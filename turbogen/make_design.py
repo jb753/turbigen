@@ -33,19 +33,17 @@ def nondim_stage_from_Al(
     eta,  # Loss
     Vx_rat=(1., 1.)  # Variation in Vx
 ):
-    """Get N-D geometry, blade speed for set of N-D aerodynamic parameters.
+    """Get non-dim' geometry for a set of non-dim' aerodynamic parameters.
 
     This compact routine is the only stage design code you will ever need. It
-    uses Euler's equation, definitions of the N-D parameters, and standard
+    uses Euler's equation, definitions of the non-dim' parameters, and standard
     perfect gas compressible flow relations.
 
     Assumes constant mean radius, angular velocity, hence blade speed.
 
     From the output of this function, arbitrarily choosing one of Omega or rm
     and providing an inlet stagnation state will completely define the stage in
-    dimensional terms.
-
-    TODO - allow for varying the mean radius."""
+    dimensional terms."""
 
     # Unpack input
     Ala, Alc = Al
