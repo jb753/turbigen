@@ -9,15 +9,16 @@ $$
 For a constant mean radius, we set $U_3=U_2=U$, then putting $V_\theta = V_x
 \tan \alpha$ yields,
 $$
-h_{03}-h_{02} = U V_{x2} \left(\frac{V_{x3}}{V_{x2}} \tan\alpha_3 - \tan\alpha_2 \right) \, ,
+h_{03}-h_{02} = U V_{x2} \left(\frac{V_{x3}}{V_{x2}} \tan\alpha_3 
+- \tan\alpha_2 \right) \, ,
 $$
 and dividing by $U^2$ to put in dimensionless terms,
 $$
 \psi = \phi \left(\zeta_3 \tan\alpha_3 - \tan\alpha_2 \right) \, . \tag{I}
 $$
-Suppose the inlet swirl, $\alpha_1$, is given. If we choose a value for stage exit swirl,
-$\alpha_3$, then Eqn.\ (I) allows us to solve for the vane exit swirl
-$\alpha_2$ and we have absolute flow angles throughout the stage.
+Suppose the inlet swirl, $\alpha_1$, is given. If we choose a value for stage
+exit swirl, $\alpha_3$, then Eqn.\ (I) allows us to solve for the vane exit
+swirl $\alpha_2$ and we have absolute flow angles throughout the stage.
 
 #### Velocities
 
@@ -25,12 +26,45 @@ The next step is to calculate velocities throughout the stage (all
 non-dimensionalised by the blade speed $U$). With prescribed axial velocity
 ratios,
 $$
-\frac{V_{x1}}{U} = \zeta_1 \phi\,, \quad \frac{V_{x2}}{U} = \phi\,, \quad \frac{V_{x3}}{U} = \zeta_3 \phi \, .
+\frac{V_{x1}}{U} = \zeta_1 \phi\,, \quad \frac{V_{x2}}{U} 
+= \phi\,, \quad \frac{V_{x3}}{U} = \zeta_3 \phi \, .
 $$
 Tangential velocities in stationary and rotor-relative frames are given by,
 $$
-\frac{V_\theta}{U} = \frac{V_x}{U} \tan \alpha \,, \quad \frac{V_\theta^\mathrm{rel}}{U} =  \frac{V_\theta}{U} -1 \,,
+\frac{V_\theta}{U} = \frac{V_x}{U} \tan \alpha \,,
+\quad \frac{V_\theta^\mathrm{rel}}{U} =  \frac{V_\theta}{U} -1 \,,
 $$
 then velocity magnitudes and relative flow angles are trivially calculable.
 
-#### Compresibility
+#### Compressibility
+
+Up to this point, we have only considered the kinematics of the turbine stage.
+Now we bring in fluid properties and compressibility, For a perfect gas, there
+exists a compressible flow relation,
+$$
+\newcommand{\Ma}{\mathit{M\kern-.05ema}}
+\frac{V}{\sqrt{c_p T_0}} = \sqrt{\gamma -1}\, \Ma
+\left(1 + \frac{\gamma - 1}{2} \Ma^2 \right)^{-\tfrac{1}{2}} \, , \tag{II}
+$$
+where $\gamma$ is the ratio of specific heats and $c_p$ the specific heat at
+constant pressure of the fluid. 
+As the stator does no work, the vane exit
+stagnation temperature is equal to the inlet stagnation temperature. We can
+then write,
+$$
+\frac{U}{\sqrt{c_p T_{01}}} = \frac{U}{V_2}\frac{V_2}{\sqrt{c_p T_{02}}} =
+\frac{1}{V_2/U}\sqrt{\gamma -1}\, \Ma_2\left(1 + \frac{\gamma - 1}{2} \Ma_2^2 \right)^{-\tfrac{1}{2}} \, . \tag{III}
+$$
+Given a non-dimensional velocity magnitude calculated in the previous step,
+$V_2/U$, Eqn. (III) evaluates the non-dimensional blade speed $U/\sqrt{c_p
+T_{01}}$ for a prescribed vane exit Mach number $\Ma_2$.
+
+The stagnation temperature downstream of the rotor depends on the stage loading
+coefficient,
+$$
+\frac{c_p T_{03}}{U^2} = \frac{c_p T_{01}}{U^2} - \psi \, .
+$$
+Combining the stagnation temperatures with values of $V/U$ for each station,
+and inverting Eqn. (II) yields Mach numbers throughout the stage.
+
+#### Loss
