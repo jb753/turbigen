@@ -64,7 +64,45 @@ coefficient,
 $$
 \frac{c_p T_{03}}{U^2} = \frac{c_p T_{01}}{U^2} - \psi \, .
 $$
-Combining the stagnation temperatures with values of $V/U$ for each station,
-and inverting Eqn. (II) yields Mach numbers throughout the stage.
+Combining the values of ${c_p T_{0}}/{U^2}$ with values of $V/U$ for each
+station, and inverting Eqn. (II) yields Mach numbers throughout the stage.
+Taking ratios of each ${c_p T_{0}}/{U^2}$ with the inlet value yields
+stagnation temperature ratios for each station independent of blade speed.
 
 #### Loss
+
+The annulus line depends on the level of blockage and hence loss of stagnation
+pressure or entropy creation within the turbine stage. We choose a polytropic
+efficiency, $\eta$, to characterise loss as it directly relates to the gas
+turbine cycle performance. Taking the logarithm of the definition of turbine polytropic efficiency,
+$$
+\frac{T_{03}}{T_{01}} = \left(\frac{p_{03}}{p_{01}}\right)
+^{\eta\tfrac{\gamma - 1}{\gamma}} \quad \Rightarrow \quad
+\log\frac{T_{03}}{T_{01}} = 
+\eta\frac{\gamma - 1}{\gamma}\log\frac{p_{03}}{p_{01}}\ , 
+$$
+with the usual perfect gas formula for entropy change,
+$$
+\Delta s = c_p \log\frac{T_{03}}{T_{01}} - R \log\frac{p_{03}}{p_{01}}\ , \tag{IV}
+$$
+combining yields the following expression for entropy creation across a turbine
+stage,
+$$
+\frac{\Delta s}{c_p} = 
+\left(1-\frac{1}{\eta}\right)\log\frac{T_{03}}{T_{01}} \ .
+$$
+
+How much of the calculated loss occurs in the stator or rotor is a free
+variable; we arbitrarily choose an equal split. Substituting back values of
+entropy, $\Delta s/c_p$ and stagnation temperature into Eqn. (IV) yields
+stagnation pressures at each station. The mean-line flow quantities are now
+fully-defined.
+
+#### Annulus line
+
+We now need to set the annulus line, which in a mean-line sense corresponds to
+axial velocity density ratios at each station, or equivalently flow area
+ratios. The compressible flow relation for non-dimensional mass flow is,
+$$
+\frac{{Geometry
+$$
