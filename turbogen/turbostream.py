@@ -1,5 +1,6 @@
 """Functions for exporting a stage design to Turbostream."""
 
+
 def make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     # Periodic patches
     p = ts_tstream_type.TstreamPatch()
@@ -15,20 +16,20 @@ def make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     p.nxbid = nxbid
     p.nxpid = nxpid
 
-    
     if dirs is not None:
         p.idir, p.jdir, p.kdir = dirs
     else:
-        p.idir, p.jdir, p.kdir = (0,1,2)
+        p.idir, p.jdir, p.kdir = (0, 1, 2)
 
     return p
 
+
 def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
 
-    yaw   = np.zeros(( nk,  nj), np.float32)
-    pitch = np.zeros(( nk,  nj), np.float32)
-    pstag = np.zeros(( nk,  nj), np.float32)
-    tstag = np.zeros(( nk,  nj), np.float32)
+    yaw = np.zeros((nk, nj), np.float32)
+    pitch = np.zeros((nk, nj), np.float32)
+    pstag = np.zeros((nk, nj), np.float32)
+    tstag = np.zeros((nk, nj), np.float32)
 
     pstag += Poin
     tstag += Toin
@@ -42,12 +43,13 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
     g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 1.0)
 
+
 def add_to_grid(g, xin, rin, rtin, ind, bid):
     """From mesh coordinates, add a block with patches to TS grid object"""
     ni, nj, nk = np.shape(rtin)
-    rt = rtin+0.
-    r = np.repeat(rin[:,:,None],nk,axis=2)
-    x = np.tile(xin[:,None,None],(1,nj,nk))
+    rt = rtin + 0.0
+    r = np.repeat(rin[:, :, None], nk, axis=2)
+    x = np.tile(xin[:, None, None], (1, nj, nk))
 
     # Permute the coordinates into C-style ordering
     # Turbostream is very fussy about this
@@ -57,9 +59,9 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
     for k in range(nk):
         for j in range(nj):
             for i in range(ni):
-                xp[k,j,i] = x[i,j,k]
-                rp[k,j,i] = r[i,j,k]
-                rtp[k,j,i] = rt[i,j,k]
+                xp[k, j, i] = x[i, j, k]
+                rp[k, j, i] = r[i, j, k]
+                rtp[k, j, i] = rt[i, j, k]
 
     # Generate new block
     b = ts_tstream_type.TstreamBlock()
@@ -71,7 +73,7 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
 
     # Add to grid with coordinates
     g.add_block(b)
-    for vname, vval in zip(['x','r','rt'],[xp,rp,rtp]):
+    for vname, vval in zip(["x", "r", "rt"], [xp, rp, rtp]):
         g.set_bp(vname, ts_tstream_type.float, bid, vval)
 
     # Leading and trailing edges
@@ -81,33 +83,59 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
 
     # Upstream of LE
     periodic_up_1 = make_patch(
-        kind='periodic', bid=bid, i=(0,ile+1), j=(0,nj), k=(0,1),
-        dirs=(0,1,6), nxbid=bid, nxpid=1,
-        )
+        kind="periodic",
+        bid=bid,
+        i=(0, ile + 1),
+        j=(0, nj),
+        k=(0, 1),
+        dirs=(0, 1, 6),
+        nxbid=bid,
+        nxpid=1,
+    )
     periodic_up_2 = make_patch(
-        kind='periodic', bid=bid, i=(0,ile+1), j=(0,nj), k=(nk-1,nk),
-        dirs=(0,1,6), nxbid=bid, nxpid=0,
-        )
+        kind="periodic",
+        bid=bid,
+        i=(0, ile + 1),
+        j=(0, nj),
+        k=(nk - 1, nk),
+        dirs=(0, 1, 6),
+        nxbid=bid,
+        nxpid=0,
+    )
     periodic_up_1.pid = g.add_patch(bid, periodic_up_1)
     periodic_up_2.pid = g.add_patch(bid, periodic_up_2)
 
     # Downstream of TE
     periodic_dn_1 = make_patch(
-        kind='periodic', bid=bid, i=(ite,ni), j=(0,nj), k=(0,1),
-        dirs=(0,1,6), nxbid=bid, nxpid=3,
-        )
+        kind="periodic",
+        bid=bid,
+        i=(ite, ni),
+        j=(0, nj),
+        k=(0, 1),
+        dirs=(0, 1, 6),
+        nxbid=bid,
+        nxpid=3,
+    )
     periodic_dn_2 = make_patch(
-        kind='periodic', bid=bid, i=(ite,ni), j=(0,nj), k=(nk-1,nk),
-        dirs=(0,1,6), nxbid=bid, nxpid=2,
-        )
+        kind="periodic",
+        bid=bid,
+        i=(ite, ni),
+        j=(0, nj),
+        k=(nk - 1, nk),
+        dirs=(0, 1, 6),
+        nxbid=bid,
+        nxpid=2,
+    )
     periodic_dn_1.pid = g.add_patch(bid, periodic_dn_1)
     periodic_dn_2.pid = g.add_patch(bid, periodic_dn_2)
 
     # Slip wall
-    slip_j0 = make_patch( kind='slipwall', bid=bid,
-            i=(0,ni), j=(0,1), k=(0,nk) )
-    slip_nj = make_patch( kind='slipwall', bid=bid,
-            i=(0,ni), j=(nj-1,nj), k=(0,nk) )
+    slip_j0 = make_patch(
+        kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
+    )
+    slip_nj = make_patch(
+        kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
+    )
     slip_j0.pid = g.add_patch(bid, slip_j0)
     slip_nj.pid = g.add_patch(bid, slip_nj)
 
@@ -128,13 +156,14 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
             else:
                 g.set_bv(name, ts_tstream_type.float, bid, val)
 
+
 def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     b = g.get_block(bid)
     ni, nj, nk = (b.ni, b.nj, b.nk)
-    xb = g.get_bp('x', bid)
-    rb = g.get_bp('r', bid)
-    cp = rgas / (ga-1.)*ga
-    cv = cp/ga
+    xb = g.get_bp("x", bid)
+    rb = g.get_bp("r", bid)
+    cp = rgas / (ga - 1.0) * ga
+    cv = cp / ga
 
     # Interpolate guess to block coords
     Pob = np.interp(xb, x, Po)
@@ -156,7 +185,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     rob = Pb / rgas / Tb
 
     # Energy
-    eb = cv*Tb + (Vb**2.)/2
+    eb = cv * Tb + (Vb ** 2.0) / 2
 
     # Primary vars
     rovxb = rob * Vxb
@@ -173,11 +202,11 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     for k in range(nk):
         for j in range(nj):
             for i in range(ni):
-                robp[k,j,i] = rob[k,j,i]
-                rovxbp[k,j,i] = rovxb[k,j,i]
-                rovrbp[k,j,i] = rovrb[k,j,i]
-                rorvtbp[k,j,i] = rorvtb[k,j,i]
-                roebp[k,j,i] = roeb[k,j,i]
+                robp[k, j, i] = rob[k, j, i]
+                rovxbp[k, j, i] = rovxb[k, j, i]
+                rovrbp[k, j, i] = rovrb[k, j, i]
+                rorvtbp[k, j, i] = rorvtb[k, j, i]
+                roebp[k, j, i] = roeb[k, j, i]
 
     # Apply to grid
     g.set_bp("ro", ts_tstream_type.float, bid, robp)
@@ -185,6 +214,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     g.set_bp("rovr", ts_tstream_type.float, bid, rovrbp)
     g.set_bp("rorvt", ts_tstream_type.float, bid, rorvtbp)
     g.set_bp("roe", ts_tstream_type.float, bid, roebp)
+
 
 def set_variables(g):
     for bid in g.get_block_ids():
@@ -212,7 +242,8 @@ def set_variables(g):
     g.set_av("viscosity_law", ts_tstream_type.int, 1)
     g.set_av("write_yplus", ts_tstream_type.int, 1)
 
-def set_rotation(g,bids,rpm,spin_j):
+
+def set_rotation(g, bids, rpm, spin_j):
     for bid in bids:
         g.set_bv("rpm", ts_tstream_type.float, bid, rpm)
         g.set_bv("rpmi1", ts_tstream_type.float, bid, rpm)
@@ -223,22 +254,25 @@ def set_rotation(g,bids,rpm,spin_j):
         g.set_bv("rpmk1", ts_tstream_type.float, bid, rpm)
         g.set_bv("rpmk2", ts_tstream_type.float, bid, rpm)
 
+
 def set_xllim(g, frac):
     # Mixing length limit
     for bid in g.get_block_ids():
-        nb = g.get_bv('nblade',bid)
-        rnow = g.get_bp('r',bid)
-        rm = np.mean([rnow.max(),rnow.min()])
-        pitch = 2. * np.pi * rm  / float(nb)
-        g.set_bv("xllim", ts_tstream_type.float, bid, frac*pitch)
+        nb = g.get_bv("nblade", bid)
+        rnow = g.get_bp("r", bid)
+        rm = np.mean([rnow.max(), rnow.min()])
+        pitch = 2.0 * np.pi * rm / float(nb)
+        g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
+
+
 def stuff():
     # Below here is code for h-meshing
 
     jp = -1
-    f,a = plt.subplots()
-    a.plot(vane_x,vane_rt[:,jp,:],'k-')
-    a.plot(blade_x,blade_rt[:,jp,:],'r-')
-    a.axis('equal')
+    f, a = plt.subplots()
+    a.plot(vane_x, vane_rt[:, jp, :], "k-")
+    a.plot(blade_x, blade_rt[:, jp, :], "r-")
+    a.axis("equal")
 
     # Make grid, add the blocks
     bid_vane = 0
@@ -250,15 +284,20 @@ def stuff():
     # Inlet
     ni, nj, nk = np.shape(vane_rt)
     inlet = make_patch(
-        kind='inlet', bid=bid_vane, i=(0,1), j=(0,nj), k=(0,nk),
-        )
+        kind="inlet",
+        bid=bid_vane,
+        i=(0, 1),
+        j=(0, nj),
+        k=(0, nk),
+    )
     inlet.pid = g.add_patch(bid_vane, inlet)
     apply_inlet(g, bid_vane, inlet.pid, Poin, Toin, nk, nj)
 
     # Outlet
     ni, nj, nk = np.shape(blade_rt)
-    outlet = make_patch( kind='outlet', bid=bid_blade,
-            i=(ni-1,ni), j=(0,nj), k=(0,nk) )
+    outlet = make_patch(
+        kind="outlet", bid=bid_blade, i=(ni - 1, ni), j=(0, nj), k=(0, nk)
+    )
     outlet.pid = g.add_patch(bid_blade, outlet)
     g.set_pv("throttle_type", ts_tstream_type.int, bid_blade, outlet.pid, 0)
     g.set_pv("ipout", ts_tstream_type.int, bid_blade, outlet.pid, 3)
@@ -267,60 +306,76 @@ def stuff():
     # Mixing upstream
     ni, nj, nk = np.shape(vane_rt)
     mix_up = make_patch(
-        kind='mixing', bid=bid_vane, i=(ni-1,ni), j=(0,nj), k=(0,nk),
-        nxbid=bid_blade, nxpid=outlet.pid+1, dirs=(6,1,2))
+        kind="mixing",
+        bid=bid_vane,
+        i=(ni - 1, ni),
+        j=(0, nj),
+        k=(0, nk),
+        nxbid=bid_blade,
+        nxpid=outlet.pid + 1,
+        dirs=(6, 1, 2),
+    )
     mix_up.pid = g.add_patch(bid_vane, mix_up)
 
     # Mixing downstream
     ni, nj, nk = np.shape(blade_rt)
     mix_dn = make_patch(
-        kind='mixing', bid=bid_blade, i=(0,1), j=(0,nj), k=(0,nk),
-        nxbid=bid_vane, nxpid=outlet.pid+1, dirs=(6,1,2))
+        kind="mixing",
+        bid=bid_blade,
+        i=(0, 1),
+        j=(0, nj),
+        k=(0, nk),
+        nxbid=bid_vane,
+        nxpid=outlet.pid + 1,
+        dirs=(6, 1, 2),
+    )
     mix_dn.pid = g.add_patch(bid_blade, mix_dn)
 
     # Apply application/block variables
     set_variables(g)
 
-    set_rotation(g,[bid_vane],0.,spin_j=False)
-    set_rotation(g,[bid_blade],rpm_rotor,spin_j=False)
+    set_rotation(g, [bid_vane], 0.0, spin_j=False)
+    set_rotation(g, [bid_blade], rpm_rotor, spin_j=False)
 
-    for bid, nbi in zip(g.get_block_ids(),nb):
+    for bid, nbi in zip(g.get_block_ids(), nb):
         g.set_bv("fblade", ts_tstream_type.float, bid, nbi)
         g.set_bv("nblade", ts_tstream_type.float, bid, nbi)
 
     set_xllim(g, 0.03)
 
     # Initial guess
-    xg = np.array(vane_xc[:-1] + blade_xc[1:])*c
-    Pog = np.repeat(stage.Po_Poin * Poin,2)
-    Tog = np.repeat(stage.To_Toin * Toin,2)
-    Mag = np.repeat(stage.Ma,2)
-    Alg = np.repeat(stage.Al,2)
+    xg = np.array(vane_xc[:-1] + blade_xc[1:]) * c
+    Pog = np.repeat(stage.Po_Poin * Poin, 2)
+    Tog = np.repeat(stage.To_Toin * Toin, 2)
+    Mag = np.repeat(stage.Ma, 2)
+    Alg = np.repeat(stage.Al, 2)
 
     for bid in g.get_block_ids():
-        guess_block(g,bid,xg,Pog,Tog,Mag,Alg,ga, rgas)
+        guess_block(g, bid, xg, Pog, Tog, Mag, Alg, ga, rgas)
 
-    g.set_av('ga', ts_tstream_type.float, ga)
-    g.set_av('cp', ts_tstream_type.float, cp)
+    g.set_av("ga", ts_tstream_type.float, ga)
+    g.set_av("cp", ts_tstream_type.float, cp)
 
     # g.write_hdf5(fname)
+
 
 def run_remote(geomturbo, py_scripts, sh_script, conf_ini):
     """Copy a geomturbo file to gp-111 and run autogrid using scripts."""
 
     # Make tmp dir on remote
-    tmpdir = os.popen(
-            'ssh gp-111 mktemp -p ~/tmp/ -d').read().splitlines()[0]
+    tmpdir = os.popen("ssh gp-111 mktemp -p ~/tmp/ -d").read().splitlines()[0]
     print(tmpdir)
 
-    # Copy files across 
+    # Copy files across
     files = [geomturbo] + py_scripts + [sh_script] + [conf_ini]
     for si in files:
-        os.system('scp %s gp-111:%s' % ( si, tmpdir))
+        os.system("scp %s gp-111:%s" % (si, tmpdir))
 
     # Run the shell script
-    result = os.popen("ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script.split('/')[-1])).read()
+    result = os.popen(
+        "ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script.split("/")[-1])
+    ).read()
     print(result)
 
     # Copy mesh back
-    os.system('scp gp-111:%s/*.{g,bcs} %s' % (tmpdir, os.getcwd()))
+    os.system("scp gp-111:%s/*.{g,bcs} %s" % (tmpdir, os.getcwd()))

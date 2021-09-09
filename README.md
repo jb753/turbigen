@@ -9,14 +9,16 @@ geometries based on a set of input aerodynamic parameters.
  
 ```python
 
-   >>> import compflow
-   >>> ga = 1.4
-   >>> compflow.Po_P_from_Ma(0.3, ga)
-   1.0644302861529382
+   >>>
 
 ```
 
 ## TODO
+
+* Make sure all routines are commented
+* List out the tests to be written
+* Set up skeleton documentation
+* Write up the reaction solution
 
 James Brind
 June 2021

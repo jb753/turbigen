@@ -101,8 +101,53 @@ fully-defined.
 #### Annulus line
 
 We now need to set the annulus line, which in a mean-line sense corresponds to
-axial velocity density ratios at each station, or equivalently flow area
+axial velocity density ratios at each station, or equivalently annulus area
 ratios. The compressible flow relation for non-dimensional mass flow is,
 $$
-\frac{{Geometry
+\frac{\dot{m}\sqrt{c_p T_0}}{A p_0} =
+\frac{\gamma}{\sqrt{\gamma -1}}\, \Ma
+\left(1 + \frac{\gamma - 1}{2} \Ma^2 \right)
+^{-\tfrac{1}{2}\tfrac{\gamma + 1}{\gamma - 1}} = Q(\Ma,\gamma)\ .
 $$
+So far, we know $c_p$, $T_0$ and $p_0$ from the left-hand side, and can
+evaluate the right-hand side $Q$ with known $\Ma$ and $\gamma$. At any given
+station, we can write,
+$$
+A_x = \frac{\dot{m} \sqrt{c_p T_0}}{p_0\,Q(\Ma,\gamma)\cos \alpha}\ ,
+$$
+then forming ratios and using conservation of mass gives,
+$$
+\frac{A_x}{A_{x1}} = \sqrt{\frac{T_{0}}{T_{01}}} \frac{p_{01}}{p_0}
+\frac{Q(\Ma_1,\gamma)}{Q(\Ma,\gamma)} \frac{\cos \alpha_1}{\cos \alpha}\ .
+$$
+For constant mean radius, annulus area ratios are identical to blade height
+ratios so that $\Delta r/\Delta r_1 = A_x/A_{x1}$.
+
+#### Summary
+
+We began with a set of *aerodynamic* parameters fully defining the mean-line
+flow of a turbine stage at constant mean radius:
+
+* $\phi$, $\psi$, $\alpha_1$, $\alpha_3$, $\zeta$ describing the velocity triangles;
+* $\Ma_2$ and $\gamma$ to describe compressibility effects;
+* $\eta$ to specify irreversibility.
+
+Using the Euler work equation and assuming a perfect gas, we have derived a set of analytic equations that convert the
+*aerodynamic* parameters into a set of *geometric* parameters 
+sufficient to construct a non-dimensional cascade shape:
+
+* $\alpha_2$, the inter-stage swirl;
+* $U/\sqrt{c_p T_01}$, a blade speed;
+* $\Delta r/\Delta r_1$ at each station.
+
+The following section discusses geometry generation at a specified degree of
+reaction, $\Lambda$, which must be done numerically.
+
+## Specifying reaction
+
+In a turbomachinery design context, it is more convenient to specify degree of
+reaction instead of the exit flow angle of a turbine stage. Reaction directly
+controls the balance of loading between stator and rotor; $\Lambda\approx0.5$
+is a common design philosophy to equalise peak velocities in stator and rotor,
+minimising loss.
+
