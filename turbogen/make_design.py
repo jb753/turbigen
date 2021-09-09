@@ -13,22 +13,26 @@ muref = 1.8e-5
 Tref = 288.0
 
 # Define a namedtuple to store all information about a stage design
+stage_vars = {
+    "Yp": "Stagnation pressure loss coefficients [-]",
+    "Ma": "Mach numbers [-]",
+    "Ma_rel": "Rotor-relative Mach numbers [-]",
+    "Al": "Yaw angles [deg]",
+    "Al_rel": "Rotor-relative yaw angles [deg]",
+    "Lam": "Degree of reaction [-]",
+    "Ax_Axin": "Annulus area ratios [-]",
+    "U_sqrt_cpToin": "Non-dimensional blade speed [-]",
+    "Po_Poin": "Stagnation pressure ratios [-]",
+    "To_Toin": "Stagnation temperature ratios [-]",
+}
+
 NonDimStage = namedtuple(
     "NonDimStage",
-    [
-        "Yp",
-        "Ma",
-        "Ma_rel",
-        "Al",
-        "Al_rel",
-        "Lam",
-        "Ax_Axin",
-        "U_sqrt_cpToin",
-        "Pout_Poin",
-        "Po_Poin",
-        "To_Toin",
-    ],
+    stage_vars.keys(),
 )
+NonDimStage.__doc__ = "Simple data class to hold geometry and derived flow parameters of a turbine stage design."
+for vi in stage_vars:
+    getattr(NonDimStage,vi).__doc__ = stage_vars[vi]
 
 
 def nondim_stage_from_Al(
@@ -137,7 +141,7 @@ def nondim_stage_from_Al(
     # Area ratios = span ratios because rm = const
     Dr_Drin = np.sqrt(To_Toin) / Po_Poin / Q_Qin * cosAl[0] / cosAl
 
-    # Evaluate some other useful secondary aerodynamic parameters 
+    # Evaluate some other useful secondary aerodynamic parameters
     T_Toin = To_Toin / compflow.To_T_from_Ma(Ma_all, ga)
     P_Poin = Po_Poin / compflow.Po_P_from_Ma(Ma_all, ga)
     Porel_Poin = P_Poin * compflow.Po_P_from_Ma(Ma_rel, ga)
@@ -157,7 +161,6 @@ def nondim_stage_from_Al(
         Ax_Axin=tuple(Dr_Drin),
         Lam=Lam,
         U_sqrt_cpToin=U_cpToin,
-        Pout_Poin=P_Poin[-1],
         Po_Poin=Po_Poin,
         To_Toin=To_Toin,
     )
@@ -253,7 +256,7 @@ def nondim_stage_from_Lam(
 
 
 def annulus_line(U_sqrt_cpToin, Ax_Axin, htr, cpToin, Omega):
-    r"""Dimensional annulus line from given non-dim' geometry and inlet state.
+    r"""Return dimensional annulus line from given non-dim' geometry and inlet state.
 
     The parameter :math:`U/\sqrt{c_p T_{01}}` characterises blade speed in a
     non-dimensional sense. To scale a design to specific dimensional conditions
@@ -302,6 +305,26 @@ def annulus_line(U_sqrt_cpToin, Ax_Axin, htr, cpToin, Omega):
 def blade_section(chi, a=0.0):
     """Make a simple blade geometry with specified metal angles, after Denton.
 
+    Assume a cubic camber line, with a coefficient :math:`a` controlling the
+    chordwise loading distribution. Default to a quadratic camber line with
+    :math:`a=0`. Positive values of :math:`a` correspond to aft-loading, and
+    negative values front-loading.
+
+    Use a quadratic thickness distribution parameterised by the maximum
+    thickness location, with an aditional linear component to force finite
+    leading and trailing edge thicknesses.
+
+    Parameters
+    ----------
+    chi : array
+        Metal angles at inlet and exit [deg].
+    a : float, default=0.
+        Aft-loading factor [-].
+
+    Returns
+    -------
+    xy : array
+        Mean radius [m].
     """
 
     # Copy defaults from MEANGEN (Denton)
