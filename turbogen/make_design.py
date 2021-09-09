@@ -144,8 +144,8 @@ def nondim_stage_from_Al(
     Lam = (T_Toin[2] - T_Toin[1]) / (T_Toin[2] - T_Toin[0])
 
     # Reformulate loss as stagnation pressure loss coefficients
-    Yp_vane = (Po_Poin[0] - Po_Poin[1]) / (Po_Poin[0] - P_Poin[1])
-    Yp_blade = (Porel_Poin[1] - Porel_Poin[2]) / (Porel_Poin[1] - P_Poin[2])
+    Yp_vane = (Po_Poin[0] - Po_Poin[1]) / (Po_Poin[0] - P_Poin[0])
+    Yp_blade = (Porel_Poin[1] - Porel_Poin[2]) / (Porel_Poin[1] - P_Poin[1])
 
     # Assemble all of the data into the output object
     stg = NonDimStage(
@@ -253,7 +253,7 @@ def nondim_stage_from_Lam(
 
 
 def annulus_line(U_sqrt_cpToin, Ax_Axin, htr, cpToin, Omega):
-    """Dimensional annulus line from given non-dim' geometry and inlet state.
+    r"""Dimensional annulus line from given non-dim' geometry and inlet state.
 
     The parameter :math:`U/\sqrt{c_p T_{01}}` characterises blade speed in a
     non-dimensional sense. To scale a design to specific dimensional conditions
