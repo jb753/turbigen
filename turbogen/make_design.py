@@ -42,8 +42,8 @@ def nondim_stage_from_Al(
 ):
     r"""Get geometry for an aerodynamic parameter set specifying outlet swirl.
 
-    This routine calculates the non-dimensional geometric parameters that
-    correspond to an input set of non-dimensional aerodynamic parameters. In
+    This routine calculates the non-dimensional *geometric* parameters that
+    correspond to an input set of non-dimensional *aerodynamic* parameters. In
     this way, a turbine designer can directly specify meaningful quantities
     that characterise the desired fluid dynamics while the precise blade
     geometry is abstracted away.
@@ -71,7 +71,7 @@ def nondim_stage_from_Al(
     eta : float
         Polytropic efficiency, :math:`\eta`.
     Vx_rat : array, default=(1.,1.)
-        Axial velocity ratios at inlet and exit, :math:`(\zeta_1,\zeta_3)`.
+        Axial velocity ratios, :math:`(\zeta_1,\zeta_3)`.
 
     Returns
     -------
