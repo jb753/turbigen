@@ -7,42 +7,36 @@ import compflow
 import numpy as np
 from collections import namedtuple
 
-# Viscosity of working fluid at a reference temperature
-# (we assume variation with 0.62 power of temperature)
-muref = 1.8e-5
-Tref = 288.0
-
 # Define a namedtuple to store all information about a stage design
 stage_vars = {
-    "Yp": "Stagnation pressure loss coefficients [-]",
-    "Ma": "Mach numbers [-]",
-    "Ma_rel": "Rotor-relative Mach numbers [-]",
-    "Al": "Yaw angles [deg]",
-    "Al_rel": "Rotor-relative yaw angles [deg]",
-    "Lam": "Degree of reaction [-]",
-    "Ax_Axin": "Annulus area ratios [-]",
-    "U_sqrt_cpToin": "Non-dimensional blade speed [-]",
-    "Po_Poin": "Stagnation pressure ratios [-]",
-    "To_Toin": "Stagnation temperature ratios [-]",
+    "Yp": r"Stagnation pressure loss coefficients :math:`Y_p` [--]",
+    "Ma": r"Mach numbers :math:`\Ma` [--]",
+    "Ma_rel": r"Rotor-relative Mach numbers :math:`\Ma^\rel` [--]",
+    "Al": r"Yaw angles :math:`\alpha` [deg]",
+    "Al_rel": r"Rotor-relative yaw angles :math:`\alpha^\rel` [deg]",
+    "Lam": r"Degree of reaction :math:`\Lambda` [--]",
+    "Ax_Axin": r"Annulus area ratios :math:`A_x/A_{x1}` [--]",
+    "U_sqrt_cpToin": r"Non-dimensional blade speed :math:`U/\sqrt{c_p T_{01}}` [--]",
+    "Po_Poin": r"Stagnation pressure ratios :math:`p_0/p_{01}` [--]",
+    "To_Toin": r"Stagnation temperature ratios :math:`T_0/T_{01}` [--]",
+    "ga": r"Ratio of specific heats, :math:`\gamma` [--]",
+    "phi": r"Flow coefficient, :math:`\phi` [--]",
+    "psi": r"Stage loading coefficient, :math:`\psi` [--]",
 }
-
-NonDimStage = namedtuple(
-    "NonDimStage",
-    stage_vars.keys(),
-)
-NonDimStage.__doc__ = "Simple data class to hold geometry and derived flow parameters of a turbine stage design."
+NonDimStage = namedtuple( "NonDimStage", stage_vars.keys() )
+NonDimStage.__doc__ = "Simple data class to hold geometry and derived flow parameters of a turbine stage mean-line design."
 for vi in stage_vars:
     getattr(NonDimStage,vi).__doc__ = stage_vars[vi]
 
 
 def nondim_stage_from_Al(
-    phi,  # Flow coefficient [-]
-    psi,  # Stage loading coefficient [-]
+    phi,  # Flow coefficient [--]
+    psi,  # Stage loading coefficient [--]
     Al,  # Yaw angles [deg]
-    Ma,  # Vane exit Mach number [-]
-    ga,  # Ratio of specific heats [-]
-    eta,  # Polytropic efficiency [-]
-    Vx_rat=(1.0, 1.0),  # Axial velocity ratios [-]
+    Ma,  # Vane exit Mach number [--]
+    ga,  # Ratio of specific heats [--]
+    eta,  # Polytropic efficiency [--]
+    Vx_rat=(1., 1.),  # Axial velocity ratios [--]
 ):
     r"""Get geometry for an aerodynamic parameter set specifying outlet swirl.
 
@@ -163,20 +157,23 @@ def nondim_stage_from_Al(
         U_sqrt_cpToin=U_cpToin,
         Po_Poin=Po_Poin,
         To_Toin=To_Toin,
+        phi=phi,
+        psi=psi,
+        ga=ga,
     )
 
     return stg
 
 
 def nondim_stage_from_Lam(
-    phi,  # Flow coefficient [-]
-    psi,  # Stage loading coefficient [-]
-    Lam,  # Degree of reaction [-]
+    phi,  # Flow coefficient [--]
+    psi,  # Stage loading coefficient [--]
+    Lam,  # Degree of reaction [--]
     Alin,  # Inlet yaw angle [deg]
-    Ma,  # Vane exit Mach number [-]
-    ga,  # Ratio of specific heats [-]
-    eta,  # Polytropic efficiency [-]
-    Vx_rat=(1.0, 1.0),  # Axial velocity ratios [-]
+    Ma,  # Vane exit Mach number [--]
+    ga,  # Ratio of specific heats [--]
+    eta,  # Polytropic efficiency [--]
+    Vx_rat=(1.0, 1.0),  # Axial velocity ratios [--]
 ):
     r"""Get geometry for an aerodynamic parameter set specifying reaction.
 
@@ -275,20 +272,20 @@ def annulus_line(U_sqrt_cpToin, Ax_Axin, htr, cpToin, Omega):
     U_sqrt_cpToin : float
         Non-dimensional blade speed, :math:`U/\sqrt{c_p T_{01}}`.
     Ax_Axin : array, length 3
-        Annulus area ratios, :math:`A_x/A_x1`.
+        Annulus area ratios, :math:`A_x/A_{x1}`.
     htr : float
         Hub-to-tip radius ratio, :math:`\HTR`.
     cpToin : float
-        Inlet specific stagnation enthalpy [J/kg].
+        Inlet specific stagnation enthalpy, :math:`c_p T_{01}` [J/kg].
     Omega : float
-        Shaft angular velocity [rad/s].
+        Shaft angular velocity, :math:`\Omega` [rad/s].
 
     Returns
     -------
     rm : float
-        Mean radius [m].
+        Mean radius, :math:`r_\mean` [m].
     Dr : array, length 3
-        Annulus spans [m].
+        Annulus spans :math:`\Delta r` [m].
     """
 
     # Use non-dimensional blade speed to get U, hence mean radius
@@ -303,28 +300,43 @@ def annulus_line(U_sqrt_cpToin, Ax_Axin, htr, cpToin, Omega):
 
 
 def blade_section(chi, a=0.0):
-    """Make a simple blade geometry with specified metal angles, after Denton.
+    r"""Make a simple blade geometry with specified metal angles.
 
-    Assume a cubic camber line, with a coefficient :math:`a` controlling the
-    chordwise loading distribution. Default to a quadratic camber line with
-    :math:`a=0`. Positive values of :math:`a` correspond to aft-loading, and
-    negative values front-loading.
+    Assume a cubic camber line :math:`\chi(\hat{x})` between inlet and exit
+    metal angles, with a coefficient :math:`\mathcal{A}` controlling the
+    chordwise loading distribution. Positive values of :math:`\mathcal{A}`
+    correspond to aft-loading, and negative values front-loading. Default to a
+    quadratic camber line with :math:`\mathcal{A}=0`.
+
+    .. math ::
+
+        \tan \chi(\hat{x}) = \left(\tan \chi_2 - \tan \chi_1
+        \right)\left[\mathcal{A}\hat{x}^2 + (1-\mathcal{A})\hat{x}\right] +
+        \tan \chi_1\,, \quad 0\le \hat{x} \le 1 \,.
 
     Use a quadratic thickness distribution parameterised by the maximum
     thickness location, with an aditional linear component to force finite
     leading and trailing edge thicknesses.
 
+    This is a variation of the geometry parameterisation used by,
+
+    Denton, J. D. (2017). "Multall---An Open Source, Computational Fluid
+    Dynamics Based, Turbomachinery Design System."
+    *J. Turbomach* 139(12): 121001.
+    https://doi.org/10.1115/1.4037819
+
     Parameters
     ----------
     chi : array
-        Metal angles at inlet and exit [deg].
-    a : float, default=0.
-        Aft-loading factor [-].
+        Metal angles at inlet and exit :math:`(\chi_1,\chi_2)` [deg].
+    a : float, default=0
+        Aft-loading factor :math:`\mathcal{A}` [--].
 
     Returns
     -------
     xy : array
-        Mean radius [m].
+        Non-dimensional blade coordinates [--], one row each for chordwise
+        coordinate, tangential upper, and tangential lower coordinates.
     """
 
     # Copy defaults from MEANGEN (Denton)
@@ -369,58 +381,154 @@ def blade_section(chi, a=0.0):
     ydown = yhat - thick * 0.5 * fac_thin
 
     # Fillet over the join at thinned LE
-    fillet(xhat - xmodle, yup, xmodle / 2.0)
-    fillet(xhat - xmodle, ydown, xmodle / 2.0)
+    _fillet(xhat - xmodle, yup, xmodle / 2.0)
+    _fillet(xhat - xmodle, ydown, xmodle / 2.0)
 
     # Assemble coordinates and return
     return np.vstack((xhat, yup, ydown))
 
 
-def pitch_Zweifel(Z, Al, Ma, Dr, ga, Yp):
-    """Calculate pitch-to-chord from Zweifel coefficient."""
-    Alr = np.radians(Al)
-    Po2_P2 = compflow.Po_P_from_Ma(Ma[1], ga)
-    Po2_Po1 = (1.0 - Yp) / (1.0 - Yp / Po2_P2)
-    Q1 = compflow.mcpTo_APo_from_Ma(Ma[0], ga)
+def pitch_Zweifel(Z, stg):
+    r"""Calculate pitch-to-chord ratio from Zweifel coefficient.
+
+    The Zweifel loading coefficient :math:`Z` is given by,
+
+    .. math ::
+
+        Z = \frac{\text{actual loading}}{\text{ideal loading}} =
+        \frac{\dot{m}(V_{\theta 1} + V_{\theta 2})}{\Delta r
+        c_x (p_{01}-p_2) } \, ,
+
+    which can be rearranged to evaluate the pitch-to-chord ratio :math:`s/c_x`
+    in purely non-dimensional terms (see Dixon and Hall p. 88). The calculation
+    is performed for the stator in the absolute frame, and for the rotor in the
+    relative frame.
+
+    Parameters
+    ----------
+    Z : tuple
+        Zweifel loading coefficients for stator and rotor, :math:`Z` [--].
+    stg : NonDimStage
+        A non-dimensional turbine stage mean-line design.
+
+    Returns
+    -------
+    s_cx : 2-tuple
+        Pitch-to-chord ratios for stator and rotor, :math:`s/c_x` [--].
+    """
+
+    # Angles
+    Alr = np.radians(stg.Al)
     cosAl = np.cos(Alr)
-    V_cpTo_sinAl = compflow.V_cpTo_from_Ma(Ma, ga) * np.sin(Alr)
-    s_c = (
-        Z
-        * (1.0 - Po2_Po1 / Po2_P2)
-        / Q1
+    V_cpTo_sinAl = compflow.V_cpTo_from_Ma(stg.Ma, stg.ga) * np.sin(Alr)
+
+    Alrelr = np.radians(stg.Al_rel)
+    cosAlrel = np.cos(Alrelr)
+    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Ma_rel, stg.ga) * np.sin(Alrelr)
+
+    P2_Po1 = stg.Po_Poin[1]/compflow.Po_P_from_Ma(stg.Ma[1], stg.ga)
+    P3_Po2_rel = (
+        stg.Po_Poin[2]
+        / stg.Po_Poin[1]
+        / compflow.Po_P_from_Ma(stg.Ma_rel[1], stg.ga)
+        * compflow.Po_P_from_Ma(stg.Ma[1], stg.ga)
+        / compflow.Po_P_from_Ma(stg.Ma[2], stg.ga)
+    )
+
+    Q_stator = compflow.mcpTo_APo_from_Ma(stg.Ma[0], stg.ga)
+    Q_rotor = compflow.mcpTo_APo_from_Ma(stg.Ma_rel[1], stg.ga)
+
+    # Evaluate pitch to chord
+    s_c_stator = (
+        Z[0]
+        * (1.0 - P2_Po1)
+        / Q_stator
         / cosAl[0]
         / (V_cpTo_sinAl[1] - V_cpTo_sinAl[0])
-        / Dr[0]
-        * np.mean(Dr)
+        / stg.Ax_Axin[0]
+        * np.mean(stg.Ax_Axin[2:])
     )
-    return np.abs(s_c)
+
+    # Evaluate pitch to chord
+    s_c_rotor = (
+        Z[1]
+        * (1.0 - P3_Po2_rel)
+        / Q_rotor
+        / cosAlrel[1]
+        / (V_cpTo_sinAlrel[2] - V_cpTo_sinAlrel[1])
+        / stg.Ax_Axin[1]
+        * np.mean(stg.Ax_Axin[1:])
+    )
+
+    return s_c_stator, s_c_rotor
 
 
-def chord_Re(Re, To1, Po1, Ma, ga, rgas, Yp):
-    """Set chord length using Reynolds number."""
+def chord_from_Re(Re, cpTo1, Po1, rgas, stg):
+    r"""Set axial chord length using Reynolds number and vane exit state.
 
-    # Get exit stagnation pressure
-    Po2_P2 = compflow.Po_P_from_Ma(Ma, ga)
-    Po2_Po1 = (1.0 - Yp) / (1.0 - Yp / Po2_P2)
+    Define a Reynolds number based on vane axial chord and vane exit static
+    state,
 
-    # Exit static state
-    P2 = Po1 * Po2_Po1 / Po2_P2
-    To2_T2 = compflow.To_T_from_Ma(Ma, ga)
-    T2 = To1 / To2_T2
-    ro2 = P2 / rgas / T2
-    cp = rgas * ga / (ga - 1.0)
-    V2 = compflow.V_cpTo_from_Ma(Ma, ga) * np.sqrt(cp * To1)
+    .. math ::
+
+        \Rey = \frac{\rho_2 V_2 c_x}{\mu_2} \, .
+
+    We can solve for the axial chord by specifying a value for :math:`\Rey`,
+    calculating the dimensional thermodynamic state at station 2, and
+    evaluating the fluid viscosity :math:`\mu_2`.
+
+    Fixing the inlet stagnation enthalpy and pressures, and a value for the
+    specific gas constant yields :math:`\rho_2 V_2` for a given non-dimensional
+    turbine stage design. Further, assuming the working fluid is air, the
+    viscosity is approximated by,
+
+    .. math ::
+
+        \mu(T) = \mu_\rf \left(T/T_\rf\right)^{0.62}
+
+    with :math:`\mu_\rf = 1.8 \times 10^5` [kg/m/s] at :math:`T_\rf = 288` [K].
+
+    Parameters
+    ----------
+    Re : float
+        Axial chord based Reynolds number, :math:`\Rey` [--].
+    cpTo1 : float
+        Inlet specific stagnation enthalpy, :math:`c_p T_{01}` [J/kg].
+    Po1 : float
+        Inlet stagnation pressure, :math:`P_{01}` [Pa].
+    rgas : float
+        Specific gas constant, :math:`R` [J/kg/K].
+    stg : NonDimStage
+        A non-dimensional turbine stage design object.
+
+    Returns
+    -------
+    cx : float
+        Dimensional vane axial chord, :math:`c_x` [m].
+    """
+
+    # Viscosity of working fluid at a reference temperature
+    # (we assume variation with 0.62 power of temperature)
+    muref = 1.8e-5
+    Tref = 288.0
+
+    # Get vane exit static state
+    Ma2 = stg.Ma[1]
+    ga = stg.ga
+    cp = rgas * ga / (ga - 1.)
+    To1 = cpTo1/cp
+    P2 = Po1 * stg.Po_Poin[1] / compflow.Po_P_from_Ma(Ma2, ga)
+    T2 = To1 * stg.To_Toin[1] / compflow.To_T_from_Ma(Ma2, ga)
+    rho2 = P2 / rgas / T2
+    V2 = compflow.V_cpTo_from_Ma(Ma2, ga) * sqrt( To1 * cp )
 
     # Get viscosity using 0.62 power approximation
-    mu = muref * (T2 / Tref) ** 0.62
+    mu2 = muref * (T2 / Tref) ** 0.62
 
-    # Use reynolds number to set chord
-    cx = Re * mu / ro2 / V2
-    return cx
+    # Use specified Reynolds number to set chord
+    return Re * mu2 / rho2 / V2
 
-
-def fillet(x, r, dx):
-
+def _fillet(x, r, dx):
     # Get indices for the points at boundary of fillet
     ind = np.array(np.where(np.abs(x) <= dx)[0])
 
@@ -503,8 +611,8 @@ def meridional_mesh(xc, rm, Dr, c, nr):
     # smooth the edges
     dxsmth_c = 0.2
     for i in [1, 2]:
-        fillet(x - xc[i], rh, dxsmth_c)
-        fillet(x - xc[i], rc, dxsmth_c)
+        _fillet(x - xc[i], rh, dxsmth_c)
+        _fillet(x - xc[i], rc, dxsmth_c)
 
     rh2 = np.atleast_2d(rh)
     rc2 = np.atleast_2d(rc)

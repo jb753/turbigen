@@ -21,7 +21,46 @@ eta = 0.9
 Lam_ref = 0.5
 Al_range = np.linspace(-30.0, 30.0, 11)
 
+Ma_low = 0.01
+eta_ideal = 1.0
+
 # Begin test functions
+
+
+def test_Zweifel():
+    """Verify Zweifel pitch-to-chord for low-speed lossless repeating stages."""
+    for phii in phi:
+        for psii in psi:
+            for Al1i in Al_range:
+                Alnow = (Al1i, Al1i)  # Same inlet and exit angle
+                stg = nondim_stage_from_Al(
+                    phii, psii, Alnow, Ma_low, ga, eta_ideal
+                )
+
+                # Evaluate Zweifel using built in function
+                Z = 0.8
+                s_c_out = np.array(pitch_Zweifel((Z, Z), stg))
+
+                # Evaluate low-speed lossless approximation
+                Alr = np.radians(stg.Al)
+                s_c_stator = (
+                    Z
+                    / 2.0
+                    / (np.cos(Alr[1]) ** 2.0)
+                    / (np.tan(Alr[1]) - np.tan(Alr[0]))
+                )
+                Alrelr = np.radians(stg.Al_rel)
+                s_c_rotor = (
+                    Z
+                    / 2.0
+                    / (np.cos(Alrelr[2]) ** 2.0)
+                    / (np.tan(Alrelr[2]) - np.tan(Alrelr[1]))
+                )
+
+                # Check that the two are within a tolerance
+                assert np.all(
+                    np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
+                )
 
 
 def test_repeating():
@@ -80,6 +119,7 @@ def test_Vx():
                 Vx_rat_out = Vx_U / phii
                 assert np.all(np.isclose(Vx_rat_out, (0.9, 1.0, 1.2)))
 
+
 def test_euler():
     """Verify that the Euler's work equation is satisfied."""
     for phii in phi:
@@ -92,7 +132,8 @@ def test_euler():
                 Vt_cpTo = V_cpTo * np.sin(np.radians(stg.Al))
                 Vt_U = Vt_cpTo / stg.U_sqrt_cpToin
                 dVt_U = Vt_U[1] - Vt_U[2]
-                assert np.all(np.isclose(dVt_U,psii))
+                assert np.all(np.isclose(dVt_U, psii))
+
 
 def test_loss():
     """Check that polytropic efficiency, loss coeffs and Po are correct."""

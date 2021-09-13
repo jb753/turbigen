@@ -64,7 +64,11 @@ mathjax3_config = {
     "tex": {
         "macros": {
             "Ma": r"{M\kern-.1ema}",
-            "HTR": r"\mathit{\operatorname{HTR}}",
-        }
+            "Rey": r"{R\kern-.1eme}",
+            "HTR": r"\mathit{HTR}",
+            "rel": r"\mathrm{rel}",
+            "rf": r"\mathrm{ref}",
+            "mean": r"\mathrm{m}",
+        },
     }
 }
