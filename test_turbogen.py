@@ -80,6 +80,19 @@ def test_Vx():
                 Vx_rat_out = Vx_U / phii
                 assert np.all(np.isclose(Vx_rat_out, (0.9, 1.0, 1.2)))
 
+def test_euler():
+    """Verify that the Euler's work equation is satisfied."""
+    for phii in phi:
+        for psii in psi:
+            for Lami in Lam:
+                stg = nondim_stage_from_Lam(
+                    phii, psii, Lami, Al1, Ma2, ga, eta, Vx_rat=(0.9, 1.2)
+                )
+                V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_Toin)
+                Vt_cpTo = V_cpTo * np.sin(np.radians(stg.Al))
+                Vt_U = Vt_cpTo / stg.U_sqrt_cpToin
+                dVt_U = Vt_U[1] - Vt_U[2]
+                assert np.all(np.isclose(dVt_U,psii))
 
 def test_loss():
     """Check that polytropic efficiency, loss coeffs and Po are correct."""
