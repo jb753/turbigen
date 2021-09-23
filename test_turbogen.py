@@ -49,7 +49,7 @@ def test_Zweifel():
                     / (np.cos(Alr[1]) ** 2.0)
                     / (np.tan(Alr[1]) - np.tan(Alr[0]))
                 )
-                Alrelr = np.radians(stg.Al_rel)
+                Alrelr = np.radians(stg.Alrel)
                 s_c_rotor = (
                     Z
                     / 2.0
@@ -86,10 +86,10 @@ def test_mass():
                 )
                 mdot_out = (
                     cf.mcpTo_APo_from_Ma(stg.Ma, ga)
-                    * stg.Ax_Axin
-                    * stg.Po_Poin
+                    * stg.Ax_Ax1
+                    * stg.Po_Po1
                     * np.cos(np.radians(stg.Al))
-                    / np.sqrt(stg.To_Toin)
+                    / np.sqrt(stg.To_To1)
                 )
                 assert np.isclose(*mdot_out)
 
@@ -113,9 +113,9 @@ def test_Vx():
                 stg = nondim_stage_from_Lam(
                     phii, psii, Lami, Al1, Ma2, ga, eta, Vx_rat=(0.9, 1.2)
                 )
-                V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_Toin)
+                V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_To1)
                 Vx_cpTo = V_cpTo * np.cos(np.radians(stg.Al))
-                Vx_U = Vx_cpTo / stg.U_sqrt_cpToin
+                Vx_U = Vx_cpTo / stg.U_sqrt_cpTo1
                 Vx_rat_out = Vx_U / phii
                 assert np.all(np.isclose(Vx_rat_out, (0.9, 1.0, 1.2)))
 
@@ -128,9 +128,9 @@ def test_euler():
                 stg = nondim_stage_from_Lam(
                     phii, psii, Lami, Al1, Ma2, ga, eta, Vx_rat=(0.9, 1.2)
                 )
-                V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_Toin)
+                V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_To1)
                 Vt_cpTo = V_cpTo * np.sin(np.radians(stg.Al))
-                Vt_U = Vt_cpTo / stg.U_sqrt_cpToin
+                Vt_U = Vt_cpTo / stg.U_sqrt_cpTo1
                 dVt_U = Vt_U[1] - Vt_U[2]
                 assert np.all(np.isclose(dVt_U, psii))
 
@@ -145,8 +145,8 @@ def test_loss():
                 )
                 # Check efficiency
                 eta_out = (
-                    np.log(stg.To_Toin[-1])
-                    / np.log(stg.Po_Poin[-1])
+                    np.log(stg.To_To1[-1])
+                    / np.log(stg.Po_Po1[-1])
                     * ga
                     / (ga - 1.0)
                 )
@@ -154,17 +154,17 @@ def test_loss():
 
                 # Check loss coeffs
                 # Note compressor definition using inlet dyn head
-                Po2_Po1 = stg.Po_Poin[1]
+                Po2_Po1 = stg.Po_Po1[1]
                 Po3_Po2_rel = (
-                    cf.Po_P_from_Ma(stg.Ma_rel[2], ga)
-                    / cf.Po_P_from_Ma(stg.Ma_rel[1], ga)
+                    cf.Po_P_from_Ma(stg.Marel[2], ga)
+                    / cf.Po_P_from_Ma(stg.Marel[1], ga)
                     * cf.Po_P_from_Ma(stg.Ma[1], ga)
                     / cf.Po_P_from_Ma(stg.Ma[2], ga)
-                    * stg.Po_Poin[2]
-                    / stg.Po_Poin[1]
+                    * stg.Po_Po1[2]
+                    / stg.Po_Po1[1]
                 )
                 Po1_P1 = cf.Po_P_from_Ma(stg.Ma[0], ga)
-                Po2_P2_rel = cf.Po_P_from_Ma(stg.Ma_rel[1], ga)
+                Po2_P2_rel = cf.Po_P_from_Ma(stg.Marel[1], ga)
 
                 Yp_stator_out = (1.0 - Po2_Po1) / (1.0 - 1.0 / Po1_P1)
                 assert np.isclose(Yp_stator_out, stg.Yp[0])
@@ -180,7 +180,7 @@ def test_psi():
                 stg = nondim_stage_from_Lam(
                     phii, psii, Lami, Al1, Ma2, ga, eta
                 )
-                psi_out = (1.0 - stg.To_Toin[2]) / stg.U_sqrt_cpToin ** 2.0
+                psi_out = (1.0 - stg.To_To1[2]) / stg.U_sqrt_cpTo1 ** 2.0
                 assert np.isclose(psii, psi_out)
 
 
@@ -218,7 +218,7 @@ def test_valid():
                     if not "Al" in vi:
                         assert np.all(np.array(xi) >= 0.0)
                 # Flow angles less than 90 degrees
-                for vi in ["Al", "Al_rel"]:
+                for vi in ["Al", "Alrel"]:
                     assert np.all(np.abs(getattr(stg, vi)) < 90.0)
                 # No diverging annuli (for these designs Vx=const)
-                assert np.all(np.array(stg.Ax_Axin) >= 1.0)
+                assert np.all(np.array(stg.Ax_Ax1) >= 1.0)
