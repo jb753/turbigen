@@ -251,7 +251,7 @@ def nondim_stage_from_Lam(
     return stg_out
 
 
-def annulus_line(U_sqrt_cpTo1, Ax_Ax1, htr, cp_To1, Omega):
+def annulus_line(stg, htr, cpTo1, Omega):
     r"""Return dimensional annulus line from given non-dim' geometry and inlet state.
 
     The parameter :math:`U/\sqrt{c_p T_{01}}` characterises blade speed in a
@@ -268,13 +268,11 @@ def annulus_line(U_sqrt_cpTo1, Ax_Ax1, htr, cp_To1, Omega):
 
     Parameters
     ----------
-    U_sqrt_cpTo1 : float
-        Non-dimensional blade speed, :math:`U/\sqrt{c_p T_{01}}`.
-    Ax_Ax1 : array, length 3
-        Annulus area ratios, :math:`A_x/A_{x1}`.
+    stg : NonDimStage
+        A non-dimensional turbine stage mean-line design.
     htr : float
         Hub-to-tip radius ratio, :math:`\HTR`.
-    cp_To1 : float
+    cpTo1 : float
         Inlet specific stagnation enthalpy, :math:`c_p T_{01}` [J/kg].
     Omega : float
         Shaft angular velocity, :math:`\Omega` [rad/s].
@@ -288,12 +286,12 @@ def annulus_line(U_sqrt_cpTo1, Ax_Ax1, htr, cp_To1, Omega):
     """
 
     # Use non-dimensional blade speed to get U, hence mean radius
-    U = U_sqrt_cpTo1 * np.sqrt(cp_To1)
+    U = stg.U_sqrt_cpTo1 * np.sqrt(cpTo1)
     rm = U / Omega
 
     # Use hub-to-tip ratio to set span (mdot will therefore float)
     Dr_rm = 2.0 * (1.0 - htr) / (1.0 + htr)
-    Dr = rm * Dr_rm * np.array(Ax_Ax1) / Ax_Ax1[1]
+    Dr = rm * Dr_rm * np.array(stg.Ax_Ax1) / stg.Ax_Ax1[1]
 
     return rm, Dr
 
@@ -387,7 +385,7 @@ def blade_section(chi, a=0.0):
     return np.vstack((xhat, yup, ydown))
 
 
-def pitch_Zweifel(Z, stg):
+def pitch_Zweifel(stg, Z):
     r"""Calculate pitch-to-chord ratio from Zweifel coefficient.
 
     The Zweifel loading coefficient :math:`Z` is given by,
@@ -405,10 +403,10 @@ def pitch_Zweifel(Z, stg):
 
     Parameters
     ----------
-    Z : tuple
-        Zweifel loading coefficients for stator and rotor, :math:`Z` [--].
     stg : NonDimStage
         A non-dimensional turbine stage mean-line design.
+    Z : tuple
+        Zweifel loading coefficients for stator and rotor, :math:`Z` [--].
 
     Returns
     -------
@@ -464,7 +462,7 @@ def pitch_Zweifel(Z, stg):
     return s_c_stator, s_c_rotor
 
 
-def chord_from_Re(Re, cpTo1, Po1, rgas, stg):
+def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     r"""Set axial chord length using Reynolds number and vane exit state.
 
     Define a Reynolds number based on vane axial chord and vane exit static
@@ -769,10 +767,8 @@ def generate(
 
     # Calculate pitch-to-chord ratio (const Zweifel)
     s_c = (
-        pitch_Zweifel(Z, stage.Al[:2], stage.Ma[:2], Dr[:2], ga, stage.Yp[0]),
-        pitch_Zweifel(
-            Z, stage.Al_rel[1:], stage.Ma_rel[1:], Dr[1:], ga, stage.Yp[1]
-        ),
+        pitch_Zweifel(stage.Al[:2], Z),
+        pitch_Zweifel(stage.Al_rel[1:], Z),
     )
 
     # Set chord based on Reynolds number

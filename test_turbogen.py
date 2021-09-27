@@ -39,7 +39,7 @@ def test_Zweifel():
 
                 # Evaluate Zweifel using built in function
                 Z = 0.8
-                s_c_out = np.array(pitch_Zweifel((Z, Z), stg))
+                s_c_out = np.array(pitch_Zweifel(stg, (Z, Z)))
 
                 # Evaluate low-speed lossless approximation
                 Alr = np.radians(stg.Al)
@@ -222,3 +222,13 @@ def test_valid():
                     assert np.all(np.abs(getattr(stg, vi)) < 90.0)
                 # No diverging annuli (for these designs Vx=const)
                 assert np.all(np.array(stg.Ax_Ax1) >= 1.0)
+
+
+def test_annulus():
+    """Ensure that annulus lines are created successfully."""
+    pass
+
+
+def test_zweifel():
+    """Ensure that annulus lines are created successfully."""
+    pass
