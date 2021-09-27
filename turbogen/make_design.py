@@ -7,6 +7,10 @@ import compflow
 import numpy as np
 from collections import namedtuple
 
+expon = 0.62
+muref = 1.8e-5
+Tref = 288.
+
 # Define a namedtuple to store all information about a stage design
 stage_vars = {
     "Yp": r"Stagnation pressure loss coefficients :math:`Y_p` [--]",
@@ -489,6 +493,8 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
 
     Parameters
     ----------
+    stg : NonDimStage
+        A non-dimensional turbine stage design object.
     Re : float
         Axial chord based Reynolds number, :math:`\Rey` [--].
     cpTo1 : float
@@ -497,8 +503,6 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
         Inlet stagnation pressure, :math:`P_{01}` [Pa].
     rgas : float
         Specific gas constant, :math:`R` [J/kg/K].
-    stg : NonDimStage
-        A non-dimensional turbine stage design object.
 
     Returns
     -------
@@ -508,8 +512,6 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
 
     # Viscosity of working fluid at a reference temperature
     # (we assume variation with 0.62 power of temperature)
-    muref = 1.8e-5
-    Tref = 288.0
 
     # Get vane exit static state
     Ma2 = stg.Ma[1]

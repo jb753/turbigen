@@ -229,6 +229,29 @@ def test_annulus():
     pass
 
 
-def test_zweifel():
-    """Ensure that annulus lines are created successfully."""
-    pass
+def test_chord():
+    """Verify chord calculation with incompressible cases."""
+
+    To1 = 300.
+    mu = muref * (To1/Tref)**expon
+    cp = 1150.
+    rgas = cp / ga * (ga - 1)
+    cpTo1 = cp * To1
+    Po1 = 1.e5
+    Re = 4e3
+    tol = Re * 0.001
+
+    for phii in phi:
+        for psii in psi:
+            for Al1i in Al_range:
+                Alnow = (Al1i, Al1i)  # Same inlet and exit angle
+                stg = nondim_stage_from_Al(
+                    phii, psii, Alnow, Ma_low, ga, eta_ideal
+                )
+                cx =  chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+                V2 = compflow.V_cpTo_from_Ma(stg.Ma[1], ga) * np.sqrt(cpTo1)
+                rho2 = Po1/rgas/To1
+                Re_out = rho2 * V2 * cx / mu
+                assert np.abs(Re-Re_out) < tol
+
+
