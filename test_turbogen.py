@@ -226,7 +226,30 @@ def test_valid():
 
 def test_annulus():
     """Ensure that annulus lines are created successfully."""
-    pass
+    for phii in phi:
+        for psii in psi:
+            for Lami in Lam:
+                stg = nondim_stage_from_Lam(
+                    phii, psii, Lami, Al1, Ma2, ga, eta
+                )
+                htr = 0.9
+                cpTo1 = 1.e6
+                Omega = 2.*np.pi*50.
+                rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
+
+                # Basic validity checks
+                assert np.all(rm>0.)
+                assert np.all(Dr>0.)
+                assert np.all(rm>Dr)
+
+                # Verify that U/sqrt(cpTo1) is correct
+                U = Omega * rm
+                assert np.isclose(stg.U_sqrt_cpTo1,U/np.sqrt(cpTo1))
+
+                # Verify hub-to-tip ratio
+                rt = rm + Dr[1]/2.
+                rh = rm - Dr[1]/2.
+                assert np.isclose(htr,rh/rt)
 
 
 def test_chord():
@@ -254,4 +277,31 @@ def test_chord():
                 Re_out = rho2 * V2 * cx / mu
                 assert np.abs(Re-Re_out) < tol
 
+
+def test_section():
+    """Verify that blade sections are generated successfully."""
+    chi1 = np.arange(-30.,30., 7)
+    chi2 = np.arange(-60.,60., 7)
+    aft = np.arange(-1.,1.,11)
+    for chi1i in chi1:
+        for chi2i in chi2:
+            for afti in aft:
+                xy = blade_section([chi1i,chi2i], afti)
+
+                # Streamwise coordinate goes in correct direction
+                assert np.all(np.diff(xy[0,:],1)>0.)
+
+                # Upper surface is higher than lower surface
+                assert np.all(xy[1,:]-xy[2,:]>=0.)
+
+                # Surfaces meet at ends
+                assert np.all(np.isclose(xy[1,(0,-1)],xy[2,(0,-1)]))
+
+                # Check camber line angles
+                yc = np.mean(xy[(1,2),:],axis=0)
+                dyc = np.diff(yc,1)
+                dxc = np.diff(xy[0,:],1)
+                ang = np.degrees(np.arctan2(dyc,dxc))[(0,-1),]
+                ang_tol = 0.1
+                assert np.all(np.abs(ang-(chi1i,chi2i))<ang_tol)
 

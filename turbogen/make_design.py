@@ -275,7 +275,7 @@ def annulus_line(stg, htr, cpTo1, Omega):
     stg : NonDimStage
         A non-dimensional turbine stage mean-line design.
     htr : float
-        Hub-to-tip radius ratio, :math:`\HTR`.
+        Hub-to-tip radius ratio at rotor inlet, :math:`\HTR`.
     cpTo1 : float
         Inlet specific stagnation enthalpy, :math:`c_p T_{01}` [J/kg].
     Omega : float
