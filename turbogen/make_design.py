@@ -530,6 +530,35 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     return Re * mu2 / rho2 / V2
 
 
+def free_vortex_vane(stg,r_rm, dev):
+    """Return radial distribution of vane metal angles.
+
+    Deviation is always positive. The turning angle is increased to counter the
+    specifed amount of deviation"""
+    # Twist blades in a free vortex
+    chi = np.degrees(
+        np.arctan(
+            np.tan(np.radians(np.atleast_2d(stage.Al[:2])).T) / r_rm
+        )
+    )
+    # Determine the direction of turning
+    turn_dir = 1. if (stg.Al[1] - stg.Al[0]) > 0. else -1.
+    # Apply deviation
+    chi[1,:] += turn_dir * dev
+
+def free_vortex_blade(stg,r_rm, dev):
+    """Return radial distribution of vane metal angles."""
+    chi = np.degrees(
+        np.arctan(
+            np.tan(np.radians(np.atleast_2d(stage.Al[1:])).T) / r_rm
+            - r_rm / phi
+        )
+    )
+    # Determine the direction of turning
+    turn_dir = 1. if (stg.Al_rel[1] - stg.Al_rel[0]) > 0. else -1.
+    # Apply deviation
+    chi[1,:] += turn_dir * dev
+
 def _fillet(x, r, dx):
     # Get indices for the points at boundary of fillet
     ind = np.array(np.where(np.abs(x) <= dx)[0])
