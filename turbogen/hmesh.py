@@ -1,6 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
-from turbogen import make_design
+from turbogen import make_design, turbostream
 import matplotlib.pyplot as plt
 
 # def 
@@ -196,7 +196,7 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
     # Now we can do b2b grids
     rt = [b2b_grid(*argsi, c) for argsi in zip(x_c, r, chi, s_c)]
 
-    return x, r, rt
+    return x, r, rt, ilte
 
 if __name__=='__main__':
 
@@ -222,6 +222,7 @@ if __name__=='__main__':
         phi, psi, Lam, Al1, Ma, ga, eta
     )
 
-    stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z)
+
+    turbostream.generate(*stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z))
 
 

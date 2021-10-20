@@ -1,7 +1,7 @@
 """Functions for exporting a stage design to Turbostream."""
 
 
-def make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
+def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     # Periodic patches
     p = ts_tstream_type.TstreamPatch()
 
@@ -41,10 +41,10 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     g.set_pp("pstag", ts_tstream_type.float, bid, pid, pstag)
     g.set_pp("tstag", ts_tstream_type.float, bid, pid, tstag)
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
-    g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 1.0)
+    g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.)
 
 
-def add_to_grid(g, xin, rin, rtin, ind, bid):
+def add_to_grid(g, xin, rin, rtin, ilte):
     """From mesh coordinates, add a block with patches to TS grid object"""
     ni, nj, nk = np.shape(rtin)
     rt = rtin + 0.0
@@ -64,6 +64,7 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
                 rtp[k, j, i] = rt[i, j, k]
 
     # Generate new block
+    bid = g.get_nb()
     b = ts_tstream_type.TstreamBlock()
     b.bid = bid
     b.ni, b.nj, b.nk = ni, nj, nk
@@ -71,18 +72,18 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
     b.procid = 0
     b.threadid = 0
 
-    # Add to grid with coordinates
+    # Add to grid and set coordinates as block properties
     g.add_block(b)
     for vname, vval in zip(["x", "r", "rt"], [xp, rp, rtp]):
         g.set_bp(vname, ts_tstream_type.float, bid, vval)
 
     # Leading and trailing edges
-    ile, ite = ind
+    ile, ite = ilte
 
     # Add periodic patches first
 
     # Upstream of LE
-    periodic_up_1 = make_patch(
+    periodic_up_1 = _make_patch(
         kind="periodic",
         bid=bid,
         i=(0, ile + 1),
@@ -92,7 +93,7 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
         nxbid=bid,
         nxpid=1,
     )
-    periodic_up_2 = make_patch(
+    periodic_up_2 = _make_patch(
         kind="periodic",
         bid=bid,
         i=(0, ile + 1),
@@ -106,7 +107,7 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
     periodic_up_2.pid = g.add_patch(bid, periodic_up_2)
 
     # Downstream of TE
-    periodic_dn_1 = make_patch(
+    periodic_dn_1 = _make_patch(
         kind="periodic",
         bid=bid,
         i=(ite, ni),
@@ -116,7 +117,7 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
         nxbid=bid,
         nxpid=3,
     )
-    periodic_dn_2 = make_patch(
+    periodic_dn_2 = _make_patch(
         kind="periodic",
         bid=bid,
         i=(ite, ni),
@@ -130,10 +131,10 @@ def add_to_grid(g, xin, rin, rtin, ind, bid):
     periodic_dn_2.pid = g.add_patch(bid, periodic_dn_2)
 
     # Slip wall
-    slip_j0 = make_patch(
+    slip_j0 = _make_patch(
         kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
     )
-    slip_nj = make_patch(
+    slip_nj = _make_patch(
         kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
     )
     slip_j0.pid = g.add_patch(bid, slip_j0)
@@ -265,25 +266,18 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def stuff():
-    # Below here is code for h-meshing
-
-    jp = -1
-    f, a = plt.subplots()
-    a.plot(vane_x, vane_rt[:, jp, :], "k-")
-    a.plot(blade_x, blade_rt[:, jp, :], "r-")
-    a.axis("equal")
+def generate(x, r, rt, ilte):
 
     # Make grid, add the blocks
-    bid_vane = 0
-    bid_blade = 1
     g = ts_tstream_grid.TstreamGrid()
-    add_to_grid(g, vane_x, vane_r, vane_rt, vane_i, bid_vane)
-    add_to_grid(g, blade_x, blade_r, blade_rt, blade_i, bid_blade)
+    for args in zip(x, r, rt, ilte):
+        add_to_grid(g, *args)
 
     # Inlet
-    ni, nj, nk = np.shape(vane_rt)
-    inlet = make_patch(
+    ni, nj, nk = zip(*[rti.shape for rti in rt])
+    print(ni, nj, nk)
+
+    inlet = _make_patch(
         kind="inlet",
         bid=bid_vane,
         i=(0, 1),
@@ -295,7 +289,7 @@ def stuff():
 
     # Outlet
     ni, nj, nk = np.shape(blade_rt)
-    outlet = make_patch(
+    outlet = _make_patch(
         kind="outlet", bid=bid_blade, i=(ni - 1, ni), j=(0, nj), k=(0, nk)
     )
     outlet.pid = g.add_patch(bid_blade, outlet)
@@ -305,7 +299,7 @@ def stuff():
 
     # Mixing upstream
     ni, nj, nk = np.shape(vane_rt)
-    mix_up = make_patch(
+    mix_up = _make_patch(
         kind="mixing",
         bid=bid_vane,
         i=(ni - 1, ni),
@@ -319,7 +313,7 @@ def stuff():
 
     # Mixing downstream
     ni, nj, nk = np.shape(blade_rt)
-    mix_dn = make_patch(
+    mix_dn = _make_patch(
         kind="mixing",
         bid=bid_blade,
         i=(0, 1),
