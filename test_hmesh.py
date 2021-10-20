@@ -102,14 +102,20 @@ def test_b2b():
     r_stator = merid_grid(x_c, rm, Dr[:2])
     r_rotor = merid_grid(x_c, rm, Dr[1:])
 
+    # Evaluate blade angles
     r_rm = np.concatenate([r_stator[(ile,ite),:],r_rotor[(ite,),:]])/rm
-
     chi_vane, chi_blade = make_design.free_vortex(stg, r_rm, (0.,0.))
 
+    # Evaluate pitch to chord
     s_c = make_design.pitch_Zweifel(stg, (0.8,0.8))
 
-    c = 0.1
-    rt = b2b_grid(x_c, r_stator, (ile, ite), chi_vane, c, s_c[0])
+    # Evaluate chord
+    Re = 1e5
+    Po1 = 16e5
+    rgas = 287.14
+    c = make_design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+
+    rt = b2b_grid(x_c, r_stator, (ile, ite), chi_vane, c[0], s_c[0])
 
     jplot = -1
     f, a = plt.subplots()
