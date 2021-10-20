@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 # Configure numbers of points
 nxb = 97  # Blade chord
-nr = 97  # Blade chord
+nr = 81  # Span
+nrt = 65  # Pitch
 
 def _cluster(npts):
     """Return a cosinusoidal clustering function with a set number of points."""
@@ -79,7 +80,8 @@ def streamwise_grid(dx_c):
 
     return x_c, i_edge
 
-def merid_grid(x_c, rm, Dr, c):
+
+def merid_grid(x_c, rm, Dr):
     """Generate meridional grid for a blade row.
 
     Each spanwise grid index corresponds to a surface of revolution. So the
@@ -93,7 +95,7 @@ def merid_grid(x_c, rm, Dr, c):
     rc = np.interp(x_c, [0., 1.], rm + Dr / 2.0)
 
     # Smooth the corners over a prescribed distance
-    dxsmth_c = 0.2
+    dxsmth_c = 0.25
     make_design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
     make_design._fillet(x_c - 1., rc, dxsmth_c)  # Trailing edge about 1
 
@@ -103,109 +105,101 @@ def merid_grid(x_c, rm, Dr, c):
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.-spf)* np.atleast_2d(rh).T
 
-    # x = np.atleast_2d(x_c).T*c
+    # x = np.atleast_2d(x_c).T*0.1
     # f,a = plt.subplots()
     # a.plot(x,r,'k-')
     # # a.axis('equal')
     # plt.show()
 
-    return x, r, i_edge
+    return r
 
 
-def blade_to_blade_mesh(x, r, ii, chi, nrt, s_c, a=0.0):
-    """Generate blade section rt, given merid mesh and flow angles."""
+def b2b_grid(x_c, r2, iedge, chi, c, s_c, a=0.0):
+    """Generate circumferential coordiantes for a blade row."""
 
-    # Define a cosinusiodal clustering function
-    clust = 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, nrt)))
-    clust3 = (clust[..., None, None]).transpose((2, 1, 0))
+    ni = len(x_c)
+    nj = r2.shape[1]
+    nk = nrt
 
-    # Chord
-    xpass = x[ii[0] : ii[1]] - x[ii[0]]
-    c = xpass.ptp()
+    # Define a pitchwise clustering function with correct dimensions
+    clust3 = np.tile((_cluster(nk)[..., None, None]).transpose((2, 1, 0)),(ni,nj,1))
 
-    # Pitch in terms of theta
-    rmid = np.mean(r[ii[0], (0, -1)])
-    dt = s_c * c / rmid
-    print("dtmid", dt)
+    # Dimensional axial coordinates
+    x = np.atleast_3d(x_c).transpose(1,2,0) * c
+    r = np.atleast_3d(r2)
+    print(x.shape)
 
-    nj = np.shape(chi)[1]
-    rt = np.ones(np.shape(r) + (nrt,)) * np.nan
+    # Determine number of blades and angular pitch
+    r_m = np.mean(r[0,(0,1)])
+    nblade = np.round(2.*np.pi*r_m/(s_c*c))  # Nearest whole number
+    pitch_t = 2*np.pi*r_m/nblade
+
+    # Preallocate and loop over radial stations
+    rtlim = np.nan * np.ones((ni,nj,2))
     for j in range(nj):
 
-        rnow = r[ii[0] : ii[1], j][:, None, None]
+        # Retrieve blade section
+        sec_x, sec_rt0, sec_rt1 = make_design.blade_section(chi[:, j], 0.) * c
 
-        # Dimensional section at midspan
-        print("Calling blade section, j=%d" % j)
-        print("chi = %f %f" % tuple(chi[:, j]))
-        sect_now = blade_section(chi[:, j], a) * c
-        rt0 = np.interp(xpass, sect_now[0, :], sect_now[1, :])[:, None, None]
-        rt1 = (
-            np.interp(xpass, sect_now[0, :], sect_now[2, :])[:, None, None]
-            + s_c * c / rmid * rnow
-        )
+        # Get centroid for stacking
+        Area = np.trapz(sec_rt1 - sec_rt0, sec_x)
+        rt_cent = (
+                np.trapz( 0.5
+                    * (sec_rt1 - sec_rt0)
+                    * (sec_rt1 + sec_rt0),
+                    sec_x)
+                / Area
+            )
 
-        # # Scale thickness to be constant along span
-        # rt0 = rt0/rmid*rnow
-        # rt1 = rt1/rmid*rnow
-        # dtnow = (rt0-rt1)/rnow
-        # print('dtnow',dtnow.min(),dtnow.max())
+        # Stack with centroid at t=0
+        sec_rt0 -= rt_cent
+        sec_rt1 -= rt_cent
 
-        # # Offset by correct circumferential pitch
-        # t1 = rt1/rmid
-        # rt1 = (t1+dt)*rnow
+        rtlim[:,j,0] = np.interp(x[:,0,0], sec_x, sec_rt0)
+        rtlim[:,j,-1] = np.interp(x[:,0,0], sec_x, sec_rt1) + pitch_t * r[:,j,0]
 
-        rt[ii[0] : ii[1], j, :] = (rt0 + (rt1 - rt0) * clust3).squeeze()
+    # Fill in the intermediate pitchwise points using clustering function
+    rt = rtlim[...,(0,)] + np.diff(rtlim,1,2) * clust3
 
-    # Now deal with inlet and exit ducts
-    # First just propagate clustering
-    rt[: ii[0], :, :] = rt[ii[0], :, :]
-    rt[ii[1] :, :, :] = rt[ii[1] - 1, :, :]
-
-    # Check theta range
-    dt = rt[ii[0], :, -1] / r[ii[0], :] - rt[ii[0], :, 0] / r[ii[0], :]
-    drt = rt[ii[0], :, -1] - rt[ii[0], :, 0]
-    print("dt", dt.max(), dt.min())
-    print("drt", drt.max(), drt.min())
-
-    # Set endpoints to a uniform distribution
-    unif_rt = np.linspace(0.0, 1.0, nrt)
-    unif_rt3 = (unif_rt[..., None, None]).transpose((2, 1, 0))
-    rt[(0, -1), :, :] = (
-        rt[(0, -1), :, 0][..., None]
-        + (rt[(0, -1), :, -1] - rt[(0, -1), :, 0])[..., None] * unif_rt3
-    )
+    # # Set endpoints to a uniform distribution
+    # unif_rt = np.linspace(0.0, 1.0, nrt)
+    # unif_rt3 = (unif_rt[..., None, None]).transpose((2, 1, 0))
+    # rt[(0, -1), :, :] = (
+    #     rt[(0, -1), :, 0][..., None]
+    #     + (rt[(0, -1), :, -1] - rt[(0, -1), :, 0])[..., None] * unif_rt3
+    # )
 
     # We need to map streamwise indices to fractions of cluster relaxation
     # If we have plenty of space, relax linearly over 1 chord, then unif
     # If we have less than 1 chord, relax linearly all the way
     # Relax clustering linearly
 
-    if (x[ii[0]] - x[0]) / c > 1.0:
-        xnow = x[: ii[0]] - x[ii[0]]
-        icl = np.where(xnow / c > -1.0)[0]
-        lin_x_up = np.zeros((ii[0],))
-        lin_x_up[icl] = np.linspace(0.0, 1.0, len(icl))
-    else:
-        lin_x_up = np.linspace(0.0, 1.0, ii[0])
+    # if (x[ii[0]] - x[0]) / c > 1.0:
+    #     xnow = x[: ii[0]] - x[ii[0]]
+    #     icl = np.where(xnow / c > -1.0)[0]
+    #     lin_x_up = np.zeros((ii[0],))
+    #     lin_x_up[icl] = np.linspace(0.0, 1.0, len(icl))
+    # else:
+    #     lin_x_up = np.linspace(0.0, 1.0, ii[0])
 
-    if (x[-1] - x[ii[1] - 1]) / c > 1.0:
-        icl = np.where(np.abs((x - x[ii[1] - 1]) / c - 0.5) < 0.5)[0]
-        lin_x_dn = np.zeros((len(x),))
-        lin_x_dn[icl] = np.linspace(1.0, 0.0, len(icl))
-        lin_x_dn = lin_x_dn[-(len(x) - ii[1]) :]
-    else:
-        lin_x_dn = np.linspace(1.0, 0.0, len(x) - ii[1])
+    # if (x[-1] - x[ii[1] - 1]) / c > 1.0:
+    #     icl = np.where(np.abs((x - x[ii[1] - 1]) / c - 0.5) < 0.5)[0]
+    #     lin_x_dn = np.zeros((len(x),))
+    #     lin_x_dn[icl] = np.linspace(1.0, 0.0, len(icl))
+    #     lin_x_dn = lin_x_dn[-(len(x) - ii[1]) :]
+    # else:
+    #     lin_x_dn = np.linspace(1.0, 0.0, len(x) - ii[1])
 
-    lin_x_up3 = lin_x_up[..., None, None]
-    lin_x_dn3 = lin_x_dn[..., None, None]
+    # lin_x_up3 = lin_x_up[..., None, None]
+    # lin_x_dn3 = lin_x_dn[..., None, None]
 
-    rt[: ii[0], :, :] = (
-        rt[0, :, :][None, ...]
-        + (rt[ii[0], :, :] - rt[0, :, :])[None, ...] * lin_x_up3
-    )
-    rt[ii[1] :, :, :] = (
-        rt[-1, :, :][None, ...]
-        + (rt[ii[1], :, :] - rt[-1, :, :])[None, ...] * lin_x_dn3
-    )
+    # rt[: ii[0], :, :] = (
+    #     rt[0, :, :][None, ...]
+    #     + (rt[ii[0], :, :] - rt[0, :, :])[None, ...] * lin_x_up3
+    # )
+    # rt[ii[1] :, :, :] = (
+    #     rt[-1, :, :][None, ...]
+    #     + (rt[ii[1], :, :] - rt[-1, :, :])[None, ...] * lin_x_dn3
+    # )
 
     return rt

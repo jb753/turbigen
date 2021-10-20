@@ -54,7 +54,7 @@ def test_Zweifel():
                     Z
                     / 2.0
                     / (np.cos(Alrelr[2]) ** 2.0)
-                    / (np.tan(Alrelr[2]) - np.tan(Alrelr[1]))
+                    / np.abs(np.tan(Alrelr[2]) - np.tan(Alrelr[1]))
                 )
 
                 # Check that the two are within a tolerance

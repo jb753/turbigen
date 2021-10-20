@@ -459,7 +459,7 @@ def pitch_Zweifel(stg, Z):
         * (1.0 - P3_Po2_rel)
         / Q_rotor
         / cosAlrel[1]
-        / (V_cpTo_sinAlrel[2] - V_cpTo_sinAlrel[1])
+        / np.abs(V_cpTo_sinAlrel[2] - V_cpTo_sinAlrel[1])
         / stg.Ax_Ax1[1]
         * np.mean(stg.Ax_Ax1[1:])
     )
@@ -575,8 +575,8 @@ def free_vortex(stg,r_rm, dev):
     turn_dir_blade = 1. if (stg.Alrel[1] - stg.Alrel[0]) > 0. else -1.
 
     # Apply deviation
-    chi_vane[1,:] += turn_dir_vane * dev
-    chi_blade[1,:] -= turn_dir_blade * dev
+    chi_vane[1,:] += turn_dir_vane * dev[0]
+    chi_blade[1,:] -= turn_dir_blade * dev[1]
 
     return chi_vane, chi_blade
 
