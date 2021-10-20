@@ -35,7 +35,6 @@ NonDimStage.__doc__ = (
 for vi in stage_vars:
     getattr(NonDimStage, vi).__doc__ = stage_vars[vi]
 
-
 def nondim_stage_from_Al(
     phi,  # Flow coefficient [--]
     psi,  # Stage loading coefficient [--]

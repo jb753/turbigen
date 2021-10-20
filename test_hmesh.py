@@ -116,7 +116,7 @@ def test_b2b():
     c = make_design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Finally, get the b2b grid!
-    rt = b2b_grid(x_c, r_stator, chi_vane, c, s_c[0])
+    rt = b2b_grid(x_c, r_stator, chi_vane, s_c[0], c)
 
     # jplot = -1
     # f, a = plt.subplots()
