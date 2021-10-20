@@ -94,7 +94,7 @@ def test_b2b():
 
     # Annulus line
     htr = 0.9
-    cpTo1 = 1.e6
+    cpTo1 = 1005. * 1600.
     Omega = 2.*np.pi*50.
     rm, Dr = make_design.annulus_line(stg, htr, cpTo1, Omega)
 
@@ -110,15 +110,37 @@ def test_b2b():
     s_c = make_design.pitch_Zweifel(stg, (0.8,0.8))
 
     # Evaluate chord
-    Re = 1e5
+    Re = 4e6
     Po1 = 16e5
     rgas = 287.14
     c = make_design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
-    rt = b2b_grid(x_c, r_stator, (ile, ite), chi_vane, c[0], s_c[0])
+    # Finally, get the b2b grid!
+    rt = b2b_grid(x_c, r_stator, chi_vane, c, s_c[0])
 
-    jplot = -1
-    f, a = plt.subplots()
-    a.plot(x_c*c, rt[:,jplot,:],'k-')
-    plt.show()
+    # jplot = -1
+    # f, a = plt.subplots()
+    # a.plot(x_c*c, rt[:,jplot,:],'k-')
+    # plt.show()
+
+    # Check that theta increases as k increases
+    assert np.all(np.diff(rt,1,2)>0.)
+
+    # Smoothness criteria
+    tol = 1e-3
+    assert np.all(np.diff(rt/rm,2,2)<tol)
+
+    # Angular pitch should never be more than reference value
+    # And equal to the reference value outside of the blade row
+    nblade = np.round(2.*np.pi*rm / (s_c[0] * c))
+    pitch_t = 2.*np.pi*rm/nblade
+    t = rt/r_stator[...,None]
+    dt = t[:,:,-1] - t[:,:,0]
+    tol = 1e-6
+    assert np.all(dt-pitch_t < tol)  # Everywhere
+    assert np.all(np.isclose(dt[:ile+1,:], pitch_t))  # Inlet duct
+    assert np.all(np.isclose(dt[ite,:], pitch_t))  # Exit duct
+
+
+
 

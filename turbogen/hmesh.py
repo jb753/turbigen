@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 nxb = 97  # Blade chord
 nr = 81  # Span
 nrt = 65  # Pitch
+rate = 0.2  # Axial chords required to fully relax
+dxsmth_c = 0.25  # Distance over which to fillet shroud corners
 
 def _cluster(npts):
     """Return a cosinusoidal clustering function with a set number of points."""
@@ -95,7 +97,6 @@ def merid_grid(x_c, rm, Dr):
     rc = np.interp(x_c, [0., 1.], rm + Dr / 2.0)
 
     # Smooth the corners over a prescribed distance
-    dxsmth_c = 0.25
     make_design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
     make_design._fillet(x_c - 1., rc, dxsmth_c)  # Trailing edge about 1
 
@@ -105,32 +106,22 @@ def merid_grid(x_c, rm, Dr):
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.-spf)* np.atleast_2d(rh).T
 
-    # x = np.atleast_2d(x_c).T*0.1
-    # f,a = plt.subplots()
-    # a.plot(x,r,'k-')
-    # # a.axis('equal')
-    # plt.show()
-
     return r
 
 
-def b2b_grid(x_c, r2, iedge, chi, c, s_c, a=0.0):
+def b2b_grid(x_c, r2, chi, c, s_c, a=0.0):
     """Generate circumferential coordiantes for a blade row."""
 
     ni = len(x_c)
     nj = r2.shape[1]
     nk = nrt
 
-    # Define a pitchwise clustering function with correct dimensions
-    clust3 = np.tile((_cluster(nk)[..., None, None]).transpose((2, 1, 0)),(ni,nj,1))
-
     # Dimensional axial coordinates
     x = np.atleast_3d(x_c).transpose(1,2,0) * c
     r = np.atleast_3d(r2)
-    print(x.shape)
 
     # Determine number of blades and angular pitch
-    r_m = np.mean(r[0,(0,1)])
+    r_m = np.mean(r[0,(0,-1),0])
     nblade = np.round(2.*np.pi*r_m/(s_c*c))  # Nearest whole number
     pitch_t = 2*np.pi*r_m/nblade
 
@@ -156,50 +147,26 @@ def b2b_grid(x_c, r2, iedge, chi, c, s_c, a=0.0):
         sec_rt1 -= rt_cent
 
         rtlim[:,j,0] = np.interp(x[:,0,0], sec_x, sec_rt0)
-        rtlim[:,j,-1] = np.interp(x[:,0,0], sec_x, sec_rt1) + pitch_t * r[:,j,0]
+        rtlim[:,j,1] = np.interp(x[:,0,0], sec_x, sec_rt1) + pitch_t * r[:,j,0]
+
+    # Define a pitchwise clustering function with correct dimensions
+    clust = np.atleast_3d(_cluster(nk)).transpose(2,0,1)
+
+    # Relax clustering towards a uniform distribution at inlet and exit
+    # With a fixed ramp rate
+    unif_rt = np.atleast_3d(np.linspace(0.0, 1.0, nk)).transpose(2,0,1)
+    relax = np.ones_like(x_c)
+    relax[x_c<0.] = 1.+x_c[x_c<0.]/rate
+    relax[x_c>1.] = 1.-(x_c[x_c>1.]-1.)/rate
+    relax[relax<0.] = 0.
+    clust = relax[:,None,None]*clust + (1.-relax[:,None,None])*unif_rt
 
     # Fill in the intermediate pitchwise points using clustering function
-    rt = rtlim[...,(0,)] + np.diff(rtlim,1,2) * clust3
-
-    # # Set endpoints to a uniform distribution
-    # unif_rt = np.linspace(0.0, 1.0, nrt)
-    # unif_rt3 = (unif_rt[..., None, None]).transpose((2, 1, 0))
-    # rt[(0, -1), :, :] = (
-    #     rt[(0, -1), :, 0][..., None]
-    #     + (rt[(0, -1), :, -1] - rt[(0, -1), :, 0])[..., None] * unif_rt3
-    # )
-
-    # We need to map streamwise indices to fractions of cluster relaxation
-    # If we have plenty of space, relax linearly over 1 chord, then unif
-    # If we have less than 1 chord, relax linearly all the way
-    # Relax clustering linearly
-
-    # if (x[ii[0]] - x[0]) / c > 1.0:
-    #     xnow = x[: ii[0]] - x[ii[0]]
-    #     icl = np.where(xnow / c > -1.0)[0]
-    #     lin_x_up = np.zeros((ii[0],))
-    #     lin_x_up[icl] = np.linspace(0.0, 1.0, len(icl))
-    # else:
-    #     lin_x_up = np.linspace(0.0, 1.0, ii[0])
-
-    # if (x[-1] - x[ii[1] - 1]) / c > 1.0:
-    #     icl = np.where(np.abs((x - x[ii[1] - 1]) / c - 0.5) < 0.5)[0]
-    #     lin_x_dn = np.zeros((len(x),))
-    #     lin_x_dn[icl] = np.linspace(1.0, 0.0, len(icl))
-    #     lin_x_dn = lin_x_dn[-(len(x) - ii[1]) :]
-    # else:
-    #     lin_x_dn = np.linspace(1.0, 0.0, len(x) - ii[1])
-
-    # lin_x_up3 = lin_x_up[..., None, None]
-    # lin_x_dn3 = lin_x_dn[..., None, None]
-
-    # rt[: ii[0], :, :] = (
-    #     rt[0, :, :][None, ...]
-    #     + (rt[ii[0], :, :] - rt[0, :, :])[None, ...] * lin_x_up3
-    # )
-    # rt[ii[1] :, :, :] = (
-    #     rt[-1, :, :][None, ...]
-    #     + (rt[ii[1], :, :] - rt[-1, :, :])[None, ...] * lin_x_dn3
-    # )
+    rt = rtlim[...,(0,)] + np.diff(rtlim,1,2) * clust
 
     return rt
+
+
+def stage_grid(stg, cpTo1, Po1, htr, Omega, dev, Re, rgas, dx_c, Z):
+    pass
+
