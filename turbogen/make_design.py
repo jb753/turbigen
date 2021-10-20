@@ -530,42 +530,12 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     # Use specified Reynolds number to set chord
     return Re * mu2 / rho2 / V2
 
-def free_vortex_vane(stg,r_rm, dev):
-    r"""Return free-vortex radial distribution of vane metal angles.
+def free_vortex(stg,r_rm, dev):
+    r"""Return free-vortex radial distributions of metal angles.
 
-    Deviation is always positive. The turning through the row is increased to
-    counteract the specifed amount of deviation
-
-    Parameters
-    ----------
-    stg : NonDimStage
-        A non-dimensional turbine stage mean-line design.
-    r_rm : array length n
-        Radius ratio, :math:`r/r_\mathrm{m}` [--].
-
-    Returns
-    -------
-    chi : array 2-by-n
-        Vane inlet and exit metal angles, :math:`\chi` [deg].
-    """
-
-    # Twist blades in a free vortex
-    chi = np.degrees(
-        np.arctan(
-            np.tan(np.radians(np.atleast_2d(stg.Al[:2])).T) / r_rm
-        )
-    )
-
-    # Determine the direction of turning
-    turn_dir = 1. if (stg.Al[1] - stg.Al[0]) > 0. else -1.
-
-    # Apply deviation
-    chi[1,:] += turn_dir * dev
-
-    return chi
-
-def free_vortex_blade(stg,r_rm, dev):
-    r"""Return radial distribution of vane metal angles.
+    Given the mean-line design and a vector of radius ratios across the span,
+    twist vanes and blades such that angular momentum :math:`rV_\theta` is
+    constant and hence axial velocity :math:`V_x` will be radially uniform.
 
     Deviation is always positive. The turning through the row is
     increased to counteract the specifed amount of deviation.
@@ -574,30 +544,41 @@ def free_vortex_blade(stg,r_rm, dev):
     ----------
     stg : NonDimStage
         A non-dimensional turbine stage mean-line design.
-    r_rm : array 2-by-n
-        Radius ratios for inlet and exit, :math:`r/r_\mathrm{m}` [--].
+    r_rm : array 3-by-n
+        Radius ratios at each station, :math:`r/r_\mathrm{m}` [--].
+    dev: array length 2
+        Flow deviation to counteract for each row, :math:`\delta` [deg].
 
     Returns
     -------
-    chi : array 2-by-n
+    chi_vane : array 2-by-n
+        Vane inlet and exit metal angles, :math:`\chi` [deg].
+    chi_blade : array 2-by-n
         Blade inlet and exit metal angles, :math:`\chi` [deg].
     """
 
-    chi = np.degrees(
+    # Twist blades in a free vortex
+    chi_vane = np.degrees(
+        np.arctan(
+            np.tan(np.radians(np.atleast_2d(stg.Al[:2])).T) / r_rm[:2,:]
+        )
+    )
+    chi_blade = np.degrees(
         np.arctan(
             np.tan(np.radians(np.atleast_2d(stg.Al[1:])).T)
-            / r_rm - r_rm / stg.phi
+            / r_rm[2:,:] - r_rm[2:,:] / stg.phi
         )
     )
 
     # Determine the direction of turning
-    turn_dir = 1. if (stg.Alrel[1] - stg.Alrel[0]) > 0. else -1.
+    turn_dir_vane = 1. if (stg.Al[1] - stg.Al[0]) > 0. else -1.
+    turn_dir_blade = 1. if (stg.Alrel[1] - stg.Alrel[0]) > 0. else -1.
 
     # Apply deviation
-    chi[1,:] -= turn_dir * dev
+    chi_vane[1,:] += turn_dir_vane * dev
+    chi_blade[1,:] -= turn_dir_blade * dev
 
-    return chi
-
+    return chi_vane, chi_blade
 
 def _fillet(x, r, dx):
     # Get indices for the points at boundary of fillet

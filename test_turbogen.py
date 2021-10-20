@@ -328,8 +328,7 @@ def test_free_vortex():
                         )/rm
 
                 # Run through the free-vortex functions with no deviation
-                chi_vane = free_vortex_vane(stg, r_rm[:2,:], 0.)
-                chi_blade = free_vortex_blade(stg, r_rm[2:,:], 0.)
+                chi_vane, chi_blade = free_vortex(stg, r_rm, 0.)
 
                 # Check angular momentum is constant to within tolerance
                 tol = 1e-10
@@ -364,12 +363,11 @@ def test_deviation():
 
                 # Loop over deviations
                 dev = [0.,1.]
-                chi_vane = np.stack(
-                        [free_vortex_vane(stg, r_rm[:2,:], devi)
-                            for devi in dev])
-                chi_blade = np.stack(
-                        [free_vortex_blade(stg, r_rm[:2,:], devi)
-                            for devi in dev])
+                chi_all = np.stack(
+                        [free_vortex(stg, r_rm, devi) for devi in dev]
+                        )
+                chi_vane = chi_all[:,0,:,:]
+                chi_blade = chi_all[:,1,:,:]
 
                 # Our sign conventions mean that turning is
                 # +ve through vane, -ve through rotor
