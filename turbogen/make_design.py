@@ -660,7 +660,7 @@ def meridional_mesh(xc, rm, Dr, c, nr):
     rh = np.interp(x, xc[1:3], rm - Dr / 2.0)
     rc = np.interp(x, xc[1:3], rm + Dr / 2.0)
 
-    # smooth the edges
+    # Smooth the corners
     dxsmth_c = 0.2
     for i in [1, 2]:
         _fillet(x - xc[i], rh, dxsmth_c)
