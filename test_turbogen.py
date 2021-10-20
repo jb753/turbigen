@@ -305,3 +305,83 @@ def test_section():
                 ang_tol = 0.1
                 assert np.all(np.abs(ang-(chi1i,chi2i))<ang_tol)
 
+def test_free_vortex():
+    """Verify that vortex distributions have constant angular momentum."""
+    for phii in phi:
+        for psii in psi:
+            for Lami in Lam:
+
+                # Generate stage with annulus line
+                stg = nondim_stage_from_Lam(
+                    phii, psii, Lami, Al1, Ma2, ga, eta
+                )
+                htr = 0.9
+                cpTo1 = 1.e6
+                Omega = 2.*np.pi*50.
+                rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
+
+                # Make radius ratios
+                rh = rm - Dr/2.
+                rc = rm + Dr/2.
+                r_rm = np.stack(
+                        [np.linspace(rhi,rci,20) for rhi, rci in zip(rh,rc)]
+                        )/rm
+
+                # Run through the free-vortex functions with no deviation
+                chi_vane = free_vortex_vane(stg, r_rm[:2,:], 0.)
+                chi_blade = free_vortex_blade(stg, r_rm[2:,:], 0.)
+
+                # Check angular momentum is constant to within tolerance
+                tol = 1e-10
+                mom_vane = r_rm[:2,:] * np.tan(np.radians(chi_vane))
+                assert np.all(np.ptp(mom_vane,axis=1)<tol)
+                mom_blade = r_rm[2:,:] * (
+                        r_rm[2:,:]/stg.phi + np.tan(np.radians(chi_blade))
+                        )
+                assert np.all(np.ptp(mom_blade,axis=1)<tol)
+
+def test_deviation():
+    """Verify that deviation goes in the correct direction."""
+    for phii in phi:
+        for psii in psi:
+            for Lami in Lam:
+
+                # Generate stage with annulus line
+                stg = nondim_stage_from_Lam(
+                    phii, psii, Lami, Al1, Ma2, ga, eta
+                )
+                htr = 0.9
+                cpTo1 = 1.e6
+                Omega = 2.*np.pi*50.
+                rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
+
+                # Make radius ratios
+                rh = rm - Dr/2.
+                rc = rm + Dr/2.
+                r_rm = np.stack(
+                        [np.linspace(rhi,rci,20) for rhi, rci in zip(rh,rc)]
+                        )/rm
+
+                # Loop over deviations
+                dev = [0.,1.]
+                chi_vane = np.stack(
+                        [free_vortex_vane(stg, r_rm[:2,:], devi)
+                            for devi in dev])
+                chi_blade = np.stack(
+                        [free_vortex_blade(stg, r_rm[:2,:], devi)
+                            for devi in dev])
+
+                # Our sign conventions mean that turning is
+                # +ve through vane, -ve through rotor
+                # So more deviation should mean that outlet flow angle
+                # reduces for vane, increases for rotor
+                # But we aim to counteract this effect by moving metal
+                # So with more deviation, the metal angle must
+                # increase for vane, decrease for blade
+                assert np.all(np.isclose(
+                    np.diff(chi_vane[:,1,:], 1, 0), np.diff(dev, 1)
+                    ))
+                assert np.all(np.isclose(
+                    np.diff(chi_blade[:,1,:], 1, 0), -np.diff(dev, 1)
+                    ))
+

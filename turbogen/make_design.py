@@ -209,7 +209,7 @@ def nondim_stage_from_Lam(
     eta : float
         Polytropic efficiency, :math:`\eta`.
     Vx_rat : array, default=(1.,1.)
-        Axial velocity ratios at inlet and exit, :math:`(\zeta_1,\zeta_3)`.
+        Axial velocity ratios, :math:`(\zeta_1,\zeta_3)`.
 
     Returns
     -------
@@ -416,6 +416,7 @@ def pitch_Zweifel(stg, Z):
     -------
     s_cx : 2-tuple
         Pitch-to-chord ratios for stator and rotor, :math:`s/c_x` [--].
+
     """
 
     # Angles
@@ -529,35 +530,74 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     # Use specified Reynolds number to set chord
     return Re * mu2 / rho2 / V2
 
-
 def free_vortex_vane(stg,r_rm, dev):
-    """Return radial distribution of vane metal angles.
+    r"""Return free-vortex radial distribution of vane metal angles.
 
-    Deviation is always positive. The turning angle is increased to counter the
-    specifed amount of deviation"""
+    Deviation is always positive. The turning through the row is increased to
+    counteract the specifed amount of deviation
+
+    Parameters
+    ----------
+    stg : NonDimStage
+        A non-dimensional turbine stage mean-line design.
+    r_rm : array length n
+        Radius ratio, :math:`r/r_\mathrm{m}` [--].
+
+    Returns
+    -------
+    chi : array 2-by-n
+        Vane inlet and exit metal angles, :math:`\chi` [deg].
+    """
+
     # Twist blades in a free vortex
     chi = np.degrees(
         np.arctan(
-            np.tan(np.radians(np.atleast_2d(stage.Al[:2])).T) / r_rm
+            np.tan(np.radians(np.atleast_2d(stg.Al[:2])).T) / r_rm
         )
     )
+
     # Determine the direction of turning
     turn_dir = 1. if (stg.Al[1] - stg.Al[0]) > 0. else -1.
+
     # Apply deviation
     chi[1,:] += turn_dir * dev
 
+    return chi
+
 def free_vortex_blade(stg,r_rm, dev):
-    """Return radial distribution of vane metal angles."""
+    r"""Return radial distribution of vane metal angles.
+
+    Deviation is always positive. The turning through the row is
+    increased to counteract the specifed amount of deviation.
+
+    Parameters
+    ----------
+    stg : NonDimStage
+        A non-dimensional turbine stage mean-line design.
+    r_rm : array 2-by-n
+        Radius ratios for inlet and exit, :math:`r/r_\mathrm{m}` [--].
+
+    Returns
+    -------
+    chi : array 2-by-n
+        Blade inlet and exit metal angles, :math:`\chi` [deg].
+    """
+
     chi = np.degrees(
         np.arctan(
-            np.tan(np.radians(np.atleast_2d(stage.Al[1:])).T) / r_rm
-            - r_rm / phi
+            np.tan(np.radians(np.atleast_2d(stg.Al[1:])).T)
+            / r_rm - r_rm / stg.phi
         )
     )
+
     # Determine the direction of turning
-    turn_dir = 1. if (stg.Al_rel[1] - stg.Al_rel[0]) > 0. else -1.
+    turn_dir = 1. if (stg.Alrel[1] - stg.Alrel[0]) > 0. else -1.
+
     # Apply deviation
-    chi[1,:] += turn_dir * dev
+    chi[1,:] -= turn_dir * dev
+
+    return chi
+
 
 def _fillet(x, r, dx):
     # Get indices for the points at boundary of fillet
