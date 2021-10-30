@@ -467,6 +467,29 @@ def pitch_Zweifel(stg, Z):
 
     return s_c_stator, s_c_rotor
 
+def pitch_circ(stg, C0):
+    """Calculate pitch-to-chord ratios using circulation coefficient.
+
+    After Coull and Hodson 2013."""
+
+    def _integrate_length(chi):
+        xhat = np.linspace(0.,1.);
+        tanchi_lim = np.tan(chi)
+        tanchi = np.diff(tanchi_lim)*xhat + tanchi_lim[0]
+        return np.trapz(np.sqrt(1.+tanchi**2.),xhat)
+
+
+    return [
+            C0 *
+            _integrate_length(chi)
+            / np.cos(chi[1])
+            / np.abs(np.tan(chi[0])-np.tan(chi[1]))
+                for chi in np.radians((stg.Al[:2],stg.Alrel[1:]))]
+
+
+
+
+
 
 def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     r"""Set axial chord length using Reynolds number and vane exit state.

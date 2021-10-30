@@ -166,7 +166,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     return rt
 
 
-def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
+def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Co):
 
     # Separate spacings for stator and rotor
     dx_c_sr = ((dx_c[0],dx_c[1]/2.),(dx_c[1]/2.,dx_c[2]))
@@ -186,14 +186,14 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
     chi = design.free_vortex(stg, r_rm[(0,1,3),:], (0.,0.))
 
     # Pitches and chords
-    s_c = design.pitch_Zweifel(stg, (Z,Z))
+    s_c = design.pitch_circ(stg, Co)
     c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Dimensionalise x
     x = [x_ci * c for x_ci in x_c]
 
     # Offset the rotor so it is downstream of stator
-    x[1] = x[1] + x[0][-1]
+    x[1] = x[1] + x[0][-1] - x[1][0]
 
     # Now we can do b2b grids
     rt = [b2b_grid(*argsi, c=c) for argsi in zip(x_c, r, chi, s_c)]
