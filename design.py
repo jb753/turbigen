@@ -406,6 +406,9 @@ def pitch_Zweifel(stg, Z):
     is performed for the stator in the absolute frame, and for the rotor in the
     relative frame.
 
+    This equation does not assume constant axial velocity or incompressible
+    flow.
+
     Parameters
     ----------
     stg : NonDimStage
@@ -470,9 +473,22 @@ def pitch_Zweifel(stg, Z):
 def pitch_circ(stg, C0):
     """Calculate pitch-to-chord ratios using circulation coefficient.
 
-    After Coull and Hodson 2013."""
+    The circulation coefficient measure of loading was proposed by,
+
+    Coull, J. D. and Hodson, H. P. (2012). "Blade Loading and Its
+    Application in the Mean-Line Design of Low Pressure Turbines."
+    ASME. J. Turbomach. 135(2)
+    https://doi.org/10.1115/1.4006588
+
+    They argue that the traditional Zweifel coefficient does not account for
+    camber, and hence that blades with different levels of turning have a
+    different value Zweifel coefficient for optimum pitch-to-chord.
+
+    The 
+    """
 
     def _integrate_length(chi):
+        """Integrate quadratic camber line length given angles."""
         xhat = np.linspace(0.,1.);
         tanchi_lim = np.tan(chi)
         tanchi = np.diff(tanchi_lim)*xhat + tanchi_lim[0]
@@ -484,7 +500,8 @@ def pitch_circ(stg, C0):
             _integrate_length(chi)
             / np.cos(chi[1])
             / np.abs(np.tan(chi[0])-np.tan(chi[1]))
-                for chi in np.radians((stg.Al[:2],stg.Alrel[1:]))]
+                for chi in np.radians((stg.Al[:2],stg.Alrel[1:]))
+                ]
 
 
 
@@ -805,264 +822,6 @@ def blade_to_blade_mesh(x, r, ii, chi, nrt, s_c, a=0.0):
     return rt
 
 
-def generate(
-    htr, aft_load=0.0, dev=(0.0, 0.0), lean_type=None, lean_angle=0.0, G=1.0
-):
-
-    ga = 1.33
-    Toin = 1600.0
-    Poin = 16.0e5
-    rgas = 287.14
-    cp = rgas * ga / (ga - 1.0)
-    Omega = 2.0 * np.pi * 50.0
-    Z = 0.85
-    phi = 0.6
-    psi = 1.6
-    Lam = 0.5
-    Alin = 0.0
-    Ma = 0.75
-    eta = 0.95
-    Re = 4.0e6
-
-    rpm_rotor = np.array([Omega / 2.0 / np.pi * 60.0]).astype(np.float32)
-
-    # Get velocity triangles
-    stage = nondim_stage_from_Lam(phi, psi, Lam, Alin, Ma, ga, eta)
-    print("PR", stage.Pout_Poin)
-
-    # Get mean radius and spans
-    rm, Dr = annulus_line(
-        stage.U_sqrt_cpToin,
-        stage.Ax_Axin,
-        htr,
-        cp * Toin,
-        Omega,
-    )
-
-    print("Dr", Dr)
-
-    # Calculate pitch-to-chord ratio (const Zweifel)
-    s_c = (
-        pitch_Zweifel(stage.Al[:2], Z),
-        pitch_Zweifel(stage.Al_rel[1:], Z),
-    )
-
-    # Set chord based on Reynolds number
-    c = chord_Re(Re, Toin, Poin, stage.Ma[1], ga, rgas, stage.Yp[0])
-
-    # Round pitch-to-chord to nearest whole number of blades
-    # Which fit in 8th-annulus sector
-    sect = 1.0 / 8.0
-    nb = (
-        np.round((2.0 * np.pi * rm / (np.array(s_c) * c)) * sect) / sect
-    ).astype(int)
-    print("nb", nb)
-    print("old s_c", s_c)
-    s_c = 2.0 * np.pi * rm / nb / c
-
-    print("new s_c", s_c)
-
-    # Number of radial points
-    dr_c = 0.04  # Radial grid spacing as fraction of chord
-    nr = np.max((int(Dr[1] / (dr_c * c)), 4))
-    print("nr", nr)
-
-    print(stage.Al)
-    print(stage.Al_rel)
-
-    # Get meridional grids
-    duct_len = 2.0
-    vane_xc = [-duct_len, 0.0, 1.0, 1.0 + G / 2.0]
-    blade_xc = [1.0 + G / 2.0, 1.0 + G, 2.0 + G, duct_len + 2.0 + G]
-    vane_x, vane_r, vane_i = meridional_mesh(vane_xc, rm, Dr[:2], c, nr)
-    blade_x, blade_r, blade_i = meridional_mesh(blade_xc, rm, Dr[1:], c, nr)
-
-    # Deviation in correct shape
-    vane_dev = np.zeros_like(vane_r[vane_i, :])
-    vane_dev[1, :] = dev[0]
-    blade_dev = np.zeros_like(blade_r[blade_i, :])
-    blade_dev[1, :] = dev[1]
-
-    # Radial flow angle variations
-    # Free vortex
-    vane_Al = np.degrees(
-        np.arctan(
-            rm
-            / vane_r[vane_i, :]
-            * np.tan(np.radians(np.atleast_2d(stage.Al[:2])).T)
-        )
-    )
-    blade_Al = np.degrees(
-        np.arctan(
-            rm
-            / blade_r[blade_i, :]
-            * np.tan(np.radians(np.atleast_2d(stage.Al[1:])).T)
-            - blade_r[blade_i, :] / rm / phi
-        )
-    )
-
-    # Add a guess of deviation
-    vane_Al += vane_dev
-    blade_Al += blade_dev
-
-    # Vxm = phi * Omega * rm
-    # Vtm = Vxm * np.tan(np.radians(stage.Al[1]))
-    # print(Vxm, Vtm, rm)
-    # solve_forced_vortex(Vxm,Vtm,rm,vane_r[blade_i[0],:])
-
-    # f,a=plt.subplots()
-    # a.plot((vane_Al.T), vane_r[vane_i[0],:]/rm)
-    # a.plot((blade_Al.T), blade_r[blade_i[0],:]/rm)
-    # plt.show()
-
-    nrt = 65
-    vane_rt = blade_to_blade_mesh(
-        vane_x, vane_r, vane_i, vane_Al, nrt, s_c[0], aft_load
-    )
-    blade_rt = blade_to_blade_mesh(
-        blade_x, blade_r, blade_i, blade_Al, nrt, s_c[1], aft_load
-    )
-
-    # taper factor
-    ARtap = 2.0
-    taper = np.linspace(1.0, 1.0 / np.sqrt(ARtap), nr)
-
-    cxref = np.ptp(vane_x[vane_i])
-
-    xle = np.array([0.0, 1.0 + G]) * cxref
-    xte = np.array([1.0, 2.0 + G]) * cxref
-
-    pside = []
-    sside = []
-    hub = []
-    cas = []
-    for xnow, rnow, rtnow, inow, nbi, is_rotor in zip(
-        (vane_x, blade_x),
-        (vane_r, blade_r),
-        (vane_rt, blade_rt),
-        (vane_i, blade_i),
-        nb,
-        [False, True],
-    ):
-
-        pside.append([])
-        sside.append([])
-
-        hub.append(np.stack((xnow, rnow[:, 0]), axis=1))
-        cas.append(np.stack((xnow, rnow[:, -1]), axis=1))
-
-        dtnow = 2.0 * np.pi / float(nbi)
-        tnow = rtnow / rnow[..., None]
-        rt2now = rnow[..., None] * (tnow - dtnow)
-        span_now = rnow[inow[0], :].ptp()
-        rref_now = rnow[inow[0], 0]
-        for ir in range(nr):
-            xrrtnow = np.stack(
-                (
-                    xnow[inow[0] : inow[1]],
-                    rnow[inow[0] : inow[1], ir],
-                    rtnow[inow[0] : inow[1], ir, 0],
-                    rt2now[inow[0] : inow[1], ir, -1],
-                ),
-                axis=1,
-            )
-
-            # Taper the rotor
-            if is_rotor:
-                xrrtnow[:, 0] = (
-                    (xrrtnow[:, 0] - xrrtnow[0, 0]) * taper[ir]
-                    + xrrtnow[0, 0]
-                    + 0.5 * (xrrtnow[-1, 0] - xrrtnow[0, 0]) * (1.0 - taper[ir])
-                )
-                xrrtnow[:, (2, 3)] = (
-                    xrrtnow[:, (2, 3)] - xrrtnow[0, 2]
-                ) * taper[ir] + xrrtnow[0, 2]
-            # Stack on centroid
-            Area = np.trapz(xrrtnow[:, 3] - xrrtnow[:, 2], xrrtnow[:, 0])
-            rtc = (
-                np.trapz(
-                    0.5
-                    * (xrrtnow[:, 3] - xrrtnow[:, 2])
-                    * (xrrtnow[:, 3] + xrrtnow[:, 2]),
-                    xrrtnow[:, 0],
-                )
-                / Area
-            )
-
-            # Shear the stacking if requested
-            if lean_type is not None and not is_rotor:
-                tan_nu = np.tan(np.radians(-lean_angle))
-                drnow = xrrtnow[0, 1] - rref_now
-                if lean_type == "compound":
-                    drtc = tan_nu * (drnow - (drnow ** 2.0) / span_now)
-                elif lean_type == "simple":
-                    drtc = tan_nu * drnow
-            else:
-                drtc = 0.0
-            # print('j',ir,'drtc',drtc,'drnow',drnow,'rtc',rtc)
-
-            xrrtnow[:, (2, 3)] -= rtc + drtc
-
-            pside[-1].append(xrrtnow[:, (0, 1, 2)])
-            sside[-1].append(xrrtnow[:, (0, 1, 3)])
-
-            # swap a few points from one side to the other
-            if not is_rotor:
-                iswp = np.argmax(pside[-1][-1][:, 2])
-                sside[-1][-1] = np.append(
-                    sside[-1][-1], np.flipud(pside[-1][-1][iswp:-1, :]), axis=0
-                )
-                pside[-1][-1] = pside[-1][-1][: (iswp + 1), :]
-            else:
-                iswp = np.argmin(sside[-1][-1][:, 2])
-                pside[-1][-1] = np.append(
-                    pside[-1][-1], np.flipud(sside[-1][-1][iswp:-1, :]), axis=0
-                )
-                sside[-1][-1] = sside[-1][-1][: (iswp + 1), :]
-
-    hub = np.concatenate((hub[0], hub[1][1:, :]))
-    cas = np.concatenate((cas[0], cas[1][1:, :]))
-
-    # f,a = plt.subplots()
-    # rtLE = [psi[0,2] for psi in pside[0]]
-    # rLE = [psi[0,1] for psi in pside[0]]
-    # a.plot(rtLE,rLE,'k-x')
-    # a.axis('equal')
-    # plt.show()
-    # rstrst
-
-    write_geomturbo("mesh.geomTurbo", sside, pside, hub, cas, nb)
-
-    # Make a config for autogrid meshing
-    import ConfigParser
-
-    conf = ConfigParser.ConfigParser()
-    conf.add_section("mesh")
-    conf.set("mesh", "nrow", 2)
-    conf.set("mesh", "nxu", 41)
-    conf.set("mesh", "nxd", 97)
-    conf.set("mesh", "rpm", [0.0, rpm_rotor[0]])
-    conf.set("mesh", "xle", [xle[0], xle[1]])
-    conf.set("mesh", "xte", [xte[0], xte[1]])
-    conf.set("mesh", "dy", [1e-4, 1e-4])
-
-    conf.set("mesh", "unif_span", False)
-
-    nr_htr = np.array([[0.6, 0.9], [121, 65]])
-    nr = int(np.interp(htr, nr_htr[0, :], nr_htr[1, :]))
-    print(nr)
-    conf.set("mesh", "nr", nr)
-
-    with open("conf.ini", "w") as f:
-        conf.write(f)
-
-    # run_remote( 'mesh.geomTurbo',
-    # ['../../script-fix/script_ag.py2', '../../script-fix/script_igg.py2'],
-    # '../../script-fix/script_sh', 'conf.ini')
-
-    return
-
-
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):
     """Write blade and annulus geometry to AutoGrid GeomTurbo file.
 
@@ -1265,8 +1024,3 @@ def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):
     fid.write("%s\n" % "NI_END GEOMTURBO")
 
     fid.close()
-
-
-if __name__ == "__main__":
-
-    pass

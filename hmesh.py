@@ -167,7 +167,6 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
 
 
 def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Co):
-
     # Separate spacings for stator and rotor
     dx_c_sr = ((dx_c[0],dx_c[1]/2.),(dx_c[1]/2.,dx_c[2]))
 

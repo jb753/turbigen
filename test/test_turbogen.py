@@ -1,7 +1,7 @@
 """Tests for the turbogen module"""
 import numpy as np
 import compflow as cf
-from turbogen.make_design import *
+from turbogen.design import *
 
 # Set up test data
 

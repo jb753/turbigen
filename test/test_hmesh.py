@@ -2,7 +2,7 @@
 import numpy as np
 import compflow as cf
 from turbogen.hmesh import *
-from turbogen import make_design
+from turbogen import design
 
 # Begin test functions
 
@@ -42,7 +42,7 @@ def test_merid():
     x_c, (ile, ite) = streamwise_grid(dx_c)
 
     # Turbine stage design
-    stg = make_design.nondim_stage_from_Lam(
+    stg = design.nondim_stage_from_Lam(
         phi=0.8, psi=1.6, Lam=0.5, Al1=0., Ma=0.7, ga=1.4, eta=0.9
     )
 
@@ -50,7 +50,7 @@ def test_merid():
     htr = 0.6
     cpTo1 = 1.e6
     Omega = 2.*np.pi*50.
-    rm, Dr = make_design.annulus_line(stg, htr, cpTo1, Omega)
+    rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
     # Generate radial grid
     r = merid_grid(x_c, rm, Dr[:2])
@@ -88,7 +88,7 @@ def test_b2b():
     x_c, (ile, ite) = streamwise_grid(dx_c)
 
     # Turbine stage design
-    stg = make_design.nondim_stage_from_Lam(
+    stg = design.nondim_stage_from_Lam(
         phi=0.8, psi=1.6, Lam=0.5, Al1=0., Ma=0.7, ga=1.4, eta=0.9
     )
 
@@ -96,7 +96,7 @@ def test_b2b():
     htr = 0.9
     cpTo1 = 1005. * 1600.
     Omega = 2.*np.pi*50.
-    rm, Dr = make_design.annulus_line(stg, htr, cpTo1, Omega)
+    rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
     # Generate radial grid
     r_stator = merid_grid(x_c, rm, Dr[:2])
@@ -104,16 +104,16 @@ def test_b2b():
 
     # Evaluate blade angles
     r_rm = np.concatenate([r_stator[(ile,ite),:],r_rotor[(ite,),:]])/rm
-    chi_vane, chi_blade = make_design.free_vortex(stg, r_rm, (0.,0.))
+    chi_vane, chi_blade = design.free_vortex(stg, r_rm, (0.,0.))
 
     # Evaluate pitch to chord
-    s_c = make_design.pitch_Zweifel(stg, (0.8,0.8))
+    s_c = design.pitch_Zweifel(stg, (0.8,0.8))
 
     # Evaluate chord
     Re = 4e6
     Po1 = 16e5
     rgas = 287.14
-    c = make_design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+    c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Finally, get the b2b grid!
     rt = b2b_grid(x_c, r_stator, chi_vane, s_c[0], c)

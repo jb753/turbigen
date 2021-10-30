@@ -4,3 +4,4 @@ doc/_build
 .idea
 *.pyc
 run/
+.python-version
