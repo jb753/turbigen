@@ -227,7 +227,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
 def set_variables(g):
 
     for bid in g.get_block_ids():
-        g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.0)
+        g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.2)
         g.set_bv("poisson_fmgrid", ts_tstream_type.float, bid, 0.05)
         g.set_bv("xllim_free", ts_tstream_type.float, bid, 0.0)
         g.set_bv("free_turb", ts_tstream_type.float, bid, 0.0)
@@ -237,9 +237,10 @@ def set_variables(g):
     g.set_av("poisson_nstep", ts_tstream_type.int, 5000)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
-    g.set_av("nstep", ts_tstream_type.int, 50000)
+    g.set_av("nstep", ts_tstream_type.int, 25000)
+    g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
-    g.set_av("dampin", ts_tstream_type.float, 10.0)
+    g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
     g.set_av("facsecin", ts_tstream_type.float, 0.005)
     g.set_av("cfl", ts_tstream_type.float, 0.4)

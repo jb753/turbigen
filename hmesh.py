@@ -1,7 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
-import make_design, turbostream
-import matplotlib.pyplot as plt
+import design
 
 # def 
 
@@ -47,7 +46,7 @@ def streamwise_grid(dx_c):
 
     clust = _cluster(nxb)
     dclust = np.diff(clust)
-    dmin, dmax = dclust.min(), dclust.max()
+    dmax = dclust.max()
 
     # Stretch clustering outside of blade row
     nxb2 = nxb // 2  # Blade semi-chord
@@ -97,8 +96,8 @@ def merid_grid(x_c, rm, Dr):
     rc = np.interp(x_c, [0., 1.], rm + Dr / 2.0)
 
     # Smooth the corners over a prescribed distance
-    make_design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
-    make_design._fillet(x_c - 1., rc, dxsmth_c)  # Trailing edge about 1
+    design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
+    design._fillet(x_c - 1., rc, dxsmth_c)  # Trailing edge about 1
 
     # Define a clustered span fraction row vector 
     spf = np.atleast_2d(_cluster(nr))
@@ -130,7 +129,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     for j in range(nj):
 
         # Retrieve blade section
-        sec_x, sec_rt0, sec_rt1 = make_design.blade_section(chi[:, j]) * c
+        sec_x, sec_rt0, sec_rt1 = design.blade_section(chi[:, j]) * c
 
         # Get centroid for stacking
         Area = np.trapz(sec_rt1 - sec_rt0, sec_x)
@@ -176,7 +175,7 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
     x_c, ilte = zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c_sr])
 
     # Annulus line 
-    rm, Dr = make_design.annulus_line(stg, htr, cpTo1, Omega)
+    rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
     # Generate radial grid
     Dr_sr = (Dr[:2],Dr[1:])
@@ -184,11 +183,11 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
 
     # Evaluate blade angles
     r_rm = np.concatenate([ri[iltei,:]/rm for ri, iltei in zip(r, ilte)])
-    chi = make_design.free_vortex(stg, r_rm[(0,1,3),:], (0.,0.))
+    chi = design.free_vortex(stg, r_rm[(0,1,3),:], (0.,0.))
 
     # Pitches and chords
-    s_c = make_design.pitch_Zweifel(stg, (Z,Z))
-    c = make_design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+    s_c = design.pitch_Zweifel(stg, (Z,Z))
+    c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Dimensionalise x
     x = [x_ci * c for x_ci in x_c]
@@ -201,33 +200,3 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
 
     return x, r, rt, ilte
 
-if __name__=='__main__':
-
-    ga = 1.33
-    To1 = 1600.0
-    Po1 = 16.0e5
-    rgas = 287.14
-    cp = rgas * ga / (ga - 1.0)
-    Omega = 2.0 * np.pi * 50.0
-    Z = 0.85
-    phi = 0.6
-    psi = 1.6
-    Lam = 0.5
-    Al1 = 0.0
-    Ma = 0.75
-    eta = 0.95
-    Re = 4.0e6
-    rpm = Omega/ 2. /np.pi * 60.
-
-    htr = 0.9
-
-    # Turbine stage design
-    stg = make_design.nondim_stage_from_Lam(
-        phi, psi, Lam, Al1, Ma, ga, eta
-    )
-
-    PR = 0.5
-
-    g = turbostream.generate(*stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z), rpm_rotor=rpm, Po1=Po1, To1=To1,P3=PR*Po1, stg=stg, ga=ga, rgas=rgas)
-
-    g.write_hdf5('../run/input_1.hdf5')
