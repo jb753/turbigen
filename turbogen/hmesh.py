@@ -193,8 +193,11 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Z):
     # Dimensionalise x
     x = [x_ci * c for x_ci in x_c]
 
+    # Offset the rotor so it is downstream of stator
+    x[1] = x[1] + x[0][-1]
+
     # Now we can do b2b grids
-    rt = [b2b_grid(*argsi, c) for argsi in zip(x_c, r, chi, s_c)]
+    rt = [b2b_grid(*argsi, c=c) for argsi in zip(x_c, r, chi, s_c)]
 
     return x, r, rt, ilte
 
@@ -214,6 +217,7 @@ if __name__=='__main__':
     Ma = 0.75
     eta = 0.95
     Re = 4.0e6
+    rpm = Omega/ 2. /np.pi * 60.
 
     htr = 0.9
 
@@ -222,7 +226,8 @@ if __name__=='__main__':
         phi, psi, Lam, Al1, Ma, ga, eta
     )
 
+    PR = 0.5
 
-    turbostream.generate(*stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z))
+    g = turbostream.generate(*stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z), rpm_rotor=rpm, Po1=Po1, To1=To1,P3=PR*Po1, stg=stg, ga=ga, rgas=rgas)
 
-
+    g.write_hdf5('run/input_1.hdf5')

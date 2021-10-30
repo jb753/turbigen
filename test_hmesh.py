@@ -140,7 +140,3 @@ def test_b2b():
     assert np.all(dt-pitch_t < tol)  # Everywhere
     assert np.all(np.isclose(dt[:ile+1,:], pitch_t))  # Inlet duct
     assert np.all(np.isclose(dt[ite,:], pitch_t))  # Exit duct
-
-
-
-

@@ -28,12 +28,14 @@ stage_vars = {
     "psi": r"Stage loading coefficient, :math:`\psi` [--]",
 }
 NonDimStage = namedtuple("NonDimStage", stage_vars.keys())
-NonDimStage.__doc__ = (
-    "Data class to hold geometry and derived flow parameters of a "
-    "turbine stage mean-line design."
-)
-for vi in stage_vars:
-    getattr(NonDimStage, vi).__doc__ = stage_vars[vi]
+
+#NonDimStage.__doc__ = (
+#    "Data class to hold geometry and derived flow parameters of a "
+#    "turbine stage mean-line design."
+#)
+
+#for vi in stage_vars:
+#    getattr(NonDimStage, vi).__doc__ = stage_vars[vi]
 
 def nondim_stage_from_Al(
     phi,  # Flow coefficient [--]

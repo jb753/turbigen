@@ -2,3 +2,5 @@ tags
 __pycache__
 doc/_build
 .idea
+*.pyc
+run/

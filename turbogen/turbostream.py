@@ -1,5 +1,9 @@
 """Functions for exporting a stage design to Turbostream."""
+import numpy as np
+from ts import ts_tstream_type, ts_tstream_grid, ts_tstream_patch_kind, ts_tstream_default, ts_tstream_load_balance
+import compflow
 
+muref = 1.8e-5
 
 def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     # Periodic patches
@@ -21,6 +25,9 @@ def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     else:
         p.idir, p.jdir, p.kdir = (0, 1, 2)
 
+    p.nface = 0
+    p.nt = 0
+
     return p
 
 
@@ -35,6 +42,9 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     tstag += Toin
     yaw += 0.0
     pitch += 0.0
+    print('Setting inlet on bid=%d, pid=%d:' % (bid, pid))
+    print(nk, nj)
+    print(Poin, Toin)
 
     g.set_pp("yaw", ts_tstream_type.float, bid, pid, yaw)
     g.set_pp("pitch", ts_tstream_type.float, bid, pid, pitch)
@@ -42,6 +52,8 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     g.set_pp("tstag", ts_tstream_type.float, bid, pid, tstag)
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
     g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.)
+
+    print('Finished setting inlet')
 
 
 def add_to_grid(g, xin, rin, rtin, ilte):
@@ -218,6 +230,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
 
 
 def set_variables(g):
+
     for bid in g.get_block_ids():
         g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.2)
         g.set_bv("poisson_fmgrid", ts_tstream_type.float, bid, 0.05)
@@ -230,7 +243,6 @@ def set_variables(g):
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
     g.set_av("nstep", ts_tstream_type.int, 25000)
-    # g.set_av("nstep", ts_tstream_type.int, 20)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
@@ -266,45 +278,53 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def generate(x, r, rt, ilte):
+def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
 
     # Make grid, add the blocks
     g = ts_tstream_grid.TstreamGrid()
     for args in zip(x, r, rt, ilte):
         add_to_grid(g, *args)
 
+    bid_vane = 0
+    bid_blade = 1
+
+
+    # calc nb
+    rm = np.mean(r[0][0,(0,-1)])
+    t = [rti/ri[...,None] for rti, ri in zip(rt,r)]
+    nb = [np.asscalar(2.*np.pi*rm/np.diff(ti[0,0,(0,-1)],1))
+            for ti in t]
+
     # Inlet
     ni, nj, nk = zip(*[rti.shape for rti in rt])
-    print(ni, nj, nk)
 
     inlet = _make_patch(
         kind="inlet",
         bid=bid_vane,
         i=(0, 1),
-        j=(0, nj),
-        k=(0, nk),
+        j=(0, nj[0]),
+        k=(0, nk[0]),
     )
     inlet.pid = g.add_patch(bid_vane, inlet)
-    apply_inlet(g, bid_vane, inlet.pid, Poin, Toin, nk, nj)
+    apply_inlet(g, bid_vane, inlet.pid, Po1, To1, nk[0], nj[0])
 
     # Outlet
-    ni, nj, nk = np.shape(blade_rt)
     outlet = _make_patch(
-        kind="outlet", bid=bid_blade, i=(ni - 1, ni), j=(0, nj), k=(0, nk)
+        kind="outlet", bid=bid_blade, i=(ni[1] - 1, ni[1]), j=(0, nj[1]), k=(0, nk[1])
     )
+
     outlet.pid = g.add_patch(bid_blade, outlet)
     g.set_pv("throttle_type", ts_tstream_type.int, bid_blade, outlet.pid, 0)
     g.set_pv("ipout", ts_tstream_type.int, bid_blade, outlet.pid, 3)
-    g.set_pv("pout", ts_tstream_type.float, bid_blade, outlet.pid, Pout)
+    g.set_pv("pout", ts_tstream_type.float, bid_blade, outlet.pid, P3)
 
     # Mixing upstream
-    ni, nj, nk = np.shape(vane_rt)
     mix_up = _make_patch(
         kind="mixing",
         bid=bid_vane,
-        i=(ni - 1, ni),
-        j=(0, nj),
-        k=(0, nk),
+        i=(ni[0] - 1, ni[0]),
+        j=(0, nj[0]),
+        k=(0, nk[0]),
         nxbid=bid_blade,
         nxpid=outlet.pid + 1,
         dirs=(6, 1, 2),
@@ -312,13 +332,12 @@ def generate(x, r, rt, ilte):
     mix_up.pid = g.add_patch(bid_vane, mix_up)
 
     # Mixing downstream
-    ni, nj, nk = np.shape(blade_rt)
     mix_dn = _make_patch(
         kind="mixing",
         bid=bid_blade,
         i=(0, 1),
-        j=(0, nj),
-        k=(0, nk),
+        j=(0, nj[1]),
+        k=(0, nk[1]),
         nxbid=bid_vane,
         nxpid=outlet.pid + 1,
         dirs=(6, 1, 2),
@@ -328,48 +347,55 @@ def generate(x, r, rt, ilte):
     # Apply application/block variables
     set_variables(g)
 
-    set_rotation(g, [bid_vane], 0.0, spin_j=False)
-    set_rotation(g, [bid_blade], rpm_rotor, spin_j=False)
+    # Rotation
+    for bid, rpmi in zip(g.get_block_ids(),[0, rpm_rotor]):
+        set_rotation(g, [bid,], rpmi, spin_j=False)
 
+    # Numbers of blades
     for bid, nbi in zip(g.get_block_ids(), nb):
         g.set_bv("fblade", ts_tstream_type.float, bid, nbi)
-        g.set_bv("nblade", ts_tstream_type.float, bid, nbi)
+        g.set_bv("nblade", ts_tstream_type.int, bid, nbi)
 
     set_xllim(g, 0.03)
 
     # Initial guess
-    xg = np.array(vane_xc[:-1] + blade_xc[1:]) * c
-    Pog = np.repeat(stage.Po_Poin * Poin, 2)
-    Tog = np.repeat(stage.To_Toin * Toin, 2)
-    Mag = np.repeat(stage.Ma, 2)
-    Alg = np.repeat(stage.Al, 2)
+    xg = np.concatenate([x[0][[0,] + ilte[0]],  x[1][ilte[1] + [-1,]]])
+    Pog = np.repeat(stg.Po_Po1 * Po1  , 2)
+    Tog = np.repeat(stg.To_To1 * To1  , 2)
+    Mag = np.repeat(stg.Ma, 2)
+    Alg = np.repeat(stg.Al, 2)
 
     for bid in g.get_block_ids():
         guess_block(g, bid, xg, Pog, Tog, Mag, Alg, ga, rgas)
 
+    cp = rgas * ga / (ga - 1.)
     g.set_av("ga", ts_tstream_type.float, ga)
     g.set_av("cp", ts_tstream_type.float, cp)
 
+    ts_tstream_load_balance.load_balance(g, 1, 1.)
+
     # g.write_hdf5(fname)
+    return g
 
 
-def run_remote(geomturbo, py_scripts, sh_script, conf_ini):
-    """Copy a geomturbo file to gp-111 and run autogrid using scripts."""
 
-    # Make tmp dir on remote
-    tmpdir = os.popen("ssh gp-111 mktemp -p ~/tmp/ -d").read().splitlines()[0]
-    print(tmpdir)
+# def run_remote(geomturbo, py_scripts, sh_script, conf_ini):
+#     """Copy a geomturbo file to gp-111 and run autogrid using scripts."""
 
-    # Copy files across
-    files = [geomturbo] + py_scripts + [sh_script] + [conf_ini]
-    for si in files:
-        os.system("scp %s gp-111:%s" % (si, tmpdir))
+#     # Make tmp dir on remote
+#     tmpdir = os.popen("ssh gp-111 mktemp -p ~/tmp/ -d").read().splitlines()[0]
+#     print(tmpdir)
 
-    # Run the shell script
-    result = os.popen(
-        "ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script.split("/")[-1])
-    ).read()
-    print(result)
+#     # Copy files across
+#     files = [geomturbo] + py_scripts + [sh_script] + [conf_ini]
+#     for si in files:
+#         os.system("scp %s gp-111:%s" % (si, tmpdir))
 
-    # Copy mesh back
-    os.system("scp gp-111:%s/*.{g,bcs} %s" % (tmpdir, os.getcwd()))
+#     # Run the shell script
+#     result = os.popen(
+#         "ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script.split("/")[-1])
+#     ).read()
+#     print(result)
+
+#     # Copy mesh back
+#     os.system("scp gp-111:%s/*.{g,bcs} %s" % (tmpdir, os.getcwd()))
