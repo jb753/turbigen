@@ -26,7 +26,7 @@ def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
         p.idir, p.jdir, p.kdir = (0, 1, 2)
 
     p.nface = 0
-    p.nt = 0
+    p.nt = 1
 
     return p
 
@@ -42,18 +42,13 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     tstag += Toin
     yaw += 0.0
     pitch += 0.0
-    print('Setting inlet on bid=%d, pid=%d:' % (bid, pid))
-    print(nk, nj)
-    print(Poin, Toin)
 
     g.set_pp("yaw", ts_tstream_type.float, bid, pid, yaw)
     g.set_pp("pitch", ts_tstream_type.float, bid, pid, pitch)
     g.set_pp("pstag", ts_tstream_type.float, bid, pid, pstag)
     g.set_pp("tstag", ts_tstream_type.float, bid, pid, tstag)
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
-    g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.)
-
-    print('Finished setting inlet')
+    g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.1)
 
 
 def add_to_grid(g, xin, rin, rtin, ilte):
@@ -232,7 +227,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
 def set_variables(g):
 
     for bid in g.get_block_ids():
-        g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.2)
+        g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.0)
         g.set_bv("poisson_fmgrid", ts_tstream_type.float, bid, 0.05)
         g.set_bv("xllim_free", ts_tstream_type.float, bid, 0.0)
         g.set_bv("free_turb", ts_tstream_type.float, bid, 0.0)
@@ -242,9 +237,9 @@ def set_variables(g):
     g.set_av("poisson_nstep", ts_tstream_type.int, 5000)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
-    g.set_av("nstep", ts_tstream_type.int, 25000)
+    g.set_av("nstep", ts_tstream_type.int, 50000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
-    g.set_av("dampin", ts_tstream_type.float, 25.0)
+    g.set_av("dampin", ts_tstream_type.float, 10.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
     g.set_av("facsecin", ts_tstream_type.float, 0.005)
     g.set_av("cfl", ts_tstream_type.float, 0.4)
@@ -295,18 +290,20 @@ def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
     nb = [np.asscalar(2.*np.pi*rm/np.diff(ti[0,0,(0,-1)],1))
             for ti in t]
 
-    # Inlet
     ni, nj, nk = zip(*[rti.shape for rti in rt])
 
+    # Inlet
     inlet = _make_patch(
         kind="inlet",
         bid=bid_vane,
         i=(0, 1),
         j=(0, nj[0]),
         k=(0, nk[0]),
+        dirs=(6, 1, 2)
     )
     inlet.pid = g.add_patch(bid_vane, inlet)
     apply_inlet(g, bid_vane, inlet.pid, Po1, To1, nk[0], nj[0])
+
 
     # Outlet
     outlet = _make_patch(

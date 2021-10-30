@@ -1,6 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
-from turbogen import make_design, turbostream
+import make_design, turbostream
 import matplotlib.pyplot as plt
 
 # def 
@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 nxb = 97  # Blade chord
 nr = 81  # Span
 nrt = 65  # Pitch
-rate = 0.2  # Axial chords required to fully relax
+rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.25  # Distance over which to fillet shroud corners
 
 def _cluster(npts):
@@ -230,4 +230,4 @@ if __name__=='__main__':
 
     g = turbostream.generate(*stage_grid(stg, cp*To1, htr, Omega, Po1, Re, rgas, (0.,0.), (2.,1.,3.), Z), rpm_rotor=rpm, Po1=Po1, To1=To1,P3=PR*Po1, stg=stg, ga=ga, rgas=rgas)
 
-    g.write_hdf5('run/input_1.hdf5')
+    g.write_hdf5('../run/input_1.hdf5')
