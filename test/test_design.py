@@ -1,7 +1,8 @@
-"""Tests for the turbogen module"""
+"""Tests for the design module"""
 import numpy as np
 import compflow as cf
 from turbogen.design import *
+from turbogen.design import _integrate_length
 
 # Set up test data
 
@@ -62,6 +63,43 @@ def test_Zweifel():
                     np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
                 )
 
+
+def test_circulation_coeff():
+    """Verify circulation pitch-to-chord for low-speed lossless repeating stages."""
+    for phii in phi:
+        for psii in psi:
+            for Al1i in Al_range:
+                Alnow = (Al1i, Al1i)  # Same inlet and exit angle
+                stg = nondim_stage_from_Al(
+                    phii, psii, Alnow, Ma_low, ga, eta_ideal
+                )
+
+                # Evaluate Zweifel using built in function
+                C0 = 0.65
+                s_c_out = np.array(pitch_circulation(stg, C0))
+                print(s_c_out)
+
+                # Evaluate low-speed lossless approximation
+                Alr = np.radians(stg.Al[:2])
+                s_c_stator = (
+                    C0
+                    * _integrate_length(Alr)
+                    / np.cos(Alr[1])
+                    / np.abs(np.tan(Alr[0]) - np.tan(Alr[1]))
+                )
+                Alrelr = np.radians(stg.Alrel[1:])
+                s_c_rotor = (
+                    C0
+                    * _integrate_length(Alrelr)
+                    / np.cos(Alrelr[1])
+                    / np.abs(np.tan(Alrelr[0]) - np.tan(Alrelr[1]))
+                )
+                print((s_c_stator, s_c_rotor))
+
+                # Check that the two are within a tolerance
+                assert np.all(
+                    np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
+                )
 
 def test_repeating():
     """Verify analytically some repeating stage velocity triangles."""
@@ -215,7 +253,7 @@ def test_valid():
                     assert np.all(np.isfinite(xi))
                 # All variables excluding flow angles should be non-negative
                 for vi, xi in stg._asdict().items():
-                    if not "Al" in vi:
+                    if vi not in ["Al", "Alrel", "Vt_U", "Vtrel_U"]:
                         assert np.all(np.array(xi) >= 0.0)
                 # Flow angles less than 90 degrees
                 for vi in ["Al", "Alrel"]:

@@ -1,6 +1,6 @@
 API Reference
 =============
 
-.. automodule:: turbogen.make_design
+.. automodule:: turbogen.design
    :members:
 

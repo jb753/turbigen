@@ -27,7 +27,7 @@ stg = design.nondim_stage_from_Lam(
 
 PR = 0.5
 
-print(design.pitch_circ(stg, 0.65))
+print(design.pitch_circulation(stg, 0.65))
 print(design.pitch_Zweifel(stg, (0.8,0.8)))
 
 

@@ -185,7 +185,7 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Co):
     chi = design.free_vortex(stg, r_rm[(0,1,3),:], (0.,0.))
 
     # Pitches and chords
-    s_c = design.pitch_circ(stg, Co)
+    s_c = design.pitch_circulation(stg, Co)
     c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Dimensionalise x

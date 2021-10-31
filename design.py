@@ -26,6 +26,10 @@ stage_vars = {
     "ga": r"Ratio of specific heats, :math:`\gamma` [--]",
     "phi": r"Flow coefficient, :math:`\phi` [--]",
     "psi": r"Stage loading coefficient, :math:`\psi` [--]",
+    "Vt_U": r"Normalised tangential velocities, :math:`V_\theta/U` [--]",
+    "Vtrel_U": r"Normalised relative tangential velocities, :math:`V^\rel_\theta/U` [--]",
+    "V_U": r"Normalised velocities, :math:`V/U` [--]",
+    "Vrel_U": r"Normalised relative velocities, :math:`V/U` [--]",
 }
 NonDimStage = namedtuple("NonDimStage", stage_vars.keys())
 
@@ -36,6 +40,13 @@ NonDimStage = namedtuple("NonDimStage", stage_vars.keys())
 
 #for vi in stage_vars:
 #    getattr(NonDimStage, vi).__doc__ = stage_vars[vi]
+
+def _integrate_length(chi):
+    """Integrate quadratic camber line length given angles."""
+    xhat = np.linspace(0.,1.);
+    tanchi_lim = np.tan(chi)
+    tanchi = np.diff(tanchi_lim)*xhat + tanchi_lim[0]
+    return np.trapz(np.sqrt(1.+tanchi**2.),xhat)
 
 def nondim_stage_from_Al(
     phi,  # Flow coefficient [--]
@@ -166,6 +177,10 @@ def nondim_stage_from_Al(
         phi=phi,
         psi=psi,
         ga=ga,
+        Vt_U=Vt_U,
+        Vtrel_U=Vtrel_U,
+        V_U=V_U,
+        Vrel_U=Vrel_U,
     )
 
     return stg
@@ -470,8 +485,8 @@ def pitch_Zweifel(stg, Z):
 
     return s_c_stator, s_c_rotor
 
-def pitch_circ(stg, C0):
-    """Calculate pitch-to-chord ratios using circulation coefficient.
+def pitch_circulation(stg, C0):
+    r"""Calculate pitch-to-chord ratios using circulation coefficient.
 
     The circulation coefficient measure of loading was proposed by,
 
@@ -484,27 +499,21 @@ def pitch_circ(stg, C0):
     camber, and hence that blades with different levels of turning have a
     different value Zweifel coefficient for optimum pitch-to-chord.
 
-    The 
+    Here we assume constant axial velocity and incompressible flow to yield,
+
+    .. math ::
+
+        \frac{s}{c_x} = \frac{S}{c_x} \frac{\sec \alpha_2}{\tan \alpha_2 - \tan_\alpha_1}
+
     """
 
-    def _integrate_length(chi):
-        """Integrate quadratic camber line length given angles."""
-        xhat = np.linspace(0.,1.);
-        tanchi_lim = np.tan(chi)
-        tanchi = np.diff(tanchi_lim)*xhat + tanchi_lim[0]
-        return np.trapz(np.sqrt(1.+tanchi**2.),xhat)
+    chi = np.array(np.radians((stg.Al[:2],stg.Alrel[1:])))
+    V2 = np.array((stg.V_U[1],stg.Vrel_U[2]))
+    Vt2 = np.array((stg.Vt_U[1],stg.Vtrel_U[2]))
+    Vt1 = np.array((stg.Vt_U[0],stg.Vtrel_U[1]))
+    S0_c = np.array([_integrate_length(chii) for chii in chi])
 
-
-    return [
-            C0 *
-            _integrate_length(chi)
-            / np.cos(chi[1])
-            / np.abs(np.tan(chi[0])-np.tan(chi[1]))
-                for chi in np.radians((stg.Al[:2],stg.Alrel[1:]))
-                ]
-
-
-
+    return C0 * S0_c * V2 / np.abs(Vt1-Vt2)
 
 
 
