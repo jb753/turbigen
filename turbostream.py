@@ -1,9 +1,16 @@
 """Functions for exporting a stage design to Turbostream."""
 import numpy as np
-from ts import ts_tstream_type, ts_tstream_grid, ts_tstream_patch_kind, ts_tstream_default, ts_tstream_load_balance
+from ts import (
+    ts_tstream_type,
+    ts_tstream_grid,
+    ts_tstream_patch_kind,
+    ts_tstream_default,
+    ts_tstream_load_balance,
+)
 import compflow
 
 muref = 1.8e-5
+
 
 def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     # Periodic patches
@@ -138,9 +145,7 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     periodic_dn_2.pid = g.add_patch(bid, periodic_dn_2)
 
     # Slip wall
-    slip_j0 = _make_patch(
-        kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
-    )
+    slip_j0 = _make_patch(kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk))
     slip_nj = _make_patch(
         kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
     )
@@ -274,7 +279,10 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
+def generate(stg, grid, dim_params):
+
+    # Split up the input grid data
+    x, r, rt, ilte = grid
 
     # Make grid, add the blocks
     g = ts_tstream_grid.TstreamGrid()
@@ -284,27 +292,19 @@ def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
     bid_vane = 0
     bid_blade = 1
 
-
     # calc nb
-    rm = np.mean(r[0][0,(0,-1)])
-    t = [rti/ri[...,None] for rti, ri in zip(rt,r)]
-    nb = [np.asscalar(2.*np.pi*rm/np.diff(ti[0,0,(0,-1)],1))
-            for ti in t]
+    rm = np.mean(r[0][0, (0, -1)])
+    t = [rti / ri[..., None] for rti, ri in zip(rt, r)]
+    nb = [np.asscalar(2.0 * np.pi * rm / np.diff(ti[0, 0, (0, -1)], 1)) for ti in t]
 
     ni, nj, nk = zip(*[rti.shape for rti in rt])
 
     # Inlet
     inlet = _make_patch(
-        kind="inlet",
-        bid=bid_vane,
-        i=(0, 1),
-        j=(0, nj[0]),
-        k=(0, nk[0]),
-        dirs=(6, 1, 2)
+        kind="inlet", bid=bid_vane, i=(0, 1), j=(0, nj[0]), k=(0, nk[0]), dirs=(6, 1, 2)
     )
     inlet.pid = g.add_patch(bid_vane, inlet)
-    apply_inlet(g, bid_vane, inlet.pid, Po1, To1, nk[0], nj[0])
-
+    apply_inlet(g, bid_vane, inlet.pid, dim_params['Po1'], dim_params['To1'], nk[0], nj[0])
 
     # Outlet
     outlet = _make_patch(
@@ -314,6 +314,7 @@ def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
     outlet.pid = g.add_patch(bid_blade, outlet)
     g.set_pv("throttle_type", ts_tstream_type.int, bid_blade, outlet.pid, 0)
     g.set_pv("ipout", ts_tstream_type.int, bid_blade, outlet.pid, 3)
+    P3 = dim_params['Po1']*stg.P3_Po1
     g.set_pv("pout", ts_tstream_type.float, bid_blade, outlet.pid, P3)
 
     # Mixing upstream
@@ -346,8 +347,16 @@ def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
     set_variables(g)
 
     # Rotation
-    for bid, rpmi in zip(g.get_block_ids(),[0, rpm_rotor]):
-        set_rotation(g, [bid,], rpmi, spin_j=False)
+    rpm_rotor = dim_params['Omega'] / 2. / np.pi *60.
+    for bid, rpmi in zip(g.get_block_ids(), [0, rpm_rotor]):
+        set_rotation(
+            g,
+            [
+                bid,
+            ],
+            rpmi,
+            spin_j=False,
+        )
 
     # Numbers of blades
     for bid, nbi in zip(g.get_block_ids(), nb):
@@ -357,24 +366,38 @@ def generate(x, r, rt, ilte, rpm_rotor, Po1, To1, P3, stg, ga, rgas):
     set_xllim(g, 0.03)
 
     # Initial guess
-    xg = np.concatenate([x[0][[0,] + ilte[0]],  x[1][ilte[1] + [-1,]]])
-    Pog = np.repeat(stg.Po_Po1 * Po1  , 2)
-    Tog = np.repeat(stg.To_To1 * To1  , 2)
+    xg = np.concatenate(
+        [
+            x[0][
+                [
+                    0,
+                ]
+                + ilte[0]
+            ],
+            x[1][
+                ilte[1]
+                + [
+                    -1,
+                ]
+            ],
+        ]
+    )
+    Pog = np.repeat(stg.Po_Po1 * dim_params['Po1'], 2)
+    Tog = np.repeat(stg.To_To1 * dim_params['To1'], 2)
     Mag = np.repeat(stg.Ma, 2)
     Alg = np.repeat(stg.Al, 2)
 
     for bid in g.get_block_ids():
-        guess_block(g, bid, xg, Pog, Tog, Mag, Alg, ga, rgas)
+        guess_block(g, bid, xg, Pog, Tog, Mag, Alg, stg.ga, dim_params['rgas'])
 
-    cp = rgas * ga / (ga - 1.)
-    g.set_av("ga", ts_tstream_type.float, ga)
+    cp = dim_params['rgas'] * stg.ga / (stg.ga - 1.0)
+    g.set_av("ga", ts_tstream_type.float, stg.ga)
     g.set_av("cp", ts_tstream_type.float, cp)
 
-    ts_tstream_load_balance.load_balance(g, 1, 1.)
+    ts_tstream_load_balance.load_balance(g, 1, 1.0)
 
     # g.write_hdf5(fname)
     return g
-
 
 
 # def run_remote(geomturbo, py_scripts, sh_script, conf_ini):

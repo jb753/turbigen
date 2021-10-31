@@ -2,7 +2,7 @@
 import numpy as np
 import design
 
-# def 
+# def
 
 # Configure numbers of points
 nxb = 97  # Blade chord
@@ -10,6 +10,7 @@ nr = 81  # Span
 nrt = 65  # Pitch
 rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.25  # Distance over which to fillet shroud corners
+
 
 def _cluster(npts):
     """Return a cosinusoidal clustering function with a set number of points."""
@@ -50,9 +51,9 @@ def streamwise_grid(dx_c):
 
     # Stretch clustering outside of blade row
     nxb2 = nxb // 2  # Blade semi-chord
-    x_c = clust + 0.  # Make a copy of clustering function
+    x_c = clust + 0.0  # Make a copy of clustering function
     x_c = np.insert(x_c[1:], 0, clust[nxb2:] - 1.0)  # In front of LE
-    x_c = np.append(x_c[:-1], x_c[-1] + clust[:nxb2+1])  # Behind TE
+    x_c = np.append(x_c[:-1], x_c[-1] + clust[: nxb2 + 1])  # Behind TE
 
     # Numbers of points in inlet/outlet
     # Half a chord subtracted to allow for mesh stretching from LE/TE
@@ -61,22 +62,22 @@ def streamwise_grid(dx_c):
 
     if nxu > 0:
         # Inlet extend inlet if needed
-        x_c = np.insert(x_c[1:], 0, np.linspace(-dx_c[0],x_c[0], nxu))
+        x_c = np.insert(x_c[1:], 0, np.linspace(-dx_c[0], x_c[0], nxu))
     else:
-        # Otherwise truncate and rescale so that inlet is in exact spot 
+        # Otherwise truncate and rescale so that inlet is in exact spot
         x_c = x_c[x_c > -dx_c[0]]
-        x_c[x_c < 0.] = x_c[x_c < 0.] * -dx_c[0]/x_c[0]
+        x_c[x_c < 0.0] = x_c[x_c < 0.0] * -dx_c[0] / x_c[0]
     if nxd > 0:
         # Outlet extend if needed
-        x_c = np.append(x_c[:-1], np.linspace(x_c[-1], dx_c[1] +1., nxd))
+        x_c = np.append(x_c[:-1], np.linspace(x_c[-1], dx_c[1] + 1.0, nxd))
     else:
-        # Otherwise truncate and rescale so that outlet is in exact spot 
-        x_c = x_c[x_c < dx_c[1]+1.]
-        x_c[x_c > 1.] = ((x_c[x_c > 1.] - 1.) * dx_c[1]/(x_c[-1] - 1.) + 1.)
+        # Otherwise truncate and rescale so that outlet is in exact spot
+        x_c = x_c[x_c < dx_c[1] + 1.0]
+        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (x_c[-1] - 1.0) + 1.0
 
     # Get indices of leading and trailing edges
     # These are needed later for patching
-    i_edge = [np.where(x_c == xloc)[0][0] for xloc in [0., 1.]]
+    i_edge = [np.where(x_c == xloc)[0][0] for xloc in [0.0, 1.0]]
     # i_edge[1] = i_edge[1] + 1
 
     return x_c, i_edge
@@ -92,18 +93,18 @@ def merid_grid(x_c, rm, Dr):
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
-    rh = np.interp(x_c, [0., 1.], rm - Dr / 2.0)
-    rc = np.interp(x_c, [0., 1.], rm + Dr / 2.0)
+    rh = np.interp(x_c, [0.0, 1.0], rm - Dr / 2.0)
+    rc = np.interp(x_c, [0.0, 1.0], rm + Dr / 2.0)
 
     # Smooth the corners over a prescribed distance
     design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
-    design._fillet(x_c - 1., rc, dxsmth_c)  # Trailing edge about 1
+    design._fillet(x_c - 1.0, rc, dxsmth_c)  # Trailing edge about 1
 
-    # Define a clustered span fraction row vector 
+    # Define a clustered span fraction row vector
     spf = np.atleast_2d(_cluster(nr))
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
-    r = spf * np.atleast_2d(rc).T + (1.-spf)* np.atleast_2d(rh).T
+    r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
 
     return r
 
@@ -116,16 +117,16 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     nk = nrt
 
     # Dimensional axial coordinates
-    x = np.atleast_3d(x_c).transpose(1,2,0) * c
+    x = np.atleast_3d(x_c).transpose(1, 2, 0) * c
     r = np.atleast_3d(r2)
 
     # Determine number of blades and angular pitch
-    r_m = np.mean(r[0,(0,-1),0])
-    nblade = np.round(2.*np.pi*r_m/(s_c*c))  # Nearest whole number
-    pitch_t = 2*np.pi*r_m/nblade
+    r_m = np.mean(r[0, (0, -1), 0])
+    nblade = np.round(2.0 * np.pi * r_m / (s_c * c))  # Nearest whole number
+    pitch_t = 2 * np.pi * r_m / nblade
 
     # Preallocate and loop over radial stations
-    rtlim = np.nan * np.ones((ni,nj,2))
+    rtlim = np.nan * np.ones((ni, nj, 2))
     for j in range(nj):
 
         # Retrieve blade section
@@ -134,59 +135,49 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         # Get centroid for stacking
         Area = np.trapz(sec_rt1 - sec_rt0, sec_x)
         rt_cent = (
-                np.trapz( 0.5
-                    * (sec_rt1 - sec_rt0)
-                    * (sec_rt1 + sec_rt0),
-                    sec_x)
-                / Area
-            )
+            np.trapz(0.5 * (sec_rt1 - sec_rt0) * (sec_rt1 + sec_rt0), sec_x) / Area
+        )
 
         # Stack with centroid at t=0
         sec_rt0 -= rt_cent
         sec_rt1 -= rt_cent
 
-        rtlim[:,j,0] = np.interp(x[:,0,0], sec_x, sec_rt0)
-        rtlim[:,j,1] = np.interp(x[:,0,0], sec_x, sec_rt1) + pitch_t * r[:,j,0]
+        rtlim[:, j, 0] = np.interp(x[:, 0, 0], sec_x, sec_rt0)
+        rtlim[:, j, 1] = np.interp(x[:, 0, 0], sec_x, sec_rt1) + pitch_t * r[:, j, 0]
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = np.atleast_3d(_cluster(nk)).transpose(2,0,1)
+    clust = np.atleast_3d(_cluster(nk)).transpose(2, 0, 1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate
-    unif_rt = np.atleast_3d(np.linspace(0.0, 1.0, nk)).transpose(2,0,1)
+    unif_rt = np.atleast_3d(np.linspace(0.0, 1.0, nk)).transpose(2, 0, 1)
     relax = np.ones_like(x_c)
-    relax[x_c<0.] = 1.+x_c[x_c<0.]/rate
-    relax[x_c>1.] = 1.-(x_c[x_c>1.]-1.)/rate
-    relax[relax<0.] = 0.
-    clust = relax[:,None,None]*clust + (1.-relax[:,None,None])*unif_rt
+    relax[x_c < 0.0] = 1.0 + x_c[x_c < 0.0] / rate
+    relax[x_c > 1.0] = 1.0 - (x_c[x_c > 1.0] - 1.0) / rate
+    relax[relax < 0.0] = 0.0
+    clust = relax[:, None, None] * clust + (1.0 - relax[:, None, None]) * unif_rt
 
     # Fill in the intermediate pitchwise points using clustering function
-    rt = rtlim[...,(0,)] + np.diff(rtlim,1,2) * clust
+    rt = rtlim[..., (0,)] + np.diff(rtlim, 1, 2) * clust
 
     return rt
 
 
-def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Co):
+def stage_grid(stg, rm, Dr, s, c, dev, dx_c):
+
     # Separate spacings for stator and rotor
-    dx_c_sr = ((dx_c[0],dx_c[1]/2.),(dx_c[1]/2.,dx_c[2]))
+    dx_c_sr = ((dx_c[0], dx_c[1] / 2.0), (dx_c[1] / 2.0, dx_c[2]))
 
     # Streamwise grids for stator and rotor require
     x_c, ilte = zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c_sr])
 
-    # Annulus line 
-    rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
-
     # Generate radial grid
-    Dr_sr = (Dr[:2],Dr[1:])
+    Dr_sr = (Dr[:2], Dr[1:])
     r = [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr_sr)]
 
     # Evaluate blade angles
-    r_rm = np.concatenate([ri[iltei,:]/rm for ri, iltei in zip(r, ilte)])
-    chi = design.free_vortex(stg, r_rm[(0,1,3),:], (0.,0.))
-
-    # Pitches and chords
-    s_c = design.pitch_circulation(stg, Co)
-    c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+    r_rm = np.concatenate([ri[iltei, :] / rm for ri, iltei in zip(r, ilte)])
+    chi = design.free_vortex(stg, r_rm[(0, 1, 3), :], (0.0, 0.0))
 
     # Dimensionalise x
     x = [x_ci * c for x_ci in x_c]
@@ -195,7 +186,7 @@ def stage_grid(stg, cpTo1, htr, Omega, Po1, Re, rgas, dev, dx_c, Co):
     x[1] = x[1] + x[0][-1] - x[1][0]
 
     # Now we can do b2b grids
+    s_c = s/c
     rt = [b2b_grid(*argsi, c=c) for argsi in zip(x_c, r, chi, s_c)]
 
     return x, r, rt, ilte
-

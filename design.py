@@ -9,7 +9,7 @@ from collections import namedtuple
 
 expon = 0.62
 muref = 1.8e-5
-Tref = 288.
+Tref = 288.0
 
 # Define a namedtuple to store all information about a stage design
 stage_vars = {
@@ -30,23 +30,26 @@ stage_vars = {
     "Vtrel_U": r"Normalised relative tangential velocities, :math:`V^\rel_\theta/U` [--]",
     "V_U": r"Normalised velocities, :math:`V/U` [--]",
     "Vrel_U": r"Normalised relative velocities, :math:`V/U` [--]",
+    "P3_Po1": r"Total-to-static stage pressure ratio, :math:`p_3/p_{01}` [--]",
 }
 NonDimStage = namedtuple("NonDimStage", stage_vars.keys())
 
-#NonDimStage.__doc__ = (
+# NonDimStage.__doc__ = (
 #    "Data class to hold geometry and derived flow parameters of a "
 #    "turbine stage mean-line design."
-#)
+# )
 
-#for vi in stage_vars:
+# for vi in stage_vars:
 #    getattr(NonDimStage, vi).__doc__ = stage_vars[vi]
+
 
 def _integrate_length(chi):
     """Integrate quadratic camber line length given angles."""
-    xhat = np.linspace(0.,1.);
+    xhat = np.linspace(0.0, 1.0)
     tanchi_lim = np.tan(chi)
-    tanchi = np.diff(tanchi_lim)*xhat + tanchi_lim[0]
-    return np.trapz(np.sqrt(1.+tanchi**2.),xhat)
+    tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
+    return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
+
 
 def nondim_stage_from_Al(
     phi,  # Flow coefficient [--]
@@ -181,6 +184,7 @@ def nondim_stage_from_Al(
         Vtrel_U=Vtrel_U,
         V_U=V_U,
         Vrel_U=Vrel_U,
+        P3_Po1= P_Po1[2]
     )
 
     return stg
@@ -259,14 +263,10 @@ def nondim_stage_from_Lam(
 
     # Start the Newton iteration at minimum error point
     i0 = np.argmin(np.abs(Lam_guess))
-    Al_soln = scipy.optimize.newton(
-        iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1]
-    )
+    Al_soln = scipy.optimize.newton(iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1])
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
-    stg_out = nondim_stage_from_Al(
-        phi, psi, [Al1, Al_soln], Ma, ga, eta, Vx_rat
-    )
+    stg_out = nondim_stage_from_Al(phi, psi, [Al1, Al_soln], Ma, ga, eta, Vx_rat)
 
     return stg_out
 
@@ -383,9 +383,7 @@ def blade_section(chi, a=0.0):
     tadd = tmax - (tle + xtmax * (tte - tle))
 
     # Total thickness
-    thick = tlin + tadd * (
-        1.0 - np.abs(xtrans - 0.5) ** tk_typ / (0.5 ** tk_typ)
-    )
+    thick = tlin + tadd * (1.0 - np.abs(xtrans - 0.5) ** tk_typ / (0.5 ** tk_typ))
 
     # Thin the leading and trailing edges
     xhat1 = 1.0 - xhat
@@ -445,9 +443,7 @@ def pitch_Zweifel(stg, Z):
 
     Alrelr = np.radians(stg.Alrel)
     cosAlrel = np.cos(Alrelr)
-    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(
-        Alrelr
-    )
+    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(Alrelr)
 
     P2_Po1 = stg.Po_Po1[1] / compflow.Po_P_from_Ma(stg.Ma[1], stg.ga)
     P3_Po2_rel = (
@@ -485,6 +481,7 @@ def pitch_Zweifel(stg, Z):
 
     return s_c_stator, s_c_rotor
 
+
 def pitch_circulation(stg, C0):
     r"""Calculate pitch-to-chord ratios using circulation coefficient.
 
@@ -507,14 +504,13 @@ def pitch_circulation(stg, C0):
 
     """
 
-    chi = np.array(np.radians((stg.Al[:2],stg.Alrel[1:])))
-    V2 = np.array((stg.V_U[1],stg.Vrel_U[2]))
-    Vt2 = np.array((stg.Vt_U[1],stg.Vtrel_U[2]))
-    Vt1 = np.array((stg.Vt_U[0],stg.Vtrel_U[1]))
+    chi = np.array(np.radians((stg.Al[:2], stg.Alrel[1:])))
+    V2 = np.array((stg.V_U[1], stg.Vrel_U[2]))
+    Vt2 = np.array((stg.Vt_U[1], stg.Vtrel_U[2]))
+    Vt1 = np.array((stg.Vt_U[0], stg.Vtrel_U[1]))
     S0_c = np.array([_integrate_length(chii) for chii in chi])
 
-    return C0 * S0_c * V2 / np.abs(Vt1-Vt2)
-
+    return C0 * S0_c * V2 / np.abs(Vt1 - Vt2)
 
 
 def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
@@ -580,7 +576,8 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     # Use specified Reynolds number to set chord
     return Re * mu2 / rho2 / V2
 
-def free_vortex(stg,r_rm, dev):
+
+def free_vortex(stg, r_rm, dev):
     r"""Return free-vortex radial distributions of metal angles.
 
     Given the mean-line design and a vector of radius ratios across the span,
@@ -609,26 +606,25 @@ def free_vortex(stg,r_rm, dev):
 
     # Twist blades in a free vortex
     chi_vane = np.degrees(
-        np.arctan(
-            np.tan(np.radians(np.atleast_2d(stg.Al[:2])).T) / r_rm[:2,:]
-        )
+        np.arctan(np.tan(np.radians(np.atleast_2d(stg.Al[:2])).T) / r_rm[:2, :])
     )
     chi_blade = np.degrees(
         np.arctan(
-            np.tan(np.radians(np.atleast_2d(stg.Al[1:])).T)
-            / r_rm[2:,:] - r_rm[2:,:] / stg.phi
+            np.tan(np.radians(np.atleast_2d(stg.Al[1:])).T) / r_rm[2:, :]
+            - r_rm[2:, :] / stg.phi
         )
     )
 
     # Determine the direction of turning
-    turn_dir_vane = 1. if (stg.Al[1] - stg.Al[0]) > 0. else -1.
-    turn_dir_blade = 1. if (stg.Alrel[1] - stg.Alrel[0]) > 0. else -1.
+    turn_dir_vane = 1.0 if (stg.Al[1] - stg.Al[0]) > 0.0 else -1.0
+    turn_dir_blade = 1.0 if (stg.Alrel[1] - stg.Alrel[0]) > 0.0 else -1.0
 
     # Apply deviation
-    chi_vane[1,:] += turn_dir_vane * dev[0]
-    chi_blade[1,:] -= turn_dir_blade * dev[1]
+    chi_vane[1, :] += turn_dir_vane * dev[0]
+    chi_blade[1, :] -= turn_dir_blade * dev[1]
 
     return chi_vane, chi_blade
+
 
 def _fillet(x, r, dx):
     # Get indices for the points at boundary of fillet
@@ -820,8 +816,7 @@ def blade_to_blade_mesh(x, r, ii, chi, nrt, s_c, a=0.0):
     lin_x_dn3 = lin_x_dn[..., None, None]
 
     rt[: ii[0], :, :] = (
-        rt[0, :, :][None, ...]
-        + (rt[ii[0], :, :] - rt[0, :, :])[None, ...] * lin_x_up3
+        rt[0, :, :][None, ...] + (rt[ii[0], :, :] - rt[0, :, :])[None, ...] * lin_x_up3
     )
     rt[ii[1] :, :, :] = (
         rt[-1, :, :][None, ...]
@@ -830,6 +825,31 @@ def blade_to_blade_mesh(x, r, ii, chi, nrt, s_c, a=0.0):
 
     return rt
 
+def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co):
+    """Scale a mean-line design and evaluate geometry."""
+
+    # Assuming perfect gas get cp
+    cp = rgas * stg.ga / (stg.ga - 1.0)
+    cpTo1 = cp*To1
+
+    # Annulus line
+    rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
+
+    # Chord
+    c = chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+
+    # Pitches
+    s_c = pitch_circulation(stg, Co)
+    s = s_c * c
+
+    geom_params = {
+        "rm": rm,
+        "Dr": Dr,
+        "c": c,
+        "s": s,
+    }
+
+    return geom_params
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):
     """Write blade and annulus geometry to AutoGrid GeomTurbo file.
