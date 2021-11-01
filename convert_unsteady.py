@@ -1,6 +1,5 @@
 """This script reads a steady TS solution and creates an unsteady input file."""
-import numpy as np  # Multidimensional array library
-# Load some TS librays
+import numpy as np
 from ts import ts_tstream_reader, ts_tstream_steady_to_unsteady, ts_tstream_type
 from ts import ts_tstream_load_balance, ts_tstream_patch_kind
 import sys
@@ -9,7 +8,7 @@ import sys
 
 # Number of rotor blade passing periods to run for
 # Change me so that the computaion reaches a periodic state
-ncycle = 16
+ncycle = 32
 
 # Time steps per cycle 
 nstep_cycle = 72
@@ -61,12 +60,11 @@ def convert(input_file, output_file):
     dup = np.round(dt_sect/ dt).astype(int)
     scale = dt_sect / dup / dt
     nb_sect = (dup * sect).astype(int)
-    nb_sect_float = nb_sect.astype(np.float32)
 
 
-    # Set blade passing frequency
+    # Set frequency based on vane passing
     rpm = g.get_bv('rpm',bids[-1])
-    freq = rpm / 60. * nb_sect[-1]
+    freq = rpm / 60. * nb_sect[0]
     print('frequency f=%.1f Hz' % freq)
 
     # Hard-code the periodic patch connections (sorry)

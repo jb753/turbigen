@@ -1,3 +1,4 @@
+"""Generate and run a Turbostream job using a set of input parameters."""
 import design, turbostream, hmesh
 import json, glob, os, shutil
 
@@ -24,7 +25,6 @@ def read_params(params_file_name):
     with open(params_file_name,"r") as f:
         return json.load(f)
 
-
 def _new_id( base_dir ):
     """Return an integer for the first vacant run identifier number."""
 
@@ -43,6 +43,7 @@ def _new_id( base_dir ):
     return new_sim_id
 
 def run(params, base_dir):
+    """Submit a cluster job corresponding to the given parameter set."""
 
     # Make a working directory with unique filename
     new_id = _new_id( base_dir )
@@ -74,8 +75,11 @@ def run(params, base_dir):
 
 if __name__=="__main__":
 
-    params = read_params('params.json')
+    # Load default values for the parameters
+    params = read_params('default_params.json')
 
-    run(params, 'run')
+    # Change the base run dir to separate different groups of runs
+    base_run_dir = 'run'
 
-
+    # Submit a job to the cluster
+    run(params, base_run_dir)
