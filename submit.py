@@ -1,4 +1,4 @@
-"""Generate and run a Turbostream job using a set of input parameters."""
+"""Generate and submit a Turbostream job using a set of input parameters."""
 import design, turbostream, hmesh
 import json, glob, os, shutil
 
@@ -72,14 +72,3 @@ def run(params, base_dir):
     os.chdir('..')
 
     return jid
-
-if __name__=="__main__":
-
-    # Load default values for the parameters
-    params = read_params('default_params.json')
-
-    # Change the base run dir to separate different groups of runs
-    base_run_dir = 'run'
-
-    # Submit a job to the cluster
-    run(params, base_run_dir)
