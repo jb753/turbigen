@@ -10,11 +10,11 @@ import sys
 # Change me so that the computaion reaches a periodic state
 ncycle = 64
 
-# Time steps per cycle 
+# Time steps per cycle
 nstep_cycle = 72
 
 # Which time step to start saving probes
-nstep_save_start =  (ncycle-1)*nstep_cycle
+nstep_save_start = (ncycle - 1) * nstep_cycle
 
 # Number of time steps between probes
 nstep_save_probe = 1
@@ -30,14 +30,14 @@ def convert(input_file, output_file):
     # Add probes at mid-span
     for bid in bids:
         b = g.get_block(bid)
-        jmid = b.nj//2
+        jmid = b.nj // 2
         p = ts_tstream_type.TstreamPatch()
         p.kind = ts_tstream_patch_kind.probe
         p.bid = bid
         p.ist = 0
         p.ien = b.ni
         p.jst = jmid
-        p.jen = jmid+1
+        p.jen = jmid + 1
         p.kst = 0
         p.ken = b.nk
         p.nxbid = 0
@@ -46,43 +46,39 @@ def convert(input_file, output_file):
         p.jdir = 1
         p.kdir = 2
         p.pid = g.add_patch(bid, p)
-        g.set_pv('probe_append', ts_tstream_type.int, p.bid, p.pid, 1)
+        g.set_pv("probe_append", ts_tstream_type.int, p.bid, p.pid, 1)
 
     # Get numbers of blades and circumferential extents
-    nb = np.array([g.get_bv('nblade',bid) for bid in bids])
-    dt = 2. * np.pi / nb
+    nb = np.array([g.get_bv("nblade", bid) for bid in bids])
+    dt = 2.0 * np.pi / nb
 
     # Duplicate to 8th annulus
-    sect = 8.
-    dt_sect = 2. * np.pi / sect
+    sect = 8.0
+    dt_sect = 2.0 * np.pi / sect
 
     # Get blade numbers for the sector
-    dup = np.round(dt_sect/ dt).astype(int)
+    dup = np.round(dt_sect / dt).astype(int)
     scale = dt_sect / dup / dt
     nb_sect = (dup * sect).astype(int)
 
-
     # Set frequency based on vane passing
-    rpm = g.get_bv('rpm',bids[-1])
-    freq = rpm / 60. * nb_sect[0]
-    print('frequency f=%.1f Hz' % freq)
+    rpm = g.get_bv("rpm", bids[-1])
+    freq = rpm / 60.0 * nb_sect[0]
+    print("frequency f=%.1f Hz" % freq)
 
     # Hard-code the periodic patch connections (sorry)
     periodic = {}
-    periodic[0] = (0,0)
-    periodic[1] = (0,2)
-    periodic[2] = (1,0)
-    periodic[3] = (1,2)
+    periodic[0] = (0, 0)
+    periodic[1] = (0, 2)
+    periodic[2] = (1, 0)
+    periodic[3] = (1, 2)
 
     # Duplicate the grid to form the sector
-    g2 = ts_tstream_steady_to_unsteady.steady_to_unsteady(
-            g, dup, scale, periodic
-            )
-
+    g2 = ts_tstream_steady_to_unsteady.steady_to_unsteady(g, dup, scale, periodic)
 
     # variables for unsteady run
     g2.set_av("ncycle", ts_tstream_type.int, ncycle)
-    g2.set_av("frequency", ts_tstream_type.float,  freq)
+    g2.set_av("frequency", ts_tstream_type.float, freq)
 
     g2.set_av("nstep_cycle", ts_tstream_type.int, nstep_cycle)
     g2.set_av("nstep_inner", ts_tstream_type.int, 100)
@@ -111,7 +107,7 @@ def convert(input_file, output_file):
     g2.set_av("poisson_restart", ts_tstream_type.int, 1)
     g2.set_av("poisson_nstep", ts_tstream_type.int, 0)
 
-    # load balance for 
+    # load balance for
     ts_tstream_load_balance.load_balance(g2, 1)
 
     # Reset spurious application variable
@@ -121,9 +117,9 @@ def convert(input_file, output_file):
     # write out unsteady input file
     g2.write_hdf5(output_file)
 
-    print('Old blade counts [%d %d]' % tuple(nb))
-    print('Scaled blade counts [%d %d] x %d' % (dup[0], dup[1], sect))
-    print('Scaling factors [%f %f]' % tuple(scale))
+    print("Old blade counts [%d %d]" % tuple(nb))
+    print("Scaled blade counts [%d %d] x %d" % (dup[0], dup[1], sect))
+    print("Scaling factors [%f %f]" % tuple(scale))
 
 
 if __name__ == "__main__":

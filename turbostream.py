@@ -65,7 +65,6 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     r = np.repeat(rin[:, :, None], nk, axis=2)
     x = np.tile(xin[:, None, None], (1, nj, nk))
 
-
     # Permute the coordinates into C-style ordering
     # Turbostream is very fussy about this
     xp = np.zeros((nk, nj, ni), np.float32)
@@ -146,8 +145,8 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     periodic_dn_2.pid = g.add_patch(bid, periodic_dn_2)
 
     # Add slip walls if this is a cascade
-    htr = r[0,1,0]/r[0,0,0]
-    if (htr>0.95):
+    htr = r[0, 1, 0] / r[0, 0, 0]
+    if htr > 0.95:
         slip_j0 = _make_patch(kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk))
         slip_nj = _make_patch(
             kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
@@ -294,7 +293,9 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
 
     # calc nb
     t = [rti / ri[..., None] for rti, ri in zip(rt, r)]
-    nb = [np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1))) for ti in t]
+    nb = [
+        np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1))) for ti in t
+    ]
     nb_int = [int(nbi) for nbi in nb]
 
     ni, nj, nk = zip(*[rti.shape for rti in rt])
@@ -314,7 +315,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     outlet.pid = g.add_patch(bid_blade, outlet)
     g.set_pv("throttle_type", ts_tstream_type.int, bid_blade, outlet.pid, 0)
     g.set_pv("ipout", ts_tstream_type.int, bid_blade, outlet.pid, 3)
-    P3 = Po1*stg.P3_Po1
+    P3 = Po1 * stg.P3_Po1
     g.set_pv("pout", ts_tstream_type.float, bid_blade, outlet.pid, P3)
 
     # Mixing upstream
@@ -347,7 +348,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     set_variables(g)
 
     # Rotation
-    rpm_rotor = Omega / 2. / np.pi *60.
+    rpm_rotor = Omega / 2.0 / np.pi * 60.0
     for bid, rpmi in zip(g.get_block_ids(), [0, rpm_rotor]):
         set_rotation(
             g,
@@ -398,6 +399,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
 
     # g.write_hdf5(fname)
     return g
+
 
 # def run_remote(geomturbo, py_scripts, sh_script, conf_ini):
 #     """Copy a geomturbo file to gp-111 and run autogrid using scripts."""

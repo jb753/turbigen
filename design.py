@@ -184,7 +184,7 @@ def nondim_stage_from_Al(
         Vtrel_U=Vtrel_U,
         V_U=V_U,
         Vrel_U=Vrel_U,
-        P3_Po1= P_Po1[2]
+        P3_Po1=P_Po1[2],
     )
 
     return stg
@@ -825,12 +825,13 @@ def blade_to_blade_mesh(x, r, ii, chi, nrt, s_c, a=0.0):
 
     return rt
 
+
 def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co):
     """Scale a mean-line design and evaluate geometry."""
 
     # Assuming perfect gas get cp
     cp = rgas * stg.ga / (stg.ga - 1.0)
-    cpTo1 = cp*To1
+    cpTo1 = cp * To1
 
     # Annulus line
     rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
@@ -843,6 +844,7 @@ def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co):
     s = s_c * c
 
     return rm, Dr, s, c
+
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):
     """Write blade and annulus geometry to AutoGrid GeomTurbo file.

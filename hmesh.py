@@ -102,14 +102,13 @@ def merid_grid(x_c, rm, Dr):
     design._fillet(x_c - 1.0, rc, dxsmth_c)  # Trailing edge about 1
 
     # Check htr to decide if this is a cascade
-    htr = rc[0]/rh[0]
-    if (htr > 0.95):
+    htr = rc[0] / rh[0]
+    if htr > 0.95:
         # Define a uniform span fraction row vector
-        spf = np.atleast_2d(np.linspace(0.,1.,nr_casc))
+        spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
         # Define a clustered span fraction row vector
         spf = np.atleast_2d(_cluster(nr))
-    
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -195,7 +194,7 @@ def stage_grid(stg, rm, Dr, s, c, dev, dx_c):
     x[1] = x[1] + x[0][-1] - x[1][0]
 
     # Now we can do b2b grids
-    s_c = s/c
+    s_c = s / c
     rt = [b2b_grid(*argsi, c=c) for argsi in zip(x_c, r, chi, s_c)]
 
     return x, r, rt, ilte
