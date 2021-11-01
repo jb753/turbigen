@@ -39,7 +39,7 @@ The default parameters are representative of a large industrial gas turbine.
 Shown below is a list of the defaults; all may be changed. The hub-to-tip ratio
 is high to approximate a linear cascade.
 
-```python
+```
 default_params.json
 {
     "mean-line": {
