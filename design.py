@@ -842,14 +842,7 @@ def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co):
     s_c = pitch_circulation(stg, Co)
     s = s_c * c
 
-    geom_params = {
-        "rm": rm,
-        "Dr": Dr,
-        "c": c,
-        "s": s,
-    }
-
-    return geom_params
+    return rm, Dr, s, c
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):
     """Write blade and annulus geometry to AutoGrid GeomTurbo file.
