@@ -9,14 +9,14 @@ cases using Turbostream.
 ## Basic usage
 
 1. Set up the Turbostream environment,
-```
-source /usr/local/software/turbostream/ts3610/bashrc_module_ts3610
-```
+   ```
+   source /usr/local/software/turbostream/ts3610/bashrc_module_ts3610
+   ```
 
 2. To run a case with the default parameters use,
-```
-    python run_default.py
-```
+   ```
+   python run_default.py
+   ```
 
 3. After about an hour, unsteady snapshot results will be available in a
    numbered directory `run/0000` in the form of compressed `dbslice.npz` files.
