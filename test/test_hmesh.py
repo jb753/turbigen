@@ -1,8 +1,8 @@
 """Tests for the hmesh module"""
 import numpy as np
 import compflow as cf
-from turbogen.hmesh import *
-from turbogen import design
+from turbigen.hmesh import *
+from turbigen import design
 
 # Begin test functions
 
@@ -134,7 +134,7 @@ def test_b2b():
     # Angular pitch should never be more than reference value
     # And equal to the reference value outside of the blade row
     nblade = np.round(2.0 * np.pi * rm / (s_c[0] * c))
-    pitch_t = 2.0 * np.pi * rm / nblade
+    pitch_t = 2.0 * np.pi / nblade
     t = rt / r_stator[..., None]
     dt = t[:, :, -1] - t[:, :, 0]
     tol = 1e-6

@@ -147,7 +147,7 @@ def add_to_grid(g, xin, rin, rtin, ilte):
 
     # Add slip walls if this is a cascade
     htr = r[0,1,0]/r[0,0,0]
-    if (htr>0.99):
+    if (htr>0.95):
         slip_j0 = _make_patch(kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk))
         slip_nj = _make_patch(
             kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
@@ -293,9 +293,9 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     bid_blade = 1
 
     # calc nb
-    rm = np.mean(r[0][0, (0, -1)])
     t = [rti / ri[..., None] for rti, ri in zip(rt, r)]
-    nb = [np.asscalar(2.0 * np.pi * rm / np.diff(ti[0, 0, (0, -1)], 1)) for ti in t]
+    nb = [np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1))) for ti in t]
+    nb_int = [int(nbi) for nbi in nb]
 
     ni, nj, nk = zip(*[rti.shape for rti in rt])
 
@@ -359,9 +359,9 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
         )
 
     # Numbers of blades
-    for bid, nbi in zip(g.get_block_ids(), nb):
+    for bid, nbi, nb_inti in zip(g.get_block_ids(), nb, nb_int):
         g.set_bv("fblade", ts_tstream_type.float, bid, nbi)
-        g.set_bv("nblade", ts_tstream_type.int, bid, nbi)
+        g.set_bv("nblade", ts_tstream_type.int, bid, nb_inti)
 
     set_xllim(g, 0.03)
 

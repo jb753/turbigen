@@ -61,6 +61,8 @@ def convert(input_file, output_file):
     dup = np.round(dt_sect/ dt).astype(int)
     scale = dt_sect / dup / dt
     nb_sect = (dup * sect).astype(int)
+    nb_sect_float = nb_sect.astype(np.float32)
+
 
     # Set blade passing frequency
     rpm = g.get_bv('rpm',bids[-1])
@@ -78,6 +80,7 @@ def convert(input_file, output_file):
     g2 = ts_tstream_steady_to_unsteady.steady_to_unsteady(
             g, dup, scale, periodic
             )
+
 
     # variables for unsteady run
     g2.set_av("ncycle", ts_tstream_type.int, ncycle)
@@ -101,7 +104,7 @@ def convert(input_file, output_file):
     g2.set_av("facsafe", ts_tstream_type.float, 0.2)
     g2.set_av("dts", ts_tstream_type.int, 1)
 
-    # No multigrid
+    # No multigrid, set blade numbers
     for bid in g2.get_block_ids():
         g2.set_bv("fmgrid", ts_tstream_type.float, bid, 0.0)
 

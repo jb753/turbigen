@@ -1,8 +1,8 @@
 """Tests for the design module"""
 import numpy as np
 import compflow as cf
-from turbogen.design import *
-from turbogen.design import _integrate_length
+from turbigen.design import *
+from turbigen.design import _integrate_length
 
 # Set up test data
 

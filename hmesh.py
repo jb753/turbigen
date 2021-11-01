@@ -103,7 +103,7 @@ def merid_grid(x_c, rm, Dr):
 
     # Check htr to decide if this is a cascade
     htr = rc[0]/rh[0]
-    if (htr > 0.99):
+    if (htr > 0.95):
         # Define a uniform span fraction row vector
         spf = np.atleast_2d(np.linspace(0.,1.,nr_casc))
     else:
@@ -130,8 +130,9 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
 
     # Determine number of blades and angular pitch
     r_m = np.mean(r[0, (0, -1), 0])
+
     nblade = np.round(2.0 * np.pi * r_m / (s_c * c))  # Nearest whole number
-    pitch_t = 2 * np.pi * r_m / nblade
+    pitch_t = 2 * np.pi / nblade
 
     # Preallocate and loop over radial stations
     rtlim = np.nan * np.ones((ni, nj, 2))

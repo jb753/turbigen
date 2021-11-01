@@ -55,6 +55,9 @@ def run(params, base_dir):
     shutil.copy(os.path.join(slurm_template),workdir)
     new_slurm = os.path.join(workdir,slurm_template)
 
+    # Append run id to the slurm job name
+    os.system("sed -i 's/turbigen/turbigen_%04d/' %s" % (new_id, new_slurm))
+
     # Generate input file
     write_hdf5_from_dict(params, os.path.join(workdir,'input_1.hdf5'))
 
