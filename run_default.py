@@ -1,4 +1,4 @@
-import submit
+import submit, os
 
 # Load default values for the parameters
 params = submit.read_params('default_params.json')

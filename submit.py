@@ -45,6 +45,10 @@ def _new_id( base_dir ):
 def run(params, base_dir):
     """Submit a cluster job corresponding to the given parameter set."""
 
+    # Make the base dir if it does not exist already
+    if not os.path.isdir(base_dir):
+        os.mkdir(base_dir)
+
     # Make a working directory with unique filename
     new_id = _new_id( base_dir )
     workdir = os.path.join(base_dir,"%04d" % new_id)
@@ -57,7 +61,7 @@ def run(params, base_dir):
     new_slurm = os.path.join(workdir,slurm_template)
 
     # Append run id to the slurm job name
-    os.system("sed -i 's/turbigen/turbigen_%04d/' %s" % (new_id, new_slurm))
+    os.system("sed -i 's/turbigen/turbigen_%s_%04d/' %s" % (base_dir, new_id, new_slurm))
 
     # Generate input file
     write_hdf5_from_dict(params, os.path.join(workdir,'input_1.hdf5'))
@@ -69,6 +73,6 @@ def run(params, base_dir):
     # Change to the working director and run
     os.chdir(workdir)
     jid = int(os.popen("sbatch %s" % slurm_template).read().split(" ")[-1])
-    os.chdir('..')
+    os.chdir('../..')
 
     return jid

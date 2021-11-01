@@ -8,7 +8,7 @@ import sys
 
 # Number of rotor blade passing periods to run for
 # Change me so that the computaion reaches a periodic state
-ncycle = 32
+ncycle = 64
 
 # Time steps per cycle 
 nstep_cycle = 72
