@@ -80,11 +80,6 @@ if __name__ == "__main__":
     g = tsr.read(output_hdf5)
 
     # Here we extract some parameters from the TS grid to use later
-
-    rpm = np.array(
-        [g.get_bv("rpm", bid) for bid in g.get_block_ids()]
-    )  # RPM in rotor row
-    Omega = rpm / 60.0 * np.pi * 2.0
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio
     rgas = cp * (1.0 - 1.0 / ga)
@@ -99,12 +94,15 @@ if __name__ == "__main__":
 
     # Iterate over all probe patches
     vars_all = []
+    dijk_all = []
     for bid in g.get_block_ids():
 
         rpm_now = g.get_bv("rpm", bid)
 
         for pid in g.get_patch_ids(bid):
             patch = g.get_patch(bid, pid)
+
+
             if patch.kind == ts_tstream_patch_kind.probe:
 
                 print("Reading probe bid=%d pid=%d" % (bid, pid))
@@ -112,6 +110,9 @@ if __name__ == "__main__":
                 di = patch.ien - patch.ist
                 dj = patch.jen - patch.jst
                 dk = patch.ken - patch.kst
+
+                dijk_all.append((di, dj, dk))
+
                 fname_now = output_hdf5.replace(
                     ".hdf5", "_probe_%d_%d.dat" % (bid, pid)
                 )
@@ -137,10 +138,18 @@ if __name__ == "__main__":
                     )
                 )
 
+# Determine number of stators and rotors
+rpms = np.array([g.get_bv("rpm",bidi) for bidi in g.get_block_ids()])
+nstator = np.sum(rpms==0.)
+nrotor = np.sum(rpms!=0.)
+
 # Join the grid points from all probes together
 var_out = np.concatenate(vars_all, axis=1)
 print(var_out.shape)
 
+print(dijk_all)
+print(nstator,nrotor)
+
 # Write out
-np.save("dbslice", var_out)
-np.savez_compressed("dbslice", data=var_out)
+#np.save("dbslice", var_out)
+np.savez_compressed("dbslice", data=var_out, sizes=dijk_all, nsr=(nstator,nrotor))
