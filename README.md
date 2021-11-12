@@ -20,6 +20,8 @@ cases using Turbostream.
 
 3. After about an hour, unsteady snapshot results will be available in a
    numbered directory `run/0000` in the form of compressed `dbslice.npz` files.
+   The input parameters for this case are stored in `params.json`, and metadata
+   calculated from the solution in `meta.json`.
 
 4. To run a case with amended parameters, edit the parameters dictionary. For
    example, a sweep in flow coefficient would look like,
@@ -67,6 +69,18 @@ default_params.json
         "dev" : [0.0, 0.0]  # Guesses for deviation of stator, rotor [deg]
     }
 }
+```
+
+## Post processing
+
+At the end of the unsteady computation, `write_dbslice.py` reads in the
+time-averaged solution and the time-resolved probe data. Then, any quantity of
+interest may be calculated and saved to `meta.json`.
+
+After making a change to the `write_dbslice.py` script, one can re-process all
+data using this shell command,
+```
+find -name "output_2_avg.hdf5" -exec python write_dbslice.py {} \; 
 ```
 
 James Brind
