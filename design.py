@@ -249,8 +249,15 @@ def nondim_stage_from_Lam(
 
     # Evaluate guesses over entire possible yaw angle range
     Al_guess = np.linspace(-89.0, 89.0, 9)
-    with np.errstate(invalid="ignore"):
-        Lam_guess = np.array([iter_Al(Ali) for Ali in Al_guess])
+    Lam_guess = np.zeros_like(Al_guess)
+
+    # Catch errors if this guess of angle is horrible/non-physical
+    for i in range(len(Al_guess)):
+        with np.errstate(invalid="ignore"):
+            try:
+                Lam_guess[i] = iter_Al(Al_guess[i])
+            except ValueError:
+                Lam_guess[i] = np.nan
 
     # Remove invalid values
     Al_guess = Al_guess[~np.isnan(Lam_guess)]
