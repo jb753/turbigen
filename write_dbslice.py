@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
                 fname_now = output_hdf5.replace(
                     ".hdf5", "_probe_%d_%d.dat" % (bid, pid)
-                )
+                ).replace("_avg","")
 
                 dat_now = read_dat(fname_now, (di, dj, dk))
                 dat_now = secondary(dat_now, rpm_now, cp, ga)
