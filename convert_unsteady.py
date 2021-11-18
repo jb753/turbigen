@@ -8,13 +8,10 @@ import sys
 
 # Number of rotor blade passing periods to run for
 # Change me so that the computaion reaches a periodic state
-ncycle = 64
+ncycle = 128
 
 # Time steps per cycle
 nstep_cycle = 72
-
-# Which time step to start saving probes
-nstep_save_start = (ncycle - 1) * nstep_cycle
 
 # Number of time steps between probes
 nstep_save_probe = 1
@@ -85,6 +82,9 @@ def convert(input_file, output_file):
 
     # disable saving of snapshots
     g2.set_av("nstep_save", ts_tstream_type.int, 999999)
+
+    # Which time step to start saving probes
+    nstep_save_start = (ncycle - nb_sect[-1]//8) * nstep_cycle
 
     # Save probes and average for last few period
     g2.set_av("nstep_save_start", ts_tstream_type.int, nstep_save_start)

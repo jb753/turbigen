@@ -1,5 +1,6 @@
 """This file contains functions for reading TS probe data."""
 import numpy as np
+import compflow
 import sys, os, json
 from ts import ts_tstream_reader, ts_tstream_patch_kind, ts_tstream_cut
 
@@ -9,6 +10,166 @@ Tref = 300.0
 # Choose which variables to write out
 varnames = ["x", "rt", "eff_lost", "pfluc"]
 
+def node_to_cell(cut, prop_name):
+    return np.mean(
+        np.stack(
+            (
+                getattr(cut,prop_name)[:-1,:-1],
+                getattr(cut,prop_name)[1:,1:],
+                getattr(cut,prop_name)[:-1,1:],
+                getattr(cut,prop_name)[1:,:-1],
+            )
+        ), axis=0
+    )
+
+
+def cell_vec(c):
+    return c[1:,1:] - c[:-1,:-1] , c[:-1,1:] - c[1:,:-1]
+
+def cell_area(cut):
+
+    dx1, dx2 = cell_vec(cut.x)
+    dr1, dr2 = cell_vec(cut.r)
+    drt1, drt2 = cell_vec(cut.rt)
+
+    Ax =  0.5*(dr1*drt2 - dr2*drt1)
+    Ar =  0.5*(dx2*drt1 - dx1*drt2)
+
+    return Ax, Ar
+
+
+def mix_out(cuts):
+
+    cp = cuts[0].cp
+    ga = cuts[0].ga
+    rgas = cp * (ga-1.)/ga
+    cv = cp / ga
+
+    props = ['ro', 'rovx', 'rovr', 'rorvt', 'roe', 'pstat', 'vx','r','vr', 'vt','tstag']
+    fluxes = ['mass', 'xmom', 'rmom', 'tmom', 'energy']
+
+    # Preallocate totals
+    total = {f: 0. for f in fluxes}
+    total['Ax'] = 0.
+    total['Ar'] = 0.
+
+    # Loop over cuts
+    for cut in cuts:
+
+        # Cell centered primary properties
+        cell = { prop: node_to_cell(cut, prop) for prop in props }
+
+        # Cell areas
+        Ax, Ar = cell_area(cut)
+
+        # Fluxes of the non-uniform flow
+        flux_x = {
+            'mass' : cell['rovx'],
+            'xmom' : cell['rovx'] * cell['vx'] + cell['pstat'],
+            'rmom' : cell['rovx'] * cell['vr'],
+            'tmom' : cell['rovx'] * cell['r'] * cell['vt'],
+            'energy' : cell['rovx'] * cell['tstag'],
+        }
+        flux_r = {
+            'mass' : cell['rovr'],
+            'xmom' : cell['rovr'] * cell['vx'],
+            'rmom' : cell['rovr'] * cell['vr'] + cell['pstat'],
+            'tmom' : cell['rovr'] * cell['r'] * cell['vt'],
+            'energy' : cell['rovr'] * cell['tstag'],
+        }
+
+        # Multiply by area and accumulate totals
+        for f in fluxes:
+            total[f] += np.sum(flux_x[f] * Ax) + np.sum(flux_r[f] * Ar)
+
+        # Accumulate areas
+        total['Ax'] += np.sum(Ax)
+        total['Ar'] += np.sum(Ar)
+
+    # Now we solve for the state of mixed out flow assuming constant area
+
+    # Mix out at the mean radius
+    rmid = np.mean((cut.r.min(), cut.r.max()))
+
+    # Guess for density
+    mix = { 'ro' :  np.mean(cell['ro']) }
+
+    # Iterate on density
+    for i in range(10):
+
+        # Conservation of mass to get mixed out axial velocity
+        mix['vx'] = total['mass'] / mix['ro'] / total['Ax']
+
+        # Conservation of axial momentum to get mixed out static pressure
+        mix['pstat'] = ( total['xmom'] - mix['ro'] * mix['vx']**2. * total['Ax'] ) / total['Ax']
+
+        # Conservation of tangential momentum to get mixed out tangential velocity
+        mix['vt'] =  total['tmom'] / mix['ro'] / mix['vx'] / total['Ax'] / rmid
+
+        # Destruction of radial momentum
+        mix['vr'] = 0.
+
+        # Total temperature from first law of thermodynamics
+        mix['tstag'] = total['energy'] / total['mass']
+
+        # Velocity magnitude
+        mix['vabs'] = np.sqrt(mix['vx'] **2. + mix['vr'] **2. + mix['vt'] **2. )
+
+        # Lookup compressible flow relation
+        V_cpTo = mix['vabs'] / np.sqrt(cp * mix['tstag'])
+        Ma = np.sqrt( V_cpTo **2. / (ga - 1.) / (1. - 0.5 * V_cpTo**2.))
+        To_T = 1. + 0.5 * (ga - 1.0) * Ma ** 2.;
+
+        # Get static T
+        mix['tstat'] = mix['tstag'] / To_T;
+
+        # Record mixed out flow condition in primary flow variables
+        mix['ro'] = mix['pstat'] / (rgas * mix['tstat'])
+
+    # Max a new cut with the mixed out flow
+    cut_out = ts_tstream_cut.TstreamStructuredCut()
+
+    cut_out.pref = cut.pref
+    cut_out.tref = cut.tref
+    cut_out.ni = 1
+    cut_out.nj = 1
+    cut_out.nk = 1
+    cut_out.ga = ga
+    cut_out.cp = cp
+    cut_out.ifgas = 0
+    cut_out.write_egen = 0
+
+    cut_out.rpm = cuts[0].rpm
+    cut_out.x = np.mean(cut.x)
+    cut_out.r = rmid
+    cut_out.rt = np.mean(cut.rt)
+    cut_out.ro = mix['ro']
+    cut_out.rovx = mix['ro'] * mix['vx']
+    cut_out.rovr = mix['ro'] * mix['vr']
+    cut_out.rorvt = mix['ro'] * mix['vt'] * rmid
+    cut_out.roe = mix['ro'] * (cv * mix['tstat'] + 0.5 * mix['vabs']**2.)
+
+    cut_out.tstat = mix['tstat']
+    cut_out.tstag = mix['tstag']
+    cut_out.pstat = mix['pstat']
+
+    cut_out.vx = mix['vx']
+    cut_out.vr = mix['vr']
+    cut_out.vt = mix['vt']
+    cut_out.U = rmid * cut_out.rpm / 60. * 2. * np.pi
+    cut_out.vt_rel = mix['vt'] - cut_out.U
+
+    cut_out.mach = mix['vabs'] / np.sqrt(ga * rgas * mix['tstat'])
+    cut_out.pstag = compflow.Po_P_from_Ma(cut_out.mach, ga) * cut_out.pstat
+
+
+    return cut_out
+
+def average_cuts(cuts, var_name):
+    mass, prop = zip(*[ci.mass_avg_1d(var_name) for ci in cuts])
+    mass = np.array(mass)
+    prop = np.array(prop)
+    return np.sum(mass*prop)/np.sum(mass)
 
 def read_dat(fname, shape):
     """Load flow data from a .dat file"""
@@ -74,8 +235,12 @@ def secondary(d, rpm, cp, ga):
 if __name__ == "__main__":
 
     output_hdf5 = sys.argv[1]
-
+    basedir = os.path.dirname(output_hdf5)
+    run_name = os.path.split(os.path.abspath(basedir))[-1]
     print("POST-PROCESSING %s\n" % output_hdf5)
+
+    opts = sys.argv[2:]
+    meta_only = '--meta-only' in opts
 
     # Load the grid
     tsr = ts_tstream_reader.TstreamReader()
@@ -87,71 +252,85 @@ if __name__ == "__main__":
     rgas = cp * (1.0 - 1.0 / ga)
 
     # Numbers of grid points
-    blk = [g.get_block(bidn) for bidn in g.get_block_ids()]
+    bid_all = np.array(g.get_block_ids())
+    blk = [g.get_block(bidn) for bidn in bid_all]
     ni = [blki.ni for blki in blk]
     nj = [blki.nj for blki in blk]
     nk = [blki.nk for blki in blk]
+    rpm = np.array([g.get_bv("rpm",bid) for bid in bid_all])
+
+    # Stator/rotor blocks
+    bid_stator = bid_all[rpm==0.]
+    bid_rotor = bid_all[rpm!=0.]
+
 
     # Take cuts at inlet/outlet planes of each row
-    stator_inlet = ts_tstream_cut.TstreamStructuredCut()
-    stator_inlet.read_from_grid(
-        g,
-        Pref,
-        Tref,
-        0,
-        ist=0,
-        ien=1,  # First streamwise
-        jst=0,
-        jen=nj[0],  # All radial
-        kst=0,
-        ken=nk[0],  # All pitchwise
-    )
-    stator_outlet = ts_tstream_cut.TstreamStructuredCut()
-    stator_outlet.read_from_grid(
-        g,
-        Pref,
-        Tref,
-        0,
-        ist=ni[0] - 2,
-        ien=ni[0] - 1,  # Last streamwise
-        jst=0,
-        jen=nj[0],  # All radial
-        kst=0,
-        ken=nk[0],  # All pitchwise
-    )
+    stator_inlet = []
+    stator_outlet = []
+    for bid in bid_stator:
+        stator_inlet.append(ts_tstream_cut.TstreamStructuredCut())
+        stator_inlet[-1].read_from_grid(
+            g,
+            Pref,
+            Tref,
+            bid,
+            ist=0,
+            ien=1,  # First streamwise
+            jst=0,
+            jen=nj[0],  # All radial
+            kst=0,
+            ken=nk[0],  # All pitchwise
+        )
+        stator_outlet.append(ts_tstream_cut.TstreamStructuredCut())
+        stator_outlet[-1].read_from_grid(
+            g,
+            Pref,
+            Tref,
+            bid,
+            ist=ni[0] - 2,
+            ien=ni[0] - 1,  # Last streamwise
+            jst=0,
+            jen=nj[0],  # All radial
+            kst=0,
+            ken=nk[0],  # All pitchwise
+        )
 
-    rotor_inlet = ts_tstream_cut.TstreamStructuredCut()
-    rotor_inlet.read_from_grid(
-        g,
-        Pref,
-        Tref,
-        g.get_block_ids()[-1],
-        ist=1,
-        ien=2,  # First streamwise
-        jst=0,
-        jen=nj[1],  # All radial
-        kst=0,
-        ken=nk[1],  # All pitchwise
-    )
-    rotor_outlet = ts_tstream_cut.TstreamStructuredCut()
-    rotor_outlet.read_from_grid(
-        g,
-        Pref,
-        Tref,
-        g.get_block_ids()[-1],
-        ist=ni[1] - 2,
-        ien=ni[1] - 1,  # Last streamwise
-        jst=0,
-        jen=nj[1],  # All radial
-        kst=0,
-        ken=nk[1],  # All pitchwise
-    )
+    rotor_inlet = []
+    rotor_outlet = []
+    for bid in bid_rotor:
+        rotor_inlet.append(ts_tstream_cut.TstreamStructuredCut())
+        rotor_inlet[-1].read_from_grid(
+            g,
+            Pref,
+            Tref,
+            bid,
+            ist=1,
+            ien=2,  # First streamwise
+            jst=0,
+            jen=nj[1],  # All radial
+            kst=0,
+            ken=nk[1],  # All pitchwise
+        )
+        rotor_outlet.append(ts_tstream_cut.TstreamStructuredCut())
+        rotor_outlet[-1].read_from_grid(
+            g,
+            Pref,
+            Tref,
+            bid,
+            ist=ni[1] - 2,
+            ien=ni[1] - 1,  # Last streamwise
+            jst=0,
+            jen=nj[1],  # All radial
+            kst=0,
+            ken=nk[1],  # All pitchwise
+        )
 
-    # Pull out area-average flow varibles from the cuts
-    cuts = [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]
+    # Pull out mass-average flow varibles from the cuts
+    cuts = [mix_out(ci) for ci in [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]]
+    var_names = ["pstag", "pstat", "tstag", "tstat", "vx", "vt", "vt_rel"]
     Po, P, To, T, Vx, Vt, Vt_rel = [
-        np.array([ci.mass_avg_1d(var_name)[1] for ci in cuts])
-        for var_name in ["pstag", "pstat", "tstag", "tstat", "vx", "vt", "vt_rel"]
+        np.array([getattr(ci, var_name) for ci in cuts])
+        for var_name in var_names
     ]
 
     # Calculate entropy change with respect to inlet
@@ -174,7 +353,24 @@ if __name__ == "__main__":
 
     # Lost effy from
     # eta = wx/(wx+Tds) = 1/(1+Tds/wx) approx 1-Tds/wx using Taylor expansion
-    meta["eff_lost_avg"] = -T[3] * ds / cp / (To[3] - To[0])
+    #meta["eff_isen_lost"] = T[3] * ds / cp / (To[0] - To[3])
+    meta["eff_isen_lost"] = 1. - 1./(1. + T[3] * ds / cp / (To[0] - To[3]))
+
+    meta["runid"] = run_name
+
+    # Save the metadata (lists because numpy arrays not seralisable)
+    for k in meta:
+        try:
+            meta[k][0]
+            meta[k] = list(meta[k])
+        except IndexError:
+            pass
+
+    with open(os.path.join(basedir, "meta.json"), "w") as f:
+        json.dump(meta, f)
+
+    if meta_only:
+        quit()
 
     # Determine number of probes
     ncycle = g.get_av("ncycle")  # Number of cycles
@@ -251,7 +447,6 @@ nrotor = np.sum(rpms != 0.0)
 # Join the grid points from all probes together
 var_out = np.concatenate(vars_all, axis=1)
 
-basedir = os.path.dirname(output_hdf5)
 np.savez_compressed(
     os.path.join(basedir, "dbslice"),
     data=var_out,
@@ -259,13 +454,3 @@ np.savez_compressed(
     nsr=(nstator, nrotor),
 )
 
-# Save the metadata (lists because numpy arrays not seralisable)
-for k in meta:
-    try:
-        meta[k][0]
-        meta[k] = list(meta[k])
-    except IndexError:
-        pass
-
-with open(os.path.join(basedir, "meta.json"), "w") as f:
-    json.dump(meta, f)

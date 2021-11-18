@@ -6,7 +6,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --time=2:00:00
+#SBATCH --time=4:00:00
 ##SBATCH --requeue
 
 source /usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100
