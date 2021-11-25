@@ -16,7 +16,7 @@ def save_meta(meta, basedir):
     for k in meta:
         try:
             meta[k][0]
-            meta[k] = list(meta[k])
+            meta[k] = list(meta[k][:72])
         except IndexError:
             pass
 
@@ -441,6 +441,7 @@ if __name__ == "__main__":
                     -T[3] * (dat_now["ds"] - ds_ref) / cp / (To[3] - To[0])
                 )
 
+
                 # Unsteady lost efficiency at exit if this is a rotor passage
                 if not rpm_now == 0.0:
 
@@ -483,6 +484,9 @@ if __name__ == "__main__":
                 for k in list(dat_now.keys()):
                     if not k in varnames:
                         dat_now.pop(k)
+                    else:
+                        # Truncate to one cycle
+                        dat_now[k] = dat_now[k][...,:72]
 
                 # Wangle the dimensions and add to list
                 vars_all.append(

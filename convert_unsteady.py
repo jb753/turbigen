@@ -84,7 +84,7 @@ def convert(input_file, output_file):
     g2.set_av("nstep_save", ts_tstream_type.int, 999999)
 
     # Which time step to start saving probes
-    nstep_save_start = (ncycle - nb_sect[-1] // 8) * nstep_cycle
+    nstep_save_start = int((ncycle - nb_sect[-1] // 8) * nstep_cycle)
 
     # Save probes and average for last few period
     g2.set_av("nstep_save_start", ts_tstream_type.int, nstep_save_start)
