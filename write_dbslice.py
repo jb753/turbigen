@@ -463,11 +463,22 @@ if __name__ == "__main__":
                     eff_av_now = np.trapz(rovx_now*eff_lost_now, rt_now, axis=0)/mdot_now
 
                     # blockage
-                    rovx_now = dat_now["rovx"][ile, 0, :, :]
-                    mdot_now = np.trapz(rovx_now, rt_now, axis=0)
-                    rt_now = dat_now["rt"][ile, 0, :, :]
-                    A_now = np.trapz(np.ones_like(rt_now),rt_now,axis=0)
-                    rovx_ref = mdot_now/A_now
+
+                    # Get the rovx distribution at leading edge
+                    rovx_le = dat_now["rovx"][ile, 0, :, :]
+                    rt_le = dat_now["rt"][ile, 0, :, :]
+
+                    # Mass flow is integral rovx drt
+                    mdot_le = np.trapz(rovx_le, rt_le, axis=0)
+
+                    # Area is integral drt
+                    A_le = np.trapz(np.ones_like(rt_le),rt_le,axis=0)
+
+                    # Reference mass flux is total mass over total area
+                    # Or the mass-averaged rovx
+                    rovx_ref = mdot_le/A_le
+
+                    # Blockage is integral 1 - rovx/rover_ref drt
                     blockage_now = np.trapz(1.-rovx_now/rovx_ref, rt_now,axis=0)
 
                     mdot_unst.append(mdot_now)

@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 
-fname = 'aljaz/0013/dbslice.npz'
-metaname = 'aljaz/0013/meta.json'
+fname = 'smith_sweep_second/0000/dbslice.npz'
+metaname = 'smith_sweep_second/0000/meta.json'
 
 with open(metaname, "r") as f:
     meta = json.load(f)
