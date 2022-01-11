@@ -1,10 +1,6 @@
 """Tests for the hmesh module"""
 import numpy as np
-import turbigen.compflow as cf
-from turbigen.hmesh import *
-from turbigen import design
-
-# Begin test functions
+from turbigen import design, hmesh
 
 
 def test_streamwise():
@@ -15,7 +11,7 @@ def test_streamwise():
             dx_c = (dx_c_in, dx_c_out)
 
             # Generate grid
-            x_c, (ile, ite) = streamwise_grid(dx_c)
+            x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
             # Diff should always be > 0
             # i.e. x increases monotonically with index, no repeats
@@ -40,7 +36,7 @@ def test_merid():
 
     # Generate a streamwise grid first
     dx_c = (1.0, 1.0)
-    x_c, (ile, ite) = streamwise_grid(dx_c)
+    x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
     # Turbine stage design
     stg = design.nondim_stage_from_Lam(
@@ -54,7 +50,7 @@ def test_merid():
     rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
     # Generate radial grid
-    r = merid_grid(x_c, rm, Dr[:2])
+    r = hmesh.merid_grid(x_c, rm, Dr[:2])
 
     # Non-negative radius
     assert np.all(r >= 0.0)
@@ -86,7 +82,7 @@ def test_b2b():
 
     # Generate a streamwise grid first
     dx_c = (1.0, 1.0)
-    x_c, (ile, ite) = streamwise_grid(dx_c)
+    x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
     # Turbine stage design
     stg = design.nondim_stage_from_Lam(
@@ -100,8 +96,8 @@ def test_b2b():
     rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
     # Generate radial grid
-    r_stator = merid_grid(x_c, rm, Dr[:2])
-    r_rotor = merid_grid(x_c, rm, Dr[1:])
+    r_stator = hmesh.merid_grid(x_c, rm, Dr[:2])
+    r_rotor = hmesh.merid_grid(x_c, rm, Dr[1:])
 
     # Evaluate blade angles
     r_rm = np.concatenate([r_stator[(ile, ite), :], r_rotor[(ite,), :]]) / rm
@@ -117,12 +113,7 @@ def test_b2b():
     c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
     # Finally, get the b2b grid!
-    rt = b2b_grid(x_c, r_stator, chi_vane, s_c[0], c)
-
-    # jplot = -1
-    # f, a = plt.subplots()
-    # a.plot(x_c*c, rt[:,jplot,:],'k-')
-    # plt.show()
+    rt = hmesh.b2b_grid(x_c, r_stator, chi_vane, s_c[0], c)
 
     # Check that theta increases as k increases
     assert np.all(np.diff(rt, 1, 2) > 0.0)

@@ -19,6 +19,6 @@ def test_without_compflow_package():
         import turbigen.compflow
         importlib.reload(turbigen.compflow)
 
-    # Restore import and put the old compflow back
+    # Restore import function and put the old compflow back
     setattr(builtins, '__import__', old_import)
     importlib.reload(turbigen.compflow)

@@ -32,6 +32,7 @@ stage_vars = {
     "V_U": r"Normalised velocities, :math:`V/U` [--]",
     "Vrel_U": r"Normalised relative velocities, :math:`V/U` [--]",
     "P3_Po1": r"Total-to-static stage pressure ratio, :math:`p_3/p_{01}` [--]",
+    "eta": r"Polytropic efficiency, :math:`\eta` [--]",
 }
 NonDimStage = namedtuple("NonDimStage", stage_vars.keys())
 
@@ -186,6 +187,7 @@ def nondim_stage_from_Al(
         V_U=V_U,
         Vrel_U=Vrel_U,
         P3_Po1=P_Po1[2],
+        eta=eta,
     )
 
     return stg
