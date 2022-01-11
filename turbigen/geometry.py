@@ -35,7 +35,18 @@ def fillet(x, r, dx):
 
     r[ind] = np.polyval(poly, x[ind])
 
-def blade_section(chi, a=0.0, tte=0.04, xttmax=(0.4, 0.2)):
+def evaluate_prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.2):
+    """A rough cubic thickness distribution."""
+    tle = tte/2.
+    tlin =  tle + x * (tte - tle)
+    # Additional component to make up maximum thickness
+    tmod = tmax - xtmax * (tte - tle) - tle
+    # Total thickness
+    thick = tlin + tmod * (1.0 - 4.* np.abs(x**(np.log(0.5)/np.log(xtmax)) - 0.5) **2.)
+    return thick
+
+
+def blade_section(chi, a=0.0, tte=0.04):
     r"""Make a simple blade geometry with specified metal angles.
 
     Assume a cubic camber line :math:`\chi(\hat{x})` between inlet and exit
@@ -75,20 +86,11 @@ def blade_section(chi, a=0.0, tte=0.04, xttmax=(0.4, 0.2)):
         coordinate, tangential upper, and tangential lower coordinates.
     """
 
-    xtmax, tmax = xttmax
-
-    tle = tte/2.
 
     # Camber line
-    xc = np.linspace(0.,1.,1000)
-
-    tlin =  tle + xc * (tte - tle)
-
-    # Additional component to make up maximum thickness
-    tmod = tmax - xtmax * (tte - tle) - tle
-
-    # Total thickness
-    thick = tlin + tmod * (1.0 - 4.* np.abs(xc**(np.log(0.5)/np.log(xtmax)) - 0.5) **2.)
+    xc = np.linspace(0.,1.)
+    thick = evaluate_prelim_thickness(xc)
+    print(np.mean(thick))
 
     # Assemble preliminary upper and lower coordiates
     xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]
@@ -97,7 +99,16 @@ def blade_section(chi, a=0.0, tte=0.04, xttmax=(0.4, 0.2)):
     A, _ = fit_aerofoil(xy_prelim, chi, tte, 4)
 
     # Upper and lower surfaces
-    xy_up, xy_dn = [evaluate_surface(Ai,xc,chi, tte) for Ai in A]
+    xy_up, xy_dn = evaluate_aerofoil(A , xc, chi, tte)
+
+    # fig, ax = plt.subplots()
+    # ax.plot(*xy_prelim[0],'x')
+    # ax.plot(*xy_prelim[1],'x')
+    # ax.plot(*xy_up,'-o')
+    # ax.plot(*xy_dn,'-o')
+    # fig.savefig('test1.pdf')
+    # rstrt
+
 
     # Assemble coordinates and return
     return np.array(np.stack((xy_up, xy_dn)))
@@ -178,7 +189,7 @@ def fit_aerofoil(xy, chi, zte, order):
     X = np.insert(X, 0, X_le, 1)
     A_all, resid = lstsq(X, strim, rcond=None)[:2]
     Au = A_all[:order]
-    Al = -np.insert(A_all[order:], 0, A_all[0])
+    Al = np.insert(A_all[order:], 0, A_all[0])
     return (Au, Al), resid
 
 
@@ -213,6 +224,9 @@ def coord_to_thickness(xy, chi):
     yc = evaluate_camber(xc, chi)
     # Now evaluate thickness
     t = np.sqrt(np.sum(np.stack((xu - xc, yu - yc)) ** 2.0, 0))
+    # Negate if this is on lower surface
+    # if np.nanmean(yu-yc) > 0.:
+    #     t = -t
     return xc, yc, t
 
 
@@ -227,8 +241,16 @@ def thickness_to_coord(xc, t, chi):
 def evaluate_surface(A, x, chi, zte):
     """Given a set of coefficients, return coordinates."""
     s = evaluate_coefficients(x, A)
-    t = from_shape_space(x, s, zte*np.sign(s[0]))
+    t = from_shape_space(x, s, zte)
     return thickness_to_coord(x, t, chi)
+
+def evaluate_aerofoil(A, x, chi, zte):
+    """Given two sets of coefficients, return coordinates."""
+    s = [evaluate_coefficients(x, Ai) for Ai in A]
+    t = [from_shape_space(x, si, zte) for si in s]
+    t[1] = -t[1]
+    return [thickness_to_coord(x, ti, chi) for ti in t]
+
 
 
 if __name__ == "__main__":
