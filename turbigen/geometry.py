@@ -5,10 +5,11 @@ import numpy as np
 from scipy.special import binom
 from numpy.linalg import lstsq
 from scipy.optimize import newton
-from scipy.integrate import cumtrapz
+
+import matplotlib.pyplot as plt
 
 def fillet(x, r, dx):
-    """Apply a filet of ."""
+    """Fillet over a join at |x|<dx."""
 
     # Get indices for the points at boundary of fillet
     ind = np.array(np.where(np.abs(x) <= dx)[0])
@@ -20,7 +21,7 @@ def fillet(x, r, dx):
     rpts = r[ ind1 ]
     xpts = x[ ind1 ]
     drpts = dr[ ind1 ]
-    
+
     b = np.atleast_2d(np.concatenate((rpts, drpts))).T
     A = np.array(
         [
@@ -34,7 +35,7 @@ def fillet(x, r, dx):
 
     r[ind] = np.polyval(poly, x[ind])
 
-def blade_section(chi, a=0.0):
+def blade_section(chi, a=0.0, tte=0.04, xttmax=(0.4, 0.2)):
     r"""Make a simple blade geometry with specified metal angles.
 
     Assume a cubic camber line :math:`\chi(\hat{x})` between inlet and exit
@@ -74,51 +75,32 @@ def blade_section(chi, a=0.0):
         coordinate, tangential upper, and tangential lower coordinates.
     """
 
-    # Copy defaults from MEANGEN (Denton)
-    tle = 0.04  # LEADING EDGE THICKNESS/AXIAL CHORD.
-    tte = 0.04  # TRAILING EDGE THICKNESS/AXIAL CHORD.
-    tmax = 0.20  # MAXIMUM THICKNESS/AXIAL CHORD.
-    xtmax = 0.40  # FRACTION OF AXIAL CHORD AT MAXIMUM THICKNESS
-    xmodle = 0.02  # FRACTION OF AXIAL CHORD OVER WHICH THE LE IS MODIFIED.
-    xmodte = 0.01  # FRACTION OF AXIAL CHORD OVER WHICH THE TE IS MODIFIED.
-    tk_typ = 2.0  # FORM OF BLADE THICKNESS DISTRIBUTION.
+    xtmax, tmax = xttmax
+
+    tle = tte/2.
 
     # Camber line
-    xhat = 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, 100)))
-    tanchi_lim = np.tan(np.radians(chi))
-    tanchi = (tanchi_lim[1] - tanchi_lim[0]) * (
-        a * xhat ** 2.0 + (1.0 - a) * xhat
-    ) + tanchi_lim[0]
-    yhat = np.insert(cumtrapz(tanchi, xhat), 0, 0.0)
+    xc = np.linspace(0.,1.,1000)
 
-    power = np.log(0.5) / np.log(xtmax)
-    xtrans = xhat ** power
-
-    # Linear thickness component for leading/trailing edges
-    tlin = tle + xhat * (tte - tle)
+    tlin =  tle + xc * (tte - tle)
 
     # Additional component to make up maximum thickness
-    tadd = tmax - (tle + xtmax * (tte - tle))
+    tmod = tmax - xtmax * (tte - tle) - tle
 
     # Total thickness
-    thick = tlin + tadd * (1.0 - np.abs(xtrans - 0.5) ** tk_typ / (0.5 ** tk_typ))
+    thick = tlin + tmod * (1.0 - 4.* np.abs(xc**(np.log(0.5)/np.log(xtmax)) - 0.5) **2.)
 
-    # Thin the leading and trailing edges
-    xhat1 = 1.0 - xhat
-    fac_thin = np.ones_like(xhat)
-    fac_thin[xhat < xmodle] = (xhat[xhat < xmodle] / xmodle) ** 0.3
-    fac_thin[xhat1 < xmodte] = (xhat1[xhat1 < xmodte] / xmodte) ** 0.3
+    # Assemble preliminary upper and lower coordiates
+    xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]
+
+    # Fit Bernstein polynomials to the prelim coords in shape space
+    A, _ = fit_aerofoil(xy_prelim, chi, tte, 4)
 
     # Upper and lower surfaces
-    yup = yhat + thick * 0.5 * fac_thin
-    ydown = yhat - thick * 0.5 * fac_thin
-
-    # Fillet over the join at thinned LE
-    fillet(xhat - xmodle, yup, xmodle / 2.0)
-    fillet(xhat - xmodle, ydown, xmodle / 2.0)
+    xy_up, xy_dn = [evaluate_surface(Ai,xc,chi, tte) for Ai in A]
 
     # Assemble coordinates and return
-    return np.vstack((xhat, yup, ydown))
+    return np.array(np.stack((xy_up, xy_dn)))
 
 
 def bernstein(x, n, i):
@@ -127,16 +109,20 @@ def bernstein(x, n, i):
 
 
 def to_shape_space(x, z, zte):
-    """Transform real thickness to shape space."""
-    # Ignore singularities at leading and trailing edges
-    with np.errstate(invalid="ignore"):
-        s = (z - x * zte) / (np.sqrt(x) * (1.0 - x))
-    return s
+	"""Transform real thickness to shape space."""
+	# Ignore singularities at leading and trailing edges
+	eps = 1e-6
+	ii = np.abs(x - 0.5) < (0.5 - eps)
+	s = np.ones(x.shape) * np.nan
+	# s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
+	s[ii] = z[ii] / (np.sqrt(x[ii]) * np.sqrt(1.0 - x[ii]))
+	return s
 
 
 def from_shape_space(x, s, zte):
     """Transform shape space to real coordinates."""
-    return np.sqrt(x) * (1.0 - x) * s + x * zte
+    # return np.sqrt(x) * (1.0 - x) * s + x * zte
+    return np.sqrt(x) * np.sqrt(1.0 - x) * s
 
 
 def evaluate_coefficients(x, A):
@@ -192,7 +178,7 @@ def fit_aerofoil(xy, chi, zte, order):
     X = np.insert(X, 0, X_le, 1)
     A_all, resid = lstsq(X, strim, rcond=None)[:2]
     Au = A_all[:order]
-    Al = np.insert(A_all[order:], 0, A_all[0])
+    Al = -np.insert(A_all[order:], 0, A_all[0])
     return (Au, Al), resid
 
 
@@ -222,7 +208,8 @@ def coord_to_thickness(xy, chi):
     def iterate(x):
         return yu - evaluate_camber(x, chi) + (xu - x) / evaluate_camber_slope(x, chi)
 
-    xc = newton(iterate, xu)
+    with np.errstate(invalid="ignore",divide="ignore"):
+        xc = newton(iterate, xu)
     yc = evaluate_camber(xc, chi)
     # Now evaluate thickness
     t = np.sqrt(np.sum(np.stack((xu - xc, yu - yc)) ** 2.0, 0))
@@ -240,7 +227,7 @@ def thickness_to_coord(xc, t, chi):
 def evaluate_surface(A, x, chi, zte):
     """Given a set of coefficients, return coordinates."""
     s = evaluate_coefficients(x, A)
-    t = from_shape_space(x, s, zte)
+    t = from_shape_space(x, s, zte*np.sign(s[0]))
     return thickness_to_coord(x, t, chi)
 
 

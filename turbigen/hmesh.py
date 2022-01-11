@@ -137,8 +137,8 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     rtlim = np.nan * np.ones((ni, nj, 2))
     for j in range(nj):
 
-        # Retrieve blade section
-        sec_x, sec_rt0, sec_rt1 = design.blade_section(chi[:, j]) * c
+        # Retrieve blade section as [surf, x or y, index]
+        sec_xrt = geometry.blade_section(chi[:, j]) * c
 
         # Get centroid for stacking
         Area = np.trapz(sec_rt1 - sec_rt0, sec_x)
