@@ -1,6 +1,6 @@
 """Tests for the hmesh module"""
 import numpy as np
-import compflow as cf
+import turbigen.compflow as cf
 from turbigen.hmesh import *
 from turbigen import design
 

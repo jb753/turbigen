@@ -1,6 +1,6 @@
 """Tests for the design module"""
 import numpy as np
-import compflow as cf
+import turbigen.compflow as cf
 from turbigen.design import *
 from turbigen.design import _integrate_length
 

@@ -3,7 +3,7 @@ Generate turbine stage geometry from aerodynamic design parameters.
 """
 import scipy.optimize
 import scipy.integrate
-import compflow
+from . import compflow
 import numpy as np
 from . import geometry
 from collections import namedtuple
