@@ -6,3 +6,6 @@ doc/_build
 run/*
 !run
 .python-version
+*.pdf
+*.npz
+*.egg-info/

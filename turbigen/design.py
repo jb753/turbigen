@@ -5,6 +5,7 @@ import scipy.optimize
 import scipy.integrate
 import compflow
 import numpy as np
+from . import geometry
 from collections import namedtuple
 
 expon = 0.62
@@ -403,8 +404,8 @@ def blade_section(chi, a=0.0):
     ydown = yhat - thick * 0.5 * fac_thin
 
     # Fillet over the join at thinned LE
-    _fillet(xhat - xmodle, yup, xmodle / 2.0)
-    _fillet(xhat - xmodle, ydown, xmodle / 2.0)
+    geometry.fillet(xhat - xmodle, yup, xmodle / 2.0)
+    geometry.fillet(xhat - xmodle, ydown, xmodle / 2.0)
 
     # Assemble coordinates and return
     return np.vstack((xhat, yup, ydown))
@@ -633,40 +634,6 @@ def free_vortex(stg, r_rm, dev):
     return chi_vane, chi_blade
 
 
-def _fillet(x, r, dx):
-    # Get indices for the points at boundary of fillet
-    ind = np.array(np.where(np.abs(x) <= dx)[0])
-
-    dr = np.diff(r) / np.diff(x)
-
-    # Assemble matrix problem
-    rpts = r[
-        ind[
-            (0, -1),
-        ]
-    ]
-    xpts = x[
-        ind[
-            (0, -1),
-        ]
-    ]
-    drpts = dr[
-        ind[
-            (0, -1),
-        ]
-    ]
-    b = np.atleast_2d(np.concatenate((rpts, drpts))).T
-    A = np.array(
-        [
-            [xpts[0] ** 3.0, xpts[0] ** 2.0, xpts[0], 1.0],
-            [xpts[1] ** 3.0, xpts[1] ** 2.0, xpts[1], 1.0],
-            [3.0 * xpts[0] ** 2.0, 2.0 * xpts[0], 1.0, 0.0],
-            [3.0 * xpts[1] ** 2.0, 2.0 * xpts[1], 1.0, 0.0],
-        ]
-    )
-    poly = np.matmul(np.linalg.inv(A), b).squeeze()
-
-    r[ind] = np.polyval(poly, x[ind])
 
 
 def meridional_mesh(xc, rm, Dr, c, nr):
@@ -716,8 +683,8 @@ def meridional_mesh(xc, rm, Dr, c, nr):
     # Smooth the corners
     dxsmth_c = 0.2
     for i in [1, 2]:
-        _fillet(x - xc[i], rh, dxsmth_c)
-        _fillet(x - xc[i], rc, dxsmth_c)
+        geometry.fillet(x - xc[i], rh, dxsmth_c)
+        geometry.fillet(x - xc[i], rc, dxsmth_c)
 
     rh2 = np.atleast_2d(rh)
     rc2 = np.atleast_2d(rc)

@@ -1,6 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
-import design
+from . import design, geometry
 
 # def
 
@@ -98,8 +98,8 @@ def merid_grid(x_c, rm, Dr):
     rc = np.interp(x_c, [0.0, 1.0], rm + Dr / 2.0)
 
     # Smooth the corners over a prescribed distance
-    design._fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
-    design._fillet(x_c - 1.0, rc, dxsmth_c)  # Trailing edge about 1
+    geometry.fillet(x_c, rh, dxsmth_c)  # Leading edge around 0
+    geometry.fillet(x_c - 1.0, rc, dxsmth_c)  # Trailing edge about 1
 
     # Check htr to decide if this is a cascade
     htr = rc[0] / rh[0]
