@@ -1,7 +1,6 @@
 """Tests for the hmesh module"""
 import numpy as np
 from turbigen import design, hmesh
-import matplotlib.pyplot as plt
 from test_design import get_geometries
 
 def test_streamwise():
@@ -86,11 +85,8 @@ def test_b2b():
     x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
 
+    # Loop over entire mean-line design space
     for stg in get_geometries('datum'):
-        # Turbine stage design
-        # stg = design.nondim_stage_from_Lam(
-        #     phi=0.8, psi=1.6, Lam=0.5, Al1=0.0, Ma=0.7, ga=1.4, eta=0.9
-        # )
 
         # Annulus line
         htr = 0.9
@@ -133,15 +129,8 @@ def test_b2b():
         dt = t[:, :, -1] - t[:, :, 0]
         tol = 1e-6
         assert np.all(dt - pitch_t < tol)  # Everywhere
-        err_inlet = dt[: ile + 1, :]/pitch_t - 1.
-        # print(dt.shape)
-        # fig, ax = plt.subplots()
-        # ax.plot(err_inlet)
-        # plt.savefig('test.pdf')
-        # quit()
-        # print(np.abs(err_inlet).max())
-        assert np.all(np.abs(err_inlet)<tol)  # Inlet duct
-
+        # err_inlet = dt[: ile + 1, :]/pitch_t - 1.
+        assert np.all(np.isclose(dt[: ile + 1, :], pitch_t))  # Inlet duct
         assert np.all(np.isclose(dt[ite, :], pitch_t))  # Exit duct
 
 # if __name__=="__main__":

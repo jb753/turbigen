@@ -136,6 +136,9 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         # Join to a loop
         loop_xrt = np.concatenate((sec_xrt[0],np.flip(sec_xrt[1,:,1:-1],-1)),-1)
 
+        # Offset so that LE at x=0
+        loop_xrt[0] -= loop_xrt[0].min()
+
         # Rescale based on chord and max x
         loop_xrt *= c / loop_xrt[0].max()
 
@@ -165,10 +168,15 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         # quit()
 
         # Stack with centroid at t=0
-        sec_xrt[:,1,:] -= rt_cent
+        upper_xrt[1,:] -= rt_cent
+        lower_xrt[1,:] -= rt_cent
+
+        print(np.interp(0., *upper_xrt)-np.interp(0., *lower_xrt))
 
         rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
         rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
+
+
 
     # Define a pitchwise clustering function with correct dimensions
     clust = np.atleast_3d(geometry.cluster(nk)).transpose(2, 0, 1)
