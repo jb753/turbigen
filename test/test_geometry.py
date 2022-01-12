@@ -108,7 +108,7 @@ def test_perpendicular_thickness_cycle():
 def test_fit_aerofoil():
     """Verify that with a large number of coeffs, we can reduce error to zero."""
     order = 20
-    xc = np.linspace(0.,1.)
+    xc = geometry.cluster(geometry.nx)
     for xyi, (chii, _) in zip(geometries, inputs):
         A, resid = geometry.fit_aerofoil(xyi, chii, tte, order)
         # Check shape-space residual

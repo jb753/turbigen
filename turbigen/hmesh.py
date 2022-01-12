@@ -1,9 +1,7 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import design, geometry
-import matplotlib.pyplot as plt
-
-# def
+# import matplotlib.pyplot as plt
 
 # Configure numbers of points
 nxb = 97  # Blade chord
@@ -12,12 +10,6 @@ nr_casc = 4  # Radial points in cascade mode
 nrt = 65  # Pitch
 rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.25  # Distance over which to fillet shroud corners
-
-
-def _cluster(npts):
-    """Return a cosinusoidal clustering function with a set number of points."""
-    # Define a non-dimensional clustering function
-    return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
 
 
 def streamwise_grid(dx_c):
@@ -47,7 +39,7 @@ def streamwise_grid(dx_c):
 
     """
 
-    clust = _cluster(nxb)
+    clust = geometry.cluster(nxb)
     dclust = np.diff(clust)
     dmax = dclust.max()
 
@@ -103,13 +95,13 @@ def merid_grid(x_c, rm, Dr):
     geometry.fillet(x_c - 1.0, rc, dxsmth_c)  # Trailing edge about 1
 
     # Check htr to decide if this is a cascade
-    htr = rc[0] / rh[0]
+    htr = rh[0] / rc[0]
     if htr > 0.95:
         # Define a uniform span fraction row vector
         spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
         # Define a clustered span fraction row vector
-        spf = np.atleast_2d(_cluster(nr))
+        spf = np.atleast_2d(geometry.cluster(nr))
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -152,10 +144,10 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
                 loop_xrt[0,:-1]*loop_xrt[1,1:]
                 - loop_xrt[0,1:]*loop_xrt[1,:-1]
                 )
-        terms_x = loop_xrt[0,:-1]+loop_xrt[0,1:]
+        # terms_x = loop_xrt[0,:-1]+loop_xrt[0,1:]
         terms_rt = loop_xrt[1,:-1]+loop_xrt[1,1:]
         Area = 0.5 * np.sum(terms_cross)
-        x_cent = np.sum(terms_x*terms_cross)/6./Area
+        # x_cent = np.sum(terms_x*terms_cross)/6./Area
         rt_cent = np.sum(terms_rt*terms_cross)/6./Area
 
         # Now split the loop back up based on true LE/TE
@@ -172,7 +164,6 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         # plt.savefig("test2.pdf")
         # quit()
 
-
         # Stack with centroid at t=0
         sec_xrt[:,1,:] -= rt_cent
 
@@ -180,7 +171,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = np.atleast_3d(_cluster(nk)).transpose(2, 0, 1)
+    clust = np.atleast_3d(geometry.cluster(nk)).transpose(2, 0, 1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate

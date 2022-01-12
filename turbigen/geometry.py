@@ -6,7 +6,8 @@ from scipy.special import binom
 from numpy.linalg import lstsq
 from scipy.optimize import newton
 
-import matplotlib.pyplot as plt
+
+nx = 201
 
 def fillet(x, r, dx):
     """Fillet over a join at |x|<dx."""
@@ -34,6 +35,12 @@ def fillet(x, r, dx):
     poly = np.matmul(np.linalg.inv(A), b).squeeze()
 
     r[ind] = np.polyval(poly, x[ind])
+
+def cluster(npts):
+    """Return a cosinusoidal clustering function with a set number of points."""
+    # Define a non-dimensional clustering function
+    return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
+
 
 def evaluate_prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.2):
     """A rough cubic thickness distribution."""
@@ -89,6 +96,7 @@ def blade_section(chi, a=0.0, tte=0.04):
 
     # Camber line
     xc = np.linspace(0.,1.)
+    xc = cluster(nx)
     thick = evaluate_prelim_thickness(xc)
 
     # Assemble preliminary upper and lower coordiates
@@ -99,15 +107,6 @@ def blade_section(chi, a=0.0, tte=0.04):
 
     # Upper and lower surfaces
     xy_up, xy_dn = evaluate_aerofoil(A , xc, chi, tte)
-
-    # fig, ax = plt.subplots()
-    # ax.plot(*xy_prelim[0],'x')
-    # ax.plot(*xy_prelim[1],'x')
-    # ax.plot(*xy_up,'-o')
-    # ax.plot(*xy_dn,'-o')
-    # fig.savefig('test1.pdf')
-    # rstrt
-
 
     # Assemble coordinates and return
     return np.array(np.stack((xy_up, xy_dn)))
