@@ -90,7 +90,6 @@ def blade_section(chi, a=0.0, tte=0.04):
     # Camber line
     xc = np.linspace(0.,1.)
     thick = evaluate_prelim_thickness(xc)
-    print(np.mean(thick))
 
     # Assemble preliminary upper and lower coordiates
     xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]

@@ -1,6 +1,7 @@
 """Tests for the hmesh module"""
 import numpy as np
 from turbigen import design, hmesh
+import matplotlib.pyplot as plt
 
 
 def test_streamwise():
@@ -132,3 +133,6 @@ def test_b2b():
     assert np.all(dt - pitch_t < tol)  # Everywhere
     assert np.all(np.isclose(dt[: ile + 1, :], pitch_t))  # Inlet duct
     assert np.all(np.isclose(dt[ite, :], pitch_t))  # Exit duct
+
+if __name__=="__main__":
+    test_b2b()

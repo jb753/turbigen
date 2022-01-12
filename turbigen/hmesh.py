@@ -1,6 +1,7 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import design, geometry
+import matplotlib.pyplot as plt
 
 # def
 
@@ -138,20 +139,45 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        sec_xrt = geometry.blade_section(chi[:, j]) * c
+        sec_xrt = geometry.blade_section(chi[:, j])
 
-        # Get centroid for stacking
-        Area = np.trapz(sec_rt1 - sec_rt0, sec_x)
-        rt_cent = (
-            np.trapz(0.5 * (sec_rt1 - sec_rt0) * (sec_rt1 + sec_rt0), sec_x) / Area
-        )
+        # Join to a loop
+        loop_xrt = np.concatenate((sec_xrt[0],np.flip(sec_xrt[1,:,1:-1],-1)),-1)
+
+        # Rescale based on chord and max x
+        loop_xrt *= c / loop_xrt[0].max()
+
+        # Area and centroid of the loop
+        terms_cross = (
+                loop_xrt[0,:-1]*loop_xrt[1,1:]
+                - loop_xrt[0,1:]*loop_xrt[1,:-1]
+                )
+        terms_x = loop_xrt[0,:-1]+loop_xrt[0,1:]
+        terms_rt = loop_xrt[1,:-1]+loop_xrt[1,1:]
+        Area = 0.5 * np.sum(terms_cross)
+        x_cent = np.sum(terms_x*terms_cross)/6./Area
+        rt_cent = np.sum(terms_rt*terms_cross)/6./Area
+
+        # Now split the loop back up based on true LE/TE
+        ile = np.argmin(loop_xrt[0])
+        ite = np.argmax(loop_xrt[0])
+        upper_xrt = loop_xrt[:,ile:(ite+1)]
+        lower_xrt = np.insert(np.flip(loop_xrt[:,ite:-1],-1), 0, loop_xrt[:,ile], -1)
+
+        # fig, ax = plt.subplots()
+        # ax.plot(*upper_xrt,'-x')
+        # ax.plot(*lower_xrt,'-x')
+        # ax.axis('equal')
+        # # ax.plot(x_cent, rt_cent,'*k')
+        # plt.savefig("test2.pdf")
+        # quit()
+
 
         # Stack with centroid at t=0
-        sec_rt0 -= rt_cent
-        sec_rt1 -= rt_cent
+        sec_xrt[:,1,:] -= rt_cent
 
-        rtlim[:, j, 0] = np.interp(x[:, 0, 0], sec_x, sec_rt0)
-        rtlim[:, j, 1] = np.interp(x[:, 0, 0], sec_x, sec_rt1) + pitch_t * r[:, j, 0]
+        rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
+        rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
 
     # Define a pitchwise clustering function with correct dimensions
     clust = np.atleast_3d(_cluster(nk)).transpose(2, 0, 1)
