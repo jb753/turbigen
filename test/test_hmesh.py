@@ -3,6 +3,13 @@ import numpy as np
 from turbigen import design, hmesh
 from test_design import get_geometries
 
+htr = 0.6
+cpTo1 = 1.0e6
+Omega = 2.0 * np.pi * 50.0
+Re = 4e6
+Po1 = 16e5
+rgas = 287.14
+
 def test_streamwise():
     """Verify the properties of generated streamwise grid vectors."""
     for dx_c_in in [0.2, 0.5, 1.0, 10.0]:
@@ -38,43 +45,38 @@ def test_merid():
     dx_c = (1.0, 1.0)
     x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
-    # Turbine stage design
-    stg = design.nondim_stage_from_Lam(
-        phi=0.8, psi=1.6, Lam=0.5, Al1=0.0, Ma=0.7, ga=1.4, eta=0.9
-    )
+    # Loop over entire mean-line design space
+    for stg in get_geometries('datum'):
 
-    # Annulus line
-    htr = 0.6
-    cpTo1 = 1.0e6
-    Omega = 2.0 * np.pi * 50.0
-    rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
+        # Annulus line
+        rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
-    # Generate radial grid
-    r = hmesh.merid_grid(x_c, rm, Dr[:2])
+        # Generate radial grid
+        r = hmesh.merid_grid(x_c, rm, Dr[:2])
 
-    # Non-negative radius
-    assert np.all(r >= 0.0)
+        # Non-negative radius
+        assert np.all(r >= 0.0)
 
-    # Radial coordinate should monotonically increase with j index
-    assert np.all(np.diff(r, 1, 1) > 0.0)
+        # Radial coordinate should monotonically increase with j index
+        assert np.all(np.diff(r, 1, 1) > 0.0)
 
-    # Check smoothness in radial direction
-    tol = 1e-3
-    assert np.all(np.abs(np.diff(r / rm, 2, 1)) < tol)
+        # Check smoothness in radial direction
+        tol = 1e-3
+        assert np.all(np.abs(np.diff(r / rm, 2, 1)) < tol)
 
-    # Verify correct mean radius
-    rm_calc = np.mean(r[:, (0, -1)], 1)
-    err_rm = np.abs(rm_calc / rm - 1.0)
-    tol_rm = 2e-3
-    assert np.all(err_rm < tol_rm)
-    assert np.isclose(rm_calc[0], rm)
-    assert np.isclose(rm_calc[-1], rm)
+        # Verify correct mean radius
+        rm_calc = np.mean(r[:, (0, -1)], 1)
+        err_rm = np.abs(rm_calc / rm - 1.0)
+        tol_rm = 2e-3
+        assert np.all(err_rm < tol_rm)
+        assert np.isclose(rm_calc[0], rm)
+        assert np.isclose(rm_calc[-1], rm)
 
-    # Verify the spans at inlet and exit
-    rh_calc = r[(0, -1), 0]
-    rc_calc = r[(0, -1), -1]
-    Dr_calc = rc_calc - rh_calc
-    assert np.all(np.isclose(Dr_calc, Dr[:2]))
+        # Verify the spans at inlet and exit
+        rh_calc = r[(0, -1), 0]
+        rc_calc = r[(0, -1), -1]
+        Dr_calc = rc_calc - rh_calc
+        assert np.all(np.isclose(Dr_calc, Dr[:2]))
 
 
 def test_b2b():
@@ -84,14 +86,10 @@ def test_b2b():
     dx_c = (1.0, 1.0)
     x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
-
     # Loop over entire mean-line design space
     for stg in get_geometries('datum'):
 
         # Annulus line
-        htr = 0.9
-        cpTo1 = 1005.0 * 1600.0
-        Omega = 2.0 * np.pi * 50.0
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
         # Generate radial grid
@@ -106,9 +104,6 @@ def test_b2b():
         s_c = design.pitch_Zweifel(stg, (0.8, 0.8))
 
         # Evaluate chord
-        Re = 4e6
-        Po1 = 16e5
-        rgas = 287.14
         c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
 
         # Finally, get the b2b grid!

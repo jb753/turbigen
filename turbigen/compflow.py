@@ -3,6 +3,7 @@
 Use the compflow Python--Fortran package if available (it is faster).
 Otherwise use a native implementation."""
 
+from __future__ import absolute_import
 import warnings
 
 try:
