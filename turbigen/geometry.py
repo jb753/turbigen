@@ -5,7 +5,7 @@ import numpy as np
 from scipy.special import binom
 from numpy.linalg import lstsq
 from scipy.optimize import newton
-
+from scipy.interpolate import interp1d
 
 nx = 201
 
@@ -243,6 +243,7 @@ def evaluate_surface(A, x, chi, zte):
     t = from_shape_space(x, s, zte)
     return thickness_to_coord(x, t, chi)
 
+
 def evaluate_aerofoil(A, x, chi, zte):
     """Given two sets of coefficients, return coordinates."""
     s = [evaluate_coefficients(x, Ai) for Ai in A]
@@ -251,7 +252,31 @@ def evaluate_aerofoil(A, x, chi, zte):
     return [thickness_to_coord(x, ti, chi) for ti in t]
 
 
+## TODO here
+# The creation of blade sections from stage parameters is agnostic to the
+# meshing, so it should not be implemented in hmesh. Nor should it really
+# depend on the implementation of the DimStage class. If we assume that the meshing 
+# function extracts the data we need from the DimStage object, then we need to,
+#   * Specify thickness coefficients A on a number of span fractions spf
+#   * Sensibly interpolate thicknesses, sensibly handle blank values
+#   * Return x,rt coordinates for each section at other span fractions
+#
+# Once that is done, we can integrate this method into the meshing rountines.
 
-if __name__ == "__main__":
+def section_coords(r, chi, A=None, spf_A=None):
+    """Generate blade sections at all radii."""
 
-    pass
+    if A is None:
+        # If no detailed thickness specified, use preliminary
+        sec_xrt = np.array([geometry.blade_section( chii, tte=tte ) for chii in chi.T])
+    elif spf_A is None:
+        # If no span fraction specified, use same A at all radii
+        sec_xrt = [geometry.blade_section( chii, A=A, tte=tte ) for chii in chi.T]
+    else:
+        # Interpolate thickness coeffs as function of span fraction
+        spf = (r - r.min())/(r.max() - r.min())
+        A_func = interp1d(spf_A, A, axis=0)
+        sec_xrt = [geometry.blade_section( chii, A=A_func(spfi), tte=tte )
+                for spfi, chii in zip(spf,chi.T)]
+
+    return sec_xrt

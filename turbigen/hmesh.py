@@ -1,6 +1,8 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import design, geometry
+from scipy.interpolate import interp1d
+
 # import matplotlib.pyplot as plt
 
 # Configure numbers of points
@@ -10,14 +12,15 @@ nr_casc = 4  # Radial points in cascade mode
 nrt = 65  # Pitch
 rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.25  # Distance over which to fillet shroud corners
+tte = 0.04  # Trailing edge thickness
 
 
 def streamwise_grid(dx_c):
     """Generate non-dimensional streamwise grid vector for a blade row.
 
     The first step in generating an H-mesh is to lay out a vector of axial
-    coordinates --- all grid points at a fixed streamwise index are at the same
-    axial coordinate.  Specify the number of points across the blade chord,
+    coordinates --- all grid points at a given streamwise index are at the same
+    axial coordinate.  Fix the number of points across the blade chord,
     clustered towards the leading and trailing edges. The clustering is then
     mirrored up- and downstream of the row. If the boundary of the row is
     within half a chord of the leading or trailing edges, the clustering is
@@ -81,8 +84,23 @@ def merid_grid(x_c, rm, Dr):
     """Generate meridional grid for a blade row.
 
     Each spanwise grid index corresponds to a surface of revolution. So the
-    gridlines have the same :math:`(x, r)` meridional locations across row
-    pitch.
+    gridlines have the same :math:`(x, r)` meridional locations across the
+    entire row pitch.
+
+    Parameters
+    ----------
+    x_c: array, length nx
+        Streamwise grid vector normalised by axial chord [--].
+    rm: float
+        A constant mean radius for this blade row [m].
+    Dr: array, length 2
+        Annulus spans at inlet and exit of blade row [m].
+
+    Returns
+    -------
+    r : array, nx by nr
+        Radial coordinates for each point in the meridional view [m].
+
     """
 
     # Evaluate hub and casing lines on the streamwise grid vector
@@ -96,7 +114,7 @@ def merid_grid(x_c, rm, Dr):
 
     # Check htr to decide if this is a cascade
     htr = rh[0] / rc[0]
-    if htr > 0.95:
+    if (htr > 0.95):
         # Define a uniform span fraction row vector
         spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
@@ -109,8 +127,27 @@ def merid_grid(x_c, rm, Dr):
     return r
 
 
+def section_coords(r, chi, A=None, spf_A=None):
+    """Generate blade sections at all radii."""
+
+    if A is None:
+        # If no detailed thickness specified, use preliminary
+        sec_xrt = np.array([geometry.blade_section( chii, tte=tte ) for chii in chi.T])
+    elif spf_A is None:
+        # If no span fraction specified, use same A at all radii
+        sec_xrt = [geometry.blade_section( chii, A=A, tte=tte ) for chii in chi.T]
+    else:
+        # Interpolate thickness coeffs as function of span fraction
+        spf = (r - r.min())/(r.max() - r.min())
+        A_func = interp1d(spf_A, A, axis=0)
+        sec_xrt = [geometry.blade_section( chii, A=A_func(spfi), tte=tte )
+                for spfi, chii in zip(spf,chi.T)]
+
+    return sec_xrt
+
+
 def b2b_grid(x_c, r2, chi, s_c, c, A=None):
-    """Generate circumferential coordiantes for a blade row."""
+    """Generate circumferential coordinates for a blade row."""
 
     ni = len(x_c)
     nj = r2.shape[1]
@@ -122,7 +159,6 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
 
     # Determine number of blades and angular pitch
     r_m = np.mean(r[0, (0, -1), 0])
-
     nblade = np.round(2.0 * np.pi * r_m / (s_c * c))  # Nearest whole number
     pitch_t = 2 * np.pi / nblade
 
@@ -147,10 +183,8 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
                 loop_xrt[0,:-1]*loop_xrt[1,1:]
                 - loop_xrt[0,1:]*loop_xrt[1,:-1]
                 )
-        # terms_x = loop_xrt[0,:-1]+loop_xrt[0,1:]
         terms_rt = loop_xrt[1,:-1]+loop_xrt[1,1:]
         Area = 0.5 * np.sum(terms_cross)
-        # x_cent = np.sum(terms_x*terms_cross)/6./Area
         rt_cent = np.sum(terms_rt*terms_cross)/6./Area
 
         # Now split the loop back up based on true LE/TE
@@ -198,7 +232,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
 
 def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None,Arot=None):
 
-    # Separate spacings for stator and rotor
+    # Distribute the spacings for stator and rotor
     dx_c_sr = ((dx_c[0], dx_c[1] / 2.0), (dx_c[1] / 2.0, dx_c[2]))
 
     # Streamwise grids for stator and rotor require

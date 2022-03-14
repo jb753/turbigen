@@ -1,5 +1,5 @@
 """Generate and submit a Turbostream job using a set of input parameters."""
-import design, turbostream, hmesh
+from . import design, turbostream, hmesh
 import json, glob, os, shutil
 
 import matplotlib.pyplot as plt

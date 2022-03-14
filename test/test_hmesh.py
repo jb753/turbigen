@@ -127,6 +127,3 @@ def test_b2b():
         # err_inlet = dt[: ile + 1, :]/pitch_t - 1.
         assert np.all(np.isclose(dt[: ile + 1, :], pitch_t))  # Inlet duct
         assert np.all(np.isclose(dt[ite, :], pitch_t))  # Exit duct
-
-# if __name__=="__main__":
-#     test_b2b()
