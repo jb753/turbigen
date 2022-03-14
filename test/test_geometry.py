@@ -7,7 +7,6 @@ from turbigen import geometry
 # Prepare a matrix of blade section input parameters
 chi1 = np.linspace(-30.0, 30.0, 6)
 chi2 = np.linspace(-60.0, 60.0, 6)
-aft = np.linspace(-1.0, 1.0, 6)
 
 tte = 0.04
 
@@ -17,9 +16,8 @@ def get_geometries():
     if not geometries:
         for chi1i in chi1:
             for chi2i in chi2:
-                for afti in aft:
-                    inputs.append(((chi1i, chi2i), afti))
-                    geometries.append(geometry.blade_section(*inputs[-1],tte=tte))
+                    inputs.append((chi1i, chi2i))
+                    geometries.append(geometry.blade_section(inputs[-1],tte=tte))
     return geometries
 
 
@@ -41,7 +39,7 @@ def test_section_surface_orientation():
 def test_camber_angles():
     """Check that camber line slope is consistent with desired angles."""
     xc = np.array([0., 1.])
-    for chii, _ in inputs:
+    for chii in inputs:
         dyc_dx = geometry.evaluate_camber_slope(xc,chii)
         chi_out = np.degrees(np.arctan(dyc_dx))
         assert np.all(np.isclose(chii, chi_out))
@@ -49,7 +47,7 @@ def test_camber_angles():
 def test_camber_slope():
     """Compare camber slope function to finite difference approximation."""
     xc = np.linspace(0.,1.)
-    for chii, _ in inputs:
+    for chii in inputs:
         dyc_dx = geometry.evaluate_camber_slope(xc,chii)
         yc = geometry.evaluate_camber(xc,chii)
         dyc_dx_out = np.gradient(yc, xc)
@@ -109,7 +107,7 @@ def test_fit_aerofoil():
     """Verify that with a large number of coeffs, we can reduce error to zero."""
     order = 20
     xc = geometry.cluster(geometry.nx)
-    for xyi, (chii, _) in zip(geometries, inputs):
+    for xyi, chii in zip(geometries, inputs):
         A, resid = geometry.fit_aerofoil(xyi, chii, tte, order)
         # Check shape-space residual
         assert resid < 1e-9

@@ -2,8 +2,9 @@
 import design, turbostream, hmesh
 import json, glob, os, shutil
 
+import matplotlib.pyplot as plt
 
-def write_hdf5_from_dict(params, input_file_name):
+def grid_from_dict(params):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
     # Mean-line design using the non-dimensionals
@@ -18,7 +19,8 @@ def write_hdf5_from_dict(params, input_file_name):
 
     # Make the TS grid and write out
     g = turbostream.make_grid(stg, *mesh, **params["bcond"])
-    g.write_hdf5(input_file_name)
+
+    return g, mesh
 
 
 def read_params(params_file_name):
@@ -48,7 +50,7 @@ def _new_id(base_dir):
     return new_sim_id
 
 
-def run(params, base_dir):
+def run(params, base_dir, plot_stuff=False):
     """Submit a cluster job corresponding to the given parameter set."""
 
     # Make the base dir if it does not exist already
@@ -71,8 +73,19 @@ def run(params, base_dir):
         "sed -i 's/turbigen/turbigen_%s_%04d/' %s" % (base_dir, new_id, new_slurm)
     )
 
-    # Generate input file
-    write_hdf5_from_dict(params, os.path.join(workdir, "input_1.hdf5"))
+    # Generate grid structure
+    g, mesh = grid_from_dict(params)
+
+    x, r, rt, ilte = [xi[0] for xi in mesh]
+    f, a = plt.subplots()
+    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,0],'-x')
+    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,-1],'-x')
+    a.axis('equal')
+    plt.savefig('beans.pdf')
+    rstrt
+
+    # Save input file
+    g.write_hdf5(os.path.join(workdir, "input_1.hdf5"))
 
     # Save the parameters
     with open(os.path.join(workdir, "params.json"), "w") as f:

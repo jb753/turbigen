@@ -109,7 +109,7 @@ def merid_grid(x_c, rm, Dr):
     return r
 
 
-def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
+def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     """Generate circumferential coordiantes for a blade row."""
 
     ni = len(x_c)
@@ -131,7 +131,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        sec_xrt = geometry.blade_section(chi[:, j])
+        sec_xrt = geometry.blade_section(chi[:, j],A)
 
         # Join to a loop
         loop_xrt = np.concatenate((sec_xrt[0],np.flip(sec_xrt[1,:,1:-1],-1)),-1)
@@ -171,7 +171,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
         upper_xrt[1,:] -= rt_cent
         lower_xrt[1,:] -= rt_cent
 
-        print(np.interp(0., *upper_xrt)-np.interp(0., *lower_xrt))
+        # print(np.interp(0., *upper_xrt)-np.interp(0., *lower_xrt))
 
         rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
         rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
@@ -196,7 +196,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, a=0.0):
     return rt
 
 
-def stage_grid(stg, rm, Dr, s, c, dev, dx_c):
+def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None,Arot=None):
 
     # Separate spacings for stator and rotor
     dx_c_sr = ((dx_c[0], dx_c[1] / 2.0), (dx_c[1] / 2.0, dx_c[2]))
@@ -220,6 +220,7 @@ def stage_grid(stg, rm, Dr, s, c, dev, dx_c):
 
     # Now we can do b2b grids
     s_c = s / c
-    rt = [b2b_grid(*argsi, c=c) for argsi in zip(x_c, r, chi, s_c)]
+    A = (Asta, Arot)
+    rt = [b2b_grid(*argsi[:-1], c=c, A=argsi[-1]) for argsi in zip(x_c, r, chi, s_c, A)]
 
     return x, r, rt, ilte

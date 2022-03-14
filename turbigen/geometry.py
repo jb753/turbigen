@@ -53,7 +53,7 @@ def evaluate_prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.2):
     return thick
 
 
-def blade_section(chi, a=0.0, tte=0.04):
+def blade_section(chi, A=None,tte=0.04):
     r"""Make a simple blade geometry with specified metal angles.
 
     Assume a cubic camber line :math:`\chi(\hat{x})` between inlet and exit
@@ -93,17 +93,18 @@ def blade_section(chi, a=0.0, tte=0.04):
         coordinate, tangential upper, and tangential lower coordinates.
     """
 
-
-    # Camber line
-    xc = np.linspace(0.,1.)
     xc = cluster(nx)
-    thick = evaluate_prelim_thickness(xc)
 
-    # Assemble preliminary upper and lower coordiates
-    xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]
+    if A is None:
 
-    # Fit Bernstein polynomials to the prelim coords in shape space
-    A, _ = fit_aerofoil(xy_prelim, chi, tte, 4)
+        # Camber line
+        thick = evaluate_prelim_thickness(xc)
+
+        # Assemble preliminary upper and lower coordiates
+        xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]
+
+        # Fit Bernstein polynomials to the prelim coords in shape space
+        A, _ = fit_aerofoil(xy_prelim, chi, tte, 4)
 
     # Upper and lower surfaces
     xy_up, xy_dn = evaluate_aerofoil(A , xc, chi, tte)
@@ -118,14 +119,15 @@ def bernstein(x, n, i):
 
 
 def to_shape_space(x, z, zte):
-	"""Transform real thickness to shape space."""
-	# Ignore singularities at leading and trailing edges
-	eps = 1e-6
-	ii = np.abs(x - 0.5) < (0.5 - eps)
-	s = np.ones(x.shape) * np.nan
-	# s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
-	s[ii] = z[ii] / (np.sqrt(x[ii]) * np.sqrt(1.0 - x[ii]))
-	return s
+    """Transform real thickness to shape space."""
+    # Ignore singularities at leading and trailing edges
+    eps = 1e-6
+    with np.errstate(invalid="ignore",divide="ignore"):
+        ii = np.abs(x - 0.5) < (0.5 - eps)
+    s = np.ones(x.shape) * np.nan
+    # s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
+    s[ii] = z[ii] / (np.sqrt(x[ii]) * np.sqrt(1.0 - x[ii]))
+    return s
 
 
 def from_shape_space(x, s, zte):
@@ -173,7 +175,8 @@ def fit_aerofoil(xy, chi, zte, order):
     for xyi in xy:
         xc, yc, t = coord_to_thickness(xyi, chi)
         s = to_shape_space(xc, t, zte)
-        itrim = np.abs(xc - 0.5) < (0.5 - dx)
+        with np.errstate(invalid="ignore",divide="ignore"):
+            itrim = np.abs(xc - 0.5) < (0.5 - dx)
         xtrim_all.append(xc[itrim])
         strim_all.append(s[itrim])
         X_all.append(np.stack([bernstein(xc[itrim], n, i) for i in range(1, n + 1)]).T)
@@ -222,9 +225,7 @@ def coord_to_thickness(xy, chi):
     yc = evaluate_camber(xc, chi)
     # Now evaluate thickness
     t = np.sqrt(np.sum(np.stack((xu - xc, yu - yc)) ** 2.0, 0))
-    # Negate if this is on lower surface
-    # if np.nanmean(yu-yc) > 0.:
-    #     t = -t
+
     return xc, yc, t
 
 
