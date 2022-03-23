@@ -20,7 +20,7 @@ def make_namedtuple_with_docstrings(class_name,class_doc,field_doc):
     return nt
 
 
-# Define a namedtuple to store all information about a stage design
+# Define a namedtuple to store all information about a non-dim stage design
 stage_vars = {
     "Yp": r"Stagnation pressure loss coefficients :math:`Y_p` [--]",
     "Ma": r"Mach numbers :math:`\Ma` [--]",
@@ -48,6 +48,7 @@ docstring_NonDimStage = (
 )
 NonDimStage = make_namedtuple_with_docstrings("NonDimStage", docstring_NonDimStage, stage_vars)
 
+# The dimensional stage has additional variables
 dim_stage_vars = {
         "htr": r"Hub-to-tip radius ratio ratio at rotor inlet, :math:`\HTR`.",
         "Omega": r"Shaft angular velocity, :math:`\Omega` [rad/s].",
@@ -68,10 +69,11 @@ docstring_DimStage = (
     "Data class to hold dimensional geometry and derived flow parameters "
     "of a turbine stage mean-line design."
 )
+
+# We want the dimensional stage to have some methods, but also immutable data
+# So make a namedtuple to start with, then subclass it to add the methods
 _DimStage = make_namedtuple_with_docstrings("DimStage", docstring_DimStage, { **stage_vars, **dim_stage_vars})
-
 class DimStage(_DimStage):
-
     def free_vortex_vane(self, spf):
         """Evaluate vane flow angles assuming a free vortex."""
 
@@ -499,24 +501,34 @@ def pitch_circulation(stg, C0):
     return C0 * S0_c * V2 / np.abs(Vt1 - Vt2)
 
 
-def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
+def chord_from_Re(stg, Re, cpTo1, Po1, rgas, viscosity=None):
     r"""Set axial chord length using Reynolds number and vane exit state.
 
-    Define a Reynolds number based on vane axial chord and vane exit static
-    state,
+    To define a Reynolds number, we must select a characteristic state and
+    length scale. The suction-side boundary layer dominates profile loss, so
+    the suction-side surface length should be our characteristic, but that
+    depends on the thickness distribution. We approximate the suction-side
+    length with the camber line length. Conventional wisdom suggests the vane
+    exit state (highest possible velocity) scales performance well.
+
+    So basing our Reynolds number on exit state and camberline length,
 
     .. math ::
 
-        \Rey = \frac{\rho_2 V_2 c_x}{\mu_2} \, .
+        \Rey = \frac{\rho_{2} V_{2} \ell}{\mu_{2}} \, .
 
-    We can solve for the axial chord by specifying a value for :math:`\Rey`,
-    calculating the dimensional thermodynamic state at station 2, and
-    evaluating the fluid viscosity :math:`\mu_2`.
+    We can solve for the dimensional camber line length :math:`\ell` by
+    specifying a value for :math:`\Rey`, calculating the dimensional
+    thermodynamic state at vane exit, and specifying the fluid viscosity
+    :math:`\mu_2`.
 
     Fixing the inlet stagnation enthalpy and pressures, and a value for the
     specific gas constant yields :math:`\rho_2 V_2` for a given non-dimensional
-    turbine stage design. Further, assuming the working fluid is air, the
-    viscosity is approximated by,
+    turbine stage design. Either, we can specify a constant viscosity, or,
+    assuming the working fluid is air, the viscosity is approximated by,
+
+    Finally, assuming a quadratic camber line :math:`\ell` relates the camber
+    line length to axial chord :math:`c_x`.
 
     .. math ::
 
@@ -536,15 +548,15 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
         Inlet stagnation pressure, :math:`P_{01}` [Pa].
     rgas : float
         Specific gas constant, :math:`R` [J/kg/K].
+    viscosity : float, default None
+        Kinematic viscosity, :math:`\mu` [kg/m^2/s]. If None, evaluate power
+        law at vane exit static temperature.
 
     Returns
     -------
     cx : float
         Dimensional vane axial chord, :math:`c_x` [m].
     """
-
-    # Viscosity of working fluid at a reference temperature
-    # (we assume variation with 0.62 power of temperature)
 
     # Get vane exit static state
     Ma2 = stg.Ma[1]
@@ -556,11 +568,21 @@ def chord_from_Re(stg, Re, cpTo1, Po1, rgas):
     rho2 = P2 / rgas / T2
     V2 = compflow.V_cpTo_from_Ma(Ma2, ga) * np.sqrt(To1 * cp)
 
-    # Get viscosity using 0.62 power approximation
-    mu2 = muref * (T2 / Tref) ** 0.62
+    # Choose viscosity
+    if viscosity:
+        # Fixed constant viscosity
+        mu2 = viscosity
+    else:
+        # Get viscosity using 0.62 power approximation
+        mu2 = muref * (T2 / Tref) ** 0.62
 
-    # Use specified Reynolds number to set chord
-    return Re * mu2 / rho2 / V2
+    # Get camber line length using Rey
+    ell = Re * mu2 / rho2 / V2
+
+    # Scale by camber line length
+    ell_cx = _integrate_length(stg.Al[:2])
+
+    return ell / ell_cx
 
 
 def free_vortex(stg, r_rm, dev):

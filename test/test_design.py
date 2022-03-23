@@ -269,9 +269,10 @@ def test_chord():
 
     for stg in get_geometries('incompressible'):
         cx = design.chord_from_Re(stg, Re, cpTo1_inc, Po1, rgas)
+        ell_cx = design._integrate_length(stg.Al[:2])
         V2 = cf.V_cpTo_from_Ma(stg.Ma[1], ga) * np.sqrt(cpTo1_inc)
         rho2 = Po1 / rgas / To1
-        Re_out = rho2 * V2 * cx / mu
+        Re_out = rho2 * V2 * cx * ell_cx / mu
         assert np.abs(Re - Re_out) < tol
 
 

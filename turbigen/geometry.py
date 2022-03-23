@@ -262,6 +262,9 @@ def evaluate_aerofoil(A, x, chi, zte):
 #   * Return x,rt coordinates for each section at other span fractions
 #
 # Once that is done, we can integrate this method into the meshing rountines.
+#
+# OR make a 'section interpolator' that returns a section given any spf
+
 
 def section_coords(r, chi, A=None, spf_A=None):
     """Generate blade sections at all radii."""
