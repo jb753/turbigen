@@ -1,7 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import design, geometry
-from scipy.interpolate import interp1d
 
 # import matplotlib.pyplot as plt
 
@@ -11,7 +10,7 @@ nr = 81  # Span
 nr_casc = 4  # Radial points in cascade mode
 nrt = 65  # Pitch
 rate = 0.5  # Axial chords required to fully relax
-dxsmth_c = 0.25  # Distance over which to fillet shroud corners
+dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
 
 
@@ -32,17 +31,24 @@ def streamwise_grid(dx_c):
 
     Parameters
     ----------
-    dx_c: array, length 2
-        Distances to row inlet and exit planes, normalised by axial chord [--].
+    dx_c: (2,) or (nrow, 2) array [--]
+        Distances to row inlet and exit planes, normalised by axial chord. If
+        two dimensional, evaluate each row and stack the return values.
 
     Returns
     -------
-    x_c: array
-        Streamwise grid vector, normalised by axial chord [--].
+    x_c: (nx,) or (nrow, nx) array [--]
+        Streamwise grid vector or vectors, normalised by axial chord.
+    ilete: (2,) or (nrow, 2) array [--]
+        Indices for the blade leading and trailing edges.
 
     """
 
-    clust = geometry.cluster(nxb)
+    # Call recursivly if multiple rows are input
+    if np.ndim(dx_c) > 1:
+        return (np.stack(reti) for reti in zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c]))
+
+    clust = geometry.cluster_cosine(nxb)
     dclust = np.diff(clust)
     dmax = dclust.max()
 
@@ -77,7 +83,6 @@ def streamwise_grid(dx_c):
     # Get indices of leading and trailing edges
     # These are needed later for patching
     i_edge = [np.where(x_c == xloc)[0][0] for xloc in [0.0, 1.0]]
-    # i_edge[1] = i_edge[1] + 1
 
     return x_c, i_edge
 
@@ -91,19 +96,23 @@ def merid_grid(x_c, rm, Dr):
 
     Parameters
     ----------
-    x_c: array, length nx
-        Streamwise grid vector normalised by axial chord [--].
-    rm: float
-        A constant mean radius for this blade row [m].
-    Dr: array, length 2
-        Annulus spans at inlet and exit of blade row [m].
+    x_c: (nx,) or (nrow, nx) array [--]
+        Streamwise grid vector or vectors normalised by axial chord .
+    rm: float [m]
+        A constant mean radius for this blade row or rows.
+    Dr: (2,) or (nrow, 2) array [m]
+        Annulus spans at inlet and exit of blade row.
 
     Returns
     -------
-    r : array, nx by nr
-        Radial coordinates for each point in the meridional view [m].
+    r : (nx, nr) or (nrow, nx, nr) array [m]
+        Radial coordinates for each point in the meridional view.
 
     """
+
+    # If multiple rows are input, call recursively and stack them
+    if np.ndim(x_c) > 1:
+        return np.stack([merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)])
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -121,7 +130,7 @@ def merid_grid(x_c, rm, Dr):
         spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
         # Define a clustered span fraction row vector
-        spf = np.atleast_2d(geometry.cluster(nr))
+        spf = np.atleast_2d(geometry.cluster_cosine(nr))
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -129,43 +138,22 @@ def merid_grid(x_c, rm, Dr):
     return r
 
 
-def section_coords(r, chi, A=None, spf_A=None):
-    """Generate blade sections at all radii."""
-
-    if A is None:
-        # If no detailed thickness specified, use preliminary
-        sec_xrt = np.array(
-            [geometry.blade_section(chii, tte=tte) for chii in chi.T]
-        )
-    elif spf_A is None:
-        # If no span fraction specified, use same A at all radii
-        sec_xrt = [geometry.blade_section(chii, A=A, tte=tte) for chii in chi.T]
-    else:
-        # Interpolate thickness coeffs as function of span fraction
-        spf = (r - r.min()) / (r.max() - r.min())
-        A_func = interp1d(spf_A, A, axis=0)
-        sec_xrt = [
-            geometry.blade_section(chii, A=A_func(spfi), tte=tte)
-            for spfi, chii in zip(spf, chi.T)
-        ]
-
-    return sec_xrt
-
-
-def b2b_grid(x_c, r2, chi, s_c, c, A=None):
+def b2b_grid(x, r, s, c, sect):
     """Generate circumferential coordinates for a blade row."""
 
-    ni = len(x_c)
-    nj = r2.shape[1]
+    ni = len(x)
+    nj = r.shape[1]
     nk = nrt
 
     # Dimensional axial coordinates
-    x = np.atleast_3d(x_c).transpose(1, 2, 0) * c
-    r = np.atleast_3d(r2)
+    x = np.reshape(x,(-1,1,1))
+    r = np.atleast_3d(r)
+
+    x_c = x / c
 
     # Determine number of blades and angular pitch
     r_m = np.mean(r[0, (0, -1), 0])
-    nblade = np.round(2.0 * np.pi * r_m / (s_c * c))  # Nearest whole number
+    nblade = np.round(2.0 * np.pi * r_m / s)  # Nearest whole number
     pitch_t = 2 * np.pi / nblade
 
     # Preallocate and loop over radial stations
@@ -173,7 +161,8 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        sec_xrt = geometry.blade_section(chi[:, j], A)
+        sec_xrt = sect[j]
+
 
         # Join to a loop
         loop_xrt = np.concatenate(
@@ -223,18 +212,16 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
         )
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = np.atleast_3d(geometry.cluster(nk)).transpose(2, 0, 1)
+    clust = geometry.cluster_cosine(nk).reshape(1,1,-1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate
-    unif_rt = np.atleast_3d(np.linspace(0.0, 1.0, nk)).transpose(2, 0, 1)
+    unif_rt = np.linspace(0.0, 1.0, nk).reshape(1,1,-1)
     relax = np.ones_like(x_c)
     relax[x_c < 0.0] = 1.0 + x_c[x_c < 0.0] / rate
     relax[x_c > 1.0] = 1.0 - (x_c[x_c > 1.0] - 1.0) / rate
     relax[relax < 0.0] = 0.0
-    clust = (
-        relax[:, None, None] * clust + (1.0 - relax[:, None, None]) * unif_rt
-    )
+    clust = relax * clust + (1.0 - relax) * unif_rt
 
     # Fill in the intermediate pitchwise points using clustering function
     rt = rtlim[..., (0,)] + np.diff(rtlim, 1, 2) * clust
@@ -242,34 +229,33 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     return rt
 
 
-def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None, Arot=None):
+def stage_grid(Dstg, dx_c, Aflat, shape_A):
 
-    # Distribute the spacings for stator and rotor
-    dx_c_sr = ((dx_c[0], dx_c[1] / 2.0), (dx_c[1] / 2.0, dx_c[2]))
+    # Distribute the spacings between stator and rotor
+    dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
 
-    # Streamwise grids for stator and rotor require
-    x_c, ilte = zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c_sr])
-
-    # Generate radial grid
-    Dr_sr = (Dr[:2], Dr[1:])
-    r = [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr_sr)]
-
-    # Evaluate blade angles
-    r_rm = np.concatenate([ri[iltei, :] / rm for ri, iltei in zip(r, ilte)])
-    chi = design.free_vortex(stg, r_rm[(0, 1, 3), :], (0.0, 0.0))
-
-    # Dimensionalise x
-    x = [x_ci * c for x_ci in x_c]
-
+    # Streamwise grids for stator and rotor 
+    x_c, ilte = streamwise_grid(dx_c)
     # Offset the rotor so it is downstream of stator
+    x = x_c * Dstg.cx.reshape(-1,1)
     x[1] = x[1] + x[0][-1] - x[1][0]
 
+    # Generate radial grid
+    Dr = np.array([Dstg.Dr[:2], Dstg.Dr[1:]])
+    r = merid_grid(x_c, Dstg.rm, Dr)
+
+    # Evaluate radial blade angles
+    r1 = r[0,ilte[0,0],:]
+    spf = (r1-r1.min())/r1.ptp()
+    chi = np.stack((Dstg.free_vortex_vane( spf ), Dstg.free_vortex_vane( spf )))
+
+    # Format the section thickness coefficients
+    A = np.reshape(Aflat,shape_A)
+
+    # Get sections
+    sect = [ geometry.radially_interpolate_section(spf, chii, spf, Ai) for chii, Ai in zip(chi, A) ]
+
     # Now we can do b2b grids
-    s_c = s / c
-    A = (Asta, Arot)
-    rt = [
-        b2b_grid(*argsi[:-1], c=c, A=argsi[-1])
-        for argsi in zip(x_c, r, chi, s_c, A)
-    ]
+    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.c, sect)]
 
     return x, r, rt, ilte

@@ -19,23 +19,23 @@ Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 spf = np.array([0.0, 0.5, 1.0])
 chi = Dstg.free_vortex_vane(spf)
 
-# Sect = geometry.SectionGenerator(spf, chi)
+hmesh.stage_grid( Dstg, [1.,0.5,1.], **params["section"])
 
-# xx = Sect.interpolate_section_xy([0.1, 0.9])
-# print(xx.shape)
+Ap = geometry.prelim_A()
+print(Ap)
+Apr = np.stack((Ap * 0.1, Ap, Ap * 1.05))
 
-Ap = geometry.prelim_A((0.,60.))
-Apr = np.stack((Ap*0.1,Ap,Ap*2.))
-
-xy = geometry.radially_interpolate_section(spf, chi, (0.1,0.5,0.9), A=Apr, spf_A=(0.,0.5,1.))
+xy = geometry.radially_interpolate_section(
+    spf, chi, (0.1,0.5,0.9), A=Apr, spf_A=(0.0, 0.5, 1.0)
+)
 
 fig, ax = plt.subplots()
 for xyi in xy:
-    ax.plot(xyi[0,0,:],xyi[0,1,:],'-x')
-    ax.plot(xyi[1,0,:],xyi[1,1,:],'-+')
+    ax.plot(xyi[0, 0, :], xyi[0, 1, :], "-x")
+    ax.plot(xyi[1, 0, :], xyi[1, 1, :], "-+")
 
-ax.axis('equal')
-plt.savefig('sects.pdf')
+ax.axis("equal")
+plt.savefig("sects.pdf")
 
 
 quit()
