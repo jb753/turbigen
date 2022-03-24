@@ -1,6 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
-from . import design, geometry
+from . import geometry
 
 # import matplotlib.pyplot as plt
 
@@ -229,7 +229,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, dx_c, Aflat, shape_A):
+def stage_grid(Dstg, dx_c, A):
 
     # Distribute the spacings between stator and rotor
     dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
@@ -249,13 +249,10 @@ def stage_grid(Dstg, dx_c, Aflat, shape_A):
     spf = (r1-r1.min())/r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane( spf ), Dstg.free_vortex_vane( spf )))
 
-    # Format the section thickness coefficients
-    A = np.reshape(Aflat,shape_A)
-
     # Get sections
     sect = [ geometry.radially_interpolate_section(spf, chii, spf, Ai) for chii, Ai in zip(chi, A) ]
 
     # Now we can do b2b grids
-    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.c, sect)]
+    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
 
     return x, r, rt, ilte

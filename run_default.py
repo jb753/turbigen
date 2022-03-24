@@ -19,7 +19,8 @@ Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 spf = np.array([0.0, 0.5, 1.0])
 chi = Dstg.free_vortex_vane(spf)
 
-hmesh.stage_grid( Dstg, [1.,0.5,1.], **params["section"])
+A = np.reshape(params["section"]["Aflat"],params["section"]["shape_A"])
+hmesh.stage_grid( Dstg, [1.,0.5,1.], A)
 
 Ap = geometry.prelim_A()
 print(Ap)
