@@ -4,6 +4,7 @@ import json, glob, os, shutil
 
 import matplotlib.pyplot as plt
 
+
 def grid_from_dict(params):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
@@ -70,7 +71,8 @@ def run(params, base_dir, plot_stuff=False):
 
     # Append run id to the slurm job name
     os.system(
-        "sed -i 's/turbigen/turbigen_%s_%04d/' %s" % (base_dir, new_id, new_slurm)
+        "sed -i 's/turbigen/turbigen_%s_%04d/' %s"
+        % (base_dir, new_id, new_slurm)
     )
 
     # Generate grid structure
@@ -78,10 +80,10 @@ def run(params, base_dir, plot_stuff=False):
 
     x, r, rt, ilte = [xi[0] for xi in mesh]
     f, a = plt.subplots()
-    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,0],'-x')
-    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,-1],'-x')
-    a.axis('equal')
-    plt.savefig('beans.pdf')
+    a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, 0], "-x")
+    a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, -1], "-x")
+    a.axis("equal")
+    plt.savefig("beans.pdf")
     rstrt
 
     # Save input file

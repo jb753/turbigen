@@ -1,6 +1,6 @@
 #
 # Native Python implementation of compflow, to be used when the
-# Fortan version is not available. 
+# Fortan version is not available.
 #
 import numpy as np
 from scipy.optimize import newton
@@ -50,7 +50,9 @@ def to_Ma(var, Y_in, ga, supersonic=False):
             )
 
         elif var == "rhoo_rho":
-            Ma_out[~ich] = np.sqrt((Y[~ich] ** (ga - 1.0) - 1.0) * 2.0 / (ga - 1.0))
+            Ma_out[~ich] = np.sqrt(
+                (Y[~ich] ** (ga - 1.0) - 1.0) * 2.0 / (ga - 1.0)
+            )
 
         else:
 
@@ -62,7 +64,9 @@ def to_Ma(var, Y_in, ga, supersonic=False):
                 return derivative_from_Ma(var, Ma_i, ga, validate=False)
 
             # Newton iteration
-            Ma_out[~ich] = newton(err, np.ones_like(Y[~ich]) * Ma_guess, fprime=jac)
+            Ma_out[~ich] = newton(
+                err, np.ones_like(Y[~ich]) * Ma_guess, fprime=jac
+            )
 
     return Ma_out
 
@@ -139,9 +143,9 @@ def from_Ma(var, Ma_in, ga_in, validate=True):
         Posh_Po = np.asarray(np.ones_like(Ma) * np.nan)
         A = gp1_2 * Ma ** 2.0 / To_T
         B = 2.0 * ga / gp1 * Ma ** 2.0 - 1.0 / gp1_gm1
-        Posh_Po[Ma >= Malimsh] = A[Ma >= Malimsh] ** g_gm1 * B[Ma >= Malimsh] ** (
-            -1.0 / gm1
-        )
+        Posh_Po[Ma >= Malimsh] = A[Ma >= Malimsh] ** g_gm1 * B[
+            Ma >= Malimsh
+        ] ** (-1.0 / gm1)
         return Posh_Po
 
     # Throw an error if we don't recognise the requested variable
@@ -171,7 +175,9 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
     g_gm1 = ga / gm1
     sqr_gm1 = np.sqrt(gm1)
     gp1_gm1 = (ga + 1.0) / gm1
-    Malimsh = np.sqrt(0.5 / g_gm1) + 0.001  # Limit when denominator goes negative
+    Malimsh = (
+        np.sqrt(0.5 / g_gm1) + 0.001
+    )  # Limit when denominator goes negative
 
     # Stagnation temperature ratio appears in every expression
     To_T = 1.0 + gm1_2 * Ma ** 2.0
@@ -205,7 +211,9 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
         )
 
     elif var == "mcpTo_AP":
-        return ga / sqr_gm1 * (To_T ** 0.5 + 0.5 * gm1 * Ma ** 2.0 * To_T ** -0.5)
+        return (
+            ga / sqr_gm1 * (To_T ** 0.5 + 0.5 * gm1 * Ma ** 2.0 * To_T ** -0.5)
+        )
 
     # Choking area
     elif var == "A_Acrit":
@@ -219,7 +227,9 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
         A = gp1 ** 2.0 * Ma / np.sqrt(2.0)
         C = ga * (2 * Ma ** 2.0 - 1.0) + 1
         der_Mash[Ma >= Malimsh] = (
-            -A[Ma >= Malimsh] * To_T[Ma >= Malimsh] ** -0.5 * C[Ma >= Malimsh] ** -1.5
+            -A[Ma >= Malimsh]
+            * To_T[Ma >= Malimsh] ** -0.5
+            * C[Ma >= Malimsh] ** -1.5
         )
         return der_Mash
 

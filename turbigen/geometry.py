@@ -9,19 +9,22 @@ from scipy.interpolate import interp1d
 
 nx = 201
 
+
 def fillet(x, r, dx):
     """Fillet over a join at |x|<dx."""
 
     # Get indices for the points at boundary of fillet
     ind = np.array(np.where(np.abs(x) <= dx)[0])
-    ind1 = ind[ (0, -1), ]
+    ind1 = ind[
+        (0, -1),
+    ]
 
     dr = np.diff(r) / np.diff(x)
 
     # Assemble matrix problem
-    rpts = r[ ind1 ]
-    xpts = x[ ind1 ]
-    drpts = dr[ ind1 ]
+    rpts = r[ind1]
+    xpts = x[ind1]
+    drpts = dr[ind1]
 
     b = np.atleast_2d(np.concatenate((rpts, drpts))).T
     A = np.array(
@@ -36,6 +39,7 @@ def fillet(x, r, dx):
 
     r[ind] = np.polyval(poly, x[ind])
 
+
 def cluster(npts):
     """Return a cosinusoidal clustering function with a set number of points."""
     # Define a non-dimensional clustering function
@@ -44,17 +48,36 @@ def cluster(npts):
 
 def evaluate_prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.2):
     """A rough cubic thickness distribution."""
-    tle = tte/2.
-    tlin =  tle + x * (tte - tle)
+    tle = tte / 2.0
+    tlin = tle + x * (tte - tle)
     # Additional component to make up maximum thickness
     tmod = tmax - xtmax * (tte - tle) - tle
     # Total thickness
-    thick = tlin + tmod * (1.0 - 4.* np.abs(x**(np.log(0.5)/np.log(xtmax)) - 0.5) **2.)
+    thick = tlin + tmod * (
+        1.0 - 4.0 * np.abs(x ** (np.log(0.5) / np.log(xtmax)) - 0.5) ** 2.0
+    )
     return thick
 
 
-def blade_section(chi, A=None,tte=0.04):
-    r"""Make a simple blade geometry with specified metal angles.
+def prelim_A(chi):
+    """Get values of A corresponding to preliminary thickness distribution."""
+
+    xc = cluster(nx)
+
+    # Camber line
+    thick = evaluate_prelim_thickness(xc)
+
+    # Assemble preliminary upper and lower coordiates
+    xy_prelim = [thickness_to_coord(xc, sgn * thick, chi) for sgn in [1, -1]]
+
+    # Fit Bernstein polynomials to the prelim coords in shape space
+    A, _ = fit_aerofoil(xy_prelim, chi, order=4)
+
+    return A
+
+
+def evaluate_section_xy(chi, A, x=None):
+    r"""Coordinates for blade section with specified camber and thickness.
 
     Assume a cubic camber line :math:`\chi(\hat{x})` between inlet and exit
     metal angles, with a coefficient :math:`\mathcal{A}` controlling the
@@ -83,8 +106,8 @@ def blade_section(chi, A=None,tte=0.04):
     ----------
     chi : array
         Metal angles at inlet and exit :math:`(\chi_1,\chi_2)` [deg].
-    a : float, default=0
-        Aft-loading factor :math:`\mathcal{A}` [--].
+    A : array, 2-by-(order-1)
+        Thickness coefficients :math:`\mathcal{A}` [--].
 
     Returns
     -------
@@ -93,25 +116,20 @@ def blade_section(chi, A=None,tte=0.04):
         coordinate, tangential upper, and tangential lower coordinates.
     """
 
-    xc = cluster(nx)
+    if x is None:
+        # Choose some x coordinates
+        x = cluster(nx)
 
-    if A is None:
+    # Convert from shape space to thickness 
+    s = evaluate_coefficients(x, A)
+    t = from_shape_space(x, s, zte=None)
 
-        # Camber line
-        thick = evaluate_prelim_thickness(xc)
+    # Flip the lower thickness
+    t[1] = -t[1]
 
-        # Assemble preliminary upper and lower coordiates
-        xy_prelim = [thickness_to_coord(xc, sgn*thick, chi) for sgn in [1,-1]]
-
-        # Fit Bernstein polynomials to the prelim coords in shape space
-        A, _ = fit_aerofoil(xy_prelim, chi, tte, 4)
-
-    # Upper and lower surfaces
-    xy_up, xy_dn = evaluate_aerofoil(A , xc, chi, tte)
-
-    # Assemble coordinates and return
-    return np.array(np.stack((xy_up, xy_dn)))
-
+    # Apply thickness to camber line and return
+    xy = np.stack([thickness_to_coord(x, ti, chi) for ti in t])
+    return xy
 
 def bernstein(x, n, i):
     """Evaluate ith Bernstein polynomial of degree n at some x-coordinates."""
@@ -122,7 +140,7 @@ def to_shape_space(x, z, zte):
     """Transform real thickness to shape space."""
     # Ignore singularities at leading and trailing edges
     eps = 1e-6
-    with np.errstate(invalid="ignore",divide="ignore"):
+    with np.errstate(invalid="ignore", divide="ignore"):
         ii = np.abs(x - 0.5) < (0.5 - eps)
     s = np.ones(x.shape) * np.nan
     # s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
@@ -138,10 +156,16 @@ def from_shape_space(x, s, zte):
 
 def evaluate_coefficients(x, A):
     """Evaluate a set of Bernstein polynomial coefficients at some x-coords."""
-    n = len(A) - 1
-    return np.sum(
-        np.stack([A[i] * bernstein(x, n, i) for i in range(0, n + 1)]), axis=0
-    )
+    A = np.atleast_2d(A)
+    nsurf, order = A.shape
+    n = order - 1
+    t = np.empty((order,nsurf,) + x.shape)
+    # Loop over surfaces and polynomials
+    for i in range(order):
+        for j in range(nsurf):
+            t[i,j,...] = A[j,i] * bernstein(x, n, i)
+    # Sum the polynomials
+    return np.sum(t,axis=0)
 
 
 def fit_coefficients(x, s, order, dx=0.05):
@@ -161,37 +185,42 @@ def fit_coefficients(x, s, order, dx=0.05):
     return lstsq(X, strim, rcond=None)[:2]
 
 
-def fit_aerofoil(xy, chi, zte, order):
-    """Fit Bernstein polynomial coefficients for both aerofoils surfaces."""
+def fit_aerofoil(xy, chi, order):
+    """Fit Bernstein polynomial coefficients for both aerofoil surfaces."""
     n = order - 1
-    dx = 0.02
     # When converting from real coordinates to shape space, we end up with
     # singularities and numerical instability at leading and trailing edges.
     # So in these cases, ignore within dx at LE and TE
+    dx = 0.02
     xtrim_all = []
     strim_all = []
     X_all = []
     X_le_all = []
     for xyi in xy:
         xc, yc, t = coord_to_thickness(xyi, chi)
-        s = to_shape_space(xc, t, zte)
-        with np.errstate(invalid="ignore",divide="ignore"):
+        s = to_shape_space(xc, t, None)
+        with np.errstate(invalid="ignore", divide="ignore"):
             itrim = np.abs(xc - 0.5) < (0.5 - dx)
         xtrim_all.append(xc[itrim])
         strim_all.append(s[itrim])
-        X_all.append(np.stack([bernstein(xc[itrim], n, i) for i in range(1, n + 1)]).T)
+        X_all.append(
+            np.stack([bernstein(xc[itrim], n, i) for i in range(1, n + 1)]).T
+        )
         X_le_all.append(bernstein(xc[itrim], n, 0))
 
     strim = np.concatenate(strim_all)
     X_le = np.concatenate(X_le_all)
     X = np.block(
-        [[X_all[0], np.zeros(X_all[1].shape)], [np.zeros(X_all[0].shape), X_all[1]]]
+        [
+            [X_all[0], np.zeros(X_all[1].shape)],
+            [np.zeros(X_all[0].shape), X_all[1]],
+        ]
     )
     X = np.insert(X, 0, X_le, 1)
     A_all, resid = lstsq(X, strim, rcond=None)[:2]
     Au = A_all[:order]
     Al = np.insert(A_all[order:], 0, A_all[0])
-    return (Au, Al), resid
+    return np.vstack((Au, Al)), resid
 
 
 def resample_coefficients(A, order):
@@ -214,17 +243,31 @@ def evaluate_camber_slope(x, chi):
 
 
 def coord_to_thickness(xy, chi):
-    """Perpendicular thickness distribution given camber line angles."""
-    xu, yu = xy
-    # Find intersections of xu, yu with camber line perpendicular
-    def iterate(x):
-        return yu - evaluate_camber(x, chi) + (xu - x) / evaluate_camber_slope(x, chi)
+    """Perpendicular thickness distribution given camber line angles.
 
-    with np.errstate(invalid="ignore",divide="ignore"):
-        xc = newton(iterate, xu)
+    Parameters
+    ----------
+
+    xy : array, 2-by-...
+        Cartesian coordinates of a blade surface.
+    chi : array, len 2
+        Camber angles for inlet and outlet."""
+
+    # Split into x and y
+    x, y = xy
+    # Find intersections of xu, yu with camber line perpendicular
+    def iterate(xi):
+        return (
+            y
+            - evaluate_camber(xi, chi)
+            + (x - xi) / evaluate_camber_slope(xi, chi)
+        )
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        xc = newton(iterate, x)
     yc = evaluate_camber(xc, chi)
     # Now evaluate thickness
-    t = np.sqrt(np.sum(np.stack((xu - xc, yu - yc)) ** 2.0, 0))
+    t = np.sqrt(np.sum(np.stack((x - xc, y - yc), axis=0) ** 2.0, axis=0))
 
     return xc, yc, t
 
@@ -244,42 +287,36 @@ def evaluate_surface(A, x, chi, zte):
     return thickness_to_coord(x, t, chi)
 
 
-def evaluate_aerofoil(A, x, chi, zte):
-    """Given two sets of coefficients, return coordinates."""
-    s = [evaluate_coefficients(x, Ai) for Ai in A]
-    t = [from_shape_space(x, si, zte) for si in s]
-    t[1] = -t[1]
-    return [thickness_to_coord(x, ti, chi) for ti in t]
+def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
+    """Given radial metal angle distributions, get blade section at a span."""
 
+    # Check input shape
+    spf = spf.reshape(-1)
+    nr = len(spf)
+    if not chi.shape == (2, nr):
+        raise ValueError("Input metal angle data wrong shape.")
 
-## TODO here
-# The creation of blade sections from stage parameters is agnostic to the
-# meshing, so it should not be implemented in hmesh. Nor should it really
-# depend on the implementation of the DimStage class. If we assume that the meshing 
-# function extracts the data we need from the DimStage object, then we need to,
-#   * Specify thickness coefficients A on a number of span fractions spf
-#   * Sensibly interpolate thicknesses, sensibly handle blank values
-#   * Return x,rt coordinates for each section at other span fractions
-#
-# Once that is done, we can integrate this method into the meshing rountines.
-#
-# OR make a 'section interpolator' that returns a section given any spf
+    func_chi = interp1d(spf, chi)
 
-
-def section_coords(r, chi, A=None, spf_A=None):
-    """Generate blade sections at all radii."""
-
+    # Fit A at midspan using preliminary thickness distribution if not specified
     if A is None:
-        # If no detailed thickness specified, use preliminary
-        sec_xrt = np.array([geometry.blade_section( chii, tte=tte ) for chii in chi.T])
-    elif spf_A is None:
-        # If no span fraction specified, use same A at all radii
-        sec_xrt = [geometry.blade_section( chii, A=A, tte=tte ) for chii in chi.T]
+        chi_mid = func_chi(0.5)
+        A = prelim_A(chi_mid)
+
+    if np.shape(spf_q) == ():
+        nq = 1
+        spf_q = (spf_q,)
     else:
-        # Interpolate thickness coeffs as function of span fraction
-        spf = (r - r.min())/(r.max() - r.min())
-        A_func = interp1d(spf_A, A, axis=0)
-        sec_xrt = [geometry.blade_section( chii, A=A_func(spfi), tte=tte )
-                for spfi, chii in zip(spf,chi.T)]
+        nq = len(spf_q)
+    chi_q = func_chi(spf_q).T
+
+    if np.ndim(A) == 2:
+        # If we only have one set of thickness coefficients, just repeat them
+        A_q = np.tile(np.expand_dims(A,0),(nq,1,1))
+    else:
+        # Otherwise Interpolate thicknesses to desired spans
+        A_q = interp1d(spf_A,A,axis=0)(spf_q)
+
+    sec_xrt = np.stack([evaluate_section_xy(chii , Ai) for chii, Ai in zip(chi_q, A_q) ])
 
     return sec_xrt

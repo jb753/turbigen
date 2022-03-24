@@ -70,7 +70,9 @@ def streamwise_grid(dx_c):
     else:
         # Otherwise truncate and rescale so that outlet is in exact spot
         x_c = x_c[x_c < dx_c[1] + 1.0]
-        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (x_c[-1] - 1.0) + 1.0
+        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (
+            x_c[-1] - 1.0
+        ) + 1.0
 
     # Get indices of leading and trailing edges
     # These are needed later for patching
@@ -114,7 +116,7 @@ def merid_grid(x_c, rm, Dr):
 
     # Check htr to decide if this is a cascade
     htr = rh[0] / rc[0]
-    if (htr > 0.95):
+    if htr > 0.95:
         # Define a uniform span fraction row vector
         spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
@@ -132,16 +134,20 @@ def section_coords(r, chi, A=None, spf_A=None):
 
     if A is None:
         # If no detailed thickness specified, use preliminary
-        sec_xrt = np.array([geometry.blade_section( chii, tte=tte ) for chii in chi.T])
+        sec_xrt = np.array(
+            [geometry.blade_section(chii, tte=tte) for chii in chi.T]
+        )
     elif spf_A is None:
         # If no span fraction specified, use same A at all radii
-        sec_xrt = [geometry.blade_section( chii, A=A, tte=tte ) for chii in chi.T]
+        sec_xrt = [geometry.blade_section(chii, A=A, tte=tte) for chii in chi.T]
     else:
         # Interpolate thickness coeffs as function of span fraction
-        spf = (r - r.min())/(r.max() - r.min())
+        spf = (r - r.min()) / (r.max() - r.min())
         A_func = interp1d(spf_A, A, axis=0)
-        sec_xrt = [geometry.blade_section( chii, A=A_func(spfi), tte=tte )
-                for spfi, chii in zip(spf,chi.T)]
+        sec_xrt = [
+            geometry.blade_section(chii, A=A_func(spfi), tte=tte)
+            for spfi, chii in zip(spf, chi.T)
+        ]
 
     return sec_xrt
 
@@ -167,10 +173,12 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        sec_xrt = geometry.blade_section(chi[:, j],A)
+        sec_xrt = geometry.blade_section(chi[:, j], A)
 
         # Join to a loop
-        loop_xrt = np.concatenate((sec_xrt[0],np.flip(sec_xrt[1,:,1:-1],-1)),-1)
+        loop_xrt = np.concatenate(
+            (sec_xrt[0], np.flip(sec_xrt[1, :, 1:-1], -1)), -1
+        )
 
         # Offset so that LE at x=0
         loop_xrt[0] -= loop_xrt[0].min()
@@ -180,18 +188,20 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
 
         # Area and centroid of the loop
         terms_cross = (
-                loop_xrt[0,:-1]*loop_xrt[1,1:]
-                - loop_xrt[0,1:]*loop_xrt[1,:-1]
-                )
-        terms_rt = loop_xrt[1,:-1]+loop_xrt[1,1:]
+            loop_xrt[0, :-1] * loop_xrt[1, 1:]
+            - loop_xrt[0, 1:] * loop_xrt[1, :-1]
+        )
+        terms_rt = loop_xrt[1, :-1] + loop_xrt[1, 1:]
         Area = 0.5 * np.sum(terms_cross)
-        rt_cent = np.sum(terms_rt*terms_cross)/6./Area
+        rt_cent = np.sum(terms_rt * terms_cross) / 6.0 / Area
 
         # Now split the loop back up based on true LE/TE
         ile = np.argmin(loop_xrt[0])
         ite = np.argmax(loop_xrt[0])
-        upper_xrt = loop_xrt[:,ile:(ite+1)]
-        lower_xrt = np.insert(np.flip(loop_xrt[:,ite:-1],-1), 0, loop_xrt[:,ile], -1)
+        upper_xrt = loop_xrt[:, ile : (ite + 1)]
+        lower_xrt = np.insert(
+            np.flip(loop_xrt[:, ite:-1], -1), 0, loop_xrt[:, ile], -1
+        )
 
         # fig, ax = plt.subplots()
         # ax.plot(*upper_xrt,'-x')
@@ -202,15 +212,15 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
         # quit()
 
         # Stack with centroid at t=0
-        upper_xrt[1,:] -= rt_cent
-        lower_xrt[1,:] -= rt_cent
+        upper_xrt[1, :] -= rt_cent
+        lower_xrt[1, :] -= rt_cent
 
         # print(np.interp(0., *upper_xrt)-np.interp(0., *lower_xrt))
 
         rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
-        rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
-
-
+        rtlim[:, j, 1] = (
+            np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
+        )
 
     # Define a pitchwise clustering function with correct dimensions
     clust = np.atleast_3d(geometry.cluster(nk)).transpose(2, 0, 1)
@@ -222,7 +232,9 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     relax[x_c < 0.0] = 1.0 + x_c[x_c < 0.0] / rate
     relax[x_c > 1.0] = 1.0 - (x_c[x_c > 1.0] - 1.0) / rate
     relax[relax < 0.0] = 0.0
-    clust = relax[:, None, None] * clust + (1.0 - relax[:, None, None]) * unif_rt
+    clust = (
+        relax[:, None, None] * clust + (1.0 - relax[:, None, None]) * unif_rt
+    )
 
     # Fill in the intermediate pitchwise points using clustering function
     rt = rtlim[..., (0,)] + np.diff(rtlim, 1, 2) * clust
@@ -230,7 +242,7 @@ def b2b_grid(x_c, r2, chi, s_c, c, A=None):
     return rt
 
 
-def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None,Arot=None):
+def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None, Arot=None):
 
     # Distribute the spacings for stator and rotor
     dx_c_sr = ((dx_c[0], dx_c[1] / 2.0), (dx_c[1] / 2.0, dx_c[2]))
@@ -255,6 +267,9 @@ def stage_grid(stg, rm, Dr, s, c, dev, dx_c, Asta=None,Arot=None):
     # Now we can do b2b grids
     s_c = s / c
     A = (Asta, Arot)
-    rt = [b2b_grid(*argsi[:-1], c=c, A=argsi[-1]) for argsi in zip(x_c, r, chi, s_c, A)]
+    rt = [
+        b2b_grid(*argsi[:-1], c=c, A=argsi[-1])
+        for argsi in zip(x_c, r, chi, s_c, A)
+    ]
 
     return x, r, rt, ilte

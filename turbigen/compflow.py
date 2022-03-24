@@ -10,4 +10,7 @@ try:
     from compflow import *
 except ImportError:
     from .compflow_native import *
-    warnings.warn('Falling back to native compflow. This is slower than the Fortan-accelerated compflow package. Try `pip install compflow`.')
+
+    warnings.warn(
+        "Falling back to native compflow. This is slower than the Fortan-accelerated compflow package. Try `pip install compflow`."
+    )

@@ -11,12 +11,13 @@ expon = 0.62
 muref = 1.8e-5
 Tref = 288.0
 
-def make_namedtuple_with_docstrings(class_name,class_doc,field_doc):
+
+def make_namedtuple_with_docstrings(class_name, class_doc, field_doc):
     nt = namedtuple(class_name, field_doc.keys())
     # Apply documentation, only works for Python 3
     nt.__doc__ = class_doc
     for fi, vi in field_doc.items():
-       getattr(nt, fi).__doc__ = vi
+        getattr(nt, fi).__doc__ = vi
     return nt
 
 
@@ -46,24 +47,26 @@ docstring_NonDimStage = (
     "Data class to hold non-dimensional geometry and derived flow parameters "
     "of a turbine stage mean-line design."
 )
-NonDimStage = make_namedtuple_with_docstrings("NonDimStage", docstring_NonDimStage, stage_vars)
+NonDimStage = make_namedtuple_with_docstrings(
+    "NonDimStage", docstring_NonDimStage, stage_vars
+)
 
 # The dimensional stage has additional variables
 dim_stage_vars = {
-        "htr": r"Hub-to-tip radius ratio ratio at rotor inlet, :math:`\HTR`.",
-        "Omega": r"Shaft angular velocity, :math:`\Omega` [rad/s].",
-        "To1" : r"Inlet stagnation temperature, :math:`T_{01}` [K].",
-        "Po1" : r"Inlet stagnation pressure, :math:`p_{01}` [K].",
-        "rgas" : r"Specific gas constant, :math:`R` [J/kg/K].",
-        "Re" : r"Axial chord Reynolds number at vane exit, :math:`\Rey` [--].",
-        "Co" : r"Circulation coefficient :math:`C_0` [--].",
-        "rm" : r"Mean radius, :math:`r_\mean` [m].",
-        "rh" : r"Hub radii, :math:`r_\hub` [m].",
-        "rc" : r"Casing radii, :math:`r_\cas` [m].",
-        "Dr" : r"Annulus spans, :math:`\Delta r` [m].",
-        "s_cx" : r"Pitch-to-chord ratios, :math:`s/c_x` [m].",
-        "s" : r"Row pitches, :math:`s` [m].",
-        "cx" : r"Axial chords, :math:`c_x` [m].",
+    "htr": r"Hub-to-tip radius ratio ratio at rotor inlet, :math:`\HTR`.",
+    "Omega": r"Shaft angular velocity, :math:`\Omega` [rad/s].",
+    "To1": r"Inlet stagnation temperature, :math:`T_{01}` [K].",
+    "Po1": r"Inlet stagnation pressure, :math:`p_{01}` [K].",
+    "rgas": r"Specific gas constant, :math:`R` [J/kg/K].",
+    "Re": r"Axial chord Reynolds number at vane exit, :math:`\Rey` [--].",
+    "Co": r"Circulation coefficient :math:`C_0` [--].",
+    "rm": r"Mean radius, :math:`r_\mean` [m].",
+    "rh": r"Hub radii, :math:`r_\hub` [m].",
+    "rc": r"Casing radii, :math:`r_\cas` [m].",
+    "Dr": r"Annulus spans, :math:`\Delta r` [m].",
+    "s_cx": r"Pitch-to-chord ratios, :math:`s/c_x` [m].",
+    "s": r"Row pitches, :math:`s` [m].",
+    "cx": r"Axial chords, :math:`c_x` [m].",
 }
 docstring_DimStage = (
     "Data class to hold dimensional geometry and derived flow parameters "
@@ -72,32 +75,39 @@ docstring_DimStage = (
 
 # We want the dimensional stage to have some methods, but also immutable data
 # So make a namedtuple to start with, then subclass it to add the methods
-_DimStage = make_namedtuple_with_docstrings("DimStage", docstring_DimStage, { **stage_vars, **dim_stage_vars})
+_DimStage = make_namedtuple_with_docstrings(
+    "DimStage", docstring_DimStage, {**stage_vars, **dim_stage_vars}
+)
+
+
 class DimStage(_DimStage):
     def free_vortex_vane(self, spf):
         """Evaluate vane flow angles assuming a free vortex."""
 
-        rh_vane = self.rh[:2].reshape(-1,1)
-        rc_vane = self.rc[:2].reshape(-1,1)
-        Al_vane = self.Al[:2].reshape(-1,1)
+        rh_vane = self.rh[:2].reshape(-1, 1)
+        rc_vane = self.rc[:2].reshape(-1, 1)
+        Al_vane = self.Al[:2].reshape(-1, 1)
 
-        r_rm = (np.reshape(spf,(1,-1))*(rh_vane-rc_vane) + rh_vane)/self.rm
+        r_rm = (
+            np.reshape(spf, (1, -1)) * (rh_vane - rc_vane) + rh_vane
+        ) / self.rm
 
-        return np.degrees( np.arctan(np.tan(np.radians(Al_vane)) / r_rm) )
+        return np.degrees(np.arctan(np.tan(np.radians(Al_vane)) / r_rm))
 
     def free_vortex_blade(self, spf):
         """Evaluate blade flow angles assuming a free vortex."""
 
-        rh_blade = self.rh[1:].reshape(-1,1)
-        rc_blade = self.rc[1:].reshape(-1,1)
-        Al_blade = self.Al[1:].reshape(-1,1)
+        rh_blade = self.rh[1:].reshape(-1, 1)
+        rc_blade = self.rc[1:].reshape(-1, 1)
+        Al_blade = self.Al[1:].reshape(-1, 1)
 
-        r_rm = (np.reshape(spf,(1,-1))*(rh_blade-rc_blade) + rh_blade)/self.rm
+        r_rm = (
+            np.reshape(spf, (1, -1)) * (rh_blade - rc_blade) + rh_blade
+        ) / self.rm
 
         return np.degrees(
-                np.arctan( np.tan(np.radians(Al_blade) / r_rm
-                - r_rm / self.phi)
-            ))
+            np.arctan(np.tan(np.radians(Al_blade) / r_rm - r_rm / self.phi))
+        )
 
     def apply_deviation_vane(self, chi, dev):
         """Apply a correction to vane exit metal angle in place"""
@@ -338,10 +348,14 @@ def nondim_stage_from_Lam(
 
     # Start the Newton iteration at minimum error point
     i0 = np.argmin(np.abs(Lam_guess))
-    Al_soln = scipy.optimize.newton(iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1])
+    Al_soln = scipy.optimize.newton(
+        iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1]
+    )
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
-    stg_out = nondim_stage_from_Al(phi, psi, [Al1, Al_soln], Ma, ga, eta, Vx_rat)
+    stg_out = nondim_stage_from_Al(
+        phi, psi, [Al1, Al_soln], Ma, ga, eta, Vx_rat
+    )
 
     return stg_out
 
@@ -431,7 +445,9 @@ def pitch_Zweifel(stg, Z):
 
     Alrelr = np.radians(stg.Alrel)
     cosAlrel = np.cos(Alrelr)
-    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(Alrelr)
+    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(
+        Alrelr
+    )
 
     P2_Po1 = stg.Po_Po1[1] / compflow.Po_P_from_Ma(stg.Ma[1], stg.ga)
     P3_Po2_rel = (
@@ -634,7 +650,7 @@ def free_vortex(stg, r_rm, dev):
     return chi_vane, chi_blade
 
 
-def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat):
+def scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat=1.0):
     """Scale a mean-line design and evaluate geometry."""
 
     # Assuming perfect gas get cp
@@ -645,17 +661,18 @@ def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat):
     rm, Dr = annulus_line(stg, htr, cpTo1, Omega)
 
     # Chord
-    cx = chord_from_Re(stg, Re, cpTo1, Po1, rgas) * np.array([1., cx_rat])
+    cx = chord_from_Re(stg, Re, cpTo1, Po1, rgas) * np.array([1.0, cx_rat])
 
     # Pitches
     s_cx = pitch_circulation(stg, Co)
 
+    # Assemble into dict
     geometry = {
         "rm": rm,
-        "Dr":Dr,
-        "cx":cx,
-        "s_cx":s_cx,
-        "s":s_cx*cx,
+        "Dr": Dr,
+        "cx": cx,
+        "s_cx": s_cx,
+        "s": s_cx * cx,
         "Omega": Omega,
         "To1": To1,
         "Po1": Po1,
@@ -663,12 +680,12 @@ def get_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat):
         "Re": Re,
         "Co": np.array(Co),
         "htr": htr,
-        "rh": rm-Dr/2.,
-        "rc": rm+Dr/2.,
+        "rh": rm - Dr / 2.0,
+        "rc": rm + Dr / 2.0,
     }
 
     # Return as a dimensional stage object
-    return DimStage( **stg._asdict(), **geometry)
+    return DimStage(**stg._asdict(), **geometry)
 
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):

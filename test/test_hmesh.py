@@ -10,6 +10,7 @@ Re = 4e6
 Po1 = 16e5
 rgas = 287.14
 
+
 def test_streamwise():
     """Verify the properties of generated streamwise grid vectors."""
     for dx_c_in in [0.2, 0.5, 1.0, 10.0]:
@@ -46,7 +47,7 @@ def test_merid():
     x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
     # Loop over entire mean-line design space
-    for stg in get_geometries('datum'):
+    for stg in get_geometries("datum"):
 
         # Annulus line
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
@@ -87,7 +88,7 @@ def test_b2b():
     x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
 
     # Loop over entire mean-line design space
-    for stg in get_geometries('datum'):
+    for stg in get_geometries("datum"):
 
         # Annulus line
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
@@ -97,7 +98,9 @@ def test_b2b():
         r_rotor = hmesh.merid_grid(x_c, rm, Dr[1:])
 
         # Evaluate blade angles
-        r_rm = np.concatenate([r_stator[(ile, ite), :], r_rotor[(ite,), :]]) / rm
+        r_rm = (
+            np.concatenate([r_stator[(ile, ite), :], r_rotor[(ite,), :]]) / rm
+        )
         chi_vane, chi_blade = design.free_vortex(stg, r_rm, (0.0, 0.0))
 
         # Evaluate pitch to chord

@@ -10,6 +10,7 @@ Tref = 300.0
 # Choose which variables to write out
 varnames = ["x", "rt", "eff_lost", "pfluc"]
 
+
 def save_meta(meta, basedir):
 
     # Save the metadata (lists because numpy arrays not seralisable)
@@ -22,6 +23,7 @@ def save_meta(meta, basedir):
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
         json.dump(meta, f)
+
 
 def node_to_cell(cut, prop_name):
     return np.mean(
@@ -141,7 +143,9 @@ def mix_out(cuts):
         mix["tstag"] = total["energy"] / total["mass"]
 
         # Velocity magnitude
-        mix["vabs"] = np.sqrt(mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0)
+        mix["vabs"] = np.sqrt(
+            mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0
+        )
 
         # Lookup compressible flow relation
         V_cpTo = mix["vabs"] / np.sqrt(cp * mix["tstag"])
@@ -188,12 +192,16 @@ def mix_out(cuts):
     cut_out.U = rmid * cut_out.rpm / 60.0 * 2.0 * np.pi
     cut_out.vt_rel = mix["vt"] - cut_out.U
 
-    cut_out.vabs_rel = np.sqrt(cut_out.vx**2. + cut_out.vr**2. + cut_out.vt_rel**2.)
+    cut_out.vabs_rel = np.sqrt(
+        cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
+    )
     cut_out.mach_rel = cut_out.vabs_rel / np.sqrt(ga * rgas * cut_out.tstat)
 
     cut_out.mach = cut_out.vabs / np.sqrt(ga * rgas * cut_out.tstat)
     cut_out.pstag = compflow.Po_P_from_Ma(cut_out.mach, ga) * cut_out.pstat
-    cut_out.pstag_rel = compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    cut_out.pstag_rel = (
+        compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    )
 
     return cut_out
 
@@ -236,7 +244,7 @@ def secondary(d, rpm, cp, ga):
     d["vtrel"] = d["vt"] - d["U"]
     d["v"] = np.sqrt(d["vx"] ** 2.0 + d["vr"] ** 2.0 + d["vt"] ** 2.0)
     d["vrel"] = np.sqrt(d["vx"] ** 2.0 + d["vr"] ** 2.0 + d["vtrel"] ** 2.0)
-    d["t"] = d["rt"]/d["r"]
+    d["t"] = d["rt"] / d["r"]
 
     # Total energy for temperature
     E = d["roe"] / d["ro"]
@@ -361,11 +369,22 @@ if __name__ == "__main__":
 
     # Pull out mass-average flow varibles from the cuts
     cuts = [
-        mix_out(ci) for ci in [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]
+        mix_out(ci)
+        for ci in [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]
     ]
-    var_names = ["pstag", "pstat", "tstag", "tstat", "vx", "vt", "vt_rel","pstag_rel"]
+    var_names = [
+        "pstag",
+        "pstat",
+        "tstag",
+        "tstat",
+        "vx",
+        "vt",
+        "vt_rel",
+        "pstag_rel",
+    ]
     Po, P, To, T, Vx, Vt, Vt_rel, Po_rel = [
-        np.array([getattr(ci, var_name) for ci in cuts]) for var_name in var_names
+        np.array([getattr(ci, var_name) for ci in cuts])
+        for var_name in var_names
     ]
 
     # Calculate entropy change with respect to inlet
@@ -377,7 +396,9 @@ if __name__ == "__main__":
     meta = {}
 
     # Polytropic efficiency
-    meta["eff_poly"] = ga / (ga - 1.0) * np.log(To[3] / To[0]) / np.log(Po[3] / Po[0])
+    meta["eff_poly"] = (
+        ga / (ga - 1.0) * np.log(To[3] / To[0]) / np.log(Po[3] / Po[0])
+    )
     meta["eff_isen"] = (To[3] / To[0] - 1.0) / (
         (Po[3] / Po[0]) ** ((ga - 1.0) / ga) - 1.0
     )
@@ -392,7 +413,6 @@ if __name__ == "__main__":
     meta["eff_isen_lost"] = 1.0 - 1.0 / (1.0 + T[3] * ds / cp / (To[0] - To[3]))
 
     meta["runid"] = run_name
-
 
     if meta_only:
         save_meta(meta, basedir)
@@ -441,18 +461,25 @@ if __name__ == "__main__":
                     -T[3] * (dat_now["ds"] - ds_ref) / cp / (To[3] - To[0])
                 )
 
-
                 # Unsteady lost efficiency at exit if this is a rotor passage
                 if not rpm_now == 0.0:
 
                     # Indexes for LE and TE
-                    pitch = np.diff(dat_now["t"][:,0,(0,-1),0],1,1)
+                    pitch = np.diff(dat_now["t"][:, 0, (0, -1), 0], 1, 1)
                     tol = 1e-5
-                    ile = np.where(np.abs(pitch/pitch[0]-1.)>tol)[0][0]-1
-                    ite = np.where(np.abs(pitch/pitch[-1]-1.)>tol)[0][-1]+1
+                    ile = (
+                        np.where(np.abs(pitch / pitch[0] - 1.0) > tol)[0][0] - 1
+                    )
+                    ite = (
+                        np.where(np.abs(pitch / pitch[-1] - 1.0) > tol)[0][-1]
+                        + 1
+                    )
 
                     # Pressure coefficient
-                    Cp_now = (dat_now["pstat"][ile:(ite+1),0,(0,-1),:]-Po_rel[2])/(Po_rel[2]-P[2])
+                    Cp_now = (
+                        dat_now["pstat"][ile : (ite + 1), 0, (0, -1), :]
+                        - Po_rel[2]
+                    ) / (Po_rel[2] - P[2])
                     Cp.append(Cp_now)
 
                     # Mass average lost effy
@@ -460,7 +487,10 @@ if __name__ == "__main__":
                     eff_lost_now = dat_now["eff_lost"][-2, 0, :, :]
                     rovx_now = dat_now["rovx"][-2, 0, :, :]
                     mdot_now = np.trapz(rovx_now, rt_now, axis=0)
-                    eff_av_now = np.trapz(rovx_now*eff_lost_now, rt_now, axis=0)/mdot_now
+                    eff_av_now = (
+                        np.trapz(rovx_now * eff_lost_now, rt_now, axis=0)
+                        / mdot_now
+                    )
 
                     # blockage
 
@@ -472,14 +502,16 @@ if __name__ == "__main__":
                     mdot_le = np.trapz(rovx_le, rt_le, axis=0)
 
                     # Area is integral drt
-                    A_le = np.trapz(np.ones_like(rt_le),rt_le,axis=0)
+                    A_le = np.trapz(np.ones_like(rt_le), rt_le, axis=0)
 
                     # Reference mass flux is total mass over total area
                     # Or the mass-averaged rovx
-                    rovx_ref = mdot_le/A_le
+                    rovx_ref = mdot_le / A_le
 
                     # Blockage is integral 1 - rovx/rover_ref drt
-                    blockage_now = np.trapz(1.-rovx_now/rovx_ref, rt_now,axis=0)
+                    blockage_now = np.trapz(
+                        1.0 - rovx_now / rovx_ref, rt_now, axis=0
+                    )
 
                     mdot_unst.append(mdot_now)
                     eff_lost_unst.append(eff_av_now)
@@ -490,14 +522,13 @@ if __name__ == "__main__":
                     # rorvt_now = dat_now["rorvt"][-2, 0, :, :]
                     # rorvt_av_now = np.trapz(rorvt_now*rovx_now, rt_now, axis=0)/mdot_now
 
-
                 # Remove variables we are not interested in
                 for k in list(dat_now.keys()):
                     if not k in varnames:
                         dat_now.pop(k)
                     else:
                         # Truncate to one cycle
-                        dat_now[k] = dat_now[k][...,:72]
+                        dat_now[k] = dat_now[k][..., :72]
 
                 # Wangle the dimensions and add to list
                 vars_all.append(
@@ -518,12 +549,14 @@ mdot_unst = np.array(mdot_unst)
 blockage_unst = np.array(blockage_unst)
 
 # Take mass av of each rotor passage effy
-meta["eff_lost_unst"] = (np.sum(eff_lost_unst*mdot_unst, 0)/np.sum(mdot_unst,0))[:]
-meta["mdot_unst"] = np.sum(mdot_unst,0)[:]
-meta["blockage_unst"] = np.mean(blockage_unst,0)[:]
+meta["eff_lost_unst"] = (
+    np.sum(eff_lost_unst * mdot_unst, 0) / np.sum(mdot_unst, 0)
+)[:]
+meta["mdot_unst"] = np.sum(mdot_unst, 0)[:]
+meta["blockage_unst"] = np.mean(blockage_unst, 0)[:]
 
-x_c = dat_now["x"][ile:(ite+1),0,0,0]
-x_c = (x_c - x_c[0])/np.ptp(x_c)
+x_c = dat_now["x"][ile : (ite + 1), 0, 0, 0]
+x_c = (x_c - x_c[0]) / np.ptp(x_c)
 
 # Save with unsteady metadata
 save_meta(meta, basedir)
@@ -542,5 +575,5 @@ np.savez_compressed(
     sizes=dijk_all,
     nsr=(nstator, nrotor),
     Cp=Cp,
-    x_c=x_c
+    x_c=x_c,
 )

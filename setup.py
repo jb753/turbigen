@@ -12,17 +12,17 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     # url="https://jb753.user.srcf.net/compflow-docs/index.html",
-    packages=['turbigen'],
+    packages=["turbigen"],
     install_requires=[
         "numpy",
         "scipy",
         "compflow",
-        ],
+    ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.7',
-    keywords=['aerodynamics','engineering','turbomachinery','design'],
+    python_requires=">=3.7",
+    keywords=["aerodynamics", "engineering", "turbomachinery", "design"],
 )

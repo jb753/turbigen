@@ -1,6 +1,7 @@
-from turbigen import design, hmesh
+from turbigen import design, hmesh, geometry
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 with open("turbigen/default_params.json", "r") as f:
@@ -9,35 +10,32 @@ with open("turbigen/default_params.json", "r") as f:
 # Mean-line design using the non-dimensionals
 stg = design.nondim_stage_from_Lam(**params["mean-line"])
 
-for ai in stg._fields:
-    print(ai)
+params["3d"]["htr"] = 0.6
 
 # Set geometry using dimensional bcond and 3D design parameter
 bcond_and_3d_params = dict(params["bcond"], **params["3d"])
-Dstg = design.get_geometry(stg, **bcond_and_3d_params)
+Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 
-Dstg.free_vortex_vane([0.,0.5,1.0])
+spf = np.array([0.0, 0.5, 1.0])
+chi = Dstg.free_vortex_vane(spf)
 
-print(Dstg)
+# Sect = geometry.SectionGenerator(spf, chi)
+
+# xx = Sect.interpolate_section_xy([0.1, 0.9])
+# print(xx.shape)
+
+Ap = geometry.prelim_A((0.,60.))
+Apr = np.stack((Ap*0.1,Ap,Ap*2.))
+
+xy = geometry.radially_interpolate_section(spf, chi, (0.1,0.5,0.9), A=Apr, spf_A=(0.,0.5,1.))
+
+fig, ax = plt.subplots()
+for xyi in xy:
+    ax.plot(xyi[0,0,:],xyi[0,1,:],'-x')
+    ax.plot(xyi[1,0,:],xyi[1,1,:],'-+')
+
+ax.axis('equal')
+plt.savefig('sects.pdf')
+
 
 quit()
-
-# Evaluate blade angles
-r = np.vstack([np.linspace(rm-Dri/2.,rm+Dri/2.,3) for Dri in Dr])
-chi = design.free_vortex(stg, r/rm, (0.0, 0.0))
-
-sec_xrt = hmesh.section_coords(r, chi[0])
-print(sec_xrt.shape)
-
-
-# Change the base run dir to separate different groups of runs
-# base_run_dir = "run"
-
-# params["mean-line"]["phi"] = 0.392
-# params["mean-line"]["psi"] = 1.009
-
-# params["mesh"]["Asta"] = [[0.36890363, 0.5244426 , 0.29232573, 0.29764035],[0.36890363, 0.5244426 , 0.29232573, 0.29764035]]
-# params["mesh"]["Arot"] = [[0.36890363, 0.5244426 , 0.29232573, 0.29764035],[0.36890363, 0.5244426 , 0.29232573, 0.29764035]]
-
-# Submit a job to the cluster
-# submit.run(params, base_run_dir, plot_stuff=True)

@@ -147,7 +147,9 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     # Add slip walls if this is a cascade
     htr = r[0, 1, 0] / r[0, 0, 0]
     if htr > 0.95:
-        slip_j0 = _make_patch(kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk))
+        slip_j0 = _make_patch(
+            kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
+        )
         slip_nj = _make_patch(
             kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
         )
@@ -294,7 +296,8 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     # calc nb
     t = [rti / ri[..., None] for rti, ri in zip(rt, r)]
     nb = [
-        np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1))) for ti in t
+        np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1)))
+        for ti in t
     ]
     nb_int = [int(nbi) for nbi in nb]
 
@@ -302,14 +305,23 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
 
     # Inlet
     inlet = _make_patch(
-        kind="inlet", bid=bid_vane, i=(0, 1), j=(0, nj[0]), k=(0, nk[0]), dirs=(6, 1, 2)
+        kind="inlet",
+        bid=bid_vane,
+        i=(0, 1),
+        j=(0, nj[0]),
+        k=(0, nk[0]),
+        dirs=(6, 1, 2),
     )
     inlet.pid = g.add_patch(bid_vane, inlet)
     apply_inlet(g, bid_vane, inlet.pid, Po1, To1, nk[0], nj[0])
 
     # Outlet
     outlet = _make_patch(
-        kind="outlet", bid=bid_blade, i=(ni[1] - 1, ni[1]), j=(0, nj[1]), k=(0, nk[1])
+        kind="outlet",
+        bid=bid_blade,
+        i=(ni[1] - 1, ni[1]),
+        j=(0, nj[1]),
+        k=(0, nk[1]),
     )
 
     outlet.pid = g.add_patch(bid_blade, outlet)
