@@ -16,26 +16,30 @@ params["3d"]["htr"] = 0.6
 bcond_and_3d_params = dict(params["bcond"], **params["3d"])
 Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 
+# Make a test section
 spf = np.array([0.0, 0.5, 1.0])
 chi = Dstg.free_vortex_vane(spf)
-
-A = np.reshape(params["section"]["Aflat"],params["section"]["shape_A"])
-hmesh.stage_grid( Dstg, [1.,0.5,1.], A)
-
-Ap = geometry.prelim_A()
-print(Ap)
-Apr = np.stack((Ap * 0.1, Ap, Ap * 1.05))
-
 xy = geometry.radially_interpolate_section(
-    spf, chi, (0.1,0.5,0.9), A=Apr, spf_A=(0.0, 0.5, 1.0)
+    spf, chi, (0.5,), A=geometry.prelim_A()*.2
 )
 
-fig, ax = plt.subplots()
-for xyi in xy:
-    ax.plot(xyi[0, 0, :], xyi[0, 1, :], "-x")
-    ax.plot(xyi[1, 0, :], xyi[1, 1, :], "-+")
+# A = np.reshape(params["section"]["Aflat"],params["section"]["shape_A"])
+# hmesh.stage_grid( Dstg, [1.,0.5,1.], A)
 
+xyl = geometry.loop_section(xy, repeat_last=True).T
+max_circle = geometry.largest_inscribed_circle(xyl)
+print(max_circle)
+
+# vor is 
+
+fig, ax = plt.subplots()
+ax.plot(xy[0, 0, :], xy[0, 1, :], ".",ms=0.5)
+ax.plot(xy[1, 0, :], xy[1, 1, :], ".",ms=0.5)
+ax.scatter(vor[:,0],vor[:,1],s=10,c=min_dist, marker='o')
 ax.axis("equal")
+ax.set_xlim((-0.5,1.5))
+ax.set_ylim((-0.5,2))
+
 plt.savefig("sects.pdf")
 
 

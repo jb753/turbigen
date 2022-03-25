@@ -4,6 +4,8 @@ from scipy.special import binom
 from numpy.linalg import lstsq
 from scipy.optimize import newton
 from scipy.interpolate import interp1d
+from scipy.spatial import Voronoi
+import matplotlib.path as mplpath
 
 nx = 201
 
@@ -230,6 +232,15 @@ def _thickness_to_coord(xc, t, chi):
     yu = yc + t * np.cos(theta)
     return xu, yu
 
+def loop_section(xy, repeat_last=False):
+    """Join a section with separate pressure and suction sides into a loop."""
+    # Concatenate the upper side with a flipped version of the lower side,
+    # discarding the first and last points to prevent repetition
+    if repeat_last:
+        return np.concatenate((xy[0], np.flip(xy[1, :, 1:], axis=-1)), axis=-1)
+    else:
+        return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
+
 
 def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
     """From radial angle distributions, interpolate aerofoil at query spans.
@@ -295,3 +306,20 @@ def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
 # Next job is to apply thickness constraints. Can a given xy section fit a
 # circle some fraction of the chord? Scipy has voronoi builtin, then for each
 # voronoi vertex find the point on the surface greatest distance away.
+
+def largest_inscribed_circle(xy):
+    """Radius of the largest circle contained within an xy polygon."""
+    vor = Voronoi(xy).vertices
+    # TODO replace matplotlib dependency with something else
+    path = mplpath.Path(xy)
+    # Only include points within the section, sorted
+    vor = np.sort(vor[path.contains_points(vor)],axis=0)
+    # vor is shape (m,2), xy is shape (n,2)
+    # we assemble distances from each vor point to each xy point
+    vor3 = np.expand_dims(vor,0)
+    xy3 = np.expand_dims(xy,1)
+    dist = np.sqrt(np.sum((vor3-xy3)**2.,axis=-1))
+    # At any point on the medial axis, we are interested in the closest point
+    min_dist = dist.min(axis=0)
+    # The largest inscribed circle fits at the point on the medial axis that is furthest away from the surface
+    return min_dist.max()

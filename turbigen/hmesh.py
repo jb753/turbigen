@@ -165,9 +165,7 @@ def b2b_grid(x, r, s, c, sect):
 
 
         # Join to a loop
-        loop_xrt = np.concatenate(
-            (sec_xrt[0], np.flip(sec_xrt[1, :, 1:-1], -1)), -1
-        )
+        loop_xrt = geometry.loop_section(sec_xrt)
 
         # Offset so that LE at x=0
         loop_xrt[0] -= loop_xrt[0].min()
