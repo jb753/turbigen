@@ -1,11 +1,13 @@
-from turbigen import design, hmesh, geometry
-import json
+from turbigen import submit, turbostream
 import numpy as np
 import matplotlib.pyplot as plt
 
+params = submit.read_params("turbigen/default_params.json")
 
-with open("turbigen/default_params.json", "r") as f:
-    params = json.load(f)
+base_dir = 'qqq'
+submit.run(turbostream.write_grid_from_dict, params, base_dir)
+
+quit()
 
 # Mean-line design using the non-dimensionals
 stg = design.nondim_stage_from_Lam(**params["mean-line"])
@@ -23,8 +25,8 @@ Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 #     spf, chi, (0.5,), A=geometry.prelim_A() * 0.2
 # )
 
-A = np.reshape(params["section"]["Aflat"],params["section"]["shape_A"])
-hmesh.stage_grid( Dstg, [1.,0.5,1.], A, min_inscribed_radius=0.2)
+A = np.reshape(params["section"]["Aflat"], params["section"]["shape_A"])
+hmesh.stage_grid(Dstg, [1.0, 0.5, 1.0], A, min_inscribed_radius=0.2)
 
 # xyl = geometry.loop_section(xy, repeat_last=False).T
 # max_circle = geometry.largest_inscribed_circle(xyl)

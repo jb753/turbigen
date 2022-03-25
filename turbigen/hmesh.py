@@ -2,7 +2,7 @@
 import numpy as np
 from . import geometry
 
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # Configure numbers of points
 nxb = 97  # Blade chord
@@ -12,7 +12,6 @@ nrt = 65  # Pitch
 rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
-
 
 def streamwise_grid(dx_c):
     """Generate non-dimensional streamwise grid vector for a blade row.
@@ -46,10 +45,7 @@ def streamwise_grid(dx_c):
 
     # Call recursivly if multiple rows are input
     if np.ndim(dx_c) > 1:
-        return (
-            np.stack(reti)
-            for reti in zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c])
-        )
+        return zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c])
 
     clust = geometry.cluster_cosine(nxb)
     dclust = np.diff(clust)
@@ -114,10 +110,8 @@ def merid_grid(x_c, rm, Dr):
     """
 
     # If multiple rows are input, call recursively and stack them
-    if np.ndim(x_c) > 1:
-        return np.stack(
-            [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)]
-        )
+    if isinstance(x_c, tuple):
+        return [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)]
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -228,7 +222,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, dx_c, A, min_inscribed_radius=None):
+def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
     """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
@@ -236,18 +230,16 @@ def stage_grid(Dstg, dx_c, A, min_inscribed_radius=None):
 
     # Streamwise grids for stator and rotor
     x_c, ilte = streamwise_grid(dx_c)
-    # Offset the rotor so it is downstream of stator
-    x = x_c * Dstg.cx.reshape(-1, 1)
-    x[1] = x[1] + x[0][-1] - x[1][0]
+    x = [ x_ci * Dstg.cx[0] for x_ci in x_c ]
 
     # Generate radial grid
     Dr = np.array([Dstg.Dr[:2], Dstg.Dr[1:]])
     r = merid_grid(x_c, Dstg.rm, Dr)
 
     # Evaluate radial blade angles
-    r1 = r[0, ilte[0, 0], :]
+    r1 = r[0][ilte[0][0], :]
     spf = (r1 - r1.min()) / r1.ptp()
-    chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_vane(spf)))
+    chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
 
     # Get sections (normalised by axial chord for now)
     sect = [
@@ -255,17 +247,39 @@ def stage_grid(Dstg, dx_c, A, min_inscribed_radius=None):
         for chii, Ai in zip(chi, A)
     ]
 
+    # fig, ax = plt.subplots()
+    # ax.plot(*sect[0][2,...])
+    # ax.plot(*sect[1][2,...])
+    # ax.axis('equal')
+    # plt.savefig('sect.pdf')
+    # quit()
+
     # If we have asked for a minimum inscribed circle, confirm that the
     # constraint is not violated
     if min_inscribed_radius:
-        for row_sect, cx in zip(sect,Dstg.cx):
+        for row_sect in sect:
             for rad_sect in row_sect:
                 current_radius = geometry.largest_inscribed_circle(rad_sect.T)
-                if  current_radius < min_inscribed_radius:
-                    raise geometry.ConstraintError('Thickness is too small for the constraint inscribed circle: %.3f < %.3f' % (current_radius, min_inscribed_radius))
-
+                if current_radius < min_inscribed_radius:
+                    raise geometry.ConstraintError(
+                        (
+                            "Thickness is too small for the constraint "
+                            "inscribed circle: %.3f < %.3f" %
+                            (current_radius, min_inscribed_radius)
+                        )
+                    )
 
     # Now we can do b2b grids
     rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
+
+    # Offset the rotor so it is downstream of stator
+    x[1] = x[1] + x[0][-1] - x[1][0]
+
+    # fig, ax = plt.subplots()
+    # ax.plot(x[0],rt[0][:,0,(0,-1)])
+    # ax.plot(x[1],rt[1][:,0,(0,-1)])
+    # ax.axis('equal')
+    # plt.savefig('sect.pdf')
+    # quit()
 
     return x, r, rt, ilte

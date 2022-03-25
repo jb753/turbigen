@@ -11,13 +11,20 @@ expon = 0.62
 muref = 1.8e-5
 Tref = 288.0
 
+def _merge_dicts(a,b):
+    c = a.copy()
+    c.update(b)
+    return c
 
-def make_namedtuple_with_docstrings(class_name, class_doc, field_doc):
+def _make_namedtuple_with_docstrings(class_name, class_doc, field_doc):
     nt = namedtuple(class_name, field_doc.keys())
     # Apply documentation, only works for Python 3
-    nt.__doc__ = class_doc
-    for fi, vi in field_doc.items():
-        getattr(nt, fi).__doc__ = vi
+    try:
+        nt.__doc__ = class_doc
+        for fi, vi in field_doc.items():
+            getattr(nt, fi).__doc__ = vi
+    except AttributeError:
+        pass
     return nt
 
 
@@ -47,7 +54,7 @@ docstring_NonDimStage = (
     "Data class to hold non-dimensional geometry and derived flow parameters "
     "of a turbine stage mean-line design."
 )
-NonDimStage = make_namedtuple_with_docstrings(
+NonDimStage = _make_namedtuple_with_docstrings(
     "NonDimStage", docstring_NonDimStage, stage_vars
 )
 
@@ -75,8 +82,8 @@ docstring_DimStage = (
 
 # We want the dimensional stage to have some methods, but also immutable data
 # So make a namedtuple to start with, then subclass it to add the methods
-_DimStage = make_namedtuple_with_docstrings(
-    "DimStage", docstring_DimStage, {**stage_vars, **dim_stage_vars}
+_DimStage = _make_namedtuple_with_docstrings(
+    "DimStage", docstring_DimStage, _merge_dicts(stage_vars, dim_stage_vars)
 )
 
 
@@ -102,23 +109,12 @@ class DimStage(_DimStage):
         Al_blade = self.Al[1:].reshape(-1, 1)
 
         r_rm = (
-            np.reshape(spf, (1, -1)) * (rh_blade - rc_blade) + rh_blade
+            np.reshape(spf, (1, -1)) * (rc_blade - rh_blade) + rh_blade
         ) / self.rm
 
         return np.degrees(
-            np.arctan(np.tan(np.radians(Al_blade) / r_rm - r_rm / self.phi))
+            np.arctan(np.tan(np.radians(Al_blade)) / r_rm - r_rm / self.phi)
         )
-
-    def apply_deviation_vane(self, chi, dev):
-        """Apply a correction to vane exit metal angle in place"""
-        turn_dir_vane = 1.0 if (self.Al[1] - stg.Al[0]) > 0.0 else -1.0
-        chi += turn_dir_vane * dev
-
-    def apply_deviation_blade(self, chi, dev):
-        """Apply a correction to blade exit metal angle in place"""
-        turn_dir_vane = 1.0 if (self.Alrel[2] - stg.Alrel[1]) > 0.0 else -1.0
-        chi += turn_dir_vane * dev
-
 
 def _integrate_length(chi):
     """Integrate quadratic camber line length given angles."""
@@ -685,7 +681,7 @@ def scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat=1.0):
     }
 
     # Return as a dimensional stage object
-    return DimStage(**stg._asdict(), **geometry)
+    return DimStage(**_merge_dicts(stg._asdict(),geometry))
 
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):

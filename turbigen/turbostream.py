@@ -8,6 +8,7 @@ from ts import (
     ts_tstream_load_balance,
 )
 import compflow
+from . import design, hmesh
 
 muref = 1.8e-5
 
@@ -233,7 +234,8 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     g.set_bp("roe", ts_tstream_type.float, bid, roebp)
 
 
-def set_variables(g):
+def set_variables(g, mu=None):
+    """Set application and block variables on a TS grid object."""
 
     for bid in g.get_block_ids():
         g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.2)
@@ -256,10 +258,16 @@ def set_variables(g):
     g.set_av("poisson_cfl", ts_tstream_type.float, 0.5)
     g.set_av("fac_stmix", ts_tstream_type.float, 0.0)
     g.set_av("rfmix", ts_tstream_type.float, 0.01)
-    g.set_av("viscosity", ts_tstream_type.float, muref)
-    g.set_av("viscosity_law", ts_tstream_type.int, 1)
     g.set_av("write_yplus", ts_tstream_type.int, 1)
 
+    if mu:
+        # Set a constant viscosity if one is specified
+        g.set_av("viscosity", ts_tstream_type.float, mu)
+        g.set_av("viscosity_law", ts_tstream_type.int, 0)
+    else:
+        # Otherwise, use power law
+        g.set_av("viscosity", ts_tstream_type.float, muref)
+        g.set_av("viscosity_law", ts_tstream_type.int, 1)
 
 def set_rotation(g, bids, rpm, spin_j):
     for bid in bids:
@@ -413,23 +421,21 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     return g
 
 
-# def run_remote(geomturbo, py_scripts, sh_script, conf_ini):
-#     """Copy a geomturbo file to gp-111 and run autogrid using scripts."""
+def write_grid_from_dict(fname, params):
+    """Generate a Turbostream input file from a dictionary of parameters."""
 
-#     # Make tmp dir on remote
-#     tmpdir = os.popen("ssh gp-111 mktemp -p ~/tmp/ -d").read().splitlines()[0]
-#     print(tmpdir)
+    # Mean-line design using the non-dimensionals
+    stg = design.nondim_stage_from_Lam(**params["mean-line"])
 
-#     # Copy files across
-#     files = [geomturbo] + py_scripts + [sh_script] + [conf_ini]
-#     for si in files:
-#         os.system("scp %s gp-111:%s" % (si, tmpdir))
+    # Set geometry using dimensional bcond and 3D design parameter
+    bcond_and_3d_params = dict(params["bcond"], **params["3d"])
+    Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
 
-#     # Run the shell script
-#     result = os.popen(
-#         "ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script.split("/")[-1])
-#     ).read()
-#     print(result)
+    # Generate mesh using geometry and the meshing parameters
+    mesh = hmesh.stage_grid(Dstg, **params["mesh"])
 
-#     # Copy mesh back
-#     os.system("scp gp-111:%s/*.{g,bcs} %s" % (tmpdir, os.getcwd()))
+    # Make the TS grid 
+    g = make_grid(stg, *mesh, **params["bcond"])
+
+    # Write out input file
+    g.write_hdf5(fname)

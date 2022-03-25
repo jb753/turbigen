@@ -12,7 +12,7 @@ nx = 201
 ## Private methods
 
 
-def _prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.15):
+def _prelim_thickness(x, tte=0.04, xtmax=0.2, tmax=0.15):
     """A rough cubic thickness distribution."""
     tle = tte / 2.0
     tlin = tle + x * (tte - tle)
@@ -27,9 +27,12 @@ def _prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.15):
 
 ## Public API
 
+
 class ConstraintError(Exception):
     """Throw this when a geometric constraint is violated."""
+
     pass
+
 
 def fillet(x, r, dx):
     """Fillet over a join at |x|<dx."""
@@ -241,7 +244,7 @@ def _loop_section(xy):
     """Join a section with separate pressure and suction sides into a loop."""
     # Concatenate the upper side with a flipped version of the lower side,
     # discarding the first and last points to prevent repetition
-    return np.concatenate( (xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
+    return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
 def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
@@ -302,7 +305,6 @@ def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
         [_loop_section(_section_xy(*args)) for args in zip(chi_q.T, A_q)]
     )
 
-
     return np.squeeze(sec_xrt)
 
 
@@ -330,7 +332,9 @@ def largest_inscribed_circle(xy):
 
     # Check input
     if not xy.ndim or not xy.shape[1] == 2:
-        raise ValueError('Shape should be (npts, 2), you input %s' % repr(xy.shape))
+        raise ValueError(
+            "Shape should be (npts, 2), you input %s" % repr(xy.shape)
+        )
 
     # Calculate Voronoi vertices (medial axis)
     vor = Voronoi(xy).vertices

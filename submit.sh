@@ -15,10 +15,10 @@ source /usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100
 mpirun -npernode 1 -np 1 turbostream input_1.hdf5 output_1 1 > log_1.txt
 
 # convert to unsteady
-python ../../convert_unsteady.py output_1.hdf5 input_2.hdf5
+# python ../../convert_unsteady.py output_1.hdf5 input_2.hdf5
 
 # run unsteady
-mpirun -npernode 1 -np 1 turbostream input_2.hdf5 output_2 1 > log_2.txt
+# mpirun -npernode 1 -np 1 turbostream input_2.hdf5 output_2 1 > log_2.txt
 
 # write out probe data file for dbslice
-python ../../write_dbslice.py output_2_avg.hdf5
+# python ../../write_dbslice.py output_2_avg.hdf5

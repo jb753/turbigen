@@ -1,38 +1,45 @@
-"""Generate and submit a Turbostream job using a set of input parameters."""
-from . import design, turbostream, hmesh
+"""Generate and submit a job using a set of input parameters."""
 import json, glob, os, shutil
+import numpy as np
 
-import matplotlib.pyplot as plt
-
-
-def grid_from_dict(params):
-    """Generate a Turbostream input file from a dictionary of parameters."""
-
-    # Mean-line design using the non-dimensionals
-    stg = design.nondim_stage_from_Lam(**params["mean-line"])
-
-    # Set geometry using dimensional bcond and 3D design parameter
-    bcond_and_3d_params = dict(params["bcond"], **params["3d"])
-    geometry = design.get_geometry(stg, **bcond_and_3d_params)
-
-    # Generate mesh using geometry and the meshing parameters
-    mesh = hmesh.stage_grid(stg, *geometry, **params["mesh"])
-
-    # Make the TS grid and write out
-    g = turbostream.make_grid(stg, *mesh, **params["bcond"])
-
-    return g, mesh
+TS_SLURM_TEMPLATE = "submit.sh"
 
 
-def read_params(params_file_name):
-    """Generate Turbostream input file from JSON file on disk."""
+def read_params(params_file):
+    """Load a parameters file and format data where needed.
 
-    with open(params_file_name, "r") as f:
-        return json.load(f)
+    This is a thin wrapper around JSON loading."""
 
+    # Load the data
+    with open(params_file, "r") as f:
+        params = json.load(f)
 
-def _new_id(base_dir):
-    """Return an integer for the first vacant run identifier number."""
+    # Sort out multi-dimensional thickness coeffs
+    params["mesh"]["A"] = np.reshape(
+        params["mesh"]["Aflat"], params["mesh"]["shape_A"]
+    )
+    for key in ("Aflat", "shape_A"):
+        params["mesh"].pop(key)
+
+    return params
+
+def write_params(params, params_file):
+
+    # Copy the nested dict
+    pnow = {}
+    for k, v in params.items():
+        pnow[k] = v.copy()
+
+    # Flatten the thickness coeffs and store their shape
+    pnow["mesh"]["Aflat"] = pnow["mesh"]["A"].reshape(-1).tolist()
+    pnow["mesh"]["shape_A"] = pnow["mesh"]["A"].shape
+    pnow["mesh"].pop("A")
+    # Write the file
+    with open(params_file, "w") as f:
+        json.dump(pnow, f)
+
+def _create_new_job(base_dir, slurm_template):
+    """Prepare a job working directory for TS run."""
 
     # Get all direcories in base dir and convert to integers
     dnames = glob.glob(base_dir + "/*")
@@ -46,28 +53,16 @@ def _new_id(base_dir):
             pass
 
     # Add one to the maximum identifier
-    new_sim_id = max(runids) + 1
-
-    return new_sim_id
-
-
-def run(params, base_dir, plot_stuff=False):
-    """Submit a cluster job corresponding to the given parameter set."""
-
-    # Make the base dir if it does not exist already
-    if not os.path.isdir(base_dir):
-        os.mkdir(base_dir)
+    new_id = max(runids) + 1
 
     # Make a working directory with unique filename
-    new_id = _new_id(base_dir)
     workdir = os.path.join(base_dir, "%04d" % new_id)
     print("Creating %s" % workdir)
     os.mkdir(workdir)
 
     # copy in a slurm submit script
-    slurm_template = "submit.sh"
-    shutil.copy(os.path.join(slurm_template), workdir)
-    new_slurm = os.path.join(workdir, slurm_template)
+    new_slurm = os.path.join(workdir, "submit.sh")
+    shutil.copy(slurm_template, new_slurm)
 
     # Append run id to the slurm job name
     os.system(
@@ -75,27 +70,58 @@ def run(params, base_dir, plot_stuff=False):
         % (base_dir, new_id, new_slurm)
     )
 
+    # Return the working directory so that we can save input files there
+    return workdir
+
+
+def run(write_func, params, base_dir):
+    """Submit a cluster job corresponding to the given parameter set.
+
+    Parameters
+    ----------
+    write_func: callable
+        Function with signature `write_func(fname, params)` that will write an
+        input file at the requested location given the parameter set.
+    params : dict
+        All parameters required to design, mesh, and run the case.
+    base_dir : string
+        Folder for the current set of cases.
+
+    Returns
+    -------
+    jobid: int
+        Job ID for the submitted job.
+
+    """
+
+    # Make the base dir if it does not exist already
+    if not os.path.isdir(base_dir):
+        os.mkdir(base_dir)
+
+    # Get a working directory and file names
+    workdir = _create_new_job(base_dir, TS_SLURM_TEMPLATE)
+    input_file = os.path.join(workdir, "input_1.hdf5")
+    params_file = os.path.join(workdir, "params.json")
+
+    # Write out a turbostream grid in the new workdir
+    write_func(input_file, params)
+
     # Generate grid structure
-    g, mesh = grid_from_dict(params)
-
-    x, r, rt, ilte = [xi[0] for xi in mesh]
-    f, a = plt.subplots()
-    a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, 0], "-x")
-    a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, -1], "-x")
-    a.axis("equal")
-    plt.savefig("beans.pdf")
-    rstrt
-
-    # Save input file
-    g.write_hdf5(os.path.join(workdir, "input_1.hdf5"))
+    # g, mesh = grid_from_dict(params)
+    # x, r, rt, ilte = [xi[0] for xi in mesh]
+    # f, a = plt.subplots()
+    # a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, 0], "-x")
+    # a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, -1], "-x")
+    # a.axis("equal")
+    # plt.savefig("beans.pdf")
+    # rstrt
 
     # Save the parameters
-    with open(os.path.join(workdir, "params.json"), "w") as f:
-        json.dump(params, f)
+    write_params(params,params_file)
 
     # Change to the working director and run
     os.chdir(workdir)
-    jid = int(os.popen("sbatch %s" % slurm_template).read().split(" ")[-1])
+    jid = int(os.popen("sbatch submit.sh").read().split(" ")[-1])
     os.chdir("../..")
 
     return jid
