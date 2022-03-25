@@ -32,19 +32,19 @@ print(max_circle)
 
 # vor is
 
-l = 1.
-x = np.linspace(0.,1.)
+l = 1.0
+x = np.linspace(0.0, 1.0)
 ls = np.ones_like(x) * l
 zs = np.zeros_like(x)
 xf = np.flip(x)
-xall = np.concatenate((x,ls,xf,zs))
-yall = np.concatenate((zs,x,ls,xf))
-xyl = np.stack((xall,yall)).T
+xall = np.concatenate((x, ls, xf, zs))
+yall = np.concatenate((zs, x, ls, xf))
+xyl = np.stack((xall, yall)).T
 
 fig, ax = plt.subplots()
 # ax.plot(xy[0, 0, :], xy[0, 1, :], ".", ms=0.5)
 # ax.plot(xy[1, 0, :], xy[1, 1, :], ".", ms=0.5)
-ax.plot(xyl[:,0], xyl[:,1],'.')
+ax.plot(xyl[:, 0], xyl[:, 1], ".")
 # ax.scatter(vor[:, 0], vor[:, 1], s=10, c=min_dist, marker="o")
 ax.axis("equal")
 ax.set_xlim((-0.5, 1.5))
