@@ -46,7 +46,10 @@ def streamwise_grid(dx_c):
 
     # Call recursivly if multiple rows are input
     if np.ndim(dx_c) > 1:
-        return (np.stack(reti) for reti in zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c]))
+        return (
+            np.stack(reti)
+            for reti in zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c])
+        )
 
     clust = geometry.cluster_cosine(nxb)
     dclust = np.diff(clust)
@@ -112,7 +115,9 @@ def merid_grid(x_c, rm, Dr):
 
     # If multiple rows are input, call recursively and stack them
     if np.ndim(x_c) > 1:
-        return np.stack([merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)])
+        return np.stack(
+            [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)]
+        )
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -146,7 +151,7 @@ def b2b_grid(x, r, s, c, sect):
     nk = nrt
 
     # Dimensional axial coordinates
-    x = np.reshape(x,(-1,1,1))
+    x = np.reshape(x, (-1, 1, 1))
     r = np.atleast_3d(r)
 
     x_c = x / c
@@ -162,7 +167,6 @@ def b2b_grid(x, r, s, c, sect):
 
         # Retrieve blade section as [surf, x or y, index]
         sec_xrt = sect[j]
-
 
         # Join to a loop
         loop_xrt = geometry.loop_section(sec_xrt)
@@ -210,11 +214,11 @@ def b2b_grid(x, r, s, c, sect):
         )
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = geometry.cluster_cosine(nk).reshape(1,1,-1)
+    clust = geometry.cluster_cosine(nk).reshape(1, 1, -1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate
-    unif_rt = np.linspace(0.0, 1.0, nk).reshape(1,1,-1)
+    unif_rt = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
     relax = np.ones_like(x_c)
     relax[x_c < 0.0] = 1.0 + x_c[x_c < 0.0] / rate
     relax[x_c > 1.0] = 1.0 - (x_c[x_c > 1.0] - 1.0) / rate
@@ -232,10 +236,10 @@ def stage_grid(Dstg, dx_c, A):
     # Distribute the spacings between stator and rotor
     dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
 
-    # Streamwise grids for stator and rotor 
+    # Streamwise grids for stator and rotor
     x_c, ilte = streamwise_grid(dx_c)
     # Offset the rotor so it is downstream of stator
-    x = x_c * Dstg.cx.reshape(-1,1)
+    x = x_c * Dstg.cx.reshape(-1, 1)
     x[1] = x[1] + x[0][-1] - x[1][0]
 
     # Generate radial grid
@@ -243,12 +247,15 @@ def stage_grid(Dstg, dx_c, A):
     r = merid_grid(x_c, Dstg.rm, Dr)
 
     # Evaluate radial blade angles
-    r1 = r[0,ilte[0,0],:]
-    spf = (r1-r1.min())/r1.ptp()
-    chi = np.stack((Dstg.free_vortex_vane( spf ), Dstg.free_vortex_vane( spf )))
+    r1 = r[0, ilte[0, 0], :]
+    spf = (r1 - r1.min()) / r1.ptp()
+    chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_vane(spf)))
 
     # Get sections
-    sect = [ geometry.radially_interpolate_section(spf, chii, spf, Ai) for chii, Ai in zip(chi, A) ]
+    sect = [
+        geometry.radially_interpolate_section(spf, chii, spf, Ai)
+        for chii, Ai in zip(chi, A)
+    ]
 
     # Now we can do b2b grids
     rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]

@@ -11,6 +11,7 @@ nx = 201
 
 ## Private methods
 
+
 def _prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.15):
     """A rough cubic thickness distribution."""
     tle = tte / 2.0
@@ -72,7 +73,7 @@ def prelim_A():
     thick = _prelim_thickness(xc)
 
     # Choose arbitrary camber line (A independent of chi)
-    chi = (-10.,20.)
+    chi = (-10.0, 20.0)
 
     # Assemble preliminary upper and lower coordiates
     xy_prelim = [_thickness_to_coord(xc, sgn * thick, chi) for sgn in [1, -1]]
@@ -232,6 +233,7 @@ def _thickness_to_coord(xc, t, chi):
     yu = yc + t * np.cos(theta)
     return xu, yu
 
+
 def loop_section(xy, repeat_last=False):
     """Join a section with separate pressure and suction sides into a loop."""
     # Concatenate the upper side with a flipped version of the lower side,
@@ -239,7 +241,9 @@ def loop_section(xy, repeat_last=False):
     if repeat_last:
         return np.concatenate((xy[0], np.flip(xy[1, :, 1:], axis=-1)), axis=-1)
     else:
-        return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
+        return np.concatenate(
+            (xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1
+        )
 
 
 def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
@@ -307,19 +311,41 @@ def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
 # circle some fraction of the chord? Scipy has voronoi builtin, then for each
 # voronoi vertex find the point on the surface greatest distance away.
 
+
 def largest_inscribed_circle(xy):
-    """Radius of the largest circle contained within an xy polygon."""
+    """Radius of the largest circle contained within an xy polygon.
+
+    This is useful to constrain the thickness of our blade sections. In a real
+    engine, the sections must be large enough to pass, e.g. cooling channels or
+    oil pipes to feed bearings.
+
+    Parameters
+    ----------
+    xy: (npt,2) [--]
+        Cartesian coordinates for `npt` locations forming a looped polygon.
+
+    Returns
+    -------
+    max_radius: float [--]
+        Radius of the largest inscribed circle that fits within polygon."""
+
+    # Calculate Voronoi vertices (medial axis)
     vor = Voronoi(xy).vertices
+
+    # Only include points within the section, sorted
     # TODO replace matplotlib dependency with something else
     path = mplpath.Path(xy)
-    # Only include points within the section, sorted
-    vor = np.sort(vor[path.contains_points(vor)],axis=0)
+    vor = np.sort(vor[path.contains_points(vor)], axis=0)
+
     # vor is shape (m,2), xy is shape (n,2)
-    # we assemble distances from each vor point to each xy point
-    vor3 = np.expand_dims(vor,0)
-    xy3 = np.expand_dims(xy,1)
-    dist = np.sqrt(np.sum((vor3-xy3)**2.,axis=-1))
+    # we assemble distances (n,m) from each vor point to each xy point
+    vor3 = np.expand_dims(vor, 0)
+    xy3 = np.expand_dims(xy, 1)
+    dist = np.sqrt(np.sum((vor3 - xy3) ** 2.0, axis=-1))
+
     # At any point on the medial axis, we are interested in the closest point
     min_dist = dist.min(axis=0)
-    # The largest inscribed circle fits at the point on the medial axis that is furthest away from the surface
+
+    # The largest inscribed circle fits at the point on the medial axis that is
+    # furthest away from the surface
     return min_dist.max()
