@@ -153,6 +153,7 @@ def test_inscribed_circle():
 
     # Calculate inscribed circle
     radius = geometry.largest_inscribed_circle(square)
+    'stuff'
 
     # If all is well, the radius is half side length
     # Not exact because the sides are discretised
