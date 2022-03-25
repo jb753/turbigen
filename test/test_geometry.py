@@ -138,6 +138,22 @@ def test_fit_aerofoil():
         xy_out = np.stack(geometry.evaluate_section_xy(chii, A, xc))
         assert np.all(np.isclose(xy_out, xyi))
 
+def test_inscribed_circle():
+    """Check radius of inscribed circle in a rectangle."""
 
-if __name__ == "__main__":
-    test_shape_space_cycle()
+    # Lay out a square polygon of side length l
+    l = 1.
+    x = np.linspace(0.,1.)
+    ls = np.ones_like(x) * l
+    zs = np.zeros_like(x)
+    xf = np.flip(x)
+    xall = np.concatenate((x,ls,xf,zs))
+    yall = np.concatenate((zs,x,ls,xf))
+    square = np.stack((xall,yall)).T
+
+    # Calculate inscribed circle
+    radius = geometry.largest_inscribed_circle(square)
+
+    # If all is well, the radius is half side length
+    # Not exact because the sides are discretised
+    assert np.isclose(radius , l/2.,rtol=1e-3)
