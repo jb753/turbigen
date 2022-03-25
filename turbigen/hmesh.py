@@ -166,10 +166,7 @@ def b2b_grid(x, r, s, c, sect):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        sec_xrt = sect[j]
-
-        # Join to a loop
-        loop_xrt = geometry.loop_section(sec_xrt)
+        loop_xrt = sect[j]
 
         # Offset so that LE at x=0
         loop_xrt[0] -= loop_xrt[0].min()
@@ -231,7 +228,8 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, dx_c, A):
+def stage_grid(Dstg, dx_c, A, min_inscribed_radius=None):
+    """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
     dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
@@ -251,11 +249,21 @@ def stage_grid(Dstg, dx_c, A):
     spf = (r1 - r1.min()) / r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_vane(spf)))
 
-    # Get sections
+    # Get sections (normalised by axial chord for now)
     sect = [
         geometry.radially_interpolate_section(spf, chii, spf, Ai)
         for chii, Ai in zip(chi, A)
     ]
+
+    # If we have asked for a minimum inscribed circle, confirm that the
+    # constraint is not violated
+    if min_inscribed_radius:
+        for row_sect, cx in zip(sect,Dstg.cx):
+            for rad_sect in row_sect:
+                current_radius = geometry.largest_inscribed_circle(rad_sect.T)
+                if  current_radius < min_inscribed_radius:
+                    raise geometry.ConstraintError('Thickness is too small for the constraint inscribed circle: %.3f < %.3f' % (current_radius, min_inscribed_radius))
+
 
     # Now we can do b2b grids
     rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]

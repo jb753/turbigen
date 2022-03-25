@@ -27,6 +27,9 @@ def _prelim_thickness(x, tte=0.04, xtmax=0.4, tmax=0.15):
 
 ## Public API
 
+class ConstraintError(Exception):
+    """Throw this when a geometric constraint is violated."""
+    pass
 
 def fillet(x, r, dx):
     """Fillet over a join at |x|<dx."""
@@ -234,16 +237,11 @@ def _thickness_to_coord(xc, t, chi):
     return xu, yu
 
 
-def loop_section(xy, repeat_last=False):
+def _loop_section(xy):
     """Join a section with separate pressure and suction sides into a loop."""
     # Concatenate the upper side with a flipped version of the lower side,
     # discarding the first and last points to prevent repetition
-    if repeat_last:
-        return np.concatenate((xy[0], np.flip(xy[1, :, 1:], axis=-1)), axis=-1)
-    else:
-        return np.concatenate(
-            (xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1
-        )
+    return np.concatenate( (xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
 def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
@@ -301,8 +299,9 @@ def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
 
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
-        [_section_xy(chii, Ai) for chii, Ai in zip(chi_q.T, A_q)]
+        [_loop_section(_section_xy(*args)) for args in zip(chi_q.T, A_q)]
     )
+
 
     return np.squeeze(sec_xrt)
 
@@ -328,6 +327,10 @@ def largest_inscribed_circle(xy):
     -------
     max_radius: float [--]
         Radius of the largest inscribed circle that fits within polygon."""
+
+    # Check input
+    if not xy.ndim or not xy.shape[1] == 2:
+        raise ValueError('Shape should be (npts, 2), you input %s' % repr(xy.shape))
 
     # Calculate Voronoi vertices (medial axis)
     vor = Voronoi(xy).vertices

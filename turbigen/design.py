@@ -123,7 +123,7 @@ class DimStage(_DimStage):
 def _integrate_length(chi):
     """Integrate quadratic camber line length given angles."""
     xhat = np.linspace(0.0, 1.0)
-    tanchi_lim = np.tan(chi)
+    tanchi_lim = np.tan(np.radians(chi))
     tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
     return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
 
@@ -508,7 +508,7 @@ def pitch_circulation(stg, C0):
 
     """
 
-    chi = np.array(np.radians((stg.Al[:2], stg.Alrel[1:])))
+    chi = np.array((stg.Al[:2], stg.Alrel[1:]))
     V2 = np.array((stg.V_U[1], stg.Vrel_U[2]))
     Vt2 = np.array((stg.Vt_U[1], stg.Vtrel_U[2]))
     Vt1 = np.array((stg.Vt_U[0], stg.Vtrel_U[1]))
