@@ -13,6 +13,7 @@ rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
 
+
 def streamwise_grid(dx_c):
     """Generate non-dimensional streamwise grid vector for a blade row.
 
@@ -230,7 +231,7 @@ def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
 
     # Streamwise grids for stator and rotor
     x_c, ilte = streamwise_grid(dx_c)
-    x = [ x_ci * Dstg.cx[0] for x_ci in x_c ]
+    x = [x_ci * Dstg.cx[0] for x_ci in x_c]
 
     # Generate radial grid
     Dr = np.array([Dstg.Dr[:2], Dstg.Dr[1:]])
@@ -264,8 +265,8 @@ def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
                     raise geometry.ConstraintError(
                         (
                             "Thickness is too small for the constraint "
-                            "inscribed circle: %.3f < %.3f" %
-                            (current_radius, min_inscribed_radius)
+                            "inscribed circle: %.3f < %.3f"
+                            % (current_radius, min_inscribed_radius)
                         )
                     )
 

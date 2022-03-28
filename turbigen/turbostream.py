@@ -6,6 +6,7 @@ from ts import (
     ts_tstream_patch_kind,
     ts_tstream_default,
     ts_tstream_load_balance,
+    ts_tstream_reader,
 )
 import compflow
 from . import design, hmesh
@@ -269,6 +270,7 @@ def set_variables(g, mu=None):
         g.set_av("viscosity", ts_tstream_type.float, muref)
         g.set_av("viscosity_law", ts_tstream_type.int, 1)
 
+
 def set_rotation(g, bids, rpm, spin_j):
     for bid in bids:
         g.set_bv("rpm", ts_tstream_type.float, bid, rpm)
@@ -291,7 +293,7 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
+def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
 
     # Make grid, add the blocks
     g = ts_tstream_grid.TstreamGrid()
@@ -387,29 +389,28 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas):
     set_xllim(g, 0.03)
 
     # Initial guess
-    xg = np.concatenate(
-        [
-            x[0][
-                [
-                    0,
-                ]
-                + ilte[0]
-            ],
-            x[1][
-                ilte[1]
-                + [
-                    -1,
-                ]
-            ],
-        ]
-    )
-    Pog = np.repeat(stg.Po_Po1 * Po1, 2)
-    Tog = np.repeat(stg.To_To1 * To1, 2)
-    Mag = np.repeat(stg.Ma, 2)
-    Alg = np.repeat(stg.Al, 2)
+    if guess_file:
+        tsr = ts_tstream_reader.TstreamReader()
+        gg = tsr.read(guess_file)
 
-    for bid in g.get_block_ids():
-        guess_block(g, bid, xg, Pog, Tog, Mag, Alg, stg.ga, rgas)
+        for var in ["ro", "rovx", "rovr", "rorvt", "roe"]:
+            for bid in g.get_block_ids():
+                g.set_bp(var, ts_tstream_type.float, bid, gg.get_bp(var, bid))
+
+        # With a good initial guess, do not need nchange
+        g.set_av("nchange", ts_tstream_type.int, 0)
+
+    else:
+        xg = np.concatenate(
+                [ x[0][ [ 0, ] + ilte[0] ], x[1][ ilte[1] + [ -1, ] ], ]
+        )
+        Pog = np.repeat(stg.Po_Po1 * Po1, 2)
+        Tog = np.repeat(stg.To_To1 * To1, 2)
+        Mag = np.repeat(stg.Ma, 2)
+        Alg = np.repeat(stg.Al, 2)
+
+        for bid in g.get_block_ids():
+            guess_block(g, bid, xg, Pog, Tog, Mag, Alg, stg.ga, rgas)
 
     cp = rgas * stg.ga / (stg.ga - 1.0)
     g.set_av("ga", ts_tstream_type.float, stg.ga)
@@ -434,8 +435,9 @@ def write_grid_from_dict(fname, params):
     # Generate mesh using geometry and the meshing parameters
     mesh = hmesh.stage_grid(Dstg, **params["mesh"])
 
-    # Make the TS grid 
-    g = make_grid(stg, *mesh, **params["bcond"])
+    # Make the TS grid
+    g = make_grid(stg, *mesh, guess_file=params["run"]["guess_file"],
+            **params["bcond"])
 
     # Write out input file
     g.write_hdf5(fname)

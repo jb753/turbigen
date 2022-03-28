@@ -11,10 +11,12 @@ expon = 0.62
 muref = 1.8e-5
 Tref = 288.0
 
-def _merge_dicts(a,b):
+
+def _merge_dicts(a, b):
     c = a.copy()
     c.update(b)
     return c
+
 
 def _make_namedtuple_with_docstrings(class_name, class_doc, field_doc):
     nt = namedtuple(class_name, field_doc.keys())
@@ -115,6 +117,7 @@ class DimStage(_DimStage):
         return np.degrees(
             np.arctan(np.tan(np.radians(Al_blade)) / r_rm - r_rm / self.phi)
         )
+
 
 def _integrate_length(chi):
     """Integrate quadratic camber line length given angles."""
@@ -681,7 +684,7 @@ def scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat=1.0):
     }
 
     # Return as a dimensional stage object
-    return DimStage(**_merge_dicts(stg._asdict(),geometry))
+    return DimStage(**_merge_dicts(stg._asdict(), geometry))
 
 
 def write_geomturbo(fname, ps, ss, h, c, nb, tips=(None, None), cascade=False):

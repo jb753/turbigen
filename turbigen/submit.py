@@ -23,6 +23,7 @@ def read_params(params_file):
 
     return params
 
+
 def write_params(params, params_file):
 
     # Copy the nested dict
@@ -37,6 +38,7 @@ def write_params(params, params_file):
     # Write the file
     with open(params_file, "w") as f:
         json.dump(pnow, f)
+
 
 def _create_new_job(base_dir, slurm_template):
     """Prepare a job working directory for TS run."""
@@ -66,7 +68,7 @@ def _create_new_job(base_dir, slurm_template):
 
     # Append run id to the slurm job name
     os.system(
-        "sed -i 's/turbigen/turbigen_%s_%04d/' %s"
+        "sed -i 's/jobname/turbigen_%s_%04d/' %s"
         % (base_dir, new_id, new_slurm)
     )
 
@@ -100,24 +102,14 @@ def run(write_func, params, base_dir):
 
     # Get a working directory and file names
     workdir = _create_new_job(base_dir, TS_SLURM_TEMPLATE)
-    input_file = os.path.join(workdir, "input_1.hdf5")
+    input_file = os.path.join(workdir, "input.hdf5")
     params_file = os.path.join(workdir, "params.json")
 
     # Write out a turbostream grid in the new workdir
     write_func(input_file, params)
 
-    # Generate grid structure
-    # g, mesh = grid_from_dict(params)
-    # x, r, rt, ilte = [xi[0] for xi in mesh]
-    # f, a = plt.subplots()
-    # a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, 0], "-x")
-    # a.plot(x[ilte[0] : (ilte[1] + 1)], rt[ilte[0] : (ilte[1] + 1), 0, -1], "-x")
-    # a.axis("equal")
-    # plt.savefig("beans.pdf")
-    # rstrt
-
     # Save the parameters
-    write_params(params,params_file)
+    write_params(params, params_file)
 
     # Change to the working director and run
     os.chdir(workdir)

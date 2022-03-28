@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 params = submit.read_params("turbigen/default_params.json")
 
-base_dir = 'qqq'
+base_dir = "qqq"
 submit.run(turbostream.write_grid_from_dict, params, base_dir)
 
 quit()
