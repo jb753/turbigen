@@ -402,7 +402,20 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
 
     else:
         xg = np.concatenate(
-                [ x[0][ [ 0, ] + ilte[0] ], x[1][ ilte[1] + [ -1, ] ], ]
+            [
+                x[0][
+                    [
+                        0,
+                    ]
+                    + ilte[0]
+                ],
+                x[1][
+                    ilte[1]
+                    + [
+                        -1,
+                    ]
+                ],
+            ]
         )
         Pog = np.repeat(stg.Po_Po1 * Po1, 2)
         Tog = np.repeat(stg.To_To1 * To1, 2)
@@ -436,8 +449,9 @@ def write_grid_from_dict(fname, params):
     mesh = hmesh.stage_grid(Dstg, **params["mesh"])
 
     # Make the TS grid
-    g = make_grid(stg, *mesh, guess_file=params["run"]["guess_file"],
-            **params["bcond"])
+    g = make_grid(
+        stg, *mesh, guess_file=params["run"]["guess_file"], **params["bcond"]
+    )
 
     # Write out input file
     g.write_hdf5(fname)

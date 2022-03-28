@@ -12,14 +12,13 @@ varnames = ["x", "rt", "eff_lost", "pfluc"]
 
 
 # def save_meta(meta, basedir):
-    # # Save the metadata (lists because numpy arrays not seralisable)
-    # for k in meta:
-    #     try:
-    #         meta[k][0]
-    #         meta[k] = list(meta[k][:72])
-    #     except IndexError:
-    #         pass
-
+# # Save the metadata (lists because numpy arrays not seralisable)
+# for k in meta:
+#     try:
+#         meta[k][0]
+#         meta[k] = list(meta[k][:72])
+#     except IndexError:
+#         pass
 
 
 def node_to_face(cut, prop_name):
@@ -46,7 +45,8 @@ def face_length_vec(c):
 def face_area(cut):
     """Calculate x and r areas for all cells in a cut."""
     (dx1, dx2), (dr1, dr2), (drt1, drt2) = [
-            face_length_vec(c) for c in (cut.x, cut.r, cut.rt)]
+        face_length_vec(c) for c in (cut.x, cut.r, cut.rt)
+    ]
 
     Ax = 0.5 * (dr1 * drt2 - dr2 * drt1)
     Ar = 0.5 * (dx2 * drt1 - dx1 * drt2)
@@ -61,7 +61,9 @@ def mix_out(cuts):
     try:
         cuts[0]
     except AttributeError:
-        cuts = [cuts,]
+        cuts = [
+            cuts,
+        ]
 
     # Gas properties
     cp = cuts[0].cp
@@ -234,36 +236,31 @@ def cut_by_indices(g, bid, ijk_sten):
 
     # Assemble end indices nijk for desired block
     blk = g.get_block(bid)
-    nijk = np.tile([blk.ni, blk.nj, blk.nk],(2,1)).T
+    nijk = np.tile([blk.ni, blk.nj, blk.nk], (2, 1)).T
 
     # Correct the end indices
     ijk_sten = np.array(ijk_sten)
-    ijk_sten[ijk_sten<0] = nijk[ijk_sten<0] + ijk_sten[ijk_sten<0]
+    ijk_sten[ijk_sten < 0] = nijk[ijk_sten < 0] + ijk_sten[ijk_sten < 0]
 
-    ijk_sten[:,1] += 1
+    ijk_sten[:, 1] += 1
 
     cut = ts_tstream_cut.TstreamStructuredCut()
-    cut.read_from_grid(
-            g,
-            Pref,
-            Tref,
-            bid,
-            *ijk_sten.flat
-        )
+    cut.read_from_grid(g, Pref, Tref, bid, *ijk_sten.flat)
 
     return cut
 
+
 def cut_rows_mixed(g):
     """Mixed-out cuts at row inlet and exit"""
-    ind_all = [0,-1]
+    ind_all = [0, -1]
     di = 1
-    ind_in = [di,di]
-    ind_out = [-1-di, -1-di]
+    ind_in = [di, di]
+    ind_out = [-1 - di, -1 - di]
     cuts = [
-        cut_by_indices(g, 0, [ind_in,ind_all,ind_all]),
-        cut_by_indices(g, 0, [ind_out,ind_all,ind_all]),
-        cut_by_indices(g, 1, [ind_in,ind_all,ind_all]),
-        cut_by_indices(g, 1, [ind_out,ind_all,ind_all]),
+        cut_by_indices(g, 0, [ind_in, ind_all, ind_all]),
+        cut_by_indices(g, 0, [ind_out, ind_all, ind_all]),
+        cut_by_indices(g, 1, [ind_in, ind_all, ind_all]),
+        cut_by_indices(g, 1, [ind_out, ind_all, ind_all]),
     ]
     return [mix_out(c) for c in cuts]
 
@@ -274,7 +271,7 @@ if __name__ == "__main__":
     # Get file paths
     output_hdf5 = sys.argv[1]
     if not os.path.isfile(output_hdf5):
-        raise IOError('%s not found.' % output_hdf5)
+        raise IOError("%s not found." % output_hdf5)
 
     basedir = os.path.dirname(output_hdf5)
     run_name = os.path.split(os.path.abspath(basedir))[-1]
@@ -288,10 +285,8 @@ if __name__ == "__main__":
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio
     rgas = cp * (1.0 - 1.0 / ga)
-    rpm = g.get_bv("rpm",1)
-    omega = rpm/60. * 2. * np.pi
-
-
+    rpm = g.get_bv("rpm", 1)
+    omega = rpm / 60.0 * 2.0 * np.pi
 
     # 1D mixed-out average cuts for stator/rotor inlet/outlet
     cut_all = cut_rows_mixed(g)
@@ -299,11 +294,13 @@ if __name__ == "__main__":
 
     # Calculate stage loading coefficient
     U = omega * rot_in.r
-    Psi = cp * (sta_in.tstag - rot_out.tstag) / U**2.
+    Psi = cp * (sta_in.tstag - rot_out.tstag) / U ** 2.0
 
     # Polytropic efficiency
     eff_poly = (
-        ga / (ga - 1.0) * np.log(rot_out.tstag / sta_in.tstag)
+        ga
+        / (ga - 1.0)
+        * np.log(rot_out.tstag / sta_in.tstag)
         / np.log(rot_out.pstag / sta_in.pstag)
     )
     eff_isen = (rot_out.tstag / sta_in.tstag - 1.0) / (
@@ -320,12 +317,12 @@ if __name__ == "__main__":
 
     # Save metadata in dict
     meta = {
-        "Al" : Al,
-        "Alrel" : Al_rel,
-        "psi" : Psi,
-        "eta" : eff_poly,
-        "eta_isen" : eff_isen,
-        "runid" : run_name,
+        "Al": Al,
+        "Alrel": Al_rel,
+        "psi": Psi,
+        "eta": eff_poly,
+        "eta_isen": eff_isen,
+        "runid": run_name,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
