@@ -311,9 +311,9 @@ if __name__ == "__main__":
     Al = [ci.yaw for ci in cut_all]
     Al_rel = [ci.yaw_rel for ci in cut_all]
 
-    print(Psi, eff_poly, eff_isen)
-    print(Al)
-    print(Al_rel)
+    # print(Psi, eff_poly, eff_isen)
+    # print(Al)
+    # print(Al_rel)
 
     # Save metadata in dict
     meta = {

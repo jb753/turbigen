@@ -12,7 +12,8 @@
 source /usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100
 
 # run steady
-mpirun -npernode 1 -np 1 turbostream input.hdf5 output 1 > log.txt
+# mpirun -npernode 1 -np 1 turbostream input.hdf5 output 1 > log.txt
+turbostream input.hdf5 output 1 > log.txt
 
 # write out probe data file for dbslice
 python ../../turbigen/post_process_turbostream.py output_avg.hdf5

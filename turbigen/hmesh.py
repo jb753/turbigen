@@ -2,8 +2,6 @@
 import numpy as np
 from . import geometry
 
-import matplotlib.pyplot as plt
-
 # Configure numbers of points
 nxb = 97  # Blade chord
 nr = 81  # Span
@@ -241,6 +239,8 @@ def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
     r1 = r[0][ilte[0][0], :]
     spf = (r1 - r1.min()) / r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
+    # Add a bit of deviation
+    chi[:,1,:] += 1.*np.sign(chi[:,1,:]) 
 
     # Get sections (normalised by axial chord for now)
     sect = [
