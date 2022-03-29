@@ -4,13 +4,11 @@ import numpy as np
 from turbigen import submit, turbostream
 
 
-params_default = submit.read_params("turbigen/default_params.json")
 base_dir = "A"
-params_default["run"]["guess_file"] = "A/0011/output_1_avg.hdf5"
-
+P = submit.ParameterSet.from_json("turbigen/default_params.json")
 
 func, x0 = submit.make_objective(
-    turbostream.write_grid_from_dict, params_default, base_dir
+    turbostream.write_grid_from_dict, P, base_dir
 )
 
 x = np.vstack([x0 * mult for mult in (0.1, 0.5, 1.0, 2.0)])

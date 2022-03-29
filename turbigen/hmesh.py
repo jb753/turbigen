@@ -221,7 +221,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
+def stage_grid(Dstg, A, dx_c, min_Rins=None):
     """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
@@ -257,16 +257,16 @@ def stage_grid(Dstg, A, dx_c, min_inscribed_radius=None):
 
     # If we have asked for a minimum inscribed circle, confirm that the
     # constraint is not violated
-    if min_inscribed_radius:
+    if min_Rins:
         for row_sect in sect:
             for rad_sect in row_sect:
                 current_radius = geometry.largest_inscribed_circle(rad_sect.T)
-                if current_radius < min_inscribed_radius:
+                if current_radius < min_Rins:
                     raise geometry.ConstraintError(
                         (
                             "Thickness is too small for the constraint "
                             "inscribed circle: %.3f < %.3f"
-                            % (current_radius, min_inscribed_radius)
+                            % (current_radius, min_Rins)
                         )
                     )
 

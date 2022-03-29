@@ -272,7 +272,7 @@ def nondim_stage_from_Lam(
     psi,  # Stage loading coefficient [--]
     Lam,  # Degree of reaction [--]
     Al1,  # Inlet yaw angle [deg]
-    Ma,  # Vane exit Mach number [--]
+    Ma2,  # Vane exit Mach number [--]
     ga,  # Ratio of specific heats [--]
     eta,  # Polytropic efficiency [--]
     Vx_rat=(1.0, 1.0),  # Axial velocity ratios [--]
@@ -299,7 +299,7 @@ def nondim_stage_from_Lam(
         Degree of reaction, :math:`\Lambda`.
     Al1 : float
         Inlet yaw angle, :math:`\alpha_1`.
-    Ma : float
+    Ma2 : float
         Vane exit Mach number, :math:`\Ma_2`.
     ga : float
         Ratio of specific heats, :math:`\gamma`.
@@ -317,7 +317,7 @@ def nondim_stage_from_Lam(
 
     # Iteration step: returns error in reaction as function of exit yaw angle
     def iter_Al(x):
-        stg_now = nondim_stage_from_Al(phi, psi, [Al1, x], Ma, ga, eta, Vx_rat)
+        stg_now = nondim_stage_from_Al(phi, psi, [Al1, x], Ma2, ga, eta, Vx_rat)
         return stg_now.Lam - Lam
 
     # Solving for Lam in general is tricky
@@ -353,7 +353,7 @@ def nondim_stage_from_Lam(
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
     stg_out = nondim_stage_from_Al(
-        phi, psi, [Al1, Al_soln], Ma, ga, eta, Vx_rat
+        phi, psi, [Al1, Al_soln], Ma2, ga, eta, Vx_rat
     )
 
     return stg_out

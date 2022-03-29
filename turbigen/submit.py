@@ -2,45 +2,138 @@
 import json, glob, os, shutil
 import numpy as np
 import subprocess
-from copy import deepcopy
 import geometry
 
 TS_SLURM_TEMPLATE = "submit.sh"
 
+class ParameterSet():
+    """Encapsulate the set of parameters sufficient to run a case."""
 
-def read_params(params_file):
-    """Load a parameters file and format data where needed.
+    # Variable lists
+    _var_names = {
+        "mean-line": [ 'phi', 'psi', 'Lam', 'Al1', 'Ma2', 'eta', 'ga', ],
+        "bcond" : [ 'To1', 'Po1', 'rgas', 'Omega', ],
+        "3d" : [ 'htr', 'Re', 'Co', 'cx_rat', ],
+        "mesh" : [ 'dx_c', 'min_Rins', 'A', ],
+        "run" : [ 'guess_file', ],
+    }
 
-    This is a thin wrapper around JSON loading."""
+    def __init__(self, var_dict):
+        """Create a parameter set using a dictionary."""
 
-    # Load the data
-    with open(params_file, "r") as f:
-        params = json.load(f)
+        # Loop over all parameters and assign to class
+        for outer_name, inner_names in self._var_names.items():
+            for var in inner_names:
+                setattr(self, var, var_dict[outer_name][var])
 
-    # Sort out multi-dimensional thickness coeffs
-    params["mesh"]["A"] = np.reshape(
-        params["mesh"]["Aflat"], params["mesh"]["shape_A"]
-    )
-    for key in ("Aflat", "shape_A"):
-        params["mesh"].pop(key)
+    @classmethod
+    def from_json(cls, fname):
+        """Create a parameter set from a file on disk."""
 
-    return params
+        # Load the data
+        with open(fname, "r") as f:
+            dat = json.load(f)
+
+        # Sort out multi-dimensional thickness coeffs
+        dat["mesh"]["A"] = np.reshape(
+            dat["mesh"]["Aflat"], dat["mesh"]["shape_A"]
+        )
+        for key in ("Aflat", "shape_A"):
+            dat["mesh"].pop(key)
+
+        # Pass dict to the normal init method
+        return cls(dat)
+
+    def to_dict(self):
+        dat = {}
+        for outer_name, inner_names in self._var_names.items():
+            dat[outer_name] = {}
+            for var in inner_names:
+                dat[outer_name][var] = getattr(self, var)
+        return dat
+
+    def write_json(self, fname):
+        """Write this parameter set to a JSON file."""
+
+        dat = self.to_dict()
+
+        # Deal with multi-dimensional thickness coeffs
+        dat["mesh"]["Aflat"] = self.A.reshape(-1).tolist()
+        dat["mesh"]["shape_A"] = self.A.shape
+        dat["mesh"].pop("A")
+
+        # Write the file
+        with open(fname, "w") as f:
+            json.dump(dat, f)
+
+    @property
+    def nondimensional(self):
+        """Return parameters needed for non-dimensional mean-line design."""
+        return { k: getattr(self, k) for k in self._var_names["mean-line"] }
+
+    @property
+    def dimensional(self):
+        """Return parameters needed to scale mean-line design to dimensions."""
+        return { k: getattr(self, k) for k in self._var_names["bcond"] + self._var_names["3d"]}
+
+    @property
+    def mesh(self):
+        """Return parameters needed to mesh."""
+        return { k: getattr(self, k) for k in self._var_names["mesh"] }
+
+    @property
+    def cfd_input_file(self):
+        """Return parameters needed to pre-process the CFD."""
+        return { k: getattr(self, k) for k in self._var_names["bcond"] + ['guess_file',] }
+
+    def copy(self):
+        """Return a copy of this parameter set."""
+        return ParameterSet(self.to_dict())
 
 
-def write_params(params, params_file):
+    def sweep(self, var, vals):
+        """Return a list of ParametersSets with var varied over vals."""
+        out = []
+        for val in vals:
+            Pnow = self.copy()
+            setattr(Pnow, var, val)
+            out.append(Pnow)
+        return out
 
-    # Copy the nested dict
-    pnow = {}
-    for k, v in params.items():
-        pnow[k] = v.copy()
 
-    # Flatten the thickness coeffs and store their shape
-    pnow["mesh"]["Aflat"] = pnow["mesh"]["A"].reshape(-1).tolist()
-    pnow["mesh"]["shape_A"] = pnow["mesh"]["A"].shape
-    pnow["mesh"].pop("A")
-    # Write the file
-    with open(params_file, "w") as f:
-        json.dump(pnow, f)
+
+
+# def read_params(params_file):
+#     """Load a parameters file and format data where needed.
+
+#     This is a thin wrapper around JSON loading."""
+
+#     # Load the data
+#     with open(params_file, "r") as f:
+#         params = json.load(f)
+
+#     # Sort out multi-dimensional thickness coeffs
+#     params["mesh"]["A"] = np.reshape(
+#         params["mesh"]["Aflat"], params["mesh"]["shape_A"]
+#     )
+#     for key in ("Aflat", "shape_A"):
+#         params["mesh"].pop(key)
+
+#     return params
+
+
+# def write_params(params, params_file):
+#     # Copy the nested dict
+#     pnow = {}
+#     for k, v in params.items():
+#         pnow[k] = v.copy()
+#     # Flatten the thickness coeffs and store their shape
+#     pnow["mesh"]["Aflat"] = pnow["mesh"]["A"].reshape(-1).tolist()
+#     pnow["mesh"]["shape_A"] = pnow["mesh"]["A"].shape
+#     pnow["mesh"].pop("A")
+#     # Write the file
+#     with open(params_file, "w") as f:
+#         json.dump(pnow, f)
 
 
 def _create_new_job(base_dir, slurm_template):
@@ -140,26 +233,28 @@ def run_parallel(write_func, params_all, base_dir):
 
 
 def make_objective(write_func, params_default, base_dir):
+    Aref = params_default.A
+    def Amod(x):
+        Am = Aref+0.
+        Am[:,:, 1:-1] = x.reshape(2,2,2)
+        return Am
+
     def _objective(x):
-        # Make parameters dicts corresponding to each row of x
-        params = []
-        for i in range(x.shape[0]):
-            param_now = deepcopy(params_default)
-            param_now["mesh"]["A"][:, :, 1:-1] = x[i].reshape(2, 2, 2)
-            params.append(param_now)
+        # Make parameters corresponding to each row of x
+        A = [Amod(xi) for xi in x]
+        params = params_default.sweep('A',A)
         # Run these parameter sets in parallel
         results = run_parallel(write_func, params, base_dir)
-
         # Apply stage loading constraint
         eta = np.reshape(
             [np.nan if not m else m["eta"] for m in results], (-1, 1)
         )
         psi = np.reshape([0.0 if not m else m["psi"] for m in results], (-1, 1))
-        eta[psi < 0.99 * params_default["mean-line"]["psi"]] = np.nan
+        eta[psi < 0.99 * params_default.psi] = np.nan
 
         return eta
 
-    x0 = params_default["mesh"]["A"][:, :, 1:-1].reshape(1, -1)
+    x0 = Aref[:, :, 1:-1].reshape(1, -1)
     return _objective, x0
 
 
@@ -203,7 +298,7 @@ def prepare_run(write_func, params, base_dir):
         return None
 
     # Save the parameters
-    write_params(params, params_file)
+    params.write_json( params_file )
 
     # # Change to the working director and run
     # os.chdir(workdir)

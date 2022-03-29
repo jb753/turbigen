@@ -439,19 +439,16 @@ def write_grid_from_dict(fname, params):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
     # Mean-line design using the non-dimensionals
-    stg = design.nondim_stage_from_Lam(**params["mean-line"])
+    stg = design.nondim_stage_from_Lam(**params.nondimensional)
 
     # Set geometry using dimensional bcond and 3D design parameter
-    bcond_and_3d_params = dict(params["bcond"], **params["3d"])
-    Dstg = design.scale_geometry(stg, **bcond_and_3d_params)
+    Dstg = design.scale_geometry(stg, **params.dimensional)
 
     # Generate mesh using geometry and the meshing parameters
-    mesh = hmesh.stage_grid(Dstg, **params["mesh"])
+    mesh = hmesh.stage_grid(Dstg, **params.mesh)
 
     # Make the TS grid
-    g = make_grid(
-        stg, *mesh, guess_file=params["run"]["guess_file"], **params["bcond"]
-    )
+    g = make_grid( stg, *mesh, **params.cfd_input_file)
 
     # Write out input file
     g.write_hdf5(fname)
