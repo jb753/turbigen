@@ -262,7 +262,7 @@ def stage_grid(Dstg, A, dx_c, min_Rins=None):
             for rad_sect in row_sect:
                 current_radius = geometry.largest_inscribed_circle(rad_sect.T)
                 if current_radius < min_Rins:
-                    raise geometry.ConstraintError(
+                    raise geometry.GeometryConstraintError(
                         (
                             "Thickness is too small for the constraint "
                             "inscribed circle: %.3f < %.3f"

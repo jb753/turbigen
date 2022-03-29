@@ -7,15 +7,14 @@ from turbigen import submit, turbostream
 base_dir = "A"
 P = submit.ParameterSet.from_json("turbigen/default_params.json")
 
-func, x0 = submit.make_objective(
-    turbostream.write_grid_from_dict, P, base_dir
-)
+obj, constr, x0 = submit.make_objective_and_constraint(turbostream.write_grid_from_params, P, base_dir)
 
 x = np.vstack([x0 * mult for mult in (0.1, 0.5, 1.0, 2.0)])
 
-eta = func(x)
+print(constr(x))
 
-print(eta)
+# eta = obj(x)
+# print(eta)
 # params_all = [deepcopy(params_default) for _ in range(4)]
 # mult = (0.6,0.8,1.2,1.5)
 # for i in range(4):

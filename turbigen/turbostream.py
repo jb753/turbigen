@@ -435,7 +435,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
     return g
 
 
-def write_grid_from_dict(fname, params):
+def write_grid_from_params(params, fname=None):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
     # Mean-line design using the non-dimensionals
@@ -445,10 +445,13 @@ def write_grid_from_dict(fname, params):
     Dstg = design.scale_geometry(stg, **params.dimensional)
 
     # Generate mesh using geometry and the meshing parameters
+    # stage_grid will throw a GeometryConstraintError if too thin
     mesh = hmesh.stage_grid(Dstg, **params.mesh)
 
     # Make the TS grid
-    g = make_grid( stg, *mesh, **params.cfd_input_file)
+    g = make_grid(stg, *mesh, **params.cfd_input_file)
 
-    # Write out input file
-    g.write_hdf5(fname)
+    # Write out input file if specified
+    # (if not specified, this function acts as a constraint check)
+    if fname:
+        g.write_hdf5(fname)

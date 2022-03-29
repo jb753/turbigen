@@ -6,16 +6,41 @@ import geometry
 
 TS_SLURM_TEMPLATE = "submit.sh"
 
-class ParameterSet():
+
+class ParameterSet:
     """Encapsulate the set of parameters sufficient to run a case."""
 
     # Variable lists
     _var_names = {
-        "mean-line": [ 'phi', 'psi', 'Lam', 'Al1', 'Ma2', 'eta', 'ga', ],
-        "bcond" : [ 'To1', 'Po1', 'rgas', 'Omega', ],
-        "3d" : [ 'htr', 'Re', 'Co', 'cx_rat', ],
-        "mesh" : [ 'dx_c', 'min_Rins', 'A', ],
-        "run" : [ 'guess_file', ],
+        "mean-line": [
+            "phi",
+            "psi",
+            "Lam",
+            "Al1",
+            "Ma2",
+            "eta",
+            "ga",
+        ],
+        "bcond": [
+            "To1",
+            "Po1",
+            "rgas",
+            "Omega",
+        ],
+        "3d": [
+            "htr",
+            "Re",
+            "Co",
+            "cx_rat",
+        ],
+        "mesh": [
+            "dx_c",
+            "min_Rins",
+            "A",
+        ],
+        "run": [
+            "guess_file",
+        ],
     }
 
     def __init__(self, var_dict):
@@ -45,6 +70,7 @@ class ParameterSet():
         return cls(dat)
 
     def to_dict(self):
+        """Nested dictionary for this object."""
         dat = {}
         for outer_name, inner_names in self._var_names.items():
             dat[outer_name] = {}
@@ -69,27 +95,35 @@ class ParameterSet():
     @property
     def nondimensional(self):
         """Return parameters needed for non-dimensional mean-line design."""
-        return { k: getattr(self, k) for k in self._var_names["mean-line"] }
+        return {k: getattr(self, k) for k in self._var_names["mean-line"]}
 
     @property
     def dimensional(self):
         """Return parameters needed to scale mean-line design to dimensions."""
-        return { k: getattr(self, k) for k in self._var_names["bcond"] + self._var_names["3d"]}
+        return {
+            k: getattr(self, k)
+            for k in self._var_names["bcond"] + self._var_names["3d"]
+        }
 
     @property
     def mesh(self):
         """Return parameters needed to mesh."""
-        return { k: getattr(self, k) for k in self._var_names["mesh"] }
+        return {k: getattr(self, k) for k in self._var_names["mesh"]}
 
     @property
     def cfd_input_file(self):
         """Return parameters needed to pre-process the CFD."""
-        return { k: getattr(self, k) for k in self._var_names["bcond"] + ['guess_file',] }
+        return {
+            k: getattr(self, k)
+            for k in self._var_names["bcond"]
+            + [
+                "guess_file",
+            ]
+        }
 
     def copy(self):
         """Return a copy of this parameter set."""
         return ParameterSet(self.to_dict())
-
 
     def sweep(self, var, vals):
         """Return a list of ParametersSets with var varied over vals."""
@@ -99,41 +133,6 @@ class ParameterSet():
             setattr(Pnow, var, val)
             out.append(Pnow)
         return out
-
-
-
-
-# def read_params(params_file):
-#     """Load a parameters file and format data where needed.
-
-#     This is a thin wrapper around JSON loading."""
-
-#     # Load the data
-#     with open(params_file, "r") as f:
-#         params = json.load(f)
-
-#     # Sort out multi-dimensional thickness coeffs
-#     params["mesh"]["A"] = np.reshape(
-#         params["mesh"]["Aflat"], params["mesh"]["shape_A"]
-#     )
-#     for key in ("Aflat", "shape_A"):
-#         params["mesh"].pop(key)
-
-#     return params
-
-
-# def write_params(params, params_file):
-#     # Copy the nested dict
-#     pnow = {}
-#     for k, v in params.items():
-#         pnow[k] = v.copy()
-#     # Flatten the thickness coeffs and store their shape
-#     pnow["mesh"]["Aflat"] = pnow["mesh"]["A"].reshape(-1).tolist()
-#     pnow["mesh"]["shape_A"] = pnow["mesh"]["A"].shape
-#     pnow["mesh"].pop("A")
-#     # Write the file
-#     with open(params_file, "w") as f:
-#         json.dump(pnow, f)
 
 
 def _create_new_job(base_dir, slurm_template):
@@ -204,18 +203,14 @@ def run_parallel(write_func, params_all, base_dir):
         prepare_run(write_func, params, base_dir) for params in params_all
     ]
 
-    # base_dir_N = (base_dir,)*N
-    # args = zip(write_func_N, params_all, base_dir_N, range(N))
-    # pool.map(run_star, args, chunksize=1)
-    # from multiprocessing import Pool
-    # # start all programs
+    # Start the processes
     cmds = ["CUDA_VISIBLE_DEVICES=%d sh submit.sh" % n for n in range(N)]
-    processes = []
-    for cmd, wd in zip(cmds, workdirs):
-        if wd:
-            processes.append(subprocess.Popen(cmd, cwd=wd, shell=True))
-        else:
-            processes.append(None)
+    processes = [
+        subprocess.Popen(cmd, cwd=wd, shell=True)
+        for cmd, wd in zip(cmds, workdirs)
+    ]
+
+    # Wait for all processes
     for process in processes:
         if process:
             process.wait()
@@ -223,26 +218,31 @@ def run_parallel(write_func, params_all, base_dir):
     # Load the processed data
     meta = []
     for workdir in workdirs:
-        if workdir:
-            with open(os.path.join(workdir, "meta.json"), "r") as f:
-                meta.append(json.load(f))
-        else:
-            meta.append(None)
+        with open(os.path.join(workdir, "meta.json"), "r") as f:
+            meta.append(json.load(f))
 
+    # Return processed metadata
     return meta
 
 
-def make_objective(write_func, params_default, base_dir):
+def make_objective_and_constraint(write_func, params_default, base_dir):
     Aref = params_default.A
+
     def Amod(x):
-        Am = Aref+0.
-        Am[:,:, 1:-1] = x.reshape(2,2,2)
+        Am = Aref + 0.0
+        Am[:, :, 1:-1] = x.reshape(2, 2, 2)
         return Am
+
+    def sweep_A(x):
+        A = [Amod(xi) for xi in x]
+        return params_default.sweep("A", A)
+
+    def _constraint(x):
+        return [check_constraint(write_func, Pi) for Pi in sweep_A(x) ]
 
     def _objective(x):
         # Make parameters corresponding to each row of x
-        A = [Amod(xi) for xi in x]
-        params = params_default.sweep('A',A)
+        params = sweep_A(x)
         # Run these parameter sets in parallel
         results = run_parallel(write_func, params, base_dir)
         # Apply stage loading constraint
@@ -255,8 +255,15 @@ def make_objective(write_func, params_default, base_dir):
         return eta
 
     x0 = Aref[:, :, 1:-1].reshape(1, -1)
-    return _objective, x0
+    return _objective, _constraint, x0
 
+def check_constraint(write_func, params):
+    """Before writing a file, check that geometry constraints are OK."""
+    try:
+        write_func(params)
+        return True
+    except geometry.GeometryConstraintError:
+        return False
 
 def prepare_run(write_func, params, base_dir):
     """Get a working directory ready for a set of parameters.
@@ -290,20 +297,10 @@ def prepare_run(write_func, params, base_dir):
     input_file = os.path.join(workdir, "input.hdf5")
     params_file = os.path.join(workdir, "params.json")
 
-    try:
-        # Write out a turbostream grid in the new workdir
-        write_func(input_file, params)
-    except geometry.ConstraintError:
-        # If this design does not work, then return sentinel value
-        return None
+    # Write out a turbostream grid in the new workdir
+    write_func(params, input_file)
 
     # Save the parameters
-    params.write_json( params_file )
-
-    # # Change to the working director and run
-    # os.chdir(workdir)
-    #     jid = int(os.popen("sbatch submit.sh").read().split(" ")[-1])
-    #     retval = wait_for_job(jid)
-    # os.chdir("../..")
+    params.write_json(params_file)
 
     return os.path.abspath(workdir)
