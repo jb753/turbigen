@@ -30,6 +30,7 @@ def _prelim_thickness(x, tte=0.04, xtmax=0.2, tmax=0.15):
 
 class GeometryConstraintError(Exception):
     """Throw this when a geometric constraint is violated."""
+
     pass
 
 

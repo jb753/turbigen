@@ -10,16 +10,15 @@ Tref = 300.0
 # Choose which variables to write out
 varnames = ["x", "rt", "eff_lost", "pfluc"]
 
+class suppress_print():
+    """A context manager that temporarily sets STDOUT to /dev/null."""
+    def __enter__(self):
+        self.orig_out = sys.stdout
+        sys.stdout = open(os.devnull,'w')
 
-# def save_meta(meta, basedir):
-# # Save the metadata (lists because numpy arrays not seralisable)
-# for k in meta:
-#     try:
-#         meta[k][0]
-#         meta[k] = list(meta[k][:72])
-#     except IndexError:
-#         pass
-
+    def __exit__(self, exc_type, exc_value, traceback):
+        sys.stdout.close()
+        sys.stdout = self.orig_out
 
 def node_to_face(cut, prop_name):
     """For a (n,m) matrix of some property, average over the four corners of
@@ -275,11 +274,12 @@ if __name__ == "__main__":
 
     basedir = os.path.dirname(output_hdf5)
     run_name = os.path.split(os.path.abspath(basedir))[-1]
-    print("POST-PROCESSING %s\n" % output_hdf5)
+    # print("POST-PROCESSING %s\n" % output_hdf5)
 
     # Load the flow solution
     tsr = ts_tstream_reader.TstreamReader()
-    g = tsr.read(output_hdf5)
+    with suppress_print():
+        g = tsr.read(output_hdf5)
 
     # Gas properties
     cp = g.get_av("cp")  # Specific heat capacity at const p

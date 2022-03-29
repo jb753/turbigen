@@ -238,7 +238,7 @@ def make_objective_and_constraint(write_func, params_default, base_dir):
         return params_default.sweep("A", A)
 
     def _constraint(x):
-        return [check_constraint(write_func, Pi) for Pi in sweep_A(x) ]
+        return [check_constraint(write_func, Pi) for Pi in sweep_A(x)]
 
     def _objective(x):
         # Make parameters corresponding to each row of x
@@ -257,6 +257,7 @@ def make_objective_and_constraint(write_func, params_default, base_dir):
     x0 = Aref[:, :, 1:-1].reshape(1, -1)
     return _objective, _constraint, x0
 
+
 def check_constraint(write_func, params):
     """Before writing a file, check that geometry constraints are OK."""
     try:
@@ -264,6 +265,7 @@ def check_constraint(write_func, params):
         return True
     except geometry.GeometryConstraintError:
         return False
+
 
 def prepare_run(write_func, params, base_dir):
     """Get a working directory ready for a set of parameters.

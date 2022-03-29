@@ -240,7 +240,7 @@ def stage_grid(Dstg, A, dx_c, min_Rins=None):
     spf = (r1 - r1.min()) / r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
     # Add a bit of deviation
-    chi[:, 1, :] += 1.0 * np.sign(chi[:, 1, :])
+    # chi[:, 1, :] += 1.0 * np.sign(chi[:, 1, :])
 
     # Get sections (normalised by axial chord for now)
     sect = [

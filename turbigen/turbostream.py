@@ -10,6 +10,7 @@ from ts import (
 )
 import compflow
 from . import design, hmesh
+import sys, os
 
 muref = 1.8e-5
 
@@ -434,6 +435,16 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
     # g.write_hdf5(fname)
     return g
 
+class suppress_print():
+    """A context manager that temporarily sets STDOUT to /dev/null."""
+    def __enter__(self):
+        self.orig_out = sys.stdout
+        sys.stdout = open(os.devnull,'w')
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        sys.stdout.close()
+        sys.stdout = self.orig_out
+
 
 def write_grid_from_params(params, fname=None):
     """Generate a Turbostream input file from a dictionary of parameters."""
@@ -448,10 +459,13 @@ def write_grid_from_params(params, fname=None):
     # stage_grid will throw a GeometryConstraintError if too thin
     mesh = hmesh.stage_grid(Dstg, **params.mesh)
 
-    # Make the TS grid
-    g = make_grid(stg, *mesh, **params.cfd_input_file)
+    with suppress_print():
 
-    # Write out input file if specified
-    # (if not specified, this function acts as a constraint check)
-    if fname:
-        g.write_hdf5(fname)
+        # Make the TS grid
+        g = make_grid(stg, *mesh, **params.cfd_input_file)
+
+        # Write out input file if specified
+        # (if not specified, this function acts as a constraint check)
+        if fname:
+            g.write_hdf5(fname)
+

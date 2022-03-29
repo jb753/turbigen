@@ -1,26 +1,24 @@
 """Sweep thickness."""
 
 import numpy as np
-from turbigen import submit, turbostream
+from turbigen import submit, turbostream, tabu
+import pickle
 
 
 base_dir = "A"
 P = submit.ParameterSet.from_json("turbigen/default_params.json")
 
-obj, constr, x0 = submit.make_objective_and_constraint(turbostream.write_grid_from_params, P, base_dir)
+obj, constr, x0 = submit.make_objective_and_constraint(
+    turbostream.write_grid_from_params, P, base_dir
+)
 
-x = np.vstack([x0 * mult for mult in (0.1, 0.5, 1.0, 2.0)])
+dx = 0.05 * np.ones_like(x0)
+tol = dx/8.
+ts = tabu.TabuSearch(obj, constr, x0.shape[1], 1, tol)
 
-print(constr(x))
+ts.max_fevals = 10
+ts.max_parallel = 4
+ts.search(x0, dx)
 
-# eta = obj(x)
-# print(eta)
-# params_all = [deepcopy(params_default) for _ in range(4)]
-# mult = (0.6,0.8,1.2,1.5)
-# for i in range(4):
-#     params_all[i]["mesh"]["A"] = Aref * mult[i]
-
-
-# meta = submit.run_parallel(turbostream.write_grid_from_dict, params_all, base_dir)
-
-# print([m["eta"] for m in meta])
+with open('test.pickle','w') as f:
+    pickle.dump(ts, f)
