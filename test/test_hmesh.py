@@ -1,6 +1,6 @@
 """Tests for the hmesh module"""
 import numpy as np
-from turbigen import design, hmesh
+from turbigen import design, hmesh, geometry
 from test_design import get_geometries
 
 htr = 0.6
@@ -9,6 +9,12 @@ Omega = 2.0 * np.pi * 50.0
 Re = 4e6
 Po1 = 16e5
 rgas = 287.14
+ga = 1.33
+Co = 0.6
+
+
+cp = rgas * ga / (ga-1.)
+To1 = cpTo1/cp
 
 
 def test_streamwise():
@@ -79,54 +85,40 @@ def test_merid():
         Dr_calc = rc_calc - rh_calc
         assert np.all(np.isclose(Dr_calc, Dr[:2]))
 
+def test_stage():
+    """Verify properties of a stage grid."""
 
-def test_b2b():
-    """Verify properties of the blade-to-blade grid."""
-
-    # Generate a streamwise grid first
-    dx_c = (1.0, 1.0)
-    x_c, (ile, ite) = hmesh.streamwise_grid(dx_c)
+    # Use a rough thickness distribution
+    A1 = geometry.prelim_A()*0.5
+    A = np.stack((A1,A1))
+    dx_c = (2.,1.,3.)
 
     # Loop over entire mean-line design space
     for stg in get_geometries("datum"):
 
-        # Annulus line
-        rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
+        Dstg = design.scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co)
 
-        # Generate radial grid
-        r_stator = hmesh.merid_grid(x_c, rm, Dr[:2])
-        r_rotor = hmesh.merid_grid(x_c, rm, Dr[1:])
+        x_all, r_all, rt_all, ilte_all = hmesh.stage_grid(Dstg, A, dx_c)
 
-        # Evaluate blade angles
-        r_rm = (
-            np.concatenate([r_stator[(ile, ite), :], r_rotor[(ite,), :]]) / rm
-        )
-        chi_vane, chi_blade = design.free_vortex(stg, r_rm, (0.0, 0.0))
+        for x, r, rt, ilte, s in zip(x_all, r_all, rt_all, ilte_all, Dstg.s):
 
-        # Evaluate pitch to chord
-        s_c = design.pitch_Zweifel(stg, (0.8, 0.8))
+            rm = np.mean(r[0, (0, -1)])
 
-        # Evaluate chord
-        c = design.chord_from_Re(stg, Re, cpTo1, Po1, rgas)
+            # Check that theta increases as k increases
+            assert np.all(np.diff(rt, 1, 2) > 0.)
 
-        # Finally, get the b2b grid!
-        rt = hmesh.b2b_grid(x_c, r_stator, chi_vane, s_c[0], c)
+            # Smoothness criteria in k direction
+            tol = 1e-3
+            assert np.all(np.diff(rt / rm, 2, 2) < tol)
 
-        # Check that theta increases as k increases
-        assert np.all(np.diff(rt, 1, 2) > 0.0)
+            # Angular pitch should never be more than reference value
+            # And equal to the reference value outside of the blade row
+            nblade = np.round(2.0 * np.pi * rm / s)
+            pitch_t = 2.0 * np.pi / nblade
+            t = rt / np.expand_dims(r,2)
+            dt = t[:, :, -1] - t[:, :, 0]
+            tol = 1e-6
+            assert np.all(dt - pitch_t < tol)  # Everywhere
+            assert np.all(np.isclose(dt[: ilte[0] + 1, :], pitch_t))  # Inlet duct
+            assert np.all(np.isclose(dt[ilte[1], :], pitch_t))  # Exit duct
 
-        # Smoothness criteria
-        tol = 1e-3
-        assert np.all(np.diff(rt / rm, 2, 2) < tol)
-
-        # Angular pitch should never be more than reference value
-        # And equal to the reference value outside of the blade row
-        nblade = np.round(2.0 * np.pi * rm / (s_c[0] * c))
-        pitch_t = 2.0 * np.pi / nblade
-        t = rt / r_stator[..., None]
-        dt = t[:, :, -1] - t[:, :, 0]
-        tol = 1e-6
-        assert np.all(dt - pitch_t < tol)  # Everywhere
-        # err_inlet = dt[: ile + 1, :]/pitch_t - 1.
-        assert np.all(np.isclose(dt[: ile + 1, :], pitch_t))  # Inlet duct
-        assert np.all(np.isclose(dt[ite, :], pitch_t))  # Exit duct

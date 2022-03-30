@@ -252,6 +252,8 @@ def set_variables(g, mu=None):
     g.set_av("nlos", ts_tstream_type.int, 5)
     g.set_av("nstep", ts_tstream_type.int, 25000)
     g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
+    # g.set_av("nstep", ts_tstream_type.int, 10000)
+    # g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
@@ -435,11 +437,13 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
     # g.write_hdf5(fname)
     return g
 
-class suppress_print():
+
+class suppress_print:
     """A context manager that temporarily sets STDOUT to /dev/null."""
+
     def __enter__(self):
         self.orig_out = sys.stdout
-        sys.stdout = open(os.devnull,'w')
+        sys.stdout = open(os.devnull, "w")
 
     def __exit__(self, exc_type, exc_value, traceback):
         sys.stdout.close()
@@ -468,4 +472,3 @@ def write_grid_from_params(params, fname=None):
         # (if not specified, this function acts as a constraint check)
         if fname:
             g.write_hdf5(fname)
-

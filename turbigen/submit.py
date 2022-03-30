@@ -2,7 +2,7 @@
 import json, glob, os, shutil
 import numpy as np
 import subprocess
-import geometry
+from . import geometry
 
 TS_SLURM_TEMPLATE = "submit.sh"
 
@@ -37,6 +37,7 @@ class ParameterSet:
             "dx_c",
             "min_Rins",
             "A",
+            "recamber",
         ],
         "run": [
             "guess_file",
@@ -154,7 +155,7 @@ def _create_new_job(base_dir, slurm_template):
 
     # Make a working directory with unique filename
     workdir = os.path.join(base_dir, "%04d" % new_id)
-    print("Creating %s" % workdir)
+    # print("Creating %s" % workdir)
     os.mkdir(workdir)
 
     # copy in a slurm submit script
@@ -230,32 +231,50 @@ def make_objective_and_constraint(write_func, params_default, base_dir):
 
     def Amod(x):
         Am = Aref + 0.0
-        Am[:, :, 1:-1] = x.reshape(2, 2, 2)
+        Am[0, :, 1:-1] = x.reshape(2, 2)
         return Am
 
     def sweep_A(x):
         A = [Amod(xi) for xi in x]
         return params_default.sweep("A", A)
 
+    def _check_err(vname, var, param, thresh):
+        return np.abs(var[vname]/getattr(param,vname) - 1.) < thresh
+
     def _constraint(x):
-        return [check_constraint(write_func, Pi) for Pi in sweep_A(x)]
+        print("CONSTR x = \n%s" % str(x))
+        Rins_ok = [check_constraint(write_func, Pi) for Pi in params_default.sweep('recamber',x)]
+        x_ok = np.abs(x).all(axis=1) < 5.
+        return np.logical_and(Rins_ok, x_ok)
 
     def _objective(x):
         # Make parameters corresponding to each row of x
-        params = sweep_A(x)
+        print("IN x = \n%s" % str(x))
+        params = params_default.sweep("recamber",x.tolist())
         # Run these parameter sets in parallel
         results = run_parallel(write_func, params, base_dir)
         # Apply stage loading constraint
-        eta = np.reshape(
-            [np.nan if not m else m["eta"] for m in results], (-1, 1)
-        )
-        psi = np.reshape([0.0 if not m else m["psi"] for m in results], (-1, 1))
-        eta[psi < 0.99 * params_default.psi] = np.nan
+        var = _concatenate_dict(results)
+        eta = var["eta"]
 
-        return eta
+        ind_good = np.all(np.stack(
+                [_check_err(v, var, params_default, 0.02) for v in ["psi", "phi", "Ma2", "Lam"] ]), axis=0 )
 
-    x0 = Aref[:, :, 1:-1].reshape(1, -1)
+        eta[~ind_good] = np.nan
+
+        print("OUT =\n%s" % str(eta))
+
+        return 1.-eta
+
+    x0 = np.reshape(params_default.recamber,(1,-1))
     return _objective, _constraint, x0
+
+
+def _concatenate_dict(list_of_dicts):
+    return {
+        k: np.reshape([d[k] for d in list_of_dicts], (-1, 1))
+        for k in list_of_dicts[0]
+    }
 
 
 def check_constraint(write_func, params):

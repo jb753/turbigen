@@ -10,15 +10,18 @@ Tref = 300.0
 # Choose which variables to write out
 varnames = ["x", "rt", "eff_lost", "pfluc"]
 
-class suppress_print():
+
+class suppress_print:
     """A context manager that temporarily sets STDOUT to /dev/null."""
+
     def __enter__(self):
         self.orig_out = sys.stdout
-        sys.stdout = open(os.devnull,'w')
+        sys.stdout = open(os.devnull, "w")
 
     def __exit__(self, exc_type, exc_value, traceback):
         sys.stdout.close()
         sys.stdout = self.orig_out
+
 
 def node_to_face(cut, prop_name):
     """For a (n,m) matrix of some property, average over the four corners of
@@ -307,6 +310,9 @@ if __name__ == "__main__":
         (rot_out.pstag / sta_in.pstag) ** ((ga - 1.0) / ga) - 1.0
     )
 
+    # Reaction
+    Lam = (rot_out.tstat-rot_in.tstat)/(rot_out.tstat - sta_in.tstat)
+
     # Flow angles
     Al = [ci.yaw for ci in cut_all]
     Al_rel = [ci.yaw_rel for ci in cut_all]
@@ -323,6 +329,9 @@ if __name__ == "__main__":
         "eta": eff_poly,
         "eta_isen": eff_isen,
         "runid": run_name,
+        "Ma2" : sta_out.mach,
+        "phi" : sta_out.vx/U,
+        "Lam" : Lam,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:

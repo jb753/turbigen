@@ -1,6 +1,7 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import geometry
+import matplotlib.pyplot as plt
 
 # Configure numbers of points
 nxb = 97  # Blade chord
@@ -176,6 +177,9 @@ def b2b_grid(x, r, s, c, sect):
         Area = 0.5 * np.sum(terms_cross)
         rt_cent = np.sum(terms_rt * terms_cross) / 6.0 / Area
 
+        # Shift the leading edge to first index
+        loop_xrt = np.roll(loop_xrt, -np.argmin(loop_xrt[0]), axis=1)
+
         # Now split the loop back up based on true LE/TE
         ile = np.argmin(loop_xrt[0])
         ite = np.argmax(loop_xrt[0])
@@ -185,11 +189,11 @@ def b2b_grid(x, r, s, c, sect):
         )
 
         # fig, ax = plt.subplots()
-        # ax.plot(*upper_xrt,'-x')
-        # ax.plot(*lower_xrt,'-x')
+        # ax.plot(*upper_xrt)
+        # ax.plot(*lower_xrt)
         # ax.axis('equal')
         # # ax.plot(x_cent, rt_cent,'*k')
-        # plt.savefig("test2.pdf")
+        # plt.savefig("test3.pdf")
         # quit()
 
         # Stack with centroid at t=0
@@ -221,7 +225,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, A, dx_c, min_Rins=None):
+def stage_grid(Dstg, A, dx_c, min_Rins=None, recamber=None):
     """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
@@ -239,21 +243,17 @@ def stage_grid(Dstg, A, dx_c, min_Rins=None):
     r1 = r[0][ilte[0][0], :]
     spf = (r1 - r1.min()) / r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
-    # Add a bit of deviation
-    # chi[:, 1, :] += 1.0 * np.sign(chi[:, 1, :])
+
+    # If recambering, then tweak the metal angles
+    if not recamber is None:
+        dev = np.reshape(recamber,(2,2,1))
+        chi += dev
 
     # Get sections (normalised by axial chord for now)
     sect = [
         geometry.radially_interpolate_section(spf, chii, spf, Ai)
         for chii, Ai in zip(chi, A)
     ]
-
-    # fig, ax = plt.subplots()
-    # ax.plot(*sect[0][2,...])
-    # ax.plot(*sect[1][2,...])
-    # ax.axis('equal')
-    # plt.savefig('sect.pdf')
-    # quit()
 
     # If we have asked for a minimum inscribed circle, confirm that the
     # constraint is not violated
