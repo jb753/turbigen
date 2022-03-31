@@ -187,15 +187,15 @@ class Memory:
         Xall = np.concatenate((self.X, X), axis=0)
 
         # Sort by objective, truncate to maximum number of points
-        isort = np.argsort(Yall[:, 0], axis=0)[: self.max_points]
+        # isort = np.argsort(Yall[:, 0], axis=0)[: self.max_points]
+        _, isort = np.unique(Yall[:, 0], axis=0, return_index=True)[: self.max_points]
         Xall, Yall = Xall[isort], Yall[isort]
 
         # Reassign to the memory
         self.npts = len(isort)
         self._X[: self.npts] = Xall
         self._Y[: self.npts] = Yall
-
-        return np.any(self.contains(X))
+        return np.any(find_rows(self.get(0)[0].reshape(1,-1), X, self.tol)[0])
 
     def generate_sparse(self, nregion):
         """Return a random design vector in a underexplored region."""
@@ -271,8 +271,8 @@ class Memory:
         assert np.all(np.array(d["tol"]) >= self.tol)
 
         self.npts = d["npts"]
-        self._X = np.reshape(d["Xflat"],d["Xshape"])
-        self._Y = np.reshape(d["Yflat"],d["Yshape"])
+        self._X = np.reshape(d["Xflat"], d["Xshape"])
+        self._Y = np.reshape(d["Yflat"], d["Yshape"])
 
 
 class TabuSearch:
@@ -294,13 +294,19 @@ class TabuSearch:
         self.n_long = 20000
         self.nx = nx
         self.ny = ny
-        self.n_med = 2000 if ny > 1 else 10
+
+        if j_obj is None:
+            self.j_objective = range(ny)
+        else:
+            self.j_objective = j_obj
+
+        self.n_med = 2000 if len(self.j_objective) > 1 else 10
 
         # Default iteration counters
         self.i_diversify = 5
         self.i_intensify = 10
         self.i_restart = 20
-        self.i_pattern = np.inf
+        self.i_pattern = None
 
         # Misc algorithm parameters
         self.x_regions = 3
@@ -308,10 +314,6 @@ class TabuSearch:
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = None
-        if j_obj is None:
-            self.j_objective = range(ny)
-        else:
-            self.j_objective = j_obj
 
         # Initialise counters
         self.fevals = 0
@@ -321,7 +323,12 @@ class TabuSearch:
         self.mem_med = Memory(nx, ny, self.n_med, self.tol)
         self.mem_long = Memory(nx, ny, self.n_long, self.tol)
         self.mem_ban = Memory(nx, ny, self.n_long, self.tol)
-        self.mem_all = (self.mem_short, self.mem_med, self.mem_long, self.mem_ban)
+        self.mem_all = (
+            self.mem_short,
+            self.mem_med,
+            self.mem_long,
+            self.mem_ban,
+        )
 
     def clear_memories(self):
         """Erase all memories"""
@@ -331,12 +338,12 @@ class TabuSearch:
     def initial_guess(self, x0):
         """Set current point, evaluate objective."""
         if not self.constraint(x0):
-            raise Exception('Constraints not satisfied at initial point.')
+            raise Exception("Constraints not satisfied at initial point.")
         if self.mem_long.contains(x0):
-            print('Using initial guess from memory.')
+            print("Using initial guess from memory.")
             y0 = self.mem_long.lookup(x0)
         else:
-            print('Evaluating initial guess.')
+            print("Evaluating initial guess.")
             y0 = self.objective(x0)
             self.fevals += 1
         for mem in self.mem_all[:-1]:
@@ -399,8 +406,8 @@ class TabuSearch:
         j = self.j_objective
 
         # Categorise the candidates for next move with respect to current
-        b_dom = (Y[:,j] < y0[:,j]).all(axis=1)
-        b_non_dom = (Y[:,j] > y0[:,j]).all(axis=1)
+        b_dom = (Y[:, j] < y0[:, j]).all(axis=1)
+        b_non_dom = (Y[:, j] > y0[:, j]).all(axis=1)
         b_equiv = ~np.logical_and(b_dom, b_non_dom)
 
         # Convert to indices
@@ -456,6 +463,7 @@ class TabuSearch:
             # Evaluate objective for permissible candidate moves
             X, Y = self.evaluate_moves(x0, dx)
 
+
             # If any objectives are NaN, add to permanent ban list
             inan = np.isnan(Y).any(-1)
             Xnan = X[inan]
@@ -469,15 +477,18 @@ class TabuSearch:
 
             # Put Pareto-equivalent results into medium-term memory
             # Flag true if we sucessfully added a point
-            if len(self.j_objective) == 1:
-                flag = self.mem_med.update_best(X, Y)
+            if X.shape[0] == 0:
+                flag = False
             else:
-                flag = self.mem_med.update_front(X, Y)
-            print("BEST %s %s" % self.mem_med.get(0))
+                if len(self.j_objective) == 1:
+                    flag = self.mem_med.update_best(X, Y)
+                else:
+                    flag = self.mem_med.update_front(X, Y)
+            print("BEST %s\n%s" % self.mem_med.get(0))
 
             # Reset counter if we added to medium memory, otherwise increment
             i = 0 if flag else i + 1
-            print('i=%d, fevals=%d' % (i,self.fevals))
+            print("i=%d, fevals=%d" % (i, self.fevals))
 
             # Choose next point based on local search counter
             if i == self.i_restart:
@@ -505,8 +516,9 @@ class TabuSearch:
                 # Normally, choose the best candidate move
                 x1, y1 = self.select_move(x0, y0, X, Y)
                 # Check for a pattern move every i_pattern steps
-                if np.mod(i, self.i_pattern):
-                    x1 = self.pattern_move(x0, y0, x1, y1)
+                if not self.i_pattern is None:
+                    if np.mod(i, self.i_pattern):
+                        x1 = self.pattern_move(x0, y0, x1, y1)
 
             # Add chosen point to short-term list (tabu)
             self.mem_short.add(x1)
@@ -521,7 +533,7 @@ class TabuSearch:
         """Dump the memories to a json file."""
 
         # Assemble a dict for each memory
-        d = { k: m.to_dict() for k, m in zip(self.MEM_KEYS, self.mem_all) }
+        d = {k: m.to_dict() for k, m in zip(self.MEM_KEYS, self.mem_all)}
 
         # Write the file
         with open(fname, "w") as f:
@@ -530,12 +542,12 @@ class TabuSearch:
     def load_memories(self, fname):
         """Populate memories from a json file."""
 
-        print('Reading memories from %s' % fname)
+        print("Reading memories from %s" % fname)
         # Load the file
         with open(fname, "r") as f:
             d = json.load(f)
 
         # Populate the memories
-        for k, m in zip(self.MEM_KEYS,self.mem_all):
-            print('%s: %d points' % (k,d[k]['npts']))
+        for k, m in zip(self.MEM_KEYS, self.mem_all):
+            print("%s: %d points" % (k, d[k]["npts"]))
             m.from_dict(d[k])

@@ -69,10 +69,12 @@ def cluster_cosine(npts):
     # Define a non-dimensional clustering function
     return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
 
+
 def cluster_hyperbola(npts, fac=3.0):
     """Return a hyperbolic tangent clustering function."""
-    xhat = np.linspace(-1.,1.,npts)
-    return np.tanh(fac*xhat)/2./np.tanh(fac) + .5
+    xhat = np.linspace(-1.0, 1.0, npts)
+    return np.tanh(fac * xhat) / 2.0 / np.tanh(fac) + 0.5
+
 
 def A_from_Rle_thick_beta(Rle, thick, beta, tte):
     """Assemble shape-space coeffs from more physical quantities.
@@ -94,15 +96,15 @@ def A_from_Rle_thick_beta(Rle, thick, beta, tte):
         The full set of thickness coefficients for upper and lower surfaces.
     """
 
-    Ale = np.sqrt(2.*Rle)
+    Ale = np.sqrt(2.0 * Rle)
     Ate = np.tan(np.radians(beta)) + tte
-    thick = np.reshape(thick,(2,-1))
+    thick = np.reshape(thick, (2, -1))
     n = thick.shape[1]
 
-    A = np.empty((2, n+2))
+    A = np.empty((2, n + 2))
     A[:, 1:-1] = thick
-    A[:, 0 ] = Ale
-    A[:, -1 ] = Ate
+    A[:, 0] = Ale
+    A[:, -1] = Ate
 
     return A
 
@@ -339,7 +341,10 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
 
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
-        [_loop_section(_section_xy(*(args + (tte,)))) for args in zip(chi_q.T, A_q)]
+        [
+            _loop_section(_section_xy(*(args + (tte,))))
+            for args in zip(chi_q.T, A_q)
+        ]
     )
 
     return np.squeeze(sec_xrt)
