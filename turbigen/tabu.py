@@ -1,4 +1,5 @@
 """Functions for multiobjective tabu search."""
+import json
 import numpy as np
 
 
@@ -246,9 +247,39 @@ class Memory:
         """Erase all points in memory."""
         self.npts = 0
 
+    def to_dict(self):
+        """Serialise as a dictionary."""
+
+        return {
+            "nx": self.nx,
+            "ny": self.ny,
+            "max_points": self.max_points,
+            "tol": self.tol.tolist(),
+            "npts": self.npts,
+            "Xflat": self._X.flatten().tolist(),
+            "Yflat": self._Y.flatten().tolist(),
+            "Xshape": self._X.shape,
+            "Yshape": self._Y.shape,
+        }
+
+    def from_dict(self, d):
+        """Deserialise from a dictionary."""
+
+        assert d["nx"] == self.nx
+        assert d["ny"] == self.ny
+        assert d["max_points"] <= self.max_points
+        assert np.all(np.array(d["tol"]) >= self.tol)
+
+        self.npts = d["npts"]
+        self._X = np.reshape(d["Xflat"],d["Xshape"])
+        self._Y = np.reshape(d["Yflat"],d["Yshape"])
+
 
 class TabuSearch:
-    def __init__(self, objective, constraint, nx, ny, tol):
+
+    MEM_KEYS = ["short", "med", "long", "ban"]
+
+    def __init__(self, objective, constraint, nx, ny, tol, j_obj=None):
         """Maximise an objective function using Tabu search."""
 
         # Store objective and constraint functions
@@ -266,10 +297,10 @@ class TabuSearch:
         self.n_med = 2000 if ny > 1 else 10
 
         # Default iteration counters
-        self.i_diversify = 10
-        self.i_intensify = 20
-        self.i_restart = 40
-        self.i_pattern = 2
+        self.i_diversify = 5
+        self.i_intensify = 10
+        self.i_restart = 20
+        self.i_pattern = np.inf
 
         # Misc algorithm parameters
         self.x_regions = 3
@@ -277,6 +308,10 @@ class TabuSearch:
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = None
+        if j_obj is None:
+            self.j_objective = range(ny)
+        else:
+            self.j_objective = j_obj
 
         # Initialise counters
         self.fevals = 0
@@ -285,7 +320,8 @@ class TabuSearch:
         self.mem_short = Memory(nx, ny, self.n_short, self.tol)
         self.mem_med = Memory(nx, ny, self.n_med, self.tol)
         self.mem_long = Memory(nx, ny, self.n_long, self.tol)
-        self.mem_all = (self.mem_short, self.mem_med, self.mem_long)
+        self.mem_ban = Memory(nx, ny, self.n_long, self.tol)
+        self.mem_all = (self.mem_short, self.mem_med, self.mem_long, self.mem_ban)
 
     def clear_memories(self):
         """Erase all memories"""
@@ -293,11 +329,17 @@ class TabuSearch:
             mem.clear()
 
     def initial_guess(self, x0):
-        """Reset memories, set current point, evaluate objective."""
-        self.clear_memories()
-        y0 = self.objective(x0)
-        self.fevals += 1
-        for mem in self.mem_all:
+        """Set current point, evaluate objective."""
+        if not self.constraint(x0):
+            raise Exception('Constraints not satisfied at initial point.')
+        if self.mem_long.contains(x0):
+            print('Using initial guess from memory.')
+            y0 = self.mem_long.lookup(x0)
+        else:
+            print('Evaluating initial guess.')
+            y0 = self.objective(x0)
+            self.fevals += 1
+        for mem in self.mem_all[:-1]:
             mem.add(x0, y0)
         return y0
 
@@ -313,6 +355,10 @@ class TabuSearch:
         # Filter against short term memory
         X = X[~self.mem_short.contains(X)]
 
+        # Filter against permanent ban list
+        # (we put points where CFD results indicate constraint violated here)
+        X = X[~self.mem_ban.contains(X)]
+
         # Check which points we have seen before
         log_seen = self.mem_long.contains(X)
         X_seen = X[log_seen]
@@ -321,29 +367,40 @@ class TabuSearch:
         # Re-use previous objectives from long-term mem if possible
         Y_seen = self.mem_long.lookup(X_seen)
 
-        # Limit the maximum parallel evaluations
-        if self.max_parallel:
-            np.random.shuffle(X_unseen)
-            X_unseen = X_unseen[: self.max_parallel]
+        # Only go as far as evaluating unseen if there are actually points
+        if X_unseen.shape[0] > 0:
 
-        # Evaluate objective for unseen points
-        Y_unseen = self.objective(X_unseen)
+            # Limit the maximum parallel evaluations
+            if self.max_parallel:
+                np.random.shuffle(X_unseen)
+                X_unseen = X_unseen[: self.max_parallel]
 
-        # Increment function evaluation counter
-        self.fevals += len(X_unseen)
+            # Evaluate objective for unseen points
+            Y_unseen = self.objective(X_unseen)
 
-        # Join the results together
-        X = np.vstack((X_seen, X_unseen))
-        Y = np.vstack((Y_seen, Y_unseen))
+            # Increment function evaluation counter
+            self.fevals += len(X_unseen)
+
+            # Join the results together
+            X = np.vstack((X_seen, X_unseen))
+            Y = np.vstack((Y_seen, Y_unseen))
+
+        # If there are no unseen points
+        else:
+
+            X = X_seen
+            Y = Y_seen
 
         return X, Y
 
     def select_move(self, x0, y0, X, Y):
         """Choose next move given starting point and list of candidate moves."""
 
+        j = self.j_objective
+
         # Categorise the candidates for next move with respect to current
-        b_dom = (Y < y0).all(axis=1)
-        b_non_dom = (Y > y0).all(axis=1)
+        b_dom = (Y[:,j] < y0[:,j]).all(axis=1)
+        b_non_dom = (Y[:,j] > y0[:,j]).all(axis=1)
         b_equiv = ~np.logical_and(b_dom, b_non_dom)
 
         # Convert to indices
@@ -399,10 +456,10 @@ class TabuSearch:
             # Evaluate objective for permissible candidate moves
             X, Y = self.evaluate_moves(x0, dx)
 
-            # If any objectives are NaN, add to tabu list
+            # If any objectives are NaN, add to permanent ban list
             inan = np.isnan(Y).any(-1)
             Xnan = X[inan]
-            self.mem_short.add(Xnan)
+            self.mem_ban.add(Xnan)
 
             # Delete NaN from results
             X, Y = X[~inan], Y[~inan]
@@ -412,22 +469,23 @@ class TabuSearch:
 
             # Put Pareto-equivalent results into medium-term memory
             # Flag true if we sucessfully added a point
-            if self.ny == 1:
+            if len(self.j_objective) == 1:
                 flag = self.mem_med.update_best(X, Y)
             else:
                 flag = self.mem_med.update_front(X, Y)
-            print('BEST %s %s' % self.mem_med.get(0))
+            print("BEST %s %s" % self.mem_med.get(0))
 
             # Reset counter if we added to medium memory, otherwise increment
             i = 0 if flag else i + 1
+            print('i=%d, fevals=%d' % (i,self.fevals))
 
             # Choose next point based on local search counter
             if i == self.i_restart:
-                print('*RESTART*')
+                print("*RESTART*")
                 # RESTART: reduce step sizes and randomly select from
                 # medium-term
                 dx = dx * self.fac_restart
-                if self.ny == 1:
+                if len(self.j_objective) == 1:
                     # Pick the current optimum if scalar objective
                     x1, y1 = self.mem_med.get(0)
                 else:
@@ -435,11 +493,11 @@ class TabuSearch:
                     x1, y1 = self.mem_med.sample_sparse(self.x_regions)
                 i = 0
             elif i == self.i_intensify or X.shape[0] == 0:
-                print('*INTENSIFY*')
+                print("*INTENSIFY*")
                 # INTENSIFY: Select a near-optimal point
                 x1, y1 = self.mem_med.sample_sparse(self.x_regions)
             elif i == self.i_diversify:
-                print('*DIVERSIFY*')
+                print("*DIVERSIFY*")
                 # DIVERSIFY: Generate a new point in sparse design region
                 x1 = self.mem_long.generate_sparse(self.x_regions)
                 y1 = self.objective(x1)
@@ -458,3 +516,26 @@ class TabuSearch:
 
         # After the loop return current point
         return x0, y0
+
+    def save_memories(self, fname):
+        """Dump the memories to a json file."""
+
+        # Assemble a dict for each memory
+        d = { k: m.to_dict() for k, m in zip(self.MEM_KEYS, self.mem_all) }
+
+        # Write the file
+        with open(fname, "w") as f:
+            json.dump(d, f)
+
+    def load_memories(self, fname):
+        """Populate memories from a json file."""
+
+        print('Reading memories from %s' % fname)
+        # Load the file
+        with open(fname, "r") as f:
+            d = json.load(f)
+
+        # Populate the memories
+        for k, m in zip(self.MEM_KEYS,self.mem_all):
+            print('%s: %d points' % (k,d[k]['npts']))
+            m.from_dict(d[k])

@@ -311,7 +311,7 @@ if __name__ == "__main__":
     )
 
     # Reaction
-    Lam = (rot_out.tstat-rot_in.tstat)/(rot_out.tstat - sta_in.tstat)
+    Lam = (rot_out.tstat - rot_in.tstat) / (rot_out.tstat - sta_in.tstat)
 
     # Flow angles
     Al = [ci.yaw for ci in cut_all]
@@ -329,9 +329,9 @@ if __name__ == "__main__":
         "eta": eff_poly,
         "eta_isen": eff_isen,
         "runid": run_name,
-        "Ma2" : sta_out.mach,
-        "phi" : sta_out.vx/U,
-        "Lam" : Lam,
+        "Ma2": sta_out.mach,
+        "phi": sta_out.vx / U,
+        "Lam": Lam,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:

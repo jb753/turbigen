@@ -11,10 +11,11 @@ Po1 = 16e5
 rgas = 287.14
 ga = 1.33
 Co = 0.6
+tte = 0.02
 
 
-cp = rgas * ga / (ga-1.)
-To1 = cpTo1/cp
+cp = rgas * ga / (ga - 1.0)
+To1 = cpTo1 / cp
 
 
 def test_streamwise():
@@ -85,27 +86,28 @@ def test_merid():
         Dr_calc = rc_calc - rh_calc
         assert np.all(np.isclose(Dr_calc, Dr[:2]))
 
+
 def test_stage():
     """Verify properties of a stage grid."""
 
     # Use a rough thickness distribution
-    A1 = geometry.prelim_A()*0.5
-    A = np.stack((A1,A1))
-    dx_c = (2.,1.,3.)
+    A1 = geometry.prelim_A() * 0.5
+    A = np.stack((A1, A1))
+    dx_c = (2.0, 1.0, 3.0)
 
     # Loop over entire mean-line design space
     for stg in get_geometries("datum"):
 
         Dstg = design.scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co)
 
-        x_all, r_all, rt_all, ilte_all = hmesh.stage_grid(Dstg, A, dx_c)
+        x_all, r_all, rt_all, ilte_all = hmesh.stage_grid(Dstg, A, dx_c, tte)
 
         for x, r, rt, ilte, s in zip(x_all, r_all, rt_all, ilte_all, Dstg.s):
 
             rm = np.mean(r[0, (0, -1)])
 
             # Check that theta increases as k increases
-            assert np.all(np.diff(rt, 1, 2) > 0.)
+            assert np.all(np.diff(rt, 1, 2) > 0.0)
 
             # Smoothness criteria in k direction
             tol = 1e-3
@@ -115,10 +117,11 @@ def test_stage():
             # And equal to the reference value outside of the blade row
             nblade = np.round(2.0 * np.pi * rm / s)
             pitch_t = 2.0 * np.pi / nblade
-            t = rt / np.expand_dims(r,2)
+            t = rt / np.expand_dims(r, 2)
             dt = t[:, :, -1] - t[:, :, 0]
             tol = 1e-6
             assert np.all(dt - pitch_t < tol)  # Everywhere
-            assert np.all(np.isclose(dt[: ilte[0] + 1, :], pitch_t))  # Inlet duct
+            assert np.all(
+                np.isclose(dt[: ilte[0] + 1, :], pitch_t)
+            )  # Inlet duct
             assert np.all(np.isclose(dt[ilte[1], :], pitch_t))  # Exit duct
-

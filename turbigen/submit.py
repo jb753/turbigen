@@ -38,6 +38,7 @@ class ParameterSet:
             "min_Rins",
             "A",
             "recamber",
+            "tte",
         ],
         "run": [
             "guess_file",
@@ -186,16 +187,6 @@ def wait_for_job(jobid):
             os.system("sleep %d" % interval)
 
 
-def wait_for_file(fname):
-    """Wait for a file to exist."""
-    interval = 5
-    while True:
-        if os.path.isfile(fname):
-            return True
-        else:
-            os.system("sleep %d" % interval)
-
-
 def run_parallel(write_func, params_all, base_dir):
     """Run up to four sets of parameters in parallel."""
     N = len(params_all)
@@ -227,46 +218,94 @@ def run_parallel(write_func, params_all, base_dir):
 
 
 def make_objective_and_constraint(write_func, params_default, base_dir):
-    Aref = params_default.A
-
-    def Amod(x):
-        Am = Aref + 0.0
-        Am[0, :, 1:-1] = x.reshape(2, 2)
-        return Am
-
-    def sweep_A(x):
-        A = [Amod(xi) for xi in x]
-        return params_default.sweep("A", A)
-
-    def _check_err(vname, var, param, thresh):
-        return np.abs(var[vname]/getattr(param,vname) - 1.) < thresh
+    def param_from_x(x):
+        # Split up the input design vector
+        P = params_default.copy()
+        P.recamber = x[:4].tolist()
+        xr = np.reshape(x[4:], (2, 4))
+        P.A = np.stack(
+            [
+                geometry.A_from_Rle_thick_beta(xi[0], xi[1:3], xi[3], P.tte)
+                for xi in xr
+            ]
+        )
+        return P
 
     def _constraint(x):
-        print("CONSTR x = \n%s" % str(x))
-        Rins_ok = [check_constraint(write_func, Pi) for Pi in params_default.sweep('recamber',x)]
-        x_ok = np.abs(x).all(axis=1) < 5.
-        return np.logical_and(Rins_ok, x_ok)
+        P = [param_from_x(xi) for xi in x]
+        dchi1max, dchi2max = 10.0, 5.0
+        Rle_min = 0.06
+        betate_min = 8.0
+        Tmin = 0.05
+        upper = np.atleast_2d(
+            [
+                dchi1max,
+                dchi2max,
+                dchi1max,
+                dchi2max,
+                1.0,
+                1.0,
+                1.0,
+                30.0,
+                1.0,
+                1.0,
+                1.0,
+                30.0,
+            ]
+        )
+        lower = np.atleast_2d(
+            [
+                -dchi1max,
+                -dchi2max,
+                -dchi1max,
+                -dchi2max,
+                Rle_min,
+                Tmin,
+                Tmin,
+                betate_min,
+                Rle_min,
+                Tmin,
+                Tmin,
+                betate_min,
+            ]
+        )
+        upper_ok = (x <= upper).any(axis=1)
+        lower_ok = (x >= lower).any(axis=1)
+
+        Rins_ok = np.zeros_like(lower_ok, dtype=bool)
+        for i in range(len(P)):
+            if lower_ok[i]:
+                Rins_ok[i] = check_constraint(write_func, P[i])
+        return np.logical_and(Rins_ok, upper_ok, lower_ok)
 
     def _objective(x):
         # Make parameters corresponding to each row of x
         print("IN x = \n%s" % str(x))
-        params = params_default.sweep("recamber",x.tolist())
+        params = [param_from_x(xi) for xi in x]
         # Run these parameter sets in parallel
         results = run_parallel(write_func, params, base_dir)
-        # Apply stage loading constraint
+        # Extract the results
         var = _concatenate_dict(results)
-        eta = var["eta"]
+        ks = ["eta", "psi", "phi", "Lam", "Ma2"]
+        y = np.column_stack([var[k] for k in ks])
+        y_target = np.reshape([getattr(params_default, k) for k in ks], (1, -1))
 
-        ind_good = np.all(np.stack(
-                [_check_err(v, var, params_default, 0.02) for v in ["psi", "phi", "Ma2", "Lam"] ]), axis=0 )
+        y[:, 0] = 1.0 - y[:, 0]
+        y_target[:, 0] = 1.0 - y_target[:, 0]
 
-        eta[~ind_good] = np.nan
+        err = y / y_target - 1.0
 
-        print("OUT =\n%s" % str(eta))
+        # NaN out results that deviate too much from target
+        ind_good = np.all(np.abs(err[:, 1:]) < 0.02, axis=1)
+        y[~ind_good, 0] = np.nan
 
-        return 1.-eta
+        print("OUT =\n%s" % str(y))
 
-    x0 = np.reshape(params_default.recamber,(1,-1))
+        return y
+
+    x0 = np.atleast_2d(
+        [[-0.0, 0.0, -0.0, 1.0, 0.12, 0.25, 0.2, 10.0, 0.12, 0.25, 0.2, 10.0]]
+    )
     return _objective, _constraint, x0
 
 

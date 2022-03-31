@@ -1,7 +1,6 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
 from . import geometry
-import matplotlib.pyplot as plt
 
 # Configure numbers of points
 nxb = 97  # Blade chord
@@ -208,7 +207,7 @@ def b2b_grid(x, r, s, c, sect):
         )
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = geometry.cluster_cosine(nk).reshape(1, 1, -1)
+    clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate
@@ -225,7 +224,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, A, dx_c, min_Rins=None, recamber=None):
+def stage_grid(Dstg, A, dx_c, tte, min_Rins=None, recamber=None):
     """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
@@ -246,12 +245,12 @@ def stage_grid(Dstg, A, dx_c, min_Rins=None, recamber=None):
 
     # If recambering, then tweak the metal angles
     if not recamber is None:
-        dev = np.reshape(recamber,(2,2,1))
+        dev = np.reshape(recamber, (2, 2, 1))
         chi += dev
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(spf, chii, spf, Ai)
+        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai)
         for chii, Ai in zip(chi, A)
     ]
 

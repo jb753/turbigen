@@ -69,6 +69,43 @@ def cluster_cosine(npts):
     # Define a non-dimensional clustering function
     return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
 
+def cluster_hyperbola(npts, fac=3.0):
+    """Return a hyperbolic tangent clustering function."""
+    xhat = np.linspace(-1.,1.,npts)
+    return np.tanh(fac*xhat)/2./np.tanh(fac) + .5
+
+def A_from_Rle_thick_beta(Rle, thick, beta, tte):
+    """Assemble shape-space coeffs from more physical quantities.
+
+    Parameters
+    ----------
+    Rle : float [--]
+        Leading-edge radius normalised by axial chord.
+    thick : (2, n) array [--]
+        `n` thickness coefficients for the pressure and suction sides.
+    beta : float [deg]
+        Trailing edge wedge angle.
+    tte : float [--]
+        Trailing edge thickness, normalised by axial chord.
+
+    Returns
+    -------
+    A : (2, n+2) array [-]]
+        The full set of thickness coefficients for upper and lower surfaces.
+    """
+
+    Ale = np.sqrt(2.*Rle)
+    Ate = np.tan(np.radians(beta)) + tte
+    thick = np.reshape(thick,(2,-1))
+    n = thick.shape[1]
+
+    A = np.empty((2, n+2))
+    A[:, 1:-1] = thick
+    A[:, 0 ] = Ale
+    A[:, -1 ] = Ate
+
+    return A
+
 
 def prelim_A():
     """Get values of A corresponding to preliminary thickness distribution."""
@@ -90,7 +127,7 @@ def prelim_A():
     return A
 
 
-def _section_xy(chi, A, x=None):
+def _section_xy(chi, A, tte, x=None):
     r"""Coordinates for blade section with specified camber and thickness."""
 
     # Choose some x coordinates if not provided
@@ -99,7 +136,7 @@ def _section_xy(chi, A, x=None):
 
     # Convert from shape space to thickness
     s = _evaluate_coefficients(x, A)
-    t = _from_shape_space(x, s, zte=None)
+    t = _from_shape_space(x, s, zte=tte)
 
     # Flip the lower thickness
     t[1] = -t[1]
@@ -121,15 +158,15 @@ def _to_shape_space(x, z, zte):
     with np.errstate(invalid="ignore", divide="ignore"):
         ii = np.abs(x - 0.5) < (0.5 - eps)
     s = np.ones(x.shape) * np.nan
-    # s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
-    s[ii] = z[ii] / (np.sqrt(x[ii]) * np.sqrt(1.0 - x[ii]))
+    s[ii] = (z[ii] - x[ii] * zte) / (np.sqrt(x[ii]) * (1.0 - x[ii]))
+    # s[ii] = z[ii] / (np.sqrt(x[ii]) * np.sqrt(1.0 - x[ii]))
     return s
 
 
 def _from_shape_space(x, s, zte):
     """Transform shape space to real coordinates."""
-    # return np.sqrt(x) * (1.0 - x) * s + x * zte
-    return np.sqrt(x) * np.sqrt(1.0 - x) * s
+    return np.sqrt(x) * (1.0 - x) * s + x * zte
+    # return np.sqrt(x) * np.sqrt(1.0 - x) * s
 
 
 def _evaluate_coefficients(x, A):
@@ -165,7 +202,7 @@ def _fit_aerofoil(xy, chi, order):
     X_le_all = []
     for xyi in xy:
         xc, yc, t = _coord_to_thickness(xyi, chi)
-        s = _to_shape_space(xc, t, None)
+        s = _to_shape_space(xc, t, 0.02)
         with np.errstate(invalid="ignore", divide="ignore"):
             itrim = np.abs(xc - 0.5) < (0.5 - dx)
         xtrim_all.append(xc[itrim])
@@ -247,7 +284,7 @@ def _loop_section(xy):
     return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
-def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
+def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
     Parameters
@@ -302,7 +339,7 @@ def radially_interpolate_section(spf, chi, spf_q, A=None, spf_A=None):
 
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
-        [_loop_section(_section_xy(*args)) for args in zip(chi_q.T, A_q)]
+        [_loop_section(_section_xy(*(args + (tte,)))) for args in zip(chi_q.T, A_q)]
     )
 
     return np.squeeze(sec_xrt)
