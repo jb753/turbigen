@@ -68,7 +68,7 @@ class Memory:
         self.nx = nx
         self.ny = ny
         self.max_points = max_points
-        self.tol = np.array(tol)
+        self.tol = None
 
         # Initialise points counter
         self.npts = 0
@@ -98,7 +98,7 @@ class Memory:
 
     def get(self, ind):
         """Get the entry for a specific index."""
-        return self._X[ind], self._Y[ind]
+        return self._X[(ind,),:], self._Y[(ind,),:]
 
     def add(self, xa, ya=None):
         """Add a point to the memory."""
@@ -188,14 +188,16 @@ class Memory:
 
         # Sort by objective, truncate to maximum number of points
         # isort = np.argsort(Yall[:, 0], axis=0)[: self.max_points]
-        _, isort = np.unique(Yall[:, 0], axis=0, return_index=True)[: self.max_points]
+        _, isort = np.unique(Yall[:, 0], axis=0, return_index=True)
+        npts = min(len(isort),self.max_points)
+        isort = isort[: npts]
         Xall, Yall = Xall[isort], Yall[isort]
 
         # Reassign to the memory
-        self.npts = len(isort)
-        self._X[: self.npts] = Xall
-        self._Y[: self.npts] = Yall
-        return np.any(find_rows(self.get(0)[0].reshape(1,-1), X, self.tol)[0])
+        self.npts = npts
+        self._X[: npts] = Xall
+        self._Y[: npts] = Yall
+        return np.any(find_rows(self.get(0)[0], X, self.tol)[0])
 
     def generate_sparse(self, nregion):
         """Return a random design vector in a underexplored region."""
@@ -216,8 +218,8 @@ class Memory:
 
     def sample_random(self):
         """Choose a random design point from the memory."""
-        i_select = np.random.choice(self.npts, 1)
-        return self._X[i_select], self._Y[i_select]
+        i_select = (np.random.choice(self.npts, 1),)
+        return self._X[i_select,:], self._Y[i_select,:]
 
     def sample_sparse(self, nregion):
         """Choose a design point from sparse region of the memory."""
@@ -254,7 +256,6 @@ class Memory:
             "nx": self.nx,
             "ny": self.ny,
             "max_points": self.max_points,
-            "tol": self.tol.tolist(),
             "npts": self.npts,
             "Xflat": self._X.flatten().tolist(),
             "Yflat": self._Y.flatten().tolist(),
@@ -268,11 +269,14 @@ class Memory:
         assert d["nx"] == self.nx
         assert d["ny"] == self.ny
         assert d["max_points"] <= self.max_points
-        assert np.all(np.array(d["tol"]) >= self.tol)
 
         self.npts = d["npts"]
         self._X = np.reshape(d["Xflat"], d["Xshape"])
         self._Y = np.reshape(d["Yflat"], d["Yshape"])
+
+    def to_file(self, fname):
+        with open(fname, "w") as f:
+            json.dump(self.to_dict(), f)
 
 
 class TabuSearch:
@@ -303,10 +307,14 @@ class TabuSearch:
         self.n_med = 2000 if len(self.j_objective) > 1 else 10
 
         # Default iteration counters
-        self.i_diversify = 5
-        self.i_intensify = 10
-        self.i_restart = 20
+        self.i_diversify = 10
+        self.i_intensify = 20
+        self.i_restart = 40
         self.i_pattern = None
+
+        self.i_search = 0
+        self.x0 = None
+        self.y0 = None
 
         # Misc algorithm parameters
         self.x_regions = 3
@@ -350,8 +358,7 @@ class TabuSearch:
             mem.add(x0, y0)
         return y0
 
-    def evaluate_moves(self, x0, dx):
-        """From a given start point, evaluate permissible candidate moves."""
+    def feasible_moves(self, x0, dx):
 
         # Generate candidate moves
         X = hj_move(x0, dx)
@@ -366,6 +373,14 @@ class TabuSearch:
         # (we put points where CFD results indicate constraint violated here)
         X = X[~self.mem_ban.contains(X)]
 
+        return X
+
+
+    def evaluate_moves(self, x0, dx):
+        """From a given start point, evaluate permissible candidate moves."""
+
+        X = self.feasible_moves(x0, dx)
+
         # Check which points we have seen before
         log_seen = self.mem_long.contains(X)
         X_seen = X[log_seen]
@@ -377,13 +392,28 @@ class TabuSearch:
         # Only go as far as evaluating unseen if there are actually points
         if X_unseen.shape[0] > 0:
 
+            # Shuffle the unseen points to remove selection bias
+            np.random.shuffle(X_unseen)
+
             # Limit the maximum parallel evaluations
             if self.max_parallel:
-                np.random.shuffle(X_unseen)
-                X_unseen = X_unseen[: self.max_parallel]
 
-            # Evaluate objective for unseen points
-            Y_unseen = self.objective(X_unseen)
+                # Trim to an integer multiple of the maximum parallel evaluations
+                n_batch = len(X_unseen)//self.max_parallel
+                n_max = n_batch * self.max_parallel
+                X_unseen = X_unseen[ : n_max ]
+
+                # Evaluate in batches
+                X_batch = X_unseen.reshape(n_batch,self.max_parallel,self.nx)
+                Y_batch = np.stack([self.objective(Xi) for Xi in X_batch])
+
+                # Reshape results
+                Y_unseen = Y_batch.reshape(n_max,self.ny)
+
+            else:
+
+                # Evaluate objective for unseen points
+                Y_unseen = self.objective(X_unseen)
 
             # Increment function evaluation counter
             self.fevals += len(X_unseen)
@@ -405,10 +435,18 @@ class TabuSearch:
 
         j = self.j_objective
 
-        # Categorise the candidates for next move with respect to current
-        b_dom = (Y[:, j] < y0[:, j]).all(axis=1)
-        b_non_dom = (Y[:, j] > y0[:, j]).all(axis=1)
-        b_equiv = ~np.logical_and(b_dom, b_non_dom)
+        try:
+            # Categorise the candidates for next move with respect to current
+            b_dom = (Y[:, j] < y0[:, j]).all(axis=1)
+            b_non_dom = (Y[:, j] > y0[:, j]).all(axis=1)
+            b_equiv = ~np.logical_and(b_dom, b_non_dom)
+        except IndexError:
+            print('ERROR! in select_move')
+            print('Y=%s',str(Y))
+            print('y0=%s',str(y0))
+            print('shape Y', Y.shape)
+            print('shape y0', y0.shape)
+            quit()
 
         # Convert to indices
         i_dom = np.where(b_dom)[0]
@@ -437,14 +475,41 @@ class TabuSearch:
 
         return x1, y1
 
-    def pattern_move(self, x0, y0, x1, y1):
+    def pattern_move(self, x0, y0, x1, y1, dx):
         """If this move is in a good direction, increase move length."""
         x1a = x0 + self.fac_pattern * (x1 - x0)
+
+        # # If we are running objectives in parallel, do not waste the spare cores
+        # if self.max_parallel:
+
+            # # Pick (n_parallel - 1) feasible moves from the pattern move point
+            # X1a = self.feasible_moves(x1a, dx)
+            # X1a_unseen = X1a[~self.mem_long.contains(X1a)]
+            # np.random.shuffle(X1a_unseen)
+            # X1a_unseen = X1a_unseen[: (self.max_parallel -1)]
+            # X = np.vstack(x1,X1a_unseen)
+            # Y = self.objective(X)
+
+        # else:
+
         y1a = self.objective(x1a)
         if (y1a < y1).all():
             return x1a
         else:
             return x1
+
+    def update_med(self, X, Y):
+        """Update the near-optimal points in medium term memory."""
+
+        if X.shape[0] == 0:
+            flag = False
+        else:
+            if len(self.j_objective) == 1:
+                flag = self.mem_med.update_best(X, Y)
+            else:
+                flag = self.mem_med.update_front(X, Y)
+
+        return flag
 
     def search(self, x0, dx, callback=None):
         """Perform a search with given intial point and step size."""
@@ -453,7 +518,7 @@ class TabuSearch:
         y0 = self.initial_guess(x0)
 
         # Main loop, until max evaluations reached or step size below tolerance
-        i = 0
+        self.i_search = 0
         while self.fevals < self.max_fevals and np.any(dx > self.tol):
 
             # If we are given a callback, evaluate it now
@@ -462,7 +527,6 @@ class TabuSearch:
 
             # Evaluate objective for permissible candidate moves
             X, Y = self.evaluate_moves(x0, dx)
-
 
             # If any objectives are NaN, add to permanent ban list
             inan = np.isnan(Y).any(-1)
@@ -477,21 +541,16 @@ class TabuSearch:
 
             # Put Pareto-equivalent results into medium-term memory
             # Flag true if we sucessfully added a point
-            if X.shape[0] == 0:
-                flag = False
-            else:
-                if len(self.j_objective) == 1:
-                    flag = self.mem_med.update_best(X, Y)
-                else:
-                    flag = self.mem_med.update_front(X, Y)
+            flag = self.update_med(X, Y)
+
             print("BEST %s\n%s" % self.mem_med.get(0))
 
             # Reset counter if we added to medium memory, otherwise increment
-            i = 0 if flag else i + 1
-            print("i=%d, fevals=%d" % (i, self.fevals))
+            self.i_search = 0 if flag else self.i_search + 1
+            print("i=%d, fevals=%d" % (self.i_search, self.fevals))
 
             # Choose next point based on local search counter
-            if i == self.i_restart:
+            if self.i_search == self.i_restart:
                 print("*RESTART*")
                 # RESTART: reduce step sizes and randomly select from
                 # medium-term
@@ -502,12 +561,13 @@ class TabuSearch:
                 else:
                     # Pick from sparse region of Pareto from if multi-objective
                     x1, y1 = self.mem_med.sample_sparse(self.x_regions)
-                i = 0
-            elif i == self.i_intensify or X.shape[0] == 0:
+                self.i_search = 0
+            elif self.i_search == self.i_intensify or X.shape[0] == 0:
                 print("*INTENSIFY*")
                 # INTENSIFY: Select a near-optimal point
-                x1, y1 = self.mem_med.sample_sparse(self.x_regions)
-            elif i == self.i_diversify:
+                # x1, y1 = self.mem_med.sample_sparse(self.x_regions)
+                x1, y1 = self.mem_med.sample_random(self.x_regions)
+            elif self.i_search == self.i_diversify:
                 print("*DIVERSIFY*")
                 # DIVERSIFY: Generate a new point in sparse design region
                 x1 = self.mem_long.generate_sparse(self.x_regions)
@@ -517,14 +577,18 @@ class TabuSearch:
                 x1, y1 = self.select_move(x0, y0, X, Y)
                 # Check for a pattern move every i_pattern steps
                 if not self.i_pattern is None:
-                    if np.mod(i, self.i_pattern):
-                        x1 = self.pattern_move(x0, y0, x1, y1)
+                    if np.mod(self.i_search, self.i_pattern):
+                        x1 = self.pattern_move(x0, y0, x1, y1, dx)
 
             # Add chosen point to short-term list (tabu)
             self.mem_short.add(x1)
 
             # Update current point before next iteration
             x0, y0 = x1, y1
+
+            # Save in case we want to resume later
+            self.x0 = x0.reshape(-1).tolist()
+            self.y0 = y0.reshape(-1).tolist()
 
         # After the loop return current point
         return x0, y0
@@ -534,6 +598,9 @@ class TabuSearch:
 
         # Assemble a dict for each memory
         d = {k: m.to_dict() for k, m in zip(self.MEM_KEYS, self.mem_all)}
+
+        for a in ['i_search', 'x0', 'y0']:
+            d[a] = getattr(self, a)
 
         # Write the file
         with open(fname, "w") as f:
@@ -551,3 +618,8 @@ class TabuSearch:
         for k, m in zip(self.MEM_KEYS, self.mem_all):
             print("%s: %d points" % (k, d[k]["npts"]))
             m.from_dict(d[k])
+
+        if 'i_search' in d:
+            self.i_search = d['i_search']
+            self.x0 = np.atleast_2d(d['x0'])
+

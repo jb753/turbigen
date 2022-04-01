@@ -4,6 +4,7 @@ import numpy as np
 import subprocess
 from . import geometry
 
+
 TS_SLURM_TEMPLATE = "submit.sh"
 
 
@@ -216,8 +217,126 @@ def run_parallel(write_func, params_all, base_dir):
     # Return processed metadata
     return meta
 
+def run_serial(write_func, param, base_dir):
+    """Run one set of parameters."""
+
+    # Start a Turbostream process on these parameters in a new workdir
+    workdir = prepare_run(write_func, param, base_dir)
+    process = subprocess.Popen("sh submit.sh", cwd=workdir, shell=True)
+
+    # When finished, read the metadata
+    process.wait()
+    with open(os.path.join(workdir, "meta.json"), "r") as f:
+        meta = json.load(f)
+
+    # Format into objective vector
+    ks = ["eta", "psi", "phi", "Lam", "Ma2"]
+    y = np.array([meta[k] for k in ks])
+    y[0] = 1.0 - y[0]  # Lost efficiency
+
+    return y
+
+def make_1d_obj_con(write_func, params_default, base_dir, mem):
+
+    thresh = 0.02
+
+    def param_from_x(x):
+        # Split up the input design vector
+        P = params_default.copy()
+        P.recamber = x[:4].tolist()
+        xr = np.reshape(x[4:], (2, 4))
+        P.A = np.stack(
+            [
+                geometry.A_from_Rle_thick_beta(xi[0], xi[1:3], xi[3], P.tte)
+                for xi in xr
+            ]
+        )
+        return P
+
+    def y_from_param(P):
+        ks = ["eta", "psi", "phi", "Lam", "Ma2"]
+        y = [getattr(P,k) for k in ks]
+        y[0] = 1. - y[0]
+        return y
+
+    def _eval_point(x):
+        x2 = np.atleast_2d(x)
+        if mem.contains(x2):
+            print('Looking up x=%s' % x)
+            y2 = mem.lookup(x2)
+        else:
+            print('Running TS x=%s' % x)
+            y2 = run_serial(write_func, param_from_x(x), base_dir).reshape(1,-1)
+            mem.add(x2, y2)
+            mem.to_file('mem_grad.json')
+        return y2.reshape(-1)
+
+    def _objective(x):
+        return _eval_point(x)[0]
+
+    def _constraint_pre(x):
+        P = param_from_x(x)
+        dchi1max, dchi2max = 10.0, 5.0
+        Rle_min = 0.06
+        betate_min = 8.0
+        Tmin = 0.05
+        upper = np.array(
+            [
+                dchi1max,
+                dchi2max,
+                dchi1max,
+                dchi2max,
+                1.0,
+                1.0,
+                1.0,
+                30.0,
+                1.0,
+                1.0,
+                1.0,
+                30.0,
+            ]
+        )
+        lower = np.array(
+            [
+                -dchi1max,
+                -dchi2max,
+                -dchi1max,
+                -dchi2max,
+                Rle_min,
+                Tmin,
+                Tmin,
+                betate_min,
+                Rle_min,
+                Tmin,
+                Tmin,
+                betate_min,
+            ]
+        )
+        upper_ok = (x <= upper).any()
+        lower_ok = (x >= lower).any()
+
+        if lower_ok and upper_ok:
+            return check_constraint(write_func, P)
+        else:
+            return False
+
+    def _constraint_post(x):
+        y = _eval_point(x)
+        if np.any(np.isnan(y)):
+            return False
+        y_target = y_from_param(param_from_x(x))
+        err = y/y_target - 1.
+        return np.all(np.abs(err[1:])<thresh)
+
+    def _constraint(x):
+        # Scipy constraints are enforced to be positive
+        satisfied = _constraint_pre(x) and _constraint_post(x)
+        return 1. if satisfied else -1.
+
+    return _objective, _constraint
 
 def make_objective_and_constraint(write_func, params_default, base_dir):
+
     def param_from_x(x):
         # Split up the input design vector
         P = params_default.copy()
@@ -269,8 +388,8 @@ def make_objective_and_constraint(write_func, params_default, base_dir):
                 betate_min,
             ]
         )
-        upper_ok = (x <= upper).any(axis=1)
-        lower_ok = (x >= lower).any(axis=1)
+        upper_ok = (x <= upper).all(axis=1)
+        lower_ok = (x >= lower).all(axis=1)
 
         Rins_ok = np.zeros_like(lower_ok, dtype=bool)
         for i in range(len(P)):
@@ -289,18 +408,13 @@ def make_objective_and_constraint(write_func, params_default, base_dir):
         ks = ["eta", "psi", "phi", "Lam", "Ma2"]
         y = np.column_stack([var[k] for k in ks])
         y_target = np.reshape([getattr(params_default, k) for k in ks], (1, -1))
-
         y[:, 0] = 1.0 - y[:, 0]
         y_target[:, 0] = 1.0 - y_target[:, 0]
-
         err = y / y_target - 1.0
-
         # NaN out results that deviate too much from target
         ind_good = np.all(np.abs(err[:, 1:]) < 0.02, axis=1)
         y[~ind_good, 0] = np.nan
-
         print("OUT =\n%s" % str(y))
-
         return y
 
     x0 = np.atleast_2d(
