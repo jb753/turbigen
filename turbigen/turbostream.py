@@ -472,4 +472,3 @@ def write_grid_from_params(params, fname=None):
         # (if not specified, this function acts as a constraint check)
         if fname:
             g.write_hdf5(fname)
-

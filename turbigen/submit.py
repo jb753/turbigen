@@ -5,9 +5,9 @@ import subprocess
 from . import geometry, tabu
 
 
-TURBIGEN_ROOT = os.path.join('/'.join(__file__.split('/')[:-1]),'..')
-TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT,"submit.sh")
-TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT,"submit_search.sh")
+TURBIGEN_ROOT = os.path.join("/".join(__file__.split("/")[:-1]), "..")
+TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit.sh")
+TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
 OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "Ma2", "runid"]
 
@@ -45,8 +45,12 @@ def _make_workdir(base_dir, slurm_template):
     shutil.copy(slurm_template, new_slurm)
 
     # Append run id to the slurm job name
-    sedcmd = ("sed -i 's?jobname?turbigen_%s_%04d?' %s" % (base_dir, new_id, new_slurm))
-    os.system( sedcmd )
+    sedcmd = "sed -i 's?jobname?turbigen_%s_%04d?' %s" % (
+        base_dir,
+        new_id,
+        new_slurm,
+    )
+    os.system(sedcmd)
 
     # Return the working directory so that we can save input files there
     return workdir
@@ -162,7 +166,7 @@ class ParameterSet:
     def from_default(cls):
         """Create a default parameter set."""
         module_path = os.path.abspath(os.path.dirname(__file__))
-        return cls.from_json(os.path.join(module_path, 'default_params.json'))
+        return cls.from_json(os.path.join(module_path, "default_params.json"))
 
     def to_dict(self):
         """Nested dictionary for this object."""
@@ -361,23 +365,23 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir):
 
     return _objective, _constraint
 
+
 def run_search(param, base_name):
-    base_dir = os.path.join(TURBIGEN_ROOT,'run')
+    base_dir = os.path.join(TURBIGEN_ROOT, "run",base_name)
     if not os.path.isdir(base_dir):
         os.mkdir(base_dir)
 
-    datum_file = os.path.join(base_dir, 'datum_param.json')
-    slurm_file = os.path.join(base_dir, 'submit.sh')
+    datum_file = os.path.join(base_dir, "datum_param.json")
+    slurm_file = os.path.join(base_dir, "submit.sh")
 
     param.write_json(datum_file)
     shutil.copy(TABU_SLURM_TEMPLATE, slurm_file)
 
     # Append run id to the slurm job name
-    sedcmd = ("sed -i 's?jobname?turbigen_%s_opt?' %s" % (base_dir, slurm_file))
-    os.system( sedcmd )
+    sedcmd = "sed -i 's?jobname?turbigen_%s?' %s" % (base_name, slurm_file)
+    os.system(sedcmd)
 
-    subprocess.Popen('sbatch submit.sh' , cwd=base_dir, shell=True)
-
+    subprocess.Popen("sbatch submit.sh", cwd=base_dir, shell=True).wait()
 
 
 def _run_search(write_func):
@@ -385,19 +389,17 @@ def _run_search(write_func):
 
     base_dir = os.getcwd()
 
-    mem_file = os.path.join(base_dir, 'mem_tabu.json')
-    datum_file = os.path.join(base_dir, 'datum_param.json')
+    mem_file = os.path.join(base_dir, "mem_tabu.json")
+    datum_file = os.path.join(base_dir, "datum_param.json")
 
     if not os.path.isfile(datum_file):
-        raise Exception('No datum parameters found.')
+        raise Exception("No datum parameters found.")
 
     # param.write_json(datum_file)
     param = ParameterSet.from_json(datum_file)
 
     # Wrapped objective and constraint
-    obj, constr = _wrap_for_optimiser(
-        write_func, param, base_dir
-    )
+    obj, constr = _wrap_for_optimiser(write_func, param, base_dir)
 
     # Initial guess, step, tolerance
     x0 = _assemble_x0()
@@ -412,6 +414,7 @@ def _run_search(write_func):
     else:
         ts.mem_file = mem_file
         ts.search(x0, dx)
+
 
 def check_constraint(write_func, params):
     """Before writing a file, check that geometry constraints are OK."""

@@ -4,6 +4,7 @@ import numpy as np
 
 np.set_printoptions(precision=3, linewidth=np.inf)
 
+
 def hj_move(x, dx):
     """Generate a set of Hooke and Jeeves moves about a point.
 
@@ -329,7 +330,11 @@ class TabuSearch:
 
         # Default iteration counters
         self.i_diversify = self.max_fevals
-        self.i_intensify = [ 5, 10, 15, ]
+        self.i_intensify = [
+            5,
+            10,
+            15,
+        ]
         self.i_restart = 20
         self.i_pattern = None
 
@@ -356,7 +361,7 @@ class TabuSearch:
     def initial_guess(self, x0):
         """Set current point, evaluate objective."""
         if self.verbose:
-            print('INITIAL\n  x = %s' % np.array_str(x0))
+            print("INITIAL\n  x = %s" % np.array_str(x0))
         if not self.constraint(x0):
             raise Exception("Constraints not satisfied at initial point.")
         if self.mem_long.contains(x0):
@@ -529,7 +534,6 @@ class TabuSearch:
     def search(self, x0, dx, callback=None):
         """Perform a search with given intial point and step size."""
 
-
         # Evaluate the objective at given initial guess point, update memories
         y0 = self.initial_guess(x0)
 
@@ -570,9 +574,9 @@ class TabuSearch:
 
             if self.verbose and flag:
                 print(
-                        "NEW OPT\n  x = %s\n  y = %s"
-                        % tuple([np.array_str(xy) for xy in self.mem_med.get(0)])
-                     )
+                    "NEW OPT\n  x = %s\n  y = %s"
+                    % tuple([np.array_str(xy) for xy in self.mem_med.get(0)])
+                )
 
             # Reset counter if we added to medium memory, otherwise increment
             self.i_search = 0 if flag else self.i_search + 1
@@ -614,8 +618,10 @@ class TabuSearch:
                         x1 = self.pattern_move(x0, y0, x1, y1, dx)
 
             if self.verbose:
-                print("  x = %s\n  y = %s"
-                    % tuple([np.array_str(xy) for xy in (x1, y1)]) )
+                print(
+                    "  x = %s\n  y = %s"
+                    % tuple([np.array_str(xy) for xy in (x1, y1)])
+                )
             # Add chosen point to short-term list (tabu)
             self.mem_short.add(x1)
 
@@ -629,7 +635,6 @@ class TabuSearch:
         self.load_memories(fname)
         self.mem_file = fname
         self.search(self.x0, self.dx)
-
 
     def save_memories(self, fname):
         """Dump the memories to a json file."""
