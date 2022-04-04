@@ -21,14 +21,21 @@ dx = np.atleast_2d(
 tol = dx / 4.0
 ts = tabu.TabuSearch(obj, constr, x0.shape[1], 5, tol, j_obj=(0,))
 
-ts.max_fevals = 200
+ts.max_fevals = 10000
 ts.max_parallel = 4
 
 
 ts.load_memories(mem_file)
 
-x0 = np.atleast_2d([-10., 0., 8., 1., 0.07, 0.25, 0.2, 18., 0.12, 0.25, 0.1, 10.])
+x0 = ts.mem_med.get(0)[0]
 
-x_opt, y_opt = ts.search(x0, dx)
+# x0 = np.atleast_2d([-10., 0., 8., 1., 0.07, 0.25, 0.2, 18., 0.12, 0.25, 0.1, 10.])
+
+ts.mem_file = mem_file
+ts.i_intensify = 5
+ts.i_diversify = 10
+ts.i_restart = 20
+
+x_opt, y_opt = ts.search(None, dx)
 
 ts.save_memories(mem_file)
