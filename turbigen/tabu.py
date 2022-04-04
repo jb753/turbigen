@@ -2,6 +2,7 @@
 import json
 import numpy as np
 
+np.set_printoptions(precision=3, linewidth=np.inf)
 
 def hj_move(x, dx):
     """Generate a set of Hooke and Jeeves moves about a point.
@@ -98,7 +99,7 @@ class Memory:
 
     def get(self, ind):
         """Get the entry for a specific index."""
-        return self._X[ind, :].reshape(1,-1), self._Y[ind, :].reshape(1,-1)
+        return self._X[ind, :].reshape(1, -1), self._Y[ind, :].reshape(1, -1)
 
     def add(self, xa, ya=None):
         """Add a point to the memory."""
@@ -202,7 +203,7 @@ class Memory:
 
         # If any of the input points have been added return True
         in_now = self.contains(X)
-        return np.any(np.logical_and(in_now,~in_already))
+        return np.any(np.logical_and(in_now, ~in_already))
 
     def generate_sparse(self, nregion):
         """Return a random design vector in a underexplored region."""
@@ -312,22 +313,25 @@ class TabuSearch:
 
         self.mem_file = None
 
-        # Default iteration counters
-        self.i_diversify = 10
-        self.i_intensify = [20,]
-        self.i_restart = 40
-        self.i_pattern = None
-
         self.i_search = 0
         self.x0 = None
         self.y0 = None
+        self.dx = None
 
         # Misc algorithm parameters
         self.x_regions = 3
         self.max_fevals = 20000
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
-        self.max_parallel = None
+        self.max_parallel = 4
+
+        self.verbose = True
+
+        # Default iteration counters
+        self.i_diversify = self.max_fevals
+        self.i_intensify = [ 5, 10, 15, ]
+        self.i_restart = 20
+        self.i_pattern = None
 
         # Initialise counters
         self.fevals = 0
@@ -351,17 +355,24 @@ class TabuSearch:
 
     def initial_guess(self, x0):
         """Set current point, evaluate objective."""
+        if self.verbose:
+            print('INITIAL\n  x = %s' % np.array_str(x0))
         if not self.constraint(x0):
             raise Exception("Constraints not satisfied at initial point.")
         if self.mem_long.contains(x0):
-            print("Using initial guess from memory.")
+            if self.verbose:
+                print("  Using initial guess from memory.")
             y0 = self.mem_long.lookup(x0)
         else:
-            print("Evaluating initial guess.")
+            if self.verbose:
+                print("  Evaluating initial guess.")
             y0 = self.objective(x0)
             self.fevals += 1
         for mem in self.mem_all[:-1]:
             mem.add(x0, y0)
+        if self.verbose:
+            print("  y = %s" % np.array_str(y0))
+
         return y0
 
     def feasible_moves(self, x0, dx):
@@ -404,7 +415,9 @@ class TabuSearch:
             if self.max_parallel:
 
                 # Evaluate in batches
-                isplit = range(self.max_parallel,len(X_unseen),self.max_parallel)
+                isplit = range(
+                    self.max_parallel, len(X_unseen), self.max_parallel
+                )
                 X_batch = np.split(X_unseen, isplit)
                 Y_batch = [self.objective(Xi) for Xi in X_batch]
 
@@ -438,9 +451,10 @@ class TabuSearch:
 
         try:
             # Categorise the candidates for next move with respect to current
-            b_dom = (Y[:, j] < y0[:, j]).all(axis=1)
-            b_non_dom = (Y[:, j] > y0[:, j]).all(axis=1)
-            b_equiv = ~np.logical_and(b_dom, b_non_dom)
+            with np.errstate(invalid="ignore"):
+                b_dom = (Y[:, j] < y0[:, j]).all(axis=1)
+                b_non_dom = (Y[:, j] > y0[:, j]).all(axis=1)
+                b_equiv = ~np.logical_and(b_dom, b_non_dom)
         except IndexError:
             print("ERROR! in select_move")
             print("Y=%s", str(Y))
@@ -515,15 +529,22 @@ class TabuSearch:
     def search(self, x0, dx, callback=None):
         """Perform a search with given intial point and step size."""
 
-        if not x0 is None:
-            # Evaluate the objective at given initial guess point, update memories
-            y0 = self.initial_guess(x0)
-        else:
-            x0, y0 = np.atleast_2d(self.x0), np.atleast_2d(self.y0)
+
+        # Evaluate the objective at given initial guess point, update memories
+        y0 = self.initial_guess(x0)
 
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0
         while self.fevals < self.max_fevals and np.any(dx > self.tol):
+
+            # Save in case we want to resume later
+            self.dx = dx.reshape(-1).tolist()
+            self.x0 = x0.reshape(-1).tolist()
+            self.y0 = y0.reshape(-1).tolist()
+
+            # Record our progress in a memory file, if specified
+            if self.mem_file:
+                self.save_memories(self.mem_file)
 
             # If we are given a callback, evaluate it now
             if callback:
@@ -547,18 +568,22 @@ class TabuSearch:
             # Flag true if we sucessfully added a point
             flag = self.update_med(X, Y)
 
-            print("BEST %s\n%s" % self.mem_med.get(0))
+            if self.verbose and flag:
+                print(
+                        "NEW OPT\n  x = %s\n  y = %s"
+                        % tuple([np.array_str(xy) for xy in self.mem_med.get(0)])
+                     )
 
             # Reset counter if we added to medium memory, otherwise increment
             self.i_search = 0 if flag else self.i_search + 1
-            print("i=%d, fevals=%d" % (self.i_search, self.fevals))
 
             # Choose next point based on local search counter
             if self.i_search == self.i_restart:
-                print("*RESTART*")
+                if self.verbose:
+                    print("RESTART")
                 # RESTART: reduce step sizes and randomly select from
                 # medium-term
-                dx = dx * self.fac_restart
+                dx *= self.fac_restart
                 if len(self.j_objective) == 1:
                     # Pick the current optimum if scalar objective
                     x1, y1 = self.mem_med.get(0)
@@ -567,16 +592,20 @@ class TabuSearch:
                     x1, y1 = self.mem_med.sample_sparse(self.x_regions)
                 self.i_search = 0
             elif self.i_search in self.i_intensify or X.shape[0] == 0:
-                print("*INTENSIFY*")
+                if self.verbose:
+                    print("INTENSIFY")
                 # INTENSIFY: Select a near-optimal point
                 # x1, y1 = self.mem_med.sample_sparse(self.x_regions)
                 x1, y1 = self.mem_med.sample_random()
             elif self.i_search == self.i_diversify:
-                print("*DIVERSIFY*")
+                if self.verbose:
+                    print("DIVERSIFY")
                 # DIVERSIFY: Generate a new point in sparse design region
                 x1 = self.mem_long.generate_sparse(self.x_regions)
                 y1 = self.objective(x1)
             else:
+                if self.verbose:
+                    print("i=%d, fevals=%d" % (self.i_search, self.fevals))
                 # Normally, choose the best candidate move
                 x1, y1 = self.select_move(x0, y0, X, Y)
                 # Check for a pattern move every i_pattern steps
@@ -584,22 +613,23 @@ class TabuSearch:
                     if np.mod(self.i_search, self.i_pattern):
                         x1 = self.pattern_move(x0, y0, x1, y1, dx)
 
+            if self.verbose:
+                print("  x = %s\n  y = %s"
+                    % tuple([np.array_str(xy) for xy in (x1, y1)]) )
             # Add chosen point to short-term list (tabu)
-            print(x1)
             self.mem_short.add(x1)
 
             # Update current point before next iteration
             x0, y0 = x1, y1
 
-            # Save in case we want to resume later
-            self.x0 = x0.reshape(-1).tolist()
-            self.y0 = y0.reshape(-1).tolist()
-
-            if self.mem_file:
-                self.save_memories(self.mem_file)
-
         # After the loop return current point
         return x0, y0
+
+    def resume(self, fname):
+        self.load_memories(fname)
+        self.mem_file = fname
+        self.search(self.x0, self.dx)
+
 
     def save_memories(self, fname):
         """Dump the memories to a json file."""
@@ -607,7 +637,7 @@ class TabuSearch:
         # Assemble a dict for each memory
         d = {k: m.to_dict() for k, m in zip(self.MEM_KEYS, self.mem_all)}
 
-        for a in ["i_search", "x0", "y0"]:
+        for a in ["i_search", "x0", "y0", "dx"]:
             d[a] = getattr(self, a)
 
         # Write the file
@@ -617,19 +647,23 @@ class TabuSearch:
     def load_memories(self, fname):
         """Populate memories from a json file."""
 
-        print("Reading memories from %s" % fname)
+        if self.verbose:
+            print("READ memories from %s" % fname)
         # Load the file
         with open(fname, "r") as f:
             d = json.load(f)
 
         # Populate the memories
         for k, m in zip(self.MEM_KEYS, self.mem_all):
-            print("%s: %d points" % (k, d[k]["npts"]))
+            if self.verbose:
+                print("  %s: %d points" % (k, d[k]["npts"]))
             m.from_dict(d[k])
 
         if "i_search" in d:
             self.i_search = d["i_search"]
             self.x0 = np.atleast_2d(d["x0"])
+            self.y0 = np.atleast_2d(d["y0"])
+            self.dx = np.atleast_2d(d["dx"])
 
     def plot(self, fname):
         """Generate a graph of optimisation progress."""
@@ -637,14 +671,14 @@ class TabuSearch:
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        Yl = np.flip(self.mem_long.Y,axis=0)
+        Yl = np.flip(self.mem_long.Y, axis=0)
         pts = np.arange(len(Yl))
         Ym = self.mem_med.Y
         _, ind = find_rows(Ym, Yl)
-        ax.plot(pts,Yl[:,0],'k-')
-        ax.plot(pts[ind],Yl[ind,0],'r*')
-        ax.set_ylabel('Lost Efficiency, $\Delta \eta$')
-        ax.set_xlabel('Design Evaluations')
+        ax.plot(pts, Yl[:, 0], "k-")
+        ax.plot(pts[ind], Yl[ind, 0], "r*")
+        ax.set_ylabel("Lost Efficiency, $\Delta \eta$")
+        ax.set_xlabel("Design Evaluations")
         plt.tight_layout()
 
         plt.savefig(fname)

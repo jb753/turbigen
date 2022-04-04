@@ -2,10 +2,14 @@
 import json, glob, os, shutil
 import numpy as np
 import subprocess
-from . import geometry
+from . import geometry, tabu
 
 
-TS_SLURM_TEMPLATE = "submit.sh"
+TURBIGEN_ROOT = os.path.join('/'.join(__file__.split('/')[:-1]),'..')
+TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT,"submit.sh")
+TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT,"submit_search.sh")
+
+OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "Ma2", "runid"]
 
 
 def _concatenate_dict(list_of_dicts):
@@ -20,7 +24,9 @@ def _make_workdir(base_dir, slurm_template):
 
     # Get all direcories in base dir and convert to integers
     dnames = glob.glob(base_dir + "/*")
-    runids = [ -1, ]
+    runids = [
+        -1,
+    ]
     for i in range(len(dnames)):
         try:
             runids.append(int(os.path.basename(dnames[i])))
@@ -39,10 +45,8 @@ def _make_workdir(base_dir, slurm_template):
     shutil.copy(slurm_template, new_slurm)
 
     # Append run id to the slurm job name
-    os.system(
-        "sed -i 's/jobname/turbigen_%s_%04d/' %s"
-        % (base_dir, new_id, new_slurm)
-    )
+    sedcmd = ("sed -i 's?jobname?turbigen_%s_%04d?' %s" % (base_dir, new_id, new_slurm))
+    os.system( sedcmd )
 
     # Return the working directory so that we can save input files there
     return workdir
@@ -154,6 +158,12 @@ class ParameterSet:
         # Pass dict to the normal init method
         return cls(dat)
 
+    @classmethod
+    def from_default(cls):
+        """Create a default parameter set."""
+        module_path = os.path.abspath(os.path.dirname(__file__))
+        return cls.from_json(os.path.join(module_path, 'default_params.json'))
+
     def to_dict(self):
         """Nested dictionary for this object."""
         dat = {}
@@ -220,11 +230,17 @@ class ParameterSet:
         return out
 
 
+def _run_parameters(write_func, params_all, base_dir):
+    """Run one or more parameters sets in parallel."""
 
-def run_parallel(write_func, params_all, base_dir):
-    """Run sets of parameters in parallel."""
+    try:
+        N = len(params_all)
+    except AttributeError:
+        N = 1
+        params_all = [
+            params_all,
+        ]
 
-    N = len(params_all)
     # Set up N working directories
     workdirs = [
         _write_input(write_func, params, base_dir) for params in params_all
@@ -252,219 +268,150 @@ def run_parallel(write_func, params_all, base_dir):
     return meta
 
 
-def run_serial(write_func, param, base_dir):
-    """Run one set of parameters."""
+def _param_from_x(x, param_datum):
+    """Perturb a datum turbine using a design vector x."""
 
-    # Start a Turbostream process on these parameters in a new workdir
-    workdir = _write_input(write_func, param, base_dir)
-    process = subprocess.Popen("sh submit.sh", cwd=workdir, shell=True)
+    param = param_datum.copy()
 
-    # When finished, read the metadata
-    process.wait()
-    with open(os.path.join(workdir, "meta.json"), "r") as f:
-        meta = json.load(f)
+    # First four elements are recambering angles
+    param.recamber = x[:4].tolist()
 
-    # Format into objective vector
-    ks = ["eta", "psi", "phi", "Lam", "Ma2"]
-    y = np.array([meta[k] for k in ks])
-    y[0] = 1.0 - y[0]  # Lost efficiency
+    # Last eight elements are section shape parameters
+    xr = np.reshape(x[4:], (2, 4))
+    param.A = np.stack(
+        [
+            geometry.A_from_Rle_thick_beta(
+                xi[0], xi[1:3], xi[3], param_datum.tte
+            )
+            for xi in xr
+        ]
+    )
 
+    return param
+
+
+def _assemble_bounds(
+    Rle=(0.06, 0.5),
+    dchi_in=(-30.0, 30),
+    dchi_out=(-10.0, 10.0),
+    beta=(8.0, 45.0),
+    thick=(0.05, 0.5),
+):
+    """With pairs of bounds for each variable, assemble design vec limits."""
+    return np.column_stack(
+        ((dchi_in,) + (dchi_out,)) * 2 + ((Rle,) + (thick,) * 2 + (beta,)) * 2
+    )
+
+
+def _assemble_x0(Rle=0.08, dchi_in=-5.0, dchi_out=0.0, beta=10.0, thick=0.2):
+    return np.atleast_2d(
+        (dchi_in, dchi_out) * 2 + (Rle, thick, thick, beta) * 2
+    )
+
+
+def _assemble_dx(
+    dRle=0.02, ddchi_in=2.0, ddchi_out=1.0, dbeta=2.0, dthick=0.04
+):
+    return np.atleast_2d(
+        (ddchi_in, ddchi_out) * 2 + (dRle, dthick, dthick, dbeta) * 2
+    )
+
+
+def _constrain_x_param(x, write_func, param_datum):
+    lower, upper = _assemble_bounds()
+    input_ok = (x >= lower).all() and (x <= upper).all()
+    param = _param_from_x(x, param_datum)
+    if input_ok:
+        return check_constraint(write_func, param)
+    else:
+        return False
+
+
+def _metadata_to_y(meta):
+    """Convert a metadata dictionary into objective vector y."""
+    return np.array([float(meta[k]) for k in OBJECTIVE_KEYS])
+
+
+def _param_to_y(param):
+    """Convert parameter set into objective vector y."""
+    y = np.array([getattr(param, k, np.nan) for k in OBJECTIVE_KEYS])
     return y
 
 
-def make_1d_obj_con(write_func, params_default, base_dir, mem):
-    thresh = 0.02
-
-    def param_from_x(x):
-        # Split up the input design vector
-        P = params_default.copy()
-        P.recamber = x[:4].tolist()
-        xr = np.reshape(x[4:], (2, 4))
-        P.A = np.stack(
-            [
-                geometry.A_from_Rle_thick_beta(xi[0], xi[1:3], xi[3], P.tte)
-                for xi in xr
-            ]
-        )
-        return P
-
-    def y_from_param(P):
-        ks = ["eta", "psi", "phi", "Lam", "Ma2"]
-        y = [getattr(P, k) for k in ks]
-        y[0] = 1.0 - y[0]
-        return y
-
-    def _eval_point(x):
-        x2 = np.atleast_2d(x)
-        if mem.contains(x2):
-            print("Looking up x=%s" % x)
-            y2 = mem.lookup(x2)
-        else:
-            print("Running TS x=%s" % x)
-            y2 = run_serial(write_func, param_from_x(x), base_dir).reshape(
-                1, -1
-            )
-            mem.add(x2, y2)
-            mem.to_file("mem_grad.json")
-        return y2.reshape(-1)
-
-    def _objective(x):
-        return _eval_point(x)[0]
-
-    def _constraint_pre(x):
-        P = param_from_x(x)
-        dchi1max, dchi2max = 10.0, 5.0
-        Rle_min = 0.06
-        betate_min = 8.0
-        Tmin = 0.05
-        upper = np.array(
-            [
-                dchi1max,
-                dchi2max,
-                dchi1max,
-                dchi2max,
-                1.0,
-                1.0,
-                1.0,
-                30.0,
-                1.0,
-                1.0,
-                1.0,
-                30.0,
-            ]
-        )
-        lower = np.array(
-            [
-                -dchi1max,
-                -dchi2max,
-                -dchi1max,
-                -dchi2max,
-                Rle_min,
-                Tmin,
-                Tmin,
-                betate_min,
-                Rle_min,
-                Tmin,
-                Tmin,
-                betate_min,
-            ]
-        )
-        upper_ok = (x <= upper).any()
-        lower_ok = (x >= lower).any()
-
-        if lower_ok and upper_ok:
-            return check_constraint(write_func, P)
-        else:
-            return False
-
-    def _constraint_post(x):
-        y = _eval_point(x)
-        if np.any(np.isnan(y)):
-            return False
-        y_target = y_from_param(param_from_x(x))
-        err = y / y_target - 1.0
-        return np.all(np.abs(err[1:]) < thresh)
+def _wrap_for_optimiser(write_func, param_datum, base_dir):
+    """A closure that wraps turbine creation and running for the optimiser."""
 
     def _constraint(x):
-        # Scipy constraints are enforced to be positive
-        satisfied = _constraint_pre(x) and _constraint_post(x)
-        return 1.0 if satisfied else -1.0
+        return [_constrain_x_param(xi, write_func, param_datum) for xi in x]
+
+    def _objective(x):
+        # Get parameter sets for all rows of x
+        params = [_param_from_x(xi, param_datum) for xi in x]
+        # Run these parameter sets in parallel
+        metadata = _run_parameters(write_func, params, base_dir)
+        # Extract the results
+        y = np.stack([_metadata_to_y(m) for m in metadata])
+        # Check error
+        y_target = np.atleast_2d(_param_to_y(param_datum))
+        err = y / y_target - 1.0
+        # NaN out results that deviate too much from target
+        ind_good = np.all(np.abs(err[:, 1:-1]) < param_datum.rtol, axis=1)
+        y[~ind_good, 0] = np.nan
+        return y
 
     return _objective, _constraint
 
+def run_search(param, base_name):
+    base_dir = os.path.join(TURBIGEN_ROOT,'run')
+    if not os.path.isdir(base_dir):
+        os.mkdir(base_dir)
 
-def make_objective_and_constraint(write_func, params_default, base_dir):
+    datum_file = os.path.join(base_dir, 'datum_param.json')
+    slurm_file = os.path.join(base_dir, 'submit.sh')
+
+    param.write_json(datum_file)
+    shutil.copy(TABU_SLURM_TEMPLATE, slurm_file)
+
+    # Append run id to the slurm job name
+    sedcmd = ("sed -i 's?jobname?turbigen_%s_opt?' %s" % (base_dir, slurm_file))
+    os.system( sedcmd )
+
+    subprocess.Popen('sbatch submit.sh' , cwd=base_dir, shell=True)
 
 
-    def param_from_x(x):
-        # Split up the input design vector
-        P = params_default.copy()
-        P.recamber = x[:4].tolist()
-        xr = np.reshape(x[4:], (2, 4))
-        P.A = np.stack(
-            [
-                geometry.A_from_Rle_thick_beta(xi[0], xi[1:3], xi[3], P.tte)
-                for xi in xr
-            ]
-        )
-        return P
 
-    def _constraint(x):
-        P = [param_from_x(xi) for xi in x]
-        dchi1max, dchi2max = 20.0, 5.0
-        Rle_min = 0.06
-        betate_min = 8.0
-        betate_max = 45.
-        Tmin = 0.05
-        Tmax = 1.0
-        upper = np.atleast_2d(
-            [
-                dchi1max,
-                dchi2max,
-                dchi1max,
-                dchi2max,
-                Tmax,
-                Tmax,
-                Tmax,
-                betate_max,
-                Tmax,
-                Tmax,
-                Tmax,
-                betate_max,
-            ]
-        )
-        lower = np.atleast_2d(
-            [
-                -dchi1max,
-                -dchi2max,
-                -dchi1max,
-                -dchi2max,
-                Rle_min,
-                Tmin,
-                Tmin,
-                betate_min,
-                Rle_min,
-                Tmin,
-                Tmin,
-                betate_min,
-            ]
-        )
-        upper_ok = (x <= upper).all(axis=1)
-        lower_ok = (x >= lower).all(axis=1)
+def _run_search(write_func):
+    """Perform a tabu search of blade geometries for a parameter set."""
 
-        Rins_ok = np.zeros_like(lower_ok, dtype=bool)
-        for i in range(len(P)):
-            if lower_ok[i]:
-                Rins_ok[i] = check_constraint(write_func, P[i])
-        return np.logical_and(Rins_ok, upper_ok, lower_ok)
+    base_dir = os.getcwd()
 
-    def _objective(x):
-        # Make parameters corresponding to each row of x
-        print("IN x = \n%s" % str(x))
-        params = [param_from_x(xi) for xi in x]
-        # Run these parameter sets in parallel
-        results = run_parallel(write_func, params, base_dir)
-        # Extract the results
-        var = _concatenate_dict(results)
-        ks = ["eta", "psi", "phi", "Lam", "Ma2"]
-        y = np.column_stack([var[k] for k in ks])
-        y_target = np.reshape([getattr(params_default, k) for k in ks], (1, -1))
-        y[:, 0] = 1.0 - y[:, 0]
-        y_target[:, 0] = 1.0 - y_target[:, 0]
-        err = y / y_target - 1.0
-        # NaN out results that deviate too much from target
-        ind_good = np.all(np.abs(err[:, 1:]) < params_default.rtol , axis=1)
-        y[~ind_good, 0] = np.nan
-        run_ids = np.reshape([float(v["runid"]) for v in results],(-1,1))
-        y = np.hstack((y, run_ids))
-        print("OUT =\n%s" % str(y))
-        return y
+    mem_file = os.path.join(base_dir, 'mem_tabu.json')
+    datum_file = os.path.join(base_dir, 'datum_param.json')
 
-    x0 = np.atleast_2d(
-        [[-0.0, 0.0, -0.0, 1.0, 0.12, 0.25, 0.2, 10.0, 0.12, 0.25, 0.2, 10.0]]
+    if not os.path.isfile(datum_file):
+        raise Exception('No datum parameters found.')
+
+    # param.write_json(datum_file)
+    param = ParameterSet.from_json(datum_file)
+
+    # Wrapped objective and constraint
+    obj, constr = _wrap_for_optimiser(
+        write_func, param, base_dir
     )
-    return _objective, _constraint, x0
 
+    # Initial guess, step, tolerance
+    x0 = _assemble_x0()
+    dx = _assemble_dx()
+    tol = dx / 4.0
+
+    # Setup the seach
+    ts = tabu.TabuSearch(obj, constr, x0.shape[1], 6, tol, j_obj=(0,))
+
+    if os.path.isfile(mem_file):
+        ts.resume(mem_file)
+    else:
+        ts.mem_file = mem_file
+        ts.search(x0, dx)
 
 def check_constraint(write_func, params):
     """Before writing a file, check that geometry constraints are OK."""
@@ -473,5 +420,3 @@ def check_constraint(write_func, params):
         return True
     except geometry.GeometryConstraintError:
         return False
-
-
