@@ -296,7 +296,7 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
+def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin):
 
     # Make grid, add the blocks
     g = ts_tstream_grid.TstreamGrid()
@@ -371,6 +371,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file):
 
     # Apply application/block variables
     set_variables(g)
+    g.set_av("dampin", ts_tstream_type.float, dampin)
 
     # Rotation
     rpm_rotor = Omega / 2.0 / np.pi * 60.0

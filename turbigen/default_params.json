@@ -30,6 +30,7 @@
         },
     "run": {
         "guess_file" : 0,
-        "rtol" : 0.05
+        "rtol" : 0.05,
+        "dampin" : 25.0
     }
 }

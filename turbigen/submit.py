@@ -133,6 +133,7 @@ class ParameterSet:
         "run": [
             "guess_file",
             "rtol",
+            "dampin",
         ],
     }
 
@@ -216,7 +217,7 @@ class ParameterSet:
             k: getattr(self, k)
             for k in self._var_names["bcond"]
             + [
-                "guess_file",
+                "guess_file", "dampin"
             ]
         }
 
@@ -307,7 +308,7 @@ def _assemble_bounds(
     )
 
 
-def _assemble_x0(Rle=0.08, dchi_in=-5.0, dchi_out=0.0, beta=10.0, thick=0.2):
+def _assemble_x0(Rle=0.08, dchi_in=-5.0, dchi_out=0.0, beta=10.0, thick=0.25):
     return np.atleast_2d(
         (dchi_in, dchi_out) * 2 + (Rle, thick, thick, beta) * 2
     )
@@ -367,7 +368,7 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir):
 
 
 def run_search(param, base_name):
-    base_dir = os.path.join(TURBIGEN_ROOT, "run",base_name)
+    base_dir = os.path.join(TURBIGEN_ROOT, "run", base_name)
     if not os.path.isdir(base_dir):
         os.mkdir(base_dir)
 
@@ -395,8 +396,8 @@ def _run_search(write_func):
     if not os.path.isfile(datum_file):
         raise Exception("No datum parameters found.")
 
-    # param.write_json(datum_file)
     param = ParameterSet.from_json(datum_file)
+
 
     # Wrapped objective and constraint
     obj, constr = _wrap_for_optimiser(write_func, param, base_dir)
@@ -405,6 +406,13 @@ def _run_search(write_func):
     x0 = _assemble_x0()
     dx = _assemble_dx()
     tol = dx / 4.0
+
+    # Get a solution with low damping and use as initial guess
+    param_damp = _param_from_x(x0.reshape(-1), param)
+    param_damp.dampin = 3.
+    meta = _run_parameters(write_func, param_damp, base_dir)
+    param.guess_file = os.path.join(base_dir,meta[0]["runid"],'output_avg.hdf5')
+    param.write_json(datum_file)
 
     # Setup the seach
     ts = tabu.TabuSearch(obj, constr, x0.shape[1], 6, tol, j_obj=(0,))
