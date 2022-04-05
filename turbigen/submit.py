@@ -145,6 +145,13 @@ class ParameterSet:
             for var in inner_names:
                 setattr(self, var, var_dict[outer_name][var])
 
+    def __repr__(self):
+        return (
+            "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f"
+            % (self.phi, self.psi, self.Lam, self.Ma2)
+            )
+
+
     @classmethod
     def from_json(cls, fname):
         """Create a parameter set from a file on disk."""
@@ -215,10 +222,7 @@ class ParameterSet:
         """Return parameters needed to pre-process the CFD."""
         return {
             k: getattr(self, k)
-            for k in self._var_names["bcond"]
-            + [
-                "guess_file", "dampin"
-            ]
+            for k in self._var_names["bcond"] + ["guess_file", "dampin"]
         }
 
     def copy(self):
@@ -398,7 +402,6 @@ def _run_search(write_func):
 
     param = ParameterSet.from_json(datum_file)
 
-
     # Wrapped objective and constraint
     obj, constr = _wrap_for_optimiser(write_func, param, base_dir)
 
@@ -409,9 +412,11 @@ def _run_search(write_func):
 
     # Get a solution with low damping and use as initial guess
     param_damp = _param_from_x(x0.reshape(-1), param)
-    param_damp.dampin = 3.
+    param_damp.dampin = 3.0
     meta = _run_parameters(write_func, param_damp, base_dir)
-    param.guess_file = os.path.join(base_dir,meta[0]["runid"],'output_avg.hdf5')
+    param.guess_file = os.path.join(
+        base_dir, meta[0]["runid"], "output_avg.hdf5"
+    )
     param.write_json(datum_file)
 
     # Setup the seach
