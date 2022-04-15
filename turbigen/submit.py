@@ -129,7 +129,7 @@ class ParameterSet:
             "A",
             "recamber",
             "tte",
-            "restagger",
+            "aft",
         ],
         "run": [
             "guess_file",
@@ -286,14 +286,11 @@ def _param_from_x(x, param_datum):
 
     # First four elements are recambering angles
     recam = x[:4]
-    restag = x[4:6]
-    recam[1] = recam[1] - restag[0]
-    recam[3] = recam[3] - restag[1]
-
     param.recamber = recam.tolist()
 
-    # Next restager angles
-    param.restagger = restag.tolist()
+    # Next aft loading factors angles
+    aft = x[4:6]
+    param.aft = aft.tolist()
 
     # Last eight elements are section shape parameters
     xr = np.reshape(x[6:], (2, 4))
@@ -315,24 +312,31 @@ def _assemble_bounds(
     dchi_out=(-10.0, 10.0),
     beta=(8.0, 45.0),
     thick=(0.05, 0.5),
+    aft=(-1.,1.)
 ):
     """With pairs of bounds for each variable, assemble design vec limits."""
     return np.column_stack(
-        ((dchi_in,) + (dchi_out,)) * 2 + (dchi_in,) * 2 + ((Rle,) + (thick,) * 2 + (beta,)) * 2
+        ((dchi_in,) + (dchi_out,)) * 2
+        + (aft,) * 2
+        + ((Rle,) + (thick,) * 2 + (beta,)) * 2
     )
 
 
-def _assemble_x0(Rle=0.08, dchi_in=-0.0, dchi_out=0.0, beta=10.0, thick=0.25):
+def _assemble_x0(Rle=0.08, dchi_in=-0.0, dchi_out=0.0, beta=10.0, thick=0.25,aft=0.):
     return np.atleast_2d(
-        (dchi_in, dchi_out) * 2 + (dchi_out,) *2 + (Rle, thick, thick, beta) * 2
+        (dchi_in, dchi_out) * 2
+        + (aft,) * 2
+        + (Rle, thick, thick, beta) * 2
     )
 
 
 def _assemble_dx(
-    dRle=0.02, ddchi_in=2.0, ddchi_out=1.0, dbeta=2.0, dthick=0.04
+    dRle=0.02, ddchi_in=2.0, ddchi_out=1.0, dbeta=2.0, dthick=0.04, aft=0.05
 ):
     return np.atleast_2d(
-        (ddchi_in, ddchi_out) * 2 + (ddchi_out,) * 2 + (dRle, dthick, dthick, dbeta) * 2
+        (ddchi_in, ddchi_out) * 2
+        + (aft,) * 2
+        + (dRle, dthick, dthick, dbeta) * 2
     )
 
 
@@ -439,13 +443,11 @@ def _run_search(write_func):
         ts.mem_file = mem_file
         ts.search(x0, dx)
 
-    # Finally make a copy of the optimal solution 
-    id_opt = ts.mem_med.get(0)[1][0,-1]
+    # Finally make a copy of the optimal solution
+    id_opt = ts.mem_med.get(0)[1][0, -1]
     id_opt_dir = os.path.join(base_dir, "%04d" % round(id_opt))
-    opt_dir = os.path.join(base_dir, 'opt')
+    opt_dir = os.path.join(base_dir, "opt")
     shutil.copytree(id_opt_dir, opt_dir)
-
-
 
 
 def check_constraint(write_func, params):

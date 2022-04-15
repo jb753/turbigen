@@ -450,6 +450,7 @@ class suppress_print:
         sys.stdout.close()
         sys.stdout = self.orig_out
 
+
 def write_grid_from_params(params, fname=None):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
@@ -462,7 +463,7 @@ def write_grid_from_params(params, fname=None):
     # Generate mesh using geometry and the meshing parameters
 
     # Relax the inscribed radius limit ever so slightly if we are writing out a
-    # file. This is ok because we check constraints without writing out first. 
+    # file. This is ok because we check constraints without writing out first.
     pcopy = params.copy()
     if fname:
         pcopy.min_Rins *= 1.001

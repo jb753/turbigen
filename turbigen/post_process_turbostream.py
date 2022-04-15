@@ -295,13 +295,13 @@ def find_chord(g, bid):
 def extract_surf(g, bid):
     cx, ile, ite, _ = find_chord(g, bid)
     C = cut_by_indices(g, bid, [[ile, ite], [2, 2], [0, -1]])
-    P = np.moveaxis(C.pstat, 0, -1)[:, (0, -1)]
+    P = np.moveaxis(C.pstat, 0, -1)[:, (0, -1)].astype(float)
     x = np.moveaxis(C.x, 0, -1)[:, (0, -1)]
     rt = np.moveaxis(C.rt, 0, -1)[:, (0, -1)]
     surf = np.cumsum(
         np.sqrt(np.diff(x, 1, 0) ** 2.0 + np.diff(rt, 1, 0) ** 2.0), axis=0
     )
-    surf = np.insert(surf, 0, np.zeros((1, 2)), axis=0)
+    surf = np.insert(surf, 0, np.zeros((1, 2)), axis=0).astype(float)
     return surf, P
 
 
@@ -405,9 +405,7 @@ if __name__ == "__main__":
         rot_in.pstag_rel - rot_out.pstat
     )
     Yp = [Ypv, Ypb]
-    print(Yp)
 
-    quit()
 
     # Save metadata in dict
     meta = {
@@ -432,4 +430,3 @@ if __name__ == "__main__":
     with open(os.path.join(basedir, "meta.json"), "w") as f:
         json.dump(meta, f)
 
-    # save_meta(meta, basedir)

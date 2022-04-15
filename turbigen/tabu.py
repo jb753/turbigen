@@ -321,7 +321,7 @@ class TabuSearch:
 
         # Misc algorithm parameters
         self.x_regions = 3
-        self.max_fevals = 25 #2500
+        self.max_fevals = 2500
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = 4
@@ -384,6 +384,9 @@ class TabuSearch:
         """Starting from x0, all moves within constraints and not tabu."""
         # Generate candidate moves
         X = hj_move(x0, dx)
+
+        # Remove duplicate moves (can arise if an element of dx is zero)
+        X = np.unique(X, axis=0)
 
         # Filter by input constraints
         X = X[self.constraint(X)]
@@ -539,6 +542,7 @@ class TabuSearch:
 
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0
+        flipflop = False
         while self.fevals < self.max_fevals and np.any(dx > self.tol):
 
             # Save in case we want to resume later
@@ -552,15 +556,27 @@ class TabuSearch:
 
             # Plot stuff
             if self.verbose:
-                self.plot_long('long.pdf')
-                self.plot_opt('opt.pdf')
+                self.plot_long("long.pdf")
+                self.plot_opt("opt.pdf")
 
             # If we are given a callback, evaluate it now
             if callback:
                 callback(self)
 
+            # Alternate between perturbing stator and rotor
+            if flipflop:
+                dx_now = dx + 0.
+                dx_now[0,(0,1,4,6,7,8,9)] = 0.
+                flipflop = False
+            else:
+                dx_now = dx + 0.
+                dx_now[0,(2,3,5,10,11,12,13)] = 0.
+                flipflop = True
+            if self.verbose:
+                print('  dx = %s' % np.array_str(dx_now))
+
             # Evaluate objective for permissible candidate moves
-            X, Y = self.evaluate_moves(x0, dx)
+            X, Y = self.evaluate_moves(x0, dx_now)
 
             # If any objectives are NaN, add to permanent ban list
             inan = np.isnan(Y).any(-1)
@@ -678,6 +694,7 @@ class TabuSearch:
     def plot_long(self, fname):
         """Generate a graph of long-term memory."""
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots()
         Yl = np.flip(self.mem_long.Y, axis=0)
         pts = np.arange(len(Yl))
@@ -694,11 +711,12 @@ class TabuSearch:
     def plot_opt(self, fname):
         """Generate a graph of optimisation progress."""
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots()
         Yl = np.flip(self.mem_long.Y, axis=0)
         pts = np.arange(len(Yl))
-        Ymin = [np.nanmin(Yl[:(p+1),0]) for p in pts]
-        ax.plot(pts, Ymin-Ymin[-1], "k-")
+        Ymin = [np.nanmin(Yl[: (p + 1), 0]) for p in pts]
+        ax.plot(pts, Ymin - Ymin[-1], "k-")
         ax.set_ylabel("Optimum Lost Efficiency Error, $\Delta \eta$")
         ax.set_xlabel("Design Evaluations")
         plt.tight_layout()

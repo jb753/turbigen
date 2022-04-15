@@ -129,7 +129,7 @@ def prelim_A():
     return A
 
 
-def _section_xy(chi, A, tte, x=None):
+def _section_xy(chi, A, tte, aft, x=None):
     r"""Coordinates for blade section with specified camber and thickness."""
 
     # Choose some x coordinates if not provided
@@ -144,7 +144,7 @@ def _section_xy(chi, A, tte, x=None):
     t[1] = -t[1]
 
     # Apply thickness to camber line and return
-    xy = np.stack([_thickness_to_coord(x, ti, chi) for ti in t])
+    xy = np.stack([_thickness_to_coord(x, ti, chi, aft) for ti in t])
     return xy
 
 
@@ -170,15 +170,17 @@ def _from_shape_space(x, s, zte):
     return np.sqrt(x) * (1.0 - x) * s + x * zte
     # return np.sqrt(x) * np.sqrt(1.0 - x) * s
 
+
 def _rotate_section(sect, gam):
     """Restagger a blade section with a solid-body rotation."""
 
     # Make rotation matrix
     gamr = np.radians(gam)
-    rot = np.array([[np.cos(gamr), -np.sin(gamr)],[np.sin(gamr), np.cos(gamr)]])
+    rot = np.array(
+        [[np.cos(gamr), -np.sin(gamr)], [np.sin(gamr), np.cos(gamr)]]
+    )
 
     return np.matmul(rot, sect)
-
 
 
 def _evaluate_coefficients(x, A):
@@ -239,16 +241,19 @@ def _fit_aerofoil(xy, chi, order):
     return np.vstack((Au, Al)), resid
 
 
-def evaluate_camber(x, chi):
+def evaluate_camber(x, chi, aft):
     """Camber line as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
-    return tanchi[0] * x + 0.5 * (tanchi[1] - tanchi[0]) * x ** 2.0
+    return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
+            (1.-aft)/2. * x ** 2.
+            + aft/3. * x **3.
+            )
 
 
-def evaluate_camber_slope(x, chi):
+def evaluate_camber_slope(x, chi, aft):
     """Camber line slope as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
-    return tanchi[0] + (tanchi[1] - tanchi[0]) * x
+    return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.-aft) )
 
 
 def _coord_to_thickness(xy, chi):
@@ -281,9 +286,9 @@ def _coord_to_thickness(xy, chi):
     return xc, yc, t
 
 
-def _thickness_to_coord(xc, t, chi):
-    theta = np.arctan(evaluate_camber_slope(xc, chi))
-    yc = evaluate_camber(xc, chi)
+def _thickness_to_coord(xc, t, chi, aft):
+    theta = np.arctan(evaluate_camber_slope(xc, chi, aft))
+    yc = evaluate_camber(xc, chi, aft)
     xu = xc - t * np.sin(theta)
     yu = yc + t * np.cos(theta)
     return xu, yu
@@ -296,7 +301,9 @@ def _loop_section(xy):
     return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
-def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, gam=0.):
+def radially_interpolate_section(
+    spf, chi, spf_q, tte, A=None, spf_A=None, aft=None
+):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
     Parameters
@@ -311,8 +318,8 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, gam=0
         Coefficients defining perpendicular thicknesses of upper and lower
         surfaces using a sum of `order` Bernstein polynomials. Either one set
         radially uniform, or `nt` sets of coefficients defined at `spf_A`.
-    gam : float or (nt,) array [deg]
-        Restagger angle, either uniform over span or defined at A locations.
+    aft : float or (nt,) array [deg]
+        Aft loadgin factor, either uniform over span or defined at `nt` loc'ns.
     spf_A : (nt,) array, optional [--]
         If specifying thickness at multiple heights, the span fractions for
         each of the `nt` sets of thickness coefficients.
@@ -347,7 +354,7 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, gam=0
     if np.ndim(A) == 2:
         # If we only have one set of thickness coefficients, just repeat them
         A_q = np.tile(np.expand_dims(A, 0), (nq, 1, 1))
-        gam_q = np.tile(gam, (nq,))
+        aft_q = np.tile(aft, (nq,))
     else:
         # Otherwise Interpolate thicknesses to desired spans
         A_q = interp1d(spf_A, A, axis=0)(spf_q)
@@ -355,13 +362,8 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, gam=0
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
         [
-            _rotate_section(
-                _loop_section(
-                    _section_xy(chi_i, A_i, tte)
-                    ),
-                gam_i
-            )
-            for chi_i, A_i, gam_i in zip(chi_q.T, A_q, gam_q)
+            _loop_section(_section_xy(chi_i, A_i, tte, aft_i))
+            for chi_i, A_i, aft_i in zip(chi_q.T, A_q, aft_q)
         ]
     )
 
