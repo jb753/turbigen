@@ -5,14 +5,15 @@ from scipy.stats.qmc import LatinHypercube
 import numpy as np
 import uuid
 
-Ma2_lim = (0.4, 0.8)
+Ma2_lim = (0.3, 0.9)
 phi_lim = (0.4, 1.2)
 psi_lim = (1.0, 2.6)
 Lam_lim = (0.3, 0.7)
 
 xmin, xmax = np.column_stack((phi_lim, psi_lim, Lam_lim, Ma2_lim))
 
-q = LatinHypercube(d=4).random(8)
+N = 4
+q = LatinHypercube(d=4,optimization='random-cd').random(N)
 v = xmin * (1.0 - q) + xmax * q
 
 param_default = submit.ParameterSet.from_default()

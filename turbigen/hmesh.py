@@ -224,7 +224,7 @@ def b2b_grid(x, r, s, c, sect):
     return rt
 
 
-def stage_grid(Dstg, A, dx_c, tte, min_Rins=None, recamber=None):
+def stage_grid(Dstg, A, dx_c, tte, min_Rins=None, recamber=None, restagger=[0.,0.,]):
     """Generate an H-mesh for a turbine stage."""
 
     # Distribute the spacings between stator and rotor
@@ -250,8 +250,8 @@ def stage_grid(Dstg, A, dx_c, tte, min_Rins=None, recamber=None):
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai)
-        for chii, Ai in zip(chi, A)
+        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, gam=gami)
+        for chii, Ai, gami in zip(chi, A, restagger)
     ]
 
     # If we have asked for a minimum inscribed circle, confirm that the

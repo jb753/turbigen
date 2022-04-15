@@ -1,8 +1,10 @@
 """Tests for geometry generation capabilities."""
 import numpy as np
 from turbigen import geometry
+import scipy.optimize
 
-# import matplotlib.pyplot as plt
+
+import matplotlib.pyplot as plt
 
 
 # Prepare a matrix of blade section input parameters
@@ -137,6 +139,41 @@ def test_fit_aerofoil():
         print(A.shape)
         xy_out = np.stack(geometry.evaluate_section_xy(chii, A, xc))
         assert np.all(np.isclose(xy_out, xyi))
+
+def test_Rle_beta():
+    """Check that leading edge radius obeys Kulfan relation."""
+
+    # Make some thickness coefficients with prescribed Rle 
+    thick = np.ones((2,1))*0.1
+    for Rle in (0.1, 0.2, 0.05):
+        for beta in (8., 16., 24.):
+            A = geometry.A_from_Rle_thick_beta(Rle, thick, beta, 0.)
+
+            # Evaluate section coordinates
+            chi = (0.,0.)  # No camber so we can look at LE/TE easily
+            xy = np.stack(geometry._loop_section(geometry._section_xy(chi , A, 0.)))
+
+            # Fit a circle to get centre point
+            xfit = 0.02
+            x, y = [xyi[xy[0,:]<xfit] for xyi in xy]
+            def guess_center(c):
+                xc, yc = c
+                Rcalc = (x-xc)**2. + (y-yc)**2.
+                return Rcalc-Rcalc.mean()
+            xc, yc = scipy.optimize.leastsq(guess_center, (xfit/2.,0.))[0]
+
+            # Fitted radius should be close to input
+            Rfit = np.sqrt(np.mean((x-xc)**2. + (y-yc)**2.))
+            assert np.abs(Rfit / Rle -1.) < 0.1
+
+            # Now get gradient at TE for upper/lower surfs
+            xy = np.stack(geometry._section_xy(chi , A, 0.))
+            for xyi in xy:
+                x, y = [xyj[xyi[0]>0.99] for xyj in xyi]
+                dydx = np.gradient(y,x)
+                beta_calc = np.mean(np.abs(np.degrees(np.arctan(dydx))))
+                assert np.abs(beta_calc / beta -1.) < 0.1
+
 
 
 def test_inscribed_circle():

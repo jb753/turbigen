@@ -129,6 +129,7 @@ class ParameterSet:
             "A",
             "recamber",
             "tte",
+            "restagger",
         ],
         "run": [
             "guess_file",
@@ -146,11 +147,12 @@ class ParameterSet:
                 setattr(self, var, var_dict[outer_name][var])
 
     def __repr__(self):
-        return (
-            "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f"
-            % (self.phi, self.psi, self.Lam, self.Ma2)
-            )
-
+        return "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f" % (
+            self.phi,
+            self.psi,
+            self.Lam,
+            self.Ma2,
+        )
 
     @classmethod
     def from_json(cls, fname):
@@ -283,10 +285,18 @@ def _param_from_x(x, param_datum):
     param = param_datum.copy()
 
     # First four elements are recambering angles
-    param.recamber = x[:4].tolist()
+    recam = x[:4]
+    restag = x[4:6]
+    recam[1] = recam[1] - restag[0]
+    recam[3] = recam[3] - restag[1]
+
+    param.recamber = recam.tolist()
+
+    # Next restager angles
+    param.restagger = restag.tolist()
 
     # Last eight elements are section shape parameters
-    xr = np.reshape(x[4:], (2, 4))
+    xr = np.reshape(x[6:], (2, 4))
     param.A = np.stack(
         [
             geometry.A_from_Rle_thick_beta(
@@ -308,13 +318,13 @@ def _assemble_bounds(
 ):
     """With pairs of bounds for each variable, assemble design vec limits."""
     return np.column_stack(
-        ((dchi_in,) + (dchi_out,)) * 2 + ((Rle,) + (thick,) * 2 + (beta,)) * 2
+        ((dchi_in,) + (dchi_out,)) * 2 + (dchi_in,) * 2 + ((Rle,) + (thick,) * 2 + (beta,)) * 2
     )
 
 
-def _assemble_x0(Rle=0.08, dchi_in=-5.0, dchi_out=0.0, beta=10.0, thick=0.25):
+def _assemble_x0(Rle=0.08, dchi_in=-0.0, dchi_out=0.0, beta=10.0, thick=0.25):
     return np.atleast_2d(
-        (dchi_in, dchi_out) * 2 + (Rle, thick, thick, beta) * 2
+        (dchi_in, dchi_out) * 2 + (dchi_out,) *2 + (Rle, thick, thick, beta) * 2
     )
 
 
@@ -322,7 +332,7 @@ def _assemble_dx(
     dRle=0.02, ddchi_in=2.0, ddchi_out=1.0, dbeta=2.0, dthick=0.04
 ):
     return np.atleast_2d(
-        (ddchi_in, ddchi_out) * 2 + (dRle, dthick, dthick, dbeta) * 2
+        (ddchi_in, ddchi_out) * 2 + (ddchi_out,) * 2 + (dRle, dthick, dthick, dbeta) * 2
     )
 
 
@@ -408,7 +418,7 @@ def _run_search(write_func):
     # Initial guess, step, tolerance
     x0 = _assemble_x0()
     dx = _assemble_dx()
-    tol = dx / 4.0
+    tol = dx / 2.0
 
     # Get a solution with low damping and use as initial guess
     param_damp = _param_from_x(x0.reshape(-1), param)
@@ -422,11 +432,20 @@ def _run_search(write_func):
     # Setup the seach
     ts = tabu.TabuSearch(obj, constr, x0.shape[1], 6, tol, j_obj=(0,))
 
+    # Resume or run the search
     if os.path.isfile(mem_file):
         ts.resume(mem_file)
     else:
         ts.mem_file = mem_file
         ts.search(x0, dx)
+
+    # Finally make a copy of the optimal solution 
+    id_opt = ts.mem_med.get(0)[1][0,-1]
+    id_opt_dir = os.path.join(base_dir, "%04d" % round(id_opt))
+    opt_dir = os.path.join(base_dir, 'opt')
+    shutil.copytree(id_opt_dir, opt_dir)
+
+
 
 
 def check_constraint(write_func, params):

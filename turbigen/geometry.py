@@ -170,6 +170,16 @@ def _from_shape_space(x, s, zte):
     return np.sqrt(x) * (1.0 - x) * s + x * zte
     # return np.sqrt(x) * np.sqrt(1.0 - x) * s
 
+def _rotate_section(sect, gam):
+    """Restagger a blade section with a solid-body rotation."""
+
+    # Make rotation matrix
+    gamr = np.radians(gam)
+    rot = np.array([[np.cos(gamr), -np.sin(gamr)],[np.sin(gamr), np.cos(gamr)]])
+
+    return np.matmul(rot, sect)
+
+
 
 def _evaluate_coefficients(x, A):
     """Evaluate a set of Bernstein polynomial coefficients at some x-coords."""
@@ -286,7 +296,7 @@ def _loop_section(xy):
     return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
-def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
+def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, gam=0.):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
     Parameters
@@ -301,6 +311,8 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
         Coefficients defining perpendicular thicknesses of upper and lower
         surfaces using a sum of `order` Bernstein polynomials. Either one set
         radially uniform, or `nt` sets of coefficients defined at `spf_A`.
+    gam : float or (nt,) array [deg]
+        Restagger angle, either uniform over span or defined at A locations.
     spf_A : (nt,) array, optional [--]
         If specifying thickness at multiple heights, the span fractions for
         each of the `nt` sets of thickness coefficients.
@@ -335,6 +347,7 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
     if np.ndim(A) == 2:
         # If we only have one set of thickness coefficients, just repeat them
         A_q = np.tile(np.expand_dims(A, 0), (nq, 1, 1))
+        gam_q = np.tile(gam, (nq,))
     else:
         # Otherwise Interpolate thicknesses to desired spans
         A_q = interp1d(spf_A, A, axis=0)(spf_q)
@@ -342,8 +355,13 @@ def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None):
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
         [
-            _loop_section(_section_xy(*(args + (tte,))))
-            for args in zip(chi_q.T, A_q)
+            _rotate_section(
+                _loop_section(
+                    _section_xy(chi_i, A_i, tte)
+                    ),
+                gam_i
+            )
+            for chi_i, A_i, gam_i in zip(chi_q.T, A_q, gam_q)
         ]
     )
 

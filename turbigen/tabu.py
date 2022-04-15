@@ -321,7 +321,7 @@ class TabuSearch:
 
         # Misc algorithm parameters
         self.x_regions = 3
-        self.max_fevals = 20000
+        self.max_fevals = 25 #2500
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = 4
@@ -550,6 +550,11 @@ class TabuSearch:
             if self.mem_file:
                 self.save_memories(self.mem_file)
 
+            # Plot stuff
+            if self.verbose:
+                self.plot_long('long.pdf')
+                self.plot_opt('opt.pdf')
+
             # If we are given a callback, evaluate it now
             if callback:
                 callback(self)
@@ -670,11 +675,9 @@ class TabuSearch:
             self.y0 = np.atleast_2d(d["y0"])
             self.dx = np.atleast_2d(d["dx"])
 
-    def plot(self, fname):
-        """Generate a graph of optimisation progress."""
-
+    def plot_long(self, fname):
+        """Generate a graph of long-term memory."""
         import matplotlib.pyplot as plt
-
         fig, ax = plt.subplots()
         Yl = np.flip(self.mem_long.Y, axis=0)
         pts = np.arange(len(Yl))
@@ -685,5 +688,19 @@ class TabuSearch:
         ax.set_ylabel("Lost Efficiency, $\Delta \eta$")
         ax.set_xlabel("Design Evaluations")
         plt.tight_layout()
-
         plt.savefig(fname)
+        plt.close()
+
+    def plot_opt(self, fname):
+        """Generate a graph of optimisation progress."""
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        Yl = np.flip(self.mem_long.Y, axis=0)
+        pts = np.arange(len(Yl))
+        Ymin = [np.nanmin(Yl[:(p+1),0]) for p in pts]
+        ax.plot(pts, Ymin-Ymin[-1], "k-")
+        ax.set_ylabel("Optimum Lost Efficiency Error, $\Delta \eta$")
+        ax.set_xlabel("Design Evaluations")
+        plt.tight_layout()
+        plt.savefig(fname)
+        plt.close()

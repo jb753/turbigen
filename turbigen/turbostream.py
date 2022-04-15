@@ -450,7 +450,6 @@ class suppress_print:
         sys.stdout.close()
         sys.stdout = self.orig_out
 
-
 def write_grid_from_params(params, fname=None):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
@@ -461,8 +460,15 @@ def write_grid_from_params(params, fname=None):
     Dstg = design.scale_geometry(stg, **params.dimensional)
 
     # Generate mesh using geometry and the meshing parameters
+
+    # Relax the inscribed radius limit ever so slightly if we are writing out a
+    # file. This is ok because we check constraints without writing out first. 
+    pcopy = params.copy()
+    if fname:
+        pcopy.min_Rins *= 1.001
+
     # stage_grid will throw a GeometryConstraintError if too thin
-    mesh = hmesh.stage_grid(Dstg, **params.mesh)
+    mesh = hmesh.stage_grid(Dstg, **pcopy.mesh)
 
     with suppress_print():
 

@@ -267,6 +267,60 @@ def cut_rows_mixed(g):
     return [mix_out(c) for c in cuts]
 
 
+def _integrate_length(chi):
+    """Integrate quadratic camber line length given angles."""
+    xhat = np.linspace(0.0, 1.0)
+    tanchi_lim = np.tan(np.radians(chi))
+    tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
+    return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
+
+
+def find_chord(g, bid):
+    """Determine axial chord of a row."""
+    x, r, rt = [
+        np.swapaxes(g.get_bp(vi, bid), 0, -1)[:, 2, (0, -1)]
+        for vi in ["x", "r", "rt"]
+    ]
+    dt = np.diff(rt / r, 1, axis=1).flat
+    pitch = dt[0]
+    is_blade = dt / pitch < 0.995
+    ile = np.argmax(is_blade)
+    is_blade_2 = dt / pitch < 0.995
+    is_blade_2[: (ile + 1)] = True
+    ite = np.argmax(~is_blade_2)
+    cx = x[ile:ite, 0].ptp()
+    return cx, ile, ite, pitch
+
+
+def extract_surf(g, bid):
+    cx, ile, ite, _ = find_chord(g, bid)
+    C = cut_by_indices(g, bid, [[ile, ite], [2, 2], [0, -1]])
+    P = np.moveaxis(C.pstat, 0, -1)[:, (0, -1)]
+    x = np.moveaxis(C.x, 0, -1)[:, (0, -1)]
+    rt = np.moveaxis(C.rt, 0, -1)[:, (0, -1)]
+    surf = np.cumsum(
+        np.sqrt(np.diff(x, 1, 0) ** 2.0 + np.diff(rt, 1, 0) ** 2.0), axis=0
+    )
+    surf = np.insert(surf, 0, np.zeros((1, 2)), axis=0)
+    return surf, P
+
+
+def circ_coeff(g, bid, Po1, P2):
+    surf, P = extract_surf(g, bid)
+    Cp = (Po1 - P) / (Po1 - P2)
+    Cp[Cp < 0.0] = 0.0
+    # Normalise distance
+    surfn = surf / surf[(-1,), :]
+    side = [
+        np.trapz(np.sqrt(Cpi), surfi, axis=0)
+        for Cpi, surfi in zip(Cp.T, surfn.T)
+    ]
+    if g.get_bv("rpm", bid):
+        return side[0] - side[1], surf[-1, 0]
+    else:
+        return side[1] - side[0], surf[-1, 1]
+
+
 # This file is called as a script from the SLURM job script
 if __name__ == "__main__":
 
@@ -277,9 +331,8 @@ if __name__ == "__main__":
 
     basedir = os.path.dirname(output_hdf5)
     run_name = os.path.split(os.path.abspath(basedir))[-1]
-    # print("POST-PROCESSING %s\n" % output_hdf5)
 
-    # Load the flow solution
+    # Load the flow solution, supressing noisy printing
     tsr = ts_tstream_reader.TstreamReader()
     with suppress_print():
         g = tsr.read(output_hdf5)
@@ -317,9 +370,44 @@ if __name__ == "__main__":
     Al = [ci.yaw for ci in cut_all]
     Al_rel = [ci.yaw_rel for ci in cut_all]
 
-    # print(Psi, eff_poly, eff_isen)
-    # print(Al)
-    # print(Al_rel)
+    # Viscosity
+    if g.get_av("viscosity_law"):
+        muref = g.get_av("viscosity")
+        Tref = 288.0
+        expon = 0.62
+        T2 = sta_out.tstat
+        mu2 = muref * (T2 / Tref) ** expon
+    else:
+        mu2 = g.get_av("viscosity")
+
+    # Reynolds num
+    ro2 = sta_out.ro
+    V2 = sta_out.vabs
+    cx = find_chord(g, 0)[0]
+    Re_cx = ro2 * V2 * cx / mu2
+    ell_cx = _integrate_length(Al[:2])
+    Re_ell = Re_cx * ell_cx
+
+    # Circulation coefficient
+    Cov, Sov = circ_coeff(g, 0, sta_in.pstag, sta_out.pstat)
+    Cob, Sob = circ_coeff(g, 1, rot_in.pstag_rel, rot_out.pstat)
+    Re_So = Re_cx * Sov / cx
+    Co = [Cov, Cob]
+
+    # Pitch to chord
+    pitch_rt = np.array([find_chord(g, bid)[3] for bid in [0, 1]])
+    cx_all = np.array([find_chord(g, bid)[0] for bid in [0, 1]])
+    s_cx = (pitch_rt / cx_all).tolist()
+
+    # Loss coefficients
+    Ypv = (sta_in.pstag - sta_out.pstag) / (sta_in.pstag - sta_out.pstat)
+    Ypb = (rot_in.pstag_rel - rot_out.pstag_rel) / (
+        rot_in.pstag_rel - rot_out.pstat
+    )
+    Yp = [Ypv, Ypb]
+    print(Yp)
+
+    quit()
 
     # Save metadata in dict
     meta = {
@@ -333,6 +421,12 @@ if __name__ == "__main__":
         "Ma2": sta_out.mach,
         "phi": sta_out.vx / U,
         "Lam": Lam,
+        "Re": Re_ell,
+        "Re_cx": Re_cx,
+        "Re_So": Re_So,
+        "Co": Co,
+        "s_cx": s_cx,
+        "Yp": Yp,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:

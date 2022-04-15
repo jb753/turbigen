@@ -1,17 +1,23 @@
 """Plot a tabu search."""
 
+import os.path
 from turbigen import tabu, submit
 
 
-base_dir = "run/e0863449/"
-mem_file = base_dir + "/mem_tabu.json"
-datum_file = base_dir + "/datum_param.json"
+runs = ['702fec29', 'c3e2ea8f', 'b72fb607', '2eda0de5', 'd61b1b27', 'e278bfd6', 'e0863449', '166a589a']
 
-Param = submit.ParameterSet.from_json(datum_file)
-print(Param)
+for run in runs:
+    base_dir = os.path.join("run",run)
+    mem_file = os.path.join(base_dir, "mem_tabu.json")
+    datum_file = os.path.join(base_dir, "datum_param.json")
 
-ts = tabu.TabuSearch(None, None, 12, 6, None, j_obj=(0,))
-ts.load_memories(mem_file)
-ts.plot("tabu.pdf")
+    Param = submit.ParameterSet.from_json(datum_file)
+    print(run, Param)
+
+    ts = tabu.TabuSearch(None, None, 12, 6, None, j_obj=(0,))
+    ts.verbose = False
+    ts.load_memories(mem_file)
+    print(ts.mem_med.get(0)[0])
+    print(ts.mem_med.get(0)[1])
 
 quit()
