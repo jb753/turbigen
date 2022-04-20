@@ -12,4 +12,4 @@
 export TURBIGEN_ROOT='/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen'
 export PYTHONPATH=$PYTHONPATH:$TURBIGEN_ROOT
 source /usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100
-python -u -c 'from turbigen import submit, turbostream; submit._run_search(turbostream.write_grid_from_params)' > log_tabu.txt
+python -u -c 'from turbigen import submit, turbostream; submit._run_search(turbostream.write_grid_from_params,1)' > log_tabu.txt

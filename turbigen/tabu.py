@@ -373,8 +373,17 @@ class TabuSearch:
                 print("  Evaluating initial guess.")
             y0 = self.objective(x0)
             self.fevals += 1
-        for mem in self.mem_all[:-1]:
-            mem.add(x0, y0)
+
+        # Add to tabu and long memories
+        self.mem_short.add(x0, y0)
+        self.mem_long.add(x0, y0)
+
+        # Only put into medium memory if it is a valid point
+        if np.isnan(y0).any():
+            self.mem_ban.add(x0, y0)
+        else:
+            self.mem_med.add(x0, y0)
+
         if self.verbose:
             print("  y = %s" % np.array_str(y0))
 
@@ -384,6 +393,7 @@ class TabuSearch:
         """Starting from x0, all moves within constraints and not tabu."""
         # Generate candidate moves
         X = hj_move(x0, dx)
+
 
         # Remove duplicate moves (can arise if an element of dx is zero)
         X = np.unique(X, axis=0)
@@ -542,7 +552,6 @@ class TabuSearch:
 
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0
-        flipflop = False
         while self.fevals < self.max_fevals and np.any(dx > self.tol):
 
             # Save in case we want to resume later
@@ -563,20 +572,8 @@ class TabuSearch:
             if callback:
                 callback(self)
 
-            # Alternate between perturbing stator and rotor
-            if flipflop:
-                dx_now = dx + 0.
-                dx_now[0,(0,1,4,6,7,8,9)] = 0.
-                flipflop = False
-            else:
-                dx_now = dx + 0.
-                dx_now[0,(2,3,5,10,11,12,13)] = 0.
-                flipflop = True
-            if self.verbose:
-                print('  dx = %s' % np.array_str(dx_now))
-
             # Evaluate objective for permissible candidate moves
-            X, Y = self.evaluate_moves(x0, dx_now)
+            X, Y = self.evaluate_moves(x0, dx)
 
             # If any objectives are NaN, add to permanent ban list
             inan = np.isnan(Y).any(-1)
@@ -617,11 +614,19 @@ class TabuSearch:
                     x1, y1 = self.mem_med.sample_sparse(self.x_regions)
                 self.i_search = 0
             elif self.i_search in self.i_intensify or X.shape[0] == 0:
-                if self.verbose:
-                    print("INTENSIFY")
-                # INTENSIFY: Select a near-optimal point
-                # x1, y1 = self.mem_med.sample_sparse(self.x_regions)
-                x1, y1 = self.mem_med.sample_random()
+                # INTENSIFY: Select a near-optimal point if the medium memory
+                # is populated
+                if self.mem_med.npts > 0:
+                    if self.verbose:
+                        print("INTENSIFY")
+                    x1, y1 = self.mem_med.sample_random()
+                else:
+                    if self.verbose:
+                        print("INCREASE STEP")
+                    # If nothing in the medium-term memory, we have not found
+                    # any valid points yet, so increase step size and try again
+                    dx /= self.fac_restart
+                    x1, y1 = x0, y0
             elif self.i_search == self.i_diversify:
                 if self.verbose:
                     print("DIVERSIFY")

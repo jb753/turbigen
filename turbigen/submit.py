@@ -2,14 +2,49 @@
 import json, glob, os, shutil
 import numpy as np
 import subprocess
-from . import geometry, tabu
+from . import geometry, tabu, design
 
 
 TURBIGEN_ROOT = os.path.join("/".join(__file__.split("/")[:-1]), "..")
 TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit.sh")
 TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
-OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "Ma2", "runid"]
+OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "runid"]
+
+X_KEYS = ["dchi_in", "dchi_out", "aft", "Rle", "thick_ps", "thick_ss1", "thick_ss2", "beta"]
+
+X_BOUNDS = {
+    'dchi_in': (-2.0, 10.0),
+    'dchi_out': (-5.0, 5.0),
+    'aft': (-1.0, 1.0),
+    'Rle': (0.06, 0.5),
+    'thick_ps': (0.04, 0.5),
+    'thick_ss1': (0.04, 0.5),
+    'thick_ss2': (0.04, 0.5),
+    'beta': (8.0, 45.0)
+    }
+
+X_GUESS = {
+    'dchi_in': 0.,
+    'dchi_out': 0.,
+    'aft': 0.3,
+    'Rle': 0.06,
+    'thick_ps': 0.08,
+    'thick_ss1': 0.34,
+    'thick_ss2': 0.24,
+    'beta': 12.,
+    }
+
+X_STEP = {
+    'dchi_in': 1.,
+    'dchi_out': .5,
+    'aft': 0.05,
+    'Rle': 0.02,
+    'thick_ps': 0.04,
+    'thick_ss1': 0.04,
+    'thick_ss2': 0.04,
+    'beta': 2.,
+    }
 
 
 def _concatenate_dict(list_of_dicts):
@@ -279,71 +314,55 @@ def _run_parameters(write_func, params_all, base_dir):
     return meta
 
 
-def _param_from_x(x, param_datum):
+def _param_from_x(x, param_datum, row_index):
     """Perturb a datum turbine using a design vector x."""
 
     param = param_datum.copy()
 
-    # First four elements are recambering angles
-    recam = x[:4]
-    param.recamber = recam.tolist()
+    recam = x[:2]
+    aft = x[2]
 
-    # Next aft loading factors angles
-    aft = x[4:6]
-    param.aft = aft.tolist()
+    offset = row_index*2
+    param.recamber = list(param.recamber)
+    param.recamber[0+offset] += recam[0]
+    param.recamber[1+offset] += recam[1]
 
-    # Last eight elements are section shape parameters
-    xr = np.reshape(x[6:], (2, 4))
-    param.A = np.stack(
-        [
-            geometry.A_from_Rle_thick_beta(
-                xi[0], xi[1:3], xi[3], param_datum.tte
-            )
-            for xi in xr
-        ]
-    )
+    param.aft = list(param.aft)
+    param.aft[row_index] = aft
+
+    Rle = x[3]
+    thick_ps = [x[4], x[4]]
+    thick_ss = x[5:7]
+    thick = np.stack((thick_ps, thick_ss))
+    if row_index:
+        thick = np.flip(thick, axis=0)
+    beta = x[7]
+
+    Anew = geometry.A_from_Rle_thick_beta( Rle, thick, beta, param_datum.tte)
+
+    param.A = param.A + 0.
+    param.A[row_index] = Anew
 
     return param
 
 
-def _assemble_bounds(
-    Rle=(0.06, 0.5),
-    dchi_in=(-30.0, 30),
-    dchi_out=(-10.0, 10.0),
-    beta=(8.0, 45.0),
-    thick=(0.05, 0.5),
-    aft=(-1.,1.)
-):
-    """With pairs of bounds for each variable, assemble design vec limits."""
-    return np.column_stack(
-        ((dchi_in,) + (dchi_out,)) * 2
-        + (aft,) * 2
-        + ((Rle,) + (thick,) * 2 + (beta,)) * 2
-    )
+def _assemble_bounds(nrow):
+    """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
+    return np.tile(np.column_stack([X_BOUNDS[k] for k in X_KEYS]),nrow)
 
 
-def _assemble_x0(Rle=0.08, dchi_in=-0.0, dchi_out=0.0, beta=10.0, thick=0.25,aft=0.):
-    return np.atleast_2d(
-        (dchi_in, dchi_out) * 2
-        + (aft,) * 2
-        + (Rle, thick, thick, beta) * 2
-    )
+def _assemble_guess(nrow):
+    return np.tile(np.atleast_2d([X_GUESS[k] for k in X_KEYS]),nrow)
 
 
-def _assemble_dx(
-    dRle=0.02, ddchi_in=2.0, ddchi_out=1.0, dbeta=2.0, dthick=0.04, aft=0.05
-):
-    return np.atleast_2d(
-        (ddchi_in, ddchi_out) * 2
-        + (aft,) * 2
-        + (dRle, dthick, dthick, dbeta) * 2
-    )
+def _assemble_step(nrow):
+    return np.tile(np.atleast_2d([X_STEP[k] for k in X_KEYS]),nrow)
 
 
-def _constrain_x_param(x, write_func, param_datum):
-    lower, upper = _assemble_bounds()
+def _constrain_x_param(x, write_func, param_datum, irow):
+    lower, upper = _assemble_bounds(1)
     input_ok = (x >= lower).all() and (x <= upper).all()
-    param = _param_from_x(x, param_datum)
+    param = _param_from_x(x, param_datum, row_index=irow)
     if input_ok:
         return check_constraint(write_func, param)
     else:
@@ -361,15 +380,15 @@ def _param_to_y(param):
     return y
 
 
-def _wrap_for_optimiser(write_func, param_datum, base_dir):
+def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
     """A closure that wraps turbine creation and running for the optimiser."""
 
     def _constraint(x):
-        return [_constrain_x_param(xi, write_func, param_datum) for xi in x]
+        return [_constrain_x_param(xi, write_func, param_datum, irow) for xi in x]
 
     def _objective(x):
         # Get parameter sets for all rows of x
-        params = [_param_from_x(xi, param_datum) for xi in x]
+        params = [_param_from_x(xi, param_datum, irow) for xi in x]
         # Run these parameter sets in parallel
         metadata = _run_parameters(write_func, params, base_dir)
         # Extract the results
@@ -403,7 +422,7 @@ def run_search(param, base_name):
     subprocess.Popen("sbatch submit.sh", cwd=base_dir, shell=True).wait()
 
 
-def _run_search(write_func):
+def _run_search(write_func, irow):
     """Perform a tabu search of blade geometries for a parameter set."""
 
     base_dir = os.getcwd()
@@ -416,25 +435,77 @@ def _run_search(write_func):
 
     param = ParameterSet.from_json(datum_file)
 
-    # Wrapped objective and constraint
-    obj, constr = _wrap_for_optimiser(write_func, param, base_dir)
-
     # Initial guess, step, tolerance
-    x0 = _assemble_x0()
-    dx = _assemble_dx()
+    x0 = _assemble_guess(1)
+    dx = _assemble_step(1)
     tol = dx / 2.0
 
-    # Get a solution with low damping and use as initial guess
-    param_damp = _param_from_x(x0.reshape(-1), param)
+    if not _constrain_x_param(x0[0], write_func, param, irow):
+        raise Exception('Violating constraint at initial guess.')
+
+    # Get a solution with high damping and use as initial guess
+    print('HIGH-DAMPING INITIAL GUESS')
+    param_damp = _param_from_x(x0.reshape(-1), param, row_index=irow)
     param_damp.dampin = 3.0
-    meta = _run_parameters(write_func, param_damp, base_dir)
+    meta_damp = _run_parameters(write_func, param_damp, base_dir)[0]
     param.guess_file = os.path.join(
-        base_dir, meta[0]["runid"], "output_avg.hdf5"
+        base_dir, meta_damp["runid"], "output_avg.hdf5"
     )
+
+    # Calculate target flow angles
+    stg = design.nondim_stage_from_Lam(**param.nondimensional)
+    Al_target = (stg.Al[1], stg.Alrel[2])
+    print('CORRECTING ANGLES AND EFFY')
+    print('  Target Al = %s' % str(Al_target))
+
+    Co_target = np.array(param.Co)
+    print('  Target Co = %s' % str(Co_target))
+
+
+    # Tune deviation, circulation, effy using fixed-point iteration
+    rf = 0.5  # Relaxation factor for increased stability
+    for _ in range(10):
+
+        # Run initial guess to see how much deviation we have
+        meta_dev = _run_parameters(write_func, param, base_dir)[0]
+
+        # Calculate corrections for the flow angles
+        dev_vane = stg.Al[1] - meta_dev["Alrel"][1]
+        dev_blade = stg.Alrel[2] - meta_dev["Alrel"][3]
+        param.recamber[1] += dev_vane * rf
+        param.recamber[3] -= dev_blade * rf
+        Al_now = (meta_dev["Alrel"][1], meta_dev["Alrel"][3])
+        print('  New Al = %s' % str(Al_now))
+
+        # Update polytropic effy
+        param.eta = meta_dev["eta"]
+        print('  Effy = %.3f' % param.eta)
+
+        # Update circulation coeff
+        Co_now = np.array(meta_dev["Co"])
+        Co_old = np.array(param.Co)
+        param.Co = (Co_old*(1.-rf) + rf*Co_old*Co_target/Co_now).tolist()
+        print('  Co = %s' % str(Co_now))
+
+        # Use most recent solution as initial guess
+        param.guess_file = os.path.join(
+            base_dir, meta_dev["runid"], "output_avg.hdf5"
+        )
+
+        # Check for convergence
+        err_Co = np.max(np.abs(Co_now/Co_target - 1.))
+        err_Al = np.max(np.abs(Al_target-Al_now))
+        if (err_Co < 0.05) and (err_Al < 0.5):
+            print('  Tolerance reached, breaking.')
+            break
+
     param.write_json(datum_file)
 
+    # Wrapped objective and constraint
+    obj, constr = _wrap_for_optimiser(write_func, param, base_dir, irow)
+
     # Setup the seach
-    ts = tabu.TabuSearch(obj, constr, x0.shape[1], 6, tol, j_obj=(0,))
+    ts = tabu.TabuSearch(obj, constr, x0.shape[1], 5, tol, j_obj=(0,))
 
     # Resume or run the search
     if os.path.isfile(mem_file):

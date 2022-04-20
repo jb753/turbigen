@@ -252,6 +252,7 @@ def stage_grid(
     # If recambering, then tweak the metal angles
     if not recamber is None:
         dev = np.reshape(recamber, (2, 2, 1))
+        dev[1] *= -1  # Reverse direction of rotor angles
         chi += dev
 
     # Get sections (normalised by axial chord for now)

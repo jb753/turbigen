@@ -245,15 +245,14 @@ def evaluate_camber(x, chi, aft):
     """Camber line as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
     return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
-            (1.-aft)/2. * x ** 2.
-            + aft/3. * x **3.
-            )
+        (1.0 - aft) / 2.0 * x ** 2.0 + aft / 3.0 * x ** 3.0
+    )
 
 
 def evaluate_camber_slope(x, chi, aft):
     """Camber line slope as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
-    return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.-aft) )
+    return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.0 - aft))
 
 
 def _coord_to_thickness(xy, chi):

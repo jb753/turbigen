@@ -135,6 +135,7 @@ def nondim_stage_from_Al(
     ga,  # Ratio of specific heats [--]
     eta,  # Polytropic efficiency [--]
     Vx_rat=(1.0, 1.0),  # Axial velocity ratios [--]
+    loss_rat=0.5,  # Fraction of stator loss [--]
 ):
     r"""Get geometry for an aerodynamic parameter set specifying outlet swirl.
 
@@ -221,7 +222,7 @@ def nondim_stage_from_Al(
     Ds_cp = -(1.0 - 1.0 / eta) * np.log(To_To1[-1])
 
     # Somewhat arbitrarily, split loss 50% on stator, 50% on rotor
-    s_cp = np.hstack((0.0, 0.5, 1.0)) * Ds_cp
+    s_cp = np.hstack((0.0, loss_rat, 1.0)) * Ds_cp
 
     # Convert to stagnation pressures
     Po_Po1 = np.exp((ga / (ga - 1.0)) * (np.log(To_To1) + s_cp))
@@ -276,6 +277,7 @@ def nondim_stage_from_Lam(
     ga,  # Ratio of specific heats [--]
     eta,  # Polytropic efficiency [--]
     Vx_rat=(1.0, 1.0),  # Axial velocity ratios [--]
+    loss_rat=0.5,  # Axial velocity ratios [--]
 ):
     r"""Get geometry for an aerodynamic parameter set specifying reaction.
 

@@ -219,6 +219,8 @@ def mix_out(cuts):
     cut_out.yaw = np.degrees(np.arctan2(cut_out.vt, cut_out.vx))
     cut_out.yaw_rel = np.degrees(np.arctan2(cut_out.vt_rel, cut_out.vx))
 
+    cut_out.entropy = cp * np.log(cut_out.tstat/cut_out.tref) - rgas * np.log(cut_out.pstat/cut_out.pref)
+
     return cut_out
 
 
@@ -406,6 +408,8 @@ if __name__ == "__main__":
     )
     Yp = [Ypv, Ypb]
 
+    # Axial velocity ratio
+    zeta = (sta_in.vx/sta_out.vx, rot_out.vx/sta_out.vx)
 
     # Save metadata in dict
     meta = {
@@ -425,8 +429,8 @@ if __name__ == "__main__":
         "Co": Co,
         "s_cx": s_cx,
         "Yp": Yp,
+        "zeta": zeta,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
         json.dump(meta, f)
-
