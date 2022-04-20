@@ -394,7 +394,6 @@ class TabuSearch:
         # Generate candidate moves
         X = hj_move(x0, dx)
 
-
         # Remove duplicate moves (can arise if an element of dx is zero)
         X = np.unique(X, axis=0)
 

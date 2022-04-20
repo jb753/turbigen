@@ -466,7 +466,7 @@ def write_grid_from_params(params, fname=None):
     # file. This is ok because we check constraints without writing out first.
     pcopy = params.copy()
     if fname:
-        pcopy.min_Rins *= .99
+        pcopy.min_Rins *= 0.99
 
     # stage_grid will throw a GeometryConstraintError if too thin
     mesh = hmesh.stage_grid(Dstg, **pcopy.mesh)

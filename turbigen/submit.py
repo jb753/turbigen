@@ -11,40 +11,49 @@ TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
 OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "runid"]
 
-X_KEYS = ["dchi_in", "dchi_out", "aft", "Rle", "thick_ps", "thick_ss1", "thick_ss2", "beta"]
+X_KEYS = [
+    "dchi_in",
+    "dchi_out",
+    "aft",
+    "Rle",
+    "thick_ps",
+    "thick_ss1",
+    "thick_ss2",
+    "beta",
+]
 
 X_BOUNDS = {
-    'dchi_in': (-2.0, 10.0),
-    'dchi_out': (-5.0, 5.0),
-    'aft': (-1.0, 1.0),
-    'Rle': (0.06, 0.5),
-    'thick_ps': (0.04, 0.5),
-    'thick_ss1': (0.04, 0.5),
-    'thick_ss2': (0.04, 0.5),
-    'beta': (8.0, 45.0)
-    }
+    "dchi_in": (-2.0, 10.0),
+    "dchi_out": (-5.0, 5.0),
+    "aft": (-1.0, 1.0),
+    "Rle": (0.06, 0.5),
+    "thick_ps": (0.04, 0.5),
+    "thick_ss1": (0.04, 0.5),
+    "thick_ss2": (0.04, 0.5),
+    "beta": (8.0, 45.0),
+}
 
 X_GUESS = {
-    'dchi_in': 0.,
-    'dchi_out': 0.,
-    'aft': 0.3,
-    'Rle': 0.06,
-    'thick_ps': 0.08,
-    'thick_ss1': 0.34,
-    'thick_ss2': 0.24,
-    'beta': 12.,
-    }
+    "dchi_in": 0.0,
+    "dchi_out": 0.0,
+    "aft": 0.3,
+    "Rle": 0.06,
+    "thick_ps": 0.08,
+    "thick_ss1": 0.34,
+    "thick_ss2": 0.24,
+    "beta": 12.0,
+}
 
 X_STEP = {
-    'dchi_in': 1.,
-    'dchi_out': .5,
-    'aft': 0.05,
-    'Rle': 0.02,
-    'thick_ps': 0.04,
-    'thick_ss1': 0.04,
-    'thick_ss2': 0.04,
-    'beta': 2.,
-    }
+    "dchi_in": 1.0,
+    "dchi_out": 0.5,
+    "aft": 0.05,
+    "Rle": 0.02,
+    "thick_ps": 0.04,
+    "thick_ss1": 0.04,
+    "thick_ss2": 0.04,
+    "beta": 2.0,
+}
 
 
 def _concatenate_dict(list_of_dicts):
@@ -322,10 +331,10 @@ def _param_from_x(x, param_datum, row_index):
     recam = x[:2]
     aft = x[2]
 
-    offset = row_index*2
+    offset = row_index * 2
     param.recamber = list(param.recamber)
-    param.recamber[0+offset] += recam[0]
-    param.recamber[1+offset] += recam[1]
+    param.recamber[0 + offset] += recam[0]
+    param.recamber[1 + offset] += recam[1]
 
     param.aft = list(param.aft)
     param.aft[row_index] = aft
@@ -338,9 +347,9 @@ def _param_from_x(x, param_datum, row_index):
         thick = np.flip(thick, axis=0)
     beta = x[7]
 
-    Anew = geometry.A_from_Rle_thick_beta( Rle, thick, beta, param_datum.tte)
+    Anew = geometry.A_from_Rle_thick_beta(Rle, thick, beta, param_datum.tte)
 
-    param.A = param.A + 0.
+    param.A = param.A + 0.0
     param.A[row_index] = Anew
 
     return param
@@ -348,15 +357,15 @@ def _param_from_x(x, param_datum, row_index):
 
 def _assemble_bounds(nrow):
     """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
-    return np.tile(np.column_stack([X_BOUNDS[k] for k in X_KEYS]),nrow)
+    return np.tile(np.column_stack([X_BOUNDS[k] for k in X_KEYS]), nrow)
 
 
 def _assemble_guess(nrow):
-    return np.tile(np.atleast_2d([X_GUESS[k] for k in X_KEYS]),nrow)
+    return np.tile(np.atleast_2d([X_GUESS[k] for k in X_KEYS]), nrow)
 
 
 def _assemble_step(nrow):
-    return np.tile(np.atleast_2d([X_STEP[k] for k in X_KEYS]),nrow)
+    return np.tile(np.atleast_2d([X_STEP[k] for k in X_KEYS]), nrow)
 
 
 def _constrain_x_param(x, write_func, param_datum, irow):
@@ -384,7 +393,9 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
     """A closure that wraps turbine creation and running for the optimiser."""
 
     def _constraint(x):
-        return [_constrain_x_param(xi, write_func, param_datum, irow) for xi in x]
+        return [
+            _constrain_x_param(xi, write_func, param_datum, irow) for xi in x
+        ]
 
     def _objective(x):
         # Get parameter sets for all rows of x
@@ -441,10 +452,10 @@ def _run_search(write_func, irow):
     tol = dx / 2.0
 
     if not _constrain_x_param(x0[0], write_func, param, irow):
-        raise Exception('Violating constraint at initial guess.')
+        raise Exception("Violating constraint at initial guess.")
 
     # Get a solution with high damping and use as initial guess
-    print('HIGH-DAMPING INITIAL GUESS')
+    print("HIGH-DAMPING INITIAL GUESS")
     param_damp = _param_from_x(x0.reshape(-1), param, row_index=irow)
     param_damp.dampin = 3.0
     meta_damp = _run_parameters(write_func, param_damp, base_dir)[0]
@@ -455,15 +466,14 @@ def _run_search(write_func, irow):
     # Calculate target flow angles
     stg = design.nondim_stage_from_Lam(**param.nondimensional)
     Al_target = (stg.Al[1], stg.Alrel[2])
-    print('CORRECTING ANGLES AND EFFY')
-    print('  Target Al = %s' % str(Al_target))
+    print("CORRECTING ANGLES AND EFFY")
+    print("  Target Al = %s" % str(Al_target))
 
     Co_target = np.array(param.Co)
-    print('  Target Co = %s' % str(Co_target))
-
+    print("  Target Co = %s" % str(Co_target))
 
     # Tune deviation, circulation, effy using fixed-point iteration
-    rf = 0.5  # Relaxation factor for increased stability
+    rf = 0.3  # Relaxation factor for increased stability
     for _ in range(10):
 
         # Run initial guess to see how much deviation we have
@@ -475,17 +485,19 @@ def _run_search(write_func, irow):
         param.recamber[1] += dev_vane * rf
         param.recamber[3] -= dev_blade * rf
         Al_now = (meta_dev["Alrel"][1], meta_dev["Alrel"][3])
-        print('  New Al = %s' % str(Al_now))
+        print("  New Al = %s" % str(Al_now))
 
         # Update polytropic effy
         param.eta = meta_dev["eta"]
-        print('  Effy = %.3f' % param.eta)
+        print("  Effy = %.3f" % param.eta)
 
         # Update circulation coeff
         Co_now = np.array(meta_dev["Co"])
         Co_old = np.array(param.Co)
-        param.Co = (Co_old*(1.-rf) + rf*Co_old*Co_target/Co_now).tolist()
-        print('  Co = %s' % str(Co_now))
+        param.Co = (
+            Co_old * (1.0 - rf) + rf * Co_old * Co_target / Co_now
+        ).tolist()
+        print("  Co = %s" % str(Co_now))
 
         # Use most recent solution as initial guess
         param.guess_file = os.path.join(
@@ -493,10 +505,10 @@ def _run_search(write_func, irow):
         )
 
         # Check for convergence
-        err_Co = np.max(np.abs(Co_now/Co_target - 1.))
-        err_Al = np.max(np.abs(Al_target-Al_now))
-        if (err_Co < 0.05) and (err_Al < 0.5):
-            print('  Tolerance reached, breaking.')
+        err_Co = np.max(np.abs(Co_now / Co_target - 1.0))
+        err_Al = np.max(np.abs(np.array(Al_target) - np.array(Al_now)))
+        if (err_Co < param.rtol) and (err_Al < 0.5):
+            print("  Tolerance reached, breaking.")
             break
 
     param.write_json(datum_file)
