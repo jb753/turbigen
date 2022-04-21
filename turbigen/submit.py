@@ -545,6 +545,7 @@ def _run_search(write_func):
     print("**FINISHED               *")
     print("**************************")
 
+
 def _search_row(base_dir, param, write_func, irow):
     """Perform a tabu search of blade geometries for one row."""
 
