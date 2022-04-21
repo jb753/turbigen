@@ -414,7 +414,9 @@ if __name__ == "__main__":
     zeta = (sta_in.vx / sta_out.vx, rot_out.vx / sta_out.vx)
 
     # Convergence residual
-    resid_str = os.popen("grep 'TOTAL DAVG' log.txt | tail -10 | cut -d ' ' -f3").read()
+    resid_str = os.popen(
+        "grep 'TOTAL DAVG' log.txt | tail -10 | cut -d ' ' -f3"
+    ).read()
     resid = np.array([float(ri) for ri in resid_str.splitlines()]).mean()
 
     # Save metadata in dict

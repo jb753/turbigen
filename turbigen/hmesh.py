@@ -257,7 +257,9 @@ def stage_grid(
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, stag=stagi)
+        geometry.radially_interpolate_section(
+            spf, chii, spf, tte, Ai, stag=stagi
+        )
         for chii, Ai, stagi in zip(chi, A, stag)
     ]
 
@@ -267,7 +269,6 @@ def stage_grid(
         for i, row_sect in enumerate(sect):
             for rad_sect in row_sect:
                 current_radius = geometry.largest_inscribed_circle(rad_sect.T)
-                print('row %d, Rmax=%.2f' % (i, current_radius))
                 if current_radius < min_Rins:
                     raise geometry.GeometryConstraintError(
                         (

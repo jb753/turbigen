@@ -25,7 +25,7 @@ X_KEYS = [
 X_BOUNDS = {
     "dchi_in": (-16.0, 16.0),
     "dchi_out": (-5.0, 5.0),
-    "stag": (-90.,90.),
+    "stag": (-90.0, 90.0),
     "Rle": (0.05, 0.5),
     "thick_ps": (0.1, 0.5),
     "thick_ss1": (0.1, 0.5),
@@ -36,7 +36,7 @@ X_BOUNDS = {
 X_GUESS = {
     "dchi_in": 0.0,
     "dchi_out": 0.0,
-    "stag": 0.,
+    "stag": 0.0,
     "Rle": 0.06,
     "thick_ps": 0.2,
     "thick_ss1": 0.34,
@@ -47,7 +47,7 @@ X_GUESS = {
 X_STEP = {
     "dchi_in": 1.0,
     "dchi_out": 0.5,
-    "stag": 1.,
+    "stag": 1.0,
     "Rle": 0.01,
     "thick_ps": 0.02,
     "thick_ss1": 0.04,
@@ -295,6 +295,7 @@ class ParameterSet:
         self.stag[0] = np.degrees(np.arctan(np.mean(tanAl_sta)))
         self.stag[1] = np.degrees(np.arctan(np.mean(tanAl_rot)))
 
+
 def _run_parameters(write_func, params_all, base_dir):
     """Run one or more parameters sets in parallel."""
 
@@ -347,8 +348,8 @@ def _param_from_x(x, param_datum, row_index):
     param.recamber[1 + offset] += recam[1]
 
     Rle = x[3]
-    Ale = np.sqrt(2.*Rle)
-    thick_ps = [0.5*(x[4]+Ale), x[4]]
+    Ale = np.sqrt(2.0 * Rle)
+    thick_ps = [0.5 * (x[4] + Ale), x[4]]
     thick_ss = x[5:7]
     thick = np.stack((thick_ps, thick_ss))
     if row_index:
@@ -422,9 +423,9 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
         err = y / y_target - 1.0
         ind_low_error = np.all(np.abs(err[:, 1:-1]) < param_datum.rtol, axis=1)
         # Check convergence
-        ind_has_conv = [mi["resid"] < 1. for mi in metadata]
+        ind_has_conv = [mi["resid"] < 1.0 for mi in metadata]
         # NaN out results that deviate too much from target
-        ind_good = np.logical_and(ind_low_error,ind_has_conv)
+        ind_good = np.logical_and(ind_low_error, ind_has_conv)
         y[~ind_good, 0] = np.nan
         return y
 
@@ -447,6 +448,7 @@ def run_search(param, base_name):
     os.system(sedcmd)
 
     subprocess.Popen("sbatch submit.sh", cwd=base_dir, shell=True).wait()
+
 
 def _run_search(write_func):
     """Tabu search both blade rows in turn."""
@@ -493,7 +495,7 @@ def _run_search(write_func):
     for i in range(20):
 
         # Relaxation factor for increased stability
-        rf = 0.3 if i < 5 else 1.
+        rf = 0.3 if i < 5 else 1.0
 
         # Run initial guess to see how much deviation we have
         meta_dev = _run_parameters(write_func, param, base_dir)[0]
@@ -539,6 +541,10 @@ def _run_search(write_func):
         print("*******************")
         param = _search_row(base_dir, param, write_func, irow)
 
+    print("**************************")
+    print("**FINISHED               *")
+    print("**************************")
+
 def _search_row(base_dir, param, write_func, irow):
     """Perform a tabu search of blade geometries for one row."""
 
@@ -547,10 +553,10 @@ def _search_row(base_dir, param, write_func, irow):
     dx = _assemble_step(1)
     tol = dx / 2.0
 
-    x0[0,2] = param.stag[irow]+0.
+    x0[0, 2] = param.stag[irow] + 0.0
 
     # Give up if the initial guess violates constraint
-    write_func(_param_from_x(x0[0],param, irow))
+    write_func(_param_from_x(x0[0], param, irow))
 
     # if not _constrain_x_param(x0[0], write_func, param, irow):
     #     raise Exception("Violating constraint at initial guess.")
@@ -575,6 +581,7 @@ def _search_row(base_dir, param, write_func, irow):
 
     # Now return the parameters corresponding to optimum
     return _param_from_x(xopt[0], param, irow)
+
 
 def check_constraint(write_func, params):
     """Before writing a file, check that geometry constraints are OK."""

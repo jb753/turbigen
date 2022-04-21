@@ -250,11 +250,11 @@ def evaluate_camber(x, chi, stag):
     # return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
     #     (1.0 - aft) / 2.0 * x ** 2.0 + aft / 3.0 * x ** 3.0
     # )
-    n = np.sum(tanchi)/tangam
-    a = tanchi[1]/n
-    b = -tanchi[0]/n
-    y = a*x**n + b*(1.-x)**n
-    y = y-y[0]
+    n = np.sum(tanchi) / tangam
+    a = tanchi[1] / n
+    b = -tanchi[0] / n
+    y = a * x ** n + b * (1.0 - x) ** n
+    y = y - y[0]
     return y
 
 
@@ -263,10 +263,10 @@ def evaluate_camber_slope(x, chi, stag):
     tanchi = np.tan(np.radians(chi))
     tangam = np.tan(np.radians(stag))
     # return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.0 - aft))
-    n = np.sum(tanchi)/tangam
-    a = tanchi[1]/n
-    b = -tanchi[0]/n
-    y = a*n*x**(n-1.) - b*n*(1.-x)**(n-1.)
+    n = np.sum(tanchi) / tangam
+    a = tanchi[1] / n
+    b = -tanchi[0] / n
+    y = a * n * x ** (n - 1.0) - b * n * (1.0 - x) ** (n - 1.0)
     return y
 
 
@@ -419,7 +419,7 @@ def largest_inscribed_circle(xy):
     # TODO replace matplotlib dependency with something else
     path = mplpath.Path(xy)
     vor = vor[path.contains_points(vor)]
-    vor = vor[vor[:,0].argsort()]
+    vor = vor[vor[:, 0].argsort()]
 
     # vor is shape (m,2), xy is shape (n,2)
     # we assemble distances (n,m) from each vor point to each xy point
@@ -431,10 +431,10 @@ def largest_inscribed_circle(xy):
     min_dist = dist.min(axis=0)
 
     fig, ax = plt.subplots()
-    ax.axis('equal')
+    ax.axis("equal")
     ax.plot(*xy.T)
     ax.plot(*vor.T)
-    plt.savefig('debug_radius.pdf')
+    plt.savefig("debug_radius.pdf")
 
     # The largest inscribed circle fits at the point on the medial axis that is
     # furthest away from the surface
