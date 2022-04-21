@@ -7,6 +7,8 @@ from scipy.interpolate import interp1d
 from scipy.spatial import Voronoi
 import matplotlib.path as mplpath
 
+import matplotlib.pyplot as plt
+
 nx = 201
 
 ## Private methods
@@ -129,7 +131,7 @@ def prelim_A():
     return A
 
 
-def _section_xy(chi, A, tte, aft, x=None):
+def _section_xy(chi, A, tte, stag, x=None):
     r"""Coordinates for blade section with specified camber and thickness."""
 
     # Choose some x coordinates if not provided
@@ -144,7 +146,7 @@ def _section_xy(chi, A, tte, aft, x=None):
     t[1] = -t[1]
 
     # Apply thickness to camber line and return
-    xy = np.stack([_thickness_to_coord(x, ti, chi, aft) for ti in t])
+    xy = np.stack([_thickness_to_coord(x, ti, chi, stag) for ti in t])
     return xy
 
 
@@ -241,18 +243,31 @@ def _fit_aerofoil(xy, chi, order):
     return np.vstack((Au, Al)), resid
 
 
-def evaluate_camber(x, chi, aft):
+def evaluate_camber(x, chi, stag):
     """Camber line as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
-    return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
-        (1.0 - aft) / 2.0 * x ** 2.0 + aft / 3.0 * x ** 3.0
-    )
+    tangam = np.tan(np.radians(stag))
+    # return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
+    #     (1.0 - aft) / 2.0 * x ** 2.0 + aft / 3.0 * x ** 3.0
+    # )
+    n = np.sum(tanchi)/tangam
+    a = tanchi[1]/n
+    b = -tanchi[0]/n
+    y = a*x**n + b*(1.-x)**n
+    y = y-y[0]
+    return y
 
 
-def evaluate_camber_slope(x, chi, aft):
+def evaluate_camber_slope(x, chi, stag):
     """Camber line slope as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
-    return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.0 - aft))
+    tangam = np.tan(np.radians(stag))
+    # return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.0 - aft))
+    n = np.sum(tanchi)/tangam
+    a = tanchi[1]/n
+    b = -tanchi[0]/n
+    y = a*n*x**(n-1.) - b*n*(1.-x)**(n-1.)
+    return y
 
 
 def _coord_to_thickness(xy, chi):
@@ -285,9 +300,9 @@ def _coord_to_thickness(xy, chi):
     return xc, yc, t
 
 
-def _thickness_to_coord(xc, t, chi, aft):
-    theta = np.arctan(evaluate_camber_slope(xc, chi, aft))
-    yc = evaluate_camber(xc, chi, aft)
+def _thickness_to_coord(xc, t, chi, stag):
+    theta = np.arctan(evaluate_camber_slope(xc, chi, stag))
+    yc = evaluate_camber(xc, chi, stag)
     xu = xc - t * np.sin(theta)
     yu = yc + t * np.cos(theta)
     return xu, yu
@@ -301,7 +316,7 @@ def _loop_section(xy):
 
 
 def radially_interpolate_section(
-    spf, chi, spf_q, tte, A=None, spf_A=None, aft=None
+    spf, chi, spf_q, tte, A=None, spf_A=None, stag=None
 ):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
@@ -317,8 +332,8 @@ def radially_interpolate_section(
         Coefficients defining perpendicular thicknesses of upper and lower
         surfaces using a sum of `order` Bernstein polynomials. Either one set
         radially uniform, or `nt` sets of coefficients defined at `spf_A`.
-    aft : float or (nt,) array [deg]
-        Aft loadgin factor, either uniform over span or defined at `nt` loc'ns.
+    stag : float or (nt,) array [deg]
+        Stagger angle, either uniform over span or defined at `nt` loc'ns.
     spf_A : (nt,) array, optional [--]
         If specifying thickness at multiple heights, the span fractions for
         each of the `nt` sets of thickness coefficients.
@@ -353,7 +368,7 @@ def radially_interpolate_section(
     if np.ndim(A) == 2:
         # If we only have one set of thickness coefficients, just repeat them
         A_q = np.tile(np.expand_dims(A, 0), (nq, 1, 1))
-        aft_q = np.tile(aft, (nq,))
+        stag_q = np.tile(stag, (nq,))
     else:
         # Otherwise Interpolate thicknesses to desired spans
         A_q = interp1d(spf_A, A, axis=0)(spf_q)
@@ -361,8 +376,8 @@ def radially_interpolate_section(
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
         [
-            _loop_section(_section_xy(chi_i, A_i, tte, aft_i))
-            for chi_i, A_i, aft_i in zip(chi_q.T, A_q, aft_q)
+            _loop_section(_section_xy(chi_i, A_i, tte, stag_i))
+            for chi_i, A_i, stag_i in zip(chi_q.T, A_q, stag_q)
         ]
     )
 
@@ -403,7 +418,8 @@ def largest_inscribed_circle(xy):
     # Only include points within the section, sorted
     # TODO replace matplotlib dependency with something else
     path = mplpath.Path(xy)
-    vor = np.sort(vor[path.contains_points(vor)], axis=0)
+    vor = vor[path.contains_points(vor)]
+    vor = vor[vor[:,0].argsort()]
 
     # vor is shape (m,2), xy is shape (n,2)
     # we assemble distances (n,m) from each vor point to each xy point
@@ -413,6 +429,12 @@ def largest_inscribed_circle(xy):
 
     # At any point on the medial axis, we are interested in the closest point
     min_dist = dist.min(axis=0)
+
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    ax.plot(*xy.T)
+    ax.plot(*vor.T)
+    plt.savefig('debug_radius.pdf')
 
     # The largest inscribed circle fits at the point on the medial axis that is
     # furthest away from the surface

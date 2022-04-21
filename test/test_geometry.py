@@ -196,3 +196,8 @@ def test_inscribed_circle():
     # If all is well, the radius is half side length
     # Not exact because the sides are discretised
     assert np.isclose(radius, l / 2.0, rtol=1e-3)
+
+    # Now flip direction and try again
+    square_flip = np.flip(square, axis=0)
+    radius_flip = geometry.largest_inscribed_circle(square)
+    assert np.isclose(radius_flip, l / 2.0, rtol=1e-3)

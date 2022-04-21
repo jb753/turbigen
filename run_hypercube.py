@@ -7,7 +7,7 @@ import uuid
 
 import matplotlib.pyplot as plt
 
-Ma2_lim = (0.3, 0.9)
+Ma2_lim = (0.3, 1.2)
 phi_lim = (0.4, 1.2)
 psi_lim = (1.0, 2.6)
 Lam_lim = (0.3, 0.7)

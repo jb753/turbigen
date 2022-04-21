@@ -321,7 +321,7 @@ class TabuSearch:
 
         # Misc algorithm parameters
         self.x_regions = 3
-        self.max_fevals = 2500
+        self.max_fevals = 20
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = 4

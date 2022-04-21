@@ -29,10 +29,10 @@ def node_to_face(cut, prop_name):
     return np.mean(
         np.stack(
             (
-                getattr(cut, prop_name)[:-1, :-1],
-                getattr(cut, prop_name)[1:, 1:],
-                getattr(cut, prop_name)[:-1, 1:],
-                getattr(cut, prop_name)[1:, :-1],
+                getattr(cut, prop_name)[:-1, :-1].astype(float),
+                getattr(cut, prop_name)[1:, 1:].astype(float),
+                getattr(cut, prop_name)[:-1, 1:].astype(float),
+                getattr(cut, prop_name)[1:, :-1].astype(float),
             )
         ),
         axis=0,
@@ -136,7 +136,7 @@ def mix_out(cuts):
     mix = {"ro": np.mean(cell["ro"])}
 
     # Iterate on density
-    for i in range(10):
+    for i in range(20):
 
         # Conservation of mass to get mixed out axial velocity
         mix["vx"] = total["mass"] / mix["ro"] / total["Ax"]
@@ -259,7 +259,7 @@ def cut_by_indices(g, bid, ijk_sten):
 def cut_rows_mixed(g):
     """Mixed-out cuts at row inlet and exit"""
     ind_all = [0, -1]
-    di = 1
+    di = 2
     ind_in = [di, di]
     ind_out = [-1 - di, -1 - di]
     cuts = [
@@ -413,6 +413,10 @@ if __name__ == "__main__":
     # Axial velocity ratio
     zeta = (sta_in.vx / sta_out.vx, rot_out.vx / sta_out.vx)
 
+    # Convergence residual
+    resid_str = os.popen("grep 'TOTAL DAVG' log.txt | tail -10 | cut -d ' ' -f3").read()
+    resid = np.array([float(ri) for ri in resid_str.splitlines()]).mean()
+
     # Save metadata in dict
     meta = {
         "Al": Al,
@@ -429,6 +433,7 @@ if __name__ == "__main__":
         "Re_cx": Re_cx,
         "Re_So": Re_So,
         "Co": Co,
+        "resid": resid,
         "s_cx": s_cx,
         "Yp": Yp,
         "zeta": zeta,

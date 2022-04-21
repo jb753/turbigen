@@ -229,7 +229,7 @@ def stage_grid(
     tte,
     min_Rins=None,
     recamber=None,
-    aft=None,
+    stag=None,
 ):
     """Generate an H-mesh for a turbine stage."""
 
@@ -257,22 +257,23 @@ def stage_grid(
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, aft=afti)
-        for chii, Ai, afti in zip(chi, A, aft)
+        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, stag=stagi)
+        for chii, Ai, stagi in zip(chi, A, stag)
     ]
 
     # If we have asked for a minimum inscribed circle, confirm that the
     # constraint is not violated
     if min_Rins:
-        for row_sect in sect:
+        for i, row_sect in enumerate(sect):
             for rad_sect in row_sect:
                 current_radius = geometry.largest_inscribed_circle(rad_sect.T)
+                print('row %d, Rmax=%.2f' % (i, current_radius))
                 if current_radius < min_Rins:
                     raise geometry.GeometryConstraintError(
                         (
-                            "Thickness is too small for the constraint "
+                            "Row %d, Thickness is too small for the constraint "
                             "inscribed circle: %.3f < %.3f"
-                            % (current_radius, min_Rins)
+                            % (i, current_radius, min_Rins)
                         )
                     )
 
