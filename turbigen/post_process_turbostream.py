@@ -341,6 +341,10 @@ if __name__ == "__main__":
     with suppress_print():
         g = tsr.read(output_hdf5)
 
+    if np.any(np.isnan(g.get_bp('ro',0))):
+        print("Simulation NaN'd, exiting.")
+        sys.exit()
+
     # Gas properties
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio

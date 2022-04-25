@@ -321,7 +321,7 @@ class TabuSearch:
 
         # Misc algorithm parameters
         self.x_regions = 3
-        self.max_fevals = 20
+        self.max_fevals = 1000
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = 4
@@ -549,6 +549,8 @@ class TabuSearch:
         # Evaluate the objective at given initial guess point, update memories
         y0 = self.initial_guess(x0)
 
+        max_step = dx * self.fac_restart**2.
+
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0
         while self.fevals < self.max_fevals and np.any(dx > self.tol):
@@ -620,12 +622,15 @@ class TabuSearch:
                         print("INTENSIFY")
                     x1, y1 = self.mem_med.sample_random()
                 else:
-                    if self.verbose:
-                        print("INCREASE STEP")
                     # If nothing in the medium-term memory, we have not found
                     # any valid points yet, so increase step size and try again
-                    dx /= self.fac_restart
-                    x1, y1 = x0, y0
+                    if np.all(dx <= max_step):
+                        if self.verbose:
+                            print("INCREASE STEP")
+                        dx /= self.fac_restart
+                        x1, y1 = x0, y0
+                    else:
+                        print('Could not find a point satisfying constraints near initial guess, quitting.')
             elif self.i_search == self.i_diversify:
                 if self.verbose:
                     print("DIVERSIFY")
@@ -700,13 +705,13 @@ class TabuSearch:
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        Yl = np.flip(self.mem_long.Y, axis=0)
+        Yl = np.flip(self.mem_long.Y, axis=0)*100.
         pts = np.arange(len(Yl))
         Ym = self.mem_med.Y
         _, ind = find_rows(Ym, Yl)
         ax.plot(pts, Yl[:, 0], "k-")
         ax.plot(pts[ind], Yl[ind, 0], "r*")
-        ax.set_ylabel("Lost Efficiency, $\Delta \eta$")
+        ax.set_ylabel("Lost Efficiency, $\Delta \eta/\%$")
         ax.set_xlabel("Design Evaluations")
         plt.tight_layout()
         plt.savefig(fname)
@@ -719,9 +724,14 @@ class TabuSearch:
         fig, ax = plt.subplots()
         Yl = np.flip(self.mem_long.Y, axis=0)
         pts = np.arange(len(Yl))
-        Ymin = [np.nanmin(Yl[: (p + 1), 0]) for p in pts]
+        Ymin = np.empty_like(pts)
+        for i, p in enumerate(pts):
+            if np.all(np.isnan(Yl[: (p + 1), 0])):
+                Ymin[i] = np.nan
+            else:
+                Ymin[i] = np.nanmin(Yl[: (p + 1), 0])*100.
         ax.plot(pts, Ymin - Ymin[-1], "k-")
-        ax.set_ylabel("Optimum Lost Efficiency Error, $\Delta \eta$")
+        ax.set_ylabel("Optimum Lost Efficiency Error, $\Delta \eta/\%$")
         ax.set_xlabel("Design Evaluations")
         plt.tight_layout()
         plt.savefig(fname)

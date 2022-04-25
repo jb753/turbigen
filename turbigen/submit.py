@@ -23,7 +23,7 @@ X_KEYS = [
 ]
 
 X_BOUNDS = {
-    "dchi_in": (-16.0, 16.0),
+    "dchi_in": (-0., 16.0),
     "dchi_out": (-5.0, 5.0),
     "stag": (-90.0, 90.0),
     "Rle": (0.05, 0.5),
@@ -327,8 +327,12 @@ def _run_parameters(write_func, params_all, base_dir):
     # Load the processed data
     meta = []
     for workdir in workdirs:
-        with open(os.path.join(workdir, "meta.json"), "r") as f:
-            meta.append(json.load(f))
+        try:
+            with open(os.path.join(workdir, "meta.json"), "r") as f:
+                meta.append(json.load(f))
+        except IOError:
+            # Sentiel value if the results file is not there (calc NaN'd)
+            meta.append(None)
 
     # Return processed metadata
     return meta
@@ -343,6 +347,9 @@ def _param_from_x(x, param_datum, row_index):
     stag = x[2]
 
     offset = row_index * 2
+    # Flip direction of recamber in rotor
+    if row_index:
+        recam = [-r for r in recam]
     param.recamber = list(param.recamber)
     param.recamber[0 + offset] += recam[0]
     param.recamber[1 + offset] += recam[1]
@@ -383,8 +390,6 @@ def _assemble_step(nrow):
 def _constrain_x_param(x, write_func, param_datum, irow):
     lower, upper = _assemble_bounds(1)
     input_ok = (x >= lower).all() and (x <= upper).all()
-    print(x >= lower)
-    print(x <= upper)
     param = _param_from_x(x, param_datum, row_index=irow)
     if input_ok:
         return check_constraint(write_func, param)
@@ -432,8 +437,8 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
     return _objective, _constraint
 
 
-def run_search(param, base_name):
-    base_dir = os.path.join(TURBIGEN_ROOT, "run", base_name)
+def run_search(param, base_name, group_name):
+    base_dir = os.path.join(TURBIGEN_ROOT, group_name, base_name)
     if not os.path.isdir(base_dir):
         os.mkdir(base_dir)
 
@@ -487,20 +492,29 @@ def _run_search(write_func):
     param.guess_file = os.path.join(
         base_dir, meta_damp["runid"], "output_avg.hdf5"
     )
+    # Die if the initial guess diverges
+    if meta_damp is None:
+        print('** guess diverged, quitting.')
+        sys.exit()
 
     # Tune deviation, circulation, effy using fixed-point iteration
     print("CORRECTING ANGLES AND EFFY")
     print("  Target Al = %s" % str(Al_target))
     print("  Target Co = %s" % str(Co_target))
-    for i in range(20):
+    for i in range(25):
 
         # Relaxation factor for increased stability
-        rf = 0.3 if i < 5 else 1.0
+        rf = 0.25 if i < 10 else 1.0
 
         # Run initial guess to see how much deviation we have
         meta_dev = _run_parameters(write_func, param, base_dir)[0]
         Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
         Co_now = np.array(meta_dev["Co"])
+
+        # Die if the initial guess diverges
+        if meta_dev is None:
+            print('** diverged, quitting.')
+            sys.exit()
 
         # Calculate corrections for the flow angles
         dev_vane, dev_blade = Al_target - Al_now

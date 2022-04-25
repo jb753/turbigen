@@ -7,8 +7,6 @@ from scipy.interpolate import interp1d
 from scipy.spatial import Voronoi
 import matplotlib.path as mplpath
 
-import matplotlib.pyplot as plt
-
 nx = 201
 
 ## Private methods
@@ -430,11 +428,11 @@ def largest_inscribed_circle(xy):
     # At any point on the medial axis, we are interested in the closest point
     min_dist = dist.min(axis=0)
 
-    fig, ax = plt.subplots()
-    ax.axis("equal")
-    ax.plot(*xy.T)
-    ax.plot(*vor.T)
-    plt.savefig("debug_radius.pdf")
+    # fig, ax = plt.subplots()
+    # ax.axis("equal")
+    # ax.plot(*xy.T)
+    # ax.plot(*vor.T)
+    # plt.savefig("debug_radius.pdf")
 
     # The largest inscribed circle fits at the point on the medial axis that is
     # furthest away from the surface

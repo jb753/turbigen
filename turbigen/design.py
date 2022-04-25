@@ -6,6 +6,7 @@ import scipy.integrate
 from . import compflow
 import numpy as np
 from collections import namedtuple
+import warnings
 
 expon = 0.62
 muref = 1.8e-5
@@ -327,7 +328,7 @@ def nondim_stage_from_Lam(
     # close to the desired reaction, then Newton iterate
 
     # Evaluate guesses over entire possible yaw angle range
-    Al_guess = np.linspace(-89.0, 89.0, 9)
+    Al_guess = np.linspace(-89.0, 89.0, 21)
     Lam_guess = np.zeros_like(Al_guess)
 
     # Catch errors if this guess of angle is horrible/non-physical
@@ -349,9 +350,20 @@ def nondim_stage_from_Lam(
 
     # Start the Newton iteration at minimum error point
     i0 = np.argmin(np.abs(Lam_guess))
-    Al_soln = scipy.optimize.newton(
-        iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1]
-    )
+    # Catch the warning from scipy that derivatives are zero
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error')
+        try:
+            Al_soln = scipy.optimize.newton(
+                iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1]
+            )
+        except:
+            print('scipy warns derivatives are zero.')
+            print('debug info..')
+            print('Al_guess',Al_guess[i0], Al_guess[i0-1.])
+            print('Lam errors',iter_Al[i0:(i0+2)])
+            print('Al_soln', Al_soln)
+
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
     stg_out = nondim_stage_from_Al(
