@@ -2,6 +2,7 @@
 import json, glob, os, shutil
 import numpy as np
 import subprocess
+import sys
 from . import geometry, tabu, design
 
 
@@ -23,7 +24,7 @@ X_KEYS = [
 ]
 
 X_BOUNDS = {
-    "dchi_in": (-0., 16.0),
+    "dchi_in": (-0.0, 30.0),
     "dchi_out": (-5.0, 5.0),
     "stag": (-90.0, 90.0),
     "Rle": (0.05, 0.5),
@@ -38,14 +39,14 @@ X_GUESS = {
     "dchi_out": 0.0,
     "stag": 0.0,
     "Rle": 0.06,
-    "thick_ps": 0.2,
+    "thick_ps": 0.18,
     "thick_ss1": 0.34,
     "thick_ss2": 0.24,
-    "beta": 18.0,
+    "beta": 20.0,
 }
 
 X_STEP = {
-    "dchi_in": 1.0,
+    "dchi_in": 5.0,
     "dchi_out": 0.5,
     "stag": 1.0,
     "Rle": 0.01,
@@ -168,6 +169,7 @@ class ParameterSet:
             "cx_rat",
         ],
         "mesh": [
+            "resolution",
             "dx_c",
             "min_Rins",
             "A",
@@ -191,11 +193,13 @@ class ParameterSet:
                 setattr(self, var, var_dict[outer_name][var])
 
     def __repr__(self):
-        return "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f" % (
+        return "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f, Co=%.2f,%.2f" % (
             self.phi,
             self.psi,
             self.Lam,
             self.Ma2,
+            self.Co[0],
+            self.Co[1],
         )
 
     @classmethod
@@ -494,56 +498,78 @@ def _run_search(write_func):
     )
     # Die if the initial guess diverges
     if meta_damp is None:
-        print('** guess diverged, quitting.')
+        print("** guess diverged, quitting.")
         sys.exit()
 
-    # Tune deviation, circulation, effy using fixed-point iteration
+    # Tune deviation, circulation, effy using a shotgun method
+
     print("CORRECTING ANGLES AND EFFY")
     print("  Target Al = %s" % str(Al_target))
     print("  Target Co = %s" % str(Co_target))
+    # A single initial guess to see how much deviation we have
+    meta_dev = _run_parameters(write_func, param, base_dir)[0]
     for i in range(25):
 
-        # Relaxation factor for increased stability
-        rf = 0.25 if i < 10 else 1.0
-
-        # Run initial guess to see how much deviation we have
-        meta_dev = _run_parameters(write_func, param, base_dir)[0]
         Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
         Co_now = np.array(meta_dev["Co"])
+        print("  Al = %s" % str(Al_now))
+        print("  Co = %s" % str(Co_now))
+
+        Co_on_target = (np.abs(Co_now/Co_target - 1.)< param.rtol).all()
+        Al_on_target = (np.abs(Al_now - Al_target) < 0.5).all()
+        if Co_on_target and Al_on_target:
+            print("  Tolerance reached, breaking.")
+            break
 
         # Die if the initial guess diverges
         if meta_dev is None:
-            print('** diverged, quitting.')
+            print("** diverged, quitting.")
             sys.exit()
-
-        # Calculate corrections for the flow angles
-        dev_vane, dev_blade = Al_target - Al_now
-        param.recamber[1] += dev_vane * rf
-        param.recamber[3] -= dev_blade * rf
-        print("  Al = %s" % str(Al_now))
 
         # Update polytropic effy
         param.eta = meta_dev["eta"]
-        print("  Effy = %.3f" % param.eta)
 
-        # Update circulation coeff
-        Co_old = np.array(param.Co)
-        param.Co = (
-            Co_old * (1.0 - rf) + rf * Co_old * Co_target / Co_now
-        ).tolist()
-        print("  Co = %s" % str(Co_now))
+        # Deviations for the flow angles
+        dev_vane, dev_blade = (Al_target - Al_now)
+
+        # Relative changes for circulation coeff
+        dCo = (Co_target / Co_now - 1.)
+
 
         # Use most recent solution as initial guess
         param.guess_file = os.path.join(
             base_dir, meta_dev["runid"], "output_avg.hdf5"
         )
 
-        # Check for convergence
-        err_Co = np.max(np.abs(Co_now / Co_target - 1.0))
-        err_Al = np.max(np.abs(Al_target - Al_now))
-        if (err_Co < param.rtol) and (err_Al < 0.5):
-            print("  Tolerance reached, breaking.")
-            break
+        # Make an array of parametrs with different amounts of change
+        params_fac = []
+        for fac in [0.25, 0.5, 0.75, 1.]:
+            param_new = param.copy()
+            # Update angles
+            param_new.recamber = list(param_new.recamber)
+            param_new.recamber[1] += dev_vane * fac
+            param_new.recamber[3] -= dev_blade * fac
+            # Update circulation coeff
+            Co_old = np.array(param_new.Co)
+            param_new.Co = list(Co_old * (dCo*fac + 1.))
+            params_fac.append(param_new)
+
+        # Run all
+        meta_fac = _run_parameters(write_func, params_fac, base_dir)
+
+        if None in meta_fac:
+            print("** diverged, quitting.")
+            sys.exit()
+
+
+        # Check circulation errors
+        err_Co = np.array([np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0)) for m in meta_fac])
+        err_Al = np.array([np.max(np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3])))) for m in meta_fac])
+
+        # Continue loop with closest circulation coeff
+        iCo = err_Co.argmin()
+        param = params_fac[iCo]
+        meta_dev = meta_fac[iCo]
 
     # Write out datum parameters for later inspection
     param.write_json(datum_file)
@@ -554,6 +580,10 @@ def _run_search(write_func):
         print("**OPTIMISE ROW %d**" % irow)
         print("*******************")
         param = _search_row(base_dir, param, write_func, irow)
+
+    # Write out optimum params
+    opt_file = os.path.join(base_dir, "opt_param.json")
+    param.write_json(opt_file)
 
     print("**************************")
     print("**FINISHED               *")

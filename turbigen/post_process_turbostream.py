@@ -288,7 +288,7 @@ def find_chord(g, bid):
     dt = np.diff(rt / r, 1, axis=1).flat
     pitch = dt[0]
     is_blade = dt / pitch < 0.995
-    ile = np.argmax(is_blade)
+    ile = np.argmax(is_blade)-1
     is_blade_2 = dt / pitch < 0.995
     is_blade_2[: (ile + 1)] = True
     ite = np.argmax(~is_blade_2)
@@ -300,17 +300,17 @@ def extract_surf(g, bid):
     cx, ile, ite, _ = find_chord(g, bid)
     C = cut_by_indices(g, bid, [[ile, ite], [2, 2], [0, -1]])
     P = np.moveaxis(C.pstat, 0, -1)[:, (0, -1)].astype(float)
-    x = np.moveaxis(C.x, 0, -1)[:, (0, -1)]
+    x = np.moveaxis(C.x, 0, -1)[:, (0, -1)].astype(float)
     rt = np.moveaxis(C.rt, 0, -1)[:, (0, -1)]
     surf = np.cumsum(
         np.sqrt(np.diff(x, 1, 0) ** 2.0 + np.diff(rt, 1, 0) ** 2.0), axis=0
     )
     surf = np.insert(surf, 0, np.zeros((1, 2)), axis=0).astype(float)
-    return surf, P
+    return surf, P, x
 
 
 def circ_coeff(g, bid, Po1, P2):
-    surf, P = extract_surf(g, bid)
+    surf, P, _ = extract_surf(g, bid)
     Cp = (Po1 - P) / (Po1 - P2)
     Cp[Cp < 0.0] = 0.0
     # Normalise distance
@@ -333,7 +333,7 @@ if __name__ == "__main__":
     if not os.path.isfile(output_hdf5):
         raise IOError("%s not found." % output_hdf5)
 
-    basedir = os.path.dirname(output_hdf5)
+    basedir = os.path.dirname(os.path.abspath(output_hdf5))
     run_name = os.path.split(os.path.abspath(basedir))[-1]
 
     # Load the flow solution, supressing noisy printing
@@ -341,7 +341,7 @@ if __name__ == "__main__":
     with suppress_print():
         g = tsr.read(output_hdf5)
 
-    if np.any(np.isnan(g.get_bp('ro',0))):
+    if np.any(np.isnan(g.get_bp("ro", 0))):
         print("Simulation NaN'd, exiting.")
         sys.exit()
 
@@ -419,7 +419,7 @@ if __name__ == "__main__":
 
     # Convergence residual
     resid_str = os.popen(
-        "grep 'TOTAL DAVG' log.txt | tail -10 | cut -d ' ' -f3"
+        "grep 'TOTAL DAVG' %s/log.txt | tail -10 | cut -d ' ' -f3" % basedir
     ).read()
     resid = np.array([float(ri) for ri in resid_str.splitlines()]).mean()
 
@@ -447,3 +447,37 @@ if __name__ == "__main__":
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
         json.dump(meta, f)
+
+    # Continue to make graphs if the argument is specified
+    if not '--plot' in sys.argv:
+        sys.exit()
+
+    # Lazy import
+    import matplotlib.pyplot as plt
+
+    # Pressure distributions
+    # Mach number contours
+    eta_lost_pc = (1.0 - eff_poly)*100.
+    fig, ax = plt.subplots()
+    title_string = ", ".join(['%s=%.2f' % (v, meta[v]) for v in ['phi', 'psi', 'Lam', 'Ma2']]) + ", Co=%.2f,%.2f" % tuple(meta['Co']) + ", lost eta = %.1f\%%" % eta_lost_pc
+    ax.set_title(title_string, fontsize=12)
+ 
+    _, Pv, xv = extract_surf(g, 0)
+    Po1 = sta_in.pstag
+    P2 = sta_out.pstat
+    Cpv = (Pv-Po1)/(Po1-P2)
+
+    _, Pb, xb = extract_surf(g, 1)
+    Po2 = rot_in.pstag_rel
+    P3 = rot_out.pstat
+    Cpb = (Pb-Po2)/(Po2-P3)
+
+    ax.plot(xv,Cpv)
+    ax.plot(xb,Cpb)
+
+    ax.set_xlabel('Axial Chord')
+    ax.set_ylabel('Static Pressure Coefficient')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(basedir,'Cp.pdf'))
+

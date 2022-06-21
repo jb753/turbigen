@@ -321,7 +321,7 @@ class TabuSearch:
 
         # Misc algorithm parameters
         self.x_regions = 3
-        self.max_fevals = 1000
+        self.max_fevals = 500
         self.fac_restart = 0.5
         self.fac_pattern = 2.0
         self.max_parallel = 4
@@ -549,7 +549,7 @@ class TabuSearch:
         # Evaluate the objective at given initial guess point, update memories
         y0 = self.initial_guess(x0)
 
-        max_step = dx * self.fac_restart**2.
+        max_step = dx * self.fac_restart ** 2.0
 
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0
@@ -630,7 +630,9 @@ class TabuSearch:
                         dx /= self.fac_restart
                         x1, y1 = x0, y0
                     else:
-                        print('Could not find a point satisfying constraints near initial guess, quitting.')
+                        print(
+                            "Could not find a point satisfying constraints near initial guess, quitting."
+                        )
             elif self.i_search == self.i_diversify:
                 if self.verbose:
                     print("DIVERSIFY")
@@ -705,7 +707,7 @@ class TabuSearch:
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        Yl = np.flip(self.mem_long.Y, axis=0)*100.
+        Yl = np.flip(self.mem_long.Y, axis=0) * 100.0
         pts = np.arange(len(Yl))
         Ym = self.mem_med.Y
         _, ind = find_rows(Ym, Yl)
@@ -729,7 +731,7 @@ class TabuSearch:
             if np.all(np.isnan(Yl[: (p + 1), 0])):
                 Ymin[i] = np.nan
             else:
-                Ymin[i] = np.nanmin(Yl[: (p + 1), 0])*100.
+                Ymin[i] = np.nanmin(Yl[: (p + 1), 0]) * 100.0
         ax.plot(pts, Ymin - Ymin[-1], "k-")
         ax.set_ylabel("Optimum Lost Efficiency Error, $\Delta \eta/\%$")
         ax.set_xlabel("Design Evaluations")

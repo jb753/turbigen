@@ -24,6 +24,7 @@
         "cx_rat": 1.0
     },
     "mesh": {
+        "resolution": 1.0,
         "dx_c": [
             1.0,
             1.0,

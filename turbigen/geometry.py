@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.special import binom
 from numpy.linalg import lstsq
-from scipy.optimize import newton
+from scipy.optimize import newton, fminbound
 from scipy.interpolate import interp1d
 from scipy.spatial import Voronoi
 import matplotlib.path as mplpath
@@ -74,6 +74,76 @@ def cluster_hyperbola(npts, fac=3.0):
     """Return a hyperbolic tangent clustering function."""
     xhat = np.linspace(-1.0, 1.0, npts)
     return np.tanh(fac * xhat) / 2.0 / np.tanh(fac) + 0.5
+
+
+def cluster_wall(npts, ER, dwall):
+    """."""
+
+    def iter_dist(ERi, nci):
+        """Function to make a distribution with given num of const cells."""
+        dy_half = dwall*ERi**np.arange(0,(npts-nci)//2)
+        dy_const = np.ones((nci,))*dy_half[-1]
+        dy = np.concatenate((dy_half,dy_const,np.flip(dy_half)))
+        return np.insert(np.cumsum(dy),0,0)
+
+    # Initial guess with no constant cells
+    y0 = iter_dist(ER, 0)
+    dy0 = np.diff(y0).max()
+    err = 1.-y0[-1]
+    if err<0.:
+        raise Exception('Not going to work.')
+
+    # Now find number of constant cells to get just over correct distance
+    nconst_target = np.ceil(err/dy0).astype(int)
+
+    for nconst in [nconst_target,nconst_target-1]:
+
+        # if np.mod(npts,2):
+        #     nconst-=1
+        if nconst>npts:
+            raise Exception('Not going to work.')
+
+        # Reduce expansion ratio very slightly until exactly correct distance
+        def iter_ER(ERi):
+            erri = np.abs(iter_dist(ERi, nconst)[-1]-1.)
+            return erri
+        ER_tweak = fminbound( iter_ER, x1=1.001, x2=ER*1.1)
+
+        y = iter_dist(ER_tweak, nconst)
+        if len(y) == npts:
+            break
+
+    # Force to symmetry
+    tol = dwall/10.
+    if np.abs(y[-1]-1.)>tol:
+        raise Exception('Not going to work.')
+    y[(0, 1, -2, -1),] = (0., dwall , 1.-dwall, 1.)
+    y = 0.5*y + .5*(1.-np.flip(y))
+
+    return y
+
+
+def cluster_wall_solve_npts(ER, dwall):
+    """Determine minimum points needed at a given dwall and ER."""
+    max_iter = 100
+    npts = 8
+    for _ in range(max_iter):
+        try:
+            return cluster_wall(npts, ER, dwall)
+        except:
+            npts += 8
+
+def cluster_wall_solve_ER(npts, dwall):
+    """Determine correct ER at given npts."""
+    max_iter = 100
+    ER = 1.01
+    for _ in range(max_iter):
+        try:
+            return cluster_wall(npts, ER, dwall)
+        except:
+            ER +=0.01
+            print(ER)
+
 
 
 def A_from_Rle_thick_beta(Rle, thick, beta, tte):

@@ -10,12 +10,13 @@ import matplotlib.pyplot as plt
 Ma2_lim = (0.3, 1.1)
 phi_lim = (0.4, 1.2)
 psi_lim = (1.0, 2.6)
-Lam_lim = (0.3, 0.7)
+Lam_lim = (0.2, 0.8)
+Co_lim = (0.4, 0.8)
 
-xmin, xmax = np.column_stack((phi_lim, psi_lim, Lam_lim, Ma2_lim))
+xmin, xmax = np.column_stack((phi_lim, psi_lim, Lam_lim, Ma2_lim, Co_lim))
 
-N = 32
-q = LatinHypercube(d=4, optimization="random-cd").random(N)
+N = 128
+q = LatinHypercube(d=5, optimization="random-cd").random(N)
 v = xmin * (1.0 - q) + xmax * q
 
 param_default = submit.ParameterSet.from_default()
@@ -33,11 +34,12 @@ param_default = submit.ParameterSet.from_default()
 
 for vi in v:
     param_now = param_default.copy()
-    phi, psi, Lam, Ma2 = vi
+    phi, psi, Lam, Ma2, Co = vi
 
     param_now.phi = phi
     param_now.psi = psi
     param_now.Lam = Lam
     param_now.Ma2 = Ma2
+    param_now.Co = list([Co+0., Co+0.])
     case_str = str(uuid.uuid4())[:8]
-    submit.run_search(param_now, case_str, 'run4')
+    submit.run_search(param_now, case_str, "run5")

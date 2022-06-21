@@ -352,18 +352,17 @@ def nondim_stage_from_Lam(
     i0 = np.argmin(np.abs(Lam_guess))
     # Catch the warning from scipy that derivatives are zero
     with warnings.catch_warnings():
-        warnings.filterwarnings('error')
+        warnings.filterwarnings("error")
         try:
             Al_soln = scipy.optimize.newton(
                 iter_Al, x0=Al_guess[i0], x1=Al_guess[i0 - 1]
             )
         except:
-            print('scipy warns derivatives are zero.')
-            print('debug info..')
-            print('Al_guess',Al_guess[i0], Al_guess[i0-1.])
-            print('Lam errors',iter_Al[i0:(i0+2)])
-            print('Al_soln', Al_soln)
-
+            print("scipy warns derivatives are zero.")
+            print("debug info..")
+            print("Al_guess", Al_guess[i0], Al_guess[i0 - 1.0])
+            print("Lam errors", iter_Al[i0 : (i0 + 2)])
+            print("Al_soln", Al_soln)
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
     stg_out = nondim_stage_from_Al(

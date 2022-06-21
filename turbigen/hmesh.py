@@ -5,14 +5,15 @@ from . import geometry
 # Configure numbers of points
 nxb = 97  # Blade chord
 nr = 81  # Span
-nr_casc = 4  # Radial points in cascade mode
 nrt = 65  # Pitch
+
+nr_casc = 4  # Radial points in cascade mode
 rate = 0.5  # Axial chords required to fully relax
 dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
 
 
-def streamwise_grid(dx_c):
+def streamwise_grid(dx_c, resolution=1.):
     """Generate non-dimensional streamwise grid vector for a blade row.
 
     The first step in generating an H-mesh is to lay out a vector of axial
@@ -46,12 +47,15 @@ def streamwise_grid(dx_c):
     if np.ndim(dx_c) > 1:
         return zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c])
 
-    clust = geometry.cluster_cosine(nxb)
+    nxbr = np.rint(nxb*resolution).astype(int)
+    nxbr = nxbr if np.mod(nxbr,2) else nxbr+1
+
+    clust = geometry.cluster_cosine(nxbr)
     dclust = np.diff(clust)
     dmax = dclust.max()
 
     # Stretch clustering outside of blade row
-    nxb2 = nxb // 2  # Blade semi-chord
+    nxb2 = nxbr // 2  # Blade semi-chord
     x_c = clust + 0.0  # Make a copy of clustering function
     x_c = np.insert(x_c[1:], 0, clust[nxb2:] - 1.0)  # In front of LE
     x_c = np.append(x_c[:-1], x_c[-1] + clust[: nxb2 + 1])  # Behind TE
@@ -85,7 +89,7 @@ def streamwise_grid(dx_c):
     return x_c, i_edge
 
 
-def merid_grid(x_c, rm, Dr):
+def merid_grid(x_c, rm, Dr, resolution=1.):
     """Generate meridional grid for a blade row.
 
     Each spanwise grid index corresponds to a surface of revolution. So the
@@ -110,7 +114,7 @@ def merid_grid(x_c, rm, Dr):
 
     # If multiple rows are input, call recursively and stack them
     if isinstance(x_c, tuple):
-        return [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)]
+        return [merid_grid(x_ci, rm, Dri, resolution) for x_ci, Dri in zip(x_c, Dr)]
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -125,10 +129,10 @@ def merid_grid(x_c, rm, Dr):
     htr = rh[0] / rc[0]
     if htr > 0.95:
         # Define a uniform span fraction row vector
-        spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
+        spf = np.atleast_2d(np.linspace(0.0, 1.0, np.rint(nr_casc*resolution).astype(int)))
     else:
         # Define a clustered span fraction row vector
-        spf = np.atleast_2d(geometry.cluster_cosine(nr))
+        spf = np.atleast_2d(geometry.cluster_cosine(np.rint(nr*resolution).astype(int)))
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -136,12 +140,12 @@ def merid_grid(x_c, rm, Dr):
     return r
 
 
-def b2b_grid(x, r, s, c, sect):
+def b2b_grid(x, r, s, c, sect, resolution=1.):
     """Generate circumferential coordinates for a blade row."""
 
     ni = len(x)
     nj = r.shape[1]
-    nk = nrt
+    nk = np.rint(nrt*resolution).astype(int)
 
     # Dimensional axial coordinates
     x = np.reshape(x, (-1, 1, 1))
@@ -230,19 +234,23 @@ def stage_grid(
     min_Rins=None,
     recamber=None,
     stag=None,
+    resolution=1.
 ):
     """Generate an H-mesh for a turbine stage."""
+
+    # Change scaling factor on grid points
+
 
     # Distribute the spacings between stator and rotor
     dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
 
     # Streamwise grids for stator and rotor
-    x_c, ilte = streamwise_grid(dx_c)
+    x_c, ilte = streamwise_grid(dx_c, resolution=resolution)
     x = [x_ci * Dstg.cx[0] for x_ci in x_c]
 
     # Generate radial grid
     Dr = np.array([Dstg.Dr[:2], Dstg.Dr[1:]])
-    r = merid_grid(x_c, Dstg.rm, Dr)
+    r = merid_grid(x_c, Dstg.rm, Dr,  resolution=resolution)
 
     # Evaluate radial blade angles
     r1 = r[0][ilte[0][0], :]
@@ -279,7 +287,7 @@ def stage_grid(
                     )
 
     # Now we can do b2b grids
-    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
+    rt = [b2b_grid(*args,  resolution=resolution) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
 
     # Offset the rotor so it is downstream of stator
     x[1] = x[1] + x[0][-1] - x[1][0]
