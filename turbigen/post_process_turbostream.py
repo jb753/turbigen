@@ -288,7 +288,7 @@ def find_chord(g, bid):
     dt = np.diff(rt / r, 1, axis=1).flat
     pitch = dt[0]
     is_blade = dt / pitch < 0.995
-    ile = np.argmax(is_blade)-1
+    ile = np.argmax(is_blade) - 1
     is_blade_2 = dt / pitch < 0.995
     is_blade_2[: (ile + 1)] = True
     ite = np.argmax(~is_blade_2)
@@ -449,7 +449,7 @@ if __name__ == "__main__":
         json.dump(meta, f)
 
     # Continue to make graphs if the argument is specified
-    if not '--plot' in sys.argv:
+    if not "--plot" in sys.argv:
         sys.exit()
 
     # Lazy import
@@ -457,27 +457,32 @@ if __name__ == "__main__":
 
     # Pressure distributions
     # Mach number contours
-    eta_lost_pc = (1.0 - eff_poly)*100.
+    eta_lost_pc = (1.0 - eff_poly) * 100.0
     fig, ax = plt.subplots()
-    title_string = ", ".join(['%s=%.2f' % (v, meta[v]) for v in ['phi', 'psi', 'Lam', 'Ma2']]) + ", Co=%.2f,%.2f" % tuple(meta['Co']) + ", lost eta = %.1f\%%" % eta_lost_pc
+    title_string = (
+        ", ".join(
+            ["%s=%.2f" % (v, meta[v]) for v in ["phi", "psi", "Lam", "Ma2"]]
+        )
+        + ", Co=%.2f,%.2f" % tuple(meta["Co"])
+        + ", lost eta = %.1f\%%" % eta_lost_pc
+    )
     ax.set_title(title_string, fontsize=12)
- 
+
     _, Pv, xv = extract_surf(g, 0)
     Po1 = sta_in.pstag
     P2 = sta_out.pstat
-    Cpv = (Pv-Po1)/(Po1-P2)
+    Cpv = (Pv - Po1) / (Po1 - P2)
 
     _, Pb, xb = extract_surf(g, 1)
     Po2 = rot_in.pstag_rel
     P3 = rot_out.pstat
-    Cpb = (Pb-Po2)/(Po2-P3)
+    Cpb = (Pb - Po2) / (Po2 - P3)
 
-    ax.plot(xv,Cpv)
-    ax.plot(xb,Cpb)
+    ax.plot(xv, Cpv)
+    ax.plot(xb, Cpb)
 
-    ax.set_xlabel('Axial Chord')
-    ax.set_ylabel('Static Pressure Coefficient')
+    ax.set_xlabel("Axial Chord")
+    ax.set_ylabel("Static Pressure Coefficient")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(basedir,'Cp.pdf'))
-
+    plt.savefig(os.path.join(basedir, "Cp.pdf"))

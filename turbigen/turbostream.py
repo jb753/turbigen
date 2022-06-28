@@ -66,7 +66,10 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     ni, nj, nk = np.shape(rtin)
     rt = rtin + 0.0
     r = np.repeat(rin[:, :, None], nk, axis=2)
-    x = np.tile(xin[:, None, None], (1, nj, nk))
+    if xin.ndim == 3:
+        x = xin + 0.
+    else:
+        x = np.tile(xin[:, None, None], (1, nj, nk))
 
     # Permute the coordinates into C-style ordering
     # Turbostream is very fussy about this
@@ -250,10 +253,12 @@ def set_variables(g, mu=None):
     g.set_av("poisson_nstep", ts_tstream_type.int, 5000)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
-    g.set_av("nstep", ts_tstream_type.int, 25000)
-    g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
-    # g.set_av("nstep", ts_tstream_type.int, 10000)
-    # g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
+    # g.set_av("nstep", ts_tstream_type.int, 25000)
+    # g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
+    # g.set_av("nstep", ts_tstream_type.int, 100000*2)
+    # g.set_av("nstep_save_start", ts_tstream_type.int, 80000*2)
+    g.set_av("nstep", ts_tstream_type.int, 10000)
+    g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
@@ -296,7 +301,7 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
-def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin):
+def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin, ilos):
 
     # Make grid, add the blocks
     g = ts_tstream_grid.TstreamGrid()
@@ -372,6 +377,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin):
     # Apply application/block variables
     set_variables(g)
     g.set_av("dampin", ts_tstream_type.float, dampin)
+    g.set_av("ilos", ts_tstream_type.float, ilos)
 
     # Rotation
     rpm_rotor = Omega / 2.0 / np.pi * 60.0
@@ -407,18 +413,8 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin):
     else:
         xg = np.concatenate(
             [
-                x[0][
-                    [
-                        0,
-                    ]
-                    + ilte[0]
-                ],
-                x[1][
-                    ilte[1]
-                    + [
-                        -1,
-                    ]
-                ],
+                x[0][ [ 0, ] + ilte[0], 0, 0 ],
+                x[1][ ilte[1] + [ -1, ], 0,0 ],
             ]
         )
         Pog = np.repeat(stg.Po_Po1 * Po1, 2)

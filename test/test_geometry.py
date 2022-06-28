@@ -202,6 +202,7 @@ def test_inscribed_circle():
     radius_flip = geometry.largest_inscribed_circle(square)
     assert np.isclose(radius_flip, l / 2.0, rtol=1e-3)
 
+
 def test_cluster_wall():
     """Check that wall clustering distributions are working."""
     ER = 1.1
@@ -209,49 +210,49 @@ def test_cluster_wall():
     for npts in [73, 74, 81, 82]:
         y = geometry.cluster_wall(npts, ER, dwall)
         dy = np.diff(y)
-        ER_out = dy[1:]/dy[:-1]
-        ER_out[ER_out<1.] = 1./ER_out[ER_out<1.]
-        ER_out = ER_out[np.abs(ER_out)>1.]
+        ER_out = dy[1:] / dy[:-1]
+        ER_out[ER_out < 1.0] = 1.0 / ER_out[ER_out < 1.0]
+        ER_out = ER_out[np.abs(ER_out) > 1.0]
         # Correct range
-        assert (y>=0).all()
-        assert (y<=1.).all()
+        assert (y >= 0).all()
+        assert (y <= 1.0).all()
         # Endpoints
-        assert y[0] == 0.
-        assert y[-1] == 1.
+        assert y[0] == 0.0
+        assert y[-1] == 1.0
         assert np.isclose(dy[0], dwall)
         assert np.isclose(dy[-1], dwall)
         # Monotonically increasing
-        assert (dy>0.).all()
+        assert (dy > 0.0).all()
         assert len(y) == npts
         # Symmetry
-        assert np.isclose(y, 1.-np.flip(y)).all()
+        assert np.isclose(y, 1.0 - np.flip(y)).all()
         # Target expansion ratio
-        assert np.isclose(ER_out,ER,rtol=1e-1).all()
+        assert np.isclose(ER_out, ER, rtol=1e-1).all()
 
 
 def test_cluster_wall_solve_npts():
     """Check that wall clustering distributions are working."""
     dwall = 0.001
-    for ER in [1.05,1.1,1.2]:
+    for ER in [1.05, 1.1, 1.2]:
         y = geometry.cluster_wall_solve_npts(ER, dwall)
         dy = np.diff(y)
-        ER_out = dy[1:]/dy[:-1]
-        ER_out[ER_out<1.] = 1./ER_out[ER_out<1.]
-        ER_out = ER_out[np.abs(ER_out)>1.]
+        ER_out = dy[1:] / dy[:-1]
+        ER_out[ER_out < 1.0] = 1.0 / ER_out[ER_out < 1.0]
+        ER_out = ER_out[np.abs(ER_out) > 1.0]
         # Correct range
-        assert (y>=0).all()
-        assert (y<=1.).all()
+        assert (y >= 0).all()
+        assert (y <= 1.0).all()
         # Endpoints
-        assert y[0] == 0.
-        assert y[-1] == 1.
+        assert y[0] == 0.0
+        assert y[-1] == 1.0
         assert np.isclose(dy[0], dwall)
         assert np.isclose(dy[-1], dwall)
         # Monotonically increasing
-        assert (dy>0.).all()
+        assert (dy > 0.0).all()
         # Symmetry
-        assert np.isclose(y, 1.-np.flip(y)).all()
+        assert np.isclose(y, 1.0 - np.flip(y)).all()
         # Target expansion ratio
-        assert np.isclose(ER_out,ER,rtol=2e-1).all()
+        assert np.isclose(ER_out, ER, rtol=2e-1).all()
 
 
 def test_cluster_wall_solve_ER():
@@ -261,17 +262,15 @@ def test_cluster_wall_solve_ER():
         y = geometry.cluster_wall_solve_ER(npts, dwall)
         dy = np.diff(y)
         # Correct range
-        assert (y>=0).all()
-        assert (y<=1.).all()
+        assert (y >= 0).all()
+        assert (y <= 1.0).all()
         # Endpoints
-        assert y[0] == 0.
-        assert y[-1] == 1.
+        assert y[0] == 0.0
+        assert y[-1] == 1.0
         assert np.isclose(dy[0], dwall)
         assert np.isclose(dy[-1], dwall)
         # Monotonically increasing
-        assert (dy>0.).all()
+        assert (dy > 0.0).all()
         assert len(y) == npts
         # Symmetry
-        assert np.isclose(y, 1.-np.flip(y)).all()
-
-
+        assert np.isclose(y, 1.0 - np.flip(y)).all()

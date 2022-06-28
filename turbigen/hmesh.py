@@ -3,9 +3,10 @@ import numpy as np
 from . import geometry
 
 # Configure numbers of points
-nxb = 97  # Blade chord
+nxb = 81  # Blade chord
 nr = 81  # Span
-nrt = 65  # Pitch
+# nrt = 65  # Pitch
+nrt = 73  # Pitch
 
 nr_casc = 4  # Radial points in cascade mode
 rate = 0.5  # Axial chords required to fully relax
@@ -13,7 +14,7 @@ dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
 
 
-def streamwise_grid(dx_c, resolution=1.):
+def streamwise_grid(dx_c ):
     """Generate non-dimensional streamwise grid vector for a blade row.
 
     The first step in generating an H-mesh is to lay out a vector of axial
@@ -47,15 +48,13 @@ def streamwise_grid(dx_c, resolution=1.):
     if np.ndim(dx_c) > 1:
         return zip(*[streamwise_grid(dx_ci) for dx_ci in dx_c])
 
-    nxbr = np.rint(nxb*resolution).astype(int)
-    nxbr = nxbr if np.mod(nxbr,2) else nxbr+1
-
-    clust = geometry.cluster_cosine(nxbr)
+    # clust = geometry.cluster_cosine(nxbr)
+    clust = geometry.cluster_wall_solve_ER(nxb, 0.001)
     dclust = np.diff(clust)
     dmax = dclust.max()
 
     # Stretch clustering outside of blade row
-    nxb2 = nxbr // 2  # Blade semi-chord
+    nxb2 = nxb // 2  # Blade semi-chord
     x_c = clust + 0.0  # Make a copy of clustering function
     x_c = np.insert(x_c[1:], 0, clust[nxb2:] - 1.0)  # In front of LE
     x_c = np.append(x_c[:-1], x_c[-1] + clust[: nxb2 + 1])  # Behind TE
@@ -89,7 +88,7 @@ def streamwise_grid(dx_c, resolution=1.):
     return x_c, i_edge
 
 
-def merid_grid(x_c, rm, Dr, resolution=1.):
+def merid_grid(x_c, rm, Dr):
     """Generate meridional grid for a blade row.
 
     Each spanwise grid index corresponds to a surface of revolution. So the
@@ -114,7 +113,9 @@ def merid_grid(x_c, rm, Dr, resolution=1.):
 
     # If multiple rows are input, call recursively and stack them
     if isinstance(x_c, tuple):
-        return [merid_grid(x_ci, rm, Dri, resolution) for x_ci, Dri in zip(x_c, Dr)]
+        return [
+            merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)
+        ]
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -129,10 +130,14 @@ def merid_grid(x_c, rm, Dr, resolution=1.):
     htr = rh[0] / rc[0]
     if htr > 0.95:
         # Define a uniform span fraction row vector
-        spf = np.atleast_2d(np.linspace(0.0, 1.0, np.rint(nr_casc*resolution).astype(int)))
+        spf = np.atleast_2d(
+            np.linspace(0.0, 1.0, nr_casc)
+        )
     else:
         # Define a clustered span fraction row vector
-        spf = np.atleast_2d(geometry.cluster_cosine(np.rint(nr*resolution).astype(int)))
+        spf = np.atleast_2d(
+            geometry.cluster_cosine(nr)
+        )
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -140,12 +145,12 @@ def merid_grid(x_c, rm, Dr, resolution=1.):
     return r
 
 
-def b2b_grid(x, r, s, c, sect, resolution=1.):
+def b2b_grid(x, r, s, c, sect):
     """Generate circumferential coordinates for a blade row."""
 
     ni = len(x)
     nj = r.shape[1]
-    nk = np.rint(nrt*resolution).astype(int)
+    nk = nrt
 
     # Dimensional axial coordinates
     x = np.reshape(x, (-1, 1, 1))
@@ -209,7 +214,9 @@ def b2b_grid(x, r, s, c, sect, resolution=1.):
         )
 
     # Define a pitchwise clustering function with correct dimensions
-    clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
+    # clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
+    clust = geometry.cluster_wall_solve_ER(nk, 2e-5).reshape(1, 1, -1)
+    # clust = geometry.cluster_wall_solve_ER(nk, 0.0006).reshape(1, 1, -1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
     # With a fixed ramp rate
@@ -227,30 +234,22 @@ def b2b_grid(x, r, s, c, sect, resolution=1.):
 
 
 def stage_grid(
-    Dstg,
-    A,
-    dx_c,
-    tte,
-    min_Rins=None,
-    recamber=None,
-    stag=None,
-    resolution=1.
+    Dstg, A, dx_c, tte, min_Rins=None, recamber=None, stag=None, resolution=1
 ):
     """Generate an H-mesh for a turbine stage."""
 
     # Change scaling factor on grid points
 
-
     # Distribute the spacings between stator and rotor
     dx_c = np.array([[dx_c[0], dx_c[1] / 2.0], [dx_c[1] / 2.0, dx_c[2]]])
 
     # Streamwise grids for stator and rotor
-    x_c, ilte = streamwise_grid(dx_c, resolution=resolution)
+    x_c, ilte = streamwise_grid(dx_c)
     x = [x_ci * Dstg.cx[0] for x_ci in x_c]
 
     # Generate radial grid
     Dr = np.array([Dstg.Dr[:2], Dstg.Dr[1:]])
-    r = merid_grid(x_c, Dstg.rm, Dr,  resolution=resolution)
+    r = merid_grid(x_c, Dstg.rm, Dr)
 
     # Evaluate radial blade angles
     r1 = r[0][ilte[0][0], :]
@@ -287,7 +286,10 @@ def stage_grid(
                     )
 
     # Now we can do b2b grids
-    rt = [b2b_grid(*args,  resolution=resolution) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
+    rt = [
+        b2b_grid(*args)
+        for args in zip(x, r, Dstg.s, Dstg.cx, sect)
+    ]
 
     # Offset the rotor so it is downstream of stator
     x[1] = x[1] + x[0][-1] - x[1][0]
@@ -299,4 +301,61 @@ def stage_grid(
     # plt.savefig('sect.pdf')
     # quit()
 
+    x = [smooth(*args) for args in zip(x, rt, ilte)]
+
+    # Repeat a number of times
+    for _ in range(resolution-1):
+        # Deal with indices
+        ilte = tuple([[ind*2 for ind in iltei] for iltei in ilte])
+        # For rotor and stator
+        x, r, rt = [[refine_nested(vi) for vi in v] for v in [x,r,rt]]
+
+
     return x, r, rt, ilte
+
+def refine_nested(v):
+    if v.ndim==1:
+        v = np.insert(v, range(1,len(v)), 0.5*(v[:-1]+v[1:]))
+    else:
+        # Loop over all dimensions of that var
+        for d in range(v.ndim):
+
+            # Move current axis to front
+            vtmp = np.moveaxis(v, d, 0)
+
+            # Insert new points before everywhere except first pt
+            ind = np.arange(1,vtmp.shape[0])
+            vmid = 0.5*(vtmp[:-1,...]+vtmp[1:,...])
+            vtmp = np.insert(vtmp,ind,vmid,0)
+
+            # Put axis back
+            v = np.moveaxis(vtmp, 0, d)
+    return v
+
+
+def smooth(x, rt, ilte):
+    """Smooth x in streamwise direction."""
+    nsmth = 200
+    x_smth = x + 0.
+    for _ in range(nsmth):
+        x_smth[1:-1] = (x_smth[:-2]+x_smth[2:])/2.
+        x_smth[ilte] = x[ilte] + 0.
+
+    # add a bit of an offset
+    xle, xte = x[ilte]
+    frac_cx = (x - xle)/(xte-xle)
+    delta = 0.1*(xte-xle)
+    offset = np.interp(frac_cx, [frac_cx[0], 0., 1.,frac_cx[-1]], [0.,-1.2*delta, delta,0.])
+    x_smth += offset
+
+    # Weight the x coordinate towards smoothed at mid-passage, unsmooth on wall
+    frac_pitch = (rt-rt[:,:,(0,)])/(rt[:,:,(-1,)]-rt[:,:,(0,)])
+    frac_smth = 4.*frac_pitch*(1.-frac_pitch)
+    # frac_smth = np.empty_like(frac_pitch)
+    # frac_smth[frac_pitch<0.5] = 2.*frac_pitch[frac_pitch<0.5]
+    # frac_smth[frac_pitch>=0.5] = 2.-2.*frac_pitch[frac_pitch>=0.5]
+    x_smth = np.reshape(x_smth,(-1,1,1))
+    x_ref = np.reshape(x,(-1,1,1))
+    return frac_smth * x_smth + (1.-frac_smth)*x_ref
+
+

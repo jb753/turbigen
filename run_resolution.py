@@ -1,26 +1,36 @@
 """Run a resolution study on datum design."""
 
-from turbigen import hmesh, geometry
-# from turbigen import submit, turbostream, hmesh, geometry
+from turbigen import submit, turbostream, geometry
 import numpy as np
 import matplotlib.pyplot as plt
 
-y = geometry.cluster_wall_solve_npts(1.1, 0.001)
-
-y = geometry.cluster_wall_solve_ER(65, 0.001)
-
+# y = geometry.cluster_wall_solve_ER(97, 0.0006)
+# y2 = geometry.cluster_cosine(97)
+# dy = np.diff(y)[0]
+# dy2 = np.diff(y2)[0]
+# print(dy, dy2)
+# f, a = plt.subplots()
+# a.plot(y, "-")
+# a.plot(y2, "-")
+# plt.savefig("test.pdf")
 # rstrt
-y = geometry.cluster_wall(65, 1.11, 0.001)
-# dy = np.diff(y)
-
-f, a = plt.subplots()
-a.plot(y,'k-x')
-plt.savefig('test.pdf')
 
 
+param_default = submit.ParameterSet.from_default()
+param_default.dampin = 10.
+param_default.ilos = 1
+param_default.Ma2 = 0.3
+param_default.set_stag()
 
+params_res = param_default.sweep('resolution', [1, 2, 3])
+submit._run_parameters(turbostream.write_grid_from_params,params_res, 'res')
+rstrt
+# # artat
 
-# param_default = submit.ParameterSet.from_default()
-# param_default.set_stag()
-# param_default.resolution=5
-# submit._run_parameters(turbostream.write_grid_from_params,param_default, 'res')
+guess_id = [0,1,2,3]
+params_sa = param_default.sweep('resolution', [1., 2., 3., 4.])
+for p, gid in zip(params_sa, guess_id):
+    p.ilos = 2
+    p.guess_file = 'res/%04d/output_avg.hdf5' % gid
+
+submit._run_parameters(turbostream.write_grid_from_params,params_sa, 'res')

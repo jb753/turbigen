@@ -181,6 +181,7 @@ class ParameterSet:
             "guess_file",
             "rtol",
             "dampin",
+            "ilos",
         ],
     }
 
@@ -272,7 +273,7 @@ class ParameterSet:
         """Return parameters needed to pre-process the CFD."""
         return {
             k: getattr(self, k)
-            for k in self._var_names["bcond"] + ["guess_file", "dampin"]
+            for k in self._var_names["bcond"] + ["guess_file", "dampin", "ilos"]
         }
 
     def copy(self):
@@ -311,32 +312,43 @@ def _run_parameters(write_func, params_all, base_dir):
             params_all,
         ]
 
-    # Set up N working directories
-    workdirs = [
-        _write_input(write_func, params, base_dir) for params in params_all
-    ]
+    max_proc = int(subprocess.check_output('nvidia-smi --list-gpus | wc -l', shell=True))
 
-    # Start the processes
-    cmds = ["CUDA_VISIBLE_DEVICES=%d sh submit.sh" % n for n in range(N)]
-    processes = [
-        subprocess.Popen(cmd, cwd=wd, shell=True)
-        for cmd, wd in zip(cmds, workdirs)
-    ]
+    if N>max_proc:
+        params_split = np.array_split(params_all,np.ceil(N/max_proc))
+    else:
+        params_split = [params_all,]
 
-    # Wait for all processes
-    for process in processes:
-        if process:
-            process.wait()
-
-    # Load the processed data
     meta = []
-    for workdir in workdirs:
-        try:
-            with open(os.path.join(workdir, "meta.json"), "r") as f:
-                meta.append(json.load(f))
-        except IOError:
-            # Sentiel value if the results file is not there (calc NaN'd)
-            meta.append(None)
+    for params_now in params_split:
+
+        # Set up N working directories
+        workdirs = [
+            _write_input(write_func, params, base_dir) for params in params_now
+        ]
+
+        Nb = len(params_now)
+        # Start the processes
+        cmds = ["CUDA_VISIBLE_DEVICES=%d sh submit.sh" % n for n in range(Nb)]
+        # print('Batch size %d' % Nb)
+        processes = [
+            subprocess.Popen(cmd, cwd=wd, shell=True)
+            for cmd, wd in zip(cmds, workdirs)
+        ]
+
+        # Wait for all processes
+        for process in processes:
+            if process:
+                process.wait()
+
+        # Load the processed data
+        for workdir in workdirs:
+            try:
+                with open(os.path.join(workdir, "meta.json"), "r") as f:
+                    meta.append(json.load(f))
+            except IOError:
+                # Sentiel value if the results file is not there (calc NaN'd)
+                meta.append(None)
 
     # Return processed metadata
     return meta
@@ -458,9 +470,87 @@ def run_search(param, base_name, group_name):
 
     subprocess.Popen("sbatch submit.sh", cwd=base_dir, shell=True).wait()
 
+def _solve_dev(Al_target, write_func, param, base_dir):
+    """Recamber a parameter set to get zero deviation."""
 
-def _run_search(write_func):
-    """Tabu search both blade rows in turn."""
+    Co_ref = np.array(param.Co)
+
+    def iter_row(x,ind):
+        Co_now = np.tile(Co_ref,(4,1))
+        Co_now[:,ind] = x
+        params_sweep = param.sweep('Co', Co_now.tolist())
+        meta_sweep = _run_parameters(write_func, params_sweep, base_dir)
+        err = np.ones((4,))*np.nan
+        for i, mi in enumerate(meta_sweep):
+            if mi:
+                if not ind:
+                    err[i] = -(mi['Al'][1]-Al_target[0])
+                else:
+                    err[i] = mi['Alrel'][3]-Al_target[1]
+        return err, meta_sweep
+
+    Co_guess = np.array([0.,.1,.2,.3])+Co_ref[0]
+    Co = Co_guess
+    err, _ = iter_row(Co_guess,0)
+
+    tol = 0.5
+    err_min = np.nanmin(np.abs(err))
+
+    for _ in range(1):
+        ic = np.nanargmax(err>0.)
+        Co_guess = np.linspace(Co[ic-1],Co[ic],6)[1:-1]
+        err = np.append(err,iter_row(Co_guess,0)[0])
+        Co = np.append(Co,Co_guess)
+        err_min = np.nanmin(np.abs(err))
+        isrt = np.argsort(Co)
+        Co, err = Co[isrt], err[isrt]
+        print(Co)
+        print(err)
+        if err_min<tol:
+            break
+
+    ii_min = np.nanargmin(np.abs(err))
+    Co_stator = Co[ii_min]
+    print('Co_stator %.2f' % Co_stator)
+
+    Co_guess = np.array([0.,.1,.2,3.])+Co_ref[1]
+    Co = Co_guess
+    err, meta = iter_row(Co_guess,1)
+    err_min = np.nanmin(np.abs(err))
+
+    for _ in range(1):
+
+        ic = np.nanargmax(err>0.)
+        Co_guess = np.linspace(Co[ic-1],Co[ic],6)[1:-1]
+
+        err_new, meta_new = iter_row(Co_guess,1)
+
+        err = np.append(err, err_new)
+        meta = meta + meta_new
+        Co = np.append(Co,Co_guess)
+
+        err_min = np.nanmin(np.abs(err))
+
+        isrt = np.argsort(Co)
+        Co, err = Co[isrt], err[isrt]
+        meta = [meta[i] for i in isrt]
+        print(Co)
+        print(err)
+
+        if err_min<tol:
+            break
+
+    ii_min = np.nanargmin(np.abs(err))
+    Co_rotor = Co[ii_min]
+    print('Co_rotor %.2f' % Co_rotor)
+    meta_out = meta[ii_min]
+
+    param_out = param.copy()
+    param_out.Co = [Co_stator, Co_rotor]
+
+    return param_out, meta_out
+
+def _initial_search(write_func):
 
     # Set up some file paths
     base_dir = os.getcwd()
@@ -470,19 +560,7 @@ def _run_search(write_func):
 
     # Create the datum parameter set
     param = ParameterSet.from_json(datum_file)
-
-    # Evaulate the meanline design to get target flow angles
-    stg = design.nondim_stage_from_Lam(**param.nondimensional)
-    Al_target = np.array((stg.Al[1], stg.Alrel[2]))
-
-    # Record target circulation
-    Co_target = np.array(param.Co)
-
-    # Set stagger guess
-    tanAl_rot = np.tan(np.radians(stg.Alrel[1:]))
-    tanAl_sta = np.tan(np.radians(stg.Al[:2]))
-    param.stag[0] = np.degrees(np.arctan(np.mean(tanAl_sta)))
-    param.stag[1] = np.degrees(np.arctan(np.mean(tanAl_rot)))
+    param.set_stag()
 
     # Give up if the initial design violates constraint
     if not check_constraint(write_func, param):
@@ -496,83 +574,160 @@ def _run_search(write_func):
     param.guess_file = os.path.join(
         base_dir, meta_damp["runid"], "output_avg.hdf5"
     )
+
     # Die if the initial guess diverges
     if meta_damp is None:
         print("** guess diverged, quitting.")
         sys.exit()
 
+    # Record target circulation and flow angles
+    Co_target = np.array(param.Co)
+    stg = design.nondim_stage_from_Lam(**param.nondimensional)
+    Al_target = np.array((stg.Al[1], stg.Alrel[2]))
+    print(Al_target)
+
+    # Change Co to get no deviation at two recamber angles
+    param.recamber = (np.array([0.,2.,0.,2.]) + param.recamber).tolist()
+    param_0, meta_0 = _solve_dev(Al_target, write_func, param, base_dir)
+    param_3 = param_0.copy()
+    param_3.recamber = (np.array([0.,4.,0.,4.]) + param_3.recamber).tolist()
+    param_3, meta_3 = _solve_dev(Al_target, write_func, param_3, base_dir)
+
+    # Pull out needed data
+    Co_3 = np.array(meta_3['Co'])
+    Co_0 = np.array(meta_0['Co'])
+    Coin_3 = np.array(param_3.Co)
+    Coin_0 = np.array(param_0.Co)
+    recam_3 = np.array(param_3.recamber)[(1,3),]
+    recam_0 = np.array(param_0.recamber)[(1,3),]
+    eta_3 = meta_3['eta']
+    eta_0 = meta_0['eta']
+
+    # Take a weighted average of the two recambers 
+    Lam = (Co_target - Co_3)/(Co_0 - Co_3)
+    Coin = Lam*Coin_0 + (1.-Lam)*Coin_3
+    recam = Lam*recam_0 + (1.-Lam)*recam_3
+    eta = Lam*eta_0 + (1.-Lam)*eta_3
+
+    print(Co_3)
+    print(Co_0)
+    print(Lam)
+    print(recam)
+    print(Coin)
+
+    param.Co = Coin.tolist()
+    param.recam = [0., recam[0], 0., recam[1]]
+    param.eta = eta
+    param.guess_file = os.path.join(
+        base_dir, meta_0["runid"], "output_avg.hdf5"
+    )
+
+    meta_final = _run_parameters(write_func, param, base_dir)[0]
+    print(Al_target)
+    print(meta_final['Al'])
+    print(meta_final['Alrel'])
+    print(meta_final['Co'])
+    quit()
+
+
     # Tune deviation, circulation, effy using a shotgun method
 
-    print("CORRECTING ANGLES AND EFFY")
-    print("  Target Al = %s" % str(Al_target))
-    print("  Target Co = %s" % str(Co_target))
-    # A single initial guess to see how much deviation we have
-    meta_dev = _run_parameters(write_func, param, base_dir)[0]
-    for i in range(25):
+    # print("CORRECTING ANGLES AND EFFY")
+    # print("  Target Al = %s" % str(Al_target))
+    # print("  Target Co = %s" % str(Co_target))
+    # # A single initial guess to see how much deviation we have
+    # meta_dev = _run_parameters(write_func, param, base_dir)[0]
+    # for i in range(25):
 
-        Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
-        Co_now = np.array(meta_dev["Co"])
-        print("  Al = %s" % str(Al_now))
-        print("  Co = %s" % str(Co_now))
+    #     Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
+    #     Co_now = np.array(meta_dev["Co"])
+    #     print("  Al = %s" % str(Al_now))
+    #     print("  Co = %s" % str(Co_now))
 
-        Co_on_target = (np.abs(Co_now/Co_target - 1.)< param.rtol).all()
-        Al_on_target = (np.abs(Al_now - Al_target) < 0.5).all()
-        if Co_on_target and Al_on_target:
-            print("  Tolerance reached, breaking.")
-            break
+    #     Co_on_target = (np.abs(Co_now / Co_target - 1.0) < param.rtol).all()
+    #     Al_on_target = (np.abs(Al_now - Al_target) < 0.5).all()
+    #     if Co_on_target and Al_on_target:
+    #         print("  Tolerance reached, breaking.")
+    #         break
 
-        # Die if the initial guess diverges
-        if meta_dev is None:
-            print("** diverged, quitting.")
-            sys.exit()
+    #     # Die if the initial guess diverges
+    #     if meta_dev is None:
+    #         print("** diverged, quitting.")
+    #         sys.exit()
 
-        # Update polytropic effy
-        param.eta = meta_dev["eta"]
+    #     # Update polytropic effy
+    #     param.eta = meta_dev["eta"]
 
-        # Deviations for the flow angles
-        dev_vane, dev_blade = (Al_target - Al_now)
+    #     # Deviations for the flow angles
+    #     dev_vane, dev_blade = Al_target - Al_now
 
-        # Relative changes for circulation coeff
-        dCo = (Co_target / Co_now - 1.)
+    #     # Relative changes for circulation coeff
+    #     dCo = Co_target / Co_now - 1.0
 
+    #     # Use most recent solution as initial guess
+    #     param.guess_file = os.path.join(
+    #         base_dir, meta_dev["runid"], "output_avg.hdf5"
+    #     )
 
-        # Use most recent solution as initial guess
-        param.guess_file = os.path.join(
-            base_dir, meta_dev["runid"], "output_avg.hdf5"
-        )
+    #     # Make an array of parametrs with different amounts of change
+    #     params_fac = []
+    #     for fac in [0.25, 0.5, 0.75, 1.0]:
+    #         param_new = param.copy()
+    #         # Update angles
+    #         param_new.recamber = list(param_new.recamber)
+    #         param_new.recamber[1] += dev_vane * fac
+    #         param_new.recamber[3] -= dev_blade * fac
+    #         # Update circulation coeff
+    #         Co_old = np.array(param_new.Co)
+    #         param_new.Co = list(Co_old * (dCo * fac + 1.0))
+    #         params_fac.append(param_new)
 
-        # Make an array of parametrs with different amounts of change
-        params_fac = []
-        for fac in [0.25, 0.5, 0.75, 1.]:
-            param_new = param.copy()
-            # Update angles
-            param_new.recamber = list(param_new.recamber)
-            param_new.recamber[1] += dev_vane * fac
-            param_new.recamber[3] -= dev_blade * fac
-            # Update circulation coeff
-            Co_old = np.array(param_new.Co)
-            param_new.Co = list(Co_old * (dCo*fac + 1.))
-            params_fac.append(param_new)
+    #     # Run all
+    #     meta_fac = _run_parameters(write_func, params_fac, base_dir)
 
-        # Run all
-        meta_fac = _run_parameters(write_func, params_fac, base_dir)
+    #     if None in meta_fac:
+    #         print("** diverged, quitting.")
+    #         sys.exit()
 
-        if None in meta_fac:
-            print("** diverged, quitting.")
-            sys.exit()
+    #     # Check circulation errors
+    #     err_Co = np.array(
+    #         [
+    #             np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0))
+    #             for m in meta_fac
+    #         ]
+    #     )
+    #     err_Al = np.array(
+    #         [
+    #             np.max(
+    #                 np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3])))
+    #             )
+    #             for m in meta_fac
+    #         ]
+    #     )
 
-
-        # Check circulation errors
-        err_Co = np.array([np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0)) for m in meta_fac])
-        err_Al = np.array([np.max(np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3])))) for m in meta_fac])
-
-        # Continue loop with closest circulation coeff
-        iCo = err_Co.argmin()
-        param = params_fac[iCo]
-        meta_dev = meta_fac[iCo]
+    #     # Continue loop with closest circulation coeff
+    #     iCo = err_Co.argmin()
+    #     param = params_fac[iCo]
+    #     meta_dev = meta_fac[iCo]
 
     # Write out datum parameters for later inspection
     param.write_json(datum_file)
+
+    return param
+
+def _run_search(write_func):
+    """Tabu search both blade rows in turn."""
+
+    # Set up datum parameters with corrections for deviation, circulation
+    _initial_search(write_func)
+
+    # Set up some file paths
+    base_dir = os.getcwd()
+    datum_file = os.path.join(base_dir, "datum_param.json")
+    if not os.path.isfile(datum_file):
+        raise Exception("No datum parameters found.")
+
+    param = ParameterSet.from_json(datum_file)
 
     # Optimise rotor first, then stator
     for irow in range(2):
@@ -626,6 +781,41 @@ def _search_row(base_dir, param, write_func, irow):
 
     # Now return the parameters corresponding to optimum
     return _param_from_x(xopt[0], param, irow)
+
+def _grad(base_dir, param, write_func, irow):
+    """Finite difference approximation of gradient."""
+
+    # Initial guess
+    x0 = _assemble_guess(1)
+    dx = _assemble_step(1)
+    x0[0, 2] = param.stag[irow] + 0.0
+
+    # Wrapped objective and constraint
+    obj, constr = _wrap_for_optimiser(write_func, param, base_dir, irow)
+
+    N = len(dx)
+    dy_dx = np.empty((N,1))
+    x = _finite_difference_moves(x0, dx)
+    y0 = obj(x0)
+    y = obj(x)
+
+    print(y.shape)
+    print(y0.shape)
+    print(dx.shape)
+    dy_dx = (y - y0)/dx.T
+    print(dy_dx)
+
+
+
+def _finite_difference_moves(x, dx):
+    """Generate a set of finite difference moves about a point
+
+    For a design vector with M variables, return a MxM matrix, each variable
+    having being perturbed by elementwise + dx."""
+    d = np.diag(dx.flat)
+    return x + d
+
+
 
 
 def check_constraint(write_func, params):

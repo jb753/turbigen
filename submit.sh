@@ -19,3 +19,6 @@ turbostream input.hdf5 output 1 > log.txt
 
 # write out probe data file for dbslice
 python $TURBIGEN_ROOT/turbigen/post_process_turbostream.py output_avg.hdf5
+
+# remove extraneous files
+rm stopit *.xdmf input.hdf5 #output.hdf5 log.txt

@@ -24,7 +24,7 @@
         "cx_rat": 1.0
     },
     "mesh": {
-        "resolution": 1.0,
+        "resolution": 1,
         "dx_c": [
             1.0,
             1.0,
@@ -69,6 +69,7 @@
     "run": {
         "guess_file": 0,
         "rtol": 0.05,
-        "dampin": 25.0
+        "dampin": 25.0,
+        "ilos": 1
     }
 }

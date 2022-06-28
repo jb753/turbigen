@@ -40,6 +40,6 @@ for vi in v:
     param_now.psi = psi
     param_now.Lam = Lam
     param_now.Ma2 = Ma2
-    param_now.Co = list([Co+0., Co+0.])
+    param_now.Co = list([Co + 0.0, Co + 0.0])
     case_str = str(uuid.uuid4())[:8]
     submit.run_search(param_now, case_str, "run5")
