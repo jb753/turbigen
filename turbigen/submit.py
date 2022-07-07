@@ -10,7 +10,8 @@ TURBIGEN_ROOT = os.path.join("/".join(__file__.split("/")[:-1]), "..")
 TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit.sh")
 TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
-OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "runid"]
+OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "Ma2", "runid","resid"]
+CONSTR_KEYS = ["psi", "phi", "Lam", "Ma2"]
 
 X_KEYS = [
     "dchi_in",
@@ -18,8 +19,7 @@ X_KEYS = [
     "stag",
     "Rle",
     "thick_ps",
-    "thick_ss1",
-    "thick_ss2",
+    "thick_ss",
     "beta",
 ]
 
@@ -29,20 +29,28 @@ X_BOUNDS = {
     "stag": (-90.0, 90.0),
     "Rle": (0.05, 0.5),
     "thick_ps": (0.1, 0.5),
-    "thick_ss1": (0.1, 0.5),
-    "thick_ss2": (0.1, 0.5),
+    "thick_ss": (0.1, 0.5),
     "beta": (8.0, 24.0),
+}
+
+X_BOUNDS_REL = {
+    "dchi_in": (-1., 6.),
+    "dchi_out": (-10., 10.0),
+    "stag": (-90.0, 90.0),
+    "Rle": (-5., 20.),
+    "thick_ps": (-5., 20.),
+    "thick_ss": (-5, 20.),
+    "beta": (-4., 4.),
 }
 
 X_GUESS = {
     "dchi_in": 0.0,
     "dchi_out": 0.0,
     "stag": 0.0,
-    "Rle": 0.06,
-    "thick_ps": 0.18,
-    "thick_ss1": 0.34,
-    "thick_ss2": 0.24,
-    "beta": 20.0,
+    "Rle": 0.1,
+    "thick_ps": 0.25,
+    "thick_ss": 0.34,
+    "beta": 16.0,
 }
 
 X_STEP = {
@@ -51,16 +59,14 @@ X_STEP = {
     "stag": 1.0,
     "Rle": 0.01,
     "thick_ps": 0.02,
-    "thick_ss1": 0.04,
-    "thick_ss2": 0.04,
+    "thick_ss": 0.02,
     "beta": 2.0,
 }
 
 
 def _concatenate_dict(list_of_dicts):
     return {
-        k: np.reshape([d[k] for d in list_of_dicts], (-1, 1))
-        for k in list_of_dicts[0]
+        k: np.reshape([d[k] for d in list_of_dicts], (-1, 1)) for k in list_of_dicts[0]
     }
 
 
@@ -182,6 +188,7 @@ class ParameterSet:
             "rtol",
             "dampin",
             "ilos",
+            "resid"
         ],
     }
 
@@ -212,9 +219,7 @@ class ParameterSet:
             dat = json.load(f)
 
         # Sort out multi-dimensional thickness coeffs
-        dat["mesh"]["A"] = np.reshape(
-            dat["mesh"]["Aflat"], dat["mesh"]["shape_A"]
-        )
+        dat["mesh"]["A"] = np.reshape(dat["mesh"]["Aflat"], dat["mesh"]["shape_A"])
         for key in ("Aflat", "shape_A"):
             dat["mesh"].pop(key)
 
@@ -312,28 +317,29 @@ def _run_parameters(write_func, params_all, base_dir):
             params_all,
         ]
 
-    max_proc = int(subprocess.check_output('nvidia-smi --list-gpus | wc -l', shell=True))
+    max_proc = int(
+        subprocess.check_output("nvidia-smi --list-gpus | wc -l", shell=True)
+    )
 
-    if N>max_proc:
-        params_split = np.array_split(params_all,np.ceil(N/max_proc))
+    if N > max_proc:
+        params_split = np.array_split(params_all, np.ceil(N / max_proc))
     else:
-        params_split = [params_all,]
+        params_split = [
+            params_all,
+        ]
 
     meta = []
     for params_now in params_split:
 
         # Set up N working directories
-        workdirs = [
-            _write_input(write_func, params, base_dir) for params in params_now
-        ]
+        workdirs = [_write_input(write_func, params, base_dir) for params in params_now]
 
         Nb = len(params_now)
         # Start the processes
         cmds = ["CUDA_VISIBLE_DEVICES=%d sh submit.sh" % n for n in range(Nb)]
         # print('Batch size %d' % Nb)
         processes = [
-            subprocess.Popen(cmd, cwd=wd, shell=True)
-            for cmd, wd in zip(cmds, workdirs)
+            subprocess.Popen(cmd, cwd=wd, shell=True) for cmd, wd in zip(cmds, workdirs)
         ]
 
         # Wait for all processes
@@ -354,13 +360,21 @@ def _run_parameters(write_func, params_all, base_dir):
     return meta
 
 
-def _param_from_x(x, param_datum, row_index):
-    """Perturb a datum turbine using a design vector x."""
+def _param_from_x(xn, param_datum, row_index):
+    """Perturb a datum turbine using normalised design vector x."""
+
+    # Get reference design and steps in dimensional terms
+    xref = _assemble_guess(1)[0]
+    dx = _assemble_step(1)[0]
+
+    # Apply datum stagger
+    xref[2] = param_datum.stag[row_index] + 0.
+    # Convert from normalised xn to dimensional x
+    x = xn*dx + xref
 
     param = param_datum.copy()
 
     recam = x[:2]
-    stag = x[2]
 
     offset = row_index * 2
     # Flip direction of recamber in rotor
@@ -371,21 +385,21 @@ def _param_from_x(x, param_datum, row_index):
     param.recamber[1 + offset] += recam[1]
 
     Rle = x[3]
-    Ale = np.sqrt(2.0 * Rle)
-    thick_ps = [0.5 * (x[4] + Ale), x[4]]
-    thick_ss = x[5:7]
-    thick = np.stack((thick_ps, thick_ss))
+    thick = np.stack(x[4:6])
     if row_index:
         thick = np.flip(thick, axis=0)
-    beta = x[7]
+    beta = x[6]
 
-    param.stag = list(param.stag)
-    param.stag[row_index] = stag
+    param.stag = [stag+0. for stag in param.stag]
+    param.stag[row_index] = x[2] + 0.
 
     Anew = geometry.A_from_Rle_thick_beta(Rle, thick, beta, param_datum.tte)
 
     param.A = param.A + 0.0
     param.A[row_index] = Anew
+
+    if np.any(param.stag==0.):
+        raise Exception('Stagger should not be zero')
 
     return param
 
@@ -394,6 +408,9 @@ def _assemble_bounds(nrow):
     """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
     return np.tile(np.column_stack([X_BOUNDS[k] for k in X_KEYS]), nrow)
 
+def _assemble_bounds_rel(nrow):
+    """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
+    return tuple([X_BOUNDS_REL[k] for k in X_KEYS])
 
 def _assemble_guess(nrow):
     return np.tile(np.atleast_2d([X_GUESS[k] for k in X_KEYS]), nrow)
@@ -403,12 +420,37 @@ def _assemble_step(nrow):
     return np.tile(np.atleast_2d([X_STEP[k] for k in X_KEYS]), nrow)
 
 
-def _constrain_x_param(x, write_func, param_datum, irow):
-    lower, upper = _assemble_bounds(1)
-    input_ok = (x >= lower).all() and (x <= upper).all()
-    param = _param_from_x(x, param_datum, row_index=irow)
+def _constrain_x_param(xn, write_func, param_datum, irow, verbose=False):
+
+    # lower, upper = _assemble_bounds(1)
+
+    # xref = _assemble_guess(1)[0]
+    # dx = _assemble_step(1)[0]
+    # xref[2] = param_datum.stag[irow] + 0.
+    # x = xn*dx + xref
+
+    # lower, upper = _assemble_bounds(1)
+    # lower_ok = x >= lower
+    # upper_ok = x <= upper
+    # if verbose and not lower_ok.all():
+    #     print('x lower bound violated:')
+    #     print(x)
+    #     print(lower)
+    # if verbose and not upper_ok.all():
+    #     print('x upper bound violated:')
+    #     print(x)
+    #     print(upper)
+    # input_ok = lower_ok.all() and upper_ok.all()
+
+    input_ok = True
+
+    param = _param_from_x(xn, param_datum, row_index=irow)
+
     if input_ok:
-        return check_constraint(write_func, param)
+        geom_ok = check_constraint(write_func, param)
+        if verbose and not geom_ok:
+            print('geometry generation failed')
+        return geom_ok
     else:
         return False
 
@@ -424,13 +466,11 @@ def _param_to_y(param):
     return y
 
 
-def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
+def _wrap_for_optimiser(write_func, param_datum, base_dir, irow, nan_constr=True):
     """A closure that wraps turbine creation and running for the optimiser."""
 
     def _constraint(x):
-        return [
-            _constrain_x_param(xi, write_func, param_datum, irow) for xi in x
-        ]
+        return [_constrain_x_param(xi, write_func, param_datum, irow) for xi in x]
 
     def _objective(x):
         # Get parameter sets for all rows of x
@@ -445,13 +485,95 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir, irow):
         ind_low_error = np.all(np.abs(err[:, 1:-1]) < param_datum.rtol, axis=1)
         # Check convergence
         ind_has_conv = [mi["resid"] < 1.0 for mi in metadata]
-        # NaN out results that deviate too much from target
-        ind_good = np.logical_and(ind_low_error, ind_has_conv)
-        y[~ind_good, 0] = np.nan
+        if nan_constr:
+            # NaN out results that deviate too much from target
+            ind_good = np.logical_and(ind_low_error, ind_has_conv)
+            y[~ind_good, 0] = np.nan
         return y
 
     return _objective, _constraint
 
+def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
+    """Closure to wraps turbine creation and running with gradient."""
+
+    # Store objective values so that we do not need to re-evaluate when
+    # constrainign
+    _cache = {}
+    _cache_grad = {}
+
+    def printv(s):
+        """Print a string if verbosity is enabled."""
+        if verbose:
+            print(s)
+
+    def _eval_func(x):
+        xt = tuple(x)
+        if xt in _cache:
+            printv('Cache: %s' % str(xt))
+            return _cache[xt]
+        printv('Eval: %s' % str(xt))
+        param = _param_from_x(x, param_datum, irow)
+        metadata = _run_parameters(write_func, param, base_dir)[0]
+        y = _metadata_to_y(metadata)
+        _cache[xt] = y
+        return y
+
+    def _eval_grad(x0):
+
+        xt0 = tuple(x0)
+        if xt0 in _cache_grad:
+            printv('Cache grad: %s' % str(xt0))
+            return _cache_grad[xt0]
+
+        # Perturb x about initial point
+        dx = eps*np.ones((len(x0),))
+        x = np.insert(x0 + np.diag(dx),0,x0,axis=0)
+
+        # Evaluate and get gradient
+        y = np.stack([_eval_func(xi) for xi in x])
+        grad_y = (y[1:,:]-y[(0,),:])/np.tile(dx,(y.shape[1],1)).T
+
+        # Save grad of all vars in cache for later
+        _cache_grad[xt0] = grad_y
+
+        return grad_y
+
+    def _f(x):
+        return _eval_func(x)[0]
+
+    def _df_dx(x0):
+        return _eval_grad(x0)[:,0]
+
+    def _constraint(x, ind, upper):
+        # Determine errors with respect to target values
+        y = _eval_func(x)
+        y_target = _param_to_y(param_datum)
+        err = (y / y_target - 1.0)[ind]
+        err_max = param_datum.rtol
+        if upper:
+            return -err + err_max
+        else:
+            return err + err_max
+
+    def _constraint_grad(x, ind, upper):
+        # Determine errors with respect to target values
+        dy_dx = _eval_grad(x)
+        y_target = _param_to_y(param_datum)
+        grad_norm = dy_dx[:,ind]/y_target[ind]
+        if upper:
+            return -grad_norm
+        else:
+            return grad_norm
+
+    # get indexes into rows of y for the constrained variables
+    ind_constr = [OBJECTIVE_KEYS.index(k) for k in CONSTR_KEYS]
+
+    # assemble dict of constraints for SLSQP
+    upper = [{'type': 'ineq', 'fun': _constraint, 'jac': _constraint_grad, 'args': (i, True)} for i in ind_constr]
+    lower = [{'type': 'ineq', 'fun': _constraint, 'jac': _constraint_grad, 'args': (i, False)} for i in ind_constr]
+    all_constr = upper + lower
+
+    return _f, _df_dx, all_constr, _cache
 
 def run_search(param, base_name, group_name):
     base_dir = os.path.join(TURBIGEN_ROOT, group_name, base_name)
@@ -470,85 +592,93 @@ def run_search(param, base_name, group_name):
 
     subprocess.Popen("sbatch submit.sh", cwd=base_dir, shell=True).wait()
 
+
 def _solve_dev(Al_target, write_func, param, base_dir):
     """Recamber a parameter set to get zero deviation."""
 
     Co_ref = np.array(param.Co)
 
-    def iter_row(x,ind):
-        Co_now = np.tile(Co_ref,(4,1))
-        Co_now[:,ind] = x
-        params_sweep = param.sweep('Co', Co_now.tolist())
+    def iter_row(x, ind):
+        Co_now = np.tile(Co_ref, (4, 1))
+        Co_now[:, ind] = x
+        params_sweep = param.sweep("Co", Co_now.tolist())
         meta_sweep = _run_parameters(write_func, params_sweep, base_dir)
-        err = np.ones((4,))*np.nan
+        err = np.ones((4,)) * np.nan
         for i, mi in enumerate(meta_sweep):
             if mi:
                 if not ind:
-                    err[i] = -(mi['Al'][1]-Al_target[0])
+                    err[i] = mi["Al"][1] - Al_target[0]
                 else:
-                    err[i] = mi['Alrel'][3]-Al_target[1]
+                    err[i] = mi["Alrel"][3] - Al_target[1]
         return err, meta_sweep
 
-    Co_guess = np.array([0.,.1,.2,.3])+Co_ref[0]
+    Co_guess = np.array([0.0, 0.1, 0.2, 0.3]) + Co_ref[0]
     Co = Co_guess
-    err, _ = iter_row(Co_guess,0)
+    err, _ = iter_row(Co_guess, 0)
 
-    tol = 0.5
+    tol = 0.1
     err_min = np.nanmin(np.abs(err))
+    # err_min_old = np.inf
 
-    for _ in range(1):
-        ic = np.nanargmax(err>0.)
-        Co_guess = np.linspace(Co[ic-1],Co[ic],6)[1:-1]
-        err = np.append(err,iter_row(Co_guess,0)[0])
-        Co = np.append(Co,Co_guess)
+    has_dup = (np.unique(err, return_counts=True)[1] > 1).any()
+
+    while not has_dup and (err_min > tol):
+        ic = np.nanargmax(err > 0.0)
+        Co_guess = np.linspace(Co[ic - 1], Co[ic], 6)[1:-1]
+        err = np.append(err, iter_row(Co_guess, 0)[0])
+        Co = np.append(Co, Co_guess)
+        # err_min_old = err_min
         err_min = np.nanmin(np.abs(err))
         isrt = np.argsort(Co)
         Co, err = Co[isrt], err[isrt]
+        has_dup = (np.unique(err, return_counts=True)[1] > 1).any()
         print(Co)
         print(err)
-        if err_min<tol:
-            break
 
     ii_min = np.nanargmin(np.abs(err))
     Co_stator = Co[ii_min]
-    print('Co_stator %.2f' % Co_stator)
+    print("Co_stator %.2f" % Co_stator)
 
-    Co_guess = np.array([0.,.1,.2,3.])+Co_ref[1]
+    Co_guess = np.array([0.0, 0.1, 0.2, 3.0]) + Co_ref[1]
     Co = Co_guess
-    err, meta = iter_row(Co_guess,1)
+    err, meta = iter_row(Co_guess, 1)
+    has_dup = (np.unique(err, return_counts=True)[1] > 1).any()
     err_min = np.nanmin(np.abs(err))
 
-    for _ in range(1):
+    while not has_dup and (err_min > tol):
 
-        ic = np.nanargmax(err>0.)
-        Co_guess = np.linspace(Co[ic-1],Co[ic],6)[1:-1]
+        print(Co)
+        print(err)
+        ic = np.nanargmax(err > 0.0)
+        print(ic)
+        Co_guess = np.linspace(Co[ic - 1], Co[ic], 6)[1:-1]
+        print(Co_guess)
 
-        err_new, meta_new = iter_row(Co_guess,1)
+        err_new, meta_new = iter_row(Co_guess, 1)
 
         err = np.append(err, err_new)
         meta = meta + meta_new
-        Co = np.append(Co,Co_guess)
+        Co = np.append(Co, Co_guess)
 
         err_min = np.nanmin(np.abs(err))
 
         isrt = np.argsort(Co)
         Co, err = Co[isrt], err[isrt]
         meta = [meta[i] for i in isrt]
+        has_dup = np.sum(np.abs(err) == err_min) > 1
         print(Co)
         print(err)
 
-        if err_min<tol:
-            break
-
     ii_min = np.nanargmin(np.abs(err))
     Co_rotor = Co[ii_min]
-    print('Co_rotor %.2f' % Co_rotor)
+    print("Co_rotor %.2f" % Co_rotor)
     meta_out = meta[ii_min]
 
     param_out = param.copy()
     param_out.Co = [Co_stator, Co_rotor]
 
     return param_out, meta_out
+
 
 def _initial_search(write_func):
 
@@ -570,150 +700,100 @@ def _initial_search(write_func):
     print("HIGH-DAMPING INITIAL GUESS")
     param_damp = param.copy()
     param_damp.dampin = 3.0
+    param_damp.ilos = 1
     meta_damp = _run_parameters(write_func, param_damp, base_dir)[0]
-    param.guess_file = os.path.join(
-        base_dir, meta_damp["runid"], "output_avg.hdf5"
-    )
+    param.guess_file = os.path.join(base_dir, meta_damp["runid"], "output_avg.hdf5")
 
     # Die if the initial guess diverges
     if meta_damp is None:
         print("** guess diverged, quitting.")
         sys.exit()
 
+    param.ilos = 1
+
     # Record target circulation and flow angles
     Co_target = np.array(param.Co)
     stg = design.nondim_stage_from_Lam(**param.nondimensional)
     Al_target = np.array((stg.Al[1], stg.Alrel[2]))
-    print(Al_target)
-
-    # Change Co to get no deviation at two recamber angles
-    param.recamber = (np.array([0.,2.,0.,2.]) + param.recamber).tolist()
-    param_0, meta_0 = _solve_dev(Al_target, write_func, param, base_dir)
-    param_3 = param_0.copy()
-    param_3.recamber = (np.array([0.,4.,0.,4.]) + param_3.recamber).tolist()
-    param_3, meta_3 = _solve_dev(Al_target, write_func, param_3, base_dir)
-
-    # Pull out needed data
-    Co_3 = np.array(meta_3['Co'])
-    Co_0 = np.array(meta_0['Co'])
-    Coin_3 = np.array(param_3.Co)
-    Coin_0 = np.array(param_0.Co)
-    recam_3 = np.array(param_3.recamber)[(1,3),]
-    recam_0 = np.array(param_0.recamber)[(1,3),]
-    eta_3 = meta_3['eta']
-    eta_0 = meta_0['eta']
-
-    # Take a weighted average of the two recambers 
-    Lam = (Co_target - Co_3)/(Co_0 - Co_3)
-    Coin = Lam*Coin_0 + (1.-Lam)*Coin_3
-    recam = Lam*recam_0 + (1.-Lam)*recam_3
-    eta = Lam*eta_0 + (1.-Lam)*eta_3
-
-    print(Co_3)
-    print(Co_0)
-    print(Lam)
-    print(recam)
-    print(Coin)
-
-    param.Co = Coin.tolist()
-    param.recam = [0., recam[0], 0., recam[1]]
-    param.eta = eta
-    param.guess_file = os.path.join(
-        base_dir, meta_0["runid"], "output_avg.hdf5"
-    )
-
-    meta_final = _run_parameters(write_func, param, base_dir)[0]
-    print(Al_target)
-    print(meta_final['Al'])
-    print(meta_final['Alrel'])
-    print(meta_final['Co'])
-    quit()
-
 
     # Tune deviation, circulation, effy using a shotgun method
 
-    # print("CORRECTING ANGLES AND EFFY")
-    # print("  Target Al = %s" % str(Al_target))
-    # print("  Target Co = %s" % str(Co_target))
-    # # A single initial guess to see how much deviation we have
-    # meta_dev = _run_parameters(write_func, param, base_dir)[0]
-    # for i in range(25):
+    print("CORRECTING ANGLES AND EFFY")
+    print("  Target Al = %s" % str(Al_target))
+    print("  Target Co = %s" % str(Co_target))
+    # A single initial guess to see how much deviation we have
+    meta_dev = _run_parameters(write_func, param, base_dir)[0]
+    for i in range(25):
 
-    #     Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
-    #     Co_now = np.array(meta_dev["Co"])
-    #     print("  Al = %s" % str(Al_now))
-    #     print("  Co = %s" % str(Co_now))
+        Al_now = np.array((meta_dev["Alrel"][1], meta_dev["Alrel"][3]))
+        Co_now = np.array(meta_dev["Co"])
+        print("  Al = %s" % str(Al_now))
+        print("  Co = %s" % str(Co_now))
 
-    #     Co_on_target = (np.abs(Co_now / Co_target - 1.0) < param.rtol).all()
-    #     Al_on_target = (np.abs(Al_now - Al_target) < 0.5).all()
-    #     if Co_on_target and Al_on_target:
-    #         print("  Tolerance reached, breaking.")
-    #         break
+        Co_on_target = (np.abs(Co_now / Co_target - 1.0) < param.rtol).all()
+        Al_on_target = (np.abs(Al_now - Al_target) < 0.5).all()
+        if Co_on_target and Al_on_target:
+            print("  Tolerance reached, breaking.")
+            break
 
-    #     # Die if the initial guess diverges
-    #     if meta_dev is None:
-    #         print("** diverged, quitting.")
-    #         sys.exit()
+        # Die if the initial guess diverges
+        if meta_dev is None:
+            print("** diverged, quitting.")
+            sys.exit()
 
-    #     # Update polytropic effy
-    #     param.eta = meta_dev["eta"]
+        # Update polytropic effy
+        param.eta = meta_dev["eta"]
 
-    #     # Deviations for the flow angles
-    #     dev_vane, dev_blade = Al_target - Al_now
+        # Deviations for the flow angles
+        dev_vane, dev_blade = Al_target - Al_now
 
-    #     # Relative changes for circulation coeff
-    #     dCo = Co_target / Co_now - 1.0
+        # Relative changes for circulation coeff
+        dCo = Co_target / Co_now - 1.0
 
-    #     # Use most recent solution as initial guess
-    #     param.guess_file = os.path.join(
-    #         base_dir, meta_dev["runid"], "output_avg.hdf5"
-    #     )
+        # Use most recent solution as initial guess
+        param.guess_file = os.path.join(base_dir, meta_dev["runid"], "output_avg.hdf5")
 
-    #     # Make an array of parametrs with different amounts of change
-    #     params_fac = []
-    #     for fac in [0.25, 0.5, 0.75, 1.0]:
-    #         param_new = param.copy()
-    #         # Update angles
-    #         param_new.recamber = list(param_new.recamber)
-    #         param_new.recamber[1] += dev_vane * fac
-    #         param_new.recamber[3] -= dev_blade * fac
-    #         # Update circulation coeff
-    #         Co_old = np.array(param_new.Co)
-    #         param_new.Co = list(Co_old * (dCo * fac + 1.0))
-    #         params_fac.append(param_new)
+        # Make an array of parametrs with different amounts of change
+        params_fac = []
+        for fac in [0.25, 0.5, 0.75, 1.0]:
+            param_new = param.copy()
+            # Update angles
+            param_new.recamber = list(param_new.recamber)
+            param_new.recamber[1] += dev_vane * fac
+            param_new.recamber[3] -= dev_blade * fac
+            # Update circulation coeff
+            Co_old = np.array(param_new.Co)
+            param_new.Co = list(Co_old * (dCo * fac + 1.0))
+            params_fac.append(param_new)
 
-    #     # Run all
-    #     meta_fac = _run_parameters(write_func, params_fac, base_dir)
+        # Run all
+        meta_fac = _run_parameters(write_func, params_fac, base_dir)
 
-    #     if None in meta_fac:
-    #         print("** diverged, quitting.")
-    #         sys.exit()
+        if None in meta_fac:
+            print("** diverged, quitting.")
+            sys.exit()
 
-    #     # Check circulation errors
-    #     err_Co = np.array(
-    #         [
-    #             np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0))
-    #             for m in meta_fac
-    #         ]
-    #     )
-    #     err_Al = np.array(
-    #         [
-    #             np.max(
-    #                 np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3])))
-    #             )
-    #             for m in meta_fac
-    #         ]
-    #     )
+        # Check circulation errors
+        err_Co = np.array(
+            [np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0)) for m in meta_fac]
+        )
+        # err_Al = np.array(
+            # [
+                # np.max(np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3]))))
+                # for m in meta_fac
+            # ]
+        # )
 
-    #     # Continue loop with closest circulation coeff
-    #     iCo = err_Co.argmin()
-    #     param = params_fac[iCo]
-    #     meta_dev = meta_fac[iCo]
+        # Continue loop with closest circulation coeff
+        iCo = err_Co.argmin()
+        param = params_fac[iCo]
+        meta_dev = meta_fac[iCo]
 
     # Write out datum parameters for later inspection
     param.write_json(datum_file)
 
     return param
+
 
 def _run_search(write_func):
     """Tabu search both blade rows in turn."""
@@ -781,39 +861,6 @@ def _search_row(base_dir, param, write_func, irow):
 
     # Now return the parameters corresponding to optimum
     return _param_from_x(xopt[0], param, irow)
-
-def _grad(base_dir, param, write_func, irow):
-    """Finite difference approximation of gradient."""
-
-    # Initial guess
-    x0 = _assemble_guess(1)
-    dx = _assemble_step(1)
-    x0[0, 2] = param.stag[irow] + 0.0
-
-    # Wrapped objective and constraint
-    obj, constr = _wrap_for_optimiser(write_func, param, base_dir, irow)
-
-    N = len(dx)
-    dy_dx = np.empty((N,1))
-    x = _finite_difference_moves(x0, dx)
-    y0 = obj(x0)
-    y = obj(x)
-
-    print(y.shape)
-    print(y0.shape)
-    print(dx.shape)
-    dy_dx = (y - y0)/dx.T
-    print(dy_dx)
-
-
-
-def _finite_difference_moves(x, dx):
-    """Generate a set of finite difference moves about a point
-
-    For a design vector with M variables, return a MxM matrix, each variable
-    having being perturbed by elementwise + dx."""
-    d = np.diag(dx.flat)
-    return x + d
 
 
 

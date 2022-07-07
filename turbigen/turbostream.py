@@ -67,7 +67,7 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     rt = rtin + 0.0
     r = np.repeat(rin[:, :, None], nk, axis=2)
     if xin.ndim == 3:
-        x = xin + 0.
+        x = xin + 0.0
     else:
         x = np.tile(xin[:, None, None], (1, nj, nk))
 
@@ -153,9 +153,7 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     # Add slip walls if this is a cascade
     htr = r[0, 1, 0] / r[0, 0, 0]
     if htr > 0.95:
-        slip_j0 = _make_patch(
-            kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
-        )
+        slip_j0 = _make_patch(kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk))
         slip_nj = _make_patch(
             kind="slipwall", bid=bid, i=(0, ni), j=(nj - 1, nj), k=(0, nk)
         )
@@ -253,12 +251,12 @@ def set_variables(g, mu=None):
     g.set_av("poisson_nstep", ts_tstream_type.int, 5000)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
-    # g.set_av("nstep", ts_tstream_type.int, 25000)
-    # g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
+    g.set_av("nstep", ts_tstream_type.int, 25000)
+    g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
     # g.set_av("nstep", ts_tstream_type.int, 100000*2)
     # g.set_av("nstep_save_start", ts_tstream_type.int, 80000*2)
-    g.set_av("nstep", ts_tstream_type.int, 10000)
-    g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
+    # g.set_av("nstep", ts_tstream_type.int, 10000)
+    # g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
@@ -314,8 +312,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin, il
     # calc nb
     t = [rti / ri[..., None] for rti, ri in zip(rt, r)]
     nb = [
-        np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1)))
-        for ti in t
+        np.asscalar(np.round(2.0 * np.pi / np.diff(ti[0, 0, (0, -1)], 1))) for ti in t
     ]
     nb_int = [int(nbi) for nbi in nb]
 
@@ -403,7 +400,7 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin, il
         tsr = ts_tstream_reader.TstreamReader()
         gg = tsr.read(guess_file)
 
-        for var in ["ro", "rovx", "rovr", "rorvt", "roe"]:
+        for var in ["ro", "rovx", "rovr", "rorvt", "roe", "trans_dyn_vis"]:
             for bid in g.get_block_ids():
                 g.set_bp(var, ts_tstream_type.float, bid, gg.get_bp(var, bid))
 
@@ -413,8 +410,22 @@ def make_grid(stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin, il
     else:
         xg = np.concatenate(
             [
-                x[0][ [ 0, ] + ilte[0], 0, 0 ],
-                x[1][ ilte[1] + [ -1, ], 0,0 ],
+                x[0][
+                    [
+                        0,
+                    ]
+                    + ilte[0],
+                    0,
+                    0,
+                ],
+                x[1][
+                    ilte[1]
+                    + [
+                        -1,
+                    ],
+                    0,
+                    0,
+                ],
             ]
         )
         Pog = np.repeat(stg.Po_Po1 * Po1, 2)

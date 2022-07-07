@@ -14,7 +14,7 @@ dxsmth_c = 0.1  # Distance over which to fillet shroud corners
 tte = 0.04  # Trailing edge thickness
 
 
-def streamwise_grid(dx_c ):
+def streamwise_grid(dx_c):
     """Generate non-dimensional streamwise grid vector for a blade row.
 
     The first step in generating an H-mesh is to lay out a vector of axial
@@ -77,9 +77,7 @@ def streamwise_grid(dx_c ):
     else:
         # Otherwise truncate and rescale so that outlet is in exact spot
         x_c = x_c[x_c < dx_c[1] + 1.0]
-        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (
-            x_c[-1] - 1.0
-        ) + 1.0
+        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (x_c[-1] - 1.0) + 1.0
 
     # Get indices of leading and trailing edges
     # These are needed later for patching
@@ -113,9 +111,7 @@ def merid_grid(x_c, rm, Dr):
 
     # If multiple rows are input, call recursively and stack them
     if isinstance(x_c, tuple):
-        return [
-            merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)
-        ]
+        return [merid_grid(x_ci, rm, Dri) for x_ci, Dri in zip(x_c, Dr)]
 
     # Evaluate hub and casing lines on the streamwise grid vector
     # Linear between leading and trailing edges, defaults to constant outside
@@ -130,14 +126,10 @@ def merid_grid(x_c, rm, Dr):
     htr = rh[0] / rc[0]
     if htr > 0.95:
         # Define a uniform span fraction row vector
-        spf = np.atleast_2d(
-            np.linspace(0.0, 1.0, nr_casc)
-        )
+        spf = np.atleast_2d(np.linspace(0.0, 1.0, nr_casc))
     else:
         # Define a clustered span fraction row vector
-        spf = np.atleast_2d(
-            geometry.cluster_cosine(nr)
-        )
+        spf = np.atleast_2d(geometry.cluster_cosine(nr))
 
     # Evaluate radial coordinates: dim 0 is streamwise, dim 1 is radial
     r = spf * np.atleast_2d(rc).T + (1.0 - spf) * np.atleast_2d(rh).T
@@ -178,8 +170,7 @@ def b2b_grid(x, r, s, c, sect):
 
         # Area and centroid of the loop
         terms_cross = (
-            loop_xrt[0, :-1] * loop_xrt[1, 1:]
-            - loop_xrt[0, 1:] * loop_xrt[1, :-1]
+            loop_xrt[0, :-1] * loop_xrt[1, 1:] - loop_xrt[0, 1:] * loop_xrt[1, :-1]
         )
         terms_rt = loop_xrt[1, :-1] + loop_xrt[1, 1:]
         Area = 0.5 * np.sum(terms_cross)
@@ -192,9 +183,7 @@ def b2b_grid(x, r, s, c, sect):
         ile = np.argmin(loop_xrt[0])
         ite = np.argmax(loop_xrt[0])
         upper_xrt = loop_xrt[:, ile : (ite + 1)]
-        lower_xrt = np.insert(
-            np.flip(loop_xrt[:, ite:-1], -1), 0, loop_xrt[:, ile], -1
-        )
+        lower_xrt = np.insert(np.flip(loop_xrt[:, ite:-1], -1), 0, loop_xrt[:, ile], -1)
 
         # fig, ax = plt.subplots()
         # ax.plot(*upper_xrt)
@@ -209,9 +198,7 @@ def b2b_grid(x, r, s, c, sect):
         lower_xrt[1, :] -= rt_cent
 
         rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
-        rtlim[:, j, 1] = (
-            np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
-        )
+        rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
 
     # Define a pitchwise clustering function with correct dimensions
     # clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
@@ -264,9 +251,7 @@ def stage_grid(
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(
-            spf, chii, spf, tte, Ai, stag=stagi
-        )
+        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, stag=stagi)
         for chii, Ai, stagi in zip(chi, A, stag)
     ]
 
@@ -286,10 +271,7 @@ def stage_grid(
                     )
 
     # Now we can do b2b grids
-    rt = [
-        b2b_grid(*args)
-        for args in zip(x, r, Dstg.s, Dstg.cx, sect)
-    ]
+    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
 
     # Offset the rotor so it is downstream of stator
     x[1] = x[1] + x[0][-1] - x[1][0]
@@ -304,18 +286,18 @@ def stage_grid(
     x = [smooth(*args) for args in zip(x, rt, ilte)]
 
     # Repeat a number of times
-    for _ in range(resolution-1):
+    for _ in range(resolution - 1):
         # Deal with indices
-        ilte = tuple([[ind*2 for ind in iltei] for iltei in ilte])
+        ilte = tuple([[ind * 2 for ind in iltei] for iltei in ilte])
         # For rotor and stator
-        x, r, rt = [[refine_nested(vi) for vi in v] for v in [x,r,rt]]
-
+        x, r, rt = [[refine_nested(vi) for vi in v] for v in [x, r, rt]]
 
     return x, r, rt, ilte
 
+
 def refine_nested(v):
-    if v.ndim==1:
-        v = np.insert(v, range(1,len(v)), 0.5*(v[:-1]+v[1:]))
+    if v.ndim == 1:
+        v = np.insert(v, range(1, len(v)), 0.5 * (v[:-1] + v[1:]))
     else:
         # Loop over all dimensions of that var
         for d in range(v.ndim):
@@ -324,9 +306,9 @@ def refine_nested(v):
             vtmp = np.moveaxis(v, d, 0)
 
             # Insert new points before everywhere except first pt
-            ind = np.arange(1,vtmp.shape[0])
-            vmid = 0.5*(vtmp[:-1,...]+vtmp[1:,...])
-            vtmp = np.insert(vtmp,ind,vmid,0)
+            ind = np.arange(1, vtmp.shape[0])
+            vmid = 0.5 * (vtmp[:-1, ...] + vtmp[1:, ...])
+            vtmp = np.insert(vtmp, ind, vmid, 0)
 
             # Put axis back
             v = np.moveaxis(vtmp, 0, d)
@@ -336,26 +318,28 @@ def refine_nested(v):
 def smooth(x, rt, ilte):
     """Smooth x in streamwise direction."""
     nsmth = 200
-    x_smth = x + 0.
+    x_smth = x + 0.0
     for _ in range(nsmth):
-        x_smth[1:-1] = (x_smth[:-2]+x_smth[2:])/2.
-        x_smth[ilte] = x[ilte] + 0.
+        x_smth[1:-1] = (x_smth[:-2] + x_smth[2:]) / 2.0
+        x_smth[ilte] = x[ilte] + 0.0
 
     # add a bit of an offset
     xle, xte = x[ilte]
-    frac_cx = (x - xle)/(xte-xle)
-    delta = 0.1*(xte-xle)
-    offset = np.interp(frac_cx, [frac_cx[0], 0., 1.,frac_cx[-1]], [0.,-1.2*delta, delta,0.])
+    frac_cx = (x - xle) / (xte - xle)
+    delta = 0.1 * (xte - xle)
+    offset = np.interp(
+        frac_cx,
+        [frac_cx[0], 0.0, 1.0, frac_cx[-1]],
+        [0.0, -1.2 * delta, delta, 0.0],
+    )
     x_smth += offset
 
     # Weight the x coordinate towards smoothed at mid-passage, unsmooth on wall
-    frac_pitch = (rt-rt[:,:,(0,)])/(rt[:,:,(-1,)]-rt[:,:,(0,)])
-    frac_smth = 4.*frac_pitch*(1.-frac_pitch)
+    frac_pitch = (rt - rt[:, :, (0,)]) / (rt[:, :, (-1,)] - rt[:, :, (0,)])
+    frac_smth = 4.0 * frac_pitch * (1.0 - frac_pitch)
     # frac_smth = np.empty_like(frac_pitch)
     # frac_smth[frac_pitch<0.5] = 2.*frac_pitch[frac_pitch<0.5]
     # frac_smth[frac_pitch>=0.5] = 2.-2.*frac_pitch[frac_pitch>=0.5]
-    x_smth = np.reshape(x_smth,(-1,1,1))
-    x_ref = np.reshape(x,(-1,1,1))
-    return frac_smth * x_smth + (1.-frac_smth)*x_ref
-
-
+    x_smth = np.reshape(x_smth, (-1, 1, 1))
+    x_ref = np.reshape(x, (-1, 1, 1))
+    return frac_smth * x_smth + (1.0 - frac_smth) * x_ref

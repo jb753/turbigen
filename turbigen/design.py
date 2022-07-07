@@ -98,9 +98,7 @@ class DimStage(_DimStage):
         rc_vane = self.rc[:2].reshape(-1, 1)
         Al_vane = self.Al[:2].reshape(-1, 1)
 
-        r_rm = (
-            np.reshape(spf, (1, -1)) * (rh_vane - rc_vane) + rh_vane
-        ) / self.rm
+        r_rm = (np.reshape(spf, (1, -1)) * (rh_vane - rc_vane) + rh_vane) / self.rm
 
         return np.degrees(np.arctan(np.tan(np.radians(Al_vane)) / r_rm))
 
@@ -111,9 +109,7 @@ class DimStage(_DimStage):
         rc_blade = self.rc[1:].reshape(-1, 1)
         Al_blade = self.Al[1:].reshape(-1, 1)
 
-        r_rm = (
-            np.reshape(spf, (1, -1)) * (rc_blade - rh_blade) + rh_blade
-        ) / self.rm
+        r_rm = (np.reshape(spf, (1, -1)) * (rc_blade - rh_blade) + rh_blade) / self.rm
 
         return np.degrees(
             np.arctan(np.tan(np.radians(Al_blade)) / r_rm - r_rm / self.phi)
@@ -365,9 +361,7 @@ def nondim_stage_from_Lam(
             print("Al_soln", Al_soln)
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
-    stg_out = nondim_stage_from_Al(
-        phi, psi, [Al1, Al_soln], Ma2, ga, eta, Vx_rat
-    )
+    stg_out = nondim_stage_from_Al(phi, psi, [Al1, Al_soln], Ma2, ga, eta, Vx_rat)
 
     return stg_out
 
@@ -457,9 +451,7 @@ def pitch_Zweifel(stg, Z):
 
     Alrelr = np.radians(stg.Alrel)
     cosAlrel = np.cos(Alrelr)
-    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(
-        Alrelr
-    )
+    V_cpTo_sinAlrel = compflow.V_cpTo_from_Ma(stg.Marel, stg.ga) * np.sin(Alrelr)
 
     P2_Po1 = stg.Po_Po1[1] / compflow.Po_P_from_Ma(stg.Ma[1], stg.ga)
     P3_Po2_rel = (

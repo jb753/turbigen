@@ -121,7 +121,5 @@ def test_stage():
             dt = t[:, :, -1] - t[:, :, 0]
             tol = 1e-6
             assert np.all(dt - pitch_t < tol)  # Everywhere
-            assert np.all(
-                np.isclose(dt[: ilte[0] + 1, :], pitch_t)
-            )  # Inlet duct
+            assert np.all(np.isclose(dt[: ilte[0] + 1, :], pitch_t))  # Inlet duct
             assert np.all(np.isclose(dt[ilte[1], :], pitch_t))  # Exit duct

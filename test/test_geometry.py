@@ -149,9 +149,7 @@ def test_Rle_beta():
 
             # Evaluate section coordinates
             chi = (0.0, 0.0)  # No camber so we can look at LE/TE easily
-            xy = np.stack(
-                geometry._loop_section(geometry._section_xy(chi, A, tte))
-            )
+            xy = np.stack(geometry._loop_section(geometry._section_xy(chi, A, tte)))
 
             # Fit a circle to get centre point
             xfit = 0.01

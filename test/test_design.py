@@ -98,10 +98,7 @@ def test_Zweifel():
         # Evaluate low-speed lossless approximation
         Alr = np.radians(stg.Al)
         s_c_stator = (
-            Z
-            / 2.0
-            / (np.cos(Alr[1]) ** 2.0)
-            / (np.tan(Alr[1]) - np.tan(Alr[0]))
+            Z / 2.0 / (np.cos(Alr[1]) ** 2.0) / (np.tan(Alr[1]) - np.tan(Alr[0]))
         )
         Alrelr = np.radians(stg.Alrel)
         s_c_rotor = (
@@ -112,9 +109,7 @@ def test_Zweifel():
         )
 
         # Check that the two are within a tolerance
-        assert np.all(
-            np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
-        )
+        assert np.all(np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4)
 
 
 def test_circulation_coeff():
@@ -143,17 +138,13 @@ def test_circulation_coeff():
         print((s_c_stator, s_c_rotor))
 
         # Check that the two are within a tolerance
-        assert np.all(
-            np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
-        )
+        assert np.all(np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4)
 
 
 def test_repeating():
     """Verify analytically some repeating stage velocity triangles."""
     for stg in get_geometries("repeating"):
-        psi_out = 2.0 * (
-            1.0 - stg.Lam - stg.phi * np.tan(np.radians(stg.Al[0]))
-        )
+        psi_out = 2.0 * (1.0 - stg.Lam - stg.phi * np.tan(np.radians(stg.Al[0])))
         assert np.isclose(stg.psi, psi_out)
 
 
@@ -201,9 +192,7 @@ def test_loss():
     """Check that polytropic efficiency, loss coeffs and Po are correct."""
     for stg in get_geometries("datum"):
         # Check efficiency
-        eta_out = (
-            np.log(stg.To_To1[-1]) / np.log(stg.Po_Po1[-1]) * ga / (ga - 1.0)
-        )
+        eta_out = np.log(stg.To_To1[-1]) / np.log(stg.Po_Po1[-1]) * ga / (ga - 1.0)
         assert np.isclose(eta_out, stg.eta)
 
         # Check loss coeffs
@@ -324,10 +313,7 @@ def test_free_vortex():
         # Make radius ratios
         rh = rm - Dr / 2.0
         rc = rm + Dr / 2.0
-        r_rm = (
-            np.stack([np.linspace(rhi, rci, 20) for rhi, rci in zip(rh, rc)])
-            / rm
-        )
+        r_rm = np.stack([np.linspace(rhi, rci, 20) for rhi, rci in zip(rh, rc)]) / rm
 
         # Run through the free-vortex functions with no deviation
         chi_vane, chi_blade = design.free_vortex(stg, r_rm, (0.0, 0.0))
@@ -350,10 +336,7 @@ def test_deviation():
         # Make radius ratios
         rh = rm - Dr / 2.0
         rc = rm + Dr / 2.0
-        r_rm = (
-            np.stack([np.linspace(rhi, rci, 20) for rhi, rci in zip(rh, rc)])
-            / rm
-        )
+        r_rm = np.stack([np.linspace(rhi, rci, 20) for rhi, rci in zip(rh, rc)]) / rm
 
         # Loop over deviations
         dev = [0.0, 1.0]
@@ -370,9 +353,5 @@ def test_deviation():
         # But we aim to counteract this effect by moving metal
         # So with more deviation, the metal angle must
         # increase for vane, decrease for blade
-        assert np.all(
-            np.isclose(np.diff(chi_vane[:, 1, :], 1, 0), np.diff(dev, 1))
-        )
-        assert np.all(
-            np.isclose(np.diff(chi_blade[:, 1, :], 1, 0), -np.diff(dev, 1))
-        )
+        assert np.all(np.isclose(np.diff(chi_vane[:, 1, :], 1, 0), np.diff(dev, 1)))
+        assert np.all(np.isclose(np.diff(chi_blade[:, 1, :], 1, 0), -np.diff(dev, 1)))
