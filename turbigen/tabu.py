@@ -130,7 +130,9 @@ class Memory:
 
         # Check that the requested points really are available
         if np.any(~self.contains(Xtest)):
-            raise ValueError("The requested points have not been previously evaluated")
+            raise ValueError(
+                "The requested points have not been previously evaluated"
+            )
 
         return self.Y[find_rows(Xtest, self.X)[1]]
 
@@ -430,7 +432,9 @@ class TabuSearch:
             if self.max_parallel:
 
                 # Evaluate in batches
-                isplit = range(self.max_parallel, len(X_unseen), self.max_parallel)
+                isplit = range(
+                    self.max_parallel, len(X_unseen), self.max_parallel
+                )
                 X_batch = np.split(X_unseen, isplit)
                 Y_batch = [self.objective(Xi) for Xi in X_batch]
 
@@ -647,7 +651,8 @@ class TabuSearch:
 
             if self.verbose:
                 print(
-                    "  x = %s\n  y = %s" % tuple([np.array_str(xy) for xy in (x1, y1)])
+                    "  x = %s\n  y = %s"
+                    % tuple([np.array_str(xy) for xy in (x1, y1)])
                 )
             # Add chosen point to short-term list (tabu)
             self.mem_short.add(x1)

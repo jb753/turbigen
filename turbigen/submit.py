@@ -10,7 +10,7 @@ TURBIGEN_ROOT = os.path.join("/".join(__file__.split("/")[:-1]), "..")
 TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit.sh")
 TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
-OBJECTIVE_KEYS = ["eta_lost", "psi", "phi", "Lam", "Ma2", "runid","resid"]
+OBJECTIVE_KEYS = ["eta_lost_percent", "psi", "phi", "Lam", "Ma2", "runid", "resid"]
 CONSTR_KEYS = ["psi", "phi", "Lam", "Ma2"]
 
 X_KEYS = [
@@ -34,13 +34,13 @@ X_BOUNDS = {
 }
 
 X_BOUNDS_REL = {
-    "dchi_in": (-1., 6.),
-    "dchi_out": (-10., 10.0),
+    "dchi_in": (-1.0, 6.0),
+    "dchi_out": (-10.0, 10.0),
     "stag": (-90.0, 90.0),
-    "Rle": (-5., 20.),
-    "thick_ps": (-5., 20.),
-    "thick_ss": (-5, 20.),
-    "beta": (-4., 4.),
+    "Rle": (-5.0, 20.0),
+    "thick_ps": (-5.0, 20.0),
+    "thick_ss": (-5, 20.0),
+    "beta": (-4.0, 4.0),
 }
 
 X_GUESS = {
@@ -66,7 +66,8 @@ X_STEP = {
 
 def _concatenate_dict(list_of_dicts):
     return {
-        k: np.reshape([d[k] for d in list_of_dicts], (-1, 1)) for k in list_of_dicts[0]
+        k: np.reshape([d[k] for d in list_of_dicts], (-1, 1))
+        for k in list_of_dicts[0]
     }
 
 
@@ -183,13 +184,7 @@ class ParameterSet:
             "tte",
             "stag",
         ],
-        "run": [
-            "guess_file",
-            "rtol",
-            "dampin",
-            "ilos",
-            "resid"
-        ],
+        "run": ["guess_file", "rtol", "dampin", "ilos", "resid"],
     }
 
     def __init__(self, var_dict):
@@ -219,7 +214,9 @@ class ParameterSet:
             dat = json.load(f)
 
         # Sort out multi-dimensional thickness coeffs
-        dat["mesh"]["A"] = np.reshape(dat["mesh"]["Aflat"], dat["mesh"]["shape_A"])
+        dat["mesh"]["A"] = np.reshape(
+            dat["mesh"]["Aflat"], dat["mesh"]["shape_A"]
+        )
         for key in ("Aflat", "shape_A"):
             dat["mesh"].pop(key)
 
@@ -332,14 +329,16 @@ def _run_parameters(write_func, params_all, base_dir):
     for params_now in params_split:
 
         # Set up N working directories
-        workdirs = [_write_input(write_func, params, base_dir) for params in params_now]
+        workdirs = [
+            _write_input(write_func, params, base_dir) for params in params_now
+        ]
 
         Nb = len(params_now)
         # Start the processes
         cmds = ["CUDA_VISIBLE_DEVICES=%d sh submit.sh" % n for n in range(Nb)]
-        # print('Batch size %d' % Nb)
         processes = [
-            subprocess.Popen(cmd, cwd=wd, shell=True) for cmd, wd in zip(cmds, workdirs)
+            subprocess.Popen(cmd, cwd=wd, shell=True)
+            for cmd, wd in zip(cmds, workdirs)
         ]
 
         # Wait for all processes
@@ -368,9 +367,9 @@ def _param_from_x(xn, param_datum, row_index):
     dx = _assemble_step(1)[0]
 
     # Apply datum stagger
-    xref[2] = param_datum.stag[row_index] + 0.
+    xref[2] = param_datum.stag[row_index] + 0.0
     # Convert from normalised xn to dimensional x
-    x = xn*dx + xref
+    x = xn * dx + xref
 
     param = param_datum.copy()
 
@@ -390,16 +389,16 @@ def _param_from_x(xn, param_datum, row_index):
         thick = np.flip(thick, axis=0)
     beta = x[6]
 
-    param.stag = [stag+0. for stag in param.stag]
-    param.stag[row_index] = x[2] + 0.
+    param.stag = [stag + 0.0 for stag in param.stag]
+    param.stag[row_index] = x[2] + 0.0
 
     Anew = geometry.A_from_Rle_thick_beta(Rle, thick, beta, param_datum.tte)
 
     param.A = param.A + 0.0
     param.A[row_index] = Anew
 
-    if np.any(param.stag==0.):
-        raise Exception('Stagger should not be zero')
+    if np.any(param.stag == 0.0):
+        raise Exception("Stagger should not be zero")
 
     return param
 
@@ -408,9 +407,11 @@ def _assemble_bounds(nrow):
     """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
     return np.tile(np.column_stack([X_BOUNDS[k] for k in X_KEYS]), nrow)
 
+
 def _assemble_bounds_rel(nrow):
     """Return a (2, nx*nrow) matrix of bounds for some number of rows."""
     return tuple([X_BOUNDS_REL[k] for k in X_KEYS])
+
 
 def _assemble_guess(nrow):
     return np.tile(np.atleast_2d([X_GUESS[k] for k in X_KEYS]), nrow)
@@ -449,7 +450,7 @@ def _constrain_x_param(xn, write_func, param_datum, irow, verbose=False):
     if input_ok:
         geom_ok = check_constraint(write_func, param)
         if verbose and not geom_ok:
-            print('geometry generation failed')
+            print("geometry generation failed")
         return geom_ok
     else:
         return False
@@ -466,11 +467,15 @@ def _param_to_y(param):
     return y
 
 
-def _wrap_for_optimiser(write_func, param_datum, base_dir, irow, nan_constr=True):
+def _wrap_for_optimiser(
+    write_func, param_datum, base_dir, irow, nan_constr=True
+):
     """A closure that wraps turbine creation and running for the optimiser."""
 
     def _constraint(x):
-        return [_constrain_x_param(xi, write_func, param_datum, irow) for xi in x]
+        return [
+            _constrain_x_param(xi, write_func, param_datum, irow) for xi in x
+        ]
 
     def _objective(x):
         # Get parameter sets for all rows of x
@@ -493,6 +498,7 @@ def _wrap_for_optimiser(write_func, param_datum, base_dir, irow, nan_constr=True
 
     return _objective, _constraint
 
+
 def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
     """Closure to wraps turbine creation and running with gradient."""
 
@@ -507,31 +513,44 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
             print(s)
 
     def _eval_func(x):
-        xt = tuple(x)
-        if xt in _cache:
-            printv('Cache: %s' % str(xt))
-            return _cache[xt]
-        printv('Eval: %s' % str(xt))
-        param = _param_from_x(x, param_datum, irow)
-        metadata = _run_parameters(write_func, param, base_dir)[0]
-        y = _metadata_to_y(metadata)
-        _cache[xt] = y
-        return y
+        if np.shape(x[0]) == ():
+            # Only one x
+            xt = tuple(x)
+            if xt in _cache:
+                printv("Cache: %s" % str(xt))
+                return _cache[xt]
+            printv("Eval: %s" % str(xt))
+            param = _param_from_x(x, param_datum, irow)
+            metadata = _run_parameters(write_func, param, base_dir)[0]
+            y = _metadata_to_y(metadata)
+            _cache[xt] = y
+            return y
+        else:
+            # Run in parallel
+            printv("Eval parallel: %s" % str(x))
+            params = [_param_from_x(xi, param_datum, irow) for xi in x]
+            metadata = _run_parameters(write_func, params, base_dir)
+            y = np.stack([_metadata_to_y(mi) for mi in metadata])
+            return y
+
+
 
     def _eval_grad(x0):
 
         xt0 = tuple(x0)
         if xt0 in _cache_grad:
-            printv('Cache grad: %s' % str(xt0))
+            printv("Cache grad: %s" % str(xt0))
             return _cache_grad[xt0]
 
         # Perturb x about initial point
-        dx = eps*np.ones((len(x0),))
-        x = np.insert(x0 + np.diag(dx),0,x0,axis=0)
+        dx = eps * np.ones((len(x0),))
+        x = np.insert(x0 + np.diag(dx), 0, x0, axis=0)
 
         # Evaluate and get gradient
-        y = np.stack([_eval_func(xi) for xi in x])
-        grad_y = (y[1:,:]-y[(0,),:])/np.tile(dx,(y.shape[1],1)).T
+        # y = np.stack([_eval_func(xi) for xi in x])
+        y = _eval_func(x)
+
+        grad_y = (y[1:, :] - y[(0,), :]) / np.tile(dx, (y.shape[1], 1)).T
 
         # Save grad of all vars in cache for later
         _cache_grad[xt0] = grad_y
@@ -542,7 +561,7 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
         return _eval_func(x)[0]
 
     def _df_dx(x0):
-        return _eval_grad(x0)[:,0]
+        return _eval_grad(x0)[:, 0]
 
     def _constraint(x, ind, upper):
         # Determine errors with respect to target values
@@ -559,7 +578,7 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
         # Determine errors with respect to target values
         dy_dx = _eval_grad(x)
         y_target = _param_to_y(param_datum)
-        grad_norm = dy_dx[:,ind]/y_target[ind]
+        grad_norm = dy_dx[:, ind] / y_target[ind]
         if upper:
             return -grad_norm
         else:
@@ -569,11 +588,28 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
     ind_constr = [OBJECTIVE_KEYS.index(k) for k in CONSTR_KEYS]
 
     # assemble dict of constraints for SLSQP
-    upper = [{'type': 'ineq', 'fun': _constraint, 'jac': _constraint_grad, 'args': (i, True)} for i in ind_constr]
-    lower = [{'type': 'ineq', 'fun': _constraint, 'jac': _constraint_grad, 'args': (i, False)} for i in ind_constr]
+    upper = [
+        {
+            "type": "ineq",
+            "fun": _constraint,
+            "jac": _constraint_grad,
+            "args": (i, True),
+        }
+        for i in ind_constr
+    ]
+    lower = [
+        {
+            "type": "ineq",
+            "fun": _constraint,
+            "jac": _constraint_grad,
+            "args": (i, False),
+        }
+        for i in ind_constr
+    ]
     all_constr = upper + lower
 
     return _f, _df_dx, all_constr, _cache
+
 
 def run_search(param, base_name, group_name):
     base_dir = os.path.join(TURBIGEN_ROOT, group_name, base_name)
@@ -702,7 +738,9 @@ def _initial_search(write_func):
     param_damp.dampin = 3.0
     param_damp.ilos = 1
     meta_damp = _run_parameters(write_func, param_damp, base_dir)[0]
-    param.guess_file = os.path.join(base_dir, meta_damp["runid"], "output_avg.hdf5")
+    param.guess_file = os.path.join(
+        base_dir, meta_damp["runid"], "output_avg.hdf5"
+    )
 
     # Die if the initial guess diverges
     if meta_damp is None:
@@ -751,7 +789,9 @@ def _initial_search(write_func):
         dCo = Co_target / Co_now - 1.0
 
         # Use most recent solution as initial guess
-        param.guess_file = os.path.join(base_dir, meta_dev["runid"], "output_avg.hdf5")
+        param.guess_file = os.path.join(
+            base_dir, meta_dev["runid"], "output_avg.hdf5"
+        )
 
         # Make an array of parametrs with different amounts of change
         params_fac = []
@@ -775,13 +815,16 @@ def _initial_search(write_func):
 
         # Check circulation errors
         err_Co = np.array(
-            [np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0)) for m in meta_fac]
+            [
+                np.max(np.abs(np.array(m["Co"]) / Co_target - 1.0))
+                for m in meta_fac
+            ]
         )
         # err_Al = np.array(
-            # [
-                # np.max(np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3]))))
-                # for m in meta_fac
-            # ]
+        # [
+        # np.max(np.abs(Al_target - np.array((m["Alrel"][1], m["Alrel"][3]))))
+        # for m in meta_fac
+        # ]
         # )
 
         # Continue loop with closest circulation coeff
@@ -861,8 +904,6 @@ def _search_row(base_dir, param, write_func, irow):
 
     # Now return the parameters corresponding to optimum
     return _param_from_x(xopt[0], param, irow)
-
-
 
 
 def check_constraint(write_func, params):

@@ -156,7 +156,9 @@ def mix_out(cuts):
         mix["tstag"] = total["energy"] / total["mass"]
 
         # Velocity magnitude
-        mix["vabs"] = np.sqrt(mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0)
+        mix["vabs"] = np.sqrt(
+            mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0
+        )
 
         # Lookup compressible flow relation
         V_cpTo = mix["vabs"] / np.sqrt(cp * mix["tstag"])
@@ -210,7 +212,9 @@ def mix_out(cuts):
 
     cut_out.mach = cut_out.vabs / np.sqrt(ga * rgas * cut_out.tstat)
     cut_out.pstag = compflow.Po_P_from_Ma(cut_out.mach, ga) * cut_out.pstat
-    cut_out.pstag_rel = compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    cut_out.pstag_rel = (
+        compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    )
 
     cut_out.yaw = np.degrees(np.arctan2(cut_out.vt, cut_out.vx))
     cut_out.yaw_rel = np.degrees(np.arctan2(cut_out.vt_rel, cut_out.vx))
@@ -278,7 +282,8 @@ def _integrate_length(chi):
 def find_chord(g, bid):
     """Determine axial chord of a row."""
     x, r, rt = [
-        np.swapaxes(g.get_bp(vi, bid), 0, -1)[:, 2, (0, -1)] for vi in ["x", "r", "rt"]
+        np.swapaxes(g.get_bp(vi, bid), 0, -1)[:, 2, (0, -1)]
+        for vi in ["x", "r", "rt"]
     ]
     dt = np.diff(rt / r, 1, axis=1).flat
     pitch = dt[0]
@@ -310,7 +315,10 @@ def circ_coeff(g, bid, Po1, P2):
     Cp[Cp < 0.0] = 0.0
     # Normalise distance
     surfn = surf / surf[(-1,), :]
-    side = [np.trapz(np.sqrt(Cpi), surfi, axis=0) for Cpi, surfi in zip(Cp.T, surfn.T)]
+    side = [
+        np.trapz(np.sqrt(Cpi), surfi, axis=0)
+        for Cpi, surfi in zip(Cp.T, surfn.T)
+    ]
     if g.get_bv("rpm", bid):
         return side[0] - side[1], surf[-1, 0]
     else:
@@ -401,7 +409,9 @@ if __name__ == "__main__":
 
     # Loss coefficients
     Ypv = (sta_in.pstag - sta_out.pstag) / (sta_in.pstag - sta_out.pstat)
-    Ypb = (rot_in.pstag_rel - rot_out.pstag_rel) / (rot_in.pstag_rel - rot_out.pstat)
+    Ypb = (rot_in.pstag_rel - rot_out.pstag_rel) / (
+        rot_in.pstag_rel - rot_out.pstat
+    )
     Yp = [Ypv, Ypb]
 
     # Axial velocity ratio
@@ -420,6 +430,7 @@ if __name__ == "__main__":
         "psi": Psi,
         "eta": eff_poly,
         "eta_lost": 1.0 - eff_poly,
+        "eta_lost_percent": (1.0 - eff_poly) * 100.,
         "eta_isen": eff_isen,
         "runid": run_name,
         "Ma2": sta_out.mach,
@@ -450,7 +461,9 @@ if __name__ == "__main__":
     eta_lost_pc = (1.0 - eff_poly) * 100.0
     fig, ax = plt.subplots()
     title_string = (
-        ", ".join(["%s=%.2f" % (v, meta[v]) for v in ["phi", "psi", "Lam", "Ma2"]])
+        ", ".join(
+            ["%s=%.2f" % (v, meta[v]) for v in ["phi", "psi", "Lam", "Ma2"]]
+        )
         + ", Co=%.2f,%.2f" % tuple(meta["Co"])
         + ", lost eta = %.1f\%%" % eta_lost_pc
     )

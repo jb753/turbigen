@@ -250,7 +250,9 @@ def _rotate_section(sect, gam):
 
     # Make rotation matrix
     gamr = np.radians(gam)
-    rot = np.array([[np.cos(gamr), -np.sin(gamr)], [np.sin(gamr), np.cos(gamr)]])
+    rot = np.array(
+        [[np.cos(gamr), -np.sin(gamr)], [np.sin(gamr), np.cos(gamr)]]
+    )
 
     return np.matmul(rot, sect)
 
@@ -293,7 +295,9 @@ def _fit_aerofoil(xy, chi, order):
             itrim = np.abs(xc - 0.5) < (0.5 - dx)
         xtrim_all.append(xc[itrim])
         strim_all.append(s[itrim])
-        X_all.append(np.stack([_bernstein(xc[itrim], n, i) for i in range(1, n + 1)]).T)
+        X_all.append(
+            np.stack([_bernstein(xc[itrim], n, i) for i in range(1, n + 1)]).T
+        )
         X_le_all.append(_bernstein(xc[itrim], n, 0))
 
     strim = np.concatenate(strim_all)
@@ -353,7 +357,11 @@ def _coord_to_thickness(xy, chi):
     x, y = xy
     # Find intersections of xu, yu with camber line perpendicular
     def iterate(xi):
-        return y - evaluate_camber(xi, chi) + (x - xi) / evaluate_camber_slope(xi, chi)
+        return (
+            y
+            - evaluate_camber(xi, chi)
+            + (x - xi) / evaluate_camber_slope(xi, chi)
+        )
 
     with np.errstate(invalid="ignore", divide="ignore"):
         xc = newton(iterate, x)
@@ -379,7 +387,9 @@ def _loop_section(xy):
     return np.concatenate((xy[0], np.flip(xy[1, :, 1:-1], axis=-1)), axis=-1)
 
 
-def radially_interpolate_section(spf, chi, spf_q, tte, A=None, spf_A=None, stag=None):
+def radially_interpolate_section(
+    spf, chi, spf_q, tte, A=None, spf_A=None, stag=None
+):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
     Parameters
@@ -470,7 +480,9 @@ def largest_inscribed_circle(xy):
 
     # Check input
     if not xy.ndim or not xy.shape[1] == 2:
-        raise ValueError("Shape should be (npts, 2), you input %s" % repr(xy.shape))
+        raise ValueError(
+            "Shape should be (npts, 2), you input %s" % repr(xy.shape)
+        )
 
     # Calculate Voronoi vertices (medial axis)
     vor = Voronoi(xy).vertices

@@ -143,7 +143,9 @@ def mix_out(cuts):
         mix["tstag"] = total["energy"] / total["mass"]
 
         # Velocity magnitude
-        mix["vabs"] = np.sqrt(mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0)
+        mix["vabs"] = np.sqrt(
+            mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0
+        )
 
         # Lookup compressible flow relation
         V_cpTo = mix["vabs"] / np.sqrt(cp * mix["tstag"])
@@ -197,7 +199,9 @@ def mix_out(cuts):
 
     cut_out.mach = cut_out.vabs / np.sqrt(ga * rgas * cut_out.tstat)
     cut_out.pstag = compflow.Po_P_from_Ma(cut_out.mach, ga) * cut_out.pstat
-    cut_out.pstag_rel = compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    cut_out.pstag_rel = (
+        compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    )
 
     return cut_out
 
@@ -365,7 +369,8 @@ if __name__ == "__main__":
 
     # Pull out mass-average flow varibles from the cuts
     cuts = [
-        mix_out(ci) for ci in [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]
+        mix_out(ci)
+        for ci in [stator_inlet, stator_outlet, rotor_inlet, rotor_outlet]
     ]
     var_names = [
         "pstag",
@@ -378,7 +383,8 @@ if __name__ == "__main__":
         "pstag_rel",
     ]
     Po, P, To, T, Vx, Vt, Vt_rel, Po_rel = [
-        np.array([getattr(ci, var_name) for ci in cuts]) for var_name in var_names
+        np.array([getattr(ci, var_name) for ci in cuts])
+        for var_name in var_names
     ]
 
     # Calculate entropy change with respect to inlet
@@ -390,7 +396,9 @@ if __name__ == "__main__":
     meta = {}
 
     # Polytropic efficiency
-    meta["eff_poly"] = ga / (ga - 1.0) * np.log(To[3] / To[0]) / np.log(Po[3] / Po[0])
+    meta["eff_poly"] = (
+        ga / (ga - 1.0) * np.log(To[3] / To[0]) / np.log(Po[3] / Po[0])
+    )
     meta["eff_isen"] = (To[3] / To[0] - 1.0) / (
         (Po[3] / Po[0]) ** ((ga - 1.0) / ga) - 1.0
     )
@@ -459,12 +467,18 @@ if __name__ == "__main__":
                     # Indexes for LE and TE
                     pitch = np.diff(dat_now["t"][:, 0, (0, -1), 0], 1, 1)
                     tol = 1e-5
-                    ile = np.where(np.abs(pitch / pitch[0] - 1.0) > tol)[0][0] - 1
-                    ite = np.where(np.abs(pitch / pitch[-1] - 1.0) > tol)[0][-1] + 1
+                    ile = (
+                        np.where(np.abs(pitch / pitch[0] - 1.0) > tol)[0][0] - 1
+                    )
+                    ite = (
+                        np.where(np.abs(pitch / pitch[-1] - 1.0) > tol)[0][-1]
+                        + 1
+                    )
 
                     # Pressure coefficient
                     Cp_now = (
-                        dat_now["pstat"][ile : (ite + 1), 0, (0, -1), :] - Po_rel[2]
+                        dat_now["pstat"][ile : (ite + 1), 0, (0, -1), :]
+                        - Po_rel[2]
                     ) / (Po_rel[2] - P[2])
                     Cp.append(Cp_now)
 
@@ -474,7 +488,8 @@ if __name__ == "__main__":
                     rovx_now = dat_now["rovx"][-2, 0, :, :]
                     mdot_now = np.trapz(rovx_now, rt_now, axis=0)
                     eff_av_now = (
-                        np.trapz(rovx_now * eff_lost_now, rt_now, axis=0) / mdot_now
+                        np.trapz(rovx_now * eff_lost_now, rt_now, axis=0)
+                        / mdot_now
                     )
 
                     # blockage
@@ -494,7 +509,9 @@ if __name__ == "__main__":
                     rovx_ref = mdot_le / A_le
 
                     # Blockage is integral 1 - rovx/rover_ref drt
-                    blockage_now = np.trapz(1.0 - rovx_now / rovx_ref, rt_now, axis=0)
+                    blockage_now = np.trapz(
+                        1.0 - rovx_now / rovx_ref, rt_now, axis=0
+                    )
 
                     mdot_unst.append(mdot_now)
                     eff_lost_unst.append(eff_av_now)
@@ -532,7 +549,9 @@ mdot_unst = np.array(mdot_unst)
 blockage_unst = np.array(blockage_unst)
 
 # Take mass av of each rotor passage effy
-meta["eff_lost_unst"] = (np.sum(eff_lost_unst * mdot_unst, 0) / np.sum(mdot_unst, 0))[:]
+meta["eff_lost_unst"] = (
+    np.sum(eff_lost_unst * mdot_unst, 0) / np.sum(mdot_unst, 0)
+)[:]
 meta["mdot_unst"] = np.sum(mdot_unst, 0)[:]
 meta["blockage_unst"] = np.mean(blockage_unst, 0)[:]
 

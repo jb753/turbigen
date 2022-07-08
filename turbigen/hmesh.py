@@ -77,7 +77,9 @@ def streamwise_grid(dx_c):
     else:
         # Otherwise truncate and rescale so that outlet is in exact spot
         x_c = x_c[x_c < dx_c[1] + 1.0]
-        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (x_c[-1] - 1.0) + 1.0
+        x_c[x_c > 1.0] = (x_c[x_c > 1.0] - 1.0) * dx_c[1] / (
+            x_c[-1] - 1.0
+        ) + 1.0
 
     # Get indices of leading and trailing edges
     # These are needed later for patching
@@ -170,7 +172,8 @@ def b2b_grid(x, r, s, c, sect):
 
         # Area and centroid of the loop
         terms_cross = (
-            loop_xrt[0, :-1] * loop_xrt[1, 1:] - loop_xrt[0, 1:] * loop_xrt[1, :-1]
+            loop_xrt[0, :-1] * loop_xrt[1, 1:]
+            - loop_xrt[0, 1:] * loop_xrt[1, :-1]
         )
         terms_rt = loop_xrt[1, :-1] + loop_xrt[1, 1:]
         Area = 0.5 * np.sum(terms_cross)
@@ -183,7 +186,9 @@ def b2b_grid(x, r, s, c, sect):
         ile = np.argmin(loop_xrt[0])
         ite = np.argmax(loop_xrt[0])
         upper_xrt = loop_xrt[:, ile : (ite + 1)]
-        lower_xrt = np.insert(np.flip(loop_xrt[:, ite:-1], -1), 0, loop_xrt[:, ile], -1)
+        lower_xrt = np.insert(
+            np.flip(loop_xrt[:, ite:-1], -1), 0, loop_xrt[:, ile], -1
+        )
 
         # fig, ax = plt.subplots()
         # ax.plot(*upper_xrt)
@@ -198,7 +203,9 @@ def b2b_grid(x, r, s, c, sect):
         lower_xrt[1, :] -= rt_cent
 
         rtlim[:, j, 0] = np.interp(x[:, 0, 0], *upper_xrt)
-        rtlim[:, j, 1] = np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
+        rtlim[:, j, 1] = (
+            np.interp(x[:, 0, 0], *lower_xrt) + pitch_t * r[:, j, 0]
+        )
 
     # Define a pitchwise clustering function with correct dimensions
     # clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
@@ -251,7 +258,9 @@ def stage_grid(
 
     # Get sections (normalised by axial chord for now)
     sect = [
-        geometry.radially_interpolate_section(spf, chii, spf, tte, Ai, stag=stagi)
+        geometry.radially_interpolate_section(
+            spf, chii, spf, tte, Ai, stag=stagi
+        )
         for chii, Ai, stagi in zip(chi, A, stag)
     ]
 

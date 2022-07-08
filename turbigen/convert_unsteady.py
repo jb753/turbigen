@@ -71,7 +71,9 @@ def convert(input_file, output_file):
     periodic[3] = (1, 2)
 
     # Duplicate the grid to form the sector
-    g2 = ts_tstream_steady_to_unsteady.steady_to_unsteady(g, dup, scale, periodic)
+    g2 = ts_tstream_steady_to_unsteady.steady_to_unsteady(
+        g, dup, scale, periodic
+    )
 
     # variables for unsteady run
     g2.set_av("ncycle", ts_tstream_type.int, ncycle)
