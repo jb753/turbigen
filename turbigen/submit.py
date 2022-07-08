@@ -10,7 +10,15 @@ TURBIGEN_ROOT = os.path.join("/".join(__file__.split("/")[:-1]), "..")
 TS_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit.sh")
 TABU_SLURM_TEMPLATE = os.path.join(TURBIGEN_ROOT, "submit_search.sh")
 
-OBJECTIVE_KEYS = ["eta_lost_percent", "psi", "phi", "Lam", "Ma2", "runid", "resid"]
+OBJECTIVE_KEYS = [
+    "eta_lost_percent",
+    "psi",
+    "phi",
+    "Lam",
+    "Ma2",
+    "runid",
+    "resid",
+]
 CONSTR_KEYS = ["psi", "phi", "Lam", "Ma2"]
 
 X_KEYS = [
@@ -532,8 +540,6 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
             metadata = _run_parameters(write_func, params, base_dir)
             y = np.stack([_metadata_to_y(mi) for mi in metadata])
             return y
-
-
 
     def _eval_grad(x0):
 

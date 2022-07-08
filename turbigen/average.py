@@ -2,7 +2,6 @@
 
 import numpy as np
 import compflow as cf
-import matplotlib.pyplot as plt
 
 
 def node_to_face(var):
@@ -15,9 +14,11 @@ def node_to_face(var):
         )
     )
 
+
 def face_length(c):
     """For (n,m) matrix of coordinates, get face length matrices."""
     return c[1:, 1:] - c[:-1, :-1], c[:-1, 1:] - c[1:, :-1]
+
 
 def face_area(x, r, rt):
     """Calculate x and r areas for all cells in a cut."""
@@ -33,9 +34,11 @@ def face_area(x, r, rt):
 
     return dAx, dAr
 
+
 def area_total(x, r, rt):
     dAx, dAr = face_area(x, r, rt)
     return np.sum(dAx), np.sum(dAr)
+
 
 def area_integrate(x, r, rt, fx, fr):
     """Integrate variable over a y-z area and return total."""
@@ -46,48 +49,48 @@ def area_integrate(x, r, rt, fx, fr):
     fr_face = node_to_face(fr)
 
     # Perform integration
-    return np.sum( fx_face * dAx ) + np.sum( fr_face * dAr)
+    return np.sum(fx_face * dAx) + np.sum(fr_face * dAr)
 
-def specific_heats( ga, rgas ):
+
+def specific_heats(ga, rgas):
     """Calculate specific heats from gas constant and specific heat ratio ."""
-    cv = rgas / (ga-1.)
+    cv = rgas / (ga - 1.0)
     cp = cv * ga
     return cp, cv
+
 
 def primary_to_fluxes(r, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
     """Convert CFD primary variables into fluxes of mass, momentum, energy."""
 
-    cp, cv = specific_heats( ga, rgas )
+    cp, cv = specific_heats(ga, rgas)
 
     # Secondary variables
-    vx, vr, vt, P, T = primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas )
+    vx, vr, vt, P, T = primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas)
 
     # Calculate some secondary variables
-    vsq = vx**2. + vr**2. + vt**2.
-    ho = cp*T + 0.5*vsq
-    rvt = vt*r
+    vsq = vx**2.0 + vr**2.0 + vt**2.0
+    ho = cp * T + 0.5 * vsq
+    rvt = vt * r
 
     # Mass fluxes
     mass_fluxes = np.stack((rovx, rovr))
 
     # Axial momentum fluxes
-    xmom_fluxes = np.stack((rovx*vx + P, rovx*vr))
+    xmom_fluxes = np.stack((rovx * vx + P, rovx * vr))
 
     # Moment of angular momentum fluxes
-    rtmom_fluxes = np.stack((rovx*rvt, rovr*rvt))
+    rtmom_fluxes = np.stack((rovx * rvt, rovr * rvt))
 
     # Stagnation rothalpy fluxes
-    ho_fluxes = np.stack((rovx*(ho - Omega*rvt), rovr*(ho - Omega*rvt) ))
+    ho_fluxes = np.stack((rovx * (ho - Omega * rvt), rovr * (ho - Omega * rvt)))
 
     return mass_fluxes, xmom_fluxes, rtmom_fluxes, ho_fluxes
-
-
 
 
 def mix_out(x, r, rt, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
     """Perform mixed-out averaging."""
 
-    cv = rgas / (ga-1.)
+    cv = rgas / (ga - 1.0)
     cp = cv * ga
 
     # Get fluxes
@@ -113,34 +116,34 @@ def mix_out(x, r, rt, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
 
     # Fixed point iteration
     max_iter = 100
-    tol_rel = 0.0001
-    for _ in range(max_iter):
+    tol_rel = 1e-6
+    for i in range(max_iter):
 
         # Axial velocity by conservation of mass
-        vx_mix = mass_tot/ro_mix/Ax
+        vx_mix = mass_tot / ro_mix / Ax
 
         # Tangential velocity by conservation of moment of angular momentum
-        vt_mix = rtmom_tot/ro_mix/vx_mix/rmid/Ax
+        vt_mix = rtmom_tot / ro_mix / vx_mix / rmid / Ax
 
         # Pressure by conservation of axial momentum
-        P_mix = xmom_tot/Ax - ro_mix*vx_mix**2.
+        P_mix = xmom_tot / Ax - ro_mix * vx_mix**2.0
 
         # Stagnation enthalpy by conservation of energy
-        ho_mix = ho_tot/ro_mix/vx_mix/Ax  + rmid*Omega*vt_mix
+        ho_mix = ho_tot / ro_mix / vx_mix / Ax + rmid * Omega * vt_mix
 
         # Mixed-out Mach
-        vsq_mix = vx_mix**2. + vt_mix**2.
-        V_cpTo_mix = np.sqrt(vsq_mix/ho_mix)
+        vsq_mix = vx_mix**2.0 + vt_mix**2.0
+        V_cpTo_mix = np.sqrt(vsq_mix / ho_mix)
         Ma_mix = cf.Ma_from_V_cpTo(V_cpTo_mix, ga)
 
         # Static temperature
-        T_mix = (ho_mix/cp)/cf.To_T_from_Ma(Ma_mix, ga)
+        T_mix = (ho_mix / cp) / cf.To_T_from_Ma(Ma_mix, ga)
 
         # New density_gess
         ro_new = P_mix / rgas / T_mix
 
         # Check convergence
-        dro = np.abs(ro_new - ro_mix)/ro_mix
+        dro = np.abs(ro_new - ro_mix) / ro_mix
         ro_mix = ro_new
 
         if dro < tol_rel:
@@ -148,37 +151,43 @@ def mix_out(x, r, rt, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
 
     # Convert mixed state to primary variables
     rovx_mix = ro_mix * vx_mix
-    rovr_mix = 0.  # Parallel streamlines, no radial velocity
+    rovr_mix = 0.0  # Parallel streamlines, no radial velocity
     rorvt_mix = ro_mix * rmid * vt_mix
-    roe_mix = ro_mix * ( cv*T_mix + 0.5 * vsq_mix )
+    roe_mix = ro_mix * (cv * T_mix + 0.5 * vsq_mix)
 
     # Return the mixed state
     return rmid, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix
 
+
 def primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas):
     """Convert CFD primary variables to pressure, temperature and velocity."""
-    cp, cv = specific_heats( ga, rgas )
+    cp, cv = specific_heats(ga, rgas)
+
     # Divide out density
-    vx = rovx/ro
-    vr = rovr/ro
-    vt = rorvt/ro/r
-    e = roe/ro
+    vx = rovx / ro
+    vr = rovr / ro
+    vt = rorvt / ro / r
+    e = roe / ro
 
     # Calculate secondary variables
-    vsq = vx**2. + vr**2. + vt**2.
-    T = (e - 0.5*vsq)/cv
-    P = ro*rgas*T
+    vsq = vx**2.0 + vr**2.0 + vt**2.0
+    T = (e - 0.5 * vsq) / cv
+    P = ro * rgas * T
 
     return vx, vr, vt, P, T
 
-if __name__ == "__main__":
 
-    # Coordinates
-    xv = np.linspace(1.,2.)
-    yv = np.linspace(1.,2.)
-    zv = np.linspace(1.,2.)
-    rv = yv**2. + zv**2.
-    tv = np.arctan2(yv, zv)
+def secondary_to_primary(r, vx, vr, vt, P, T, ga, rgas):
+    """Convert secondary variables to CFD primary variables."""
 
-    # Set up a non-uniform flow with uniform mass fluxes
+    cp, cv = specific_heats(ga, rgas)
 
+    vsq = vx**2.0 + vr**2.0 + vt**2.0
+
+    ro = P / rgas / T
+    rovx = ro * vx
+    rovr = ro * vr
+    rorvt = ro * r * vt
+    roe = ro * (cv * T + 0.5 * vsq)
+
+    return ro, rovx, rovr, rorvt, roe

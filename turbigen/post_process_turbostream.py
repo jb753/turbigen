@@ -430,7 +430,7 @@ if __name__ == "__main__":
         "psi": Psi,
         "eta": eff_poly,
         "eta_lost": 1.0 - eff_poly,
-        "eta_lost_percent": (1.0 - eff_poly) * 100.,
+        "eta_lost_percent": (1.0 - eff_poly) * 100.0,
         "eta_isen": eff_isen,
         "runid": run_name,
         "Ma2": sta_out.mach,
