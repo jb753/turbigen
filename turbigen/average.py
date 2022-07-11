@@ -1,7 +1,7 @@
 """Functions for mixed-out averaging."""
 
 import numpy as np
-import compflow as cf
+import compflow_native as cf
 
 
 def node_to_face(var):
@@ -65,10 +65,12 @@ def primary_to_fluxes(r, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
     cp, cv = specific_heats(ga, rgas)
 
     # Secondary variables
-    vx, vr, vt, P, T = primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas)
+    vx, vr, vt, P, T = primary_to_secondary(
+        r, ro, rovx, rovr, rorvt, roe, ga, rgas
+    )
 
     # Calculate some secondary variables
-    vsq = vx**2.0 + vr**2.0 + vt**2.0
+    vsq = vx ** 2.0 + vr ** 2.0 + vt ** 2.0
     ho = cp * T + 0.5 * vsq
     rvt = vt * r
 
@@ -126,13 +128,13 @@ def mix_out(x, r, rt, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega):
         vt_mix = rtmom_tot / ro_mix / vx_mix / rmid / Ax
 
         # Pressure by conservation of axial momentum
-        P_mix = xmom_tot / Ax - ro_mix * vx_mix**2.0
+        P_mix = xmom_tot / Ax - ro_mix * vx_mix ** 2.0
 
         # Stagnation enthalpy by conservation of energy
         ho_mix = ho_tot / ro_mix / vx_mix / Ax + rmid * Omega * vt_mix
 
         # Mixed-out Mach
-        vsq_mix = vx_mix**2.0 + vt_mix**2.0
+        vsq_mix = vx_mix ** 2.0 + vt_mix ** 2.0
         V_cpTo_mix = np.sqrt(vsq_mix / ho_mix)
         Ma_mix = cf.Ma_from_V_cpTo(V_cpTo_mix, ga)
 
@@ -170,7 +172,7 @@ def primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas):
     e = roe / ro
 
     # Calculate secondary variables
-    vsq = vx**2.0 + vr**2.0 + vt**2.0
+    vsq = vx ** 2.0 + vr ** 2.0 + vt ** 2.0
     T = (e - 0.5 * vsq) / cv
     P = ro * rgas * T
 
@@ -182,7 +184,7 @@ def secondary_to_primary(r, vx, vr, vt, P, T, ga, rgas):
 
     cp, cv = specific_heats(ga, rgas)
 
-    vsq = vx**2.0 + vr**2.0 + vt**2.0
+    vsq = vx ** 2.0 + vr ** 2.0 + vt ** 2.0
 
     ro = P / rgas / T
     rovx = ro * vx

@@ -3,6 +3,7 @@ import numpy as np
 import compflow_native as compflow
 import sys, os, json
 from ts import ts_tstream_reader, ts_tstream_cut
+from turbigen import average
 
 Pref = 1e5
 Tref = 300.0
@@ -56,120 +57,32 @@ def face_area(cut):
     return Ax, Ar
 
 
-def mix_out(cuts):
-    """Take a number of structured cuts and mix out the flow at constant A."""
+def mix_out(cut):
+    """Take a structured cuts and mix out the flow at constant A."""
 
-    # If only one cut is input, make a trivial array
-    try:
-        cuts[0]
-    except AttributeError:
-        cuts = [
-            cuts,
-        ]
+    # # If only one cut is input, make a trivial array
+    # try:
+    #     cuts[0]
+    # except AttributeError:
+    #     cuts = [
+    #         cuts,
+    #     ]
 
     # Gas properties
-    cp = cuts[0].cp
-    ga = cuts[0].ga
+    cp = cut.cp
+    ga = cut.ga
     rgas = cp * (ga - 1.0) / ga
-    cv = cp / ga
+    Omega = cut.rpm /60. * 2. * np.pi
 
-    # Identify the flow properties and fluxes we will need for the calculation
-    props = [
-        "ro",
-        "rovx",
-        "rovr",
-        "rorvt",
-        "roe",
-        "pstat",
-        "vx",
-        "r",
-        "vr",
-        "vt",
-        "tstag",
-    ]
-    fluxes = ["mass", "xmom", "rmom", "tmom", "energy"]
+    # Do the mixing
+    r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix = average.mix_out(
+        cut.x, cut.r, cut.rt, cut.ro, cut.rovx, cut.rovr, cut.rorvt, cut.roe, ga, rgas, Omega
+    )
 
-    # Preallocate totals
-    total = {f: 0.0 for f in fluxes}
-    total["Ax"] = 0.0
-    total["Ar"] = 0.0
-
-    # Loop over cuts
-    for cut in cuts:
-
-        # Cell centered primary properties
-        cell = {prop: node_to_face(cut, prop) for prop in props}
-
-        # Cell areas
-        Ax, Ar = face_area(cut)
-
-        # Fluxes of the non-uniform flow
-        flux_x = {
-            "mass": cell["rovx"],
-            "xmom": cell["rovx"] * cell["vx"] + cell["pstat"],
-            "rmom": cell["rovx"] * cell["vr"],
-            "tmom": cell["rovx"] * cell["r"] * cell["vt"],
-            "energy": cell["rovx"] * cell["tstag"],
-        }
-        flux_r = {
-            "mass": cell["rovr"],
-            "xmom": cell["rovr"] * cell["vx"],
-            "rmom": cell["rovr"] * cell["vr"] + cell["pstat"],
-            "tmom": cell["rovr"] * cell["r"] * cell["vt"],
-            "energy": cell["rovr"] * cell["tstag"],
-        }
-
-        # Multiply by area and accumulate totals
-        for f in fluxes:
-            total[f] += np.sum(flux_x[f] * Ax) + np.sum(flux_r[f] * Ar)
-
-        # Accumulate areas
-        total["Ax"] += np.sum(Ax)
-        total["Ar"] += np.sum(Ar)
-
-    # Now we solve for the state of mixed out flow assuming constant area
-
-    # Mix out at the mean radius
-    rmid = np.mean((cut.r.min(), cut.r.max()))
-
-    # Guess for density
-    mix = {"ro": np.mean(cell["ro"])}
-
-    # Iterate on density
-    for i in range(20):
-
-        # Conservation of mass to get mixed out axial velocity
-        mix["vx"] = total["mass"] / mix["ro"] / total["Ax"]
-
-        # Conservation of axial momentum to get mixed out static pressure
-        mix["pstat"] = (
-            total["xmom"] - mix["ro"] * mix["vx"] ** 2.0 * total["Ax"]
-        ) / total["Ax"]
-
-        # Conservation of tangential momentum to get mixed out tangential velocity
-        mix["vt"] = total["tmom"] / mix["ro"] / mix["vx"] / total["Ax"] / rmid
-
-        # Destruction of radial momentum
-        mix["vr"] = 0.0
-
-        # Total temperature from first law of thermodynamics
-        mix["tstag"] = total["energy"] / total["mass"]
-
-        # Velocity magnitude
-        mix["vabs"] = np.sqrt(
-            mix["vx"] ** 2.0 + mix["vr"] ** 2.0 + mix["vt"] ** 2.0
-        )
-
-        # Lookup compressible flow relation
-        V_cpTo = mix["vabs"] / np.sqrt(cp * mix["tstag"])
-        Ma = np.sqrt(V_cpTo ** 2.0 / (ga - 1.0) / (1.0 - 0.5 * V_cpTo ** 2.0))
-        To_T = 1.0 + 0.5 * (ga - 1.0) * Ma ** 2.0
-
-        # Get static T
-        mix["tstat"] = mix["tstag"] / To_T
-
-        # Record mixed out flow condition in primary flow variables
-        mix["ro"] = mix["pstat"] / (rgas * mix["tstat"])
+    # Secondary mixed vars
+    vx_mix, vr_mix, vt_mix, P_mix, T_mix = average.primary_to_secondary(
+        r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix, ga, rgas
+    )
 
     # Max a new cut with the mixed out flow
     cut_out = ts_tstream_cut.TstreamStructuredCut()
@@ -184,26 +97,25 @@ def mix_out(cuts):
     cut_out.ifgas = 0
     cut_out.write_egen = 0
 
-    cut_out.rpm = cuts[0].rpm
+    cut_out.rpm = cut.rpm
     cut_out.x = np.mean(cut.x)
-    cut_out.r = rmid
+    cut_out.r = r_mix
     cut_out.rt = np.mean(cut.rt)
-    cut_out.ro = mix["ro"]
-    cut_out.rovx = mix["ro"] * mix["vx"]
-    cut_out.rovr = mix["ro"] * mix["vr"]
-    cut_out.rorvt = mix["ro"] * mix["vt"] * rmid
-    cut_out.roe = mix["ro"] * (cv * mix["tstat"] + 0.5 * mix["vabs"] ** 2.0)
+    cut_out.ro = ro_mix
+    cut_out.rovx = rovx_mix
+    cut_out.rovr = rovr_mix
+    cut_out.rorvt = rorvt_mix
+    cut_out.roe = roe_mix
 
-    cut_out.tstat = mix["tstat"]
-    cut_out.tstag = mix["tstag"]
-    cut_out.pstat = mix["pstat"]
+    cut_out.tstat = T_mix
+    cut_out.pstat = P_mix
 
-    cut_out.vx = mix["vx"]
-    cut_out.vr = mix["vr"]
-    cut_out.vt = mix["vt"]
-    cut_out.vabs = mix["vabs"]
-    cut_out.U = rmid * cut_out.rpm / 60.0 * 2.0 * np.pi
-    cut_out.vt_rel = mix["vt"] - cut_out.U
+    cut_out.vx = vx_mix
+    cut_out.vr = vr_mix
+    cut_out.vt = vt_mix
+    cut_out.vabs = np.sqrt(vx_mix**2. + vr_mix**2. + vt_mix**2.)
+    cut_out.U = r_mix * Omega
+    cut_out.vt_rel = vt_mix - cut_out.U
 
     cut_out.vabs_rel = np.sqrt(
         cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
@@ -215,6 +127,7 @@ def mix_out(cuts):
     cut_out.pstag_rel = (
         compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
     )
+    cut_out.tstag = compflow.To_T_from_Ma(cut_out.mach, ga) * cut_out.tstat
 
     cut_out.yaw = np.degrees(np.arctan2(cut_out.vt, cut_out.vx))
     cut_out.yaw_rel = np.degrees(np.arctan2(cut_out.vt_rel, cut_out.vx))

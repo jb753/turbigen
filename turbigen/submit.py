@@ -42,9 +42,9 @@ X_BOUNDS = {
 }
 
 X_BOUNDS_REL = {
-    "dchi_in": (-1.0, 6.0),
+    "dchi_in": (-2.0, 6.0),
     "dchi_out": (-10.0, 10.0),
-    "stag": (-90.0, 90.0),
+    "stag": (-10.0, 10.0),
     "Rle": (-5.0, 20.0),
     "thick_ps": (-5.0, 20.0),
     "thick_ss": (-5, 20.0),
@@ -63,12 +63,12 @@ X_GUESS = {
 
 X_STEP = {
     "dchi_in": 5.0,
-    "dchi_out": 0.5,
-    "stag": 1.0,
+    "dchi_out": 1.0,
+    "stag": 2.0,
     "Rle": 0.01,
     "thick_ps": 0.02,
     "thick_ss": 0.02,
-    "beta": 2.0,
+    "beta": 4.0,
 }
 
 
@@ -521,25 +521,28 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
             print(s)
 
     def _eval_func(x):
-        if np.shape(x[0]) == ():
-            # Only one x
-            xt = tuple(x)
-            if xt in _cache:
-                printv("Cache: %s" % str(xt))
-                return _cache[xt]
-            printv("Eval: %s" % str(xt))
-            param = _param_from_x(x, param_datum, irow)
-            metadata = _run_parameters(write_func, param, base_dir)[0]
-            y = _metadata_to_y(metadata)
-            _cache[xt] = y
-            return y
-        else:
-            # Run in parallel
-            printv("Eval parallel: %s" % str(x))
-            params = [_param_from_x(xi, param_datum, irow) for xi in x]
-            metadata = _run_parameters(write_func, params, base_dir)
-            y = np.stack([_metadata_to_y(mi) for mi in metadata])
-            return y
+        try:
+            if np.shape(x[0]) == ():
+                # Only one x
+                xt = tuple(x)
+                if xt in _cache:
+                    printv("Cache: %s" % str(xt))
+                    return _cache[xt]
+                printv("Eval: %s" % str(xt))
+                param = _param_from_x(x, param_datum, irow)
+                metadata = _run_parameters(write_func, param, base_dir)[0]
+                y = _metadata_to_y(metadata)
+                _cache[xt] = y
+                return y
+            else:
+                # Run in parallel
+                printv("Eval parallel: %s" % str(x))
+                params = [_param_from_x(xi, param_datum, irow) for xi in x]
+                metadata = _run_parameters(write_func, params, base_dir)
+                y = np.stack([_metadata_to_y(mi) for mi in metadata])
+                return y
+        except:
+            return np.nan*np.ones((len(OBJECTIVE_KEYS),))
 
     def _eval_grad(x0):
 
