@@ -542,7 +542,7 @@ def _wrap_for_grad(write_func, param_datum, base_dir, irow, eps, verbose=False):
                 y = np.stack([_metadata_to_y(mi) for mi in metadata])
                 return y
         except:
-            return np.nan*np.ones((len(OBJECTIVE_KEYS),))
+            return np.nan * np.ones((len(OBJECTIVE_KEYS),))
 
     def _eval_grad(x0):
 

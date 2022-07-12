@@ -13,7 +13,7 @@ def test_nonuniform_energy():
     rv = np.linspace(1.0, 2.0)
     tv = np.linspace(-np.pi / 8.0, np.pi / 8.0)
     r, t = np.meshgrid(rv, tv, indexing="ij")
-    t = t + np.pi/64*r/r0  # Warp the grid
+    t = t + np.pi / 64 * r / r0  # Warp the grid
     rt = r * t
     r_norm = (r - r0) / (r1 - r0)
     x = np.ones_like(r) * r_norm * 0.2  # Angled cut plane
@@ -32,7 +32,7 @@ def test_nonuniform_energy():
     ro = ro0 * (1.0 + 0.5 * r_norm)
     vx = rovx_ref / ro
     vr = np.zeros_like(vx)
-    P = xmom_ref - ro * vx ** 2.0
+    P = xmom_ref - ro * vx**2.0
     T = P / rgas / ro
     vt = rtmom_ref / ro / vx / r
 
@@ -59,7 +59,7 @@ def test_nonuniform_energy():
     assert np.isclose(rovx_mix, rovx_ref)
 
     # Axial momentum should be reference value
-    assert np.isclose(P_mix + ro_mix * vx_mix ** 2.0, xmom_ref)
+    assert np.isclose(P_mix + ro_mix * vx_mix**2.0, xmom_ref)
 
     # Moment of angular momentum should be reference value
     assert np.isclose(ro_mix * vx_mix * r_mix * vt_mix, rtmom_ref)
@@ -93,7 +93,7 @@ def test_nonuniform_xmom():
     rmid = np.mean((r0, r1))
     vt = rtmom_ref / ro / vx / r
     To = (I_ref + rmid * Omega * vt) / cp
-    vsq = vx ** 2.0 + vr ** 2.0 + vt ** 2.0
+    vsq = vx**2.0 + vr**2.0 + vt**2.0
     v_cpTo = np.sqrt(vsq / cp / To)
     Ma = cf.Ma_from_V_cpTo(v_cpTo, ga)
     T = To / cf.To_T_from_Ma(Ma, ga)
@@ -114,7 +114,7 @@ def test_nonuniform_xmom():
         r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix, ga, rgas
     )
 
-    vsq_mix = vx_mix ** 2.0 + vr_mix ** 2.0 + vt_mix ** 2.0
+    vsq_mix = vx_mix**2.0 + vr_mix**2.0 + vt_mix**2.0
     Ma_mix = np.sqrt(vsq_mix / ga / rgas / T_mix)
     To_mix = T_mix * cf.To_T_from_Ma(Ma_mix, ga)
 
@@ -157,7 +157,7 @@ def test_uniform():
     r_ref = 1000.0
     ro_ref = 1.0
     T_ref = 300.0
-    vsq_ref = vx_ref ** 2.0 + vr_ref ** 2.0 + vt_ref ** 2.0
+    vsq_ref = vx_ref**2.0 + vr_ref**2.0 + vt_ref**2.0
 
     rovx_ref = ro_ref * vx_ref
     rovr_ref = ro_ref * vr_ref
@@ -232,9 +232,9 @@ def test_mixing():
     impulse = mom / mdot3 / np.sqrt(cp * To3)
 
     def F(Ma, F_target):
-        To_T = 1.0 + (ga - 1.0) / 2.0 * Ma ** 2.0
+        To_T = 1.0 + (ga - 1.0) / 2.0 * Ma**2.0
         return (
-            np.sqrt(ga - 1.0) / ga / Ma * (1.0 + ga * Ma ** 2.0) / np.sqrt(To_T)
+            np.sqrt(ga - 1.0) / ga / Ma * (1.0 + ga * Ma**2.0) / np.sqrt(To_T)
             - F_target
         )
 
@@ -309,7 +309,7 @@ def test_radial():
     vt_ref = rvt_ref / r
     ro_ref = 1.0
     T_ref = 300.0
-    vsq_ref = vx_ref ** 2.0 + vr_ref ** 2.0 + vt_ref ** 2.0
+    vsq_ref = vx_ref**2.0 + vr_ref**2.0 + vt_ref**2.0
 
     rovx_ref = ro_ref * vx_ref
     rovr_ref = ro_ref * vr_ref

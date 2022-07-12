@@ -224,7 +224,7 @@ def _section_xy(chi, A, tte, stag, x=None):
 
 def _bernstein(x, n, i):
     """Evaluate ith Bernstein polynomial of degree n at some x-coordinates."""
-    return binom(n, i) * x ** i * (1.0 - x) ** (n - i)
+    return binom(n, i) * x**i * (1.0 - x) ** (n - i)
 
 
 def _to_shape_space(x, z, zte):
@@ -325,7 +325,7 @@ def evaluate_camber(x, chi, stag):
     n = np.sum(tanchi) / tangam
     a = tanchi[1] / n
     b = -tanchi[0] / n
-    y = a * x ** n + b * (1.0 - x) ** n
+    y = a * x**n + b * (1.0 - x) ** n
     y = y - y[0]
     return y
 

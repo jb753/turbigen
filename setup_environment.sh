@@ -22,11 +22,10 @@ fi
 source "$ENV_DIR"/bin/activate
 
 # # Install pyfr into this venv if we have not got it
-if ! pip show pyfr &> /dev/null ; then
+if ! pip show openmdao &> /dev/null ; then
     pip install numpy
     pip install scipy
     pip install compflow
-    # pip install --no-binary :all: --compile mpi4py
     pip install mpi4py
     pip install petsc
     pip install petsc4py

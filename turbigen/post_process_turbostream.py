@@ -72,11 +72,21 @@ def mix_out(cut):
     cp = cut.cp
     ga = cut.ga
     rgas = cp * (ga - 1.0) / ga
-    Omega = cut.rpm /60. * 2. * np.pi
+    Omega = cut.rpm / 60.0 * 2.0 * np.pi
 
     # Do the mixing
     r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix = average.mix_out(
-        cut.x, cut.r, cut.rt, cut.ro, cut.rovx, cut.rovr, cut.rorvt, cut.roe, ga, rgas, Omega
+        cut.x,
+        cut.r,
+        cut.rt,
+        cut.ro,
+        cut.rovx,
+        cut.rovr,
+        cut.rorvt,
+        cut.roe,
+        ga,
+        rgas,
+        Omega,
     )
 
     # Secondary mixed vars
@@ -113,12 +123,12 @@ def mix_out(cut):
     cut_out.vx = vx_mix
     cut_out.vr = vr_mix
     cut_out.vt = vt_mix
-    cut_out.vabs = np.sqrt(vx_mix**2. + vr_mix**2. + vt_mix**2.)
+    cut_out.vabs = np.sqrt(vx_mix**2.0 + vr_mix**2.0 + vt_mix**2.0)
     cut_out.U = r_mix * Omega
     cut_out.vt_rel = vt_mix - cut_out.U
 
     cut_out.vabs_rel = np.sqrt(
-        cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
+        cut_out.vx**2.0 + cut_out.vr**2.0 + cut_out.vt_rel**2.0
     )
     cut_out.mach_rel = cut_out.vabs_rel / np.sqrt(ga * rgas * cut_out.tstat)
 
@@ -189,7 +199,7 @@ def _integrate_length(chi):
     xhat = np.linspace(0.0, 1.0)
     tanchi_lim = np.tan(np.radians(chi))
     tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
-    return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
+    return np.trapz(np.sqrt(1.0 + tanchi**2.0), xhat)
 
 
 def find_chord(g, bid):
@@ -237,18 +247,13 @@ def circ_coeff(g, bid, Po1, P2):
     else:
         return side[1] - side[0], surf[-1, 1]
 
-
-# This file is called as a script from the SLURM job script
-if __name__ == "__main__":
-
-    # Get file paths
-    output_hdf5 = sys.argv[1]
-    if not os.path.isfile(output_hdf5):
-        raise IOError("%s not found." % output_hdf5)
+def post_process( output_hdf5 ):
+    """Do the post processing on a given hdf5"""
 
     basedir = os.path.dirname(os.path.abspath(output_hdf5))
     run_name = os.path.split(os.path.abspath(basedir))[-1]
 
+    print(output_hdf5)
     # Load the flow solution, supressing noisy printing
     tsr = ts_tstream_reader.TstreamReader()
     with suppress_print():
@@ -256,12 +261,11 @@ if __name__ == "__main__":
 
     if np.any(np.isnan(g.get_bp("ro", 0))):
         print("Simulation NaN'd, exiting.")
-        sys.exit()
+        sys.exit(1)
 
     # Gas properties
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio
-    rgas = cp * (1.0 - 1.0 / ga)
     rpm = g.get_bv("rpm", 1)
     omega = rpm / 60.0 * 2.0 * np.pi
 
@@ -271,7 +275,7 @@ if __name__ == "__main__":
 
     # Calculate stage loading coefficient
     U = omega * rot_in.r
-    Psi = cp * (sta_in.tstag - rot_out.tstag) / U ** 2.0
+    Psi = cp * (sta_in.tstag - rot_out.tstag) / U**2.0
 
     # Polytropic efficiency
     eff_poly = (
@@ -364,7 +368,7 @@ if __name__ == "__main__":
 
     # Continue to make graphs if the argument is specified
     if not "--plot" in sys.argv:
-        sys.exit()
+        return
 
     # Lazy import
     import matplotlib.pyplot as plt
@@ -400,3 +404,16 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.savefig(os.path.join(basedir, "Cp.pdf"))
+
+
+# This file is called as a script from the SLURM job script
+if __name__ == "__main__":
+
+
+    # Get file paths
+    output_hdf5 = sys.argv[1]
+    if not os.path.isfile(output_hdf5):
+        raise IOError("%s not found." % output_hdf5)
+
+    post_process(output_hdf5)
+
