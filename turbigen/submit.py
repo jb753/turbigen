@@ -1,8 +1,6 @@
 """Generate and submit a job using a set of input parameters."""
-import json, glob, os, shutil
+import json, glob, os, shutil, subprocess, sys, uuid
 import numpy as np
-import subprocess
-import sys
 from . import geometry, tabu, design
 
 
@@ -71,6 +69,10 @@ X_STEP = {
     "beta": 4.0,
 }
 
+def load_results(metadata_file):
+    with open(metadata_file) as f:
+        return json.load(f)
+
 
 def _concatenate_dict(list_of_dicts):
     return {
@@ -114,6 +116,18 @@ def _make_workdir(base_dir, slurm_template):
 
     # Return the working directory so that we can save input files there
     return workdir
+
+def _make_rundir(base_dir):
+    """Inside base_dir, make new work dir in four-digit integer format."""
+    if not os.path.exists(base_dir):
+        os.mkdir(base_dir)
+    # Make a working directory with unique filename
+    case_str = str(uuid.uuid4())
+    workdir = os.path.join(base_dir, case_str)
+    os.mkdir(workdir)
+    # Return the working directory so that we can save input files there
+    return workdir
+
 
 
 def _write_input(write_func, params, base_dir):
@@ -202,6 +216,8 @@ class ParameterSet:
         for outer_name, inner_names in self._var_names.items():
             for var in inner_names:
                 setattr(self, var, var_dict[outer_name][var])
+        if not np.any(self.stag):
+            self.set_stag()
 
     def __repr__(self):
         return "phi=%.2f, psi=%.2f, Lam=%.2f, Ma2=%.2f, Co=%.2f,%.2f" % (
@@ -249,6 +265,10 @@ class ParameterSet:
     def write_json(self, fname):
         """Write this parameter set to a JSON file."""
 
+        # Check stagger is sensible
+        if not np.any(self.stag):
+            raise Exception('Bad stagger angles.')
+
         dat = self.to_dict()
 
         # Deal with multi-dimensional thickness coeffs
@@ -258,7 +278,7 @@ class ParameterSet:
 
         # Write the file
         with open(fname, "w") as f:
-            json.dump(dat, f)
+            json.dump(dat, f, indent=4)
 
     @property
     def nondimensional(self):

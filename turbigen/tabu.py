@@ -549,7 +549,7 @@ class TabuSearch:
         # Evaluate the objective at given initial guess point, update memories
         y0 = self.initial_guess(x0)
 
-        max_step = dx * self.fac_restart**2.0
+        max_step = dx * self.fac_restart ** 2.0
 
         # Main loop, until max evaluations reached or step size below tolerance
         self.i_search = 0

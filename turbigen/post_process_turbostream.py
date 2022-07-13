@@ -123,12 +123,12 @@ def mix_out(cut):
     cut_out.vx = vx_mix
     cut_out.vr = vr_mix
     cut_out.vt = vt_mix
-    cut_out.vabs = np.sqrt(vx_mix**2.0 + vr_mix**2.0 + vt_mix**2.0)
+    cut_out.vabs = np.sqrt(vx_mix ** 2.0 + vr_mix ** 2.0 + vt_mix ** 2.0)
     cut_out.U = r_mix * Omega
     cut_out.vt_rel = vt_mix - cut_out.U
 
     cut_out.vabs_rel = np.sqrt(
-        cut_out.vx**2.0 + cut_out.vr**2.0 + cut_out.vt_rel**2.0
+        cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
     )
     cut_out.mach_rel = cut_out.vabs_rel / np.sqrt(ga * rgas * cut_out.tstat)
 
@@ -199,7 +199,7 @@ def _integrate_length(chi):
     xhat = np.linspace(0.0, 1.0)
     tanchi_lim = np.tan(np.radians(chi))
     tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
-    return np.trapz(np.sqrt(1.0 + tanchi**2.0), xhat)
+    return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
 
 
 def find_chord(g, bid):
@@ -234,26 +234,31 @@ def extract_surf(g, bid):
 
 def circ_coeff(g, bid, Po1, P2):
     surf, P, _ = extract_surf(g, bid)
+    So = np.max(surf[-1,:])
     Cp = (Po1 - P) / (Po1 - P2)
     Cp[Cp < 0.0] = 0.0
     # Normalise distance
-    surfn = surf / surf[(-1,), :]
     side = [
         np.trapz(np.sqrt(Cpi), surfi, axis=0)
-        for Cpi, surfi in zip(Cp.T, surfn.T)
+        for Cpi, surfi in zip(Cp.T, surf.T)
     ]
     if g.get_bv("rpm", bid):
-        return side[0] - side[1], surf[-1, 0]
+        total_Co = (side[0] - side[1])/So
     else:
-        return side[1] - side[0], surf[-1, 1]
+        total_Co = (side[1] - side[0])/So
 
-def post_process( output_hdf5 ):
+    return total_Co, So
+
+
+def post_process(output_hdf5):
     """Do the post processing on a given hdf5"""
 
     basedir = os.path.dirname(os.path.abspath(output_hdf5))
     run_name = os.path.split(os.path.abspath(basedir))[-1]
 
-    print(output_hdf5)
+    if not os.path.exists(output_hdf5):
+        raise Exception('No output hdf5 found.')
+
     # Load the flow solution, supressing noisy printing
     tsr = ts_tstream_reader.TstreamReader()
     with suppress_print():
@@ -275,7 +280,7 @@ def post_process( output_hdf5 ):
 
     # Calculate stage loading coefficient
     U = omega * rot_in.r
-    Psi = cp * (sta_in.tstag - rot_out.tstag) / U**2.0
+    Psi = cp * (sta_in.tstag - rot_out.tstag) / U ** 2.0
 
     # Polytropic efficiency
     eff_poly = (
@@ -364,7 +369,7 @@ def post_process( output_hdf5 ):
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
-        json.dump(meta, f)
+        json.dump(meta, f, indent=4)
 
     # Continue to make graphs if the argument is specified
     if not "--plot" in sys.argv:
@@ -409,11 +414,9 @@ def post_process( output_hdf5 ):
 # This file is called as a script from the SLURM job script
 if __name__ == "__main__":
 
-
     # Get file paths
     output_hdf5 = sys.argv[1]
     if not os.path.isfile(output_hdf5):
         raise IOError("%s not found." % output_hdf5)
 
     post_process(output_hdf5)
-

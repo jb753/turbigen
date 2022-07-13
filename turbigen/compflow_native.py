@@ -100,7 +100,7 @@ def from_Ma(var, Ma_in, ga_in, validate=True):
     gp1_gm1 = (ga + 1.0) / gm1
 
     # Stagnation temperature ratio appears in every expression
-    To_T = 1.0 + gm1_2 * Ma**2.0
+    To_T = 1.0 + gm1_2 * Ma ** 2.0
 
     # Safe reciprocal of Ma
     with np.errstate(divide="ignore"):
@@ -111,20 +111,20 @@ def from_Ma(var, Ma_in, ga_in, validate=True):
         return To_T
 
     elif var == "Po_P":
-        return To_T**g_gm1
+        return To_T ** g_gm1
 
     elif var == "rhoo_rho":
         return To_T ** (1.0 / gm1)
 
     # Velocity and mass flow functions
     elif var == "V_cpTo":
-        return sqr_gm1 * Ma * To_T**-0.5
+        return sqr_gm1 * Ma * To_T ** -0.5
 
     elif var == "mcpTo_APo":
         return ga / sqr_gm1 * Ma * To_T ** (-0.5 * gp1_gm1)
 
     elif var == "mcpTo_AP":
-        return ga / sqr_gm1 * Ma * To_T**0.5
+        return ga / sqr_gm1 * Ma * To_T ** 0.5
 
     # Choking area
     elif var == "A_Acrit":
@@ -141,8 +141,8 @@ def from_Ma(var, Ma_in, ga_in, validate=True):
     # Shock pressure ratio
     elif var == "Posh_Po":
         Posh_Po = np.asarray(np.ones_like(Ma) * np.nan)
-        A = gp1_2 * Ma**2.0 / To_T
-        B = 2.0 * ga / gp1 * Ma**2.0 - 1.0 / gp1_gm1
+        A = gp1_2 * Ma ** 2.0 / To_T
+        B = 2.0 * ga / gp1 * Ma ** 2.0 - 1.0 / gp1_gm1
         Posh_Po[Ma >= Malimsh] = A[Ma >= Malimsh] ** g_gm1 * B[
             Ma >= Malimsh
         ] ** (-1.0 / gm1)
@@ -180,7 +180,7 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
     )  # Limit when denominator goes negative
 
     # Stagnation temperature ratio appears in every expression
-    To_T = 1.0 + gm1_2 * Ma**2.0
+    To_T = 1.0 + gm1_2 * Ma ** 2.0
 
     # Safe reciprocal of Ma
     with np.errstate(divide="ignore"):
@@ -198,7 +198,7 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
 
     # Velocity and mass flow functions
     elif var == "V_cpTo":
-        return sqr_gm1 * (To_T**-0.5 - 0.5 * gm1 * Ma**2.0 * To_T**-1.5)
+        return sqr_gm1 * (To_T ** -0.5 - 0.5 * gm1 * Ma ** 2.0 * To_T ** -1.5)
 
     elif var == "mcpTo_APo":
         return (
@@ -206,26 +206,26 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
             / sqr_gm1
             * (
                 To_T ** (-0.5 * gp1_gm1)
-                - 0.5 * gp1 * Ma**2.0 * To_T ** (-0.5 * gp1_gm1 - 1.0)
+                - 0.5 * gp1 * Ma ** 2.0 * To_T ** (-0.5 * gp1_gm1 - 1.0)
             )
         )
 
     elif var == "mcpTo_AP":
         return (
-            ga / sqr_gm1 * (To_T**0.5 + 0.5 * gm1 * Ma**2.0 * To_T**-0.5)
+            ga / sqr_gm1 * (To_T ** 0.5 + 0.5 * gm1 * Ma ** 2.0 * To_T ** -0.5)
         )
 
     # Choking area
     elif var == "A_Acrit":
         return (2.0 / gp1 * To_T) ** (0.5 * gp1_gm1) * (
-            -(recip_Ma**2.0) + 0.5 * gp1 * To_T**-1.0
+            -(recip_Ma ** 2.0) + 0.5 * gp1 * To_T ** -1.0
         )
 
     # Post-shock Mack number
     elif var == "Mash":
         der_Mash = np.asarray(np.ones_like(Ma) * np.nan)
-        A = gp1**2.0 * Ma / np.sqrt(2.0)
-        C = ga * (2 * Ma**2.0 - 1.0) + 1
+        A = gp1 ** 2.0 * Ma / np.sqrt(2.0)
+        C = ga * (2 * Ma ** 2.0 - 1.0) + 1
         der_Mash[Ma >= Malimsh] = (
             -A[Ma >= Malimsh]
             * To_T[Ma >= Malimsh] ** -0.5
@@ -236,9 +236,9 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=True):
     # Shock pressure ratio
     elif var == "Posh_Po":
         der_Posh_Po = np.asarray(np.ones_like(Ma) * np.nan)
-        A = ga * Ma * (Ma**2.0 - 1.0) ** 2.0 / To_T**2.0
-        B = gp1 * Ma**2.0 / To_T / 2.0
-        C = 2.0 * ga / gp1 * Ma**2.0 - 1.0 / gp1_gm1
+        A = ga * Ma * (Ma ** 2.0 - 1.0) ** 2.0 / To_T ** 2.0
+        B = gp1 * Ma ** 2.0 / To_T / 2.0
+        C = 2.0 * ga / gp1 * Ma ** 2.0 - 1.0 / gp1_gm1
         der_Posh_Po[Ma >= Malimsh] = (
             -A[Ma >= Malimsh]
             * B[Ma >= Malimsh] ** (1.0 / gm1)

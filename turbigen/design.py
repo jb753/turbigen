@@ -125,7 +125,7 @@ def _integrate_length(chi):
     xhat = np.linspace(0.0, 1.0)
     tanchi_lim = np.tan(np.radians(chi))
     tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
-    return np.trapz(np.sqrt(1.0 + tanchi**2.0), xhat)
+    return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
 
 
 def nondim_stage_from_Al(
@@ -192,11 +192,11 @@ def nondim_stage_from_Al(
     # Get non-dimensional velocities from definition of flow coefficient
     Vx_U = np.array([Vx_rat[0], 1.0, Vx_rat[1]]) * phi
     Vt_U = Vx_U * np.tan(np.radians(Al))
-    V_U = np.sqrt(Vx_U**2.0 + Vt_U**2.0)
+    V_U = np.sqrt(Vx_U ** 2.0 + Vt_U ** 2.0)
 
     # Change reference frame for rotor-relative velocities and angles
     Vtrel_U = Vt_U - 1.0
-    Vrel_U = np.sqrt(Vx_U**2.0 + Vtrel_U**2.0)
+    Vrel_U = np.sqrt(Vx_U ** 2.0 + Vtrel_U ** 2.0)
     Alrel = np.degrees(np.arctan2(Vtrel_U, Vx_U))
 
     # Use Mach number to get U/cpTo1 = U/cpTo2
@@ -204,7 +204,7 @@ def nondim_stage_from_Al(
     U_sqrtcpTo1 = V_sqrtcpTo2 / V_U[1]
 
     # Non-dimensional temperatures from U/cpTo Ma and stage loading definition
-    cpTo1_Usq = 1.0 / U_sqrtcpTo1**2
+    cpTo1_Usq = 1.0 / U_sqrtcpTo1 ** 2
     cpTo3_Usq = cpTo1_Usq - psi
     cpTo_Usq = np.array([cpTo1_Usq, cpTo1_Usq, cpTo3_Usq])
 
@@ -518,15 +518,18 @@ def pitch_circulation(stg, C0):
 
         \frac{s}{c_x} = C_0 \frac{S}{c_x} \frac{\sec \alpha_2}{\tan \alpha_2 - \tan_\alpha_1}
 
+    The reference length is actually the axial chord, because we don't know the
+    blade shape yet.
+
     """
 
-    chi = np.array((stg.Al[:2], stg.Alrel[1:]))
+    # chi = np.array((stg.Al[:2], stg.Alrel[1:]))
     V2 = np.array((stg.V_U[1], stg.Vrel_U[2]))
     Vt2 = np.array((stg.Vt_U[1], stg.Vtrel_U[2]))
     Vt1 = np.array((stg.Vt_U[0], stg.Vtrel_U[1]))
-    S0_c = np.array([_integrate_length(chii) for chii in chi])
-
-    return C0 * S0_c * V2 / np.abs(Vt1 - Vt2)
+    # S0_c = np.array([_integrate_length(chii) for chii in chi])
+    # return C0 * S0_c * V2 / np.abs(Vt1 - Vt2)
+    return C0 * V2 / np.abs(Vt1 - Vt2)
 
 
 def chord_from_Re(stg, Re, cpTo1, Po1, rgas, viscosity=None):

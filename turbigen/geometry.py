@@ -5,7 +5,7 @@ from numpy.linalg import lstsq
 from scipy.optimize import newton, fminbound
 from scipy.interpolate import interp1d
 from scipy.spatial import Voronoi
-import matplotlib.path as mplpath
+# import matplotlib.path as mplpath
 
 nx = 201
 
@@ -224,7 +224,7 @@ def _section_xy(chi, A, tte, stag, x=None):
 
 def _bernstein(x, n, i):
     """Evaluate ith Bernstein polynomial of degree n at some x-coordinates."""
-    return binom(n, i) * x**i * (1.0 - x) ** (n - i)
+    return binom(n, i) * x ** i * (1.0 - x) ** (n - i)
 
 
 def _to_shape_space(x, z, zte):
@@ -325,7 +325,7 @@ def evaluate_camber(x, chi, stag):
     n = np.sum(tanchi) / tangam
     a = tanchi[1] / n
     b = -tanchi[0] / n
-    y = a * x**n + b * (1.0 - x) ** n
+    y = a * x ** n + b * (1.0 - x) ** n
     y = y - y[0]
     return y
 
@@ -454,6 +454,24 @@ def radially_interpolate_section(
     )
 
     return np.squeeze(sec_xrt)
+
+def _surface_length(xrt):
+    # xrt : (nq, 2, 2, nx) array [--]
+    nr = xrt.shape[0]
+    S_cx = np.empty((nr,))
+    for j in range(nr):
+        x = xrt[j,0,:]
+        ite = np.argmax(x)
+
+        upper = np.diff(xrt[j,:,:ite])
+        lower = np.diff(xrt[j,:,ite:])
+
+        S_upper = np.sum(np.sqrt(np.sum(upper**2.,0)))
+        S_lower = np.sum(np.sqrt(np.sum(lower**2.,0)))
+
+        S_cx[j] = np.max((S_upper, S_lower))
+
+    return np.mean(S_cx)
 
 
 # Next job is to apply thickness constraints. Can a given xy section fit a

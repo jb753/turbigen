@@ -149,8 +149,8 @@ def mix_out(cuts):
 
         # Lookup compressible flow relation
         V_cpTo = mix["vabs"] / np.sqrt(cp * mix["tstag"])
-        Ma = np.sqrt(V_cpTo**2.0 / (ga - 1.0) / (1.0 - 0.5 * V_cpTo**2.0))
-        To_T = 1.0 + 0.5 * (ga - 1.0) * Ma**2.0
+        Ma = np.sqrt(V_cpTo ** 2.0 / (ga - 1.0) / (1.0 - 0.5 * V_cpTo ** 2.0))
+        To_T = 1.0 + 0.5 * (ga - 1.0) * Ma ** 2.0
 
         # Get static T
         mix["tstat"] = mix["tstag"] / To_T
@@ -193,7 +193,7 @@ def mix_out(cuts):
     cut_out.vt_rel = mix["vt"] - cut_out.U
 
     cut_out.vabs_rel = np.sqrt(
-        cut_out.vx**2.0 + cut_out.vr**2.0 + cut_out.vt_rel**2.0
+        cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
     )
     cut_out.mach_rel = cut_out.vabs_rel / np.sqrt(ga * rgas * cut_out.tstat)
 

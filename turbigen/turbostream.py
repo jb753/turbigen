@@ -15,16 +15,18 @@ import subprocess
 
 muref = 1.8e-5
 
+
 def get_free_gpu_id():
     """Parse output of nvidia-smi to find a vacant GPU."""
     output = subprocess.check_output(
         "nvidia-smi pmon -c 1 | tail -4 | tr -s ' ' | cut -d ' ' -f2-3",
-        shell=True
+        shell=True,
     )
     for l in output.splitlines():
         gpu_id, pid = l.split()
-        if pid == '-':
+        if pid == "-":
             return int(gpu_id)
+
 
 def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     # Periodic patches
@@ -219,7 +221,7 @@ def guess_block(g, bid, x, Po, To, Ma, Al, ga, rgas):
     rob = Pb / rgas / Tb
 
     # Energy
-    eb = cv * Tb + (Vb**2.0) / 2
+    eb = cv * Tb + (Vb ** 2.0) / 2
 
     # Primary vars
     rovxb = rob * Vxb
@@ -493,6 +495,8 @@ def write_grid_from_params(params, fname=None):
 
     # stage_grid will throw a GeometryConstraintError if too thin
     mesh = hmesh.stage_grid(Dstg, **pcopy.mesh)
+
+
 
     with suppress_print():
 

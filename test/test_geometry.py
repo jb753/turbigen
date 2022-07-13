@@ -84,7 +84,7 @@ def test_bernstein():
 def test_shape_space_cycle():
     """Go from shape space to real space and back again."""
     x = np.linspace(0.0, 1)
-    s = 1.0 + x**2.0  # Arbitrary thickness distribution
+    s = 1.0 + x ** 2.0  # Arbitrary thickness distribution
     t = geometry.from_shape_space(x, s, 0.0)
     s_out = geometry.to_shape_space(x, t, 0.0)
     # Remove the inevitable singularities from comparison
@@ -95,7 +95,7 @@ def test_shape_space_cycle():
 def test_fit_shape_space():
     """Check that we can fit a low-order polynomial with negligible error."""
     x = np.linspace(0.0, 1)
-    s = 1.0 + x**2.0  # Arbitrary thickness distribution
+    s = 1.0 + x ** 2.0  # Arbitrary thickness distribution
     params = 3
     A, resid = geometry.fit_coefficients(x, s, params)
     assert len(A) == params

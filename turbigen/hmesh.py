@@ -155,6 +155,7 @@ def b2b_grid(x, r, s, c, sect):
     # Determine number of blades and angular pitch
     r_m = np.mean(r[0, (0, -1), 0])
     nblade = np.round(2.0 * np.pi * r_m / s)  # Nearest whole number
+    print(2.0 * np.pi * r_m / s)  # Nearest whole number
     pitch_t = 2 * np.pi / nblade
 
     # Preallocate and loop over radial stations
@@ -264,6 +265,10 @@ def stage_grid(
         for chii, Ai, stagi in zip(chi, A, stag)
     ]
 
+    # Adjust pitches to account for surface length
+    So_cx = np.array([geometry._surface_length(si) for si in sect])
+    s = np.array(Dstg.s)*So_cx
+
     # If we have asked for a minimum inscribed circle, confirm that the
     # constraint is not violated
     if min_Rins:
@@ -280,7 +285,7 @@ def stage_grid(
                     )
 
     # Now we can do b2b grids
-    rt = [b2b_grid(*args) for args in zip(x, r, Dstg.s, Dstg.cx, sect)]
+    rt = [b2b_grid(*args) for args in zip(x, r, s, Dstg.cx, sect)]
 
     # Offset the rotor so it is downstream of stator
     x[1] = x[1] + x[0][-1] - x[1][0]

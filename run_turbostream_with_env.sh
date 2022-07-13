@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# A slim wrapper around run_turbostream.py that sources the correct environment
+# A slim wrapper around run_turbostream.py that CLEAR existing environment and
+# sources a version of the official env without MPI
 #
-source /usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100
-run_turbostream.py "$@"
+env -i bash -c "source ./bashrc_module_ts3610_a100 && run_turbostream.py $@"

@@ -229,7 +229,7 @@ def test_loss():
 def test_psi():
     """Check that stage loading coefficient is correct."""
     for stg in get_geometries("datum"):
-        psi_out = (1.0 - stg.To_To1[2]) / stg.U_sqrt_cpTo1**2.0
+        psi_out = (1.0 - stg.To_To1[2]) / stg.U_sqrt_cpTo1 ** 2.0
         assert np.isclose(stg.psi, psi_out)
 
 
