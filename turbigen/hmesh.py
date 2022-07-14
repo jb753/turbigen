@@ -155,7 +155,6 @@ def b2b_grid(x, r, s, c, sect):
     # Determine number of blades and angular pitch
     r_m = np.mean(r[0, (0, -1), 0])
     nblade = np.round(2.0 * np.pi * r_m / s)  # Nearest whole number
-    print(2.0 * np.pi * r_m / s)  # Nearest whole number
     pitch_t = 2 * np.pi / nblade
 
     # Preallocate and loop over radial stations

@@ -182,6 +182,17 @@ def A_from_Rle_thick_beta(Rle, thick, beta, tte):
 
     return A
 
+def Rle_thick_beta_from_A(A, tte):
+    """Use shape-space coeffs to assemble physical quantities. """
+
+    Ale = A[0,0]
+    Ate = A[0,-1]
+    thick = A[:, 1:-1]
+
+    Rle = 0.5*Ale**2.
+    beta = np.degrees(np.arctan(Ate - tte))
+
+    return Rle, thick, beta
 
 def prelim_A():
     """Get values of A corresponding to preliminary thickness distribution."""

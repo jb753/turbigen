@@ -259,7 +259,7 @@ class ParameterSet:
         for outer_name, inner_names in self._var_names.items():
             dat[outer_name] = {}
             for var in inner_names:
-                dat[outer_name][var] = getattr(self, var)
+                dat[outer_name][var] = np.copy(getattr(self, var))
         return dat
 
     def write_json(self, fname):
@@ -272,9 +272,17 @@ class ParameterSet:
         dat = self.to_dict()
 
         # Deal with multi-dimensional thickness coeffs
-        dat["mesh"]["Aflat"] = self.A.reshape(-1).tolist()
+        dat["mesh"]["Aflat"] = self.A.reshape(-1)
         dat["mesh"]["shape_A"] = self.A.shape
         dat["mesh"].pop("A")
+
+        # Convert any numpy arrays to plain lists for serialisation
+        for k in dat:
+            for j in dat[k]:
+                try:
+                    dat[k][j] = dat[k][j].tolist()
+                except:
+                    pass
 
         # Write the file
         with open(fname, "w") as f:
