@@ -1,0 +1,5 @@
+#!/bin/bash
+
+export DISPLAY=:0.0
+/opt/numeca/bin/igg -autogrid5 -batch -print -script script_ag.py2 &&
+    /opt/numeca/bin/igg -batch -script script_igg.py2

@@ -1,0 +1,256 @@
+# This script generates a three-dimensional turbine mesh from a geomturbo and
+# configuration file.
+
+igg_script_version(2.1)
+import os, re
+# from ConfigParser import ConfigParser
+
+def get_mg(n):
+    # Return next multiple of 8 + 1
+    return int(-8 * (-int(n) // 8) + 1)
+
+
+##################
+# SET PARAMETERS #
+##################
+
+nrow = 2  # Number of rows
+nxu = 17  # Points in upstream duct
+nxd = 33  # Points in downstream duct
+
+drh = 7e-5  # Hub cell width
+drc = 8e-5  # Casing cell width
+nr = 4  # Spanwise number of points
+
+# Rotational speed
+rpm = [ 3000.0 * (i % 2) for i in range(nrow)]
+
+# Cell width at wall
+dy =  [5e-5, 7e-5, 9e-5, 1.1e-4, 1.2e-4, 1.5e-4, 2e-4, 2.2e-4]
+
+# x-const line positions
+xup = [-0.02, 1.362]
+xdn = [0.189, 1.56]
+
+################
+# BEGIN SCRIPT #
+################
+
+# Number of blades must be grepped from file because AG doesn't read in!
+# nb = [40, 96, 64, 87, 54, 112, 56, 100]
+nb_str = os.popen('grep PERIOD mesh.geomTurbo').read()
+print(nb_str)
+nb = [float(nbi.split()[-1]) for nbi in nb_str.splitlines()]
+
+# If this is NOT a cascade, make blade counts integers
+if nb[0]>1:
+    nb = [int(nbi) for nbi in nb]
+print(nb)
+
+# In TS4, we don't use multigrid
+set_preference('numberOfGridLevel',int(4))
+
+# load the geomTurbo
+print 'Reading geometry: ' + os.getcwd() + '/mesh.geomTurbo'
+a5_init_new_project_from_a_geomTurbo_file(os.getcwd() + '/mesh.geomTurbo')
+
+print "Setting default topology..."
+
+# First pass - choose a topology and then set default values
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    # Set number of blades and rpm from config
+    # Autogrid seems to fail to read these from geomturbo
+    row(n1).set_periodicity(nb[n])
+    row(n1).set_rotation_speed(float(rpm[n]))
+    is_rotor = bool(rpm[n])
+
+    # misc blade-to-blade blocking parameters
+    row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
+    row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
+    row(n1).set_coarse_grid_level(1)
+    row(n1).set_upstream_block_relaxation(1)
+    row(n1).set_downstream_block_relaxation(1)
+
+    # high-stagger topology setup
+    row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
+    row(n1).blade(1).set_b2b_default_topology_disable_high_staggered_detection()
+    row(n1).blade(1).set_b2b_default_topology_normal_inlet_angle()
+    if is_rotor:
+        row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
+
+    row(n1).blade(1).set_b2b_default_topology_cell_width_at_wall(float(dy[n]))
+
+    # smoothing config
+    row(n1).set_row_full_multigrid_optimization_steps(100)
+    row(n1).set_row_optimization_steps(1000)
+    row(n1).set_row_optimization_steps_in_gap(1000)
+
+# Add moveable z-const lines up and downstream of all rows
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    cpi = row(n1).inlet().get_control_point(0)
+    cpo = row(n1).outlet().get_control_point(0)
+
+    # First and last rows: read locations from config
+    # if n1==1 and False:
+    #     xci = xup[0]
+    #     xco = xdn[0]
+    # elif n1==nrow and False:
+    #     xci = xup[-1]
+    #     xco = xdn[-1]
+    # # Other rows: go a fixed percentage inward from the ends
+    # else:
+    frac = 0.05
+    xci = cpi.x + frac * (cpo.x - cpi.x)
+    xco = cpo.x - frac * (cpo.x - cpi.x)
+
+    # Inlet z const
+    z = compute_default_z_cst_line(Point(xci,cpi.y,0.),0)
+    z.set_name("Z_" + `n1` + "_1")
+    z.geometry_is_not_fixed()
+    if n1 in [1,nrow]:
+        z.set_linear_shape()
+    else:
+        z.set_default_shape()
+
+    # Outlet z const
+    z = compute_default_z_cst_line(Point(xco,cpo.y,0.),0)
+    z.set_name("Z_" + `n1` + "_2")
+    z.geometry_is_not_fixed()
+    if n1 in [1,nrow]:
+        z.set_linear_shape()
+    else:
+        z.set_default_shape()
+
+# # generate the mesh at the default 'coarse' resolution
+set_active_control_layer_index(50)
+select_all()
+a5_reset_default_topology()
+
+# Now we apply our modifications to the default resolution
+
+print "Modifying the resolution..."
+
+# Set up flow paths 
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+    row(n1).set_row_flow_path_number(int(nr))
+    row(n1).set_flow_path_control_cst_cells_number(45.0)
+
+    # Cascade 
+    if nr == 4:
+
+        nn = row(n1).inlet().get_number_of_control_points()
+        cp0 = row(n1).inlet().get_control_point(0)
+        cp1 = row(n1).inlet().get_control_point(nn-1)
+    
+        r0 = cp0.y
+        r1 = cp1.y
+        span = r1 - r0
+        dr = span / (nr-1)
+
+        row(n1).set_flow_path_control_hub_clustering(dr)
+        row(n1).set_flow_path_control_shroud_clustering(dr)
+    else:
+        row(n1).set_flow_path_control_hub_clustering(drh)
+        row(n1).set_flow_path_control_shroud_clustering(drc)
+        if row(n1).blade(1).get_shroud_gap():
+            row(n1).blade(1).shroud_gap().set_clustering(drc)
+            row(n1).blade(1).shroud_gap().set_number_of_points_in_spanwise_direction(17)
+
+select_all()
+a5_generate_flow_paths()
+
+set_active_control_layer_index(50)
+# Copy the tip-gap distribution everywhere
+row(1).outlet().copy_right_meridional_distribution()
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(17))
+    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(1.2)
+
+    # Small number of streamwise points in H blocks
+    z = z_cst_line("Z_" + `n1` + "_1")
+    z.streamwise_number_of_points(int(9))
+    z.paste_left_meridional_distribution()
+    z.paste_right_meridional_distribution()
+
+    z = z_cst_line("Z_" + `n1` + "_2")
+    z.streamwise_number_of_points(int(9))
+    z.paste_left_meridional_distribution()
+    z.paste_right_meridional_distribution()
+
+    
+    row(n1).outlet().paste_left_meridional_distribution()
+    row(n1).outlet().paste_right_meridional_distribution()
+
+    row(n1).inlet().paste_left_meridional_distribution()
+    row(n1).inlet().paste_right_meridional_distribution()
+
+    # More points across trailing edge
+    row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet(int(17))
+
+    # More points along back of suction surface
+    if n1 % 2:
+        nnow = row(n1).blade(1).get_b2b_default_topology_grid_point_number_azimutal_outlet_up()
+        row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet_up(get_mg(nnow * 2.5))
+    else:
+        nnow = row(n1).blade(1).get_b2b_default_topology_grid_point_number_azimutal_outlet_down()
+        row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet_down(get_mg(nnow * 2.5))
+
+    # points around blade in o-mesh based on expansion ratio
+    row(n1).blade(1).leadingEdgeControl().set_percentage_cst_cell(30.)
+    row(n1).blade(1).leadingEdgeControl().desired_expansion_ratio(1.2)
+    row(n1).blade(1).leadingEdgeControl().get_distribution_from_expansion_ratio()
+    row(n1).blade(1).leadingEdgeControl().enable_distribution_from_expansion_ratio()
+    row(n1).blade(1).leadingEdgeControl().set_distribution_type_relative_distance()
+    row(n1).blade(1).leadingEdgeControl().disable_distribution_from_expansion_ratio()
+    row(n1).blade(1).leadingEdgeControl().enable_distribution_from_expansion_ratio()
+    row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
+
+# Fixed z const lines for inlet and exit
+xi = xup[0] - 0.02
+ri = row(1).outlet().get_control_point(0).y
+xo = xdn[-1] + 0.15
+ro = row(nrow).inlet().get_control_point(0).y
+
+# z = compute_default_z_cst_line(Point(xi,ri,0.),0)
+# z.set_name("ZF_in")
+# z.streamwise_number_of_points(int(nxu))
+# z.geometry_is_fixed()
+# z.set_z_cst_shape(xi)
+# z.paste_left_meridional_distribution()
+# z.paste_right_meridional_distribution()
+
+# z = compute_default_z_cst_line(Point(xo,ro,0.),0)
+# z.set_name("ZF_out")
+# z.streamwise_number_of_points(int(nxd))
+# z.geometry_is_fixed()
+# z.set_z_cst_shape(xo)
+# z.paste_left_meridional_distribution()
+# z.paste_right_meridional_distribution()
+
+z = z_cst_line("Z_1_1")
+z.streamwise_number_of_points(int(9))
+
+z = z_cst_line("Z_" + `nrow` + "_2")
+z.streamwise_number_of_points(int(25))
+
+# Interpolation spacing
+for n in range(nrow):
+    row(n+1).set_row_interpolation_spacing(float(2))
+#
+## generate 3D
+print "Generating 3D mesh..."
+select_all()
+set_active_control_layer_index(50)
+a5_generate_b2b()
+a5_start_3d_generation()
+a5_save_project(os.getcwd() + "/mesh.trb")
+print "Finished!"

@@ -7,9 +7,10 @@ from ts import (
     ts_tstream_default,
     ts_tstream_load_balance,
     ts_tstream_reader,
+    ts_autogrid_reader,
 )
 import compflow
-from . import design, hmesh
+from . import design, ohmesh
 import sys, os
 import subprocess
 
@@ -54,7 +55,11 @@ def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     return p
 
 
-def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
+def apply_inlet(g, bid, pid, Poin, Toin):
+
+    patch = g.get_patch(bid, pid)
+    nk = patch.ken-patch.kst
+    nj = patch.ken-patch.kst
 
     yaw = np.zeros((nk, nj), np.float32)
     pitch = np.zeros((nk, nj), np.float32)
@@ -73,43 +78,53 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
     g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.1)
 
+def find_spanwise_patches(g):
+
+    all_pairs = []
+    for bid in g.get_block_ids():
+        patch_pair = []
+        for pid in g.get_patch_ids(bid):
+            patch = g.get_patch(bid, pid)
+            if (patch.jst + 1) == patch.jen:
+                patch_pair.append(patch)
+        if len(patch_pair):
+            all_pairs.append(patch_pair)
+
+    return all_pairs
+
 def slipwall_to_periodic(g):
     """Set slipwalls to periodic for poisson calc."""
-    # Hard code everything for now
-    pids = [4,5]
-    for bid in g.get_block_ids():
-        p1, p2 = [g.get_patch(bid, pid) for pid in pids]
-        p1.kind = ts_tstream_patch_kind.periodic
-        p2.kind = ts_tstream_patch_kind.periodic
-        p1.nxpid = p2.pid
-        p1.nxbid = p2.bid
-        p2.nxpid = p1.pid
-        p2.nxbid = p1.bid
-        p1.idir = 0
-        p2.idir = 0
-        p1.jdir = -1
-        p2.jdir = -1
-        p1.kdir = 2
-        p2.kdir = 2
+    for P in find_spanwise_patches(g):
+        P[0].kind = ts_tstream_patch_kind.periodic
+        P[1].kind = ts_tstream_patch_kind.periodic
+        P[0].nxpid = P[1].pid
+        P[0].nxbid = P[1].bid
+        P[1].nxpid = P[0].pid
+        P[1].nxbid = P[0].bid
+        P[0].idir = 0
+        P[1].idir = 0
+        P[0].jdir = -1
+        P[1].jdir = -1
+        P[0].kdir = 2
+        P[1].kdir = 2
+
 
 def periodic_to_slipwall(g):
     """Set spanwise periodic to slipwall for main calc."""
     # Hard code everything for now
-    pids = [4,5]
-    for bid in g.get_block_ids():
-        p1, p2 = [g.get_patch(bid, pid) for pid in pids]
-        p1.kind = ts_tstream_patch_kind.slipwall
-        p2.kind = ts_tstream_patch_kind.slipwall
-        p1.nxpid = p2.pid
-        p1.nxbid = p2.bid
-        p2.nxpid = p1.pid
-        p2.nxbid = p1.bid
-        p1.idir = 0
-        p2.idir = 0
-        p1.jdir = -1
-        p2.jdir = -1
-        p1.kdir = 2
-        p2.kdir = 2
+    for P in find_spanwise_patches(g):
+        P[0].kind = ts_tstream_patch_kind.slipwall
+        P[1].kind = ts_tstream_patch_kind.slipwall
+        P[0].nxpid = P[1].pid
+        P[0].nxbid = P[1].bid
+        P[1].nxpid = P[0].pid
+        P[1].nxbid = P[0].bid
+        P[0].idir = 0
+        P[1].idir = 0
+        P[0].jdir = -1
+        P[1].jdir = -1
+        P[0].kdir = 2
+        P[1].kdir = 2
 
 
 
@@ -357,6 +372,109 @@ def set_xllim(g, frac):
         g.set_bv("xllim", ts_tstream_type.float, bid, frac * pitch)
 
 
+def find_patches(g, kind):
+    bid = []
+    pid = []
+    for b in g.get_block_ids():
+        for p in g.get_patch_ids(b):
+
+            if g.get_patch(b,p).kind == kind:
+                bid.append(b)
+                pid.append(p)
+
+    if len(bid)==1:
+        bid, pid = bid[0], pid[0]
+
+    return bid, pid
+
+
+def prep_ag(g, x, ilte, stg, Po1, To1, Omega, rgas, guess_file, dampin, ilos):
+
+    # Inlet
+    bid_in, pid_in = find_patches(g, ts_tstream_patch_kind.inlet)
+    apply_inlet(g, bid_in, pid_in, Po1, To1)
+
+    # Outlet
+    bid_out, pid_out = find_patches(g, ts_tstream_patch_kind.inlet)
+    P3 = Po1 * stg.P3_Po1
+    g.set_pv("throttle_type", ts_tstream_type.int, bid_out, pid_out, 0)
+    g.set_pv("ipout", ts_tstream_type.int, bid_out, pid_out, 3)
+    g.set_pv("pout", ts_tstream_type.float, bid_out, pid_out, P3)
+
+    # Apply application/block variables
+    set_variables(g)
+    g.set_av("dampin", ts_tstream_type.float, dampin)
+    g.set_av("ilos", ts_tstream_type.float, ilos)
+
+    # Rotation
+    rotor_bids = [i for i in range(7,len(g.get_block_ids()))]
+    rpm_rotor = Omega / 2.0 / np.pi * 60.0
+    for bid in rotor_bids:
+        print(bid)
+        set_rotation(
+            g,
+            [
+                bid,
+            ],
+            rpm_rotor,
+            spin_j=False,
+        )
+
+    set_xllim(g, 0.03)
+
+    # Initial guess
+    if guess_file:
+        tsr = ts_tstream_reader.TstreamReader()
+        gg = tsr.read(guess_file)
+
+        # Copy varaibles
+        for var in ["ro", "rovx", "rovr", "rorvt", "roe", "trans_dyn_vis", "phi"]:
+            for bid in g.get_block_ids():
+                g.set_bp(var, ts_tstream_type.float, bid, gg.get_bp(var, bid))
+
+        # With a good initial guess, do not need nchange
+        g.set_av("nchange", ts_tstream_type.int, 0)
+
+        # Throw out spurious negative wall distances
+        for bid in g.get_block_ids():
+            phi = g.get_bp('phi',bid)
+            if np.any(phi[:]<0.):
+                g.set_av("nchange", ts_tstream_type.int, 5000)
+                phi[phi<0.] = 0.
+                g.set_bp('phi', ts_tstream_type.float, bid, phi)
+
+        # Use the existing Poisson field
+        g.set_av("poisson_nstep", ts_tstream_type.int, 0)
+        g.set_av("poisson_restart", ts_tstream_type.int, 1)
+
+        # Make spanwise periodics slipwalls
+        periodic_to_slipwall(g)
+
+    else:
+        xg = np.concatenate( [ x[0][ [ 0, ] + ilte[0], ], x[1][ ilte[1] + [ -1, ], ] ])
+        print(xg)
+        Pog = np.repeat(stg.Po_Po1 * Po1, 2)
+        Tog = np.repeat(stg.To_To1 * To1, 2)
+        Mag = np.repeat(stg.Ma, 2)
+        Alg = np.repeat(stg.Al, 2)
+
+        for bid in g.get_block_ids():
+            guess_block(g, bid, xg, Pog, Tog, Mag, Alg, stg.ga, rgas)
+
+        # Make slipwalls spanwise periodic for Poisson
+        g.set_av("nstep", ts_tstream_type.int, 0)
+        slipwall_to_periodic(g)
+
+    cp = rgas * stg.ga / (stg.ga - 1.0)
+    g.set_av("ga", ts_tstream_type.float, stg.ga)
+    g.set_av("cp", ts_tstream_type.float, cp)
+
+    ts_tstream_load_balance.load_balance(g, 1, 1.0)
+
+    return g
+
+
+
 def make_grid(
     stg, x, r, rt, ilte, Po1, To1, Omega, rgas, guess_file, dampin, ilos
 ):
@@ -556,17 +674,30 @@ def write_grid_from_params(params, fname=None):
     if fname:
         pcopy.min_Rins *= 0.99
 
-    # stage_grid will throw a GeometryConstraintError if too thin
-    mesh = hmesh.stage_grid(Dstg, **pcopy.mesh)
+    # Hmesh
+    # mesh = hmesh.stage_grid(Dstg, **pcopy.mesh)
 
+    # OH mesh
 
+    # Make a g and bcs
+    x, ilte = ohmesh.make_g_bcs(Dstg, **pcopy.mesh)
 
     with suppress_print():
 
-        # Make the TS grid
-        g = make_grid(stg, *mesh, **params.cfd_input_file)
+        # Load them
+        agr = ts_autogrid_reader.AutogridReader()
+        g = agr.read('mesh.bcs','mesh.g')
 
-        # Write out input file if specified
-        # (if not specified, this function acts as a constraint check)
+        g = prep_ag(g, x, ilte, stg, **params.cfd_input_file)
+
         if fname:
             g.write_hdf5(fname)
+
+
+        # # Make the TS grid
+        # g = make_grid(stg, *mesh, **params.cfd_input_file)
+
+#         # Write out input file if specified
+#         # (if not specified, this function acts as a constraint check)
+#         if fname:
+#             g.write_hdf5(fname)

@@ -1,0 +1,28 @@
+igg_script_version(2.1)
+import os
+
+open_igg_project(os.getcwd() + "/mesh.igg")
+
+# Regenerate pitchwise faces in inlet and exit duct
+#block("r1_flux_1_Main_Blade_upStream").face(5).linear_4Bnd()
+#block("r1_flux_1_Main_Blade_upStream").face(6).linear_4Bnd()
+#block("r1_flux_1_Main_Blade_upStream").linear_6_bnd()
+#block("r8_flux_1_Main_Blade_downStream").face(5).linear_4Bnd()
+#block("r8_flux_1_Main_Blade_downStream").face(6).linear_4Bnd()
+#block("r8_flux_1_Main_Blade_downStream").linear_6_bnd()
+
+# set all boundary patches to walls
+bc = ['INL', 'OUT']
+for bi in range(num_of_blocks()):
+    for fi in range(block(bi+1).num_faces()):
+        for pi in range(face(bi+1,fi+1).num_patches()):
+            if patch(bi+1,fi+1,pi+1).get_type() in bc:
+                pass
+                #patch(bi+1,fi+1,pi+1).set_type('SOL')
+
+save_project(os.getcwd() + "/mesh.igg")
+
+#fl_str = os.getcwd() + "/mesh.msh"
+#print "Exporting to fluent: " + fl_str
+#export_FLUENT(fl_str)
+export_plot3D(os.getcwd() + "/mesh.g",[3,1,"ASCII",0])

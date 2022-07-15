@@ -399,7 +399,7 @@ def _loop_section(xy):
 
 
 def radially_interpolate_section(
-    spf, chi, spf_q, tte, A=None, spf_A=None, stag=None
+    spf, chi, spf_q, tte, A=None, spf_A=None, stag=None, loop=True
 ):
     """From radial angle distributions, interpolate aerofoil at query spans.
 
@@ -459,10 +459,12 @@ def radially_interpolate_section(
     # Second, convert thickness in shape space to real coords
     sec_xrt = np.stack(
         [
-            _loop_section(_section_xy(chi_i, A_i, tte, stag_i))
+            _section_xy(chi_i, A_i, tte, stag_i)
             for chi_i, A_i, stag_i in zip(chi_q.T, A_q, stag_q)
         ]
     )
+    if loop:
+        sec_xrt = [ _loop_section(seci) for seci in sec_xrt]
 
     return np.squeeze(sec_xrt)
 

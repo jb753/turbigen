@@ -2,8 +2,8 @@
 import numpy as np
 import compflow_native as compflow
 import sys, os, json
-from ts import ts_tstream_reader, ts_tstream_cut
-from turbigen import average
+from ts import ts_tstream_reader, ts_tstream_cut, ts_tstream_patch_kind
+from turbigen import average, turbostream
 
 Pref = 1e5
 Tref = 300.0
@@ -178,19 +178,42 @@ def cut_by_indices(g, bid, ijk_sten):
 
     return cut
 
+def cut_by_patch(g, bid, pid):
+    """Structured cut a patch from grid."""
+
+    P = g.get_patch(bid, pid)
+    cut = ts_tstream_cut.TstreamStructuredCut()
+    cut.read_from_grid(g, Pref, Tref, bid, P.ist, P.ien, P.jst, P.jen, P.kst, P.ken)
+
+    return cut
 
 def cut_rows_mixed(g):
     """Mixed-out cuts at row inlet and exit"""
-    ind_all = [0, -1]
-    di = 2
-    ind_in = [di, di]
-    ind_out = [-1 - di, -1 - di]
+
+    # ind_all = [0, -1]
+    # di = 2
+    # ind_in = [di, di]
+    # ind_out = [-1 - di, -1 - di]
+
+    # cuts = [
+    #     cut_by_indices(g, 0, [ind_in, ind_all, ind_all]),
+    #     cut_by_indices(g, 0, [ind_out, ind_all, ind_all]),
+    #     cut_by_indices(g, 1, [ind_in, ind_all, ind_all]),
+    #     cut_by_indices(g, 1, [ind_out, ind_all, ind_all]),
+    # ]
+    bid_in, pid_in = turbostream.find_patches(g, ts_tstream_patch_kind.inlet)
+    bid_out, pid_out = turbostream.find_patches(g, ts_tstream_patch_kind.outlet)
+    bid_mix, pid_mix = turbostream.find_patches(g, ts_tstream_patch_kind.mixing)
+
     cuts = [
-        cut_by_indices(g, 0, [ind_in, ind_all, ind_all]),
-        cut_by_indices(g, 0, [ind_out, ind_all, ind_all]),
-        cut_by_indices(g, 1, [ind_in, ind_all, ind_all]),
-        cut_by_indices(g, 1, [ind_out, ind_all, ind_all]),
+        cut_by_patch(g, bid_in, pid_in),
+        cut_by_patch(g, bid_mix[0], pid_mix[0]),
+        cut_by_patch(g, bid_mix[1], pid_mix[1]),
+        cut_by_patch(g, bid_out, pid_out)
     ]
+
+
+
     return [mix_out(c) for c in cuts]
 
 
@@ -201,9 +224,35 @@ def _integrate_length(chi):
     tanchi = np.diff(tanchi_lim) * xhat + tanchi_lim[0]
     return np.trapz(np.sqrt(1.0 + tanchi ** 2.0), xhat)
 
+def find_omesh(g):
+    oblocks = []
+    for b in g.get_block_ids():
+        for p in g.get_patch_ids(b):
+            P = g.get_patch(b,p)
+            if (P.kind == ts_tstream_patch_kind.periodic) and (P.nxbid==b):
+                CP1 = cut_by_patch(g, b, p)
+                CP2 = cut_by_patch(g, P.nxbid, P.nxpid)
+                if np.isclose(np.mean(CP1.rt), np.mean(CP2.rt)):
+                    oblocks.append(b)
+                    break
+
+    return oblocks
+
+def cut_by_blade(g, row_ind):
+
+    bid_o = find_omesh(g)[row_ind]
+    blk = g.get_block(bid_o)
+    cut = ts_tstream_cut.TstreamStructuredCut()
+    cut.read_from_grid(g, Pref, Tref, bid_o, 0, blk.ni, 1,2, 0, 1)
+
+    return cut
+
+def get_cx(g):
+    return np.array([np.ptp(cut_by_blade(g,i).x) for i in range(2)])
 
 def find_chord(g, bid):
     """Determine axial chord of a row."""
+
     x, r, rt = [
         np.swapaxes(g.get_bp(vi, bid), 0, -1)[:, 2, (0, -1)]
         for vi in ["x", "r", "rt"]
@@ -216,7 +265,19 @@ def find_chord(g, bid):
     is_blade_2[: (ile + 1)] = True
     ite = np.argmax(~is_blade_2)
     cx = x[ile:ite, 0].ptp()
+
     return cx, ile, ite, pitch
+
+def extract_surf_o(g, row_ind):
+
+    C = cut_by_blade(g,row_ind)
+    P = np.squeeze(C.pstat)
+    x = np.squeeze(C.x)
+    rt = np.squeeze(C.rt)
+    surf = np.cumsum(np.sqrt(np.diff(x, 1) ** 2.0 + np.diff(rt, 1) ** 2.0))
+    surf = np.insert(surf, 0, 0, 0).astype(float)
+    return surf, P, x
+
 
 
 def extract_surf(g, bid):
@@ -229,25 +290,20 @@ def extract_surf(g, bid):
         np.sqrt(np.diff(x, 1, 0) ** 2.0 + np.diff(rt, 1, 0) ** 2.0), axis=0
     )
     surf = np.insert(surf, 0, np.zeros((1, 2)), axis=0).astype(float)
-    return surf, P, x
+    return np.squeeze(surf), np.squeeze(P), np.squeeze(x)
 
 
-def circ_coeff(g, bid, Po1, P2):
-    surf, P, _ = extract_surf(g, bid)
-    So = np.max(surf[-1,:])
+def circ_coeff(g, row_ind, Po1, P2):
+    surf, P, x = extract_surf_o(g, row_ind)
+
+    ile = np.argmax(x)
+
+    So = np.max((np.ptp(surf[:ile]),np.ptp(surf[ile:])))
     Cp = (Po1 - P) / (Po1 - P2)
     Cp[Cp < 0.0] = 0.0
-    # Normalise distance
-    side = [
-        np.trapz(np.sqrt(Cpi), surfi, axis=0)
-        for Cpi, surfi in zip(Cp.T, surf.T)
-    ]
-    if g.get_bv("rpm", bid):
-        total_Co = (side[0] - side[1])/So
-    else:
-        total_Co = (side[1] - side[0])/So
+    Co = np.abs(np.trapz(np.sqrt(Cp), surf)/So)
 
-    return total_Co, So
+    return Co, So
 
 
 def post_process(output_hdf5):
@@ -275,7 +331,7 @@ def post_process(output_hdf5):
     # Gas properties
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio
-    rpm = g.get_bv("rpm", 1)
+    rpm = g.get_bv("rpm", g.get_block_ids()[-1])
     omega = rpm / 60.0 * 2.0 * np.pi
 
     # 1D mixed-out average cuts for stator/rotor inlet/outlet
@@ -317,21 +373,22 @@ def post_process(output_hdf5):
     # Reynolds num
     ro2 = sta_out.ro
     V2 = sta_out.vabs
-    cx = find_chord(g, 0)[0]
+    cx = get_cx(g)
     Re_cx = ro2 * V2 * cx / mu2
     ell_cx = _integrate_length(Al[:2])
-    Re_ell = Re_cx * ell_cx
+    Re_ell = (Re_cx * ell_cx).tolist()
 
     # Circulation coefficient
     Cov, Sov = circ_coeff(g, 0, sta_in.pstag, sta_out.pstat)
     Cob, Sob = circ_coeff(g, 1, rot_in.pstag_rel, rot_out.pstat)
-    Re_So = Re_cx * Sov / cx
+    Re_So = (Re_cx * Sov / cx).tolist()
     Co = [Cov, Cob]
 
     # Pitch to chord
-    pitch_rt = np.array([find_chord(g, bid)[3] for bid in [0, 1]])
-    cx_all = np.array([find_chord(g, bid)[0] for bid in [0, 1]])
-    s_cx = (pitch_rt / cx_all).tolist()
+    bids = g.get_block_ids()[0], g.get_block_ids()[-1]
+    nb = np.array([g.get_bv("nblade", bid) for bid in bids])
+    pitch_rt = np.array([2.*np.pi*Ci.r/nbi for Ci, nbi in zip([sta_in,rot_in],nb)])
+    s_cx = (pitch_rt / cx).tolist()
 
     # Loss coefficients
     Ypv = (sta_in.pstag - sta_out.pstag) / (sta_in.pstag - sta_out.pstat)
@@ -362,7 +419,7 @@ def post_process(output_hdf5):
         "phi": sta_out.vx / U,
         "Lam": Lam,
         "Re": Re_ell,
-        "Re_cx": Re_cx,
+        "Re_cx": Re_cx.tolist(),
         "Re_So": Re_So,
         "Co": Co,
         "resid": resid,

@@ -104,9 +104,9 @@ class DeviationTurbostreamComp(BaseTurbostreamComp):
         irow = self.options["row_index"]
         outputs["deviation"] = Al_err[irow]
 
+
 class SectionTurbostreamComp(BaseTurbostreamComp):
     """Run Turbostream with parameterised blade section."""
-
 
     def initialize(self):
         self.options.declare("row_index")
@@ -114,11 +114,11 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
     def setup(self):
 
-        self.add_input("stagger_rel", val=1.)
-        self.add_input("radius_le_rel", val=1.)
-        self.add_input("beta_rel", val=1.)
-        self.add_input("thick_ps_rel", val=1.)
-        self.add_input("thick_ss_rel", val=1.)
+        self.add_input("stagger_rel", val=1.0)
+        self.add_input("radius_le_rel", val=1.0)
+        self.add_input("beta_rel", val=1.0)
+        self.add_input("thick_ps_rel", val=1.0)
+        self.add_input("thick_ss_rel", val=1.0)
 
         self.add_output("lost_efficiency_rel")
         self.add_output("err_phi_rel")
@@ -127,7 +127,9 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
         # All partial derivatives approximated by finite difference
         # Most variables use a relative step
-        self.declare_partials(of="*", wrt="*", method="fd", step=0.1, step_calc='rel_element')
+        self.declare_partials(
+            of="*", wrt="*", method="fd", step=0.1, step_calc="rel_element"
+        )
         # For recamber which may go through zero, override with constant step
         # self.declare_partials(of="*", wrt="recamber_*", method="fd", step=0.2, step_calc='abs')
 
@@ -135,7 +137,7 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
     def params_from_inputs(self, inputs):
 
-        print('In : %s' % str(inputs))
+        print("In : %s" % str(inputs))
 
         param_datum = self.options["datum_params"]
         param_now = param_datum.copy()
@@ -147,12 +149,19 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
         # param_now.recamber[irow*2] = inputs["recamber_le"][0]
         # param_now.recamber[irow*2+1] = inputs["recamber_te"][0]
 
-        Rle_d, thick_d, beta_d = geometry.Rle_thick_beta_from_A(param_datum.A[irow],param_datum.tte)
+        Rle_d, thick_d, beta_d = geometry.Rle_thick_beta_from_A(
+            param_datum.A[irow], param_datum.tte
+        )
 
         Rle = inputs["radius_le_rel"][0] * Rle_d
         beta = inputs["beta_rel"][0] * beta_d
-        thick = np.array([[inputs["thick_ps_rel"][0]],[inputs["thick_ss_rel"][0]]])*thick_d[0,0]
-        param_now.A[irow] = geometry.A_from_Rle_thick_beta(Rle, thick, beta, param_now.tte)
+        thick = (
+            np.array([[inputs["thick_ps_rel"][0]], [inputs["thick_ss_rel"][0]]])
+            * thick_d[0, 0]
+        )
+        param_now.A[irow] = geometry.A_from_Rle_thick_beta(
+            Rle, thick, beta, param_now.tte
+        )
 
         return param_now
 
@@ -160,11 +169,16 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
         params = self.options["datum_params"]
 
-        outputs["lost_efficiency_rel"] = metadata["eta_lost"]/(1.-params.eta)
+        outputs["lost_efficiency_rel"] = metadata["eta_lost"] / (
+            1.0 - params.eta
+        )
         for v in ["phi", "psi", "Lam"]:
-            outputs["err_" + v + "_rel"] = (metadata[v]/getattr(params, v)-1.)/params.rtol
+            outputs["err_" + v + "_rel"] = (
+                metadata[v] / getattr(params, v) - 1.0
+            ) / params.rtol
 
-        print('Out: %s' % str(outputs))
+        print("Out: %s" % str(outputs))
+
 
 def correct_deviation(params):
 
@@ -174,7 +188,9 @@ def correct_deviation(params):
     for k, irow in enumerate(row_indices):
 
         params_now = params.copy()
-        params_now.recamber[(1,3),] = recamber
+        params_now.recamber[
+            (1, 3),
+        ] = recamber
 
         # build the model
         prob = om.Problem()
@@ -200,11 +216,13 @@ def correct_deviation(params):
 
         # save the data
         tol = 0.2
-        brak = 3. * np.array([-1., 1.])
-        if k==2:
-            if np.abs(dev_all[-1])>tol:
+        brak = 3.0 * np.array([-1.0, 1.0])
+        if k == 2:
+            if np.abs(dev_all[-1]) > tol:
                 recamber[irow] = root_scalar(
-                    iterate, bracket=tuple(recamber[irow]+brak/2.), xtol=tol
+                    iterate,
+                    bracket=tuple(recamber[irow] + brak / 2.0),
+                    xtol=tol,
                 ).root
             else:
                 break
@@ -215,7 +233,7 @@ def correct_deviation(params):
                 ).root
             except:
                 recamber[irow] = root_scalar(
-                    iterate, bracket=tuple(brak*2.), xtol=tol
+                    iterate, bracket=tuple(brak * 2.0), xtol=tol
                 ).root
 
     effy = prob.get_val("ts.efficiency_out")[0]
@@ -229,15 +247,16 @@ def correct_deviation(params):
 # correct_deviation(params)
 # params.write_json('datum_deviation_corrected.json')
 
-# # Poisson calc
-# params = submit.ParameterSet.from_json('datum_deviation_corrected.json')
+# Poisson calc
+params = submit.ParameterSet.from_json('datum_deviation_corrected.json')
+
 # params.guess_file = os.path.join(os.getcwd(),'guess_poisson.hdf5')
 
-params = submit.ParameterSet.from_json('datum_deviation_corrected.json')
-params.guess_file = os.path.join(os.getcwd(),'guess_flow.hdf5')
-params.rtol = 0.01
-params.ilos = 2
-params.dampin = 10.
+# params = submit.ParameterSet.from_json("datum_deviation_corrected.json")
+# # params.guess_file = os.path.join(os.getcwd(), "guess_flow.hdf5")
+# params.rtol = 0.01
+# params.ilos = 2
+# params.dampin = 10.0
 
 # Set up model
 prob = om.Problem()
@@ -245,7 +264,7 @@ model = prob.model
 model.add_subsystem(
     "ts",
     SectionTurbostreamComp(
-        row_index=0, datum_params=params, base_dir="om_sect_6"
+        row_index=0, datum_params=params, base_dir="om7"
     ),
 )
 prob.setup()
@@ -254,7 +273,7 @@ prob.run_model()
 quit()
 
 
-params.guess_file = os.path.join(os.getcwd(),'datum_guess.hdf5')
+params.guess_file = os.path.join(os.getcwd(), "datum_guess.hdf5")
 
 # correct_deviation(params)
 # params.write_json('datum_deviation_corrected_sa.json')
@@ -274,7 +293,9 @@ prob.run_model()
 quit()
 
 # Design variables
-prob.model.add_design_var("ts.stagger_rel", lower=0.5, upper=1.5)  # For vane, stag +ve
+prob.model.add_design_var(
+    "ts.stagger_rel", lower=0.5, upper=1.5
+)  # For vane, stag +ve
 # prob.model.add_design_var("ts.recamber_le", lower=-5., upper=10.)
 # prob.model.add_design_var("ts.recamber_te", lower=-5., upper=5.)
 prob.model.add_design_var("ts.radius_le_rel", lower=0.5, upper=1.5)
@@ -283,9 +304,9 @@ prob.model.add_design_var("ts.thick_ps_rel", lower=0.5, upper=1.5)
 prob.model.add_design_var("ts.thick_ss_rel", lower=0.5, upper=1.5)
 
 # Constraints
-prob.model.add_constraint('ts.err_phi_rel', lower=-1., upper=1.)
-prob.model.add_constraint('ts.err_psi_rel', lower=-1., upper=1.)
-prob.model.add_constraint('ts.err_Lam_rel', lower=-1., upper=1.)
+prob.model.add_constraint("ts.err_phi_rel", lower=-1.0, upper=1.0)
+prob.model.add_constraint("ts.err_psi_rel", lower=-1.0, upper=1.0)
+prob.model.add_constraint("ts.err_Lam_rel", lower=-1.0, upper=1.0)
 
 # Set up optimizer
 prob.driver = om.ScipyOptimizeDriver()
@@ -300,4 +321,4 @@ prob.setup()
 
 prob.run_driver()
 
-print(prob.get_val("ts.lost_efficiency_rel")[0]*(1.-params.eta))
+print(prob.get_val("ts.lost_efficiency_rel")[0] * (1.0 - params.eta))

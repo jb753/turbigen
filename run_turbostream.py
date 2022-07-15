@@ -30,9 +30,11 @@ param = submit.ParameterSet.from_json(json_file_name)
 
 # Write the grid
 input_file_name = "input.hdf5"
-output_prefix = "output"
 turbostream.write_grid_from_params(param, input_file_name)
 
+print('written input hdf5')
+
+output_prefix = "output"
 # Start Turbostream
 cmd_str = "CUDA_VISIBLE_DEVICES=%d turbostream %s %s 1 > log.txt" % (
     gpu_id,
