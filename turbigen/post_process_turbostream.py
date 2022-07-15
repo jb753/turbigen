@@ -257,7 +257,11 @@ def post_process(output_hdf5):
     run_name = os.path.split(os.path.abspath(basedir))[-1]
 
     if not os.path.exists(output_hdf5):
-        raise Exception('No output hdf5 found.')
+        inst_hdf5 = output_hdf5.replace('_avg','')
+        if not os.path.exists(inst_hdf5):
+            raise Exception('No output hdf5 found.')
+        else:
+            output_hdf5 = inst_hdf5
 
     # Load the flow solution, supressing noisy printing
     tsr = ts_tstream_reader.TstreamReader()

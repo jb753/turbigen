@@ -50,8 +50,11 @@ class BaseTurbostreamComp(om.ExternalCodeComp):
         # Save parameters file for TS
         param_now.write_json(input_file_path)
 
-        # the parent compute function actually runs the external code
-        super().compute(inputs, outputs)
+        try:
+            # the parent compute function actually runs the external code
+            super().compute(inputs, outputs)
+        except:
+            raise om.AnalysisError("TS failed %s" % os.path.dirname(workdir))
 
         # parse the output file from the external code
         m = submit.load_results(output_file_path)
@@ -110,24 +113,17 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
         super().initialize()
 
     def setup(self):
-        irow = self.options["row_index"]
-        params = self.options["datum_params"]
-        A_datum = params.A[irow]
 
-        Rle, thick, beta = geometry.Rle_thick_beta_from_A(A_datum, params.tte)
-
-        self.add_input("stagger", val=params.stag[irow])
-        # self.add_input("recamber_le", val=0.)
-        # self.add_input("recamber_te", val=params.recamber[irow*2+1])
-        self.add_input("radius_le", val=Rle)
-        self.add_input("beta", val=beta)
-        self.add_input("thick_ps", val=thick[0,0])
-        self.add_input("thick_ss", val=thick[1,0])
+        self.add_input("stagger_rel", val=1.)
+        self.add_input("radius_le_rel", val=1.)
+        self.add_input("beta_rel", val=1.)
+        self.add_input("thick_ps_rel", val=1.)
+        self.add_input("thick_ss_rel", val=1.)
 
         self.add_output("lost_efficiency_rel")
-        self.add_output("err_rel_phi")
-        self.add_output("err_rel_psi")
-        self.add_output("err_rel_Lam")
+        self.add_output("err_phi_rel")
+        self.add_output("err_psi_rel")
+        self.add_output("err_Lam_rel")
 
         # All partial derivatives approximated by finite difference
         # Most variables use a relative step
@@ -141,18 +137,21 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
         print('In : %s' % str(inputs))
 
-        param_now = self.options["datum_params"].copy()
+        param_datum = self.options["datum_params"]
+        param_now = param_datum.copy()
 
         irow = self.options["row_index"]
 
-        param_now.stag[irow] = inputs["stagger"][0]
+        param_now.stag[irow] = inputs["stagger_rel"][0] * param_datum.stag[irow]
 
         # param_now.recamber[irow*2] = inputs["recamber_le"][0]
         # param_now.recamber[irow*2+1] = inputs["recamber_te"][0]
 
-        Rle = inputs["radius_le"][0]
-        beta = inputs["beta"][0]
-        thick = np.array([[inputs["thick_ps"][0]],[inputs["thick_ss"][0]]])
+        Rle_d, thick_d, beta_d = geometry.Rle_thick_beta_from_A(param_datum.A[irow],param_datum.tte)
+
+        Rle = inputs["radius_le_rel"][0] * Rle_d
+        beta = inputs["beta_rel"][0] * beta_d
+        thick = np.array([[inputs["thick_ps_rel"][0]],[inputs["thick_ss_rel"][0]]])*thick_d[0,0]
         param_now.A[irow] = geometry.A_from_Rle_thick_beta(Rle, thick, beta, param_now.tte)
 
         return param_now
@@ -163,7 +162,7 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
         outputs["lost_efficiency_rel"] = metadata["eta_lost"]/(1.-params.eta)
         for v in ["phi", "psi", "Lam"]:
-            outputs["err_rel_" + v] = (metadata[v]/getattr(params, v)-1.)/params.rtol
+            outputs["err_" + v + "_rel"] = (metadata[v]/getattr(params, v)-1.)/params.rtol
 
         print('Out: %s' % str(outputs))
 
@@ -205,18 +204,18 @@ def correct_deviation(params):
         if k==2:
             if np.abs(dev_all[-1])>tol:
                 recamber[irow] = root_scalar(
-                    iterate, bracket=recamber[irow]+brak/2., xtol=tol
+                    iterate, bracket=tuple(recamber[irow]+brak/2.), xtol=tol
                 ).root
             else:
                 break
         else:
             try:
                 recamber[irow] = root_scalar(
-                    iterate, bracket=brak, xtol=tol
+                    iterate, bracket=tuple(brak), xtol=tol
                 ).root
             except:
                 recamber[irow] = root_scalar(
-                    iterate, bracket=brak*2., xtol=tol
+                    iterate, bracket=tuple(brak*2.), xtol=tol
                 ).root
 
     effy = prob.get_val("ts.efficiency_out")[0]
@@ -230,9 +229,15 @@ def correct_deviation(params):
 # correct_deviation(params)
 # params.write_json('datum_deviation_corrected.json')
 
+# # Poisson calc
+# params = submit.ParameterSet.from_json('datum_deviation_corrected.json')
+# params.guess_file = os.path.join(os.getcwd(),'guess_poisson.hdf5')
+
 params = submit.ParameterSet.from_json('datum_deviation_corrected.json')
-params.guess_file = os.path.join(os.getcwd(),'datum_guess.hdf5')
+params.guess_file = os.path.join(os.getcwd(),'guess_flow.hdf5')
 params.rtol = 0.01
+params.ilos = 2
+params.dampin = 10.
 
 # Set up model
 prob = om.Problem()
@@ -240,29 +245,55 @@ model = prob.model
 model.add_subsystem(
     "ts",
     SectionTurbostreamComp(
-        row_index=0, datum_params=params, base_dir="om_sect"
+        row_index=0, datum_params=params, base_dir="om_sect_6"
     ),
 )
+prob.setup()
+prob.run_model()
+
+quit()
+
+
+params.guess_file = os.path.join(os.getcwd(),'datum_guess.hdf5')
+
+# correct_deviation(params)
+# params.write_json('datum_deviation_corrected_sa.json')
+
+
+# Set up model
+prob = om.Problem()
+model = prob.model
+model.add_subsystem(
+    "ts",
+    SectionTurbostreamComp(
+        row_index=0, datum_params=params, base_dir="om_sect_6"
+    ),
+)
+prob.setup()
+prob.run_model()
+quit()
 
 # Design variables
-prob.model.add_design_var("ts.stagger", lower=0., upper=90.)  # For vane, stag +ve
+prob.model.add_design_var("ts.stagger_rel", lower=0.5, upper=1.5)  # For vane, stag +ve
 # prob.model.add_design_var("ts.recamber_le", lower=-5., upper=10.)
 # prob.model.add_design_var("ts.recamber_te", lower=-5., upper=5.)
-prob.model.add_design_var("ts.radius_le", lower=0.05, upper=0.5)
-prob.model.add_design_var("ts.beta", lower=12., upper=36.)
-prob.model.add_design_var("ts.thick_ps", lower=0.05, upper=0.4)
-prob.model.add_design_var("ts.thick_ss", lower=0.05, upper=0.4)
+prob.model.add_design_var("ts.radius_le_rel", lower=0.5, upper=1.5)
+prob.model.add_design_var("ts.beta_rel", lower=0.5, upper=1.5)
+prob.model.add_design_var("ts.thick_ps_rel", lower=0.5, upper=1.5)
+prob.model.add_design_var("ts.thick_ss_rel", lower=0.5, upper=1.5)
 
 # Constraints
-prob.model.add_constraint('ts.err_rel_phi', lower=-1., upper=1.)
-prob.model.add_constraint('ts.err_rel_psi', lower=-1., upper=1.)
-prob.model.add_constraint('ts.err_rel_Lam', lower=-1., upper=1.)
+prob.model.add_constraint('ts.err_phi_rel', lower=-1., upper=1.)
+prob.model.add_constraint('ts.err_psi_rel', lower=-1., upper=1.)
+prob.model.add_constraint('ts.err_Lam_rel', lower=-1., upper=1.)
 
 # Set up optimizer
 prob.driver = om.ScipyOptimizeDriver()
 # prob.driver.options["optimizer"] = "SLSQP"
-prob.driver.options["optimizer"] = "SLSQP"
+prob.driver.options["optimizer"] = "COBYLA"
 prob.driver.options["disp"] = True
+# prob.driver.opt_settings["rhobeg"] = 0.2
+prob.driver.options["optimizer"] = "Nelder-Mead"
 
 prob.model.add_objective("ts.lost_efficiency_rel")
 prob.setup()

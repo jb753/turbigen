@@ -52,4 +52,7 @@ spare_files = [
     input_file_name,
 ]
 for f in spare_files:
-    os.remove(os.path.join(".", f))
+    try:
+        os.remove(os.path.join(".", f))
+    except OSError:
+        pass

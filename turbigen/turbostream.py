@@ -73,6 +73,45 @@ def apply_inlet(g, bid, pid, Poin, Toin, nk, nj):
     g.set_pv("rfin", ts_tstream_type.float, bid, pid, 0.5)
     g.set_pv("sfinlet", ts_tstream_type.float, bid, pid, 0.1)
 
+def slipwall_to_periodic(g):
+    """Set slipwalls to periodic for poisson calc."""
+    # Hard code everything for now
+    pids = [4,5]
+    for bid in g.get_block_ids():
+        p1, p2 = [g.get_patch(bid, pid) for pid in pids]
+        p1.kind = ts_tstream_patch_kind.periodic
+        p2.kind = ts_tstream_patch_kind.periodic
+        p1.nxpid = p2.pid
+        p1.nxbid = p2.bid
+        p2.nxpid = p1.pid
+        p2.nxbid = p1.bid
+        p1.idir = 0
+        p2.idir = 0
+        p1.jdir = -1
+        p2.jdir = -1
+        p1.kdir = 2
+        p2.kdir = 2
+
+def periodic_to_slipwall(g):
+    """Set spanwise periodic to slipwall for main calc."""
+    # Hard code everything for now
+    pids = [4,5]
+    for bid in g.get_block_ids():
+        p1, p2 = [g.get_patch(bid, pid) for pid in pids]
+        p1.kind = ts_tstream_patch_kind.slipwall
+        p2.kind = ts_tstream_patch_kind.slipwall
+        p1.nxpid = p2.pid
+        p1.nxbid = p2.bid
+        p2.nxpid = p1.pid
+        p2.nxbid = p1.bid
+        p1.idir = 0
+        p2.idir = 0
+        p1.jdir = -1
+        p2.jdir = -1
+        p1.kdir = 2
+        p2.kdir = 2
+
+
 
 def add_to_grid(g, xin, rin, rtin, ilte):
     """From mesh coordinates, add a block with patches to TS grid object"""
@@ -259,28 +298,32 @@ def set_variables(g, mu=None):
         g.set_bv("fmgrid", ts_tstream_type.float, bid, 0.2)
         g.set_bv("poisson_fmgrid", ts_tstream_type.float, bid, 0.05)
         g.set_bv("xllim_free", ts_tstream_type.float, bid, 0.0)
-        g.set_bv("free_turb", ts_tstream_type.float, bid, 0.0)
+        g.set_bv("free_turb", ts_tstream_type.float, bid, 0.05)
+        g.set_bv("fsturb", ts_tstream_type.float, bid, 1.0)
 
     g.set_av("restart", ts_tstream_type.int, 1)
     g.set_av("poisson_restart", ts_tstream_type.int, 0)
-    g.set_av("poisson_nstep", ts_tstream_type.int, 5000)
+    g.set_av("poisson_nstep", ts_tstream_type.int, 10000)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
     g.set_av("nstep", ts_tstream_type.int, 25000)
     g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
-    # g.set_av("nstep", ts_tstream_type.int, 100000*2)
-    # g.set_av("nstep_save_start", ts_tstream_type.int, 80000*2)
-    # g.set_av("nstep", ts_tstream_type.int, 10000)
-    # g.set_av("nstep_save_start", ts_tstream_type.int, 5000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("dampin", ts_tstream_type.float, 25.0)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
     g.set_av("facsecin", ts_tstream_type.float, 0.005)
     g.set_av("cfl", ts_tstream_type.float, 0.4)
-    g.set_av("poisson_cfl", ts_tstream_type.float, 0.5)
+    g.set_av("poisson_cfl", ts_tstream_type.float, 1.0)
     g.set_av("fac_stmix", ts_tstream_type.float, 0.0)
     g.set_av("rfmix", ts_tstream_type.float, 0.01)
     g.set_av("write_yplus", ts_tstream_type.int, 1)
+
+    g.set_av("rfvis", ts_tstream_type.float, 0.1)
+    g.set_av("poisson_nsmooth", ts_tstream_type.int, 10)
+    g.set_av("poisson_sfin", ts_tstream_type.float, 0.05)
+
+    g.set_av("fac_sa_smth", ts_tstream_type.float, 1.0)
+    g.set_av("if_no_mg", ts_tstream_type.int, 1)
 
     if mu:
         # Set a constant viscosity if one is specified
@@ -418,12 +461,28 @@ def make_grid(
         tsr = ts_tstream_reader.TstreamReader()
         gg = tsr.read(guess_file)
 
-        for var in ["ro", "rovx", "rovr", "rorvt", "roe", "trans_dyn_vis"]:
+        # Copy varaibles
+        for var in ["ro", "rovx", "rovr", "rorvt", "roe", "trans_dyn_vis", "phi"]:
             for bid in g.get_block_ids():
                 g.set_bp(var, ts_tstream_type.float, bid, gg.get_bp(var, bid))
 
         # With a good initial guess, do not need nchange
         g.set_av("nchange", ts_tstream_type.int, 0)
+
+        # Throw out spurious negative wall distances
+        for bid in g.get_block_ids():
+            phi = g.get_bp('phi',bid)
+            if np.any(phi[:]<0.):
+                g.set_av("nchange", ts_tstream_type.int, 5000)
+                phi[phi<0.] = 0.
+                g.set_bp('phi', ts_tstream_type.float, bid, phi)
+
+        # Use the existing Poisson field
+        g.set_av("poisson_nstep", ts_tstream_type.int, 0)
+        g.set_av("poisson_restart", ts_tstream_type.int, 1)
+
+        # Make spanwise periodics slipwalls
+        periodic_to_slipwall(g)
 
     else:
         xg = np.concatenate(
@@ -453,6 +512,10 @@ def make_grid(
 
         for bid in g.get_block_ids():
             guess_block(g, bid, xg, Pog, Tog, Mag, Alg, stg.ga, rgas)
+
+        # Make slipwalls spanwise periodic for Poisson
+        g.set_av("nstep", ts_tstream_type.int, 0)
+        slipwall_to_periodic(g)
 
     cp = rgas * stg.ga / (stg.ga - 1.0)
     g.set_av("ga", ts_tstream_type.float, stg.ga)
