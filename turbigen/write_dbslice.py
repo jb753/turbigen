@@ -1,8 +1,9 @@
 """This file contains functions for reading TS probe data."""
 import numpy as np
-import compflow
+import compflow_native as compflow
 import sys, os, json
 from ts import ts_tstream_reader, ts_tstream_patch_kind, ts_tstream_cut
+import average
 
 Pref = 1e5
 Tref = 300.0
@@ -21,7 +22,7 @@ def save_meta(meta, basedir):
             pass
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:
-        json.dump(meta, f)
+        json.dump(meta, f, indent=2)
 
 def node_to_cell(cut, prop_name):
     return np.mean(
@@ -52,7 +53,7 @@ def cell_area(cut):
     return Ax, Ar
 
 
-def mix_out(cuts):
+def mix_out_old(cuts):
 
     cp = cuts[0].cp
     ga = cuts[0].ga
@@ -198,6 +199,97 @@ def mix_out(cuts):
     return cut_out
 
 
+def mix_out(cut):
+    """Take a structured cuts and mix out the flow at constant A."""
+
+    # # If only one cut is input, make a trivial array
+    # try:
+    #     cuts[0]
+    # except AttributeError:
+    #     cuts = [
+    #         cuts,
+    #     ]
+
+    # Gas properties
+    cp = cut.cp
+    ga = cut.ga
+    rgas = cp * (ga - 1.0) / ga
+    Omega = cut.rpm / 60.0 * 2.0 * np.pi
+
+    # Do the mixing
+    r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix = average.mix_out(
+        cut.x,
+        cut.r,
+        cut.rt,
+        cut.ro,
+        cut.rovx,
+        cut.rovr,
+        cut.rorvt,
+        cut.roe,
+        ga,
+        rgas,
+        Omega,
+    )
+
+    # Secondary mixed vars
+    vx_mix, vr_mix, vt_mix, P_mix, T_mix = average.primary_to_secondary(
+        r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix, ga, rgas
+    )
+
+    # Max a new cut with the mixed out flow
+    cut_out = ts_tstream_cut.TstreamStructuredCut()
+
+    cut_out.pref = cut.pref
+    cut_out.tref = cut.tref
+    cut_out.ni = 1
+    cut_out.nj = 1
+    cut_out.nk = 1
+    cut_out.ga = ga
+    cut_out.cp = cp
+    cut_out.ifgas = 0
+    cut_out.write_egen = 0
+
+    cut_out.rpm = cut.rpm
+    cut_out.x = np.mean(cut.x)
+    cut_out.r = r_mix
+    cut_out.rt = np.mean(cut.rt)
+    cut_out.ro = ro_mix
+    cut_out.rovx = rovx_mix
+    cut_out.rovr = rovr_mix
+    cut_out.rorvt = rorvt_mix
+    cut_out.roe = roe_mix
+
+    cut_out.tstat = T_mix
+    cut_out.pstat = P_mix
+
+    cut_out.vx = vx_mix
+    cut_out.vr = vr_mix
+    cut_out.vt = vt_mix
+    cut_out.vabs = np.sqrt(vx_mix ** 2.0 + vr_mix ** 2.0 + vt_mix ** 2.0)
+    cut_out.U = r_mix * Omega
+    cut_out.vt_rel = vt_mix - cut_out.U
+
+    cut_out.vabs_rel = np.sqrt(
+        cut_out.vx ** 2.0 + cut_out.vr ** 2.0 + cut_out.vt_rel ** 2.0
+    )
+    cut_out.mach_rel = cut_out.vabs_rel / np.sqrt(ga * rgas * cut_out.tstat)
+
+    cut_out.mach = cut_out.vabs / np.sqrt(ga * rgas * cut_out.tstat)
+    cut_out.pstag = compflow.Po_P_from_Ma(cut_out.mach, ga) * cut_out.pstat
+    cut_out.pstag_rel = (
+        compflow.Po_P_from_Ma(cut_out.mach_rel, ga) * cut_out.pstat
+    )
+    cut_out.tstag = compflow.To_T_from_Ma(cut_out.mach, ga) * cut_out.tstat
+
+    cut_out.yaw = np.degrees(np.arctan2(cut_out.vt, cut_out.vx))
+    cut_out.yaw_rel = np.degrees(np.arctan2(cut_out.vt_rel, cut_out.vx))
+
+    cut_out.entropy = cp * np.log(cut_out.tstat / cut_out.tref) - rgas * np.log(
+        cut_out.pstat / cut_out.pref
+    )
+
+    return cut_out
+
 def average_cuts(cuts, var_name):
     mass, prop = zip(*[ci.mass_avg_1d(var_name) for ci in cuts])
     mass = np.array(mass)
@@ -295,69 +387,63 @@ if __name__ == "__main__":
     rpm = np.array([g.get_bv("rpm", bid) for bid in bid_all])
 
     # Stator/rotor blocks
-    bid_stator = bid_all[rpm == 0.0]
-    bid_rotor = bid_all[rpm != 0.0]
+    bid_stator = bid_all[rpm == 0.0][0]
+    bid_rotor = bid_all[rpm != 0.0][0]
 
     # Take cuts at inlet/outlet planes of each row
-    stator_inlet = []
-    stator_outlet = []
-    for bid in bid_stator:
-        stator_inlet.append(ts_tstream_cut.TstreamStructuredCut())
-        stator_inlet[-1].read_from_grid(
-            g,
-            Pref,
-            Tref,
-            bid,
-            ist=0,
-            ien=1,  # First streamwise
-            jst=0,
-            jen=nj[0],  # All radial
-            kst=0,
-            ken=nk[0],  # All pitchwise
-        )
-        stator_outlet.append(ts_tstream_cut.TstreamStructuredCut())
-        stator_outlet[-1].read_from_grid(
-            g,
-            Pref,
-            Tref,
-            bid,
-            ist=ni[0] - 2,
-            ien=ni[0] - 1,  # Last streamwise
-            jst=0,
-            jen=nj[0],  # All radial
-            kst=0,
-            ken=nk[0],  # All pitchwise
-        )
+    stator_inlet = ts_tstream_cut.TstreamStructuredCut()
+    stator_inlet.read_from_grid(
+        g,
+        Pref,
+        Tref,
+        bid_stator,
+        ist=0,
+        ien=1,  # First streamwise
+        jst=0,
+        jen=nj[0],  # All radial
+        kst=0,
+        ken=nk[0],  # All pitchwise
+    )
+    stator_outlet = ts_tstream_cut.TstreamStructuredCut()
+    stator_outlet.read_from_grid(
+        g,
+        Pref,
+        Tref,
+        bid_stator,
+        ist=ni[0] - 2,
+        ien=ni[0] - 1,  # Last streamwise
+        jst=0,
+        jen=nj[0],  # All radial
+        kst=0,
+        ken=nk[0],  # All pitchwise
+    )
 
-    rotor_inlet = []
-    rotor_outlet = []
-    for bid in bid_rotor:
-        rotor_inlet.append(ts_tstream_cut.TstreamStructuredCut())
-        rotor_inlet[-1].read_from_grid(
-            g,
-            Pref,
-            Tref,
-            bid,
-            ist=1,
-            ien=2,  # First streamwise
-            jst=0,
-            jen=nj[1],  # All radial
-            kst=0,
-            ken=nk[1],  # All pitchwise
-        )
-        rotor_outlet.append(ts_tstream_cut.TstreamStructuredCut())
-        rotor_outlet[-1].read_from_grid(
-            g,
-            Pref,
-            Tref,
-            bid,
-            ist=ni[1] - 2,
-            ien=ni[1] - 1,  # Last streamwise
-            jst=0,
-            jen=nj[1],  # All radial
-            kst=0,
-            ken=nk[1],  # All pitchwise
-        )
+    rotor_inlet = ts_tstream_cut.TstreamStructuredCut()
+    rotor_inlet.read_from_grid(
+        g,
+        Pref,
+        Tref,
+        bid_rotor,
+        ist=1,
+        ien=2,  # First streamwise
+        jst=0,
+        jen=nj[1],  # All radial
+        kst=0,
+        ken=nk[1],  # All pitchwise
+    )
+    rotor_outlet = ts_tstream_cut.TstreamStructuredCut()
+    rotor_outlet.read_from_grid(
+        g,
+        Pref,
+        Tref,
+        bid_rotor,
+        ist=ni[1] - 2,
+        ien=ni[1] - 1,  # Last streamwise
+        jst=0,
+        jen=nj[1],  # All radial
+        kst=0,
+        ken=nk[1],  # All pitchwise
+    )
 
     # Pull out mass-average flow varibles from the cuts
     cuts = [

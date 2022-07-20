@@ -77,12 +77,12 @@ def run(params, base_dir, plot_stuff=False):
     g, mesh = grid_from_dict(params)
 
     x, r, rt, ilte = [xi[0] for xi in mesh]
-    f, a = plt.subplots()
-    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,0],'-x')
-    a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,-1],'-x')
-    a.axis('equal')
-    plt.savefig('beans.pdf')
-    rstrt
+
+    # f, a = plt.subplots()
+    # a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,0],'-x')
+    # a.plot(x[ilte[0]:(ilte[1]+1)], rt[ilte[0]:(ilte[1]+1),0,-1],'-x')
+    # a.axis('equal')
+    # plt.savefig('beans.pdf')
 
     # Save input file
     g.write_hdf5(os.path.join(workdir, "input_1.hdf5"))

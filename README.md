@@ -8,6 +8,11 @@ cases using Turbostream.
 
 ## Basic usage
 
+0. Clone this repository,
+   ```
+   git clone -b hmesh git clone -b hmesh https://github.com/jb753/turbigen.git
+   ```
+
 1. Set up the Turbostream environment,
    ```
    source /usr/local/software/turbostream/ts3610/bashrc_module_ts3610
@@ -18,9 +23,10 @@ cases using Turbostream.
    python run_default.py
    ```
 
-3. After about an hour, unsteady snapshot results will be available in a
-   numbered directory `run/0000` in the form of compressed `dbslice.npz` files.
-   The input parameters for this case are stored in `params.json`, and metadata
+3. Input files will have been prepared in a numbered directory `run/0000`, and
+   a job is now waiting in the queue to run Turbostream. Eventually, when the
+   calculation is finished, the results will be processed automatically. The
+   input parameters for this case are stored in `params.json`, and metadata
    calculated from the solution in `meta.json`.
 
 4. To run a case with amended parameters, edit the parameters dictionary. For
@@ -73,15 +79,15 @@ default_params.json
 
 ## Post processing
 
-At the end of the unsteady computation, `write_dbslice.py` reads in the
-time-averaged solution and the time-resolved probe data. Then, any quantity of
-interest may be calculated and saved to `meta.json`.
+At the end of the computation, `write_dbslice.py` reads in the time-averaged
+solution. Then, any quantity of interest may be calculated and saved to
+`meta.json`.
 
 After making a change to the `write_dbslice.py` script, one can re-process all
 data using this shell command,
 ```
-find -name "output_2_avg.hdf5" -exec python write_dbslice.py {} \; 
+find -name "output_1_avg.hdf5" -exec python write_dbslice.py {} \; 
 ```
 
 James Brind
-Nov 2021
+Jul 2022
