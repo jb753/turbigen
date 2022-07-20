@@ -32,7 +32,7 @@ param = submit.ParameterSet.from_json(json_file_name)
 input_file_name = "input.hdf5"
 turbostream.write_grid_from_params(param, input_file_name)
 
-print('written input hdf5')
+print("written input hdf5")
 
 output_prefix = "output"
 # Start Turbostream
@@ -51,7 +51,6 @@ spare_files = [
     "stopit",
     output_prefix + ".xdmf",
     output_prefix + "_avg.xdmf",
-    input_file_name,
 ]
 for f in spare_files:
     try:

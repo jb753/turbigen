@@ -134,6 +134,74 @@ def test_nonuniform_xmom():
     assert np.isclose(I_mix, I_ref, rtol=1e-3)
 
 
+def test_nonuniform_grid():
+    """Run a test flow with nonuniform x-momentum and grid."""
+
+    # Coordinates
+    r0, r1 = 1.0, 2.0
+    rv = np.geomspace(1.0, 2.0)
+    tv = np.linspace(-np.pi / 8.0, np.pi / 8.0)
+    r, t = np.meshgrid(rv, tv, indexing="ij")
+    rt = r * t
+    r_norm = (r - r0) / (r1 - r0)
+    x = np.ones_like(r) * r_norm * 0.2  # Angled cut plane
+
+    # Define a base state that we want to conserve
+    rgas = 287.0
+    ga = 1.4
+    cp, cv = average.specific_heats(ga, rgas)
+    rovx_ref = 200.0
+    I_ref = 1e6
+    rtmom_ref = 1.5e4
+    Omega = 200.0
+
+    # Make the non-uniform flow
+    ro0 = 1.0
+    ro = ro0 * (1.0 + 0.5 * r_norm)
+    vx = rovx_ref / ro
+    vr = np.zeros_like(vx)
+    rmid = np.mean((r0, r1))
+    vt = rtmom_ref / ro / vx / r
+    To = (I_ref + rmid * Omega * vt) / cp
+    vsq = vx ** 2.0 + vr ** 2.0 + vt ** 2.0
+    v_cpTo = np.sqrt(vsq / cp / To)
+    Ma = cf.Ma_from_V_cpTo(v_cpTo, ga)
+    T = To / cf.To_T_from_Ma(Ma, ga)
+    P = ro * rgas * T
+
+    # Convert to primary vars
+    ro, rovx, rovr, rorvt, roe = average.secondary_to_primary(
+        r, vx, vr, vt, P, T, ga, rgas
+    )
+
+    # Do the mixing
+    r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix = average.mix_out(
+        x, r, rt, ro, rovx, rovr, rorvt, roe, ga, rgas, Omega
+    )
+
+    # Secondary mixed vars
+    vx_mix, vr_mix, vt_mix, P_mix, T_mix = average.primary_to_secondary(
+        r_mix, ro_mix, rovx_mix, rovr_mix, rorvt_mix, roe_mix, ga, rgas
+    )
+
+    vsq_mix = vx_mix ** 2.0 + vr_mix ** 2.0 + vt_mix ** 2.0
+    Ma_mix = np.sqrt(vsq_mix / ga / rgas / T_mix)
+    To_mix = T_mix * cf.To_T_from_Ma(Ma_mix, ga)
+
+    # Radius should be midspan
+    r_mid = np.mean((r.min(), r.max()))
+    assert np.isclose(r_mix, r_mid)
+
+    # Mass flux should be reference value
+    assert np.isclose(rovx_mix, rovx_ref)
+
+    # Moment of angular momentum should be reference value
+    assert np.isclose(ro_mix * vx_mix * r_mix * vt_mix, rtmom_ref)
+
+    # Rothalpy should be close to reference value
+    # Not exact because we have a small radial span
+    I_mix = cp * To_mix - r_mix * Omega * vt_mix
+    assert np.isclose(I_mix, I_ref, rtol=1e-3)
 def test_uniform():
     """Run a test uniform flow."""
 

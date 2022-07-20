@@ -473,11 +473,9 @@ def _surface_length(xrt):
     nr = xrt.shape[0]
     S_cx = np.empty((nr,))
     for j in range(nr):
-        x = xrt[j,0,:]
-        ite = np.argmax(x)
 
-        upper = np.diff(xrt[j,:,:ite])
-        lower = np.diff(xrt[j,:,ite:])
+        upper = np.diff(xrt[j,0,:,:])
+        lower = np.diff(xrt[j,1,:,:])
 
         S_upper = np.sum(np.sqrt(np.sum(upper**2.,0)))
         S_lower = np.sum(np.sqrt(np.sum(lower**2.,0)))

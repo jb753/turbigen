@@ -1,7 +1,10 @@
 """Functions for mixed-out averaging."""
 
 import numpy as np
-import compflow_native as cf
+try:
+    import compflow_native as cf
+except ModuleNotFoundError:
+    import compflow as cf
 
 
 def node_to_face(var):
@@ -10,8 +13,7 @@ def node_to_face(var):
     return np.mean(
         np.stack(
             (var[:-1, :-1], var[1:, 1:], var[:-1, 1:], var[1:, :-1]),
-            axis=0,
-        )
+        ), axis=0,
     )
 
 

@@ -278,7 +278,7 @@ def nondim_stage_from_Lam(
     ga,  # Ratio of specific heats [--]
     eta,  # Polytropic efficiency [--]
     Vx_rat=(1.0, 1.0),  # Axial velocity ratios [--]
-    loss_rat=0.5,  # Axial velocity ratios [--]
+    loss_rat=0.5,  # Fraction of stator loss [--]
 ):
     r"""Get geometry for an aerodynamic parameter set specifying reaction.
 

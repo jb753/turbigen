@@ -20,7 +20,8 @@ nxd = 33  # Points in downstream duct
 
 drh = 7e-5  # Hub cell width
 drc = 8e-5  # Casing cell width
-nr = 4  # Spanwise number of points
+# nr = 4  # Spanwise number of points
+nr = 65  # Spanwise number of points
 
 # Rotational speed
 rpm = [ 3000.0 * (i % 2) for i in range(nrow)]
@@ -173,7 +174,7 @@ for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
     row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(17))
-    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(1.2)
+    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(1.1)
 
     # Small number of streamwise points in H blocks
     z = z_cst_line("Z_" + `n1` + "_1")

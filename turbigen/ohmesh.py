@@ -328,12 +328,11 @@ def run_remote(geomturbo, py_scripts, sh_script, gbcs_output_dir):
     # Make tmp dir on remote
     tmpdir = os.popen(
             'ssh gp-111 mktemp -p ~/tmp/ -d').read().splitlines()[0]
-    print(tmpdir)
 
     # Copy files across 
     files = [geomturbo] + py_scripts + [sh_script]
-    for si in files:
-        os.system('scp %s gp-111:%s' % ( si, tmpdir))
+    # for si in files:
+    os.system('scp %s gp-111:%s' % ( " ".join(files), tmpdir))
 
     # Run the shell script
     os.popen("ssh gp-111 'cd %s ; ./%s'" % (tmpdir, sh_script)).read()
@@ -384,6 +383,7 @@ def make_g_bcs(
 
     # Adjust pitches to account for surface length
     So_cx = np.array([geometry._surface_length(si) for si in sect])
+
     s = np.array(Dstg.s)*So_cx
 
     # Offset the rotor so it is downstream of stator
@@ -412,10 +412,9 @@ def make_g_bcs(
     x[0] = x[0][:-1]
     rc[0] = rc[0][:-1]
     rh[0] = rh[0][:-1]
-    
+
     h = np.concatenate([np.column_stack((xi,rhi)) for xi, rhi in zip(x, rh)],0)
     c = np.concatenate([np.column_stack((xi,rci)) for xi, rci in zip(x, rc)],0)
-    print(c.shape)
 
     # Determine number of blades and angular pitch
     nb = np.round(2.0 * np.pi * Dstg.rm / s).astype(int)  # Nearest whole number
@@ -429,4 +428,4 @@ def make_g_bcs(
         shutil.copy(os.path.join(TURBIGEN_ROOT,'ag_mesh', f),'.')
     run_remote( 'mesh.geomTurbo', ['script_ag.py2', 'script_igg.py2'], 'script_sh', '.')
 
-    return x, ilte
+    return x, ilte, nb

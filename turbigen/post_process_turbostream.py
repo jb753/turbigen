@@ -212,8 +212,6 @@ def cut_rows_mixed(g):
         cut_by_patch(g, bid_out, pid_out)
     ]
 
-
-
     return [mix_out(c) for c in cuts]
 
 
@@ -239,12 +237,10 @@ def find_omesh(g):
     return oblocks
 
 def cut_by_blade(g, row_ind):
-
     bid_o = find_omesh(g)[row_ind]
     blk = g.get_block(bid_o)
     cut = ts_tstream_cut.TstreamStructuredCut()
-    cut.read_from_grid(g, Pref, Tref, bid_o, 0, blk.ni, 1,2, 0, 1)
-
+    cut.read_from_grid(g, Pref, Tref, bid_o, 0, blk.ni, 2,3, 0, 1)
     return cut
 
 def get_cx(g):
@@ -276,6 +272,8 @@ def extract_surf_o(g, row_ind):
     rt = np.squeeze(C.rt)
     surf = np.cumsum(np.sqrt(np.diff(x, 1) ** 2.0 + np.diff(rt, 1) ** 2.0))
     surf = np.insert(surf, 0, 0, 0).astype(float)
+
+    surf = surf - surf[np.argmin(x)]
     return surf, P, x
 
 
@@ -296,12 +294,16 @@ def extract_surf(g, bid):
 def circ_coeff(g, row_ind, Po1, P2):
     surf, P, x = extract_surf_o(g, row_ind)
 
-    ile = np.argmax(x)
-
-    So = np.max((np.ptp(surf[:ile]),np.ptp(surf[ile:])))
     Cp = (Po1 - P) / (Po1 - P2)
     Cp[Cp < 0.0] = 0.0
-    Co = np.abs(np.trapz(np.sqrt(Cp), surf)/So)
+    sqrt_Cp = np.sqrt(Cp)
+
+    So = np.max(np.abs(surf))
+
+    upper = np.trapz(sqrt_Cp[surf<0.],surf[surf<0.])
+    lower = np.trapz(sqrt_Cp[surf>=0.],surf[surf>=0.])
+
+    Co = np.abs(upper-lower)/So
 
     return Co, So
 
@@ -397,6 +399,9 @@ def post_process(output_hdf5):
     )
     Yp = [Ypv, Ypb]
 
+    # Loss ratio
+    loss_rat = (rot_in.entropy - sta_in.entropy)/(rot_out.entropy - sta_in.entropy)
+
     # Axial velocity ratio
     zeta = (sta_in.vx / sta_out.vx, rot_out.vx / sta_out.vx)
 
@@ -426,6 +431,7 @@ def post_process(output_hdf5):
         "s_cx": s_cx,
         "Yp": Yp,
         "zeta": zeta,
+        "loss_rat": loss_rat,
     }
 
     with open(os.path.join(basedir, "meta.json"), "w") as f:

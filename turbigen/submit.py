@@ -1,5 +1,5 @@
 """Generate and submit a job using a set of input parameters."""
-import json, glob, os, shutil, subprocess, sys, uuid
+import json, glob, os, shutil, subprocess, sys
 import numpy as np
 from . import geometry, tabu, design
 
@@ -122,7 +122,7 @@ def _make_rundir(base_dir):
     if not os.path.exists(base_dir):
         os.mkdir(base_dir)
     # Make a working directory with unique filename
-    case_str = str(uuid.uuid4())
+    case_str = "%012d" % np.random.randint(0,1e12)
     workdir = os.path.join(base_dir, case_str)
     os.mkdir(workdir)
     # Return the working directory so that we can save input files there
@@ -184,6 +184,7 @@ class ParameterSet:
             "Ma2",
             "eta",
             "ga",
+            "loss_rat",
         ],
         "bcond": [
             "To1",
@@ -206,7 +207,7 @@ class ParameterSet:
             "tte",
             "stag",
         ],
-        "run": ["guess_file", "rtol", "dampin", "ilos", "resid"],
+        "run": ["guess_file", "rtol", "ilos", "resid","nchange"],
     }
 
     def __init__(self, var_dict):
@@ -311,7 +312,7 @@ class ParameterSet:
         """Return parameters needed to pre-process the CFD."""
         return {
             k: getattr(self, k)
-            for k in self._var_names["bcond"] + ["guess_file", "dampin", "ilos"]
+            for k in self._var_names["bcond"] + ["guess_file", "ilos","nchange"]
         }
 
     def copy(self):
