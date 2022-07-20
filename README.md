@@ -10,7 +10,7 @@ cases using Turbostream.
 
 0. Clone this repository,
    ```
-   git clone -b hmesh git clone -b hmesh https://github.com/jb753/turbigen.git
+   git clone -b hmesh https://github.com/jb753/turbigen.git
    ```
 
 1. Set up the Turbostream environment,
