@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J turbigen
+#SBATCH -J turbigen_xxx
 #SBATCH -p ampere
 #SBATCH -A PULLAN-MHI-SL2-GPU
 #SBATCH --mail-type=FAIL

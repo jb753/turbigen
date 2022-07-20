@@ -27,7 +27,13 @@ def read_params(params_file_name):
     """Generate Turbostream input file from JSON file on disk."""
 
     with open(params_file_name, "r") as f:
-        return json.load(f)
+        params = json.load(f)
+
+    # hard code thicknesses
+    params["mesh"]["Asta"] = [[0.36890363, 0.5244426 , 0.29232573, 0.29764035],[0.36890363, 0.5244426 , 0.29232573, 0.29764035]]
+    params["mesh"]["Arot"] = [[0.36890363, 0.5244426 , 0.29232573, 0.29764035],[0.36890363, 0.5244426 , 0.29232573, 0.29764035]]
+
+    return params
 
 
 def _new_id(base_dir):
@@ -70,7 +76,7 @@ def run(params, base_dir, plot_stuff=False):
 
     # Append run id to the slurm job name
     os.system(
-        "sed -i 's/turbigen/turbigen_%s_%04d/' %s" % (base_dir, new_id, new_slurm)
+        "sed -i 's/turbigen_xxx/turbigen_%s_%04d/' %s" % (base_dir, new_id, new_slurm)
     )
 
     # Generate grid structure
