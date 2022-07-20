@@ -53,7 +53,9 @@ class BaseTurbostreamComp(om.ExternalCodeComp):
             # the parent compute function actually runs the external code
             super().compute(inputs, outputs)
         except:
-            raise om.AnalysisError("TS failed %s" % os.path.join(*os.path.split(workdir)[-2:]))
+            raise om.AnalysisError(
+                "TS failed %s" % os.path.join(*os.path.split(workdir)[-2:])
+            )
 
         # parse the output file from the external code
         m = submit.load_results(output_file_path)
@@ -199,9 +201,11 @@ def correct_deviation(params):
 
     for k, irow in enumerate(row_indices):
 
-        print('* row %d' % irow)
+        print("* row %d" % irow)
         params_now = params.copy()
-        params_now.recamber[ (1, 3), ] = recamber
+        params_now.recamber[
+            (1, 3),
+        ] = recamber
 
         # build the model
         prob = om.Problem()
@@ -210,12 +214,14 @@ def correct_deviation(params):
             "ts",
             MeanLineTurbostreamComp(
                 row_index=irow, datum_params=params_now, base_dir=base_dir
-            ), promotes=["*"]
+            ),
+            promotes=["*"],
         )
 
         prob.setup()
 
         cache = {}
+
         def iterate(x):
             if x in cache:
                 return cache[x]
@@ -230,31 +236,31 @@ def correct_deviation(params):
         # Attempt to bracket zero-deviation point
 
         # Look for a positive deviation
-        recam_upper = recamber[irow] + 0.
-        recam_lower = recamber[irow] + 0.
-        flip = -1. if irow else 1.
+        recam_upper = recamber[irow] + 0.0
+        recam_lower = recamber[irow] + 0.0
+        flip = -1.0 if irow else 1.0
         while True:
-            print('recam', recam_upper, recam_lower)
-            dev_upper = iterate(recam_upper)*flip
-            if dev_upper > 0.:
-                print('found positive dev')
+            print("recam", recam_upper, recam_lower)
+            dev_upper = iterate(recam_upper) * flip
+            if dev_upper > 0.0:
+                print("found positive dev")
                 break
             else:
                 if recam_upper > recam_lower:
-                    recam_lower = recam_upper + 0.
-                recam_upper += 1.
+                    recam_lower = recam_upper + 0.0
+                recam_upper += 1.0
 
         # Look for a negative deviation
         while True:
-            print('recam', recam_upper, recam_lower)
-            dev_lower = iterate(recam_lower)*flip
-            if dev_lower < 0.:
-                print('found negative dev')
+            print("recam", recam_upper, recam_lower)
+            dev_lower = iterate(recam_lower) * flip
+            if dev_lower < 0.0:
+                print("found negative dev")
                 break
             else:
                 if recam_lower < recam_upper:
-                    recam_upper = recam_lower + 0.
-                recam_lower -= 1.
+                    recam_upper = recam_lower + 0.0
+                recam_lower -= 1.0
 
         # tol = 0.5
         # brak = (recam_lower, recam_upper)
@@ -262,9 +268,15 @@ def correct_deviation(params):
 
         # We now have the zero-deviation point inside a 1 degree interval
         # So just linearly interpolate to get good enough
-        recamber[irow] = recam_lower - dev_lower * (recam_upper-recam_lower)/(dev_upper - dev_lower)
+        recamber[irow] = recam_lower - dev_lower * (
+            recam_upper - recam_lower
+        ) / (dev_upper - dev_lower)
 
-        output_hdf5_path = os.path.abspath(os.path.join(base_dir,  str(int(prob.get_val("runid")[0])), 'output_avg.hdf5'))
+        output_hdf5_path = os.path.abspath(
+            os.path.join(
+                base_dir, str(int(prob.get_val("runid")[0])), "output_avg.hdf5"
+            )
+        )
         params.eta = prob.get_val("efficiency_out")[0]
         params.loss_rat = prob.get_val("loss_rat_out")[0]
         params.recamber[1], params.recamber[3] = recamber
@@ -272,11 +284,11 @@ def correct_deviation(params):
 
 
 def run_once(params):
-    if (params.ilos == -1):
+    if params.ilos == -1:
         base_dir = "./om_poisson"
-    elif (params.ilos == 1):
+    elif params.ilos == 1:
         base_dir = "./om_ml"
-    elif (params.ilos == 2):
+    elif params.ilos == 2:
         base_dir = "./om_sa"
     else:
         pass
@@ -286,13 +298,19 @@ def run_once(params):
     model = prob.model
     model.add_subsystem(
         "ts",
-        SectionTurbostreamComp(row_index=0, datum_params=params, base_dir=base_dir),
-        promotes=['*']
+        SectionTurbostreamComp(
+            row_index=0, datum_params=params, base_dir=base_dir
+        ),
+        promotes=["*"],
     )
     prob.setup()
     prob.run_model()
 
-    output_hdf5_path = os.path.abspath(os.path.join(base_dir,  str(int(prob.get_val("runid")[0])), 'output.hdf5'))
+    output_hdf5_path = os.path.abspath(
+        os.path.join(
+            base_dir, str(int(prob.get_val("runid")[0])), "output.hdf5"
+        )
+    )
 
     return output_hdf5_path
 
@@ -305,15 +323,17 @@ params = submit.ParameterSet.from_json("datum_deviation_corrected_sa_2.json")
 # run_once(params)
 
 
-
 # Set up model
 prob = om.Problem()
 model = prob.model
 model.add_subsystem(
     "ts",
     SectionTurbostreamComp(
-        row_index=0, datum_params=params, base_dir="run/opt_stator",
-    ), promotes=["*"]
+        row_index=0,
+        datum_params=params,
+        base_dir="run/opt_stator",
+    ),
+    promotes=["*"],
 )
 
 # prob.setup()
