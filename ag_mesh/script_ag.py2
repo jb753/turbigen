@@ -33,6 +33,8 @@ dy =  [5e-5, 7e-5, 9e-5, 1.1e-4, 1.2e-4, 1.5e-4, 2e-4, 2.2e-4]
 xup = [-0.02, 1.362]
 xdn = [0.189, 1.56]
 
+compressor = True
+
 ################
 # BEGIN SCRIPT #
 ################
@@ -78,10 +80,19 @@ for n in range(nrow):
     row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
     row(n1).blade(1).set_b2b_default_topology_disable_high_staggered_detection()
     row(n1).blade(1).set_b2b_default_topology_normal_inlet_angle()
-    if is_rotor:
-        row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+
+    if compressor:
+        if is_rotor:
+            row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
+            row(n1).blade(1).set_b2b_default_topology_low_staggered_inlet_angle()
+        else:
+            row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+            row(n1).blade(1).set_b2b_default_topology_high_staggered_inlet_angle()
     else:
-        row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
+        if is_rotor:
+            row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+        else:
+            row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
 
     row(n1).blade(1).set_b2b_default_topology_cell_width_at_wall(float(dy[n]))
 

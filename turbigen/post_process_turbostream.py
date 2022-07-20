@@ -333,7 +333,7 @@ def post_process(output_hdf5):
     # Gas properties
     cp = g.get_av("cp")  # Specific heat capacity at const p
     ga = g.get_av("ga")  # Specific heat ratio
-    rpm = g.get_bv("rpm", g.get_block_ids()[-1])
+    rpm = np.max([g.get_bv("rpm", b) for b in g.get_block_ids()])
     omega = rpm / 60.0 * 2.0 * np.pi
 
     # 1D mixed-out average cuts for stator/rotor inlet/outlet

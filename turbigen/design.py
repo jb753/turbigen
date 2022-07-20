@@ -52,6 +52,7 @@ stage_vars = {
     "Vrel_U": r"Normalised relative velocities, :math:`V/U` [--]",
     "P3_Po1": r"Total-to-static stage pressure ratio, :math:`p_3/p_{01}` [--]",
     "eta": r"Polytropic efficiency, :math:`\eta` [--]",
+    "Psi_ts": r"Compressor total-to-static pressure rise coefficient, :math:`\Psi_\mathrm{ts}` [--]",
 }
 docstring_NonDimStage = (
     "Data class to hold non-dimensional geometry and derived flow parameters "
@@ -91,12 +92,17 @@ _DimStage = _make_namedtuple_with_docstrings(
 
 
 class DimStage(_DimStage):
-    def free_vortex_vane(self, spf):
+    def free_vortex_vane(self, spf, compressor=False):
         """Evaluate vane flow angles assuming a free vortex."""
 
-        rh_vane = self.rh[:2].reshape(-1, 1)
-        rc_vane = self.rc[:2].reshape(-1, 1)
-        Al_vane = self.Al[:2].reshape(-1, 1)
+        if compressor:
+            rh_vane = self.rh[1:].reshape(-1, 1)
+            rc_vane = self.rc[1:].reshape(-1, 1)
+            Al_vane = self.Al[1:].reshape(-1, 1)
+        else:
+            rh_vane = self.rh[:2].reshape(-1, 1)
+            rc_vane = self.rc[:2].reshape(-1, 1)
+            Al_vane = self.Al[:2].reshape(-1, 1)
 
         r_rm = (
             np.reshape(spf, (1, -1)) * (rh_vane - rc_vane) + rh_vane
@@ -104,12 +110,17 @@ class DimStage(_DimStage):
 
         return np.degrees(np.arctan(np.tan(np.radians(Al_vane)) / r_rm))
 
-    def free_vortex_blade(self, spf):
+    def free_vortex_blade(self, spf, compressor=False):
         """Evaluate blade flow angles assuming a free vortex."""
 
-        rh_blade = self.rh[1:].reshape(-1, 1)
-        rc_blade = self.rc[1:].reshape(-1, 1)
-        Al_blade = self.Al[1:].reshape(-1, 1)
+        if compressor:
+            rh_blade = self.rh[:2].reshape(-1, 1)
+            rc_blade = self.rc[:2].reshape(-1, 1)
+            Al_blade = self.Al[:2].reshape(-1, 1)
+        else:
+            rh_blade = self.rh[1:].reshape(-1, 1)
+            rc_blade = self.rc[1:].reshape(-1, 1)
+            Al_blade = self.Al[1:].reshape(-1, 1)
 
         r_rm = (
             np.reshape(spf, (1, -1)) * (rc_blade - rh_blade) + rh_blade
@@ -182,9 +193,16 @@ def nondim_stage_from_Al(
     # First, construct velocity triangles
     #
 
-    # Euler work equation sets tangential velocity upstream of rotor
-    # This gives us absolute flow angles everywhere
-    tanAl2 = np.tan(np.radians(Al13[1])) * Vx_rat[1] + psi / phi
+    # Get absolute flow angles using Euler work eqn
+    if psi > 0.:
+        # Turbine
+        # Euler work eqn from 2-3 sets tangential velocity upstream of rotor
+        tanAl2 = np.tan(np.radians(Al13[1])) * Vx_rat[1] + psi / phi
+    else:
+        # Compressor
+        # Euler work eqn from 1-2 sets tangential velocity downstream of rotor
+        tanAl2 = np.tan(np.radians(Al13[0])) * Vx_rat[0] - psi / phi
+
     Al2 = np.degrees(np.arctan(tanAl2))
     Al = np.insert(Al13, 1, Al2)
     cosAl = np.cos(np.radians(Al))
@@ -199,14 +217,26 @@ def nondim_stage_from_Al(
     Vrel_U = np.sqrt(Vx_U ** 2.0 + Vtrel_U ** 2.0)
     Alrel = np.degrees(np.arctan2(Vtrel_U, Vx_U))
 
-    # Use Mach number to get U/cpTo1 = U/cpTo2
-    V_sqrtcpTo2 = compflow.V_cpTo_from_Ma(Ma2, ga)
-    U_sqrtcpTo1 = V_sqrtcpTo2 / V_U[1]
+    if psi > 0.:
+        # Turbine
+        # Use Mach number to get U/cpTo1 = U/cpTo2
+        V_sqrtcpTo2 = compflow.V_cpTo_from_Ma(Ma2, ga)
+        U_sqrtcpTo1 = V_sqrtcpTo2 / V_U[1]
+    else:
+        # Compressor
+        # Set the tip Mach number directly
+        U_sqrtcpTo1 = compflow.V_cpTo_from_Ma(Ma2, ga)
 
     # Non-dimensional temperatures from U/cpTo Ma and stage loading definition
     cpTo1_Usq = 1.0 / U_sqrtcpTo1 ** 2
     cpTo3_Usq = cpTo1_Usq - psi
-    cpTo_Usq = np.array([cpTo1_Usq, cpTo1_Usq, cpTo3_Usq])
+
+    if psi > 0.:
+        # Turbine - constant To from 1-2
+        cpTo_Usq = np.array([cpTo1_Usq, cpTo1_Usq, cpTo3_Usq])
+    else:
+        # Compressor - constant To from 2-3
+        cpTo_Usq = np.array([cpTo1_Usq, cpTo3_Usq, cpTo3_Usq])
 
     # Mach numbers and capacity from compressible flow relations
     Ma = compflow.Ma_from_V_cpTo(V_U / np.sqrt(cpTo_Usq), ga)
@@ -222,7 +252,7 @@ def nondim_stage_from_Al(
     To_To1 = cpTo_Usq / cpTo_Usq[0]
     Ds_cp = -(1.0 - 1.0 / eta) * np.log(To_To1[-1])
 
-    # Somewhat arbitrarily, split loss 50% on stator, 50% on rotor
+    # Somewhat arbitrarily, split loss using loss ratio (default 0.5)
     s_cp = np.hstack((0.0, loss_rat, 1.0)) * Ds_cp
 
     # Convert to stagnation pressures
@@ -236,12 +266,24 @@ def nondim_stage_from_Al(
     T_To1 = To_To1 / compflow.To_T_from_Ma(Ma, ga)
     P_Po1 = Po_Po1 / compflow.Po_P_from_Ma(Ma, ga)
     Porel_Po1 = P_Po1 * compflow.Po_P_from_Ma(Marel, ga)
-    Lam = (T_To1[2] - T_To1[1]) / (T_To1[2] - T_To1[0])
 
     # Reformulate loss as stagnation pressure loss coefficients
     # referenced to inlet dynamic head as in a compressor
-    Yp_vane = (Po_Po1[0] - Po_Po1[1]) / (Po_Po1[0] - P_Po1[0])
-    Yp_blade = (Porel_Po1[1] - Porel_Po1[2]) / (Porel_Po1[1] - P_Po1[1])
+    if psi>0.:
+        # Turbine
+        Lam = (T_To1[2] - T_To1[1]) / (T_To1[2] - T_To1[0])
+        Yp_vane = (Po_Po1[0] - Po_Po1[1]) / (Po_Po1[0] - P_Po1[0])
+        Yp_blade = (Porel_Po1[1] - Porel_Po1[2]) / (Porel_Po1[1] - P_Po1[1])
+    else:
+        # Compressor
+        Lam = (T_To1[1] - T_To1[0]) / (T_To1[2] - T_To1[0])
+        Yp_vane = (Po_Po1[1] - Po_Po1[2]) / (Po_Po1[1] - P_Po1[1])
+        Yp_blade = (Porel_Po1[0] - Porel_Po1[1]) / (Porel_Po1[0] - P_Po1[0])
+
+
+    # Compressor style total-to-static pressure rise coefficient
+    half_rho_Usq_Po1 = (0.5*ga*Ma[0]**2.)/compflow.Po_P_from_Ma(Ma[0],ga)/(V_U[0]**2.)
+    Psi_ts = (P_Po1[2] - 1.)/half_rho_Usq_Po1
 
     # Assemble all of the data into the output object
     stg = NonDimStage(
@@ -264,6 +306,7 @@ def nondim_stage_from_Al(
         Vrel_U=Vrel_U,
         P3_Po1=P_Po1[2],
         eta=eta,
+        Psi_ts=Psi_ts,
     )
 
     return stg
@@ -523,12 +566,15 @@ def pitch_circulation(stg, C0):
 
     """
 
-    # chi = np.array((stg.Al[:2], stg.Alrel[1:]))
-    V2 = np.array((stg.V_U[1], stg.Vrel_U[2]))
-    Vt2 = np.array((stg.Vt_U[1], stg.Vtrel_U[2]))
-    Vt1 = np.array((stg.Vt_U[0], stg.Vtrel_U[1]))
-    # S0_c = np.array([_integrate_length(chii) for chii in chi])
-    # return C0 * S0_c * V2 / np.abs(Vt1 - Vt2)
+    if stg.psi < 0.:
+        V2 = np.array((stg.Vrel_U[1], stg.V_U[2]))
+        Vt2 = np.array((stg.Vtrel_U[1], stg.Vt_U[2]))
+        Vt1 = np.array((stg.Vtrel_U[0], stg.Vt_U[1]))
+    else:
+        V2 = np.array((stg.V_U[1], stg.Vrel_U[2]))
+        Vt2 = np.array((stg.Vt_U[1], stg.Vtrel_U[2]))
+        Vt1 = np.array((stg.Vt_U[0], stg.Vtrel_U[1]))
+
     return C0 * V2 / np.abs(Vt1 - Vt2)
 
 
@@ -679,7 +725,11 @@ def scale_geometry(stg, htr, Omega, To1, Po1, rgas, Re, Co, cx_rat=1.0):
     cx = chord_from_Re(stg, Re, cpTo1, Po1, rgas) * np.array([1.0, cx_rat])
 
     # Pitches
-    s_cx = pitch_circulation(stg, Co)
+    if stg.psi < 0.:
+        # For a compressor, set pitch to chord directly from Co
+        s_cx = Co
+    else:
+        s_cx = pitch_circulation(stg, Co)
 
     # Assemble into dict
     geometry = {

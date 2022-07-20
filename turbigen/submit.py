@@ -181,6 +181,7 @@ class ParameterSet:
             "psi",
             "Lam",
             "Al1",
+            "Al3",
             "Ma2",
             "eta",
             "ga",
@@ -217,6 +218,8 @@ class ParameterSet:
         for outer_name, inner_names in self._var_names.items():
             for var in inner_names:
                 setattr(self, var, var_dict[outer_name][var])
+
+
         if not np.any(self.stag):
             self.set_stag()
 
@@ -290,6 +293,22 @@ class ParameterSet:
             json.dump(dat, f, indent=4)
 
     @property
+    def stg(self):
+
+        # Mean-line design using the non-dimensionals
+        args = self.nondimensional
+        if self.Lam == -1 and not self.Al3 == -1:
+            args['Al13'] = (args['Al1'],args['Al3'])
+            args.pop('Lam')
+            args.pop('Al3')
+            args.pop('Al1')
+            return design.nondim_stage_from_Al(**args)
+        else:
+            args.pop('Al3')
+            return design.nondim_stage_from_Lam(**args)
+
+
+    @property
     def nondimensional(self):
         """Return parameters needed for non-dimensional mean-line design."""
         return {k: getattr(self, k) for k in self._var_names["mean-line"]}
@@ -331,13 +350,18 @@ class ParameterSet:
     def set_stag(self):
 
         # Evaulate the meanline design to get target flow angles
-        stg = design.nondim_stage_from_Lam(**self.nondimensional)
 
         # Set stagger guess
-        tanAl_rot = np.tan(np.radians(stg.Alrel[1:]))
-        tanAl_sta = np.tan(np.radians(stg.Al[:2]))
-        self.stag[0] = np.degrees(np.arctan(np.mean(tanAl_sta)))
-        self.stag[1] = np.degrees(np.arctan(np.mean(tanAl_rot)))
+        if self.psi < 0.:
+            tanAl_rot = np.tan(np.radians(self.stg.Alrel[:2]))
+            tanAl_sta = np.tan(np.radians(self.stg.Al[1:]))
+            self.stag[0] = np.degrees(np.arctan(np.mean(tanAl_rot)))
+            self.stag[1] = np.degrees(np.arctan(np.mean(tanAl_sta)))
+        else:
+            tanAl_rot = np.tan(np.radians(self.stg.Alrel[1:]))
+            tanAl_sta = np.tan(np.radians(self.stg.Al[:2]))
+            self.stag[0] = np.degrees(np.arctan(np.mean(tanAl_sta)))
+            self.stag[1] = np.degrees(np.arctan(np.mean(tanAl_rot)))
 
 
 def _run_parameters(write_func, params_all, base_dir):

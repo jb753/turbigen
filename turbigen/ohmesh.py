@@ -365,7 +365,11 @@ def make_g_bcs(
     # Evaluate radial blade angles
     r1 = r[0][ilte[0][0], :]
     spf = (r1 - r1.min()) / r1.ptp()
-    chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
+
+    if Dstg.psi < 0.:
+        chi = np.stack((Dstg.free_vortex_blade(spf,True), Dstg.free_vortex_vane(spf,True)))
+    else:
+        chi = np.stack((Dstg.free_vortex_vane(spf,), Dstg.free_vortex_blade(spf)))
 
     # If recambering, then tweak the metal angles
     if not recamber is None:
@@ -384,7 +388,10 @@ def make_g_bcs(
     # Adjust pitches to account for surface length
     So_cx = np.array([geometry._surface_length(si) for si in sect])
 
-    s = np.array(Dstg.s)*So_cx
+    if Dstg.psi >0.:
+        s = np.array(Dstg.s)*So_cx
+    else:
+        s = np.array(Dstg.s)
 
     # Offset the rotor so it is downstream of stator
     x_offset = x[0][-1] - x[1][0]

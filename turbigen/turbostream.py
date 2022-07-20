@@ -423,8 +423,8 @@ def set_variables(g, mu=None):
     g.set_av("restart", ts_tstream_type.int, 1)
     g.set_av("ilos", ts_tstream_type.int, 1)
     g.set_av("nlos", ts_tstream_type.int, 5)
-    g.set_av("nstep", ts_tstream_type.int, 25000)
-    g.set_av("nstep_save_start", ts_tstream_type.int, 20000)
+    g.set_av("nstep", ts_tstream_type.int, 50000)
+    g.set_av("nstep_save_start", ts_tstream_type.int, 45000)
     g.set_av("nchange", ts_tstream_type.int, 5000)
     g.set_av("sfin", ts_tstream_type.float, 0.5)
     g.set_av("facsecin", ts_tstream_type.float, 0.005)
@@ -517,7 +517,7 @@ def prep_ag(g, x, ilte, nb, stg, Po1, To1, Omega, rgas, guess_file, ilos, nchang
 
     # Apply application/block variables
     set_variables(g)
-    g.set_av("dampin", ts_tstream_type.float, 3. if ilos == 1 else 25.)
+    g.set_av("dampin", ts_tstream_type.float, 10. if ilos == 1 else 25.)
     g.set_av("ilos", ts_tstream_type.float, ilos)
 
     g.set_av("nchange", ts_tstream_type.int, nchange)
@@ -552,10 +552,9 @@ def prep_ag(g, x, ilte, nb, stg, Po1, To1, Omega, rgas, guess_file, ilos, nchang
     # Kill turbulence in outlet for better convergence
     g.set_bv("fac_st0", ts_tstream_type.float, bid_out, 0.)
 
-    # Rotation
     stator_bids = [i for i in range(7)]
     rotor_bids = [i for i in range(7,len(g.get_block_ids()))]
-    rpm_rotor = Omega / 2.0 / np.pi * 60.0
+
     for bid in stator_bids:
         g.set_bv("fblade", ts_tstream_type.float, bid, float(nb[0]))
         g.set_bv("nblade", ts_tstream_type.int, bid, nb[0])
@@ -563,8 +562,13 @@ def prep_ag(g, x, ilte, nb, stg, Po1, To1, Omega, rgas, guess_file, ilos, nchang
         g.set_bv("fblade", ts_tstream_type.float, bid, float(nb[1]))
         g.set_bv("nblade", ts_tstream_type.int, bid, nb[1])
 
+    # Rotation
+    # Swap rotation if compressor
+    if stg.psi < 0.:
+        stator_bids, rotor_bids = rotor_bids, stator_bids
+    rpm_rotor = Omega / 2.0 / np.pi * 60.0
     set_rotation( g, stator_bids, 0., spin_j=False,)
-    set_rotation( g, rotor_bids, rpm_rotor, spin_j=False,)
+    set_rotation( g, rotor_bids, rpm_rotor, spin_j=True,)
 
     # Mixing length limit
     set_xllim(g, 0.03)
@@ -816,11 +820,8 @@ class suppress_print:
 def write_grid_from_params(params, fname=None):
     """Generate a Turbostream input file from a dictionary of parameters."""
 
-    # Mean-line design using the non-dimensionals
-    stg = design.nondim_stage_from_Lam(**params.nondimensional)
-
     # Set geometry using dimensional bcond and 3D design parameter
-    Dstg = design.scale_geometry(stg, **params.dimensional)
+    Dstg = design.scale_geometry(params.stg, **params.dimensional)
 
     # Generate mesh using geometry and the meshing parameters
 
@@ -843,7 +844,7 @@ def write_grid_from_params(params, fname=None):
         # Load them
         agr = ts_autogrid_reader.AutogridReader()
         g = agr.read('mesh.bcs','mesh.g')
-        g = prep_ag(g, x, ilte, nb, stg, **params.cfd_input_file)
+        g = prep_ag(g, x, ilte, nb, params.stg, **params.cfd_input_file)
         if fname:
             g.write_hdf5(fname)
 
