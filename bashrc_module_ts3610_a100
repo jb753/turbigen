@@ -1,0 +1,52 @@
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+	. /etc/bashrc
+fi
+
+
+
+
+# ENV ROOT
+export ENV_ROOT=/usr/local/software/turbostream/ts_env_4
+
+# TS ROOT
+export TSHOME=/usr/local/software/turbostream/ts3610_a100/
+export TSDIR=turbostream_3
+export SBDIR=sblock_1
+
+# PYTHON
+source $ENV_ROOT/virtualenvs/ts3/bin/activate
+
+# OPEN-MPI
+# module load openmpi-4.0.5-gcc-8.4.1-2lpgttf
+
+# CMAKE
+export PATH=$ENV_ROOT/cmake/bin:$PATH
+
+# CUDA
+#module load cuda/8.0
+
+# METIS
+export LD_LIBRARY_PATH=$ENV_ROOT/metis/lib:$LD_LIBRARY_PATH
+
+# HDF5
+export LD_LIBRARY_PATH=$ENV_ROOT/hdf5_1.8/lib:$LD_LIBRARY_PATH
+
+# FLANN
+export LD_LIBRARY_PATH=$ENV_ROOT/flann/lib:$LD_LIBRARY_PATH
+
+# PARMAT
+export LD_LIBRARY_PATH=$TSHOME/parmat/lib:$LD_LIBRARY_PATH
+
+# SBLOCK
+export PYTHONPATH=$TSHOME/$SBDIR/script:$PYTHONPATH
+export PYTHONPATH=$TSHOME/$SBDIR/src:$PYTHONPATH
+export LD_LIBRARY_PATH=$TSHOME/$SBDIR/lib:$LD_LIBRARY_PATH
+
+# TURBOSTREAM
+export PYTHONPATH=$TSHOME/$TSDIR/script/ts:$PYTHONPATH
+export LD_LIBRARY_PATH=$TSHOME/$TSDIR/script/ts:$LD_LIBRARY_PATH
+export PYTHONPATH=$TSHOME/$TSDIR/script:$PYTHONPATH
+export LD_LIBRARY_PATH=$TSHOME/$TSDIR/lib:$LD_LIBRARY_PATH
+export PATH=$TSHOME/$TSDIR/bin/cuda:$PATH
+
