@@ -4,8 +4,7 @@ from scipy.special import binom
 from numpy.linalg import lstsq
 from scipy.optimize import newton, fminbound
 from scipy.interpolate import interp1d
-from scipy.spatial import Voronoi
-# import matplotlib.path as mplpath
+np.seterr(all="raise")
 
 nx = 201
 
@@ -205,11 +204,13 @@ def prelim_A():
     # Choose arbitrary camber line (A independent of chi)
     chi = (-10.0, 20.0)
 
+    stag = np.mean(chi)
+
     # Assemble preliminary upper and lower coordiates
-    xy_prelim = [_thickness_to_coord(xc, sgn * thick, chi) for sgn in [1, -1]]
+    xy_prelim = [_thickness_to_coord(xc, sgn * thick, chi, stag) for sgn in [1, -1]]
 
     # Fit Bernstein polynomials to the prelim coords in shape space
-    A, _ = _fit_aerofoil(xy_prelim, chi, order=4)
+    A, _ = _fit_aerofoil(xy_prelim, chi, stag, order=4)
 
     return A
 
@@ -288,7 +289,7 @@ def _evaluate_coefficients(x, A):
     return np.sum(t, axis=0)
 
 
-def _fit_aerofoil(xy, chi, order):
+def _fit_aerofoil(xy, chi, stag, order):
     """Fit Bernstein polynomials to both aerofoil surfaces simultaneously."""
     n = order - 1
     # When converting from real coordinates to shape space, we end up with
@@ -300,7 +301,7 @@ def _fit_aerofoil(xy, chi, order):
     X_all = []
     X_le_all = []
     for xyi in xy:
-        xc, yc, t = _coord_to_thickness(xyi, chi)
+        xc, yc, t = _coord_to_thickness(xyi, chi, stag)
         s = _to_shape_space(xc, t, 0.02)
         with np.errstate(invalid="ignore", divide="ignore"):
             itrim = np.abs(xc - 0.5) < (0.5 - dx)
@@ -325,19 +326,16 @@ def _fit_aerofoil(xy, chi, order):
     Al = np.insert(A_all[order:], 0, A_all[0])
     return np.vstack((Au, Al)), resid
 
-
 def evaluate_camber(x, chi, stag):
     """Camber line as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
     tangam = np.tan(np.radians(stag))
-    # return tanchi[0] * x + (tanchi[1] - tanchi[0]) * (
-    #     (1.0 - aft) / 2.0 * x ** 2.0 + aft / 3.0 * x ** 3.0
-    # )
-    n = np.sum(tanchi) / tangam
+    n = np.max((np.sum(tanchi) / tangam,1.))
     a = tanchi[1] / n
     b = -tanchi[0] / n
     y = a * x ** n + b * (1.0 - x) ** n
     y = y - y[0]
+
     return y
 
 
@@ -345,15 +343,14 @@ def evaluate_camber_slope(x, chi, stag):
     """Camber line slope as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
     tangam = np.tan(np.radians(stag))
-    # return tanchi[0] + (tanchi[1] - tanchi[0]) * x * (aft * x + (1.0 - aft))
-    n = np.sum(tanchi) / tangam
+    n = np.max((np.sum(tanchi) / tangam,1.))
     a = tanchi[1] / n
     b = -tanchi[0] / n
-    y = a * n * x ** (n - 1.0) - b * n * (1.0 - x) ** (n - 1.0)
-    return y
+    dy = a * n * x ** (n - 1.0) - b * n * (1.0 - x) ** (n - 1.0)
+    return dy
 
 
-def _coord_to_thickness(xy, chi):
+def _coord_to_thickness(xy, chi, stag):
     """Perpendicular thickness distribution given camber line angles.
 
     Parameters
@@ -370,13 +367,14 @@ def _coord_to_thickness(xy, chi):
     def iterate(xi):
         return (
             y
-            - evaluate_camber(xi, chi)
-            + (x - xi) / evaluate_camber_slope(xi, chi)
+            - evaluate_camber(xi, chi, stag)
+            + (x - xi) / evaluate_camber_slope(xi, chi, stag)
+            # This is sufficient for 101 points along chord
         )
 
     with np.errstate(invalid="ignore", divide="ignore"):
         xc = newton(iterate, x)
-    yc = evaluate_camber(xc, chi)
+    yc = evaluate_camber(xc, chi, stag)
     # Now evaluate thickness
     t = np.sqrt(np.sum(np.stack((x - xc, y - yc), axis=0) ** 2.0, axis=0))
 
@@ -469,74 +467,68 @@ def radially_interpolate_section(
     return np.squeeze(sec_xrt)
 
 def _surface_length(xrt):
-    # xrt : (nq, 2, 2, nx) array [--]
     nr = xrt.shape[0]
     S_cx = np.empty((nr,))
     for j in range(nr):
-
         upper = np.diff(xrt[j,0,:,:])
         lower = np.diff(xrt[j,1,:,:])
-
         S_upper = np.sum(np.sqrt(np.sum(upper**2.,0)))
         S_lower = np.sum(np.sqrt(np.sum(lower**2.,0)))
-
         S_cx[j] = np.max((S_upper, S_lower))
-
     return np.mean(S_cx)
 
 
-# Next job is to apply thickness constraints. Can a given xy section fit a
-# circle some fraction of the chord? Scipy has voronoi builtin, then for each
-# voronoi vertex find the point on the surface greatest distance away.
+def skewness(x,r,rt):
+    """From (i,j,k) matrices of coords, evaluate skewness."""
 
+    ni, nj, nk = rt.shape
 
-def largest_inscribed_circle(xy):
-    """Radius of the largest circle contained within an xy polygon.
+    def dot(a, b):
+        ni, nj, nk, _ = a.shape
+        out = np.empty((ni, nj, nk))
+        for i in range(ni):
+            for j in range(nj):
+                for k in range(nk):
+                    out[i,j,k] = np.dot(a[i,j,k,:],b[i,j,k,:])
+        return out
 
-    This is useful to constrain the thickness of our blade sections. In a real
-    engine, the sections must be large enough to pass, e.g. cooling channels or
-    oil pipes to feed bearings.
+    def dot(a, b):
+        ab = np.stack((a,b))
+        # print(ab.shape)
+        prod_ab = np.prod(ab, axis=0)
+        # print(prod_ab.shape)
+        sum_prod_ab = np.sum(prod_ab,axis=-1)
+        # print(sum_prod_ab.shape)
+        return sum_prod_ab
 
-    Parameters
-    ----------
-    xy: (npt,2) [--]
-        Cartesian coordinates for `npt` locations forming a looped polygon.
+    DIx = np.diff(x[:,:-1,:-1],axis=0)
+    DIr = np.diff(r[:,:-1,:-1],axis=0)
+    DIrt = np.diff(rt[:,:-1,:-1],axis=0)
+    DI = np.stack((DIx, DIr, DIrt),axis=-1)
 
-    Returns
-    -------
-    max_radius: float [--]
-        Radius of the largest inscribed circle that fits within polygon."""
+    DJx = np.diff(x[:-1,:,:-1],axis=1)
+    DJr = np.diff(r[:-1,:,:-1],axis=1)
+    DJrt = np.diff(rt[:-1,:,:-1],axis=1)
+    DJ = np.stack((DJx, DJr, DJrt),axis=-1)
 
-    # Check input
-    if not xy.ndim or not xy.shape[1] == 2:
-        raise ValueError(
-            "Shape should be (npts, 2), you input %s" % repr(xy.shape)
-        )
+    DKx = np.diff(x[:-1,:-1,:],axis=2)
+    DKr = np.diff(r[:-1,:-1,:],axis=2)
+    DKrt = np.diff(rt[:-1,:-1,:],axis=2)
+    DK = np.stack((DKx, DKr, DKrt),axis=-1)
 
-    # Calculate Voronoi vertices (medial axis)
-    vor = Voronoi(xy).vertices
+    vol = dot(DK, np.cross(DI, DJ))
 
-    # Only include points within the section, sorted
-    # TODO replace matplotlib dependency with something else
-    path = mplpath.Path(xy)
-    vor = vor[path.contains_points(vor)]
-    vor = vor[vor[:, 0].argsort()]
+    DIu = DI/np.sqrt(np.sum(np.abs(DI)**2.,axis=-1))[...,None]
+    DJu = DJ/np.sqrt(np.sum(np.abs(DJ)**2.,axis=-1))[...,None]
+    DKu = DK/np.sqrt(np.sum(np.abs(DK)**2.,axis=-1))[...,None]
 
-    # vor is shape (m,2), xy is shape (n,2)
-    # we assemble distances (n,m) from each vor point to each xy point
-    vor3 = np.expand_dims(vor, 0)
-    xy3 = np.expand_dims(xy, 1)
-    dist = np.sqrt(np.sum((vor3 - xy3) ** 2.0, axis=-1))
+    skewK = np.degrees(np.arccos(np.abs(dot(DIu,DJu))))
+    skewJ = np.degrees(np.arccos(np.abs(dot(DIu,DKu))))
+    skewI = np.degrees(np.arccos(np.abs(dot(DJu,DKu))))
 
-    # At any point on the medial axis, we are interested in the closest point
-    min_dist = dist.min(axis=0)
+    total_vol = np.sum(vol)
 
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # ax.plot(*xy.T)
-    # ax.plot(*vor.T)
-    # plt.savefig("debug_radius.pdf")
+    skew_metric = np.quantile(skewJ[:], 0.25)
 
-    # The largest inscribed circle fits at the point on the medial axis that is
-    # furthest away from the surface
-    return min_dist.max()
+    return skew_metric
+

@@ -30,23 +30,23 @@ htr = 0.9
 cpTo1 = 1.0e6
 Omega = 2.0 * np.pi * 50.0
 
-# Function to initialise a test set of geometries. We only do this once, when
+# Function to initialise a test set of designs. We only do this once, when
 # called by a test function, otherwise retrieve from a module attribute.
-geometries = {}
+designs = {}
 Lam_target = []
 Al_target = []
 
 
-def get_geometries(kind):
-    if not kind in geometries:
-        geometries[kind] = []
+def get_designs(kind):
+    if not kind in designs:
+        designs[kind] = []
         if kind == "datum":
             for phii in phi:
                 for psii in psi:
                     for Lami in Lam:
                         for etai in eta_all:
                             Lam_target.append(Lami)
-                            geometries[kind].append(
+                            designs[kind].append(
                                 design.nondim_stage_from_Lam(
                                     phii, psii, Lami, Al1, Ma2, ga, etai, Vx_rat
                                 )
@@ -55,7 +55,7 @@ def get_geometries(kind):
             for phii in phi:
                 for psii in psi:
                     for Al1i in Al_range:
-                        geometries[kind].append(
+                        designs[kind].append(
                             design.nondim_stage_from_Al(
                                 phii, psii, (Al1i, Al1i), Ma_low, ga, eta_ideal
                             )
@@ -64,7 +64,7 @@ def get_geometries(kind):
             for phii in phi:
                 for psii in psi:
                     for Al1i in Al_range:
-                        geometries[kind].append(
+                        designs[kind].append(
                             design.nondim_stage_from_Al(
                                 phii, psii, (Al1i, Al1i), Ma2, ga, eta
                             )
@@ -76,13 +76,13 @@ def get_geometries(kind):
                         for Al3i in Al_range:
                             Alnow = (Al1i, Al3i)
                             Al_target.append(Alnow)
-                            geometries[kind].append(
+                            designs[kind].append(
                                 design.nondim_stage_from_Al(
                                     phii, psii, Alnow, Ma2, ga, eta
                                 )
                             )
 
-    return geometries[kind]
+    return designs[kind]
 
 
 # Begin test functions
@@ -90,7 +90,7 @@ def get_geometries(kind):
 
 def test_Zweifel():
     """Verify Zweifel pitch-to-chord for low-speed lossless repeating stages."""
-    for stg in get_geometries("incompressible"):
+    for stg in get_designs("incompressible"):
         # Evaluate pitch using built in function
         Z = 0.8
         s_c_out = np.array(design.pitch_Zweifel(stg, (Z, Z)))
@@ -119,11 +119,10 @@ def test_Zweifel():
 
 def test_circulation_coeff():
     """Verify circulation pitch-to-chord for low-speed lossless repeating stages."""
-    for stg in get_geometries("incompressible"):
+    for stg in get_designs("incompressible"):
         # Evaluate pitch using built in function
         C0 = 0.65
         s_c_out = np.array(design.pitch_circulation(stg, C0))
-        print(s_c_out)
 
         # Evaluate low-speed lossless approximation
         Alr = np.radians(stg.Al[:2])
@@ -140,17 +139,15 @@ def test_circulation_coeff():
             / np.cos(Alrelr[1])
             / np.abs(np.tan(Alrelr[0]) - np.tan(Alrelr[1]))
         )
-        print((s_c_stator, s_c_rotor))
+        s_c_theory = (s_c_stator, s_c_rotor)
 
         # Check that the two are within a tolerance
-        assert np.all(
-            np.abs(s_c_out - np.array((s_c_stator, s_c_rotor))) < 1e-4
-        )
+        assert np.isclose( s_c_out,  s_c_theory , rtol=0.001).all()
 
 
 def test_repeating():
     """Verify analytically some repeating stage velocity triangles."""
-    for stg in get_geometries("repeating"):
+    for stg in get_designs("repeating"):
         psi_out = 2.0 * (
             1.0 - stg.Lam - stg.phi * np.tan(np.radians(stg.Al[0]))
         )
@@ -159,7 +156,7 @@ def test_repeating():
 
 def test_mass():
     """Check for mass conservation."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         mdot_out = (
             cf.mcpTo_APo_from_Ma(stg.Ma, ga)
             * stg.Ax_Ax1
@@ -172,14 +169,14 @@ def test_mass():
 
 def test_Lam():
     """Check target reaction is achieved by the yaw angle iteration."""
-    for stg, Lami in zip(get_geometries("datum"), Lam_target):
+    for stg, Lami in zip(get_designs("datum"), Lam_target):
         assert np.isclose(stg.Lam, Lami)
 
 
 def test_Vx():
     """Verify that the axial velocity is as required."""
     Vx_rat_target = np.insert(Vx_rat, 1, 1)
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_To1)
         Vx_cpTo = V_cpTo * np.cos(np.radians(stg.Al))
         Vx_U = Vx_cpTo / stg.U_sqrt_cpTo1
@@ -189,7 +186,7 @@ def test_Vx():
 
 def test_euler():
     """Verify that the Euler's work equation is satisfied."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         V_cpTo = cf.V_cpTo_from_Ma(stg.Ma, ga) * np.sqrt(stg.To_To1)
         Vt_cpTo = V_cpTo * np.sin(np.radians(stg.Al))
         Vt_U = Vt_cpTo / stg.U_sqrt_cpTo1
@@ -199,7 +196,7 @@ def test_euler():
 
 def test_loss():
     """Check that polytropic efficiency, loss coeffs and Po are correct."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         # Check efficiency
         eta_out = (
             np.log(stg.To_To1[-1]) / np.log(stg.Po_Po1[-1]) * ga / (ga - 1.0)
@@ -228,14 +225,14 @@ def test_loss():
 
 def test_psi():
     """Check that stage loading coefficient is correct."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         psi_out = (1.0 - stg.To_To1[2]) / stg.U_sqrt_cpTo1 ** 2.0
         assert np.isclose(stg.psi, psi_out)
 
 
 def test_Al():
     """Check that inlet and exit yaw angles are as specified."""
-    for stg, Alnow in zip(get_geometries("angles"), Al_target):
+    for stg, Alnow in zip(get_designs("angles"), Al_target):
         assert np.all(
             np.isclose(
                 np.array(stg.Al)[
@@ -248,13 +245,13 @@ def test_Al():
 
 def test_valid():
     """Check that output data is always physically sensible."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         # No nans or infinities
         for xi in stg:
             assert np.all(np.isfinite(xi))
         # All variables excluding flow angles should be non-negative
         for vi, xi in stg._asdict().items():
-            if vi not in ["Al", "Alrel", "Vt_U", "Vtrel_U"]:
+            if vi not in ["Al", "Alrel", "Vt_U", "Vtrel_U", "Psi_ts"]:
                 assert np.all(np.array(xi) >= 0.0)
         # Flow angles less than 90 degrees
         for vi in ["Al", "Alrel"]:
@@ -265,7 +262,7 @@ def test_valid():
 
 def test_annulus():
     """Ensure that annulus lines are created successfully."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
         # Basic validity checks
@@ -295,7 +292,7 @@ def test_chord():
     Re = 4e3
     tol = Re * 0.001
 
-    for stg in get_geometries("incompressible"):
+    for stg in get_designs("incompressible"):
 
         # Variable viscosity
         cx = design.chord_from_Re(stg, Re, cpTo1_inc, Po1, rgas)
@@ -317,7 +314,7 @@ def test_chord():
 
 def test_free_vortex():
     """Verify that vortex distributions have constant angular momentum."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         # Generate stage with annulus line
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
@@ -344,7 +341,7 @@ def test_free_vortex():
 
 def test_deviation():
     """Verify that deviation goes in the correct direction."""
-    for stg in get_geometries("datum"):
+    for stg in get_designs("datum"):
         rm, Dr = design.annulus_line(stg, htr, cpTo1, Omega)
 
         # Make radius ratios

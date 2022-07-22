@@ -162,7 +162,7 @@ def b2b_grid(x, r, s, c, sect):
     for j in range(nj):
 
         # Retrieve blade section as [surf, x or y, index]
-        loop_xrt = sect[j]
+        loop_xrt = geometry._loop_section(sect[j])
 
         # Offset so that LE at x=0
         loop_xrt[0] -= loop_xrt[0].min()
@@ -250,6 +250,11 @@ def stage_grid(
     spf = (r1 - r1.min()) / r1.ptp()
     chi = np.stack((Dstg.free_vortex_vane(spf), Dstg.free_vortex_blade(spf)))
 
+    # Default stagger angles
+    if stag is None:
+        # stag = np.degrees(np.arctan(np.mean(np.tan(np.radians(chi)),axis=(1,2))))
+        stag = np.degrees(np.arctan(np.mean(np.tan(np.radians(chi)),axis=(1,2))))
+
     # If recambering, then tweak the metal angles
     if not recamber is None:
         dev = np.reshape(recamber, (2, 2, 1))
@@ -259,29 +264,15 @@ def stage_grid(
     # Get sections (normalised by axial chord for now)
     sect = [
         geometry.radially_interpolate_section(
-            spf, chii, spf, tte, Ai, stag=stagi
+            spf, chii, spf, tte, Ai, stag=stagi, loop=False
         )
         for chii, Ai, stagi in zip(chi, A, stag)
     ]
 
     # Adjust pitches to account for surface length
     So_cx = np.array([geometry._surface_length(si) for si in sect])
-    s = np.array(Dstg.s)*So_cx
 
-    # If we have asked for a minimum inscribed circle, confirm that the
-    # constraint is not violated
-    if min_Rins:
-        for i, row_sect in enumerate(sect):
-            for rad_sect in row_sect:
-                current_radius = geometry.largest_inscribed_circle(rad_sect.T)
-                if current_radius < min_Rins:
-                    raise geometry.GeometryConstraintError(
-                        (
-                            "Row %d, Thickness is too small for the constraint "
-                            "inscribed circle: %.3f < %.3f"
-                            % (i, current_radius, min_Rins)
-                        )
-                    )
+    s = np.array(Dstg.s)*So_cx
 
     # Now we can do b2b grids
     rt = [b2b_grid(*args) for args in zip(x, r, s, Dstg.cx, sect)]
@@ -289,16 +280,7 @@ def stage_grid(
     # Offset the rotor so it is downstream of stator
     x[1] = x[1] + x[0][-1] - x[1][0]
 
-    # fig, ax = plt.subplots()
-    # ax.plot(x[0],rt[0][:,0,(0,-1)])
-    # ax.plot(x[1],rt[1][:,0,(0,-1)])
-    # ax.axis('equal')
-    # plt.savefig('sect.pdf')
-    # quit()
-
-    x = [smooth(*args) for args in zip(x, rt, ilte)]
-
-    # Repeat a number of times
+    # Refine
     for _ in range(resolution - 1):
         # Deal with indices
         ilte = tuple([[ind * 2 for ind in iltei] for iltei in ilte])
@@ -326,33 +308,3 @@ def refine_nested(v):
             # Put axis back
             v = np.moveaxis(vtmp, 0, d)
     return v
-
-
-def smooth(x, rt, ilte):
-    """Smooth x in streamwise direction."""
-    nsmth = 200
-    x_smth = x + 0.0
-    for _ in range(nsmth):
-        x_smth[1:-1] = (x_smth[:-2] + x_smth[2:]) / 2.0
-        x_smth[ilte] = x[ilte] + 0.0
-
-    # add a bit of an offset
-    xle, xte = x[ilte]
-    frac_cx = (x - xle) / (xte - xle)
-    delta = 0.1 * (xte - xle)
-    offset = np.interp(
-        frac_cx,
-        [frac_cx[0], 0.0, 1.0, frac_cx[-1]],
-        [0.0, -1.2 * delta, delta, 0.0],
-    )
-    x_smth += offset
-
-    # Weight the x coordinate towards smoothed at mid-passage, unsmooth on wall
-    frac_pitch = (rt - rt[:, :, (0,)]) / (rt[:, :, (-1,)] - rt[:, :, (0,)])
-    frac_smth = 4.0 * frac_pitch * (1.0 - frac_pitch)
-    # frac_smth = np.empty_like(frac_pitch)
-    # frac_smth[frac_pitch<0.5] = 2.*frac_pitch[frac_pitch<0.5]
-    # frac_smth[frac_pitch>=0.5] = 2.-2.*frac_pitch[frac_pitch>=0.5]
-    x_smth = np.reshape(x_smth, (-1, 1, 1))
-    x_ref = np.reshape(x, (-1, 1, 1))
-    return frac_smth * x_smth + (1.0 - frac_smth) * x_ref
