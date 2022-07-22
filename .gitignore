@@ -12,3 +12,4 @@ run*/*
 *.npz
 *.egg-info/
 env-turbigen/
+external_code_comp_error.out
