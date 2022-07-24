@@ -218,6 +218,7 @@ def prelim_A():
 def _section_xy(chi, A, tte, stag, x=None):
     r"""Coordinates for blade section with specified camber and thickness."""
 
+
     # Choose some x coordinates if not provided
     if x is None:
         x = cluster_cosine(nx)
@@ -330,7 +331,7 @@ def evaluate_camber(x, chi, stag):
     """Camber line as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
     tangam = np.tan(np.radians(stag))
-    n = np.max((np.sum(tanchi) / tangam,1.))
+    n = np.max(((np.sum(tanchi) / tangam),1.))
     a = tanchi[1] / n
     b = -tanchi[0] / n
     y = a * x ** n + b * (1.0 - x) ** n
@@ -343,7 +344,7 @@ def evaluate_camber_slope(x, chi, stag):
     """Camber line slope as a function of x, given inlet and exit angles."""
     tanchi = np.tan(np.radians(chi))
     tangam = np.tan(np.radians(stag))
-    n = np.max((np.sum(tanchi) / tangam,1.))
+    n = np.max(((np.sum(tanchi) / tangam),1.))
     a = tanchi[1] / n
     b = -tanchi[0] / n
     dy = a * n * x ** (n - 1.0) - b * n * (1.0 - x) ** (n - 1.0)
@@ -437,6 +438,14 @@ def radially_interpolate_section(
     # Returns inlet and exit flow angle as rows
     func_chi = interp1d(spf, chi)
 
+    # If no circumferential variation in stagger given
+    if np.isscalar(stag):
+        # Twist stagger like exit flow angle about midspan
+        chi_mid = func_chi(0.5)
+        stag_mid = np.copy(stag)
+        stag = stag_mid + (chi[1,:] - chi_mid[1])
+    func_stag = interp1d(spf, stag)
+
     # If the query span fraction is not an array, make it one
     if np.shape(spf_q) == ():
         nq = 1
@@ -444,12 +453,12 @@ def radially_interpolate_section(
     else:
         nq = len(spf_q)
     chi_q = func_chi(spf_q)
+    stag_q = func_stag(spf_q)
 
     # First, get thickness coefficients at query spans
     if np.ndim(A) == 2:
         # If we only have one set of thickness coefficients, just repeat them
         A_q = np.tile(np.expand_dims(A, 0), (nq, 1, 1))
-        stag_q = np.tile(stag, (nq,))
     else:
         # Otherwise Interpolate thicknesses to desired spans
         A_q = interp1d(spf_A, A, axis=0)(spf_q)

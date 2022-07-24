@@ -33,7 +33,7 @@ dy =  [5e-5, 7e-5, 9e-5, 1.1e-4, 1.2e-4, 1.5e-4, 2e-4, 2.2e-4]
 xup = [-0.02, 1.362]
 xdn = [0.189, 1.56]
 
-compressor = True
+compressor = False
 
 ################
 # BEGIN SCRIPT #
@@ -184,8 +184,8 @@ row(1).outlet().copy_right_meridional_distribution()
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
-    row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(17))
-    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(1.1)
+    row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(25))
+    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(1.2)
 
     # Small number of streamwise points in H blocks
     z = z_cst_line("Z_" + `n1` + "_1")
@@ -226,6 +226,7 @@ for n in range(nrow):
     row(n1).blade(1).leadingEdgeControl().enable_distribution_from_expansion_ratio()
     row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
 
+
 # Fixed z const lines for inlet and exit
 xi = xup[0] - 0.02
 ri = row(1).outlet().get_control_point(0).y
@@ -256,8 +257,8 @@ z.streamwise_number_of_points(int(25))
 
 # Interpolation spacing
 for n in range(nrow):
-    row(n+1).set_row_interpolation_spacing(float(2))
-#
+    row(n+1).set_row_interpolation_spacing(float(5))
+
 ## generate 3D
 print "Generating 3D mesh..."
 select_all()

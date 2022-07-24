@@ -119,6 +119,7 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
 
     def initialize(self):
         self.options.declare("row_index")
+        self.options.declare("penalise_constraints")
         super().initialize()
 
     def setup(self):
@@ -189,6 +190,14 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
             ) / params.rtol
 
         outputs["runid"] = metadata["runid"]
+
+        W = self.options["penalise_constraints"]
+        if W:
+            for v in ["phi", "psi", "Lam"]:
+                constr = np.abs(outputs["err_" + v + "_rel"]) - 1.
+                if constr>0.:
+                    outputs["lost_efficiency_rel"] += constr * W
+
 
         print("Out: %s" % str(outputs))
 
@@ -332,13 +341,14 @@ model.add_subsystem(
         row_index=0,
         datum_params=params,
         base_dir="run/opt_stator",
+        penalise_constraints=100.
     ),
     promotes=["*"],
 )
 
-# prob.setup()
-# prob.run_model()
-# quit()
+prob.setup()
+prob.run_model()
+quit()
 
 # Design variables
 prob.model.add_design_var(

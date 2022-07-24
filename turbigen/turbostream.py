@@ -56,7 +56,7 @@ def _make_patch(kind, bid, i, j, k, nxbid=0, nxpid=0, dirs=None):
     return p
 
 
-def apply_inlet(g, bid, pid, Poin, Toin):
+def apply_inlet(g, bid, pid, Poin, Toin, yawin):
 
     patch = g.get_patch(bid, pid)
     nk = patch.ken-patch.kst
@@ -69,7 +69,7 @@ def apply_inlet(g, bid, pid, Poin, Toin):
 
     pstag += Poin
     tstag += Toin
-    yaw += 0.0
+    yaw += yawin
     pitch += 0.0
 
     g.set_pp("yaw", ts_tstream_type.float, bid, pid, yaw)
@@ -222,7 +222,7 @@ def add_to_grid(g, xin, rin, rtin, ilte):
     periodic_dn_2.pid = g.add_patch(bid, periodic_dn_2)
 
     # Add slip walls if this is a cascade
-    htr = r[0, 1, 0] / r[0, 0, 0]
+    htr = r[0, 0, 0] / r[0, -1, 0]
     if htr > 0.95:
         slip_j0 = _make_patch(
             kind="slipwall", bid=bid, i=(0, ni), j=(0, 1), k=(0, nk)
@@ -461,7 +461,7 @@ def set_rotation(g, bids, rpm, spin_j):
         g.set_bv("rpmi2", ts_tstream_type.float, bid, rpm)
         if spin_j:
             g.set_bv("rpmj1", ts_tstream_type.float, bid, rpm)
-            g.set_bv("rpmj2", ts_tstream_type.float, bid, rpm)
+        g.set_bv("rpmj2", ts_tstream_type.float, bid, rpm)
         g.set_bv("rpmk1", ts_tstream_type.float, bid, rpm)
         g.set_bv("rpmk2", ts_tstream_type.float, bid, rpm)
 
@@ -856,3 +856,79 @@ def write_grid_from_params(params, fname=None):
 #         # (if not specified, this function acts as a constraint check)
 #         if fname:
 #             g.write_hdf5(fname)
+
+def make_row(
+    fname, x, r, rt, ilte, Po1, To1, Al1, Pout, Omega, rgas, ga
+):
+
+    # Make grid, add the blocks
+    g = ts_tstream_grid.TstreamGrid()
+    add_to_grid(g, x, r, rt, ilte)
+
+    # calc nb
+    t = rt/np.expand_dims(r,2)
+    nb = np.asscalar(np.round(2.0 * np.pi / np.diff(t[0, 0, (0, -1)], 1)))
+    nb_int = int(nb)
+
+    # Numbers of grid points
+    ni, nj, nk = rt.shape
+
+    bid_row = 0
+
+    # Inlet
+    inlet = _make_patch(
+        kind="inlet",
+        bid=bid_row,
+        i=(0, 1),
+        j=(0, nj),
+        k=(0, nk),
+        dirs=(6, 1, 2),
+    )
+    inlet.pid = g.add_patch(bid_row, inlet)
+    apply_inlet(g, bid_row, inlet.pid, Po1, To1, Al1)
+
+    # Outlet
+    outlet = _make_patch(
+        kind="outlet",
+        bid=bid_row,
+        i=(ni - 1, ni),
+        j=(0, nj),
+        k=(0, nk),
+    )
+
+    outlet.pid = g.add_patch(bid_row, outlet)
+    g.set_pv("throttle_type", ts_tstream_type.int, bid_row, outlet.pid, 0)
+    g.set_pv("ipout", ts_tstream_type.int, bid_row, outlet.pid, 3)
+    g.set_pv("pout", ts_tstream_type.float, bid_row, outlet.pid, Pout)
+
+    # Apply application/block variables
+    set_variables(g)
+    g.set_av("dampin", ts_tstream_type.float, 10)
+    g.set_av("ilos", ts_tstream_type.int, 1)
+
+    # Rotation
+    rpm = Omega / 2.0 / np.pi * 60.0
+    set_rotation( g, [ bid_row, ], rpm, spin_j=False )
+
+    # Numbers of blades
+    g.set_bv("fblade", ts_tstream_type.float, bid_row, nb)
+    g.set_bv("nblade", ts_tstream_type.int, bid_row, nb_int)
+
+    set_xllim(g, 0.03)
+
+    # Guess
+    xg = np.concatenate( [ x[ [ 0, ] + ilte[0],], x[ ilte[1] + [ -1, ],], ])
+    Pog = np.repeat(Po1, 2)
+    Tog = np.repeat(To1, 2)
+    Mag = np.repeat(0.1, 2)
+    Alg = np.repeat(0., 2)
+
+    guess_block(g, bid_row, xg, Pog, Tog, Mag, Alg, ga, rgas)
+
+    cp = rgas * ga / (ga - 1.0)
+    g.set_av("ga", ts_tstream_type.float, ga)
+    g.set_av("cp", ts_tstream_type.float, cp)
+
+    ts_tstream_load_balance.load_balance(g, 1, 1.0)
+
+    g.write_hdf5(fname)

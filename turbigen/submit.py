@@ -217,7 +217,11 @@ class ParameterSet:
         # Loop over all parameters and assign to class
         for outer_name, inner_names in self._var_names.items():
             for var in inner_names:
-                setattr(self, var, var_dict[outer_name][var])
+                try:
+                    setattr(self, var, var_dict[outer_name][var])
+                except KeyError:
+                    setattr(self, var, None)
+
 
 
         if not np.any(self.stag):

@@ -34,3 +34,4 @@ fi
 
 # # Point pyfr to my home-built CGNS library
 # export PYFR_LIBRARY_PATH="$HOME"/builds/CGNS/lib/lib
+eval `ssh-agent` && ssh-add

@@ -1,12 +1,13 @@
 """Functions to produce a H-mesh from stage design."""
 import numpy as np
+from scipy.interpolate import interp1d
 from . import geometry
 
 # Configure numbers of points
 nxb = 81  # Blade chord
 nr = 81  # Span
-# nrt = 65  # Pitch
-nrt = 73  # Pitch
+nrt = 65  # Pitch
+# nrt = 73  # Pitch
 
 nr_casc = 4  # Radial points in cascade mode
 rate = 0.5  # Axial chords required to fully relax
@@ -139,7 +140,7 @@ def merid_grid(x_c, rm, Dr):
     return r
 
 
-def b2b_grid(x, r, s, c, sect):
+def b2b_grid(x, r, c, sect, s=None, nb=None):
     """Generate circumferential coordinates for a blade row."""
 
     ni = len(x)
@@ -152,10 +153,14 @@ def b2b_grid(x, r, s, c, sect):
 
     x_c = x / c
 
-    # Determine number of blades and angular pitch
-    r_m = np.mean(r[0, (0, -1), 0])
-    nblade = np.round(2.0 * np.pi * r_m / s)  # Nearest whole number
+    if s is not None:
+        # Determine number of blades and angular pitch
+        r_m = np.mean(r[0, (0, -1), 0])
+        nblade = np.round(2.0 * np.pi * r_m / s)  # Nearest whole number
+    elif nb is not None:
+        nblade = float(nb)
     pitch_t = 2 * np.pi / nblade
+
 
     # Preallocate and loop over radial stations
     rtlim = np.nan * np.ones((ni, nj, 2))
@@ -208,8 +213,9 @@ def b2b_grid(x, r, s, c, sect):
         )
 
     # Define a pitchwise clustering function with correct dimensions
+    clust = geometry.cluster_cosine(nk).reshape(1, 1, -1)
     # clust = geometry.cluster_hyperbola(nk).reshape(1, 1, -1)
-    clust = geometry.cluster_wall_solve_ER(nk, 2e-5).reshape(1, 1, -1)
+    # clust = geometry.cluster_wall_solve_ER(nk, 2e-5).reshape(1, 1, -1)
     # clust = geometry.cluster_wall_solve_ER(nk, 0.0006).reshape(1, 1, -1)
 
     # Relax clustering towards a uniform distribution at inlet and exit
@@ -228,7 +234,7 @@ def b2b_grid(x, r, s, c, sect):
 
 
 def stage_grid(
-    Dstg, A, dx_c, tte, min_Rins=None, recamber=None, stag=None, resolution=1
+    Dstg, A, dx_c, tte, min_Rins=None, recamber=None, stag=None, resolution=1.
 ):
     """Generate an H-mesh for a turbine stage."""
 
@@ -289,6 +295,93 @@ def stage_grid(
 
     return x, r, rt, ilte
 
+def row_grid(
+    dx_c, c, rm, Dr, nb, chi, stag, A, tte, spf=None
+    ):
+    """H-mesh for one row by specifying inlet and outlet angles.
+
+    Parameters
+    ----------
+    dx_c: (2,) float array [--]
+        Distances to row inlet and outlet as numbers of axial chords.
+    c: float [m]
+        Aerofoil axial chord.
+    rm: float [m]
+        Annulus mean radius.
+    Dr: (2,) float array [m]
+        Annulus heights at row inlet and exit
+    nb: int [--]
+        Number of blades.
+    tte: float [--]
+        Aerofoil trailing edge thickness normalised by axial chord.
+    spf: (nr,) float array [--]
+        Span fractions for `nr` radial heights at which blade angles are
+        defined, default `None` for constant up the radial span.
+    chi: (nr,2) float array [deg]
+        Inlet and exit flow angles for all `nr` radial heights.
+    stag: (nr,) float array [deg]
+        Aerofoild stagger angles for all `nr` radial heights.
+    A: (nr,2,order) float array [--]
+        Thickness coefficients for the blade surfaces at `nr` radial heights.
+        A[:,0,:] is the upper surface; A[:,1,:] is the lower surface. `order`
+        should be at least three to give control of leading edge radius,
+        thickness, and trailing edge wedge angle.
+
+    Returns
+    --------
+    x, r, rt, ilte
+
+    """
+
+    # Ensure inputs are numpy arrays
+    dx_c = np.array(dx_c)
+    Dr = np.array(Dr)
+    chi = np.array(chi)
+    A = np.array(A)
+    if stag is None:
+        stag = np.nan
+    stag = np.array(stag)
+
+    # Streamwise grids for stator and rotor
+    x_c, ilte = streamwise_grid(dx_c)
+
+    # Scale by chord
+    x = x_c *c
+
+    # Generate radial grid
+    r = merid_grid(x_c, rm, Dr)
+
+    # Evaluate blade sections at query span fractions given by radial grid
+    r1 = r[ilte[0], :]
+    spf_q = (r1 - r1.min()) / r1.ptp()
+
+    # If no spf provided, then everything is constant up span
+    if spf is None:
+        spf = np.array([0.,1.])
+        chi = np.tile(chi,(2,1))
+        stag = np.tile(stag, (2,1))
+        A = np.tile(A, (2,1,1))
+
+    # Make interpolators
+    interp_chi = interp1d(spf, chi, axis=0)
+    interp_stag = interp1d(spf, stag, axis=0)
+    interp_A = interp1d(spf, A, axis=0)
+
+    # Interpolate at query span fractions
+    chi_q = interp_chi(spf_q)
+    stag_q = interp_stag(spf_q)
+    A_q = interp_A(spf_q)
+
+    # Get sections (normalised by axial chord for now)
+    sect = [
+        geometry._section_xy(chi_i, A_i, tte, stag_i)
+        for chi_i, A_i, stag_i in zip(chi_q, A_q, stag_q)
+    ]
+
+    # Now we can do b2b grid
+    rt = b2b_grid(x, r, c, sect, nb=nb)
+
+    return x, r, rt, ilte
 
 def refine_nested(v):
     if v.ndim == 1:
