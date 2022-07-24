@@ -194,10 +194,9 @@ class SectionTurbostreamComp(BaseTurbostreamComp):
         W = self.options["penalise_constraints"]
         if W:
             for v in ["phi", "psi", "Lam"]:
-                constr = np.abs(outputs["err_" + v + "_rel"]) - 1.
-                if constr>0.:
+                constr = np.abs(outputs["err_" + v + "_rel"]) - 1.0
+                if constr > 0.0:
                     outputs["lost_efficiency_rel"] += constr * W
-
 
         print("Out: %s" % str(outputs))
 
@@ -341,7 +340,7 @@ model.add_subsystem(
         row_index=0,
         datum_params=params,
         base_dir="run/opt_stator",
-        penalise_constraints=100.
+        penalise_constraints=100.0,
     ),
     promotes=["*"],
 )

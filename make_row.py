@@ -46,7 +46,7 @@ A_datum = np.ones((2, 3)) * 0.1
 A_datum[:, 0] = 0.2
 A = np.tile(A_datum, (nrad, 1, 1))
 
-dx_c = (4.0, 8.0)  # Spacing to inlet and exit boundaries in axial chords
+dx_c = (4.0, 4.0)  # Spacing to inlet and exit boundaries in axial chords
 c = 0.2  # Axial chord
 nb = 13  # Number of blades
 
