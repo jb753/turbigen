@@ -57,10 +57,10 @@ x, r, rt, ilte = turbigen.hmesh.row_grid(
 )
 
 # Write turbostream input file
-run_directory = 'fan_example'
+run_directory = "fan_example"
 if not os.path.exists(run_directory):
     os.mkdir(run_directory)
-fname = os.path.join(run_directory,"input.hdf5")
+fname = os.path.join(run_directory, "input.hdf5")
 Pout = fan.P_Po1[-1] * Po1
 turbigen.turbostream.make_row(
     fname, x, r, rt, ilte, Po1, To1, Al1, Pout, Omega, rgas, ga

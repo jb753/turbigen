@@ -26,7 +26,7 @@
 
 5. Follow the progress of the calculation using:
 ```
-   less -F log.txt 
+   less +F log.txt 
 ```
 
 6. Adapt your post-processing script to look at the results in
