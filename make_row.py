@@ -1,6 +1,7 @@
 import numpy as np
 import turbigen.hmesh, turbigen.turbostream, turbigen.design
 import matplotlib.pyplot as plt
+import os
 
 Po1 = 1e5
 To1 = 300.0
@@ -27,8 +28,8 @@ cpTo1 = cp * To1
 # Annulus line
 rm, Dr = turbigen.design.annulus_line(fan, htr, cpTo1, Omega)
 
-# Specify flow angles at 10 points across span
-nrad = 4
+# Specify flow angles at nr points across span
+nrad = 10
 spf = np.linspace(0.0, 1.0, nrad)
 rhub = rm - Dr[0] / 2.0
 rtip = rm + Dr[0] / 2.0
@@ -56,7 +57,10 @@ x, r, rt, ilte = turbigen.hmesh.row_grid(
 )
 
 # Write turbostream input file
-fname = "single_row_example/input.hdf5"
+run_directory = 'fan_example'
+if not os.path.exists(run_directory):
+    os.mkdir(run_directory)
+fname = os.path.join(run_directory,"input.hdf5")
 Pout = fan.P_Po1[-1] * Po1
 turbigen.turbostream.make_row(
     fname, x, r, rt, ilte, Po1, To1, Al1, Pout, Omega, rgas, ga
