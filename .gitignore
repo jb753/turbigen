@@ -22,7 +22,6 @@ reports/
 *.g
 *.bcs
 doc/build
-data*
 stopit
 log.txt
 *.xdmf
