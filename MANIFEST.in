@@ -1,0 +1,11 @@
+graft test
+graft examples
+graft turbigen
+graft pytest.ini
+global-exclude __pycache__
+global-exclude */__pycache__/*
+global-exclude *.pyc
+prune test/.pytest_cache
+prune examples/meshes/
+prune turbigen/install
+prune turbigen/figconf.py

@@ -1,0 +1,28 @@
+#!/bin/bash
+#
+#
+QFILE="$1"
+
+# Make sure that we can access
+chmod -R a+rwx .
+
+# This script is run from the temporary meshing dir
+echo "$(pwd)" >> "$QFILE"
+
+# Check for output file
+nTry=0
+until [ $nTry -ge 500 ]
+do
+    nTry=$[$nTry+1]
+    if [ $(find . -name "finished") ]; then
+        sleep 1
+        exit 0
+    elif [ $(find . -name "failed") ]; then
+        echo "AutoGrid meshing script failed"
+        exit 2
+    else
+        sleep 3
+    fi
+done
+echo 'Timed out waiting for AutoGrid to process our mesh'
+exit 3

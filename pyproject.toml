@@ -1,0 +1,55 @@
+[project]
+name = "turbigen"
+version = "1.5.1"
+requires-python = ">=3.9"
+dependencies = [
+    'CoolProp',
+    'matplotlib',
+    'numpy',
+    'PyYAML',
+    'scipy',
+    'h5py',
+    'numpy-stl',
+    'metis',
+]
+
+[project.optional-dependencies]
+docs = [
+    'sphinx~=7.2.6',
+    'sphinxcontrib-bibtex~=2.5.0',
+    'sphinx-autobuild~=2021.3.14',
+    'sphinx-argparse~=0.4.0',
+    'sphinxcontrib-programoutput~=0.7',
+]
+test = [
+    'pytest~=6.2.5',
+]
+
+[project.scripts]
+turbigen = "turbigen.main:main"
+turbigen-autogrid-server = "turbigen.autogrid.server:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+# Only package what is in the turbigen folder
+[tool.setuptools.packages.find]
+include = ["turbigen",]
+
+[tool.bumpversion]
+allow_dirty = false
+commit = true
+message = "Bump version: {current_version} → {new_version}"
+commit_args = ""
+tag = true
+sign_tags = false
+tag_name = "v{new_version}"
+tag_message = "Bump version: {current_version} → {new_version}"
+current_version = "1.5.2"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = [
+    "{major}.{minor}.{patch}"
+]
+search = "{current_version}"
+replace = "{new_version}"
