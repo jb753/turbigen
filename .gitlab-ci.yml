@@ -1,6 +1,12 @@
 image: python:3.9
 
+# Run in two stages, only deploy if the tests pass
+stages:
+- test
+- deploy
+
 test:
+  stage: test
   script:
   - python -V
   - pip install -U pip
@@ -15,6 +21,7 @@ docs:
   - make doc
 
 pages:
+  stage: deploy
   script:
   - python -V
   - pip install -U pip
@@ -28,6 +35,7 @@ pages:
   - master
 
 release_job:
+  stage: deploy
   only:
   - master
   image: registry.gitlab.com/gitlab-org/release-cli:latest

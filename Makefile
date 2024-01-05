@@ -9,8 +9,7 @@ install ::
 	pip install -e .
 	pip install -e .[docs]
 	pip install -e .[test]
-	pip install pre-commit
-	pip install build
+	pip install pre-commit build bump-my-version
 	pre-commit install
 
 doc-dev ::
