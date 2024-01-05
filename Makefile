@@ -10,6 +10,7 @@ install ::
 	pip install -e .[docs]
 	pip install -e .[test]
 	pip install pre-commit
+	pip install build
 	pre-commit install
 
 doc-dev ::
