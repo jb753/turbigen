@@ -5,6 +5,13 @@ MAKEFLAGS += --no-builtin-rules
 # Allow bash syntax
 SHELL := /bin/bash
 
+install ::
+	pip install -e .
+	pip install -e .[docs]
+	pip install -e .[test]
+	pip install pre-commit
+	pre-commit install
+
 doc-dev ::
 	sphinx-autobuild doc doc/_build --watch turbigen
 
