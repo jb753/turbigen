@@ -27,7 +27,7 @@ instance.
 
 .. code-block:: console
 
-   $ git clone https://gitlab.developers.cam.ac.uk/eng/diva/whittle/turbigen.git
+   $ git clone https://gitlab.developers.cam.ac.uk/jb753/turbigen.git
    $ cd turbigen
    $ source setup.sh
 

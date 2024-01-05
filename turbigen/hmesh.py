@@ -62,7 +62,7 @@ class HMeshConfig(BaseConfig):
     """Number of smoothing iterations, zero to disable smoothing."""
 
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
-        """Evaluate a spanwise grid vector given hub and casing spacings."""
+        # """Evaluate a spanwise grid vector given hub and casing spacings."""
         if tip:
             Lmain = 1.0 - tip
 
@@ -113,7 +113,7 @@ class HMeshConfig(BaseConfig):
             )
 
     def pitchwise_grid(self, drt_row, pitch_chord, AR_row, resample=True):
-        """Evaluate a pitchwise grid vector given surface spacing."""
+        # """Evaluate a pitchwise grid vector given surface spacing."""
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
         drt_mid = dm_mid / pitch_chord * self.AR_passage
         logger.debug(
@@ -137,7 +137,7 @@ class HMeshConfig(BaseConfig):
         return x
 
     def pitchwise_grid_fixed_npts(self, drt_row, pitch_chord, AR_row, npts):
-        """Evaluate a pitchwise grid vector given surface spacing."""
+        # """Evaluate a pitchwise grid vector given surface spacing."""
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
         drt_mid = dm_mid / pitch_chord * self.AR_passage
 
@@ -159,7 +159,7 @@ class HMeshConfig(BaseConfig):
         )
 
     def pitchwise_grid_unbladed(self, AR_row, pitch_chord):
-        """Evaluate a pitchwise grid vector for unbladed row."""
+        # """Evaluate a pitchwise grid vector for unbladed row."""
         dm_mid = self.dspf_mid * AR_row * self.AR_merid_unbladed
         drt_mid = dm_mid / pitch_chord * self.AR_passage
         nk = np.round(1.0 / drt_mid).astype(int)
@@ -176,7 +176,7 @@ class HMeshConfig(BaseConfig):
         chord_factor=1.0,
         ni_chord=None,
     ):
-        """Evaluate streamwise grid vector for a blade row."""
+        # """Evaluate streamwise grid vector for a blade row."""
 
         assert len(pitch_chord) == 3
         assert (pitch_chord > 0.0).all()
