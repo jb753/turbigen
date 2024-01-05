@@ -123,7 +123,8 @@ def inverse(ml):
     -------
     out : dict
         Dictionary of aerodynamic design parameters with fields: `So1`, `htr`, `Omega`,
-        `Alpha1`, `phi`, `psi`, `Lam`, `Ma2`, `eta`, `loss_split`, `VmR12`, `VmR23`. The fields have the same meanings as in :func:`forward`.
+        `Alpha1`, `phi`, `psi`, `Lam`, `Ma2`, `eta`, `loss_split`, `VmR12`,
+        `VmR23`. The fields have the same meanings as in :func:`forward`.
     """
     psi = -(ml.ho[-1] - ml.ho[0]) / (ml.U[2] ** 2.0)
     Lam = (ml.h[3] - ml.h[2]) / (ml.h[3] - ml.h[0])

@@ -661,7 +661,7 @@ def marching_cubes(data, dist):
                             print(f"edge_index={edge_index[i,j,k]:012b}")
                             print(f"frac={frac}, e={e}, i={i}, j={j}, k={k}")
                             print(f"dist={(dist[ijk_en],dist[ijk_st])}")
-                            quit()
+                            raise Exception("cutting failed")
                         cut_edges[e] = (
                             data[ijk4_st] + (data[ijk4_en] - data[ijk4_st]) * frac
                         )

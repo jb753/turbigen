@@ -243,7 +243,8 @@ def inverse(ml):
     -------
     out : dict
         Dictionary of aerodynamic design parameters with fields:
-        `So1`, `PR_tt`, `eta_tt`, `mdot`, `phi1`, `Alpha1`, `Marel1`, `htr1`, `Alpharel2`, `loss_split`, `DHimp`, `DHdiff`
+        `So1`, `PR_tt`, `eta_tt`, `mdot`, `phi1`, `Alpha1`, `Marel1`, `htr1`,
+        `Alpharel2`, `loss_split`, `DHimp`, `DHdiff`
         The fields have the same meanings as in :func:`forward`.
     """
     # Pull out states
@@ -399,5 +400,3 @@ def inverse(ml):
         ),
     }
     return out
-
-

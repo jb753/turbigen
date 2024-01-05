@@ -146,7 +146,9 @@ def inverse(ml):
     Returns
     -------
     out : dict
-        Dictionary of aerodynamic design parameters with fields: `So1`, `span1`, `span2`, `Alpha1`, `Alpha2`, `Ma2`, `Yh`, `htr`, `RR`, `Beta`. The fields have the same meanings as in :func:`forward`.
+        Dictionary of aerodynamic design parameters with fields: `So1`,
+        `span1`, `span2`, `Alpha1`, `Alpha2`, `Ma2`, `Yh`, `htr`, `RR`, `Beta`.
+        The fields have the same meanings as in :func:`forward`.
     """
     # Pull out states
     S2s = ml.empty().set_P_s(ml.P[-1], ml.s[0])
