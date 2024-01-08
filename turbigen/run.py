@@ -145,6 +145,8 @@ def run_single(conf, gguess=None, plot=False):
     # conf_out.interpolate = {}
     # conf_out.write(os.path.join(workdir, "config.yaml"))
 
+    conf.write(os.path.join(workdir, "config.yaml"))
+
     # Feed annulus arguments to the geometry function
     times.append(timer())
     annulus_type = conf.annulus.pop("type", "Smooth")

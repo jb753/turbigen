@@ -342,7 +342,7 @@ def _theta_limits(tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0)):
     ind_u_te = ind_u_dn[tq[ind_u_dn] > mlim[1] - 0.2]
 
     # If the process for setting tte does not work, then
-    # arbitrarily cluster grid over last 0.5% chord
+    # arbitrarily cluster grid over last 1.0% chord
     # tte = mlim[1] -0.005
     tte = None
     if ind_l_te.size > 0:
@@ -352,7 +352,7 @@ def _theta_limits(tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0)):
         # print(f'TE on upper at {ind_u_te[0]}')
         tte = tq[ind_u_te[-1]]
     else:
-        pass
+        tte = mlim[1] - 0.01
 
     if np.any(theta_u < theta_l):
         raise Exception("Blade is thicker than calculated pitch!")
