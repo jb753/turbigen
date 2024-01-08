@@ -78,12 +78,14 @@ mean_line
 ---------
 
 Under the `mean_line` key, a `type` key is required to specify the architecture
-or topology of turbomachine to design. This can take any of the values listed
-in :py:mod:`turbigen.meanline` for which mean-line design functions have been
-written. Also specified are the aerodynamic or geometric paramters needed to
-solve for the flow along the mean-line for the current turbomachine type. The
-design variables are fed directly into the `forward` mean-line design functions
-in :py:mod:`turbigen.meanline` (see the :ref:`Mean line page <ml>` for more detail) The configuration file might look like:
+or topology of turbomachine to design. This can either be: one the built-in
+mean-lines listed in in :py:mod:`turbigen.meanline`, or a file path to a
+user-written mean-line module that provides the correct functions. Also
+specified are the aerodynamic or geometric paramters needed to solve for the
+flow along the mean-line for the current turbomachine type. The design
+variables are fed directly into the `forward` mean-line design functions in
+:py:mod:`turbigen.meanline` (see the :ref:`Mean line page <ml>` for more
+detail) The configuration file might look like:
 
 .. code-block:: yaml
 

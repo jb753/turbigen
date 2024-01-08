@@ -87,9 +87,10 @@ def run_single(conf, gguess=None, plot=False):
     if not conf.mean_line_type:
         raise ConfigError("No mean-line type specified; quitting.")
     logger.info(f"Designing a {conf.mean_line_type}...")
-    meanline_design = importlib.import_module(
-        f".{conf.mean_line_type}", package="turbigen.meanline"
-    )
+
+
+    meanline_design = util.load_mean_line(conf.mean_line_type)
+
 
     # Feed mean-line arguments to the function
     times.append(timer())

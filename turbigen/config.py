@@ -178,9 +178,12 @@ class Config:
         """Make sure that the mean-line data is valid."""
         if meanline_type := self.mean_line_type:
             try:
-                design = importlib.import_module(
-                    f".{self.mean_line_type}", package="turbigen.meanline"
-                )
+
+                design = util.load_mean_line(self.mean_line_type)
+                print(design)
+                print(dir(design))
+
+
                 sig = signature(design.forward)
                 func_params = list(sig.parameters.values())[1:]
                 for p in func_params:
@@ -197,7 +200,8 @@ class Config:
                             f" {func_param_names}"
                         )
                 func_param_names = [p.name for p in func_params]
-            except AttributeError:
+            except AttributeError as e:
+                print(e)
                 raise ConfigError(f'Invalid mean-line type "{meanline_type}"') from None
         else:
             raise ConfigError("Missing a mean-line type")
