@@ -286,7 +286,7 @@ z_cst_line("Z_%d_out" % nrow).streamwise_number_of_points(int(conf["nx_dn"]))
 
 # Interpolation spacing
 for n in range(nrow):
-    row(n+1).set_row_interpolation_spacing(float(5))
+    row(n+1).set_row_interpolation_spacing(float(conf["span_interp"]))
 
 ## generate 3D
 print "Generating 3D mesh..."

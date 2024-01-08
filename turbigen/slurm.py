@@ -90,6 +90,10 @@ def submit(conf, basedir=None, verbose=True):
         else ""
     )
 
+    hours, frac_hours = divmod(cj["hours"], 1)
+    mins = frac_hours * 60
+    timestr = f"{hours:02d}:{mins:02d}:00"
+
     nnode = cj.get("nodes", 1)
     ntask = cj.get("tasks", 1)
     gres = min((ntask, 4))
@@ -102,7 +106,7 @@ def submit(conf, basedir=None, verbose=True):
 #SBATCH --nodes={nnode}
 #SBATCH --ntasks={ntask}
 #SBATCH --gres=gpu:{gres}
-#SBATCH --time={'%02d' % cj['hours']}:00:00
+#SBATCH --time={timestr}
 #SBATCH --qos={cj.get('qos','gpu1')}
 {depstr}
 

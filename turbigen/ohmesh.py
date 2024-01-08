@@ -21,6 +21,9 @@ class OHMeshConfig(BaseConfig):
     remote_host = ""
     """Remote host on which AutoGrid server is running."""
 
+    span_interpolation = 5.0
+    """Spanwise % spacing between optimisations of the mesh, interpolate between."""
+
     via_host = ""
     """Jump host for SSH connection to the AutoGrid server."""
 
@@ -133,6 +136,7 @@ class OHMeshConfig(BaseConfig):
             "wake_deviation": self.wake_deviation,
             "untwist_outlet": self.untwist_outlet,
             "splitter": splitter,
+            "span_interp": self.span_interpolation,
         }
 
 

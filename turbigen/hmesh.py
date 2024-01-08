@@ -7,6 +7,7 @@ from multiprocessing import Pool
 from itertools import repeat
 from turbigen.base import BaseConfig
 import os
+from turbigen import clusterfunc
 
 logger = util.make_logger()
 
@@ -73,25 +74,16 @@ class HMeshConfig(BaseConfig):
             njtip_min = 9
             dspf_tip = np.minimum(dspf_casing, tip / njtip_min)
 
-            spf_main = (
-                util.cluster_two_sided_ER(
-                    dspf_hub / Lmain,
-                    self.dspf_mid / Lmain,
-                    dspf_tip / Lmain,
-                    self.ER_span,
-                )
-                * Lmain
+            spf_main = clusterfunc.double.free(
+                dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, Lmain
             )
-            # np.floor(tip / 0.001).astype(int)
-
-            # spf_tip = (
-            #     util.cluster_two_sided_step(npts_tip, dspf_tip_norm, dspf_tip_norm)
-            #     * tip
-            #     + Lmain
-            # )
 
             spf_tip = util.cluster_two_sided_free(
                 Lmain, 1.0, dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span
+            )
+
+            spf_tip = clusterfunc.double.free(
+                dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span, Lmain, 1.0
             )
 
             spf_main = util.resample(spf_main, self.resolution_factor)
@@ -106,22 +98,25 @@ class HMeshConfig(BaseConfig):
 
         else:
             return util.resample(
-                util.cluster_two_sided_ER(
-                    dspf_hub, self.dspf_mid, dspf_casing, self.ER_span
+                clusterfunc.double.free(
+                    dspf_hub, dspf_casing, self.dspf_mid, self.ER_span
                 ),
                 self.resolution_factor,
             )
 
     def pitchwise_grid(self, drt_row, pitch_chord, AR_row, resample=True):
-        # """Evaluate a pitchwise grid vector given surface spacing."""
+        """Evaluate a pitchwise grid vector given surface spacing."""
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
         drt_mid = dm_mid / pitch_chord * self.AR_passage
         logger.debug(
             f"Free npts: drt_row={drt_row}, drt_mid={drt_mid}, ER={self.ER_pitch}"
         )
 
-        x1 = 0.5 * util.cluster_new_free(drt_row * 2.0, drt_mid * 2.0, self.ER_pitch)
-        x = np.concatenate((x1[:-1], 1.0 - np.flip(x1)))
+        # x1 = 0.5 * util.cluster_new_free(drt_row * 2.0, drt_mid * 2.0, self.ER_pitch)
+        # x = np.concatenate((x1[:-1], 1.0 - np.flip(x1)))
+
+        x = clusterfunc.symmetric.free(drt_row, drt_mid, self.ER_pitch)
+
         dx = np.diff(x)
         assert np.isclose(x[0], 0.0)
         assert np.isclose(x[-1], 1.0)
@@ -137,13 +132,10 @@ class HMeshConfig(BaseConfig):
         return x
 
     def pitchwise_grid_fixed_npts(self, drt_row, pitch_chord, AR_row, npts):
-        # """Evaluate a pitchwise grid vector given surface spacing."""
-        dm_mid = self.dspf_mid * AR_row / self.AR_merid
-        drt_mid = dm_mid / pitch_chord * self.AR_passage
+        """Evaluate a pitchwise grid vector given surface spacing."""
 
-        npts1 = npts // 2 + 1
-        x1 = 0.5 * util.cluster_new(drt_row * 2.0, drt_mid * 2.0, self.ER_pitch, npts1)
-        x = np.concatenate((x1[:-1], 1.0 - np.flip(x1)))
+        x = clusterfunc.symmetric.fixed(drt_row, npts)
+
         dx = np.diff(x)
         assert np.isclose(x[0], 0.0)
         assert np.isclose(x[-1], 1.0)
@@ -216,14 +208,10 @@ class HMeshConfig(BaseConfig):
             dm_TE = (1.0 - tte) / self.ni_TE
             dm_downstream_TE = dm_TE * pitch_chord[-1] / pitch_chord[1]
 
-            t_upstream = (
-                1.0
-                - np.flip(
-                    util.cluster_one_sided_ER(
-                        dm_upstream_LE / L[0], dm_boundary[0], self.ER_stream
-                    )
+            t_upstream = 1.0 - np.flip(
+                clusterfunc.single.free(
+                    dm_upstream_LE, dm_boundary[0] * L[0], self.ER_stream, 0.0, L[0]
                 )
-                * L[0]
             )
 
             # Apply chord length adjustment factor
@@ -231,34 +219,29 @@ class HMeshConfig(BaseConfig):
             dm_mid_adj = dm_mid / chord_factor
             dm_TE_adj = dm_TE / chord_factor
 
-            if ni_chord:
-                t1 = 0.5 * util.cluster_new(
-                    dm_LE_adj * 2.0, dm_mid_adj * 2.0, self.ER_stream, ni_chord // 2
-                )
-                t2 = 0.5 * util.cluster_new(
-                    dm_TE_adj * 2.0, dm_mid_adj * 2.0, self.ER_stream, ni_chord // 2
-                )
-                t_chord = np.concatenate((t1[:-1], 1.0 - np.flip(t2))) * tte
-            else:
-                t_chord = (
-                    util.cluster_two_sided_ER(
-                        dm_LE_adj, dm_mid_adj, dm_TE_adj, self.ER_stream
-                    )
-                    * tte
-                )
+            t_chord = clusterfunc.double.free(
+                dm_LE_adj, dm_TE_adj, dm_mid_adj, self.ER_stream, 0.0, tte
+            )
+
             t_te = np.linspace(tte, 1.0, self.ni_TE)
 
-            for _ in range(20):
-                try:
-                    t_downstream = (
-                        util.cluster_one_sided_ER(
-                            dm_downstream_TE / L[1], dm_boundary[-1], self.ER_stream
-                        )
-                        * L[1]
-                    )
-                except ValueError:
-                    dm_boundary[-1] *= 0.8
-                    continue
+            # free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
+
+            t_downstream = clusterfunc.single.free(
+                dm_downstream_TE, dm_boundary[-1] * L[1], self.ER_stream, 0.0, L[1]
+            )
+
+            # for _ in range(20):
+            #     try:
+            #         t_downstream = (
+            #             util.cluster_one_sided_ER(
+            #                 dm_downstream_TE / L[1], dm_boundary[-1], self.ER_stream
+            #             )
+            #             * L[1]
+            #         )
+            #     except ValueError:
+            #         dm_boundary[-1] *= 0.8
+            #         continue
 
             t_upstream = util.resample(t_upstream, self.resolution_factor)
             t_downstream = util.resample(t_downstream, self.resolution_factor)

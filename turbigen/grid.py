@@ -862,7 +862,11 @@ class Grid:
                     surfs.append(cut_now)
         else:
             # Loop over blocks and find o-meshes
-            nj = self.inlet_patches[0].block.shape[1]
+            # nj = self.inlet_patches[0].block.shape[1]
+            nj_vals, nj_counts = np.unique(
+                [b.shape[1] for b in self], return_counts=True
+            )
+            nj = nj_vals[np.argmax(nj_counts)]
             for b in self:
                 if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
                     surfs.append(b[:, :, None, 0])
@@ -919,7 +923,8 @@ class Grid:
                 .tolist()
             )
             adjacency = []
-            for block in self:
+            logger.debug("Weights and adjacency for each block:")
+            for ib, block in enumerate(self):
                 adjacency_now = []
                 for patch in block.patches:
                     if isinstance(patch, PeriodicPatch) or isinstance(
@@ -931,6 +936,7 @@ class Grid:
                             if nxblockid not in adjacency_now:
                                 adjacency_now.append(nxblockid)
                 adjacency.append(tuple(adjacency_now))
+                logger.debug(f"    {vertex_weights[ib]} {adjacency[-1]}")
             G = metis.adjlist_to_metis(adjacency, vertex_weights)
             _, procids = metis.part_graph(G, N)
             procids = np.array(procids)
