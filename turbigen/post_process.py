@@ -90,9 +90,14 @@ def incidence(g, machine, Beta_in, plot=False):
                 plt.figure()
                 plt.plot(zeta, x)
                 plt.savefig('beans4.pdf')
+                plt.figure()
+                plt.plot(zeta, P)
+                plt.savefig('beans5.pdf')
+                plt.figure()
+                plt.plot(zeta, surf.Vx[:,j])
+                plt.savefig('beans6.pdf')
                 plt.show()
                 from IPython import embed; embed()
-                quit()
 
             zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
 
