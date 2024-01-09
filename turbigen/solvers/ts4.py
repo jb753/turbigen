@@ -77,6 +77,8 @@ class TS4Config(BaseSolver):
 
     area_avg_pout = True
 
+    pout_fac_ramp_nstep = 0
+
     inlet_relax_fac = 0.5
     nstep_save_start_probe_1d = 0
     nstep_save_probe_1d = 100
@@ -106,6 +108,12 @@ class TS4Config(BaseSolver):
         istep_avg_start = v["istep_avg_start"] = v["nstep"] - self.nstep_avg
         if istep_avg_start >= nstep and nstep > 0:
             raise Exception(f"istep_avg_start={istep_avg_start} is > nstep={nstep}")
+
+        if v["cfl_ramp"]:
+            v["cfl_ramp_en"] = v["cfl"]
+
+        if v.get("pout_fac_ramp_nstep"):
+            v["pout_fac_ramp"] = 1
 
         if v["precon"]:
             v["precon_fac_ramp"] = 1
@@ -254,6 +262,10 @@ DEFAULT_CONFIG = {
     "precon_fac_ramp_nstep": 100,
     "precon_fac_ramp_st": 0.1,
     "precon_fac_ramp_en": 1.0,
+    "pout_fac_ramp_nstep": 0,
+    "pout_fac_ramp": 0,
+    "pout_fac_ramp_st": 0.8,
+    "pout_fac_ramp_en": 1.0,
 }
 
 
@@ -487,7 +499,9 @@ def run(grid, settings, machine):
             body_force_str = f.read()
 
         for k, v in ts4_conf.body_force_params.items():
-            body_force_str = re.sub(rf"{k}\s*=.*$", f"{k} = {v}", body_force_str)
+            body_force_str = re.sub(
+                rf"{k}\s*=.*$", f"{k} = {v}", body_force_str, flags=re.MULTILINE
+            )
 
         dest_body_force = os.path.join(ts4_conf.workdir, "body_force_config.ofp")
         with open(dest_body_force, "w") as f:
@@ -503,6 +517,7 @@ def run(grid, settings, machine):
     ngpu = int(os.environ["SLURM_NTASKS"])
     nnode = int(os.environ["SLURM_NNODES"])
     npernode = ngpu // nnode
+
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
         ts3_conf.nstep = ts4_conf.nstep_ts3
@@ -528,7 +543,7 @@ def run(grid, settings, machine):
             f"pvpython {os.path.abspath(pipeline)} input.hdf5 input_ts4 > convert.log"
         )
 
-        logger.info(f"Converting TS3->TS4 using custom pipeline {pipeline}...")
+        logger.iter(f"Converting TS3->TS4 using custom pipeline {pipeline}...")
 
         # When runing headless, paraview seems to segfault on exit, despite the
         # pipeline completing successfully. So we ignore errors when executing
@@ -540,9 +555,9 @@ def run(grid, settings, machine):
         convert_script = os.path.join(
             os.path.dirname(__file__), "convert_ts3_to_ts4_native.py"
         )
-        convert_cmd = f"{convert_script} input.hdf5 input_ts4 2>&1 > convert.log"
+        convert_cmd = f"{convert_script} input.hdf5 input_ts4 > convert.log"
         check = True
-        logger.info("Converting TS3->TS4...")
+        logger.iter("Converting TS3->TS4...")
 
     cmd_str = (
         f"source {ts4_conf.environment_script} 2>&1 > /dev/null;"
@@ -591,7 +606,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             _write_point_probe(ts4_conf, xyz, idomain)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
-    logger.info("Running TS4...")
+    logger.iter("Running TS4...")
     cmd_str = (
         f"source {ts4_conf.environment_script} 2 > /dev/null;"
         f"cd {ts4_conf.workdir};"
@@ -601,7 +616,10 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     )
     sleep(1)
     try:
+
         subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
+
+    # TODO catch keyboard interrupt here
     except subprocess.CalledProcessError as e:
         raise Exception(
             f"""Running TS4 failed, exit code {e.returncode}
