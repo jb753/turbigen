@@ -180,9 +180,6 @@ class Config:
             try:
 
                 design = util.load_mean_line(self.mean_line_type)
-                print(design)
-                print(dir(design))
-
 
                 sig = signature(design.forward)
                 func_params = list(sig.parameters.values())[1:]

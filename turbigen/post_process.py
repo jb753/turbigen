@@ -71,7 +71,29 @@ def incidence(g, machine, Beta_in, plot=False):
             zeta -= 1.0
 
             # Find a zero crossing near LE
-            iz = np.where((np.diff(np.sign(Vi)) > 0) & (np.abs(zeta) < 0.5)[:-1])[0][0]
+            try:
+
+                iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[0][0]
+
+            except:
+                import matplotlib.pyplot as plt
+                print(np.where((np.diff(np.sign(Vi)) > 0) & (np.abs(zeta) < 0.3)[:-1]))
+                plt.figure()
+                plt.plot(zeta, Vi)
+                plt.savefig('beans.pdf')
+                plt.figure()
+                plt.plot(zeta[:-1], (np.diff(np.sign(Vi))))
+                plt.savefig('beans2.pdf')
+                plt.figure()
+                plt.plot(zeta, np.abs(zeta))
+                plt.savefig('beans3.pdf')
+                plt.figure()
+                plt.plot(zeta, x)
+                plt.savefig('beans4.pdf')
+                plt.show()
+                from IPython import embed; embed()
+                quit()
+
             zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
 
             if j == 25 and plot:
