@@ -497,11 +497,17 @@ def run(grid, settings, machine):
 
     _write_ofp(ts4_conf.config_path, ofp)
 
-    ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir)
+    ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir).robust()
 
+    # Get number of GPUs from environment var
+    ngpu = int(os.environ["SLURM_NTASKS"])
+    nnode = int(os.environ["SLURM_NNODES"])
+    npernode = ngpu // nnode
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
         ts3_conf.nstep = ts4_conf.nstep_ts3
+        ts3_conf.ntask = ngpu
+        ts3_conf.nnode = nnode
         turbigen.solvers.ts3._run(grid, ts3_conf)
 
     turbigen.solvers.ts3._write_hdf5(grid, ts3_conf)
@@ -537,11 +543,6 @@ def run(grid, settings, machine):
         convert_cmd = f"{convert_script} input.hdf5 input_ts4 2>&1 > convert.log"
         check = True
         logger.info("Converting TS3->TS4...")
-
-    # Get number of GPUs from environment var
-    ngpu = int(os.environ["SLURM_NTASKS"])
-    nnode = int(os.environ["SLURM_NNODES"])
-    npernode = ngpu // nnode
 
     cmd_str = (
         f"source {ts4_conf.environment_script} 2>&1 > /dev/null;"

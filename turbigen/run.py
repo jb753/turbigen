@@ -559,9 +559,9 @@ def run_single(conf, gguess=None, plot=False):
     if install_type := conf.install.pop("type", None):
         # Dynamically load the install module
         logger.info(f"Installing a {install_type}...")
-        install_module = importlib.import_module(
-            f".{install_type}", package="turbigen.install"
-        )
+
+        install_module = turbigen.util.load_install(install_type)
+
         logger.debug("Successfully imported.")
         gi = install_module.forward(g, mac, **conf.install)
 
