@@ -1222,3 +1222,22 @@ def load_annulus(annulus_type):
 
 
 
+def load_install(install_type):
+    try:
+        # Attempt to load a built-in meanline
+        mod = importlib.import_module(
+            f".{install_type}", package="turbigen.install"
+        )
+    except ModuleNotFoundError:
+        # Use as a file path
+        mod_file = os.path.abspath(install_type)
+        mod_name = os.path.basename(install_type)
+        mod_file += ".py"
+        spec = importlib.util.spec_from_file_location(f"turbigen.install.{mod_name}", mod_file)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"turbigen.install.{mod_name}"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+
