@@ -150,7 +150,7 @@ def run_single(conf, gguess=None, plot=False):
     # Feed annulus arguments to the geometry function
     times.append(timer())
     annulus_type = conf.annulus.pop("type", "Smooth")
-    Annulus = getattr(turbigen.annulus, annulus_type)
+    Annulus = util.load_annulus(annulus_type)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
     conf.annulus["type"] = annulus_type
     logger.info(ann)
@@ -648,7 +648,6 @@ def run_single(conf, gguess=None, plot=False):
 
     logger.info("Mixed-out CFD result:")
     logger.info(ml_out)
-    logger.info(f"eta_tt={ml_out.eta_tt:.3f}, eta_ts={ml_out.eta_ts:.3f}")
 
     log_fields = LOG_FIELDS + ()
     match_vars = conf.iterate.get("mean_line", {}).get("match_tolerance", {})
@@ -765,6 +764,8 @@ def run_single(conf, gguess=None, plot=False):
                 },
                 var_fields,
             )
+
+        logger.iter(f"eta_tt={ml_out.eta_tt:.3f}, eta_ts={ml_out.eta_ts:.3f}")
 
         inverse_path = os.path.join(workdir, "inverse.yaml")
         turbigen.util.write_yaml(out_vars, inverse_path)

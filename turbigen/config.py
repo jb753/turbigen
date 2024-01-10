@@ -205,7 +205,7 @@ class Config:
 
     def _check_annulus(self):
         """Validate annulus data"""
-        Annulus = getattr(annulus, self.annulus.get("type", "Smooth"))
+        Annulus = util.load_annulus(self.annulus.get("type", "Smooth"))
         sig = signature(Annulus)
         for k in self.annulus:
             if k not in sig.parameters and not k == "type":

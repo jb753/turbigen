@@ -1021,7 +1021,7 @@ class MeanLine:
         V2 = self.V_rel[1::2]
         DVt = np.abs(self.Vt_rel[1::2] - self.Vt_rel[::2])
         logger.debug(f"V1={V1}, V2={V2}, DVt={DVt}")
-        if (DFL + V2 / V1 - 1.0) < 0.0:
+        if np.any((DFL + V2 / V1 - 1.0) < 0.0):
             raise Exception(
                 f"V2/V1={V2/V1} is too low for this DFL={DFL}, need DFL + V2/V1 > 1"
             )
