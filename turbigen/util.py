@@ -1183,16 +1183,15 @@ def next_numbered_dir(basename):
     return os.path.join(base_dir, stem.replace("*", f"{next_id:04d}"))
 
 def load_mean_line(mean_line_type):
-    try:
+    if not mean_line_type.endswith('.py'):
         # Attempt to load a built-in meanline
         mod = importlib.import_module(
             f".{mean_line_type}", package="turbigen.meanline"
         )
-    except ModuleNotFoundError:
+    else:
         # Use as a file path
         mod_file = os.path.abspath(mean_line_type)
         mod_name = os.path.basename(mean_line_type)
-        mod_file += ".py"
         spec = importlib.util.spec_from_file_location(f"turbigen.meanline.{mod_name}", mod_file)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"turbigen.meanline.{mod_name}"] = mod
@@ -1202,16 +1201,15 @@ def load_mean_line(mean_line_type):
 
 
 def load_install(install_type):
-    try:
+    if not install_type.endswith('.py'):
         # Attempt to load a built-in meanline
         mod = importlib.import_module(
             f".{install_type}", package="turbigen.install"
         )
-    except ModuleNotFoundError:
+    else:
         # Use as a file path
         mod_file = os.path.abspath(install_type)
         mod_name = os.path.basename(install_type)
-        mod_file += ".py"
         spec = importlib.util.spec_from_file_location(f"turbigen.install.{mod_name}", mod_file)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"turbigen.install.{mod_name}"] = mod

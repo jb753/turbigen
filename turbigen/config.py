@@ -95,6 +95,13 @@ class Config:
 
         self.mean_line_type = self.mean_line.pop("type", None)
 
+        if self.mean_line_type.endswith('.py'):
+            self.mean_line_type = os.path.abspath(self.mean_line_type)
+
+        if self.install:
+            if self.install["type"].endswith('.py'):
+                self.install["type"] = os.path.abspath(self.install["type"])
+
         self.check()
 
     def check(self):

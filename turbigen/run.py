@@ -556,7 +556,8 @@ def run_single(conf, gguess=None, plot=False):
         conf.solver["workdir"] = workdir
 
     # The grid is ready to run. At this point, we can 'install' it
-    if install_type := conf.install.pop("type", None):
+    if conf.install:
+        install_type = conf.install.pop("type")
         # Dynamically load the install module
         logger.info(f"Installing a {install_type}...")
 
