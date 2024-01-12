@@ -943,7 +943,7 @@ class Grid:
 
             # Metis may produce fewer partitions than requested, which results
             # in skipped procids. Shift the procids first so there are no gaps.
-            procids_unique, ind_unique = np.unique(procids, return_index=True)
+            procids_unique = np.unique(procids)
             procids_missing = np.setdiff1d(range(N), procids_unique)
             for pmiss in procids_missing:
                 procids[procids >= pmiss] -= 1
@@ -953,12 +953,19 @@ class Grid:
                 logger.debug(
                     f"Metis produced {npart} partitions, fewer than target {N}"
                 )
-                logger.debug("Original procids {procids}")
+                logger.debug(f"Original procids {procids}")
 
                 # Find indices of repeated procids, i.e. those that are not
                 # required to form the unique array
-                ind_repeat = np.setdiff1d(range(N), ind_unique)
-                logger.debug("Original procids {procids}")
+                ind_repeat = []
+                proc_used = []
+                for iiproc, iproc in enumerate(procids):
+                    if iproc in proc_used:
+                        ind_repeat.append(iiproc)
+                    else:
+                        proc_used.append(iproc)
+
+                # ind_repeat = np.setdiff1d(range(N), ind_unique)
                 logger.debug(f"Indexes of repeats {ind_repeat}")
                 procids_add = list(range(npart - 1, N))
                 logger.debug(f"procids to be added {procids_add}")
