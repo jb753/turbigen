@@ -17,6 +17,8 @@ class HMeshConfig(BaseConfig):
 
     _name = "H mesh"
 
+    recluster = False
+
     ER_stream = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
 
@@ -613,44 +615,49 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
             #     pass
 
         else:
+
             theta_lim = np.zeros((2, ni, nj))
-            for j in range(nj):
-                for i in range(ni):
-                    rt_pitch_now = xr[1, i, j] * pitch_theta
-                    # Determine position along blade
-                    mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
-                    mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
-                    mfrac = np.array([1.0 - mclip, mclip])
-                    drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
-                    try:
-                        pitch_frac_clust[
-                            i, j, :
-                        ] = mesh_config.pitchwise_grid_fixed_npts(
-                            drt_norm_now,
-                            pitch_chord_ref[1],
-                            AR_row,
-                            nk_not_resampled,
-                        )
-                    except ValueError:
-                        raise Exception(
-                            f"Failed to recluster: {drt_norm_now},"
-                            f" {pitch_chord_ref[1]}, {AR_row}"
-                        )
+            if not mesh_config.recluster:
+                pitch_frac_clust = np.tile(pitch_frac_nom.reshape(1,1,-1),(ni,nj,1))
+            else:
+                for j in range(nj):
+                    for i in range(ni):
+                        rt_pitch_now = xr[1, i, j] * pitch_theta
+                        # Determine position along blade
+                        mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
+                        mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
+                        mfrac = np.array([1.0 - mclip, mclip])
+                        drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
-            assert np.isfinite(pitch_frac_clust).all()
+                        try:
+                            pitch_frac_clust[
+                                i, j, :
+                            ] = mesh_config.pitchwise_grid_fixed_npts(
+                                drt_norm_now,
+                                pitch_chord_ref[1],
+                                AR_row,
+                                nk_not_resampled,
+                            )
+                        except ValueError:
+                            raise Exception(
+                                f"Failed to recluster: {drt_norm_now},"
+                                f" {pitch_chord_ref[1]}, {AR_row}"
+                            )
 
-            # Smooth the pitch fraction in i and j directions
-            for _ in range(5):
-                pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
-                    pitch_frac_clust[:-2, 1:-1, :]
-                    + pitch_frac_clust[2:, 1:-1, :]
-                    + pitch_frac_clust[1:-1, :-2, :]
-                    + pitch_frac_clust[1:-1, 2:, :]
-                )
+                assert np.isfinite(pitch_frac_clust).all()
 
-            assert (pitch_frac_clust >= 0.0).all()
-            assert (pitch_frac_clust <= 1.0).all()
+                # Smooth the pitch fraction in i and j directions
+                for _ in range(5):
+                    pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
+                        pitch_frac_clust[:-2, 1:-1, :]
+                        + pitch_frac_clust[2:, 1:-1, :]
+                        + pitch_frac_clust[1:-1, :-2, :]
+                        + pitch_frac_clust[1:-1, 2:, :]
+                    )
+
+                assert (pitch_frac_clust >= 0.0).all()
+                assert (pitch_frac_clust <= 1.0).all()
 
             for j in range(nj):
                 xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j])

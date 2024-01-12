@@ -40,7 +40,7 @@ def log_line(d, fields):
     out = ""
 
     for v in fields:
-        w = max(len(v), 4)
+        w = max(len(v), 5)
         if d is None:
             dout = f"{v:<{w}}" + " "
         elif isinstance(d, int):
@@ -181,6 +181,7 @@ def run_single(conf, gguess=None, plot=False):
             if chi_fix := row.get("chi"):
                 Alpha_rel = chi_fix
             else:
+                logger.debug(f'Vortex exponent irow={irow} is {vexpon_row}')
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
             Chi = Alpha_rel + qstar_camber[:, :2]
             q_camber = qstar_camber
@@ -226,7 +227,7 @@ def run_single(conf, gguess=None, plot=False):
         if row:
             row_now = row.copy()
             row_now.pop("chi", None)
-            row_now.pop("vortex_expon", None)
+            vexpon = row_now.pop("vortex_expon", None)
             if thick_rm:
                 f = thick_rm[irow] * row_rmid[irow] / ann.chords(0.5)[1:-1:2][irow]
                 if thick_type == "Taylor":
@@ -309,6 +310,8 @@ def run_single(conf, gguess=None, plot=False):
 
                 splitter_now.pop("q_camber")
                 splitter_now["qstar_camber"] = qstar_camber_split_save
+                if not vexpon is None:
+                    row_now["vexpon"] = vexpon
         else:
             bld.append(None)
 
