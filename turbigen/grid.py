@@ -281,9 +281,12 @@ class Grid:
     def extend(self, g):
         self._blocks += g._blocks
         self._iter_ind = 0
-
         for block in self._blocks:
             block.grid = self
+
+    def append(self, b):
+        self._blocks.append(b)
+        b.grid = self
 
     def index(self, block):
         return self._blocks.index(block)
