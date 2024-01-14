@@ -64,6 +64,8 @@ class HMeshConfig(BaseConfig):
     maxiter_smooth = 0
     """Number of smoothing iterations, zero to disable smoothing."""
 
+    skew_max = 30.
+
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         # """Evaluate a spanwise grid vector given hub and casing spacings."""
         if tip:
@@ -277,7 +279,7 @@ class HMeshConfig(BaseConfig):
         return np.interp(stream_frac, t_ref, relax_ref)
 
 
-def _theta_limits(tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0)):
+def _theta_limits(tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0), Theta_max=30.):
     """Evaluate pitchwise limits given upper/lower surface section coordinates."""
 
     # Put geometric leading edge where it should be
@@ -367,7 +369,6 @@ def _theta_limits(tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0)):
     dtheta_skew = np.zeros_like(theta_u)
     ind_up = tq < mlim[0]
     ind_dn = tq > mlim[1]
-    Theta_max = 30.0
     Theta_now = np.clip(Theta, -Theta_max, Theta_max)
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():
@@ -697,6 +698,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
                     chord_mid[
                         (0, -1),
                     ],
+                    Theta_max=mesh_config.skew_max
                 )[:2]
 
         assert np.isfinite(xr).all()

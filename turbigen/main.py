@@ -151,7 +151,7 @@ def main():
     conf.plot |= args.plot
 
     # Choose log level
-    sys.tracebacklimit = 1000 if args.verbose else 1
+    # sys.tracebacklimit = 1000 if args.verbose else 1
     if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
         log_level = logging.DEBUG
     elif conf.iterate:
