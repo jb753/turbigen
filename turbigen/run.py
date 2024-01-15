@@ -558,6 +558,8 @@ def run_single(conf, gguess=None, plot=False):
     if conf.solver:
         conf.solver["workdir"] = workdir
 
+    g.check_coordinates()
+
     # The grid is ready to run. At this point, we can 'install' it
     if conf.install:
         install_type = conf.install.pop("type")
@@ -568,6 +570,8 @@ def run_single(conf, gguess=None, plot=False):
 
         logger.debug("Successfully imported.")
         gi = install_module.forward(g, mac, **conf.install)
+
+        gi.check_coordinates()
 
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')

@@ -123,6 +123,18 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def pitch(self):
         return 2.0 * np.pi / self.Nb
 
+    @property
+    def ni(self):
+        return self.shape[0]
+
+    @property
+    def nj(self):
+        return self.shape[1]
+
+    @property
+    def nk(self):
+        return self.shape[2]
+
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
 
@@ -375,6 +387,13 @@ class Grid:
             if block in row_block:
                 return irow
         raise Exception(f"Could not locate {block} in the row lists")
+
+    def check_coordinates(self):
+        for ib, b in enumerate(self):
+            try:
+                b.check_coordinates()
+            except AssertionError:
+                raise Exception(f'Coordinate check failed in block {ib} {b}')from None
 
     def apply_rotation(self, row_types, Omega):
         """Set wall rotations."""

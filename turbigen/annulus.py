@@ -451,7 +451,7 @@ class Aircon:
 
         Beta_cas = Beta.copy()
 
-        DLmotor = Lmotor * 0.05
+        DLmotor = Lmotor * 0.1
         # rmin = rmid12[1] * 0.05
         rmin = rhub[0]
         thub = np.linspace(0.0, len(xhub) - 1, len(xhub))

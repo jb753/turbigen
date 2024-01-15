@@ -17,8 +17,10 @@ from turbigen.solvers.base import BaseSolver
 
 import turbigen.util
 
-logger = turbigen.util.make_logger()
+import warnings
+warnings.simplefilter('error')
 
+logger = turbigen.util.make_logger()
 
 class TS3Config(BaseSolver):
     _name = "TS3"
@@ -797,45 +799,43 @@ Are you on a HPC compute node?"""
         )
 
     # Start the Turbostream process
-    proc = subprocess.Popen(
-        cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
-    )
+    with subprocess.Popen( cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid) as proc:
 
-    # Until process has finished, check regularly for divergence
-    try:
-        while proc.poll() is None:
-            timeout = 60
-            start = timer()
-            while (timer() - start) < timeout:
-                sleep(10)
-                if os.path.isfile("log.txt"):
-                    break
-            if not os.path.isfile("log.txt"):
-                raise Exception(
-                    f"Timed out after {timeout}s waiting for TS3 log file to appear"
-                )
-            if istep_nan := _check_nan("log.txt"):
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                raise ConvergenceError(f"TS3 diverged at step {istep_nan}") from None
-    except KeyboardInterrupt:
-        logger.iter("******")
-        logger.iter("Caught interrupt, killing solver...")
-        logger.iter("******")
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        # Until process has finished, check regularly for divergence
+        try:
+            while proc.poll() is None:
+                timeout = 60
+                start = timer()
+                while (timer() - start) < timeout:
+                    sleep(10)
+                    if os.path.isfile("log.txt"):
+                        break
+                if not os.path.isfile("log.txt"):
+                    raise Exception(
+                        f"Timed out after {timeout}s waiting for TS3 log file to appear"
+                    )
+                if istep_nan := _check_nan("log.txt"):
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    raise ConvergenceError(f"TS3 diverged at step {istep_nan}") from None
+        except KeyboardInterrupt:
+            logger.iter("******")
+            logger.iter("Caught interrupt, killing solver...")
+            logger.iter("******")
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            proc.wait()
+            logger.iter("Killed solver.")
+
         proc.wait()
-        logger.iter("Killed solver.")
 
-    proc.wait()
-
-    # If we have an error code, prind debugging info
-    if proc.returncode:
-        raise Exception(
-            f"""TS3 failed, exit code {proc.returncode}
+        # If we have an error code, prind debugging info
+        if proc.returncode:
+            raise Exception(
+                f"""TS3 failed, exit code {proc.returncode}
 COMMAND: {cmd_str}
 STDERR: {proc.stderr.read().decode(sys.getfilesystemencoding()).strip()}
 
 Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
-        ) from None
+            ) from None
 
     # Delete extraneous files
     for f in ("stopit", "output_avg.xdmf", "output.xdmf"):
@@ -845,7 +845,6 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             pass
 
     os.chdir(old_workdir)
-
 
 def _read_hdf5(grid, ts3_config):
     """Using a given configuration, load flow solution and insert into grid."""
@@ -912,6 +911,7 @@ def _read_hdf5(grid, ts3_config):
 
 def _check_conv(ts3_config):
     """Parse the TS3 log and raise exceptions in case of problems."""
+
     log = TS3Log(os.path.join(ts3_config.workdir, "log.txt"))
 
     logger.info(f"Checking convergence over last {ts3_config.nstep_avg} steps...")
@@ -1013,7 +1013,6 @@ def run(grid, settings, machine):
 
     # Raise errors if the solution did not converge
     _check_conv(ts3_conf)
-
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
 re_nstep_save_start = re.compile(r"nstep_save_start\s*:\s*(\d*)$")

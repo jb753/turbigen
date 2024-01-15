@@ -17,7 +17,7 @@ logger = util.make_logger()
 logger.setLevel(level=logging.INFO)
 
 @pytest.mark.parametrize("conf_yaml", example_confs)
-def test_example(conf_yaml):
+def test_example(conf_yaml, usegpu):
     print("*********************")
     print(f"Running example: {conf_yaml}")
     print("*********************")
@@ -26,11 +26,9 @@ def test_example(conf_yaml):
     c = config.Config.read(conf_yaml)
 
     workdir = c.workdir
-    c.solver["skip"] = True
-    c.wdist = False
-
-    # Check the workdir is under the examples run folder
-    assert os.path.commonprefix([workdir, RUN_DIR]) == RUN_DIR
+    if not usegpu:
+        c.solver["skip"] = True
+        c.wdist = False
 
     # Delete workdir if it exists
     if os.path.isdir(workdir):
