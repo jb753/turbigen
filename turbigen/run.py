@@ -757,9 +757,9 @@ def run_single(conf, gguess=None, plot=False):
         log_line(pdict, log_fields)
 
     if opt_converged and not chic_flag:
+
         out_vars = meanline_design.inverse(ml_out)
         out_vars.pop("So1")
-
         var_fields = ("Design variable", "Nom   ", "CFD   ")
         log_line(None, var_fields)
         log_line("-", var_fields)
@@ -772,7 +772,6 @@ def run_single(conf, gguess=None, plot=False):
                 },
                 var_fields,
             )
-
         logger.iter(f"eta_tt={ml_out.eta_tt:.3f}, eta_ts={ml_out.eta_ts:.3f}")
 
         inverse_path = os.path.join(workdir, "inverse.yaml")
@@ -850,6 +849,31 @@ def run(conf, plot=False):
             if i > 0 and ("soft_start" in conf.solver):
                 conf.solver["soft_start"] = False
             ml_out, opt_converged, gguess = run_single(conf, gguess)
+
+            # Check for stopit to interrupt iterations
+            stopit_path = os.path.join(basedir,'stopit')
+            if (stopit_found:=os.path.exists(stopit_path)):
+                logger.iter(f"stopit found, terminating iterations.")
+                opt_converged = True
+
+                out_vars = meanline_design.inverse(ml_out)
+                out_vars.pop("So1")
+                var_fields = ("Design variable", "Nom   ", "CFD   ")
+                log_line(None, var_fields)
+                log_line("-", var_fields)
+                for v in conf.mean_line:
+                    log_line(
+                        {
+                            "Design variable": v,
+                            "Nom   ": conf.mean_line[v],
+                            "CFD   ": out_vars[v],
+                        },
+                        var_fields,
+                    )
+                logger.iter(f"eta_tt={ml_out.eta_tt:.3f}, eta_ts={ml_out.eta_ts:.3f}")
+
+                os.remove(stopit_path)
+
             if opt_converged:
                 logger.debug("Moving converged solution up to work dir")
                 for f in os.listdir(iterdir):
@@ -878,27 +902,9 @@ def run(conf, plot=False):
 
                 topt_end = timer()
                 opt_mins = (topt_end - topt_start) / 60.0
-                logger.iter(f"Iteration converged in {opt_mins:.1f} min.")
+                logger.iter(f"Iteration finished in {opt_mins:.1f} min.")
 
                 break
-
-            elif i == max_iter // 2:
-                # Reduce relaxation factors halfway through
-                logger.iter("Reducing relaxation factors")
-                for k in ["incidence", "mean_line"]:
-                    try:
-                        conf.iterate[k]["relaxation_factor"] *= 0.5
-                    except KeyError:
-                        pass
-
-            elif i == (max_iter * 3) // 4:
-                # Reduce relaxation factors halfway through
-                logger.iter("Reducing relaxation factors")
-                for k in ["incidence", "mean_line"]:
-                    try:
-                        conf.iterate[k]["relaxation_factor"] *= 0.5
-                    except KeyError:
-                        pass
 
     else:
         ml_out, _, gguess = run_single(conf, plot=plot)
