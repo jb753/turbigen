@@ -17,9 +17,6 @@ from turbigen.solvers.base import BaseSolver
 
 import turbigen.util
 
-import warnings
-warnings.simplefilter('error')
-
 logger = turbigen.util.make_logger()
 
 class TS3Config(BaseSolver):
