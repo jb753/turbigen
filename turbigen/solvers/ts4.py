@@ -75,6 +75,9 @@ class TS4Config(BaseSolver):
     outlet_tag = "Outlet"
     """Identifier string for the outlet patch."""
 
+    monitor_script = ""
+    """Path to a monitoring script, given the workdir as an argument."""
+
     area_avg_pout = True
 
     pout_fac_ramp_nstep = 0
@@ -615,6 +618,12 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         f" {npernode} > log_ts4.txt 2> err.txt"
     )
     sleep(1)
+
+    # Start monitoring script
+    if ts4_conf.monitor_script:
+        monitor_cmd = f"python {ts4_conf.monitor_script} {ts4_conf.workdir}"
+        monitor_proc = subprocess.Popen(monitor_cmd, shell=True)
+
     try:
 
         subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
@@ -627,6 +636,9 @@ COMMAND: {cmd_str}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 """
         ) from None
+
+    if ts4_conf.monitor_script:
+        monitor_proc.kill()
 
     log_path = os.path.join(ts4_conf.workdir, "log_ts4.txt")
     if istep_nan := _check_nan(log_path):
