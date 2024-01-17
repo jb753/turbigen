@@ -244,6 +244,38 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             u = interpn(ijkv_other, other.u, ijk)
             self.set_rho_u(rho, u)
 
+    def refine(self, k):
+        """Make a finer mesh by halving each edge k times."""
+
+        # Store angular velocity and reset later to make sure Omega.ptp() remains 0
+        Omega = self.Omega.mean()
+
+        # Input data
+        ni, nj, nk = self.shape
+        ijk = range(ni), range(nj), range(nk)
+        d = np.moveaxis(self._data,0,-1)
+
+        # Query data
+        iqv = np.linspace(0, ni-1, (ni-1)*(2**k)+1)
+        jqv = np.linspace(0, nj-1, (nj-1)*(2**k)+1)
+        kqv = np.linspace(0, nk-1, (nk-1)*(2**k)+1)
+        ijkq = np.moveaxis(np.stack(np.meshgrid(iqv, jqv, kqv, indexing='ij')),0,-1)
+
+        # Peform interpolation
+        dq = interpn(ijk, d, ijkq)
+        self._data = np.moveaxis(dq,-1,0)
+
+
+        # Adjust patches
+        for patch in self.patches:
+            pos = patch.ijk_limits>=0
+            patch.ijk_limits[pos] *= 2**k
+            patch.ijk_limits[~pos] = (( patch.ijk_limits[~pos]+1 ) * 2**k)-1
+
+
+        self.Omega = Omega
+
+
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
     _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "P", "T", "w", "mu_turb", "Omega")

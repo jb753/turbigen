@@ -41,6 +41,9 @@ class OHMeshConfig(BaseConfig):
     ni_outlet = 65
     """Number of streamwise points in outlet."""
 
+    refine_factor = 0
+    """Divide each edge into 2**(refine_factor) sub-edges."""
+
     fix_h_blocks = True
 
     wake_control = False
@@ -205,5 +208,9 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
     g_path = output_stem + ".g"
 
     g = turbigen.autogrid.reader.read(g_path, bcs_path)
+
+    if (rf:=mesh_config.refine_factor):
+        for b in g:
+            b.refine(rf)
 
     return g
