@@ -83,10 +83,8 @@ class TS4Config(BaseSolver):
     pout_fac_ramp_nstep = 0
 
     inlet_relax_fac = 0.5
-    nstep_save_start_probe_1d = 0
-    nstep_save_probe_1d = 100
-    nstep_save_start_probe_2d = 0
-    nstep_save_probe_2d = 100
+    nstep_save_probe_1d = 1
+    nstep_save_probe_2d = 1
     cfl_turb_fac = 0.5
 
     plot_conv = True
@@ -403,6 +401,8 @@ probe_list = []
 def _write_point_probe(ts4_conf, xyzp, dom):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
 
+    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
+
     with open(probe_ofp, "a") as f:
         # Initialise probe list
         f.write(
@@ -412,13 +412,13 @@ p.x = {xyzp[0].tolist()}
 p.y = {xyzp[1].tolist()}
 p.z = {xyzp[2].tolist()}
 p.idomain = {dom}
-p.absolute_frame = False
+p.absolute_frame = True
 p.fname_root = "point_probe"
 p.write_2d = True
-p.nstep_save_start_1d = 0
-p.nstep_save_1d = 1
-p.nstep_save_start_2d = 0
-p.nstep_save_2d = 1
+p.nstep_save_start_1d = {istep_save_start}
+p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
+p.nstep_save_start_2d = {istep_save_start}
+p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
 p.time_average = True
 probe_list.append(p)
 """
@@ -435,6 +435,8 @@ def _write_xr_probe(machine, ts4_conf, spf):
 
     logger.debug(f"min xr={xr.min(axis=1)}, max xr={xr.max(axis=1)}")
 
+    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
+
     # Fill values into template
     pstr = []
     for irow in range(machine.ann.nrow):
@@ -447,9 +449,9 @@ p.s2 = {xr[1].tolist()}
 p.idomain = {irow}
 p.fname_root = "xr_probe_row_{irow}_spf_{str(spf).replace('.','')}"
 p.write_2d = True
-p.nstep_save_start_1d = {ts4_conf.nstep_save_start_probe_1d}
+p.nstep_save_start_1d = {istep_save_start}
 p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
-p.nstep_save_start_2d = {ts4_conf.nstep_save_start_probe_2d}
+p.nstep_save_start_2d = {istep_save_start}
 p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
 probe_list.append(p)
 
@@ -560,7 +562,7 @@ def run(grid, settings, machine):
         )
         convert_cmd = f"{convert_script} input.hdf5 input_ts4 > convert.log"
         check = True
-        logger.iter("Converting TS3->TS4...")
+        logger.info("Converting TS3->TS4...")
 
     cmd_str = (
         f"source {ts4_conf.environment_script} 2>&1 > /dev/null;"
@@ -609,7 +611,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             _write_point_probe(ts4_conf, xyz, idomain)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
-    logger.iter("Running TS4...")
+    logger.info("Running TS4...")
     cmd_str = (
         f"source {ts4_conf.environment_script} 2 > /dev/null;"
         f"cd {ts4_conf.workdir};"

@@ -324,7 +324,7 @@ class Smooth:
 
         return xr
 
-    def get_coords(self, nseg=100):
+    def get_coords(self, nseg=50):
         """Sample the coordinates of hub and casing lines in AutoGrid style."""
         N = self.hub.N
         s = np.linspace(0.0, 1.0, N * nseg + 1)

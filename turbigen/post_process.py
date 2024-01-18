@@ -3,7 +3,132 @@ import turbigen.geometry
 import turbigen.grid
 import os
 import turbigen.util
+logger = turbigen.util.make_logger()
 
+
+def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot):
+
+    if plot:
+        import matplotlib.pyplot as plt
+
+    surf = current_surf[..., 0]
+
+    # Preallocate and loop over spanwise points
+    nj = current_surf.shape[1]
+
+    jplot = np.round(
+        np.interp(
+            [0.2, 0.5, 0.8], current_surf.spf[0, :, 0], np.linspace(0.0, nj - 1, nj)
+        )
+    ).astype(int)
+
+    spf_row = np.ones(nj) * np.nan
+    chi_stag_row = np.ones(nj) * np.nan
+    for j in range(nj):
+        # Find current span fraction
+        spf_row[j] = spf_now = current_surf.spf[0, j, 0]
+
+        xrrt_le_cent = current_blade.get_LE_cent(spf_now)
+
+        x = surf.x[:, j]
+        r = surf.r[:, j]
+        rt = surf.rt[:, j]
+        P = surf.P[:, j]
+        Vi = surf.Vi_rel[:, j]
+
+        # Take surface distance and normalise to (-1, 1)
+        zeta = surf.zeta[:, j]
+        zeta /= 0.5 * zeta.ptp()
+        zeta -= 1.0
+
+        # Find a zero crossing near LE
+        iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[0][0]
+
+        zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
+
+        if j == 25 and plot:
+            fig, ax = plt.subplots()
+            ax.plot(zeta, Vi, "k")
+            ax.plot(zeta[iz], Vi[iz], "b*")
+            ax.plot(zeta_stag, np.interp(zeta_stag, zeta, Vi), "ro")
+            plt.savefig(f"zeta_Vi_j_25_irow_{irow}.pdf")
+
+
+        x_stag = np.interp(zeta_stag, zeta, x)
+        rt_stag = np.interp(zeta_stag, zeta, rt)
+        r_stag = np.interp(zeta_stag, zeta, r)
+        xrrt_le_stag = np.array((x_stag, r_stag, rt_stag)).reshape(-1, 1)
+
+        # Get angle between stagnation point and centre of LE
+        dxrrt = xrrt_le_cent - xrrt_le_stag
+
+        # Choose how to calculate angle
+        if np.abs(current_Beta) < 45.0:
+            # Small pitch angle => the leading edge is oriented axially
+            chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[0])).item()
+
+            if j in jplot and plot:
+                fig, ax = plt.subplots()
+                ax.plot(surf.x[:, j], surf.rt[:, j], "-")
+                ax.plot(
+                    *xrrt_le_stag[
+                        (0, 2),
+                    ],
+                    "r*",
+                )
+                ax.plot(
+                    *xrrt_le_cent[
+                        (0, 2),
+                    ],
+                    "b*",
+                )
+                ax.axis("equal")
+                Lref = turbigen.util.vecnorm(dxrrt) * 2.0
+                ax.set_ylim(np.array((-Lref, Lref)) + xrrt_le_cent[2])
+                ax.set_xlim(np.array((-Lref, Lref)) + xrrt_le_cent[0])
+                plt.savefig(os.path.join(plot, f"inc_xr_row_{irow}_j_{j}.pdf"))
+                plt.close()
+
+        else:
+            # Large pitch angle => the leading edge is oriented radially
+
+            # Going radially in
+            if current_Beta < 0.0:
+                chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], -dxrrt[1])).item()
+            else:
+                # Going radially out
+                chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[1])).item()
+
+            if j in jplot and plot:
+                fig, ax = plt.subplots()
+                ax.plot(surf.r[:, j], surf.rt[:, j], "-")
+                ax.plot(
+                    *xrrt_le_stag[
+                        (1, 2),
+                    ],
+                    "r*",
+                )
+                ax.plot(
+                    *xrrt_le_cent[
+                        (1, 2),
+                    ],
+                    "b*",
+                )
+                ax.axis("equal")
+                Lref = turbigen.util.vecnorm(dxrrt) * 2.0
+                ax.set_ylim(np.array((-Lref, Lref)) + xrrt_le_cent[2])
+                ax.set_xlim(np.array((-Lref, Lref)) + xrrt_le_cent[1])
+
+                ax.plot(
+                    [xrrt_le_cent[1], xrrt_le_cent[1] + Lref],
+                    [xrrt_le_cent[2], xrrt_le_cent[2]],
+                    "k--",
+                )
+                ax.set_title(str(chi_stag_row[j]) + ", " + str(spf_now))
+                plt.savefig(os.path.join(plot, f"inc_rrt_row_{irow}_j_{j}.pdf"))
+                plt.close()
+
+    return spf_row, chi_stag_row
 
 def incidence(g, machine, Beta_in, plot=False):
     """Spanwise profile of incidence for each blade row.
@@ -19,229 +144,27 @@ def incidence(g, machine, Beta_in, plot=False):
     # Preallocate and loop over rows
     spf = []
     chi_stag = []
+    chi_stag_splitter = []
     for irow, blocks in enumerate(g.row_blocks):
+
         if surfs[irow] is None:
             spf.append(None)
             chi_stag.append(None)
             continue
 
-        surf = surfs[irow][..., 0]
+        current_surf = surfs[irow][0]
+        current_Beta = Beta_in[irow]
+        current_blade = machine.bld[irow]
 
-        # Preallocate and loop over spanwise points
-        nj = blocks[0].shape[1]
-        spf.append(np.ones(nj) * np.nan)
-        chi_stag.append(np.ones(nj) * np.nan)
+        spf_row, chi_stag_row = _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot)
 
-        jplot = np.round(
-            np.interp(
-                [0.2, 0.5, 0.8], surfs[irow].spf[0, :, 0], np.linspace(0.0, nj - 1, nj)
-            )
-        ).astype(int)
+        spf.append(spf_row)
+        chi_stag.append(chi_stag_row)
 
-        # if irow == 1:
-        #     fig, ax = plt.subplots()
-        #     ax.plot(surfs[irow].x[0,:,0],
-        #     plt.savefig('beans.pdf')
-        #     quit()
-
-        for j in range(nj):
-            # Find current span fraction
-            spf[-1][j] = spf_now = surfs[irow].spf[0, j, 0]
-
-            # # If we cannot fit a circle to the LE, then move to next j
-            # try:
-            #     xrt_le_cent = turbigen.geometry.fit_leading_edge(
-            #         surf.x[:, j], surf.rt[:, j]
-            #     )
-            # except:
-            #     continue
-            # print(xrt_le_cent)
-
-            xrrt_le_cent = machine.bld[irow].get_LE_cent(spf_now)
-
-            x = surf.x[:, j]
-            r = surf.r[:, j]
-            rt = surf.rt[:, j]
-            P = surf.P[:, j]
-            Vi = surf.Vi_rel[:, j]
-
-            # Take surface distance and normalise to (-1, 1)
-            zeta = surf.zeta[:, j]
-            zeta /= 0.5 * zeta.ptp()
-            zeta -= 1.0
-
-            # Find a zero crossing near LE
-            try:
-
-                iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[0][0]
-
-            except:
-                import matplotlib.pyplot as plt
-                print(np.where((np.diff(np.sign(Vi)) > 0) & (np.abs(zeta) < 0.3)[:-1]))
-                plt.figure()
-                plt.plot(zeta, Vi)
-                plt.savefig('beans.pdf')
-                plt.figure()
-                plt.plot(zeta[:-1], (np.diff(np.sign(Vi))))
-                plt.savefig('beans2.pdf')
-                plt.figure()
-                plt.plot(zeta, np.abs(zeta))
-                plt.savefig('beans3.pdf')
-                plt.figure()
-                plt.plot(zeta, x)
-                plt.savefig('beans4.pdf')
-                plt.figure()
-                plt.plot(zeta, P)
-                plt.savefig('beans5.pdf')
-                plt.figure()
-                plt.plot(zeta, surf.Vx[:,j])
-                plt.savefig('beans6.pdf')
-                plt.show()
-                from IPython import embed; embed()
-
-            zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
-
-            if j == 25 and plot:
-                fig, ax = plt.subplots()
-                ax.plot(zeta, Vi, "k")
-                ax.plot(zeta[iz], Vi[iz], "b*")
-                ax.plot(zeta_stag, np.interp(zeta_stag, zeta, Vi), "ro")
-                plt.savefig(f"zeta_Vi_j_25_irow_{irow}.pdf")
-
-            # r_mid_chord = 0.5 * (r.max() + r.min())
-
-            # Reduce pressure on aft part of blade
-            if np.abs(Beta_in[irow]) < 45.0:
-                # If blade is oriented axially
-                xn = (x - x.min()) / x.ptp()
-                P = surf.P[:, j]
-                xcent_norm = (xrrt_le_cent[0] - x.min()) / x.ptp()
-                P[xn > xcent_norm * 5.0] = 0.0
-            else:
-                # If blade is oriented radially
-
-                if Beta_in[irow] < 0.0:
-                    # Going radially down
-                    rn = (r - r.max()) / r.ptp()
-                    rcent_norm = (xrrt_le_cent[1] - r.max()) / r.ptp()
-                    P[rn < rcent_norm * 2.0] = 0.0
-                else:
-                    # Going radially up
-                    rn = (r - r.min()) / r.ptp()
-                    rcent_norm = (xrrt_le_cent[1] - r.min()) / r.ptp()
-                    P[rn > rcent_norm * 5.0] = 0.0
-
-            # Coarse stagnation point location by simple maximum
-            # istag_max = np.argmax(P)
-
-            # if j == 33:
-            #     import matplotlib.pyplot as plt
-            #     fig, ax = plt.subplots()
-            #     ax.plot(zeta, Vi,'k-')
-            #     ax.plot(zeta[iz], Vi[iz],'bx')
-            #     ax.plot(zeta_stag, np.interp(zeta_stag, zeta, Vi),'g^')
-            #     ax.plot(zeta[istag_max], Vi[istag_max],'ro')
-            #     plt.savefig('beans.pdf')
-            #     quit()
-
-            # xrrt_le_stag = np.array(
-            #     (surf.x[istag_max, j], surf.r[istag_max, j], surf.rt[istag_max, j])
-            # ).reshape(-1, 1)
-
-            # istag_lim = np.array([-1, 2]) + istag_max
-            # # Fit a quadratic wrt surface distance to locate stagnation point
-            # # between gridpoints
-            # zeta_fit = surf.zeta[istag_lim[0] : istag_lim[-1], j]
-            # x_fit = surf.x[istag_lim[0] : istag_lim[-1], j]
-            # rt_fit = surf.rt[istag_lim[0] : istag_lim[-1], j]
-            # r_fit = surf.r[istag_lim[0] : istag_lim[-1], j]
-            # P_fit = surf.P[istag_lim[0] : istag_lim[-1], j]
-            # try:
-            #     poly_P = np.polyfit(zeta_fit, P_fit, 2)
-            # except TypeError:
-            #     continue
-            # zeta_stag = -poly_P[1] / 2.0 / poly_P[0]
-            # # Now evaluate coordinates at the stag point
-
-            # x_stag = np.interp(zeta_stag, zeta_fit, x_fit)
-            # rt_stag = np.interp(zeta_stag, zeta_fit, rt_fit)
-            # r_stag = np.interp(zeta_stag, zeta_fit, r_fit)
-            # xrrt_le_stag = np.array((x_stag, r_stag, rt_stag)).reshape(-1, 1)
-
-            x_stag = np.interp(zeta_stag, zeta, x)
-            rt_stag = np.interp(zeta_stag, zeta, rt)
-            r_stag = np.interp(zeta_stag, zeta, r)
-            xrrt_le_stag = np.array((x_stag, r_stag, rt_stag)).reshape(-1, 1)
-
-            # Get angle between stagnation point and centre of LE
-            dxrrt = xrrt_le_cent - xrrt_le_stag
-
-            # Choose how to calculate angle
-            if np.abs(Beta_in[irow]) < 45.0:  # np.abs(dxrrt[0]) > np.abs(dxrrt[1]):
-                # Small pitch angle => the leading edge is oriented axially
-                chi_stag[-1][j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[0])).item()
-
-                if j in jplot and plot:
-                    fig, ax = plt.subplots()
-                    ax.plot(surf.x[:, j], surf.rt[:, j], "-")
-                    ax.plot(
-                        *xrrt_le_stag[
-                            (0, 2),
-                        ],
-                        "r*",
-                    )
-                    ax.plot(
-                        *xrrt_le_cent[
-                            (0, 2),
-                        ],
-                        "b*",
-                    )
-                    ax.axis("equal")
-                    Lref = turbigen.util.vecnorm(dxrrt) * 2.0
-                    ax.set_ylim(np.array((-Lref, Lref)) + xrrt_le_cent[2])
-                    ax.set_xlim(np.array((-Lref, Lref)) + xrrt_le_cent[0])
-                    plt.savefig(os.path.join(plot, f"inc_xr_row_{irow}_j_{j}.pdf"))
-                    plt.close()
-
-            else:
-                # Large pitch angle => the leading edge is oriented radially
-
-                # Going radially in
-                # if xrrt_le_cent[1] > r_mid_chord:
-                if Beta_in[irow] < 0.0:
-                    chi_stag[-1][j] = np.degrees(np.arctan2(dxrrt[2], -dxrrt[1])).item()
-                else:
-                    # Going radially out
-                    chi_stag[-1][j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[1])).item()
-
-                if j in jplot and plot:
-                    fig, ax = plt.subplots()
-                    ax.plot(surf.r[:, j], surf.rt[:, j], "-")
-                    ax.plot(
-                        *xrrt_le_stag[
-                            (1, 2),
-                        ],
-                        "r*",
-                    )
-                    ax.plot(
-                        *xrrt_le_cent[
-                            (1, 2),
-                        ],
-                        "b*",
-                    )
-                    ax.axis("equal")
-                    Lref = turbigen.util.vecnorm(dxrrt) * 2.0
-                    ax.set_ylim(np.array((-Lref, Lref)) + xrrt_le_cent[2])
-                    ax.set_xlim(np.array((-Lref, Lref)) + xrrt_le_cent[1])
-
-                    ax.plot(
-                        [xrrt_le_cent[1], xrrt_le_cent[1] + Lref],
-                        [xrrt_le_cent[2], xrrt_le_cent[2]],
-                        "k--",
-                    )
-                    ax.set_title(str(chi_stag[-1][j]) + ", " + str(spf[-1][j]))
-                    plt.savefig(os.path.join(plot, f"inc_rrt_row_{irow}_j_{j}.pdf"))
-                    plt.close()
+        if len(surfs[irow])>1:
+            chi_stag_splitter.append(_calc_blade_inc(irow, surfs[irow][1], machine.split[irow], current_Beta, plot)[1])
+        else:
+            chi_stag_splitter.append(None)
 
         if plot:
             fig, ax = plt.subplots()
@@ -260,7 +183,7 @@ def incidence(g, machine, Beta_in, plot=False):
             plt.savefig(os.path.join(plot, f"inc_spf_row_{irow}.pdf"))
             plt.close()
 
-    return spf, chi_stag
+    return spf, chi_stag, chi_stag_splitter
 
 
 #     import matplotlib.pyplot as plt
@@ -268,6 +191,12 @@ def incidence(g, machine, Beta_in, plot=False):
 #     for i in range(g.nrow):
 #         ax.plot(spf[i], chi_stag[i],'-x')
 #     plt.savefig('test.pdf')
+
+def check_phase(g):
+    for ib, b in enumerate(g):
+        n = (~b.is_gas).sum()
+        if n:
+            logger.info(f'Block {ib}: {n}/{b.size} cells not in gas phase')
 
 
 def surface_dissipation(g, Cd=0.002):

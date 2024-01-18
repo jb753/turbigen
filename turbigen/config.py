@@ -279,8 +279,6 @@ class Config:
 
         nrow = self.nrow
         d["blades"] = []
-        if self.splitter:
-            d["splitter"] = []
         for irow in range(nrow):
             d["blades"].append({})
             for k in self.blades:

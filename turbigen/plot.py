@@ -435,38 +435,64 @@ def plot_grid_meridional(g, fname=None):
         plt.close()
 
 
-def plot_pressure_distribution(bld, g, ml, spf, fname):
-    Po1 = ml.Po_rel[0]
-    P1 = ml.P[0]
+def plot_pressure_distribution(irow, g, ml, spf, fname):
 
-    # Pull out camber and thickness
-    cam, thick = bld._get_cam_thick(spf)
-    mq = turbigen.util.cluster_cosine(200)
+    iin = irow*2
+    iout = iin+1
+    Po1, Po2 = ml.Po_rel[(iin, iout),]
+    P1, P2 = ml.P[(iin, iout),]
 
-    C = g.cut_blade_sides()[0]
-    jspf = np.argmin(np.abs(C[0].spf[0, :] - spf))
-    xr = C[0].xr[:, :, jspf]
-    P = np.stack([Ci.P[:, jspf] for Ci in C])
-    m = turbigen.util.cum_arc_length(xr)
-    m /= m[-1]
+    # for c in g.cut_blade_surfs():
+    #     print('***')
+    #     for b in c:
+    #         print(b.r.min())
+    # quit()
 
-    Cp = (P - Po1) / (Po1 - P1)
+    surfs = g.cut_blade_surfs()[irow]
+    surf = surfs[0]  # Main blade
+    jspf = np.argmin(np.abs(surf.spf[1, :, 0] - spf))
+    surf = surf[:,jspf,0]
+    istag = np.argmax(surf.P)
+    zstag = surf.zeta - surf.zeta[istag]
+    zn = zstag + 0.
+    Lref = zn[np.argmax(np.abs(zn))]
+    zn /= Lref
 
-    fig, ax = plt.subplots(3, 1, sharex=True, figsize=(3.58, 4.44))
-    ax[0].plot(mq, cam.chi_hat(mq))
-    # ax[1].plot(mq, thick.tau(mq))
-    ax[1].plot(mq, thick.t(mq))
-    ax[2].plot(m, Cp[0])
-    ax[2].plot(m, Cp[1])
-    ax[2].set_xlabel("Meridional Distance, $m/c_m$")
-    ax[0].set_ylabel(r"Camber Slope, $\hat{\chi}$")
-    ax[1].set_ylabel("Thickness")
-    ax[2].set_ylabel("Static Pressure, $C_p$")
-    ax[0].set_ylim((0.0, 1))
-    ax[1].set_ylim((0.0, 0.02))
-    for axi in ax:
-        axi.set_xlim([0, 1])
+    if Po2 > Po1:
+        # Compressor
+        Cp = (surf.P - Po1)/(Po1-P1)
+    else:
+        # Turbine
+        Cp = (surf.P - Po1)/(Po1-P2)
 
-    plt.subplots_adjust(left=0.17, right=0.97, bottom=0.10, top=0.99)
+
+
+    fig, ax = plt.subplots()
+    ax.plot(np.abs(zn), Cp)
+    ax.set_xlabel("Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
+    ax.set_ylabel("Static Pressure, $C_p$")
+    # ax.set_ylabel(r"Sati")
+    # ax.set_xlim((0.0, 1))
+    # ax.set_ylim((0.0, 0.02))
+
+    # Splitter
+    if len(surfs) > 1:
+
+        splitter = surfs[1]
+        splitter = splitter[:,jspf,0]
+        istag = np.argmax(splitter.P)
+        zstag = splitter.zeta - splitter.zeta[istag]
+        zn = zstag + 0.
+        zn /= Lref
+
+        if Po2 > Po1:
+            # Compressor
+            Cp_split = (splitter.P - Po1)/(Po1-P1)
+        else:
+            # Turbine
+            Cp_split = (splitter.P - Po1)/(Po1-P2)
+        ax.plot(np.abs(zn), Cp_split,'--')
+
+    plt.tight_layout()
     plt.savefig(fname)
     plt.close()

@@ -52,7 +52,7 @@ class OHMeshConfig(BaseConfig):
     skewness_control = 0
     orthogonality_control = 0.5
     nsmooth = 100
-    nsmooth_multigrid = 50
+    nsmooth_multigrid = 100
 
     constant_spacing_streamwise_percent = 60.0
 

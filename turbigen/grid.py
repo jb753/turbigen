@@ -913,19 +913,25 @@ class Grid:
                     cut_now = sides[0].concatenate(
                         (sides[0].flip(axis=0), sides[1][1:, ...]), axis=0
                     )
-                    surfs.append(cut_now)
+                    surfs.append([cut_now])
         else:
-            # Loop over blocks and find o-meshes
-            # nj = self.inlet_patches[0].block.shape[1]
-            nj_vals, nj_counts = np.unique(
-                [b.shape[1] for b in self], return_counts=True
-            )
-            nj = nj_vals[np.argmax(nj_counts)]
-            for b in self:
-                if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
-                    surfs.append(b[:, :, None, 0])
 
-            # raise NotImplementedException('beans')
+            for row_block in self.row_blocks:
+
+                # Preallocate list for this row
+                surfs.append([])
+
+                # Determine full span nj as the modal nj in this row
+                nj_vals, nj_counts = np.unique(
+                    [b.shape[1] for b in self], return_counts=True
+                )
+                nj = nj_vals[np.argmax(nj_counts)]
+
+                # Loop over blocks and find o-meshes
+                for b in row_block:
+                    if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
+                        surfs[-1].append(b[:, :, None, 0])
+
 
         return surfs
 

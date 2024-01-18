@@ -282,13 +282,15 @@ def run_single(conf, gguess=None, plot=False):
                     cam_main = bld[-1]._get_cam_thick(spf_sect)[0]
                     chi_main = cam_main.chi(mlim_sect)
                     logger.debug(f"Section {isect}, main blade angles {chi_main}")
-                    logger.debug(f'q_camber {splitter_now["q_camber"][isect]}')
+                    logger.debug(f'main q_camber {row_now["q_camber"][isect]}')
+                    logger.debug(f'main q_camber deg {util.atand(row_now["q_camber"][isect])}')
 
                     # Fill in tanChi for the splitter after recamber
                     splitter_now["q_camber"][isect][:2] = util.tand(
                         chi_main + splitter_now["q_camber"][isect][:2]
                     )
-                    logger.debug(f'q_camber {splitter_now["q_camber"][isect]}')
+                    logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
+                    logger.debug(f'splitter q_camber deg {util.atand(splitter_now["q_camber"][isect])}')
 
                     # Calculate the angular offset to put splitter on the main
                     # camber line at splitter stacking location
@@ -633,6 +635,7 @@ def run_single(conf, gguess=None, plot=False):
     except Exception:
         pass
 
+
     if conf.post_process.get("Sdot_wall"):
         times.append(timer())
         ml_out.Sdot_wall, ml_out.Asurf = turbigen.post_process.surface_dissipation(g)
@@ -644,6 +647,13 @@ def run_single(conf, gguess=None, plot=False):
         ml_out.Sdot_tip = turbigen.post_process.tip(g)
         times.append(timer())
         logger.debug(f"Tip loss calculation took {np.diff(times)[-1]:.1f}s")
+
+    if conf.plot:
+        for irow, row in enumerate(conf.sections):
+            if row:
+                spf_row = row["spf"]
+                for spf in spf_row:
+                    turbigen.plot.plot_pressure_distribution(irow, g, ml_out, spf, os.path.join(workdir, f"pdist_{irow}_{spf}.pdf") )
 
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
@@ -689,7 +699,7 @@ def run_single(conf, gguess=None, plot=False):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-        spf_flow, chi_stag = turbigen.post_process.incidence(
+        spf_flow, chi_stag, chi_stag_splitter = turbigen.post_process.incidence(
             g, mac, ml.Beta[::2], workdir if conf.plot else False
         )
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
@@ -724,8 +734,41 @@ def run_single(conf, gguess=None, plot=False):
                 inc_prev = np.abs(pdict.get("Inc", inc_target) - inc_target)
                 inc_now = np.abs(inc.flat[imax])
                 if inc_now > inc_prev:
+                    logger.debug(f"New maximum inc={inc.flat[imax] + inc_target}")
                     pdict["Inc"] = inc.flat[imax] + inc_target
                     pdict["DInc"] = dinc.flat[imax]
+
+                if conf.splitter:
+                    if (splitter_now := conf.splitter[irow]):
+
+                        logger.debug(f'CORRECTING SPLITTER row={irow}')
+                        chi_flow = np.interp(splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow])
+                        logger.debug(f'chi_flow={chi_flow}')
+                        chi_metal = util.atand(mac.split[irow].q_camber[:,0])
+                        logger.debug(f'chi_metal={chi_metal}')
+                        # inc_target = inc_conf.get("target", 0.0)
+                        inc = chi_flow - chi_metal - inc_target
+                        logger.debug(f"inc={inc}")
+
+                        if (np.abs(inc) > inc_tol).any():
+                            inc_converged = False
+
+                        dinc_splitter = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+                        if mdot_err > rtol_mdot_inc:
+                            dinc_splitter *= 0.0
+                        logger.debug(f"dinc_splitter={dinc_splitter}")
+
+                        qcam_split = np.array(splitter_now["qstar_camber"])
+                        qcam_split[:,0] += dinc_splitter - dinc
+                        splitter_now["qstar_camber"] = qcam_split
+
+                        imax = np.argmax(np.abs(inc.flat))
+                        inc_prev = np.abs(pdict.get("Inc", inc_target) - inc_target)
+                        inc_now = np.abs(inc.flat[imax])
+                        if inc_now > inc_prev:
+                            logger.debug(f"Splitter new maximum inc={inc.flat[imax] + inc_target}")
+                            pdict["Inc"] = inc.flat[imax] + inc_target
+                            pdict["DInc"] = dinc_splitter.flat[imax]
 
     dev_converged = True
     if dev_conf := conf.iterate.get("deviation"):
@@ -757,6 +800,9 @@ def run_single(conf, gguess=None, plot=False):
         log_line(pdict, log_fields)
 
     if opt_converged and not chic_flag:
+
+        # Checking the phase is expensive, so only do at end of iteration
+        turbigen.post_process.check_phase(g)
 
         out_vars = meanline_design.inverse(ml_out)
         out_vars.pop("So1")
@@ -875,30 +921,32 @@ def run(conf, plot=False):
                 os.remove(stopit_path)
 
             if opt_converged:
-                logger.debug("Moving converged solution up to work dir")
-                for f in os.listdir(iterdir):
-                    src_path = os.path.join(iterdir, f)
-                    dest_path = os.path.join(basedir, f)
-                    logger.debug(src_path + "->" + dest_path)
-                    shutil.move(src_path, dest_path)
-                logger.debug("Deleting iterations")
-                for j in range(i + 1):
-                    del_path = os.path.join(basedir, "%04d" % j)
-                    shutil.rmtree(del_path)
 
-                # Update the guess file loation
-                if old_guess_path := conf.solver.get("guess_file"):
-                    old_guess_file = os.path.basename(old_guess_path)
-                    new_guess_path = os.path.join(basedir, old_guess_file)
-                    conf.solver["guess_file"] = new_guess_path
+                if not conf.solver.get("skip"):
+                    logger.debug("Moving converged solution up to work dir")
+                    for f in os.listdir(iterdir):
+                        src_path = os.path.join(iterdir, f)
+                        dest_path = os.path.join(basedir, f)
+                        logger.debug(src_path + "->" + dest_path)
+                        shutil.move(src_path, dest_path)
+                    logger.debug("Deleting iterations")
+                    for j in range(i + 1):
+                        del_path = os.path.join(basedir, "%04d" % j)
+                        shutil.rmtree(del_path)
+
+                    # Update the guess file loation
+                    if old_guess_path := conf.solver.get("guess_file"):
+                        old_guess_file = os.path.basename(old_guess_path)
+                        new_guess_path = os.path.join(basedir, old_guess_file)
+                        conf.solver["guess_file"] = new_guess_path
+
+                    # Rename the meanline
+                    old_ml_path = os.path.join(basedir, "mean_line_actual.yaml")
+                    new_ml_path = os.path.join(basedir, "mean_line_actual_conv.yaml")
+                    shutil.move(old_ml_path, new_ml_path)
 
                 conf.workdir = basedir
                 conf.write(os.path.join(basedir, "config_conv.yaml"))
-
-                # Rename the meanline
-                old_ml_path = os.path.join(basedir, "mean_line_actual.yaml")
-                new_ml_path = os.path.join(basedir, "mean_line_actual_conv.yaml")
-                shutil.move(old_ml_path, new_ml_path)
 
                 topt_end = timer()
                 opt_mins = (topt_end - topt_start) / 60.0

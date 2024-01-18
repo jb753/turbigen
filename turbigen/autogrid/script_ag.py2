@@ -115,7 +115,7 @@ for n in range(nrow):
     nsmooth_multigrid = int(conf["nsmooth_multigrid"])
     row(n1).set_row_full_multigrid_optimization_steps(nsmooth_multigrid)
     row(n1).set_row_optimization_steps(nsmooth)
-    row(n1).set_row_optimization_steps_in_gap(nsmooth)
+    row(n1).set_row_optimization_steps_in_gap(2*nsmooth)
     row(n1).set_row_optimization_skewness_control(int(conf["skewness_control"]))
     row(n1).set_row_optimization_orthogonality_control(float(conf["orthogonality_control"]))
 
