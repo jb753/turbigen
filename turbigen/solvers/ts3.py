@@ -84,6 +84,8 @@ class TS3Config(BaseSolver):
     ncycle = 0
     frequency = 0.0
     fac_sa_step = 1.0
+    nstep_save_probe = 0
+    nstep_save_start_probe = 0
 
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
@@ -438,6 +440,8 @@ def _get_patch_kind(patch):
         return 5
     elif isinstance(patch, turbigen.grid.InviscidPatch):
         return 7
+    elif isinstance(patch, turbigen.grid.ProbePatch):
+        return 8
     elif isinstance(patch, turbigen.grid.NonMatchPatch):
         return 15
     else:
@@ -542,9 +546,11 @@ def _patch_variables(patch, ts3_config):
     if isinstance(patch, turbigen.grid.InletPatch):
         pv.update(DEFAULT_INLET_PV)
         pv["rfin"] = float(patch.rfin)
-    if isinstance(patch, turbigen.grid.PorousPatch):
+    elif isinstance(patch, turbigen.grid.PorousPatch):
         pv.update(DEFAULT_POROUS_PV)
         pv["porous_fac_loss"] = float(patch.porous_fac_loss)
+    elif isinstance(patch, turbigen.grid.ProbePatch):
+        pv["probe_append"] = 1
     elif isinstance(patch, turbigen.grid.OutletPatch):
         pv.update(DEFAULT_OUTLET_PV)
         pv["pout"] = float(patch.Pout)
@@ -1012,6 +1018,9 @@ def run(grid, settings, machine):
     _check_conv(ts3_conf)
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
+re_dts = re.compile(r"dts\s*:\s*(\d*)$")
+re_ncycle = re.compile(r"ncycle\s*:\s*(\d*)$")
+re_nstep_cycle = re.compile(r"nstep_cycle\s*:\s*(\d*)$")
 re_nstep_save_start = re.compile(r"nstep_save_start\s*:\s*(\d*)$")
 re_mdot = re.compile(r"^INLET FLOW =\s*(-?\d*\.\d*)\s*OUTLET FLOW =\s*(-?\d*\.\d*)$")
 re_Po = re.compile(
@@ -1022,7 +1031,7 @@ re_To = re.compile(
 )
 re_eta = re.compile(r"EFFICIENCY\s*=\s*(-?\d*.\d*)$")
 re_nan = re.compile(r".*NAN.*")
-re_current_step = re.compile(r"^STEP No\.\s*(\d*)$", flags=re.MULTILINE)
+re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
 
 
 class TS3Log:
@@ -1033,6 +1042,7 @@ class TS3Log:
 
         # Loop over lines in the file
         with open(fname, "r") as f:
+
             # First, look for number of steps
             for line in f:
                 match = re_nstep.search(line)
@@ -1040,15 +1050,28 @@ class TS3Log:
                     nstep = int(match.group(1))
                     break
 
-            # Second, look for averaging steps
+            # Second, look for number of steps
+            for line in f:
+                match = re_dts.search(line)
+                if match:
+                    dts = int(match.group(1))
+                    ncycle = int(re_ncycle.search(f.readline()).group(1))
+                    f.readline()
+                    nstep_cycle = int(re_nstep_cycle.search(f.readline()).group(1))
+                    break
+
+            # Third, look for averaging steps
             for line in f:
                 match = re_nstep_save_start.search(line)
                 if match:
                     nstep_save_start = int(match.group(1))
                     break
 
+            step_now = 0
+
             # Preallocate
-            self._nlog = nlog = nstep // 50
+            self._step_fac = 1 if dts else 50
+            self._nlog = nlog = nstep // self._step_fac
             self._eta = np.zeros(nlog) * np.nan
             self._mdot = np.zeros((2, nlog)) * np.nan
             self._Po = np.zeros((2, nlog)) * np.nan
@@ -1060,15 +1083,27 @@ class TS3Log:
                 logger.debug(f"* Parsing nstep={self.nstep[ilog]}")
 
                 try:
-                    # Loop over lines until we find mdot
-                    logger.debug("Finding mass flow rate...")
-                    for line in f:
-                        if mdot_match := re_mdot.search(line):
-                            logger.debug(f'Found: "{line.strip()}"')
-                            self._mdot[:, ilog] = [
-                                float(m) for m in mdot_match.group(1, 2)
-                            ]
-                            break
+
+                    if not dts:
+
+                        # Loop over lines until we find mdot
+                        logger.debug("Finding mass flow rate...")
+
+                        for line in f:
+                            if mdot_match := re_mdot.search(line):
+                                logger.debug(f'Found: "{line.strip()}"')
+                                self._mdot[:, ilog] = [
+                                    float(m) for m in mdot_match.group(1, 2)
+                                ]
+                                break
+
+                    else:
+
+                        for line in f:
+                            if nstep_match := re_nstep.search(line):
+                                logger.debug(f'Found: "{line.strip()}"')
+                                break
+
 
                     # Skip flow ratio
                     _ = f.readline()
@@ -1098,13 +1133,18 @@ class TS3Log:
                     # Next step number
                     if ilog < nlog - 1:
                         logger.debug("Finding next step No...")
+                        step_next = None
                         for line in f:
                             if step_match := re_current_step.search(line):
                                 step_next = int(step_match.group(1))
-                                logger.debug(f" Found next nstep={step_next}")
-                                break
+                                if step_next > step_now:
+                                    logger.debug(f" Found next nstep={step_next}")
+                                    step_now = step_next
+                                    break
+                                else:
+                                    continue
                         if not step_next == self.nstep[ilog + 1]:
-                            raise Exception(f"Log step mismatch at {step_next}")
+                            raise Exception(f"Log step mismatch at {step_now}, {step_next}")
 
                 except AttributeError:
                     logger.debug("Failed to parse, breaking")
@@ -1116,7 +1156,7 @@ class TS3Log:
 
     @property
     def nstep(self):
-        return np.linspace(0, self._nlog - 1, self._nlog, dtype=int) * 50
+        return np.linspace(0, self._nlog - 1, self._nlog, dtype=int) * self._step_fac
 
     def __str__(self):
         return (

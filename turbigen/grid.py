@@ -1085,7 +1085,8 @@ class Patch:
                 except TypeError:
                     self.ijk_limits[n] = (ind, ind)
 
-        assert np.sum(np.diff(self.ijk_limits) == 0) == 1
+        # Disallow volume patches
+        assert np.sum(np.diff(self.ijk_limits) == 0) >= 1
 
         self.block = None
 
@@ -1251,6 +1252,10 @@ class RotatingPatch(Patch):
     Omega = None
 
 
+class ProbePatch(Patch):
+    pass
+
+
 class NonMatchPatch(Patch):
     match = None
 
@@ -1296,6 +1301,7 @@ NOT_WALL_PATCHES = [
     MixingPatch,
     PeriodicPatch,
     PorousPatch,
+    ProbePatch,
 ]
 
 
