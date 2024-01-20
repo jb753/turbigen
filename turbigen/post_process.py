@@ -194,7 +194,7 @@ def incidence(g, machine, Beta_in, plot=False):
 
 def check_phase(g):
     for ib, b in enumerate(g):
-        n = (~b.is_gas).sum()
+        n = (b.is_two_phase).sum()
         if n:
             logger.info(f'Block {ib}: {n}/{b.size} cells not in gas phase')
 

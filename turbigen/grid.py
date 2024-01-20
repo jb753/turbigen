@@ -390,7 +390,7 @@ class Grid:
                         break
             for P in patches:
                 if P.match is None:
-                    raise Exception(f"Could not match patch {P}")
+                    raise Exception(f"Could not match patch bid={self._blocks.index(P.block)} pid={P.block.patches.index(P)} {P}")
 
     @property
     def nrow(self):

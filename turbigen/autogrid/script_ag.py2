@@ -68,46 +68,50 @@ for n in range(nrow):
     # misc blade-to-blade blocking parameters
     row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
     row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
-    row(n1).set_coarse_grid_level(1)
+    row(n1).set_coarse_grid_level(2)
+    row(n1).set_streamwise_weight(1.,2.5,1.)
     row(n1).set_upstream_block_relaxation(1)
     row(n1).set_downstream_block_relaxation(conf["relax_outlet"])
 
+    # How many blades to configure
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
+
     # high-stagger topology setup
     if conf["stagger"] == "auto":
-
         row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
         row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_detection()
-
     else:
-
         row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
         row(n1).blade(1).set_b2b_default_topology_disable_high_staggered_detection()
 
-        # Retrieve stagger data
-        # A nested list len(nrow) of in/out
-        stag_in, stag_out = conf["stagger"][n]
+    # Retrieve stagger data
+    # A nested list len(nrow) of in/out
+    stag_in, stag_out = conf["stagger"][n]
 
-        if stag_in < 0:
-            row(n1).blade(1).set_b2b_default_topology_high_staggered_inlet_angle()
-        elif stag_in > 0:
-            row(n1).blade(1).set_b2b_default_topology_low_staggered_inlet_angle()
-        else:
-            row(n1).blade(1).set_b2b_default_topology_normal_inlet_angle()
+    if stag_in < 0:
+        row(n1).blade(1).set_b2b_default_topology_high_staggered_inlet_angle()
+    elif stag_in > 0:
+        row(n1).blade(1).set_b2b_default_topology_low_staggered_inlet_angle()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_normal_inlet_angle()
+    if stag_out < 0:
+        row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+    elif stag_out > 0:
+        row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_normal_outlet_angle()
 
-        if stag_out < 0:
-            row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
-        elif stag_out > 0:
-            row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
-        else:
-            row(n1).blade(1).set_b2b_default_topology_normal_outlet_angle()
 
+    for iib in ib:
 
-    # Blade surface cell width
-    row(n1).blade(1).set_b2b_default_topology_cell_width_at_wall(float(conf["drt_row"][n]))
+        # Blade surface cell width
+        row(n1).blade(iib).set_b2b_default_topology_cell_width_at_wall(float(conf["drt_row"][n]))
 
-    if n in conf["splitter"]:
-        row(n1).blade(2).set_b2b_default_topology_cell_width_at_wall(float(conf["drt_row"][n]))
-        row(n1).blade(2).set_rounded_treatment_at_trailing_edge(1)
+        row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(1)
+        row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
 
 
     # smoothing config
@@ -115,9 +119,10 @@ for n in range(nrow):
     nsmooth_multigrid = int(conf["nsmooth_multigrid"])
     row(n1).set_row_full_multigrid_optimization_steps(nsmooth_multigrid)
     row(n1).set_row_optimization_steps(nsmooth)
-    row(n1).set_row_optimization_steps_in_gap(2*nsmooth)
+    row(n1).set_row_optimization_steps_in_gap(nsmooth)
     row(n1).set_row_optimization_skewness_control(int(conf["skewness_control"]))
     row(n1).set_row_optimization_orthogonality_control(float(conf["orthogonality_control"]))
+
 
 # Add z-const lines up and downstream of all rows
 for n in range(nrow):
@@ -125,7 +130,6 @@ for n in range(nrow):
 
     # The z-const lines are needed upstream and downstream of all rows
     # If between rows, then halfway between LE/TE and mixing plane
-    # If first row,
 
     # Inlet z const
     if n1 == 1:
@@ -167,33 +171,21 @@ print "Modifying the resolution..."
 # Set up flow paths
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
+
     row(n1).set_row_flow_path_number(int(conf["nr"]))
     row(n1).set_flow_path_control_cst_cells_number(conf["const_cells_pc"])
+    row(n1).set_flow_path_control_hub_clustering(conf["dr_hub"])
+    row(n1).set_flow_path_control_shroud_clustering(conf["dr_cas"])
 
-    # Cascade
-    if conf["is_cascade"]:
-
-        nn = row(n1).inlet().get_number_of_control_points()
-        cp0 = row(n1).inlet().get_control_point(0)
-        cp1 = row(n1).inlet().get_control_point(nn-1)
-
-        r0 = cp0.y
-        r1 = cp1.y
-        span = r1 - r0
-        dr = span / (nr-1)
-
-        row(n1).set_flow_path_control_hub_clustering(dr)
-        row(n1).set_flow_path_control_shroud_clustering(dr)
+    # Set tip gap on main and splitter blades
+    if n in conf["splitter"]:
+        ib = (1,2)
     else:
-        row(n1).set_flow_path_control_hub_clustering(conf["dr_hub"])
-        row(n1).set_flow_path_control_shroud_clustering(conf["dr_cas"])
-        if row(n1).blade(1).get_shroud_gap():
-            row(n1).blade(1).shroud_gap().set_clustering(conf["dr_cas"])
-            row(n1).blade(1).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
-        if n in conf["splitter"]:
-            if row(n1).blade(2).get_shroud_gap():
-                row(n1).blade(2).shroud_gap().set_clustering(conf["dr_cas"])
-                row(n1).blade(2).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
+        ib = (1,)
+    for iib in ib:
+        if row(n1).blade(iib).get_shroud_gap():
+            row(n1).blade(iib).shroud_gap().set_clustering(conf["dr_cas"])
+            row(n1).blade(iib).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
 
 select_all()
 a5_generate_flow_paths()
@@ -204,10 +196,12 @@ row(1).outlet().copy_right_meridional_distribution()
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
-    row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(conf["n_boundary_layer"]))
-    row(n1).blade(1).set_b2b_default_topology_expansion_ratio_in_bnd_layer(conf["ER_boundary_layer"])
-
-    row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(int(conf["n_boundary_layer_gap"]))
+    # The default settings leave rather high ER
+    # But if we increase ER then the mesh quality reduces
+    # Leave disabled for now
+    # row(n1).blade(iib).set_b2b_default_topology_expansion_ratio_in_bnd_layer(conf["ER_boundary_layer"])
+    # row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(conf["n_boundary_layer"]))
+    # row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(int(conf["n_boundary_layer_gap"]))
 
     # Small number of streamwise points in H blocks
     z = z_cst_line("Z_%d_in" % n1)
@@ -227,57 +221,25 @@ for n in range(nrow):
     row(n1).inlet().paste_left_meridional_distribution()
     row(n1).inlet().paste_right_meridional_distribution()
 
-    # More points across trailing edge
-    row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet(int(conf["n_te"]))
-
-    # More points along back of suction surface
-    if n1 % 2:
-        nnow = row(n1).blade(1).get_b2b_default_topology_grid_point_number_azimutal_outlet_up()
-        row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet_up(get_mg(nnow * conf["fac_ss_ni"]))
-    else:
-        nnow = row(n1).blade(1).get_b2b_default_topology_grid_point_number_azimutal_outlet_down()
-        row(n1).blade(1).set_b2b_default_topology_grid_point_number_azimutal_outlet_down(get_mg(nnow * conf["fac_ss_ni"]))
-
-    # points around blade in o-mesh based on expansion ratio
-    row(n1).blade(1).leadingEdgeControl().set_percentage_cst_cell(conf["const_pc_blade_surf"])
-    row(n1).blade(1).leadingEdgeControl().desired_expansion_ratio(conf["ER_blade_surf"])
-
-    if conf["reset_blade_streamwise"]:
-        row(n1).blade(1).leadingEdgeControl().get_distribution_from_expansion_ratio()
-        row(n1).blade(1).leadingEdgeControl().enable_distribution_from_expansion_ratio()
-        row(n1).blade(1).leadingEdgeControl().set_distribution_type_relative_distance()
-        row(n1).blade(1).leadingEdgeControl().disable_distribution_from_expansion_ratio()
-        row(n1).blade(1).leadingEdgeControl().enable_distribution_from_expansion_ratio()
-
-    row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
-
+    # Autogrid sometimes forgets we have asked for matching periodicity
+    # Reset that here for main and splitter blades
     if n in conf["splitter"]:
-        row(n1).blade(2).set_b2b_default_topology_periodicity_type(1)
+        ib = (1,2)
+    else:
+        ib = (1,)
+    for iib in ib:
+        row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
 
-        # More points along back of suction surface
-        if n1 % 2:
-            nnow = row(n1).blade(2).get_b2b_default_topology_grid_point_number_azimutal_outlet_up()
-            row(n1).blade(2).set_b2b_default_topology_grid_point_number_azimutal_outlet_up(get_mg(nnow * conf["fac_ss_ni_split"]))
-        else:
-            nnow = row(n1).blade(2).get_b2b_default_topology_grid_point_number_azimutal_outlet_down()
-            row(n1).blade(2).set_b2b_default_topology_grid_point_number_azimutal_outlet_down(get_mg(nnow * conf["fac_ss_ni_split"]))
+        # Enable clustering in wake for last blade row
+        if conf["wake_control"] and n==nrow:
+            row(nrow).blade(iib).set_b2b_default_topology_enable_wake_control()
+            row(nrow).blade(iib).set_b2b_default_topology_enable_wake_prolongation()
+            row(nrow).blade(iib).set_b2b_default_topology_wake_control_deviation_angle(conf["wake_deviation"])
 
-        # More points across trailing edge
-        row(n1).blade(2).set_b2b_default_topology_grid_point_number_azimutal_outlet(int(conf["n_te"]))
-
-        row(n1).blade(2).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(conf["n_boundary_layer"]))
-        row(n1).blade(2).set_b2b_default_topology_expansion_ratio_in_bnd_layer(conf["ER_boundary_layer"])
-
-if conf["wake_control"]:
-    row(nrow).blade(1).set_b2b_default_topology_enable_wake_control()
-    row(nrow).blade(1).set_b2b_default_topology_enable_wake_prolongation()
-    row(nrow).blade(1).set_b2b_default_topology_wake_control_deviation_angle(conf["wake_deviation"])
-
+# Blend the outlet k-grid lines to radial with theta=constant
 if conf["untwist_outlet"]:
     row(nrow).set_untwist_downstream_block(int(1))
     row(nrow).set_untwist_downstream_block_stream_location(30)
-
-
 
 
 # Set number of points in inlet/exit ducts

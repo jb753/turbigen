@@ -21,7 +21,7 @@ class OHMeshConfig(BaseConfig):
     remote_host = ""
     """Remote host on which AutoGrid server is running."""
 
-    span_interpolation = 5.0
+    span_interpolation = 2.0
     """Spanwise % spacing between optimisations of the mesh, interpolate between."""
 
     via_host = ""
@@ -51,7 +51,7 @@ class OHMeshConfig(BaseConfig):
 
     skewness_control = 0
     orthogonality_control = 0.5
-    nsmooth = 100
+    nsmooth = 200
     nsmooth_multigrid = 100
 
     constant_spacing_streamwise_percent = 60.0

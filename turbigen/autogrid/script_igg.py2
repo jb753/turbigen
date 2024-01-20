@@ -35,30 +35,9 @@ for irow in range(nrow):
         blocks_merge(face(dn_str, 6), 0)
         blocks_merge(face(up_str, 6), 0)
 
-        # Merge inlet patch
-        if irow == 0:
-            patch(up_str, 2, 2).delete()
-            bid = patch(up_str, 2, 1).get_block_face_patch_indices()[0]
-            ni = block(bid).num_of_I()
-            nj = block(bid).num_of_J()
-            patch(up_str, 2, 1).resize(Range(1, ni, 1, nj))
-
-        # Merge outlet patch
-        elif irow == (nrow-1):
-            patch(dn_str, 1, 2).delete()
-            bid = patch(dn_str, 1, 1).get_block_face_patch_indices()[0]
-            ni = block(bid).num_of_I()
-            nj = block(bid).num_of_J()
-            patch(dn_str, 1, 1).resize(Range(1, ni, 1, nj))
-
-        # Merge on downstream side of mixing boundary
-        # i.e the inlet to this row
-        if (nrow>1) and (irow>0):
-            patch(up_str, 2, 2).delete()
-            bid = patch(up_str, 2, 1).get_block_face_patch_indices()[0]
-            ni = block(bid).num_of_I()
-            nj = block(bid).num_of_J()
-            patch(up_str, 2, 1).resize(Range(1, ni, 1, nj))
+# Join adjacent patches with the same boundary condition type
+# Needed to make splittered rows only have one mixing plane
+merge_patches()
 
 save_project(os.getcwd() + "/%s.igg" % conf["prefix"])
 

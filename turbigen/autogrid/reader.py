@@ -10,7 +10,7 @@ def _read_coord(f, nijkb):
     return np.flip(data.transpose((2, 1, 0)), axis=0)
 
 
-def read(g_file, bcs_file):
+def read(g_file, bcs_file, Lref=1.):
     #
     # Process the IGG bcs file with patches
     #
@@ -132,6 +132,11 @@ def read(g_file, bcs_file):
         yb = _read_coord(f, nijk[ib])
         zb = _read_coord(f, nijk[ib])
         xb = _read_coord(f, nijk[ib])
+
+        # Apply scale factor
+        xb *= Lref
+        yb *= Lref
+        zb *= Lref
 
         # Convert to polars
         rb = np.sqrt(yb**2.0 + zb**2.0)

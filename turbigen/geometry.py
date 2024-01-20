@@ -843,7 +843,7 @@ class Blade:
 
         return xrrtle.reshape(-1, 1)
 
-    def get_coords(self, nspf=10, nchord=100, flip_theta=False):
+    def get_coords(self, nspf=20, nchord=100, flip_theta=False):
         """3-D coordinates for this blade row in AutoGrid-style format.
 
         Parameters

@@ -292,17 +292,26 @@ def run_single(conf, gguess=None, plot=False):
                     logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
                     logger.debug(f'splitter q_camber deg {util.atand(splitter_now["q_camber"][isect])}')
 
+                    # The relative mstack for splitter is same as for main blade.
+                    # i.e. if LE for main, splitter sections stacked on splitter LE
+                    # i.e. if TE for main, splitter sections stacked on splitter TE
+                    # i.e. if mid-chord for main, splitter stacked on splitter mid-chord
+                    mstack_splitter = mstack[irow]
+
                     # Calculate the angular offset to put splitter on the main
                     # camber line at splitter stacking location
-                    mref[isect] = mstack[irow] * np.ptp(mlim_sect) + mlim_sect[0]
+                    mref[isect] = mstack_splitter * np.ptp(mlim_sect) + mlim_sect[0]
+
                     mq = np.linspace(0.0, 1.0, 101)
                     xrtc = np.mean(bld[irow].evaluate_section(spf_sect, m=mq), axis=0)
                     tmain[isect] = np.interp(mref[isect], mq, xrtc[2])
 
+
+
                 splitter.append(
                     geometry.Blade(
                         streamsurface=ann.xr_row(irow),
-                        mstack=mstack[irow],
+                        mstack=np.mean(mref),
                         thick_type=thick_type[irow],
                         camber_type=camber_type[irow],
                         theta_offset=np.mean(tmain),
@@ -400,7 +409,7 @@ def run_single(conf, gguess=None, plot=False):
         for ib, b in enumerate(bld):
             if b:
                 if splitter and splitter[ib]:
-                    turbigen.plot.plot_splitter(b, splitter[ib], fname_split)
+                    turbigen.plot.plot_splitter(b, splitter[ib], Nb[ib], fname_split)
 
     ml.Nb = np.repeat(Nb, 2)
     ml.Co = conf.blades.get("Co")
@@ -487,6 +496,13 @@ def run_single(conf, gguess=None, plot=False):
     times.append(timer())
     logger.debug(f"Mesh generation took {np.diff(times)[-1]:.1f}s")
     logger.info(f"Mesh Npts/10^6={g.ncell/1e6:.2f}")
+
+    if conf.plot:
+        for spf in (0.1, 0.5, 0.9):
+            for system in ('xrt','yz'):
+                pltname = os.path.join(workdir, f"mesh_b2b_{system}_spf_{int(spf*10)}.pdf")
+                turbigen.plot.plot_grid_b2b( g, spf, system=='xrt', pltname)
+
 
     # Ready to apply boundary conditions now
     logger.info("Applying boundary conditions...")
@@ -740,7 +756,6 @@ def run_single(conf, gguess=None, plot=False):
 
                 if conf.splitter:
                     if (splitter_now := conf.splitter[irow]):
-
                         logger.debug(f'CORRECTING SPLITTER row={irow}')
                         chi_flow = np.interp(splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow])
                         logger.debug(f'chi_flow={chi_flow}')
@@ -749,19 +764,15 @@ def run_single(conf, gguess=None, plot=False):
                         # inc_target = inc_conf.get("target", 0.0)
                         inc = chi_flow - chi_metal - inc_target
                         logger.debug(f"inc={inc}")
-
                         if (np.abs(inc) > inc_tol).any():
                             inc_converged = False
-
                         dinc_splitter = np.clip(inc * rf_inc, -inc_clip, inc_clip)
                         if mdot_err > rtol_mdot_inc:
                             dinc_splitter *= 0.0
                         logger.debug(f"dinc_splitter={dinc_splitter}")
-
                         qcam_split = np.array(splitter_now["qstar_camber"])
                         qcam_split[:,0] += dinc_splitter - dinc
                         splitter_now["qstar_camber"] = qcam_split
-
                         imax = np.argmax(np.abs(inc.flat))
                         inc_prev = np.abs(pdict.get("Inc", inc_target) - inc_target)
                         inc_now = np.abs(inc.flat[imax])
