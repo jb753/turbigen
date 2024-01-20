@@ -83,8 +83,10 @@ class TS4Config(BaseSolver):
     pout_fac_ramp_nstep = 0
 
     inlet_relax_fac = 0.5
-    nstep_save_probe_1d = 1
-    nstep_save_probe_2d = 1
+    nstep_save_start_probe_1d = 0
+    nstep_save_probe_1d = 100
+    nstep_save_start_probe_2d = 0
+    nstep_save_probe_2d = 100
     cfl_turb_fac = 0.5
 
     plot_conv = True
@@ -400,8 +402,6 @@ probe_list = []
 
 def _write_point_probe(ts4_conf, xyzp, dom):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
-
-    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
 
     with open(probe_ofp, "a") as f:
         # Initialise probe list
