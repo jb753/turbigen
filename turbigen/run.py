@@ -771,7 +771,7 @@ def run_single(conf, gguess=None, plot=False):
                             dinc_splitter *= 0.0
                         logger.debug(f"dinc_splitter={dinc_splitter}")
                         qcam_split = np.array(splitter_now["qstar_camber"])
-                        qcam_split[:,0] += dinc_splitter - dinc
+                        qcam_split[:,0] += (dinc_splitter - dinc)
                         splitter_now["qstar_camber"] = qcam_split
                         imax = np.argmax(np.abs(inc.flat))
                         inc_prev = np.abs(pdict.get("Inc", inc_target) - inc_target)

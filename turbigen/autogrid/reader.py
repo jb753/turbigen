@@ -151,6 +151,7 @@ def read(g_file, bcs_file, Lref=1.):
     f.close()
 
     g = turbigen.grid.Grid(blocks)
+
     g.match_patches()
 
     return g

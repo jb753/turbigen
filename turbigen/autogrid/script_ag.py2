@@ -69,7 +69,7 @@ for n in range(nrow):
     row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
     row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
     row(n1).set_coarse_grid_level(2)
-    row(n1).set_streamwise_weight(1.,2.5,1.)
+    row(n1).set_streamwise_weight(1.,3.0,1.)
     row(n1).set_upstream_block_relaxation(1)
     row(n1).set_downstream_block_relaxation(conf["relax_outlet"])
 

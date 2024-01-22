@@ -1313,13 +1313,19 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
     xrt = [pi.get_cut().xrt.copy() for pi in p]
     dijk = [xrti.shape[1:] for xrti in xrt]
 
-    # Cope with circumferential offset by taking mod wrt pitch
+    # The patches cannot match if their pitches are different
     pitch = [2.0 * np.pi / pi.block.Nb for pi in p]
     if not np.ptp(pitch) == 0.0:
         return False
 
+    # Cope with circumferential offset by taking mod wrt pitch
     for xrti in xrt:
         xrti[2, ...] = np.mod(xrti[2, ...], pitch[0])
+        # We need to be careful at the pitch boundaries. For example, if one point
+        # is pitch - tol/2 and its matching point is pitch + tol/2 then they
+        # *should* match, but will be in error by whole pitch after modulus.
+        # So move any points very close to upper pitch boundary back to zero
+        xrti[2, ...][xrti[2, ...]/pitch[0]>(1.-rtol)] = 0.
 
     # We are going to loop over all possible choices for i/j/kdir
     # and return from this function if the coordinates match.
@@ -1401,48 +1407,18 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                 err_rel[1] = err[1, :] / Lref
                 err_rel[2] = err[2, :] / pitch[0]
 
-                # # Initialise next patch dirs to -1 => CONST
-                # dirsm = np.array([idir, jdir, kdir])
-                # dirsm[dirsm > 0] = np.mod(dirsm[dirsm > 0], 3)
-                # nxdirs = np.ones((3,), dtype=int)* -1
-
-                # for n in range(3):
-                #     # If constant on this patch, not one of nxdir
-                #     if dirsm[n] == -1:
-                #         pass
-                #     # Otherwise  constant on this patch, not one of nxdir
-                #     else:
-                #         nxdirs[dirsm[n]] = n
-                # nxdirs[flip] += 3
-
-                # if patch.label and other.label:
-                #     print('***')
-                #     print(patch)
-                #     print(other)
-                #     print(dirs)
-                #     print(nxdirs)
-                #     print(flip)
-                #     quit()
-
                 # Although the TS User Manual says that -1 implies the constant
                 # direction, it seems that 6 is the real convention
                 dirs[dirs == -1] = 6
                 idir6, jdir6, kdir6 = dirs
-                # nxdirs[nxdirs == -1] = 6
-                # nxidir6, nxjdir6, nxkdir6 = nxdirs
 
+                # Only error if more than 1 in 1000 points do not match
                 if err_rel.max() < rtol:
                     patch.idir = MatchDir(idir6)
                     patch.jdir = MatchDir(jdir6)
                     patch.kdir = MatchDir(kdir6)
 
-                    # other.idir = MatchDir(nxidir6)
-                    # other.jdir = MatchDir(nxjdir6)
-                    # other.kdir = MatchDir(nxkdir6)
-
                     patch.match = other
-
-                    # other.match = patch
 
                     return True
 
