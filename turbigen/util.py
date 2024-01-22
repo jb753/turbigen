@@ -5,7 +5,7 @@ import os
 import sys
 import importlib
 import scipy.interpolate
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.optimize import minimize, leastsq, root_scalar
 from scipy.spatial import Voronoi, ConvexHull
 from scipy.signal import medfilt

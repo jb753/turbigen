@@ -665,7 +665,13 @@ class RealState(StructuredData):
 
     @dependent_property
     def phase(self):
-        return self._lookup_property(self._as.phase).astype(int)
+        phase = self._lookup_property(self._as.phase)
+        # Convert numpy arrays to integer data type
+        try:
+            phase = phase.astype(int)
+        except AttributeError:
+            pass
+        return phase
 
 
 

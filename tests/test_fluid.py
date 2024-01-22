@@ -83,13 +83,13 @@ def test_phase_indicators():
 
     # Two phase
     S.set_P_chi(Pref, 0.5)
-    assert S.is_two_phase and (not S.is_liquid) and (not S.is_vapour)
+    assert S.is_two_phase and (not S.is_liquid) and (not S.is_gas)
     assert not S.is_supercritical
 
     # Superheated vapour
     S.set_P_chi(Pref, 1.0)
     S.set_P_h(Pref, S.h + dh)
-    assert S.is_vapour
+    assert S.is_gas
     assert (not S.is_two_phase) and (not S.is_liquid)
     assert not S.is_supercritical
 
@@ -97,12 +97,12 @@ def test_phase_indicators():
     S.set_P_chi(Pref, 0.0)
     S.set_P_h(Pref, S.h - dh)
     assert S.is_liquid
-    assert (not S.is_two_phase) and (not S.is_vapour)
+    assert (not S.is_two_phase) and (not S.is_gas)
     assert not S.is_supercritical
 
     # Supercritical
     S.set_P_h(250e5, 2500e3)
-    assert (not S.is_liquid) and (not S.is_two_phase) and (not S.is_vapour)
+    assert (not S.is_liquid) and (not S.is_two_phase) and (not S.is_gas)
     assert S.is_supercritical
 
 
@@ -168,7 +168,7 @@ def test_superheat():
     S.set_P_s(Pref, s)
     assert np.all(np.diff(S.DTsuperheat) > 0.0)
     assert np.all(S.DTsuperheat[S.is_two_phase] < 0.0)
-    assert np.all(S.DTsuperheat[S.is_vapour] > 0.0)
+    assert np.all(S.DTsuperheat[S.is_gas] > 0.0)
 
     S.set_P_chi(Pref, 1.0)
     assert np.allclose(S.DTsuperheat, 0.0)
