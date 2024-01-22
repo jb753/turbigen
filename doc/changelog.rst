@@ -1,6 +1,28 @@
 Changelog
 =========
 
+v1.6.0
+^^^^^^
+
+* General grid refinement by subdivision of cells
+* Allow halting iterations by creating a stopit file in working directory
+* Check for two-phase flow at the end of the calculation
+* Incidence correction for splitters
+* Improve robustness and simplify AutoGrid meshing script
+* Use improved clustering functions for H-meshing
+* Plot pressure distributions
+* Implement loading mean-line, annulus, and installation modules from file
+* Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to change body force)
+* Configuration option for maximum H-mesh free stream skew
+* Fix AutoGrid patch matching bug
+* Fix bug with TS4 cfl_ramp_en not set
+
+
+v1.5.1
+^^^^^^
+
+* Minor corrections for open release
+
 v1.5.0
 ^^^^^^
 
