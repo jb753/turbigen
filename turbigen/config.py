@@ -282,8 +282,9 @@ class Config:
         for irow in range(nrow):
             d["blades"].append({})
             for k in self.blades:
-                if self.blades[k][irow]:
+                if not self.blades[k][irow] is None:
                     d["blades"][-1][k] = util.to_basic_type(self.blades[k][irow])
+
             sect_now = self.sections[irow]
             if self.splitter:
                 splitter_now = self.splitter[irow]
