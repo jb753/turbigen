@@ -419,7 +419,7 @@ p.nstep_save_start_1d = 0
 p.nstep_save_1d = 1
 p.nstep_save_start_2d = 0
 p.nstep_save_2d = 1
-p.time_average = True
+p.time_average = False  # Must be False in a steady calc?
 probe_list.append(p)
 """
         )
