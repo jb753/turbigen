@@ -1,6 +1,6 @@
 [project]
 name = "turbigen"
-version = "1.5.1"
+version = "1.6.1"
 requires-python = ">=3.9"
 dependencies = [
     'CoolProp',
@@ -36,20 +36,3 @@ build-backend = "setuptools.build_meta"
 # Only package what is in the turbigen folder
 [tool.setuptools.packages.find]
 include = ["turbigen",]
-
-[tool.bumpversion]
-allow_dirty = false
-commit = true
-message = "Bump version: {current_version} → {new_version}"
-commit_args = ""
-tag = true
-sign_tags = false
-tag_name = "v{new_version}"
-tag_message = "Bump version: {current_version} → {new_version}"
-current_version = "1.5.1"
-parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
-serialize = [
-    "{major}.{minor}.{patch}"
-]
-search = "{current_version}"
-replace = "{new_version}"

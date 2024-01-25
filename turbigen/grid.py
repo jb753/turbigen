@@ -390,7 +390,7 @@ class Grid:
                         break
             for P in patches:
                 if P.match is None:
-                    raise Exception(f"Could not match patch {P}")
+                    raise Exception(f"Could not match patch bid={self._blocks.index(P.block)} pid={P.block.patches.index(P)} {P}")
 
     @property
     def nrow(self):
@@ -913,19 +913,25 @@ class Grid:
                     cut_now = sides[0].concatenate(
                         (sides[0].flip(axis=0), sides[1][1:, ...]), axis=0
                     )
-                    surfs.append(cut_now)
+                    surfs.append([cut_now])
         else:
-            # Loop over blocks and find o-meshes
-            # nj = self.inlet_patches[0].block.shape[1]
-            nj_vals, nj_counts = np.unique(
-                [b.shape[1] for b in self], return_counts=True
-            )
-            nj = nj_vals[np.argmax(nj_counts)]
-            for b in self:
-                if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
-                    surfs.append(b[:, :, None, 0])
 
-            # raise NotImplementedException('beans')
+            for row_block in self.row_blocks:
+
+                # Preallocate list for this row
+                surfs.append([])
+
+                # Determine full span nj as the modal nj in this row
+                nj_vals, nj_counts = np.unique(
+                    [b.shape[1] for b in self], return_counts=True
+                )
+                nj = nj_vals[np.argmax(nj_counts)]
+
+                # Loop over blocks and find o-meshes
+                for b in row_block:
+                    if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
+                        surfs[-1].append(b[:, :, None, 0])
+
 
         return surfs
 
@@ -1079,7 +1085,8 @@ class Patch:
                 except TypeError:
                     self.ijk_limits[n] = (ind, ind)
 
-        assert np.sum(np.diff(self.ijk_limits) == 0) == 1
+        # Disallow volume patches
+        assert np.sum(np.diff(self.ijk_limits) == 0) >= 1
 
         self.block = None
 
@@ -1229,6 +1236,9 @@ class MixingPatch(Patch):
 class InletPatch(Patch):
     state = None
     rfin = 0.5
+    force_type = None
+    amplitude = 0.
+    phase = 0.
 
 
 class InviscidPatch(Patch):
@@ -1239,10 +1249,17 @@ class OutletPatch(Patch):
     Pout = None
     mdot_target = None
     Kpid = None
+    force = False
+    amplitude = 0.
+    phase = 0.
 
 
 class RotatingPatch(Patch):
     Omega = None
+
+
+class ProbePatch(Patch):
+    pass
 
 
 class NonMatchPatch(Patch):
@@ -1290,6 +1307,7 @@ NOT_WALL_PATCHES = [
     MixingPatch,
     PeriodicPatch,
     PorousPatch,
+    ProbePatch,
 ]
 
 
@@ -1301,13 +1319,19 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
     xrt = [pi.get_cut().xrt.copy() for pi in p]
     dijk = [xrti.shape[1:] for xrti in xrt]
 
-    # Cope with circumferential offset by taking mod wrt pitch
+    # The patches cannot match if their pitches are different
     pitch = [2.0 * np.pi / pi.block.Nb for pi in p]
     if not np.ptp(pitch) == 0.0:
         return False
 
+    # Cope with circumferential offset by taking mod wrt pitch
     for xrti in xrt:
         xrti[2, ...] = np.mod(xrti[2, ...], pitch[0])
+        # We need to be careful at the pitch boundaries. For example, if one point
+        # is pitch - tol/2 and its matching point is pitch + tol/2 then they
+        # *should* match, but will be in error by whole pitch after modulus.
+        # So move any points very close to upper pitch boundary back to zero
+        xrti[2, ...][xrti[2, ...]/pitch[0]>(1.-rtol)] = 0.
 
     # We are going to loop over all possible choices for i/j/kdir
     # and return from this function if the coordinates match.
@@ -1389,48 +1413,18 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                 err_rel[1] = err[1, :] / Lref
                 err_rel[2] = err[2, :] / pitch[0]
 
-                # # Initialise next patch dirs to -1 => CONST
-                # dirsm = np.array([idir, jdir, kdir])
-                # dirsm[dirsm > 0] = np.mod(dirsm[dirsm > 0], 3)
-                # nxdirs = np.ones((3,), dtype=int)* -1
-
-                # for n in range(3):
-                #     # If constant on this patch, not one of nxdir
-                #     if dirsm[n] == -1:
-                #         pass
-                #     # Otherwise  constant on this patch, not one of nxdir
-                #     else:
-                #         nxdirs[dirsm[n]] = n
-                # nxdirs[flip] += 3
-
-                # if patch.label and other.label:
-                #     print('***')
-                #     print(patch)
-                #     print(other)
-                #     print(dirs)
-                #     print(nxdirs)
-                #     print(flip)
-                #     quit()
-
                 # Although the TS User Manual says that -1 implies the constant
                 # direction, it seems that 6 is the real convention
                 dirs[dirs == -1] = 6
                 idir6, jdir6, kdir6 = dirs
-                # nxdirs[nxdirs == -1] = 6
-                # nxidir6, nxjdir6, nxkdir6 = nxdirs
 
+                # Only error if more than 1 in 1000 points do not match
                 if err_rel.max() < rtol:
                     patch.idir = MatchDir(idir6)
                     patch.jdir = MatchDir(jdir6)
                     patch.kdir = MatchDir(kdir6)
 
-                    # other.idir = MatchDir(nxidir6)
-                    # other.jdir = MatchDir(nxjdir6)
-                    # other.kdir = MatchDir(nxkdir6)
-
                     patch.match = other
-
-                    # other.match = patch
 
                     return True
 

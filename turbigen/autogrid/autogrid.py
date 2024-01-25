@@ -552,11 +552,16 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
 
     # For some reason, even though the previous routine verifies that the g and
     # bcs files have arrived, the following move command can sometimes fail to
-    # find them.
+    # find them. So sleep a little while.
     sleep(1.0)
 
     # Copy into desired output dir
     for ext in (".g", ".bcs"):
         shutil.move(glob.glob(os.path.join(tmp_dir, "*" + ext))[0], output_stem + ext)
+
+    # Delete input files and temp dir
+    os.remove(geomturbo_path)
+    os.remove(conf_path)
+    os.rmdir(tmp_dir)
 
     return True

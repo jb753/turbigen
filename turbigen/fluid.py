@@ -284,6 +284,11 @@ class PerfectState(StructuredData):
     def u(self):
         return self.cv * self.T
 
+    @property
+    def is_two_phase(self):
+        # Perfect gas is never liquid or two-phase
+        return np.full(self.shape, False)
+
     @dependent_property
     def s(self):
         return self.cp * np.log(self.T / self.Tref) - self.rgas * np.log(
@@ -648,15 +653,27 @@ class RealState(StructuredData):
 
     @dependent_property
     def is_two_phase(self):
-        return self._lookup_property(self._as.phase) == CoolProp.iphase_twophase
+        return self.phase == CoolProp.iphase_twophase
 
     @dependent_property
     def is_liquid(self):
-        return self._lookup_property(self._as.phase) == CoolProp.iphase_liquid
+        return self.phase == CoolProp.iphase_liquid
 
     @dependent_property
-    def is_vapour(self):
-        return self._lookup_property(self._as.phase) == CoolProp.iphase_gas
+    def is_gas(self):
+        return self.phase == CoolProp.iphase_gas
+
+    @dependent_property
+    def phase(self):
+        phase = self._lookup_property(self._as.phase)
+        # Convert numpy arrays to integer data type
+        try:
+            phase = phase.astype(int)
+        except AttributeError:
+            pass
+        return phase
+
+
 
     @dependent_property
     def is_supercritical(self):
