@@ -1236,6 +1236,9 @@ class MixingPatch(Patch):
 class InletPatch(Patch):
     state = None
     rfin = 0.5
+    force_type = None
+    amplitude = 0.
+    phase = 0.
 
 
 class InviscidPatch(Patch):
@@ -1246,6 +1249,9 @@ class OutletPatch(Patch):
     Pout = None
     mdot_target = None
     Kpid = None
+    force = False
+    amplitude = 0.
+    phase = 0.
 
 
 class RotatingPatch(Patch):
