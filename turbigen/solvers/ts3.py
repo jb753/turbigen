@@ -75,6 +75,7 @@ class TS3Config(BaseSolver):
     ipout = 3
     convert_sliding = False
     smooth_scale_precon_option = 0
+    smooth_scale_dts_option = 0
     rfin = 0.5
     precon = 0
     nstep_soft = 0
@@ -1234,6 +1235,27 @@ class TS3Log:
         drift = self._mdot[0] / self._mdot[0, -1] - 1.0
         err = drift[self.nstep >= self._nstep_save_start]
         return err[np.argmax(np.abs(err))]
+
+def _read_probe_dat(fname, S, shape=()):
+    x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
+
+    nt = len(x)
+
+    Fshape = shape + (nt,)
+
+    F = turbigen.flowfield.PerfectFlowField(Fshape)
+    F.cp = S.cp
+    F.gamma = S.gamma
+    F.mu = S.mu
+
+    F.xrt = np.stack((x, r, rt/r))
+    F.Vxrt = np.stack((rovx, rovr, rorvt/r))/ro
+
+    u = roe / ro - 0.5 * F.V**2.0
+
+    F.set_rho_u(ro, u)
+
+    return F
 
 
 def _check_nan(fname):

@@ -180,6 +180,10 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
+    def reshape(self, shape):
+        self._data = self._data.reshape((self.nprop,) + shape)
+
+
     @property
     def ndim(self):
         return len(self.shape)
