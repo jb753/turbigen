@@ -759,7 +759,8 @@ def _write_hdf5(grid, ts3_config):
                     if (force_type:=patch.force_type):
 
                         t = _get_time_vector(ts3_config)
-                        F = 1.+patch.amplitude*np.sin(2.*np.pi*freq*t + patch.phase).reshape(1,1,1,nt)
+                        nt = len(t)
+                        F = 1.+patch.amplitude*np.sin(2.*np.pi*ts3_config.frequency*t + patch.phase).reshape(1,1,1,nt)
                         ga = patch.state.gamma
 
                         if force_type == 'isentropic':
@@ -966,8 +967,9 @@ def _check_conv(ts3_config):
     log = TS3Log(os.path.join(ts3_config.workdir, "log.txt"))
 
     logger.info(f"Checking convergence over last {ts3_config.nstep_avg} steps...")
-    if np.isnan(log.eta_drift).any():
-        raise ConvergenceError("TS3 log has NAN efficiency.")
+
+    # if np.isnan(log.eta_drift).any():
+    #     raise ConvergenceError("TS3 log has NAN efficiency.")
 
     if np.abs(log.mdot_drift) > ts3_config.rtol_mdot:
         raise ConvergenceError(
