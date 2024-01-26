@@ -400,8 +400,10 @@ probe_list = []
         )
 
 
-def _write_point_probe(ts4_conf, xyzp, dom):
+def _write_point_probe(ts4_conf, xyzp, dom, label):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
+
+    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
 
     with open(probe_ofp, "a") as f:
         # Initialise probe list
@@ -413,13 +415,13 @@ p.y = {xyzp[1].tolist()}
 p.z = {xyzp[2].tolist()}
 p.idomain = {dom}
 p.absolute_frame = True
-p.fname_root = "point_probe"
+p.fname_root = "point_probe_{label}"
 p.write_2d = True
 p.nstep_save_start_1d = {istep_save_start}
 p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
 p.nstep_save_start_2d = {istep_save_start}
 p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
-p.time_average = True
+p.time_average = False  # Must be False in a steady calc?
 probe_list.append(p)
 """
         )
@@ -608,7 +610,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.ndim == 2
             assert xyz.shape[0] == 3
 
-            _write_point_probe(ts4_conf, xyz, idomain)
+            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")
