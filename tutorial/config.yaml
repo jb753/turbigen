@@ -1,0 +1,20 @@
+# All files relating to the case are held in a working directory
+workdir: runs/fan
+
+# Perfect gas inlet state
+inlet:
+    Po: 1e5
+    To: 300.
+    cp: 1005.
+    mu: 1.8e-5
+    gamma: 1.4
+
+# Mean-line design
+mean_line:
+    type: fan.py  # Path to the mean-line module we are writing
+    # Our chosen design variables (args to forward)
+    DPo: 200.
+    mdot: 5.
+    phi: 0.5
+    psi: 0.4
+    etatt: 0.8

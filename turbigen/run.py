@@ -88,9 +88,7 @@ def run_single(conf, gguess=None, plot=False):
         raise ConfigError("No mean-line type specified; quitting.")
     logger.info(f"Designing a {conf.mean_line_type}...")
 
-
     meanline_design = util.load_mean_line(conf.mean_line_type)
-
 
     # Feed mean-line arguments to the function
     times.append(timer())
@@ -147,8 +145,12 @@ def run_single(conf, gguess=None, plot=False):
 
     conf.write(os.path.join(workdir, "config.yaml"))
 
+    if not conf.annulus:
+        raise ConfigError("No annulus configuration; quitting.")
+
     # Feed annulus arguments to the geometry function
     times.append(timer())
+    conf._check_annulus()
     annulus_type = conf.annulus.pop("type", "Smooth")
     Annulus = util.load_annulus(annulus_type)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
@@ -181,7 +183,7 @@ def run_single(conf, gguess=None, plot=False):
             if chi_fix := row.get("chi"):
                 Alpha_rel = chi_fix
             else:
-                logger.debug(f'Vortex exponent irow={irow} is {vexpon_row}')
+                logger.debug(f"Vortex exponent irow={irow} is {vexpon_row}")
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
             Chi = Alpha_rel + qstar_camber[:, :2]
             q_camber = qstar_camber
@@ -283,14 +285,18 @@ def run_single(conf, gguess=None, plot=False):
                     chi_main = cam_main.chi(mlim_sect)
                     logger.debug(f"Section {isect}, main blade angles {chi_main}")
                     logger.debug(f'main q_camber {row_now["q_camber"][isect]}')
-                    logger.debug(f'main q_camber deg {util.atand(row_now["q_camber"][isect])}')
+                    logger.debug(
+                        f'main q_camber deg {util.atand(row_now["q_camber"][isect])}'
+                    )
 
                     # Fill in tanChi for the splitter after recamber
                     splitter_now["q_camber"][isect][:2] = util.tand(
                         chi_main + splitter_now["q_camber"][isect][:2]
                     )
                     logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
-                    logger.debug(f'splitter q_camber deg {util.atand(splitter_now["q_camber"][isect])}')
+                    logger.debug(
+                        f'splitter q_camber deg {util.atand(splitter_now["q_camber"][isect])}'
+                    )
 
                     # The relative mstack for splitter is same as for main blade.
                     # i.e. if LE for main, splitter sections stacked on splitter LE
@@ -305,8 +311,6 @@ def run_single(conf, gguess=None, plot=False):
                     mq = np.linspace(0.0, 1.0, 101)
                     xrtc = np.mean(bld[irow].evaluate_section(spf_sect, m=mq), axis=0)
                     tmain[isect] = np.interp(mref[isect], mq, xrtc[2])
-
-
 
                 splitter.append(
                     geometry.Blade(
@@ -499,10 +503,11 @@ def run_single(conf, gguess=None, plot=False):
 
     if conf.plot:
         for spf in (0.1, 0.5, 0.9):
-            for system in ('xrt','yz'):
-                pltname = os.path.join(workdir, f"mesh_b2b_{system}_spf_{int(spf*10)}.pdf")
-                turbigen.plot.plot_grid_b2b( g, spf, system=='xrt', pltname)
-
+            for system in ("xrt", "yz"):
+                pltname = os.path.join(
+                    workdir, f"mesh_b2b_{system}_spf_{int(spf*10)}.pdf"
+                )
+                turbigen.plot.plot_grid_b2b(g, spf, system == "xrt", pltname)
 
     # Ready to apply boundary conditions now
     logger.info("Applying boundary conditions...")
@@ -651,7 +656,6 @@ def run_single(conf, gguess=None, plot=False):
     except Exception:
         pass
 
-
     if conf.post_process.get("Sdot_wall"):
         times.append(timer())
         ml_out.Sdot_wall, ml_out.Asurf = turbigen.post_process.surface_dissipation(g)
@@ -669,7 +673,13 @@ def run_single(conf, gguess=None, plot=False):
             if row:
                 spf_row = row["spf"]
                 for spf in spf_row:
-                    turbigen.plot.plot_pressure_distribution(irow, g, ml_out, spf, os.path.join(workdir, f"pdist_{irow}_{spf}.pdf") )
+                    turbigen.plot.plot_pressure_distribution(
+                        irow,
+                        g,
+                        ml_out,
+                        spf,
+                        os.path.join(workdir, f"pdist_{irow}_{spf}.pdf"),
+                    )
 
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
@@ -755,12 +765,14 @@ def run_single(conf, gguess=None, plot=False):
                     pdict["DInc"] = dinc.flat[imax]
 
                 if conf.splitter:
-                    if (splitter_now := conf.splitter[irow]):
-                        logger.debug(f'CORRECTING SPLITTER row={irow}')
-                        chi_flow = np.interp(splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow])
-                        logger.debug(f'chi_flow={chi_flow}')
-                        chi_metal = util.atand(mac.split[irow].q_camber[:,0])
-                        logger.debug(f'chi_metal={chi_metal}')
+                    if splitter_now := conf.splitter[irow]:
+                        logger.debug(f"CORRECTING SPLITTER row={irow}")
+                        chi_flow = np.interp(
+                            splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow]
+                        )
+                        logger.debug(f"chi_flow={chi_flow}")
+                        chi_metal = util.atand(mac.split[irow].q_camber[:, 0])
+                        logger.debug(f"chi_metal={chi_metal}")
                         # inc_target = inc_conf.get("target", 0.0)
                         inc = chi_flow - chi_metal - inc_target
                         logger.debug(f"inc={inc}")
@@ -771,13 +783,15 @@ def run_single(conf, gguess=None, plot=False):
                             dinc_splitter *= 0.0
                         logger.debug(f"dinc_splitter={dinc_splitter}")
                         qcam_split = np.array(splitter_now["qstar_camber"])
-                        qcam_split[:,0] += (dinc_splitter - dinc)
+                        qcam_split[:, 0] += dinc_splitter - dinc
                         splitter_now["qstar_camber"] = qcam_split
                         imax = np.argmax(np.abs(inc.flat))
                         inc_prev = np.abs(pdict.get("Inc", inc_target) - inc_target)
                         inc_now = np.abs(inc.flat[imax])
                         if inc_now > inc_prev:
-                            logger.debug(f"Splitter new maximum inc={inc.flat[imax] + inc_target}")
+                            logger.debug(
+                                f"Splitter new maximum inc={inc.flat[imax] + inc_target}"
+                            )
                             pdict["Inc"] = inc.flat[imax] + inc_target
                             pdict["DInc"] = dinc_splitter.flat[imax]
 
@@ -908,8 +922,8 @@ def run(conf, plot=False):
             ml_out, opt_converged, gguess = run_single(conf, gguess)
 
             # Check for stopit to interrupt iterations
-            stopit_path = os.path.join(basedir,'stopit')
-            if (stopit_found:=os.path.exists(stopit_path)):
+            stopit_path = os.path.join(basedir, "stopit")
+            if stopit_found := os.path.exists(stopit_path):
                 logger.iter(f"stopit found, terminating iterations.")
                 opt_converged = True
 
