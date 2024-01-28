@@ -183,11 +183,11 @@ Create a new `config.yaml` with the following content:
    mean_line:
        type: fan.py  # Path to the mean-line module we are writing
        # Our chosen design variables (args to forward)
-       DPo: 200.
+       DPo: 2000.
        mdot: 5.
        phi: 0.5
        psi: 0.4
-       htr: 0.6
+       htr: 0.8
        etatt: 0.8
 
 At this point, running the config.yaml file through :program:`turbigen` by using the shell command
@@ -431,7 +431,8 @@ Running CFD
 ^^^^^^^^^^^
 
 We have now finished the mean-line design. To create blade shapes and run a
-computational fluid dynamics simulation, we can add some extra code to the `config.yaml`:
+computational fluid dynamics simulation, we can add some extra code to the
+`config.yaml`. These options are described fully in :doc:`config`.
 
 .. code-block:: yaml
    :caption: config.yaml
@@ -451,10 +452,11 @@ computational fluid dynamics simulation, we can add some extra code to the `conf
    mean_line:
        type: fan.py  # Path to the mean-line module we are writing
        # Our chosen design variables (args to forward)
-       DPo: 200.
+       DPo: 2000.
        mdot: 5.
        phi: 0.5
        psi: 0.4
+       htr: 0.8
        etatt: 0.8
 
    # ADD annulus configuration
@@ -478,3 +480,100 @@ computational fluid dynamics simulation, we can add some extra code to the `conf
    # ADD CFD solver
    solver:
      type: ts3  # Use Turbostream 3
+     nstep: 50000
+
+    # ADD control mass flow using a PID on exit pressure
+    operating_point:
+    mdot_pid: [0.5, 0.1, 0.0]
+
+If we now run :program:`turbigen` on our `config.yaml` using the shell command,
+we can quickly obtain a CFD solution for our newly designed fan.
+
+.. code-block:: console
+
+    $ turbigen config.yaml
+    TURBIGEN v1.5.1
+    Starting at 2024-01-28T14:37:40
+    Working directory: ...
+    Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+    Designing a fan.py...
+    MeanLine(
+        Po=[1.   1.02] bar,
+        To=[300.     302.1277] K,
+        Ma=[0.105 0.135],
+        Vx=[36.6 36.6],
+        Vr=[0. 0.],
+        Vt=[ 0.  29.2],
+        Vt_rel=[-73.1 -43.9],
+        Al=[ 0.   38.66],
+        Al_rel=[-63.43 -50.19],
+        rpm=[2382. 2393.],
+        mdot=[5. 5.] kg/s
+        )
+    Checking mean-line conservation...
+    Checking mean-line inversion...
+    Annulus(
+        xmid=[-8.3270e-07  2.1487e-02],
+        rmid=[0.2913 0.2899],
+        span=[0.0647 0.0644]
+        )
+    Re_surf/10^5=[2.1]
+    Nblade=[54], s_cm=[1.57], tip=[0.]
+    Generating an H-mesh...
+    Mesh Npts/10^6=0.83
+    Applying boundary conditions...
+    Setting intial guess...
+    Calculating wall distance...
+    Running solver ts3...
+    Using 1 GPUs on 1 nodes, 1 per node.
+    Checking convergence over last 5000 steps...
+    mdot drift = 0.1%, mdot error = 0.1%, eta_drift = 0.0%
+    Post-processing...
+    Mixed-out CFD result:
+    MeanLine(
+        Po=[0.9999 1.0168] bar,
+        To=[300.067  301.6789] K,
+        Ma=[0.087 0.109],
+        Vx=[30.1 30.1],
+        Vr=[0.7 0.1],
+        Vt=[ 0.8 23.1],
+        Vt_rel=[-72.3 -50. ],
+        Al=[ 1.55 37.56],
+        Al_rel=[-67.41 -58.97],
+        rpm=[2382. 2393.],
+        mdot=[4.12 4.12] kg/s
+        )
+    Design variable Nom    CFD    
+    ------------------------------
+    DPo             2000.0 1687.7 
+    etatt           0.8000 0.8923 
+    htr             0.8000 0.8000 
+    mdot            5.0000 4.1213 
+    phi             0.5000 0.4114 
+    psi             0.4000 0.3030 
+    eta_tt=0.892, eta_ts=0.449
+
+Creating and running designs with different velocity triangles is as simple as
+changing a line or two in the mean-line section of `config.yaml`. This allows
+us to explore a new design space very quickly.
+
+Iterating the design
+^^^^^^^^^^^^^^^^^^^^
+
+The table at the end of the program output compares the nominal mean-line
+design variables to actual values calculated using cuts from the
+three-dimensional CFD solution (the cuts are mixed out at constant area).
+Inspecting the output for our new fan, we can identify several problems:
+
+.. code-block:: console
+
+    Design variable Nom    CFD
+    ------------------------------
+    DPo             2000.0 1687.7  # Pressure rise too low
+    etatt           0.8000 0.8923  # Guessed efficiency too low
+    htr             0.8000 0.8000
+    mdot            5.0000 4.1213  # Mass flow too low
+    phi             0.5000 0.4114  # Mismatch
+    psi             0.4000 0.3030  # Mismatch
+
+The m

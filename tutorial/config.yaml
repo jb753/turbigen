@@ -42,3 +42,7 @@ mesh:
 solver:
   type: ts3  # Use Turbostream 3
   nstep: 50000
+
+# ADD control mass flow using a PID on exit pressure
+operating_point:
+  mdot_pid: [0.5, 0.1, 0.0]
