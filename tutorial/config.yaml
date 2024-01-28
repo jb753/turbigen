@@ -3,18 +3,41 @@ workdir: runs/fan
 
 # Perfect gas inlet state
 inlet:
-    Po: 1e5
-    To: 300.
-    cp: 1005.
-    mu: 1.8e-5
-    gamma: 1.4
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  mu: 1.8e-5
+  gamma: 1.4
 
 # Mean-line design
 mean_line:
-    type: fan.py  # Path to the mean-line module we are writing
-    # Our chosen design variables (args to forward)
-    DPo: 200.
-    mdot: 5.
-    phi: 0.5
-    psi: 0.4
-    etatt: 0.8
+  type: fan.py  # Path to the mean-line module we are writing
+  # Our chosen design variables (args to forward)
+  DPo: 200.
+  mdot: 5.
+  phi: 0.5
+  psi: 0.4
+  etatt: 0.8
+  htr: 0.8
+
+# ADD annulus configuration
+annulus:
+  AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+  AR_chord: 3.  # Span to chord
+
+# ADD blade shapes
+blades:
+  - DFL: 0.45  # Set number of blades using Lieblein
+    sections:  # One blade section at midheight
+      - spf: 0.5  
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+
+# ADD mesh generation
+mesh:
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+
+# ADD CFD solver
+solver:
+  type: ts3  # Use Turbostream 3

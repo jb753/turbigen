@@ -5,8 +5,8 @@ Writing a mean-line
 -------------------
 
 This tutorial will walk through the process of writing a new user-defined
-mean-line solver to integrate into the :program:`turbigen` design system.
-We first need to download and install the code:
+mean-line solver. 
+We first need to download the :program:`turbigen` code:
 
 .. code-block:: console
 
@@ -114,12 +114,13 @@ Finally, the shaft angular velocity is simply
 Setting up skeleton files
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-We have two functions to write: a `forward` function which takes our design
-variables as inputs and returns a :py:class:`turbigen.meanline.MeanLine`
-object; and an `inverse` function that recalculates the design variables from
-an input :py:class:`turbigen.meanline.MeanLine` object. Now that we know what
-input and output data are required, we can start writing these functions. In a
-new file called `fan.py`, copy and paste these definitions:
+To integrate our new mean-line design into :program:`turbigen`, we have two
+functions to write: a `forward` function which takes our design variables as
+inputs and returns a :py:class:`turbigen.meanline.MeanLine` object; and an
+`inverse` function that recalculates the design variables from an input
+:py:class:`turbigen.meanline.MeanLine` object. Now that we know what input and
+output data are required, and have the equations for our algorithm, we can start writing the functions. In a new file
+called `fan.py`, copy and paste these definitions:
 
 .. code-block:: python
    :caption: fan.py
@@ -186,6 +187,7 @@ Create a new `config.yaml` with the following content:
        mdot: 5.
        phi: 0.5
        psi: 0.4
+       htr: 0.6
        etatt: 0.8
 
 At this point, running the config.yaml file through :program:`turbigen` by using the shell command
@@ -202,8 +204,8 @@ Implementing the algorithm
 We can now start to add the :ref:`tut-ml-algo` to the `forward` function inside
 `fan.py`.
 
-The first task is to calculate the idea exit enthalpy :math:`h_{02s}`
-from Eqn. :eq:`eqn-eta`. Mean-line design functions should be written to make
+The first task is to calculate the idea exit enthalpy :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)`
+in Eqn. :eq:`eqn-eta`. Mean-line design functions should be written to make
 no assumptions about the working fluid equation of state --- this is accomplished
 using the fluid modelling abstractions in :py:mod:`turbigen.fluid`. We take a
 copy of the inlet state, and set its pressure and entropy to the required
@@ -211,8 +213,6 @@ values.
 
 .. code-block:: python
    :caption: fan.py
-
-   # ...
 
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
        """Caluclate mean-line from inlet and design variables."""
@@ -223,13 +223,11 @@ values.
 
        # ...
 
-We can now calculate the compressor work and velocity vectors by reading off
+We can now calculate the compressor work by reading off
 enthalpy values from our two state objects `So1` and `So2s`.
 
 .. code-block:: python
    :caption: fan.py
-
-   # ...
 
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
        """Caluclate mean-line from inlet and design variables."""
@@ -247,8 +245,6 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
 
 .. code-block:: python
    :caption: fan.py
-
-   # ...
 
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
        """Caluclate mean-line from inlet and design variables."""
@@ -272,13 +268,212 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
        # Assemble velocity vectors
        # shape (3 directions, 2 stations)
        Vxrt = np.stack(
-            (
-                (Vx, Vx),  # Constant axial velocity
-                (0., 0.),  # No radial velocity
-                (0., Vt2),  # Zero inlet swirl
-            )
+           (
+               (Vx, Vx),  # Constant axial velocity
+               (0., 0.),  # No radial velocity
+               (0., Vt2),  # Zero inlet swirl
+           )
        )
 
-Next, the
-# Annulus area from cons mass Euler Eqn. (5)
-# Shaft angular velocity Eqn. (6)
+       # ...
+
+Next, we need to calculate the static thermodynamic states. As we know
+stagnation states and velocity vectors everywhere, this is most straightforward
+to do by evaluating the static enthalpy :math:`h=h_0-\frac{1}{2}V^2`. The static and stagnations states have the same entropy. In code, this looks like:
+
+.. code-block:: python
+   :caption: fan.py
+
+   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
+       """Caluclate mean-line from inlet and design variables."""
+
+       # Get the ideal exit state
+       So2s = So1.copy()  # Duplicate the inlet state
+       So2s.set_P_s(So1.P + DPo, So1.s)  # Set pressure and entropy
+
+       # Work from defn efficiency Eqn. (1)
+       Dho = (So2s.h-So1.h)/etatt
+
+       # Blade speed from defn psi Eqn. (2)
+       U = np.sqrt(Dho/psi)
+
+       # Axial velocity from defn phi Eqn. (3)
+       Vx = phi*U
+
+       # Circumferential velocity from Euler Eqn. (4)
+       Vt2 = Dho/U
+
+       # Assemble velocity vectors
+       # shape (3 directions, 2 stations)
+       Vxrt = np.stack(
+           (
+               (Vx, Vx),  # Constant axial velocity
+               (0., 0.),  # No radial velocity
+               (0., Vt2),  # Zero inlet swirl
+           )
+       )
+
+       # Outlet stagnation state from known total rises
+       So2 = So1.copy().set_P_h(So1.P + DPo, So1.h + Dho)
+
+       # Assemble both stagnation states into a vector state
+       So = So1.stack((So1,So2))
+
+       # Get static states using velocity magnitude and same entropy
+       Vmag = np.sqrt(np.sum(Vxrt**2,axis=0))
+       h = So.h - 0.5*Vmag**2  # Static enthalpy
+       S = So.copy().set_h_s(h , So.s)
+
+       # ...
+
+Now that the static states are known, the density can be using in the
+conservation of mass equation to continue with evaluating areas, the RMS
+radius, and the shaft angular velocity. 
+
+.. code-block:: python
+   :caption: fan.py
+
+   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
+       """Caluclate mean-line from inlet and design variables."""
+
+       # Get the ideal exit state
+       So2s = So1.copy()  # Duplicate the inlet state
+       So2s.set_P_s(So1.P + DPo, So1.s)  # Set pressure and entropy
+
+       # Work from defn efficiency Eqn. (1)
+       Dho = (So2s.h-So1.h)/etatt
+
+       # Blade speed from defn psi Eqn. (2)
+       U = np.sqrt(Dho/psi)
+
+       # Axial velocity from defn phi Eqn. (3)
+       Vx = phi*U
+
+       # Circumferential velocity from Euler Eqn. (4)
+       Vt2 = Dho/U
+
+       # Assemble velocity vectors
+       # shape (3 directions, 2 stations)
+       Vxrt = np.stack(
+           (
+               (Vx, Vx),  # Constant axial velocity
+               (0., 0.),  # No radial velocity
+               (0., Vt2),  # Zero inlet swirl
+           )
+       )
+
+       # Outlet stagnation state from known total rises
+       So2 = So1.copy().set_P_h(So1.P + DPo, So1.h + Dho)
+
+       # Assemble both stagnation states into a vector state
+       So = So1.stack((So1,So2))
+
+       # Get static states using velocity magnitude and same entropy
+       Vmag = np.sqrt(np.sum(Vxrt**2,axis=0))
+       h = So.h - 0.5*Vmag**2  # Static enthalpy
+       S = So.copy().set_h_s(h , So.s)
+
+       # Conservation of mass for annulus area, Eqn. (5)
+       A = mdot/S.rho/Vx
+
+       # Mean radius from HTR Eqn. (6)
+       rrms = np.sqrt(A/np.pi/2.*(1.+htr**2)/(1.-htr**2))
+
+       # Shaft angular velocity
+       Omega = U / rrms
+
+       # Return assembled mean-line object
+       return turbigen.flowfield.make_mean_line(
+           rrms,  # Mean radii
+           A,  # Annulus areas
+           Omega,  # Shaft angular velocity
+           Vxrt, # Velocity vectors
+           S  # Thermodynamic states
+       )
+This concludes the `forward` function --- all the required quantities have been
+evaluated and can be returned for further processing.
+
+Inverse function
+^^^^^^^^^^^^^^^^
+
+If we run :program:`turbigen` on the `config.yaml` file now, it will complete
+mean-line design successfully using the `forward` function, but raise an
+Exception because the `inverse` function is incomplete.
+
+The `inverse` function serves as a verification check that the mean-line
+matches the design intent, and also to extract design variables from a
+mixed-out CFD solution. We add the design variables as keys in the output
+dictionary, using the attributes of the :py:class:`turbigen.meanline.MeanLine`
+class to calculate them:
+
+.. code-block:: python
+   :caption: fan.py
+
+   def inverse(ml):
+       """Calculate design variables from a mean-line object."""
+
+       So1 = ml.stagnation[0]
+       So2s = So1.copy().set_P_s(ml.Po[-1], ml.s[0])
+       ho2s = So2s.h
+
+       return {
+           "So1": So1,
+           'DPo': ml.Po[-1] - ml.Po[0],
+           'mdot': ml.mdot[0],
+           'phi': ml.Vx[0]/ml.U[0],
+           'psi': (ml.ho[-1]-ml.ho[0])/(ml.U[0])**2,
+           'etatt': (ho2s-So1.h)/(ml.ho[-1]-ml.ho[0]),
+           'htr': ml.rhub[0]/ml.rtip[0]
+       }
+
+Running CFD
+^^^^^^^^^^^
+
+We have now finished the mean-line design. To create blade shapes and run a
+computational fluid dynamics simulation, we can add some extra code to the `config.yaml`:
+
+.. code-block:: yaml
+   :caption: config.yaml
+
+   # All files relating to the case are held in a working directory
+   workdir: runs/fan
+
+   # Perfect gas inlet state
+   inlet:
+       Po: 1e5
+       To: 300.
+       cp: 1005.
+       mu: 1.8e-5
+       gamma: 1.4
+
+   # Mean-line design
+   mean_line:
+       type: fan.py  # Path to the mean-line module we are writing
+       # Our chosen design variables (args to forward)
+       DPo: 200.
+       mdot: 5.
+       phi: 0.5
+       psi: 0.4
+       etatt: 0.8
+
+   # ADD annulus configuration
+   annulus:
+     AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+     AR_chord: 3.  # Span to chord
+
+   # ADD blade shapes
+   blades:
+     - DFL: 0.45  # Set number of blades using Lieblein
+       sections:  # One blade section at midheight
+         - spf: 0.5  
+           q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+           qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+
+   # ADD mesh generation
+   mesh:
+     type: h  # Mesh topology
+     yplus: 30.0  # Non-dimensional wall distance
+
+   # ADD CFD solver
+   solver:
+     type: ts3  # Use Turbostream 3
