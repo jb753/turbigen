@@ -13,7 +13,7 @@ inlet:
 mean_line:
   type: fan.py  # Path to the mean-line module we are writing
   # Our chosen design variables (args to forward)
-  DPo: 200.
+  DPo: 2000.
   mdot: 5.
   phi: 0.5
   psi: 0.4
@@ -41,3 +41,4 @@ mesh:
 # ADD CFD solver
 solver:
   type: ts3  # Use Turbostream 3
+  nstep: 50000

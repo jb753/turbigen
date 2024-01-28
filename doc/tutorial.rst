@@ -390,6 +390,7 @@ radius, and the shaft angular velocity.
            Vxrt, # Velocity vectors
            S  # Thermodynamic states
        )
+
 This concludes the `forward` function --- all the required quantities have been
 evaluated and can be returned for further processing.
 
