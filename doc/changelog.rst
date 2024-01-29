@@ -1,6 +1,19 @@
 Changelog
 =========
 
+v1.7.0
+^^^^^^
+
+* Fix bug with noisy TS4 console logging
+* Allow labes on TS4 point probes with different file names
+* Implement unsteady boundary conditions into pre-processing framework
+* Add tutorial to documentation
+
+v1.6.1
+^^^^^^
+
+* Fix bug where zero-valued configuration options are not written out
+
 v1.6.0
 ^^^^^^
 
