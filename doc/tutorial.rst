@@ -188,15 +188,13 @@ Create a new `config.yaml` with the following content:
        phi: 0.5
        psi: 0.4
        htr: 0.8
-       etatt: 0.8
+       etatt: 0.9
 
-At this point, running the config.yaml file through :program:`turbigen` by using the shell command
+At this point, running the config.yaml file through :program:`turbigen`
+generates a `NotImplementedError` because the body of the `forward` function is
+missing.
 
-.. code-block:: console
 
-    $ turbigen config.yaml
-
-generates a `NotImplementedError` because the body of the `forward` function is missing.
 
 Implementing the algorithm
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -279,7 +277,8 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
 
 Next, we need to calculate the static thermodynamic states. As we know
 stagnation states and velocity vectors everywhere, this is most straightforward
-to do by evaluating the static enthalpy :math:`h=h_0-\frac{1}{2}V^2`. The static and stagnations states have the same entropy. In code, this looks like:
+to do by evaluating the static enthalpy :math:`h=h_0-\frac{1}{2}V^2`. The
+static and stagnation states have the same entropy. In code, this looks like:
 
 .. code-block:: python
    :caption: fan.py
@@ -457,12 +456,13 @@ computational fluid dynamics simulation, we can add some extra code to the
        phi: 0.5
        psi: 0.4
        htr: 0.8
-       etatt: 0.8
+       etatt: 0.9
 
    # ADD annulus configuration
    annulus:
      AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
      AR_chord: 3.  # Span to chord
+     nozzle_ratio: 0.9  # Exit nozzle contraction
 
    # ADD blade shapes
    blades:
@@ -476,15 +476,19 @@ computational fluid dynamics simulation, we can add some extra code to the
    mesh:
      type: h  # Mesh topology
      yplus: 30.0  # Non-dimensional wall distance
+     resolution_factor: 0.5  # Use a coarse mesh
 
    # ADD CFD solver
    solver:
      type: ts3  # Use Turbostream 3
-     nstep: 50000
+     nstep: 20000
+     nstep_avg: 5000
+     ilos: 1  # Mixing-length turbulence model
+     fmgrid: 0.4  # Full multigrid
 
-    # ADD control mass flow using a PID on exit pressure
-    operating_point:
-    mdot_pid: [0.5, 0.1, 0.0]
+   # ADD control mass flow using a PID on exit pressure
+   operating_point:
+     mdot_pid: [0.5, 0.1, 0.0]
 
 If we now run :program:`turbigen` on our `config.yaml` using the shell command,
 we can quickly obtain a CFD solution for our newly designed fan.
@@ -493,65 +497,67 @@ we can quickly obtain a CFD solution for our newly designed fan.
 
     $ turbigen config.yaml
     TURBIGEN v1.5.1
-    Starting at 2024-01-28T14:37:40
+    Starting at 2024-01-29T13:57:10
     Working directory: ...
     Inlet: PerfectState(P=1.000 bar, T=300.0 K)
     Designing a fan.py...
     MeanLine(
         Po=[1.   1.02] bar,
-        To=[300.     302.1277] K,
-        Ma=[0.105 0.135],
-        Vx=[36.6 36.6],
+        To=[300.     301.8913] K,
+        Ma=[0.099 0.127],
+        Vx=[34.5 34.5],
         Vr=[0. 0.],
-        Vt=[ 0.  29.2],
-        Vt_rel=[-73.1 -43.9],
+        Vt=[ 0.  27.6],
+        Vt_rel=[-68.9 -41.4],
         Al=[ 0.   38.66],
         Al_rel=[-63.43 -50.19],
-        rpm=[2382. 2393.],
+        rpm=[2182. 2193.],
         mdot=[5. 5.] kg/s
         )
     Checking mean-line conservation...
     Checking mean-line inversion...
     Annulus(
-        xmid=[-8.3270e-07  2.1487e-02],
-        rmid=[0.2913 0.2899],
-        span=[0.0647 0.0644]
+        xmid=[-7.5253e-07  2.2099e-02],
+        rmid=[0.2999 0.2983],
+        span=[0.0666 0.0663]
         )
-    Re_surf/10^5=[2.1]
+    Re_surf/10^5=[2.]
     Nblade=[54], s_cm=[1.57], tip=[0.]
     Generating an H-mesh...
-    Mesh Npts/10^6=0.83
+    Mesh Npts/10^6=0.11
     Applying boundary conditions...
     Setting intial guess...
     Calculating wall distance...
     Running solver ts3...
     Using 1 GPUs on 1 nodes, 1 per node.
     Checking convergence over last 5000 steps...
-    mdot drift = 0.1%, mdot error = 0.1%, eta_drift = 0.0%
+    mdot drift = 0.0%, mdot error = -0.3%, eta_drift = -0.0%
     Post-processing...
     Mixed-out CFD result:
     MeanLine(
-        Po=[0.9999 1.0168] bar,
-        To=[300.067  301.6789] K,
-        Ma=[0.087 0.109],
-        Vx=[30.1 30.1],
-        Vr=[0.7 0.1],
-        Vt=[ 0.8 23.1],
-        Vt_rel=[-72.3 -50. ],
-        Al=[ 1.55 37.56],
-        Al_rel=[-67.41 -58.97],
-        rpm=[2382. 2393.],
-        mdot=[4.12 4.12] kg/s
+        Po=[0.9997 1.0115] bar,
+        To=[300.0521 301.2397] K,
+        Ma=[0.099 0.113],
+        Vx=[34.5 34.6],
+        Vr=[ 0.4 -0.8],
+        Vt=[ 0.8 18.2],
+        Vt_rel=[-68.1 -50.7],
+        Al=[ 1.35 27.72],
+        Al_rel=[-63.17 -55.69],
+        rpm=[2182. 2193.],
+        mdot=[5. 5.] kg/s
         )
-    Design variable Nom    CFD    
+    Design variable Nom    CFD
     ------------------------------
-    DPo             2000.0 1687.7 
-    etatt           0.8000 0.8923 
-    htr             0.8000 0.8000 
-    mdot            5.0000 4.1213 
-    phi             0.5000 0.4114 
-    psi             0.4000 0.3030 
-    eta_tt=0.892, eta_ts=0.449
+    DPo             2000.0 1172.7
+    etatt           0.9000 0.8433
+    htr             0.8000 0.8000
+    mdot            5.0000 4.9961
+    phi             0.5000 0.4997
+    psi             0.4000 0.2511
+    eta_tt=0.843, eta_ts=0.203
+    Elapsed time 1.40 min.
+
 
 Creating and running designs with different velocity triangles is as simple as
 changing a line or two in the mean-line section of `config.yaml`. This allows
@@ -569,11 +575,34 @@ Inspecting the output for our new fan, we can identify several problems:
 
     Design variable Nom    CFD
     ------------------------------
-    DPo             2000.0 1687.7  # Pressure rise too low
-    etatt           0.8000 0.8923  # Guessed efficiency too low
+    DPo             2000.0 1172.7  # Pressure rise too low
+    etatt           0.9000 0.8433  # Guessed efficiency too high
     htr             0.8000 0.8000
-    mdot            5.0000 4.1213  # Mass flow too low
-    phi             0.5000 0.4114  # Mismatch
-    psi             0.4000 0.3030  # Mismatch
+    mdot            5.0000 4.9961
+    phi             0.5000 0.4997
+    psi             0.4000 0.2511  # Loading too low
 
-The m
+The root cause of the lack of pressure rise is that we have not allowed for
+deviation in designing the blade shapes, hence the flow is underturned.
+Assuming a guess of efficiency was neccesary to complete mean-line design, but
+its value should be updated so that the annulus areas are compatible with the
+intended velocity triangles.
+
+Although it is not evident from the table, the inlet flow is not precisely
+aligned with the inlet metal angle, leading to unwanted accelerations around
+the leading edge. We should locate the stagnation point on the nose of the
+aerofoil to yield the smoothest pressure distributions.
+
+:program:`turbigen` has the capability to correct for all these issues. Adding
+an `iterate` key to the `config.yaml` will cause the program to repeatedly run
+the CFD, updating the efficiency guess and recambering the leading and trailing
+edges as needed:
+
+
+.. code-block:: yaml
+   :caption: config.yaml
+
+    # ...
+
+    # ADD new section for iterative corrections
+
