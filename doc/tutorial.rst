@@ -1,11 +1,8 @@
-Tutorials
-=========
-
-Writing a mean-line
--------------------
+Tutorial
+========
 
 This tutorial will walk through the process of writing a new user-defined
-mean-line solver. 
+mean-line solver and using it to run CFD on the Cambridge Wilkes3 cluster. 
 We first need to download the :program:`turbigen` code:
 
 .. code-block:: console
@@ -17,8 +14,8 @@ We first need to download the :program:`turbigen` code:
 Problem statement
 ^^^^^^^^^^^^^^^^^
 
-Suppose we wish to design a rotor-only, low-speed axial fan. We shall assume
-incompressible flow and a constant axial velocity. The inlet state is specified
+Suppose we wish to design a rotor-only axial fan. We shall assume
+a constant axial velocity. The inlet state is specified
 as fixed values of :math:`T_{01}` and :math:`p_{01}` with no inlet swirl,
 :math:`\alpha_1=0`. We can then parametrise the aerodynamics of the stage using the
 following design variables:
@@ -26,7 +23,7 @@ following design variables:
 * Total pressure rise, :math:`\Delta p_0`
 * Mass flow rate, :math:`\dot{m}`
 * Flow coefficient, :math:`\phi=V_x/U`
-* Loading coefficient, :math:`\psi=c_p \Delta T_0/U^2`
+* Loading coefficient, :math:`\psi= \Delta h_0/U^2`
 * Hub-to-tip ratio, :math:`\mathit{HTR}=r_\mathrm{hub}/r_\mathrm{cas}`
 * Total-to-total isentropic efficiency guess, :math:`\eta_\mathrm{tt}`
 
@@ -39,13 +36,16 @@ To proceed with the annulus and blade shape design, :program:`turbigen` requires
 * Static thermodynamic states, :math:`(P, T)` for example
 * Rotor shaft speed, :math:`\Omega`
 
+:math:`r_\mathrm{rms}`, :math:`A`, :math:`\Omega` and the thermodynamic states
+should all be arrays of length 2. The velocity vectors should be of shape (3,2).
+
 .. _tut-ml-algo:
 
 Mean-line design equations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We need to combine conservation of mass, momentum, and energy with
-definitions for our design variables to solve for the flow in the turbomachine.
+definitions of our design variables to solve for the flow in the turbomachine.
 This will yield a set of equations that we will later implement numerically in
 the `forward` function.
 
@@ -202,7 +202,7 @@ Implementing the algorithm
 We can now start to add the :ref:`tut-ml-algo` to the `forward` function inside
 `fan.py`.
 
-The first task is to calculate the idea exit enthalpy :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)`
+The first task is to calculate the ideal exit enthalpy :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)`
 in Eqn. :eq:`eqn-eta`. Mean-line design functions should be written to make
 no assumptions about the working fluid equation of state --- this is accomplished
 using the fluid modelling abstractions in :py:mod:`turbigen.fluid`. We take a
@@ -227,12 +227,7 @@ enthalpy values from our two state objects `So1` and `So2s`.
 .. code-block:: python
    :caption: fan.py
 
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
-
-       # Get the ideal exit state
-       So2s = So1.copy()  # Duplicate the inlet state
-       So2s.set_P_s(So1.P + DPo, So1.s)  # Set pressure and entropy
+       # ...
 
        # Work from defn efficiency Eqn. (1)
        Dho = (So2s.h-So1.h)/etatt
@@ -243,16 +238,8 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
 
 .. code-block:: python
    :caption: fan.py
-
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
-
-       # Get the ideal exit state
-       So2s = So1.copy()  # Duplicate the inlet state
-       So2s.set_P_s(So1.P + DPo, So1.s)  # Set pressure and entropy
-
-       # Work from defn efficiency Eqn. (1)
-       Dho = (So2s.h-So1.h)/etatt
+  
+       # ...
 
        # Blade speed from defn psi Eqn. (2)
        U = np.sqrt(Dho/psi)
@@ -283,34 +270,7 @@ static and stagnation states have the same entropy. In code, this looks like:
 .. code-block:: python
    :caption: fan.py
 
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
-
-       # Get the ideal exit state
-       So2s = So1.copy()  # Duplicate the inlet state
-       So2s.set_P_s(So1.P + DPo, So1.s)  # Set pressure and entropy
-
-       # Work from defn efficiency Eqn. (1)
-       Dho = (So2s.h-So1.h)/etatt
-
-       # Blade speed from defn psi Eqn. (2)
-       U = np.sqrt(Dho/psi)
-
-       # Axial velocity from defn phi Eqn. (3)
-       Vx = phi*U
-
-       # Circumferential velocity from Euler Eqn. (4)
-       Vt2 = Dho/U
-
-       # Assemble velocity vectors
-       # shape (3 directions, 2 stations)
-       Vxrt = np.stack(
-           (
-               (Vx, Vx),  # Constant axial velocity
-               (0., 0.),  # No radial velocity
-               (0., Vt2),  # Zero inlet swirl
-           )
-       )
+       # ...
 
        # Outlet stagnation state from known total rises
        So2 = So1.copy().set_P_h(So1.P + DPo, So1.h + Dho)
@@ -325,9 +285,9 @@ static and stagnation states have the same entropy. In code, this looks like:
 
        # ...
 
-Now that the static states are known, the density can be using in the
+Now that the static states are known, the density can be used in the
 conservation of mass equation to continue with evaluating areas, the RMS
-radius, and the shaft angular velocity. 
+radius, and the shaft angular velocity. The completed function is:
 
 .. code-block:: python
    :caption: fan.py
@@ -602,7 +562,94 @@ edges as needed:
 .. code-block:: yaml
    :caption: config.yaml
 
-    # ...
+   # ...
 
-    # ADD new section for iterative corrections
+   # ADD new section for iterative corrections
+   iterate:
+   mean_line:  # Correct efficiency guess
+     match_tolerance:
+       etatt: 0.01  # Efficiency to within 1%
+     relaxation_factor: 0.5  # Change is half CFD minus nominal
+   deviation:  # Correct exit flow angles by TE recamber
+     clip: 5.0  # Maximum recamber in one step
+     relaxation_factor: 0.8  # Multiplier on changes to metal angle
+     tolerance: 1.0  # Absolute tolerance for termination in degrees
+   incidence:  # Correct incidence by LE recamber
+     clip: 5.0   # Maximum recamber in one step
+     relaxation_factor: 0.2  # Multiplier on changes to metal angle
+     tolerance: 2.0  # Absolute tolerance for termination in degrees
 
+Running the extended input file gives:
+
+.. code-block:: console
+
+    $ turbigen config.yaml
+    TURBIGEN v1.5.1
+    Starting at 2024-01-29T09:58:58
+    Working directory: ...
+    Iterating for max_iter=20 iterations
+    Min   Inc   DInc  Dev   DDev  etatt Detatt
+    -------------------------------------------
+    1.401 6.271 1.254 -5.49 4.398 0.844 -0.002
+    1.401 4.064 0.812 -2.56 2.051 0.893 0.0232
+    1.401 2.502 0.500 -1.24 0.996 0.907 0.0182
+    1.401 1.491 0.298 -0.60 0.482 0.911 0.0115
+    1.401 0.885 0.177 -0.32 0.258 0.913 0.0067
+    1.401 0.497 0.099 -0.11 0.093 0.915 0.0041
+    Design variable Nom    CFD
+    ------------------------------
+    DPo             2000.0 1932.2
+    etatt           0.9111 0.9153
+    htr             0.8000 0.8000
+    mdot            5.0000 4.9941
+    phi             0.5000 0.4995
+    psi             0.4000 0.3832
+    eta_tt=0.915, eta_ts=0.383
+    Iteration finished in 8.4 min.
+
+The corrections applied, `DInc`, `DDev`, and `Detatt`, decrease with each
+iteration indicating stable convergence. When the iteration terminates, the
+mixed-out CFD solution corresponds closely to the design intent. A new
+configuration file has been written out in the working directory
+`runs/fan/config_conv.yaml` for the converged solution. Inspecting this file:
+
+.. code-block:: yaml
+   :caption: config_conv.yaml
+
+   # ...
+   qstar_camber:
+      - 3.142689298065078
+      - 8.280434755893827
+      - 1.0
+      - 1.0
+      - 0.0
+   # ...
+
+Under the `qstar_camber` key that defines the camber line, we see that 3.1
+degrees of recamber was required to align the stagnation point, and the
+deviation was 8.3 degrees. The efficiency has also been updated to 91.5%.
+
+Extensions
+^^^^^^^^^^
+
+This tutorial has demonstrated some of the functionality of
+:program:`turbigen`. With the current choice of parameterisation, any change to
+the design is just an edit to the `config.yaml`, as described in :doc:`config`. 
+
+* Increase the number of blades by changing `DFL`
+* Increase the grid density under `mesh`
+* Control camber and thickness distributions by changing `qthick` and `qstar_camber`
+* Specify blade sections at multiple spanwise locations
+* Change the aspect ratio `AR_chord`
+* With a compatible CFD solver, change the working fluid to a real gas under `inlet`
+
+To change the mean-line design, edit the `forward` and `inverse` functions in
+`fan.py`. For example: relax the assumption of constant axial velocity by
+adding a velocity ratio as one of the arguments to forward, replace
+specification of loading coefficient with a de Haller number, or specify an
+inlet Mach number instead of mass flow rate.
+
+To add a stator, extend `forward` to take additional design variables and
+perform the necessary calculations. The output data should be at the inlet and
+exit of both blade rows, e.g. `A` an array of length 4, the velocity vectors
+should be of shape (3,4).
