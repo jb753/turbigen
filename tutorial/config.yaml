@@ -17,13 +17,14 @@ mean_line:
   mdot: 5.
   phi: 0.5
   psi: 0.4
-  etatt: 0.8
+  etatt: 0.9
   htr: 0.8
 
 # ADD annulus configuration
 annulus:
   AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
   AR_chord: 3.  # Span to chord
+  nozzle_ratio: 0.9
 
 # ADD blade shapes
 blades:
@@ -37,12 +38,32 @@ blades:
 mesh:
   type: h  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Coarsen the mesh
 
 # ADD CFD solver
 solver:
   type: ts3  # Use Turbostream 3
-  nstep: 50000
+  nstep: 20000
+  nstep_avg: 5000
+  fmgrid: 0.4
+  ilos: 1
 
 # ADD control mass flow using a PID on exit pressure
 operating_point:
   mdot_pid: [0.5, 0.1, 0.0]
+
+# Match CFD to nominal by iteration
+iterate:
+  mean_line:  # Correct efficiency guess
+    match_tolerance:
+      etatt: 0.01  # Efficiency to within 0.5%
+    relaxation_factor: 0.5  # Change is half difference CFD-nominal
+  deviation:  # Correct exit flow angles by TE recamber
+    clip: 5.0  # Maximum recamber in one step
+    relaxation_factor: 0.8  # Multiplier on changes to metal angle
+    tolerance: 1.0  # Absolute tolerance for termination in degrees
+  incidence:  # Correct incidence by LE recamber
+    clip: 5.0   # Maximum recamber in one step
+    relaxation_factor: 0.2  # Multiplier on changes to metal angle
+    tolerance: 2.0  # Absolute tolerance for termination in degrees
+

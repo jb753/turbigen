@@ -46,7 +46,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
 
         zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
 
-        if j == 25 and plot_prefix:
+        if plot and j == 25 and plot_prefix:
             fig, ax = plt.subplots()
             ax.plot(zeta, Vi, "k")
             ax.plot(zeta[iz], Vi[iz], "b*")
@@ -67,7 +67,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
             # Small pitch angle => the leading edge is oriented axially
             chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[0])).item()
 
-            if j in jplot and plot_prefix:
+            if plot and j in jplot and plot_prefix:
                 fig, ax = plt.subplots()
                 ax.plot(surf.x[:, j], surf.rt[:, j], "-")
                 ax.plot(
@@ -99,7 +99,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
                 # Going radially out
                 chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[1])).item()
 
-            if j in jplot and plot_prefix:
+            if plot and j in jplot and plot_prefix:
                 fig, ax = plt.subplots()
                 ax.plot(surf.r[:, j], surf.rt[:, j], "-")
                 ax.plot(
