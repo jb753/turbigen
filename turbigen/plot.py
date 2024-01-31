@@ -426,7 +426,7 @@ def plot_grid_b2b(g, spf, axial, fname=None):
 
 def plot_hmesh(g, workdir):
     plot_grid_meridional(g, os.path.join(workdir, "mesh_xr.pdf"))
-    plot_grid_b2b(g, fname=os.path.join(workdir, "mesh_b2b.pdf"))
+    plot_grid_b2b(g, 0.5, True, fname=os.path.join(workdir, "mesh_b2b.pdf"))
 
 
 def plot_grid_meridional(g, fname=None):
