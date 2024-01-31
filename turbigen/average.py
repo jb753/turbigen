@@ -308,14 +308,14 @@ def mix_out(F):
     rtmom_fl = F.flux_rtmom.squeeze()
 
     # Stagnation rothalpy fluxes in x an r dirns
-    ho_fl = F.flux_energy.squeeze()
+    ho_fl = F.flux_rothalpy.squeeze()
 
     # Get totals by integrating over area
-    mass_tot = area_integrate(x, r, rt, *mass_fl)
-    xmom_tot = area_integrate(x, r, rt, *xmom_fl)
-    rmom_tot = area_integrate(x, r, rt, *rmom_fl)
-    rtmom_tot = area_integrate(x, r, rt, *rtmom_fl)
-    ho_tot = area_integrate(x, r, rt, *ho_fl)
+    mass_tot = area_integrate(x, r, rt, *mass_fl[:2])
+    xmom_tot = area_integrate(x, r, rt, *xmom_fl[:2])
+    rmom_tot = area_integrate(x, r, rt, *rmom_fl[:2])
+    rtmom_tot = area_integrate(x, r, rt, *rtmom_fl[:2])
+    ho_tot = area_integrate(x, r, rt, *ho_fl[:2])
 
     # Assemble all total fluxes into a vector for convenience
     all_names = ["mass", "xmom", "rmom", "rtmom", "ho"]
@@ -363,11 +363,11 @@ def mix_out(F):
 
     # Check conservation
     Axr = np.array([Ax, Ar])
-    mass_mix = (F_mix.flux_mass * Axr).sum()
-    xmom_mix = (F_mix.flux_xmom * Axr).sum()
-    rmom_mix = (F_mix.flux_rmom * Axr).sum()
-    rtmom_mix = (F_mix.flux_rtmom * Axr).sum()
-    ho_mix = (F_mix.flux_energy * Axr).sum()
+    mass_mix = (F_mix.flux_mass[:2] * Axr).sum()
+    xmom_mix = (F_mix.flux_xmom[:2] * Axr).sum()
+    rmom_mix = (F_mix.flux_rmom[:2] * Axr).sum()
+    rtmom_mix = (F_mix.flux_rtmom[:2] * Axr).sum()
+    ho_mix = (F_mix.flux_rothalpy[:2] * Axr).sum()
 
     # Set absolute tolerances to rtol*reference to be more numerically robust
     # This handles with xmom or rmom ~ 0, and cases with low net mass flow
@@ -473,12 +473,12 @@ def mix_out_unstructured(F):
 
     dA = F.tri_area[:2]
 
-    mass_tot = (F.flux_mass.mean(-1) * dA).sum()
-    xmom_tot = (F.flux_xmom.mean(-1) * dA).sum()
-    rmom_tot = (F.flux_rmom.mean(-1) * dA).sum()
-    rtmom_tot = (F.flux_rtmom.mean(-1) * dA).sum()
-    ho_tot = (F.flux_energy.mean(-1) * dA).sum()
-    ent_tot = (F.flux_entropy.mean(-1) * dA).sum()
+    mass_tot = (F.flux_mass[:2].mean(-1) * dA).sum()
+    xmom_tot = (F.flux_xmom[:2].mean(-1) * dA).sum()
+    rmom_tot = (F.flux_rmom[:2].mean(-1) * dA).sum()
+    rtmom_tot = (F.flux_rtmom[:2].mean(-1) * dA).sum()
+    ho_tot = (F.flux_rothalpy[:2].mean(-1) * dA).sum()
+    ent_tot = (F.flux_entropy[:2].mean(-1) * dA).sum()
 
     Ax, Ar = dA.sum(-1)
 
