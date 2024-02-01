@@ -12,6 +12,8 @@ import os
 import signal
 import sys
 import re
+import grp
+import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver
 
@@ -87,6 +89,8 @@ class TS3Config(BaseSolver):
     fac_sa_step = 1.0
     nstep_save_probe = 0
     nstep_save_start_probe = 0
+    xllim_free = 0.1
+    free_turb = 0.05
 
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
@@ -769,6 +773,8 @@ def _write_hdf5(grid, ts3_config):
                         elif force_type == "entropic":
                             Po_Poav = np.ones_like(F)
                             To_Toav = F
+                        else:
+                            raise Exception(f'Unknown inlet forcing type {force_type}')
 
                         val = np.expand_dims(val,3)
                         if name == 'pstag':
@@ -1007,6 +1013,12 @@ def _run(grid, ts3_config):
 def run(grid, settings, machine):
     """Write, run, and read TS3 results for a grid object, specifying some settings."""
 
+    # Check that the user is a member of the turbostream group
+    ts_users = grp.getgrnam('turbostream').gr_mem
+    current_user = getpass.getuser()
+    if not current_user in ts_users:
+        raise Exception(f'Current user {current_user} is not a member of the turbostream group')
+
     # Apply settings to the default configuration
     ts3_conf = TS3Config(**settings)
 
@@ -1239,11 +1251,23 @@ class TS3Log:
         return err[np.argmax(np.abs(err))]
 
 def _read_probe_dat(fname, S, shape=()):
+    Npts = int(np.loadtxt(fname, max_rows=1))
     x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
 
-    nt = len(x)
+    nt = len(x)//Npts
 
     Fshape = shape + (nt,)
+    if shape:
+        x = x.reshape(Fshape)
+        r = r.reshape(Fshape)
+        rt = rt.reshape(Fshape)
+        ro = ro.reshape(Fshape)
+        rovx = rovx.reshape(Fshape)
+        rovr = rovr.reshape(Fshape)
+        rorvt = rorvt.reshape(Fshape)
+        roe = roe.reshape(Fshape)
+
+    Fshape = x.shape
 
     F = turbigen.flowfield.PerfectFlowField(Fshape)
     F.cp = S.cp
