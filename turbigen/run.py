@@ -583,10 +583,6 @@ def run_single(conf, gguess=None, plot=False):
 
     g.check_coordinates()
 
-    import turbigen.solvers.native
-    turbigen.solvers.native.step(g[0])
-    rstrt
-
     # The grid is ready to run. At this point, we can 'install' it
     if conf.install:
         install_type = conf.install.pop("type")
