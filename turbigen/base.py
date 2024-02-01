@@ -386,10 +386,61 @@ class Kinematics:
         # Vectors for cell sides
         qi = np.diff(xrrt[:, :-1, :], axis=0)
         qj = np.diff(xrrt[:-1, :, :], axis=1)
-
         dA = np.cross(qi, qj)
 
         return dA[..., 2]
+
+    @dependent_property
+    def dli(self):
+        # Edge vectors along i dirn
+        # Numpy cross function assumes that the components are in last axis
+        return np.diff(self.xrrt[:, :, :-1, :-1].astype(np.float64), axis=1)
+
+    @dependent_property
+    def dlj(self):
+        # Edge vectors along j dirn
+        # Numpy cross function assumes that the components are in last axis
+        return np.diff(self.xrrt[:, :-1, :, :-1].astype(np.float64), axis=2)
+
+    @dependent_property
+    def dlk(self):
+        # Edge vectors along k dirn
+        # Numpy cross function assumes that the components are in last axis
+        return np.diff(self.xrrt[:, :-1, :-1, :].astype(np.float64), axis=3)
+
+    @dependent_property
+    def dAi(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+        # Numpy cross function assumes that the components are in last axis
+        dlj = np.moveaxis(self.dlj, 0, -1)
+        dlk = np.moveaxis(self.dlk, 0, -1)
+        return np.moveaxis(np.cross(dlj, dlk),-1,0)
+
+    @dependent_property
+    def dAj(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+        # Numpy cross function assumes that the components are in last axis
+        dli = np.moveaxis(self.dli, 0, -1)
+        dlk = np.moveaxis(self.dlk, 0, -1)
+        return np.moveaxis(np.cross(dli, dlk),-1,0)
+
+    @dependent_property
+    def dAk(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+        # Numpy cross function assumes that the components are in last axis
+        dli = np.moveaxis(self.dli, 0, -1)
+        dlj = np.moveaxis(self.dlj, 0, -1)
+        return np.moveaxis(np.cross(dli, dlj),-1,0)
+
+    @dependent_property
+    def flux_all(self):
+        return np.stack((self.flux_mass, self.flux_xmom, self.flux_rmom, self.flux_rtmom, self.flux_energy))
 
     @dependent_property
     def spf(self):
@@ -506,8 +557,12 @@ class Composites:
         return self.rho * self.Vr
 
     @dependent_property
+    def rhoVt(self):
+        return self.rho * self.Vt
+
+    @dependent_property
     def rhorVt(self):
-        return self.rho * self.rVt
+        return self.r * self.rhoVt
 
     @dependent_property
     def rVt(self):
@@ -579,37 +634,76 @@ class Composites:
     @dependent_property
     def flux_mass(self):
         # Mass fluxes in x and r dirns
-        return np.stack((self.rhoVx, self.rhoVr))
+        return np.stack((self.rhoVx, self.rhoVr, self.rhoVt))
 
     @dependent_property
     def flux_xmom(self):
         # Axial momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.Vx + self.P, self.rhoVr * self.Vx))
-
-    @dependent_property
-    def flux_rmom(self):
-        # Radial momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.Vr, self.rhoVr * self.Vr + self.P))
-
-    @dependent_property
-    def flux_rtmom(self):
-        # Moment of angular momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.rVt, self.rhoVr * self.rVt))
-
-    @dependent_property
-    def flux_energy(self):
-        # Stagnation rothalpy fluxes in x an r dirns
         return np.stack(
             (
-                self.rhoVx * (self.ho - self.Omega * self.rVt),
-                self.rhoVr * (self.ho - self.Omega * self.rVt),
+                self.rhoVx * self.Vx + self.P,
+                self.rhoVr * self.Vx,
+                self.rhoVt * self.Vx
             )
         )
 
     @dependent_property
+    def flux_rmom(self):
+        # Radial momentum fluxes in x and r dirns
+        return np.stack(
+            (
+                self.rhoVx * self.Vr,
+                self.rhoVr * self.Vr + self.P,
+                self.rhoVt * self.Vr,
+            )
+        )
+
+    @dependent_property
+    def flux_rtmom(self):
+        # Moment of angular momentum fluxes in x and r dirns
+        return np.stack(
+            (
+                self.Vx * self.rhorVt,
+                self.Vr * self.rhorVt,
+                self.Vr * self.rhorVt + self.r*self.P,
+            )
+        )
+
+    @dependent_property
+    def flux_rothalpy(self):
+        # Stagnation rothalpy fluxes in x an r dirns
+        return self.flux_mass * self.I
+
+    @dependent_property
+    def flux_energy(self):
+        # Stagnation entahlpy fluxes in x an r dirns
+        return np.stack(
+            (
+                self.rhoVx * self.ho,
+                self.rhoVr * self.ho,
+                self.rhoVt * self.ho + self.Omega*self.r*self.P,
+            )
+        )
+
+    @dependent_property
+    def source_all(self):
+        source_rtmom = (self.P + self.rho*self.Vt**2)/self.r
+        Z = np.zeros_like(source_rtmom)
+        return np.stack(
+                (
+                    Z,  # mass
+                    Z,  # xmom 
+                    Z,  # rmom 
+                    source_rtmom,  # rtmom 
+                    Z,  # energy
+                )
+        )
+
+
+    @dependent_property
     def flux_entropy(self):
         # Mass fluxes in x and r dirns
-        return np.stack((self.rhoVx, self.rhoVr)) * self.s
+        return self.flux_mass * self.s
 
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""

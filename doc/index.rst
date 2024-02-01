@@ -11,6 +11,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
    nomenclature
    install
    usage
+   tutorial
    config
    fluid
    meanline

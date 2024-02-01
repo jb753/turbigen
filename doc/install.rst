@@ -11,13 +11,24 @@ Lines prefixed with `$` are to be run at the Linux terminal.
 Prerequisites
 ^^^^^^^^^^^^^
 
-The program requires a working Python installation, version 3.9 or greater. Check your Python version by running,
+The program requires a working Python installation, version 3.9 or greater.
+Check your Python version by running,
 
 .. code-block:: console
 
-   $ python -V
+   $ python3 -V
+   Python 3.11.2
 
 If your Python version is below 3.9, you need to install a more recent version.
+You will also need the `virtualenv` module to make an installation separate
+from your system Python modules; this may require an extra package, e.g. `sudo
+apt install python3-virtualenv` in Debian. Check for the `virtualenv` module by
+running,
+
+.. code-block:: console
+
+   $ python3 -c 'import virtualenv; print("virtualenv installed")'
+   virtualenv installed
 
 Obtain the code
 ^^^^^^^^^^^^^^^

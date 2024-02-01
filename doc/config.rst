@@ -186,10 +186,10 @@ fraction `spf` and vectors of thickness and camber parameters, `q_thick` and
     * Camber line slope at trailing edge
     * Camber line curvature at mid-chord
 
-The number of blades can be set via two choices: directly using `Nb` or for a
-non-dimensional circulation using `Co`. Thickness and camber vectors are
-interpolated between each of the specified span fractions. So a complete
-specification of the blade geometry might be:
+The number of blades can be set via three choices: directly using `Nb`, a
+non-dimensional circulation using `Co`, or the Lieblein diffusion factor `DFL`.
+Thickness and camber vectors are interpolated between each of the specified
+span fractions. So a complete specification of the blade geometry is:
 
 .. code-block:: yaml
 
