@@ -1258,14 +1258,14 @@ def _read_probe_dat(fname, S, shape=()):
 
     Fshape = shape + (nt,)
     if shape:
-        x = x.reshape(Fshape)
-        r = r.reshape(Fshape)
-        rt = rt.reshape(Fshape)
-        ro = ro.reshape(Fshape)
-        rovx = rovx.reshape(Fshape)
-        rovr = rovr.reshape(Fshape)
-        rorvt = rorvt.reshape(Fshape)
-        roe = roe.reshape(Fshape)
+        x = x.reshape(Fshape, order='F')
+        r = r.reshape(Fshape, order='F')
+        rt = rt.reshape(Fshape, order='F')
+        ro = ro.reshape(Fshape, order='F')
+        rovx = rovx.reshape(Fshape, order='F')
+        rovr = rovr.reshape(Fshape, order='F')
+        rorvt = rorvt.reshape(Fshape, order='F')
+        roe = roe.reshape(Fshape, order='F')
 
     Fshape = x.shape
 
@@ -1273,6 +1273,7 @@ def _read_probe_dat(fname, S, shape=()):
     F.cp = S.cp
     F.gamma = S.gamma
     F.mu = S.mu
+    F.Omega = 0.
 
     F.xrt = np.stack((x, r, rt/r))
     F.Vxrt = np.stack((rovx, rovr, rorvt/r))/ro

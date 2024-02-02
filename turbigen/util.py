@@ -954,11 +954,11 @@ Increase ERmax, Dst, Dmax, or N."""
 
 
 def node_to_face(var):
-    """For a (n,m) matrix of some property, average over the four corners of
-    each face to produce an (n-1,m-1) matrix of face-centered properties."""
+    """For a (...,n,m) matrix of some property, average over the four corners of
+    each face to produce an (...,n-1,m-1) matrix of face-centered properties."""
     return np.mean(
         np.stack(
-            (var[:-1, :-1], var[1:, 1:], var[:-1, 1:], var[1:, :-1]),
+            (var[...,:-1, :-1], var[...,1:, 1:], var[...,:-1, 1:], var[...,1:, :-1]),
         ),
         axis=0,
     )

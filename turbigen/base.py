@@ -86,6 +86,13 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
+    def transpose(self, order):
+        out = self.__class__()
+        order1 = [0,] + [o+1 for o in order]
+        out._data = np.transpose(self._data, order1)
+        out._metadata = self._metadata
+        return out
+
     def squeeze(self):
         out = self.__class__()
         out._data = np.squeeze(self._data)
@@ -353,13 +360,13 @@ class Kinematics:
 
     @dependent_property
     def surface_area(self):
-        if not self.ndim == 2:
-            raise Exception("Surface area is only defined for 2D grids")
+        # if not self.ndim == 2:
+        #     raise Exception("Surface area is only defined for 2D grids")
         # Numpy cross function assumes that the components are in last axis
         xyz = np.moveaxis(self.xyz, 0, -1).astype(np.float64)
         # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, :], axis=0)
-        qj = np.diff(xyz[:-1, :, :], axis=1)
+        qi = np.diff(xyz[:, :-1, ...], axis=0)
+        qj = np.diff(xyz[:-1, :, ...], axis=1)
         dA = np.cross(qi, qj)
         return dA
 
@@ -549,6 +556,10 @@ class Composites:
     """Methods for properties depending on thermodynamic and velocity fields."""
 
     @dependent_property
+    def conserved(self):
+        return np.stack((self.rho, self.rhoVx, self.rhoVr, self.rhorVt, self.rhoe))
+
+    @dependent_property
     def rhoVx(self):
         return self.rho * self.Vx
 
@@ -708,6 +719,30 @@ class Composites:
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
         return turbigen.average.mix_out(self)
+
+    def set_conserved(self, conserved):
+        rho, *rhoVxrt, rhoe = conserved
+        Vxrt = rhoVxrt/rho
+        Vxrt[2] /= self.r
+        self.Vxrt = Vxrt
+        u = rhoe/rho - 0.5*self.V**2
+        self.set_rho_u(rho, u)
+
+    def area_average(self):
+
+        dA = np.linalg.norm(self.surface_area[:,:,0,:], axis=-1, ord=2)
+        A = np.sum(dA)
+        conserved = np.moveaxis(self.conserved,-1,1)
+        xrt = np.moveaxis(self.xrt,-1,1)
+        conserved_av = np.sum(dA*turbigen.util.node_to_face(conserved),axis=(-2,-1))/A
+        xrt_av = np.sum(dA*turbigen.util.node_to_face(xrt),axis=(-2,-1))/A
+
+        F = self.empty((conserved_av.shape[1],))
+        F.xrt = xrt_av
+        F.set_conserved(conserved_av)
+
+        return F
+
 
     def mix_out_pitchwise(self):
         """Mix out in the pitchwise direction, to a spanwise profile."""
