@@ -139,11 +139,6 @@ def cell_to_node(x):
 def step(g, dt):
 
     fi, fj, fk = node_to_face(g.flux_all)
-    print("ni, nj, nk", g.shape)
-    print("dAi", g.dAi.shape)
-    print("dAj", g.dAj.shape)
-    print("dAk", g.dAk.shape)
-    print("fi", fi.shape)
     sumf = (
         -np.diff(fi * g.dAi, axis=-3)  # i faces
         - np.diff(fj * g.dAj, axis=-2)  # j faces
@@ -152,5 +147,4 @@ def step(g, dt):
     S = node_to_vol(g.source_all)
     dU = (sumf / g.vol + S) * dt
 
-    print(cell_to_node(dU).shape)
-    print(g.conserved.shape)
+    g.set_conserved(g.conserved + cell_to_node(dU))

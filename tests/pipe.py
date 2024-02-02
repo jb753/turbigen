@@ -25,8 +25,8 @@ To1 = 300.0
 M = 0.3
 rgas = cp * (ga-1.)/ga
 V = cf.V_cpTo_from_Ma(M,ga)*np.sqrt(cp*To1)
-P1 = Po1/cf.Po_P_from_Ma(M,ga)*Po1
-T1 = To1/cf.To_T_from_Ma(M,ga)*To1
+P1 = Po1/cf.Po_P_from_Ma(M,ga)
+T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
 nj = 20
@@ -70,6 +70,12 @@ for b in g:
     b.set_P_T(P1, T1)
 
 CFL=0.5
-dt = (xv[1]-xv[0])/V
+dt = (xv[1]-xv[0])/V*CFL
 
-turbigen.solvers.native.step(g[0], dt)
+for i in range(1000):
+    print(g[0].P.mean())
+    print(i)
+    try:
+        turbigen.solvers.native.step(g[0], dt)
+    except:
+        break
