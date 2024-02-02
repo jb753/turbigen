@@ -564,5 +564,3 @@ class Aircon:
         xr_hub = self.evaluate_xr(t, 0)
         xr_cas = self.evaluate_xr(t, 1)
         return np.stack((xr_hub, xr_cas)).transpose(2, 0, 1)
-
-

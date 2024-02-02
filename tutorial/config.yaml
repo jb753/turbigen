@@ -30,7 +30,7 @@ annulus:
 blades:
   - DFL: 0.45  # Set number of blades using Lieblein
     sections:  # One blade section at midheight
-      - spf: 0.5  
+      - spf: 0.5
         q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
 
@@ -66,4 +66,3 @@ iterate:
     clip: 5.0   # Maximum recamber in one step
     relaxation_factor: 0.2  # Multiplier on changes to metal angle
     tolerance: 2.0  # Absolute tolerance for termination in degrees
-
