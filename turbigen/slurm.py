@@ -111,7 +111,6 @@ def submit(conf, basedir=None, verbose=True):
 {depstr}
 
 cd {TURBIGEN_ROOT}
-source setup_environment.sh &> /dev/null
 turbigen {yaml_path} &> {log_path}
 
 """
@@ -185,7 +184,6 @@ def submit_array(confs, basedir, Nmax):
 #SBATCH --array={ids[0]}-{ids[-1]}{maxstr}
 
 cd {TURBIGEN_ROOT}
-source setup_environment.sh &> /dev/null
 turbigen {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/config.yaml &>\
     {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/log_turbigen.txt
 
