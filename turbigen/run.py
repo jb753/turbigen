@@ -3,7 +3,6 @@ import os
 import sys
 import json
 import shutil
-import importlib
 from turbigen import (
     fluid,
     grid,
@@ -295,7 +294,8 @@ def run_single(conf, gguess=None, plot=False):
                     )
                     logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
                     logger.debug(
-                        f'splitter q_camber deg {util.atand(splitter_now["q_camber"][isect])}'
+                        "splitter q_camber deg "
+                        f'{util.atand(splitter_now["q_camber"][isect])}'
                     )
 
                     # The relative mstack for splitter is same as for main blade.
@@ -325,7 +325,7 @@ def run_single(conf, gguess=None, plot=False):
 
                 splitter_now.pop("q_camber")
                 splitter_now["qstar_camber"] = qstar_camber_split_save
-                if not vexpon is None:
+                if vexpon is not None:
                     row_now["vexpon"] = vexpon
         else:
             bld.append(None)
@@ -790,7 +790,8 @@ def run_single(conf, gguess=None, plot=False):
                         inc_now = np.abs(inc.flat[imax])
                         if inc_now > inc_prev:
                             logger.debug(
-                                f"Splitter new maximum inc={inc.flat[imax] + inc_target}"
+                                "Splitter new maximum inc="
+                                f"{inc.flat[imax] + inc_target}"
                             )
                             pdict["Inc"] = inc.flat[imax] + inc_target
                             pdict["DInc"] = dinc_splitter.flat[imax]
@@ -923,10 +924,11 @@ def run(conf, plot=False):
 
             # Check for stopit to interrupt iterations
             stopit_path = os.path.join(basedir, "stopit")
-            if stopit_found := os.path.exists(stopit_path):
-                logger.iter(f"stopit found, terminating iterations.")
+            if os.path.exists(stopit_path):
+                logger.iter("stopit found, terminating iterations.")
                 opt_converged = True
 
+                meanline_design = util.load_mean_line(conf.mean_line_type)
                 out_vars = meanline_design.inverse(ml_out)
                 out_vars.pop("So1")
                 var_fields = ("Design variable", "Nom   ", "CFD   ")

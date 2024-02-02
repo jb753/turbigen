@@ -1,7 +1,6 @@
 """Object to encapsulate a configuration file."""
-from turbigen import util, fluid, annulus
+from turbigen import util, fluid
 from turbigen.exceptions import ConfigError
-import importlib
 from inspect import signature
 from scipy.interpolate import griddata
 from scipy.spatial import QhullError
