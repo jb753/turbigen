@@ -253,28 +253,25 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Input data
         ni, nj, nk = self.shape
         ijk = range(ni), range(nj), range(nk)
-        d = np.moveaxis(self._data,0,-1)
+        d = np.moveaxis(self._data, 0, -1)
 
         # Query data
-        iqv = np.linspace(0, ni-1, (ni-1)*(2**k)+1)
-        jqv = np.linspace(0, nj-1, (nj-1)*(2**k)+1)
-        kqv = np.linspace(0, nk-1, (nk-1)*(2**k)+1)
-        ijkq = np.moveaxis(np.stack(np.meshgrid(iqv, jqv, kqv, indexing='ij')),0,-1)
+        iqv = np.linspace(0, ni - 1, (ni - 1) * (2**k) + 1)
+        jqv = np.linspace(0, nj - 1, (nj - 1) * (2**k) + 1)
+        kqv = np.linspace(0, nk - 1, (nk - 1) * (2**k) + 1)
+        ijkq = np.moveaxis(np.stack(np.meshgrid(iqv, jqv, kqv, indexing="ij")), 0, -1)
 
         # Peform interpolation
         dq = interpn(ijk, d, ijkq)
-        self._data = np.moveaxis(dq,-1,0)
-
+        self._data = np.moveaxis(dq, -1, 0)
 
         # Adjust patches
         for patch in self.patches:
-            pos = patch.ijk_limits>=0
+            pos = patch.ijk_limits >= 0
             patch.ijk_limits[pos] *= 2**k
-            patch.ijk_limits[~pos] = (( patch.ijk_limits[~pos]+1 ) * 2**k)-1
-
+            patch.ijk_limits[~pos] = ((patch.ijk_limits[~pos] + 1) * 2**k) - 1
 
         self.Omega = Omega
-
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
@@ -390,7 +387,11 @@ class Grid:
                         break
             for P in patches:
                 if P.match is None:
-                    raise Exception(f"Could not match patch bid={self._blocks.index(P.block)} pid={P.block.patches.index(P)} {P}")
+                    raise Exception(
+                        "Could not match patch "
+                        f"bid={self._blocks.index(P.block)} "
+                        f"pid={P.block.patches.index(P)} {P}"
+                    )
 
     @property
     def nrow(self):
@@ -425,7 +426,7 @@ class Grid:
             try:
                 b.check_coordinates()
             except AssertionError:
-                raise Exception(f'Coordinate check failed in block {ib} {b}')from None
+                raise Exception(f"Coordinate check failed in block {ib} {b}") from None
 
     def apply_rotation(self, row_types, Omega):
         """Set wall rotations."""
@@ -929,9 +930,11 @@ class Grid:
 
                 # Loop over blocks and find o-meshes
                 for b in row_block:
-                    if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
+                    if (
+                        np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt)
+                        and b.shape[1] == nj
+                    ):
                         surfs[-1].append(b[:, :, None, 0])
-
 
         return surfs
 
@@ -1237,8 +1240,8 @@ class InletPatch(Patch):
     state = None
     rfin = 0.5
     force_type = None
-    amplitude = 0.
-    phase = 0.
+    amplitude = 0.0
+    phase = 0.0
 
 
 class InviscidPatch(Patch):
@@ -1250,8 +1253,8 @@ class OutletPatch(Patch):
     mdot_target = None
     Kpid = None
     force = False
-    amplitude = 0.
-    phase = 0.
+    amplitude = 0.0
+    phase = 0.0
 
 
 class RotatingPatch(Patch):
@@ -1331,7 +1334,7 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
         # is pitch - tol/2 and its matching point is pitch + tol/2 then they
         # *should* match, but will be in error by whole pitch after modulus.
         # So move any points very close to upper pitch boundary back to zero
-        xrti[2, ...][xrti[2, ...]/pitch[0]>(1.-rtol)] = 0.
+        xrti[2, ...][xrti[2, ...] / pitch[0] > (1.0 - rtol)] = 0.0
 
     # We are going to loop over all possible choices for i/j/kdir
     # and return from this function if the coordinates match.

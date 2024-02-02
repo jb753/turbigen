@@ -2,7 +2,7 @@ Tutorial
 ========
 
 This tutorial will walk through the process of writing a new user-defined
-mean-line solver and using it to run CFD on the Cambridge Wilkes3 cluster. 
+mean-line solver and using it to run CFD on the Cambridge Wilkes3 cluster.
 We first need to download the :program:`turbigen` code:
 
 .. code-block:: console
@@ -238,7 +238,7 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
 
 .. code-block:: python
    :caption: fan.py
-  
+
        # ...
 
        # Blade speed from defn psi Eqn. (2)
@@ -428,7 +428,7 @@ computational fluid dynamics simulation, we can add some extra code to the
    blades:
      - DFL: 0.45  # Set number of blades using Lieblein
        sections:  # One blade section at midheight
-         - spf: 0.5  
+         - spf: 0.5
            q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
            qstar_camber: [0., 0., 1.0, 1.0, 0.0]
 
@@ -634,7 +634,7 @@ Extensions
 
 This tutorial has demonstrated some of the functionality of
 :program:`turbigen`. With the current choice of parameterisation, any change to
-the design is just an edit to the `config.yaml`, as described in :doc:`config`. 
+the design is just an edit to the `config.yaml`, as described in :doc:`config`.
 
 * Increase the number of blades by changing `DFL`
 * Increase the grid density under `mesh`

@@ -336,17 +336,17 @@ def plot_splitter(main, split, Nb, fname=None):
     spf = np.atleast_1d(0.5)
 
     mq = np.linspace(0.0, 1.0, 11)
-    pitch = np.pi*2./Nb
+    pitch = np.pi * 2.0 / Nb
 
     for i in range(len(spf)):
         for self in (main, split):
-            for dt in (0., pitch):
+            for dt in (0.0, pitch):
                 xrtu, xrtl = self.evaluate_section(spf[i])
                 xrtuq, xrtlq = self.evaluate_section(spf[i], m=mq)
-                xrrtu = np.stack((*xrtu[:2],) + (xrtu[1] * (xrtu[2]+dt),))
-                xrrtl = np.stack((*xrtl[:2],) + (xrtl[1] * (xrtl[2]+dt),))
-                xrrtuq = np.stack((*xrtuq[:2],) + (xrtuq[1] * (xrtuq[2]+dt),))
-                xrrtlq = np.stack((*xrtlq[:2],) + (xrtlq[1] * (xrtlq[2]+dt),))
+                xrrtu = np.stack((*xrtu[:2],) + (xrtu[1] * (xrtu[2] + dt),))
+                xrrtl = np.stack((*xrtl[:2],) + (xrtl[1] * (xrtl[2] + dt),))
+                xrrtuq = np.stack((*xrtuq[:2],) + (xrtuq[1] * (xrtuq[2] + dt),))
+                xrrtlq = np.stack((*xrtlq[:2],) + (xrtlq[1] * (xrtlq[2] + dt),))
                 xrrtc = 0.5 * (xrrtuq + xrrtlq)
                 ax1.plot(
                     *xrrtu[
@@ -402,12 +402,12 @@ def plot_grid_b2b(g, spf, axial, fname=None):
 
     C = g.cut_span(spf)
 
-    fig, ax = plt.subplots(figsize=(10,10))
+    fig, ax = plt.subplots(figsize=(10, 10))
     ax.axis("equal")
     for b in C:
         bs = b.squeeze()
         bsr = bs.copy()
-        bsr.t += 2*np.pi/bsr.Nb
+        bsr.t += 2 * np.pi / bsr.Nb
         for bb in (bs, bsr):
             if axial:
                 ax.plot(bb.x, bb.rt, "k-", lw=0.1)
@@ -447,11 +447,11 @@ def _get_distribution(g, irow, spf, varname):
     surfs = g.cut_blade_surfs()[irow]
     surf = surfs[0]  # Main blade
     jspf = np.argmin(np.abs(surf.spf[1, :, 0] - spf))
-    surf = surf[:,jspf,0]
+    surf = surf[:, jspf, 0]
     var = getattr(surf, varname)
     istag = np.argmax(var)
     zstag = surf.zeta - surf.zeta[istag]
-    zn = zstag + 0.
+    zn = zstag + 0.0
     Lref = zn[np.argmax(np.abs(zn))]
     zn /= Lref
 
@@ -459,39 +459,42 @@ def _get_distribution(g, irow, spf, varname):
     if len(surfs) > 1:
 
         splitter = surfs[1]
-        splitter = splitter[:,jspf,0]
+        splitter = splitter[:, jspf, 0]
         var_split = getattr(splitter, varname)
         istag = np.argmax(var_split)
         zstag = splitter.zeta - splitter.zeta[istag]
-        zn_split = zstag + 0.
+        zn_split = zstag + 0.0
         zn_split /= Lref
 
     return [[zn, var], [zn_split, var_split]]
 
+
 def plot_pressure_distribution(irow, g, ml, spf, fname):
-    iin = irow*2
-    iout = iin+1
-    Po1, Po2 = ml.Po_rel[(iin, iout),]
-    P1, P2 = ml.P[(iin, iout),]
+    iin = irow * 2
+    iout = iin + 1
+    Po1, Po2 = ml.Po_rel[
+        (iin, iout),
+    ]
+    P1, P2 = ml.P[
+        (iin, iout),
+    ]
 
     surfs = g.cut_blade_surfs()[irow]
     surf = surfs[0]  # Main blade
     jspf = np.argmin(np.abs(surf.spf[1, :, 0] - spf))
-    surf = surf[:,jspf,0]
+    surf = surf[:, jspf, 0]
     istag = np.argmax(surf.P)
     zstag = surf.zeta - surf.zeta[istag]
-    zn = zstag + 0.
+    zn = zstag + 0.0
     Lref = zn[np.argmax(np.abs(zn))]
     zn /= Lref
 
     if Po2 > Po1:
         # Compressor
-        Cp = (surf.P - Po1)/(Po1-P1)
+        Cp = (surf.P - Po1) / (Po1 - P1)
     else:
         # Turbine
-        Cp = (surf.P - Po1)/(Po1-P2)
-
-
+        Cp = (surf.P - Po1) / (Po1 - P2)
 
     fig, ax = plt.subplots()
     ax.plot(np.abs(zn), Cp)
@@ -505,19 +508,19 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
     if len(surfs) > 1:
 
         splitter = surfs[1]
-        splitter = splitter[:,jspf,0]
+        splitter = splitter[:, jspf, 0]
         istag = np.argmax(splitter.P)
         zstag = splitter.zeta - splitter.zeta[istag]
-        zn = zstag + 0.
+        zn = zstag + 0.0
         zn /= Lref
 
         if Po2 > Po1:
             # Compressor
-            Cp_split = (splitter.P - Po1)/(Po1-P1)
+            Cp_split = (splitter.P - Po1) / (Po1 - P1)
         else:
             # Turbine
-            Cp_split = (splitter.P - Po1)/(Po1-P2)
-        ax.plot(np.abs(zn), Cp_split,'--')
+            Cp_split = (splitter.P - Po1) / (Po1 - P2)
+        ax.plot(np.abs(zn), Cp_split, "--")
 
     plt.tight_layout()
     plt.savefig(fname)

@@ -673,8 +673,6 @@ class RealState(StructuredData):
             pass
         return phase
 
-
-
     @dependent_property
     def is_supercritical(self):
         return self._lookup_property(self._as.phase) in (
