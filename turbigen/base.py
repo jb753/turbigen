@@ -393,19 +393,19 @@ class Kinematics:
     def dli(self):
         # Edge vectors along i dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt[:, :, :-1, :-1].astype(np.float64), axis=1)
+        return np.diff(self.xrrt.astype(np.float64), axis=1)
 
     @dependent_property
     def dlj(self):
         # Edge vectors along j dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt[:, :-1, :, :-1].astype(np.float64), axis=2)
+        return np.diff(self.xrrt.astype(np.float64), axis=2)
 
     @dependent_property
     def dlk(self):
         # Edge vectors along k dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt[:, :-1, :-1, :].astype(np.float64), axis=3)
+        return np.diff(self.xrrt.astype(np.float64), axis=3)
 
     @dependent_property
     def dAi(self):
@@ -413,8 +413,8 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
         # Numpy cross function assumes that the components are in last axis
-        dlj = np.moveaxis(self.dlj, 0, -1)
-        dlk = np.moveaxis(self.dlk, 0, -1)
+        dlj = np.moveaxis(self.dlj[:, :, :, :-1], 0, -1)
+        dlk = np.moveaxis(self.dlk[:, :, :-1, :], 0, -1)
         return np.moveaxis(np.cross(dlj, dlk), -1, 0)
 
     @dependent_property
@@ -423,8 +423,8 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
         # Numpy cross function assumes that the components are in last axis
-        dli = np.moveaxis(self.dli, 0, -1)
-        dlk = np.moveaxis(self.dlk, 0, -1)
+        dli = np.moveaxis(self.dli[:, :, :, :-1], 0, -1)
+        dlk = np.moveaxis(self.dlk[:, :-1, :, :], 0, -1)
         return np.moveaxis(np.cross(dli, dlk), -1, 0)
 
     @dependent_property
@@ -433,8 +433,8 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
         # Numpy cross function assumes that the components are in last axis
-        dli = np.moveaxis(self.dli, 0, -1)
-        dlj = np.moveaxis(self.dlj, 0, -1)
+        dli = np.moveaxis(self.dli[:, :, :-1, :], 0, -1)
+        dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
         return np.moveaxis(np.cross(dli, dlj), -1, 0)
 
     @dependent_property

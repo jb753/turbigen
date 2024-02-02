@@ -1,20 +1,3 @@
-
-job
----
-
-Automations are in place for running :program:`turbigen` as a SLURM queue job
-using the `sbatch` command. Some parameters are hardcoded assuming the
-University of Cambridge Wilkes3 cluster and may require modifying for different
-systems. Sumbitting jobs requires the following
-configuration:
-
-
-.. code-block:: yaml
-
-    job:
-      account: NAME-SL2-GPU   # SLURM account to charge
-      hours: 4  # Integer number of hours for job time limit
-      tasks: 2  # Number of GPUs
 Configuration file format
 =========================
 

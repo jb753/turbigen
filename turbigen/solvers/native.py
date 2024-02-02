@@ -112,25 +112,45 @@ def cell_to_node(x):
 
     # Edges take half from nearest two cells
 
+    # Along i lines
+    for j in (0, -1):
+        for k in (0, -1):
+            xn[..., 1:-1, j, k] = 0.5 * (x[..., :-1, j, k] + x[..., 1:, j, k])
+
+    # Along j lines
+    for i in (0, -1):
+        for k in (0, -1):
+            xn[..., i, 1:-1, k] = 0.5 * (x[..., i, :-1, k] + x[..., i, 1:, k])
+
+    # Along k lines
+    for i in (0, -1):
+        for j in (0, -1):
+            xn[..., i, j, 1:-1] = 0.5 * (x[..., i, j, :-1] + x[..., i, j, 1:])
+
     # Corners take entire change from nearest cell
     for i in (0, -1):
         for j in (0, -1):
             for k in (0, -1):
                 xn[..., i, j, k] = x[..., i, j, k]
 
-    print(xn[0, :3, :3, 0])
-    assert not np.isnan(xn).any()
+    return xn
 
 
 def step(g, dt):
 
     fi, fj, fk = node_to_face(g.flux_all)
+    print("ni, nj, nk", g.shape)
+    print("dAi", g.dAi.shape)
+    print("dAj", g.dAj.shape)
+    print("dAk", g.dAk.shape)
+    print("fi", fi.shape)
     sumf = (
-        (fi[..., :-1, :, :] - fi[..., 1:, :, :]) * g.dAi  # i faces
-        + (fj[..., :, :-1, :] - fj[..., :, 1:, :]) * g.dAj  # j faces
-        + (fk[..., :, :, :-1] - fk[..., :, :, 1:]) * g.dAk  # k faces
+        -np.diff(fi * g.dAi, axis=-3)  # i faces
+        - np.diff(fj * g.dAj, axis=-2)  # j faces
+        - np.diff(fk * g.dAk, axis=-1)  # k faces
     ).sum(axis=1)
     S = node_to_vol(g.source_all)
     dU = (sumf / g.vol + S) * dt
 
-    cell_to_node(dU)
+    print(cell_to_node(dU).shape)
+    print(g.conserved.shape)
