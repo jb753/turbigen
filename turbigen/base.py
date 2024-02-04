@@ -679,7 +679,7 @@ class Composites:
             (
                 self.Vx * self.rhorVt,
                 self.Vr * self.rhorVt,
-                self.Vr * self.rhorVt + self.r * self.P,
+                self.Vt * self.rhorVt + self.r * self.P,
             )
         )
 

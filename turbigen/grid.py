@@ -211,6 +211,14 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def rotating_patches(self):
         return self.find_patches(RotatingPatch)
 
+    @property
+    def inlet_patches(self):
+        return self.find_patches(InletPatch)
+
+    @property
+    def outlet_patches(self):
+        return self.find_patches(OutletPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -427,6 +435,20 @@ class Grid:
                 b.check_coordinates()
             except AssertionError:
                 raise Exception(f"Coordinate check failed in block {ib} {b}") from None
+
+    def apply_periodic(self):
+        """For each pair of periodic patches, set average of conserved quantities."""
+        done = []
+        for patch in self.periodic_patches:
+            if patch in done:
+                continue
+            i1 = (slice(3,None,None),) + patch.get_slice()[1:]
+            i2 = (slice(3,None,None),) + patch.match.get_slice()[1:]
+            C1 = patch.get_cut()
+            C2 = patch.get_match_cut()
+            avg = 0.5*(C1._data[i1] + C2._data[i2])
+            patch.block._data[i1] = avg
+            patch.match.block._data[i2] = avg
 
     def apply_rotation(self, row_types, Omega):
         """Set wall rotations."""
@@ -1242,6 +1264,7 @@ class InletPatch(Patch):
     force_type = None
     amplitude = 0.0
     phase = 0.0
+    store = None
 
 
 class InviscidPatch(Patch):

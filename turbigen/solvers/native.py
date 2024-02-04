@@ -1,11 +1,26 @@
 from turbigen.solvers.base import BaseSolver
+from scipy.signal import convolve
 import numpy as np
+import turbigen.util
 
 
 class NativeConfig(BaseSolver):
     """Settings with default values for the TS4 solver."""
 
     _name = "Native"
+
+def get_timestep(b, CFL):
+    Vref = node_to_vol(b.V)
+    aref = node_to_vol(b.a)
+    dli = turbigen.util.vecnorm(b.dli)
+    dlj = turbigen.util.vecnorm(b.dlj)
+    dlk = turbigen.util.vecnorm(b.dlk)
+    dli = 0.25*(dli[:,:-1,:-1] + dli[:,:-1,1:]+ dli[:,1:,:-1]+ dli[:,:-1,:-1])
+    dlj = 0.25*(dlj[:-1,:,:-1] + dlj[:-1,:,1:]+ dlj[1:,:,:-1]+ dlj[:-1,:,:-1])
+    dlk = 0.25*(dlk[:-1,:-1,:] + dlk[:-1,1:,:]+ dlk[1:,:-1,:]+ dlk[:-1,:-1,:])
+    dlmin = np.minimum(dli, dlj, dlk)
+    dt = CFL*dlmin/(aref+Vref)
+    return dt
 
 
 def node_to_face(x):
@@ -135,16 +150,149 @@ def cell_to_node(x):
 
     return xn
 
+def get_fluxes(conserved, P, ho, r, Omega):
 
-def step(g, dt):
+    rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
 
-    fi, fj, fk = node_to_face(g.flux_all)
+    rVt = rhorVt/rho
+    rhoVt = rhorVt/r
+    Vx = rhoVx/rho
+    Vr = rhoVr/rho
+    Vt = rhoVt/rho
+
+    flux = np.array(
+        (
+            (rhoVx, rhoVr, rhoVt),  # mass
+            (rhoVx * Vx + P, rhoVr * Vx, rhoVt * Vx),  # x-mom
+            (rhoVx * Vr, rhoVr * Vr + P, rhoVt * Vr),  # r-mom
+            (rhoVx * rVt, rhoVr * rVt, rhoVt * Vt + r*P),  # rt-mom
+            (rhoVx * ho, rhoVr * ho, rhoVt * ho + Omega * r * P),  # energy
+        )
+    )
+
+    return flux
+
+def smooth(x):
+    # x has shape [?,ni,nj,nk]
+    # return smoothed nodal values
+
+    xs = np.full_like(x, np.nan)
+    xs = x.copy()
+
+    kern0 = np.array([[0, 0, 0],[0,1,0],[0,0,0]])
+    kern1 = np.array([[0, 1, 0],[1,-6,1],[0,1,0]])
+    kern2 = np.array([[0, 0, 0],[0,1,0],[0,0,0]])
+    sf = 0.05
+    kern = np.stack((kern0, kern1, kern2))/6.*sf
+
+    kern_i0 = np.stack(
+            [
+                [[0,1,0],[1,-3,1],[0,1,0]],
+                [[0,0,0],[0,-2,0],[0,0,0]],
+                [[0,0,0],[0,1,0],[0,0,0]],
+            ]
+    )/3.*sf
+    kern_j0 = np.moveaxis(kern_i0,0,1)
+    kern_k0 = np.moveaxis(kern_i0,0,2)
+
+    kern_i0j0 = np.stack(
+            [
+                [[1,0,1],[0,-2,0],[0,1,0]],
+                [[0,0,0],[0,-2,0],[0,0,0]],
+                [[0,0,0],[0,1,0],[0,0,0]],
+            ]
+    )/3.*sf
+    kern_i0k0 = np.moveaxis(kern_i0j0,1,2)
+    kern_j0k0 = np.moveaxis(kern_i0j0,0,2)
+
+    for i in range(x.shape[0]):
+        xs[i,1:-1,1:-1,1:-1] += convolve(x[i], kern, mode='valid')
+
+        xs[i, 0, 1:-1, 1:-1] += convolve(x[i,:3,:,:], kern_i0, mode='valid').squeeze()
+        xs[i, 1:-1, 0, 1:-1] += convolve(x[i,:,:3,:], kern_j0, mode='valid').squeeze()
+        xs[i, 1:-1, 1:-1, 0] += convolve(x[i,:,:,:3], kern_k0, mode='valid').squeeze()
+
+        xs[i, 0, 0, 1:-1] += convolve(x[i,:3,:3,:], kern_i0j0, mode='valid').squeeze()
+        xs[i, 0, 1:-1, 0] += convolve(x[i,:3,:3,:], kern_i0k0, mode='valid').squeeze()
+        xs[i, 1:-1, 0, 0] += convolve(x[i,:3,:3,:], kern_j0k0, mode='valid').squeeze()
+
+    return xs
+
+
+import matplotlib.pyplot as plt
+
+x = np.ones((3,10,10,10))
+xs = smooth(x)
+print(np.sum(xs!=1.))
+
+plt.contourf(xs[0,:,:,0])
+plt.show()
+quit()
+
+
+
+def step(b, dt):
+
+    P = b.P.copy()
+    ho = b.ho.copy()
+    conserved = b.conserved.copy()
+
+    rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
+    r = b.r
+
+    # Adjust static pressure for exit boundary conditions
+    for patch in b.outlet_patches:
+        P[patch.get_slice()] = patch.Pout
+
+    # Change inlet patches
+    for patch in b.inlet_patches:
+
+        ipatch = patch.get_slice()
+        Cin = b[ipatch]
+        rfin = patch.rfin
+
+        if patch.store:
+            # Relax changes in density if we have a stored state
+            rho_now = rfin*Cin.rho + (1.-rfin)*patch.store.rho
+            # Isentropic expansion from stagnation state
+            Cin.set_rho_s(rho_now, patch.state.s)
+
+        patch.store = Cin
+
+        # Get the velocity
+        dhin = patch.state.h - Cin.h
+        # dhin[dhin<=0.] = patch.state.h*1e-6
+        Vin = np.sqrt(2*dhin)
+
+        tanAlpha = turbigen.util.tand(patch.Alpha)
+        tanBeta = turbigen.util.tand(patch.Beta)
+
+        # Resolve velocity components
+        Vxin = Vin * np.sqrt((1.+tanAlpha**2)*(1.+tanBeta**2))
+        Vrin = Vxin * tanBeta
+        Vmin = np.sqrt(Vxin**2 + Vrin**2)
+        Vtin = Vmin * tanAlpha
+
+        # Reset conserved vars on inlet
+        rhoVx[ipatch] = Cin.rho * Vxin
+        rhoVr[ipatch] = Cin.rho * Vrin
+        rhorVt[ipatch] = Cin.rho * Cin.r * Vtin
+        rhoe[ipatch] = Cin.rho*(Cin.u + 0.5*Vin**2)
+
+        # Reset pressure and hstag on inlet
+        ho[ipatch] = Cin.h + 0.5*Vin**2
+        P[ipatch] = Cin.P
+
+    flux = get_fluxes(conserved, P, ho, b.r, b.Omega)
+
+    fi, fj, fk = node_to_face(flux)
     sumf = (
-        -np.diff(fi * g.dAi, axis=-3)  # i faces
-        - np.diff(fj * g.dAj, axis=-2)  # j faces
-        - np.diff(fk * g.dAk, axis=-1)  # k faces
+        -np.diff(fi * b.dAi, axis=-3)  # i faces
+        - np.diff(fj * b.dAj, axis=-2)  # j faces
+        - np.diff(fk * b.dAk, axis=-1)  # k faces
     ).sum(axis=1)
-    S = node_to_vol(g.source_all)
-    dU = (sumf / g.vol + S) * dt
 
-    g.set_conserved(g.conserved + cell_to_node(dU))
+    S = node_to_vol(b.source_all)
+    dU = (sumf / b.vol + S) * dt
+
+    b.set_conserved(smooth(b.conserved + cell_to_node(dU)))

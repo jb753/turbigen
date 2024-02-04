@@ -329,6 +329,15 @@ class PerfectState(StructuredData):
         self.set_P_T(P, T)
         return self
 
+    def set_rho_s(self, rho, s):
+        uref = self.cv * self.Tref
+        rhoref = self.Pref/self.rgas/self.Tref
+        u = uref * np.exp((s + self.rgas*np.log(rho/rhoref))/self.cv)
+        self.set_rho_u(rho, u)
+        assert np.allclose(self.rho, rho)
+        assert np.allclose(self.s, s)
+        return self
+
     def to_static(self, Ma):
         To_T = 1.0 + 0.5 * (self.gamma - 1.0) * Ma**2.0
         return self.copy().set_T_s(self.T / To_T, self.s)

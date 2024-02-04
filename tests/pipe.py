@@ -32,7 +32,7 @@ T1 = To1/cf.To_T_from_Ma(M,ga)
 nj = 20
 AR = 1.
 ni = int(nj/h*L)
-nk = 5
+nk = 6
 pitch = h/nj*(nk-1)
 Nb = int(2.0 * np.pi * rm / pitch)
 dt = 2.0 * np.pi / float(Nb)
@@ -69,8 +69,13 @@ for b in g:
     b.Omega = 0.0
     b.set_P_T(P1, T1)
 
-CFL=0.5
-dt = (xv[1]-xv[0])/V*CFL
+CFL=0.1
+
+dt = turbigen.solvers.native.get_timestep(g[0], CFL)
+
+g.apply_periodic()
+
+import matplotlib.pyplot as plt
 
 for i in range(1000):
     print(g[0].P.mean())
@@ -78,4 +83,8 @@ for i in range(1000):
     try:
         turbigen.solvers.native.step(g[0], dt)
     except:
-        break
+        b = g[0][:,0,0]
+        fig, ax = plt.subplots()
+        ax.plot(b.x, b.To)
+        plt.show()
+
