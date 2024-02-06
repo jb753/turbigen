@@ -604,7 +604,7 @@ def run_single(conf, gguess=None, plot=False):
             logger.info("No solver specified, continuing with initial guess...")
 
         logger.info("Uninstalling...")
-        g = install_module.inverse(gi)
+        g, install_inverse = install_module.inverse(gi)
 
         conf.install["type"] = install_type
 
@@ -707,6 +707,9 @@ def run_single(conf, gguess=None, plot=False):
     if mean_opt_conf := conf.iterate.get("mean_line"):
         rf_mean = mean_opt_conf.get("relaxation_factor", 0.5)
         out_vars = meanline_design.inverse(ml_out)
+        if conf.install:
+            out_vars.update(install_inverse)
+        print(out_vars)
 
         match_vars = mean_opt_conf.get("match_tolerance", {})
         for v in match_vars:
