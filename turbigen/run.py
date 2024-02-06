@@ -709,7 +709,6 @@ def run_single(conf, gguess=None, plot=False):
         out_vars = meanline_design.inverse(ml_out)
         if conf.install:
             out_vars.update(install_inverse)
-        print(out_vars)
 
         match_vars = mean_opt_conf.get("match_tolerance", {})
         for v in match_vars:
