@@ -57,7 +57,7 @@ So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
 So1.set_P_T(Po1, To1)
 g.apply_inlet(So1, Alpha, Beta)
 g.calculate_wall_distance()
-g.apply_outlet(P1-100.)
+g.apply_outlet(P1-2.)
 
 for b in g:
     b.Vx = V
@@ -69,7 +69,7 @@ for b in g:
     b.Omega = 0.0
     b.set_P_T(P1, T1)
 
-CFL=0.1
+CFL=0.4
 
 dt = turbigen.solvers.native.get_timestep(g[0], CFL)
 
@@ -77,14 +77,25 @@ g.apply_periodic()
 
 import matplotlib.pyplot as plt
 
-for i in range(1000):
+for i in range(10000):
     print(g[0].P.mean())
     print(i)
     try:
         turbigen.solvers.native.step(g[0], dt)
     except:
-        b = g[0][:,0,0]
+        b = g[0][:,:,0]
         fig, ax = plt.subplots()
-        ax.plot(b.x, b.To)
+        ax.contourf(b.x, b.r, b.P)
         plt.show()
+        break
+
+
+    if not np.mod(i, 10):
+        dt = turbigen.solvers.native.get_timestep(g[0], CFL)
+
+
+        # b = g[0][-1,g[0].nj, lev_P//2,:]
+        # fig, ax = plt.subplots()
+        # ax.plot(b.rt, b.P)
+        # plt.show()
 

@@ -182,7 +182,7 @@ def smooth(x):
     kern0 = np.array([[0, 0, 0],[0,1,0],[0,0,0]])
     kern1 = np.array([[0, 1, 0],[1,-6,1],[0,1,0]])
     kern2 = np.array([[0, 0, 0],[0,1,0],[0,0,0]])
-    sf = 0.05
+    sf = 0.5
     kern = np.stack((kern0, kern1, kern2))/6.*sf
 
     kern_i0 = np.stack(
@@ -191,44 +191,38 @@ def smooth(x):
                 [[0,0,0],[0,-2,0],[0,0,0]],
                 [[0,0,0],[0,1,0],[0,0,0]],
             ]
-    )/3.*sf
+    )/6.*sf
     kern_j0 = np.moveaxis(kern_i0,0,1)
     kern_k0 = np.moveaxis(kern_i0,0,2)
 
-    kern_i0j0 = np.stack(
+    kern_ni = np.stack(
             [
-                [[1,0,1],[0,-2,0],[0,1,0]],
+                [[0,0,0],[0, 1, 0],[0,0,0]],
                 [[0,0,0],[0,-2,0],[0,0,0]],
-                [[0,0,0],[0,1,0],[0,0,0]],
+                [[0,1,0],[1,-3,1],[0,1,0]],
             ]
-    )/3.*sf
-    kern_i0k0 = np.moveaxis(kern_i0j0,1,2)
-    kern_j0k0 = np.moveaxis(kern_i0j0,0,2)
+    )/6.*sf
+    kern_nj = np.moveaxis(kern_ni,0,1)
+    kern_nk = np.moveaxis(kern_ni,0,2)
 
     for i in range(x.shape[0]):
         xs[i,1:-1,1:-1,1:-1] += convolve(x[i], kern, mode='valid')
+
+        xs[i, -1, 1:-1, 1:-1] += convolve(x[i,-3:,:,:], kern_ni, mode='valid').squeeze()
+        xs[i, 1:-1, -1, 1:-1] += convolve(x[i,:,-3:,:], kern_nj, mode='valid').squeeze()
+        xs[i, 1:-1, 1:-1, -1] += convolve(x[i,:,:,-3:], kern_nk, mode='valid').squeeze()
 
         xs[i, 0, 1:-1, 1:-1] += convolve(x[i,:3,:,:], kern_i0, mode='valid').squeeze()
         xs[i, 1:-1, 0, 1:-1] += convolve(x[i,:,:3,:], kern_j0, mode='valid').squeeze()
         xs[i, 1:-1, 1:-1, 0] += convolve(x[i,:,:,:3], kern_k0, mode='valid').squeeze()
 
-        xs[i, 0, 0, 1:-1] += convolve(x[i,:3,:3,:], kern_i0j0, mode='valid').squeeze()
-        xs[i, 0, 1:-1, 0] += convolve(x[i,:3,:3,:], kern_i0k0, mode='valid').squeeze()
-        xs[i, 1:-1, 0, 0] += convolve(x[i,:3,:3,:], kern_j0k0, mode='valid').squeeze()
+        # xs[i, 0, 0, 1:-1] += convolve(x[i,:3,:3,:], kern_i0j0, mode='valid').squeeze()
+        # xs[i, 0, 1:-1, 0] += convolve(x[i,:3,:3,:], kern_i0k0, mode='valid').squeeze()
+        # xs[i, 1:-1, 0, 0] += convolve(x[i,:3,:3,:], kern_j0k0, mode='valid').squeeze()
+        # xs[i, -1, :, :] += (x[i, 0, :, :] - 2.*x[i, 1, :, :] + x[i, 2, :, :])*sf/6.
+        # xs[i, 0, :, :] += (x[i, -3, :, :] - 2.*x[i, -2, :, :] + x[i, -1, :, :])*sf/6.
 
     return xs
-
-
-import matplotlib.pyplot as plt
-
-x = np.ones((3,10,10,10))
-xs = smooth(x)
-print(np.sum(xs!=1.))
-
-plt.contourf(xs[0,:,:,0])
-plt.show()
-quit()
-
 
 
 def step(b, dt):
@@ -242,26 +236,28 @@ def step(b, dt):
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
-        P[patch.get_slice()] = patch.Pout
+        P[patch.get_slice()] = patch.Pout * 0.1 + 0.9*(patch.get_cut().P)
 
     # Change inlet patches
     for patch in b.inlet_patches:
 
         ipatch = patch.get_slice()
         Cin = b[ipatch]
-        rfin = patch.rfin
+        rfin = 0.1#patch.rfin
+        print(Cin.Po.mean(), Cin.To.mean(), Cin.V.mean())
 
         if patch.store:
             # Relax changes in density if we have a stored state
             rho_now = rfin*Cin.rho + (1.-rfin)*patch.store.rho
             # Isentropic expansion from stagnation state
             Cin.set_rho_s(rho_now, patch.state.s)
+            assert np.allclose(Cin.rho, rho_now)
 
         patch.store = Cin
 
         # Get the velocity
         dhin = patch.state.h - Cin.h
-        # dhin[dhin<=0.] = patch.state.h*1e-6
+        dhin[dhin<=0.] = 1e-9
         Vin = np.sqrt(2*dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
