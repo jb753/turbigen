@@ -263,7 +263,7 @@ def cell_to_node(x):
 
 
 sfin = 0.5
-CFL=0.4
+CFL=0.1
 sf = CFL*sfin
 
 def smooth(x):
@@ -356,6 +356,7 @@ def step(b, dt, wall):
             for p, c in enumerate(('x','r','t')):
                 print(f'    flux of {kind} in {c}-dirn: {ff[n][m][p].mean()}')
 
+
     # Dot with areas and sum over cells
     Fi = np.sum(fi * b.dAi, axis=1)
     Fj = np.sum(fj * b.dAj, axis=1)
@@ -374,7 +375,8 @@ def step(b, dt, wall):
     for n, lab in enumerate(('i', 'j', 'k')):
         print(f'  {lab} faces')
         for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
-            print(f'    flux of {kind}: {Fnet[n][m].mean()}')
+            Fnow = Fnet[n][m]
+            print(f'    flux of {kind}: {Fnow.mean(), Fnow.min(), Fnow.max()}')
     quit()
 
     fsum = (

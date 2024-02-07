@@ -8,7 +8,7 @@ import numpy as np
 # Geometry
 h = 0.1
 L = h * 4.0
-htr = 0.9
+htr = 0.99
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
 rt = rm + 0.5 * h
@@ -44,8 +44,8 @@ xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 patches = [
     turbigen.grid.InletPatch(i=0),
     turbigen.grid.OutletPatch(i=-1),
-    # turbigen.grid.PeriodicPatch(k=0),
-    # turbigen.grid.PeriodicPatch(k=-1),
+    turbigen.grid.PeriodicPatch(k=0),
+    turbigen.grid.PeriodicPatch(k=-1),
 ]
 
 block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
