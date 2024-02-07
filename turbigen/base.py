@@ -328,15 +328,20 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Cell volume is only defined for 3D grids")
 
-        # Numpy cross function assumes that the components are in last axis
-        xyz = np.moveaxis(self.xrt, 0, -1).astype(np.float64)
+        dli = np.moveaxis(self.dli[:, :, :-1, :-1], 0, -1)
+        dlj = np.moveaxis(self.dlj[:, :-1, :, :-1], 0, -1)
+        dlk = np.moveaxis(self.dlk[:, :-1, :-1, :], 0, -1)
+        return np.sum(dlk * np.cross(dli, dlj),axis=-1)
 
-        # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
-        qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
-        qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+        # # Numpy cross function assumes that the components are in last axis
+        # xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
 
-        return np.sum(qk * np.cross(qi, qj), axis=-1)
+        # # Vectors for cell sides
+        # qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
+        # qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
+        # qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+
+        # return np.sum(qk * np.cross(qi, qj), axis=-1)
 
     @dependent_property
     def Vxrt_rel(self):
@@ -400,19 +405,19 @@ class Kinematics:
     def dli(self):
         # Edge vectors along i dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt.astype(np.float64), axis=1)
+        return np.diff(self.xrrt, axis=1)
 
     @dependent_property
     def dlj(self):
         # Edge vectors along j dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt.astype(np.float64), axis=2)
+        return np.diff(self.xrrt, axis=2)
 
     @dependent_property
     def dlk(self):
         # Edge vectors along k dirn
         # Numpy cross function assumes that the components are in last axis
-        return np.diff(self.xrrt.astype(np.float64), axis=3)
+        return np.diff(self.xrrt, axis=3)
 
     @dependent_property
     def dAi(self):

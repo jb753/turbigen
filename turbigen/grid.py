@@ -1111,6 +1111,11 @@ class Patch:
     def ijkdir(self):
         return [self.idir, self.jdir, self.kdir]
 
+    @ijkdir.setter
+    def ijkdir(self, value):
+        self.idir, self.jdir, self.kdir = value
+
+
     def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice
         sl = []

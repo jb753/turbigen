@@ -246,7 +246,7 @@ class PerfectState(StructuredData):
     def P(self, value):
         val_array = np.array(value)
         if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative P={value}")
+            raise Exception(f"Cannot set negative P={value.min()}")
         self._set_data_by_key("P", val_array)
 
     @property

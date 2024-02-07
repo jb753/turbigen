@@ -1,16 +1,16 @@
 from turbigen.solvers.base import BaseSolver
-from scipy.signal import convolve
 import numpy as np
 import turbigen.util
+import turbigen.laplacian
 
 
-class NativeConfig(BaseSolver):
-    """Settings with default values for the TS4 solver."""
+# class NativeConfig(BaseSolver):
+#     """Settings with default values for the TS4 solver."""
 
-    _name = "Native"
+#     _name = "Native"
 
 
-def get_timestep(b, CFL):
+def get_timestep(b):
     Vref = node_to_vol(b.V)
     aref = node_to_vol(b.a)
     dli = turbigen.util.vecnorm(b.dli)
@@ -157,207 +157,129 @@ def cell_to_node(x):
 
     return xn
 
+# def convective_fluxes(U_node, ho_node, r_face, wall):
+#     """Calculate the convective fluxes from nodal conserved vars."""
 
-def get_fluxes(conserved, P, ho, r, Omega):
+#     U_face = node_to_face(U_node)
+#     ho_face = node_to_face(ho_node)
 
-    rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
+#     # Loop over i/j/k faces
+#     flux = []
+#     for n in range(3):
 
-    rVt = rhorVt / rho
-    rhoVt = rhorVt / r
-    Vx = rhoVx / rho
-    Vr = rhoVr / rho
-    Vt = rhoVt / rho
+#         rho, rhoVx, rhoVr, rhorVt, rhoe  = U_face[n]
+#         ho = ho_face[n]
 
-    flux = np.array(
-        (
-            (rhoVx, rhoVr, rhoVt),  # mass
-            (rhoVx * Vx + P, rhoVr * Vx, rhoVt * Vx),  # x-mom
-            (rhoVx * Vr, rhoVr * Vr + P, rhoVt * Vr),  # r-mom
-            (rhoVx * rVt, rhoVr * rVt, rhoVt * Vt + r * P),  # rt-mom
-            (rhoVx * ho, rhoVr * ho, rhoVt * ho + Omega * r * P),  # energy
-        )
-    )
+#         rVt = rhorVt / rho
+#         rhoVt = rhorVt / r_face[n]
+#         Vx = rhoVx / rho
+#         Vr = rhoVr / rho
 
-    return flux
+#         flux_mass = np.expand_dims(np.stack((rhoVx, rhoVr, rhoVt)),axis=1)
 
+#         flux_all = flux_mass * np.stack(
+#             (
+#                 np.ones_like(rho),  # mass
+#                 Vx,  # x-mom
+#                 Vr, # r-mom
+#                 rVt, # rt-mom
+#                 ho, # energy
+#             )
+#         )
 
-# Coefficients for central difference second derivative order 2, 4, 6 accurate
-D2_CENTRAL = np.array(
-    [
-        [0, 0, 1, -2, 1, 0, 0],
-        [0, -1 / 12, 4 / 3, -5 / 2, 4 / 3, -1 / 12, 0],
-        [1 / 90, -3 / 20, 3 / 2, -49 / 18, 3 / 2, -3 / 20, 1 / 90],
-    ]
-)
+#         # Sum over coordinate directions
+#         flux_sum = np.sum(flux_all, axis=0)
 
-# Coefficients for boundary difference second derivative order 1, 3, 5 accurate
-D2_BOUNDARY = np.array(
-    [
-        [1, -2, 1, 0, 0, 0, 0, 0],
-        [35 / 12, -26 / 3, 19 / 2, -14 / 3, 11 / 12, 0, 0, 0],
-        [203 / 45, -87 / 5, 117 / 4, -254 / 9, 33 / 2, -27 / 5, 137 / 180, 0],
-    ]
-)
+#         flux_sum[:,wall[n]] = 0.
 
-sf = 0.5
+#         flux.append(flux_sum)
 
+#     return flux
 
-def make_stencil(ityp, jtyp, ktyp, order):
+# def pressure_fluxes(P_node, r_face, Omega):
 
-    # Get 1D coefficients
-    iord = order // 2 - 1
-    cent = D2_CENTRAL[iord]
-    bound = D2_BOUNDARY[iord]
+#     P_face = node_to_face(P_node)
 
-    # Preallocate stencil size
-    iz = np.nonzero(cent)[0]
-    N = len(iz)
-    N2 = N // 2
-    cent = cent[iz]
-    bound = bound[:N]
-    D = np.zeros((N, N, N))
+#     # Loop over i/j/k faces
+#     flux = []
+#     for n in range(3):
 
-    def get_origin(typ):
-        if typ == 1:
-            o = 0
-        elif typ == 0:
-            o = N2
-        elif typ == -1:
-            o = -1
-        else:
-            raise Exception("typ should be in (0,1,-1)")
-        return o
+#         P = P_face[n]
+#         Z = np.zeros_like(P)
+#         r = r_face[n]
 
-    # Select the 'origin' of the stencil
-    io = get_origin(ityp)
-    jo = get_origin(jtyp)
-    ko = get_origin(ktyp)
+#         flux_all = np.array(
+#             (
+#                 (Z, Z, Z), # mass
+#                 (P, Z, Z), # x-mom
+#                 (Z, P, Z), # r-mom
+#                 (Z, Z, r*P), # rt-mom
+#                 (Z, Z, Z), # energy TODO put Omega term in here
+#             )
+#         )
 
-    # Set the coefficients for i/j/k in turn
+#         flux.append(np.stack(
+#             (
+#                 np.zeros_like(P),  # mass
+#                 Vx,  # x-mom
+#                 Vr, # r-mom
+#                 rVt, # rt-mom
+#                 ho, # energy
+#             )
+#         )
 
-    for i in range(N):
-        ii = i - N2 + order // 2
-        if ityp:
-            D[i, jo, ko] += bound[ii]
-        else:
-            D[i, jo, ko] += cent[ii]
+#     )
 
-    for j in range(N):
-        jj = j - N2 + order // 2
-        if jtyp:
-            D[io, j, ko] += bound[jj]
-        else:
-            D[io, j, ko] += cent[jj]
+#     return flux
 
-    for k in range(N):
-        kk = k - N2 + order // 2
-        if ktyp:
-            D[io, jo, k] += bound[kk]
-        else:
-            D[io, jo, k] += cent[kk]
+# def get_fluxes(vars_node, Omega):
 
-    return D / 6.0 * sf
+#     vars_face = node_to_face(vars_node)
 
+#     # vars_node = np.stack((*conserved, P, ho, b.r))
+#     flux = []
+#     for n in range(3):
 
-# Assemble all the stencils we need
-KERN2 = {
-    # Interior
-    "ijk": make_stencil(0, 0, 0, 2),
-    # 8 Faces
-    "i0": make_stencil(1, 0, 0, 2),
-    "ni": make_stencil(-1, 0, 0, 2),
-    "j0": make_stencil(0, 1, 0, 2),
-    "nj": make_stencil(0, -1, 0, 2),
-    "k0": make_stencil(0, 0, 1, 2),
-    "nk": make_stencil(0, 0, -1, 2),
-    # 12 Edges
-    # i=0
-    "i0j0": make_stencil(1, 1, 0, 2),
-    "i0nj": make_stencil(1, -1, 0, 2),
-    "i0k0": make_stencil(1, 0, 1, 2),
-    "i0nk": make_stencil(1, 0, -1, 2),
-    # i=ni
-    "nij0": make_stencil(-1, 1, 0, 2),
-    "ninj": make_stencil(-1, -1, 0, 2),
-    "nik0": make_stencil(-1, 0, 1, 2),
-    "nink": make_stencil(-1, 0, -1, 2),
-    # j
-    "j0k0": make_stencil(0, 1, 1, 2),
-    "j0nk": make_stencil(0, 1, -1, 2),
-    "njk0": make_stencil(0, -1, 1, 2),
-    "njnk": make_stencil(0, -1, -1, 2),
-    # 8 Vertices
-    "i0j0k0": make_stencil(1, 1, 1, 2),
-    "i0njk0": make_stencil(1, -1, 1, 2),
-    "i0j0nk": make_stencil(1, 1, -1, 2),
-    "i0njnk": make_stencil(1, -1, -1, 2),
-    "nij0k0": make_stencil(-1, 1, 1, 2),
-    "ninjk0": make_stencil(-1, -1, 1, 2),
-    "nij0nk": make_stencil(-1, 1, -1, 2),
-    "ninjnk": make_stencil(-1, -1, -1, 2),
-}
+#         rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = vars_face[n]
+
+#         rVt = rhorVt / rho
+#         rhoVt = rhorVt / r
+#         Vx = rhoVx / rho
+#         Vr = rhoVr / rho
+#         Vt = rhoVt / rho
+
+#         flux.append(np.array(
+#             (
+#                 (rhoVx, rhoVr, rhoVt),  # mass
+#                 (rhoVx * Vx + P, rhoVr * Vx, rhoVt * Vx),  # x-mom
+#                 (rhoVx * Vr, rhoVr * Vr + P, rhoVt * Vr),  # r-mom
+#                 (rhoVx * rVt, rhoVr * rVt, rhoVt * Vt + r * P),  # rt-mom
+#                 (rhoVx * ho, rhoVr * ho, rhoVt * ho + Omega * r * P),  # energy
+#             )
+#         ))
+
+#     return flux
 
 
-def conv(y, sten):
-    return convolve(y, KERN2[sten], mode="valid").squeeze()
 
+sfin = 0.5
+CFL=0.4
+sf = CFL*sfin
 
 def smooth(x):
-    # x has shape [?,ni,nj,nk]
-    # return smoothed nodal values
-
     xs = x.copy()
-
     for i in range(x.shape[0]):
-
-        # Interior
-        xs[i, 1:-1, 1:-1, 1:-1] += conv(x[i], "ijk")
-
-        # 6 Faces
-        xs[i, 0, 1:-1, 1:-1] += conv(x[i, :3, :, :], "i0")
-        xs[i, -1, 1:-1, 1:-1] += conv(x[i, -3:, :, :], "ni")
-        xs[i, 1:-1, 0, 1:-1] += conv(x[i, :, :3, :], "j0")
-        xs[i, 1:-1, -1, 1:-1] += conv(x[i, :, -3:, :], "nj")
-        xs[i, 1:-1, 1:-1, 0] += conv(x[i, :, :, :3], "k0")
-        xs[i, 1:-1, 1:-1, -1] += conv(x[i, :, :, -3:], "nk")
-
-        # 12 Edges
-        # i0
-        xs[i, 0, 0, 1:-1] += conv(x[i, :3, :3, :], "i0j0")
-        xs[i, 0, -1, 1:-1] += conv(x[i, :3, -3:, :], "i0nj")
-        xs[i, 0, 1:-1, 0] += conv(x[i, :3, :, :3], "i0k0")
-        xs[i, 0, 1:-1, -1] += conv(x[i, :3, :, -3:], "i0nk")
-        # ni
-        xs[i, -1, 0, 1:-1] += conv(x[i, -3:, :3, :], "nij0")
-        xs[i, -1, -1, 1:-1] += conv(x[i, -3:, -3:, :], "ninj")
-        xs[i, -1, 1:-1, 0] += conv(x[i, -3:, :, :3], "nik0")
-        xs[i, -1, 1:-1, -1] += conv(x[i, -3:, :, -3:], "nink")
-        # j
-        xs[i, 1:-1, 0, 0] += conv(x[i, :, :3, :3], "j0k0")
-        xs[i, 1:-1, 0, -1] += conv(x[i, :, :3, -3:], "j0nk")
-        xs[i, 1:-1, -1, 0] += conv(x[i, :, -3:, :3], "njk0")
-        xs[i, 1:-1, -1, -1] += conv(x[i, :, -3:, -3:], "njnk")
-
-        # 8 Corners
-        # i=0
-        xs[i, 0, 0, 0] += conv(x[i, :3, :3, :3], "i0j0k0")
-        xs[i, 0, -1, 0] += conv(x[i, :3, -3:, :3], "i0njk0")
-        xs[i, 0, 0, -1] += conv(x[i, :3, :3, -3:], "i0j0nk")
-        xs[i, 0, -1, -1] += conv(x[i, :3, -3:, -3:], "i0njnk")
-        # ni
-        xs[i, -1, 0, 0] += conv(x[i, -3:, :3, :3], "nij0k0")
-        xs[i, -1, -1, 0] += conv(x[i, -3:, -3:, :3], "ninjk0")
-        xs[i, -1, 0, -1] += conv(x[i, -3:, :3, -3:], "nij0nk")
-        xs[i, -1, -1, -1] += conv(x[i, -3:, -3:, -3:], "ninjnk")
-
+        xs[i] += turbigen.laplacian.laplacian2(x[i], sf/6.)
     return xs
+
 
 def get_wall(b):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
     return [w>thresh for w in node_to_face(b.get_wall())]
 
-def step(b, dt, wall):
+def apply_bconds(b):
+    """Return properties needed to time march after in/out boundaries applied"""
 
     P = b.P.copy()
     ho = b.ho.copy()
@@ -373,22 +295,24 @@ def step(b, dt, wall):
     for patch in b.inlet_patches:
 
         ipatch = patch.get_slice()
-        Cin = b[ipatch]
-        rfin = patch.rfin
-        print(Cin.Po.mean(), Cin.To.mean(), Cin.V.mean())
+        inlet = b[ipatch]
+        rfin = 0.25#*patch.rfin
 
         if patch.store:
             # Relax changes in density if we have a stored state
-            rho_now = rfin * Cin.rho + (1.0 - rfin) * patch.store.rho
+            rho_now = rfin * inlet.rho + (1.0 - rfin) * patch.store.rho
+            # Check for flow reversal
+            rho_now[rho_now>patch.state.rho] = patch.state.rho*.9999
             # Isentropic expansion from stagnation state
-            Cin.set_rho_s(rho_now, patch.state.s)
-            assert np.allclose(Cin.rho, rho_now)
+            inlet.set_rho_s(rho_now, patch.state.s)
+            assert np.allclose(inlet.rho, rho_now)
 
-        patch.store = Cin
+        patch.store = inlet
 
         # Get the velocity
-        dhin = patch.state.h - Cin.h
-        dhin[dhin <= 0.0] = 1e-9
+        dhin = patch.state.h - inlet.h
+        if (dhin<=0.).any():
+            assert False
         Vin = np.sqrt(2 * dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
@@ -401,33 +325,155 @@ def step(b, dt, wall):
         Vtin = Vmin * tanAlpha
 
         # Reset conserved vars on inlet
-        rhoVx[ipatch] = Cin.rho * Vxin
-        rhoVr[ipatch] = Cin.rho * Vrin
-        rhorVt[ipatch] = Cin.rho * Cin.r * Vtin
-        rhoe[ipatch] = Cin.rho * (Cin.u + 0.5 * Vin**2)
+        # rho[ipatch] = inlet.rho
+        rhoVx[ipatch] = inlet.rho * Vxin
+        rhoVr[ipatch] = inlet.rho * Vrin
+        rhorVt[ipatch] = inlet.rho * inlet.r * Vtin
+        rhoe[ipatch] = inlet.rho * (inlet.u + 0.5 * Vin**2)
 
         # Reset pressure and hstag on inlet
-        ho[ipatch] = Cin.h + 0.5 * Vin**2
-        P[ipatch] = Cin.P
+        ho[ipatch] = inlet.h + 0.5 * Vin**2
+        P[ipatch] = inlet.P
 
-    flux = get_fluxes(conserved, P, ho, b.r, b.Omega)
+    # All nodal variables are ready
+    return np.stack((*conserved, P, ho, b.r))
+
+def step(b, dt, wall):
+
+    assert b.Omega.ptp() < 1e-6
+    Omega = b.Omega.mean()
+
+    conservedPhor = apply_bconds(b)
+
+    # Flux vectors
+    fi, fj, fk = get_fluxes(conservedPhor, Omega, wall)
+
+    ff = fi, fj, fk
+    print('**Flux vectors')
+    for n, lab in enumerate(('i', 'j', 'k')):
+        print(f'  {lab} faces')
+        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+            for p, c in enumerate(('x','r','t')):
+                print(f'    flux of {kind} in {c}-dirn: {ff[n][m][p].mean()}')
+
+    # Dot with areas and sum over cells
+    Fi = np.sum(fi * b.dAi, axis=1)
+    Fj = np.sum(fj * b.dAj, axis=1)
+    Fk = np.sum(fk * b.dAk, axis=1)
+
+    ff = [Fi, Fj, Fk]
+    print('**Total fluxes')
+    for n, lab in enumerate(('i', 'j', 'k')):
+        print(f'  {lab} faces')
+        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+            print(f'    flux of {kind}: {ff[n][m].mean()}')
+
+    Fnet = [-np.diff(Fi, axis=-3), -np.diff(Fj, axis=-2), -np.diff(Fk, axis=-1),]
+    S = get_source(conservedPhor)
+    print('**Net fluxes')
+    for n, lab in enumerate(('i', 'j', 'k')):
+        print(f'  {lab} faces')
+        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+            print(f'    flux of {kind}: {Fnet[n][m].mean()}')
+    quit()
+
+    fsum = (
+        - np.diff(Fi, axis=-3)  # i faces
+        - np.diff(Fj, axis=-2)  # j faces
+        - np.diff(Fk, axis=-1)  # k faces
+    )
+
+    dU = (fsum / b.vol + S) * dt
+    # dUav = dUabs.mean(axis=(-3,-2,-1))
+    # dUav[dUav<=0.] = 1e-9
+    # damp = 10.
+    # dU /= (1.+dUabs/dUav/damp)
 
 
-    fi, fj, fk = node_to_face(flux)
+    # dU[2] = 0.
+    # dU[-1,...] = 0.
 
-    # # Zeros fluxes on walls
-    # wi, wj, wk = wall
-    # fi[...,wi] = 0.
-    # fj[...,wj] = 0.
-    # fk[...,wk] = 0.
 
-    sumf = (
-        -np.diff(fi * b.dAi, axis=-3)  # i faces
-        - np.diff(fj * b.dAj, axis=-2)  # j faces
-        - np.diff(fk * b.dAk, axis=-1)  # k faces
-    ).sum(axis=1)
+    Unew = b.conserved + cell_to_node(dU)
 
-    S = node_to_vol(b.source_all)
-    dU = (sumf / b.vol + S) * dt
+    Unew = smooth(Unew)
 
-    b.set_conserved(smooth(b.conserved + cell_to_node(dU)))
+    # # # Extra smoothing at inlet and exit
+    # sff = 0.05
+    # sf1 = 1.-sff
+    # Unew[:,0] = sf1*Unew[:,0]+sff*Unew[:,1]
+    # Unew[:,-1] = sf1*Unew[:,-1]+sff*Unew[:,-2]
+
+    b.set_conserved(Unew)
+    assert np.allclose(b.conserved, Unew)
+
+    return dU
+
+def get_source(conservedPhor_node):
+
+    conservedPhor_vol = node_to_vol(conservedPhor_node)
+    rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = conservedPhor_vol
+    Vt = rhorVt/rho/r
+    Z = np.zeros_like(rho)
+    return np.stack( (
+        Z,  # mass
+        Z,  # xmom
+        (P + rho * Vt **2)/r,  # rmom
+        Z,  # rtmom
+        Z,  # energy
+    ))
+
+
+
+
+def get_fluxes(conservedPhor_node, Omega, wall):
+
+    # Convert all properties to face-averaged
+    conservedPhor_face = node_to_face(conservedPhor_node)
+
+
+    # We treat i/j/k independently: loop over them
+    flux = []
+    for n in range(3):
+
+        rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = conservedPhor_face[n]
+
+        rVt = rhorVt / rho
+        rhoVt = rhorVt / r
+        Vx = rhoVx / rho
+        Vr = rhoVr / rho
+        Vt = rhoVt / rho
+
+        flux_mass = np.expand_dims(np.stack((rhoVx, rhoVr, rhoVt)),0)
+
+        # Convective flux vectors
+        flux_conv = flux_mass *np.expand_dims(np.array(
+            (
+                np.ones_like(rho),   # mass
+                Vx,  # x-mom
+                Vr,  # r-mom
+                rVt,  # rt-mom
+                ho,  # energy
+            )
+        ), axis=1)
+
+        flux_conv[...,wall[n]] = 0.
+
+        # Pressure flux vectors
+        Z = np.zeros_like(P)
+        flux_pressure = np.array(
+            (
+                (Z, Z, Z), # mass
+                (P, Z, Z), # x-mom
+                (Z, P, Z), # r-mom
+                (Z, Z, r*P), # rt-mom
+                (Z, Z, Omega*r*P), # energy
+            )
+        )
+
+        flux.append(flux_conv + flux_pressure)
+
+    return flux
+
+
+
