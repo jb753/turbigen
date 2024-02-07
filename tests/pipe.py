@@ -77,15 +77,27 @@ g.apply_periodic()
 
 import matplotlib.pyplot as plt
 
+wall = turbigen.solvers.native.get_wall(g[0])
+# wi, wj, wk = wall
+
+# # plt.plot(wj[1,:,2])
+# b = g[0][:,:,0]
+# iw = g[0].get_wall()[...,1]
+# plt.plot(b.x, b.r, 'k-',lw=0.5)
+# plt.plot(b.x.T, b.r.T, 'k-',lw=0.5)
+# plt.plot(b.x[iw], b.r[iw], 'b*')
+# plt.show()
+# quit()
+
 for i in range(10000):
-    print(g[0].P.mean())
-    print(i)
+    turbigen.solvers.native.step(g[0], dt, wall)
     try:
-        turbigen.solvers.native.step(g[0], dt)
+        turbigen.solvers.native.step(g[0], dt, wall)
     except:
         b = g[0][:,:,0]
         fig, ax = plt.subplots()
-        ax.contourf(b.x, b.r, b.P)
+        hm = ax.contourf(b.x, b.r, b.Vr)
+        plt.colorbar(hm)
         plt.show()
         break
 

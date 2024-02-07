@@ -224,8 +224,12 @@ def smooth(x):
 
     return xs
 
+def get_wall(b):
+    # Find logical indices that zero the fluxes on wall faces
+    thresh = 0.99  # To allow for floating point error
+    return [w>thresh for w in node_to_face(b.get_wall())]
 
-def step(b, dt):
+def step(b, dt, wall):
 
     P = b.P.copy()
     ho = b.ho.copy()
@@ -281,7 +285,15 @@ def step(b, dt):
 
     flux = get_fluxes(conserved, P, ho, b.r, b.Omega)
 
+
     fi, fj, fk = node_to_face(flux)
+
+    # # Zeros fluxes on walls
+    # wi, wj, wk = wall
+    # fi[...,wi] = 0.
+    # fj[...,wj] = 0.
+    # fk[...,wk] = 0.
+
     sumf = (
         -np.diff(fi * b.dAi, axis=-3)  # i faces
         - np.diff(fj * b.dAj, axis=-2)  # j faces

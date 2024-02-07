@@ -145,7 +145,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
             # Unset wall indicator if patch is not wall
             if type(patch) in NOT_WALL_PATCHES:
-                is_wall[patch.get_slice()] = False
+                is_wall[patch.get_slice(trim=1)] = False
 
         return is_wall
 
@@ -1111,7 +1111,7 @@ class Patch:
     def ijkdir(self):
         return [self.idir, self.jdir, self.kdir]
 
-    def get_slice(self, offset=0):
+    def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice
         sl = []
         for lim in self.ijk_limits:
@@ -1122,8 +1122,11 @@ class Patch:
                     lim_now += offset
                 else:
                     lim_now -= offset
+            else:
+                lim_now[0] += trim
+                lim_now[1] -= trim
 
-            if (lim == -1).any():
+            if (lim_now == -1).any():
                 sl.append(slice(lim_now[0], None))
             else:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
