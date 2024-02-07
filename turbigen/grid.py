@@ -135,6 +135,20 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
+    def get_wall(self):
+
+        # Preallocate wall indicator with True on boundaries, False interior
+        is_wall = np.ones(self.shape, dtype=bool)
+        is_wall[1:-1, 1:-1, 1:-1] = False
+
+        # Loop over patches
+        for patch in self.patches:
+            # Unset wall indicator if patch is not wall
+            if type(patch) in NOT_WALL_PATCHES:
+                is_wall[patch.get_slice()] = False
+
+        return is_wall
+
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
 
@@ -526,18 +540,9 @@ class Grid:
         # Loop over blocks
         xrrt_wall_block = []
         for block in self:
-            # Preallocate wall indicator
-            is_wall = np.ones(block.shape, dtype=bool)
-            is_wall[1:-1, 1:-1, 1:-1] = False
-
-            # Loop over patches
-            for patch in block.patches:
-                # Unset wall indicator if patch is not wall
-                if type(patch) in NOT_WALL_PATCHES:
-                    is_wall[patch.get_slice()] = False
 
             # Assemble unstructured wall coordinates for this block
-            xrtbw = block.xrt[:, is_wall].reshape(3, -1)
+            xrtbw = block.xrt[:, block.get_wall()].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)
@@ -555,23 +560,6 @@ class Grid:
         xrrt_wall = np.concatenate(xrrt_wall_block, axis=1)
 
         return xrrt_wall
-
-    def cut_walls(self):
-        """Structured coordinates of all walls."""
-
-        # Loop over blocks
-        cut_wall = []
-        for block in self:
-            # Preallocate wall indicator
-            is_wall = np.ones(block.shape, dtype=bool)
-            is_wall[1:-1, 1:-1, 1:-1] = False
-
-            # Loop over patches
-            for patch in block.patches:
-                if not (type(patch) in NOT_WALL_PATCHES):
-                    cut_wall.append(patch.get_cut())
-
-        return cut_wall
 
     def calculate_wall_distance(self):
         """Get distance to nearest wall node for all grid points."""

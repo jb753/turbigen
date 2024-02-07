@@ -559,13 +559,9 @@ def run_single(conf, gguess=None, plot=False):
         raise Exception("Unrecognised inlet state type")
 
     logger.info("Setting intial guess...")
-    # Initial guess
-    if gguess:
-        g.apply_guess_3d(gguess)
-        if throttle_pid:
-            g.update_outlet()
-    else:
-        g.apply_guess_meridional(ml.interpolate_guess(mac.ann))
+
+    # Crude guess (may be updated later if arg gguess is supplied
+    g.apply_guess_meridional(ml.interpolate_guess(mac.ann))
 
     if conf.wdist:
         logger.info("Calculating wall distance...")
@@ -596,6 +592,11 @@ def run_single(conf, gguess=None, plot=False):
 
         gi.check_coordinates()
 
+        if gguess:
+            gi.apply_guess_3d(gguess)
+            if throttle_pid:
+                gi.update_outlet()
+
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')
             gi.run(conf.solver, mac)
@@ -606,9 +607,17 @@ def run_single(conf, gguess=None, plot=False):
         logger.info("Uninstalling...")
         g, install_inverse = install_module.inverse(gi)
 
+        gguess = gi
+
         conf.install["type"] = install_type
 
     else:
+
+        if gguess:
+            g.apply_guess_3d(gguess)
+            if throttle_pid:
+                g.update_outlet()
+
         if conf.solver:
             if conf.solver.get("type"):
                 logger.info(f'Running solver {conf.solver["type"]}...')
@@ -616,6 +625,8 @@ def run_single(conf, gguess=None, plot=False):
                 conf.solver.pop("workdir")
         else:
             logger.info("No solver specified, continuing with initial guess...")
+
+        gguess = g
 
     if cut_offset is not None:
         conf.solver["cut_offset"] = cut_offset
@@ -861,7 +872,7 @@ def run_single(conf, gguess=None, plot=False):
 
     sys.stdout.flush()
 
-    return ml_out, opt_converged, g
+    return ml_out, opt_converged, gguess
 
 
 def run(conf, plot=False):
