@@ -88,7 +88,9 @@ class StructuredData:
 
     def transpose(self, order):
         out = self.__class__()
-        order1 = [0,] + [o+1 for o in order]
+        order1 = [
+            0,
+        ] + [o + 1 for o in order]
         out._data = np.transpose(self._data, order1)
         out._metadata = self._metadata
         return out
@@ -328,10 +330,58 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Cell volume is only defined for 3D grids")
 
-        dli = np.moveaxis(self.dli[:, :, :-1, :-1], 0, -1)
-        dlj = np.moveaxis(self.dlj[:, :-1, :, :-1], 0, -1)
-        dlk = np.moveaxis(self.dlk[:, :-1, :-1, :], 0, -1)
-        return np.sum(dlk * np.cross(dli, dlj),axis=-1)
+        # Put coord components on last dimension for numpy cross
+        v = np.moveaxis(self.xrt, 0, -1)
+
+        # Extract vertices A to H
+        A = v[:-1, 1:, :-1, :]  # i j+1 k
+        B = v[1:, 1:, :-1, :]  # i+1 j+1 k
+        C = v[1:, 1:, 1:, :]  # i+1 j+1 k+1
+        D = v[:-1, 1:, 1:, :]  # i j+1 k+1
+        E = v[:-1, :-1, :-1, :]  # i j k
+        F = v[1:, :-1, :-1, :]  # i+1 j k
+        G = v[1:, :-1, 1:, :]  # i+1 j k+1
+        H = v[:-1, :-1, 1:, :]  # i j k+1
+
+        # Evaluate side vectors
+        GA = A - G
+        DB = B - D
+        AC = C - A
+        BE = E - B
+        AF = F - A
+        ED = D - E
+        AH = H - A
+        GB = B - G
+        GC = C - G
+        FC = C - F
+        GE = E - G
+        GF = F - G
+        HF = F - H
+        GD = D - G
+        GH = H - G
+        CH = H - C
+
+        def dot(a, b):
+            # Dot product of [ni,nj,nk,3] along last axis
+            return np.sum(a * b, axis=-1)
+
+        cross = np.cross
+
+        # Evaluate volume terms
+        # Eqn. (14) Davies and Salmond (1985)
+        V1 = dot(GA, cross(DB, AC) + cross(BE, AF) + cross(ED, AH))
+        V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
+        V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
+        V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
+
+        vol = -(V1 + V2 + V3 + V4) / 12.0
+
+        return vol
+
+        # dli = np.moveaxis(self.dli[:, :, :-1, :-1], 0, -1)
+        # dlj = np.moveaxis(self.dlj[:, :-1, :, :-1], 0, -1)
+        # dlk = np.moveaxis(self.dlk[:, :-1, :-1, :], 0, -1)
+        # return np.sum(dlk * np.cross(dli, dlj),axis=-1)
 
         # # Numpy cross function assumes that the components are in last axis
         # xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
@@ -402,6 +452,52 @@ class Kinematics:
         return dA[..., 2]
 
     @dependent_property
+    def dlif(self):
+        # Forward diagonal vector across i face
+        # From j,k to j+1, k+1
+        #
+        # j+1 * *
+        #      /
+        # j   * *
+        #    k  k+1
+        return self.xrrt[:, :, 1:, 1:] - self.xrrt[:, :, :-1, :-1]
+
+    @dependent_property
+    def dlib(self):
+        # Backward diagonal vector across i face
+        # From j,k+1 to j+1, k
+        #
+        # j+1 * *
+        #      \
+        # j   * *
+        #    k  k+1
+        return self.xrrt[:, :, 1:, :-1] - self.xrrt[:, :, :-1, 1:]
+
+    @dependent_property
+    def dljf(self):
+        # Forward diagonal vector across j face
+        # From i,k to i+1, k+1
+        return self.xrrt[:, 1:, :, 1:] - self.xrrt[:, :-1, :, :-1]
+
+    @dependent_property
+    def dljb(self):
+        # Backward diagonal vector across i face
+        # From i,k+1 to i+1,k
+        return self.xrrt[:, 1:, :, :-1] - self.xrrt[:, :-1, :, 1:]
+
+    @dependent_property
+    def dlkf(self):
+        # Forward diagonal vector across k face
+        # From i,j to i+1, j+1
+        return self.xrrt[:, 1:, 1:, :] - self.xrrt[:, :-1, :-1, :]
+
+    @dependent_property
+    def dlkb(self):
+        # Backward diagonal vector across k face
+        # From i,j+1 to i+1,j
+        return self.xrrt[:, 1:, :-1, :] - self.xrrt[:, :-1, 1:, :]
+
+    @dependent_property
     def dli(self):
         # Edge vectors along i dirn
         # Numpy cross function assumes that the components are in last axis
@@ -424,30 +520,43 @@ class Kinematics:
         # Vector area for i=const faces
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
+
         # Numpy cross function assumes that the components are in last axis
-        dlj = np.moveaxis(self.dlj[:, :, :, :-1], 0, -1)
-        dlk = np.moveaxis(self.dlk[:, :, :-1, :], 0, -1)
-        return np.moveaxis(np.cross(dlj, dlk), -1, 0)
+        dlif = np.moveaxis(self.dlif, 0, -1)
+        dlib = np.moveaxis(self.dlib, 0, -1)
+        return -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
 
     @dependent_property
     def dAj(self):
         # Vector area for i=const faces
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
+
+        # # Numpy cross function assumes that the components are in last axis
+        # dli = np.moveaxis(self.dli[:, :, :, :-1], 0, -1)
+        # dlk = np.moveaxis(self.dlk[:, :-1, :, :], 0, -1)
+        # return np.moveaxis(np.cross(dli, dlk), -1, 0)
+
         # Numpy cross function assumes that the components are in last axis
-        dli = np.moveaxis(self.dli[:, :, :, :-1], 0, -1)
-        dlk = np.moveaxis(self.dlk[:, :-1, :, :], 0, -1)
-        return np.moveaxis(np.cross(dli, dlk), -1, 0)
+        dljf = np.moveaxis(self.dljf, 0, -1)
+        dljb = np.moveaxis(self.dljb, 0, -1)
+        return np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
 
     @dependent_property
     def dAk(self):
         # Vector area for i=const faces
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
+
+        # # Numpy cross function assumes that the components are in last axis
+        # dli = np.moveaxis(self.dli[:, :, :-1, :], 0, -1)
+        # dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
+        # return np.moveaxis(np.cross(dli, dlj), -1, 0)
+
         # Numpy cross function assumes that the components are in last axis
-        dli = np.moveaxis(self.dli[:, :, :-1, :], 0, -1)
-        dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
-        return np.moveaxis(np.cross(dli, dlj), -1, 0)
+        dlkf = np.moveaxis(self.dlkf, 0, -1)
+        dlkb = np.moveaxis(self.dlkb, 0, -1)
+        return -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
 
     @dependent_property
     def flux_all(self):
@@ -729,27 +838,28 @@ class Composites:
 
     def set_conserved(self, conserved):
         rho, *rhoVxrt, rhoe = conserved
-        Vxrt = rhoVxrt/rho
+        Vxrt = rhoVxrt / rho
         Vxrt[2] /= self.r
         self.Vxrt = Vxrt
-        u = rhoe/rho - 0.5*self.V**2
+        u = rhoe / rho - 0.5 * self.V**2
         self.set_rho_u(rho, u)
 
     def area_average(self):
 
-        dA = np.linalg.norm(self.surface_area[:,:,0,:], axis=-1, ord=2)
+        dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
-        conserved = np.moveaxis(self.conserved,-1,1)
-        xrt = np.moveaxis(self.xrt,-1,1)
-        conserved_av = np.sum(dA*turbigen.util.node_to_face(conserved),axis=(-2,-1))/A
-        xrt_av = np.sum(dA*turbigen.util.node_to_face(xrt),axis=(-2,-1))/A
+        conserved = np.moveaxis(self.conserved, -1, 1)
+        xrt = np.moveaxis(self.xrt, -1, 1)
+        conserved_av = (
+            np.sum(dA * turbigen.util.node_to_face(conserved), axis=(-2, -1)) / A
+        )
+        xrt_av = np.sum(dA * turbigen.util.node_to_face(xrt), axis=(-2, -1)) / A
 
         F = self.empty((conserved_av.shape[1],))
         F.xrt = xrt_av
         F.set_conserved(conserved_av)
 
         return F
-
 
     def mix_out_pitchwise(self):
         """Mix out in the pitchwise direction, to a spanwise profile."""

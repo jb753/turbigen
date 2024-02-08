@@ -157,6 +157,7 @@ def cell_to_node(x):
 
     return xn
 
+
 # def convective_fluxes(U_node, ho_node, r_face, wall):
 #     """Calculate the convective fluxes from nodal conserved vars."""
 
@@ -261,22 +262,23 @@ def cell_to_node(x):
 #     return flux
 
 
-
 sfin = 0.5
-CFL=0.1
-sf = CFL*sfin
+CFL = 0.2
+sf = CFL * sfin
+
 
 def smooth(x):
     xs = x.copy()
     for i in range(x.shape[0]):
-        xs[i] += turbigen.laplacian.laplacian2(x[i], sf/6.)
+        xs[i] += turbigen.laplacian.laplacian2(x[i], sf / 6.0)
     return xs
 
 
 def get_wall(b):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
-    return [w>thresh for w in node_to_face(b.get_wall())]
+    return [w > thresh for w in node_to_face(b.get_wall())]
+
 
 def apply_bconds(b):
     """Return properties needed to time march after in/out boundaries applied"""
@@ -296,13 +298,13 @@ def apply_bconds(b):
 
         ipatch = patch.get_slice()
         inlet = b[ipatch]
-        rfin = 0.25#*patch.rfin
+        rfin = patch.rfin
 
         if patch.store:
             # Relax changes in density if we have a stored state
             rho_now = rfin * inlet.rho + (1.0 - rfin) * patch.store.rho
             # Check for flow reversal
-            rho_now[rho_now>patch.state.rho] = patch.state.rho*.9999
+            rho_now[rho_now > patch.state.rho] = patch.state.rho * 0.9999
             # Isentropic expansion from stagnation state
             inlet.set_rho_s(rho_now, patch.state.s)
             assert np.allclose(inlet.rho, rho_now)
@@ -311,7 +313,7 @@ def apply_bconds(b):
 
         # Get the velocity
         dhin = patch.state.h - inlet.h
-        if (dhin<=0.).any():
+        if (dhin <= 0.0).any():
             assert False
         Vin = np.sqrt(2 * dhin)
 
@@ -335,8 +337,12 @@ def apply_bconds(b):
         ho[ipatch] = inlet.h + 0.5 * Vin**2
         P[ipatch] = inlet.P
 
+    Pref = 1e5
+    P -= Pref
+
     # All nodal variables are ready
     return np.stack((*conserved, P, ho, b.r))
+
 
 def step(b, dt, wall):
 
@@ -348,53 +354,63 @@ def step(b, dt, wall):
     # Flux vectors
     fi, fj, fk = get_fluxes(conservedPhor, Omega, wall)
 
-    ff = fi, fj, fk
-    print('**Flux vectors')
-    for n, lab in enumerate(('i', 'j', 'k')):
-        print(f'  {lab} faces')
-        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
-            for p, c in enumerate(('x','r','t')):
-                print(f'    flux of {kind} in {c}-dirn: {ff[n][m][p].mean()}')
-
+    # ff = fi, fj, fk
+    # print('**Flux vectors')
+    # for n, lab in enumerate(('i', 'j', 'k')):
+    #     print(f'  {lab} faces')
+    #     for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+    #         for p, c in enumerate(('x','r','t')):
+    #             print(f'    flux of {kind} in {c}-dirn: {ff[n][m][p].mean()}')
 
     # Dot with areas and sum over cells
     Fi = np.sum(fi * b.dAi, axis=1)
     Fj = np.sum(fj * b.dAj, axis=1)
     Fk = np.sum(fk * b.dAk, axis=1)
 
-    ff = [Fi, Fj, Fk]
-    print('**Total fluxes')
-    for n, lab in enumerate(('i', 'j', 'k')):
-        print(f'  {lab} faces')
-        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
-            print(f'    flux of {kind}: {ff[n][m].mean()}')
+    # ff = [Fi, Fj, Fk]
+    # print('**Total fluxes')
+    # for n, lab in enumerate(('i', 'j', 'k')):
+    #     print(f'  {lab} faces')
+    #     for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+    #         print(f'    flux of {kind}: {ff[n][m].mean()}')
 
-    Fnet = [-np.diff(Fi, axis=-3), -np.diff(Fj, axis=-2), -np.diff(Fk, axis=-1),]
-    S = get_source(conservedPhor)
-    print('**Net fluxes')
-    for n, lab in enumerate(('i', 'j', 'k')):
-        print(f'  {lab} faces')
-        for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
-            Fnow = Fnet[n][m]
-            print(f'    flux of {kind}: {Fnow.mean(), Fnow.min(), Fnow.max()}')
-    quit()
+    Fnet = [
+        -np.diff(Fi, axis=-3),
+        -np.diff(Fj, axis=-2),
+        -np.diff(Fk, axis=-1),
+    ]
+    S = get_source(conservedPhor) * 0.0
+    Svol = np.mean(S * b.vol, axis=(-1, -2, -3))
+
+    # print('**Net fluxes')
+    # for n, lab in enumerate(('i', 'j', 'k')):
+    #     print(f'  {lab} faces')
+    #     for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+    #         Fnow = Fnet[n][m]
+    #         print(f'    flux of {kind}: {Fnow.mean(), Fnow.min(), Fnow.max()}')
 
     fsum = (
-        - np.diff(Fi, axis=-3)  # i faces
+        -np.diff(Fi, axis=-3)  # i faces
         - np.diff(Fj, axis=-2)  # j faces
         - np.diff(Fk, axis=-1)  # k faces
     )
 
+    # print('**After source')
+    # for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
+    #     print(f'    {kind}: {fsum[m].mean() + S[m].mean()}')
+    # # quit()
+
     dU = (fsum / b.vol + S) * dt
+
+    # dUabs = np.abs(dU)
     # dUav = dUabs.mean(axis=(-3,-2,-1))
     # dUav[dUav<=0.] = 1e-9
+    # dUav = np.expand_dims(dUav, (1,2,3))
     # damp = 10.
     # dU /= (1.+dUabs/dUav/damp)
 
-
     # dU[2] = 0.
     # dU[-1,...] = 0.
-
 
     Unew = b.conserved + cell_to_node(dU)
 
@@ -411,21 +427,25 @@ def step(b, dt, wall):
 
     return dU
 
+
 def get_source(conservedPhor_node):
 
-    conservedPhor_vol = node_to_vol(conservedPhor_node)
-    rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = conservedPhor_vol
-    Vt = rhorVt/rho/r
+    rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r = conservedPhor_node
+    Vt = rhorVt / rho / r
     Z = np.zeros_like(rho)
-    return np.stack( (
-        Z,  # mass
-        Z,  # xmom
-        (P + rho * Vt **2)/r,  # rmom
-        Z,  # rtmom
-        Z,  # energy
-    ))
+    S_node = np.stack(
+        (
+            Z,  # mass
+            Z,  # xmom
+            (P + rho * Vt**2) / r,  # rmom
+            Z,  # rtmom
+            Z,  # energy
+        )
+    )
 
+    S_vol = node_to_vol(S_node)
 
+    return S_vol
 
 
 def get_fluxes(conservedPhor_node, Omega, wall):
@@ -433,12 +453,11 @@ def get_fluxes(conservedPhor_node, Omega, wall):
     # Convert all properties to face-averaged
     conservedPhor_face = node_to_face(conservedPhor_node)
 
-
     # We treat i/j/k independently: loop over them
     flux = []
     for n in range(3):
 
-        rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = conservedPhor_face[n]
+        rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r = conservedPhor_face[n]
 
         rVt = rhorVt / rho
         rhoVt = rhorVt / r
@@ -446,36 +465,36 @@ def get_fluxes(conservedPhor_node, Omega, wall):
         Vr = rhoVr / rho
         Vt = rhoVt / rho
 
-        flux_mass = np.expand_dims(np.stack((rhoVx, rhoVr, rhoVt)),0)
+        flux_mass = np.expand_dims(np.stack((rhoVx, rhoVr, rhoVt)), 0)
 
         # Convective flux vectors
-        flux_conv = flux_mass *np.expand_dims(np.array(
-            (
-                np.ones_like(rho),   # mass
-                Vx,  # x-mom
-                Vr,  # r-mom
-                rVt,  # rt-mom
-                ho,  # energy
-            )
-        ), axis=1)
+        flux_conv = flux_mass * np.expand_dims(
+            np.array(
+                (
+                    np.ones_like(rho),  # mass
+                    Vx,  # x-mom
+                    Vr,  # r-mom
+                    rVt,  # rt-mom
+                    ho,  # energy
+                )
+            ),
+            axis=1,
+        )
 
-        flux_conv[...,wall[n]] = 0.
+        flux_conv[..., wall[n]] = 0.0
 
         # Pressure flux vectors
         Z = np.zeros_like(P)
         flux_pressure = np.array(
             (
-                (Z, Z, Z), # mass
-                (P, Z, Z), # x-mom
-                (Z, P, Z), # r-mom
-                (Z, Z, r*P), # rt-mom
-                (Z, Z, Omega*r*P), # energy
+                (Z, Z, Z),  # mass
+                (P, Z, Z),  # x-mom
+                (Z, P, Z),  # r-mom
+                (Z, Z, r * P),  # rt-mom
+                (Z, Z, Omega * r * P),  # energy
             )
         )
 
         flux.append(flux_conv + flux_pressure)
 
     return flux
-
-
-
