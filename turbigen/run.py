@@ -640,8 +640,11 @@ def run_single(conf, gguess=None, plot=False):
     Dsmix = []
     for icut, xrci in enumerate(xr_cut):
         try:
+            CC = g.unstructured_cut_marching(xrci)
+            cutname = os.path.join(workdir, f"cut_{icut}")
+            np.savez_compressed(cutname, data=CC._data)
             Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(
-                g.unstructured_cut_marching(xrci)
+                CC
             )
             Cmix.append(Cnow)
             Amix.append(Aannnow)
