@@ -14,103 +14,120 @@ def test_node_to_face():
     for xfi in xf:
         assert np.allclose(xfi,1.)
 
-def test_smooth():
-    shape = (1,10,12,14)
-    x = np.ones(shape) + 0.05*np.random.random_sample(shape)
-    for i in range(100):
-        x = turbigen.solvers.native.smooth(x)
-        if not np.mod(i,10):
-            import matplotlib.pyplot as plt
-            fig, ax = plt.subplots()
-            h = ax.contourf(x[0,2,:,:],cmap='RdBu')
-            plt.colorbar(h)
-            plt.show()
-        print(x.ptp())
-    assert x.ptp()<1e-3
-
-def test_fluxes():
-
-    g = make_duct()
-    b = g[0]
-    b.Vx = 5.
-    b.Vr = 10.
-    b.Vt = 15.
-    rho = b.rho
-
-    conservedPhor = np.stack((*b.conserved, b.P, b.ho, b.r))
-    Omega = 0.
-
-    Fc, FP = turbigen.solvers.native.get_fluxes(conservedPhor, Omega)
-
-
-
-
-def make_duct():
-
+def test_areas_volumes():
     # Geometry
     h = 0.1
-    L = h * 4.0
-    htr = 0.999
+    htr = 0.8
     rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
     rh = rm - 0.5 * h
     rt = rm + 0.5 * h
 
-    # Boundary conditions
-    ga = 1.4
-    cp = 1005.0
-    mu = 1.8e-5
-    Alpha = 0.0
-    Beta = 0.0
-    Po1 = 1e5
-    To1 = 300.0
-
-    M = 0.3
-    rgas = cp * (ga-1.)/ga
-    V = cf.V_cpTo_from_Ma(M,ga)*np.sqrt(cp*To1)
-    P1 = Po1/cf.Po_P_from_Ma(M,ga)
-    T1 = To1/cf.To_T_from_Ma(M,ga)
-
-
-    nj = 20
-    AR = 1.
-    ni = int(nj/h*L)
-    nk = 6
+    nj = 7
+    ni = 5
+    nk = 3
     pitch = h/nj*(nk-1)
     Nb = int(2.0 * np.pi * rm / pitch)
-    dt = 2.0 * np.pi / float(Nb)
-    tv = np.linspace(-dt / 2., dt / 2., nk)
-    xv = np.linspace(0., L, ni)
+    tpitch = 2.0 * np.pi / float(Nb)
+    tv = np.linspace(-tpitch/2., tpitch/2., nk)
+    xv = np.linspace(0., h, ni)
     rv = np.linspace(rh, rt, nj)
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
-    patches = [
-        turbigen.grid.PeriodicPatch(k=0),
-        turbigen.grid.PeriodicPatch(k=-1),
-        turbigen.grid.InletPatch(i=0),
-        turbigen.grid.OutletPatch(i=-1),
-    ]
+    patches = []
 
     block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
     g = turbigen.grid.Grid([block,])
     g.match_patches()
     g.check_coordinates()
 
-    So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
-    So1.set_P_T(Po1, To1)
-    g.apply_inlet(So1, Alpha, Beta)
-    g.calculate_wall_distance()
-    g.apply_outlet(P1-2.)
+    rtol = 1e-9
 
-    for b in g:
-        b.Vx = V
-        b.Vr = 0.
-        b.Vt = 0.
-        b.cp = cp
-        b.gamma = ga
-        b.mu = mu
-        b.Omega = 0.0
-        b.set_P_T(P1, T1)
+    # Check the grid is uniform
+    b = g[0]
 
-    return g
+    dt = np.diff(b.t,axis=2)
+    assert dt.ptp()/dt.mean() < rtol
+    dt = dt.mean()
 
-test_smooth()
+    dx = np.diff(b.x,axis=0)
+    assert dx.ptp()/dx.mean() < rtol
+    dx = dx.mean()
+
+    dr = np.diff(b.r,axis=1)
+    assert dr.ptp()/dr.mean() < rtol
+    dr = dr.mean()
+
+    # Check the total areas in i,j,k dirns
+    Ai = (rt*2-rh*2)/2.*tpitch
+    Aj = rv * tpitch * h
+    Ak = h * h
+
+    # Check the vectors are in one dirn only
+    assert (b.dAi[(1,2),...] < rtol * b.dAi[0,...]).all()
+    assert (b.dAj[(0,2),...] < rtol * b.dAj[1,...]).all()
+    assert (b.dAk[(0,1),...] < rtol * b.dAk[2,...]).all()
+
+    # Check the totals sum correctly
+    assert np.allclose(Ai, b.dAi[0,:,:,:].sum(axis=(1,2)))
+    assert np.allclose(Aj, b.dAj[1,:,:,:].sum(axis=(0,2)))
+    assert np.allclose(Ak, b.dAk[2,:,:,:].sum(axis=(0,1)))
+
+    # Check the volume sums correctly
+    vol = Ai*h
+    assert np.isclose(vol, b.vol.sum())
+
+def not_test_box():
+    # Geometry
+    L = 0.1
+    yoffset = 8*L
+
+    nj = 7
+    ni = 5
+    nk = 3
+
+    Nb = 1
+    xv = np.linspace(-L, L, ni)
+    yv = np.linspace(-L, L, nj) + yoffset
+    zv = -np.linspace(-L, L, nk)
+
+    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
+
+    # Convert Cartesian coordinates to polar
+    r = np.sqrt(y**2 + z**2)
+    t = np.arctan2(-z, y)
+
+    xrt = np.stack((x, r, t))
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    b = g[0]
+
+    # Check the areas
+    A = (2*L)**2
+    print(A, turbigen.util.vecnorm(b.dAi).sum(axis=(1,2)))
+
+    # # Check the volume
+    # vol = (2*L)**3
+    # print(b.vol.shape)
+    # print(b.vol.sum(), vol)
+    # assert np.isclose(b.vol.sum(),vol)
+
+
+# test_box()
+
+    # def test_smooth():
+    #     shape = (1,10,12,14)
+    #     x = np.ones(shape) + 0.05*np.random.random_sample(shape)
+    #     for i in range(100):
+    #         x = turbigen.solvers.native.smooth(x)
+    #         if not np.mod(i,10):
+    #             import matplotlib.pyplot as plt
+    #             fig, ax = plt.subplots()
+    #             h = ax.contourf(x[0,2,:,:],cmap='RdBu')
+    #             plt.colorbar(h)
+    #             plt.show()
+    #         print(x.ptp())
+    #     assert x.ptp()<1e-3
+

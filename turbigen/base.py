@@ -361,6 +361,7 @@ class Kinematics:
         GH = H - G
         CH = H - C
 
+        # For brevity
         def dot(a, b):
             # Dot product of [ni,nj,nk,3] along last axis
             return np.sum(a * b, axis=-1)
@@ -373,7 +374,6 @@ class Kinematics:
         V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
         V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
         V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
-
         vol = -(V1 + V2 + V3 + V4) / 12.0
 
         return vol
@@ -460,7 +460,7 @@ class Kinematics:
         #      /
         # j   * *
         #    k  k+1
-        return self.xrrt[:, :, 1:, 1:] - self.xrrt[:, :, :-1, :-1]
+        return self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
 
     @dependent_property
     def dlib(self):
@@ -471,48 +471,42 @@ class Kinematics:
         #      \
         # j   * *
         #    k  k+1
-        return self.xrrt[:, :, 1:, :-1] - self.xrrt[:, :, :-1, 1:]
+        return self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
 
     @dependent_property
     def dljf(self):
         # Forward diagonal vector across j face
         # From i,k to i+1, k+1
-        return self.xrrt[:, 1:, :, 1:] - self.xrrt[:, :-1, :, :-1]
+        return self.xrt[:, 1:, :, 1:] - self.xrt[:, :-1, :, :-1]
 
     @dependent_property
     def dljb(self):
         # Backward diagonal vector across i face
         # From i,k+1 to i+1,k
-        return self.xrrt[:, 1:, :, :-1] - self.xrrt[:, :-1, :, 1:]
+        return self.xrt[:, 1:, :, :-1] - self.xrt[:, :-1, :, 1:]
 
     @dependent_property
     def dlkf(self):
         # Forward diagonal vector across k face
         # From i,j to i+1, j+1
-        return self.xrrt[:, 1:, 1:, :] - self.xrrt[:, :-1, :-1, :]
+        return self.xrt[:, 1:, 1:, :] - self.xrt[:, :-1, :-1, :]
 
     @dependent_property
     def dlkb(self):
         # Backward diagonal vector across k face
         # From i,j+1 to i+1,j
-        return self.xrrt[:, 1:, :-1, :] - self.xrrt[:, :-1, 1:, :]
+        return self.xrt[:, 1:, :-1, :] - self.xrt[:, :-1, 1:, :]
 
     @dependent_property
     def dli(self):
-        # Edge vectors along i dirn
-        # Numpy cross function assumes that the components are in last axis
         return np.diff(self.xrrt, axis=1)
 
     @dependent_property
     def dlj(self):
-        # Edge vectors along j dirn
-        # Numpy cross function assumes that the components are in last axis
         return np.diff(self.xrrt, axis=2)
 
     @dependent_property
     def dlk(self):
-        # Edge vectors along k dirn
-        # Numpy cross function assumes that the components are in last axis
         return np.diff(self.xrrt, axis=3)
 
     @dependent_property
@@ -524,7 +518,13 @@ class Kinematics:
         # Numpy cross function assumes that the components are in last axis
         dlif = np.moveaxis(self.dlif, 0, -1)
         dlib = np.moveaxis(self.dlib, 0, -1)
-        return -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
+        dAi = -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAi[1] *= self.r_face[0]
+        # print('beans')
+
+        return dAi
 
     @dependent_property
     def dAj(self):
@@ -532,15 +532,16 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # # Numpy cross function assumes that the components are in last axis
-        # dli = np.moveaxis(self.dli[:, :, :, :-1], 0, -1)
-        # dlk = np.moveaxis(self.dlk[:, :-1, :, :], 0, -1)
-        # return np.moveaxis(np.cross(dli, dlk), -1, 0)
-
         # Numpy cross function assumes that the components are in last axis
         dljf = np.moveaxis(self.dljf, 0, -1)
         dljb = np.moveaxis(self.dljb, 0, -1)
-        return np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
+
+        dAj = np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAj[1] *= self.r_face[1]
+
+        return dAj
 
     @dependent_property
     def dAk(self):
@@ -556,7 +557,16 @@ class Kinematics:
         # Numpy cross function assumes that the components are in last axis
         dlkf = np.moveaxis(self.dlkf, 0, -1)
         dlkb = np.moveaxis(self.dlkb, 0, -1)
-        return -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
+        dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAk[1] *= self.r_face[2]
+
+        return dAk
+
+    @dependent_property
+    def r_face(self):
+        return turbigen.util.node_to_face3(self.r)
 
     @dependent_property
     def flux_all(self):

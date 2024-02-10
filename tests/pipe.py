@@ -8,7 +8,7 @@ import numpy as np
 # Geometry
 h = 0.1
 L = h * 4.0
-htr = 0.9
+htr = 0.99
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
 rt = rm + 0.5 * h
@@ -136,6 +136,8 @@ for i in range(10000):
             b = g[0][ni//2, nj//2, nk//2]
             print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
             # print(b.Vx, b.Vr, b.Vt, b.P, b.T)
+        if i == 10:
+            assert False
     except:
 
         b = g[0][ni//2,:,:]

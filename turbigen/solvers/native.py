@@ -263,7 +263,7 @@ def cell_to_node(x):
 
 
 sfin = 0.5
-CFL = 0.2
+CFL = 0.1
 sf = CFL * sfin
 
 
@@ -379,7 +379,7 @@ def step(b, dt, wall):
         -np.diff(Fj, axis=-2),
         -np.diff(Fk, axis=-1),
     ]
-    S = get_source(conservedPhor) * 0.0
+    S = get_source(conservedPhor) * 0
     Svol = np.mean(S * b.vol, axis=(-1, -2, -3))
 
     # print('**Net fluxes')
@@ -397,8 +397,8 @@ def step(b, dt, wall):
 
     # print('**After source')
     # for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
-    #     print(f'    {kind}: {fsum[m].mean() + S[m].mean()}')
-    # # quit()
+    #     print(f'    {kind}: {fsum[m].mean() + Svol[m].mean()}')
+    # quit()
 
     dU = (fsum / b.vol + S) * dt
 
@@ -415,6 +415,8 @@ def step(b, dt, wall):
     Unew = b.conserved + cell_to_node(dU)
 
     Unew = smooth(Unew)
+    Unew[:, 0, :, :] = 0.5 * (Unew[:, 0, :, :] + Unew[:, 1, :, :])
+    Unew[:, -1, :] = 0.5 * (Unew[:, -1, :, :] + Unew[:, -2, :, :])
 
     # # # Extra smoothing at inlet and exit
     # sff = 0.05

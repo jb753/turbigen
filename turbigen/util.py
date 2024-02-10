@@ -958,7 +958,12 @@ def node_to_face(var):
     each face to produce an (...,n-1,m-1) matrix of face-centered properties."""
     return np.mean(
         np.stack(
-            (var[...,:-1, :-1], var[...,1:, 1:], var[...,:-1, 1:], var[...,1:, :-1]),
+            (
+                var[..., :-1, :-1],
+                var[..., 1:, 1:],
+                var[..., :-1, 1:],
+                var[..., 1:, :-1],
+            ),
         ),
         axis=0,
     )
@@ -1235,3 +1240,40 @@ def load_install(install_type):
         sys.modules[f"turbigen.install.{mod_name}"] = mod
         spec.loader.exec_module(mod)
     return mod
+
+
+def node_to_face3(x):
+    # x has shape [?,ni,nj,nk]
+    # return averaged values on const i, const j, const k faces
+    # xi [?,ni,nj-1, nk-1]
+    # xj [?,ni-1,nj, nk-1]
+    # xk [?,ni-1,nj-1, nk]
+
+    xi = np.stack(
+        (
+            x[..., :, :-1, :-1],
+            x[..., :, 1:, :-1],
+            x[..., :, 1:, 1:],
+            x[..., :, :-1, 1:],
+        ),
+    ).mean(axis=0)
+
+    xj = np.stack(
+        (
+            x[..., :-1, :, :-1],
+            x[..., 1:, :, :-1],
+            x[..., 1:, :, 1:],
+            x[..., :-1, :, 1:],
+        ),
+    ).mean(axis=0)
+
+    xk = np.stack(
+        (
+            x[..., :-1, :-1, :],
+            x[..., 1:, :-1, :],
+            x[..., 1:, 1:, :],
+            x[..., :-1, 1:, :],
+        ),
+    ).mean(axis=0)
+
+    return xi, xj, xk
