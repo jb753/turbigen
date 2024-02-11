@@ -331,7 +331,7 @@ class Kinematics:
             raise Exception("Cell volume is only defined for 3D grids")
 
         # Put coord components on last dimension for numpy cross
-        v = np.moveaxis(self.xrt, 0, -1)
+        v = np.moveaxis(self.xrrt, 0, -1)
 
         # Extract vertices A to H
         A = v[:-1, 1:, :-1, :]  # i j+1 k
@@ -460,42 +460,61 @@ class Kinematics:
         #      /
         # j   * *
         #    k  k+1
-        return self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
+        dlif = self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
+        # Reference theta is at j,k
+        dlif[2] *= self.r[:,1:,1:]
+        return dlif
 
     @dependent_property
     def dlib(self):
         # Backward diagonal vector across i face
-        # From j,k+1 to j+1, k
+        # From j,k+1 to j+1, k ***via j,k**
         #
         # j+1 * *
-        #      \
-        # j   * *
+        #     |\
+        # j   *-*
         #    k  k+1
-        return self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
+
+        # from k+1 to k, reference radius at j,k for 
+        dk = self.xrt[:, :, :-1, :-1] - self.xrt[:, :, :-1, 1:]
+        dk[2] *= self.r[:,:-1,:-1]
+        # from j to j+1, reference radius at e
+        dj = self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, :-1]
+
+        dlib = self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
+        return dlib
 
     @dependent_property
     def dljf(self):
         # Forward diagonal vector across j face
         # From i,k to i+1, k+1
-        return self.xrt[:, 1:, :, 1:] - self.xrt[:, :-1, :, :-1]
+        dljf = self.xrt[:, 1:, :, 1:] - self.xrt[:, :-1, :, :-1]
+        dljf[2] *= self.r_face[1]
+        return dljf
 
     @dependent_property
     def dljb(self):
         # Backward diagonal vector across i face
         # From i,k+1 to i+1,k
-        return self.xrt[:, 1:, :, :-1] - self.xrt[:, :-1, :, 1:]
+        dljb = self.xrt[:, 1:, :, :-1] - self.xrt[:, :-1, :, 1:]
+        dljb[2] *= self.r_face[1]
+        return dljb
 
     @dependent_property
     def dlkf(self):
         # Forward diagonal vector across k face
         # From i,j to i+1, j+1
-        return self.xrt[:, 1:, 1:, :] - self.xrt[:, :-1, :-1, :]
+        dlkf = self.xrt[:, 1:, 1:, :] - self.xrt[:, :-1, :-1, :]
+        dlkf[2] *= self.r_face[2]
+        return dlkf
 
     @dependent_property
     def dlkb(self):
         # Backward diagonal vector across k face
         # From i,j+1 to i+1,j
-        return self.xrt[:, 1:, :-1, :] - self.xrt[:, :-1, 1:, :]
+        dlkb = self.xrt[:, 1:, :-1, :] - self.xrt[:, :-1, 1:, :]
+        dlkb[2] *= self.r_face[2]
+        return dlkb
 
     @dependent_property
     def dli(self):
@@ -515,16 +534,33 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # Numpy cross function assumes that the components are in last axis
-        dlif = np.moveaxis(self.dlif, 0, -1)
-        dlib = np.moveaxis(self.dlib, 0, -1)
-        dAi = -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
+        # # Numpy cross function assumes that the components are in last axis
+        # dlif = np.moveaxis(self.dlif, 0, -1)
+        # dlib = np.moveaxis(self.dlib, 0, -1)
+        # dAi = -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
 
-        # For some reason, we need to scale radial component by r?
-        dAi[1] *= self.r_face[0]
-        # print('beans')
+        # Define the four vertices OBAC
+        #    B      A
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    O      C
+        #      j>
 
-        return dAi
+        O = self.xrt[:,:,:-1,:-1]
+        A = self.xrt[:,:,1:,1:]
+        B = self.xrt[:,:,:-1,1:]
+        C = self.xrt[:,:,1:,:-1]
+
+        # Form three vectors AO, BO, CO
+        AO = A - O
+        AO[2] *= A[1]  # Theta reference radius at A
+        BO = B - O
+        BO[2] *= B[1]  # Theta reference radius at B
+        CO = C - O
+        CO[2] *= C[1]  # Theta reference radius at C
+
+        return 0.5*np.cross(AO, BO-CO, axis=0)
 
     @dependent_property
     def dAj(self):
@@ -532,16 +568,33 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # Numpy cross function assumes that the components are in last axis
-        dljf = np.moveaxis(self.dljf, 0, -1)
-        dljb = np.moveaxis(self.dljb, 0, -1)
+        # # Numpy cross function assumes that the components are in last axis
+        # dljf = np.moveaxis(self.dljf, 0, -1)
+        # dljb = np.moveaxis(self.dljb, 0, -1)
+        # dAj = np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
 
-        dAj = np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
+        # Define the four vertices OBAC
+        #    B      A
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    O      C
+        #      i>
 
-        # For some reason, we need to scale radial component by r?
-        dAj[1] *= self.r_face[1]
+        O = self.xrt[:,:-1,:,:-1]
+        A = self.xrt[:,1:,:,1:]
+        B = self.xrt[:,:-1,:,1:]
+        C = self.xrt[:,1:,:,:-1]
 
-        return dAj
+        # Form three vectors AO, BO, CO
+        AO = A - O
+        AO[2] *= A[1]  # Theta reference radius at A
+        BO = B - O
+        BO[2] *= B[1]  # Theta reference radius at B
+        CO = C - O
+        CO[2] *= C[1]  # Theta reference radius at C
+
+        return -0.5*np.cross(AO, BO-CO, axis=0)
 
     @dependent_property
     def dAk(self):
@@ -554,15 +607,26 @@ class Kinematics:
         # dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
         # return np.moveaxis(np.cross(dli, dlj), -1, 0)
 
-        # Numpy cross function assumes that the components are in last axis
-        dlkf = np.moveaxis(self.dlkf, 0, -1)
-        dlkb = np.moveaxis(self.dlkb, 0, -1)
-        dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
+        # # Numpy cross function assumes that the components are in last axis
+        # dlkf = np.moveaxis(self.dlkf, 0, -1)
+        # dlkb = np.moveaxis(self.dlkb, 0, -1)
+        # dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
 
-        # For some reason, we need to scale radial component by r?
-        dAk[1] *= self.r_face[2]
+        O = self.xrt[:,:-1,:-1,:]
+        A = self.xrt[:,1:,1:,:]
+        B = self.xrt[:,:-1,1:,:]
+        C = self.xrt[:,1:,:-1,:]
 
-        return dAk
+        # Form three vectors AO, BO, CO
+        AO = A - O
+        AO[2] *= A[1]  # Theta reference radius at A
+        BO = B - O
+        BO[2] *= B[1]  # Theta reference radius at B
+        CO = C - O
+        CO[2] *= C[1]  # Theta reference radius at C
+
+        return 0.5*np.cross(AO, BO-CO, axis=0)
+
 
     @dependent_property
     def r_face(self):
