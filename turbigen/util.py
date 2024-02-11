@@ -954,11 +954,16 @@ Increase ERmax, Dst, Dmax, or N."""
 
 
 def node_to_face(var):
-    """For a (n,m) matrix of some property, average over the four corners of
-    each face to produce an (n-1,m-1) matrix of face-centered properties."""
+    """For a (...,n,m) matrix of some property, average over the four corners of
+    each face to produce an (...,n-1,m-1) matrix of face-centered properties."""
     return np.mean(
         np.stack(
-            (var[:-1, :-1], var[1:, 1:], var[:-1, 1:], var[1:, :-1]),
+            (
+                var[..., :-1, :-1],
+                var[..., 1:, 1:],
+                var[..., :-1, 1:],
+                var[..., 1:, :-1],
+            ),
         ),
         axis=0,
     )
@@ -1182,17 +1187,18 @@ def next_numbered_dir(basename):
     next_id = cur_id + 1
     return os.path.join(base_dir, stem.replace("*", f"{next_id:04d}"))
 
+
 def load_mean_line(mean_line_type):
-    if not mean_line_type.endswith('.py'):
+    if not mean_line_type.endswith(".py"):
         # Attempt to load a built-in meanline
-        mod = importlib.import_module(
-            f".{mean_line_type}", package="turbigen.meanline"
-        )
+        mod = importlib.import_module(f".{mean_line_type}", package="turbigen.meanline")
     else:
         # Use as a file path
         mod_file = os.path.abspath(mean_line_type)
         mod_name = os.path.basename(mean_line_type)
-        spec = importlib.util.spec_from_file_location(f"turbigen.meanline.{mod_name}", mod_file)
+        spec = importlib.util.spec_from_file_location(
+            f"turbigen.meanline.{mod_name}", mod_file
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"turbigen.meanline.{mod_name}"] = mod
         spec.loader.exec_module(mod)
@@ -1202,16 +1208,16 @@ def load_mean_line(mean_line_type):
 def load_annulus(annulus_type):
     try:
         # Attempt to load a built-in annulus
-        mod = importlib.import_module(
-            ".annulus", package="turbigen"
-        )
+        mod = importlib.import_module(".annulus", package="turbigen")
         mod = getattr(mod, annulus_type)
-    except AttributeError as e:
+    except AttributeError:
         # Use as a file path
         mod_file = os.path.abspath(annulus_type)
         mod_name = os.path.basename(annulus_type)
         mod_file += ".py"
-        spec = importlib.util.spec_from_file_location(f"turbigen.annulus.{mod_name}", mod_file)
+        spec = importlib.util.spec_from_file_location(
+            f"turbigen.annulus.{mod_name}", mod_file
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"turbigen.annulus.{mod_name}"] = mod
         spec.loader.exec_module(mod)
@@ -1219,23 +1225,55 @@ def load_annulus(annulus_type):
     return mod
 
 
-
-
 def load_install(install_type):
-    if not install_type.endswith('.py'):
+    if not install_type.endswith(".py"):
         # Attempt to load a built-in meanline
-        mod = importlib.import_module(
-            f".{install_type}", package="turbigen.install"
-        )
+        mod = importlib.import_module(f".{install_type}", package="turbigen.install")
     else:
         # Use as a file path
         mod_file = os.path.abspath(install_type)
         mod_name = os.path.basename(install_type)
-        spec = importlib.util.spec_from_file_location(f"turbigen.install.{mod_name}", mod_file)
+        spec = importlib.util.spec_from_file_location(
+            f"turbigen.install.{mod_name}", mod_file
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"turbigen.install.{mod_name}"] = mod
         spec.loader.exec_module(mod)
     return mod
 
 
+def node_to_face3(x):
+    # x has shape [?,ni,nj,nk]
+    # return averaged values on const i, const j, const k faces
+    # xi [?,ni,nj-1, nk-1]
+    # xj [?,ni-1,nj, nk-1]
+    # xk [?,ni-1,nj-1, nk]
 
+    xi = np.stack(
+        (
+            x[..., :, :-1, :-1],
+            x[..., :, 1:, :-1],
+            x[..., :, 1:, 1:],
+            x[..., :, :-1, 1:],
+        ),
+    ).mean(axis=0)
+
+    xj = np.stack(
+        (
+            x[..., :-1, :, :-1],
+            x[..., 1:, :, :-1],
+            x[..., 1:, :, 1:],
+            x[..., :-1, :, 1:],
+        ),
+    ).mean(axis=0)
+
+    xk = np.stack(
+        (
+            x[..., :-1, :-1, :],
+            x[..., 1:, :-1, :],
+            x[..., 1:, 1:, :],
+            x[..., :-1, 1:, :],
+        ),
+    ).mean(axis=0)
+
+    return xi, xj, xk

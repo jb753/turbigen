@@ -86,6 +86,15 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
+    def transpose(self, order):
+        out = self.__class__()
+        order1 = [
+            0,
+        ] + [o + 1 for o in order]
+        out._data = np.transpose(self._data, order1)
+        out._metadata = self._metadata
+        return out
+
     def squeeze(self):
         out = self.__class__()
         out._data = np.squeeze(self._data)
@@ -179,6 +188,9 @@ class StructuredData:
         out._data = np.empty((self.nprop,) + shape)
         out._metadata = self._metadata
         return out
+
+    def reshape(self, shape):
+        self._data = self._data.reshape((self.nprop,) + shape)
 
     @property
     def ndim(self):
@@ -318,15 +330,68 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Cell volume is only defined for 3D grids")
 
-        # Numpy cross function assumes that the components are in last axis
-        xyz = np.moveaxis(self.xrt, 0, -1).astype(np.float64)
+        # Put coord components on last dimension for numpy cross
+        v = np.moveaxis(self.xrt, 0, -1)
 
-        # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
-        qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
-        qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+        # Extract vertices A to H
+        A = v[:-1, 1:, :-1, :]  # i j+1 k
+        B = v[1:, 1:, :-1, :]  # i+1 j+1 k
+        C = v[1:, 1:, 1:, :]  # i+1 j+1 k+1
+        D = v[:-1, 1:, 1:, :]  # i j+1 k+1
+        E = v[:-1, :-1, :-1, :]  # i j k
+        F = v[1:, :-1, :-1, :]  # i+1 j k
+        G = v[1:, :-1, 1:, :]  # i+1 j k+1
+        H = v[:-1, :-1, 1:, :]  # i j k+1
 
-        return np.sum(qk * np.cross(qi, qj), axis=-1)
+        # Evaluate side vectors
+        GA = A - G
+        DB = B - D
+        AC = C - A
+        BE = E - B
+        AF = F - A
+        ED = D - E
+        AH = H - A
+        GB = B - G
+        GC = C - G
+        FC = C - F
+        GE = E - G
+        GF = F - G
+        HF = F - H
+        GD = D - G
+        GH = H - G
+        CH = H - C
+
+        # For brevity
+        def dot(a, b):
+            # Dot product of [ni,nj,nk,3] along last axis
+            return np.sum(a * b, axis=-1)
+
+        cross = np.cross
+
+        # Evaluate volume terms
+        # Eqn. (14) Davies and Salmond (1985)
+        V1 = dot(GA, cross(DB, AC) + cross(BE, AF) + cross(ED, AH))
+        V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
+        V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
+        V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
+        vol = -(V1 + V2 + V3 + V4) / 12.0
+
+        return vol
+
+        # dli = np.moveaxis(self.dli[:, :, :-1, :-1], 0, -1)
+        # dlj = np.moveaxis(self.dlj[:, :-1, :, :-1], 0, -1)
+        # dlk = np.moveaxis(self.dlk[:, :-1, :-1, :], 0, -1)
+        # return np.sum(dlk * np.cross(dli, dlj),axis=-1)
+
+        # # Numpy cross function assumes that the components are in last axis
+        # xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
+
+        # # Vectors for cell sides
+        # qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
+        # qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
+        # qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+
+        # return np.sum(qk * np.cross(qi, qj), axis=-1)
 
     @dependent_property
     def Vxrt_rel(self):
@@ -349,13 +414,13 @@ class Kinematics:
 
     @dependent_property
     def surface_area(self):
-        if not self.ndim == 2:
-            raise Exception("Surface area is only defined for 2D grids")
+        # if not self.ndim == 2:
+        #     raise Exception("Surface area is only defined for 2D grids")
         # Numpy cross function assumes that the components are in last axis
         xyz = np.moveaxis(self.xyz, 0, -1).astype(np.float64)
         # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, :], axis=0)
-        qj = np.diff(xyz[:-1, :, :], axis=1)
+        qi = np.diff(xyz[:, :-1, ...], axis=0)
+        qj = np.diff(xyz[:-1, :, ...], axis=1)
         dA = np.cross(qi, qj)
         return dA
 
@@ -382,10 +447,138 @@ class Kinematics:
         # Vectors for cell sides
         qi = np.diff(xrrt[:, :-1, :], axis=0)
         qj = np.diff(xrrt[:-1, :, :], axis=1)
-
         dA = np.cross(qi, qj)
 
         return dA[..., 2]
+
+    @dependent_property
+    def dlif(self):
+        # Forward diagonal vector across i face
+        # From j,k to j+1, k+1
+        #
+        # j+1 * *
+        #      /
+        # j   * *
+        #    k  k+1
+        return self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
+
+    @dependent_property
+    def dlib(self):
+        # Backward diagonal vector across i face
+        # From j,k+1 to j+1, k
+        #
+        # j+1 * *
+        #      \
+        # j   * *
+        #    k  k+1
+        return self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
+
+    @dependent_property
+    def dljf(self):
+        # Forward diagonal vector across j face
+        # From i,k to i+1, k+1
+        return self.xrt[:, 1:, :, 1:] - self.xrt[:, :-1, :, :-1]
+
+    @dependent_property
+    def dljb(self):
+        # Backward diagonal vector across i face
+        # From i,k+1 to i+1,k
+        return self.xrt[:, 1:, :, :-1] - self.xrt[:, :-1, :, 1:]
+
+    @dependent_property
+    def dlkf(self):
+        # Forward diagonal vector across k face
+        # From i,j to i+1, j+1
+        return self.xrt[:, 1:, 1:, :] - self.xrt[:, :-1, :-1, :]
+
+    @dependent_property
+    def dlkb(self):
+        # Backward diagonal vector across k face
+        # From i,j+1 to i+1,j
+        return self.xrt[:, 1:, :-1, :] - self.xrt[:, :-1, 1:, :]
+
+    @dependent_property
+    def dli(self):
+        return np.diff(self.xrrt, axis=1)
+
+    @dependent_property
+    def dlj(self):
+        return np.diff(self.xrrt, axis=2)
+
+    @dependent_property
+    def dlk(self):
+        return np.diff(self.xrrt, axis=3)
+
+    @dependent_property
+    def dAi(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Numpy cross function assumes that the components are in last axis
+        dlif = np.moveaxis(self.dlif, 0, -1)
+        dlib = np.moveaxis(self.dlib, 0, -1)
+        dAi = -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAi[1] *= self.r_face[0]
+        # print('beans')
+
+        return dAi
+
+    @dependent_property
+    def dAj(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Numpy cross function assumes that the components are in last axis
+        dljf = np.moveaxis(self.dljf, 0, -1)
+        dljb = np.moveaxis(self.dljb, 0, -1)
+
+        dAj = np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAj[1] *= self.r_face[1]
+
+        return dAj
+
+    @dependent_property
+    def dAk(self):
+        # Vector area for i=const faces
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # # Numpy cross function assumes that the components are in last axis
+        # dli = np.moveaxis(self.dli[:, :, :-1, :], 0, -1)
+        # dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
+        # return np.moveaxis(np.cross(dli, dlj), -1, 0)
+
+        # Numpy cross function assumes that the components are in last axis
+        dlkf = np.moveaxis(self.dlkf, 0, -1)
+        dlkb = np.moveaxis(self.dlkb, 0, -1)
+        dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
+
+        # For some reason, we need to scale radial component by r?
+        dAk[1] *= self.r_face[2]
+
+        return dAk
+
+    @dependent_property
+    def r_face(self):
+        return turbigen.util.node_to_face3(self.r)
+
+    @dependent_property
+    def flux_all(self):
+        return np.stack(
+            (
+                self.flux_mass,
+                self.flux_xmom,
+                self.flux_rmom,
+                self.flux_rtmom,
+                self.flux_energy,
+            )
+        )
 
     @dependent_property
     def spf(self):
@@ -494,6 +687,10 @@ class Composites:
     """Methods for properties depending on thermodynamic and velocity fields."""
 
     @dependent_property
+    def conserved(self):
+        return np.stack((self.rho, self.rhoVx, self.rhoVr, self.rhorVt, self.rhoe))
+
+    @dependent_property
     def rhoVx(self):
         return self.rho * self.Vx
 
@@ -502,8 +699,12 @@ class Composites:
         return self.rho * self.Vr
 
     @dependent_property
+    def rhoVt(self):
+        return self.rho * self.Vt
+
+    @dependent_property
     def rhorVt(self):
-        return self.rho * self.rVt
+        return self.r * self.rhoVt
 
     @dependent_property
     def rVt(self):
@@ -575,41 +776,100 @@ class Composites:
     @dependent_property
     def flux_mass(self):
         # Mass fluxes in x and r dirns
-        return np.stack((self.rhoVx, self.rhoVr))
+        return np.stack((self.rhoVx, self.rhoVr, self.rhoVt))
 
     @dependent_property
     def flux_xmom(self):
         # Axial momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.Vx + self.P, self.rhoVr * self.Vx))
+        return np.stack(
+            (self.rhoVx * self.Vx + self.P, self.rhoVr * self.Vx, self.rhoVt * self.Vx)
+        )
 
     @dependent_property
     def flux_rmom(self):
         # Radial momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.Vr, self.rhoVr * self.Vr + self.P))
+        return np.stack(
+            (
+                self.rhoVx * self.Vr,
+                self.rhoVr * self.Vr + self.P,
+                self.rhoVt * self.Vr,
+            )
+        )
 
     @dependent_property
     def flux_rtmom(self):
         # Moment of angular momentum fluxes in x and r dirns
-        return np.stack((self.rhoVx * self.rVt, self.rhoVr * self.rVt))
+        return np.stack(
+            (
+                self.Vx * self.rhorVt,
+                self.Vr * self.rhorVt,
+                self.Vt * self.rhorVt + self.r * self.P,
+            )
+        )
+
+    @dependent_property
+    def flux_rothalpy(self):
+        # Stagnation rothalpy fluxes in x an r dirns
+        return self.flux_mass * self.I
 
     @dependent_property
     def flux_energy(self):
-        # Stagnation rothalpy fluxes in x an r dirns
+        # Stagnation entahlpy fluxes in x an r dirns
         return np.stack(
             (
-                self.rhoVx * (self.ho - self.Omega * self.rVt),
-                self.rhoVr * (self.ho - self.Omega * self.rVt),
+                self.rhoVx * self.ho,
+                self.rhoVr * self.ho,
+                self.rhoVt * self.ho + self.Omega * self.r * self.P,
+            )
+        )
+
+    @dependent_property
+    def source_all(self):
+        source_rtmom = (self.P + self.rho * self.Vt**2) / self.r
+        Z = np.zeros_like(source_rtmom)
+        return np.stack(
+            (
+                Z,  # mass
+                Z,  # xmom
+                Z,  # rmom
+                source_rtmom,  # rtmom
+                Z,  # energy
             )
         )
 
     @dependent_property
     def flux_entropy(self):
         # Mass fluxes in x and r dirns
-        return np.stack((self.rhoVx, self.rhoVr)) * self.s
+        return self.flux_mass * self.s
 
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
         return turbigen.average.mix_out(self)
+
+    def set_conserved(self, conserved):
+        rho, *rhoVxrt, rhoe = conserved
+        Vxrt = rhoVxrt / rho
+        Vxrt[2] /= self.r
+        self.Vxrt = Vxrt
+        u = rhoe / rho - 0.5 * self.V**2
+        self.set_rho_u(rho, u)
+
+    def area_average(self):
+
+        dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
+        A = np.sum(dA)
+        conserved = np.moveaxis(self.conserved, -1, 1)
+        xrt = np.moveaxis(self.xrt, -1, 1)
+        conserved_av = (
+            np.sum(dA * turbigen.util.node_to_face(conserved), axis=(-2, -1)) / A
+        )
+        xrt_av = np.sum(dA * turbigen.util.node_to_face(xrt), axis=(-2, -1)) / A
+
+        F = self.empty((conserved_av.shape[1],))
+        F.xrt = xrt_av
+        F.set_conserved(conserved_av)
+
+        return F
 
     def mix_out_pitchwise(self):
         """Mix out in the pitchwise direction, to a spanwise profile."""

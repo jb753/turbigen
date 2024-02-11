@@ -569,7 +569,7 @@ def run(grid, settings, machine):
         logger.info("Converting TS3->TS4...")
 
     cmd_str = (
-        f"source {ts4_conf.environment_script} 2>&1 > /dev/null;"
+        f"source {ts4_conf.environment_script} 2> /dev/null;"
         f"cd {ts4_conf.workdir}; {convert_cmd}"
     )
     try:
@@ -612,12 +612,12 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.ndim == 2
             assert xyz.shape[0] == 3
 
-            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
+            _write_point_probe(ts4_conf, xyz, idomain)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")
     cmd_str = (
-        f"source {ts4_conf.environment_script} 2 > /dev/null;"
+        f"source {ts4_conf.environment_script} 2> /dev/null;"
         f"cd {ts4_conf.workdir};"
         f"mpirun -np {ngpu} python $TSHOME/$TSDIR/bin/turbostream.py"
         " config.ofp input_ts4.hdf5 input_ts4.hdf5 input_ts4.hdf5 output_ts4"

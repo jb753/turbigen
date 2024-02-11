@@ -513,7 +513,13 @@ class MeridionalLine:
     def _xr_straight(self, t):
         """Evaluate meridional curve on straight path between control points."""
         xr = np.stack((self.x, self.r))
-        return scipy.interpolate.interp1d(self.t, xr)(t)
+        text = self.t.copy()
+        # Extend the interpolation range very slightly to avoid bounds errors
+        # due to fluke numerical noise (but still raise error on gross violations)
+        eps = 1e-9
+        text[0] -= eps
+        text[-1] += eps
+        return scipy.interpolate.interp1d(text, xr)(t)
 
 
 class Blade:

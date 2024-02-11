@@ -135,6 +135,20 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
+    def get_wall(self):
+
+        # Preallocate wall indicator with True on boundaries, False interior
+        is_wall = np.ones(self.shape, dtype=bool)
+        is_wall[1:-1, 1:-1, 1:-1] = False
+
+        # Loop over patches
+        for patch in self.patches:
+            # Unset wall indicator if patch is not wall
+            if type(patch) in NOT_WALL_PATCHES:
+                is_wall[patch.get_slice(trim=1)] = False
+
+        return is_wall
+
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
 
@@ -211,6 +225,14 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def rotating_patches(self):
         return self.find_patches(RotatingPatch)
 
+    @property
+    def inlet_patches(self):
+        return self.find_patches(InletPatch)
+
+    @property
+    def outlet_patches(self):
+        return self.find_patches(OutletPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -253,28 +275,25 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Input data
         ni, nj, nk = self.shape
         ijk = range(ni), range(nj), range(nk)
-        d = np.moveaxis(self._data,0,-1)
+        d = np.moveaxis(self._data, 0, -1)
 
         # Query data
-        iqv = np.linspace(0, ni-1, (ni-1)*(2**k)+1)
-        jqv = np.linspace(0, nj-1, (nj-1)*(2**k)+1)
-        kqv = np.linspace(0, nk-1, (nk-1)*(2**k)+1)
-        ijkq = np.moveaxis(np.stack(np.meshgrid(iqv, jqv, kqv, indexing='ij')),0,-1)
+        iqv = np.linspace(0, ni - 1, (ni - 1) * (2**k) + 1)
+        jqv = np.linspace(0, nj - 1, (nj - 1) * (2**k) + 1)
+        kqv = np.linspace(0, nk - 1, (nk - 1) * (2**k) + 1)
+        ijkq = np.moveaxis(np.stack(np.meshgrid(iqv, jqv, kqv, indexing="ij")), 0, -1)
 
         # Peform interpolation
         dq = interpn(ijk, d, ijkq)
-        self._data = np.moveaxis(dq,-1,0)
-
+        self._data = np.moveaxis(dq, -1, 0)
 
         # Adjust patches
         for patch in self.patches:
-            pos = patch.ijk_limits>=0
+            pos = patch.ijk_limits >= 0
             patch.ijk_limits[pos] *= 2**k
-            patch.ijk_limits[~pos] = (( patch.ijk_limits[~pos]+1 ) * 2**k)-1
-
+            patch.ijk_limits[~pos] = ((patch.ijk_limits[~pos] + 1) * 2**k) - 1
 
         self.Omega = Omega
-
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
@@ -390,7 +409,11 @@ class Grid:
                         break
             for P in patches:
                 if P.match is None:
-                    raise Exception(f"Could not match patch bid={self._blocks.index(P.block)} pid={P.block.patches.index(P)} {P}")
+                    raise Exception(
+                        "Could not match patch "
+                        f"bid={self._blocks.index(P.block)} "
+                        f"pid={P.block.patches.index(P)} {P}"
+                    )
 
     @property
     def nrow(self):
@@ -425,7 +448,21 @@ class Grid:
             try:
                 b.check_coordinates()
             except AssertionError:
-                raise Exception(f'Coordinate check failed in block {ib} {b}')from None
+                raise Exception(f"Coordinate check failed in block {ib} {b}") from None
+
+    def apply_periodic(self):
+        """For each pair of periodic patches, set average of conserved quantities."""
+        done = []
+        for patch in self.periodic_patches:
+            if patch in done:
+                continue
+            i1 = (slice(3,None,None),) + patch.get_slice()[1:]
+            i2 = (slice(3,None,None),) + patch.match.get_slice()[1:]
+            C1 = patch.get_cut()
+            C2 = patch.get_match_cut()
+            avg = 0.5*(C1._data[i1] + C2._data[i2])
+            patch.block._data[i1] = avg
+            patch.match.block._data[i2] = avg
 
     def apply_rotation(self, row_types, Omega):
         """Set wall rotations."""
@@ -503,18 +540,9 @@ class Grid:
         # Loop over blocks
         xrrt_wall_block = []
         for block in self:
-            # Preallocate wall indicator
-            is_wall = np.ones(block.shape, dtype=bool)
-            is_wall[1:-1, 1:-1, 1:-1] = False
-
-            # Loop over patches
-            for patch in block.patches:
-                # Unset wall indicator if patch is not wall
-                if type(patch) in NOT_WALL_PATCHES:
-                    is_wall[patch.get_slice()] = False
 
             # Assemble unstructured wall coordinates for this block
-            xrtbw = block.xrt[:, is_wall].reshape(3, -1)
+            xrtbw = block.xrt[:, block.get_wall()].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)
@@ -532,23 +560,6 @@ class Grid:
         xrrt_wall = np.concatenate(xrrt_wall_block, axis=1)
 
         return xrrt_wall
-
-    def cut_walls(self):
-        """Structured coordinates of all walls."""
-
-        # Loop over blocks
-        cut_wall = []
-        for block in self:
-            # Preallocate wall indicator
-            is_wall = np.ones(block.shape, dtype=bool)
-            is_wall[1:-1, 1:-1, 1:-1] = False
-
-            # Loop over patches
-            for patch in block.patches:
-                if not (type(patch) in NOT_WALL_PATCHES):
-                    cut_wall.append(patch.get_cut())
-
-        return cut_wall
 
     def calculate_wall_distance(self):
         """Get distance to nearest wall node for all grid points."""
@@ -929,9 +940,11 @@ class Grid:
 
                 # Loop over blocks and find o-meshes
                 for b in row_block:
-                    if np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt) and b.shape[1] == nj:
+                    if (
+                        np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt)
+                        and b.shape[1] == nj
+                    ):
                         surfs[-1].append(b[:, :, None, 0])
-
 
         return surfs
 
@@ -1098,7 +1111,12 @@ class Patch:
     def ijkdir(self):
         return [self.idir, self.jdir, self.kdir]
 
-    def get_slice(self, offset=0):
+    @ijkdir.setter
+    def ijkdir(self, value):
+        self.idir, self.jdir, self.kdir = value
+
+
+    def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice
         sl = []
         for lim in self.ijk_limits:
@@ -1109,8 +1127,11 @@ class Patch:
                     lim_now += offset
                 else:
                     lim_now -= offset
+            else:
+                lim_now[0] += trim
+                lim_now[1] -= trim
 
-            if (lim == -1).any():
+            if (lim_now == -1).any():
                 sl.append(slice(lim_now[0], None))
             else:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
@@ -1237,8 +1258,9 @@ class InletPatch(Patch):
     state = None
     rfin = 0.5
     force_type = None
-    amplitude = 0.
-    phase = 0.
+    amplitude = 0.0
+    phase = 0.0
+    store = None
 
 
 class InviscidPatch(Patch):
@@ -1250,8 +1272,8 @@ class OutletPatch(Patch):
     mdot_target = None
     Kpid = None
     force = False
-    amplitude = 0.
-    phase = 0.
+    amplitude = 0.0
+    phase = 0.0
 
 
 class RotatingPatch(Patch):
@@ -1331,7 +1353,7 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
         # is pitch - tol/2 and its matching point is pitch + tol/2 then they
         # *should* match, but will be in error by whole pitch after modulus.
         # So move any points very close to upper pitch boundary back to zero
-        xrti[2, ...][xrti[2, ...]/pitch[0]>(1.-rtol)] = 0.
+        xrti[2, ...][xrti[2, ...] / pitch[0] > (1.0 - rtol)] = 0.0
 
     # We are going to loop over all possible choices for i/j/kdir
     # and return from this function if the coordinates match.

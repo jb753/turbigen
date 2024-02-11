@@ -10,7 +10,7 @@ def _read_coord(f, nijkb):
     return np.flip(data.transpose((2, 1, 0)), axis=0)
 
 
-def read(g_file, bcs_file, Lref=1.):
+def read(g_file, bcs_file, Lref=1.0):
     #
     # Process the IGG bcs file with patches
     #

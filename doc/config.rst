@@ -20,6 +20,7 @@ may contain the following top-level keys:
 * :ref:`cnf-solver`
 * :ref:`cnf-operating_point`
 * :ref:`cnf-iterate`
+* :ref:`cnf-job`
 
 The following sections give more detail on each of the keys.
 
@@ -186,10 +187,10 @@ fraction `spf` and vectors of thickness and camber parameters, `q_thick` and
     * Camber line slope at trailing edge
     * Camber line curvature at mid-chord
 
-The number of blades can be set via two choices: directly using `Nb` or for a
-non-dimensional circulation using `Co`. Thickness and camber vectors are
-interpolated between each of the specified span fractions. So a complete
-specification of the blade geometry might be:
+The number of blades can be set via three choices: directly using `Nb`, a
+non-dimensional circulation using `Co`, or the Lieblein diffusion factor `DFL`.
+Thickness and camber vectors are interpolated between each of the specified
+span fractions. So a complete specification of the blade geometry is:
 
 .. code-block:: yaml
 
@@ -354,3 +355,22 @@ To locate the stagnation point on the nose of the blades, include an `incidence`
 
 In the event of instability, `clip` and `relaxation_factor` can be
 reduced for all three adjustments.
+
+.. _cnf-job:
+
+job
+---
+
+Automations are in place for running :program:`turbigen` as a SLURM queue job
+using the `sbatch` command. Some parameters are hardcoded assuming the
+University of Cambridge Wilkes3 cluster and may require modifying for different
+systems. Sumbitting jobs requires the following
+configuration:
+
+
+.. code-block:: yaml
+
+    job:
+      account: NAME-SL2-GPU   # SLURM account to charge
+      hours: 4  # Integer number of hours for job time limit
+      tasks: 2  # Number of GPUs

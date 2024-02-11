@@ -199,7 +199,7 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
 
     g = turbigen.autogrid.reader.read(g_path, bcs_path)
 
-    if (rf:=mesh_config.refine_factor):
+    if rf := mesh_config.refine_factor:
         for b in g:
             b.refine(rf)
 

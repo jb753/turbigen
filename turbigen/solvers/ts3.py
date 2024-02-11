@@ -12,12 +12,15 @@ import os
 import signal
 import sys
 import re
+import grp
+import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver
 
 import turbigen.util
 
 logger = turbigen.util.make_logger()
+
 
 class TS3Config(BaseSolver):
     _name = "TS3"
@@ -75,6 +78,7 @@ class TS3Config(BaseSolver):
     ipout = 3
     convert_sliding = False
     smooth_scale_precon_option = 0
+    smooth_scale_dts_option = 0
     rfin = 0.5
     precon = 0
     nstep_soft = 0
@@ -86,6 +90,8 @@ class TS3Config(BaseSolver):
     fac_sa_step = 1.0
     nstep_save_probe = 0
     nstep_save_start_probe = 0
+    xllim_free = 0.1
+    free_turb = 0.05
 
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
@@ -168,14 +174,16 @@ class TS3Config(BaseSolver):
             c.nstep = c.nstep_soft
         return c
 
+
 def _get_time_vector(ts3_config):
     freq = ts3_config.frequency
     nstep_cycle = ts3_config.nstep_cycle
     nt = nstep_cycle * ts3_config.ncycle
     it = np.arange(nt)
-    dt = 1./freq/nstep_cycle
-    t = it*dt
+    dt = 1.0 / freq / nstep_cycle
+    t = it * dt
     return t
+
 
 # Block attributes that must be present
 # Where we should not set a default, use None
@@ -755,34 +763,41 @@ def _write_hdf5(grid, ts3_config):
 
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
-                    if (force_type:=patch.force_type):
+                    if force_type := patch.force_type:
 
                         t = _get_time_vector(ts3_config)
-                        F = 1.+patch.amplitude*np.sin(2.*np.pi*freq*t + patch.phase).reshape(1,1,1,nt)
+                        nt = len(t)
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, nt)
                         ga = patch.state.gamma
 
-                        if force_type == 'isentropic':
+                        if force_type == "isentropic":
                             Po_Poav = F
-                            To_Toav = Po_Poav**((ga-1.)/ga)
+                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
                         elif force_type == "entropic":
                             Po_Poav = np.ones_like(F)
                             To_Toav = F
+                        else:
+                            raise Exception(f"Unknown inlet forcing type {force_type}")
 
-                        val = np.expand_dims(val,3)
-                        if name == 'pstag':
+                        val = np.expand_dims(val, 3)
+                        if name == "pstag":
                             val = val * Po_Poav
-                        elif name == 'tstag':
+                        elif name == "tstag":
                             val = val * To_Toav
                         else:
-                            val = np.tile(val, (1,1,1,nt))
+                            val = np.tile(val, (1, 1, 1, nt))
 
                         pa["nt"] = nt
 
                 if isinstance(patch, turbigen.grid.OutletPatch):
-                    if (force:=patch.force):
+                    if patch.force:
                         t = _get_time_vector(ts3_config)
-                        F = 1.+patch.amplitude*np.sin(2.*np.pi*ts3_config.frequency*t + patch.phase).reshape(1,1,1,-1)
-                        val = np.expand_dims(val,3) * F
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, -1)
+                        val = np.expand_dims(val, 3) * F
                         pa["nt"] = len(t)
 
                 _write_property(patch_group, name, "_pp", val, flat=True)
@@ -849,7 +864,9 @@ Are you on a HPC compute node?"""
         )
 
     # Start the Turbostream process
-    with subprocess.Popen( cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid) as proc:
+    with subprocess.Popen(
+        cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
+    ) as proc:
 
         # Until process has finished, check regularly for divergence
         try:
@@ -866,7 +883,9 @@ Are you on a HPC compute node?"""
                     )
                 if istep_nan := _check_nan("log.txt"):
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    raise ConvergenceError(f"TS3 diverged at step {istep_nan}") from None
+                    raise ConvergenceError(
+                        f"TS3 diverged at step {istep_nan}"
+                    ) from None
         except KeyboardInterrupt:
             logger.iter("******")
             logger.iter("Caught interrupt, killing solver...")
@@ -895,6 +914,7 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             pass
 
     os.chdir(old_workdir)
+
 
 def _read_hdf5(grid, ts3_config):
     """Using a given configuration, load flow solution and insert into grid."""
@@ -965,8 +985,9 @@ def _check_conv(ts3_config):
     log = TS3Log(os.path.join(ts3_config.workdir, "log.txt"))
 
     logger.info(f"Checking convergence over last {ts3_config.nstep_avg} steps...")
-    if np.isnan(log.eta_drift).any():
-        raise ConvergenceError("TS3 log has NAN efficiency.")
+
+    # if np.isnan(log.eta_drift).any():
+    #     raise ConvergenceError("TS3 log has NAN efficiency.")
 
     if np.abs(log.mdot_drift) > ts3_config.rtol_mdot:
         raise ConvergenceError(
@@ -1006,6 +1027,20 @@ def run(grid, settings, machine):
 
     # Apply settings to the default configuration
     ts3_conf = TS3Config(**settings)
+
+    # Check that the user is a member of the turbostream group
+    try:
+        ts_users = grp.getgrnam("turbostream").gr_mem
+        current_user = getpass.getuser()
+        if current_user not in ts_users:
+            raise Exception(
+                f"Current user {current_user} is not a member of the turbostream group"
+            )
+    except KeyError:
+        if not ts3_conf.skip:
+            raise Exception(
+                "No turbostream group on this machine - are you on the HPC?"
+            )
 
     input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
     output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")
@@ -1064,6 +1099,7 @@ def run(grid, settings, machine):
     # Raise errors if the solution did not converge
     _check_conv(ts3_conf)
 
+
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
 re_dts = re.compile(r"dts\s*:\s*(\d*)$")
 re_ncycle = re.compile(r"ncycle\s*:\s*(\d*)$")
@@ -1102,9 +1138,9 @@ class TS3Log:
                 match = re_dts.search(line)
                 if match:
                     dts = int(match.group(1))
-                    ncycle = int(re_ncycle.search(f.readline()).group(1))
-                    f.readline()
-                    nstep_cycle = int(re_nstep_cycle.search(f.readline()).group(1))
+                    # ncycle = int(re_ncycle.search(f.readline()).group(1))
+                    # f.readline()
+                    # nstep_cycle = int(re_nstep_cycle.search(f.readline()).group(1))
                     break
 
             # Third, look for averaging steps
@@ -1147,10 +1183,9 @@ class TS3Log:
                     else:
 
                         for line in f:
-                            if nstep_match := re_nstep.search(line):
+                            if re_nstep.search(line):
                                 logger.debug(f'Found: "{line.strip()}"')
                                 break
-
 
                     # Skip flow ratio
                     _ = f.readline()
@@ -1191,7 +1226,9 @@ class TS3Log:
                                 else:
                                     continue
                         if not step_next == self.nstep[ilog + 1]:
-                            raise Exception(f"Log step mismatch at {step_now}, {step_next}")
+                            raise Exception(
+                                f"Log step mismatch at {step_now}, {step_next}"
+                            )
 
                 except AttributeError:
                     logger.debug("Failed to parse, breaking")
@@ -1234,6 +1271,41 @@ class TS3Log:
         drift = self._mdot[0] / self._mdot[0, -1] - 1.0
         err = drift[self.nstep >= self._nstep_save_start]
         return err[np.argmax(np.abs(err))]
+
+
+def _read_probe_dat(fname, S, shape=()):
+    Npts = int(np.loadtxt(fname, max_rows=1))
+    x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
+
+    nt = len(x) // Npts
+
+    Fshape = shape + (nt,)
+    if shape:
+        x = x.reshape(Fshape, order='F')
+        r = r.reshape(Fshape, order='F')
+        rt = rt.reshape(Fshape, order='F')
+        ro = ro.reshape(Fshape, order='F')
+        rovx = rovx.reshape(Fshape, order='F')
+        rovr = rovr.reshape(Fshape, order='F')
+        rorvt = rorvt.reshape(Fshape, order='F')
+        roe = roe.reshape(Fshape, order='F')
+
+    Fshape = x.shape
+
+    F = turbigen.flowfield.PerfectFlowField(Fshape)
+    F.cp = S.cp
+    F.gamma = S.gamma
+    F.mu = S.mu
+    F.Omega = 0.
+
+    F.xrt = np.stack((x, r, rt / r))
+    F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro
+
+    u = roe / ro - 0.5 * F.V**2.0
+
+    F.set_rho_u(ro, u)
+
+    return F
 
 
 def _check_nan(fname):

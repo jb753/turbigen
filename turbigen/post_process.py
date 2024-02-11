@@ -3,6 +3,7 @@ import turbigen.geometry
 import turbigen.grid
 import os
 import turbigen.util
+
 logger = turbigen.util.make_logger()
 
 
@@ -33,7 +34,6 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
         x = surf.x[:, j]
         r = surf.r[:, j]
         rt = surf.rt[:, j]
-        P = surf.P[:, j]
         Vi = surf.Vi_rel[:, j]
 
         # Take surface distance and normalise to (-1, 1)
@@ -42,17 +42,18 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
         zeta -= 1.0
 
         # Find a zero crossing near LE
-        iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[0][0]
+        iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[
+            0
+        ][0]
 
         zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
 
-        if j == 25 and plot_prefix:
+        if plot and j == 25 and plot_prefix:
             fig, ax = plt.subplots()
             ax.plot(zeta, Vi, "k")
             ax.plot(zeta[iz], Vi[iz], "b*")
             ax.plot(zeta_stag, np.interp(zeta_stag, zeta, Vi), "ro")
             plt.savefig(f"zeta_Vi_j_25_{plot_prefix}_irow_{irow}.pdf")
-
 
         x_stag = np.interp(zeta_stag, zeta, x)
         rt_stag = np.interp(zeta_stag, zeta, rt)
@@ -67,7 +68,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
             # Small pitch angle => the leading edge is oriented axially
             chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[0])).item()
 
-            if j in jplot and plot_prefix:
+            if plot and j in jplot and plot_prefix:
                 fig, ax = plt.subplots()
                 ax.plot(surf.x[:, j], surf.rt[:, j], "-")
                 ax.plot(
@@ -86,7 +87,9 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
                 Lref = turbigen.util.vecnorm(dxrrt) * 2.0
                 ax.set_ylim(np.array((-Lref, Lref)) + xrrt_le_cent[2])
                 ax.set_xlim(np.array((-Lref, Lref)) + xrrt_le_cent[0])
-                plt.savefig(os.path.join(plot, f"inc_xr_{plot_prefix}_row_{irow}_j_{j}.pdf"))
+                plt.savefig(
+                    os.path.join(plot, f"inc_xr_{plot_prefix}_row_{irow}_j_{j}.pdf")
+                )
                 plt.close()
 
         else:
@@ -99,7 +102,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
                 # Going radially out
                 chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], dxrrt[1])).item()
 
-            if j in jplot and plot_prefix:
+            if plot and j in jplot and plot_prefix:
                 fig, ax = plt.subplots()
                 ax.plot(surf.r[:, j], surf.rt[:, j], "-")
                 ax.plot(
@@ -125,10 +128,13 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
                     "k--",
                 )
                 ax.set_title(str(chi_stag_row[j]) + ", " + str(spf_now))
-                plt.savefig(os.path.join(plot, f"inc_rrt_{plot_prefix}_row_{irow}_j_{j}.pdf"))
+                plt.savefig(
+                    os.path.join(plot, f"inc_rrt_{plot_prefix}_row_{irow}_j_{j}.pdf")
+                )
                 plt.close()
 
     return spf_row, chi_stag_row
+
 
 def incidence(g, machine, Beta_in, plot=False):
     """Spanwise profile of incidence for each blade row.
@@ -156,13 +162,24 @@ def incidence(g, machine, Beta_in, plot=False):
         current_Beta = Beta_in[irow]
         current_blade = machine.bld[irow]
 
-        spf_row, chi_stag_row = _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, 'main')
+        spf_row, chi_stag_row = _calc_blade_inc(
+            irow, current_surf, current_blade, current_Beta, plot, "main"
+        )
 
         spf.append(spf_row)
         chi_stag.append(chi_stag_row)
 
-        if len(surfs[irow])>1:
-            chi_stag_splitter.append(_calc_blade_inc(irow, surfs[irow][1], machine.split[irow], current_Beta, plot, 'splitter')[1])
+        if len(surfs[irow]) > 1:
+            chi_stag_splitter.append(
+                _calc_blade_inc(
+                    irow,
+                    surfs[irow][1],
+                    machine.split[irow],
+                    current_Beta,
+                    plot,
+                    "splitter",
+                )[1]
+            )
         else:
             chi_stag_splitter.append(None)
 
@@ -192,11 +209,12 @@ def incidence(g, machine, Beta_in, plot=False):
 #         ax.plot(spf[i], chi_stag[i],'-x')
 #     plt.savefig('test.pdf')
 
+
 def check_phase(g):
     for ib, b in enumerate(g):
         n = (b.is_two_phase).sum()
         if n:
-            logger.info(f'Block {ib}: {n}/{b.size} cells not in gas phase')
+            logger.info(f"Block {ib}: {n}/{b.size} cells not in gas phase")
 
 
 def surface_dissipation(g, Cd=0.002):

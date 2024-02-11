@@ -1,7 +1,6 @@
 """Object to encapsulate a configuration file."""
-from turbigen import util, fluid, annulus
+from turbigen import util, fluid
 from turbigen.exceptions import ConfigError
-import importlib
 from inspect import signature
 from scipy.interpolate import griddata
 from scipy.spatial import QhullError
@@ -95,11 +94,11 @@ class Config:
 
         self.mean_line_type = self.mean_line.pop("type", None)
 
-        if self.mean_line_type.endswith('.py'):
+        if self.mean_line_type.endswith(".py"):
             self.mean_line_type = os.path.abspath(self.mean_line_type)
 
         if self.install:
-            if self.install["type"].endswith('.py'):
+            if self.install["type"].endswith(".py"):
                 self.install["type"] = os.path.abspath(self.install["type"])
 
         self.check()
@@ -109,7 +108,7 @@ class Config:
         self._check_viscosity()
         self._check_inlet()
         self._check_mean_line()
-        self._check_annulus()
+        # self._check_annulus()
 
     def _check_blades(self):
         """Ensure blade data OK."""

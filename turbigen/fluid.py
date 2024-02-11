@@ -246,7 +246,7 @@ class PerfectState(StructuredData):
     def P(self, value):
         val_array = np.array(value)
         if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative P={value}")
+            raise Exception(f"Cannot set negative P={value.min()}")
         self._set_data_by_key("P", val_array)
 
     @property
@@ -327,6 +327,15 @@ class PerfectState(StructuredData):
         T = u / self.cv
         P = rho * self.rgas * T
         self.set_P_T(P, T)
+        return self
+
+    def set_rho_s(self, rho, s):
+        uref = self.cv * self.Tref
+        rhoref = self.Pref/self.rgas/self.Tref
+        u = uref * np.exp((s + self.rgas*np.log(rho/rhoref))/self.cv)
+        self.set_rho_u(rho, u)
+        assert np.allclose(self.rho, rho)
+        assert np.allclose(self.s, s)
         return self
 
     def to_static(self, Ma):
@@ -672,8 +681,6 @@ class RealState(StructuredData):
         except AttributeError:
             pass
         return phase
-
-
 
     @dependent_property
     def is_supercritical(self):
