@@ -347,6 +347,8 @@ def _write_throttle(ts4_conf, grid, fname):
     with h5py.File(fname, "r") as f:
         bcell_names = list(f["bcell_names"].attrs["names"])
         bcell_ind = [i for i, b in enumerate(bcell_names) if ts4_conf.outlet_tag in b]
+        if not bcell_ind:
+            raise Exception(f'Could not find throttle outlet tag {ts4_conf.outlet_tag}, should be one of {bcell_names}')
 
     # Loop over outlet patches
     mass_target = []
