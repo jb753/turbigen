@@ -264,7 +264,7 @@ def cell_to_node(x):
 
 
 sfin = 0.5
-CFL = 0.4
+CFL = 0.2
 sf = CFL * sfin
 
 
@@ -381,16 +381,6 @@ def step(b, dt, wall):
         -np.diff(Fk, axis=-1),
     ]
 
-    vol_r = (
-        - np.diff(b.dAi[1], axis=0)
-        - np.diff(b.dAj[1], axis=1)
-        - np.diff(b.dAk[1], axis=2)
-    )
-    rvol = node_to_vol(b.r)
-    print(vol_r.flat[0], (b.vol/rvol).flat[0])
-
-
-
     S = get_source(conservedPhor)
     Svol = np.mean(S * b.vol, axis=(-1, -2, -3))
 
@@ -410,7 +400,7 @@ def step(b, dt, wall):
     # print('**After source')
     # for m, kind in enumerate(('mass', 'xmom', 'rmom', 'rtmom', 'ho')):
     #     print(f'    {kind}: {fsum[m].mean() + Svol[m].mean()}')
-    # quit()
+    # # quit()
 
     dU = (fsum / b.vol + S) * dt
 

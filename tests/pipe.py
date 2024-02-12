@@ -22,7 +22,7 @@ Beta = 0.0
 Po1 = 1e5
 To1 = 300.0
 
-M = 0.5
+M = 0.3
 rgas = cp * (ga-1.)/ga
 V = cf.V_cpTo_from_Ma(M,ga)*np.sqrt(cp*To1)
 P1 = Po1/cf.Po_P_from_Ma(M,ga)
@@ -39,7 +39,19 @@ dt = 2.0 * np.pi / float(Nb)
 tv = np.linspace(-dt / 2., dt / 2., nk)
 xv = np.linspace(0., L, ni)
 rv = np.linspace(rh, rt, nj)
+
 xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+
+# squeeze the nozzle
+fac_noz = np.interp(xv, [0., L/2, L], [1., 0.5, 1.])[:,None,None]
+xrt[1] = (xrt[1] - rm)*fac_noz + rm
+
+# import matplotlib.pyplot as plt
+# plt.plot(xrt[0,:,0,0], xrt[1,:,0,0])
+# plt.plot(xrt[0,:,0,0], xrt[1,:,-1,0])
+# plt.axis('equal')
+# plt.show()
+
 
 patches = [
     turbigen.grid.InletPatch(i=0),
@@ -93,66 +105,31 @@ wall = turbigen.solvers.native.get_wall(g[0])
 # plt.plot(b.x[iw], b.r[iw], 'b*')
 # plt.show()
 # quit()
-dt = turbigen.solvers.native.get_timestep(g[0]).min()
 
 
-dU = turbigen.solvers.native.step(g[0], dt, wall)
 np.set_printoptions(precision=3)
 Unow = []
-for i in range(10000):
+for i in range(20000):
 
+    if not np.mod(i, 100):
+        dt = turbigen.solvers.native.get_timestep(g[0])
 
-    # if not np.mod(i, 200) and i > 0:
+    dU = turbigen.solvers.native.step(g[0], dt, wall)
 
-        # b = g[0][ni//2,:,:]
-        # fig, ax = plt.subplots()
-        # hm = ax.contourf(b.y, b.z, b.P)
-        # ax.axis('equal')
-        # plt.colorbar(hm)
+    if not np.mod(i, 50):
+        b = g[0][ni//2, nj//2, nk//2]
+        print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
 
-        # b = g[0][:,:,nk//2]
-        # fig, ax = plt.subplots()
-        # hm = ax.contourf(b.x, b.r, b.Vr)
-        # ax.axis('equal')
-        # plt.colorbar(hm)
+b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+hm = ax.contourf(b.y, b.z, b.P)
+ax.axis('equal')
+plt.colorbar(hm)
 
-        # plt.show()
+b = g[0][:,:,nk//2]
+fig, ax = plt.subplots()
+hm = ax.contourf(b.x, b.r, b.Vr)
+ax.axis('equal')
+plt.colorbar(hm)
 
-        # b = g[0][:,0,0]
-        # fig, ax = plt.subplots()
-        # ax.plot(b.x, b.P)
-        # plt.show()
-
-        # fig, ax = plt.subplots()
-        # Ua = np.array(Unow)
-        # Ua
-        # plt.plot(Ua[:,:3])
-        # ax.legend(('mass','xmom','rmom'))
-        # plt.show()
-
-    try:
-        dU = turbigen.solvers.native.step(g[0], dt, wall)
-        if not np.mod(i, 50):
-            b = g[0][ni//2, nj//2, nk//2]
-            print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
-            # print(b.Vx, b.Vr, b.Vt, b.P, b.T)
-    except:
-
-        b = g[0][ni//2,:,:]
-        fig, ax = plt.subplots()
-        hm = ax.contourf(b.y, b.z, b.P)
-        ax.axis('equal')
-        plt.colorbar(hm)
-
-        b = g[0][:,:,nk//2]
-        fig, ax = plt.subplots()
-        hm = ax.contourf(b.x, b.r, b.Vr)
-        ax.axis('equal')
-        plt.colorbar(hm)
-
-        plt.show()
-        break
-
-
-    # print(g[0].Vx.mean(), g[0].Vr.mean(), g[0].Vt.mean())
-
+plt.show()
