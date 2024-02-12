@@ -67,9 +67,4 @@ mesh:
   yplus: 30.0
   remote_host: gp-111
   gbcs_path: examples/meshes/cascade_splitter/mesh
-  fac_ss_ni: 0.8
-  fac_ss_ni_split: 1.2
-  nk_omesh: 25
-  nk_omesh_tip: 17
   frac_outlet:  0.1
-  # resolution_factor: 0.5
