@@ -264,7 +264,7 @@ def cell_to_node(x):
 
 
 sfin = 0.5
-CFL = 0.1
+CFL = 0.4
 sf = CFL * sfin
 
 
@@ -380,7 +380,18 @@ def step(b, dt, wall):
         -np.diff(Fj, axis=-2),
         -np.diff(Fk, axis=-1),
     ]
-    S = get_source(conservedPhor) * 0
+
+    vol_r = (
+        - np.diff(b.dAi[1], axis=0)
+        - np.diff(b.dAj[1], axis=1)
+        - np.diff(b.dAk[1], axis=2)
+    )
+    rvol = node_to_vol(b.r)
+    print(vol_r.flat[0], (b.vol/rvol).flat[0])
+
+
+
+    S = get_source(conservedPhor)
     Svol = np.mean(S * b.vol, axis=(-1, -2, -3))
 
     # print('**Net fluxes')
