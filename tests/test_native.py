@@ -3,6 +3,8 @@ import turbigen.grid
 import numpy as np
 import turbigen.compflow_native as cf
 
+np.random.seed = 0
+
 def dot(a, b, axis=0):
     return np.sum(a * b, axis=axis)
 
@@ -148,20 +150,50 @@ def test_box():
     assert np.isclose(b.vol.sum(),vol, rtol=rtol)
 
 
-test_box()
-test_areas_volumes()
+# test_box()
+# test_areas_volumes()
 
-    # def test_smooth():
-    #     shape = (1,10,12,14)
-    #     x = np.ones(shape) + 0.05*np.random.random_sample(shape)
-    #     for i in range(100):
-    #         x = turbigen.solvers.native.smooth(x)
-    #         if not np.mod(i,10):
-    #             import matplotlib.pyplot as plt
-    #             fig, ax = plt.subplots()
-    #             h = ax.contourf(x[0,2,:,:],cmap='RdBu')
-    #             plt.colorbar(h)
-    #             plt.show()
-    #         print(x.ptp())
-    #     assert x.ptp()<1e-3
+def test_smooth():
+    ni, nj, nk = (10,12,14)
+    shape = (1,) + (ni, nj, nk)
 
+    x = np.ones(shape)
+
+    mag = 0.05
+    irand = mag*np.random.random_sample((ni,1,1))
+    jrand = mag*np.random.random_sample((1,nj,1))
+    krand = mag*np.random.random_sample((1,1,nk,))
+    irand -= irand.mean()
+    jrand -= jrand.mean()
+    krand -= krand.mean()
+
+    xi = x.copy() + irand
+
+    print('i')
+    print(xi.ptp())
+    for i in range(1000):
+        xi = turbigen.solvers.native.smooth(xi)
+    print(xi.ptp())
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.set_title('i')
+    h = ax.contourf(xi[0,:,:,nk//2].T,levels=np.linspace(-2*mag, 2*mag,20)+1,cmap='RdBu')
+    plt.colorbar(h)
+    plt.show()
+
+    xj = x.copy() + jrand
+    print('j')
+    print(xj.ptp())
+    for i in range(1000):
+        xj = turbigen.solvers.native.smooth(xj)
+    import matplotlib.pyplot as plt
+    print(xj.ptp())
+    fig, ax = plt.subplots()
+    ax.set_title('j')
+    h = ax.contourf(xj[0,:,:,nk//2].T,levels=np.linspace(-2*mag, 2*mag,20)+1,cmap='RdBu')
+    plt.colorbar(h)
+    plt.show()
+
+    assert x.ptp()<1e-3
+
+test_smooth()
