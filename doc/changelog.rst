@@ -1,11 +1,20 @@
 Changelog
 =========
 
+v1.8.0
+^^^^^^
+
+* When running installed turbomachine, reuse installed initial guess
+* Allow install function to return inverse design variables to mean line
+* Fix bounds error on annulus interpolation due to floating point error
+* Check for membership of the turbostream group before running TS3
+* Error if we cannot locate the specified TS4 throttle tag
+
 v1.7.0
 ^^^^^^
 
 * Fix bug with noisy TS4 console logging
-* Allow labes on TS4 point probes with different file names
+* Allow labels on TS4 point probes with different file names
 * Implement unsteady boundary conditions into pre-processing framework
 * Add tutorial to documentation
 
