@@ -115,19 +115,3 @@ def not_test_box():
     # assert np.isclose(b.vol.sum(),vol)
 
 
-# test_box()
-
-    # def test_smooth():
-    #     shape = (1,10,12,14)
-    #     x = np.ones(shape) + 0.05*np.random.random_sample(shape)
-    #     for i in range(100):
-    #         x = turbigen.solvers.native.smooth(x)
-    #         if not np.mod(i,10):
-    #             import matplotlib.pyplot as plt
-    #             fig, ax = plt.subplots()
-    #             h = ax.contourf(x[0,2,:,:],cmap='RdBu')
-    #             plt.colorbar(h)
-    #             plt.show()
-    #         print(x.ptp())
-    #     assert x.ptp()<1e-3
-

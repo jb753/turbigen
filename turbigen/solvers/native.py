@@ -2,6 +2,7 @@ from turbigen.solvers.base import BaseSolver
 import numpy as np
 import turbigen.util
 import turbigen.laplacian
+from turbigen.smooth import smooth
 
 
 # class NativeConfig(BaseSolver):
@@ -267,11 +268,11 @@ CFL = 0.1
 sf = CFL * sfin
 
 
-def smooth(x):
-    xs = x.copy()
-    for i in range(x.shape[0]):
-        xs[i] += turbigen.laplacian.laplacian2(x[i], sf / 6.0)
-    return xs
+# def smooth(x):
+#     xs = x.copy()
+#     for i in range(x.shape[0]):
+#         xs[i] += turbigen.laplacian.laplacian2(x[i], sf / 6.0)
+#     return xs
 
 
 def get_wall(b):
@@ -414,9 +415,9 @@ def step(b, dt, wall):
 
     Unew = b.conserved + cell_to_node(dU)
 
-    Unew = smooth(Unew)
-    Unew[:, 0, :, :] = 0.5 * (Unew[:, 0, :, :] + Unew[:, 1, :, :])
-    Unew[:, -1, :] = 0.5 * (Unew[:, -1, :, :] + Unew[:, -2, :, :])
+    Unew = smooth(Unew, sf)
+    # Unew[:, 0, :, :] = 0.5 * (Unew[:, 0, :, :] + Unew[:, 1, :, :])
+    # Unew[:, -1, :] = 0.5 * (Unew[:, -1, :, :] + Unew[:, -2, :, :])
 
     # # # Extra smoothing at inlet and exit
     # sff = 0.05
