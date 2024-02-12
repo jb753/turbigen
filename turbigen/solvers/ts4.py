@@ -612,7 +612,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.ndim == 2
             assert xyz.shape[0] == 3
 
-            _write_point_probe(ts4_conf, xyz, idomain)
+            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")
