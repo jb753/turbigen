@@ -51,22 +51,16 @@ class OHMeshConfig(BaseConfig):
 
     skewness_control = 0
     orthogonality_control = 0.5
-    nsmooth = 200
+    nsmooth = 500
     nsmooth_multigrid = 100
-
-    constant_spacing_streamwise_percent = 60.0
+    blade_streamwise_weight = 3.0
 
     untwist_outlet = False
 
-    nk_omesh = 25
-    nk_omesh_tip = 25
     nj_tip = 25
     frac_inlet = 0.9
     frac_outlet = 0.15
     relax_outlet = 1
-
-    fac_ss_ni = 2.5
-    fac_ss_ni_split = 1.5
 
     reset_blade_streamwise = True
 
@@ -109,19 +103,14 @@ class OHMeshConfig(BaseConfig):
             "nx_mix": 9,
             "dr_hub": dhub,
             "dr_cas": dcas,
-            "fac_ss_ni": self.fac_ss_ni,
-            "fac_ss_ni_split": self.fac_ss_ni_split,
             "nr": nj,
             "drt_row": dsurf.tolist(),
             "stagger": stagger_topo,
             "const_cells_pc": 45.0,
             "nr_tip_gap": self.nj_tip,
-            "n_boundary_layer": self.nk_omesh,
             "relax_outlet": self.relax_outlet,
-            "n_boundary_layer_gap": self.nk_omesh_tip,
             "ER_boundary_layer": 1.1,
             "ER_blade_surf": 1.2,
-            "const_pc_blade_surf": self.constant_spacing_streamwise_percent,
             "n_te": 17,
             "frac_up": self.frac_inlet,
             "frac_dn": self.frac_outlet,
@@ -140,6 +129,7 @@ class OHMeshConfig(BaseConfig):
             "untwist_outlet": self.untwist_outlet,
             "splitter": splitter,
             "span_interp": self.span_interpolation,
+            "blade_streamwise_weight": self.blade_streamwise_weight,
         }
 
 

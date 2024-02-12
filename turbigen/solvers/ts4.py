@@ -347,6 +347,8 @@ def _write_throttle(ts4_conf, grid, fname):
     with h5py.File(fname, "r") as f:
         bcell_names = list(f["bcell_names"].attrs["names"])
         bcell_ind = [i for i, b in enumerate(bcell_names) if ts4_conf.outlet_tag in b]
+        if not bcell_ind:
+            raise Exception(f'Could not find throttle outlet tag {ts4_conf.outlet_tag}, should be one of {bcell_names}')
 
     # Loop over outlet patches
     mass_target = []
@@ -610,7 +612,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.ndim == 2
             assert xyz.shape[0] == 3
 
-            _write_point_probe(ts4_conf, xyz, idomain)
+            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")

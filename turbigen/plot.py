@@ -482,8 +482,18 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
     surfs = g.cut_blade_surfs()[irow]
     surf = surfs[0]  # Main blade
     jspf = np.argmin(np.abs(surf.spf[1, :, 0] - spf))
-    surf = surf[:, jspf, 0]
-    istag = np.argmax(surf.P)
+    surf = surf[:,jspf,0]
+
+
+    Vi = surf.Vi_rel
+    # Take surface distance and normalise to (-1, 1)
+    zeta_norm = surf.zeta
+    zeta_norm /= 0.5 * zeta_norm.ptp()
+    zeta_norm -= 1.0
+
+    # Find a zero crossing near LE
+    istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.3)[:-1])[0][0]
+
     zstag = surf.zeta - surf.zeta[istag]
     zn = zstag + 0.0
     Lref = zn[np.argmax(np.abs(zn))]
