@@ -492,7 +492,7 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
     zeta_norm -= 1.0
 
     # Find a zero crossing near LE
-    istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.3)[:-1])[0][0]
+    istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.1)[:-1])[0][0]
 
     zstag = surf.zeta - surf.zeta[istag]
     zn = zstag + 0.0
