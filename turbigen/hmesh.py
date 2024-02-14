@@ -2,7 +2,6 @@ import numpy as np
 from turbigen import util
 import turbigen.grid
 import turbigen.geometry
-import turbigen.smooth
 from multiprocessing import Pool
 from itertools import repeat
 from turbigen.base import BaseConfig
@@ -768,63 +767,6 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
             )
 
         xrt_now = np.concatenate([xr3, theta], axis=0)
-
-        if mesh_config.maxiter_smooth and not unbladed[irow]:
-
-            # Loop over spanwise points to convert to mp coordinates
-            mp = np.empty(xrt_now.shape[1:])
-            Ls = []
-            for j in range(nj):
-                Lnow = turbigen.geometry.DiscreteMeridionalLine(xrt_now[:2, :, j, :])
-                mp[:, j, :] = Lnow.mp_from_xr(xrt_now[:2, :, j, :])
-                Ls.append(Lnow)
-
-            mpt_now = np.stack((mp, xrt_now[2]))
-
-            _, ni, nj, nk = xrt_now.shape
-            bcond_i = np.zeros((2, nk), dtype=int)
-            bcond_k = np.zeros((2, ni), dtype=int)
-
-            # Fix k=0 and k=nk-1 surfaces
-            bcond_k[:] = turbigen.smooth.BCond.FIX
-            bcond_k[:, ile : (ite + 1)] = turbigen.smooth.BCond.DISTANCE
-
-            # Extrapolate circumferential position of i=0 and i=ni-1 nodes from interior
-            bcond_i[:] = turbigen.smooth.BCond.FIX
-            bcond_i[:, 1:-1] = turbigen.smooth.BCond.EXTRAP_Y
-
-            # Split into chunks for parallel execution
-            Nworker = np.min((os.cpu_count(), nj // 2))
-            mpt_chunk = np.array_split(mpt_now, Nworker, axis=2)
-
-            # Send to workers
-            with Pool(Nworker) as p:
-                mpt_now = np.concatenate(
-                    p.starmap(
-                        turbigen.smooth.smooth_block,
-                        zip(
-                            mpt_chunk,
-                            repeat(bcond_i),
-                            repeat(bcond_k),
-                            repeat(mesh_config.rtol_smooth),
-                            repeat(mesh_config.maxiter_smooth),
-                        ),
-                    ),
-                    axis=2,
-                )
-
-            # turbigen.smooth.smooth_block(
-            #     mpt_now,
-            #     bcond_i,
-            #     bcond_k,
-            #     mesh_config.rtol_smooth,
-            #     mesh_config.maxiter_smooth,
-            # )
-
-            # Assign back to grid
-            for j in range(nj):
-                xrt_now[:2, :, j, :] = Ls[j].xr_from_mp(mpt_now[0, :, j, :])
-                xrt_now[2] = mpt_now[1]
 
         # Make periodic patches
         if unbladed[irow]:
