@@ -25,6 +25,7 @@ doc/build
 stopit
 log.txt
 *.xdmf
+*.so
 .init_finished
 tests/run*/
 slurm-*.out
