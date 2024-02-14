@@ -109,7 +109,7 @@ wall = turbigen.solvers.native.get_wall(g[0])
 
 np.set_printoptions(precision=3)
 Unow = []
-for i in range(20000):
+for i in range(5000):
 
     if not np.mod(i, 100):
         dt = turbigen.solvers.native.get_timestep(g[0])

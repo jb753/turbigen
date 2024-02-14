@@ -2,7 +2,7 @@ from turbigen.solvers.base import BaseSolver
 import numpy as np
 import turbigen.util
 import turbigen.laplacian
-from turbigen.smooth import smooth
+from turbigen.compiled import smooth, cell_to_node, node_to_face, node_to_cell
 
 
 # class NativeConfig(BaseSolver):
@@ -12,8 +12,7 @@ from turbigen.smooth import smooth
 
 
 def get_timestep(b):
-    Vref = node_to_vol(b.V)
-    aref = node_to_vol(b.a)
+    Vref, aref = node_to_cell(np.stack((b.V, b.a)))
     dli = turbigen.util.vecnorm(b.dli)
     dlj = turbigen.util.vecnorm(b.dlj)
     dlk = turbigen.util.vecnorm(b.dlk)
@@ -31,254 +30,15 @@ def get_timestep(b):
     return dt
 
 
-def node_to_face(x):
-    # x has shape [?,ni,nj,nk]
-    # return averaged values on const i, const j, const k faces
-    # xi [?,ni,nj-1, nk-1]
-    # xj [?,ni-1,nj, nk-1]
-    # xk [?,ni-1,nj-1, nk]
-
-    xi = np.stack(
-        (
-            x[..., :, :-1, :-1],
-            x[..., :, 1:, :-1],
-            x[..., :, 1:, 1:],
-            x[..., :, :-1, 1:],
-        ),
-    ).mean(axis=0)
-
-    xj = np.stack(
-        (
-            x[..., :-1, :, :-1],
-            x[..., 1:, :, :-1],
-            x[..., 1:, :, 1:],
-            x[..., :-1, :, 1:],
-        ),
-    ).mean(axis=0)
-
-    xk = np.stack(
-        (
-            x[..., :-1, :-1, :],
-            x[..., 1:, :-1, :],
-            x[..., 1:, 1:, :],
-            x[..., :-1, 1:, :],
-        ),
-    ).mean(axis=0)
-
-    return xi, xj, xk
-
-
-def node_to_vol(x):
-    # x has shape [?,ni,nj,nk]
-    # return averaged values for each cell
-    # xi [?,ni-1,nj-1, nk-1]
-    return np.stack(
-        (
-            x[..., :-1, :-1, :-1],  # i, j, k
-            x[..., 1:, :-1, :-1],  # i+1, j, k
-            x[..., 1:, 1:, :-1],  # i+1, j+1, k
-            x[..., :-1, 1:, :-1],  # i, j+1, k
-            x[..., :-1, :-1, 1:],  # i, j, k+1
-            x[..., 1:, :-1, 1:],  # i+1, j, k+1
-            x[..., 1:, 1:, 1:],  # i+1, j+1, k+1
-            x[..., :-1, 1:, 1:],  # i, j+1, k+1
-        ),
-    ).mean(axis=0)
-
-
-def cell_to_node(x):
-    # x has shape [?,ni-1,nj-1,nk-1]
-    # return values for each node
-    # xi [?,ni,nj, nk]
-    *other, nim1, njm1, nkm1 = x.shape
-    ni = nim1 + 1
-    nj = njm1 + 1
-    nk = nkm1 + 1
-
-    xn = np.full(tuple(other) + (ni, nj, nk), np.nan)
-
-    # Interior nodes take 1/8th from each of i
-    xn[..., 1:-1, 1:-1, 1:-1] = node_to_vol(x)
-
-    # i=(0,-1) takes 1/4 from j, j+1, k, k+1
-    for i in (0, -1):
-        xn[..., i, 1:-1, 1:-1] = np.stack(
-            (
-                x[..., i, :-1, :-1],  # j, k
-                x[..., i, 1:, :-1],  # j+1, k
-                x[..., i, :-1, 1:],  # j, k+1
-                x[..., i, 1:, 1:],  # j+1, k+1
-            )
-        ).mean(axis=0)
-
-    # j=(0,-1) takes 1/4 from i, i+1, k, k+1
-    for j in (0, -1):
-        xn[..., 1:-1, j, 1:-1] = np.stack(
-            (
-                x[..., :-1, j, :-1],
-                x[..., 1:, j, :-1],
-                x[..., :-1, j, 1:],
-                x[..., 1:, j, 1:],
-            )
-        ).mean(axis=0)
-
-    # k=(0,-1) takes 1/4 from i, i+1, k, k+1
-    for k in (0, -1):
-        xn[..., 1:-1, 1:-1, k] = np.stack(
-            (
-                x[..., :-1, :-1, k],
-                x[..., 1:, :-1, k],
-                x[..., :-1, 1:, k],
-                x[..., 1:, 1:, k],
-            )
-        ).mean(axis=0)
-
-    # Edges take half from nearest two cells
-
-    # Along i lines
-    for j in (0, -1):
-        for k in (0, -1):
-            xn[..., 1:-1, j, k] = 0.5 * (x[..., :-1, j, k] + x[..., 1:, j, k])
-
-    # Along j lines
-    for i in (0, -1):
-        for k in (0, -1):
-            xn[..., i, 1:-1, k] = 0.5 * (x[..., i, :-1, k] + x[..., i, 1:, k])
-
-    # Along k lines
-    for i in (0, -1):
-        for j in (0, -1):
-            xn[..., i, j, 1:-1] = 0.5 * (x[..., i, j, :-1] + x[..., i, j, 1:])
-
-    # Corners take entire change from nearest cell
-    for i in (0, -1):
-        for j in (0, -1):
-            for k in (0, -1):
-                xn[..., i, j, k] = x[..., i, j, k]
-
-    return xn
-
-
-# def convective_fluxes(U_node, ho_node, r_face, wall):
-#     """Calculate the convective fluxes from nodal conserved vars."""
-
-#     U_face = node_to_face(U_node)
-#     ho_face = node_to_face(ho_node)
-
-#     # Loop over i/j/k faces
-#     flux = []
-#     for n in range(3):
-
-#         rho, rhoVx, rhoVr, rhorVt, rhoe  = U_face[n]
-#         ho = ho_face[n]
-
-#         rVt = rhorVt / rho
-#         rhoVt = rhorVt / r_face[n]
-#         Vx = rhoVx / rho
-#         Vr = rhoVr / rho
-
-#         flux_mass = np.expand_dims(np.stack((rhoVx, rhoVr, rhoVt)),axis=1)
-
-#         flux_all = flux_mass * np.stack(
-#             (
-#                 np.ones_like(rho),  # mass
-#                 Vx,  # x-mom
-#                 Vr, # r-mom
-#                 rVt, # rt-mom
-#                 ho, # energy
-#             )
-#         )
-
-#         # Sum over coordinate directions
-#         flux_sum = np.sum(flux_all, axis=0)
-
-#         flux_sum[:,wall[n]] = 0.
-
-#         flux.append(flux_sum)
-
-#     return flux
-
-# def pressure_fluxes(P_node, r_face, Omega):
-
-#     P_face = node_to_face(P_node)
-
-#     # Loop over i/j/k faces
-#     flux = []
-#     for n in range(3):
-
-#         P = P_face[n]
-#         Z = np.zeros_like(P)
-#         r = r_face[n]
-
-#         flux_all = np.array(
-#             (
-#                 (Z, Z, Z), # mass
-#                 (P, Z, Z), # x-mom
-#                 (Z, P, Z), # r-mom
-#                 (Z, Z, r*P), # rt-mom
-#                 (Z, Z, Z), # energy TODO put Omega term in here
-#             )
-#         )
-
-#         flux.append(np.stack(
-#             (
-#                 np.zeros_like(P),  # mass
-#                 Vx,  # x-mom
-#                 Vr, # r-mom
-#                 rVt, # rt-mom
-#                 ho, # energy
-#             )
-#         )
-
-#     )
-
-#     return flux
-
-# def get_fluxes(vars_node, Omega):
-
-#     vars_face = node_to_face(vars_node)
-
-#     # vars_node = np.stack((*conserved, P, ho, b.r))
-#     flux = []
-#     for n in range(3):
-
-#         rho, rhoVx, rhoVr, rhorVt, rhoe, P, ho, r  = vars_face[n]
-
-#         rVt = rhorVt / rho
-#         rhoVt = rhorVt / r
-#         Vx = rhoVx / rho
-#         Vr = rhoVr / rho
-#         Vt = rhoVt / rho
-
-#         flux.append(np.array(
-#             (
-#                 (rhoVx, rhoVr, rhoVt),  # mass
-#                 (rhoVx * Vx + P, rhoVr * Vx, rhoVt * Vx),  # x-mom
-#                 (rhoVx * Vr, rhoVr * Vr + P, rhoVt * Vr),  # r-mom
-#                 (rhoVx * rVt, rhoVr * rVt, rhoVt * Vt + r * P),  # rt-mom
-#                 (rhoVx * ho, rhoVr * ho, rhoVt * ho + Omega * r * P),  # energy
-#             )
-#         ))
-
-#     return flux
-
-
 sfin = 0.5
 CFL = 0.2
 sf = CFL * sfin
 
 
-# def smooth(x):
-#     xs = x.copy()
-#     for i in range(x.shape[0]):
-#         xs[i] += turbigen.laplacian.laplacian2(x[i], sf / 6.0)
-#     return xs
-
-
 def get_wall(b):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
-    return [w > thresh for w in node_to_face(b.get_wall())]
+    return [w[0] > thresh for w in node_to_face(np.expand_dims(b.get_wall(), 0))]
 
 
 def apply_bconds(b):
@@ -415,8 +175,11 @@ def step(b, dt, wall):
     # dU[-1,...] = 0.
 
     Unew = b.conserved + cell_to_node(dU)
+    Unew = np.asfortranarray(Unew)
+    # print(Unew.flags['F_CONTIGUOUS'])
+    # quit()
 
-    Unew = smooth(Unew, sf)
+    smooth(Unew, sf)
     # Unew[:, 0, :, :] = 0.5 * (Unew[:, 0, :, :] + Unew[:, 1, :, :])
     # Unew[:, -1, :] = 0.5 * (Unew[:, -1, :, :] + Unew[:, -2, :, :])
 
@@ -447,7 +210,7 @@ def get_source(conservedPhor_node):
         )
     )
 
-    S_vol = node_to_vol(S_node)
+    S_vol = node_to_cell(S_node)
 
     return S_vol
 
