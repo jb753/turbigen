@@ -24,6 +24,11 @@ sdist ::
 test ::
 	pytest
 
+compile ::
+	f2py -m compiled -c turbigen/compiled.f90
+	mv compiled*.so turbigen
+
+
 verify-sdist ::
 	mkdir -p test-sdist
 	rm -rv test-sdist/*
