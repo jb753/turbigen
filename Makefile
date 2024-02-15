@@ -25,7 +25,7 @@ test ::
 	pytest
 
 compile ::
-	f2py -m compiled -c turbigen/compiled.f90
+	f2py -m compiled --opt='-O3' -c turbigen/compiled.f90
 	mv compiled*.so turbigen
 
 

@@ -2,6 +2,7 @@ import turbigen.solvers.native
 import turbigen.compflow_native as cf
 import turbigen.grid
 import numpy as np
+from timeit import default_timer as timer
 
 
 
@@ -66,10 +67,10 @@ g = turbigen.grid.Grid([block,])
 g.match_patches()
 g.check_coordinates()
 
-print('nijk',g[0].shape)
-print('dAi', g[0].dAi.shape, g[0].dAi.mean(axis=(-1,-2,-3)))
-print('dAj', g[0].dAj.shape, g[0].dAj.mean(axis=(-1,-2,-3)))
-print('dAk', g[0].dAk.shape, g[0].dAk.mean(axis=(-1,-2,-3)))
+# print('nijk',g[0].shape)
+# print('dAi', g[0].dAi.shape, g[0].dAi.mean(axis=(-1,-2,-3)))
+# print('dAj', g[0].dAj.shape, g[0].dAj.mean(axis=(-1,-2,-3)))
+# print('dAk', g[0].dAk.shape, g[0].dAk.mean(axis=(-1,-2,-3)))
 
 So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
 So1.set_P_T(Po1, To1)
@@ -87,49 +88,47 @@ for b in g:
     b.Omega = 0.0
     b.set_P_T(P1, T1)
 
-
-dt = turbigen.solvers.native.get_timestep(g[0])
+# dt = turbigen.solvers.native.get_timestep(g[0])
 
 g.apply_periodic()
 
 import matplotlib.pyplot as plt
 
-wall = turbigen.solvers.native.get_wall(g[0])
-# wi, wj, wk = wall
-
-# # plt.plot(wj[1,:,2])
-# b = g[0][:,:,0]
-# iw = g[0].get_wall()[...,1]
-# plt.plot(b.x, b.r, 'k-',lw=0.5)
-# plt.plot(b.x.T, b.r.T, 'k-',lw=0.5)
-# plt.plot(b.x[iw], b.r[iw], 'b*')
-# plt.show()
-# quit()
-
-
 np.set_printoptions(precision=3)
-Unow = []
-for i in range(5000):
 
-    if not np.mod(i, 100):
-        dt = turbigen.solvers.native.get_timestep(g[0])
 
-    dU = turbigen.solvers.native.step(g[0], dt, wall)
+tst = timer()
+turbigen.solvers.native.run(g)
+ten = timer()
+print(ten-tst)
 
-    if not np.mod(i, 50):
-        b = g[0][ni//2, nj//2, nk//2]
-        print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
+
+# Unow = []
+# tstart = timer()
+# nodes = b.size
+# for i in range(5000):
+
+#     if not np.mod(i, 100):
+#         dt = turbigen.solvers.native.get_timestep(g[0])
+#         ten = timer()
+#         tpnps = (ten-tstart)/nodes/100
+#         print(f'tpnps={tpnps}')
+#         tstart = ten
+
+#     dU = turbigen.solvers.native.step(g[0], dt, wall)
+
+#     if not np.mod(i, 50):
+#         b = g[0][ni//2, nj//2, nk//2]
+#         print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
 
 b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 hm = ax.contourf(b.y, b.z, b.P)
 ax.axis('equal')
 plt.colorbar(hm)
-
 b = g[0][:,:,nk//2]
 fig, ax = plt.subplots()
 hm = ax.contourf(b.x, b.r, b.Vr)
 ax.axis('equal')
 plt.colorbar(hm)
-
 plt.show()
