@@ -456,11 +456,11 @@ class Grid:
         for patch in self.periodic_patches:
             if patch in done:
                 continue
-            i1 = (slice(3,None,None),) + patch.get_slice()[1:]
-            i2 = (slice(3,None,None),) + patch.match.get_slice()[1:]
+            i1 = (slice(3, 7, None),) + patch.get_slice()[1:]
+            i2 = (slice(3, 7, None),) + patch.match.get_slice()[1:]
             C1 = patch.get_cut()
             C2 = patch.get_match_cut()
-            avg = 0.5*(C1._data[i1] + C2._data[i2])
+            avg = 0.5 * (C1._data[i1] + C2._data[i2])
             patch.block._data[i1] = avg
             patch.match.block._data[i2] = avg
 
@@ -1114,7 +1114,6 @@ class Patch:
     @ijkdir.setter
     def ijkdir(self, value):
         self.idir, self.jdir, self.kdir = value
-
 
     def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice

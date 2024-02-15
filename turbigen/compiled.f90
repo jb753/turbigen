@@ -8,18 +8,18 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (in)  :: conserved(5, ni, nj, nk)
+    real*8, intent (inout)  :: conserved(5, ni, nj, nk)
     real*8, intent (out) :: resid(5,ni, nj, nk)
-    real*8, intent (in)  :: Phor(3, ni, nj, nk)
-    real*8, intent (in)  :: Omega
-    integer, intent (in)  :: walli(ni, nj-1, nk-1)
-    integer, intent (in)  :: wallj(ni-1, nj, nk-1)
-    integer, intent (in)  :: wallk(ni-1, nj-1, nk)
-    real*8, intent (in)  :: dAi(3, ni, nj-1, nk-1)
-    real*8, intent (in)  :: dAj(3, ni-1, nj, nk-1)
-    real*8, intent (in)  :: dAk(3, ni-1, nj-1, nk)
-    real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
-    real*8, intent (in)  :: dt(ni-1, nj-1, nk-1)
+    real*8, intent (inout)  :: Phor(3, ni, nj, nk)
+    real*8, intent (inout)  :: Omega
+    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
+    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
+    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
+    real*8, intent (inout)  :: dAi(3, ni, nj-1, nk-1)
+    real*8, intent (inout)  :: dAj(3, ni-1, nj, nk-1)
+    real*8, intent (inout)  :: dAk(3, ni-1, nj-1, nk)
+    real*8, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*8, intent (inout)  :: dt(ni-1, nj-1, nk-1)
 
     integer :: ip
 
@@ -101,7 +101,7 @@ subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
     real*8, intent (in)  :: conserved(5, ni, nj, nk)
     real*8, intent (in)  :: Phor(3, ni, nj, nk)
     real*8, intent (in)  :: Omega
-    integer, intent (in)  :: wall(ni, nj, nk)
+    logical*1, intent (in)  :: wall(ni, nj, nk)
 
     real*8, intent (out) :: flux(5, 3, ni, nj, nk)
 
@@ -145,7 +145,9 @@ subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
     ! zero convective fluxes on walls
     do ip = 1,5
         do ic = 1,3
-            flux(ip, ic, :, :, :) = flux(ip, ic, :, :, :)*wall
+            where (wall)
+                flux(ip, ic, :, :, :) = 0.0
+            end where
         end do
     end do
 
@@ -217,7 +219,7 @@ subroutine node_to_face(xn, xi, xj, xk, np, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (in)  :: xn(np, ni, nj, nk)
+    real*8, intent (inout)  :: xn(np, ni, nj, nk)
     real*8, intent (out)  :: xi(np, ni, nj-1, nk-1)
     real*8, intent (out)  :: xj(np, ni-1, nj, nk-1)
     real*8, intent (out)  :: xk(np, ni-1, nj-1, nk)
@@ -258,7 +260,7 @@ subroutine node_to_cell(xn, xc, np, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (in)  :: xn(np, ni, nj, nk)
+    real*8, intent (inout)  :: xn(np, ni, nj, nk)
     real*8, intent (out)  :: xc(np, ni-1, nj-1, nk-1)
 
     ! Cell values are the average of all eight hex vertices
@@ -450,7 +452,7 @@ subroutine smooth(x, xs, sf, np, ni, nj, nk)
 
     real*8, intent (in)  :: sf
 
-    real*8, intent (in)  :: x(np, ni, nj, nk)
+    real*8, intent (inout)  :: x(np, ni, nj, nk)
     real*8, intent (out)  :: xs(np, ni, nj, nk)
 
     real*8 :: sf1

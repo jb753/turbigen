@@ -20,11 +20,11 @@ logger.setLevel(level=logging.INFO)
 #     _name = "Native"
 
 nstep_dt = 100
-nstep_log = 100
+nstep_log = 50
 nstep = 1000
+nrk = 4
 
 
-# @profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
@@ -59,19 +59,31 @@ def run(grid, settings={}, machine=None):
             b = grid[iblock]
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
 
-            conserved, Phor = apply_bconds(b)
+            dU = np.zeros(b.shape)
 
-            dU = step(conserved, Phor, Omega, *wall, dt[iblock], dAi, dAj, dAk, vol)
+            conserved_start = np.asfortranarray(b.conserved.copy())
+
+            for irk in range(nrk):
+                frk = 1.0 / (irk + nrk)
+
+                conserved, Phor = apply_bconds(b)
+
+                dU = step(
+                    conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
+                )
+
+                if irk == nrk - 1:
+                    b.set_conserved(smooth(conserved_start + dU, sf))
+                else:
+                    b.set_conserved(conserved_start + dU)
 
             if not np.mod(istep, nstep_log):
                 log_line = f"{istep}: {np.abs(dU).mean(axis=(-1,-2,-3))}"
                 logger.info(log_line)
                 ten = timer()
-                tpnps = (ten - tstart) / nodes / 100
+                tpnps = (ten - tstart) / nodes / nstep_log
                 logger.info(f"tpnps={tpnps}")
                 tstart = ten
-
-            b.set_conserved(smooth(conserved + dU, sf))
 
 
 def get_geom(b):
@@ -106,20 +118,25 @@ def get_geom(b):
 
 
 def get_timestep(b, dlmin):
-    Vref, aref = node_to_cell(np.stack((b.V, b.a)))
+    Vref, aref = node_to_cell(np.asfortranarray(np.stack((b.V, b.a))))
     dt = CFL * dlmin / (aref + Vref)
     return np.asfortranarray(dt)
 
 
-sfin = 0.5
-CFL = 0.2
+sfin = 0.05
+CFL = 3.5
 sf = CFL * sfin
 
 
 def get_wall(b):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
-    return [w[0] < thresh for w in node_to_face(np.expand_dims(b.get_wall(), 0))]
+    return [
+        (w[0] > thresh).astype(np.int8)
+        for w in node_to_face(
+            np.asfortranarray(np.expand_dims(b.get_wall(), 0).astype(float))
+        )
+    ]
 
 
 # @profile
