@@ -513,11 +513,15 @@ def run_single(conf, gguess=None, plot=False):
     logger.info("Applying boundary conditions...")
 
     # Wall rotations
-    Omega = ml.Omega[
-        ::2,
-    ]
     rot_types = []
-    for Omi, tip in zip(Omega, mac.tip):
+
+    rpm_adjust = conf.operating_point.get("rpm_adjust",0.)
+    if rpm_adjust:
+        logger.info(f'Adjusting rpms by {rpm_adjust}')
+    ml.Omega*=(1.+rpm_adjust)
+
+
+    for Omi, tip in zip(ml.Omega[::2], mac.tip):
         if Omi:
             if tip:
                 rot_types.append("tip_gap")
@@ -525,7 +529,7 @@ def run_single(conf, gguess=None, plot=False):
                 rot_types.append("shroud")
         else:
             rot_types.append("stationary")
-    g.apply_rotation(rot_types, Omega)
+    g.apply_rotation(rot_types, ml.Omega[::2])
 
     # if "Beta1_override" in conf.solver:
     #     Beta1 = conf.solver.pop("Beta1_override")
