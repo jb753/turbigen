@@ -20,18 +20,21 @@ def test_node_to_cell():
 
     # Make an ijk grid
     i, j, k = make_ijk()
+    i = np.asfortranarray(np.expand_dims(i,0))
+    j = np.asfortranarray(np.expand_dims(j,0))
+    k = np.asfortranarray(np.expand_dims(k,0))
 
     # Uniform should stay uniform
-    xu = np.expand_dims(np.ones_like(i),0)
+    xu = np.ones_like(i)
     assert np.allclose(xu[:,:-1,:-1,:-1], turbigen.compiled.node_to_cell(xu))
 
     # Error should be exactly half for linear variation in each dirn
-    fi = turbigen.compiled.node_to_cell(np.expand_dims(i, 0))[0]
-    assert np.allclose(fi-i[:-1, :-1, :-1], 0.5)
-    fj = turbigen.compiled.node_to_cell(np.expand_dims(j, 0))[0]
-    assert np.allclose(fj-j[:-1, :-1, :-1], 0.5)
-    fk = turbigen.compiled.node_to_cell(np.expand_dims(k, 0))[0]
-    assert np.allclose(fk-k[:-1, :-1, :-1], 0.5)
+    fi = turbigen.compiled.node_to_cell(i)[0]
+    assert np.allclose(fi-i[0,:-1, :-1, :-1], 0.5)
+    fj = turbigen.compiled.node_to_cell(j)[0]
+    assert np.allclose(fj-j[0,:-1, :-1, :-1], 0.5)
+    fk = turbigen.compiled.node_to_cell(k)[0]
+    assert np.allclose(fk-k[0,:-1, :-1, :-1], 0.5)
 
 def test_cell_to_node():
 
