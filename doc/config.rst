@@ -190,7 +190,12 @@ fraction `spf` and vectors of thickness and camber parameters, `q_thick` and
 The number of blades can be set via three choices: directly using `Nb`, a
 non-dimensional circulation using `Co`, or the Lieblein diffusion factor `DFL`.
 Thickness and camber vectors are interpolated between each of the specified
-span fractions. So a complete specification of the blade geometry is:
+span fractions. 
+
+Tip gaps can be modelled by adding a `tip` key to the row configuration. The
+gap is normalised by the mean of the inlet and exit span.
+
+A complete specification of the blade geometry is:
 
 .. code-block:: yaml
 
@@ -207,6 +212,7 @@ span fractions. So a complete specification of the blade geometry is:
            qstar_camber: [0., 0., 1.0, 1.0, 0.0]
      # Second row
      - Co: 0.7  # Set number of blades using circulation coeff
+       tip: 0.01  # 1% of span tip gap
        # Prismatic blade section
        sections:
          - spf: 0.5  # Midspan
@@ -301,6 +307,18 @@ To set the mass flow rate to the design value using a PID controller on exit sta
 The constants are non-dimensionalised with the nominal duty, so values of order
 one are a good first guess. Smaller values are more robust at the expense of
 longer convergence times.
+
+To run the CFD off-design, keys `mass_adjust` and `rpm_adjust` can be added to
+change the mass flow rate and shaft speed respectively, relative to the nominal
+values. For example, to throttle to 90% of the design mass flow at 110% of the
+design shaft speed:
+
+.. code-block:: yaml
+
+   operating_point:
+     mdot_pid: [0.5, 0.1, 0.0]
+     mass_adjust: -0.1  # 10% below design mass flow
+     rpm_adjust: 0.1  # 10% above design rpm
 
 .. _cnf-iterate:
 

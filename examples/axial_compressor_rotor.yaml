@@ -45,18 +45,5 @@ solver:
 
 operating_point:
   mdot_pid: [0.5, 0.1, 0.0]
-
-# Match CFD to nominal by iteration
-iterate:
-  mean_line:  # Correct efficiency guess
-    match_tolerance:
-      etatt: 0.01  # Efficiency to within 0.5%
-    relaxation_factor: 0.5  # Change is half difference CFD-nominal
-  deviation:  # Correct exit flow angles by TE recamber
-    clip: 5.0  # Maximum recamber in one step
-    relaxation_factor: 0.8  # Multiplier on changes to metal angle
-    tolerance: 1.0  # Absolute tolerance for termination in degrees
-  incidence:  # Correct incidence by LE recamber
-    clip: 5.0   # Maximum recamber in one step
-    relaxation_factor: 0.2  # Multiplier on changes to metal angle
-    tolerance: 2.0  # Absolute tolerance for termination in degrees
+  mass_adjust: -0.01
+  rpm_adjust: 0.02

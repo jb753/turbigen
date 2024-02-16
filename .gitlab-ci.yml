@@ -9,10 +9,10 @@ test:
   stage: test
   script:
   - python -V
-  - make compile
   - apt install gfortran
   - pip install -U pip
   - pip install -e ".[test]"
+  - make compile
   - pytest
 
 docs:
