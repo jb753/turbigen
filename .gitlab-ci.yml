@@ -9,7 +9,7 @@ test:
   stage: test
   script:
   - python -V
-  - apt install gfortran
+  - apt install gcc-gfortran
   - pip install -U pip
   - pip install -e ".[test]"
   - make compile
