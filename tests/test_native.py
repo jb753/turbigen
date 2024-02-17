@@ -1,4 +1,4 @@
-import turbigen.solvers.native
+# import turbigen.solvers.native
 import turbigen.grid
 import numpy as np
 import turbigen.compflow_native as cf
