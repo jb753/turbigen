@@ -513,11 +513,15 @@ def run_single(conf, gguess=None, plot=False):
     logger.info("Applying boundary conditions...")
 
     # Wall rotations
-    Omega = ml.Omega[
-        ::2,
-    ]
     rot_types = []
-    for Omi, tip in zip(Omega, mac.tip):
+
+    rpm_adjust = conf.operating_point.get("rpm_adjust",0.)
+    if rpm_adjust:
+        logger.info(f'Running off-design: adjusted rpms by {rpm_adjust:+}')
+    ml.Omega*=(1.+rpm_adjust)
+
+
+    for Omi, tip in zip(ml.Omega[::2], mac.tip):
         if Omi:
             if tip:
                 rot_types.append("tip_gap")
@@ -525,7 +529,7 @@ def run_single(conf, gguess=None, plot=False):
                 rot_types.append("shroud")
         else:
             rot_types.append("stationary")
-    g.apply_rotation(rot_types, Omega)
+    g.apply_rotation(rot_types, ml.Omega[::2])
 
     if "Beta1_override" in conf.solver:
         Beta1 = conf.solver.pop("Beta1_override")
@@ -538,17 +542,21 @@ def run_single(conf, gguess=None, plot=False):
     g.apply_outlet(ml.P[-1])
 
     # Configure throttle
-    if throttle_pid := conf.operating_point.get("mdot_pid"):
+    mass_adjust = conf.operating_point.get("mass_adjust", 0.0)
+    throttle_pid = conf.operating_point.get("mdot_pid")
+    if mass_adjust and not throttle_pid:
+        raise Exception('Cannot adjust mass flow rate without exit throttle PID: set `mdot_pid` in the operating point configuration.')
+
+    if mass_adjust:
+        logger.info(f'Running off-design: adjusted mass flow rate by {mass_adjust:+}')
+
+    if throttle_pid:
         restart_fac = 0.5 if gguess else 1.0
         norm_fac = ml.P.ptp() / ml.mdot[-1]
-        mass_adjust = conf.solver.pop("mass_adjust", 0.0)
-        chic_flag = np.abs(mass_adjust) > 0.0
         g.apply_throttle(
             ml.mdot[-1] * (1.0 + mass_adjust),
             np.array(throttle_pid) * norm_fac * restart_fac,
         )
-    else:
-        chic_flag = False
 
     # Choose whether the blocks are real or perfect
     if isinstance(So1, fluid.PerfectState):
@@ -841,7 +849,7 @@ def run_single(conf, gguess=None, plot=False):
     if conf.iterate:
         log_line(pdict, log_fields)
 
-    if opt_converged and not chic_flag:
+    if opt_converged:
 
         # Checking the phase is expensive, so only do at end of iteration
         turbigen.post_process.check_phase(g)
@@ -1003,118 +1011,6 @@ def run(conf, plot=False):
 
     if not opt_converged:
         raise Exception("Iteration did not converge to specified tolerances")
-
-    # Now run chic if requested
-    if "mass_step" in conf.operating_point:
-        # Disable optimisations to fix the geometry
-        conf.iterate = {}
-
-        chic_path = os.path.join(basedir, "chic.json")
-
-        mdot_des = ml_out.mdot[0]
-        logger.iter(f"Design mass flow mdot_des={mdot_des}")
-
-        chic = {"mass": [0.0], "eta": [ml_out.eta_tt], "PR": [ml_out.PR_tt]}
-
-        logger.iter("Now running characteristic.")
-
-        logger.iter("Into stall...")
-
-        np.set_printoptions(precision=3)
-
-        mass_low = -1.0
-        mass_high = 0.0
-        i = 0
-        gref = gguess
-        dm_min = conf.operating_point["mass_step"]
-
-        # Relax convergence checking
-        conf.solver["rtol_mdot"] = 0.1
-        conf.solver["atol_eta"] = 1.0
-
-        while True:
-            mass_new = 0.5 * (mass_low + mass_high)
-            if (mass_high - mass_low) < (2.0 * dm_min):
-                logger.iter(f"Stalled, mhigh={mass_high}, mlow={mass_low}")
-                mdot_stall = (0.5 * (mass_high + mass_low) + 1.0) * mdot_des
-                logger.iter(
-                    f"Dimensional stalling mass flow rate, mdot_stall={mdot_stall}"
-                )
-                ml_out.mdot_stall = mdot_stall
-                break
-
-            logger.iter(f"mass_now={mass_new:.2f}: ")
-            iterdir = os.path.join(basedir, "chic_%04d" % i)
-            i += 1
-            os.makedirs(iterdir, exist_ok=True)
-            conf.workdir = iterdir
-            conf.solver["mass_adjust"] = mass_new
-            conf.solver["soft_start"] = True
-            try:
-                ml, _, gguess = run_single(conf, gref)
-                ml_out.mdot_stall = ml.mdot[0]
-                # If we do not stall, replace high mass with current
-                mass_high = mass_new
-                logger.iter(
-                    f"PR={ml.PR_tt:.3f}, eta={ml.eta_tt:.3f}, mdot_norm={mass_new:.3f}",
-                )
-                chic["mass"].append(ml.mdot[0] / mdot_des - 1.0)
-                chic["eta"].append(ml.eta_tt)
-                chic["PR"].append(ml.PR_tt)
-
-            except ConvergenceError as e:
-                logger.iter(e)
-                # If we stall, replace low mass with current
-                mass_low = mass_new
-
-        logger.iter("Into choke...")
-        gguess = gref
-        mass_low = 0.0
-        mass_high = 1.0
-        while True:
-            mass_new = 0.5 * (mass_low + mass_high)
-            if (mass_high - mass_low) < (2.0 * dm_min):
-                logger.iter("Choked.")
-                ml_out.mdot_choke = (0.5 * (mass_high + mass_low) + 1.0) * mdot_des
-                break
-
-            logger.iter(f"mass_now={mass_new:.2f}: ")
-            iterdir = os.path.join(basedir, "chic_%04d" % i)
-            i += 1
-            os.makedirs(iterdir, exist_ok=True)
-            conf.workdir = iterdir
-            conf.solver["mass_adjust"] = mass_new
-            try:
-                ml, _, gguess = run_single(conf, gref)
-                ml_out.mdot_choke = ml.mdot[0]
-                mnorm_now = ml.mdot[0] / mdot_des - 1.0
-                if (mass_new - mnorm_now) > 0.05:
-                    logger.iter(f"mdot error {mass_new - mnorm_now}")
-                    mass_high = mass_new
-                    continue
-                # If we do not choke, replace low mass with current
-                mass_low = mass_new
-                logger.iter(
-                    f"PR={ml.PR_tt:.3f}, eta={ml.eta_tt:.3f}, mdot_norm={mass_new:.3f}",
-                )
-                chic["mass"].append(mnorm_now)
-                chic["eta"].append(ml.eta_tt)
-                chic["PR"].append(ml.PR_tt)
-            except ConvergenceError:
-                # If we choke, replace high mass with current
-                mass_high = mass_new
-
-        # Sort by mass flow
-        isort = np.argsort(chic["mass"])
-        for k, v in chic.items():
-            chic[k] = np.take(chic[k], isort).tolist()
-
-        with open(chic_path, "w") as f:
-            json.dump(chic, f)
-
-        # Rewrite output mean line with mdot stall/choke added
-        actual_ml_path = os.path.join(basedir, "mean_line_actual.yaml")
-        ml_out.write(actual_ml_path)
 
     # If specified, add to a database
     if conf.database.get("conf_path") and not conf.database.get("read_only", False):

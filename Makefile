@@ -24,6 +24,11 @@ sdist ::
 test ::
 	pytest
 
+compile ::
+	f2py -m compiled --opt='-O3' -c turbigen/compiled.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv compiled*.so turbigen
+
+
 verify-sdist ::
 	mkdir -p test-sdist
 	rm -rv test-sdist/*

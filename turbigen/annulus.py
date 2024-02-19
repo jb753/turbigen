@@ -31,7 +31,7 @@ logger = turbigen.util.make_logger()
 class Smooth:
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
-    def __init__(self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0):
+    def __init__(self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.):
         r"""Construct an annulus from geometric parameters.
 
         Parameters
@@ -113,6 +113,9 @@ class Smooth:
         xcas = xmid - 0.5 * span * sinBeta
         rhub = rmid - 0.5 * span * cosBeta
         rcas = rmid + 0.5 * span * cosBeta
+
+        # Offset the exit casing radius (defaults to zero)
+        rcas[-1] +=  rcout_offset * span[-1]
 
         # Smoothed the initial guess lines
         self.hub = MeridionalLine(xhub, rhub, Beta).smooth()
@@ -204,7 +207,8 @@ class Smooth:
         self.cas.smooth()
         self.hub.smooth()
 
-        assert all(self.hub._is_straight() == self.cas._is_straight())
+        if not rcout_offset:
+            assert all(self.hub._is_straight() == self.cas._is_straight())
 
     def __str__(self):
         xr_mid = self.xr_mid(self.mctrl[1:-1])
