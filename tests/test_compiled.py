@@ -14,54 +14,104 @@ def make_ijk():
     kv = np.linspace(0.,nk-1., nk)
     i, j, k = np.meshgrid(iv, jv, kv, indexing='ij')
 
+    i = np.asfortranarray(np.expand_dims(i,-1))
+    j = np.asfortranarray(np.expand_dims(j,-1))
+    k = np.asfortranarray(np.expand_dims(k,-1))
+
     return i, j, k
 
-# def test_node_to_cell():
 
-#     # Make an ijk grid
-#     i, j, k = make_ijk()
-#     i = np.asfortranarray(np.expand_dims(i,0))
-#     j = np.asfortranarray(np.expand_dims(j,0))
-#     k = np.asfortranarray(np.expand_dims(k,0))
+def test_node_to_face():
 
-#     # Uniform should stay uniform
-#     xu = np.ones_like(i)
-#     assert np.allclose(xu[:,:-1,:-1,:-1], turbigen.compiled.node_to_cell(xu))
+    # Make an ijk grid
+    i, j, k = make_ijk()
 
-#     # Error should be exactly half for linear variation in each dirn
-#     fi = turbigen.compiled.node_to_cell(i)[0]
-#     assert np.allclose(fi-i[0,:-1, :-1, :-1], 0.5)
-#     fj = turbigen.compiled.node_to_cell(j)[0]
-#     assert np.allclose(fj-j[0,:-1, :-1, :-1], 0.5)
-#     fk = turbigen.compiled.node_to_cell(k)[0]
-#     assert np.allclose(fk-k[0,:-1, :-1, :-1], 0.5)
+    fnode = i + j + k
+    ni, nj, nk, nv = i.shape
+    shape_iface = (ni, nj-1, nk-1, nv)
+    shape_jface = (ni-1, nj, nk-1, nv)
+    shape_kface = (ni-1, nj-1, nk, nv)
+    fi = np.empty(shape_iface,order='F')
+    fj = np.empty(shape_jface,order='F')
+    fk = np.empty(shape_kface,order='F')
 
-# def test_cell_to_node():
+    turbigen.compiled.node_to_face(fnode, fi, fj, fk)
 
-#     # Make an ijk grid
-#     i, j, k = make_ijk()
+    # If all directions are increasing linearly, then the face-averaged value
+    # is exactly one plus the value at low i,j node
+    #
+    # j+1 *----*
+    #     |    |
+    # j   *----*
+    #    i    i+1
+    #
+    # face average = ((i + j) + (i+1 + j) + (i + j+1) + (i+1, j+1))/4
+    #              # (4i + 4j + 4)/4 = i + j + 1
+    #
+    assert np.allclose(fi-fnode[:,:-1,:-1,:], 1.)
+    assert np.allclose(fj-fnode[:-1,:,:-1,:], 1.)
+    assert np.allclose(fk-fnode[:-1,:-1,:,:], 1.)
 
-#     # Uniform should stay uniform
-#     xu = np.expand_dims(np.ones_like(i),0)
-#     xun =  turbigen.compiled.cell_to_node(xu)
-#     assert np.allclose(xun, 1.)
 
-#     # Check linear variation in each direction
+def test_node_to_cell():
 
-#     inode = turbigen.compiled.cell_to_node(np.expand_dims(i, 0))[0]
-#     assert np.allclose(inode[0,:-1,:-1], i[0,:,:])
-#     assert np.allclose(inode[-1,:-1,:-1], i[-1,:,:])
-#     assert np.allclose(inode[1:-1,:-1,:-1]-i[:-1,:,:],0.5)
+    # Make an ijk grid
+    i, j, k = make_ijk()
 
-#     jnode = turbigen.compiled.cell_to_node(np.expand_dims(j, 0))[0]
-#     assert np.allclose(jnode[:-1,0,:-1], j[:,0,:])
-#     assert np.allclose(jnode[:-1,-1,:-1], j[:,-1,:])
-#     assert np.allclose(jnode[:-1,1:-1,:-1]-j[:,:-1,:],0.5)
+    # Uniform should stay uniform
+    xn = np.ones_like(i)
+    ni, nj, nk, nv = i.shape
+    shape_cell = (ni-1, nj-1, nk-1, nv)
+    xc = np.empty(shape_cell, order='F')
+    turbigen.compiled.node_to_cell(xn, xc)
+    assert np.allclose(xn[:-1,:-1,:-1,:], xc)
 
-#     knode = turbigen.compiled.cell_to_node(np.expand_dims(k, 0))[0]
-#     assert np.allclose(knode[:-1,:-1,0], k[:,:,0])
-#     assert np.allclose(knode[:-1,:-1,-1], k[:,:,-1])
-#     assert np.allclose(knode[:-1,:-1,1:-1]-k[:,:,:-1],0.5)
+    # Error should be exactly half for linear variation in each dirn
+    ic = np.empty(shape_cell, order='F')
+    turbigen.compiled.node_to_cell(i, ic)
+    assert np.allclose(ic-i[:-1, :-1, :-1,:], 0.5)
+
+    jc = np.empty(shape_cell, order='F')
+    turbigen.compiled.node_to_cell(j, jc)
+    assert np.allclose(jc-j[:-1, :-1, :-1,:], 0.5)
+
+    kc = np.empty(shape_cell, order='F')
+    turbigen.compiled.node_to_cell(k, kc)
+    assert np.allclose(kc-k[:-1, :-1, :-1,:], 0.5)
+
+
+def test_cell_to_node():
+
+    # Make an ijk grid
+    i, j, k = make_ijk()
+
+    # Uniform should stay uniform
+    xc = np.ones_like(i)
+    ni, nj, nk, nv = xc.shape
+    shape_node = (ni+1, nj+1, nk+1, nv)
+    xn = np.empty(shape_node, order='F')
+    turbigen.compiled.cell_to_node(xc, xn)
+    assert np.allclose(xc, 1.)
+
+    # Check linear variation in each direction
+    inode = np.empty(shape_node, order='F')
+    turbigen.compiled.cell_to_node(i, inode)
+    assert np.allclose(inode[0,:-1,:-1], i[0,:,:])
+    assert np.allclose(inode[-1,:-1,:-1], i[-1,:,:])
+    assert np.allclose(inode[1:-1,:-1,:-1]-i[:-1,:,:],0.5)
+
+    jnode = np.empty(shape_node, order='F')
+    turbigen.compiled.cell_to_node(j, jnode)
+    assert np.allclose(jnode[:-1,0,:-1], j[:,0,:])
+    assert np.allclose(jnode[:-1,-1,:-1], j[:,-1,:])
+    assert np.allclose(jnode[:-1,1:-1,:-1]-j[:,:-1,:],0.5)
+
+    knode = np.empty(shape_node, order='F')
+    turbigen.compiled.cell_to_node(k, knode)
+    assert np.allclose(knode[:-1,:-1,0], k[:,:,0])
+    assert np.allclose(knode[:-1,:-1,-1], k[:,:,-1])
+    assert np.allclose(knode[:-1,:-1,1:-1]-k[:,:,:-1],0.5)
+
 
 def test_smooth_zero():
     # Zero smoothing factor should change nothing
@@ -136,4 +186,4 @@ def test_smooth_converge():
 
     assert derr < 1e-5
 
-test_smooth_converge()
+test_node_to_face()

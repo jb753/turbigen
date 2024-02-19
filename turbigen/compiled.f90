@@ -165,279 +165,279 @@
 ! end subroutine
 
 
-! subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, np, ni, nj, nk)
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
 
-!     implicit none
+    implicit none
 
-!     integer, intent (in)  :: np
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
 
-!     integer :: ip
+    integer :: ip
 
-!     real*8, intent (in)  :: dAi(3, ni, nj-1, nk-1)
-!     real*8, intent (in)  :: dAj(3, ni-1, nj, nk-1)
-!     real*8, intent (in)  :: dAk(3, ni-1, nj-1, nk)
-!     real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-!     real*8, intent (in)  :: fi(np, 3, ni, nj-1, nk-1)
-!     real*8, intent (in)  :: fj(np, 3, ni-1, nj, nk-1)
-!     real*8, intent (in)  :: fk(np, 3, ni-1, nj-1, nk)
+    real*8, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
+    real*8, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
+    real*8, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
 
-!     real*8 :: fisum(ni, nj-1, nk-1)
-!     real*8 :: fjsum(ni-1, nj, nk-1)
-!     real*8 :: fksum(ni-1, nj-1, nk)
+    real*8 :: fisum(ni, nj-1, nk-1)
+    real*8 :: fjsum(ni-1, nj, nk-1)
+    real*8 :: fksum(ni-1, nj-1, nk)
 
-!     real*8, intent (out)  :: fsum(np, ni-1, nj-1, nk-1)
+    real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
 
-!     fsum = 0.
+    fsum = 0d0
 
-!     do ip = 1,np
-!         ! Dot product areas with the fluxes
-!         fisum = sum(dAi*fi(ip,:,:,:,:),1)
-!         fjsum = sum(dAj*fj(ip,:,:,:,:),1)
-!         fksum = sum(dAk*fk(ip,:,:,:,:),1)
-!         ! Add on the differences
-!         fsum(ip, :, :, :) = fsum(ip, :, :, :) + (fisum(1:ni-1,:,:) - fisum(2:ni,:,:))
-!         fsum(ip, :, :, :) = fsum(ip, :, :, :) + (fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:))
-!         fsum(ip, :, :, :) = fsum(ip, :, :, :) + (fksum(:,:,1:nk-1) - fksum(:,:,2:nk))
-!         ! Divide by volume
-!         fsum(ip, :, :, :) = fsum(ip, :, :, :)/vol
-!     end do
-
-
-! end subroutine
+    do ip = 1,np
+        ! Dot product areas with the fluxes
+        fisum = sum(dAi*fi(:,:,:,:,ip),4)
+        fjsum = sum(dAj*fj(:,:,:,:,ip),4)
+        fksum = sum(dAk*fk(:,:,:,:,ip),4)
+        ! Add on the differences
+        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fisum(1:ni-1,:,:) - fisum(2:ni,:,:))
+        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:))
+        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fksum(:,:,1:nk-1) - fksum(:,:,2:nk))
+        ! Divide by volume
+        fsum( :, :, :, ip) = fsum( :, :, :, ip)/vol
+    end do
 
 
-! subroutine node_to_face(xn, xi, xj, xk, np, ni, nj, nk)
-
-!     implicit none
-
-!     integer, intent (in)  :: np
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
-
-!     real*8, intent (inout)  :: xn(np, ni, nj, nk)
-!     real*8, intent (out)  :: xi(np, ni, nj-1, nk-1)
-!     real*8, intent (out)  :: xj(np, ni-1, nj, nk-1)
-!     real*8, intent (out)  :: xk(np, ni-1, nj-1, nk)
-
-!     ! Values on i-faces are average over four bounding vertices
-!     xi = (&
-!           xn(:, :, 1:nj-1, 1:nk-1) & ! j, k
-!         + xn(:, :, 2:nj,   1:nk-1) & ! j+1, k
-!         + xn(:, :, 1:nj-1, 2:nk  ) & ! j, k+1
-!         + xn(:, :, 2:nj,   2:nk  ) & ! j+1, k+1
-!     )/4.0
-
-!     ! Values on j-faces are average over four bounding vertices
-!     xj = (&
-!           xn(:, 1:ni-1, :, 1:nk-1) & ! i, k
-!         + xn(:, 2:ni,   :, 1:nk-1) & ! i+1, k
-!         + xn(:, 1:ni-1, :, 2:nk  ) & ! i, k+1
-!         + xn(:, 2:ni,   :, 2:nk  ) & ! i+1, k+1
-!     )/4.0
-
-!     ! Values on k-faces are average over four bounding vertices
-!     xk = (&
-!           xn(:, 1:ni-1, 1:nj-1, :) & ! i, j
-!         + xn(:, 2:ni,   1:nj-1, :) & ! i+1, j
-!         + xn(:, 1:ni-1, 2:nj,   :) & ! i, j+1
-!         + xn(:, 2:ni,   2:nj,   :) & ! i+1, j+1
-!     )/4.0
-
-! end subroutine
+end subroutine
 
 
-! subroutine node_to_cell(xn, xc, np, ni, nj, nk)
+subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
 
-!     implicit none
+    implicit none
 
-!     integer, intent (in)  :: np
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
 
-!     real*8, intent (inout)  :: xn(np, ni, nj, nk)
-!     real*8, intent (out)  :: xc(np, ni-1, nj-1, nk-1)
+    real*8, intent (inout)  :: xn(ni, nj, nk, np)
+    real*8, intent (inout)  :: xi(ni, nj-1, nk-1, np)
+    real*8, intent (inout)  :: xj(ni-1, nj, nk-1, np)
+    real*8, intent (inout)  :: xk(ni-1, nj-1, nk, np)
 
-!     ! Cell values are the average of all eight hex vertices
-!     xc = (&
-!           xn(:, 1:ni-1, 1:nj-1, 1:nk-1) & ! i,j,k
-!         + xn(:, 2:ni,   1:nj-1, 1:nk-1) & ! i+1,j,k
-!         + xn(:, 2:ni,   2:nj,   1:nk-1) & ! i+1,j+1,k
-!         + xn(:, 1:ni-1, 2:nj,   1:nk-1) & ! i,j+1,k
-!         + xn(:, 1:ni-1, 1:nj-1, 2:nk) & ! i,j,k+1
-!         + xn(:, 2:ni,   1:nj-1, 2:nk) & ! i+1,j,k+1
-!         + xn(:, 2:ni,   2:nj,   2:nk) & ! i+1,j+1,k+1
-!         + xn(:, 1:ni-1, 2:nj,   2:nk) & ! i,j+1,k+1
-!     )/8.0
+    ! Values on i-faces are average over four bounding vertices
+    xi = (&
+          xn(:, 1:nj-1, 1:nk-1, :) & ! j, k
+        + xn(:, 2:nj,   1:nk-1, :) & ! j+1, k
+        + xn(:, 1:nj-1, 2:nk  , :) & ! j, k+1
+        + xn(:, 2:nj,   2:nk  , :) & ! j+1, k+1
+    )/4.0
 
+    ! Values on j-faces are average over four bounding vertices
+    xj = (&
+          xn(1:ni-1, :, 1:nk-1, :) & ! i, k
+        + xn(2:ni,   :, 1:nk-1, :) & ! i+1, k
+        + xn(1:ni-1, :, 2:nk  , :) & ! i, k+1
+        + xn(2:ni,   :, 2:nk  , :) & ! i+1, k+1
+    )/4.0
 
-! end subroutine
+    ! Values on k-faces are average over four bounding vertices
+    xk = (&
+          xn(1:ni-1, 1:nj-1, :, :) & ! i, j
+        + xn(2:ni,   1:nj-1, :, :) & ! i+1, j
+        + xn(1:ni-1, 2:nj,   :, :) & ! i, j+1
+        + xn(2:ni,   2:nj,   :, :) & ! i+1, j+1
+    )/4.0
 
-! subroutine cell_to_node(xc, xn, np, ni, nj, nk)
-
-!     implicit none
-
-!     integer, intent (in)  :: np
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
-
-!     real*8, intent (in)  :: xc(np, ni-1, nj-1, nk-1)
-!     real*8, intent (out)  :: xn(np, ni, nj, nk)
-
-!     ! Interior nodes take 1/8 from each adjacent cell
-!     xn(:, 2:ni-1, 2:nj-1, 2:nk-1) = (&
-!           xc(:, 1:ni-2, 1:nj-2, 1:nk-2) & ! i,j,k
-!         + xc(:, 2:ni-1, 1:nj-2, 1:nk-2) & ! i+1,j,k
-!         + xc(:, 2:ni-1, 2:nj-1, 1:nk-2) & ! i+1,j+1,k
-!         + xc(:, 1:ni-2, 2:nj-1, 1:nk-2) & ! i,j+1,k
-!         + xc(:, 1:ni-2, 1:nj-2, 2:nk-1) & ! i,j,k+1
-!         + xc(:, 2:ni-1, 1:nj-2, 2:nk-1) & ! i+1,j,k+1
-!         + xc(:, 2:ni-1, 2:nj-1, 2:nk-1) & ! i+1,j+1,k+1
-!         + xc(:, 1:ni-2, 2:nj-1, 2:nk-1) & ! i,j+1,k+1
-!     )/8.0
-
-!     ! Face nodes take 1/4 from each adjacent cell
-
-!     ! i=1
-!     xn(:, 1, 2:nj-1, 2:nk-1) = (&
-!           xc(:, 1, 1:nj-2, 1:nk-2) & ! 1,j,k
-!         + xc(:, 1, 2:nj-1, 1:nk-2) & ! 1,j+1,k
-!         + xc(:, 1, 1:nj-2, 2:nk-1) & ! 1,j,k+1
-!         + xc(:, 1, 2:nj-1, 2:nk-1) & ! 1,j+1,k+1
-!     )/4.0
-
-!     ! i=ni
-!     xn(:, ni, 2:nj-1, 2:nk-1) = (&
-!           xc(:, ni-1, 1:nj-2, 1:nk-2) & ! ni-1,j,k
-!         + xc(:, ni-1, 2:nj-1, 1:nk-2) & ! ni-1,j+1,k
-!         + xc(:, ni-1, 1:nj-2, 2:nk-1) & ! ni-1,j,k+1
-!         + xc(:, ni-1, 2:nj-1, 2:nk-1) & ! ni-1,j+1,k+1
-!     )/4.0
-
-!     ! j=1
-!     xn(:, 2:ni-1, 1, 2:nk-1) = (&
-!           xc(:, 1:ni-2, 1, 1:nk-2) & ! i,1,k
-!         + xc(:, 2:ni-1, 1, 1:nk-2) & ! i+1,1,k
-!         + xc(:, 1:ni-2, 1, 2:nk-1) & ! i,1,k+1
-!         + xc(:, 2:ni-1, 1, 2:nk-1) & ! i+1,1,k+1
-!     )/4.0
-
-!     ! j=nj
-!     xn(:, 2:ni-1, nj, 2:nk-1) = (&
-!           xc(:, 1:ni-2, nj-1, 1:nk-2) & ! i,nj-1,k
-!         + xc(:, 2:ni-1, nj-1, 1:nk-2) & ! i+1,nj-1,k
-!         + xc(:, 1:ni-2, nj-1, 2:nk-1) & ! i,nj-1,k+1
-!         + xc(:, 2:ni-1, nj-1, 2:nk-1) & ! i+1,nj-1,k+1
-!     )/4.0
-
-!     ! k=1
-!     xn(:, 2:ni-1, 2:nj-1, 1) = (&
-!           xc(:, 1:ni-2, 1:nj-2, 1) &
-!         + xc(:, 2:ni-1, 1:nj-2, 1) &
-!         + xc(:, 1:ni-2, 2:nj-1, 1) &
-!         + xc(:, 2:ni-1, 2:nj-1, 1) &
-!     )/4.0
-
-!     ! k=nk
-!     xn(:, 2:ni-1, 2:nj-1, nk) = (&
-!           xc(:, 1:ni-2, 1:nj-2, nk-1) &
-!         + xc(:, 2:ni-1, 1:nj-2, nk-1) &
-!         + xc(:, 1:ni-2, 2:nj-1, nk-1) &
-!         + xc(:, 2:ni-1, 2:nj-1, nk-1) &
-!     )/4.0
-
-!     ! Edges take 1/2 from each adjacent cell
-
-!     ! i=1, j=1
-!     xn(:, 1, 1, 2:nk-1) = (&
-!           xc(:, 1, 1, 1:nk-2) &
-!         + xc(:, 1, 1, 2:nk-1) &
-!     )/2.0
-
-!     ! i=1, j=nj
-!     xn(:, 1, nj, 2:nk-1) = (&
-!           xc(:, 1, nj-1, 1:nk-2) &
-!         + xc(:, 1, nj-1, 2:nk-1) &
-!     )/2.0
-
-!     ! i=ni, j=1
-!     xn(:, ni, 1, 2:nk-1) = (&
-!           xc(:, ni-1, 1, 1:nk-2) &
-!         + xc(:, ni-1, 1, 2:nk-1) &
-!     )/2.0
-
-!     ! i=ni, j=nj
-!     xn(:, ni, nj, 2:nk-1) = (&
-!           xc(:, ni-1, nj-1, 1:nk-2) &
-!         + xc(:, ni-1, nj-1, 2:nk-1) &
-!     )/2.0
-
-!     ! i=1, k=1
-!     xn(:, 1, 2:nj-1, 1) = (&
-!           xc(:, 1, 1:nj-2, 1) &
-!         + xc(:, 1, 2:nj-1, 1) &
-!     )/2.0
-
-!     ! i=1, k=nk
-!     xn(:, 1, 2:nj-1, nk) = (&
-!           xc(:, 1, 1:nj-2, nk-1) &
-!         + xc(:, 1, 2:nj-1, nk-1) &
-!     )/2.0
-
-!     ! i=ni, k=1
-!     xn(:, ni, 2:nj-1, 1) = (&
-!           xc(:, ni-1, 1:nj-2, 1) &
-!         + xc(:, ni-1, 2:nj-1, 1) &
-!     )/2.0
-
-!     ! i=ni, k=nk
-!     xn(:, ni, 2:nj-1, nk) = (&
-!           xc(:, ni-1, 1:nj-2, nk-1) &
-!         + xc(:, ni-1, 2:nj-1, nk-1) &
-!     )/2.0
-
-!     ! j=1, k=1
-!     xn(:, 2:ni-1, 1, 1) = (&
-!           xc(:, 1:ni-2, 1, 1) &
-!         + xc(:, 2:ni-1, 1, 1) &
-!     )/2.0
-
-!     ! j=1, k=nk
-!     xn(:, 2:ni-1, 1, nk) = (&
-!           xc(:, 1:ni-2, 1, nk-1) &
-!         + xc(:, 2:ni-1, 1, nk-1) &
-!     )/2.0
-
-!     ! j=nj, k=1
-!     xn(:, 2:ni-1, nj, 1) = (&
-!           xc(:, 1:ni-2, nj-1, 1) &
-!         + xc(:, 2:ni-1, nj-1, 1) &
-!     )/2.0
-
-!     ! j=nj, k=nk
-!     xn(:, 2:ni-1, nj, nk) = (&
-!           xc(:, 1:ni-2, nj-1, nk-1) &
-!         + xc(:, 2:ni-1, nj-1, nk-1) &
-!     )/2.0
-
-!     ! Corners take entirety from nearest cell
-!     xn(:, 1,  1,  1) = xc(:, 1,    1,    1)
-!     xn(:, 1,  nj, 1) = xc(:, 1,    nj-1, 1)
-!     xn(:, ni, nj, 1) = xc(:, ni-1, nj-1, 1)
-!     xn(:, ni, 1,  1) = xc(:, ni-1, 1,    1)
-!     xn(:, 1,  1,  nk) = xc(:, 1,    1,    nk-1)
-!     xn(:, 1,  nj, nk) = xc(:, 1,    nj-1, nk-1)
-!     xn(:, ni, nj, nk) = xc(:, ni-1, nj-1, nk-1)
-!     xn(:, ni, 1,  nk) = xc(:, ni-1, 1,    nk-1)
+end subroutine
 
 
-! end subroutine
+subroutine node_to_cell(xn, xc, ni, nj, nk, np)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
+
+    real*8, intent (inout)  :: xn(ni, nj, nk, np)
+    real*8, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+
+    ! Cell values are the average of all eight hex vertices
+    xc = (&
+          xn(1:ni-1, 1:nj-1, 1:nk-1, :) & ! i,j,k
+        + xn(2:ni,   1:nj-1, 1:nk-1, :) & ! i+1,j,k
+        + xn(2:ni,   2:nj,   1:nk-1, :) & ! i+1,j+1,k
+        + xn(1:ni-1, 2:nj,   1:nk-1, :) & ! i,j+1,k
+        + xn(1:ni-1, 1:nj-1, 2:nk,   :) & ! i,j,k+1
+        + xn(2:ni,   1:nj-1, 2:nk,   :) & ! i+1,j,k+1
+        + xn(2:ni,   2:nj,   2:nk,   :) & ! i+1,j+1,k+1
+        + xn(1:ni-1, 2:nj,   2:nk,   :) & ! i,j+1,k+1
+    )/8.0
+
+
+end subroutine
+
+subroutine cell_to_node(xc, xn, ni, nj, nk, np)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
+
+    real*8, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*8, intent (inout)  :: xn(ni, nj, nk, np)
+
+    ! Interior nodes take 1/8 from each adjacent cell
+    xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
+          xc(1:ni-2, 1:nj-2, 1:nk-2, :) & ! i,j,k
+        + xc(2:ni-1, 1:nj-2, 1:nk-2, :) & ! i+1,j,k
+        + xc(2:ni-1, 2:nj-1, 1:nk-2, :) & ! i+1,j+1,k
+        + xc(1:ni-2, 2:nj-1, 1:nk-2, :) & ! i,j+1,k
+        + xc(1:ni-2, 1:nj-2, 2:nk-1, :) & ! i,j,k+1
+        + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
+        + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
+        + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
+    )/8.0
+
+    ! Face nodes take 1/4 from each adjacent cell
+
+    ! i=1
+    xn(1, 2:nj-1, 2:nk-1, :) = (&
+          xc(1, 1:nj-2, 1:nk-2, :) & ! 1,j,k
+        + xc(1, 2:nj-1, 1:nk-2, :) & ! 1,j+1,k
+        + xc(1, 1:nj-2, 2:nk-1, :) & ! 1,j,k+1
+        + xc(1, 2:nj-1, 2:nk-1, :) & ! 1,j+1,k+1
+    )/4.0
+
+    ! i=ni
+    xn(ni, 2:nj-1, 2:nk-1, :) = (&
+          xc(ni-1, 1:nj-2, 1:nk-2, :) & ! ni-1,j,k
+        + xc(ni-1, 2:nj-1, 1:nk-2, :) & ! ni-1,j+1,k
+        + xc(ni-1, 1:nj-2, 2:nk-1, :) & ! ni-1,j,k+1
+        + xc(ni-1, 2:nj-1, 2:nk-1, :) & ! ni-1,j+1,k+1
+    )/4.0
+
+    ! j=1
+    xn(2:ni-1, 1, 2:nk-1, :) = (&
+          xc(1:ni-2, 1, 1:nk-2, :) & ! i,1,k
+        + xc(2:ni-1, 1, 1:nk-2, :) & ! i+1,1,k
+        + xc(1:ni-2, 1, 2:nk-1, :) & ! i,1,k+1
+        + xc(2:ni-1, 1, 2:nk-1, :) & ! i+1,1,k+1
+    )/4.0
+
+    ! j=nj
+    xn(2:ni-1, nj, 2:nk-1, :) = (&
+          xc(1:ni-2, nj-1, 1:nk-2, :) & ! i,nj-1,k
+        + xc(2:ni-1, nj-1, 1:nk-2, :) & ! i+1,nj-1,k
+        + xc(1:ni-2, nj-1, 2:nk-1, :) & ! i,nj-1,k+1
+        + xc(2:ni-1, nj-1, 2:nk-1, :) & ! i+1,nj-1,k+1
+    )/4.0
+
+    ! k=1
+    xn(2:ni-1, 2:nj-1, 1, :) = (&
+          xc(1:ni-2, 1:nj-2, 1, :) &
+        + xc(2:ni-1, 1:nj-2, 1, :) &
+        + xc(1:ni-2, 2:nj-1, 1, :) &
+        + xc(2:ni-1, 2:nj-1, 1, :) &
+    )/4.0
+
+    ! k=nk
+    xn(2:ni-1, 2:nj-1, nk, :) = (&
+          xc(1:ni-2, 1:nj-2, nk-1, :) &
+        + xc(2:ni-1, 1:nj-2, nk-1, :) &
+        + xc(1:ni-2, 2:nj-1, nk-1, :) &
+        + xc(2:ni-1, 2:nj-1, nk-1, :) &
+    )/4.0
+
+    ! Edges take 1/2 from each adjacent cell
+
+    ! i=1, j=1
+    xn(1, 1, 2:nk-1, :) = (&
+          xc(1, 1, 1:nk-2, :) &
+        + xc(1, 1, 2:nk-1, :) &
+    )/2.0
+
+    ! i=1, j=nj
+    xn(1, nj, 2:nk-1, :) = (&
+          xc(1, nj-1, 1:nk-2, :) &
+        + xc(1, nj-1, 2:nk-1, :) &
+    )/2.0
+
+    ! i=ni, j=1
+    xn(ni, 1, 2:nk-1, :) = (&
+          xc(ni-1, 1, 1:nk-2, :) &
+        + xc(ni-1, 1, 2:nk-1, :) &
+    )/2.0
+
+    ! i=ni, j=nj
+    xn(ni, nj, 2:nk-1, :) = (&
+          xc(ni-1, nj-1, 1:nk-2, :) &
+        + xc(ni-1, nj-1, 2:nk-1, :) &
+    )/2.0
+
+    ! i=1, k=1
+    xn(1, 2:nj-1, 1, :) = (&
+          xc(1, 1:nj-2, 1, :) &
+        + xc(1, 2:nj-1, 1, :) &
+    )/2.0
+
+    ! i=1, k=nk
+    xn(1, 2:nj-1, nk, :) = (&
+          xc(1, 1:nj-2, nk-1, :) &
+        + xc(1, 2:nj-1, nk-1, :) &
+    )/2.0
+
+    ! i=ni, k=1
+    xn(ni, 2:nj-1, 1, :) = (&
+          xc(ni-1, 1:nj-2, 1, :) &
+        + xc(ni-1, 2:nj-1, 1, :) &
+    )/2.0
+
+    ! i=ni, k=nk
+    xn(ni, 2:nj-1, nk, :) = (&
+          xc(ni-1, 1:nj-2, nk-1, :) &
+        + xc(ni-1, 2:nj-1, nk-1, :) &
+    )/2.0
+
+    ! j=1, k=1
+    xn(2:ni-1, 1, 1, :) = (&
+          xc(1:ni-2, 1, 1, :) &
+        + xc(2:ni-1, 1, 1, :) &
+    )/2.0
+
+    ! j=1, k=nk
+    xn(2:ni-1, 1, nk, :) = (&
+          xc(1:ni-2, 1, nk-1, :) &
+        + xc(2:ni-1, 1, nk-1, :) &
+    )/2.0
+
+    ! j=nj, k=1
+    xn(2:ni-1, nj, 1, :) = (&
+          xc(1:ni-2, nj-1, 1, :) &
+        + xc(2:ni-1, nj-1, 1, :) &
+    )/2.0
+
+    ! j=nj, k=nk
+    xn(2:ni-1, nj, nk, :) = (&
+          xc(1:ni-2, nj-1, nk-1, :) &
+        + xc(2:ni-1, nj-1, nk-1, :) &
+    )/2.0
+
+    ! Corners take entirety from nearest cell
+    xn(1,  1,  1, :) = xc(1,    1,    1, :)
+    xn(1,  nj, 1, :) = xc(1,    nj-1, 1, :)
+    xn(ni, nj, 1, :) = xc(ni-1, nj-1, 1, :)
+    xn(ni, 1,  1, :) = xc(ni-1, 1,    1, :)
+    xn(1,  1,  nk, :) = xc(1,    1,    nk-1, :)
+    xn(1,  nj, nk, :) = xc(1,    nj-1, nk-1, :)
+    xn(ni, nj, nk, :) = xc(ni-1, nj-1, nk-1, :)
+    xn(ni, 1,  nk, :) = xc(ni-1, 1,    nk-1, :)
+
+
+end subroutine
 
 subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array

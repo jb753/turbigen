@@ -24,6 +24,13 @@ nstep_log = 50
 nstep = 1000
 nrk = 4
 
+sfin = 0.05
+fac_2nd = 0.2
+CFL = 3.5
+sf = CFL * sfin
+sf2 = sf*fac_2nd
+sf4 = sf*(1.-fac_2nd)
+
 
 def run(grid, settings={}, machine=None):
 
@@ -60,6 +67,8 @@ def run(grid, settings={}, machine=None):
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
 
             dU = np.zeros(b.shape)
+            print(dU.shape)
+            quit()
 
             conserved_start = np.asfortranarray(b.conserved.copy())
 
@@ -121,11 +130,6 @@ def get_timestep(b, dlmin):
     Vref, aref = node_to_cell(np.asfortranarray(np.stack((b.V, b.a))))
     dt = CFL * dlmin / (aref + Vref)
     return np.asfortranarray(dt)
-
-
-sfin = 0.05
-CFL = 3.5
-sf = CFL * sfin
 
 
 def get_wall(b):
