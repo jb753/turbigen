@@ -66,25 +66,33 @@ def run(grid, settings={}, machine=None):
             b = grid[iblock]
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
 
-            dU = np.zeros(b.shape)
-            print(dU.shape)
-            quit()
-
-            conserved_start = np.asfortranarray(b.conserved.copy())
+            conserved_start = np.asfortranarray(np.moveaxis(b.conserved,0,-1))
 
             for irk in range(nrk):
                 frk = 1.0 / (irk + nrk)
 
                 conserved, Phor = apply_bconds(b)
 
+                print(np.sum(~np.isfinite(conserved)), conserved.shape)
+                print(np.sum(~np.isfinite(Phor)), Phor.shape)
+                print(np.sum(~np.isfinite(dAi)), dAi.shape)
+                print(np.sum(~np.isfinite(dAj)), dAj.shape)
+                print(np.sum(~np.isfinite(dAk)), dAk.shape)
+                print(np.sum(~np.isfinite(vol)), vol.shape)
+                for wi in wall:
+                    print(np.sum(~np.isfinite(wi)), wi.shape)
                 dU = step(
                     conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
                 )
+                print(np.sum(~np.isfinite(dU)))
+                quit()
+
+                conserved_new = conserved_start + dU
 
                 if irk == nrk - 1:
-                    b.set_conserved(smooth(conserved_start + dU, sf))
-                else:
-                    b.set_conserved(conserved_start + dU)
+                    smooth(conserved_new, sf2, sf4)
+
+                b.set_conserved(np.moveaxis(conserved_new, -1, 0))
 
             if not np.mod(istep, nstep_log):
                 log_line = f"{istep}: {np.abs(dU).mean(axis=(-1,-2,-3))}"
@@ -97,9 +105,9 @@ def run(grid, settings={}, machine=None):
 
 def get_geom(b):
     # Areas and volumes
-    dAi = np.asfortranarray(b.dAi)
-    dAj = np.asfortranarray(b.dAj)
-    dAk = np.asfortranarray(b.dAk)
+    dAi = np.asfortranarray(np.moveaxis(b.dAi, 0, -1))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj, 0, -1))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk, 0, -1))
     vol = np.asfortranarray(b.vol)
 
     # Shortest side length
@@ -118,7 +126,7 @@ def get_geom(b):
     dlmin = np.asfortranarray(np.minimum(dli, dlj, dlk))
 
     # Wall locations
-    wall = [np.asfortranarray(w) for w in get_wall(b)]
+    wall = get_wall(b)
 
     # Reference frame angular velocity
     Omega = b.Omega.mean()
@@ -127,7 +135,12 @@ def get_geom(b):
 
 
 def get_timestep(b, dlmin):
-    Vref, aref = node_to_cell(np.asfortranarray(np.stack((b.V, b.a))))
+    ni, nj, nk = b.shape
+    Va_node = np.asfortranarray(np.stack((b.V, b.a),axis=-1))
+    Va_cell = np.empty((ni-1, nj-1, nk-1,2), order='F')
+    node_to_cell(Va_node, Va_cell)
+    Vref = Va_cell[...,0]
+    aref = Va_cell[...,1]
     dt = CFL * dlmin / (aref + Vref)
     return np.asfortranarray(dt)
 
@@ -135,12 +148,22 @@ def get_timestep(b, dlmin):
 def get_wall(b):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
-    return [
-        (w[0] > thresh).astype(np.int8)
-        for w in node_to_face(
-            np.asfortranarray(np.expand_dims(b.get_wall(), 0).astype(float))
-        )
+
+    # Preallocate face indices
+    ni, nj, nk = b.shape
+    wf = [
+        np.empty((ni, nj-1, nk-1, 1), order='F'),
+        np.empty((ni-1, nj, nk-1, 1), order='F'),
+        np.empty((ni-1, nj-1, nk, 1), order='F'),
     ]
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(),-1).astype(float))
+
+    # Calculate nodal values of wall indicator
+    node_to_face(wn, *wf)
+
+    wfl = [(wfn > thresh)[...,0].astype(np.int8) for wfn in wf]
+
+    return wfl
 
 
 # @profile
@@ -205,4 +228,5 @@ def apply_bconds(b):
     P -= Pref
 
     # All nodal variables are ready
-    return conserved, np.asfortranarray(np.stack((P, ho, b.r)))
+    conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
+    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))

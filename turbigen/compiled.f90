@@ -1,178 +1,182 @@
 ! ! Compiled functions to speed up expensive calulations
 
-! subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, resid, ni, nj, nk)
-
-!     implicit none
-
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
-
-!     real*8, intent (inout)  :: conserved(5, ni, nj, nk)
-!     real*8, intent (out) :: resid(5,ni, nj, nk)
-!     real*8, intent (inout)  :: Phor(3, ni, nj, nk)
-!     real*8, intent (inout)  :: Omega
-!     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
-!     logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
-!     logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
-!     real*8, intent (inout)  :: dAi(3, ni, nj-1, nk-1)
-!     real*8, intent (inout)  :: dAj(3, ni-1, nj, nk-1)
-!     real*8, intent (inout)  :: dAk(3, ni-1, nj-1, nk)
-!     real*8, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-!     real*8, intent (inout)  :: dt(ni-1, nj-1, nk-1)
-
-!     integer :: ip
-
-!     real*8 :: Sn(1,ni, nj, nk)
-!     real*8 :: Sc(1,ni-1, nj-1, nk-1)
-
-!     real*8 :: conservedi(5,ni, nj-1, nk-1)
-!     real*8 :: conservedj(5,ni-1, nj, nk-1)
-!     real*8 :: conservedk(5,ni-1, nj-1, nk)
-
-!     real*8 :: Phori(3, ni, nj-1, nk-1)
-!     real*8 :: Phorj(3, ni-1, nj, nk-1)
-!     real*8 :: Phork(3, ni-1, nj-1, nk)
-
-!     real*8 :: fi(5,3,ni, nj-1, nk-1)
-!     real*8 :: fj(5,3,ni-1, nj, nk-1)
-!     real*8 :: fk(5,3,ni-1, nj-1, nk)
-
-!     real*8 :: fsum_vol(5,ni-1, nj-1, nk-1)
-!     real*8 :: resc(5,ni-1, nj-1, nk-1)
-
-
-!     ! Calculate source term at nodes, average at cell centers
-!     Sn(1, :, :, :) = Phor(1,:,:,:)/Phor(3,:,:,:) &
-!         + conserved(4,:,:,:)*conserved(4,:,:,:)/conserved(1,:,:,:)/Phor(3,:,:,:)/Phor(3,:,:,:)/Phor(3,:,:,:)
-!     call node_to_cell(Sn, Sc, 1, ni, nj, nk)
-
-!     ! Get face-centered vars
-!     call node_to_face( &
-!         conserved, conservedi, conservedj, conservedk, &
-!         5, ni, nj, nk &
-!     )
-!     call node_to_face( &
-!         Phor, Phori, Phorj, Phork, &
-!         3, ni, nj, nk &
-!     )
-
-!     ! Evaluate fluxes on each set of faces
-!     call get_fluxes_face(conservedi, Phori, walli, Omega, fi, ni, nj-1, nk-1)
-!     call get_fluxes_face(conservedj, Phorj, wallj, Omega, fj, ni-1, nj, nk-1)
-!     call get_fluxes_face(conservedk, Phork, wallk, Omega, fk, ni-1, nj-1, nk)
-
-!     ! Get the net flux into each cell
-!     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, 5, ni, nj, nk)
-
-
-!     ! Add on source term
-!     fsum_vol(3,:,:,:) = fsum_vol(3,:,:,:) + Sc(1,:,:,:)
-
-!     ! Integrate forward in time
-!     do ip = 1, 5
-!         resc(ip,:,:,:)  = fsum_vol(ip, :,:,:) * dt
-!     end do
-
-!     ! Distribute change to nodes
-!     call cell_to_node(resc, resid, 5, ni, nj, nk)
-
-!     ! ! Add change
-!     ! conserved = conserved + resn
-
-!     ! ! Smooth
-!     ! call smooth(conserved, conservedsmth, sf, 5, ni, nj, nk)
-!     ! conserved = conservedsmth
-
-!     ! print *,'SMOOTHED'
-
-! end subroutine
-
-
-! subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
-!     ! using face-centered properties, evaluate fluxes for one direction
-
-!     implicit none
-
-!     integer, intent (in)  :: ni
-!     integer, intent (in)  :: nj
-!     integer, intent (in)  :: nk
-
-!     real*8, intent (in)  :: conserved(5, ni, nj, nk)
-!     real*8, intent (in)  :: Phor(3, ni, nj, nk)
-!     real*8, intent (in)  :: Omega
-!     logical*1, intent (in)  :: wall(ni, nj, nk)
-
-!     real*8, intent (out) :: flux(5, 3, ni, nj, nk)
-
-!     integer :: ic
-!     integer :: ip
-
-!     real*8 :: Vx(ni, nj, nk)
-!     real*8 :: Vr(ni, nj, nk)
-!     real*8 :: rVt(ni, nj, nk)
-
-!     ! Calculate velocities
-!     Vx = conserved(2,:, :, :)/conserved(1,:,:,:)
-!     Vr = conserved(3,:, :, :)/conserved(1,:,:,:)
-!     rVt = conserved(4,:, :, :)/conserved(1,:,:,:)
-
-!     ! mass
-!     flux(1,1,:,:,:) = conserved(2,:, :, :)  ! rhoVx
-!     flux(1,2,:,:,:) = conserved(3,:, :, :)  ! rhoVr
-!     flux(1,3,:,:,:) = conserved(4,:, :, :)/Phor(3,:,:,:)  ! rhoVt=rhorVt/r
-
-!     ! x-mom
-!     do ic = 1,3
-!         flux(2,ic,:,:,:) = flux(1,ic,:,:,:) * Vx
-!     end do
-
-!     ! r-mom
-!     do ic = 1,3
-!         flux(3,ic,:,:,:) = flux(1,ic,:,:,:) * Vr
-!     end do
-
-!     ! rt-mom
-!     do ic = 1,3
-!         flux(4,ic,:,:,:) = flux(1,ic,:,:,:) * rVt
-!     end do
-
-!     ! ho
-!     do ic = 1,3
-!         flux(5,ic,:,:,:) = flux(1,ic,:,:,:) * Phor(2,:,:,:)
-!     end do
-
-!     ! zero convective fluxes on walls
-!     do ip = 1,5
-!         do ic = 1,3
-!             where (wall)
-!                 flux(ip, ic, :, :, :) = 0.0
-!             end where
-!         end do
-!     end do
-
-!     ! pressure fluxes
-!     ! x-mom in x-dirn
-!     flux(2, 1, :, :, :) = flux(2, 1, :, :, :) + Phor(1,:,:,:)
-!     ! r-mom in r-dirn
-!     flux(3, 2, :, :, :) = flux(3, 2, :, :, :) + Phor(1,:,:,:)
-!     ! rt-mom in t-dirn
-!     flux(4, 3, :, :, :) = flux(4, 3, :, :, :) + Phor(3,:,:,:)*Phor(1,:,:,:)
-!     ! ho in t-dirn
-!     flux(5, 3, :, :, :) = flux(5, 3, :, :, :) + Omega*Phor(3,:,:,:)*Phor(1,:,:,:)
-
-
-! end subroutine
-
-
-subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
+subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, resid, ni, nj, nk)
 
     implicit none
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
-    integer, intent (in)  :: np
+
+    real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (out) :: resid(ni, nj, nk, 5)
+    real*8, intent (inout)  :: Phor(ni, nj, nk, 3)
+    real*8, intent (inout)  :: Omega
+    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
+    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
+    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
+    real*8, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*8, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*8, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*8, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*8, intent (inout)  :: dt(ni-1, nj-1, nk-1)
+
+    integer :: ip
+
+    real*8 :: Sn(ni, nj, nk, 1)
+    real*8 :: Sc(ni-1, nj-1, nk-1, 1)
+
+    real*8 :: conservedi(ni, nj-1, nk-1, 5)
+    real*8 :: conservedj(ni-1, nj, nk-1,5)
+    real*8 :: conservedk(ni-1, nj-1, nk,5)
+
+    real*8 :: Phori( ni, nj-1, nk-1,3)
+    real*8 :: Phorj( ni-1, nj, nk-1,3)
+    real*8 :: Phork( ni-1, nj-1, nk,3)
+
+    real*8 :: fi(ni, nj-1, nk-1, 3, 5)
+    real*8 :: fj(ni-1, nj, nk-1, 3, 5)
+    real*8 :: fk(ni-1, nj-1, nk, 3, 5)
+
+    real*8 :: fsum_vol(ni-1, nj-1, nk-1, 5)
+    real*8 :: resc(ni-1, nj-1, nk-1, 5)
+
+
+    ! Calculate source term at nodes, average at cell centers
+    Sn(:, :, :, 1) = (&
+        Phor(:,:,:,1)/Phor(:,:,:,3) &  ! P/r
+        + ( &
+            conserved(:,:,:,4)*conserved(:,:,:,4) &  ! rhorVt**2
+            /conserved(1,:,:,:) & ! over rho
+            /Phor(:,:,:,3)/Phor(:,:,:,3)/Phor(:,:,:,3) & ! over r**3
+        ) &
+    )
+    call node_to_cell(Sn, Sc, ni, nj, nk, 1)
+
+    ! Get face-centered vars
+    call node_to_face( &
+        conserved, conservedi, conservedj, conservedk, &
+        ni, nj, nk, 5 &
+    )
+    call node_to_face( &
+        Phor, Phori, Phorj, Phork, &
+         ni, nj, nk, 3 &
+    )
+
+    ! Evaluate fluxes on each set of faces
+    call get_fluxes_face(conservedi, Phori, walli, Omega, fi, ni, nj-1, nk-1)
+    call get_fluxes_face(conservedj, Phorj, wallj, Omega, fj, ni-1, nj, nk-1)
+    call get_fluxes_face(conservedk, Phork, wallk, Omega, fk, ni-1, nj-1, nk)
+
+    ! Get the net flux into each cell
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk)
+
+    ! Add on source term
+    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc(:,:,:,1)
+
+
+
+    ! Integrate forward in time
+    do ip = 1, 5
+        resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
+    end do
+
+    ! Distribute change to nodes
+    ! call cell_to_node(resc, resid, ni, nj, nk, 5)
+    resid(1:ni-1, 1:nj-1, 1:nk-1,:) = resc
+
+    ! ! Smooth
+    ! call smooth(conserved, conservedsmth, sf, 5, ni, nj, nk)
+    ! conserved = conservedsmth
+
+    ! print *,'SMOOTHED'
+
+end subroutine
+
+
+subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
+    ! using face-centered properties, evaluate fluxes for one direction
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*8, intent (in)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (in)  :: Phor(ni, nj, nk, 3)
+    real*8, intent (in)  :: Omega
+    logical*1, intent (in)  :: wall(ni, nj, nk)
+
+    real*8, intent (out) :: flux(ni, nj, nk, 3, 5)
+
+    integer :: ic
+    integer :: ip
+
+    real*8 :: Vx(ni, nj, nk)
+    real*8 :: Vr(ni, nj, nk)
+    real*8 :: rVt(ni, nj, nk)
+
+    ! Calculate velocities
+    Vx = conserved(:, :, :,2)/conserved(:,:,:,1)
+    Vr = conserved(:, :, :,3)/conserved(:,:,:,1)
+    rVt = conserved(:, :, :,4)/conserved(:,:,:,1)
+
+    ! mass fluxes in each direction
+    flux(:,:,:,1,1) = conserved(:, :, :,2)  ! rhoVx
+    flux(:,:,:,2,1) = conserved(:, :, :,3)  ! rhoVr
+    flux(:,:,:,3,1) = conserved(:, :, :,4)/Phor(:,:,:,3)  ! rhoVt=rhorVt/r
+
+    ! x-mom flux for each coordinate direction
+    do ic = 1,3
+        flux(:,:,:,ic,2) = flux(:,:,:,ic,1) * Vx
+    end do
+
+    ! r-mom flux for each coordinate direction
+    do ic = 1,3
+        flux(:,:,:,ic,3) = flux(:,:,:,ic,1) * Vr
+    end do
+
+    ! rt-mom flux for each coordinate direction
+    do ic = 1,3
+        flux(:,:,:,ic,4) = flux(:,:,:,ic,1) * rVt
+    end do
+
+    ! ho flux for each coordinate direction
+    do ic = 1,3
+        flux(:,:,:,ic,5) = flux(:,:,:,ic,1) * Phor(:,:,:,2)
+    end do
+
+    ! zero convective fluxes on walls
+    do ip = 1,5
+        do ic = 1,3
+            where (wall)
+                flux(:, :, :, ic, ip) = 0.0
+            end where
+        end do
+    end do
+
+    ! pressure fluxes
+    ! x-mom in x-dirn
+    flux(:, :, :, 1, 2) = flux(:, :, :, 1, 2) + Phor(:,:,:,1)
+    ! r-mom in r-dirn
+    flux(:, :, :, 2, 3) = flux(:, :, :, 2, 3) + Phor(:,:,:,1)
+    ! rt-mom in t-dirn
+    flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + Phor(:,:,:,3)*Phor(:,:,:,1)
+    ! ho in t-dirn
+    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + Omega*Phor(:,:,:,3)*Phor(:,:,:,1)
+
+
+end subroutine
+
+
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
 
     integer :: ip
 
@@ -181,31 +185,31 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
     real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
     real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*8, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
-    real*8, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
-    real*8, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
+    real*8, intent (in)  :: fi(ni, nj-1, nk-1, 3, 5)
+    real*8, intent (in)  :: fj(ni-1, nj, nk-1, 3, 5)
+    real*8, intent (in)  :: fk(ni-1, nj-1, nk, 3, 5)
 
     real*8 :: fisum(ni, nj-1, nk-1)
     real*8 :: fjsum(ni-1, nj, nk-1)
     real*8 :: fksum(ni-1, nj-1, nk)
 
-    real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
+    real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, 5)
 
     fsum = 0d0
 
-    do ip = 1,np
+
+    do ip = 1, 5
         ! Dot product areas with the fluxes
         fisum = sum(dAi*fi(:,:,:,:,ip),4)
         fjsum = sum(dAj*fj(:,:,:,:,ip),4)
         fksum = sum(dAk*fk(:,:,:,:,ip),4)
-        ! Add on the differences
-        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fisum(1:ni-1,:,:) - fisum(2:ni,:,:))
-        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:))
-        fsum( :, :, :, ip) = fsum( :, :, :, ip) + (fksum(:,:,1:nk-1) - fksum(:,:,2:nk))
-        ! Divide by volume
-        fsum( :, :, :, ip) = fsum( :, :, :, ip)/vol
+        ! Net flux per unit volume
+        fsum(:, :, :, ip) = (&
+              fisum(1:ni-1,:,:) - fisum(2:ni,:,:) & ! i faces
+            + fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:) & ! j faces
+            + fksum(:,:,1:nk-1) - fksum(:,:,2:nk) & ! k faces
+        )/vol
     end do
-
 
 end subroutine
 
