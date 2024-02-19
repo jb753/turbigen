@@ -121,14 +121,14 @@ print(ten-tst)
 #         b = g[0][ni//2, nj//2, nk//2]
 #         print(i, np.abs(dU).mean(axis=(-1,-2,-3)))
 
-b = g[0][ni//2,:,:]
-fig, ax = plt.subplots()
-hm = ax.contourf(b.y, b.z, b.P)
-ax.axis('equal')
-plt.colorbar(hm)
-b = g[0][:,:,nk//2]
-fig, ax = plt.subplots()
-hm = ax.contourf(b.x, b.r, b.Vr)
-ax.axis('equal')
-plt.colorbar(hm)
-plt.show()
+# b = g[0][ni//2,:,:]
+# fig, ax = plt.subplots()
+# hm = ax.contourf(b.y, b.z, b.P)
+# ax.axis('equal')
+# plt.colorbar(hm)
+# b = g[0][:,:,nk//2]
+# fig, ax = plt.subplots()
+# hm = ax.contourf(b.x, b.r, b.Vr)
+# ax.axis('equal')
+# plt.colorbar(hm)
+# plt.show()

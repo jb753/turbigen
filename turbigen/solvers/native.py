@@ -24,14 +24,14 @@ nstep_log = 50
 nstep = 1000
 nrk = 4
 
-sfin = 0.05
+sfin = 0.01
 fac_2nd = 0.2
 CFL = 3.5
 sf = CFL * sfin
 sf2 = sf*fac_2nd
 sf4 = sf*(1.-fac_2nd)
 
-
+@profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
@@ -73,19 +73,9 @@ def run(grid, settings={}, machine=None):
 
                 conserved, Phor = apply_bconds(b)
 
-                print(np.sum(~np.isfinite(conserved)), conserved.shape)
-                print(np.sum(~np.isfinite(Phor)), Phor.shape)
-                print(np.sum(~np.isfinite(dAi)), dAi.shape)
-                print(np.sum(~np.isfinite(dAj)), dAj.shape)
-                print(np.sum(~np.isfinite(dAk)), dAk.shape)
-                print(np.sum(~np.isfinite(vol)), vol.shape)
-                for wi in wall:
-                    print(np.sum(~np.isfinite(wi)), wi.shape)
                 dU = step(
                     conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
                 )
-                print(np.sum(~np.isfinite(dU)))
-                quit()
 
                 conserved_new = conserved_start + dU
 
@@ -95,7 +85,7 @@ def run(grid, settings={}, machine=None):
                 b.set_conserved(np.moveaxis(conserved_new, -1, 0))
 
             if not np.mod(istep, nstep_log):
-                log_line = f"{istep}: {np.abs(dU).mean(axis=(-1,-2,-3))}"
+                log_line = f"{istep}: {np.abs(dU).mean(axis=(0,1,2))}"
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log

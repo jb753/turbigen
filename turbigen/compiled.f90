@@ -47,7 +47,7 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
         Phor(:,:,:,1)/Phor(:,:,:,3) &  ! P/r
         + ( &
             conserved(:,:,:,4)*conserved(:,:,:,4) &  ! rhorVt**2
-            /conserved(1,:,:,:) & ! over rho
+            /conserved(:,:,:,1) & ! over rho
             /Phor(:,:,:,3)/Phor(:,:,:,3)/Phor(:,:,:,3) & ! over r**3
         ) &
     )
@@ -82,8 +82,8 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     end do
 
     ! Distribute change to nodes
-    ! call cell_to_node(resc, resid, ni, nj, nk, 5)
-    resid(1:ni-1, 1:nj-1, 1:nk-1,:) = resc
+    call cell_to_node(resc, resid, ni, nj, nk, 5)
+    ! resid(1:ni-1, 1:nj-1, 1:nk-1,:) = resc
 
     ! ! Smooth
     ! call smooth(conserved, conservedsmth, sf, 5, ni, nj, nk)
