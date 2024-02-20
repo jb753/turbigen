@@ -639,6 +639,9 @@ def run_single(conf, gguess=None, plot=False):
     if cut_offset is not None:
         conf.solver["cut_offset"] = cut_offset
 
+    if not np.isclose(Beta1, ml.Beta[0]):
+        conf.solver["Beta1_override"] = Beta1
+
     logger.info("Post-processing...")
 
     times.append(timer())

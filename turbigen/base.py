@@ -402,13 +402,20 @@ class Kinematics:
         """Velocity in grid i-direction."""
 
         # Edge-center vector for grid spacing
-        qi_edge = np.diff(self.xrrt, axis=1)
+        qi_edge = np.diff(self.xrt, axis=1)
+
+        # Multiply theta component by average radius on that face
+        r_edge = 0.5*(self.r[:-1,...]+self.r[1:,...])
+        qi_edge[2] *= r_edge
 
         # Convert to node-centered
         qi_node = np.full(self.xrrt.shape, np.nan)
         qi_node[:, 0, ...] = qi_edge[:, 0, ...]
         qi_node[:, -1, ...] = qi_edge[:, -1, ...]
         qi_node[:, 1:-1, ...] = 0.5 * (qi_edge[:, :-1, ...] + qi_edge[:, 1:, ...])
+
+        # Normalise to unit length
+        qi_node /= util.vecnorm(qi_node)
 
         return (self.Vxrt_rel * qi_node).sum(axis=0)
 
