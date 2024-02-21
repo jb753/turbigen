@@ -74,8 +74,6 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     ! Add on source term
     fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc(:,:,:,1)
 
-
-
     ! Integrate forward in time
     do ip = 1, 5
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
@@ -83,16 +81,42 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
 
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
-    ! resid(1:ni-1, 1:nj-1, 1:nk-1,:) = resc
-
-    ! ! Smooth
-    ! call smooth(conserved, conservedsmth, sf, 5, ni, nj, nk)
-    ! conserved = conservedsmth
-
-    ! print *,'SMOOTHED'
 
 end subroutine
 
+subroutine calculate_secondary(r, conserved, Vxrt, u, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (inout)  :: Vxrt(ni, nj, nk, 3)
+    real*8, intent (inout)  :: u(ni, nj, nk)
+    real*8, intent (inout)  :: r(ni, nj, nk)
+
+    integer :: ic
+
+    do ic = 1,3
+        Vxrt(:,:,:, ic) = conserved(:,:,:,ic+1)/conserved(:,:,:,1)
+    end do
+    Vxrt(:,:,:,3) = Vxrt(:,:,:,3)/r
+
+    u = conserved(:,:,:,5)/conserved(:,:,:,1) - 0.5d0*sum(Vxrt*Vxrt, 4)
+
+    ! def set_conserved(self, conserved):
+    !     rho, *rhoVxrt, rhoe = conserved
+    !     Vxrt = rhoVxrt / rho
+    !     Vxrt[2] /= self.r
+    !     self.Vxrt = Vxrt
+    !     u = rhoe / rho - 0.5 * self.V**2
+    !     self.set_rho_u(rho, u)
+
+
+
+end subroutine
 
 subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
     ! using face-centered properties, evaluate fluxes for one direction
@@ -151,7 +175,7 @@ subroutine get_fluxes_face(conserved, Phor, wall, Omega, flux, ni, nj, nk)
     do ip = 1,5
         do ic = 1,3
             where (wall)
-                flux(:, :, :, ic, ip) = 0.0
+                flux(:, :, :, ic, ip) = 0d0
             end where
         end do
     end do
@@ -195,9 +219,6 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk)
 
     real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, 5)
 
-    fsum = 0d0
-
-
     do ip = 1, 5
         ! Dot product areas with the fluxes
         fisum = sum(dAi*fi(:,:,:,:,ip),4)
@@ -234,7 +255,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(:, 2:nj,   1:nk-1, :) & ! j+1, k
         + xn(:, 1:nj-1, 2:nk  , :) & ! j, k+1
         + xn(:, 2:nj,   2:nk  , :) & ! j+1, k+1
-    )/4.0
+    )/4d0
 
     ! Values on j-faces are average over four bounding vertices
     xj = (&
@@ -242,7 +263,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(2:ni,   :, 1:nk-1, :) & ! i+1, k
         + xn(1:ni-1, :, 2:nk  , :) & ! i, k+1
         + xn(2:ni,   :, 2:nk  , :) & ! i+1, k+1
-    )/4.0
+    )/4d0
 
     ! Values on k-faces are average over four bounding vertices
     xk = (&
@@ -250,7 +271,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(2:ni,   1:nj-1, :, :) & ! i+1, j
         + xn(1:ni-1, 2:nj,   :, :) & ! i, j+1
         + xn(2:ni,   2:nj,   :, :) & ! i+1, j+1
-    )/4.0
+    )/4d0
 
 end subroutine
 
@@ -277,7 +298,7 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
         + xn(2:ni,   1:nj-1, 2:nk,   :) & ! i+1,j,k+1
         + xn(2:ni,   2:nj,   2:nk,   :) & ! i+1,j+1,k+1
         + xn(1:ni-1, 2:nj,   2:nk,   :) & ! i,j+1,k+1
-    )/8.0
+    )/8d0
 
 
 end subroutine
@@ -304,7 +325,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
         + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
         + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
-    )/8.0
+    )/8d0
 
     ! Face nodes take 1/4 from each adjacent cell
 
@@ -314,7 +335,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(1, 2:nj-1, 1:nk-2, :) & ! 1,j+1,k
         + xc(1, 1:nj-2, 2:nk-1, :) & ! 1,j,k+1
         + xc(1, 2:nj-1, 2:nk-1, :) & ! 1,j+1,k+1
-    )/4.0
+    )/4d0
 
     ! i=ni
     xn(ni, 2:nj-1, 2:nk-1, :) = (&
@@ -322,7 +343,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(ni-1, 2:nj-1, 1:nk-2, :) & ! ni-1,j+1,k
         + xc(ni-1, 1:nj-2, 2:nk-1, :) & ! ni-1,j,k+1
         + xc(ni-1, 2:nj-1, 2:nk-1, :) & ! ni-1,j+1,k+1
-    )/4.0
+    )/4d0
 
     ! j=1
     xn(2:ni-1, 1, 2:nk-1, :) = (&
@@ -330,7 +351,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1, 1:nk-2, :) & ! i+1,1,k
         + xc(1:ni-2, 1, 2:nk-1, :) & ! i,1,k+1
         + xc(2:ni-1, 1, 2:nk-1, :) & ! i+1,1,k+1
-    )/4.0
+    )/4d0
 
     ! j=nj
     xn(2:ni-1, nj, 2:nk-1, :) = (&
@@ -338,7 +359,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, nj-1, 1:nk-2, :) & ! i+1,nj-1,k
         + xc(1:ni-2, nj-1, 2:nk-1, :) & ! i,nj-1,k+1
         + xc(2:ni-1, nj-1, 2:nk-1, :) & ! i+1,nj-1,k+1
-    )/4.0
+    )/4d0
 
     ! k=1
     xn(2:ni-1, 2:nj-1, 1, :) = (&
@@ -346,7 +367,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, 1, :) &
         + xc(1:ni-2, 2:nj-1, 1, :) &
         + xc(2:ni-1, 2:nj-1, 1, :) &
-    )/4.0
+    )/4d0
 
     ! k=nk
     xn(2:ni-1, 2:nj-1, nk, :) = (&
@@ -354,7 +375,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, nk-1, :) &
         + xc(1:ni-2, 2:nj-1, nk-1, :) &
         + xc(2:ni-1, 2:nj-1, nk-1, :) &
-    )/4.0
+    )/4d0
 
     ! Edges take 1/2 from each adjacent cell
 
@@ -362,73 +383,73 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
     xn(1, 1, 2:nk-1, :) = (&
           xc(1, 1, 1:nk-2, :) &
         + xc(1, 1, 2:nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! i=1, j=nj
     xn(1, nj, 2:nk-1, :) = (&
           xc(1, nj-1, 1:nk-2, :) &
         + xc(1, nj-1, 2:nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! i=ni, j=1
     xn(ni, 1, 2:nk-1, :) = (&
           xc(ni-1, 1, 1:nk-2, :) &
         + xc(ni-1, 1, 2:nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! i=ni, j=nj
     xn(ni, nj, 2:nk-1, :) = (&
           xc(ni-1, nj-1, 1:nk-2, :) &
         + xc(ni-1, nj-1, 2:nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! i=1, k=1
     xn(1, 2:nj-1, 1, :) = (&
           xc(1, 1:nj-2, 1, :) &
         + xc(1, 2:nj-1, 1, :) &
-    )/2.0
+    )/2d0
 
     ! i=1, k=nk
     xn(1, 2:nj-1, nk, :) = (&
           xc(1, 1:nj-2, nk-1, :) &
         + xc(1, 2:nj-1, nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! i=ni, k=1
     xn(ni, 2:nj-1, 1, :) = (&
           xc(ni-1, 1:nj-2, 1, :) &
         + xc(ni-1, 2:nj-1, 1, :) &
-    )/2.0
+    )/2d0
 
     ! i=ni, k=nk
     xn(ni, 2:nj-1, nk, :) = (&
           xc(ni-1, 1:nj-2, nk-1, :) &
         + xc(ni-1, 2:nj-1, nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! j=1, k=1
     xn(2:ni-1, 1, 1, :) = (&
           xc(1:ni-2, 1, 1, :) &
         + xc(2:ni-1, 1, 1, :) &
-    )/2.0
+    )/2d0
 
     ! j=1, k=nk
     xn(2:ni-1, 1, nk, :) = (&
           xc(1:ni-2, 1, nk-1, :) &
         + xc(2:ni-1, 1, nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! j=nj, k=1
     xn(2:ni-1, nj, 1, :) = (&
           xc(1:ni-2, nj-1, 1, :) &
         + xc(2:ni-1, nj-1, 1, :) &
-    )/2.0
+    )/2d0
 
     ! j=nj, k=nk
     xn(2:ni-1, nj, nk, :) = (&
           xc(1:ni-2, nj-1, nk-1, :) &
         + xc(2:ni-1, nj-1, nk-1, :) &
-    )/2.0
+    )/2d0
 
     ! Corners take entirety from nearest cell
     xn(1,  1,  1, :) = xc(1,    1,    1, :)
