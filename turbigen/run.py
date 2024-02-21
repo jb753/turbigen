@@ -531,14 +531,14 @@ def run_single(conf, gguess=None, plot=False):
             rot_types.append("stationary")
     g.apply_rotation(rot_types, ml.Omega[::2])
 
-    # if "Beta1_override" in conf.solver:
-    #     Beta1 = conf.solver.pop("Beta1_override")
-    #     g.apply_inlet(So1, ml.Alpha[0], Beta1)
-    # else:
-    #     Beta1 = None
+    if "Beta1_override" in conf.solver:
+        Beta1 = conf.solver.pop("Beta1_override")
+        g.apply_inlet(So1, ml.Alpha[0], Beta1)
+    else:
+        Beta1 = ml.Beta[0]
 
     # # Inlet and outlet
-    g.apply_inlet(So1, ml.Alpha[0], ml.Beta[0])
+    g.apply_inlet(So1, ml.Alpha[0], Beta1)
     g.apply_outlet(ml.P[-1])
 
     # Configure throttle
@@ -638,6 +638,9 @@ def run_single(conf, gguess=None, plot=False):
 
     if cut_offset is not None:
         conf.solver["cut_offset"] = cut_offset
+
+    if not np.isclose(Beta1, ml.Beta[0]):
+        conf.solver["Beta1_override"] = Beta1
 
     logger.info("Post-processing...")
 

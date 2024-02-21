@@ -487,15 +487,23 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
 
     Vi = surf.Vi_rel
     # Take surface distance and normalise to (-1, 1)
-    zeta_norm = surf.zeta
+    zeta_norm = surf.zeta.copy()
     zeta_norm /= 0.5 * zeta_norm.ptp()
     zeta_norm -= 1.0
 
+    # # Find a zero crossing near LE
+    # istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.1)[:-1])[0][0]
+
+
     # Find a zero crossing near LE
-    istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.3)[:-1])[0][0]
+    iz_all = np.where(
+            (np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.3)[:-1]
+    )[0]
+    iiz = np.argmin(np.abs(zeta_norm[iz_all]))
+    istag = iz_all[iiz]
 
     zstag = surf.zeta - surf.zeta[istag]
-    zn = zstag + 0.0
+    zn = np.copy(zstag)
     Lref = zn[np.argmax(np.abs(zn))]
     zn /= Lref
 
@@ -505,6 +513,10 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
     else:
         # Turbine
         Cp = (surf.P - Po1) / (Po1 - P2)
+
+    # Write the data for custom plotting
+    fname_raw = fname.replace('.pdf','.dat')
+    np.savetxt(fname_raw, np.stack((zn, Cp)))
 
     fig, ax = plt.subplots()
     ax.plot(np.abs(zn), Cp)
@@ -521,8 +533,8 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
         splitter = splitter[:, jspf, 0]
         istag = np.argmax(splitter.P)
         zstag = splitter.zeta - splitter.zeta[istag]
-        zn = zstag + 0.0
-        zn /= Lref
+        zns = np.copy(zstag)
+        zns /= Lref
 
         if Po2 > Po1:
             # Compressor
@@ -530,7 +542,12 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
         else:
             # Turbine
             Cp_split = (splitter.P - Po1) / (Po1 - P2)
-        ax.plot(np.abs(zn), Cp_split, "--")
+
+        ax.plot(np.abs(zns), Cp_split, "--")
+
+        # Write the data for custom plotting
+        fname_raw_splitter = fname.replace('.pdf','_splitter.dat')
+        np.savetxt(fname_raw_splitter, np.stack((zns, Cp_split)))
 
     plt.tight_layout()
     plt.savefig(fname)

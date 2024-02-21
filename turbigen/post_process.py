@@ -42,9 +42,11 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
         zeta -= 1.0
 
         # Find a zero crossing near LE
-        iz = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1])[
-            0
-        ][0]
+        iz_all = np.where(
+                (np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1]
+        )[0]
+        iiz = np.argmin(np.abs(zeta[iz_all]))
+        iz = iz_all[iiz]
 
         zeta_stag = np.interp(0, Vi[iz : iz + 2], zeta[iz : iz + 2])
 
