@@ -42,6 +42,10 @@ class HMeshConfig(BaseConfig):
     ni_TE = 9
     """Number of streamwise points across trailing edge."""
 
+    dm_TE = 0.
+    """Normalised meridional length over which to cluster the TE points, 0. for
+    the true actual TE."""
+
     nk_unbladed = 81
     """Number of pitchwise points across unbladed rows."""
 
@@ -491,6 +495,8 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         # This fixes number of points and roughly distributes points
         if unbladed[irow]:
             tte = None
+        elif mesh_config.dm_TE:
+            tte = 1.-mesh_config.dm_TE
         else:
             xrt_u, xrt_l = mac.bld[irow].evaluate_section(0.5)
             mlim_now = np.array((0, 1))

@@ -78,10 +78,11 @@ operating_point:
   - 0.1
   - 0.0
 solver:
-  soft_start: true
+  # soft_start: true
   convert_sliding: true
   nchange: 2000
   nstep: 16000
   nstep_avg: 1000
   type: ts3
+  skip: true
 ...

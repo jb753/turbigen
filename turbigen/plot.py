@@ -485,28 +485,6 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
     surf = surf[:,jspf,0]
 
 
-    Vi = surf.Vi_rel
-    # Take surface distance and normalise to (-1, 1)
-    zeta_norm = surf.zeta
-    zeta_norm /= 0.5 * zeta_norm.ptp()
-    zeta_norm -= 1.0
-
-    # # Find a zero crossing near LE
-    # istag = np.where((np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.1)[:-1])[0][0]
-
-
-    # Find a zero crossing near LE
-    iz_all = np.where(
-            (np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta_norm) < 0.3)[:-1]
-    )[0]
-    iiz = np.argmin(np.abs(zeta_norm[iz_all]))
-    istag = iz_all[iiz]
-
-    zstag = surf.zeta - surf.zeta[istag]
-    zn = zstag + 0.0
-    Lref = zn[np.argmax(np.abs(zn))]
-    zn /= Lref
-
     if Po2 > Po1:
         # Compressor
         Cp = (surf.P - Po1) / (Po1 - P1)
@@ -514,13 +492,12 @@ def plot_pressure_distribution(irow, g, ml, spf, fname):
         # Turbine
         Cp = (surf.P - Po1) / (Po1 - P2)
 
+    zeta_stag = surfs[0][:,:,0].zeta_stag[:,jspf]
+    zeta_TE = zeta_stag / np.abs(zeta_stag).max(axis=0, keepdims=True)
     fig, ax = plt.subplots()
-    ax.plot(np.abs(zn), Cp)
+    ax.plot(np.abs(zeta_TE), Cp)
     ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
     ax.set_ylabel(r"Static Pressure, $C_p$")
-    # ax.set_ylabel(r"Sati")
-    # ax.set_xlim((0.0, 1))
-    # ax.set_ylim((0.0, 0.02))
 
     # Splitter
     if len(surfs) > 1:

@@ -958,6 +958,41 @@ class Composites:
         Call = self.stack(cuts)
         return spf, Call
 
+    @dependent_property
+    def zeta_stag(self):
+        """Surface distance along i-line with origin at stagnation point."""
+
+        if not self.ndim == 2:
+            raise Exception(f'Can only find stagnation point on 2D cuts; this cut has shape {self.shape}')
+
+        P = self.P
+
+        # Extract surface distance, normalise to [-1,1] on each j-line
+        z = self.zeta/self.zeta.ptp(axis=0)*2.-1.
+
+        # Find pressure maxima
+        # This must be a loop over j because there can be a different number of
+        # turning points at each spanwise lnocation
+        _, nj = self.shape
+        istag = np.full((nj,),0,dtype=int)
+        zstag = np.full((1,nj,),np.nan)
+        for j in range(nj):
+
+            # Calculate gradient and curvature
+            dP = np.diff(P[:,j])
+            d2P = np.diff(dP)
+
+            # Indices of downward zero crossings of pressure derivative
+            izj = np.where(np.diff(np.sign(dP[:-2]))<0.)[0]+1
+
+            # Only keep maxima close to LE
+            izj = izj[np.abs(z[izj,j])<0.3]
+
+            # Now take the candiate point with maximum pressure
+            istag[j] = izj[np.argsort(P[izj,j])][-1]
+            zstag[0,j] = self.zeta[istag[j],j]
+
+        return self.zeta - zstag
 
 class MeanLine:
     """Encapsulate flow and geometry on a nomial mean streamsurface."""

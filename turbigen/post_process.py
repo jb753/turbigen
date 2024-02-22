@@ -204,13 +204,6 @@ def incidence(g, machine, Beta_in, plot=False):
     return spf, chi_stag, chi_stag_splitter
 
 
-#     import matplotlib.pyplot as plt
-#     fix, ax = plt.subplots()
-#     for i in range(g.nrow):
-#         ax.plot(spf[i], chi_stag[i],'-x')
-#     plt.savefig('test.pdf')
-
-
 def check_phase(g):
     for ib, b in enumerate(g):
         n = (b.is_two_phase).sum()
