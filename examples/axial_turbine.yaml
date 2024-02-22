@@ -46,7 +46,6 @@ solver:
   type: ts3
   nstep_avg: 1000
   nstep: 5000
-  skip: true
 
 mesh:
   type: h

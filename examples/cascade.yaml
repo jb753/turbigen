@@ -51,7 +51,6 @@ mesh:
 
 # CFD solver
 solver:
-  skip: true
   type: ts3  # Which solver
   # Solver-specific configuration settings
   nstep: 5000
