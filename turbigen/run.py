@@ -652,8 +652,6 @@ def run_single(conf, gguess=None, plot=False):
     for icut, xrci in enumerate(xr_cut):
         try:
             CC = g.unstructured_cut_marching(xrci)
-            cutname = os.path.join(workdir, f"cut_{icut}")
-            np.savez_compressed(cutname, data=CC._data)
             Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(
                 CC
             )
@@ -670,6 +668,16 @@ def run_single(conf, gguess=None, plot=False):
     Call.Nb = ml.Nb
 
     ml_out = turbigen.flowfield.make_mean_line_from_flowfield(Amix, Call)
+
+
+    for post_name, post_conf in conf.post_process.items():
+        post_func = util.load_post(post_name).post
+        if post_conf is None:
+            post_conf = {}
+        post_func(g, mac, ml_out, workdir, **post_conf)
+        quit()
+
+
 
     try:
         if conf.plot:

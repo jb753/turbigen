@@ -57,3 +57,5 @@ solver:
   nstep_avg: 1000
   rtol_mdot: 0.02
   # ...
+post_process:
+  write_cuts:

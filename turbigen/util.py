@@ -1241,6 +1241,23 @@ def load_install(install_type):
         spec.loader.exec_module(mod)
     return mod
 
+def load_post(post_type):
+    if not post_type.endswith(".py"):
+        # Attempt to load a built-in post
+        mod = importlib.import_module(f".{post_type}", package="turbigen.post")
+    else:
+        # Use as a file path
+        mod_file = os.path.abspath(post_type)
+        mod_name = os.path.basename(post_type)
+        spec = importlib.util.spec_from_file_location(
+            f"turbigen.post.{mod_name}", mod_file
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"turbigen.post.{mod_name}"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 
 def node_to_face3(x):
     # x has shape [?,ni,nj,nk]
