@@ -456,13 +456,13 @@ class Grid:
         for patch in self.periodic_patches:
             if patch in done:
                 continue
-            i1 = (slice(3, 7, None),) + patch.get_slice()[1:]
-            i2 = (slice(3, 7, None),) + patch.match.get_slice()[1:]
-            C1 = patch.get_cut()
-            C2 = patch.get_match_cut()
-            avg = 0.5 * (C1._data[i1] + C2._data[i2])
+            i1 = (slice(3, 7, None),) + patch.get_slice()
+            i2 = (slice(3, 7, None),) + patch.match.get_slice()
+            avg = 0.5 * (patch.block._data[i1] + patch.match.block._data[i2])
             patch.block._data[i1] = avg
             patch.match.block._data[i2] = avg
+            done.append(patch)
+            done.append(patch.match)
 
     def apply_rotation(self, row_types, Omega):
         """Set wall rotations."""

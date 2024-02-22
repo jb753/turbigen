@@ -5,6 +5,7 @@ from turbigen.compiled import (
     node_to_cell,
     node_to_face,
     step,
+    calculate_secondary,
 )
 from timeit import default_timer as timer
 import logging
@@ -20,9 +21,10 @@ logger.setLevel(level=logging.INFO)
 #     _name = "Native"
 
 nstep_dt = 100
-nstep_log = 50
-nstep = 1000
+nstep_log = 100
+nstep = 4000
 nrk = 4
+dampin = 10.
 
 sfin = 0.01
 fac_2nd = 0.2
@@ -31,7 +33,6 @@ sf = CFL * sfin
 sf2 = sf*fac_2nd
 sf4 = sf*(1.-fac_2nd)
 
-@profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
@@ -52,7 +53,7 @@ def run(grid, settings={}, machine=None):
     for istep in range(nstep):
 
         # Update periodic boundaries
-        # grid.apply_periodic()
+        grid.apply_periodic()
 
         # Update time stegs
         if not np.mod(istep, nstep_dt):
@@ -65,32 +66,93 @@ def run(grid, settings={}, machine=None):
 
             b = grid[iblock]
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
-
-            conserved_start = np.asfortranarray(np.moveaxis(b.conserved,0,-1))
+            Vxrt = np.empty(b.shape + (3,), order='F')
+            u = np.empty(b.shape, order='F')
 
             for irk in range(nrk):
                 frk = 1.0 / (irk + nrk)
 
                 conserved, Phor = apply_bconds(b)
 
+                if irk == 0:
+                    conserved_start = conserved.copy(order='F')
+
                 dU = step(
                     conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
                 )
+
+                if np.isnan(dU).any():
+                    raise Exception('NaN dU')
+
+                # dUabs = np.abs(dU)
+                # dUavg = np.mean(dUabs,axis=(0,1,2),keepdims=True)
+                # dU /= 1.+dUavg/dampin/dUavg
 
                 conserved_new = conserved_start + dU
 
                 if irk == nrk - 1:
                     smooth(conserved_new, sf2, sf4)
 
-                b.set_conserved(np.moveaxis(conserved_new, -1, 0))
+                if np.isnan(conserved_new).any():
+                    raise Exception('NaN conserved_new')
+
+
+                calculate_secondary(Phor[...,2], conserved_new, Vxrt, u)
+
+                # for n in range(3):
+                #     print(Vxrt[...,n].min(), Vxrt[...,n].max())
+                # print('***')
+
+                if np.isnan(Vxrt).any():
+                    raise Exception('NaN Vxrt')
+
+
+                if np.isnan(u).any():
+                    raise Exception('NaN u')
+
+
+                b.Vxrt = np.moveaxis(Vxrt,-1,0)
+
+                try:
+                    b.set_rho_u(conserved_new[...,0], u)
+                except Exception as e:
+
+                    print(e)
+
+                    ijkmax = np.argmax(grid[0].V)
+                    imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
+
+                    import matplotlib.pyplot as plt
+                    fig, ax = plt.subplots()
+                    bb = grid[0][:,jmax,:].squeeze()
+                    cm = ax.contourf(bb.x, bb.rt, bb.Ma)
+                    ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], 'k*')
+                    plt.colorbar(cm)
+                    plt.show()
+                    quit()
+
+
 
             if not np.mod(istep, nstep_log):
+
                 log_line = f"{istep}: {np.abs(dU).mean(axis=(0,1,2))}"
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log
                 logger.info(f"tpnps={tpnps}")
                 tstart = ten
+
+                mdot_in = 0.
+                for patch in grid.inlet_patches:
+                    Cm, Ann, _ = patch.get_cut().mix_out()
+                    mdot_in += Cm.rho * Cm.Vm * Ann
+
+                mdot_out = 0.
+                for patch in grid.outlet_patches:
+                    Cm, Ann, _ = patch.get_cut().mix_out()
+                    mdot_out += Cm.rho * Cm.Vm * Ann
+                    print(f'mass flows {mdot_in}, {mdot_out}, err={mdot_in/mdot_out-1.}')
+
 
 
 def get_geom(b):
@@ -156,26 +218,25 @@ def get_wall(b):
     return wfl
 
 
-# @profile
 def apply_bconds(b):
     """Return properties needed to time march after in/out boundaries applied"""
 
-    P = b.P.copy()
-    ho = b.ho.copy()
-    conserved = np.asfortranarray(b.conserved.copy())
+    P = b.P
+    ho = b.ho
+    conserved = b.conserved
 
     rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
-        P[patch.get_slice()] = patch.Pout * 0.1 + 0.9 * (patch.get_cut().P)
+        P[patch.get_slice()] = patch.Pout# * 0.1 + 0.9 * (patch.get_cut().P)
 
     # Change inlet patches
     for patch in b.inlet_patches:
 
         ipatch = patch.get_slice()
         inlet = b[ipatch]
-        rfin = patch.rfin
+        rfin = 0.1#*patch.rfin
 
         if patch.store:
             # Relax changes in density if we have a stored state
@@ -184,7 +245,6 @@ def apply_bconds(b):
             rho_now[rho_now > patch.state.rho] = patch.state.rho * 0.9999
             # Isentropic expansion from stagnation state
             inlet.set_rho_s(rho_now, patch.state.s)
-            assert np.allclose(inlet.rho, rho_now)
 
         patch.store = inlet
 
@@ -192,7 +252,7 @@ def apply_bconds(b):
         dhin = patch.state.h - inlet.h
         if (dhin <= 0.0).any():
             assert False
-        Vin = np.sqrt(2 * dhin)
+        Vin = np.sqrt(2. * dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
         tanBeta = turbigen.util.tand(patch.Beta)
@@ -203,8 +263,10 @@ def apply_bconds(b):
         Vmin = np.sqrt(Vxin**2 + Vrin**2)
         Vtin = Vmin * tanAlpha
 
+        # print(f'Vin={Vin.mean()}, Vxin={Vxin.mean()}, Vrin={Vrin.mean()}, Vtin={Vtin.mean()}')
+
         # Reset conserved vars on inlet
-        # rho[ipatch] = inlet.rho
+        rho[ipatch] = inlet.rho
         rhoVx[ipatch] = inlet.rho * Vxin
         rhoVr[ipatch] = inlet.rho * Vrin
         rhorVt[ipatch] = inlet.rho * inlet.r * Vtin

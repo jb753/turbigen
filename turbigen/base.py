@@ -664,7 +664,7 @@ class Kinematics:
     @dependent_property
     def zeta(self):
         """Arc length along each i gridline."""
-        return util.cum_arc_length(self.xrrt, axis=1)
+        return util.cum_arc_length(self.xyz, axis=1)
 
     @dependent_property
     def tri_area(self):
