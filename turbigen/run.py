@@ -1,7 +1,6 @@
 """Functions to run turbigen on config objects."""
 import os
 import sys
-import json
 import shutil
 from turbigen import (
     fluid,
@@ -12,7 +11,7 @@ from turbigen import (
     hmesh,
     ohmesh,
 )
-from turbigen.exceptions import ConvergenceError, ConfigError
+from turbigen.exceptions import ConfigError
 import turbigen.post_process
 import turbigen.plot
 import turbigen.average
@@ -515,11 +514,10 @@ def run_single(conf, gguess=None, plot=False):
     # Wall rotations
     rot_types = []
 
-    rpm_adjust = conf.operating_point.get("rpm_adjust",0.)
+    rpm_adjust = conf.operating_point.get("rpm_adjust", 0.0)
     if rpm_adjust:
-        logger.info(f'Running off-design: adjusted rpms by {rpm_adjust:+}')
-    ml.Omega*=(1.+rpm_adjust)
-
+        logger.info(f"Running off-design: adjusted rpms by {rpm_adjust:+}")
+    ml.Omega *= 1.0 + rpm_adjust
 
     for Omi, tip in zip(ml.Omega[::2], mac.tip):
         if Omi:
@@ -545,10 +543,13 @@ def run_single(conf, gguess=None, plot=False):
     mass_adjust = conf.operating_point.get("mass_adjust", 0.0)
     throttle_pid = conf.operating_point.get("mdot_pid")
     if mass_adjust and not throttle_pid:
-        raise Exception('Cannot adjust mass flow rate without exit throttle PID: set `mdot_pid` in the operating point configuration.')
+        raise Exception(
+            "Cannot adjust mass flow rate without exit throttle PID: "
+            "set `mdot_pid` in the operating point configuration."
+        )
 
     if mass_adjust:
-        logger.info(f'Running off-design: adjusted mass flow rate by {mass_adjust:+}')
+        logger.info(f"Running off-design: adjusted mass flow rate by {mass_adjust:+}")
 
     if throttle_pid:
         restart_fac = 0.5 if gguess else 1.0
@@ -652,9 +653,7 @@ def run_single(conf, gguess=None, plot=False):
     for icut, xrci in enumerate(xr_cut):
         try:
             CC = g.unstructured_cut_marching(xrci)
-            Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(
-                CC
-            )
+            Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(CC)
             Cmix.append(Cnow)
             Amix.append(Aannnow)
             Dsmix.append(dsnow)
@@ -669,50 +668,15 @@ def run_single(conf, gguess=None, plot=False):
 
     ml_out = turbigen.flowfield.make_mean_line_from_flowfield(Amix, Call)
 
+    postdir = os.path.join(workdir, "post")
+    if not os.path.exists(postdir):
+        os.makedirs(postdir, exist_ok=True)
 
     for post_name, post_conf in conf.post_process.items():
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}
-        post_func(g, mac, ml_out, workdir, **post_conf)
-        quit()
-
-
-
-    try:
-        if conf.plot:
-            for spf in (0.1, 0.5, 0.9):
-                pltname = os.path.join(workdir, f"pdist_spf_{int(spf*10)}.pdf")
-                turbigen.plot.plot_pressure_distribution(
-                    bld[0], g, ml_out, spf, pltname
-                )
-    except Exception:
-        pass
-
-    if conf.post_process.get("Sdot_wall"):
-        times.append(timer())
-        ml_out.Sdot_wall, ml_out.Asurf = turbigen.post_process.surface_dissipation(g)
-        times.append(timer())
-        logger.debug(f"Surface dissipation calculation took {np.diff(times)[-1]:.1f}s")
-
-    if conf.post_process.get("tip"):
-        times.append(timer())
-        ml_out.Sdot_tip = turbigen.post_process.tip(g)
-        times.append(timer())
-        logger.debug(f"Tip loss calculation took {np.diff(times)[-1]:.1f}s")
-
-    if conf.plot:
-        for irow, row in enumerate(conf.sections):
-            if row:
-                spf_row = row["spf"]
-                for spf in spf_row:
-                    turbigen.plot.plot_pressure_distribution(
-                        irow,
-                        g,
-                        ml_out,
-                        spf,
-                        os.path.join(workdir, f"pdist_{irow}_{spf}.pdf"),
-                    )
+        post_func(g, mac, ml_out, postdir, **post_conf)
 
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell

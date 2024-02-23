@@ -36,6 +36,7 @@ def test_splitter():
     shutil.rmtree(tmp_dir)
 
 
+
 # If called as a script then test all examples
 if __name__ == "__main__":
     test_splitter()

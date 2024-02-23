@@ -64,6 +64,17 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         bnew.mu_turb = np.full_like(bnew.w, np.nan)
         return bnew
 
+    def to_dict(self, strip_patches=False):
+        d = super().to_dict()
+        if strip_patches:
+            d["metadata"].pop("patches")
+        return d
+
+    def write(self, fname):
+        """Save this object to a yaml file."""
+        d = self.to_dict(strip_patches=True)
+        util.write_yaml_compressed(d, fname)
+
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=()):
         # Make empty object of correct shape

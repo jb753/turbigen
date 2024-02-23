@@ -1,6 +1,7 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
 # from . import compflow as cf
 import numpy as np
+import gzip
 import os
 import sys
 import importlib
@@ -418,6 +419,12 @@ def read_yaml_list(fname):
 def write_yaml(d, fname, mode="w"):
     """Write a dictionary to file."""
     with open(fname, mode) as f:
+        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
+
+
+def write_yaml_compressed(d, fname):
+    """Write a dictionary to compressed file."""
+    with gzip.open(fname, "wt") as f:
         yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
 
 
@@ -1241,6 +1248,7 @@ def load_install(install_type):
         spec.loader.exec_module(mod)
     return mod
 
+
 def load_post(post_type):
     if not post_type.endswith(".py"):
         # Attempt to load a built-in post
@@ -1256,7 +1264,6 @@ def load_post(post_type):
         sys.modules[f"turbigen.post.{mod_name}"] = mod
         spec.loader.exec_module(mod)
     return mod
-
 
 
 def node_to_face3(x):

@@ -1,27 +1,35 @@
 """Write traverse plane or blade surface cuts to files."""
-import numpy as np
 import os
+import turbigen.util
 
-def post(grid, machine, meanline, workdir, offsets=None):
+logger = turbigen.util.make_logger()
 
-    # Default to chord offset
-    if offsets is None:
-        offsets = 0.05 * np.ones((grid.nrow * 2,))
-        offsets[::2] *= -1.0
 
-    # Get meridional coordinates of the cut planes
-    xrc = machine.ann.get_cut_planes(offsets)
+def post(grid, machine, meanline, postdir, mnorm_traverse=(), irow_surf=()):
+
+    if not mnorm_traverse and not irow_surf:
+        logger.info("No cut locations specified.")
+
+    if mnorm_traverse:
+        logger.info("Writing traverse cuts...")
 
     # Loop over stations
-    for i, xrci in enumerate(xrc):
-        C = grid.unstructured_cut_marching(xrci)
-        cutname = os.path.join(workdir, f"cut_station_{i}")
-        np.savez_compressed(cutname, data=C._data)
+    for i, ti in enumerate(mnorm_traverse):
+
+        # Get meridional coordinates of the cut planes
+        xrc = machine.ann.get_cut_plane(ti)[0]
+
+        C = grid.unstructured_cut_marching(xrc)
+        cutname = os.path.join(postdir, f"cut_traverse_{i}.yaml.gz")
+        C.write(cutname)
 
     # Loop over rows
-    for i, surfi in enumerate(grid.cut_blade_surfs()):
-        # Loop over main/splitter
-        for j, surfj in enumerate(surfi):
-            cutname = os.path.join(workdir, f"cut_blade_{i}{j}")
-            np.savez_compressed(cutname, data=surfj._data)
+    if irow_surf:
+        logger.info("Writing blade surface cuts...")
 
+    surfs = grid.cut_blade_surfs()
+    for i in irow_surf:
+        # Loop over main/splitter
+        for j, surfj in enumerate(surfs[i]):
+            cutname = os.path.join(postdir, f"cut_blade_{i}{j}.yaml.gz")
+            surfj.write(cutname)

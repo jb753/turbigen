@@ -1,6 +1,3 @@
-# Covers:
-#   - Submitting a job to the queue
-
 workdir: runs/cascade_splitter
 
 plot: true
@@ -61,6 +58,7 @@ solver:
   rtol_mdot: 0.02
   nchange: 2000
   soft_start: true
+  skip: true
 
 mesh:
   type: oh
@@ -68,3 +66,7 @@ mesh:
   remote_host: gp-111
   gbcs_path: examples/meshes/cascade_splitter/mesh
   frac_outlet:  0.1
+
+post_process:
+  plot_pressure_distributions:
+    row_spf: [[0.3, 0.7],]
