@@ -24,7 +24,6 @@ def post(grid, machine, meanline, postdir):
             ax[0].plot(chi_metal, spf, label="Metal")
             ax[0].legend()
             ax[1].set_xlabel("Incidence/deg")
-            ax[1].set_ylabel("Span Fraction")
             ax[1].plot(inc, spf)
 
             pltname = os.path.join(postdir, f"incidence_row_{irow}_blade_{jblade}.pdf")

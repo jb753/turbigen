@@ -660,12 +660,6 @@ class Blade:
         chi = np.arctan(dydm)
         tau = thick.t(m)
 
-        if debug:
-            print("** section debugs")
-            print(f"spf={spf}, chi={np.degrees(chi[(0,-1),])}")
-            thick.plot("thick.pdf")
-            cam.plot("cam.pdf")
-
         # Calculate offsets for perpendicular thickness in b2b plane
         Dm = -tau * np.sin(chi)
         Dy = tau * np.cos(chi)
@@ -673,26 +667,6 @@ class Blade:
         # Meridional positions for upper and lower surfaces
         mu = m + Dm
         ml = m - Dm
-
-        if debug:
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots()
-            y = cam.y(m)
-            ax.plot(m, y, "k--")
-            ax.plot(
-                mu,
-                y + Dy,
-            )
-            ax.plot(
-                ml,
-                y - Dy,
-            )
-            ax.axis("equal")
-            ax.set_xlim(-0.03, 0.01)
-            ax.set_ylim(np.array((-0.03, 0.01)) - 0.005)
-            plt.savefig("test.pdf")
-            plt.close()
 
         # We need to convert the camber line meridional positions into LE/TE
         # meridional positions.
@@ -711,25 +685,6 @@ class Blade:
         mcam = mlim[0] + mlim.ptp() * mcam
         chord = util.arc_length(self.streamsurface(0.5, mcam))
 
-        if debug:
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots()
-            ax.plot(mcam, y, "k--")
-            ax.plot(
-                mu_LTE,
-                y + Dy,
-            )
-            ax.plot(
-                ml_LTE,
-                y - Dy,
-            )
-            ax.axis("equal")
-            ax.set_xlim(-0.01, 0.05)
-            ax.set_ylim(np.array((-0.05, 0.01)) - 0.005)
-            plt.savefig("test11.pdf")
-            plt.close()
-
         # Find coordinates on stream surface of upper/lower/camber points
         xru = self.streamsurface(spf, mu_LTE)
         xrl = self.streamsurface(spf, ml_LTE)
@@ -742,17 +697,16 @@ class Blade:
         # Add on the whole blade angular offset
         theta += self.theta_offset
 
-        # # Calculate the angular shift to give correct thickness
-        # # dtu = Dy * 0.5*(1./xru[1]+1./xr[1]) * chord
-        # # dtl = -Dy * 0.5*(1./xrl[1]+1./xr[1]) * chord
-        # dtu = (Dy / xru[1]) * chord
-        # dtl = -(Dy / xrl[1]) * chord
-        # # Form coordinates
-        # xrtu = np.stack((*xru, theta + dtu))
-        # xrtl = np.stack((*xrl, theta + dtl))
+        # drtu = Dy * chord
+        # drtl = -Dy * chord
 
-        drtu = Dy * chord
-        drtl = -Dy * chord
+        # Change in theta if r were constant
+        dtu = Dy * chord / xr[1]
+        dtl = -Dy * chord / xr[1]
+        # Change in rtheta at the average radius between camber and surf
+        drtu = dtu * 0.5*(xr[1] + xru[1])
+        drtl = dtl * 0.5*(xr[1] + xrl[1])
+
         xrrtu = np.stack((*xru, theta * xru[1] + drtu))
         xrrtl = np.stack((*xrl, theta * xrl[1] + drtl))
 
@@ -761,28 +715,6 @@ class Blade:
 
         xrtl = xrrtl + 0.0
         xrtl[2] /= xrtl[1]
-
-        if debug:
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots()
-            ax.plot(xrrtu[0], xrrtu[2])
-            ax.plot(xrrtl[0], xrrtl[2])
-            ax.axis("equal")
-            ax.set_xlim(-0.06, 0.06)
-            ax.set_ylim(-0.005, 0.005)
-            # ax.set_xlim(-0.01,0.01)
-            # ax.set_ylim(np.array((-0.01,0.01)))
-            # matplotlib.use('tkagg')
-            plt.savefig("test2.pdf")
-            plt.close()
-
-            fig, ax = plt.subplots()
-            ax.plot(mcam, dydm)
-            plt.savefig("test5.pdf")
-            plt.close()
-
-            # quit()
 
         # Add cusp if requested
         if ncusp:
@@ -841,8 +773,41 @@ class Blade:
         xrtcam = np.mean(xrtul, axis=0)
         xrtLE = xrtcam[:, np.argmax(m > Rle)]
 
-        # xrrtul = xrtul.copy()
-        # xrrtul[:, 2, ...] *= xrrtul[:, 1, ...]
+        xyzcam = np.stack(
+            (
+                xrtcam[0],
+                xrtcam[1]*np.sin(xrtcam[2]),
+                xrtcam[1]*np.cos(xrtcam[2]),
+            )
+        )
+
+        xyzul = np.stack(
+            (
+                xrtul[:,0],
+                xrtul[:,1]*np.sin(xrtul[:,2]),
+                xrtul[:,1]*np.cos(xrtul[:,2]),
+            ),axis=1
+        )
+
+        xyzLE = np.stack(
+            (
+                xrtLE[0],
+                xrtLE[1]*np.sin(xrtLE[2]),
+                xrtLE[1]*np.cos(xrtLE[2]),
+            )
+        )
+
+
+        # if spf > 0.8:
+        #     import matplotlib.pyplot as plt
+        #     fig, ax = plt.subplots()
+        #     ax.plot(*xyzcam[1:,:],'k-x')
+        #     ax.plot(*xyzul[0,1:,:],'r-.')
+        #     ax.plot(*xyzul[1,1:,:],'b-.')
+        #     ax.plot(*xyzLE[1:],'m*')
+        #     ax.axis('equal')
+        #     plt.savefig('beans.pdf')
+        #     quit()
 
         # xrrtle = xrtLE.copy()
         # xrrtle[2, ...] *= xrrtle[1, ...]
