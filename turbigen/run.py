@@ -158,8 +158,6 @@ def run_single(conf, gguess=None, plot=False):
 
     cut_offset = conf.solver.pop("cut_offset", None)
     xr_cut = ann.get_cut_planes(cut_offset)
-    if conf.plot:
-        turbigen.plot.plot_annulus(ann, os.path.join(workdir, "annulus.pdf"), xr_cut)
 
     # Include deviations angles with respect to free vortex in camber
     # parameters to make q_camber
