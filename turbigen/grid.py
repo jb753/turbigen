@@ -677,32 +677,6 @@ class Grid:
             # Determine the i indices on each side of cut
             ni, nj, nk = block.shape
 
-            # BEGIN OLD WAY
-            # if side[0, :, :].any():
-            #     side = np.logical_not(side)
-            # icut = np.argmax(side, axis=0, keepdims=True)
-            # logger.debug(f"min icut={icut.min()}")
-            # logger.debug(f"shape={block.shape}")
-            # # print(np.sum(icut == 0))
-            # # print(np.size(icut))
-            # if icut.min() <= 1:
-            #     logger.debug(f"min icut={icut.min()}, skipping this block")
-            #     continue
-            # if icut.min() == 0:
-            #     jplot = 10
-            #     import matplotlib.pyplot as plt
-            #     # fig, ax = plt.subplots()
-            #     # bplot = block[:, jplot, :].squeeze()
-            #     # ax.plot(bplot.r, bplot.rt, "kx")
-            #     # plt.savefig("test.pdf")
-            # # quit()
-            # # Get xr coordinates on either side of cut
-            # xi = np.take_along_axis(block.x, icut - 1, axis=0)
-            # xip1 = np.take_along_axis(block.x, icut, axis=0)
-            # ri = np.take_along_axis(block.r, icut - 1, axis=0)
-            # rip1 = np.take_along_axis(block.r, icut, axis=0)
-            # END OLD WAY
-
             icut = np.argmax(dsgn, axis=0, keepdims=True)
             # If there are no zero crossing, then argmax will return icut=0
             # If the first cell is cut, argmax will return icut=1
