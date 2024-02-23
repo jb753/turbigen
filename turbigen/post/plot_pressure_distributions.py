@@ -7,9 +7,11 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf):
+def post(grid, machine, meanline, postdir, row_spf, write_raw=False):
 
     lnst = ["-", "--"]
+
+    raw_data = {}
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -72,8 +74,16 @@ def post(grid, machine, meanline, postdir, row_spf):
                         np.abs(zeta_norm), Cp, color=f"C{ispf}", linestyle=lnst[isurf]
                     )
 
+                # Store the raw data
+                key = f"row_{irow}_spf_{spf}_blade_{isurf}"
+                raw_data[key] = np.stack((zeta_stag, Cp))
+
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         ax.legend()
         plt.tight_layout()
         plt.savefig(plotname)
         plt.close()
+
+        if write_raw:
+            rawname = os.path.join(postdir, "pressure_distributions_raw")
+            np.savez_compressed(rawname, **raw_data)
