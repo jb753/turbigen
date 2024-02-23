@@ -16,7 +16,6 @@ import turbigen.post_process
 import turbigen.plot
 import turbigen.average
 import turbigen.annulus
-import turbigen.blade
 import numpy as np
 from timeit import default_timer as timer
 

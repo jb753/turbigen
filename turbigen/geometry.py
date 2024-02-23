@@ -841,13 +841,14 @@ class Blade:
         xrtcam = np.mean(xrtul, axis=0)
         xrtLE = xrtcam[:, np.argmax(m > Rle)]
 
-        xrrtul = xrtul.copy()
-        xrrtul[:, 2, ...] *= xrrtul[:, 1, ...]
+        # xrrtul = xrtul.copy()
+        # xrrtul[:, 2, ...] *= xrrtul[:, 1, ...]
 
-        xrrtle = xrtLE.copy()
-        xrrtle[2, ...] *= xrrtle[1, ...]
+        # xrrtle = xrtLE.copy()
+        # xrrtle[2, ...] *= xrrtle[1, ...]
 
-        return xrrtle.reshape(-1, 1)
+        # return xrtle.reshape(-1, 1)
+        return xrtLE
 
     def get_coords(self, nspf=20, nchord=100, flip_theta=False):
         """3-D coordinates for this blade row in AutoGrid-style format.

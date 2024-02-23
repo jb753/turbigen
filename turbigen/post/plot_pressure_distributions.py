@@ -16,6 +16,11 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False):
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
 
+        if not spfrow:
+            continue
+
+        logger.info(f"Plotting pressure distributions, row {irow} at spf={spfrow}")
+
         # Extract reference pressure from mean-line
         iin = irow * 2
         iout = iin + 1
