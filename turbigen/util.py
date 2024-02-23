@@ -1326,8 +1326,9 @@ def stagnation_point_angle(grid, machine, meanline):
             xrt_stag = surf.xrt_stag
 
             # Get coordinates of LE center
+            bldnow = machine.split[irow] if jbld else machine.bld[irow]
             xrt_cent = np.stack(
-                [machine.bld[irow].get_LE_cent(spf[j]).squeeze() for j in range(nj)],
+                [bldnow.get_LE_cent(spf[j]).squeeze() for j in range(nj)],
                 axis=-1,
             )
 
@@ -1342,9 +1343,9 @@ def stagnation_point_angle(grid, machine, meanline):
             denom = np.sqrt(dxrrt[0] ** 2 + dxrrt[1] ** 2)
             chi_stag_now = np.degrees(np.arctan2(dxrrt[2], denom))
 
-            # If we are going radially inwards then flip sign
-            if meanline.Beta[irow * 2] < -45.0:
-                chi_stag_now *= -1.0
+            # # If we are going radially inwards then flip sign
+            # if meanline.Beta[irow * 2] < -45.0:
+            #     chi_stag_now *= -1.0
 
             chi_stag[-1].append(np.stack((spf, chi_stag_now)))
 
