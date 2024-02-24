@@ -721,35 +721,34 @@ def run_single(conf, gguess=None, plot=False):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-        spf_flow, chi_stag, chi_stag_splitter = turbigen.post_process.incidence(
-            g, mac, ml.Beta[::2], workdir if conf.plot else False
-        )
+
+        # Evaluate incidence
+        data = turbigen.util.incidence(g, mac, ml)
+
+        # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
         mdot_err = np.abs(ml_out.mdot / ml.mdot - 1)[0]
+        inc_target = inc_conf.get("target", 0.0)
+        inc_tol = inc_conf["tolerance"]
+        inc_clip = inc_conf.get("clip", 0.5)
+
         for irow, row in enumerate(conf.sections):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
-                chi_flow = np.interp(row["spf"], spf_flow[irow], chi_stag[irow])
-                chi_metal = util.atand(qcamber_save[irow][:, 0])
-                inc_target = inc_conf.get("target", 0.0)
-                inc = chi_flow - chi_metal - inc_target
-                logger.debug(f"chi_flow={chi_flow}")
-                logger.debug(f"chi_metal={chi_metal}")
-                logger.debug(f"inc={inc}")
-                inc_tol = inc_conf["tolerance"]
-                inc_clip = inc_conf.get("clip", 0.5)
-                if np.isnan(chi_flow).any():
-                    raise Exception(
-                        f'NaN stagnation point angle, row {irow}, spf={row["spf"]},'
-                        f" chi_flow={chi_flow}, chi_metal={chi_metal}"
-                    )
+
+                spf, inc = data[irow][0][:2]
+
+                inc -= inc_target
+                inc = np.interp(row["spf"], spf, inc)
+
                 if (np.abs(inc) > inc_tol).any():
                     inc_converged = False
+
                 dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0
-                logger.debug(f"dinc={dinc}")
                 qstar_save[irow][:, 0] += dinc
 
                 imax = np.argmax(np.abs(inc.flat))
@@ -763,21 +762,19 @@ def run_single(conf, gguess=None, plot=False):
                 if conf.splitter:
                     if splitter_now := conf.splitter[irow]:
                         logger.debug(f"CORRECTING SPLITTER row={irow}")
-                        chi_flow = np.interp(
-                            splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow]
-                        )
-                        logger.debug(f"chi_flow={chi_flow}")
-                        chi_metal = util.atand(mac.split[irow].q_camber[:, 0])
-                        logger.debug(f"chi_metal={chi_metal}")
-                        # inc_target = inc_conf.get("target", 0.0)
-                        inc = chi_flow - chi_metal - inc_target
-                        logger.debug(f"inc={inc}")
+
+                        spf, inc = data[irow][1][:2]
+                        inc -= inc_target
+                        inc = np.interp(splitter_now["spf"], spf, inc)
+
                         if (np.abs(inc) > inc_tol).any():
                             inc_converged = False
+
                         dinc_splitter = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+
                         if mdot_err > rtol_mdot_inc:
                             dinc_splitter *= 0.0
-                        logger.debug(f"dinc_splitter={dinc_splitter}")
+
                         qcam_split = np.array(splitter_now["qstar_camber"])
                         qcam_split[:, 0] += dinc_splitter - dinc
                         splitter_now["qstar_camber"] = qcam_split
