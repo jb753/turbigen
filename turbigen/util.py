@@ -1371,6 +1371,13 @@ def incidence(grid, machine, meanline):
             chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
             incidence = chi_stag - chi_metal
 
+            # Smooth
+            nsmooth = 5
+            sf = 0.5
+            for _ in range(nsmooth):
+                chi_avg = 0.5*(chi_stag[:-2]+chi_stag[2:])
+                chi_stag[1:-1] = sf*chi_stag[1:-1]  + (1.-sf)*chi_avg
+
             out_now = np.stack((spf, incidence, chi_stag, chi_metal))
 
             # Remove results in tip gap
