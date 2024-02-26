@@ -59,6 +59,8 @@ solver:
   # ...
 
 post_process:
+  plot_nose:
+    row_spf: [[0.6,],]
   plot_pressure_distributions:
     row_spf: [[0.6,],]
     write_raw: true

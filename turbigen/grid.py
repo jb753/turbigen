@@ -938,9 +938,12 @@ class Grid:
         k = self[0].shape[2] // 2
         return [b[:, :, k].squeeze() for b in self]
 
+    def spf_index(self, spf):
+        return np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
+
     def cut_span(self, spf):
         # Find j index nearest to requested span fraction
-        jspf = np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
+        jspf = self.spf_index(spf)
         nj = self[0].shape[1]
         logger.debug(f"Cutting at spf={spf}: jspf={jspf}, nj={nj}")
 
