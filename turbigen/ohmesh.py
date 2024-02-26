@@ -57,6 +57,8 @@ class OHMeshConfig(BaseConfig):
 
     untwist_outlet = False
 
+    round_TE = False
+
     nj_tip = 25
     frac_inlet = 0.9
     frac_outlet = 0.15
@@ -104,6 +106,7 @@ class OHMeshConfig(BaseConfig):
             "dr_hub": dhub,
             "dr_cas": dcas,
             "nr": nj,
+            "round_TE": self.round_TE,
             "drt_row": dsurf.tolist(),
             "stagger": stagger_topo,
             "const_cells_pc": 45.0,
