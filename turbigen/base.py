@@ -988,7 +988,10 @@ class Composites:
             izj = izj[np.abs(z[izj, j]) < 0.3]
 
             # Now take the candiate point with maximum pressure
-            istag[j] = izj[np.argsort(P[izj, j])][-1]
+            try:
+                istag[j] = izj[np.argsort(P[izj, j])][-1]
+            except:
+                istag[j] = 0
 
         return istag
 
