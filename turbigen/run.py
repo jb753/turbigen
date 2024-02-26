@@ -948,6 +948,10 @@ def run(conf, plot=False):
                         src_path = os.path.join(iterdir, f)
                         dest_path = os.path.join(basedir, f)
                         logger.debug(src_path + "->" + dest_path)
+                        if os.path.isdir(dest_path):
+                            shutil.rmtree(dest_path)
+                        elif os.path.exists(dest_path):
+                            os.remove(dest_path)
                         shutil.move(src_path, dest_path)
                     logger.debug("Deleting iterations")
                     for j in range(i + 1):
