@@ -704,8 +704,8 @@ class Blade:
         dtu = Dy * chord / xr[1]
         dtl = -Dy * chord / xr[1]
         # Change in rtheta at the average radius between camber and surf
-        drtu = dtu * 0.5*(xr[1] + xru[1])
-        drtl = dtl * 0.5*(xr[1] + xrl[1])
+        drtu = dtu * 0.5 * (xr[1] + xru[1])
+        drtl = dtl * 0.5 * (xr[1] + xrl[1])
 
         xrrtu = np.stack((*xru, theta * xru[1] + drtu))
         xrrtl = np.stack((*xrl, theta * xrl[1] + drtl))
@@ -760,6 +760,16 @@ class Blade:
         Ll = util.arc_length(xrrtl)
         return np.maximum(Lu, Ll)
 
+    def get_camber_line(self, spf):
+
+        cam, thick = self._get_cam_thick(spf)
+        m = util.cluster_cosine(500)
+
+        xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
+        xrtcam = np.mean(xrtul, axis=0)
+
+        return xrtcam
+
     def get_LE_cent(self, spf):
         """Get the centre of the leading edge."""
 
@@ -776,43 +786,28 @@ class Blade:
         xyzcam = np.stack(
             (
                 xrtcam[0],
-                xrtcam[1]*np.sin(xrtcam[2]),
-                xrtcam[1]*np.cos(xrtcam[2]),
+                xrtcam[1] * np.sin(xrtcam[2]),
+                xrtcam[1] * np.cos(xrtcam[2]),
             )
         )
 
         xyzul = np.stack(
             (
-                xrtul[:,0],
-                xrtul[:,1]*np.sin(xrtul[:,2]),
-                xrtul[:,1]*np.cos(xrtul[:,2]),
-            ),axis=1
+                xrtul[:, 0],
+                xrtul[:, 1] * np.sin(xrtul[:, 2]),
+                xrtul[:, 1] * np.cos(xrtul[:, 2]),
+            ),
+            axis=1,
         )
 
         xyzLE = np.stack(
             (
                 xrtLE[0],
-                xrtLE[1]*np.sin(xrtLE[2]),
-                xrtLE[1]*np.cos(xrtLE[2]),
+                xrtLE[1] * np.sin(xrtLE[2]),
+                xrtLE[1] * np.cos(xrtLE[2]),
             )
         )
 
-
-        # if spf > 0.8:
-        #     import matplotlib.pyplot as plt
-        #     fig, ax = plt.subplots()
-        #     ax.plot(*xyzcam[1:,:],'k-x')
-        #     ax.plot(*xyzul[0,1:,:],'r-.')
-        #     ax.plot(*xyzul[1,1:,:],'b-.')
-        #     ax.plot(*xyzLE[1:],'m*')
-        #     ax.axis('equal')
-        #     plt.savefig('beans.pdf')
-        #     quit()
-
-        # xrrtle = xrtLE.copy()
-        # xrrtle[2, ...] *= xrrtle[1, ...]
-
-        # return xrtle.reshape(-1, 1)
         return xrtLE
 
     def get_coords(self, nspf=20, nchord=100, flip_theta=False):

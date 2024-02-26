@@ -35,7 +35,6 @@ def post(grid, machine, meanline, postdir, row_spf):
         #     )
         # )
 
-
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
 
@@ -48,12 +47,11 @@ def post(grid, machine, meanline, postdir, row_spf):
             xr_row = machine.ann.xr_row(irow)
 
             # Get spf along LE
-            xr_LE = xr_row(np.linspace(0.,1.,200),np.atleast_1d(0.))
+            xr_LE = xr_row(np.linspace(0.0, 1.0, 200), np.atleast_1d(0.0))
 
             surf = grid.cut_blade_surfs()[irow][0].squeeze()
-            spf_blade = surf.spf[:,jspf]
+            spf_blade = surf.spf[:, jspf]
             spf_actual = spf_blade[surf.i_stag[jspf]]
-
 
             # We want to plot along a general meridional surface
             # So brute force a mapping from x/r to meridional distance
@@ -79,14 +77,13 @@ def post(grid, machine, meanline, postdir, row_spf):
 
             fig, ax = plt.subplots()
 
-
             # fig3, ax3 = plt.subplots()
             # ax3.axis('equal')
             Pall = np.concatenate([b.P.reshape(-1) for b in cut])
             tall = np.concatenate([b.t.reshape(-1) for b in cut])
             mpall = np.concatenate([mp_from_xr(b.xr).reshape(-1) for b in cut])
-            Pred = Pall[np.abs(mpall)<0.18]
-            tred = tall[np.abs(mpall)<0.18]
+            Pred = Pall[np.abs(mpall) < 0.18]
+            tred = tall[np.abs(mpall) < 0.18]
 
             if Po2 > Po1:
                 # Compressor
@@ -95,10 +92,10 @@ def post(grid, machine, meanline, postdir, row_spf):
                 # Turbine
                 Cpall = (Pred - Po1) / (Po1 - P2)
 
-
             Cpmin = turbigen.util.qinv(Cpall, 0.001)
             Cpmax = turbigen.util.qinv(Cpall, 0.999)
             lev_Cp = np.linspace(Cpmin, Cpmax, 20)
+            print(Cpmax, Cpmin)
 
             for b in cut:
 
@@ -116,7 +113,7 @@ def post(grid, machine, meanline, postdir, row_spf):
                 # ax3.plot(*b.xr,'.')
 
                 #    raise Exception('Failed to unwrap the streamsurface')
-                if mpb.ptp()< surf.pitch*0.01:
+                if mpb.ptp() < surf.pitch * 0.01:
                     continue
 
                 ax.contourf(mpb, b.t, Cp, lev_Cp)
@@ -137,23 +134,32 @@ def post(grid, machine, meanline, postdir, row_spf):
             mps = mp_from_xr(surf.xr)
             mstag = mps[surf.i_stag[jspf], jspf]
             tstag = surf.t[surf.i_stag[jspf], jspf]
-            if grid.is_hmesh:
-                tstag += surf.pitch
-            ax.plot(mstag, tstag, "r+")
-            dt = surf.pitch * 0.2
-            xlim = (mp_ref.min(), mp_ref.max())
-
-            ax.set_ylim(tstag - dt, tstag + dt)
-            ax.set_xlim(mstag - dt, mstag + dt)
 
             xrtLE = machine.bld[irow].get_LE_cent(spf_actual)
             mpLE = mp_from_xr(xrtLE[:2])
-            ax.plot(mpLE, xrtLE[2], 'bx')
+
+            xrtcam = machine.bld[irow].get_camber_line(spf_actual)
+            mpcam = mp_from_xr(xrtcam[:2])
+
+            if grid.is_hmesh:
+                tstag += surf.pitch
+                xrtLE[2] += surf.pitch
+                xrtcam[2] += surf.pitch
+
+            ax.plot(mstag, tstag, "r+")
+
+            dt = surf.pitch * 0.2
+            ax.set_ylim(tstag - dt, tstag + dt)
+            ax.set_xlim(mstag - dt, mstag + dt)
+
+            ax.plot(mpLE, xrtLE[2], "bx")
             # ax.set_xlim(xlim)
             # ax.set_ylim((tred.min(), tred.max()))
 
-            ax.set_aspect('equal', adjustable='box')
-            ax.axis('off')
+            ax.plot(mpcam, xrtcam[2], "m-")
+
+            ax.set_aspect("equal", adjustable="box")
+            ax.axis("off")
             # ax.set_aspect("equal",adjustable='box')
 
             # ax.plot( mstag, tstag + surf.pitch, 'r+')
