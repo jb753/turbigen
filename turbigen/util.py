@@ -1369,14 +1369,15 @@ def incidence(grid, machine, meanline):
 
             bldnow = machine.split[irow] if jblade else machine.bld[irow]
             chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
-            incidence = chi_stag - chi_metal
 
             # Smooth
-            nsmooth = 5
+            nsmooth = 10
             sf = 0.5
             for _ in range(nsmooth):
                 chi_avg = 0.5*(chi_stag[:-2]+chi_stag[2:])
                 chi_stag[1:-1] = sf*chi_stag[1:-1]  + (1.-sf)*chi_avg
+
+            incidence = chi_stag - chi_metal
 
             out_now = np.stack((spf, incidence, chi_stag, chi_metal))
 
@@ -1386,3 +1387,9 @@ def incidence(grid, machine, meanline):
             out[-1].append(out_now)
 
     return out
+
+def qinv(x,q):
+    xs = np.sort(x)
+    n = len(x)
+    irel = np.linspace(0.,n-1,n)/(n-1)
+    return np.interp(q, irel, xs)
