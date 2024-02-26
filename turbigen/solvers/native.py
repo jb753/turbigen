@@ -22,16 +22,17 @@ logger.setLevel(level=logging.INFO)
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 4000
+nstep = 8000
 nrk = 4
-dampin = 10.
+dampin = 10.0
 
 sfin = 0.01
 fac_2nd = 0.2
-CFL = 3.5
+CFL = 0.4
 sf = CFL * sfin
-sf2 = sf*fac_2nd
-sf4 = sf*(1.-fac_2nd)
+sf2 = sf * fac_2nd
+sf4 = sf * (1.0 - fac_2nd)
+
 
 def run(grid, settings={}, machine=None):
 
@@ -49,6 +50,17 @@ def run(grid, settings={}, machine=None):
 
     tstart = timer()
 
+    # # Pre-allocate residuals
+    # dU_last = [np.full(b.conserved.shape) for b in grid]
+    # dU = [np.full(b.conserved.shape) for b in grid]
+
+    # Pre-allocate secondaries
+    Vxrt = [np.empty(b.shape + (3,), order="F") for b in grid]
+    u = [np.empty(b.shape, order="F") for b in grid]
+    dU = [np.empty(b.shape + (5,), order="F") for b in grid]
+    dU_last = [np.empty(b.shape + (5,), order="F") for b in grid]
+    mdot_all = np.empty((nstep // nstep_log, 2))
+
     # Start the main time stepping loop
     for istep in range(nstep):
 
@@ -65,94 +77,87 @@ def run(grid, settings={}, machine=None):
         for iblock in range(nblock):
 
             b = grid[iblock]
+
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
-            Vxrt = np.empty(b.shape + (3,), order='F')
-            u = np.empty(b.shape, order='F')
 
-            for irk in range(nrk):
-                frk = 1.0 / (irk + nrk)
+            conserved, Phor = apply_bconds(b)
 
-                conserved, Phor = apply_bconds(b)
+            step(
+                conserved,
+                Phor,
+                Omega,
+                *wall,
+                dt[iblock],
+                dAi,
+                dAj,
+                dAk,
+                vol,
+                dU[iblock],
+            )
 
-                if irk == 0:
-                    conserved_start = conserved.copy(order='F')
+            if istep == 0:
 
-                dU = step(
-                    conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
-                )
+                conserved += dU[iblock]
 
-                if np.isnan(dU).any():
-                    raise Exception('NaN dU')
+            else:
 
-                # dUabs = np.abs(dU)
-                # dUavg = np.mean(dUabs,axis=(0,1,2),keepdims=True)
-                # dU /= 1.+dUavg/dampin/dUavg
+                conserved += 2.0 * dU[iblock] - dU_last[iblock]
 
-                conserved_new = conserved_start + dU
+            dU_last[iblock][:] = dU[iblock]
 
-                if irk == nrk - 1:
-                    smooth(conserved_new, sf2, sf4)
+            smooth(conserved, sf2, sf4)
 
-                if np.isnan(conserved_new).any():
-                    raise Exception('NaN conserved_new')
+            calculate_secondary(Phor[..., 2], conserved, Vxrt[iblock], u[iblock])
 
+            b.Vxrt = np.moveaxis(Vxrt[iblock], -1, 0)
 
-                calculate_secondary(Phor[...,2], conserved_new, Vxrt, u)
+            try:
+                b.set_rho_u(conserved[..., 0], u[iblock])
+            except Exception as e:
 
-                # for n in range(3):
-                #     print(Vxrt[...,n].min(), Vxrt[...,n].max())
-                # print('***')
+                print(e)
 
-                if np.isnan(Vxrt).any():
-                    raise Exception('NaN Vxrt')
+                ijkmax = np.argmax(grid[0].V)
+                imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
 
+                import matplotlib.pyplot as plt
 
-                if np.isnan(u).any():
-                    raise Exception('NaN u')
-
-
-                b.Vxrt = np.moveaxis(Vxrt,-1,0)
-
-                try:
-                    b.set_rho_u(conserved_new[...,0], u)
-                except Exception as e:
-
-                    print(e)
-
-                    ijkmax = np.argmax(grid[0].V)
-                    imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
-
-                    import matplotlib.pyplot as plt
-                    fig, ax = plt.subplots()
-                    bb = grid[0][:,jmax,:].squeeze()
-                    cm = ax.contourf(bb.x, bb.rt, bb.Ma)
-                    ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], 'k*')
-                    plt.colorbar(cm)
-                    plt.show()
-                    quit()
-
-
+                fig, ax = plt.subplots()
+                bb = grid[0][:, jmax, :].squeeze()
+                cm = ax.contourf(bb.x, bb.rt, bb.Ma)
+                ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], "k*")
+                plt.colorbar(cm)
+                plt.show()
+                # quit()
 
             if not np.mod(istep, nstep_log):
 
-                log_line = f"{istep}: {np.abs(dU).mean(axis=(0,1,2))}"
+                log_line = f"{istep}: {np.abs(dU[0]).mean(axis=(0,1,2))}"
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log
                 logger.info(f"tpnps={tpnps}")
                 tstart = ten
 
-                mdot_in = 0.
+                mdot_in = 0.0
                 for patch in grid.inlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_in += Cm.rho * Cm.Vm * Ann
 
-                mdot_out = 0.
+                mdot_out = 0.0
                 for patch in grid.outlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_out += Cm.rho * Cm.Vm * Ann
-                    print(f'mass flows {mdot_in}, {mdot_out}, err={mdot_in/mdot_out-1.}')
+                    print(
+                        f"mass flows {mdot_in}, {mdot_out}, err={mdot_in/mdot_out-1.}"
+                    )
+                    mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.plot(mdot_all / mdot_all[-1].mean())
+    plt.show()
 
 
 def get_geom(b):
@@ -188,11 +193,11 @@ def get_geom(b):
 
 def get_timestep(b, dlmin):
     ni, nj, nk = b.shape
-    Va_node = np.asfortranarray(np.stack((b.V, b.a),axis=-1))
-    Va_cell = np.empty((ni-1, nj-1, nk-1,2), order='F')
+    Va_node = np.asfortranarray(np.stack((b.V, b.a), axis=-1))
+    Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
     node_to_cell(Va_node, Va_cell)
-    Vref = Va_cell[...,0]
-    aref = Va_cell[...,1]
+    Vref = Va_cell[..., 0]
+    aref = Va_cell[..., 1]
     dt = CFL * dlmin / (aref + Vref)
     return np.asfortranarray(dt)
 
@@ -204,16 +209,16 @@ def get_wall(b):
     # Preallocate face indices
     ni, nj, nk = b.shape
     wf = [
-        np.empty((ni, nj-1, nk-1, 1), order='F'),
-        np.empty((ni-1, nj, nk-1, 1), order='F'),
-        np.empty((ni-1, nj-1, nk, 1), order='F'),
+        np.empty((ni, nj - 1, nk - 1, 1), order="F"),
+        np.empty((ni - 1, nj, nk - 1, 1), order="F"),
+        np.empty((ni - 1, nj - 1, nk, 1), order="F"),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(),-1).astype(float))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(float))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)
 
-    wfl = [(wfn > thresh)[...,0].astype(np.int8) for wfn in wf]
+    wfl = [(wfn > thresh)[..., 0].astype(np.int8) for wfn in wf]
 
     return wfl
 
@@ -229,14 +234,14 @@ def apply_bconds(b):
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
-        P[patch.get_slice()] = patch.Pout# * 0.1 + 0.9 * (patch.get_cut().P)
+        P[patch.get_slice()] = patch.Pout  # * 0.1 + 0.9 * (patch.get_cut().P)
 
     # Change inlet patches
     for patch in b.inlet_patches:
 
         ipatch = patch.get_slice()
         inlet = b[ipatch]
-        rfin = 0.1#*patch.rfin
+        rfin = 0.1  # *patch.rfin
 
         if patch.store:
             # Relax changes in density if we have a stored state
@@ -252,7 +257,7 @@ def apply_bconds(b):
         dhin = patch.state.h - inlet.h
         if (dhin <= 0.0).any():
             assert False
-        Vin = np.sqrt(2. * dhin)
+        Vin = np.sqrt(2.0 * dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
         tanBeta = turbigen.util.tand(patch.Beta)
@@ -262,8 +267,6 @@ def apply_bconds(b):
         Vrin = Vxin * tanBeta
         Vmin = np.sqrt(Vxin**2 + Vrin**2)
         Vtin = Vmin * tanAlpha
-
-        # print(f'Vin={Vin.mean()}, Vxin={Vxin.mean()}, Vrin={Vrin.mean()}, Vtin={Vtin.mean()}')
 
         # Reset conserved vars on inlet
         rho[ipatch] = inlet.rho
@@ -280,5 +283,5 @@ def apply_bconds(b):
     P -= Pref
 
     # All nodal variables are ready
-    conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
+    conserved = np.asfortranarray(np.moveaxis(conserved, 0, -1))
     return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))
