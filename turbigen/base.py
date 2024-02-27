@@ -405,7 +405,7 @@ class Kinematics:
         qi_edge = np.diff(self.xrt, axis=1)
 
         # Multiply theta component by average radius on that face
-        r_edge = 0.5*(self.r[:-1,...]+self.r[1:,...])
+        r_edge = 0.5 * (self.r[:-1, ...] + self.r[1:, ...])
         qi_edge[2] *= r_edge
 
         # Convert to node-centered
@@ -469,7 +469,7 @@ class Kinematics:
         #    k  k+1
         dlif = self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
         # Reference theta is at j,k
-        dlif[2] *= self.r[:,1:,1:]
+        dlif[2] *= self.r[:, 1:, 1:]
         return dlif
 
     @dependent_property
@@ -482,11 +482,10 @@ class Kinematics:
         # j   *-*
         #    k  k+1
 
-        # from k+1 to k, reference radius at j,k for 
+        # from k+1 to k, reference radius at j,k for
         dk = self.xrt[:, :, :-1, :-1] - self.xrt[:, :, :-1, 1:]
-        dk[2] *= self.r[:,:-1,:-1]
+        dk[2] *= self.r[:, :-1, :-1]
         # from j to j+1, reference radius at e
-        dj = self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, :-1]
 
         dlib = self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
         return dlib
@@ -554,10 +553,10 @@ class Kinematics:
         #    O      C
         #      j>
 
-        O = self.xrt[:,:,:-1,:-1]
-        A = self.xrt[:,:,1:,1:]
-        B = self.xrt[:,:,:-1,1:]
-        C = self.xrt[:,:,1:,:-1]
+        O = self.xrt[:, :, :-1, :-1]
+        A = self.xrt[:, :, 1:, 1:]
+        B = self.xrt[:, :, :-1, 1:]
+        C = self.xrt[:, :, 1:, :-1]
 
         # Form three vectors AO, BO, CO
         AO = A - O
@@ -567,7 +566,7 @@ class Kinematics:
         CO = C - O
         CO[2] *= C[1]  # Theta reference radius at C
 
-        return 0.5*np.cross(AO, BO-CO, axis=0)
+        return 0.5 * np.cross(AO, BO - CO, axis=0)
 
     @dependent_property
     def dAj(self):
@@ -588,10 +587,10 @@ class Kinematics:
         #    O      C
         #      i>
 
-        O = self.xrt[:,:-1,:,:-1]
-        A = self.xrt[:,1:,:,1:]
-        B = self.xrt[:,:-1,:,1:]
-        C = self.xrt[:,1:,:,:-1]
+        O = self.xrt[:, :-1, :, :-1]
+        A = self.xrt[:, 1:, :, 1:]
+        B = self.xrt[:, :-1, :, 1:]
+        C = self.xrt[:, 1:, :, :-1]
 
         # Form three vectors AO, BO, CO
         AO = A - O
@@ -601,7 +600,7 @@ class Kinematics:
         CO = C - O
         CO[2] *= C[1]  # Theta reference radius at C
 
-        return -0.5*np.cross(AO, BO-CO, axis=0)
+        return -0.5 * np.cross(AO, BO - CO, axis=0)
 
     @dependent_property
     def dAk(self):
@@ -619,10 +618,10 @@ class Kinematics:
         # dlkb = np.moveaxis(self.dlkb, 0, -1)
         # dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
 
-        O = self.xrt[:,:-1,:-1,:]
-        A = self.xrt[:,1:,1:,:]
-        B = self.xrt[:,:-1,1:,:]
-        C = self.xrt[:,1:,:-1,:]
+        O = self.xrt[:, :-1, :-1, :]
+        A = self.xrt[:, 1:, 1:, :]
+        B = self.xrt[:, :-1, 1:, :]
+        C = self.xrt[:, 1:, :-1, :]
 
         # Form three vectors AO, BO, CO
         AO = A - O
@@ -632,8 +631,7 @@ class Kinematics:
         CO = C - O
         CO[2] *= C[1]  # Theta reference radius at C
 
-        return 0.5*np.cross(AO, BO-CO, axis=0)
-
+        return 0.5 * np.cross(AO, BO - CO, axis=0)
 
     @dependent_property
     def r_face(self):
@@ -957,6 +955,78 @@ class Composites:
                 cuts.append(cut_now.empty())
         Call = self.stack(cuts)
         return spf, Call
+
+    @dependent_property
+    def i_stag(self):
+        """i-index of stagnation point."""
+
+        if not self.ndim == 2:
+            raise Exception(
+                "Can only find stagnation point on 2D cuts; "
+                f"this cut has shape {self.shape}"
+            )
+
+        P = self.P
+
+        # Extract surface distance, normalise to [-1,1] on each j-line
+        z = self.zeta / self.zeta.ptp(axis=0) * 2.0 - 1.0
+
+        # Find pressure maxima
+        # This must be a loop over j because there can be a different number of
+        # turning points at each spanwise lnocation
+        _, nj = self.shape
+        istag = np.full((nj,), 0, dtype=int)
+        for j in range(nj):
+
+            # Calculate gradient and curvature
+            dP = np.diff(P[:, j])
+
+            # Indices of downward zero crossings of pressure derivative
+            izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
+
+            # Only keep maxima close to LE
+            izj = izj[np.abs(z[izj, j]) < 0.3]
+
+            # Now take the candiate point with maximum pressure
+            try:
+                istag[j] = izj[np.argsort(P[izj, j])][-1]
+            except:
+                istag[j] = 0
+
+        return istag
+
+    @dependent_property
+    def zeta_stag(self):
+        """Surface distance along i-line with origin at stagnation point."""
+
+        _, nj = self.shape
+        zstag = np.full(
+            (
+                1,
+                nj,
+            ),
+            np.nan,
+        )
+        istag = self.i_stag
+        for j in range(nj):
+            zstag[0, j] = self.zeta[istag[j], j]
+
+        return self.zeta - zstag
+
+    @dependent_property
+    def xrt_stag(self):
+        """Coordinates of the stagnation point at all j indices."""
+        _, nj = self.shape
+        xrt_stag = np.full(
+            (
+                3,
+                nj,
+            ),
+            np.nan,
+        )
+        for j in range(nj):
+            xrt_stag[:, j] = self.xrt[:, self.i_stag[j], j]
+        return xrt_stag
 
 
 class MeanLine:

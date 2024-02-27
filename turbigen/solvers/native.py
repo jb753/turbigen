@@ -22,16 +22,17 @@ logger.setLevel(level=logging.INFO)
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 1000
+nstep = 8000
 nrk = 4
-dampin = 25.
+dampin = 10.0
 
-sfin = 0.005
-fac_2nd = 0.5
-CFL = 3.5
+sfin = 0.01
+fac_2nd = 0.2
+CFL = 0.4
 sf = CFL * sfin
-sf2 = sf*fac_2nd
-sf4 = sf*(1.-fac_2nd)
+sf2 = sf * fac_2nd
+sf4 = sf * (1.0 - fac_2nd)
+
 
 # @profile
 def run(grid, settings={}, machine=None):
@@ -50,6 +51,17 @@ def run(grid, settings={}, machine=None):
 
     tstart = timer()
 
+    # # Pre-allocate residuals
+    # dU_last = [np.full(b.conserved.shape) for b in grid]
+    # dU = [np.full(b.conserved.shape) for b in grid]
+
+    # Pre-allocate secondaries
+    Vxrt = [np.empty(b.shape + (3,), order="F") for b in grid]
+    u = [np.empty(b.shape, order="F") for b in grid]
+    dU = [np.empty(b.shape + (5,), order="F") for b in grid]
+    dU_last = [np.empty(b.shape + (5,), order="F") for b in grid]
+    mdot_all = np.empty((nstep // nstep_log, 2))
+
     # Start the main time stepping loop
     for istep in range(nstep):
 
@@ -66,89 +78,88 @@ def run(grid, settings={}, machine=None):
         for iblock in range(nblock):
 
             b = grid[iblock]
+
             dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
-            Vxrt = np.empty(b.shape + (3,), order='F')
-            u = np.empty(b.shape, order='F')
 
-            for irk in range(nrk):
-                frk = 1.0 / (irk + nrk)
+            conserved, Phor = apply_bconds(b)
 
-                conserved, Phor = apply_bconds(b)
+            step(
+                conserved,
+                Phor,
+                Omega,
+                *wall,
+                dt[iblock],
+                dAi,
+                dAj,
+                dAk,
+                vol,
+                dU[iblock],
+            )
 
-                if irk == 0:
-                    conserved_start = conserved.copy(order='F')
+            if istep == 0:
 
-                dU = step(
-                    conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
-                )
+                conserved += dU[iblock]
 
-                # dUabs = np.abs(dU)
-                # dUavg = np.mean(dUabs,axis=(0,1,2),keepdims=True)
-                # dU /= 1.+dUavg/dampin/dUavg
+            else:
 
-                # dU[...,-1] *= 0.5
+                conserved += 2.0 * dU[iblock] - dU_last[iblock]
 
-                conserved_new = conserved_start + dU
+            dU_last[iblock][:] = dU[iblock]
 
-                if irk == nrk - 1:
-                    smooth(conserved_new, sf2, sf4)
-
-                calculate_secondary(Phor[...,2], conserved_new, Vxrt, u)
-
-                b.Vxrt = np.moveaxis(Vxrt,-1,0)
-
-                b._conserved_store = conserved_new
-
-                try:
-                    b.set_rho_u(conserved_new[...,0], u)
-                except Exception as e:
-
-                    # print(e)
-
-                    ijkmax = np.argmax(grid[0].V)
-                    imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
-                    print(imax, jmax, kmax, grid[0].V.max())
-
-                    import matplotlib.pyplot as plt
-                    fig, ax = plt.subplots()
-                    ni, nj, nk = grid[0].shape
-                    print(ni, nj, nk)
-                    bb = grid[0][:,:,nk//2].squeeze()
-                    cm = ax.contourf(bb.x, bb.r, bb.Ma)
-                    plt.colorbar(cm)
-
-                    fig, ax = plt.subplots()
-                    bb = grid[0][:,jmax,:].squeeze()
-                    cm = ax.contourf(bb.x, bb.rt, bb.To)
-                    ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], 'k*')
-                    ax.axis('equal')
-                    plt.colorbar(cm)
-
-                    plt.show()
-                    quit()
+            smooth(conserved, sf2, sf4)
 
 
+            b._conserved_store = conserved
+
+            calculate_secondary(Phor[..., 2], conserved, Vxrt[iblock], u[iblock])
+
+            b.Vxrt = np.moveaxis(Vxrt[iblock], -1, 0)
+
+            try:
+                b.set_rho_u(conserved[..., 0], u[iblock])
+            except Exception as e:
+
+                print(e)
+
+                ijkmax = np.argmax(grid[0].V)
+                imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
+
+                import matplotlib.pyplot as plt
+
+                fig, ax = plt.subplots()
+                bb = grid[0][:, jmax, :].squeeze()
+                cm = ax.contourf(bb.x, bb.rt, bb.Ma)
+                ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], "k*")
+                plt.colorbar(cm)
+                plt.show()
+                # quit()
 
             if not np.mod(istep, nstep_log):
 
-                log_line = f"{istep}: {np.abs(dU).mean(axis=(0,1,2))}"
+                log_line = f"{istep}: {np.abs(dU[0]).mean(axis=(0,1,2))}"
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log
                 logger.info(f"tpnps={tpnps:.3e}")
                 tstart = ten
 
-                mdot_in = 0.
+                mdot_in = 0.0
                 for patch in grid.inlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_in += Cm.rho * Cm.Vm * Ann
 
-                mdot_out = 0.
+                mdot_out = 0.0
                 for patch in grid.outlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_out += Cm.rho * Cm.Vm * Ann
                     print(f'mass flows {mdot_in:.3e}, {mdot_out:.3e}, err={(mdot_in/mdot_out-1.)*100:.1f}%')
+                    mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.plot(mdot_all / mdot_all[-1].mean())
+    plt.show()
 
 
 def get_geom(b):
@@ -184,11 +195,11 @@ def get_geom(b):
 
 def get_timestep(b, dlmin):
     ni, nj, nk = b.shape
-    Va_node = np.asfortranarray(np.stack((b.V, b.a),axis=-1))
-    Va_cell = np.empty((ni-1, nj-1, nk-1,2), order='F')
+    Va_node = np.asfortranarray(np.stack((b.V, b.a), axis=-1))
+    Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
     node_to_cell(Va_node, Va_cell)
-    Vref = Va_cell[...,0]
-    aref = Va_cell[...,1]
+    Vref = Va_cell[..., 0]
+    aref = Va_cell[..., 1]
     dt = CFL * dlmin / (aref + Vref)
     return np.asfortranarray(dt)
 
@@ -200,16 +211,16 @@ def get_wall(b):
     # Preallocate face indices
     ni, nj, nk = b.shape
     wf = [
-        np.empty((ni, nj-1, nk-1, 1), order='F'),
-        np.empty((ni-1, nj, nk-1, 1), order='F'),
-        np.empty((ni-1, nj-1, nk, 1), order='F'),
+        np.empty((ni, nj - 1, nk - 1, 1), order="F"),
+        np.empty((ni - 1, nj, nk - 1, 1), order="F"),
+        np.empty((ni - 1, nj - 1, nk, 1), order="F"),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(),-1).astype(float))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(float))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)
 
-    wfl = [(wfn > thresh)[...,0].astype(np.int8) for wfn in wf]
+    wfl = [(wfn > thresh)[..., 0].astype(np.int8) for wfn in wf]
 
     return wfl
 
@@ -235,7 +246,7 @@ def apply_bconds(b):
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
-        P[patch.get_slice()] = patch.Pout# * 0.1 + 0.9 * (patch.get_cut().P)
+        P[patch.get_slice()] = patch.Pout  # * 0.1 + 0.9 * (patch.get_cut().P)
 
     # Change inlet patches
     for patch in b.inlet_patches:
@@ -269,8 +280,6 @@ def apply_bconds(b):
         Vmin = np.sqrt(Vxin**2 + Vrin**2)
         Vtin = Vmin * tanAlpha
 
-        print(f'Vin={Vin.mean()}, Vxin={Vxin.mean()}, Vrin={Vrin.mean()}, Vtin={Vtin.mean()}')
-
         # Reset conserved vars on inlet
         # rho[ipatch] = inlet.rho
         rhoVx[ipatch] = inlet.rho * Vxin
@@ -289,4 +298,4 @@ def apply_bconds(b):
     if b._conserved_store is None:
         conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
 
-    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))
+    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=0))

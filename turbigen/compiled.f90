@@ -9,7 +9,7 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     integer, intent (in)  :: nk
 
     real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (out) :: resid(ni, nj, nk, 5)
+    real*8, intent (inout) :: resid(ni, nj, nk, 5)
     real*8, intent (inout)  :: Phor(ni, nj, nk, 3)
     real*8, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
@@ -505,7 +505,7 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
 
     ! j interior
     xs2(:, 2:nj-1, :, :) = xs2(:, 2:nj-1, :, :) + ( &
-          x(:, 1:nj-2, :, :) + x(:, 3:nj,   :, :) & 
+          x(:, 1:nj-2, :, :) + x(:, 3:nj,   :, :) &
     )/2d0
 
     ! j start
@@ -520,7 +520,7 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
 
     ! k interior
     xs2(:, :, 2:nk-1, :) = xs2(:, :, 2:nk-1, :) + ( &
-          x(:, :, 1:nk-2, :) + x(:, :,   3:nk, :) & 
+          x(:, :, 1:nk-2, :) + x(:, :,   3:nk, :) &
     )/2d0
 
     ! k start

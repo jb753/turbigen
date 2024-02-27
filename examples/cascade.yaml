@@ -57,3 +57,12 @@ solver:
   nstep_avg: 1000
   rtol_mdot: 0.02
   # ...
+
+post_process:
+  plot_nose:
+    row_spf: [[0.6,],]
+  plot_pressure_distributions:
+    row_spf: [[0.6,],]
+    write_raw: true
+  plot_incidence:
+  plot_annulus:

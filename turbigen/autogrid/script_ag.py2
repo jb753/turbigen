@@ -67,7 +67,12 @@ for n in range(nrow):
 
     # misc blade-to-blade blocking parameters
     row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
-    row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
+    if conf["round_TE"]:
+        row(n1).blade(1).set_rounded_treatment_at_trailing_edge(0)
+        row(n1).blade(1).set_blend_treatment_at_trailing_edge(1)
+    else:
+        row(n1).blade(1).set_blend_treatment_at_trailing_edge(0)
+        row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
     row(n1).set_coarse_grid_level(2)
     row(n1).set_streamwise_weight(1.,conf["blade_streamwise_weight"],1.)
     row(n1).set_upstream_block_relaxation(1)
@@ -110,7 +115,14 @@ for n in range(nrow):
         # Blade surface cell width
         row(n1).blade(iib).set_b2b_default_topology_cell_width_at_wall(float(conf["drt_row"][n]))
 
-        row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(1)
+        if conf["round_TE"]:
+            row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(0)
+            row(n1).blade(iib).set_blend_treatment_at_trailing_edge(1)
+        else:
+            row(n1).blade(iib).set_blend_treatment_at_trailing_edge(0)
+            row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(1)
+
+
         row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
 
 

@@ -31,7 +31,9 @@ logger = turbigen.util.make_logger()
 class Smooth:
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
-    def __init__(self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.):
+    def __init__(
+        self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.0
+    ):
         r"""Construct an annulus from geometric parameters.
 
         Parameters
@@ -115,7 +117,7 @@ class Smooth:
         rcas = rmid + 0.5 * span * cosBeta
 
         # Offset the exit casing radius (defaults to zero)
-        rcas[-1] +=  rcout_offset * span[-1]
+        rcas[-1] += rcout_offset * span[-1]
 
         # Smoothed the initial guess lines
         self.hub = MeridionalLine(xhub, rhub, Beta).smooth()
@@ -361,6 +363,12 @@ class Smooth:
 
         spf = np.reshape([0.0, 1.0], (1, -1))
         return self.evaluate_xr(t.reshape(-1, 1), spf).transpose(1, 0, 2)
+
+    def get_cut_plane(self, t):
+        """(x,r) points on hub and casing at given normalise merdional coord."""
+        spf = np.reshape([0.0, 1.0], (1, -1))
+        xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
+        return xrc
 
     def A(self, m):
         """Flow area as function of normalised meridional distance."""

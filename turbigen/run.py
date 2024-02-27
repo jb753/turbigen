@@ -1,7 +1,6 @@
 """Functions to run turbigen on config objects."""
 import os
 import sys
-import json
 import shutil
 from turbigen import (
     fluid,
@@ -12,12 +11,11 @@ from turbigen import (
     hmesh,
     ohmesh,
 )
-from turbigen.exceptions import ConvergenceError, ConfigError
+from turbigen.exceptions import ConfigError
 import turbigen.post_process
 import turbigen.plot
 import turbigen.average
 import turbigen.annulus
-import turbigen.blade
 import numpy as np
 from timeit import default_timer as timer
 
@@ -160,8 +158,6 @@ def run_single(conf, gguess=None, plot=False):
 
     cut_offset = conf.solver.pop("cut_offset", None)
     xr_cut = ann.get_cut_planes(cut_offset)
-    if conf.plot:
-        turbigen.plot.plot_annulus(ann, os.path.join(workdir, "annulus.pdf"), xr_cut)
 
     # Include deviations angles with respect to free vortex in camber
     # parameters to make q_camber
@@ -515,11 +511,10 @@ def run_single(conf, gguess=None, plot=False):
     # Wall rotations
     rot_types = []
 
-    rpm_adjust = conf.operating_point.get("rpm_adjust",0.)
+    rpm_adjust = conf.operating_point.get("rpm_adjust", 0.0)
     if rpm_adjust:
-        logger.info(f'Running off-design: adjusted rpms by {rpm_adjust:+}')
-    ml.Omega*=(1.+rpm_adjust)
-
+        logger.info(f"Running off-design: adjusted rpms by {rpm_adjust:+}")
+    ml.Omega *= 1.0 + rpm_adjust
 
     for Omi, tip in zip(ml.Omega[::2], mac.tip):
         if Omi:
@@ -545,10 +540,13 @@ def run_single(conf, gguess=None, plot=False):
     mass_adjust = conf.operating_point.get("mass_adjust", 0.0)
     throttle_pid = conf.operating_point.get("mdot_pid")
     if mass_adjust and not throttle_pid:
-        raise Exception('Cannot adjust mass flow rate without exit throttle PID: set `mdot_pid` in the operating point configuration.')
+        raise Exception(
+            "Cannot adjust mass flow rate without exit throttle PID: "
+            "set `mdot_pid` in the operating point configuration."
+        )
 
     if mass_adjust:
-        logger.info(f'Running off-design: adjusted mass flow rate by {mass_adjust:+}')
+        logger.info(f"Running off-design: adjusted mass flow rate by {mass_adjust:+}")
 
     if throttle_pid:
         restart_fac = 0.5 if gguess else 1.0
@@ -652,11 +650,7 @@ def run_single(conf, gguess=None, plot=False):
     for icut, xrci in enumerate(xr_cut):
         try:
             CC = g.unstructured_cut_marching(xrci)
-            cutname = os.path.join(workdir, f"cut_{icut}")
-            np.savez_compressed(cutname, data=CC._data)
-            Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(
-                CC
-            )
+            Cnow, Aannnow, dsnow = turbigen.average.mix_out_unstructured(CC)
             Cmix.append(Cnow)
             Amix.append(Aannnow)
             Dsmix.append(dsnow)
@@ -671,40 +665,15 @@ def run_single(conf, gguess=None, plot=False):
 
     ml_out = turbigen.flowfield.make_mean_line_from_flowfield(Amix, Call)
 
-    try:
-        if conf.plot:
-            for spf in (0.1, 0.5, 0.9):
-                pltname = os.path.join(workdir, f"pdist_spf_{int(spf*10)}.pdf")
-                turbigen.plot.plot_pressure_distribution(
-                    bld[0], g, ml_out, spf, pltname
-                )
-    except Exception:
-        pass
+    postdir = os.path.join(workdir, "post")
+    if not os.path.exists(postdir):
+        os.makedirs(postdir, exist_ok=True)
 
-    if conf.post_process.get("Sdot_wall"):
-        times.append(timer())
-        ml_out.Sdot_wall, ml_out.Asurf = turbigen.post_process.surface_dissipation(g)
-        times.append(timer())
-        logger.debug(f"Surface dissipation calculation took {np.diff(times)[-1]:.1f}s")
-
-    if conf.post_process.get("tip"):
-        times.append(timer())
-        ml_out.Sdot_tip = turbigen.post_process.tip(g)
-        times.append(timer())
-        logger.debug(f"Tip loss calculation took {np.diff(times)[-1]:.1f}s")
-
-    if conf.plot:
-        for irow, row in enumerate(conf.sections):
-            if row:
-                spf_row = row["spf"]
-                for spf in spf_row:
-                    turbigen.plot.plot_pressure_distribution(
-                        irow,
-                        g,
-                        ml_out,
-                        spf,
-                        os.path.join(workdir, f"pdist_{irow}_{spf}.pdf"),
-                    )
+    for post_name, post_conf in conf.post_process.items():
+        post_func = util.load_post(post_name).post
+        if post_conf is None:
+            post_conf = {}
+        post_func(g, mac, ml_out, postdir, **post_conf)
 
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
@@ -752,35 +721,34 @@ def run_single(conf, gguess=None, plot=False):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-        spf_flow, chi_stag, chi_stag_splitter = turbigen.post_process.incidence(
-            g, mac, ml.Beta[::2], workdir if conf.plot else False
-        )
+
+        # Evaluate incidence
+        data = turbigen.util.incidence(g, mac, ml)
+
+        # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
         mdot_err = np.abs(ml_out.mdot / ml.mdot - 1)[0]
+        inc_target = inc_conf.get("target", 0.0)
+        inc_tol = inc_conf["tolerance"]
+        inc_clip = inc_conf.get("clip", 0.5)
+
         for irow, row in enumerate(conf.sections):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
-                chi_flow = np.interp(row["spf"], spf_flow[irow], chi_stag[irow])
-                chi_metal = util.atand(qcamber_save[irow][:, 0])
-                inc_target = inc_conf.get("target", 0.0)
-                inc = chi_flow - chi_metal - inc_target
-                logger.debug(f"chi_flow={chi_flow}")
-                logger.debug(f"chi_metal={chi_metal}")
-                logger.debug(f"inc={inc}")
-                inc_tol = inc_conf["tolerance"]
-                inc_clip = inc_conf.get("clip", 0.5)
-                if np.isnan(chi_flow).any():
-                    raise Exception(
-                        f'NaN stagnation point angle, row {irow}, spf={row["spf"]},'
-                        f" chi_flow={chi_flow}, chi_metal={chi_metal}"
-                    )
+
+                spf, inc = data[irow][0][:2]
+
+                inc -= inc_target
+                inc = np.interp(row["spf"], spf, inc)
+
                 if (np.abs(inc) > inc_tol).any():
                     inc_converged = False
+
                 dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0
-                logger.debug(f"dinc={dinc}")
                 qstar_save[irow][:, 0] += dinc
 
                 imax = np.argmax(np.abs(inc.flat))
@@ -794,21 +762,19 @@ def run_single(conf, gguess=None, plot=False):
                 if conf.splitter:
                     if splitter_now := conf.splitter[irow]:
                         logger.debug(f"CORRECTING SPLITTER row={irow}")
-                        chi_flow = np.interp(
-                            splitter_now["spf"], spf_flow[irow], chi_stag_splitter[irow]
-                        )
-                        logger.debug(f"chi_flow={chi_flow}")
-                        chi_metal = util.atand(mac.split[irow].q_camber[:, 0])
-                        logger.debug(f"chi_metal={chi_metal}")
-                        # inc_target = inc_conf.get("target", 0.0)
-                        inc = chi_flow - chi_metal - inc_target
-                        logger.debug(f"inc={inc}")
+
+                        spf, inc = data[irow][1][:2]
+                        inc -= inc_target
+                        inc = np.interp(splitter_now["spf"], spf, inc)
+
                         if (np.abs(inc) > inc_tol).any():
                             inc_converged = False
+
                         dinc_splitter = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+
                         if mdot_err > rtol_mdot_inc:
                             dinc_splitter *= 0.0
-                        logger.debug(f"dinc_splitter={dinc_splitter}")
+
                         qcam_split = np.array(splitter_now["qstar_camber"])
                         qcam_split[:, 0] += dinc_splitter - dinc
                         splitter_now["qstar_camber"] = qcam_split
@@ -982,6 +948,10 @@ def run(conf, plot=False):
                         src_path = os.path.join(iterdir, f)
                         dest_path = os.path.join(basedir, f)
                         logger.debug(src_path + "->" + dest_path)
+                        if os.path.isdir(dest_path):
+                            shutil.rmtree(dest_path)
+                        elif os.path.exists(dest_path):
+                            os.remove(dest_path)
                         shutil.move(src_path, dest_path)
                     logger.debug("Deleting iterations")
                     for j in range(i + 1):

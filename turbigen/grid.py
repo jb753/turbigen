@@ -65,6 +65,17 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         bnew.mu_turb = np.full_like(bnew.w, np.nan)
         return bnew
 
+    def to_dict(self, strip_patches=False):
+        d = super().to_dict()
+        if strip_patches:
+            d["metadata"].pop("patches")
+        return d
+
+    def write(self, fname):
+        """Save this object to a yaml file."""
+        d = self.to_dict(strip_patches=True)
+        util.write_yaml_compressed(d, fname)
+
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=()):
         # Make empty object of correct shape
@@ -681,32 +692,6 @@ class Grid:
             # Determine the i indices on each side of cut
             ni, nj, nk = block.shape
 
-            # BEGIN OLD WAY
-            # if side[0, :, :].any():
-            #     side = np.logical_not(side)
-            # icut = np.argmax(side, axis=0, keepdims=True)
-            # logger.debug(f"min icut={icut.min()}")
-            # logger.debug(f"shape={block.shape}")
-            # # print(np.sum(icut == 0))
-            # # print(np.size(icut))
-            # if icut.min() <= 1:
-            #     logger.debug(f"min icut={icut.min()}, skipping this block")
-            #     continue
-            # if icut.min() == 0:
-            #     jplot = 10
-            #     import matplotlib.pyplot as plt
-            #     # fig, ax = plt.subplots()
-            #     # bplot = block[:, jplot, :].squeeze()
-            #     # ax.plot(bplot.r, bplot.rt, "kx")
-            #     # plt.savefig("test.pdf")
-            # # quit()
-            # # Get xr coordinates on either side of cut
-            # xi = np.take_along_axis(block.x, icut - 1, axis=0)
-            # xip1 = np.take_along_axis(block.x, icut, axis=0)
-            # ri = np.take_along_axis(block.r, icut - 1, axis=0)
-            # rip1 = np.take_along_axis(block.r, icut, axis=0)
-            # END OLD WAY
-
             icut = np.argmax(dsgn, axis=0, keepdims=True)
             # If there are no zero crossing, then argmax will return icut=0
             # If the first cell is cut, argmax will return icut=1
@@ -968,9 +953,12 @@ class Grid:
         k = self[0].shape[2] // 2
         return [b[:, :, k].squeeze() for b in self]
 
+    def spf_index(self, spf):
+        return np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
+
     def cut_span(self, spf):
         # Find j index nearest to requested span fraction
-        jspf = np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
+        jspf = self.spf_index(spf)
         nj = self[0].shape[1]
         logger.debug(f"Cutting at spf={spf}: jspf={jspf}, nj={nj}")
 

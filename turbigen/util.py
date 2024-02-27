@@ -1,6 +1,7 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
 # from . import compflow as cf
 import numpy as np
+import gzip
 import os
 import sys
 import importlib
@@ -418,6 +419,12 @@ def read_yaml_list(fname):
 def write_yaml(d, fname, mode="w"):
     """Write a dictionary to file."""
     with open(fname, mode) as f:
+        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
+
+
+def write_yaml_compressed(d, fname):
+    """Write a dictionary to compressed file."""
+    with gzip.open(fname, "wt") as f:
         yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
 
 
@@ -1242,6 +1249,23 @@ def load_install(install_type):
     return mod
 
 
+def load_post(post_type):
+    if not post_type.endswith(".py"):
+        # Attempt to load a built-in post
+        mod = importlib.import_module(f".{post_type}", package="turbigen.post")
+    else:
+        # Use as a file path
+        mod_file = os.path.abspath(post_type)
+        mod_name = os.path.basename(post_type)
+        spec = importlib.util.spec_from_file_location(
+            f"turbigen.post.{mod_name}", mod_file
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"turbigen.post.{mod_name}"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def node_to_face3(x):
     # x has shape [?,ni,nj,nk]
     # return averaged values on const i, const j, const k faces
@@ -1277,3 +1301,95 @@ def node_to_face3(x):
     ).mean(axis=0)
 
     return xi, xj, xk
+
+
+def stagnation_point_angle(grid, machine, meanline):
+
+    surfs = grid.cut_blade_surfs()
+
+    chi_stag = []
+
+    # Loop over rows
+    for irow, surfi in enumerate(surfs):
+
+        chi_stag.append([])
+
+        # Loop over main/splitter
+        for jbld, surfj in enumerate(surfi):
+
+            surf = surfj.squeeze()
+            _, nj = surf.shape
+
+            spf = [surf.spf[surf.i_stag[j], j] for j in range(nj)]
+
+            # Get coordinates of stagnation point
+            xrt_stag = surf.xrt_stag
+
+            # Get coordinates of LE center
+            bldnow = machine.split[irow] if jbld else machine.bld[irow]
+            xrt_cent = np.stack(
+                [bldnow.get_LE_cent(spf[j]).squeeze() for j in range(nj)],
+                axis=-1,
+            )
+
+            # Get vector between stagnation point and centre of LE
+            dxrt = xrt_cent - xrt_stag
+
+            # Multiply theta component by reference radius
+            dxrrt = dxrt.copy()
+            dxrrt[2] *= 0.5 * (xrt_cent + xrt_stag)[1]
+
+            # Calculate angle
+            denom = np.sqrt(dxrrt[0] ** 2 + dxrrt[1] ** 2)
+            chi_stag_now = np.degrees(np.arctan2(dxrrt[2], denom))
+
+            # # If we are going radially inwards then flip sign
+            # if meanline.Beta[irow * 2] < -45.0:
+            #     chi_stag_now *= -1.0
+
+            chi_stag[-1].append(np.stack((spf, chi_stag_now)))
+
+    return chi_stag
+
+
+def incidence(grid, machine, meanline):
+
+    chi_stag_all = stagnation_point_angle(grid, machine, meanline)
+
+    out = []
+
+    # Loop over rows
+    for irow, chi_stag_row in enumerate(chi_stag_all):
+
+        out.append([])
+
+        for jblade, chi_stag_blade in enumerate(chi_stag_row):
+
+            spf, chi_stag = chi_stag_blade
+
+            bldnow = machine.split[irow] if jblade else machine.bld[irow]
+            chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
+
+            # Smooth
+            nsmooth = 10
+            sf = 0.5
+            for _ in range(nsmooth):
+                chi_avg = 0.5*(chi_stag[:-2]+chi_stag[2:])
+                chi_stag[1:-1] = sf*chi_stag[1:-1]  + (1.-sf)*chi_avg
+
+            incidence = chi_stag - chi_metal
+
+            out_now = np.stack((spf, incidence, chi_stag, chi_metal))
+
+            # Remove results in tip gap
+            out_now[1:,spf>(1.-machine.tip[irow])] = np.nan
+
+            out[-1].append(out_now)
+
+    return out
+
+def qinv(x,q):
+    xs = np.sort(x)
+    n = len(x)
+    irel = np.linspace(0.,n-1,n)/(n-1)
+    return np.interp(q, irel, xs)

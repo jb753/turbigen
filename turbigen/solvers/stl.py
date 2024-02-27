@@ -36,7 +36,8 @@ def run(grid, settings, machine):
         # Join the points at leading edge
 
         xrt_ps = section[0, ...]
-        xrt_ss = np.flip(section[1, :, 1:, :], axis=1)  # Do not repeat LE
+        # xrt_ss = np.flip(section[1, :, 1:, :], axis=1)  # Do not repeat LE
+        xrt_ss = np.flip(section[1, :, :, :], axis=1)  # Fix the hole in LE?
         xrt_section = np.concatenate((xrt_ps, xrt_ss), axis=1)
 
         xyz_section = np.stack(

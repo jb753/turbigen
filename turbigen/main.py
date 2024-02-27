@@ -145,7 +145,8 @@ def main():
         conf.iterate = {}
 
     if args.no_solve:
-        conf.solver = {}
+        if conf.solver:
+            conf.solver["skip"] = True
 
     conf.wdist &= not args.no_wdist
     conf.plot |= args.plot
