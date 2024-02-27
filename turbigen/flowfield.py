@@ -52,8 +52,8 @@ class PerfectFlowField(turbigen.fluid.PerfectState, BaseFlowField):
         "Vx",
         "Vr",
         "Vt",
-        "P",
-        "T",
+        "rho",
+        "u",
         "Omega",
     )
 
@@ -74,7 +74,7 @@ class PerfectFlowField(turbigen.fluid.PerfectState, BaseFlowField):
 class PerfectMeanLine(turbigen.base.MeanLine, PerfectFlowField):
     """Encapsulate the mean-line flow and geometry of a turbomachine."""
 
-    _data_rows = ("x", "r", "A", "Vx", "Vr", "Vt", "P", "T", "Omega", "Nb")
+    _data_rows = ("x", "r", "A", "Vx", "Vr", "Vt", "rho", "u", "Omega", "Nb")
 
 
 class RealFlowField(turbigen.fluid.RealState, BaseFlowField):

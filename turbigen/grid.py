@@ -35,6 +35,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     )  # , "Vx", "Vr", "Vt", "P", "T", "w")
 
     grid = None
+    _conserved_store = None
 
     def __str__(self):
         return (
@@ -297,7 +298,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
-    _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "P", "T", "w", "mu_turb", "Omega")
+    _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
         return f"Block({self.label})"
@@ -456,10 +457,24 @@ class Grid:
         for patch in self.periodic_patches:
             if patch in done:
                 continue
+            print('****')
+            print('****')
+            print('****')
+
+            perm, flip = patch.get_match_perm_flip()
+
             i1 = (slice(3, 7, None),) + patch.get_slice()
             i2 = (slice(3, 7, None),) + patch.match.get_slice()
-            avg = 0.5 * (patch.block._data[i1] + patch.match.block._data[i2])
+
+            data1 = patch.block._data[i1]
+            data2 = np.flip(patch.match.block._data[i2].transpose(perm), axis=flip)
+            print(data1.shape, data2.shape)
+
+            avg = 0.5 * (data1 + data2)
             patch.block._data[i1] = avg
+
+            nxdata = np.flip(patch.match._data[i2].transpose(perm), axis=flip)
+
             patch.match.block._data[i2] = avg
             done.append(patch)
             done.append(patch.match)
@@ -1154,7 +1169,8 @@ class PeriodicPatch(Patch):
     def check_match(self, other, rtol=1e-4):
         return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
 
-    def get_match_cut(self, offset=0):
+    def get_match_perm_flip(self):
+
         # We need to establise a permutation order and set of flips that will
         # transform the other coordinates to our indexing
         perm = np.empty(3, dtype=int)
@@ -1186,7 +1202,12 @@ class PeriodicPatch(Patch):
         perm = np.insert(perm + 1, 0, 0)
         flip = np.where(np.insert(flip, 0, 0))[0]
 
+        return perm, flip
+
+    def get_match_cut(self, offset=0):
+
         Cnx = self.match.get_cut(offset)
+        perm, flip = self.get_match_perm_flip()
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
 
         return Cnx
@@ -1259,7 +1280,7 @@ class InletPatch(Patch):
     force_type = None
     amplitude = 0.0
     phase = 0.0
-    store = None
+    rho_store = None
 
 
 class InviscidPatch(Patch):

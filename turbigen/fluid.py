@@ -112,6 +112,7 @@ state, each taking two properties as arguments:
 `set_T_s(T,s)`      Temperature, entropy
 `set_P_h(P,h)`      Enthalpy, entropy
 `set_rho_u(rho,u)`  Density, internal energy
+`set_rho_s(rho,s)`  Density, entropy
 =================== ============================================
 
 Static/stagnation methods
@@ -151,8 +152,8 @@ class PerfectState(StructuredData):
     """Thermodynamic properties from perfect gas equations of state."""
 
     _data_rows = (
-        "P",
-        "T",
+        "rho",
+        "u",
     )
 
     # Arbitrary reference properties for entropy/enthalpy datum
@@ -239,26 +240,26 @@ class PerfectState(StructuredData):
         self._set_metadata_by_key("mu", mu)
 
     @property
-    def P(self):
-        return self._get_data_by_key("P")
+    def rho(self):
+        return self._get_data_by_key("rho")
 
-    @P.setter
-    def P(self, value):
+    @rho.setter
+    def rho(self, value):
         val_array = np.array(value)
         if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative P={value.min()}")
-        self._set_data_by_key("P", val_array)
+            raise Exception(f"Cannot set negative rho={value.min()}")
+        self._set_data_by_key("rho", val_array)
 
     @property
-    def T(self):
-        return self._get_data_by_key("T")
+    def u(self):
+        return self._get_data_by_key("u")
 
-    @T.setter
-    def T(self, value):
+    @u.setter
+    def u(self, value):
         val_array = np.array(value)
         if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative T={value}")
-        self._set_data_by_key("T", val_array)
+            raise Exception(f"Cannot set negative u={value}")
+        self._set_data_by_key("u", val_array)
 
     @dependent_property
     def cv(self):
@@ -269,8 +270,8 @@ class PerfectState(StructuredData):
         return self.cp * (self.gamma - 1.0) / self.gamma
 
     @dependent_property
-    def rho(self):
-        return self.P / self.rgas / self.T
+    def P(self):
+        return self.rho * self.rgas * self.T
 
     @dependent_property
     def a(self):
@@ -281,8 +282,8 @@ class PerfectState(StructuredData):
         return self.cp * self.T
 
     @dependent_property
-    def u(self):
-        return self.cv * self.T
+    def T(self):
+        return self.u / self.cv
 
     @property
     def is_two_phase(self):
@@ -296,9 +297,9 @@ class PerfectState(StructuredData):
         )
 
     def set_P_T(self, P, T):
-        self.P = P
-        self.T = T
-        return self
+        u = self.cv * T
+        rho = P/self.rgas/T
+        return self.set_rho_u(rho,u)
 
     def set_P_s(self, P, s):
         T = self.Tref * np.exp((s + self.rgas * np.log(P / self.Pref)) / self.cp)
@@ -324,9 +325,8 @@ class PerfectState(StructuredData):
         return self
 
     def set_rho_u(self, rho, u):
-        T = u / self.cv
-        P = rho * self.rgas * T
-        self.set_P_T(P, T)
+        self.rho = rho
+        self.u = u
         return self
 
     def set_rho_s(self, rho, s):
@@ -334,8 +334,6 @@ class PerfectState(StructuredData):
         rhoref = self.Pref/self.rgas/self.Tref
         u = uref * np.exp((s + self.rgas*np.log(rho/rhoref))/self.cv)
         self.set_rho_u(rho, u)
-        assert np.allclose(self.rho, rho)
-        assert np.allclose(self.s, s)
         return self
 
     def to_static(self, Ma):
@@ -532,6 +530,10 @@ class RealState(StructuredData):
     def set_rho_u(self, ro, u):
         self._set_data_by_key("rho", ro)
         self._set_data_by_key("u", u)
+        return self
+
+    def set_rho_s(self, ro, s):
+        self._store(CoolProp.DmassSmass_INPUTS, ro, s)
         return self
 
     def set_T_chi(self, T, chi):

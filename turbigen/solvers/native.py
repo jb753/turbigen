@@ -22,17 +22,18 @@ logger.setLevel(level=logging.INFO)
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 4000
+nstep = 1000
 nrk = 4
-dampin = 10.
+dampin = 25.
 
-sfin = 0.01
-fac_2nd = 0.2
+sfin = 0.005
+fac_2nd = 0.5
 CFL = 3.5
 sf = CFL * sfin
 sf2 = sf*fac_2nd
 sf4 = sf*(1.-fac_2nd)
 
+# @profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
@@ -81,53 +82,48 @@ def run(grid, settings={}, machine=None):
                     conserved, Phor, Omega, *wall, dt[iblock] * frk, dAi, dAj, dAk, vol
                 )
 
-                if np.isnan(dU).any():
-                    raise Exception('NaN dU')
-
                 # dUabs = np.abs(dU)
                 # dUavg = np.mean(dUabs,axis=(0,1,2),keepdims=True)
                 # dU /= 1.+dUavg/dampin/dUavg
+
+                # dU[...,-1] *= 0.5
 
                 conserved_new = conserved_start + dU
 
                 if irk == nrk - 1:
                     smooth(conserved_new, sf2, sf4)
 
-                if np.isnan(conserved_new).any():
-                    raise Exception('NaN conserved_new')
-
-
                 calculate_secondary(Phor[...,2], conserved_new, Vxrt, u)
 
-                # for n in range(3):
-                #     print(Vxrt[...,n].min(), Vxrt[...,n].max())
-                # print('***')
-
-                if np.isnan(Vxrt).any():
-                    raise Exception('NaN Vxrt')
-
-
-                if np.isnan(u).any():
-                    raise Exception('NaN u')
-
-
                 b.Vxrt = np.moveaxis(Vxrt,-1,0)
+
+                b._conserved_store = conserved_new
 
                 try:
                     b.set_rho_u(conserved_new[...,0], u)
                 except Exception as e:
 
-                    print(e)
+                    # print(e)
 
                     ijkmax = np.argmax(grid[0].V)
                     imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
+                    print(imax, jmax, kmax, grid[0].V.max())
 
                     import matplotlib.pyplot as plt
                     fig, ax = plt.subplots()
-                    bb = grid[0][:,jmax,:].squeeze()
-                    cm = ax.contourf(bb.x, bb.rt, bb.Ma)
-                    ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], 'k*')
+                    ni, nj, nk = grid[0].shape
+                    print(ni, nj, nk)
+                    bb = grid[0][:,:,nk//2].squeeze()
+                    cm = ax.contourf(bb.x, bb.r, bb.Ma)
                     plt.colorbar(cm)
+
+                    fig, ax = plt.subplots()
+                    bb = grid[0][:,jmax,:].squeeze()
+                    cm = ax.contourf(bb.x, bb.rt, bb.To)
+                    ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], 'k*')
+                    ax.axis('equal')
+                    plt.colorbar(cm)
+
                     plt.show()
                     quit()
 
@@ -139,7 +135,7 @@ def run(grid, settings={}, machine=None):
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log
-                logger.info(f"tpnps={tpnps}")
+                logger.info(f"tpnps={tpnps:.3e}")
                 tstart = ten
 
                 mdot_in = 0.
@@ -151,7 +147,7 @@ def run(grid, settings={}, machine=None):
                 for patch in grid.outlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_out += Cm.rho * Cm.Vm * Ann
-                    print(f'mass flows {mdot_in}, {mdot_out}, err={mdot_in/mdot_out-1.}')
+                    print(f'mass flows {mdot_in:.3e}, {mdot_out:.3e}, err={(mdot_in/mdot_out-1.)*100:.1f}%')
 
 
 
@@ -218,14 +214,24 @@ def get_wall(b):
     return wfl
 
 
+# @profile
 def apply_bconds(b):
     """Return properties needed to time march after in/out boundaries applied"""
 
     P = b.P
     ho = b.ho
-    conserved = b.conserved
 
-    rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
+    if b._conserved_store is None:
+        conserved = b.conserved
+        rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
+    else:
+        conserved = b._conserved_store
+        rho = conserved[...,0]
+        rhoVx = conserved[...,1]
+        rhoVr = conserved[...,2]
+        rhorVt = conserved[...,3]
+        rhoe = conserved[...,4]
+
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
@@ -236,37 +242,37 @@ def apply_bconds(b):
 
         ipatch = patch.get_slice()
         inlet = b[ipatch]
-        rfin = 0.1#*patch.rfin
+        rfin = 0.2#*patch.rfin
 
-        if patch.store:
-            # Relax changes in density if we have a stored state
-            rho_now = rfin * inlet.rho + (1.0 - rfin) * patch.store.rho
+        # Relax changes in density if we have a stored state
+        if patch.rho_store is None:
+            rho_now = inlet.rho.copy()
+        else:
+            rho_now = rfin * inlet.rho + (1.0 - rfin) * patch.rho_store
             # Check for flow reversal
             rho_now[rho_now > patch.state.rho] = patch.state.rho * 0.9999
             # Isentropic expansion from stagnation state
             inlet.set_rho_s(rho_now, patch.state.s)
 
-        patch.store = inlet
+        patch.rho_store = rho_now
 
         # Get the velocity
         dhin = patch.state.h - inlet.h
-        if (dhin <= 0.0).any():
-            assert False
         Vin = np.sqrt(2. * dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
         tanBeta = turbigen.util.tand(patch.Beta)
 
         # Resolve velocity components
-        Vxin = Vin * np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
+        Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
         Vrin = Vxin * tanBeta
         Vmin = np.sqrt(Vxin**2 + Vrin**2)
         Vtin = Vmin * tanAlpha
 
-        # print(f'Vin={Vin.mean()}, Vxin={Vxin.mean()}, Vrin={Vrin.mean()}, Vtin={Vtin.mean()}')
+        print(f'Vin={Vin.mean()}, Vxin={Vxin.mean()}, Vrin={Vrin.mean()}, Vtin={Vtin.mean()}')
 
         # Reset conserved vars on inlet
-        rho[ipatch] = inlet.rho
+        # rho[ipatch] = inlet.rho
         rhoVx[ipatch] = inlet.rho * Vxin
         rhoVr[ipatch] = inlet.rho * Vrin
         rhorVt[ipatch] = inlet.rho * inlet.r * Vtin
@@ -280,5 +286,7 @@ def apply_bconds(b):
     P -= Pref
 
     # All nodal variables are ready
-    conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
+    if b._conserved_store is None:
+        conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
+
     return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))
