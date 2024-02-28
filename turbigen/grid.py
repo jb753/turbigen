@@ -468,25 +468,21 @@ class Grid:
         for patch in self.periodic_patches:
             if patch in done:
                 continue
-            print('****')
-            print('****')
-            print('****')
 
             perm, flip = patch.get_match_perm_flip()
+            print(perm, patch)
+            print(patch.match)
 
-            i1 = (slice(3, 7, None),) + patch.get_slice()
-            i2 = (slice(3, 7, None),) + patch.match.get_slice()
+            i1 = (slice(3, 8, None),) + patch.get_slice()
+            i2 = (slice(3, 8, None),) + patch.match.get_slice()
 
-            data1 = patch.block._data[i1]
+            data1 = patch.block._data[i1].copy()
             data2 = np.flip(patch.match.block._data[i2].transpose(perm), axis=flip)
-            print(data1.shape, data2.shape)
 
             avg = 0.5 * (data1 + data2)
             patch.block._data[i1] = avg
-
-            nxdata = np.flip(patch.match._data[i2].transpose(perm), axis=flip)
-
-            patch.match.block._data[i2] = avg
+            nxavg = np.flip(avg, axis=flip).transpose(np.argsort(perm))
+            patch.match.block._data[i2] = nxavg
             done.append(patch)
             done.append(patch.match)
 

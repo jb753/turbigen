@@ -26,7 +26,7 @@ nstep = 8000
 nrk = 4
 dampin = 10.0
 
-sfin = 0.01
+sfin = 0.001
 fac_2nd = 0.2
 CFL = 0.4
 sf = CFL * sfin
@@ -108,7 +108,6 @@ def run(grid, settings={}, machine=None):
 
             smooth(conserved, sf2, sf4)
 
-
             b._conserved_store = conserved
 
             calculate_secondary(Phor[..., 2], conserved, Vxrt[iblock], u[iblock])
@@ -152,7 +151,10 @@ def run(grid, settings={}, machine=None):
                 for patch in grid.outlet_patches:
                     Cm, Ann, _ = patch.get_cut().mix_out()
                     mdot_out += Cm.rho * Cm.Vm * Ann
-                    print(f'mass flows {mdot_in:.3e}, {mdot_out:.3e}, err={(mdot_in/mdot_out-1.)*100:.1f}%')
+                    print(
+                        f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
+                        f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
+                    )
                     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
     import matplotlib.pyplot as plt
@@ -237,12 +239,11 @@ def apply_bconds(b):
         rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
     else:
         conserved = b._conserved_store
-        rho = conserved[...,0]
-        rhoVx = conserved[...,1]
-        rhoVr = conserved[...,2]
-        rhorVt = conserved[...,3]
-        rhoe = conserved[...,4]
-
+        # rho = conserved[..., 0]
+        rhoVx = conserved[..., 1]
+        rhoVr = conserved[..., 2]
+        rhorVt = conserved[..., 3]
+        rhoe = conserved[..., 4]
 
     # Adjust static pressure for exit boundary conditions
     for patch in b.outlet_patches:
@@ -253,7 +254,7 @@ def apply_bconds(b):
 
         ipatch = patch.get_slice()
         inlet = b[ipatch]
-        rfin = 0.2#*patch.rfin
+        rfin = 0.2  # *patch.rfin
 
         # Relax changes in density if we have a stored state
         if patch.rho_store is None:
@@ -269,7 +270,7 @@ def apply_bconds(b):
 
         # Get the velocity
         dhin = patch.state.h - inlet.h
-        Vin = np.sqrt(2. * dhin)
+        Vin = np.sqrt(2.0 * dhin)
 
         tanAlpha = turbigen.util.tand(patch.Alpha)
         tanBeta = turbigen.util.tand(patch.Beta)
@@ -296,6 +297,6 @@ def apply_bconds(b):
 
     # All nodal variables are ready
     if b._conserved_store is None:
-        conserved = np.asfortranarray(np.moveaxis(conserved,0,-1))
+        conserved = np.asfortranarray(np.moveaxis(conserved, 0, -1))
 
-    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=0))
+    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))
