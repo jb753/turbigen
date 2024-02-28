@@ -470,8 +470,6 @@ class Grid:
                 continue
 
             perm, flip = patch.get_match_perm_flip()
-            print(perm, patch)
-            print(patch.match)
 
             i1 = (slice(3, 8, None),) + patch.get_slice()
             i2 = (slice(3, 8, None),) + patch.match.get_slice()
@@ -1160,27 +1158,33 @@ class PeriodicPatch(Patch):
         perm = np.empty(3, dtype=int)
         flip = np.empty(3, dtype=int)
 
+        ijkdir_match = self.match.ijkdir
+        ijkdir = self.ijkdir
+
         for n in range(3):
-            if self.ijkdir[n] == MatchDir.IPLUS:
+            if ijkdir[n] == MatchDir.IPLUS:
                 perm[n] = 0
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.JPLUS:
+            elif ijkdir[n] == MatchDir.JPLUS:
                 perm[n] = 1
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.KPLUS:
+            elif ijkdir[n] == MatchDir.KPLUS:
                 perm[n] = 2
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.IMINUS:
+            elif ijkdir[n] == MatchDir.IMINUS:
                 perm[n] = 0
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.JMINUS:
+            elif ijkdir[n] == MatchDir.JMINUS:
                 perm[n] = 1
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.KMINUS:
+            elif ijkdir[n] == MatchDir.KMINUS:
                 perm[n] = 2
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.CONST:
-                perm[n] = n
+            elif ijkdir[n] == MatchDir.CONST:
+                # We must put the const dirn of the next patch here
+                for m in range(3):
+                    if ijkdir_match[m] == MatchDir.CONST:
+                        perm[n] = m
                 flip[n] = 0
 
         perm = np.insert(perm + 1, 0, 0)
