@@ -35,6 +35,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     )  # , "Vx", "Vr", "Vt", "P", "T", "w")
 
     grid = None
+    _conserved_store = None
 
     def __str__(self):
         return (
@@ -308,7 +309,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
-    _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "P", "T", "w", "mu_turb", "Omega")
+    _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
         return f"Block({self.label})"
@@ -467,11 +468,19 @@ class Grid:
         for patch in self.periodic_patches:
             if patch in done:
                 continue
-            i1 = (slice(3, 7, None),) + patch.get_slice()
-            i2 = (slice(3, 7, None),) + patch.match.get_slice()
-            avg = 0.5 * (patch.block._data[i1] + patch.match.block._data[i2])
+
+            perm, flip = patch.get_match_perm_flip()
+
+            i1 = (slice(3, 8, None),) + patch.get_slice()
+            i2 = (slice(3, 8, None),) + patch.match.get_slice()
+
+            data1 = patch.block._data[i1].copy()
+            data2 = np.flip(patch.match.block._data[i2].transpose(perm), axis=flip)
+
+            avg = 0.5 * (data1 + data2)
             patch.block._data[i1] = avg
-            patch.match.block._data[i2] = avg
+            nxavg = np.flip(avg, axis=flip).transpose(np.argsort(perm))
+            patch.match.block._data[i2] = nxavg
             done.append(patch)
             done.append(patch.match)
 
@@ -1142,39 +1151,51 @@ class PeriodicPatch(Patch):
     def check_match(self, other, rtol=1e-4):
         return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
 
-    def get_match_cut(self, offset=0):
+    def get_match_perm_flip(self):
+
         # We need to establise a permutation order and set of flips that will
         # transform the other coordinates to our indexing
         perm = np.empty(3, dtype=int)
         flip = np.empty(3, dtype=int)
 
+        ijkdir_match = self.match.ijkdir
+        ijkdir = self.ijkdir
+
         for n in range(3):
-            if self.ijkdir[n] == MatchDir.IPLUS:
+            if ijkdir[n] == MatchDir.IPLUS:
                 perm[n] = 0
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.JPLUS:
+            elif ijkdir[n] == MatchDir.JPLUS:
                 perm[n] = 1
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.KPLUS:
+            elif ijkdir[n] == MatchDir.KPLUS:
                 perm[n] = 2
                 flip[n] = 0
-            elif self.ijkdir[n] == MatchDir.IMINUS:
+            elif ijkdir[n] == MatchDir.IMINUS:
                 perm[n] = 0
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.JMINUS:
+            elif ijkdir[n] == MatchDir.JMINUS:
                 perm[n] = 1
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.KMINUS:
+            elif ijkdir[n] == MatchDir.KMINUS:
                 perm[n] = 2
                 flip[n] = 1
-            elif self.ijkdir[n] == MatchDir.CONST:
-                perm[n] = n
+            elif ijkdir[n] == MatchDir.CONST:
+                # We must put the const dirn of the next patch here
+                for m in range(3):
+                    if ijkdir_match[m] == MatchDir.CONST:
+                        perm[n] = m
                 flip[n] = 0
 
         perm = np.insert(perm + 1, 0, 0)
         flip = np.where(np.insert(flip, 0, 0))[0]
 
+        return perm, flip
+
+    def get_match_cut(self, offset=0):
+
         Cnx = self.match.get_cut(offset)
+        perm, flip = self.get_match_perm_flip()
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
 
         return Cnx
@@ -1247,7 +1268,7 @@ class InletPatch(Patch):
     force_type = None
     amplitude = 0.0
     phase = 0.0
-    store = None
+    rho_store = None
 
 
 class InviscidPatch(Patch):

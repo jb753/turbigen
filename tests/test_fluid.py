@@ -327,6 +327,9 @@ def test_set_properties(S1):
     S2.set_rho_u(S1.rho, S1.u)
     assert S1 == S2
 
+    S2.set_rho_s(S1.rho, S1.s)
+    assert S1 == S2
+
     Ma_ref = 0.6
     So2 = S2.to_stagnation(Ma_ref)
     S2a = So2.to_static(Ma_ref)
