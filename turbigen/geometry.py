@@ -770,12 +770,12 @@ class Blade:
 
         return xrtcam
 
-    def get_LE_cent(self, spf):
+    def get_LE_cent(self, spf, fac_Rle=1.):
         """Get the centre of the leading edge."""
 
         # Make a meridional grid vector for just the le
         cam, thick = self._get_cam_thick(spf)
-        Rle = thick.R_LE
+        Rle = thick.R_LE/fac_Rle
         m = util.cluster_cosine(500)
 
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)

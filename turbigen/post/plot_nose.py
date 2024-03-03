@@ -95,7 +95,6 @@ def post(grid, machine, meanline, postdir, row_spf):
             Cpmin = turbigen.util.qinv(Cpall, 0.001)
             Cpmax = turbigen.util.qinv(Cpall, 0.999)
             lev_Cp = np.linspace(Cpmin, Cpmax, 20)
-            print(Cpmax, Cpmin)
 
             for b in cut:
 

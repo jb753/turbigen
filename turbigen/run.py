@@ -181,6 +181,10 @@ def run_single(conf, gguess=None, plot=False):
                 logger.debug(f"Vortex exponent irow={irow} is {vexpon_row}")
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
             Chi = Alpha_rel + qstar_camber[:, :2]
+            if np.any(np.abs(Chi)>90.):
+                raise Exception(f'Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}')
+            else:
+                print(f'Chi OK, Chi={Chi}')
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
             row["q_camber"] = q_camber
@@ -723,7 +727,8 @@ def run_single(conf, gguess=None, plot=False):
     if inc_conf := conf.iterate.get("incidence"):
 
         # Evaluate incidence
-        data = turbigen.util.incidence(g, mac, ml)
+        fac_Rle = inc_conf.get("fac_RLE", 1.0)
+        data = turbigen.util.incidence(g, mac, ml, fac_Rle)
 
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)

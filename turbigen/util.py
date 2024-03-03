@@ -1303,7 +1303,7 @@ def node_to_face3(x):
     return xi, xj, xk
 
 
-def stagnation_point_angle(grid, machine, meanline):
+def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.):
 
     surfs = grid.cut_blade_surfs()
 
@@ -1328,7 +1328,7 @@ def stagnation_point_angle(grid, machine, meanline):
             # Get coordinates of LE center
             bldnow = machine.split[irow] if jbld else machine.bld[irow]
             xrt_cent = np.stack(
-                [bldnow.get_LE_cent(spf[j]).squeeze() for j in range(nj)],
+                [bldnow.get_LE_cent(spf[j], fac_Rle).squeeze() for j in range(nj)],
                 axis=-1,
             )
 
@@ -1337,7 +1337,8 @@ def stagnation_point_angle(grid, machine, meanline):
 
             # Multiply theta component by reference radius
             dxrrt = dxrt.copy()
-            dxrrt[2] *= 0.5 * (xrt_cent + xrt_stag)[1]
+            rref = 0.5 * (xrt_cent + xrt_stag)[1]
+            dxrrt[2] *= rref
 
             # Calculate angle
             denom = np.sqrt(dxrrt[0] ** 2 + dxrrt[1] ** 2)
@@ -1352,9 +1353,9 @@ def stagnation_point_angle(grid, machine, meanline):
     return chi_stag
 
 
-def incidence(grid, machine, meanline):
+def incidence(grid, machine, meanline, fac_Rle=1.):
 
-    chi_stag_all = stagnation_point_angle(grid, machine, meanline)
+    chi_stag_all = stagnation_point_angle(grid, machine, meanline, fac_Rle)
 
     out = []
 
