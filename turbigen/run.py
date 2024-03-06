@@ -183,8 +183,6 @@ def run_single(conf, gguess=None, plot=False):
             Chi = Alpha_rel + qstar_camber[:, :2]
             if np.any(np.abs(Chi)>90.):
                 raise Exception(f'Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}')
-            else:
-                print(f'Chi OK, Chi={Chi}')
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
             row["q_camber"] = q_camber
