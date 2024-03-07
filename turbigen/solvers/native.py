@@ -20,6 +20,9 @@ logger.setLevel(level=logging.INFO)
 
 #     _name = "Native"
 
+def flatwhere(x):
+    return np.where(x.reshape(-1,order='F'))[0]
+
 nstep_dt = 100
 nstep_log = 100
 nstep = 8000
@@ -33,12 +36,59 @@ sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
 
+class SolverBlock():
+    """Hold just the data we need for a CFD solution."""
+
+    def __init__(self, block):
+        """Initialise from a standard Block object."""
+
+        # Primaries
+        self.conserved = np.asfortranarray(np.moveaxis(block.conserved,0,-1))
+
+        # Secondaries
+        self.P = np.asfortranarray(block.P)
+        self.ho = np.asfortranarray(block.ho)
+
+        # Geometry
+        self.r = np.asfortranarray(block.r)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1))
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1))
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1))
+        self.vol = np.asfortranarray(block.vol)
+        self.dlmin = np.asfortranarray(block.dlmin)
+        self.Omega = block.Omega.mean()
+
+        # Get wall indicators
+        # These are three arrays of shape
+        #   i faces: (ni, nj-1, nk-1)
+        #   j faces: (ni-1, nj, nk-1)
+        #   k faces: (ni-1, nj-1, nk)
+        # equal to one if the face is a wall, zero otherwise
+        wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
+
+        # Convert wall indicators to wall indices
+        # Which are indices into the flattend face arrays
+        self.walls = [flatwhere(w > 0.99) for w in wall_indicators]
+
+        self.inlets = []
+        for patch in block.inlet_patches:
+            ijk = patch.get_indices()  # ijk indices for all points on patch
+            iflat = np.ravel_multi_index(ijk, block.shape, order='F').reshape(-1, order='F')
+            xflat = block.r.reshape(-1,order='F')[iflat]
+            xcut = patch.get_cut().r.reshape(-1,order='F')
+            print(xflat.shape)
+            print(xcut.shape)
+            assert np.allclose(xflat, xcut)
+        quit()
 
 # @profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
     nodes = np.sum([b.size for b in grid])
+
+    sb = SolverBlock(grid[0])
+    quit()
 
     logger.info("Starting native solver...")
 

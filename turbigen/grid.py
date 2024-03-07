@@ -1133,6 +1133,17 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
+    def get_indices(self):
+        # Return ijk indices over the patch
+        nijk = np.tile(np.reshape(self.block.shape,(3,1)),(1,2))
+        ijk_lim = self.ijk_limits.copy()
+        ijk_lim[ijk_lim<0] = (nijk + ijk_lim)[ijk_lim<0]
+        ijk_lim[:,1] += 1
+        ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
+        ijk = tuple(np.meshgrid(*ijkv,indexing='ij'))
+        return ijk
+
+
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
 

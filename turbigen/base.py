@@ -535,6 +535,24 @@ class Kinematics:
         return np.diff(self.xrrt, axis=3)
 
     @dependent_property
+    def dlmin(self):
+
+        # Shortest side length
+        dli = turbigen.util.vecnorm(self.dli)
+        dlj = turbigen.util.vecnorm(self.dlj)
+        dlk = turbigen.util.vecnorm(self.dlk)
+        dli = 0.25 * (
+            dli[:, :-1, :-1] + dli[:, :-1, 1:] + dli[:, 1:, :-1] + dli[:, :-1, :-1]
+        )
+        dlj = 0.25 * (
+            dlj[:-1, :, :-1] + dlj[:-1, :, 1:] + dlj[1:, :, :-1] + dlj[:-1, :, :-1]
+        )
+        dlk = 0.25 * (
+            dlk[:-1, :-1, :] + dlk[:-1, 1:, :] + dlk[1:, :-1, :] + dlk[:-1, :-1, :]
+        )
+        return np.minimum(dli, dlj, dlk)
+
+    @dependent_property
     def dAi(self):
         # Vector area for i=const faces
         if not self.ndim == 3:
