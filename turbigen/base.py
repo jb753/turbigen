@@ -685,7 +685,7 @@ class Kinematics:
     @dependent_property
     def tri_area(self):
         if not self.shape[1] == 3:
-            raise Exception("This is not a triangulate cut.")
+            raise Exception("This is not a triangulated cut.")
 
         # Vectors for each side
         qAB = self.xrrt[..., 1] - self.xrrt[..., 0]
@@ -696,6 +696,23 @@ class Kinematics:
         qAC = np.moveaxis(qAC, 0, -1).astype(np.float64)
 
         return 0.5 * np.cross(qAC, qAB).transpose(1, 0)
+
+    def get_triangulation(self):
+        """Generate a matplotlib-compatible triangulation in r-t plane."""
+        if not self.shape[1] == 3:
+            raise Exception("This is not a triangulated cut.")
+
+        ntri, _ = self.shape
+        points, iunique, triangles = np.unique(
+            # np.stack((self.x, self.r, self.t)).reshape(2,-1)
+            self.xrt.reshape(3, -1),
+            axis=1,
+            return_index=True,
+            return_inverse=True,
+        )
+        triangles = triangles.reshape(-1, 3)
+
+        return points, triangles, iunique
 
     #
     # Velocities
@@ -1008,7 +1025,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except:
+            except Exception:
                 istag[j] = 0
 
         return istag

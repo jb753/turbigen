@@ -1303,7 +1303,7 @@ def node_to_face3(x):
     return xi, xj, xk
 
 
-def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.):
+def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
     surfs = grid.cut_blade_surfs()
 
@@ -1353,7 +1353,7 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.):
     return chi_stag
 
 
-def incidence(grid, machine, meanline, fac_Rle=1.):
+def incidence(grid, machine, meanline, fac_Rle=1.0):
 
     chi_stag_all = stagnation_point_angle(grid, machine, meanline, fac_Rle)
 
@@ -1375,22 +1375,37 @@ def incidence(grid, machine, meanline, fac_Rle=1.):
             nsmooth = 10
             sf = 0.5
             for _ in range(nsmooth):
-                chi_avg = 0.5*(chi_stag[:-2]+chi_stag[2:])
-                chi_stag[1:-1] = sf*chi_stag[1:-1]  + (1.-sf)*chi_avg
+                chi_avg = 0.5 * (chi_stag[:-2] + chi_stag[2:])
+                chi_stag[1:-1] = sf * chi_stag[1:-1] + (1.0 - sf) * chi_avg
 
             incidence = chi_stag - chi_metal
 
             out_now = np.stack((spf, incidence, chi_stag, chi_metal))
 
             # Remove results in tip gap
-            out_now[1:,spf>(1.-machine.tip[irow])] = np.nan
+            out_now[1:, spf > (1.0 - machine.tip[irow])] = np.nan
 
             out[-1].append(out_now)
 
     return out
 
-def qinv(x,q):
+
+def qinv(x, q):
     xs = np.sort(x)
     n = len(x)
-    irel = np.linspace(0.,n-1,n)/(n-1)
+    irel = np.linspace(0.0, n - 1, n) / (n - 1)
     return np.interp(q, irel, xs)
+
+
+def clipped_levels(x, dx=None, thresh=0.001):
+
+    xmin = qinv(x, thresh)
+    xmax = qinv(x, 1.0 - thresh)
+    if dx:
+        xmin = np.floor(xmin / dx) * dx
+        xmax = np.ceil(xmax / dx) * dx
+        xlev = np.arange(xmin, xmax + dx, dx)
+    else:
+        xlev = np.linspace(xmin, xmax, 20)
+
+    return xlev

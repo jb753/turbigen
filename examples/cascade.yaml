@@ -59,6 +59,9 @@ solver:
   # ...
 
 post_process:
+  contour_Yp:
+    mnorm_traverse: [2.1,]
+    coord_sys: yz
   plot_nose:
     row_spf: [[0.6,],]
   plot_pressure_distributions:

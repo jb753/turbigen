@@ -46,9 +46,6 @@ def post(grid, machine, meanline, postdir, row_spf):
 
             xr_row = machine.ann.xr_row(irow)
 
-            # Get spf along LE
-            xr_LE = xr_row(np.linspace(0.0, 1.0, 200), np.atleast_1d(0.0))
-
             surf = grid.cut_blade_surfs()[irow][0].squeeze()
             spf_blade = surf.spf[:, jspf]
             spf_actual = spf_blade[surf.i_stag[jspf]]
@@ -80,10 +77,8 @@ def post(grid, machine, meanline, postdir, row_spf):
             # fig3, ax3 = plt.subplots()
             # ax3.axis('equal')
             Pall = np.concatenate([b.P.reshape(-1) for b in cut])
-            tall = np.concatenate([b.t.reshape(-1) for b in cut])
             mpall = np.concatenate([mp_from_xr(b.xr).reshape(-1) for b in cut])
             Pred = Pall[np.abs(mpall) < 0.18]
-            tred = tall[np.abs(mpall) < 0.18]
 
             if Po2 > Po1:
                 # Compressor
@@ -92,9 +87,7 @@ def post(grid, machine, meanline, postdir, row_spf):
                 # Turbine
                 Cpall = (Pred - Po1) / (Po1 - P2)
 
-            Cpmin = turbigen.util.qinv(Cpall, 0.001)
-            Cpmax = turbigen.util.qinv(Cpall, 0.999)
-            lev_Cp = np.linspace(Cpmin, Cpmax, 20)
+            lev_Cp = turbigen.util.clipped_levels(Cpall)
 
             for b in cut:
 
