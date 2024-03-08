@@ -245,6 +245,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def outlet_patches(self):
         return self.find_patches(OutletPatch)
 
+    @property
+    def periodic_patches(self):
+        return self.find_patches(PeriodicPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -1135,14 +1139,17 @@ class Patch:
 
     def get_indices(self):
         # Return ijk indices over the patch
-        nijk = np.tile(np.reshape(self.block.shape,(3,1)),(1,2))
+        nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
         ijk_lim = self.ijk_limits.copy()
-        ijk_lim[ijk_lim<0] = (nijk + ijk_lim)[ijk_lim<0]
-        ijk_lim[:,1] += 1
+        ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+        ijk_lim[:, 1] += 1
         ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
-        ijk = tuple(np.meshgrid(*ijkv,indexing='ij'))
+        ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
         return ijk
 
+    def get_flat_indices(self):
+        # Return indices of all points on patch into self.block.flat
+        return np.ravel_multi_index(self.get_indices(), self.block.shape).reshape(-1)
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1210,6 +1217,16 @@ class PeriodicPatch(Patch):
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
 
         return Cnx
+
+    def get_periodic_data(self):
+        ind = self.get_flat_indices()
+        match = self.match
+        # perm, flip = match.get_match_perm_flip()
+        # nxijk = np.flip(np.array(match.get_indices()).transpose(perm), axis=flip)
+        nxind = match.get_flat_indices()
+        bid = self.block.grid.index(self.block)
+        nxbid = match.block.grid.index(match.block)
+        return bid, ind, nxbid, nxind
 
 
 class PorousPatch(PeriodicPatch):
@@ -1281,6 +1298,18 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
 
+    def get_inlet_data(self):
+        return (
+            self.get_flat_indices(),
+            self.state.P + 0.0,
+            self.state.T + 0.0,
+            self.Alpha + 0.0,
+            self.Beta + 0.0,
+            self.state.rho,
+            self.state.h,
+            self.get_cut().r.reshape(-1),
+        )
+
 
 class InviscidPatch(Patch):
     pass
@@ -1293,6 +1322,9 @@ class OutletPatch(Patch):
     force = False
     amplitude = 0.0
     phase = 0.0
+
+    def get_outlet_data(self):
+        return self.get_flat_indices(), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):

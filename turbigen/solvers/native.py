@@ -1,5 +1,8 @@
 import numpy as np
 import turbigen.util
+import turbigen.fluid
+import turbigen.flowfield
+import turbigen.grid
 from turbigen.compiled import (
     smooth,
     node_to_cell,
@@ -20,14 +23,18 @@ logger.setLevel(level=logging.INFO)
 
 #     _name = "Native"
 
+
 def flatwhere(x):
-    return np.where(x.reshape(-1,order='F'))[0]
+    return np.where(x.flat)[0]
+
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 8000
+nstep = 4000
 nrk = 4
 dampin = 10.0
+rfin = 0.2
+rfin1 = 1.0 - rfin
 
 sfin = 0.001
 fac_2nd = 0.2
@@ -36,18 +43,21 @@ sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
 
-class SolverBlock():
+
+class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
     def __init__(self, block):
         """Initialise from a standard Block object."""
 
         # Primaries
-        self.conserved = np.asfortranarray(np.moveaxis(block.conserved,0,-1))
+        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1))
 
-        # Secondaries
-        self.P = np.asfortranarray(block.P)
         self.ho = np.asfortranarray(block.ho)
+        self.P = np.asfortranarray(block.P)
+
+        self.Vxrt = np.asfortranarray(np.moveaxis(block.Vxrt, 0, -1))
+        self.u = np.asfortranarray(block.u)
 
         # Geometry
         self.r = np.asfortranarray(block.r)
@@ -58,28 +68,165 @@ class SolverBlock():
         self.dlmin = np.asfortranarray(block.dlmin)
         self.Omega = block.Omega.mean()
 
+        self.dU1 = self.conserved.copy(order="F") * np.nan
+        self.dU2 = self.conserved.copy(order="F") * np.nan
+        self._flag_scree = False
+
         # Get wall indicators
         # These are three arrays of shape
         #   i faces: (ni, nj-1, nk-1)
         #   j faces: (ni-1, nj, nk-1)
         #   k faces: (ni-1, nj-1, nk)
         # equal to one if the face is a wall, zero otherwise
-        wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
+        self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
 
         # Convert wall indicators to wall indices
         # Which are indices into the flattend face arrays
-        self.walls = [flatwhere(w > 0.99) for w in wall_indicators]
+        self.walls = [flatwhere(w > 0.99) for w in self.wall_indicators]
 
-        self.inlets = []
-        for patch in block.inlet_patches:
-            ijk = patch.get_indices()  # ijk indices for all points on patch
-            iflat = np.ravel_multi_index(ijk, block.shape, order='F').reshape(-1, order='F')
-            xflat = block.r.reshape(-1,order='F')[iflat]
-            xcut = patch.get_cut().r.reshape(-1,order='F')
-            print(xflat.shape)
-            print(xcut.shape)
-            assert np.allclose(xflat, xcut)
-        quit()
+        self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
+        self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
+
+        if isinstance(block, turbigen.grid.PerfectBlock):
+            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F")
+            self.state._metadata = block._metadata
+            self.state.set_rho_u(block.rho, block.u)
+            self.state_inlets = [
+                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F")
+                for inlet in self.inlets
+            ]
+        else:
+            raise NotImplementedError()
+
+        # Preallocate stored inlet density
+        for inlet, state_inlet in zip(self.inlets, self.state_inlets):
+            state_inlet._metadata = block._metadata
+            rho_inlet = block.rho.flat[inlet[0]]
+            u_inlet = block.u.flat[inlet[0]]
+            state_inlet.set_rho_u(rho_inlet, u_inlet)
+
+    def set_inlets(self):
+        """Set conserved variables on inlets by relaxing density changes."""
+
+        # Change inlet patches
+        for patch, state in zip(self.inlets, self.state_inlets):
+
+            # Expand patch data
+            ind, Po, To, Alpha, Beta, rhoo, ho, r = patch
+
+            # Relax changes in density
+            rho_now = rfin * self.conserved[..., 0].flat[ind] + rfin1 * state.rho
+
+            # Check for flow reversal
+            rho_now[rho_now > rhoo] = rhoo * 0.99999
+
+            # Isentropic expansion from stagnation state
+            state.set_rho_s(rho_now, state.s)
+
+            # Pull out vars we need
+            h, u, P = state.h, state.u, state.P
+
+            # Get the velocity
+            dhin = ho - h
+            Vinsq = 2.0 * dhin
+            Vin = np.sqrt(Vinsq)
+
+            # Resolve velocity components
+            tanAlpha = turbigen.util.tand(Alpha)
+            tanBeta = turbigen.util.tand(Beta)
+            Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
+            Vrin = Vxin * tanBeta
+            Vmin = np.sqrt(Vxin**2 + Vrin**2)
+            Vtin = Vmin * tanAlpha
+
+            # Reset conserved vars on inlet
+            self.conserved[..., 0].flat[ind] = rho_now  # rho
+            self.conserved[..., 1].flat[ind] = rho_now * Vxin  # rhoVx
+            self.conserved[..., 2].flat[ind] = rho_now * Vrin  # rhoVr
+            self.conserved[..., 3].flat[ind] = rho_now * r * Vtin  # rhorVt
+            self.conserved[..., 4].flat[ind] = rho_now * (u + 0.5 * Vinsq)  # rhoe
+
+            # Reset pressure and hstag on inlet
+            self.ho.flat[ind] = h + 0.5 * Vin**2
+            self.P.flat[ind] = P
+
+    def set_outlets(self):
+        """Set static pressure on outlets."""
+        for outlet in self.outlets:
+            self.P.flat[outlet[0]] = outlet[1]
+
+    def set_timestep(self):
+        Vx = self.conserved[..., 1] / self.conserved[..., 0]
+        Vr = self.conserved[..., 2] / self.conserved[..., 0]
+        Vt = self.conserved[..., 3] / self.conserved[..., 0] / self.r
+        V = np.sqrt(Vx**2 + Vr**2 + Vt**2)
+
+        a = self.state.a
+
+        ni, nj, nk = self.r.shape
+
+        Va_node = np.asfortranarray(np.stack((V, a), axis=-1))
+        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
+        node_to_cell(Va_node, Va_cell)
+        Vref = Va_cell[..., 0]
+        aref = Va_cell[..., 1]
+        self.dt = CFL * self.dlmin / (aref + Vref)
+
+    def step(self):
+
+        Phor = np.asfortranarray(np.stack((self.P, self.ho, self.r), axis=-1))
+        step(
+            self.conserved,
+            Phor,
+            self.Omega,
+            *self.wall_indicators,
+            self.dt,
+            self.dAi,
+            self.dAj,
+            self.dAk,
+            self.vol,
+            self.dU1,
+        )
+
+        if self._flag_scree:
+            self.conserved += 2.0 * self.dU1 - self.dU2
+        else:
+            self.conserved += self.dU1
+            self._flag_scree = True
+
+        self.dU2[:] = self.dU1
+
+        calculate_secondary(Phor[..., 2], self.conserved, self.Vxrt, self.u)
+
+        self.state.set_rho_u(self.conserved[..., 0], self.u)
+
+        Vsq = np.sum(self.Vxrt**2, axis=-1)
+        self.ho[:] = self.state.h + 0.5 * Vsq
+        self.P[:] = self.state.P
+
+    def smooth(self):
+        smooth(self.conserved, sf2, sf4)
+
+
+# def set_periodic(g)
+def get_periodics(g):
+
+    periodics = []
+    seen = []
+
+    for patch in g.periodic_patches:
+
+        if patch in seen:
+            continue
+        else:
+            seen.append(patch)
+            seen.append(patch.match)
+
+        periodics.append(patch.get_periodic_data())
+
+    return periodics
+    # [patch.get_periodic_data() for patch in block.periodic_patches]
+
 
 # @profile
 def run(grid, settings={}, machine=None):
@@ -87,131 +234,80 @@ def run(grid, settings={}, machine=None):
     nblock = len(grid)
     nodes = np.sum([b.size for b in grid])
 
-    sb = SolverBlock(grid[0])
+    sg = [SolverBlock(b) for b in grid]
+    periodics = get_periodics(grid)
+    print(len(periodics))
+    print(periodics[0])
     quit()
 
+    # sb.set_outlets()
+    # sb.set_inlets()
+    # sb.set_timestep()
+    # sb.step()
+    # quit()
+
     logger.info("Starting native solver...")
-
-    # Calculate areas etc just once
-    logger.info("Calculating geometry...")
-
-    geom = [get_geom(b) for b in grid]
 
     logger.info("Starting the main time-stepping loop...")
 
     tstart = timer()
 
-    # # Pre-allocate residuals
-    # dU_last = [np.full(b.conserved.shape) for b in grid]
-    # dU = [np.full(b.conserved.shape) for b in grid]
-
-    # Pre-allocate secondaries
-    Vxrt = [np.empty(b.shape + (3,), order="F") for b in grid]
-    u = [np.empty(b.shape, order="F") for b in grid]
-    dU = [np.empty(b.shape + (5,), order="F") for b in grid]
-    dU_last = [np.empty(b.shape + (5,), order="F") for b in grid]
-    mdot_all = np.empty((nstep // nstep_log, 2))
-
     # Start the main time stepping loop
     for istep in range(nstep):
 
         # Update periodic boundaries
-        grid.apply_periodic()
-
-        # Update time stegs
-        if not np.mod(istep, nstep_dt):
-            dt = [
-                get_timestep(grid[iblock], geom[iblock][4]) for iblock in range(nblock)
-            ]
+        # grid.apply_periodic()
 
         # Loop over blocks
         for iblock in range(nblock):
 
-            b = grid[iblock]
+            sb = sg[iblock]
 
-            dAi, dAj, dAk, vol, dlmin, wall, Omega = geom[iblock]
+            # Update time stegs
+            if not np.mod(istep, nstep_dt):
+                sb.set_timestep()
+                print(sb.dt.min(), sb.dt.max())
 
-            conserved, Phor = apply_bconds(b)
+            sb.set_inlets()
 
-            step(
-                conserved,
-                Phor,
-                Omega,
-                *wall,
-                dt[iblock],
-                dAi,
-                dAj,
-                dAk,
-                vol,
-                dU[iblock],
-            )
+            sb.set_outlets()
 
-            if istep == 0:
+            sb.step()
 
-                conserved += dU[iblock]
-
-            else:
-
-                conserved += 2.0 * dU[iblock] - dU_last[iblock]
-
-            dU_last[iblock][:] = dU[iblock]
-
-            smooth(conserved, sf2, sf4)
-
-            b._conserved_store = conserved
-
-            calculate_secondary(Phor[..., 2], conserved, Vxrt[iblock], u[iblock])
-
-            b.Vxrt = np.moveaxis(Vxrt[iblock], -1, 0)
-
-            try:
-                b.set_rho_u(conserved[..., 0], u[iblock])
-            except Exception as e:
-
-                print(e)
-
-                ijkmax = np.argmax(grid[0].V)
-                imax, jmax, kmax = np.unravel_index(ijkmax, grid[0].shape)
-
-                import matplotlib.pyplot as plt
-
-                fig, ax = plt.subplots()
-                bb = grid[0][:, jmax, :].squeeze()
-                cm = ax.contourf(bb.x, bb.rt, bb.Ma)
-                ax.plot(grid[0].x.flat[ijkmax], grid[0].rt.flat[ijkmax], "k*")
-                plt.colorbar(cm)
-                plt.show()
-                # quit()
+            sb.smooth()
 
             if not np.mod(istep, nstep_log):
 
-                log_line = f"{istep}: {np.abs(dU[0]).mean(axis=(0,1,2))}"
+                log_line = f"{istep}: {np.abs(sb.dU1).mean(axis=(0,1,2))}"
                 logger.info(log_line)
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / nstep_log
                 logger.info(f"tpnps={tpnps:.3e}")
                 tstart = ten
 
-                mdot_in = 0.0
-                for patch in grid.inlet_patches:
-                    Cm, Ann, _ = patch.get_cut().mix_out()
-                    mdot_in += Cm.rho * Cm.Vm * Ann
+                # mdot_in = 0.0
+                # for patch in grid.inlet_patches:
+                #     Cm, Ann, _ = patch.get_cut().mix_out()
+                #     mdot_in += Cm.rho * Cm.Vm * Ann
 
-                mdot_out = 0.0
-                for patch in grid.outlet_patches:
-                    Cm, Ann, _ = patch.get_cut().mix_out()
-                    mdot_out += Cm.rho * Cm.Vm * Ann
-                    print(
-                        f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
-                        f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
-                    )
-                    mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
+                # mdot_out = 0.0
+                # for patch in grid.outlet_patches:
+                #     Cm, Ann, _ = patch.get_cut().mix_out()
+                #     mdot_out += Cm.rho * Cm.Vm * Ann
+                #     print(
+                #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
+                #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
+                #     )
+                #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots()
-    ax.plot(mdot_all / mdot_all[-1].mean())
-    plt.show()
+    # fig, ax = plt.subplots()
+    # ax.plot(mdot_all / mdot_all[-1].mean())
+    # plt.show()
+
+    for b, sb in zip(grid, sg):
+        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
 
 
 def get_geom(b):

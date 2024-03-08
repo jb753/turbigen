@@ -31,10 +31,10 @@ class StructuredData:
     _read_only = False
     _data_rows = ()
 
-    def __init__(self, shape=()):
+    def __init__(self, shape=(), order="C"):
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
-        self._data = np.full((self.nprop,) + shape, np.nan)
+        self._data = np.full((self.nprop,) + shape, np.nan, order=order)
         self._metadata = {}
         self._dependent_property_cache = {}
 

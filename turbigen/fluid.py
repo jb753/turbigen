@@ -258,7 +258,7 @@ class PerfectState(StructuredData):
     def u(self, value):
         val_array = np.array(value)
         if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative u={value}")
+            raise Exception(f"Cannot set negative u={value.min()}")
         self._set_data_by_key("u", val_array)
 
     @dependent_property
@@ -298,8 +298,8 @@ class PerfectState(StructuredData):
 
     def set_P_T(self, P, T):
         u = self.cv * T
-        rho = P/self.rgas/T
-        return self.set_rho_u(rho,u)
+        rho = P / self.rgas / T
+        return self.set_rho_u(rho, u)
 
     def set_P_s(self, P, s):
         T = self.Tref * np.exp((s + self.rgas * np.log(P / self.Pref)) / self.cp)
@@ -331,8 +331,8 @@ class PerfectState(StructuredData):
 
     def set_rho_s(self, rho, s):
         uref = self.cv * self.Tref
-        rhoref = self.Pref/self.rgas/self.Tref
-        u = uref * np.exp((s + self.rgas*np.log(rho/rhoref))/self.cv)
+        rhoref = self.Pref / self.rgas / self.Tref
+        u = uref * np.exp((s + self.rgas * np.log(rho / rhoref)) / self.cv)
         self.set_rho_u(rho, u)
         return self
 
