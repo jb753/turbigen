@@ -1147,9 +1147,23 @@ class Patch:
         ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
         return ijk
 
-    def get_flat_indices(self):
+    def get_flat_indices(self, extra_dim=0, perm=None, flip=None):
         # Return indices of all points on patch into self.block.flat
-        return np.ravel_multi_index(self.get_indices(), self.block.shape).reshape(-1)
+        ijk = self.get_indices()
+        shape = self.block.shape
+        if extra_dim:
+            # ijk += np.full_like(ijk[
+            ijk = [ np.tile(np.expand_dims(ijki,-1),(1,1,1,extra_dim)) for ijki in ijk]
+            ijk.append( np.tile(np.arange(0,extra_dim).reshape(1,1,1,-1), (*ijk[0].shape[:-1],1) ))
+            shape += (extra_dim,)
+
+        ind = np.ravel_multi_index(ijk, shape)
+        if not perm is None:
+            perm = perm[1:] - 1
+            if extra_dim:
+                perm = np.append(perm, 3)
+            ind = np.flip(ind.transpose(perm), axis=flip)
+        return ind
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1219,11 +1233,11 @@ class PeriodicPatch(Patch):
         return Cnx
 
     def get_periodic_data(self):
-        ind = self.get_flat_indices()
+        ind = self.get_flat_indices(extra_dim=5)
         match = self.match
-        # perm, flip = match.get_match_perm_flip()
+        perm, flip = match.get_match_perm_flip()
         # nxijk = np.flip(np.array(match.get_indices()).transpose(perm), axis=flip)
-        nxind = match.get_flat_indices()
+        nxind = match.get_flat_indices(extra_dim=5, perm=perm, flip=flip)
         bid = self.block.grid.index(self.block)
         nxbid = match.block.grid.index(match.block)
         return bid, ind, nxbid, nxind

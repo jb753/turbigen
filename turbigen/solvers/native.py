@@ -208,7 +208,6 @@ class SolverBlock:
         smooth(self.conserved, sf2, sf4)
 
 
-# def set_periodic(g)
 def get_periodics(g):
 
     periodics = []
@@ -225,8 +224,15 @@ def get_periodics(g):
         periodics.append(patch.get_periodic_data())
 
     return periodics
-    # [patch.get_periodic_data() for patch in block.periodic_patches]
 
+def set_periodics(sg, periodics):
+
+    for patch in periodics:
+
+        bid, ind, nxbid, nxind = patch
+        avg = 0.5*(sg[bid].conserved.flat[ind] + sg[nxbid].conserved.flat[nxind])
+        sg[bid].conserved.flat[ind] = avg
+        sg[nxbid].conserved.flat[nxind] = avg
 
 # @profile
 def run(grid, settings={}, machine=None):
@@ -236,9 +242,11 @@ def run(grid, settings={}, machine=None):
 
     sg = [SolverBlock(b) for b in grid]
     periodics = get_periodics(grid)
-    print(len(periodics))
-    print(periodics[0])
-    quit()
+
+
+    # print(len(periodics))
+    # print(periodics[0])
+    # quit()
 
     # sb.set_outlets()
     # sb.set_inlets()
@@ -256,7 +264,7 @@ def run(grid, settings={}, machine=None):
     for istep in range(nstep):
 
         # Update periodic boundaries
-        # grid.apply_periodic()
+        # set_periodics(sg, periodics)
 
         # Loop over blocks
         for iblock in range(nblock):
