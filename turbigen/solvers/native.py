@@ -101,8 +101,8 @@ class SolverBlock:
         # Preallocate stored inlet density
         for inlet, state_inlet in zip(self.inlets, self.state_inlets):
             state_inlet._metadata = block._metadata
-            rho_inlet = block.rho.flat[inlet[0]]
-            u_inlet = block.u.flat[inlet[0]]
+            rho_inlet = block.rho.ravel(order='F')[inlet[0]]
+            u_inlet = block.u.ravel(order='F')[inlet[0]]
             state_inlet.set_rho_u(rho_inlet, u_inlet)
 
     def set_inlets(self):
@@ -115,7 +115,7 @@ class SolverBlock:
             ind, Po, To, Alpha, Beta, rhoo, ho, r = patch
 
             # Relax changes in density
-            rho_now = rfin * self.conserved[..., 0].flat[ind] + rfin1 * state.rho
+            rho_now = rfin * self.conserved[..., 0].ravel(order='F')[ind] + rfin1 * state.rho
 
             # Check for flow reversal
             rho_now[rho_now > rhoo] = rhoo * 0.99999
@@ -140,20 +140,20 @@ class SolverBlock:
             Vtin = Vmin * tanAlpha
 
             # Reset conserved vars on inlet
-            self.conserved[..., 0].flat[ind] = rho_now  # rho
-            self.conserved[..., 1].flat[ind] = rho_now * Vxin  # rhoVx
-            self.conserved[..., 2].flat[ind] = rho_now * Vrin  # rhoVr
-            self.conserved[..., 3].flat[ind] = rho_now * r * Vtin  # rhorVt
-            self.conserved[..., 4].flat[ind] = rho_now * (u + 0.5 * Vinsq)  # rhoe
+            self.conserved[..., 0].ravel(order='F')[ind] = rho_now  # rho
+            self.conserved[..., 1].ravel(order='F')[ind] = rho_now * Vxin  # rhoVx
+            self.conserved[..., 2].ravel(order='F')[ind] = rho_now * Vrin  # rhoVr
+            self.conserved[..., 3].ravel(order='F')[ind] = rho_now * r * Vtin  # rhorVt
+            self.conserved[..., 4].ravel(order='F')[ind] = rho_now * (u + 0.5 * Vinsq)  # rhoe
 
             # Reset pressure and hstag on inlet
-            self.ho.flat[ind] = h + 0.5 * Vin**2
-            self.P.flat[ind] = P
+            self.ho.ravel(order='F')[ind] = h + 0.5 * Vin**2
+            self.P.ravel(order='F')[ind] = P
 
     def set_outlets(self):
         """Set static pressure on outlets."""
         for outlet in self.outlets:
-            self.P.flat[outlet[0]] = outlet[1]
+            self.P.ravel(order='F')[outlet[0]] = outlet[1]
 
     def set_timestep(self):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -172,6 +172,7 @@ class SolverBlock:
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
 
+    @profile
     def step(self):
 
         Phor = np.asfortranarray(np.stack((self.P, self.ho, self.r), axis=-1))
@@ -230,11 +231,15 @@ def set_periodics(sg, periodics):
     for patch in periodics:
 
         bid, ind, nxbid, nxind = patch
-        avg = 0.5*(sg[bid].conserved.flat[ind] + sg[nxbid].conserved.flat[nxind])
-        sg[bid].conserved.flat[ind] = avg
-        sg[nxbid].conserved.flat[nxind] = avg
 
-# @profile
+        for i in range(5):
+            conserved1 = sg[bid].conserved[...,i].ravel(order='F')
+            conserved2 = sg[nxbid].conserved[...,i].ravel(order='F')
+            avg = 0.5*(conserved1[ind] + conserved2[nxind])
+            conserved1[ind] = avg
+            conserved2[nxind] = avg
+
+@profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
@@ -264,7 +269,7 @@ def run(grid, settings={}, machine=None):
     for istep in range(nstep):
 
         # Update periodic boundaries
-        # set_periodics(sg, periodics)
+        set_periodics(sg, periodics)
 
         # Loop over blocks
         for iblock in range(nblock):

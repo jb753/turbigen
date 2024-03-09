@@ -1147,23 +1147,15 @@ class Patch:
         ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
         return ijk
 
-    def get_flat_indices(self, extra_dim=0, perm=None, flip=None):
+    def get_flat_indices(self, order='C', perm=None, flip=None):
         # Return indices of all points on patch into self.block.flat
         ijk = self.get_indices()
         shape = self.block.shape
-        if extra_dim:
-            # ijk += np.full_like(ijk[
-            ijk = [ np.tile(np.expand_dims(ijki,-1),(1,1,1,extra_dim)) for ijki in ijk]
-            ijk.append( np.tile(np.arange(0,extra_dim).reshape(1,1,1,-1), (*ijk[0].shape[:-1],1) ))
-            shape += (extra_dim,)
-
-        ind = np.ravel_multi_index(ijk, shape)
+        ind = np.ravel_multi_index(ijk, shape, order=order)
         if not perm is None:
             perm = perm[1:] - 1
-            if extra_dim:
-                perm = np.append(perm, 3)
             ind = np.flip(ind.transpose(perm), axis=flip)
-        return ind
+        return ind.reshape(-1)
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1233,11 +1225,11 @@ class PeriodicPatch(Patch):
         return Cnx
 
     def get_periodic_data(self):
-        ind = self.get_flat_indices(extra_dim=5)
+        ind = self.get_flat_indices(order='F')
         match = self.match
         perm, flip = match.get_match_perm_flip()
         # nxijk = np.flip(np.array(match.get_indices()).transpose(perm), axis=flip)
-        nxind = match.get_flat_indices(extra_dim=5, perm=perm, flip=flip)
+        nxind = match.get_flat_indices('F', perm, flip)
         bid = self.block.grid.index(self.block)
         nxbid = match.block.grid.index(match.block)
         return bid, ind, nxbid, nxind
@@ -1314,7 +1306,7 @@ class InletPatch(Patch):
 
     def get_inlet_data(self):
         return (
-            self.get_flat_indices(),
+            self.get_flat_indices(order='F'),
             self.state.P + 0.0,
             self.state.T + 0.0,
             self.Alpha + 0.0,
@@ -1338,7 +1330,7 @@ class OutletPatch(Patch):
     phase = 0.0
 
     def get_outlet_data(self):
-        return self.get_flat_indices(), (self.Pout + 0.0,)
+        return self.get_flat_indices(order='F'), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):
