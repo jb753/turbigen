@@ -1,6 +1,6 @@
 ! ! Compiled functions to speed up expensive calulations
 
-subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, resid, ni, nj, nk)
+subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, resid1,resid2, start_flag, ni, nj, nk)
 
     implicit none
 
@@ -9,7 +9,8 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     integer, intent (in)  :: nk
 
     real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout) :: resid(ni, nj, nk, 5)
+    real*8, intent (inout) :: resid1(ni, nj, nk, 5)
+    real*8, intent (inout) :: resid2(ni, nj, nk, 5)
     real*8, intent (inout)  :: Phor(ni, nj, nk, 3)
     real*8, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
@@ -20,6 +21,8 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     real*8, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*8, intent (inout)  :: vol(ni-1, nj-1, nk-1)
     real*8, intent (inout)  :: dt(ni-1, nj-1, nk-1)
+
+    integer :: start_flag
 
     integer :: ip
 
@@ -80,7 +83,14 @@ subroutine step(conserved, Phor, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, 
     end do
 
     ! Distribute change to nodes
-    call cell_to_node(resc, resid, ni, nj, nk, 5)
+    call cell_to_node(resc, resid1, ni, nj, nk, 5)
+
+    if (start_flag.eq.1) then
+        conserved = conserved + resid1
+    else
+        conserved = conserved + 2d0*resid1 - resid2
+    end if
+    resid2 = resid1
 
 end subroutine
 

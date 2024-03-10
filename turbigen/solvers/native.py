@@ -173,7 +173,7 @@ class SolverBlock:
         self.dt = CFL * self.dlmin / (aref + Vref)
 
     @profile
-    def step(self):
+    def step(self, start_flag):
 
         Phor = np.asfortranarray(np.stack((self.P, self.ho, self.r), axis=-1))
         step(
@@ -187,15 +187,16 @@ class SolverBlock:
             self.dAk,
             self.vol,
             self.dU1,
+            self.dU2,
+            start_flag
         )
 
-        if self._flag_scree:
-            self.conserved += 2.0 * self.dU1 - self.dU2
-        else:
-            self.conserved += self.dU1
-            self._flag_scree = True
-
-        self.dU2[:] = self.dU1
+        # if self._flag_scree:
+        #     self.conserved += 2.0 * self.dU1 - self.dU2
+        # else:
+        #     self.conserved += self.dU1
+        #     self._flag_scree = True
+        # self.dU2[:] = self.dU1
 
         calculate_secondary(Phor[..., 2], self.conserved, self.Vxrt, self.u)
 
@@ -285,7 +286,8 @@ def run(grid, settings={}, machine=None):
 
             sb.set_outlets()
 
-            sb.step()
+            start_flag = 1 if istep == 0 else 0
+            sb.step(start_flag)
 
             sb.smooth()
 
