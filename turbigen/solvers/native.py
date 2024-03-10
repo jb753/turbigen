@@ -30,7 +30,7 @@ def flatwhere(x):
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 4000
+nstep = 2000
 nrk = 4
 dampin = 10.0
 rfin = 0.2
@@ -56,7 +56,7 @@ class SolverBlock:
         self.ho = np.asfortranarray(block.ho)
         self.P = np.asfortranarray(block.P)
 
-        self.Vxrt = np.asfortranarray(np.moveaxis(block.Vxrt, 0, -1))
+        self.halfVsq = np.asfortranarray(0.5*block.V**2)
         self.u = np.asfortranarray(block.u)
 
         # Geometry
@@ -175,10 +175,11 @@ class SolverBlock:
     @profile
     def step(self, start_flag):
 
-        Phor = np.asfortranarray(np.stack((self.P, self.ho, self.r), axis=-1))
         step(
             self.conserved,
-            Phor,
+            self.P,
+            self.ho,
+            self.r,
             self.Omega,
             *self.wall_indicators,
             self.dt,
@@ -186,24 +187,16 @@ class SolverBlock:
             self.dAj,
             self.dAk,
             self.vol,
+            self.halfVsq,
+            self.u,
             self.dU1,
             self.dU2,
             start_flag
         )
 
-        # if self._flag_scree:
-        #     self.conserved += 2.0 * self.dU1 - self.dU2
-        # else:
-        #     self.conserved += self.dU1
-        #     self._flag_scree = True
-        # self.dU2[:] = self.dU1
-
-        calculate_secondary(Phor[..., 2], self.conserved, self.Vxrt, self.u)
-
         self.state.set_rho_u(self.conserved[..., 0], self.u)
 
-        Vsq = np.sum(self.Vxrt**2, axis=-1)
-        self.ho[:] = self.state.h + 0.5 * Vsq
+        self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
 
     def smooth(self):
@@ -240,7 +233,6 @@ def set_periodics(sg, periodics):
             conserved1[ind] = avg
             conserved2[nxind] = avg
 
-@profile
 def run(grid, settings={}, machine=None):
 
     nblock = len(grid)
