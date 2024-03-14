@@ -103,10 +103,9 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             v = np.clip(v, lev[0], lev[-1])
 
             fig, ax = plt.subplots()
-            cm = ax.tricontourf(c1, c2, v, lev, triangles=triangles, cmap="cubehelix", linestyles="none")
+            cm = ax.tricontourf(c1, c2, v, lev, triangles, cmap="cubehelix", linestyles="none")
 
-            for c in cm.collections:
-                c.set_edgecolor("face")
+            cm.set_edgecolor("face")
 
             ax.axis("equal")
             # ax.axis('tight')
