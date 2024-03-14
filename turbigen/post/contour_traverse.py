@@ -83,10 +83,10 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
 
                 if U[i] == 0.0:
                     Vref = Cu.Vm[iunique].mean()
-                    lab = "Meridional Velocity, $V_m/\overline{V_m}$"
+                    lab = r"Meridional Velocity, $V_m/\overline{V_m}$"
                 else:
                     Vref = U[i]
-                    lab = "Meridional Velocity, $V_m/U$"
+                    lab = r"Meridional Velocity, $V_m/U$"
                 dv = 0.05
                 v = Cu.Vm[iunique] / Vref
 
