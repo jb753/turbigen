@@ -11,11 +11,12 @@ from turbigen.compiled import (
     calculate_secondary,
 )
 from timeit import default_timer as timer
+from mpi4py import MPI
 import logging
 
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.INFO)
+logger.setLevel(level=logging.DEBUG)
 
 
 # class NativeConfig(BaseSolver):
@@ -211,7 +212,7 @@ class SolverBlock:
         smooth(self.conserved, sf2, sf4)
 
 
-def get_periodics(g):
+def get_periodics(g, procids):
 
     periodics = []
     seen = []
@@ -224,52 +225,64 @@ def get_periodics(g):
             seen.append(patch)
             seen.append(patch.match)
 
-        periodics.append(patch.get_periodic_data())
+        bid, ind, nxbid, nxind = patch.get_periodic_data()
+        periodics.append((bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
 
-    # quit()
     return periodics
 
 
-def set_periodics(sg, periodics):
+def set_periodic(b1, b2, ind1, ind2):
+    for i in range(5):
+        conserved1 = b1.conserved[..., i].ravel(order="F")
+        conserved2 = b2.conserved[..., i].ravel(order="F")
+        avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
+        conserved1[ind1] = avg
+        conserved2[ind2] = avg
 
-    for patch in periodics:
+def send_slave(block_split, procids, periodics):
 
-        bid, ind, nxbid, nxind = patch
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
-        # x1 = sg[bid].x.ravel(order='F')[ind]
-        # x2 = sg[nxbid].x.ravel(order='F')[nxind]
-        # assert np.allclose(x1, x2)
+    for iproc in range(1,size):
+        comm.send(block_split[iproc], dest=iproc)
+        comm.send(periodics, dest=iproc)
 
-        for i in range(5):
+def run_slave(blocks=None, periodics_all=None, nodes=None):
 
-            conserved1 = sg[bid].conserved[..., i].ravel(order="F")
-            conserved2 = sg[nxbid].conserved[..., i].ravel(order="F")
-            avg = 0.5 * (conserved1[ind] + conserved2[nxind])
-            conserved1[ind] = avg
-            conserved2[nxind] = avg
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    if blocks is None:
+        blocks = comm.recv()
+        periodics_all = comm.recv()
+
+        master_flag = False
+    else:
+        master_flag = True
 
 
-def run(grid, settings={}, machine=None):
+    # Only keep relevent periodics
+    # And rearrange the periodics so that foreign procid is always nx
+    periodics = []
+    for patch in periodics_all:
+        bid, procid, ind, nxbid, nxprocid, nxind = patch
+        if procid==rank:
+            periodics.append(patch)
+        elif nxprocid==rank:
+            periodics.append((nxbid, nxprocid, nxind, bid, procid, ind))
 
-    nblock = len(grid)
-    nodes = np.sum([b.size for b in grid])
 
-    sg = [SolverBlock(b) for b in grid]
-    periodics = get_periodics(grid)
+    bids = [b.bid for b in blocks]
 
-    # print(len(periodics))
-    # print(periodics[0])
+    # Lookup of local bid from global bid
+    bid_local = {bid: ibid for ibid, bid in enumerate(bids)}
+    # print(f'Rank {rank}, bid={bids}, bid_local={bid_local}')
     # quit()
 
-    # sb.set_outlets()
-    # sb.set_inlets()
-    # sb.set_timestep()
-    # sb.step()
-    # quit()
-
-    logger.info("Starting native solver...")
-
-    logger.info("Starting the main time-stepping loop...")
+    nblock = len(blocks)
 
     tstart = timer()
 
@@ -277,12 +290,28 @@ def run(grid, settings={}, machine=None):
     for istep in range(nstep):
 
         # Update periodic boundaries
-        set_periodics(sg, periodics)
+        for patch in periodics:
+            bid, procid, ind, nxbid, nxprocid, nxind = patch
+            # print(f'Rank {rank}, bid={bid, procid}, nxbid={nxbid, nxprocid}, bid_proc={bids}')
+
+            if nxprocid == rank:
+                set_periodic(blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind)
+                # print(f'Rank {rank} set periodic on self')
+            else:
+                # print(rank, bid, procid, nxbid, nxprocid)
+                for i in range(5):
+                    conserved = blocks[bid_local[bid]].conserved[...,i].ravel(order="F")
+                    nxconserved = np.empty_like(conserved[ind])
+                    comm.Send(conserved[ind], dest=nxprocid)
+                    # print(f'Rank {rank} sent periodic to {nxprocid}')
+                    comm.Recv(nxconserved, source=nxprocid)
+                    # print(f'Rank {rank} recived periodic from {nxprocid}')
+                    conserved[ind] = 0.5*(conserved[ind] + nxconserved)
 
         # Loop over blocks
         for iblock in range(nblock):
 
-            sb = sg[iblock]
+            sb = blocks[iblock]
 
             # Update time stegs
             if not np.mod(istep, nstep_dt):
@@ -297,13 +326,84 @@ def run(grid, settings={}, machine=None):
 
             sb.smooth()
 
-        if not np.mod(istep, nstep_log):
-            log_line = f"{istep}: {np.abs(sg[0].dU1).mean(axis=(0,1,2))}"
+        if not np.mod(istep, nstep_log) and istep > 0 and master_flag:
+            log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
             logger.info(log_line)
             ten = timer()
             tpnps = (ten - tstart) / nodes / nstep_log
             logger.info(f"tpnps={tpnps:.3e}")
             tstart = ten
+
+    if master_flag:
+        return blocks
+
+
+
+def run(grid, settings={}, machine=None):
+
+    nblock = len(grid)
+    nodes = np.sum([b.size for b in grid])
+
+    blocks = [SolverBlock(b) for b in grid]
+    for ib, b in enumerate(blocks):
+        b.bid = ib
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    procids = grid.partition(size)
+    periodics = get_periodics(grid, procids)
+
+    logger.info("Starting native solver...")
+
+    logger.info("Starting the main time-stepping loop...")
+
+    # Split into lists for each procid
+    block_split = []
+    for iproc in range(size):
+        block_split.append([])
+        for ib, b in enumerate(blocks):
+            if iproc==procids[ib]:
+                block_split[-1].append(b)
+
+    send_slave(block_split, procids, periodics)
+
+    blocks[0] = run_slave(block_split[0], periodics, nodes)
+    # tstart = timer()
+    # # Start the main time stepping loop
+    # for istep in range(nstep):
+
+    #     # Update periodic boundaries
+    #     for patch in periodics:
+    #         bid, procid, ind, nxbid, nxprocid, nxind = patch
+    #         set_periodic(blocks[bid], blocks[nxbid], ind, nxind)
+
+    #     # Loop over blocks
+    #     for iblock in range(nblock):
+
+    #         sb = blocks[iblock]
+
+    #         # Update time stegs
+    #         if not np.mod(istep, nstep_dt):
+    #             sb.set_timestep()
+
+    #         sb.set_inlets()
+
+    #         sb.set_outlets()
+
+    #         start_flag = 1 if istep == 0 else 0
+    #         sb.step(start_flag)
+
+    #         sb.smooth()
+
+    #     if not np.mod(istep, nstep_log):
+    #         log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
+    #         logger.info(log_line)
+    #         ten = timer()
+    #         tpnps = (ten - tstart) / nodes / nstep_log
+    #         logger.info(f"tpnps={tpnps:.3e}")
+    #         tstart = ten
 
             # mdot_in = 0.0
             # for patch in grid.inlet_patches:
@@ -326,8 +426,8 @@ def run(grid, settings={}, machine=None):
     # ax.plot(mdot_all / mdot_all[-1].mean())
     # plt.show()
 
-    for b, sb in zip(grid, sg):
-        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
+    # for b, sb in zip(grid, blocks):
+    #     b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
 
 
 def get_geom(b):

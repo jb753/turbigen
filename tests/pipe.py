@@ -3,6 +3,18 @@ import turbigen.compflow_native as cf
 import turbigen.grid
 import numpy as np
 from timeit import default_timer as timer
+import sys
+
+# Check our MPI rank
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+# Jump to solver slave process if not first rank
+if rank > 0:
+    turbigen.solvers.native.run_slave()
+    sys.exit(0)
 
 
 
@@ -47,13 +59,6 @@ xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 fac_noz = np.interp(xv, [0., L/2, L], [1., 0.5, 1.])[:,None,None]
 xrt[1] = (xrt[1] - rm)*fac_noz + rm
 
-# import matplotlib.pyplot as plt
-# plt.plot(xrt[0,:,0,0], xrt[1,:,0,0])
-# plt.plot(xrt[0,:,0,0], xrt[1,:,-1,0])
-# plt.axis('equal')
-# plt.show()
-
-
 patches = [
     turbigen.grid.InletPatch(i=0),
     turbigen.grid.OutletPatch(i=-1),
@@ -62,7 +67,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 8
+nblock = 4
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -160,11 +165,10 @@ print(ten-tst)
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
-lev = np.linspace(80,300,21)
 for b in g:
-    bc = b[:,:,nk//2]
-    hm = ax.contourf(bc.x, bc.r, bc.Vx,lev)
+    bc = b[:,nj//2,nk//2]
+    hm = ax.plot(bc.x, bc.Vx)
 
-ax.axis('equal')
-plt.colorbar(hm)
+# ax.axis('equal')
+# plt.colorbar(hm)
 plt.show()
