@@ -31,10 +31,14 @@ class StructuredData:
     _read_only = False
     _data_rows = ()
 
-    def __init__(self, shape=()):
+    def __init__(self, shape=(), order="C"):
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
-        self._data = np.full((self.nprop,) + shape, np.nan)
+        self._order = order
+        if order == 'C':
+            self._data = np.full((self.nprop,) + shape, np.nan, order=order)
+        else:
+            self._data = np.full(shape + (self.nprop,), np.nan, order=order)
         self._metadata = {}
         self._dependent_property_cache = {}
 
@@ -151,18 +155,27 @@ class StructuredData:
         return ind
 
     def _get_data_by_key(self, key):
-        return self._data[
-            self._lookup_index(key),
-        ]
+        ind = self._lookup_index(key)
+        if self._order == 'C':
+            return self._data[ind,]
+        else:
+            return self._data[...,ind]
 
     def _set_data_by_key(self, key, val):
         if self._read_only:
             raise Exception(f"Cannot modify read-only {self}")
         else:
+            ind = self._lookup_index(key)
             if np.shape(val) == (1,):
-                self._data[self._lookup_index(key)] = val[0]
+                if self._order == 'C':
+                    self._data[ind] = val[0]
+                else:
+                    self._data[...,ind] = val[0]
             else:
-                self._data[self._lookup_index(key)] = val
+                if self._order == 'C':
+                    self._data[ind] = val
+                else:
+                    self._data[...,ind] = val
             self._dependent_property_cache.clear()
 
     def set_read_only(self):
