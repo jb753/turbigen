@@ -368,7 +368,7 @@ class Grid:
         b.grid = self
 
     def index(self, block):
-        return self._blocks.index(block)
+        return [block is bi for bi in self._blocks].index(True)
 
     def find_patches(self, cls):
         patches = []
@@ -1147,7 +1147,7 @@ class Patch:
         ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
         return ijk
 
-    def get_flat_indices(self, order='C', perm=None, flip=None):
+    def get_flat_indices(self, order="C", perm=None, flip=None):
         # Return indices of all points on patch into self.block.flat
         ijk = self.get_indices()
         shape = self.block.shape
@@ -1225,14 +1225,13 @@ class PeriodicPatch(Patch):
         return Cnx
 
     def get_periodic_data(self):
-        ind = self.get_flat_indices(order='F')
+        ind = self.get_flat_indices("F")
         match = self.match
         perm, flip = match.get_match_perm_flip()
-        # nxijk = np.flip(np.array(match.get_indices()).transpose(perm), axis=flip)
-        nxind = match.get_flat_indices('F', perm, flip)
+        nxind = match.get_flat_indices("F", perm, flip)
         bid = self.block.grid.index(self.block)
         nxbid = match.block.grid.index(match.block)
-        return bid, ind, nxbid, nxind
+        return bid, ind.tolist(), nxbid, nxind.tolist()
 
 
 class PorousPatch(PeriodicPatch):
@@ -1306,7 +1305,7 @@ class InletPatch(Patch):
 
     def get_inlet_data(self):
         return (
-            self.get_flat_indices(order='F'),
+            self.get_flat_indices(order="F"),
             self.state.P + 0.0,
             self.state.T + 0.0,
             self.Alpha + 0.0,
@@ -1330,7 +1329,7 @@ class OutletPatch(Patch):
     phase = 0.0
 
     def get_outlet_data(self):
-        return self.get_flat_indices(order='F'), (self.Pout + 0.0,)
+        return self.get_flat_indices(order="F"), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):

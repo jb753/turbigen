@@ -11,11 +11,12 @@ from turbigen.compiled import (
     calculate_secondary,
 )
 from timeit import default_timer as timer
+from mpi4py import MPI
 import logging
 
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.INFO)
+logger.setLevel(level=logging.DEBUG)
 
 
 # class NativeConfig(BaseSolver):
@@ -30,7 +31,7 @@ def flatwhere(x):
 
 nstep_dt = 100
 nstep_log = 100
-nstep = 2000
+nstep = 5000
 nrk = 4
 dampin = 10.0
 rfin = 0.2
@@ -56,7 +57,7 @@ class SolverBlock:
         self.ho = np.asfortranarray(block.ho)
         self.P = np.asfortranarray(block.P)
 
-        self.halfVsq = np.asfortranarray(0.5*block.V**2)
+        self.halfVsq = np.asfortranarray(0.5 * block.V**2)
         self.u = np.asfortranarray(block.u)
 
         # Geometry
@@ -101,8 +102,8 @@ class SolverBlock:
         # Preallocate stored inlet density
         for inlet, state_inlet in zip(self.inlets, self.state_inlets):
             state_inlet._metadata = block._metadata
-            rho_inlet = block.rho.ravel(order='F')[inlet[0]]
-            u_inlet = block.u.ravel(order='F')[inlet[0]]
+            rho_inlet = block.rho.ravel(order="F")[inlet[0]]
+            u_inlet = block.u.ravel(order="F")[inlet[0]]
             state_inlet.set_rho_u(rho_inlet, u_inlet)
 
     def set_inlets(self):
@@ -115,7 +116,9 @@ class SolverBlock:
             ind, Po, To, Alpha, Beta, rhoo, ho, r = patch
 
             # Relax changes in density
-            rho_now = rfin * self.conserved[..., 0].ravel(order='F')[ind] + rfin1 * state.rho
+            rho_now = (
+                rfin * self.conserved[..., 0].ravel(order="F")[ind] + rfin1 * state.rho
+            )
 
             # Check for flow reversal
             rho_now[rho_now > rhoo] = rhoo * 0.99999
@@ -140,20 +143,22 @@ class SolverBlock:
             Vtin = Vmin * tanAlpha
 
             # Reset conserved vars on inlet
-            self.conserved[..., 0].ravel(order='F')[ind] = rho_now  # rho
-            self.conserved[..., 1].ravel(order='F')[ind] = rho_now * Vxin  # rhoVx
-            self.conserved[..., 2].ravel(order='F')[ind] = rho_now * Vrin  # rhoVr
-            self.conserved[..., 3].ravel(order='F')[ind] = rho_now * r * Vtin  # rhorVt
-            self.conserved[..., 4].ravel(order='F')[ind] = rho_now * (u + 0.5 * Vinsq)  # rhoe
+            self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+            self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
+            self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
+            self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
+            self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
+                u + 0.5 * Vinsq
+            )  # rhoe
 
             # Reset pressure and hstag on inlet
-            self.ho.ravel(order='F')[ind] = h + 0.5 * Vin**2
-            self.P.ravel(order='F')[ind] = P
+            self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
+            self.P.ravel(order="F")[ind] = P
 
     def set_outlets(self):
         """Set static pressure on outlets."""
         for outlet in self.outlets:
-            self.P.ravel(order='F')[outlet[0]] = outlet[1]
+            self.P.ravel(order="F")[outlet[0]] = outlet[1]
 
     def set_timestep(self):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -172,7 +177,7 @@ class SolverBlock:
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
 
-    @profile
+    # @profile
     def step(self, start_flag):
 
         step(
@@ -191,7 +196,7 @@ class SolverBlock:
             self.u,
             self.dU1,
             self.dU2,
-            start_flag
+            start_flag,
         )
 
         self.state.set_rho_u(self.conserved[..., 0], self.u)
@@ -203,7 +208,7 @@ class SolverBlock:
         smooth(self.conserved, sf2, sf4)
 
 
-def get_periodics(g):
+def get_periodics(g, procids):
 
     periodics = []
     seen = []
@@ -216,41 +221,193 @@ def get_periodics(g):
             seen.append(patch)
             seen.append(patch.match)
 
-        periodics.append(patch.get_periodic_data())
+        bid, ind, nxbid, nxind = patch.get_periodic_data()
+
+        procid = procids[bid]
+        nxprocid = procids[nxbid]
+
+        periodics.append((bid, procid, ind, nxbid, nxprocid, nxind))
 
     return periodics
+
+
+def set_periodic(b1, b2, ind1, ind2):
+    assert np.allclose(b1.r.ravel(order="F")[ind1], b2.r.ravel(order="F")[ind2])
+    for i in range(5):
+        conserved1 = b1.conserved[..., i].ravel(order="F")
+        conserved2 = b1.conserved[..., i].ravel(order="F")
+        avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
+        conserved1[ind1] = avg
+        conserved2[ind2] = avg
+
 
 def set_periodics(sg, periodics):
 
     for patch in periodics:
-
-        bid, ind, nxbid, nxind = patch
+        bid, ind, procid, nxbid, nxind, nxprocid = patch
 
         for i in range(5):
-            conserved1 = sg[bid].conserved[...,i].ravel(order='F')
-            conserved2 = sg[nxbid].conserved[...,i].ravel(order='F')
-            avg = 0.5*(conserved1[ind] + conserved2[nxind])
+            conserved1 = sg[bid].conserved[..., i].ravel(order="F")
+            conserved2 = sg[nxbid].conserved[..., i].ravel(order="F")
+            avg = 0.5 * (conserved1[ind] + conserved2[nxind])
             conserved1[ind] = avg
             conserved2[nxind] = avg
 
+
+def run_slave(blocks=None, periodics=None):
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    status = MPI.Status()
+
+    if not periodics:
+
+        # Recieve number of periodics
+        nper = comm.recv()
+        logger.debug(f"Rank {rank} expecting {nper} periodics")
+
+        # Recieve periodic data
+        periodics_all = []
+        for iper in range(nper):
+            periodics_all.append(comm.recv())
+            logger.debug(f"Rank {rank} got periodic {iper}/{nper-1}")
+    else:
+        nper = len(periodics)
+
+    # Recieve number of block
+    nblock = comm.recv()
+    logger.debug(f"Rank {rank} expecting {nblock} blocks")
+
+    # Recieve block data
+    if blocks is None:
+        blocks = []
+        for iblock in range(nblock):
+            blocks.append(comm.recv())
+            logger.debug(f"Rank {rank} got block {iblock}/{nblock-1}")
+    logger.debug(f"Rank {rank} got all blocks")
+
+    # # Only use periodics relavent to us
+    # # And make the foreign proc nx
+    # periodics = []
+    # for patch in periodics_all:
+    #     bid, procid, ind, nxbid, nxprocid, nxind = patch
+    #     if rank == procid:
+    #         periodics.append(patch)
+    #     elif rank == nxprocid:
+    #         periodics.append((nxbid, nxprocid, nxind, bid, procid, ind))
+    # periodics = periodics_all
+
+    logger.debug(f"Rank {rank} needs {len(periodics)} of {nper} periodics")
+
+    logger.debug(f"Rank {rank} starting the main time stepping loop")
+
+    periodic_len = np.max([np.maximum(len(p[2]), len(p[5])) for p in periodics])
+    periodic_buffer = np.empty((periodic_len, 5))
+
+    tstart = timer()
+    nodes = np.sum([b.r.size for b in blocks])
+
+    # Start the main time stepping loop
+    for istep in range(nstep):
+
+        for patch in periodics:
+            # Just set periodics that do not need sending
+            bid, procid, ind, nxbid, nxprocid, nxind = patch
+            # if nxprocid == procid:
+            set_periodic(blocks[bid], blocks[nxbid], ind, nxind)
+
+        # Update periodic boundaries
+        # set_periodics(sg, periodics)
+
+        # Loop over blocks
+        for iblock in range(nblock):
+
+            sb = blocks[iblock]
+
+            # Update time stegs
+            if not np.mod(istep, nstep_dt):
+                sb.set_timestep()
+
+            sb.set_inlets()
+
+            sb.set_outlets()
+
+            start_flag = 1 if istep == 0 else 0
+            sb.step(start_flag)
+
+            sb.smooth()
+
+        if not np.mod(istep, nstep_log):
+            log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
+            logger.info(log_line)
+            ten = timer()
+            tpnps = (ten - tstart) / nodes / nstep_log
+            logger.info(f"tpnps={tpnps:.3e}")
+            tstart = ten
+
+
 def run(grid, settings={}, machine=None):
+
+    # import pickle
+    # fname = 'test.pickle'
+    # b = grid[0]
+    # with open(fname,'wb') as f:
+    #     pickle.dump(b,f)
+    # with open(fname, 'rb') as f:
+    #     xx = pickle.load(f)
+    #     print('loaded from pickle')
+    #     print(b.x.mean(), xx.x.mean())
+    #     # print(xx)
+    # quit()
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    status = MPI.Status()
+
+    assert rank == 0
+
+    procids = grid.partition(size)
 
     nblock = len(grid)
     nodes = np.sum([b.size for b in grid])
 
-    sg = [SolverBlock(b) for b in grid]
-    periodics = get_periodics(grid)
+    periodics = get_periodics(grid, procids)
+    nper = len(periodics)
+    logger.debug("Sending number of periodics to slave processes...")
+    for iproc in range(1, size):
+        comm.isend(nper, dest=iproc)
 
+    logger.debug("Sending periodic data to slave processes...")
+    for iproc in range(1, size):
+        for iper in range(nper):
+            comm.isend(periodics[iper], dest=iproc)
 
-    # print(len(periodics))
-    # print(periodics[0])
-    # quit()
+    # Make lists of solver blocks for each proc
+    sg = []
+    for iproc in range(size):
+        sg.append([])
+        for bid, b in enumerate(grid):
+            if procids[bid] == iproc:
+                sg[-1].append(SolverBlock(b))
+                sg[-1][-1].bid = bid
 
-    # sb.set_outlets()
-    # sb.set_inlets()
-    # sb.set_timestep()
-    # sb.step()
-    # quit()
+    # Sending number of blocks for each proc
+    logger.debug("Sending number of blocks to slave processes...")
+    for iproc in range(size):
+        comm.isend(len(sg[iproc]), dest=iproc)
+
+    logger.info("Send blocks to slave processes (blocking)...")
+    for iproc in range(1, size):
+        nbp = len(sg[iproc])
+        for iblock in range(nbp):
+            bnow = sg[iproc][iblock]
+            comm.send(bnow, dest=iproc)
+            # comm.isend(grid[0], dest=iproc)
+        print(f"Sent {nbp} blocks to {iproc}")
+
+    run_slave(sg[0], periodics)
+    quit()
 
     logger.info("Starting native solver...")
 
@@ -272,7 +429,6 @@ def run(grid, settings={}, machine=None):
             # Update time stegs
             if not np.mod(istep, nstep_dt):
                 sb.set_timestep()
-                print(sb.dt.min(), sb.dt.max())
 
             sb.set_inlets()
 
@@ -283,29 +439,28 @@ def run(grid, settings={}, machine=None):
 
             sb.smooth()
 
-            if not np.mod(istep, nstep_log):
+        if not np.mod(istep, nstep_log):
+            log_line = f"{istep}: {np.abs(sg[0].dU1).mean(axis=(0,1,2))}"
+            logger.info(log_line)
+            ten = timer()
+            tpnps = (ten - tstart) / nodes / nstep_log
+            logger.info(f"tpnps={tpnps:.3e}")
+            tstart = ten
 
-                log_line = f"{istep}: {np.abs(sb.dU1).mean(axis=(0,1,2))}"
-                logger.info(log_line)
-                ten = timer()
-                tpnps = (ten - tstart) / nodes / nstep_log
-                logger.info(f"tpnps={tpnps:.3e}")
-                tstart = ten
+            # mdot_in = 0.0
+            # for patch in grid.inlet_patches:
+            #     Cm, Ann, _ = patch.get_cut().mix_out()
+            #     mdot_in += Cm.rho * Cm.Vm * Ann
 
-                # mdot_in = 0.0
-                # for patch in grid.inlet_patches:
-                #     Cm, Ann, _ = patch.get_cut().mix_out()
-                #     mdot_in += Cm.rho * Cm.Vm * Ann
-
-                # mdot_out = 0.0
-                # for patch in grid.outlet_patches:
-                #     Cm, Ann, _ = patch.get_cut().mix_out()
-                #     mdot_out += Cm.rho * Cm.Vm * Ann
-                #     print(
-                #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
-                #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
-                #     )
-                #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
+            # mdot_out = 0.0
+            # for patch in grid.outlet_patches:
+            #     Cm, Ann, _ = patch.get_cut().mix_out()
+            #     mdot_out += Cm.rho * Cm.Vm * Ann
+            #     print(
+            #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
+            #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
+            #     )
+            #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
     # import matplotlib.pyplot as plt
 
@@ -378,78 +533,3 @@ def get_wall(b):
     wfl = [(wfn > thresh)[..., 0].astype(np.int8) for wfn in wf]
 
     return wfl
-
-
-# @profile
-def apply_bconds(b):
-    """Return properties needed to time march after in/out boundaries applied"""
-
-    P = b.P
-    ho = b.ho
-
-    if b._conserved_store is None:
-        conserved = b.conserved
-        rho, rhoVx, rhoVr, rhorVt, rhoe = conserved
-    else:
-        conserved = b._conserved_store
-        # rho = conserved[..., 0]
-        rhoVx = conserved[..., 1]
-        rhoVr = conserved[..., 2]
-        rhorVt = conserved[..., 3]
-        rhoe = conserved[..., 4]
-
-    # Adjust static pressure for exit boundary conditions
-    for patch in b.outlet_patches:
-        P[patch.get_slice()] = patch.Pout  # * 0.1 + 0.9 * (patch.get_cut().P)
-
-    # Change inlet patches
-    for patch in b.inlet_patches:
-
-        ipatch = patch.get_slice()
-        inlet = b[ipatch]
-        rfin = 0.2  # *patch.rfin
-
-        # Relax changes in density if we have a stored state
-        if patch.rho_store is None:
-            rho_now = inlet.rho.copy()
-        else:
-            rho_now = rfin * inlet.rho + (1.0 - rfin) * patch.rho_store
-            # Check for flow reversal
-            rho_now[rho_now > patch.state.rho] = patch.state.rho * 0.9999
-            # Isentropic expansion from stagnation state
-            inlet.set_rho_s(rho_now, patch.state.s)
-
-        patch.rho_store = rho_now
-
-        # Get the velocity
-        dhin = patch.state.h - inlet.h
-        Vin = np.sqrt(2.0 * dhin)
-
-        tanAlpha = turbigen.util.tand(patch.Alpha)
-        tanBeta = turbigen.util.tand(patch.Beta)
-
-        # Resolve velocity components
-        Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
-        Vrin = Vxin * tanBeta
-        Vmin = np.sqrt(Vxin**2 + Vrin**2)
-        Vtin = Vmin * tanAlpha
-
-        # Reset conserved vars on inlet
-        # rho[ipatch] = inlet.rho
-        rhoVx[ipatch] = inlet.rho * Vxin
-        rhoVr[ipatch] = inlet.rho * Vrin
-        rhorVt[ipatch] = inlet.rho * inlet.r * Vtin
-        rhoe[ipatch] = inlet.rho * (inlet.u + 0.5 * Vin**2)
-
-        # Reset pressure and hstag on inlet
-        ho[ipatch] = inlet.h + 0.5 * Vin**2
-        P[ipatch] = inlet.P
-
-    Pref = 1e5
-    P -= Pref
-
-    # All nodal variables are ready
-    if b._conserved_store is None:
-        conserved = np.asfortranarray(np.moveaxis(conserved, 0, -1))
-
-    return conserved, np.asfortranarray(np.stack((P, ho, b.r), axis=-1))

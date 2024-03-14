@@ -102,6 +102,24 @@ def _make_argparser():
 def main():
     """Parse command-line arguments and call turbigen appropriately."""
 
+    # try:
+
+    # # Check our MPI rank
+    # import mpi4py
+    # comm = MPI.COMM_WORLD
+    # rank = comm.Get_rank()
+    # print(rank)
+    # # # Jump to solver slave process if not first rank
+    # # if rank > 0:
+    # #     import turbigen.solvers.native
+    # #     turbigen.solvers.native.run_slave()
+    # #     print(rank)
+    # #     sys.exit(0)
+
+    # except ImportError:
+    #     # Just run serially if we cannot import mpi4py
+    #     pass
+
     # Run the parser on sys.argv and collect input data
     args = _make_argparser().parse_args()
 
