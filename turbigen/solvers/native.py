@@ -11,12 +11,11 @@ from turbigen.compiled import (
     calculate_secondary,
 )
 from timeit import default_timer as timer
-from mpi4py import MPI
 import logging
 
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.DEBUG)
+logger.setLevel(level=logging.INFO)
 
 
 # class NativeConfig(BaseSolver):
@@ -59,6 +58,10 @@ class SolverBlock:
 
         self.halfVsq = np.asfortranarray(0.5 * block.V**2)
         self.u = np.asfortranarray(block.u)
+
+        self.x = np.asfortranarray(block.x)
+        self.r = np.asfortranarray(block.r)
+        self.t = np.asfortranarray(block.t)
 
         # Geometry
         self.r = np.asfortranarray(block.r)
@@ -208,7 +211,7 @@ class SolverBlock:
         smooth(self.conserved, sf2, sf4)
 
 
-def get_periodics(g, procids):
+def get_periodics(g):
 
     periodics = []
     seen = []
@@ -221,32 +224,24 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, nxbid, nxind = patch.get_periodic_data()
+        periodics.append(patch.get_periodic_data())
 
-        procid = procids[bid]
-        nxprocid = procids[nxbid]
-
-        periodics.append((bid, procid, ind, nxbid, nxprocid, nxind))
-
+    # quit()
     return periodics
-
-
-def set_periodic(b1, b2, ind1, ind2):
-    assert np.allclose(b1.r.ravel(order="F")[ind1], b2.r.ravel(order="F")[ind2])
-    for i in range(5):
-        conserved1 = b1.conserved[..., i].ravel(order="F")
-        conserved2 = b1.conserved[..., i].ravel(order="F")
-        avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
-        conserved1[ind1] = avg
-        conserved2[ind2] = avg
 
 
 def set_periodics(sg, periodics):
 
     for patch in periodics:
-        bid, ind, procid, nxbid, nxind, nxprocid = patch
+
+        bid, ind, nxbid, nxind = patch
+
+        # x1 = sg[bid].x.ravel(order='F')[ind]
+        # x2 = sg[nxbid].x.ravel(order='F')[nxind]
+        # assert np.allclose(x1, x2)
 
         for i in range(5):
+
             conserved1 = sg[bid].conserved[..., i].ravel(order="F")
             conserved2 = sg[nxbid].conserved[..., i].ravel(order="F")
             avg = 0.5 * (conserved1[ind] + conserved2[nxind])
@@ -254,160 +249,23 @@ def set_periodics(sg, periodics):
             conserved2[nxind] = avg
 
 
-def run_slave(blocks=None, periodics=None):
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    status = MPI.Status()
-
-    if not periodics:
-
-        # Recieve number of periodics
-        nper = comm.recv()
-        logger.debug(f"Rank {rank} expecting {nper} periodics")
-
-        # Recieve periodic data
-        periodics_all = []
-        for iper in range(nper):
-            periodics_all.append(comm.recv())
-            logger.debug(f"Rank {rank} got periodic {iper}/{nper-1}")
-    else:
-        nper = len(periodics)
-
-    # Recieve number of block
-    nblock = comm.recv()
-    logger.debug(f"Rank {rank} expecting {nblock} blocks")
-
-    # Recieve block data
-    if blocks is None:
-        blocks = []
-        for iblock in range(nblock):
-            blocks.append(comm.recv())
-            logger.debug(f"Rank {rank} got block {iblock}/{nblock-1}")
-    logger.debug(f"Rank {rank} got all blocks")
-
-    # # Only use periodics relavent to us
-    # # And make the foreign proc nx
-    # periodics = []
-    # for patch in periodics_all:
-    #     bid, procid, ind, nxbid, nxprocid, nxind = patch
-    #     if rank == procid:
-    #         periodics.append(patch)
-    #     elif rank == nxprocid:
-    #         periodics.append((nxbid, nxprocid, nxind, bid, procid, ind))
-    # periodics = periodics_all
-
-    logger.debug(f"Rank {rank} needs {len(periodics)} of {nper} periodics")
-
-    logger.debug(f"Rank {rank} starting the main time stepping loop")
-
-    periodic_len = np.max([np.maximum(len(p[2]), len(p[5])) for p in periodics])
-    periodic_buffer = np.empty((periodic_len, 5))
-
-    tstart = timer()
-    nodes = np.sum([b.r.size for b in blocks])
-
-    # Start the main time stepping loop
-    for istep in range(nstep):
-
-        for patch in periodics:
-            # Just set periodics that do not need sending
-            bid, procid, ind, nxbid, nxprocid, nxind = patch
-            # if nxprocid == procid:
-            set_periodic(blocks[bid], blocks[nxbid], ind, nxind)
-
-        # Update periodic boundaries
-        # set_periodics(sg, periodics)
-
-        # Loop over blocks
-        for iblock in range(nblock):
-
-            sb = blocks[iblock]
-
-            # Update time stegs
-            if not np.mod(istep, nstep_dt):
-                sb.set_timestep()
-
-            sb.set_inlets()
-
-            sb.set_outlets()
-
-            start_flag = 1 if istep == 0 else 0
-            sb.step(start_flag)
-
-            sb.smooth()
-
-        if not np.mod(istep, nstep_log):
-            log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
-            logger.info(log_line)
-            ten = timer()
-            tpnps = (ten - tstart) / nodes / nstep_log
-            logger.info(f"tpnps={tpnps:.3e}")
-            tstart = ten
-
-
 def run(grid, settings={}, machine=None):
-
-    # import pickle
-    # fname = 'test.pickle'
-    # b = grid[0]
-    # with open(fname,'wb') as f:
-    #     pickle.dump(b,f)
-    # with open(fname, 'rb') as f:
-    #     xx = pickle.load(f)
-    #     print('loaded from pickle')
-    #     print(b.x.mean(), xx.x.mean())
-    #     # print(xx)
-    # quit()
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-    status = MPI.Status()
-
-    assert rank == 0
-
-    procids = grid.partition(size)
 
     nblock = len(grid)
     nodes = np.sum([b.size for b in grid])
 
-    periodics = get_periodics(grid, procids)
-    nper = len(periodics)
-    logger.debug("Sending number of periodics to slave processes...")
-    for iproc in range(1, size):
-        comm.isend(nper, dest=iproc)
+    sg = [SolverBlock(b) for b in grid]
+    periodics = get_periodics(grid)
 
-    logger.debug("Sending periodic data to slave processes...")
-    for iproc in range(1, size):
-        for iper in range(nper):
-            comm.isend(periodics[iper], dest=iproc)
+    # print(len(periodics))
+    # print(periodics[0])
+    # quit()
 
-    # Make lists of solver blocks for each proc
-    sg = []
-    for iproc in range(size):
-        sg.append([])
-        for bid, b in enumerate(grid):
-            if procids[bid] == iproc:
-                sg[-1].append(SolverBlock(b))
-                sg[-1][-1].bid = bid
-
-    # Sending number of blocks for each proc
-    logger.debug("Sending number of blocks to slave processes...")
-    for iproc in range(size):
-        comm.isend(len(sg[iproc]), dest=iproc)
-
-    logger.info("Send blocks to slave processes (blocking)...")
-    for iproc in range(1, size):
-        nbp = len(sg[iproc])
-        for iblock in range(nbp):
-            bnow = sg[iproc][iblock]
-            comm.send(bnow, dest=iproc)
-            # comm.isend(grid[0], dest=iproc)
-        print(f"Sent {nbp} blocks to {iproc}")
-
-    run_slave(sg[0], periodics)
-    quit()
+    # sb.set_outlets()
+    # sb.set_inlets()
+    # sb.set_timestep()
+    # sb.step()
+    # quit()
 
     logger.info("Starting native solver...")
 

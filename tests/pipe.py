@@ -3,18 +3,6 @@ import turbigen.compflow_native as cf
 import turbigen.grid
 import numpy as np
 from timeit import default_timer as timer
-import sys
-
-# Check our MPI rank
-from mpi4py import MPI
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-# Jump to solver slave process if not first rank
-if rank > 0:
-    turbigen.solvers.native.run_slave()
-    sys.exit(0)
 
 
 
@@ -74,7 +62,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 2
+nblock = 8
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -163,10 +151,6 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-print(f'Partitioned {len(g)} blocks onto {size} procs')
-
-
-    # Send
 
 tst = timer()
 turbigen.solvers.native.run(g)
