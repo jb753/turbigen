@@ -1089,6 +1089,7 @@ def interpolate_transfinite(c, plot=False):
                     label=f"{labels[i]},{ci.shape[1]}",
                 )
         ax.legend()
+        plt.savefig('beans.pdf')
         plt.show()
 
     # Check corners are coincident

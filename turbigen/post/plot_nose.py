@@ -87,7 +87,8 @@ def post(grid, machine, meanline, postdir, row_spf):
                 # Turbine
                 Cpall = (Pred - Po1) / (Po1 - P2)
 
-            lev_Cp = turbigen.util.clipped_levels(Cpall)
+            dCp = 0.1
+            lev_Cp = turbigen.util.clipped_levels(Cpall, dCp)
 
             for b in cut:
 
