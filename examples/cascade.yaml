@@ -62,7 +62,7 @@ post_process:
   contour_traverse:
     mnorm: [2.1,]
     coord_sys: yz
-    var: ['Yp', 'Vm']
+    var: ['Ys', 'Vm']
   plot_nose:
     row_spf: [[0.6,],]
   plot_pressure_distributions:
