@@ -8,7 +8,6 @@ from turbigen.compiled import (
     node_to_cell,
     node_to_face,
     step,
-    calculate_secondary,
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -239,21 +238,23 @@ def set_periodic(b1, b2, ind1, ind2):
         conserved1[ind1] = avg
         conserved2[ind2] = avg
 
+
 def send_slave(block_split, procids, periodics):
 
     comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
     size = comm.Get_size()
 
-    for iproc in range(1,size):
+    for iproc in range(1, size):
         comm.send(block_split[iproc], dest=iproc)
+
+    for iproc in range(1, size):
         comm.send(periodics, dest=iproc)
+
 
 def run_slave(blocks=None, periodics_all=None, nodes=None):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    size = comm.Get_size()
 
     if blocks is None:
         blocks = comm.recv()
@@ -263,17 +264,15 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     else:
         master_flag = True
 
-
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
         bid, procid, ind, nxbid, nxprocid, nxind = patch
-        if procid==rank:
+        if procid == rank:
             periodics.append(patch)
-        elif nxprocid==rank:
+        elif nxprocid == rank:
             periodics.append((nxbid, nxprocid, nxind, bid, procid, ind))
-
 
     bids = [b.bid for b in blocks]
 
@@ -292,21 +291,20 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
         # Update periodic boundaries
         for patch in periodics:
             bid, procid, ind, nxbid, nxprocid, nxind = patch
-            # print(f'Rank {rank}, bid={bid, procid}, nxbid={nxbid, nxprocid}, bid_proc={bids}')
 
             if nxprocid == rank:
-                set_periodic(blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind)
-                # print(f'Rank {rank} set periodic on self')
+                set_periodic(
+                    blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind
+                )
             else:
-                # print(rank, bid, procid, nxbid, nxprocid)
                 for i in range(5):
-                    conserved = blocks[bid_local[bid]].conserved[...,i].ravel(order="F")
+                    conserved = (
+                        blocks[bid_local[bid]].conserved[..., i].ravel(order="F")
+                    )
                     nxconserved = np.empty_like(conserved[ind])
                     comm.Send(conserved[ind], dest=nxprocid)
-                    # print(f'Rank {rank} sent periodic to {nxprocid}')
                     comm.Recv(nxconserved, source=nxprocid)
-                    # print(f'Rank {rank} recived periodic from {nxprocid}')
-                    conserved[ind] = 0.5*(conserved[ind] + nxconserved)
+                    conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
 
         # Loop over blocks
         for iblock in range(nblock):
@@ -336,12 +334,12 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
     if master_flag:
         return blocks
-
+    else:
+        comm.send(blocks, dest=0)
 
 
 def run(grid, settings={}, machine=None):
 
-    nblock = len(grid)
     nodes = np.sum([b.size for b in grid])
 
     blocks = [SolverBlock(b) for b in grid]
@@ -349,7 +347,6 @@ def run(grid, settings={}, machine=None):
         b.bid = ib
 
     comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
     size = comm.Get_size()
 
     procids = grid.partition(size)
@@ -364,70 +361,37 @@ def run(grid, settings={}, machine=None):
     for iproc in range(size):
         block_split.append([])
         for ib, b in enumerate(blocks):
-            if iproc==procids[ib]:
+            if iproc == procids[ib]:
                 block_split[-1].append(b)
 
     send_slave(block_split, procids, periodics)
 
-    blocks[0] = run_slave(block_split[0], periodics, nodes)
-    # tstart = timer()
-    # # Start the main time stepping loop
-    # for istep in range(nstep):
+    block_split[0] = run_slave(block_split[0], periodics, nodes)
 
-    #     # Update periodic boundaries
-    #     for patch in periodics:
-    #         bid, procid, ind, nxbid, nxprocid, nxind = patch
-    #         set_periodic(blocks[bid], blocks[nxbid], ind, nxind)
+    for iproc in range(1, size):
+        block_split[iproc] = comm.recv(source=iproc)
 
-    #     # Loop over blocks
-    #     for iblock in range(nblock):
+    blocks_out = []
+    for bsi in block_split:
+        blocks_out.extend(bsi)
 
-    #         sb = blocks[iblock]
+        # mdot_in = 0.0
+        # for patch in grid.inlet_patches:
+        #     Cm, Ann, _ = patch.get_cut().mix_out()
+        #     mdot_in += Cm.rho * Cm.Vm * Ann
 
-    #         # Update time stegs
-    #         if not np.mod(istep, nstep_dt):
-    #             sb.set_timestep()
+        # mdot_out = 0.0
+        # for patch in grid.outlet_patches:
+        #     Cm, Ann, _ = patch.get_cut().mix_out()
+        #     mdot_out += Cm.rho * Cm.Vm * Ann
+        #     print(
+        #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
+        #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
+        #     )
+        #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
 
-    #         sb.set_inlets()
-
-    #         sb.set_outlets()
-
-    #         start_flag = 1 if istep == 0 else 0
-    #         sb.step(start_flag)
-
-    #         sb.smooth()
-
-    #     if not np.mod(istep, nstep_log):
-    #         log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
-    #         logger.info(log_line)
-    #         ten = timer()
-    #         tpnps = (ten - tstart) / nodes / nstep_log
-    #         logger.info(f"tpnps={tpnps:.3e}")
-    #         tstart = ten
-
-            # mdot_in = 0.0
-            # for patch in grid.inlet_patches:
-            #     Cm, Ann, _ = patch.get_cut().mix_out()
-            #     mdot_in += Cm.rho * Cm.Vm * Ann
-
-            # mdot_out = 0.0
-            # for patch in grid.outlet_patches:
-            #     Cm, Ann, _ = patch.get_cut().mix_out()
-            #     mdot_out += Cm.rho * Cm.Vm * Ann
-            #     print(
-            #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
-            #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
-            #     )
-            #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
-
-    # import matplotlib.pyplot as plt
-
-    # fig, ax = plt.subplots()
-    # ax.plot(mdot_all / mdot_all[-1].mean())
-    # plt.show()
-
-    # for b, sb in zip(grid, blocks):
-    #     b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
+    for b, sb in zip(grid, blocks_out):
+        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
 
 
 def get_geom(b):

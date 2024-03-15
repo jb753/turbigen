@@ -67,7 +67,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 4
+nblock = 8
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
