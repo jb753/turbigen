@@ -29,7 +29,7 @@ def flatwhere(x):
 
 
 nstep_dt = 100
-nstep_log = 100
+nstep_log = 50
 nstep = 5000
 nrk = 4
 dampin = 10.0
@@ -215,6 +215,7 @@ def get_periodics(g, procids):
 
     periodics = []
     seen = []
+    pid = 0
 
     for patch in g.periodic_patches:
 
@@ -225,18 +226,18 @@ def get_periodics(g, procids):
             seen.append(patch.match)
 
         bid, ind, nxbid, nxind = patch.get_periodic_data()
-        periodics.append((bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
+        periodics.append((pid, bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
+        pid += 1
 
     return periodics
 
 
 def set_periodic(b1, b2, ind1, ind2):
-    for i in range(5):
-        conserved1 = b1.conserved[..., i].ravel(order="F")
-        conserved2 = b2.conserved[..., i].ravel(order="F")
-        avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
-        conserved1[ind1] = avg
-        conserved2[ind2] = avg
+    conserved1 = b1.conserved.ravel(order="F")
+    conserved2 = b2.conserved.ravel(order="F")
+    avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
+    conserved1[ind1] = avg
+    conserved2[ind2] = avg
 
 
 def send_slave(block_split, procids, periodics):
@@ -259,7 +260,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     if blocks is None:
         blocks = comm.recv()
         periodics_all = comm.recv()
-
         master_flag = False
     else:
         master_flag = True
@@ -268,18 +268,16 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
-        bid, procid, ind, nxbid, nxprocid, nxind = patch
+        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
         if procid == rank:
             periodics.append(patch)
         elif nxprocid == rank:
-            periodics.append((nxbid, nxprocid, nxind, bid, procid, ind))
+            periodics.append((pid, nxbid, nxprocid, nxind, bid, procid, ind))
 
     bids = [b.bid for b in blocks]
 
     # Lookup of local bid from global bid
     bid_local = {bid: ibid for ibid, bid in enumerate(bids)}
-    # print(f'Rank {rank}, bid={bids}, bid_local={bid_local}')
-    # quit()
 
     nblock = len(blocks)
 
@@ -290,21 +288,31 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
         # Update periodic boundaries
         for patch in periodics:
-            bid, procid, ind, nxbid, nxprocid, nxind = patch
+            pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
+            count = len(ind)
 
+            # Just set the periodic if on same rank
             if nxprocid == rank:
                 set_periodic(
                     blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind
                 )
+            # Otherwise, communication is needed
             else:
-                for i in range(5):
-                    conserved = (
-                        blocks[bid_local[bid]].conserved[..., i].ravel(order="F")
+                conserved = blocks[bid_local[bid]].conserved.ravel(order="F")
+                nxconserved = np.empty((count,))
+                # If our rank is lower than next rank, send first
+                if rank < nxprocid:
+                    comm.Send(
+                        [conserved[ind], count, MPI.REAL8], dest=nxprocid, tag=pid
                     )
-                    nxconserved = np.empty_like(conserved[ind])
-                    comm.Send(conserved[ind], dest=nxprocid)
-                    comm.Recv(nxconserved, source=nxprocid)
-                    conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
+                    comm.Recv([nxconserved, count, MPI.REAL8], source=nxprocid, tag=pid)
+                # If our rank is higher than next rank, recieve first
+                else:
+                    comm.Recv([nxconserved, count, MPI.REAL8], source=nxprocid, tag=pid)
+                    comm.Send(
+                        [conserved[ind], count, MPI.REAL8], dest=nxprocid, tag=pid
+                    )
+                conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
 
         # Loop over blocks
         for iblock in range(nblock):
@@ -340,6 +348,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
 def run(grid, settings={}, machine=None):
 
+    logger.info("Intialising native solver...")
+
     nodes = np.sum([b.size for b in grid])
 
     blocks = [SolverBlock(b) for b in grid]
@@ -349,12 +359,9 @@ def run(grid, settings={}, machine=None):
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
 
+    logger.info(f"Patitioning onto {size} processors...")
     procids = grid.partition(size)
     periodics = get_periodics(grid, procids)
-
-    logger.info("Starting native solver...")
-
-    logger.info("Starting the main time-stepping loop...")
 
     # Split into lists for each procid
     block_split = []
@@ -364,8 +371,10 @@ def run(grid, settings={}, machine=None):
             if iproc == procids[ib]:
                 block_split[-1].append(b)
 
+    logger.info("Sending data to processors...")
     send_slave(block_split, procids, periodics)
 
+    logger.info("Starting the main time-stepping loop...")
     block_split[0] = run_slave(block_split[0], periodics, nodes)
 
     for iproc in range(1, size):

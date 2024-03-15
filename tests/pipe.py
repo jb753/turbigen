@@ -42,10 +42,13 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 10
+nj = 64
+nk = 32
+
 AR = 1.
 ni = int(nj/h*L)
-nk = 10
+# print(ni*nj*nk/1e6)
+# quit()
 pitch = h/nj*(nk-1)
 Nb = int(2.0 * np.pi * rm / pitch)
 dt = 2.0 * np.pi / float(Nb)
@@ -67,7 +70,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 8
+nblock = 16
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -167,7 +170,7 @@ print(ten-tst)
 fig, ax = plt.subplots()
 for b in g:
     bc = b[:,nj//2,nk//2]
-    hm = ax.plot(bc.x, bc.Vx)
+    hm = ax.plot(bc.x, bc.P)
 
 # ax.axis('equal')
 # plt.colorbar(hm)
