@@ -51,29 +51,29 @@ class SolverBlock:
         """Initialise from a standard Block object."""
 
         # Primaries
-        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1))
+        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(np.single)
 
-        self.ho = np.asfortranarray(block.ho)
-        self.P = np.asfortranarray(block.P)
+        self.ho = np.asfortranarray(block.ho).astype(np.single)
+        self.P = np.asfortranarray(block.P).astype(np.single)
 
-        self.halfVsq = np.asfortranarray(0.5 * block.V**2)
-        self.u = np.asfortranarray(block.u)
+        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(np.single)
+        self.u = np.asfortranarray(block.u).astype(np.single)
 
-        self.x = np.asfortranarray(block.x)
-        self.r = np.asfortranarray(block.r)
-        self.t = np.asfortranarray(block.t)
+        self.x = np.asfortranarray(block.x).astype(np.single)
+        self.r = np.asfortranarray(block.r).astype(np.single)
+        self.t = np.asfortranarray(block.t).astype(np.single)
 
         # Geometry
-        self.r = np.asfortranarray(block.r)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1))
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1))
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1))
-        self.vol = np.asfortranarray(block.vol)
-        self.dlmin = np.asfortranarray(block.dlmin)
-        self.Omega = block.Omega.mean()
+        self.r = np.asfortranarray(block.r).astype(np.single)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(np.single)
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(np.single)
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(np.single)
+        self.vol = np.asfortranarray(block.vol).astype(np.single)
+        self.dlmin = np.asfortranarray(block.dlmin).astype(np.single)
+        self.Omega = block.Omega.mean().astype(np.single)
 
-        self.dU1 = self.conserved.copy(order="F") * np.nan
-        self.dU2 = self.conserved.copy(order="F") * np.nan
+        self.dU1 = self.conserved.copy(order="F").astype(np.single) * np.nan
+        self.dU2 = self.conserved.copy(order="F").astype(np.single) * np.nan
         self._flag_scree = False
 
         # Get wall indicators
@@ -173,8 +173,8 @@ class SolverBlock:
 
         ni, nj, nk = self.r.shape
 
-        Va_node = np.asfortranarray(np.stack((V, a), axis=-1))
-        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
+        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(np.single)
+        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=np.single)
         node_to_cell(Va_node, Va_cell)
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
@@ -299,18 +299,18 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
             # Otherwise, communication is needed
             else:
                 conserved = blocks[bid_local[bid]].conserved.ravel(order="F")
-                nxconserved = np.empty((count,))
+                nxconserved = np.empty((count,), dtype=np.single)
                 # If our rank is lower than next rank, send first
                 if rank < nxprocid:
                     comm.Send(
-                        [conserved[ind], count, MPI.REAL8], dest=nxprocid, tag=pid
+                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
                     )
-                    comm.Recv([nxconserved, count, MPI.REAL8], source=nxprocid, tag=pid)
+                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
                 # If our rank is higher than next rank, recieve first
                 else:
-                    comm.Recv([nxconserved, count, MPI.REAL8], source=nxprocid, tag=pid)
+                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
                     comm.Send(
-                        [conserved[ind], count, MPI.REAL8], dest=nxprocid, tag=pid
+                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
                     )
                 conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
 
@@ -452,11 +452,11 @@ def get_wall(b):
     # Preallocate face indices
     ni, nj, nk = b.shape
     wf = [
-        np.empty((ni, nj - 1, nk - 1, 1), order="F"),
-        np.empty((ni - 1, nj, nk - 1, 1), order="F"),
-        np.empty((ni - 1, nj - 1, nk, 1), order="F"),
+        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=np.single),
+        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=np.single),
+        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=np.single),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(float))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(np.single))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)

@@ -9,55 +9,55 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout) :: resid1(ni, nj, nk, 5)
-    real*8, intent (inout) :: resid2(ni, nj, nk, 5)
-    real*8, intent (inout)  :: Omega
+    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid1(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+    real*4, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
     logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
     logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
-    real*8, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
-    real*8, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
-    real*8, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
-    real*8, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-    real*8, intent (inout)  :: dt(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1)
 
     integer :: start_flag
 
     integer :: ip
 
-    real*8 :: Sn(ni, nj, nk, 1)
-    real*8 :: Sc(ni-1, nj-1, nk-1, 1)
+    real*4 :: Sn(ni, nj, nk, 1)
+    real*4 :: Sc(ni-1, nj-1, nk-1, 1)
 
-    real*8 :: conservedi(ni, nj-1, nk-1, 5)
-    real*8 :: conservedj(ni-1, nj, nk-1,5)
-    real*8 :: conservedk(ni-1, nj-1, nk,5)
+    real*4 :: conservedi(ni, nj-1, nk-1, 5)
+    real*4 :: conservedj(ni-1, nj, nk-1,5)
+    real*4 :: conservedk(ni-1, nj-1, nk,5)
 
-    real*8 :: fi(ni, nj-1, nk-1, 3, 5)
-    real*8 :: fj(ni-1, nj, nk-1, 3, 5)
-    real*8 :: fk(ni-1, nj-1, nk, 3, 5)
+    real*4 :: fi(ni, nj-1, nk-1, 3, 5)
+    real*4 :: fj(ni-1, nj, nk-1, 3, 5)
+    real*4 :: fk(ni-1, nj-1, nk, 3, 5)
 
-    real*8 :: fsum_vol(ni-1, nj-1, nk-1, 5)
-    real*8 :: resc(ni-1, nj-1, nk-1, 5)
+    real*4 :: fsum_vol(ni-1, nj-1, nk-1, 5)
+    real*4 :: resc(ni-1, nj-1, nk-1, 5)
 
-    real*8, intent(inout) :: P( ni, nj, nk)
-    real*8, intent(inout) :: ho( ni, nj, nk)
-    real*8, intent(inout) :: r( ni, nj, nk)
+    real*4, intent(inout) :: P( ni, nj, nk)
+    real*4, intent(inout) :: ho( ni, nj, nk)
+    real*4, intent(inout) :: r( ni, nj, nk)
 
-    real*8, intent(inout) :: u( ni, nj, nk)
-    real*8, intent(inout) :: halfVsq(ni, nj, nk)
+    real*4, intent(inout) :: u( ni, nj, nk)
+    real*4, intent(inout) :: halfVsq(ni, nj, nk)
 
-    real*8 :: Pi( ni, nj-1, nk-1)
-    real*8 :: Pj( ni-1, nj, nk-1)
-    real*8 :: Pk( ni-1, nj-1, nk)
+    real*4 :: Pi( ni, nj-1, nk-1)
+    real*4 :: Pj( ni-1, nj, nk-1)
+    real*4 :: Pk( ni-1, nj-1, nk)
 
-    real*8 :: hoi( ni, nj-1, nk-1)
-    real*8 :: hoj( ni-1, nj, nk-1)
-    real*8 :: hok( ni-1, nj-1, nk)
+    real*4 :: hoi( ni, nj-1, nk-1)
+    real*4 :: hoj( ni-1, nj, nk-1)
+    real*4 :: hok( ni-1, nj-1, nk)
 
-    real*8 :: ri( ni, nj-1, nk-1)
-    real*8 :: rj( ni-1, nj, nk-1)
-    real*8 :: rk( ni-1, nj-1, nk)
+    real*4 :: ri( ni, nj-1, nk-1)
+    real*4 :: rj( ni-1, nj, nk-1)
+    real*4 :: rk( ni-1, nj-1, nk)
 
     ! Calculate source term at nodes, average at cell centers
     Sn(:, :, :, 1) = (&
@@ -112,7 +112,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     if (start_flag.eq.1) then
         conserved = conserved + resid1
     else
-        conserved = conserved + 2d0*resid1 - resid2
+        conserved = conserved + 2e0*resid1 - resid2
     end if
     resid2 = resid1
 
@@ -128,11 +128,11 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout)  :: halfVsq(ni, nj, nk)
-    real*8, intent (inout)  :: u(ni, nj, nk)
-    real*8, intent (inout)  :: r(ni, nj, nk)
-    real*8 :: Vxrt(ni, nj, nk, 3)
+    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*4, intent (inout)  :: halfVsq(ni, nj, nk)
+    real*4, intent (inout)  :: u(ni, nj, nk)
+    real*4, intent (inout)  :: r(ni, nj, nk)
+    real*4 :: Vxrt(ni, nj, nk, 3)
 
     integer :: ic
 
@@ -142,7 +142,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
     end do
     Vxrt(:,:,:,3) = Vxrt(:,:,:,3)/r
 
-    halfVsq = 0.5d0*sum(Vxrt*Vxrt, 4)
+    halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
     u = conserved(:,:,:,5)/conserved(:,:,:,1) - halfVsq
 
@@ -157,21 +157,21 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*8, intent (in)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (in)  :: P(ni, nj, nk)
-    real*8, intent (in)  :: ho(ni, nj, nk)
-    real*8, intent (in)  :: r(ni, nj, nk)
-    real*8, intent (in)  :: Omega
+    real*4, intent (in)  :: conserved(ni, nj, nk, 5)
+    real*4, intent (in)  :: P(ni, nj, nk)
+    real*4, intent (in)  :: ho(ni, nj, nk)
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: Omega
     logical*1, intent (in)  :: wall(ni, nj, nk)
 
-    real*8, intent (out) :: flux(ni, nj, nk, 3, 5)
+    real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
 
     integer :: ic
     integer :: ip
 
-    real*8 :: Vx(ni, nj, nk)
-    real*8 :: Vr(ni, nj, nk)
-    real*8 :: rVt(ni, nj, nk)
+    real*4 :: Vx(ni, nj, nk)
+    real*4 :: Vr(ni, nj, nk)
+    real*4 :: rVt(ni, nj, nk)
 
     ! Calculate velocities
     Vx = conserved(:, :, :,2)/conserved(:,:,:,1)
@@ -207,7 +207,7 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
     do ip = 1,5
         do ic = 1,3
             where (wall)
-                flux(:, :, :, ic, ip) = 0d0
+                flux(:, :, :, ic, ip) = 0e0
             end where
         end do
     end do
@@ -236,20 +236,20 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk)
 
     integer :: ip
 
-    real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-    real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*8, intent (in)  :: fi(ni, nj-1, nk-1, 3, 5)
-    real*8, intent (in)  :: fj(ni-1, nj, nk-1, 3, 5)
-    real*8, intent (in)  :: fk(ni-1, nj-1, nk, 3, 5)
+    real*4, intent (in)  :: fi(ni, nj-1, nk-1, 3, 5)
+    real*4, intent (in)  :: fj(ni-1, nj, nk-1, 3, 5)
+    real*4, intent (in)  :: fk(ni-1, nj-1, nk, 3, 5)
 
-    real*8 :: fisum(ni, nj-1, nk-1)
-    real*8 :: fjsum(ni-1, nj, nk-1)
-    real*8 :: fksum(ni-1, nj-1, nk)
+    real*4 :: fisum(ni, nj-1, nk-1)
+    real*4 :: fjsum(ni-1, nj, nk-1)
+    real*4 :: fksum(ni-1, nj-1, nk)
 
-    real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, 5)
+    real*4, intent (out)  :: fsum(ni-1, nj-1, nk-1, 5)
 
 
     do ip = 1, 5
@@ -277,10 +277,10 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*8, intent (inout)  :: xn(ni, nj, nk, np)
-    real*8, intent (inout)  :: xi(ni, nj-1, nk-1, np)
-    real*8, intent (inout)  :: xj(ni-1, nj, nk-1, np)
-    real*8, intent (inout)  :: xk(ni-1, nj-1, nk, np)
+    real*4, intent (inout)  :: xn(ni, nj, nk, np)
+    real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
+    real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
 
     ! Values on i-faces are average over four bounding vertices
     xi = (&
@@ -288,7 +288,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(:, 2:nj,   1:nk-1, :) & ! j+1, k
         + xn(:, 1:nj-1, 2:nk  , :) & ! j, k+1
         + xn(:, 2:nj,   2:nk  , :) & ! j+1, k+1
-    )/4d0
+    )/4e0
 
     ! Values on j-faces are average over four bounding vertices
     xj = (&
@@ -296,7 +296,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(2:ni,   :, 1:nk-1, :) & ! i+1, k
         + xn(1:ni-1, :, 2:nk  , :) & ! i, k+1
         + xn(2:ni,   :, 2:nk  , :) & ! i+1, k+1
-    )/4d0
+    )/4e0
 
     ! Values on k-faces are average over four bounding vertices
     xk = (&
@@ -304,7 +304,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(2:ni,   1:nj-1, :, :) & ! i+1, j
         + xn(1:ni-1, 2:nj,   :, :) & ! i, j+1
         + xn(2:ni,   2:nj,   :, :) & ! i+1, j+1
-    )/4d0
+    )/4e0
 
 end subroutine
 
@@ -318,8 +318,8 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*8, intent (inout)  :: xn(ni, nj, nk, np)
-    real*8, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xn(ni, nj, nk, np)
+    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
 
     ! Cell values are the average of all eight hex vertices
     xc = (&
@@ -331,7 +331,7 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
         + xn(2:ni,   1:nj-1, 2:nk,   :) & ! i+1,j,k+1
         + xn(2:ni,   2:nj,   2:nk,   :) & ! i+1,j+1,k+1
         + xn(1:ni-1, 2:nj,   2:nk,   :) & ! i,j+1,k+1
-    )/8d0
+    )/8e0
 
 
 end subroutine
@@ -345,8 +345,8 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*8, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
-    real*8, intent (inout)  :: xn(ni, nj, nk, np)
+    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xn(ni, nj, nk, np)
 
     ! Interior nodes take 1/8 from each adjacent cell
     xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
@@ -358,7 +358,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
         + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
         + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
-    )/8d0
+    )/8e0
 
     ! Face nodes take 1/4 from each adjacent cell
 
@@ -368,7 +368,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(1, 2:nj-1, 1:nk-2, :) & ! 1,j+1,k
         + xc(1, 1:nj-2, 2:nk-1, :) & ! 1,j,k+1
         + xc(1, 2:nj-1, 2:nk-1, :) & ! 1,j+1,k+1
-    )/4d0
+    )/4e0
 
     ! i=ni
     xn(ni, 2:nj-1, 2:nk-1, :) = (&
@@ -376,7 +376,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(ni-1, 2:nj-1, 1:nk-2, :) & ! ni-1,j+1,k
         + xc(ni-1, 1:nj-2, 2:nk-1, :) & ! ni-1,j,k+1
         + xc(ni-1, 2:nj-1, 2:nk-1, :) & ! ni-1,j+1,k+1
-    )/4d0
+    )/4e0
 
     ! j=1
     xn(2:ni-1, 1, 2:nk-1, :) = (&
@@ -384,7 +384,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1, 1:nk-2, :) & ! i+1,1,k
         + xc(1:ni-2, 1, 2:nk-1, :) & ! i,1,k+1
         + xc(2:ni-1, 1, 2:nk-1, :) & ! i+1,1,k+1
-    )/4d0
+    )/4e0
 
     ! j=nj
     xn(2:ni-1, nj, 2:nk-1, :) = (&
@@ -392,7 +392,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, nj-1, 1:nk-2, :) & ! i+1,nj-1,k
         + xc(1:ni-2, nj-1, 2:nk-1, :) & ! i,nj-1,k+1
         + xc(2:ni-1, nj-1, 2:nk-1, :) & ! i+1,nj-1,k+1
-    )/4d0
+    )/4e0
 
     ! k=1
     xn(2:ni-1, 2:nj-1, 1, :) = (&
@@ -400,7 +400,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, 1, :) &
         + xc(1:ni-2, 2:nj-1, 1, :) &
         + xc(2:ni-1, 2:nj-1, 1, :) &
-    )/4d0
+    )/4e0
 
     ! k=nk
     xn(2:ni-1, 2:nj-1, nk, :) = (&
@@ -408,7 +408,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         + xc(2:ni-1, 1:nj-2, nk-1, :) &
         + xc(1:ni-2, 2:nj-1, nk-1, :) &
         + xc(2:ni-1, 2:nj-1, nk-1, :) &
-    )/4d0
+    )/4e0
 
     ! Edges take 1/2 from each adjacent cell
 
@@ -416,73 +416,73 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
     xn(1, 1, 2:nk-1, :) = (&
           xc(1, 1, 1:nk-2, :) &
         + xc(1, 1, 2:nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! i=1, j=nj
     xn(1, nj, 2:nk-1, :) = (&
           xc(1, nj-1, 1:nk-2, :) &
         + xc(1, nj-1, 2:nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! i=ni, j=1
     xn(ni, 1, 2:nk-1, :) = (&
           xc(ni-1, 1, 1:nk-2, :) &
         + xc(ni-1, 1, 2:nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! i=ni, j=nj
     xn(ni, nj, 2:nk-1, :) = (&
           xc(ni-1, nj-1, 1:nk-2, :) &
         + xc(ni-1, nj-1, 2:nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! i=1, k=1
     xn(1, 2:nj-1, 1, :) = (&
           xc(1, 1:nj-2, 1, :) &
         + xc(1, 2:nj-1, 1, :) &
-    )/2d0
+    )/2e0
 
     ! i=1, k=nk
     xn(1, 2:nj-1, nk, :) = (&
           xc(1, 1:nj-2, nk-1, :) &
         + xc(1, 2:nj-1, nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! i=ni, k=1
     xn(ni, 2:nj-1, 1, :) = (&
           xc(ni-1, 1:nj-2, 1, :) &
         + xc(ni-1, 2:nj-1, 1, :) &
-    )/2d0
+    )/2e0
 
     ! i=ni, k=nk
     xn(ni, 2:nj-1, nk, :) = (&
           xc(ni-1, 1:nj-2, nk-1, :) &
         + xc(ni-1, 2:nj-1, nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! j=1, k=1
     xn(2:ni-1, 1, 1, :) = (&
           xc(1:ni-2, 1, 1, :) &
         + xc(2:ni-1, 1, 1, :) &
-    )/2d0
+    )/2e0
 
     ! j=1, k=nk
     xn(2:ni-1, 1, nk, :) = (&
           xc(1:ni-2, 1, nk-1, :) &
         + xc(2:ni-1, 1, nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! j=nj, k=1
     xn(2:ni-1, nj, 1, :) = (&
           xc(1:ni-2, nj-1, 1, :) &
         + xc(2:ni-1, nj-1, 1, :) &
-    )/2d0
+    )/2e0
 
     ! j=nj, k=nk
     xn(2:ni-1, nj, nk, :) = (&
           xc(1:ni-2, nj-1, nk-1, :) &
         + xc(2:ni-1, nj-1, nk-1, :) &
-    )/2d0
+    )/2e0
 
     ! Corners take entirety from nearest cell
     xn(1,  1,  1, :) = xc(1,    1,    1, :)
@@ -507,16 +507,16 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*8, intent (in)  :: sf2
-    real*8, intent (in)  :: sf4
+    real*4, intent (in)  :: sf2
+    real*4, intent (in)  :: sf4
 
-    real*8, intent (inout)  :: x(ni, nj, nk, np)
-    real*8 :: xs2(ni, nj, nk, np)
-    real*8 :: xs4(ni, nj, nk, np)
+    real*4, intent (inout)  :: x(ni, nj, nk, np)
+    real*4 :: xs2(ni, nj, nk, np)
+    real*4 :: xs4(ni, nj, nk, np)
 
     ! Initialise to zero
-    xs2 = 0d0
-    xs4 = 0d0
+    xs2 = 0e0
+    xs4 = 0e0
 
     ! Accumulate 2nd-order smoothed values for each direcion in turn
     ! We will divide by three later
@@ -524,46 +524,46 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! i interior
     xs2(2:ni-1, :, :, :) = xs2(2:ni-1, :, :, :) + ( &
           x(1:ni-2, :, :, :) + x(3:ni, :, :, :) &
-    )/2d0
+    )/2e0
 
     ! i start
     xs2(1, :, :, :) = xs2(1, :, :, :) + ( &
-          2d0*x(2, :, :, :) - x(3, :, :, :) &
+          2e0*x(2, :, :, :) - x(3, :, :, :) &
     )
 
     ! i end
     xs2(ni, :, :, :) = xs2(ni, :, :, :) + ( &
-          2d0*x(ni-1, :, :, :) - x(ni-2, :, :, :) &
+          2e0*x(ni-1, :, :, :) - x(ni-2, :, :, :) &
     )
 
     ! j interior
     xs2(:, 2:nj-1, :, :) = xs2(:, 2:nj-1, :, :) + ( &
           x(:, 1:nj-2, :, :) + x(:, 3:nj,   :, :) &
-    )/2d0
+    )/2e0
 
     ! j start
     xs2(:, 1, :, :) = xs2(:, 1, :, :) + ( &
-          2d0*x(:, 2, :, :) - x(:, 3,   :, :) &
+          2e0*x(:, 2, :, :) - x(:, 3,   :, :) &
     )
 
     ! j end
     xs2(:, nj, :, :) = xs2(:, nj, :, :) + ( &
-          2d0*x(:, nj-1, :, :) - x(:, nj-2, :, :) &
+          2e0*x(:, nj-1, :, :) - x(:, nj-2, :, :) &
     )
 
     ! k interior
     xs2(:, :, 2:nk-1, :) = xs2(:, :, 2:nk-1, :) + ( &
           x(:, :, 1:nk-2, :) + x(:, :,   3:nk, :) &
-    )/2d0
+    )/2e0
 
     ! k start
     xs2(:, :, 1, :) = xs2(:, :, 1, :) + ( &
-          2d0*x(:, :, 2, :) - x(:, :,   3, :) &
+          2e0*x(:, :, 2, :) - x(:, :,   3, :) &
     )
 
     ! k end
     xs2(:, :, nk, :) = xs2(:, :, nk, :) + ( &
-          2d0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
+          2e0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
     )
 
     ! Accumulate 4th-order smoothed values for each direcion in turn
@@ -571,97 +571,97 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
 
     ! i interior
     xs4(3:ni-2, :, :, :) = xs4(3:ni-2, :, :, :) + ( &
-        -     x(1:ni-4, :, :, :) + 4d0*x(2:ni-3, :, :, :) &
-        + 4d0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
-    )/6d0
+        -     x(1:ni-4, :, :, :) + 4e0*x(2:ni-3, :, :, :) &
+        + 4e0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
+    )/6e0
 
     ! i=1
     xs4(1, :, :, :) = xs4(1, :, :, :) + ( &
-          4d0*x(2, :, :, :) - 6d0*x(3, :, :, :) &
-        + 4d0*x(4, :, :, :) -     x(5, :, :, :) &
+          4e0*x(2, :, :, :) - 6e0*x(3, :, :, :) &
+        + 4e0*x(4, :, :, :) -     x(5, :, :, :) &
     )
 
     ! i=2
     xs4(2, :, :, :) = xs4(2, :, :, :) + ( &
-              x(1, :, :, :) + 6d0*x(3, :, :, :) &
-        - 4d0*x(4, :, :, :) +     x(5, :, :, :) &
-    )/4d0
+              x(1, :, :, :) + 6e0*x(3, :, :, :) &
+        - 4e0*x(4, :, :, :) +     x(5, :, :, :) &
+    )/4e0
 
     ! i=ni-1
     xs4(ni-1, :, :, :) = xs4(ni-1, :, :, :) + ( &
-              x(ni-4, :, :, :) - 4d0*x(ni-3, :, :, :) &
-        + 6d0*x(ni-2, :, :, :) +     x(ni, :, :, :) &
-    )/4d0
+              x(ni-4, :, :, :) - 4e0*x(ni-3, :, :, :) &
+        + 6e0*x(ni-2, :, :, :) +     x(ni, :, :, :) &
+    )/4e0
 
     ! i=ni
     xs4(ni, :, :, :) = xs4(ni, :, :, :) + ( &
-        -     x(ni-4, :, :, :) + 4d0*x(ni-3, :, :, :) &
-        - 6d0*x(ni-2, :, :, :) + 4d0*x(ni-1, :, :, :) &
+        -     x(ni-4, :, :, :) + 4e0*x(ni-3, :, :, :) &
+        - 6e0*x(ni-2, :, :, :) + 4e0*x(ni-1, :, :, :) &
     )
 
 
     ! j interior
     xs4(:, 3:nj-2, :, :) = xs4(:, 3:nj-2, :, :) + ( &
-        -     x(:, 1:nj-4, :, :) + 4d0*x(:, 2:nj-3, :, :) &
-        + 4d0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
-    )/6d0
+        -     x(:, 1:nj-4, :, :) + 4e0*x(:, 2:nj-3, :, :) &
+        + 4e0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
+    )/6e0
 
     ! j=1
     xs4(:, 1, :, :) = xs4(:, 1, :, :) + ( &
-          4d0*x(:, 2, :, :) - 6d0*x(:, 3, :, :) &
-        + 4d0*x(:, 4, :, :) -     x(:, 5, :, :) &
+          4e0*x(:, 2, :, :) - 6e0*x(:, 3, :, :) &
+        + 4e0*x(:, 4, :, :) -     x(:, 5, :, :) &
     )
 
     ! j=2
     xs4(:, 2, :, :) = xs4(:, 2, :, :) + ( &
-              x(:, 1, :, :) + 6d0*x(:, 3, :, :) &
-        - 4d0*x(:, 4, :, :) +     x(:, 5, :, :) &
-    )/4d0
+              x(:, 1, :, :) + 6e0*x(:, 3, :, :) &
+        - 4e0*x(:, 4, :, :) +     x(:, 5, :, :) &
+    )/4e0
 
     ! j=nj-1
     xs4(:, nj-1, :, :) = xs4(:, nj-1, :, :) + ( &
-              x(:, nj-4, :, :) - 4d0*x(:, nj-3, :, :) &
-        + 6d0*x(:, nj-2, :, :) +     x(:, nj, :, :) &
-    )/4d0
+              x(:, nj-4, :, :) - 4e0*x(:, nj-3, :, :) &
+        + 6e0*x(:, nj-2, :, :) +     x(:, nj, :, :) &
+    )/4e0
 
     ! j=nj
     xs4(:, nj, :, :) = xs4(:, nj, :, :) + ( &
-        -     x(:, nj-4, :, :) + 4d0*x(:, nj-3, :, :) &
-        - 6d0*x(:, nj-2, :, :) + 4d0*x(:, nj-1, :, :) &
+        -     x(:, nj-4, :, :) + 4e0*x(:, nj-3, :, :) &
+        - 6e0*x(:, nj-2, :, :) + 4e0*x(:, nj-1, :, :) &
     )
 
 
     ! k interior
     xs4(:, :, 3:nk-2, :) = xs4(:, :, 3:nk-2, :) + ( &
-        -     x(:, :, 1:nk-4, :) + 4d0*x(:, :, 2:nk-3, :) &
-        + 4d0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
-    )/6d0
+        -     x(:, :, 1:nk-4, :) + 4e0*x(:, :, 2:nk-3, :) &
+        + 4e0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
+    )/6e0
 
     ! k=1
     xs4(:, :, 1, :) = xs4(:, :, 1, :) + ( &
-          4d0*x(:, :, 2, :) - 6d0*x(:, :, 3, :) &
-        + 4d0*x(:, :, 4, :) -     x(:, :, 5, :) &
+          4e0*x(:, :, 2, :) - 6e0*x(:, :, 3, :) &
+        + 4e0*x(:, :, 4, :) -     x(:, :, 5, :) &
     )
 
     ! k=2
     xs4(:, :, 2, :) = xs4(:, :, 2, :) + ( &
-              x(:, :, 1, :) + 6d0*x(:, :, 3, :) &
-        - 4d0*x(:, :, 4, :) +     x(:, :, 5, :) &
-    )/4d0
+              x(:, :, 1, :) + 6e0*x(:, :, 3, :) &
+        - 4e0*x(:, :, 4, :) +     x(:, :, 5, :) &
+    )/4e0
 
     ! k=nk-1
     xs4(:, :, nk-1, :) = xs4(:, :, nk-1, :) + ( &
-              x(:, :, nk-4, :) - 4d0*x(:, :, nk-3, :) &
-        + 6d0*x(:, :, nk-2, :) +     x(:, :, nk, :) &
-    )/4d0
+              x(:, :, nk-4, :) - 4e0*x(:, :, nk-3, :) &
+        + 6e0*x(:, :, nk-2, :) +     x(:, :, nk, :) &
+    )/4e0
 
     ! k=nk
     xs4(:, :, nk, :) = xs4(:, :, nk, :) + ( &
-        -     x(:, :, nk-4, :) + 4d0*x(:, :, nk-3, :) &
-        - 6d0*x(:, :, nk-2, :) + 4d0*x(:, :, nk-1, :) &
+        -     x(:, :, nk-4, :) + 4e0*x(:, :, nk-3, :) &
+        - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
     ! now smooth
-    x = (1d0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3d0
+    x = (1e0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3e0
 
 end subroutine
