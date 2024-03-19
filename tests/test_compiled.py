@@ -1,5 +1,6 @@
 import turbigen.compiled
 import numpy as np
+import turbigen.grid
 np.random.seed = 3
 
 def make_ijk():
@@ -186,4 +187,66 @@ def test_smooth_converge():
 
     assert derr < 1e-5
 
-test_node_to_face()
+def test_div_uniform():
+    # 
+
+    # Geometry
+    L = 0.1
+    yoffset = 2.1*L
+
+    nj = 70
+    ni = 50
+    nk = 40
+
+    Nb = 1
+    xv = np.linspace(-L, L, ni)
+    yv = np.linspace(-L, L, nj) + yoffset
+    zv = -np.linspace(-L, L, nk)
+
+    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
+
+    # Convert Cartesian coordinates to polar
+    r = np.sqrt(y**2 + z**2)
+    t = np.arctan2(-z, y)
+
+    xrt = np.stack((x, r, t))
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    b = g[0]
+
+
+    ####
+    x = np.asfortranarray(np.zeros((ni, nj, nk, 3)).astype(np.single))
+
+    divx = np.asfortranarray(np.ones_like(b.vol).astype(np.single))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(np.single))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(np.single))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(np.single))
+    vol = np.asfortranarray(b.vol.astype(np.single))
+
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    rtol = 1e-2
+    assert (np.abs(divx)<rtol).all()
+
+    x[...,0] = 2.*b.x
+    print(x[...,1].mean())
+    print(x[...,2].mean())
+
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    print(divx.min(), divx.max())
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    # ax.plot(x[:, nj//2+1, nk//2])
+    # ax.plot(divx[:, nj//2+1, nk//2])
+    ax.plot(vol[:, nj//2, nk//2])
+    # ax.plot(dAj[:, nj//2, nk//2])
+    plt.show()
+    # assert (np.abs(divx)<rtol).all()
+
+
+test_div_uniform()
+# test_node_to_face()

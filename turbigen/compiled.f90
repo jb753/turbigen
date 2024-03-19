@@ -1,7 +1,7 @@
 !! ! Compiled functions to speed up expensive calulations
 
 subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
-        resid1,resid2, start_flag, ni, nj, nk)
+        resid1, resid2, start_flag, conserved_avg, nstep_avg, ni, nj, nk)
 
     implicit none
 
@@ -10,8 +10,11 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     integer, intent (in)  :: nk
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
     real*4, intent (inout) :: resid1(ni, nj, nk, 5)
     real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+    real*4 :: resc_abs(ni, nj, nk, 5)
+    real*4 :: resc_avg(5)
     real*4, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
     logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
@@ -25,6 +28,8 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     integer :: start_flag
 
     integer :: ip
+    integer, intent (in) :: nstep_avg
+    real*4 :: damp
 
     real*4 :: Sn(ni, nj, nk, 1)
     real*4 :: Sc(ni-1, nj-1, nk-1, 1)
@@ -93,7 +98,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     call get_fluxes_face(conservedk, Pk, hok, rk, wallk, Omega, fk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
 
     ! Add on source term
     fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc(:,:,:,1)
@@ -103,15 +108,29 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
 
+    resc_abs = abs(resc)
+    resc_avg = sum(sum(sum(resc_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
+    damp = 25e0
+    if (minval(resc_avg).gt.0) then
+        do ip = 1, 5
+            resc(:,:,:,ip)  = resc(:,:,:,ip) / (1e0 + resc_abs(:,:,:,ip)/resc_avg(ip)/damp)
+        end do
+    end if
+
     ! Distribute change to nodes
     call cell_to_node(resc, resid1, ni, nj, nk, 5)
 
-    if (start_flag.eq.1) then
+    if (start_flag.eq.0) then
         conserved = conserved + 5e-1*resid1
     else
         conserved = conserved + 2e0*resid1 - resid2
     end if
     resid2 = resid1
+
+    if (start_flag.gt.1) then
+        conserved_avg = conserved_avg + conserved/float(nstep_avg)
+    end if
+
 
 end subroutine
 
@@ -221,13 +240,14 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
 end subroutine
 
 
-subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk)
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
 
     implicit none
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
+    integer, intent (in)  :: np
 
     integer :: ip
 
@@ -236,18 +256,17 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk)
     real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*4, intent (in)  :: fi(ni, nj-1, nk-1, 3, 5)
-    real*4, intent (in)  :: fj(ni-1, nj, nk-1, 3, 5)
-    real*4, intent (in)  :: fk(ni-1, nj-1, nk, 3, 5)
+    real*4, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
+    real*4, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
+    real*4, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
 
     real*4 :: fisum(ni, nj-1, nk-1)
     real*4 :: fjsum(ni-1, nj, nk-1)
     real*4 :: fksum(ni-1, nj-1, nk)
 
-    real*4, intent (out)  :: fsum(ni-1, nj-1, nk-1, 5)
+    real*4, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
 
-
-    do ip = 1, 5
+    do ip = 1, np
         ! Dot product areas with the fluxes
         fisum = sum(dAi*fi(:,:,:,:,ip),4)
         fjsum = sum(dAj*fj(:,:,:,:,ip),4)
@@ -658,5 +677,35 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
 
     ! now smooth
     x = (1e0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3e0
+
+end subroutine
+
+
+subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
+
+    implicit none
+
+    real*4, intent (inout)  :: x(ni, nj, nk, 3)
+
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+
+    real*4, intent (inout)  :: divx(ni-1, nj-1, nk-1)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4 :: xi(ni, nj-1, nk-1, 3)
+    real*4 :: xj(ni-1, nj, nk-1, 3)
+    real*4 :: xk(ni-1, nj-1, nk, 3)
+
+    call node_to_face( x, xi, xj, xk, ni, nj, nk, 3 )
+
+
+    call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, divx, ni, nj, nk, 1)
+
 
 end subroutine

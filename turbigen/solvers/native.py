@@ -16,7 +16,7 @@ import logging
 
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.DEBUG)
+logger.setLevel(level=logging.INFO)
 
 
 # class NativeConfig(BaseSolver):
@@ -31,14 +31,14 @@ def flatwhere(x):
 
 nstep_dt = 100
 nstep_log = 500
-nstep = 20000
+nstep = 15000
+nstep_avg = 5000
 nrk = 4
-dampin = 10.0
 rfin = 0.2
 rfin1 = 1.0 - rfin
 
-fac_conv = 1e-2
-sfin = 0.001
+fac_conv = 1e-9
+sfin = 0.005
 fac_2nd = 0.2
 CFL = 0.4
 sf = CFL * sfin
@@ -77,6 +77,8 @@ class SolverBlock:
         self.dU1 = self.conserved.copy(order="F").astype(np.single) * np.nan
         self.dU2 = self.conserved.copy(order="F").astype(np.single) * np.nan
         self._flag_scree = False
+
+        self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
 
         # Get wall indicators
         # These are three arrays of shape
@@ -200,6 +202,8 @@ class SolverBlock:
             self.dU1,
             self.dU2,
             start_flag,
+            self.conserved_avg,
+            nstep_avg
         )
 
         self.smooth()
@@ -338,10 +342,14 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
                 sb.set_timestep()
 
             sb.set_inlets()
-
             sb.set_outlets()
 
-            start_flag = 1 if istep == 0 else 0
+            if istep==0:
+                start_flag = 0
+            elif istep > (nstep-nstep_avg):
+                start_flag = 2
+            else:
+                start_flag = 1
             sb.step(start_flag)
 
             # sb.smooth()
@@ -434,7 +442,21 @@ def run(grid, settings={}, machine=None):
         blocks_out.extend(bsi)
 
     for b, sb in zip(grid, blocks_out):
-        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
+        b.set_conserved(np.moveaxis(sb.conserved_avg, -1, 0))
+
+
+    mdot_in = 0.
+    for patch in grid.inlet_patches:
+        Cm, A, _ = patch.get_cut().mix_out()
+        mdot_in += Cm.rho * Cm.Vm * A
+
+    mdot_out = 0.
+    for patch in grid.outlet_patches:
+        Cm, A, _ = patch.get_cut().mix_out()
+        mdot_out += Cm.rho * Cm.Vm * A
+
+    logger.info(f'Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%')
+
 
     dUlog = np.array(dUlog)
     dUlog /= dUlog[0]

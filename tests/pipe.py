@@ -43,17 +43,24 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 20
-nk = 20
+nj = 33
+nk = 5
 
 AR = 1.
 ni = int(nj/h*L)
 print(f'ni={ni}, nj={nj}, nk={nk}')
 print(f'ncell/1e6={ni*nj*nk/1e6}')
 # quit()
-pitch = h/nj*(nk-1)
+pitch = h/(nj-1)*(nk-1)
 Nb = int(2.0 * np.pi * rm / pitch)
+print(Nb)
 dt = 2.0 * np.pi / float(Nb)
+dk = rm*dt/(nk-1)
+dj = h/nj
+di = L/ni
+print('AR',dj/dk)
+print('AR',dj/di)
+quit()
 tv = np.linspace(-dt / 2., dt / 2., nk)
 xv = np.linspace(0., L, ni)
 rv = np.linspace(rh, rt, nj)
@@ -175,6 +182,12 @@ for b in g:
     bc = b[:,nj//2,nk//2]
     hm = ax.plot(bc.x, bc.P)
 
-# ax.axis('equal')
-# plt.colorbar(hm)
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    bc = b[:,:,nk//2]
+    hm = ax.contourf(bc.x, bc.r, bc.Vt)
+
+ax.axis('equal')
+plt.colorbar(hm)
 plt.show()
