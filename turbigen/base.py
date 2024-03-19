@@ -344,7 +344,7 @@ class Kinematics:
             raise Exception("Cell volume is only defined for 3D grids")
 
         # Put coord components on last dimension for numpy cross
-        v = np.moveaxis(self.xrrt, 0, -1)
+        v = np.moveaxis(self.xyz, 0, -1)
 
         # Extract vertices A to H
         A = v[:-1, 1:, :-1, :]  # i j+1 k
@@ -387,7 +387,7 @@ class Kinematics:
         V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
         V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
         V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
-        vol = -(V1 + V2 + V3 + V4) / 12.0
+        vol = (V1 + V2 + V3 + V4) / 12.0
 
         return vol
 
@@ -537,15 +537,15 @@ class Kinematics:
 
     @dependent_property
     def dli(self):
-        return np.diff(self.xrrt, axis=1)
+        return np.diff(self.xyz, axis=1)
 
     @dependent_property
     def dlj(self):
-        return np.diff(self.xrrt, axis=2)
+        return np.diff(self.xyz, axis=2)
 
     @dependent_property
     def dlk(self):
-        return np.diff(self.xrrt, axis=3)
+        return np.diff(self.xyz, axis=3)
 
     @dependent_property
     def dlmin(self):
