@@ -21,7 +21,7 @@ if rank > 0:
 # Geometry
 h = 0.1
 L = h * 4.0
-skew = 30.
+skew = 0.
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -48,7 +48,8 @@ nk = 20
 
 AR = 1.
 ni = int(nj/h*L)
-# print(ni*nj*nk/1e6)
+print(f'ni={ni}, nj={nj}, nk={nk}')
+print(f'ncell/1e6={ni*nj*nk/1e6}')
 # quit()
 pitch = h/nj*(nk-1)
 Nb = int(2.0 * np.pi * rm / pitch)

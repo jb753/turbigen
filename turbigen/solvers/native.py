@@ -8,6 +8,7 @@ from turbigen.compiled import (
     node_to_cell,
     node_to_face,
     step,
+    calculate_secondary
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -195,12 +196,14 @@ class SolverBlock:
             self.dAj,
             self.dAk,
             self.vol,
-            self.halfVsq,
-            self.u,
             self.dU1,
             self.dU2,
             start_flag,
         )
+
+        self.smooth()
+
+        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
 
         self.state.set_rho_u(self.conserved[..., 0], self.u)
 
@@ -330,7 +333,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
             start_flag = 1 if istep == 0 else 0
             sb.step(start_flag)
 
-            sb.smooth()
+            # sb.smooth()
 
         if not np.mod(istep, nstep_log) and istep > 0 and master_flag:
             log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"

@@ -1,6 +1,6 @@
 !! ! Compiled functions to speed up expensive calulations
 
-subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, halfVsq, u, &
+subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
         resid1,resid2, start_flag, ni, nj, nk)
 
     implicit none
@@ -43,9 +43,6 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     real*4, intent(inout) :: P( ni, nj, nk)
     real*4, intent(inout) :: ho( ni, nj, nk)
     real*4, intent(inout) :: r( ni, nj, nk)
-
-    real*4, intent(inout) :: u( ni, nj, nk)
-    real*4, intent(inout) :: halfVsq(ni, nj, nk)
 
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
@@ -115,8 +112,6 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
         conserved = conserved + 2e0*resid1 - resid2
     end if
     resid2 = resid1
-
-    call calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
 end subroutine
 
