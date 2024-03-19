@@ -110,7 +110,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     call cell_to_node(resc, resid1, ni, nj, nk, 5)
 
     if (start_flag.eq.1) then
-        conserved = conserved + resid1
+        conserved = conserved + 5e-1*resid1
     else
         conserved = conserved + 2e0*resid1 - resid2
     end if

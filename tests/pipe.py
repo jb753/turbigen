@@ -21,6 +21,7 @@ if rank > 0:
 # Geometry
 h = 0.1
 L = h * 4.0
+skew = 30.
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -42,8 +43,8 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 64
-nk = 32
+nj = 20
+nk = 20
 
 AR = 1.
 ni = int(nj/h*L)
@@ -57,6 +58,8 @@ xv = np.linspace(0., L, ni)
 rv = np.linspace(rh, rt, nj)
 
 xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+
+xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1]
 
 # squeeze the nozzle
 fac_noz = np.interp(xv, [0., L/2, L], [1., 0.5, 1.])[:,None,None]
@@ -164,7 +167,6 @@ tst = timer()
 turbigen.solvers.native.run(g)
 ten = timer()
 print(ten-tst)
-
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
