@@ -251,8 +251,12 @@ def send_slave(block_split, procids, periodics):
     for iproc in range(1, size):
         comm.send(block_split[iproc], dest=iproc)
 
+    comm.Barrier()
+
     for iproc in range(1, size):
         comm.send(periodics, dest=iproc)
+
+    comm.Barrier()
 
 
 def run_slave(blocks=None, periodics_all=None, nodes=None):
@@ -262,7 +266,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
     if blocks is None:
         blocks = comm.recv()
+        comm.Barrier()
         periodics_all = comm.recv()
+        comm.Barrier()
         master_flag = False
     else:
         master_flag = True
