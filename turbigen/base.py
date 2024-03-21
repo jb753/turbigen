@@ -31,10 +31,14 @@ class StructuredData:
     _read_only = False
     _data_rows = ()
 
-    def __init__(self, shape=()):
+    def __init__(self, shape=(), order="C"):
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
-        self._data = np.full((self.nprop,) + shape, np.nan)
+        self._order = order
+        if order == 'C':
+            self._data = np.full((self.nprop,) + shape, np.nan, order=order)
+        else:
+            self._data = np.full(shape + (self.nprop,), np.nan, order=order)
         self._metadata = {}
         self._dependent_property_cache = {}
 
@@ -151,18 +155,27 @@ class StructuredData:
         return ind
 
     def _get_data_by_key(self, key):
-        return self._data[
-            self._lookup_index(key),
-        ]
+        ind = self._lookup_index(key)
+        if self._order == 'C':
+            return self._data[ind,]
+        else:
+            return self._data[...,ind]
 
     def _set_data_by_key(self, key, val):
         if self._read_only:
             raise Exception(f"Cannot modify read-only {self}")
         else:
+            ind = self._lookup_index(key)
             if np.shape(val) == (1,):
-                self._data[self._lookup_index(key)] = val[0]
+                if self._order == 'C':
+                    self._data[ind] = val[0]
+                else:
+                    self._data[...,ind] = val[0]
             else:
-                self._data[self._lookup_index(key)] = val
+                if self._order == 'C':
+                    self._data[ind] = val
+                else:
+                    self._data[...,ind] = val
             self._dependent_property_cache.clear()
 
     def set_read_only(self):
@@ -331,7 +344,7 @@ class Kinematics:
             raise Exception("Cell volume is only defined for 3D grids")
 
         # Put coord components on last dimension for numpy cross
-        v = np.moveaxis(self.xrrt, 0, -1)
+        v = np.moveaxis(self.xyz, 0, -1)
 
         # Extract vertices A to H
         A = v[:-1, 1:, :-1, :]  # i j+1 k
@@ -374,7 +387,7 @@ class Kinematics:
         V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
         V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
         V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
-        vol = -(V1 + V2 + V3 + V4) / 12.0
+        vol = (V1 + V2 + V3 + V4) / 12.0
 
         return vol
 
@@ -524,15 +537,33 @@ class Kinematics:
 
     @dependent_property
     def dli(self):
-        return np.diff(self.xrrt, axis=1)
+        return np.diff(self.xyz, axis=1)
 
     @dependent_property
     def dlj(self):
-        return np.diff(self.xrrt, axis=2)
+        return np.diff(self.xyz, axis=2)
 
     @dependent_property
     def dlk(self):
-        return np.diff(self.xrrt, axis=3)
+        return np.diff(self.xyz, axis=3)
+
+    @dependent_property
+    def dlmin(self):
+
+        # Shortest side length
+        dli = turbigen.util.vecnorm(self.dli)
+        dlj = turbigen.util.vecnorm(self.dlj)
+        dlk = turbigen.util.vecnorm(self.dlk)
+        dli = 0.25 * (
+            dli[:, :-1, :-1] + dli[:, :-1, 1:] + dli[:, 1:, :-1] + dli[:, :-1, :-1]
+        )
+        dlj = 0.25 * (
+            dlj[:-1, :, :-1] + dlj[:-1, :, 1:] + dlj[1:, :, :-1] + dlj[:-1, :, :-1]
+        )
+        dlk = 0.25 * (
+            dlk[:-1, :-1, :] + dlk[:-1, 1:, :] + dlk[1:, :-1, :] + dlk[:-1, :-1, :]
+        )
+        return np.minimum(dli, dlj, dlk)
 
     @dependent_property
     def dAi(self):
@@ -667,7 +698,7 @@ class Kinematics:
     @dependent_property
     def tri_area(self):
         if not self.shape[1] == 3:
-            raise Exception("This is not a triangulate cut.")
+            raise Exception("This is not a triangulated cut.")
 
         # Vectors for each side
         qAB = self.xrrt[..., 1] - self.xrrt[..., 0]
@@ -678,6 +709,23 @@ class Kinematics:
         qAC = np.moveaxis(qAC, 0, -1).astype(np.float64)
 
         return 0.5 * np.cross(qAC, qAB).transpose(1, 0)
+
+    def get_triangulation(self):
+        """Generate a matplotlib-compatible triangulation in r-t plane."""
+        if not self.shape[1] == 3:
+            raise Exception("This is not a triangulated cut.")
+
+        ntri, _ = self.shape
+        points, iunique, triangles = np.unique(
+            # np.stack((self.x, self.r, self.t)).reshape(2,-1)
+            self.xrt.reshape(3, -1),
+            axis=1,
+            return_index=True,
+            return_inverse=True,
+        )
+        triangles = triangles.reshape(-1, 3)
+
+        return points, triangles, iunique
 
     #
     # Velocities
@@ -990,7 +1038,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except:
+            except Exception:
                 istag[j] = 0
 
         return istag

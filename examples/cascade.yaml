@@ -59,10 +59,17 @@ solver:
   # ...
 
 post_process:
+  contour_traverse:
+    mnorm: [2.1,]
+    coord_sys: yz
+    var: ['Ys', 'Vm']
   plot_nose:
     row_spf: [[0.6,],]
+  plot_section:
+    row_spf: [[0.2,0.5,0.8],]
   plot_pressure_distributions:
     row_spf: [[0.6,],]
     write_raw: true
   plot_incidence:
   plot_annulus:
+    show_control_points: false

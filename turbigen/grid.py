@@ -245,6 +245,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def outlet_patches(self):
         return self.find_patches(OutletPatch)
 
+    @property
+    def periodic_patches(self):
+        return self.find_patches(PeriodicPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -364,7 +368,7 @@ class Grid:
         b.grid = self
 
     def index(self, block):
-        return self._blocks.index(block)
+        return [block is bi for bi in self._blocks].index(True)
 
     def find_patches(self, cls):
         patches = []
@@ -1133,6 +1137,32 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
+    def get_indices(self, extra_dim=0):
+        # Return ijk indices over the patch
+        nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
+        ijk_lim = self.ijk_limits.copy()
+        ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+        ijk_lim[:, 1] += 1
+        if extra_dim:
+            ijk_lim = np.append(ijk_lim, [[0, extra_dim]], axis=0)
+        ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
+        ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
+        return ijk
+
+    def get_flat_indices(self, order="C", perm=None, flip=None, extra_dim=0):
+        # Return indices of all points on patch into self.block.flat
+        ijk = self.get_indices(extra_dim)
+        shape = self.block.shape
+        if extra_dim:
+            shape = shape + (extra_dim,)
+        ind = np.ravel_multi_index(ijk, shape, order=order)
+        if perm is not None:
+            perm = perm[1:] - 1
+            if extra_dim:
+                perm = np.append(perm, 3)
+            ind = np.flip(ind.transpose(perm), axis=flip)
+        return ind.reshape(-1)
+
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
 
@@ -1199,6 +1229,15 @@ class PeriodicPatch(Patch):
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
 
         return Cnx
+
+    def get_periodic_data(self):
+        ind = self.get_flat_indices("F", extra_dim=5)
+        match = self.match
+        perm, flip = match.get_match_perm_flip()
+        nxind = match.get_flat_indices("F", perm, flip, extra_dim=5)
+        bid = self.block.grid.index(self.block)
+        nxbid = match.block.grid.index(match.block)
+        return bid, ind.tolist(), nxbid, nxind.tolist()
 
 
 class PorousPatch(PeriodicPatch):
@@ -1270,6 +1309,18 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
 
+    def get_inlet_data(self):
+        return (
+            self.get_flat_indices(order="F"),
+            self.state.P + 0.0,
+            self.state.T + 0.0,
+            self.Alpha + 0.0,
+            self.Beta + 0.0,
+            self.state.rho,
+            self.state.h,
+            self.get_cut().r.reshape(-1),
+        )
+
 
 class InviscidPatch(Patch):
     pass
@@ -1282,6 +1333,9 @@ class OutletPatch(Patch):
     force = False
     amplitude = 0.0
     phase = 0.0
+
+    def get_outlet_data(self):
+        return self.get_flat_indices(order="F"), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):

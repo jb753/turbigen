@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, write_raw=False):
+def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
 
     lnst = ["-", "--"]
 
@@ -78,6 +78,9 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False):
                     ax.plot(
                         np.abs(zeta_norm), Cp, color=f"C{ispf}", linestyle=lnst[isurf]
                     )
+
+                if lim:
+                    ax.set_ylim(lim)
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"

@@ -1089,6 +1089,7 @@ def interpolate_transfinite(c, plot=False):
                     label=f"{labels[i]},{ci.shape[1]}",
                 )
         ax.legend()
+        plt.savefig("beans.pdf")
         plt.show()
 
     # Check corners are coincident
@@ -1303,7 +1304,7 @@ def node_to_face3(x):
     return xi, xj, xk
 
 
-def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.):
+def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
     surfs = grid.cut_blade_surfs()
 
@@ -1353,7 +1354,7 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.):
     return chi_stag
 
 
-def incidence(grid, machine, meanline, fac_Rle=1.):
+def incidence(grid, machine, meanline, fac_Rle=1.0):
 
     chi_stag_all = stagnation_point_angle(grid, machine, meanline, fac_Rle)
 
@@ -1375,22 +1376,71 @@ def incidence(grid, machine, meanline, fac_Rle=1.):
             nsmooth = 10
             sf = 0.5
             for _ in range(nsmooth):
-                chi_avg = 0.5*(chi_stag[:-2]+chi_stag[2:])
-                chi_stag[1:-1] = sf*chi_stag[1:-1]  + (1.-sf)*chi_avg
+                chi_avg = 0.5 * (chi_stag[:-2] + chi_stag[2:])
+                chi_stag[1:-1] = sf * chi_stag[1:-1] + (1.0 - sf) * chi_avg
 
             incidence = chi_stag - chi_metal
 
             out_now = np.stack((spf, incidence, chi_stag, chi_metal))
 
             # Remove results in tip gap
-            out_now[1:,spf>(1.-machine.tip[irow])] = np.nan
+            out_now[1:, spf > (1.0 - machine.tip[irow])] = np.nan
 
             out[-1].append(out_now)
 
     return out
 
-def qinv(x,q):
+
+def qinv(x, q):
     xs = np.sort(x)
     n = len(x)
-    irel = np.linspace(0.,n-1,n)/(n-1)
+    irel = np.linspace(0.0, n - 1, n) / (n - 1)
     return np.interp(q, irel, xs)
+
+
+def clipped_levels(x, dx=None, thresh=0.001):
+
+    xmin = qinv(x, thresh)
+    xmax = qinv(x, 1.0 - thresh)
+    if dx:
+        xmin = np.floor(xmin / dx) * dx
+        xmax = np.ceil(xmax / dx) * dx
+        xlev = np.arange(xmin, xmax + dx, dx)
+    else:
+        xlev = np.linspace(xmin, xmax, 20)
+
+    return xlev
+
+
+def get_mp_from_xr(grid, machine, irow, spf, mlim):
+
+    # Start by choosing a j-index to plot along
+    jspf = grid.spf_index(spf)
+
+    xr_row = machine.ann.xr_row(irow)
+
+    surf = grid.cut_blade_surfs()[irow][0].squeeze()
+    spf_blade = surf.spf[:, jspf]
+    spf_actual = spf_blade[surf.i_stag[jspf]]
+
+    # We want to plot along a general meridional surface
+    # So brute force a mapping from x/r to meridional distance
+
+    # Evaluate xr as a function of meridonal distance using machine geometry
+    m_ref = np.linspace(*mlim, 5000)
+    xr_ref = xr_row(spf_actual, m_ref)
+
+    # Calculate normalised meridional distance (angles are angles)
+    dxr = np.diff(xr_ref, n=1, axis=1)
+    dm = np.sqrt(np.sum(dxr**2.0, axis=0))
+    rc = 0.5 * (xr_ref[1, 1:] + xr_ref[1, :-1])
+    mp_ref = cumsum0(dm / rc)
+    assert (np.diff(mp_ref) > 0.0).all()
+
+    def mp_from_xr(xr):
+        func = scipy.interpolate.NearestNDInterpolator(xr_ref.T, mp_ref)
+        xru = xr.reshape(2, -1)
+        mpu = func(xru.T)
+        return mpu.reshape(xr.shape[1:])
+
+    return mp_from_xr, spf_actual

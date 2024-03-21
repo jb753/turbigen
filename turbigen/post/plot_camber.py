@@ -1,0 +1,57 @@
+"""Save plot of camber line."""
+import os
+import turbigen.util
+import turbigen.camber
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+logger = turbigen.util.make_logger()
+
+
+def post(grid, machine, meanline, postdir, row_spf):
+
+    # Meridional locations to plot at
+    m = turbigen.util.cluster_cosine(50)
+
+    # Loop over rows
+    for irow, spfrow in enumerate(row_spf):
+
+        # Set up axes
+        fig, ax = plt.subplots()
+        ax.set_xlabel(r"Meridional Distance, $m/c_m$")
+        ax.set_ylabel(r"Normalised Metal Angle, $\hat{\chi}$")
+        ax.set_xlim((0.0, 1.0))
+
+        # Loop over span fractions
+        for ispf, spf in enumerate(spfrow):
+
+            cam, _ = machine.bld[irow]._get_cam_thick(spf)
+
+            if isinstance(cam, turbigen.camber.Taylor):
+                chi_str = r"$\displaystyle\hat{\chi} = \frac{\chi - \chi_\mathrm{in} }{\chi_\mathrm{out} - \chi_\mathrm{in}}$"
+
+            title_str = (
+                (r"$\chi_\mathrm{in}=%.1f^\circ$, " % cam.chi(0.0))
+                + (r"$\chi_\mathrm{out}=%.1f^\circ$, " % cam.chi(1.0))
+                + (r"$\hat{\chi}'(0)=%.2f$, " % cam.q_camber[2])
+                + (r"$\hat{\chi}'(1)=%.2f$, " % cam.q_camber[3])
+                + (r"$\hat{\chi}''(0.5)=%.2f$" % cam.q_camber[4])
+            )
+
+            ax.set_title(title_str, pad=10)
+            ax.text(0.025, 0.95, chi_str, va='top')
+            plt.tight_layout()
+
+            col=f'C{ispf}'
+            ax.plot(m, cam.chi_hat(m), "-", color=col, label=f'spf={spf}')
+
+            mctrl = (0.0, 0.5, 1.0)
+            ax.plot(mctrl, cam.chi_hat(mctrl), "o", color=col, ms=10)
+            ax.set_ylim((0.,1.))
+
+        ax.legend(loc='lower right')
+
+        plotname = os.path.join(postdir, f"camber_row_{irow}.pdf")
+        plt.savefig(plotname)
+        plt.close()

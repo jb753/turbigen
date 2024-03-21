@@ -563,6 +563,12 @@ class Aircon:
         spf = np.reshape([0.0, 1.0], (1, -1))
         return self.evaluate_xr(t.reshape(-1, 1), spf).transpose(1, 0, 2)
 
+    def get_cut_plane(self, t):
+        """(x,r) points on hub and casing at given normalise merdional coord."""
+        spf = np.reshape([0.0, 1.0], (1, -1))
+        xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
+        return xrc
+
     def get_coords(self, nseg=100):
         """Sample the coordinates of hub and casing lines in AutoGrid style."""
         N = 3
