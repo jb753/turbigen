@@ -871,16 +871,21 @@ class Machine:
         self.Nrow = len(self.bld)
 
     def get_coords(self, flip_theta=False):
-        sections = [b.get_coords(flip_theta=flip_theta) for b in self.bld]
+        sections = []
+        for b in self.bld:
+            if b:
+                sections.append(b.get_coords(flip_theta=flip_theta))
+            else:
+                sections.append([None,None])
         annulus = self.ann.get_coords()
         zcst = self.ann.get_interfaces()
         if self.split:
             split = []
             for irow in range(len(sections)):
-                if b := self.split[irow]:
-                    split.append(b.get_coords(flip_theta=flip_theta))
-                else:
-                    split.append(None)
+                try:
+                    split.append(self.split[irow].get_coords(flip_theta=flip_theta))
+                except:
+                    split.append([None,None])
         else:
             split = None
         return sections, annulus, zcst, self.Nb, self.tip, split

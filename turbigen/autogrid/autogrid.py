@@ -260,6 +260,10 @@ def _write_geomturbo(
 
     # NOW DEFINE ROWS
     for i in range(n_row):
+
+        if ps[i] is None:
+            continue
+
         writeln("NI_BEGIN nirow")
         writeln("  NAME r%d" % (i + 1))
         writeln("  TYPE normal")

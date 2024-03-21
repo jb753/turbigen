@@ -183,8 +183,6 @@ def run_single(conf, gguess=None, plot=False):
             Chi = Alpha_rel + qstar_camber[:, :2]
             if np.any(np.abs(Chi)>90.):
                 raise Exception(f'Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}')
-            else:
-                print(f'Chi OK, Chi={Chi}')
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
             row["q_camber"] = q_camber
@@ -394,7 +392,7 @@ def run_single(conf, gguess=None, plot=False):
     Nb[iunbladed] = Nb[iunbladed - 1]
     Nb = np.round(Nb).astype(int)
 
-    s = 2.0 * np.pi * row_rmid[ind_out] / Nb
+    s = 2.0 * np.pi * row_rmid[ind_out] / Nb[ind_out]
     s_cm = s / ann.chords(0.5)[1:-1:2][ind_out]
     s_cm_str = np.array2string(s_cm, precision=2)
 
@@ -456,9 +454,9 @@ def run_single(conf, gguess=None, plot=False):
     # Set row, hub, casing spacings using yplus and flat-plate correlations
     yplus = np.atleast_2d(conf.mesh["yplus"]).T
     Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * ml.rho_ref * ml.V_ref**2.0
-    Vtau = np.sqrt(tauw / ml.rho_ref)
-    Lvisc = np.atleast_2d(ml.mu_ref / ml.rho_ref / Vtau)
+    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)[ind_out]
+    Vtau = np.sqrt(tauw / ml.rho_ref[ind_out])
+    Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref)[ind_out] / Vtau)
     drow = yplus * Lvisc
     # drow has dimensions: [LE/TE, irow]
     dhub = np.mean(drow)
@@ -486,7 +484,7 @@ def run_single(conf, gguess=None, plot=False):
             turbigen.plot.plot_hmesh(g, workdir)
 
     elif mesh_type == "oh":
-        tips *= 0.5 * (ml.span[::2] + ml.span[1::2])[ind_out]
+        tips *= 0.5 * (ml.span[::2] + ml.span[1::2])
         # Apply settings from yaml file to the default config
         ohmesh_config = ohmesh.OHMeshConfig(**mesh_settings)
         ohmesh_config.workdir = workdir
@@ -528,7 +526,20 @@ def run_single(conf, gguess=None, plot=False):
                 rot_types.append("shroud")
         else:
             rot_types.append("stationary")
-    g.apply_rotation(rot_types, ml.Omega[::2])
+
+    # OH meshes just skip unbladed rows, so we need to remove rotation
+    # information from unbladed rows
+    if mesh_type == "oh":
+        Omega_trim = []
+        rot_types_trim = []
+        for irow, Omi in enumerate(ml.Omega[::2]):
+            if ind_out[irow]:
+                rot_types_trim.append(rot_types[irow])
+                Omega_trim.append(Omi)
+        rot_types = rot_types_trim
+        Omega = Omega_trim
+
+    g.apply_rotation(rot_types, Omega)
 
     if "Beta1_override" in conf.solver:
         Beta1 = conf.solver.pop("Beta1_override")

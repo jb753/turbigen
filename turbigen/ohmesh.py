@@ -168,12 +168,20 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
     output_stem = os.path.join(os.path.abspath(workdir), "mesh")
 
     if mesh_config.gbcs_path == "":
-        chi_ref = np.concatenate(
-            [bld.get_chi(mesh_config.spf_ref) for bld in machine.bld]
-        )
+        chi_ref = []
+        is_unbladed = []
+        for bld in machine.bld:
+            if bld:
+                chi_ref.append(bld.get_chi(mesh_config.spf_ref))
+                is_unbladed.append(0)
+            # else:
+            #     chi_ref.append(np.zeros((2,)))
+            #     is_unbladed.append(1)
+        chi_ref = np.concatenate(chi_ref)
 
         # We fill in the rotation speeds later
-        Omega = np.zeros_like(dsurf)
+        Omega = np.zeros((len(chi_ref),))
+
         logger.info("Making a new mesh.")
         splitter = []
         if machine.split:
