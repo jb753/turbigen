@@ -704,8 +704,42 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
 
     call node_to_face( x, xi, xj, xk, ni, nj, nk, 3 )
 
-
     call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, divx, ni, nj, nk, 1)
 
+end subroutine
+
+
+subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
+
+    implicit none
+
+    real*4, intent (inout)  :: x(ni, nj, nk)
+
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+
+    real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer :: ii
+
+    real*4 :: xi(ni, nj-1, nk-1, 3)
+    real*4 :: xj(ni-1, nj, nk-1, 3)
+    real*4 :: xk(ni-1, nj-1, nk, 3)
+
+    real*4 :: xv(ni, nj, nk, 3)
+
+    xv = 0e0
+
+    do ii = 1,3
+        xv(:,:,:,ii) = x
+        call node_to_face( xv, xi, xj, xk, ni, nj, nk, 3 )
+        call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, gradx(:,:,:,ii), ni, nj, nk, 1)
+        xv = 0e0
+    end do
 
 end subroutine
