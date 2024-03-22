@@ -107,7 +107,8 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             # It seems that we have to pass triangles as a kwarg to tricontour,
             # not positional, but this results in a UserWarning that contour
             # does not take it as a kwarg. So catch and hide this warning.
-            with warnings.catch_warnings(action='ignore', category=UserWarning):
+            with warnings.catch_warnings(category=UserWarning):
+                warnings.simplefilter("ignore")
                 cm = ax.tricontourf(c1, c2, v, lev, triangles=triangles, cmap="cubehelix", linestyles="none")
 
             cm.set_edgecolor("face")
