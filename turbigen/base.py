@@ -639,16 +639,6 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # # Numpy cross function assumes that the components are in last axis
-        # dli = np.moveaxis(self.dli[:, :, :-1, :], 0, -1)
-        # dlj = np.moveaxis(self.dlj[:, :-1, :, :], 0, -1)
-        # return np.moveaxis(np.cross(dli, dlj), -1, 0)
-
-        # # Numpy cross function assumes that the components are in last axis
-        # dlkf = np.moveaxis(self.dlkf, 0, -1)
-        # dlkb = np.moveaxis(self.dlkb, 0, -1)
-        # dAk = -np.moveaxis(np.cross(dlkf, dlkb), -1, 0) * 0.5
-
         O = self.xrt[:, :-1, :-1, :]
         A = self.xrt[:, 1:, 1:, :]
         B = self.xrt[:, :-1, 1:, :]
