@@ -108,6 +108,7 @@ class Config:
         self._check_viscosity()
         self._check_inlet()
         self._check_mean_line()
+        self._check_iterate()
         # self._check_annulus()
 
     def _check_blades(self):
@@ -222,6 +223,12 @@ class Config:
                     "No value specified for required annulus design parameter"
                     f' "{p.name}"'
                 )
+
+    def _check_iterate(self):
+        if (mlconf:=self.iterate.get('mean_line')):
+            for v in mlconf.get('match_tolerance'):
+                if v not in self.mean_line:
+                    raise Exception(f'Unknown mean-line match variable \'{v}\', should be one of {list(self.mean_line.keys())}')
 
     @classmethod
     def read(cls, yaml_file):
