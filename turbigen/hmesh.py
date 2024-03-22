@@ -406,7 +406,6 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
     # Loop over rows
     nrow = mac.Nrow
-    print(dsurf)
     assert dsurf.shape == (2, nrow)
     theta_lim = None
     for irow in range(nrow):
