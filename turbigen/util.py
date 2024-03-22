@@ -1214,15 +1214,14 @@ def load_mean_line(mean_line_type):
 
 
 def load_annulus(annulus_type):
-    try:
+    if not annulus_type.endswith(".py"):
         # Attempt to load a built-in annulus
         mod = importlib.import_module(".annulus", package="turbigen")
         mod = getattr(mod, annulus_type)
-    except AttributeError:
+    else:
         # Use as a file path
         mod_file = os.path.abspath(annulus_type)
         mod_name = os.path.basename(annulus_type)
-        mod_file += ".py"
         spec = importlib.util.spec_from_file_location(
             f"turbigen.annulus.{mod_name}", mod_file
         )
@@ -1437,10 +1436,13 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
     mp_ref = cumsum0(dm / rc)
     assert (np.diff(mp_ref) > 0.0).all()
 
+    # Calculate location of stacking axis
+    mp_stack = np.interp(machine.bld[irow].mstack, m_ref, mp_ref)
+
     def mp_from_xr(xr):
         func = scipy.interpolate.NearestNDInterpolator(xr_ref.T, mp_ref)
         xru = xr.reshape(2, -1)
-        mpu = func(xru.T)
+        mpu = func(xru.T) - mp_stack
         return mpu.reshape(xr.shape[1:])
 
     return mp_from_xr, spf_actual

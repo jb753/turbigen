@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf):
+def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -32,7 +32,10 @@ def post(grid, machine, meanline, postdir, row_spf):
 
             mps = mp_from_xr(surf.xr)
 
-            ax.plot(mps, surf.t, "-", label=f"spf={spf}")
+            if coord_sys == "mpt":
+                ax.plot(mps, surf.t, "-", label=f"spf={spf}")
+            elif coord_sys == "xrt":
+                ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

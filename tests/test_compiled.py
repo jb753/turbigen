@@ -1,5 +1,6 @@
 import turbigen.compiled
 import numpy as np
+import turbigen.grid
 np.random.seed = 3
 
 def make_ijk():
@@ -186,4 +187,154 @@ def test_smooth_converge():
 
     assert derr < 1e-5
 
-test_node_to_face()
+def test_div():
+
+    # Geometry
+    L = 0.1
+    yoffset = 2.1*L
+
+    nj = 60
+    ni = 50
+    nk = 40
+
+    Nb = 1
+    xv = np.linspace(-L, L, ni)
+    yv = np.linspace(-L, L, nj) + yoffset
+    zv = -np.linspace(-L, L, nk)
+
+    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
+
+    x += 0.05*z
+
+    # Convert Cartesian coordinates to polar
+    r = np.sqrt(y**2 + z**2)
+    t = np.arctan2(-z, y)
+
+    xrt = np.stack((x, r, t))
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    b = g[0]
+
+    x = np.asfortranarray(np.zeros((ni, nj, nk, 3)).astype(np.single))
+
+    divx = np.asfortranarray(np.ones_like(b.vol).astype(np.single))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(np.single))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(np.single))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(np.single))
+    vol = np.asfortranarray(b.vol.astype(np.single))
+
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    rtol = 1e-3
+    assert (np.abs(divx)<rtol).all()
+
+    x[...,0] = 2.*b.x
+
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    assert np.allclose(divx,2., rtol=rtol)
+
+    x[...,0] = 0.
+    x[...,2] = -b.t
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+
+    rn = np.asfortranarray(b.r.astype(np.float32))
+    ni, nj, nk = rn.shape
+    shape_cell = (ni-1, nj-1, nk-1)
+    rc = np.empty(shape_cell, order='F', dtype=np.float32)
+    turbigen.compiled.node_to_cell(rn, rc)
+    assert np.allclose(divx*rc,-1., rtol=rtol)
+
+    x[...,2] = 0.
+    x[...,1] = 3.
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    assert np.allclose(divx*rc,3., rtol=0.05)
+
+
+def test_grad():
+
+    # Geometry
+    L = 0.1
+    yoffset = 2.1*L
+
+    nj = 60
+    ni = 50
+    nk = 40
+
+    Nb = 1
+    xv = np.linspace(-L, L, ni)
+    yv = np.linspace(-L, L, nj) + yoffset
+    zv = -np.linspace(-L, L, nk)
+
+    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
+
+    # x += 0.05*z
+
+    # Convert Cartesian coordinates to polar
+    r = np.sqrt(y**2 + z**2)
+    t = np.arctan2(-z, y)
+
+    xrt = np.stack((x, r, t))
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    b = g[0]
+
+
+    gradq = np.asfortranarray(np.ones((ni-1, nj-1, nk-1, 3)).astype(np.single))*np.nan
+    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(np.single))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(np.single))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(np.single))
+    vol = np.asfortranarray(b.vol.astype(np.single))
+
+    rn = np.asfortranarray(b.r.astype(np.float32))
+    ni, nj, nk = rn.shape
+    shape_cell = (ni-1, nj-1, nk-1)
+    rc = np.empty(shape_cell, order='F', dtype=np.float32)
+    turbigen.compiled.node_to_cell(rn, rc)
+
+    q = np.asfortranarray(b.x).astype(np.single)
+    # x = np.asfortranarray(b.r).astype(np.single)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk)
+    rtol = 1e-3
+    assert np.allclose(gradq[...,0], 1., rtol=rtol)
+
+    q = np.asfortranarray(-np.sqrt(2)*b.r).astype(np.single)
+    # x = np.asfortranarray(b.r).astype(np.single)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk)
+    print(gradq[...,1].min(), gradq[...,1].max())
+    # assert np.allclose(gradq[...,1], -2., rtol=rtol)
+
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.plot(gradq[ni-2,:, nk//2, :])
+
+    # assert (np.abs(divx)<rtol).all()
+
+    plt.show()
+
+    # x[...,0] = 0.
+    # x[...,2] = -b.t
+    # turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+
+    # rn = np.asfortranarray(b.r.astype(np.float32))
+    # ni, nj, nk = rn.shape
+    # shape_cell = (ni-1, nj-1, nk-1)
+    # rc = np.empty(shape_cell, order='F', dtype=np.float32)
+    # turbigen.compiled.node_to_cell(rn, rc)
+    # assert np.allclose(divx*rc,-1., rtol=rtol)
+
+    # x[...,2] = 0.
+    # x[...,1] = 3.
+    # turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    # assert np.allclose(divx*rc,3., rtol=0.05)
+
+
+
+test_grad()
+# test_div_uniform()
+# test_node_to_face()

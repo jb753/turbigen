@@ -8,6 +8,7 @@ from turbigen.compiled import (
     node_to_cell,
     node_to_face,
     step,
+    calculate_secondary
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -15,7 +16,7 @@ import logging
 
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.DEBUG)
+logger.setLevel(level=logging.INFO)
 
 
 # class NativeConfig(BaseSolver):
@@ -29,14 +30,15 @@ def flatwhere(x):
 
 
 nstep_dt = 100
-nstep_log = 50
-nstep = 5000
+nstep_log = 500
+nstep = 15000
+nstep_avg = 5000
 nrk = 4
-dampin = 10.0
 rfin = 0.2
 rfin1 = 1.0 - rfin
 
-sfin = 0.001
+fac_conv = 1e-9
+sfin = 0.005
 fac_2nd = 0.2
 CFL = 0.4
 sf = CFL * sfin
@@ -75,6 +77,8 @@ class SolverBlock:
         self.dU1 = self.conserved.copy(order="F").astype(np.single) * np.nan
         self.dU2 = self.conserved.copy(order="F").astype(np.single) * np.nan
         self._flag_scree = False
+
+        self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
 
         # Get wall indicators
         # These are three arrays of shape
@@ -195,12 +199,16 @@ class SolverBlock:
             self.dAj,
             self.dAk,
             self.vol,
-            self.halfVsq,
-            self.u,
             self.dU1,
             self.dU2,
             start_flag,
+            self.conserved_avg,
+            nstep_avg
         )
+
+        self.smooth()
+
+        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
 
         self.state.set_rho_u(self.conserved[..., 0], self.u)
 
@@ -260,6 +268,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
+    size = comm.Get_size()
 
     if blocks is None:
         blocks = comm.recv()
@@ -269,6 +278,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
         master_flag = False
     else:
         master_flag = True
+        dUlog = []
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -288,6 +298,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     nblock = len(blocks)
 
     tstart = timer()
+
+    dUe_ref = None
 
     # Start the main time stepping loop
     for istep in range(nstep):
@@ -330,24 +342,63 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
                 sb.set_timestep()
 
             sb.set_inlets()
-
             sb.set_outlets()
 
-            start_flag = 1 if istep == 0 else 0
+            if istep==0:
+                start_flag = 0
+            elif istep > (nstep-nstep_avg):
+                start_flag = 2
+            else:
+                start_flag = 1
             sb.step(start_flag)
 
-            sb.smooth()
+            # sb.smooth()
 
-        if not np.mod(istep, nstep_log) and istep > 0 and master_flag:
-            log_line = f"{istep}: {np.abs(blocks[0].dU1).mean(axis=(0,1,2))}"
-            logger.info(log_line)
-            ten = timer()
-            tpnps = (ten - tstart) / nodes / nstep_log
-            logger.info(f"tpnps={tpnps:.3e}")
-            tstart = ten
+        if not np.mod(istep, nstep_log) and istep > 0:
+
+            # Send residuals to master proc
+            dUnow = np.stack([np.abs(b.dU1.mean(axis=(0,1,2))) for b in blocks])
+
+            if rank:
+                comm.send(dUnow, dest=0)
+                terminate = np.empty((1,),dtype=int)
+                comm.Recv([terminate, 1, MPI.INT], source=0, tag=rank)
+                if terminate:
+                    comm.send(blocks, dest=0)
+                    return
+            else:
+                dUall = [dUnow,]
+                for iproc in range(1, size):
+                    dUall.append(comm.recv(source=iproc))
+                dUall = np.concatenate(dUall)
+
+                ten = timer()
+                tpnps = (ten - tstart) / nodes / nstep_log
+                tstart = ten
+
+                logger.info(f"{istep}: tpnps={tpnps:.3e}")
+                for ib, dU in enumerate(dUall):
+                    logger.info(f"  block {ib}: {dU}")
+
+                dUlognow = np.stack(dUall).mean(axis=0)
+                dUlog.append(dUlognow)
+
+                if not dUe_ref:
+                    dUe_ref = dUlognow[-1]*fac_conv
+
+                if dUlognow[-1] < dUe_ref:
+                    terminate = np.array((1,), dtype=int)
+                else:
+                    terminate = np.array((0,), dtype=int)
+                for iproc in range(1, size):
+                    comm.Send([terminate, 1, MPI.INT], dest=iproc, tag=iproc)
+
+                if terminate:
+                    return blocks, dUlog
+
 
     if master_flag:
-        return blocks
+        return blocks, dUlog
     else:
         comm.send(blocks, dest=0)
 
@@ -381,7 +432,7 @@ def run(grid, settings={}, machine=None):
     send_slave(block_split, procids, periodics)
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0] = run_slave(block_split[0], periodics, nodes)
+    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes)
 
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
@@ -390,24 +441,29 @@ def run(grid, settings={}, machine=None):
     for bsi in block_split:
         blocks_out.extend(bsi)
 
-        # mdot_in = 0.0
-        # for patch in grid.inlet_patches:
-        #     Cm, Ann, _ = patch.get_cut().mix_out()
-        #     mdot_in += Cm.rho * Cm.Vm * Ann
-
-        # mdot_out = 0.0
-        # for patch in grid.outlet_patches:
-        #     Cm, Ann, _ = patch.get_cut().mix_out()
-        #     mdot_out += Cm.rho * Cm.Vm * Ann
-        #     print(
-        #         f"mass flows {mdot_in:.3e}, {mdot_out:.3e}, "
-        #         f"err={(mdot_in/mdot_out-1.)*100:.1f}%"
-        #     )
-        #     mdot_all[istep // nstep_log] = (mdot_in, mdot_out)
-
     for b, sb in zip(grid, blocks_out):
-        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
+        b.set_conserved(np.moveaxis(sb.conserved_avg, -1, 0))
 
+
+    mdot_in = 0.
+    for patch in grid.inlet_patches:
+        Cm, A, _ = patch.get_cut().mix_out()
+        mdot_in += Cm.rho * Cm.Vm * A
+
+    mdot_out = 0.
+    for patch in grid.outlet_patches:
+        Cm, A, _ = patch.get_cut().mix_out()
+        mdot_out += Cm.rho * Cm.Vm * A
+
+    logger.info(f'Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%')
+
+
+    dUlog = np.array(dUlog)
+    dUlog /= dUlog[0]
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.semilogy(dUlog)
+    ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
 
 def get_geom(b):
     # Areas and volumes

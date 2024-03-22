@@ -15,6 +15,7 @@ def post(
     show_axis=False,
     show_control_points=True,
     show_blades=True,
+    write_raw=False,
 ):
 
     logger.info("Plotting annulus lines")
@@ -22,9 +23,9 @@ def post(
     m = np.linspace(0.0, 1.0, 100)
 
     fig, ax = plt.subplots()
-    ax.set_xlabel("Axial Coordinate, $x$")
-    ax.set_ylabel("Radial Coordinate, $r$")
-    plt.tight_layout(pad=0.1)
+    ax.axis("off")
+    # ax.set_xlabel("Axial Coordinate, $x$")
+    # ax.set_ylabel("Radial Coordinate, $r$")
     ann = machine.ann
 
     if show_blades:
@@ -59,8 +60,10 @@ def post(
             ax.plot(*xr_d1, "-", color=grey, solid_capstyle="butt")
             ax.plot(*xr_d2, "-", color=grey, solid_capstyle="butt")
 
-    ax.plot(*ann.hub.xr(m), "k-")
-    ax.plot(*ann.cas.xr(m), "k-")
+    xr_hub = ann.hub.xr(m)
+    xr_cas = ann.cas.xr(m)
+    ax.plot(*xr_hub, "k-")
+    ax.plot(*xr_cas, "k-")
     if show_control_points:
         ax.plot(*ann.hub.xr(ann.hub.mctrl), "ro", fillstyle="none", ms=10)
         ax.plot(*ann.cas.xr(ann.cas.mctrl), "ro", fillstyle="none", ms=10)
@@ -71,5 +74,10 @@ def post(
     ax.axis("equal")
     ax.axis("off")
     ax.grid("off")
+    plt.tight_layout(pad=0.1)
     pltname = os.path.join(postdir, "annulus.pdf")
     plt.savefig(pltname)
+
+    if write_raw:
+        rawname = os.path.join(postdir, "annulus_raw")
+        np.savez_compressed(rawname, xr_hub=xr_hub, xr_cas=xr_cas)
