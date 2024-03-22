@@ -181,8 +181,10 @@ def run_single(conf, gguess=None, plot=False):
                 logger.debug(f"Vortex exponent irow={irow} is {vexpon_row}")
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
             Chi = Alpha_rel + qstar_camber[:, :2]
-            if np.any(np.abs(Chi)>90.):
-                raise Exception(f'Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}')
+            if np.any(np.abs(Chi) > 90.0):
+                raise Exception(
+                    f"Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}"
+                )
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
             row["q_camber"] = q_camber
@@ -454,9 +456,9 @@ def run_single(conf, gguess=None, plot=False):
     # Set row, hub, casing spacings using yplus and flat-plate correlations
     yplus = np.atleast_2d(conf.mesh["yplus"]).T
     Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)[ind_out]
-    Vtau = np.sqrt(tauw / ml.rho_ref[ind_out])
-    Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref)[ind_out] / Vtau)
+    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)
+    Vtau = np.sqrt(tauw / ml.rho_ref)
+    Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
     # drow has dimensions: [LE/TE, irow]
     dhub = np.mean(drow)
@@ -538,6 +540,8 @@ def run_single(conf, gguess=None, plot=False):
                 Omega_trim.append(Omi)
         rot_types = rot_types_trim
         Omega = Omega_trim
+    else:
+        Omega = ml.Omega[::2]
 
     g.apply_rotation(rot_types, Omega)
 

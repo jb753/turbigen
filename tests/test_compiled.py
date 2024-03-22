@@ -3,6 +3,8 @@ import numpy as np
 import turbigen.grid
 np.random.seed = 3
 
+typ = np.float32
+
 def make_ijk():
 
     ni = 10
@@ -15,9 +17,9 @@ def make_ijk():
     kv = np.linspace(0.,nk-1., nk)
     i, j, k = np.meshgrid(iv, jv, kv, indexing='ij')
 
-    i = np.asfortranarray(np.expand_dims(i,-1),dtype=np.float32)
-    j = np.asfortranarray(np.expand_dims(j,-1),dtype=np.float32)
-    k = np.asfortranarray(np.expand_dims(k,-1),dtype=np.float32)
+    i = np.asfortranarray(np.expand_dims(i,-1),dtype=typ)
+    j = np.asfortranarray(np.expand_dims(j,-1),dtype=typ)
+    k = np.asfortranarray(np.expand_dims(k,-1),dtype=typ)
 
     return i, j, k
 
@@ -32,9 +34,9 @@ def test_node_to_face():
     shape_iface = (ni, nj-1, nk-1, nv)
     shape_jface = (ni-1, nj, nk-1, nv)
     shape_kface = (ni-1, nj-1, nk, nv)
-    fi = np.empty(shape_iface,order='F',dtype=np.float32)
-    fj = np.empty(shape_jface,order='F',dtype=np.float32)
-    fk = np.empty(shape_kface,order='F',dtype=np.float32)
+    fi = np.empty(shape_iface,order='F',dtype=typ)
+    fj = np.empty(shape_jface,order='F',dtype=typ)
+    fk = np.empty(shape_kface,order='F',dtype=typ)
 
     turbigen.compiled.node_to_face(fnode, fi, fj, fk)
 
@@ -63,20 +65,20 @@ def test_node_to_cell():
     xn = np.ones_like(i)
     ni, nj, nk, nv = i.shape
     shape_cell = (ni-1, nj-1, nk-1, nv)
-    xc = np.empty(shape_cell, order='F', dtype=np.float32)
+    xc = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(xn, xc)
     assert np.allclose(xn[:-1,:-1,:-1,:], xc)
 
     # Error should be exactly half for linear variation in each dirn
-    ic = np.empty(shape_cell, order='F', dtype=np.float32)
+    ic = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(i, ic)
     assert np.allclose(ic-i[:-1, :-1, :-1,:], 0.5)
 
-    jc = np.empty(shape_cell, order='F', dtype=np.float32)
+    jc = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(j, jc)
     assert np.allclose(jc-j[:-1, :-1, :-1,:], 0.5)
 
-    kc = np.empty(shape_cell, order='F', dtype=np.float32)
+    kc = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(k, kc)
     assert np.allclose(kc-k[:-1, :-1, :-1,:], 0.5)
 
@@ -90,24 +92,24 @@ def test_cell_to_node():
     xc = np.ones_like(i)
     ni, nj, nk, nv = xc.shape
     shape_node = (ni+1, nj+1, nk+1, nv)
-    xn = np.empty(shape_node, order='F', dtype=np.float32)
+    xn = np.empty(shape_node, order='F', dtype=typ)
     turbigen.compiled.cell_to_node(xc, xn)
     assert np.allclose(xc, 1.)
 
     # Check linear variation in each direction
-    inode = np.empty(shape_node, order='F', dtype=np.float32)
+    inode = np.empty(shape_node, order='F', dtype=typ)
     turbigen.compiled.cell_to_node(i, inode)
     assert np.allclose(inode[0,:-1,:-1], i[0,:,:])
     assert np.allclose(inode[-1,:-1,:-1], i[-1,:,:])
     assert np.allclose(inode[1:-1,:-1,:-1]-i[:-1,:,:],0.5)
 
-    jnode = np.empty(shape_node, order='F', dtype=np.float32)
+    jnode = np.empty(shape_node, order='F', dtype=typ)
     turbigen.compiled.cell_to_node(j, jnode)
     assert np.allclose(jnode[:-1,0,:-1], j[:,0,:])
     assert np.allclose(jnode[:-1,-1,:-1], j[:,-1,:])
     assert np.allclose(jnode[:-1,1:-1,:-1]-j[:,:-1,:],0.5)
 
-    knode = np.empty(shape_node, order='F', dtype=np.float32)
+    knode = np.empty(shape_node, order='F', dtype=typ)
     turbigen.compiled.cell_to_node(k, knode)
     assert np.allclose(knode[:-1,:-1,0], k[:,:,0])
     assert np.allclose(knode[:-1,:-1,-1], k[:,:,-1])
@@ -118,7 +120,7 @@ def test_smooth_zero():
     # Zero smoothing factor should change nothing
     shape = (2,4,5,6)
     X = np.random.random_sample(shape)
-    Xs = np.asfortranarray(X.copy()).astype(np.float32)
+    Xs = np.asfortranarray(X.copy()).astype(typ)
     turbigen.compiled.smooth(Xs, sf2=0., sf4=0.)
     assert np.allclose(X, Xs)
 
@@ -127,7 +129,7 @@ def test_smooth_const():
     # A constant value should stay constant after smoothing
     for sf2 in (0.1, 0.2):
         for sf4 in (0.1, 0.2):
-            X = np.ones((10,15,20,1),order='F', dtype=np.float32)
+            X = np.ones((10,15,20,1),order='F', dtype=typ)
             turbigen.compiled.smooth(X, sf2=sf2, sf4=sf4)
             assert np.allclose(X, 1.)
 
@@ -180,7 +182,7 @@ def test_smooth_converge():
     sf4 = 0.3
     derr = np.inf
     for istep in range(10000):
-        Xnew = np.asfortranarray(X.copy()).astype(np.float32)
+        Xnew = np.asfortranarray(X.copy()).astype(typ)
         turbigen.compiled.smooth(Xnew, sf2, sf4)
         derr = X.ptp() - Xnew.ptp()
         X = Xnew
@@ -218,13 +220,13 @@ def test_div():
 
     b = g[0]
 
-    x = np.asfortranarray(np.zeros((ni, nj, nk, 3)).astype(np.single))
+    x = np.asfortranarray(np.zeros((ni, nj, nk, 3)).astype(typ))
 
-    divx = np.asfortranarray(np.ones_like(b.vol).astype(np.single))
-    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(np.single))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(np.single))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(np.single))
-    vol = np.asfortranarray(b.vol.astype(np.single))
+    divx = np.asfortranarray(np.ones_like(b.vol).astype(typ))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(typ))
+    vol = np.asfortranarray(b.vol.astype(typ))
 
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
     rtol = 1e-3
@@ -239,28 +241,31 @@ def test_div():
     x[...,2] = -b.t
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
 
-    rn = np.asfortranarray(b.r.astype(np.float32))
+    rn = np.asfortranarray(b.r.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni-1, nj-1, nk-1)
-    rc = np.empty(shape_cell, order='F', dtype=np.float32)
+    rc = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(rn, rc)
     assert np.allclose(divx*rc,-1., rtol=rtol)
 
     x[...,2] = 0.
-    x[...,1] = 3.
+    x[...,1] = 3.*b.r
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
-    assert np.allclose(divx*rc,3., rtol=0.05)
+    print(divx.min(), divx.max())
+    assert np.allclose(divx,6., rtol=0.05)
 
 
 def test_grad():
 
+
     # Geometry
     L = 0.1
-    yoffset = 2.1*L
+    yoffset = 10.1*L
 
-    nj = 60
-    ni = 50
-    nk = 40
+    refine_fac = 1
+    nj = 60*refine_fac
+    ni = 50*refine_fac
+    nk = 40*refine_fac
 
     Nb = 1
     xv = np.linspace(-L, L, ni)
@@ -283,58 +288,42 @@ def test_grad():
 
     b = g[0]
 
+    gradq = np.asfortranarray(np.ones((ni-1, nj-1, nk-1, 3)).astype(typ))*np.nan
+    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(typ))
+    vol = np.asfortranarray(b.vol.astype(typ))
 
-    gradq = np.asfortranarray(np.ones((ni-1, nj-1, nk-1, 3)).astype(np.single))*np.nan
-    dAi = np.asfortranarray(np.moveaxis(b.dAi,0,-1).astype(np.single))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj,0,-1).astype(np.single))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk,0,-1).astype(np.single))
-    vol = np.asfortranarray(b.vol.astype(np.single))
-
-    rn = np.asfortranarray(b.r.astype(np.float32))
+    rn = np.asfortranarray(b.r.astype(typ))
+    tn = np.asfortranarray(b.t.astype(typ))
+    xn = np.asfortranarray(b.x.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni-1, nj-1, nk-1)
-    rc = np.empty(shape_cell, order='F', dtype=np.float32)
+    rc = np.empty(shape_cell, order='F', dtype=typ)
     turbigen.compiled.node_to_cell(rn, rc)
+    tc = np.empty(shape_cell, order='F', dtype=typ)
+    turbigen.compiled.node_to_cell(tn, tc)
+    xc = np.empty(shape_cell, order='F', dtype=typ)
+    turbigen.compiled.node_to_cell(xn, xc)
 
-    q = np.asfortranarray(b.x).astype(np.single)
-    # x = np.asfortranarray(b.r).astype(np.single)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk)
-    rtol = 1e-3
-    assert np.allclose(gradq[...,0], 1., rtol=rtol)
+    q = np.asfortranarray(b.x).astype(typ)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    assert np.allclose(gradq[...,0], 1., rtol=1e-3)
 
-    q = np.asfortranarray(-np.sqrt(2)*b.r).astype(np.single)
-    # x = np.asfortranarray(b.r).astype(np.single)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk)
-    print(gradq[...,1].min(), gradq[...,1].max())
-    # assert np.allclose(gradq[...,1], -2., rtol=rtol)
+    q = np.asfortranarray(-2.*b.r).astype(typ)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    assert np.allclose(gradq[...,1], -2., rtol=5e-2)
 
+    q = np.asfortranarray(np.ones_like(b.r)).astype(typ)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    assert (np.abs(gradq)<5e-3).all()
 
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.plot(gradq[ni-2,:, nk//2, :])
-
-    # assert (np.abs(divx)<rtol).all()
-
-    plt.show()
-
-    # x[...,0] = 0.
-    # x[...,2] = -b.t
-    # turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
-
-    # rn = np.asfortranarray(b.r.astype(np.float32))
-    # ni, nj, nk = rn.shape
-    # shape_cell = (ni-1, nj-1, nk-1)
-    # rc = np.empty(shape_cell, order='F', dtype=np.float32)
-    # turbigen.compiled.node_to_cell(rn, rc)
-    # assert np.allclose(divx*rc,-1., rtol=rtol)
-
-    # x[...,2] = 0.
-    # x[...,1] = 3.
-    # turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
-    # assert np.allclose(divx*rc,3., rtol=0.05)
-
-
+    q = np.asfortranarray(b.r**2*b.t-b.x**2+0.1).astype(typ)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    assert np.allclose(gradq[...,0], -2.*xc, atol=1e-3)
+    assert np.allclose(gradq[...,1], 2.*rc*tc, atol=1e-3)
+    assert np.allclose(gradq[...,2], rc, atol=1e-3)
 
 test_grad()
-# test_div_uniform()
+# test_div()
 # test_node_to_face()
