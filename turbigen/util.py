@@ -1214,15 +1214,14 @@ def load_mean_line(mean_line_type):
 
 
 def load_annulus(annulus_type):
-    try:
+    if not annulus_type.endswith(".py"):
         # Attempt to load a built-in annulus
         mod = importlib.import_module(".annulus", package="turbigen")
         mod = getattr(mod, annulus_type)
-    except AttributeError:
+    else:
         # Use as a file path
         mod_file = os.path.abspath(annulus_type)
         mod_name = os.path.basename(annulus_type)
-        mod_file += ".py"
         spec = importlib.util.spec_from_file_location(
             f"turbigen.annulus.{mod_name}", mod_file
         )

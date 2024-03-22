@@ -90,6 +90,21 @@ def submit(conf, basedir=None, verbose=True):
         else ""
     )
 
+    error_handler_str = (
+r"""trap 'handle_error' ERR
+handle_error() {
+    echo "Command failed, starting a shell on ${HOSTNAME}. Attach using:" > failed.txt
+    echo "ssh -t $HOSTNAME tmux att" >> failed.txt
+    # Run the shell in a detached tmux session
+    # Starting a tmux sesison without a tty seems flaky
+    # Fix this by redirecting to a file handle
+    export TMUX=""
+    tmux new -d 'exec bash' &> /dev/null
+    # Keep the job running until it times out
+    sleep 36h
+}"""
+)
+
     hours, frac_hours = divmod(cj["hours"], 1)
     mins = frac_hours * 60
     timestr = f"{hours:02d}:{mins:02d}:00"
@@ -108,9 +123,11 @@ def submit(conf, basedir=None, verbose=True):
 #SBATCH --gres=gpu:{gres}
 #SBATCH --time={timestr}
 #SBATCH --qos={cj.get('qos','gpu1')}
+
+{error_handler_str}
+
 {depstr}
 
-cd {TURBIGEN_ROOT}
 turbigen {yaml_path} &> {log_path}
 
 """
