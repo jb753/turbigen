@@ -43,8 +43,8 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 33
-nk = 5
+nj = 20
+nk = 20
 
 AR = 1.
 ni = int(nj/h*L)
@@ -60,7 +60,7 @@ dj = h/nj
 di = L/ni
 print('AR',dj/dk)
 print('AR',dj/di)
-quit()
+# quit()
 tv = np.linspace(-dt / 2., dt / 2., nk)
 xv = np.linspace(0., L, ni)
 rv = np.linspace(rh, rt, nj)
@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 4
+nblock = 1
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]

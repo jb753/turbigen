@@ -121,11 +121,12 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     call cell_to_node(resc, resid1, ni, nj, nk, 5)
 
     if (start_flag.eq.0) then
-        conserved = conserved + 5e-1*resid1
+        conserved = conserved + resid1
+        resid2 = resid1
     else
-        conserved = conserved + 2e0*resid1 - resid2
+        conserved = conserved + 2e0*resid1 - 1.65e0*resid2
+        resid2 = resid1 - 0.65e0*resid2
     end if
-    resid2 = resid1
 
     if (start_flag.gt.1) then
         conserved_avg = conserved_avg + conserved/float(nstep_avg)
