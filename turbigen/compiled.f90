@@ -754,3 +754,58 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
     end do
 
 end subroutine
+
+subroutine viscous_stress(V, tau, vol, dAi, dAj, dAk, r, ni, nj, nk)
+
+    implicit none
+
+    real*4, intent (inout)  :: V(ni, nj, nk, 3)
+    real*4, intent (inout)  :: tau(ni, nj, nk, 3, 3)
+
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: r(ni, nj, nk)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4 :: rc(ni-1, nj-1, nk-1)
+    real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
+    real*4 :: divV(ni-1, nj-1, nk-1)
+    integer :: i
+
+    call node_to_cell(r, rc, ni, nj, nk, 1)
+
+    do i = 1,3
+        call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, ni, nj, nk)
+    end do
+    ! gradV is indexed (..., which dirn, which velocity)
+
+    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    divV = divV*2e0/3e0
+
+    ! tau_xx = 2*dVx_dx - 2/3*divV
+    tau(:,:,:,1,1) = 2e0*gradV(:,:,:,1,1) - divV
+
+    ! tau_rr = 2*dVr_dr - 2/3*divV
+    tau(:,:,:,2,2) = 2e0*gradV(:,:,:,2,2) - divV
+
+    ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
+    tau(:,:,:,3,3) = 2e0*(gradV(:,:,:,3,3)+ V(:,:,:,2))/rc - divV
+
+    ! tau_xr = tau_rx = dVx_dr + dVr_dx
+    tau(:,:,:,1,2) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
+    tau(:,:,:,2,1) = tau(:,:,:,1,2)
+
+    ! tau_xt = tau_tx = dVx_dt/r + dVt_dx
+    tau(:,:,:,1,3) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
+    tau(:,:,:,3,1) = tau(:,:,:,1,3)
+
+    ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
+    tau(:,:,:,2,3) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - V(:,:,:,3)/rc
+    tau(:,:,:,3,2) = tau(:,:,:,2,3)
+
+end subroutine
