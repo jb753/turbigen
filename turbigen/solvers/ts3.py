@@ -1040,7 +1040,7 @@ def run(grid, settings, machine):
         if not ts3_conf.skip:
             raise Exception(
                 "No turbostream group on this machine - are you on the HPC?"
-            )
+            ) from None
 
     input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
     output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")
@@ -1281,14 +1281,14 @@ def _read_probe_dat(fname, S, shape=()):
 
     Fshape = shape + (nt,)
     if shape:
-        x = x.reshape(Fshape, order='F')
-        r = r.reshape(Fshape, order='F')
-        rt = rt.reshape(Fshape, order='F')
-        ro = ro.reshape(Fshape, order='F')
-        rovx = rovx.reshape(Fshape, order='F')
-        rovr = rovr.reshape(Fshape, order='F')
-        rorvt = rorvt.reshape(Fshape, order='F')
-        roe = roe.reshape(Fshape, order='F')
+        x = x.reshape(Fshape, order="F")
+        r = r.reshape(Fshape, order="F")
+        rt = rt.reshape(Fshape, order="F")
+        ro = ro.reshape(Fshape, order="F")
+        rovx = rovx.reshape(Fshape, order="F")
+        rovr = rovr.reshape(Fshape, order="F")
+        rorvt = rorvt.reshape(Fshape, order="F")
+        roe = roe.reshape(Fshape, order="F")
 
     Fshape = x.shape
 
@@ -1296,7 +1296,7 @@ def _read_probe_dat(fname, S, shape=()):
     F.cp = S.cp
     F.gamma = S.gamma
     F.mu = S.mu
-    F.Omega = 0.
+    F.Omega = 0.0
 
     F.xrt = np.stack((x, r, rt / r))
     F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro

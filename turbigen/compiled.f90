@@ -150,7 +150,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
     integer :: ic
 
-    
+
     do ic = 1,3
         Vxrt(:,:,:, ic) = conserved(:,:,:,ic+1)/conserved(:,:,:,1)
     end do
@@ -709,7 +709,7 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
 end subroutine
 
 
-subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
+subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
     implicit none
 
@@ -719,6 +719,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: r(ni, nj, nk)
 
     real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
 
@@ -730,15 +731,25 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
     real*4 :: xi(ni, nj-1, nk-1, 3)
     real*4 :: xj(ni-1, nj, nk-1, 3)
     real*4 :: xk(ni-1, nj-1, nk, 3)
-
     real*4 :: xv(ni, nj, nk, 3)
+
+    real*4 :: rc(ni-1, nj-1, nk-1)
+
+    ! Find radii at cell centers
+    call node_to_cell(r, rc, ni, nj, nk, 1)
 
     xv = 0e0
 
     do ii = 1,3
         xv(:,:,:,ii) = x
+        if (ii.eq.2) then
+            xv(:,:,:,ii) = xv(:,:,:,ii)/r
+        end if
         call node_to_face( xv, xi, xj, xk, ni, nj, nk, 3 )
         call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, gradx(:,:,:,ii), ni, nj, nk, 1)
+        if (ii.eq.2) then
+            gradx(:,:,:,ii) = gradx(:,:,:,ii)*rc
+        end if
         xv = 0e0
     end do
 
