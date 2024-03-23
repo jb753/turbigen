@@ -7,6 +7,7 @@ from turbigen.compiled import (
     smooth,
     node_to_cell,
     node_to_face,
+    residual,
     step,
     calculate_secondary
 )
@@ -31,7 +32,7 @@ def flatwhere(x):
 
 nstep_dt = 100
 nstep_log = 500
-nstep = 15000
+nstep = 5000
 nstep_avg = 5000
 nrk = 4
 rfin = 0.2
@@ -40,7 +41,7 @@ rfin1 = 1.0 - rfin
 fac_conv = 1e-9
 sfin = 0.005
 fac_2nd = 0.2
-CFL = 0.7
+CFL = 0.4
 sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
@@ -185,9 +186,9 @@ class SolverBlock:
         self.dt = CFL * self.dlmin / (aref + Vref)
 
     # @profile
-    def step(self, start_flag):
 
-        step(
+    def residual(self):
+        residual(
             self.conserved,
             self.P,
             self.ho,
@@ -200,18 +201,23 @@ class SolverBlock:
             self.dAk,
             self.vol,
             self.dU1,
-            self.dU2,
-            start_flag,
+        )
+
+    def step(self, istep, istep_avg, nstep_avg):
+        step(
+            self.conserved,
             self.conserved_avg,
-            nstep_avg
+            self.dU1,
+            self.dU2,
+            istep,
+            istep_avg,
+            nstep_avg,
         )
 
         self.smooth()
 
         calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
-
         self.state.set_rho_u(self.conserved[..., 0], self.u)
-
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
 
@@ -263,6 +269,53 @@ def send_slave(block_split, procids, periodics):
 
     comm.Barrier()
 
+def exchange_periodics(blocks, bid_local, periodics, variable='conserved'):
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Update periodic boundaries
+    for patch in periodics:
+        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
+        count = len(ind)
+
+        b1 = blocks[bid_local[bid]]
+
+        if variable=='conserved':
+            v1 = b1.conserved.ravel(order='F')
+        elif variable=='residual':
+            v1 = b1.dU1.ravel(order='F')
+
+        # Just set the periodic if on same rank
+        if nxprocid == rank:
+
+            b2 = blocks[bid_local[nxbid]]
+            if variable=='conserved':
+                v2 = b2.conserved.ravel(order='F')
+            elif variable=='residual':
+                v2 = b2.dU1.ravel(order='F')
+
+            avg = 0.5 * (v1[ind] + v2[nxind])
+            v1[ind] = avg
+            v2[nxind] = avg
+
+        # Otherwise, communication is needed
+        else:
+
+            # Preallocate a buffer to recieve data
+            nxv = np.empty((count,), dtype=np.single)
+
+            # If our rank is lower than next rank, send first
+            if rank < nxprocid:
+                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            # If our rank is higher than next rank, recieve first
+            else:
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+            v1[ind] = 0.5 * (v1[ind] + nxv)
+
 
 def run_slave(blocks=None, periodics_all=None, nodes=None):
 
@@ -304,55 +357,40 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     # Start the main time stepping loop
     for istep in range(nstep):
 
-        # Update periodic boundaries
-        for patch in periodics:
-            pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
-            count = len(ind)
 
-            # Just set the periodic if on same rank
-            if nxprocid == rank:
-                set_periodic(
-                    blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind
-                )
-            # Otherwise, communication is needed
-            else:
-                conserved = blocks[bid_local[bid]].conserved.ravel(order="F")
-                nxconserved = np.empty((count,), dtype=np.single)
-                # If our rank is lower than next rank, send first
-                if rank < nxprocid:
-                    comm.Send(
-                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
-                    )
-                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
-                # If our rank is higher than next rank, recieve first
-                else:
-                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
-                    comm.Send(
-                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
-                    )
-                conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
-
-        # Loop over blocks
+        # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
 
-            # Update time stegs
             if not np.mod(istep, nstep_dt):
                 sb.set_timestep()
 
             sb.set_inlets()
+
             sb.set_outlets()
 
-            if istep==0:
-                start_flag = 0
-            elif istep > (nstep-nstep_avg):
-                start_flag = 2
-            else:
-                start_flag = 1
-            sb.step(start_flag)
+            sb.residual()
 
-            # sb.smooth()
+            # if istep==0:
+            #     start_flag = 0
+            # elif istep > (nstep-nstep_avg):
+            #     start_flag = 2
+            # else:
+            #     start_flag = 1
+
+            #
+
+        # Send residuals to other blocks
+        exchange_periodics(blocks, bid_local, periodics, variable='residual')
+        if not np.mod(istep, nstep_dt):
+            exchange_periodics(blocks, bid_local, periodics, variable='conserved')
+
+        # Now integrate forward
+        for iblock in range(nblock):
+            sb.step(istep, nstep-nstep_avg, nstep_avg)
+            sb.smooth()
+
 
         if not np.mod(istep, nstep_log) and istep > 0:
 

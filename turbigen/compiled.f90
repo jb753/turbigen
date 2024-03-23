@@ -1,7 +1,7 @@
 !! ! Compiled functions to speed up expensive calulations
 
-subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
-        resid1, resid2, start_flag, conserved_avg, nstep_avg, ni, nj, nk)
+subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
+        resid, ni, nj, nk)
 
     implicit none
 
@@ -10,9 +10,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     integer, intent (in)  :: nk
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
-    real*4, intent (inout) :: resid1(ni, nj, nk, 5)
-    real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid(ni, nj, nk, 5)
     real*4 :: resc_abs(ni, nj, nk, 5)
     real*4 :: resc_avg(5)
     real*4, intent (inout)  :: Omega
@@ -25,10 +23,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1)
 
-    integer :: start_flag
-
     integer :: ip
-    integer, intent (in) :: nstep_avg
     real*4 :: damp
 
     real*4 :: Sn(ni, nj, nk, 1)
@@ -60,6 +55,9 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     real*4 :: ri( ni, nj-1, nk-1)
     real*4 :: rj( ni-1, nj, nk-1)
     real*4 :: rk( ni-1, nj-1, nk)
+
+    ! integer, intent (in) :: nstep_avg
+    ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
 
     ! Calculate source term at nodes, average at cell centers
     Sn(:, :, :, 1) = (&
@@ -118,9 +116,24 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     end if
 
     ! Distribute change to nodes
-    call cell_to_node(resc, resid1, ni, nj, nk, 5)
+    call cell_to_node(resc, resid, ni, nj, nk, 5)
 
-    if (start_flag.eq.0) then
+end subroutine
+
+subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ni, nj, nk)
+
+    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid1(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+    integer, intent (in) :: istep
+    integer, intent (in) :: istep_avg
+    integer, intent (in) :: nstep_avg
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    if (istep.eq.0) then
         conserved = conserved + resid1
         resid2 = resid1
     else
@@ -128,10 +141,9 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
         resid2 = resid1 - 0.65e0*resid2
     end if
 
-    if (start_flag.gt.1) then
+    if (istep.gt.istep_avg) then
         conserved_avg = conserved_avg + conserved/float(nstep_avg)
     end if
-
 
 end subroutine
 
