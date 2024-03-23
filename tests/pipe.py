@@ -43,8 +43,8 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 20
-nk = 20
+nj = 17
+nk = 17
 
 AR = 1.
 ni = int(nj/h*L)
@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 1
+nblock = 4
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -180,7 +180,9 @@ print(ten-tst)
 fig, ax = plt.subplots()
 for b in g:
     bc = b[:,nj//2,nk//2]
-    hm = ax.plot(bc.x, bc.P)
+    hm = ax.plot(bc.x, bc.P/Po1)
+ax.plot(bc.x[-1], P1/Po1,'k*')
+ax.set_ylim((0.6,1.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()

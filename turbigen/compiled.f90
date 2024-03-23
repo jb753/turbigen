@@ -106,14 +106,14 @@ subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dA
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
 
-    resc_abs = abs(resc)
-    resc_avg = sum(sum(sum(resc_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
-    damp = 25e0
-    if (minval(resc_avg).gt.0) then
-        do ip = 1, 5
-            resc(:,:,:,ip)  = resc(:,:,:,ip) / (1e0 + resc_abs(:,:,:,ip)/resc_avg(ip)/damp)
-        end do
-    end if
+    ! resc_abs = abs(resc)
+    ! resc_avg = sum(sum(sum(resc_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
+    ! damp = 25e0
+    ! if (minval(resc_avg).gt.0) then
+    !     do ip = 1, 5
+    !         resc(:,:,:,ip)  = resc(:,:,:,ip) / (1e0 + resc_abs(:,:,:,ip)/resc_avg(ip)/damp)
+    !     end do
+    ! end if
 
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
@@ -137,11 +137,13 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
         conserved = conserved + resid1
         resid2 = resid1
     else
-        conserved = conserved + 2e0*resid1 - 1.65e0*resid2
-        resid2 = resid1 - 0.65e0*resid2
+        ! conserved = conserved + 2e0*resid1 - 1.65e0*resid2
+        ! resid2 = resid1 - 0.65e0*resid2
+        conserved = conserved + 2e0*resid1 - resid2
+        resid2 = resid1
     end if
 
-    if (istep.gt.istep_avg) then
+    if (istep.ge.istep_avg) then
         conserved_avg = conserved_avg + conserved/float(nstep_avg)
     end if
 

@@ -30,10 +30,10 @@ def flatwhere(x):
     return np.where(x.flat)[0]
 
 
-nstep_dt = 100
+nstep_dt = 50
 nstep_log = 500
 nstep = 5000
-nstep_avg = 5000
+nstep_avg = 500
 nrk = 4
 rfin = 0.2
 rfin1 = 1.0 - rfin
@@ -41,7 +41,7 @@ rfin1 = 1.0 - rfin
 fac_conv = 1e-9
 sfin = 0.005
 fac_2nd = 0.2
-CFL = 0.4
+CFL = 0.5
 sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
@@ -216,6 +216,10 @@ class SolverBlock:
 
         self.smooth()
 
+        self.set_secondary()
+
+    def set_secondary(self):
+
         calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
         self.state.set_rho_u(self.conserved[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
@@ -354,9 +358,12 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
     dUe_ref = None
 
+
     # Start the main time stepping loop
     for istep in range(nstep):
 
+        if not np.mod(istep, nstep_dt):
+            exchange_periodics(blocks, bid_local, periodics, variable='conserved')
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
@@ -372,24 +379,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
             sb.residual()
 
-            # if istep==0:
-            #     start_flag = 0
-            # elif istep > (nstep-nstep_avg):
-            #     start_flag = 2
-            # else:
-            #     start_flag = 1
-
-            #
-
         # Send residuals to other blocks
         exchange_periodics(blocks, bid_local, periodics, variable='residual')
-        if not np.mod(istep, nstep_dt):
-            exchange_periodics(blocks, bid_local, periodics, variable='conserved')
 
         # Now integrate forward
+        istep_avg =  nstep-nstep_avg
         for iblock in range(nblock):
-            sb.step(istep, nstep-nstep_avg, nstep_avg)
-            sb.smooth()
+            blocks[iblock].step(istep, istep_avg, nstep_avg)
 
 
         if not np.mod(istep, nstep_log) and istep > 0:
@@ -480,7 +476,8 @@ def run(grid, settings={}, machine=None):
         blocks_out.extend(bsi)
 
     for b, sb in zip(grid, blocks_out):
-        b.set_conserved(np.moveaxis(sb.conserved_avg, -1, 0))
+        sb.set_secondary()
+        b.set_conserved(np.moveaxis(sb.conserved, -1, 0))
 
 
     mdot_in = 0.
@@ -496,12 +493,12 @@ def run(grid, settings={}, machine=None):
     logger.info(f'Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%')
 
 
-    dUlog = np.array(dUlog)
-    dUlog /= dUlog[0]
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.semilogy(dUlog)
-    ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
+    # dUlog = np.array(dUlog)
+    # dUlog /= dUlog[0]
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.semilogy(dUlog)
+    # ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
 
 def get_geom(b):
     # Areas and volumes
