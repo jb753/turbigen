@@ -32,16 +32,16 @@ def flatwhere(x):
 
 nstep_dt = 50
 nstep_log = 500
-nstep = 5000
-nstep_avg = 500
+nstep = 10000
+nstep_avg = 2000
 nrk = 4
 rfin = 0.2
 rfin1 = 1.0 - rfin
 
 fac_conv = 1e-9
-sfin = 0.005
+sfin = 0.01
 fac_2nd = 0.2
-CFL = 0.5
+CFL = 0.4
 sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
@@ -493,12 +493,12 @@ def run(grid, settings={}, machine=None):
     logger.info(f'Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%')
 
 
-    # dUlog = np.array(dUlog)
-    # dUlog /= dUlog[0]
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.semilogy(dUlog)
-    # ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
+    dUlog = np.array(dUlog)
+    dUlog /= dUlog[0]
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.semilogy(dUlog)
+    ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
 
 def get_geom(b):
     # Areas and volumes

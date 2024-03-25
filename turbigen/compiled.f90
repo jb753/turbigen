@@ -526,6 +526,36 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
 
 end subroutine
 
+subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
+
+    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
+    real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
+
+    ! 
+    xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
+          xc(1:ni-2, 1:nj-2, 1:nk-2, :) & ! i,j,k
+        + xc(2:ni-1, 1:nj-2, 1:nk-2, :) & ! i+1,j,k
+        + xc(2:ni-1, 2:nj-1, 1:nk-2, :) & ! i+1,j+1,k
+        + xc(1:ni-2, 2:nj-1, 1:nk-2, :) & ! i,j+1,k
+        + xc(1:ni-2, 1:nj-2, 2:nk-1, :) & ! i,j,k+1
+        + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
+        + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
+        + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
+    )/8e0
+
+
+
+end subroutine
+
 subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array
 

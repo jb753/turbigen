@@ -43,8 +43,8 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 17
-nk = 17
+nj = 33
+nk = 33
 
 AR = 1.
 ni = int(nj/h*L)
