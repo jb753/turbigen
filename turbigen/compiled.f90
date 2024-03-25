@@ -120,7 +120,7 @@ subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dA
 
 end subroutine
 
-subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ni, nj, nk)
+subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ischeme, ni, nj, nk)
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
     real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
@@ -129,6 +129,7 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
     integer, intent (in) :: istep
     integer, intent (in) :: istep_avg
     integer, intent (in) :: nstep_avg
+    integer, intent (in) :: ischeme
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
@@ -137,10 +138,13 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
         conserved = conserved + resid1
         resid2 = resid1
     else
-        ! conserved = conserved + 2e0*resid1 - 1.65e0*resid2
-        ! resid2 = resid1 - 0.65e0*resid2
-        conserved = conserved + 2e0*resid1 - resid2
-        resid2 = resid1
+        if (ischeme.eq.0) then
+            conserved = conserved + 2e0*resid1 - resid2
+            resid2 = resid1
+        else
+            conserved = conserved + 2e0*resid1 - 1.65e0*resid2
+            resid2 = resid1 - 0.65e0*resid2
+        end if
     end if
 
     if (istep.ge.istep_avg) then
@@ -526,35 +530,28 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
 
 end subroutine
 
-subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
-
-    implicit none
-
-    integer, intent (in)  :: ni
-    integer, intent (in)  :: nj
-    integer, intent (in)  :: nk
-    integer, intent (in)  :: np
-
-    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
-    real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
-    real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
-    real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
-
-    ! 
-    xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
-          xc(1:ni-2, 1:nj-2, 1:nk-2, :) & ! i,j,k
-        + xc(2:ni-1, 1:nj-2, 1:nk-2, :) & ! i+1,j,k
-        + xc(2:ni-1, 2:nj-1, 1:nk-2, :) & ! i+1,j+1,k
-        + xc(1:ni-2, 2:nj-1, 1:nk-2, :) & ! i,j+1,k
-        + xc(1:ni-2, 1:nj-2, 2:nk-1, :) & ! i,j,k+1
-        + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
-        + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
-        + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
-    )/8e0
-
-
-
-end subroutine
+!subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
+!    implicit none
+!    integer, intent (in)  :: ni
+!    integer, intent (in)  :: nj
+!    integer, intent (in)  :: nk
+!    integer, intent (in)  :: np
+!    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+!    real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
+!    real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
+!    real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
+!    ! 
+!    xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
+!          xc(1:ni-2, 1:nj-2, 1:nk-2, :) & ! i,j,k
+!        + xc(2:ni-1, 1:nj-2, 1:nk-2, :) & ! i+1,j,k
+!        + xc(2:ni-1, 2:nj-1, 1:nk-2, :) & ! i+1,j+1,k
+!        + xc(1:ni-2, 2:nj-1, 1:nk-2, :) & ! i,j+1,k
+!        + xc(1:ni-2, 1:nj-2, 2:nk-1, :) & ! i,j,k+1
+!        + xc(2:ni-1, 1:nj-2, 2:nk-1, :) & ! i+1,j,k+1
+!        + xc(2:ni-1, 2:nj-1, 2:nk-1, :) & ! i+1,j+1,k+1
+!        + xc(1:ni-2, 2:nj-1, 2:nk-1, :) & ! i,j+1,k+1
+!    )/8e0
+!end subroutine
 
 subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array

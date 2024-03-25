@@ -31,20 +31,23 @@ def flatwhere(x):
 
 
 nstep_dt = 50
-nstep_log = 500
-nstep = 10000
+nstep_log = 100
+nstep = 5000
 nstep_avg = 2000
 nrk = 4
-rfin = 0.2
-rfin1 = 1.0 - rfin
+rfin = 0.1
 
 fac_conv = 1e-9
 sfin = 0.01
 fac_2nd = 0.2
-CFL = 0.4
+CFL = 0.7
+rfin /= CFL
 sf = CFL * sfin
 sf2 = sf * fac_2nd
 sf4 = sf * (1.0 - fac_2nd)
+
+rfin1 = 1.0 - rfin
+
 
 
 class SolverBlock:
@@ -129,7 +132,7 @@ class SolverBlock:
             )
 
             # Check for flow reversal
-            rho_now[rho_now > rhoo] = rhoo * 0.99999
+            rho_now[rho_now > rhoo] = rhoo * 0.999
 
             # Isentropic expansion from stagnation state
             state.set_rho_s(rho_now, state.s)
@@ -151,7 +154,7 @@ class SolverBlock:
             Vtin = Vmin * tanAlpha
 
             # Reset conserved vars on inlet
-            self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+            # Do not reset the density - seems to compromise stability
             self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
             self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
@@ -212,6 +215,7 @@ class SolverBlock:
             istep,
             istep_avg,
             nstep_avg,
+            1,
         )
 
         self.smooth()

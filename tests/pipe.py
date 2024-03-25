@@ -179,17 +179,31 @@ print(ten-tst)
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,nj//2,nk//2]
-    hm = ax.plot(bc.x, bc.P/Po1)
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.P/Po1,'-x')
 ax.plot(bc.x[-1], P1/Po1,'k*')
-ax.set_ylim((0.6,1.))
+ax.set_ylim((0.4,1.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,:,nk//2]
-    hm = ax.contourf(bc.x, bc.r, bc.Vt)
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.To/To1,'-x')
+# ax.set_ylim((0.4,2.))
 
-ax.axis('equal')
-plt.colorbar(hm)
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.Vx/V,'-x')
+# ax.set_ylim((0.4,2.))
+
+# # b = g[0][ni//2,:,:]
+# fig, ax = plt.subplots()
+# for b in g:
+#     bc = b[:,:,nk//2]
+#     hm = ax.contourf(bc.x, bc.r, bc.Vt)
+
+# ax.axis('equal')
+# plt.colorbar(hm)
 plt.show()
