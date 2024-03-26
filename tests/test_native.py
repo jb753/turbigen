@@ -74,3 +74,4 @@ def test_box():
     vol = (2*L)**3
     assert np.isclose(b.vol.sum(),vol, rtol=rtol)
 
+test_box()

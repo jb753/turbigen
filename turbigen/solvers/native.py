@@ -223,7 +223,7 @@ class SolverBlock:
             istep,
             istep_avg,
             nstep_avg,
-            0,
+            1,
         )
 
 
