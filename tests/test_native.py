@@ -67,6 +67,8 @@ def test_box():
     A = (2*L)**2
     rtol = 2e-3
     assert np.allclose(dot(b.dAi,ex).sum(axis=(1,2)),A,rtol=rtol)
+    print(dot(b.dAj,ek).sum(axis=(0,2)))
+    print(A)
     assert np.allclose(dot(b.dAj,ek).sum(axis=(0,2)),A, rtol=rtol)
     assert np.allclose(dot(b.dAk,ey).sum(axis=(0,1)),A, rtol=rtol)
 
