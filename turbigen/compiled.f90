@@ -11,8 +11,6 @@ subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dA
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
     real*4, intent (inout) :: resid(ni, nj, nk, 5)
-    real*4 :: resc_abs(ni, nj, nk, 5)
-    real*4 :: resc_avg(5)
     real*4, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
     logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
@@ -24,7 +22,6 @@ subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dA
     real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1)
 
     integer :: ip
-    real*4 :: damp
 
     real*4 :: Sn(ni, nj, nk, 1)
     real*4 :: Sc(ni-1, nj-1, nk-1, 1)
@@ -106,17 +103,32 @@ subroutine residual(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dA
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
 
-    ! resc_abs = abs(resc)
-    ! resc_avg = sum(sum(sum(resc_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
-    ! damp = 25e0
-    ! if (minval(resc_avg).gt.0) then
-    !     do ip = 1, 5
-    !         resc(:,:,:,ip)  = resc(:,:,:,ip) / (1e0 + resc_abs(:,:,:,ip)/resc_avg(ip)/damp)
-    !     end do
-    ! end if
-
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
+
+end subroutine
+
+subroutine damp(resid, fdamp, ni, nj, nk)
+    ! Apply negative feedback to damp down large residuals
+    ! Denton (2017)
+
+    real*4, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
+    real*4, intent (in) :: fdamp
+    real*4 :: resid_abs(ni-1, nj-1, nk-1, 5)
+    real*4 :: resid_avg(5)
+
+    ! Calculate absolute and average values over all cells
+    resid_abs = abs(resid)
+    resid_avg = sum(sum(sum(resid_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
+
+    ! Apply damping to all conserved residuals
+    where (resid_avg.eq.0)
+        resid_avg = 1e-9
+    end where
+    do ip = 1, 5
+        resid(:,:,:,ip) = resid(:,:,:,ip) &
+            / (1e0 + resid_abs(:,:,:,ip)/resid_avg(ip)/fdamp)
+    end do
 
 end subroutine
 

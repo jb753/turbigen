@@ -21,7 +21,7 @@ if rank > 0:
 # Geometry
 h = 0.1
 L = h * 4.0
-skew = 0.
+skew = 30.
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -170,9 +170,10 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
+settings = {'n_step': 2000}
 
 tst = timer()
-turbigen.solvers.native.run(g)
+turbigen.solvers.native.run(g, settings)
 ten = timer()
 print(ten-tst)
 
