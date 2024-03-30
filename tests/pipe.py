@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 4
+nblock = 1
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -170,7 +170,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2000}
+settings = {'n_step': 5000}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)

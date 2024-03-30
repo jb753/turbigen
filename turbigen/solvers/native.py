@@ -11,7 +11,8 @@ from turbigen.compiled import (
     residual,
     step,
     damp,
-    calculate_secondary
+    calculate_secondary,
+    viscous_force
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -32,7 +33,7 @@ class NativeConfig(BaseSolver):
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_2nd_proportion = 0.5
+    smoothing_2nd_proportion = 0.2
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -58,6 +59,8 @@ class NativeConfig(BaseSolver):
 
     n_step_ramp = 1
 
+    i_scheme = 1
+
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
@@ -66,6 +69,8 @@ class SolverBlock:
 
         # Primaries
         self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(np.single)
+
+        self.mu = block.mu
 
         self.ho = np.asfortranarray(block.ho).astype(np.single)
         self.P = np.asfortranarray(block.P).astype(np.single)
@@ -91,6 +96,9 @@ class SolverBlock:
         self._flag_scree = False
 
         self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
+
+        ni, nj, nk = block.shape
+        self.f = np.zeros((ni-1, nj-1, nk-1, 5), order="F", dtype=np.single)
 
         # Get wall indicators
         # These are three arrays of shape
@@ -204,6 +212,7 @@ class SolverBlock:
             self.P,
             self.ho,
             self.r,
+            self.f,
             self.Omega,
             *self.wall_indicators,
             self.dt,
@@ -214,7 +223,7 @@ class SolverBlock:
             self.dU1,
         )
 
-    def step(self, istep, istep_avg, nstep_avg):
+    def step(self, istep, istep_avg, nstep_avg, ischeme):
         step(
             self.conserved,
             self.conserved_avg,
@@ -223,7 +232,7 @@ class SolverBlock:
             istep,
             istep_avg,
             nstep_avg,
-            1,
+            ischeme,
         )
 
 
@@ -239,6 +248,12 @@ class SolverBlock:
 
     def damp(self, fdamp):
         damp(self.dU1, fdamp)
+
+    def calculate_viscous(self):
+        viscous_force(
+            self.conserved, self.f, self.mu, self.vol, self.dAi, self.dAj, self.dAk, self.r
+        )
+
 
 
 
@@ -389,10 +404,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
-        # Evaluate ramped CFL and sfin
-        CFL_now = conf.CFL * np.interp(istep, [0, conf.n_step_ramp], [0.1, 1.])
-        fac_sf_now = np.interp(istep, [0, conf.n_step_ramp], [5.0, 1.])
-
         if not np.mod(istep, conf.n_step_dt):
             exchange_periodics(blocks, bid_local, periodics, variable='conserved')
 
@@ -402,7 +413,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             sb = blocks[iblock]
 
             if not np.mod(istep, conf.n_step_dt):
-                sb.set_timestep(CFL_now)
+                sb.set_timestep(conf.CFL)
 
             sb.set_inlets(rfin)
 
@@ -421,11 +432,14 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             if conf.damping_factor:
                 sb.damp(conf.damping_factor)
 
-            sb.step(istep, istep_avg, conf.n_step_avg)
+            sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
 
-            sb.smooth(sf2 * fac_sf_now, sf4 * fac_sf_now)
+            sb.smooth(sf2, sf4)
 
             sb.set_secondary()
+
+            if not np.mod(istep, 5) and istep > 100:
+                sb.calculate_viscous()
 
         if not np.mod(istep, conf.n_step_log) and istep > 0:
 
@@ -544,20 +558,32 @@ def run(grid, settings={}, machine=None):
 
     ip, jp, kp = np.unravel_index(np.argmax(blocks_out[0].dU1[...,-1]),blocks_out[0].dU1[...,-1].shape)
 
-
-
     fig, ax = plt.subplots()
     for b in grid:
         ni, nj, nk = b.shape
-        c = b[:,jp,:].squeeze()
-        cm=ax.contourf(c.x, c.rt, c.Ma)
-        ax.plot(c.x, c.rt, 'k-',lw=0.5)
-        ax.plot(c.x.T, c.rt.T, 'k-',lw=0.5)
-        ax.plot(c.x[ip, kp], c.rt[ip, kp], 'r*')
-        ax.axis('equal')
-        plt.colorbar(cm)
-        # ax.plot(c.x, c.P)
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.P, '-')
     plt.show()
+
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     ni, nj, nk = b.shape
+    #     c = b[:,jp,:].squeeze()
+    #     cm=ax.contourf(c.x, c.rt, c.Ma)
+    #     ax.plot(c.x, c.rt, 'k-',lw=0.5)
+    #     ax.plot(c.x.T, c.rt.T, 'k-',lw=0.5)
+    #     ax.plot(c.x[ip, kp], c.rt[ip, kp], 'r*')
+    #     ax.axis('equal')
+    #     plt.colorbar(cm)
+    #     # ax.plot(c.x, c.P)
+    # plt.show()
 
 def get_geom(b):
     # Areas and volumes

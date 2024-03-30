@@ -189,6 +189,41 @@ def test_smooth_converge():
 
     assert derr < 1e-5
 
+def test_cell_to_face():
+
+    # Make an ijk grid
+    i, j, k = make_ijk()
+
+    fnode = i + j + k
+    ni, nj, nk, nv = i.shape
+    shape_iface = (ni, nj-1, nk-1, nv)
+    shape_jface = (ni-1, nj, nk-1, nv)
+    shape_kface = (ni-1, nj-1, nk, nv)
+    fi = np.empty(shape_iface,order='F',dtype=typ)
+    fj = np.empty(shape_jface,order='F',dtype=typ)
+    fk = np.empty(shape_kface,order='F',dtype=typ)
+
+    fcell = np.asfortranarray(i[:-1,:-1,:-1,:])
+    turbigen.compiled.cell_to_face(fcell, fi, fj, fk)
+    assert np.allclose(fi[1:-1, :, :, :], i[:-2, :-1, :-1, :]+0.5)
+    assert np.allclose(fi[0, :, :, :], 0.)
+    assert np.allclose(fi[-1, :, :, :], ni-2.)
+
+    fcell = np.asfortranarray(j[:-1,:-1,:-1,:])
+    turbigen.compiled.cell_to_face(fcell, fi, fj, fk)
+    assert np.allclose(fj[:, 1:-1, :, :], j[:-1, :-2, :-1, :]+0.5)
+    assert np.allclose(fj[:, 0, :, :], 0.)
+    assert np.allclose(fj[:, -1, :, :], nj-2.)
+
+    fcell = np.asfortranarray(k[:-1,:-1,:-1,:])
+    turbigen.compiled.cell_to_face(fcell, fi, fj, fk)
+    assert np.allclose(fk[:, :, 1:-1, :], k[:-1, :-1, :-2, :]+0.5)
+    assert np.allclose(fk[:, :, 0, :], 0.)
+    assert np.allclose(fk[:, :, -1, :], nk-2.)
+
+    # assert np.allclose(fj-fnode[:-1,:,:-1,:], 1.)
+    # assert np.allclose(fk-fnode[:-1,:-1,:,:], 1.)
+
 def test_div():
 
     # Geometry
