@@ -927,10 +927,10 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
-    ! ! Apply relaxation
-    ! fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    ! Apply relaxation
+    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
 
 end subroutine
 

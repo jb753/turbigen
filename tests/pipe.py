@@ -21,7 +21,7 @@ if rank > 0:
 # Geometry
 h = 0.1
 L = h * 4.0
-skew = 30.
+skew = 0.
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -46,12 +46,12 @@ T1 = To1/cf.To_T_from_Ma(M,ga)
 nj = 33
 nk = 33
 
-AR = 1.
+AR = 0.2
 ni = int(nj/h*L)
 print(f'ni={ni}, nj={nj}, nk={nk}')
 print(f'ncell/1e6={ni*nj*nk/1e6}')
 # quit()
-pitch = h/(nj-1)*(nk-1)
+pitch = h/(nj-1)*(nk-1)*AR
 Nb = int(2.0 * np.pi * rm / pitch)
 print(Nb)
 dt = 2.0 * np.pi / float(Nb)
@@ -132,6 +132,12 @@ g = turbigen.grid.Grid(blocks)
 g.match_patches()
 g.check_coordinates()
 
+print('i', turbigen.util.vecnorm(g[0].dli).min())
+print('j', turbigen.util.vecnorm(g[0].dlj).min())
+print('k', turbigen.util.vecnorm(g[0].dlk).min())
+
+
+
 # for b in g:
 #     print(b.x.mean())
 # quit()
@@ -170,7 +176,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 5000}
+settings = {'n_step': 2500}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)

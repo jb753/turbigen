@@ -28,7 +28,7 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor = 0.01
+    smoothing_factor = 0.005
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
@@ -49,7 +49,7 @@ class NativeConfig(BaseSolver):
     n_step_log = 100
     """Number of time steps between log prints."""
 
-    n_step_avg = 2000
+    n_step_avg = 1
     """Number of time steps to average over."""
 
     conv_lim = 1e-9
@@ -377,7 +377,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.2/conf.CFL
+    rfin = 0.5#0.2/conf.CFL
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -399,7 +399,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     tstart = timer()
 
     dUe_ref = None
-
 
     # Start the main time stepping loop
     for istep in range(conf.n_step):
