@@ -28,7 +28,7 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor = 0.005
+    smoothing_factor = 0.01
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
@@ -377,7 +377,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.5#0.2/conf.CFL
+    rfin = 0.1#0.2/conf.CFL
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -437,8 +437,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if not np.mod(istep, 5) and istep > 100:
-                sb.calculate_viscous()
+            # if not np.mod(istep, 5) and istep > 100:
+            #     sb.calculate_viscous()
 
         if not np.mod(istep, conf.n_step_log) and istep > 0:
 
@@ -560,13 +560,13 @@ def run(grid, settings={}, machine=None):
     fig, ax = plt.subplots()
     for b in grid:
         ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
+        c = b[:,nj//2,1].squeeze()
         ax.plot(c.x, c.P, '-')
         # c = b[:,nj//2,1].squeeze()
         # ax.plot(c.x, c.P, '-')
         # c = b[:,nj//2,-2].squeeze()
         # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
+        c = b[:,nj//2,-2].squeeze()
         ax.plot(c.x, c.P, '-')
     plt.show()
 

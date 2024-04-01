@@ -19,7 +19,7 @@ mean_line:
   span1: 0.1
   span2: 0.12
   Alpha1: 40.
-  Alpha2: -65.
+  Alpha2: -60.
   Ma2: 0.6
   Yh: 0.1
   htr: 0.9
@@ -55,8 +55,8 @@ mesh:
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 2000
-  n_step_avg: 1000
+  n_step: 2500
+  n_step_avg: 500
   n_step_log: 50
   damping_factor: 25.0
   CFL: 0.4

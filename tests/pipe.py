@@ -46,7 +46,7 @@ T1 = To1/cf.To_T_from_Ma(M,ga)
 nj = 33
 nk = 33
 
-AR = 0.2
+AR = 1.
 ni = int(nj/h*L)
 print(f'ni={ni}, nj={nj}, nk={nk}')
 print(f'ncell/1e6={ni*nj*nk/1e6}')
@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 1
+nblock = 2
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -176,7 +176,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2500}
+settings = {'n_step': 2000, 'n_step_log': 10}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
@@ -202,14 +202,15 @@ for b in g:
 fig, ax = plt.subplots()
 for b in g:
     bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.Vx/V,'-x')
+    hm = ax.plot(bc.x, bc.Ma,'-x')
+ax.set_ylabel('Ma')
 # ax.set_ylim((0.4,2.))
 
-# # b = g[0][ni//2,:,:]
-# fig, ax = plt.subplots()
-# for b in g:
-#     bc = b[:,:,nk//2]
-#     hm = ax.contourf(bc.x, bc.r, bc.Vt)
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    bc = b[:,:,nk//2]
+    hm = ax.contourf(bc.x, bc.r, bc.Ma)
 
 # ax.axis('equal')
 # plt.colorbar(hm)
