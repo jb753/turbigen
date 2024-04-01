@@ -570,72 +570,10 @@ def run(grid, settings={}, machine=None):
     for b in grid:
         ni, nj, nk = b.shape
         c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.rhoVx, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.rhoVx, '-')
-        ax.set_title('rhoVx')
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.rhoVr, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.rhoVr, '-')
-        ax.set_title('rhoVr')
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.rhorVt, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.rhorVt, '-')
-        ax.set_title('rhorVt')
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.rhoe, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.rhoe, '-')
-        ax.set_title('rhoe')
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.rho, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.rho, '-')
-        ax.set_title('rho')
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
         ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,nk//2].squeeze()
+        ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,1].squeeze()
         # c = b[:,nj//2,1].squeeze()
         # ax.plot(c.x, c.P, '-')
         # c = b[:,nj//2,-2].squeeze()

@@ -47,7 +47,7 @@ blades:
 mesh:
   type: h  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
-  # resolution_factor: 0.5  # Double grid spacing in each direction
+  resolution_factor: 0.5  # Double grid spacing in each direction
   # ni_TE: 4
   # dm_TE: 0.04
   # dm_LE: 0.003
@@ -55,8 +55,8 @@ mesh:
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 4000
-  n_step_avg: 1000
+  n_step: 1000
+  n_step_avg: 200
   n_step_log: 50
   damping_factor: 25.0
   CFL: 0.7
