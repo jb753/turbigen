@@ -108,6 +108,9 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
 
+    ! Halve energy eqn time step
+    ! resc(:,:,:,5) = resc(:,:,:,5) * 0.5e0
+
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
 
@@ -170,7 +173,7 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
 
 end subroutine
 
-subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
+subroutine calculate_secondary(r, conserved, halfVsq, u, eref, ni, nj, nk)
 
     implicit none
 
@@ -182,6 +185,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
     real*4, intent (inout)  :: halfVsq(ni, nj, nk)
     real*4, intent (inout)  :: u(ni, nj, nk)
     real*4, intent (inout)  :: r(ni, nj, nk)
+    real*4, intent (inout)  :: eref
     real*4 :: Vxrt(ni, nj, nk, 3)
 
     integer :: ic
@@ -194,7 +198,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
     halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
-    u = conserved(:,:,:,5)/conserved(:,:,:,1) - halfVsq
+    u = (conserved(:,:,:,5) + eref)/conserved(:,:,:,1) - halfVsq
 
 end subroutine
 
@@ -927,10 +931,10 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    ! fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
 
 end subroutine
 

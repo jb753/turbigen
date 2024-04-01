@@ -22,6 +22,9 @@ logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
 
+typ = np.float32
+
+
 
 class NativeConfig(BaseSolver):
     """Settings with default values for the native solver."""
@@ -67,38 +70,42 @@ class SolverBlock:
     def __init__(self, block):
         """Initialise from a standard Block object."""
 
+
         # Primaries
-        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(np.single)
+        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(typ)
+
+        self.eref = self.conserved[...,4].mean()
+        self.conserved[...,4] -= self.eref
 
         self.mu = block.mu
 
-        self.ho = np.asfortranarray(block.ho).astype(np.single)
-        self.P = np.asfortranarray(block.P).astype(np.single)
+        self.ho = np.asfortranarray(block.ho).astype(typ)
+        self.P = np.asfortranarray(block.P).astype(typ)
 
-        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(np.single)
-        self.u = np.asfortranarray(block.u).astype(np.single)
+        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(typ)
+        self.u = np.asfortranarray(block.u).astype(typ)
 
-        self.x = np.asfortranarray(block.x).astype(np.single)
-        self.r = np.asfortranarray(block.r).astype(np.single)
-        self.t = np.asfortranarray(block.t).astype(np.single)
+        self.x = np.asfortranarray(block.x).astype(typ)
+        self.r = np.asfortranarray(block.r).astype(typ)
+        self.t = np.asfortranarray(block.t).astype(typ)
 
         # Geometry
-        self.r = np.asfortranarray(block.r).astype(np.single)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(np.single)
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(np.single)
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(np.single)
-        self.vol = np.asfortranarray(block.vol).astype(np.single)
-        self.dlmin = np.asfortranarray(block.dlmin).astype(np.single)
-        self.Omega = block.Omega.mean().astype(np.single)
+        self.r = np.asfortranarray(block.r).astype(typ)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(typ)
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(typ)
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(typ)
+        self.vol = np.asfortranarray(block.vol).astype(typ)
+        self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
+        self.Omega = block.Omega.mean().astype(typ)
 
-        self.dU1 = self.conserved.copy(order="F").astype(np.single) * np.nan
-        self.dU2 = self.conserved.copy(order="F").astype(np.single) * np.nan
+        self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
+        self.dU2 = self.conserved.copy(order="F").astype(typ) * np.nan
         self._flag_scree = False
 
         self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
 
         ni, nj, nk = block.shape
-        self.f = np.zeros((ni-1, nj-1, nk-1, 5), order="F", dtype=np.single)
+        self.f = np.zeros((ni-1, nj-1, nk-1, 5), order="F", dtype=typ)
 
         # Get wall indicators
         # These are three arrays of shape
@@ -176,7 +183,7 @@ class SolverBlock:
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
             self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
                 u + 0.5 * Vinsq
-            )  # rhoe
+            )  - self.eref # rhoe
 
             # Reset pressure and hstag on inlet
             self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
@@ -197,8 +204,8 @@ class SolverBlock:
 
         ni, nj, nk = self.r.shape
 
-        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(np.single)
-        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=np.single)
+        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(typ)
+        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=typ)
         node_to_cell(Va_node, Va_cell)
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
@@ -238,7 +245,7 @@ class SolverBlock:
 
     def set_secondary(self):
 
-        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
+        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u, self.eref)
         self.state.set_rho_u(self.conserved[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
@@ -341,7 +348,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable='conserved'):
         else:
 
             # Preallocate a buffer to recieve data
-            nxv = np.empty((count,), dtype=np.single)
+            nxv = np.empty((count,), dtype=typ)
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
@@ -377,7 +384,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.1#0.2/conf.CFL
+    rfin = 0.5#0.2/conf.CFL
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -437,8 +444,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            # if not np.mod(istep, 5) and istep > 100:
-            #     sb.calculate_viscous()
+            if not np.mod(istep, 5) and istep > 100:
+                sb.calculate_viscous()
 
         if not np.mod(istep, conf.n_step_log) and istep > 0:
 
@@ -531,7 +538,9 @@ def run(grid, settings={}, machine=None):
 
     for b, sb in zip(grid, blocks_out):
         # sb.set_secondary()
-        b.set_conserved(np.moveaxis(sb.conserved_avg, -1, 0))
+        cons_avg = np.moveaxis(sb.conserved_avg, -1, 0)
+        cons_avg[4] += sb.eref
+        b.set_conserved(cons_avg)
 
 
     mdot_in = 0.
@@ -560,14 +569,81 @@ def run(grid, settings={}, machine=None):
     fig, ax = plt.subplots()
     for b in grid:
         ni, nj, nk = b.shape
-        c = b[:,nj//2,1].squeeze()
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.rhoVx, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.rhoVx, '-')
+        ax.set_title('rhoVx')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.rhoVr, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.rhoVr, '-')
+        ax.set_title('rhoVr')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.rhorVt, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.rhorVt, '-')
+        ax.set_title('rhorVt')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.rhoe, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.rhoe, '-')
+        ax.set_title('rhoe')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.rho, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.rho, '-')
+        ax.set_title('rho')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
         ax.plot(c.x, c.P, '-')
         # c = b[:,nj//2,1].squeeze()
         # ax.plot(c.x, c.P, '-')
         # c = b[:,nj//2,-2].squeeze()
         # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-2].squeeze()
+        c = b[:,nj//2,-1].squeeze()
         ax.plot(c.x, c.P, '-')
+        ax.set_title('P')
+
     plt.show()
 
 
@@ -633,11 +709,11 @@ def get_wall(b):
     # Preallocate face indices
     ni, nj, nk = b.shape
     wf = [
-        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=np.single),
-        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=np.single),
-        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=np.single),
+        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=typ),
+        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
+        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(np.single))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(typ))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)
