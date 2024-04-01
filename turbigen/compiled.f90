@@ -25,13 +25,10 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     integer :: ip
 
-    real*4 :: Sn(ni, nj, nk, 1)
-    real*4 :: Sc(ni-1, nj-1, nk-1, 1)
+    real*4 :: Sn(ni, nj, nk)
+    real*4 :: Sc(ni-1, nj-1, nk-1)
 
-    real*4 :: conservedi(ni, nj-1, nk-1, 5)
-    real*4 :: conservedj(ni-1, nj, nk-1,5)
-    real*4 :: conservedk(ni-1, nj-1, nk,5)
-
+    real*4 :: fn(ni, nj, nk, 3, 5)
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
     real*4 :: fk(ni-1, nj-1, nk, 3, 5)
@@ -43,13 +40,11 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     real*4, intent(inout) :: ho( ni, nj, nk)
     real*4, intent(inout) :: r( ni, nj, nk)
 
+    real*4 :: Vt( ni, nj, nk)
+
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
-
-    real*4 :: hoi( ni, nj-1, nk-1)
-    real*4 :: hoj( ni-1, nj, nk-1)
-    real*4 :: hok( ni-1, nj-1, nk)
 
     real*4 :: ri( ni, nj-1, nk-1)
     real*4 :: rj( ni-1, nj, nk-1)
@@ -58,47 +53,41 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     ! integer, intent (in) :: nstep_avg
     ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
 
-    ! Calculate source term at nodes, average at cell centers
-    Sn(:, :, :, 1) = (&
-        P/r &  ! P/r
-        + ( &
-            conserved(:,:,:,4)*conserved(:,:,:,4) &  ! rhorVt**2
-            /conserved(:,:,:,1) & ! over rho
-            /r/r/r & ! over r**3
-        ) &
-    )
+    ! Calculate source term at nodes, average at cell center
+    Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
+    Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
     call node_to_cell(Sn, Sc, ni, nj, nk, 1)
-
-    ! Get face-centered vars
-    call node_to_face( &
-        conserved, conservedi, conservedj, conservedk, &
-        ni, nj, nk, 5 &
-    )
 
     call node_to_face( &
         P, Pi, Pj, Pk, &
          ni, nj, nk, 1 &
     )
-    call node_to_face( &
-        ho, hoi, hoj, hok, &
-         ni, nj, nk, 1 &
-    )
+
     call node_to_face( &
         r, ri, rj, rk, &
          ni, nj, nk, 1 &
     )
 
+    ! Evaluate convective fluxes at nodes
+    call get_fluxes_node(conserved, ho, r, fn, ni, nj, nk)
 
-    ! Evaluate fluxes on each set of faces
-    call get_fluxes_face(conservedi, Pi, hoi, ri, walli, Omega, fi, ni, nj-1, nk-1)
-    call get_fluxes_face(conservedj, Pj, hoj, rj, wallj, Omega, fj, ni-1, nj, nk-1)
-    call get_fluxes_face(conservedk, Pk, hok, rk, wallk, Omega, fk, ni-1, nj-1, nk)
+    ! Distribute to faces
+    do ip = 1,5
+        call node_to_face( &
+            fn(:,:,:,:,ip), fi(:,:,:,:,ip), fj(:,:,:,:,ip), fk(:,:,:,:,ip), &
+            ni, nj, nk, 3 &
+        )
+    end do
+
+    call get_fluxes_face(fi, Pi, ri, walli, Omega, ni, nj-1, nk-1)
+    call get_fluxes_face(fj, Pj, rj, wallj, Omega, ni-1, nj, nk-1)
+    call get_fluxes_face(fk, Pk, rk, wallk, Omega, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
 
     ! Add on source term
-    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc(:,:,:,1)
+    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc
 
     ! Add on body forces
     fsum_vol = fsum_vol + f
@@ -107,9 +96,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     do ip = 1, 5
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
-
-    ! Halve energy eqn time step
-    ! resc(:,:,:,5) = resc(:,:,:,5) * 0.5e0
 
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
@@ -202,8 +188,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, eref, ni, nj, nk)
 
 end subroutine
 
-subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
-    ! using face-centered properties, evaluate fluxes for one direction
+subroutine get_fluxes_node(conserved, ho, r, flux, ni, nj, nk)
 
     implicit none
 
@@ -212,16 +197,12 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
     integer, intent (in)  :: nk
 
     real*4, intent (in)  :: conserved(ni, nj, nk, 5)
-    real*4, intent (in)  :: P(ni, nj, nk)
     real*4, intent (in)  :: ho(ni, nj, nk)
     real*4, intent (in)  :: r(ni, nj, nk)
-    real*4, intent (in)  :: Omega
-    logical*1, intent (in)  :: wall(ni, nj, nk)
 
     real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
 
     integer :: ic
-    integer :: ip
 
     real*4 :: Vx(ni, nj, nk)
     real*4 :: Vr(ni, nj, nk)
@@ -257,6 +238,27 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
         flux(:,:,:,ic,5) = flux(:,:,:,ic,1) * ho
     end do
 
+end subroutine
+
+subroutine get_fluxes_face(flux, P, r, wall, Omega, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: Omega
+
+    real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
+
+    integer :: ic
+    integer :: ip
+
+    real*4, intent (in)  :: P(ni, nj, nk)
+    logical*1, intent (in)  :: wall(ni, nj, nk)
+
     ! zero convective fluxes on walls
     do ip = 1,5
         do ic = 1,3
@@ -265,6 +267,7 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
             end where
         end do
     end do
+
 
     ! pressure fluxes
     ! x-mom in x-dirn
@@ -868,7 +871,6 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     real*4 :: rj(ni-1, nj, nk-1)
     real*4 :: rk(ni-1, nj-1, nk)
 
-    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
