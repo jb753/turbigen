@@ -119,12 +119,15 @@ def test_equals(S1):
     S2 = S1.copy()
     S2.set_P_h(S1.P, S1.h)
 
+    print(S1.P, S1.h)
+    print(S2.P, S2.h)
+    assert S1 == S2
+
     S3 = S1.copy()
     S3.set_P_h(S1.P, S1.h + 200e3)
 
     S4 = S1.copy()
 
-    assert S1 == S2
     assert S1 == S4
     assert not (S1 == S3)
 
@@ -339,6 +342,8 @@ def test_set_properties(S1):
 @pytest.mark.parametrize("S1", states)
 def test_thermo_properties(S1):
     """Check that universal relations between thermodynamic properties are satisfied"""
+    # print(S1.h)
+    # print( S1.u + S1.P / S1.rho)
     assert np.isclose(S1.h, S1.u + S1.P / S1.rho)
     assert np.isclose(S1.gamma, S1.cp / S1.cv)
 

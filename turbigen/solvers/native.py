@@ -74,9 +74,6 @@ class SolverBlock:
         # Primaries
         self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(typ)
 
-        self.eref = self.conserved[...,4].mean()
-        self.conserved[...,4] -= self.eref
-
         self.mu = block.mu
 
         self.ho = np.asfortranarray(block.ho).astype(typ)
@@ -183,7 +180,7 @@ class SolverBlock:
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
             self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
                 u + 0.5 * Vinsq
-            )  - self.eref # rhoe
+            ) 
 
             # Reset pressure and hstag on inlet
             self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
@@ -245,7 +242,7 @@ class SolverBlock:
 
     def set_secondary(self):
 
-        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u, self.eref)
+        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
         self.state.set_rho_u(self.conserved[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
@@ -539,7 +536,6 @@ def run(grid, settings={}, machine=None):
     for b, sb in zip(grid, blocks_out):
         # sb.set_secondary()
         cons_avg = np.moveaxis(sb.conserved_avg, -1, 0)
-        cons_avg[4] += sb.eref
         b.set_conserved(cons_avg)
 
 

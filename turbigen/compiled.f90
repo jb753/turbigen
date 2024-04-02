@@ -159,7 +159,7 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
 
 end subroutine
 
-subroutine calculate_secondary(r, conserved, halfVsq, u, eref, ni, nj, nk)
+subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
     implicit none
 
@@ -171,7 +171,6 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, eref, ni, nj, nk)
     real*4, intent (inout)  :: halfVsq(ni, nj, nk)
     real*4, intent (inout)  :: u(ni, nj, nk)
     real*4, intent (inout)  :: r(ni, nj, nk)
-    real*4, intent (inout)  :: eref
     real*4 :: Vxrt(ni, nj, nk, 3)
 
     integer :: ic
@@ -184,7 +183,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, eref, ni, nj, nk)
 
     halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
-    u = (conserved(:,:,:,5) + eref)/conserved(:,:,:,1) - halfVsq
+    u = conserved(:,:,:,5)/conserved(:,:,:,1) - halfVsq
 
 end subroutine
 
