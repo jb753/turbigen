@@ -64,8 +64,6 @@ class OHMeshConfig(BaseConfig):
     frac_outlet = 0.15
     relax_outlet = 1
 
-    reset_blade_streamwise = True
-
     def __setattr__(self, key, value):
         if key not in dir(self):
             raise TypeError(f"Invalid OH-mesh configuration variable '{key}'")
@@ -126,7 +124,6 @@ class OHMeshConfig(BaseConfig):
             "nsmooth_multigrid": self.nsmooth_multigrid,
             "orthogonality_control": self.orthogonality_control,
             "skewness_control": self.skewness_control,
-            "reset_blade_streamwise": self.reset_blade_streamwise,
             "wake_control": self.wake_control,
             "wake_deviation": self.wake_deviation,
             "untwist_outlet": self.untwist_outlet,
