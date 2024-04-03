@@ -156,9 +156,10 @@ class PerfectState(StructuredData):
         "u",
     )
 
-    # Arbitrary reference properties for entropy/enthalpy datum
-    Pref = 1e5
-    Tref = 300.0
+    # Arbitrary reference properties for entropy datum
+    Ps0 = 1e5
+    Ts0 = 300.0
+    Tu0 = 300.0
 
     def __eq__(self, other):
         if other is None:
@@ -257,8 +258,6 @@ class PerfectState(StructuredData):
     @u.setter
     def u(self, value):
         val_array = np.array(value)
-        if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative u={value.min()}")
         self._set_data_by_key("u", val_array)
 
     @dependent_property
@@ -279,11 +278,11 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def h(self):
-        return self.cp * self.T
+        return self.cp * self.T - self.cv*self.Tu0
 
     @dependent_property
     def T(self):
-        return self.u / self.cv
+        return self.u / self.cv + self.Tu0
 
     @property
     def is_two_phase(self):
@@ -292,36 +291,38 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def s(self):
-        return self.cp * np.log(self.T / self.Tref) - self.rgas * np.log(
-            self.P / self.Pref
+        return self.cp * np.log(self.T / self.Ts0) - self.rgas * np.log(
+            self.P / self.Ps0
         )
 
     def set_P_T(self, P, T):
-        u = self.cv * T
+        u = self.cv * (T - self.Tu0)
         rho = P / self.rgas / T
         return self.set_rho_u(rho, u)
 
     def set_P_s(self, P, s):
-        T = self.Tref * np.exp((s + self.rgas * np.log(P / self.Pref)) / self.cp)
+        T = self.Ts0 * np.exp((s + self.rgas * np.log(P / self.Ps0)) / self.cp)
         self.set_P_T(P, T)
         return self
 
     def set_h_s(self, h, s):
-        T = h / self.cp
-        P = self.Pref * np.exp((self.cp * np.log(T / self.Tref) - s) / self.rgas)
+        T = (h + self.cv*self.Tu0)/self.cp
+        P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
         self.set_P_T(P, T)
         assert np.allclose(self.h, h)
         assert np.allclose(self.s, s)
         return self
 
     def set_T_s(self, T, s):
-        P = self.Pref * np.exp((self.cp * np.log(T / self.Tref) - s) / self.rgas)
+        P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
         self.set_P_T(P, T)
         return self
 
     def set_P_h(self, P, h):
-        T = h / self.cp
+        T = (h + self.cv*self.Tu0)/self.cp
         self.set_P_T(P, T)
+        assert np.allclose(self.h, h)
+        assert np.allclose(self.P, P)
         return self
 
     def set_rho_u(self, rho, u):
@@ -330,9 +331,10 @@ class PerfectState(StructuredData):
         return self
 
     def set_rho_s(self, rho, s):
-        uref = self.cv * self.Tref
-        rhoref = self.Pref / self.rgas / self.Tref
-        u = uref * np.exp((s + self.rgas * np.log(rho / rhoref)) / self.cv)
+        us0 = self.cv * (self.Ts0 - self.Tu0)
+        rhos0 = self.Ps0 / self.rgas / self.Ts0
+        T = self.Ts0 * np.exp((s + self.rgas * np.log(rho / rhos0)) / self.cv)
+        u = self.cv*(T-self.Tu0)
         self.set_rho_u(rho, u)
         return self
 

@@ -3,12 +3,16 @@ import turbigen.util
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.grid
+from turbigen.solvers.base import BaseSolver
 from turbigen.compiled import (
     smooth,
     node_to_cell,
     node_to_face,
+    residual,
     step,
-    calculate_secondary
+    damp,
+    calculate_secondary,
+    viscous_force
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -18,33 +22,47 @@ logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
 
-
-# class NativeConfig(BaseSolver):
-#     """Settings with default values for the TS4 solver."""
-
-#     _name = "Native"
+typ = np.float32
 
 
-def flatwhere(x):
-    return np.where(x.flat)[0]
 
+class NativeConfig(BaseSolver):
+    """Settings with default values for the native solver."""
 
-nstep_dt = 100
-nstep_log = 500
-nstep = 15000
-nstep_avg = 5000
-nrk = 4
-rfin = 0.2
-rfin1 = 1.0 - rfin
+    _name = "Native"
 
-fac_conv = 1e-9
-sfin = 0.005
-fac_2nd = 0.2
-CFL = 0.4
-sf = CFL * sfin
-sf2 = sf * fac_2nd
-sf4 = sf * (1.0 - fac_2nd)
+    smoothing_factor = 0.01
+    """Artificial dissipation to suppress central-differencing instability and
+    reduce overshoots at sharp discontinuities. Increased values are more
+    robust, but less accurate."""
 
+    smoothing_2nd_proportion = 0.2
+
+    CFL = 0.7
+    """Courant--Friedrichs--Lewy number, time step normalised by local wave
+    speed and cell size. Reduced values are more stable but slower to
+    converge."""
+
+    n_step = 5000
+    """Number of time steps to run for."""
+
+    n_step_dt = 10
+    """Number of time steps between updates of the local time step."""
+
+    n_step_log = 100
+    """Number of time steps between log prints."""
+
+    n_step_avg = 1
+    """Number of time steps to average over."""
+
+    conv_lim = 1e-9
+
+    damping_factor = 25.0
+    """Negative feedback to damp down high residuals. Lower values are more stable."""
+
+    n_step_ramp = 1
+
+    i_scheme = 1
 
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
@@ -52,33 +70,39 @@ class SolverBlock:
     def __init__(self, block):
         """Initialise from a standard Block object."""
 
+
         # Primaries
-        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(np.single)
+        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(typ)
 
-        self.ho = np.asfortranarray(block.ho).astype(np.single)
-        self.P = np.asfortranarray(block.P).astype(np.single)
+        self.mu = block.mu
 
-        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(np.single)
-        self.u = np.asfortranarray(block.u).astype(np.single)
+        self.ho = np.asfortranarray(block.ho).astype(typ)
+        self.P = np.asfortranarray(block.P).astype(typ)
 
-        self.x = np.asfortranarray(block.x).astype(np.single)
-        self.r = np.asfortranarray(block.r).astype(np.single)
-        self.t = np.asfortranarray(block.t).astype(np.single)
+        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(typ)
+        self.u = np.asfortranarray(block.u).astype(typ)
+
+        self.x = np.asfortranarray(block.x).astype(typ)
+        self.r = np.asfortranarray(block.r).astype(typ)
+        self.t = np.asfortranarray(block.t).astype(typ)
 
         # Geometry
-        self.r = np.asfortranarray(block.r).astype(np.single)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(np.single)
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(np.single)
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(np.single)
-        self.vol = np.asfortranarray(block.vol).astype(np.single)
-        self.dlmin = np.asfortranarray(block.dlmin).astype(np.single)
-        self.Omega = block.Omega.mean().astype(np.single)
+        self.r = np.asfortranarray(block.r).astype(typ)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(typ)
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(typ)
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(typ)
+        self.vol = np.asfortranarray(block.vol).astype(typ)
+        self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
+        self.Omega = block.Omega.mean().astype(typ)
 
-        self.dU1 = self.conserved.copy(order="F").astype(np.single) * np.nan
-        self.dU2 = self.conserved.copy(order="F").astype(np.single) * np.nan
+        self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
+        self.dU2 = self.conserved.copy(order="F").astype(typ) * np.nan
         self._flag_scree = False
 
         self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
+
+        ni, nj, nk = block.shape
+        self.f = np.zeros((ni-1, nj-1, nk-1, 5), order="F", dtype=typ)
 
         # Get wall indicators
         # These are three arrays of shape
@@ -90,7 +114,7 @@ class SolverBlock:
 
         # Convert wall indicators to wall indices
         # Which are indices into the flattend face arrays
-        self.walls = [flatwhere(w > 0.99) for w in self.wall_indicators]
+        self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
 
         self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
         self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
@@ -113,7 +137,7 @@ class SolverBlock:
             u_inlet = block.u.ravel(order="F")[inlet[0]]
             state_inlet.set_rho_u(rho_inlet, u_inlet)
 
-    def set_inlets(self):
+    def set_inlets(self, rfin):
         """Set conserved variables on inlets by relaxing density changes."""
 
         # Change inlet patches
@@ -124,11 +148,11 @@ class SolverBlock:
 
             # Relax changes in density
             rho_now = (
-                rfin * self.conserved[..., 0].ravel(order="F")[ind] + rfin1 * state.rho
+                rfin * self.conserved[..., 0].ravel(order="F")[ind] + (1.-rfin) * state.rho
             )
 
             # Check for flow reversal
-            rho_now[rho_now > rhoo] = rhoo * 0.99999
+            rho_now[rho_now > rhoo] = rhoo * 0.999
 
             # Isentropic expansion from stagnation state
             state.set_rho_s(rho_now, state.s)
@@ -150,13 +174,13 @@ class SolverBlock:
             Vtin = Vmin * tanAlpha
 
             # Reset conserved vars on inlet
-            self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+            # Do not reset the density - seems to compromise stability
             self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
             self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
             self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
                 u + 0.5 * Vinsq
-            )  # rhoe
+            ) 
 
             # Reset pressure and hstag on inlet
             self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
@@ -167,7 +191,7 @@ class SolverBlock:
         for outlet in self.outlets:
             self.P.ravel(order="F")[outlet[0]] = outlet[1]
 
-    def set_timestep(self):
+    def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
         Vr = self.conserved[..., 2] / self.conserved[..., 0]
         Vt = self.conserved[..., 3] / self.conserved[..., 0] / self.r
@@ -177,21 +201,22 @@ class SolverBlock:
 
         ni, nj, nk = self.r.shape
 
-        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(np.single)
-        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=np.single)
+        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(typ)
+        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=typ)
         node_to_cell(Va_node, Va_cell)
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
 
     # @profile
-    def step(self, start_flag):
 
-        step(
+    def residual(self):
+        residual(
             self.conserved,
             self.P,
             self.ho,
             self.r,
+            self.f,
             self.Omega,
             *self.wall_indicators,
             self.dt,
@@ -200,23 +225,40 @@ class SolverBlock:
             self.dAk,
             self.vol,
             self.dU1,
-            self.dU2,
-            start_flag,
-            self.conserved_avg,
-            nstep_avg
         )
 
-        self.smooth()
+    def step(self, istep, istep_avg, nstep_avg, ischeme):
+        step(
+            self.conserved,
+            self.conserved_avg,
+            self.dU1,
+            self.dU2,
+            istep,
+            istep_avg,
+            nstep_avg,
+            ischeme,
+        )
+
+
+    def set_secondary(self):
 
         calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
-
         self.state.set_rho_u(self.conserved[..., 0], self.u)
-
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
 
-    def smooth(self):
+    def smooth(self, sf2, sf4):
         smooth(self.conserved, sf2, sf4)
+
+    def damp(self, fdamp):
+        damp(self.dU1, fdamp)
+
+    def calculate_viscous(self):
+        viscous_force(
+            self.conserved, self.f, self.mu, self.vol, self.dAi, self.dAj, self.dAk, self.r
+        )
+
+
 
 
 def get_periodics(g, procids):
@@ -248,7 +290,7 @@ def set_periodic(b1, b2, ind1, ind2):
     conserved2[ind2] = avg
 
 
-def send_slave(block_split, procids, periodics):
+def send_slave(block_split, procids, periodics, settings):
 
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
@@ -263,8 +305,60 @@ def send_slave(block_split, procids, periodics):
 
     comm.Barrier()
 
+    for iproc in range(1, size):
+        comm.send(settings, dest=iproc)
 
-def run_slave(blocks=None, periodics_all=None, nodes=None):
+    comm.Barrier()
+
+def exchange_periodics(blocks, bid_local, periodics, variable='conserved'):
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Update periodic boundaries
+    for patch in periodics:
+        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
+        count = len(ind)
+
+        b1 = blocks[bid_local[bid]]
+
+        if variable=='conserved':
+            v1 = b1.conserved.ravel(order='F')
+        elif variable=='residual':
+            v1 = b1.dU1.ravel(order='F')
+
+        # Just set the periodic if on same rank
+        if nxprocid == rank:
+
+            b2 = blocks[bid_local[nxbid]]
+            if variable=='conserved':
+                v2 = b2.conserved.ravel(order='F')
+            elif variable=='residual':
+                v2 = b2.dU1.ravel(order='F')
+
+            avg = 0.5 * (v1[ind] + v2[nxind])
+            v1[ind] = avg
+            v2[nxind] = avg
+
+        # Otherwise, communication is needed
+        else:
+
+            # Preallocate a buffer to recieve data
+            nxv = np.empty((count,), dtype=typ)
+
+            # If our rank is lower than next rank, send first
+            if rank < nxprocid:
+                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            # If our rank is higher than next rank, recieve first
+            else:
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+            v1[ind] = 0.5 * (v1[ind] + nxv)
+
+
+def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -275,10 +369,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
         comm.Barrier()
         periodics_all = comm.recv()
         comm.Barrier()
+        conf = comm.recv()
+        comm.Barrier()
         master_flag = False
     else:
         master_flag = True
         dUlog = []
+
+
+    # Calculate smoothing and inlet relaxation scaled by CFL
+    sf = conf.CFL * conf.smoothing_factor
+    sf2 = sf * conf.smoothing_2nd_proportion
+    sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
+    rfin = 0.5#0.2/conf.CFL
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -302,59 +405,46 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
     dUe_ref = None
 
     # Start the main time stepping loop
-    for istep in range(nstep):
+    for istep in range(conf.n_step):
 
-        # Update periodic boundaries
-        for patch in periodics:
-            pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
-            count = len(ind)
+        if not np.mod(istep, conf.n_step_dt):
+            exchange_periodics(blocks, bid_local, periodics, variable='conserved')
 
-            # Just set the periodic if on same rank
-            if nxprocid == rank:
-                set_periodic(
-                    blocks[bid_local[bid]], blocks[bid_local[nxbid]], ind, nxind
-                )
-            # Otherwise, communication is needed
-            else:
-                conserved = blocks[bid_local[bid]].conserved.ravel(order="F")
-                nxconserved = np.empty((count,), dtype=np.single)
-                # If our rank is lower than next rank, send first
-                if rank < nxprocid:
-                    comm.Send(
-                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
-                    )
-                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
-                # If our rank is higher than next rank, recieve first
-                else:
-                    comm.Recv([nxconserved, count, MPI.REAL4], source=nxprocid, tag=pid)
-                    comm.Send(
-                        [conserved[ind], count, MPI.REAL4], dest=nxprocid, tag=pid
-                    )
-                conserved[ind] = 0.5 * (conserved[ind] + nxconserved)
-
-        # Loop over blocks
+        # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
 
-            # Update time stegs
-            if not np.mod(istep, nstep_dt):
-                sb.set_timestep()
+            if not np.mod(istep, conf.n_step_dt):
+                sb.set_timestep(conf.CFL)
 
-            sb.set_inlets()
+            sb.set_inlets(rfin)
+
             sb.set_outlets()
 
-            if istep==0:
-                start_flag = 0
-            elif istep > (nstep-nstep_avg):
-                start_flag = 2
-            else:
-                start_flag = 1
-            sb.step(start_flag)
+            sb.residual()
 
-            # sb.smooth()
+        # Send residuals to other blocks
+        exchange_periodics(blocks, bid_local, periodics, variable='residual')
 
-        if not np.mod(istep, nstep_log) and istep > 0:
+        # Now integrate forward
+        istep_avg =  conf.n_step-conf.n_step_avg
+        for iblock in range(nblock):
+            sb = blocks[iblock]
+
+            if conf.damping_factor:
+                sb.damp(conf.damping_factor)
+
+            sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
+
+            sb.smooth(sf2, sf4)
+
+            sb.set_secondary()
+
+            if not np.mod(istep, 5) and istep > 100:
+                sb.calculate_viscous()
+
+        if not np.mod(istep, conf.n_step_log) and istep > 0:
 
             # Send residuals to master proc
             dUnow = np.stack([np.abs(b.dU1.mean(axis=(0,1,2))) for b in blocks])
@@ -373,7 +463,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
                 dUall = np.concatenate(dUall)
 
                 ten = timer()
-                tpnps = (ten - tstart) / nodes / nstep_log
+                tpnps = (ten - tstart) / nodes / conf.n_step_log
                 tstart = ten
 
                 logger.info(f"{istep}: tpnps={tpnps:.3e}")
@@ -384,7 +474,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
                 dUlog.append(dUlognow)
 
                 if not dUe_ref:
-                    dUe_ref = dUlognow[-1]*fac_conv
+                    dUe_ref = dUlognow[-1]*conf.conv_lim
 
                 if dUlognow[-1] < dUe_ref:
                     terminate = np.array((1,), dtype=int)
@@ -404,6 +494,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None):
 
 
 def run(grid, settings={}, machine=None):
+
+    conf = NativeConfig(**settings)
 
     logger.info("Intialising native solver...")
 
@@ -429,10 +521,10 @@ def run(grid, settings={}, machine=None):
                 block_split[-1].append(b)
 
     logger.info("Sending data to processors...")
-    send_slave(block_split, procids, periodics)
+    send_slave(block_split, procids, periodics, conf)
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes)
+    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes, conf)
 
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
@@ -442,7 +534,9 @@ def run(grid, settings={}, machine=None):
         blocks_out.extend(bsi)
 
     for b, sb in zip(grid, blocks_out):
-        b.set_conserved(np.moveaxis(sb.conserved_avg, -1, 0))
+        # sb.set_secondary()
+        cons_avg = np.moveaxis(sb.conserved_avg, -1, 0)
+        b.set_conserved(cons_avg)
 
 
     mdot_in = 0.
@@ -460,10 +554,45 @@ def run(grid, settings={}, machine=None):
 
     dUlog = np.array(dUlog)
     dUlog /= dUlog[0]
+
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
     ax.semilogy(dUlog)
     ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
+
+    ip, jp, kp = np.unravel_index(np.argmax(blocks_out[0].dU1[...,-1]),blocks_out[0].dU1[...,-1].shape)
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        ni, nj, nk = b.shape
+        c = b[:,nj//2,0].squeeze()
+        ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,nk//2].squeeze()
+        ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,1].squeeze()
+        # c = b[:,nj//2,1].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        # c = b[:,nj//2,-2].squeeze()
+        # ax.plot(c.x, c.P, '-')
+        c = b[:,nj//2,-1].squeeze()
+        ax.plot(c.x, c.P, '-')
+        ax.set_title('P')
+
+    plt.show()
+
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     ni, nj, nk = b.shape
+    #     c = b[:,jp,:].squeeze()
+    #     cm=ax.contourf(c.x, c.rt, c.Ma)
+    #     ax.plot(c.x, c.rt, 'k-',lw=0.5)
+    #     ax.plot(c.x.T, c.rt.T, 'k-',lw=0.5)
+    #     ax.plot(c.x[ip, kp], c.rt[ip, kp], 'r*')
+    #     ax.axis('equal')
+    #     plt.colorbar(cm)
+    #     # ax.plot(c.x, c.P)
+    # plt.show()
 
 def get_geom(b):
     # Areas and volumes
@@ -496,15 +625,15 @@ def get_geom(b):
     return dAi, dAj, dAk, vol, dlmin, wall, Omega
 
 
-def get_timestep(b, dlmin):
-    ni, nj, nk = b.shape
-    Va_node = np.asfortranarray(np.stack((b.V, b.a), axis=-1))
-    Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
-    node_to_cell(Va_node, Va_cell)
-    Vref = Va_cell[..., 0]
-    aref = Va_cell[..., 1]
-    dt = CFL * dlmin / (aref + Vref)
-    return np.asfortranarray(dt)
+# def get_timestep(b, dlmin, CFL):
+#     ni, nj, nk = b.shape
+#     Va_node = np.asfortranarray(np.stack((b.V, b.a), axis=-1))
+#     Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
+#     node_to_cell(Va_node, Va_cell)
+#     Vref = Va_cell[..., 0]
+#     aref = Va_cell[..., 1]
+#     dt = CFL * dlmin / (aref + Vref)
+#     return np.asfortranarray(dt)
 
 
 def get_wall(b):
@@ -514,11 +643,11 @@ def get_wall(b):
     # Preallocate face indices
     ni, nj, nk = b.shape
     wf = [
-        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=np.single),
-        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=np.single),
-        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=np.single),
+        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=typ),
+        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
+        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(np.single))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(typ))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)

@@ -2,10 +2,7 @@ import numpy as np
 from turbigen import util
 import turbigen.grid
 import turbigen.geometry
-from multiprocessing import Pool
-from itertools import repeat
 from turbigen.base import BaseConfig
-import os
 from turbigen import clusterfunc
 
 logger = util.make_logger()
@@ -42,7 +39,7 @@ class HMeshConfig(BaseConfig):
     ni_TE = 9
     """Number of streamwise points across trailing edge."""
 
-    dm_TE = 0.
+    dm_TE = 0.0
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
@@ -496,7 +493,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         if unbladed[irow]:
             tte = None
         elif mesh_config.dm_TE:
-            tte = 1.-mesh_config.dm_TE
+            tte = 1.0 - mesh_config.dm_TE
         else:
             xrt_u, xrt_l = mac.bld[irow].evaluate_section(0.5)
             mlim_now = np.array((0, 1))

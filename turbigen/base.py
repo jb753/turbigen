@@ -563,7 +563,9 @@ class Kinematics:
         dlk = 0.25 * (
             dlk[:-1, :-1, :] + dlk[:-1, 1:, :] + dlk[1:, :-1, :] + dlk[:-1, :-1, :]
         )
-        return np.minimum(dli, dlj, dlk)
+        dlmin = np.minimum(dli, dlj)
+        dlmin = np.minimum(dlmin, dlk)
+        return dlmin
 
     @dependent_property
     def dAi(self):

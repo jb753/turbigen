@@ -31,7 +31,7 @@ rt = rm + 0.5 * h
 ga = 1.4
 cp = 1005.0
 mu = 1.8e-5
-Alpha = 0.0
+Alpha = 30.0
 Beta = 0.0
 Po1 = 1e5
 To1 = 300.0
@@ -44,14 +44,14 @@ T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
 nj = 33
-nk = 5
+nk = 33
 
-AR = 1.
+AR = 1.0
 ni = int(nj/h*L)
 print(f'ni={ni}, nj={nj}, nk={nk}')
 print(f'ncell/1e6={ni*nj*nk/1e6}')
 # quit()
-pitch = h/(nj-1)*(nk-1)
+pitch = h/(nj-1)*(nk-1)*AR
 Nb = int(2.0 * np.pi * rm / pitch)
 print(Nb)
 dt = 2.0 * np.pi / float(Nb)
@@ -60,7 +60,7 @@ dj = h/nj
 di = L/ni
 print('AR',dj/dk)
 print('AR',dj/di)
-quit()
+# quit()
 tv = np.linspace(-dt / 2., dt / 2., nk)
 xv = np.linspace(0., L, ni)
 rv = np.linspace(rh, rt, nj)
@@ -70,7 +70,7 @@ xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1]
 
 # squeeze the nozzle
-fac_noz = np.interp(xv, [0., L/2, L], [1., 0.5, 1.])[:,None,None]
+fac_noz = np.interp(xv, [0., L/2, L], [1., 0.65, 1.])[:,None,None]
 xrt[1] = (xrt[1] - rm)*fac_noz + rm
 
 patches = [
@@ -132,6 +132,12 @@ g = turbigen.grid.Grid(blocks)
 g.match_patches()
 g.check_coordinates()
 
+print('i', turbigen.util.vecnorm(g[0].dli).min())
+print('j', turbigen.util.vecnorm(g[0].dlj).min())
+print('k', turbigen.util.vecnorm(g[0].dlk).min())
+
+
+
 # for b in g:
 #     print(b.x.mean())
 # quit()
@@ -155,7 +161,7 @@ g.apply_outlet(P1)
 for b in g:
     b.Vx = V
     b.Vr = 0.
-    b.Vt = 0.
+    b.Vt = V*np.tan(np.radians(Alpha))
     b.cp = cp
     b.gamma = ga
     b.mu = mu
@@ -170,24 +176,50 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
+settings = {'n_step': 2000, 'n_step_avg': 500, 'n_step_log': 100}
 
 tst = timer()
-turbigen.solvers.native.run(g)
+turbigen.solvers.native.run(g, settings)
 ten = timer()
 print(ten-tst)
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,nj//2,nk//2]
-    hm = ax.plot(bc.x, bc.P)
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.P/Po1,'-x')
+ax.plot(bc.x[-1], P1/Po1,'k*')
+ax.set_ylim((0.4,1.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,:,nk//2]
-    hm = ax.contourf(bc.x, bc.r, bc.Vt)
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.To/To1,'-x')
+# ax.set_ylim((0.4,2.))
 
-ax.axis('equal')
-plt.colorbar(hm)
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.Ma,'-x')
+ax.set_ylabel('Ma')
+# ax.set_ylim((0.4,2.))
+
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.Alpha,'-x')
+ax.set_ylabel('Alpha')
+# ax.set_ylim((0.4,2.))
+
+# # b = g[0][ni//2,:,:]
+# fig, ax = plt.subplots()
+# for b in g:
+#     bc = b[:,:,nk//2]
+#     hm = ax.contourf(bc.x, bc.r, bc.Ma)
+
+# ax.axis('equal')
+# plt.colorbar(hm)
 plt.show()

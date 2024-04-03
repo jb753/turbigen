@@ -1,7 +1,7 @@
 !! ! Compiled functions to speed up expensive calulations
 
-subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
-        resid1, resid2, start_flag, conserved_avg, nstep_avg, ni, nj, nk)
+subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
+        resid, ni, nj, nk)
 
     implicit none
 
@@ -10,11 +10,7 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     integer, intent (in)  :: nk
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
-    real*4, intent (inout) :: resid1(ni, nj, nk, 5)
-    real*4, intent (inout) :: resid2(ni, nj, nk, 5)
-    real*4 :: resc_abs(ni, nj, nk, 5)
-    real*4 :: resc_avg(5)
+    real*4, intent (inout) :: resid(ni, nj, nk, 5)
     real*4, intent (inout)  :: Omega
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
     logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
@@ -25,19 +21,14 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1)
 
-    integer :: start_flag
+    real*4, intent (inout)  :: f(ni-1, nj-1, nk-1, 5)
 
     integer :: ip
-    integer, intent (in) :: nstep_avg
-    real*4 :: damp
 
-    real*4 :: Sn(ni, nj, nk, 1)
-    real*4 :: Sc(ni-1, nj-1, nk-1, 1)
+    real*4 :: Sn(ni, nj, nk)
+    real*4 :: Sc(ni-1, nj-1, nk-1)
 
-    real*4 :: conservedi(ni, nj-1, nk-1, 5)
-    real*4 :: conservedj(ni-1, nj, nk-1,5)
-    real*4 :: conservedk(ni-1, nj-1, nk,5)
-
+    real*4 :: fn(ni, nj, nk, 3, 5)
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
     real*4 :: fk(ni-1, nj-1, nk, 3, 5)
@@ -49,88 +40,122 @@ subroutine step(conserved, P, ho, r, Omega, walli, wallj, wallk, dt, dAi, dAj, d
     real*4, intent(inout) :: ho( ni, nj, nk)
     real*4, intent(inout) :: r( ni, nj, nk)
 
+    real*4 :: Vt( ni, nj, nk)
+
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
-
-    real*4 :: hoi( ni, nj-1, nk-1)
-    real*4 :: hoj( ni-1, nj, nk-1)
-    real*4 :: hok( ni-1, nj-1, nk)
 
     real*4 :: ri( ni, nj-1, nk-1)
     real*4 :: rj( ni-1, nj, nk-1)
     real*4 :: rk( ni-1, nj-1, nk)
 
-    ! Calculate source term at nodes, average at cell centers
-    Sn(:, :, :, 1) = (&
-        P/r &  ! P/r
-        + ( &
-            conserved(:,:,:,4)*conserved(:,:,:,4) &  ! rhorVt**2
-            /conserved(:,:,:,1) & ! over rho
-            /r/r/r & ! over r**3
-        ) &
-    )
-    call node_to_cell(Sn, Sc, ni, nj, nk, 1)
+    ! integer, intent (in) :: nstep_avg
+    ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
 
-    ! Get face-centered vars
-    call node_to_face( &
-        conserved, conservedi, conservedj, conservedk, &
-        ni, nj, nk, 5 &
-    )
+    ! Calculate source term at nodes, average at cell center
+    Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
+    Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
+    call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
     call node_to_face( &
         P, Pi, Pj, Pk, &
          ni, nj, nk, 1 &
     )
-    call node_to_face( &
-        ho, hoi, hoj, hok, &
-         ni, nj, nk, 1 &
-    )
+
     call node_to_face( &
         r, ri, rj, rk, &
          ni, nj, nk, 1 &
     )
 
+    ! Evaluate convective fluxes at nodes
+    call get_fluxes_node(conserved, ho, r, fn, ni, nj, nk)
 
-    ! Evaluate fluxes on each set of faces
-    call get_fluxes_face(conservedi, Pi, hoi, ri, walli, Omega, fi, ni, nj-1, nk-1)
-    call get_fluxes_face(conservedj, Pj, hoj, rj, wallj, Omega, fj, ni-1, nj, nk-1)
-    call get_fluxes_face(conservedk, Pk, hok, rk, wallk, Omega, fk, ni-1, nj-1, nk)
+    ! Distribute to faces
+    do ip = 1,5
+        call node_to_face( &
+            fn(:,:,:,:,ip), fi(:,:,:,:,ip), fj(:,:,:,:,ip), fk(:,:,:,:,ip), &
+            ni, nj, nk, 3 &
+        )
+    end do
+
+    call get_fluxes_face(fi, Pi, ri, walli, Omega, ni, nj-1, nk-1)
+    call get_fluxes_face(fj, Pj, rj, wallj, Omega, ni-1, nj, nk-1)
+    call get_fluxes_face(fk, Pk, rk, wallk, Omega, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
 
     ! Add on source term
-    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc(:,:,:,1)
+    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc
+
+    ! Add on body forces
+    fsum_vol = fsum_vol + f
 
     ! Integrate forward in time
     do ip = 1, 5
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
 
-    resc_abs = abs(resc)
-    resc_avg = sum(sum(sum(resc_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
-    damp = 25e0
-    if (minval(resc_avg).gt.0) then
-        do ip = 1, 5
-            resc(:,:,:,ip)  = resc(:,:,:,ip) / (1e0 + resc_abs(:,:,:,ip)/resc_avg(ip)/damp)
-        end do
-    end if
-
     ! Distribute change to nodes
-    call cell_to_node(resc, resid1, ni, nj, nk, 5)
+    call cell_to_node(resc, resid, ni, nj, nk, 5)
 
-    if (start_flag.eq.0) then
-        conserved = conserved + 5e-1*resid1
+end subroutine
+
+subroutine damp(resid, fdamp, ni, nj, nk)
+    ! Apply negative feedback to damp down large residuals
+    ! Denton (2017)
+
+    real*4, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
+    real*4, intent (in) :: fdamp
+    real*4 :: resid_abs(ni-1, nj-1, nk-1, 5)
+    real*4 :: resid_avg(5)
+
+    ! Calculate absolute and average values over all cells
+    resid_abs = abs(resid)
+    resid_avg = sum(sum(sum(resid_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
+
+    ! Apply damping to all conserved residuals
+    where (resid_avg.eq.0)
+        resid_avg = 1e-9
+    end where
+    do ip = 1, 5
+        resid(:,:,:,ip) = resid(:,:,:,ip) &
+            / (1e0 + resid_abs(:,:,:,ip)/resid_avg(ip)/fdamp)
+    end do
+
+end subroutine
+
+subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ischeme, ni, nj, nk)
+
+    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid1(ni, nj, nk, 5)
+    real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+    integer, intent (in) :: istep
+    integer, intent (in) :: istep_avg
+    integer, intent (in) :: nstep_avg
+    integer, intent (in) :: ischeme
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    if (istep.eq.0) then
+        conserved = conserved + resid1
+        resid2 = resid1
     else
-        conserved = conserved + 2e0*resid1 - resid2
+        if (ischeme.eq.0) then
+            conserved = conserved + 2e0*resid1 - resid2
+            resid2 = resid1
+        else
+            conserved = conserved + 2e0*resid1 - 1.65e0*resid2
+            resid2 = resid1 - 0.65e0*resid2
+        end if
     end if
-    resid2 = resid1
 
-    if (start_flag.gt.1) then
+    if (istep.ge.istep_avg) then
         conserved_avg = conserved_avg + conserved/float(nstep_avg)
     end if
-
 
 end subroutine
 
@@ -150,7 +175,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
     integer :: ic
 
-    
+
     do ic = 1,3
         Vxrt(:,:,:, ic) = conserved(:,:,:,ic+1)/conserved(:,:,:,1)
     end do
@@ -162,8 +187,7 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
 
 end subroutine
 
-subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
-    ! using face-centered properties, evaluate fluxes for one direction
+subroutine get_fluxes_node(conserved, ho, r, flux, ni, nj, nk)
 
     implicit none
 
@@ -172,16 +196,12 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
     integer, intent (in)  :: nk
 
     real*4, intent (in)  :: conserved(ni, nj, nk, 5)
-    real*4, intent (in)  :: P(ni, nj, nk)
     real*4, intent (in)  :: ho(ni, nj, nk)
     real*4, intent (in)  :: r(ni, nj, nk)
-    real*4, intent (in)  :: Omega
-    logical*1, intent (in)  :: wall(ni, nj, nk)
 
     real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
 
     integer :: ic
-    integer :: ip
 
     real*4 :: Vx(ni, nj, nk)
     real*4 :: Vr(ni, nj, nk)
@@ -217,6 +237,27 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
         flux(:,:,:,ic,5) = flux(:,:,:,ic,1) * ho
     end do
 
+end subroutine
+
+subroutine get_fluxes_face(flux, P, r, wall, Omega, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: Omega
+
+    real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
+
+    integer :: ic
+    integer :: ip
+
+    real*4, intent (in)  :: P(ni, nj, nk)
+    logical*1, intent (in)  :: wall(ni, nj, nk)
+
     ! zero convective fluxes on walls
     do ip = 1,5
         do ic = 1,3
@@ -225,6 +266,7 @@ subroutine get_fluxes_face(conserved, P, ho, r, wall, Omega, flux, ni, nj, nk)
             end where
         end do
     end do
+
 
     ! pressure fluxes
     ! x-mom in x-dirn
@@ -266,6 +308,7 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
 
     real*4, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
 
+    fsum = 0e0
     do ip = 1, np
         ! Dot product areas with the fluxes
         fisum = sum(dAi*fi(:,:,:,:,ip),4)
@@ -511,6 +554,50 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
 
 end subroutine
 
+subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
+
+    implicit none
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
+    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
+    real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
+    real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
+
+    ! interior i-faces are average of i and i+1
+    xi(2:ni-1, :, :, :) = ( &
+        xc(1:ni-2, :, :, :) & 
+        + xc(2:ni-1, :, :, :) &
+    )/2e0
+
+    ! i start and end
+    xi(1, :, :, :) = xc(1, :, :, :)
+    xi(ni, :, :, :) = xc(ni-1, :, :, :)
+
+    ! interior j-faces are average of j and j+1
+    xj(:, 2:nj-1, :, :) = ( &
+        xc(:, 1:nj-2, :, :) & 
+        + xc(:, 2:nj-1, :, :) &
+    )/2e0
+
+    ! j start and end
+    xj(:, 1, :, :) = xc(:, 1, :, :)
+    xj(:, nj, :, :) = xc(:, nj-1, :, :)
+
+    ! interior k-faces are average of k and k+1
+    xk(:, :, 2:nk-1, :) = ( &
+        xc(:, :, 1:nk-2, :) & 
+        + xc(:, :, 2:nk-1, :) &
+    )/2e0
+
+    ! k start and end
+    xk(:, :, 1, :) = xc(:, :, 1, :)
+    xk(:, :, nk, :) = xc(:, :, nk-1, :)
+
+end subroutine
+
 subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array
 
@@ -709,7 +796,7 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
 end subroutine
 
 
-subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
+subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
     implicit none
 
@@ -719,6 +806,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: r(ni, nj, nk)
 
     real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
 
@@ -730,16 +818,165 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, ni, nj, nk)
     real*4 :: xi(ni, nj-1, nk-1, 3)
     real*4 :: xj(ni-1, nj, nk-1, 3)
     real*4 :: xk(ni-1, nj-1, nk, 3)
-
     real*4 :: xv(ni, nj, nk, 3)
+
+    real*4 :: rc(ni-1, nj-1, nk-1)
+
+    ! Find radii at cell centers
+    call node_to_cell(r, rc, ni, nj, nk, 1)
 
     xv = 0e0
 
     do ii = 1,3
         xv(:,:,:,ii) = x
+        if (ii.eq.2) then
+            xv(:,:,:,ii) = xv(:,:,:,ii)/r
+        end if
         call node_to_face( xv, xi, xj, xk, ni, nj, nk, 3 )
         call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, gradx(:,:,:,ii), ni, nj, nk, 1)
+        if (ii.eq.2) then
+            gradx(:,:,:,ii) = gradx(:,:,:,ii)*rc
+        end if
         xv = 0e0
     end do
 
 end subroutine
+
+subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk)
+
+    implicit none
+
+    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
+
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: r(ni, nj, nk)
+
+    real*4, intent (inout)  :: mu
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4 :: tauc(ni-1, nj-1, nk-1, 6)
+    real*4 :: taui(ni, nj-1, nk-1, 6)
+    real*4 :: tauj(ni-1, nj, nk-1, 6)
+    real*4 :: tauk(ni-1, nj-1, nk, 6)
+
+    real*4 :: ri(ni, nj-1, nk-1)
+    real*4 :: rj(ni-1, nj, nk-1)
+    real*4 :: rk(ni-1, nj-1, nk)
+
+
+    real*4 :: fi(ni, nj-1, nk-1, 3, 5)
+    real*4 :: fj(ni-1, nj, nk-1, 3, 5)
+    real*4 :: fk(ni-1, nj-1, nk, 3, 5)
+
+
+    real*4 :: rc(ni-1, nj-1, nk-1)
+    real*4 :: V(ni, nj, nk, 3)
+    real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
+    real*4 :: divV(ni-1, nj-1, nk-1)
+    integer :: i
+
+    ! real*4 :: Vxrt(ni, nj, nk, 3)
+
+    do i = 1,3
+        V(:,:,:, i) = conserved(:,:,:,i+1)/conserved(:,:,:,1)
+    end do
+    V(:,:,:,3) = V(:,:,:,3)/r
+
+    call node_to_cell(r, rc, ni, nj, nk, 1)
+    call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
+
+    ! Calculate grad V
+    do i = 1,3
+        call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, ni, nj, nk)
+    end do
+    ! gradV is indexed (..., which dirn, which velocity)
+
+    ! Calculate divergence of V
+    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    divV = divV*2e0/3e0
+
+    ! tau contains the six unique terms in the tensor
+    ! tau_xx = 2*dVx_dx - 2/3*divV
+    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
+
+    ! tau_rr = 2*dVr_dr - 2/3*divV
+    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
+
+    ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ V(:,:,:,2))/rc - divV
+
+    ! tau_xr = tau_rx = dVx_dr + dVr_dx
+    tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
+
+    ! tau_xt = tau_tx = dVx_dt/r + dVt_dx
+    tauc(:,:,:,5) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
+
+    ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
+    tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - V(:,:,:,3)/rc
+
+    tauc = tauc * mu
+
+    ! Now distribute cell values to faces
+    call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
+
+    ! We need to assemble the viscous fluxes from the stress tensor components
+    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
+    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
+    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
+
+    ! Get the net flux into each cell
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
+
+    ! Apply relaxation
+    ! fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+
+end subroutine
+
+subroutine viscous_flux(f, tau, r, ni, nj, nk)
+
+    implicit none
+    real*4, intent (inout) :: tau(ni, nj, nk, 6)
+    real*4, intent (inout) :: f(ni, nj, nk, 3, 5)
+    real*4, intent (inout) :: r(ni, nj, nk)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    ! 1 tau_xx 
+    ! 2 tau_rr
+    ! 3 tau_tt
+    ! 4 tau_xr
+    ! 5 tau_xt
+    ! 6 tau_rt
+
+    ! mass
+    f(:, :, :, :, 1) = 0e0
+
+    ! x-momentum
+    f(:, :, :, 1, 2) = tau(:, :, :, 1)  ! tau_xx
+    f(:, :, :, 2, 2) = tau(:, :, :, 4)  ! tau_xr
+    f(:, :, :, 3, 2) = tau(:, :, :, 5)  ! tau_xt
+
+    ! r-momentum
+    f(:, :, :, 1, 3) = tau(:, :, :, 4)  ! tau_rx
+    f(:, :, :, 2, 3) = tau(:, :, :, 2)  ! tau_rr
+    f(:, :, :, 3, 3) = tau(:, :, :, 6)  ! tau_rt
+
+    ! t-momentum
+    f(:, :, :, 1, 4) = tau(:, :, :, 5) * r  ! tau_tx
+    f(:, :, :, 2, 4) = tau(:, :, :, 6) * r  ! tau_tr
+    f(:, :, :, 3, 4) = tau(:, :, :, 3) * r  ! tau_tt
+
+    ! energy
+    f(:, :, :, :, 5) = 0e0
+
+end subroutine
+
