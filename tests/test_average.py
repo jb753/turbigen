@@ -10,6 +10,7 @@ from scipy.optimize import newton
 
 MU = 1.8e-4
 
+Tu0 = turbigen.flowfield.PerfectFlowField.Tu0
 
 def test_grid():
     """Verify that area vectors have correct signs."""
@@ -138,7 +139,11 @@ def test_nonuniform_xmom():
     vr = np.zeros_like(vx)
     rmid = np.mean((r0, r1))
     vt = rtmom_ref / ro / vx / r
-    To = (I_ref + rmid * Omega * vt) / cp
+
+    hu0 = rgas*Tu0
+    ho = I_ref + rmid * Omega * vt
+    To = (ho-hu0)/cp + Tu0
+
     vsq = vx**2.0 + vr**2.0 + vt**2.0
     v_cpTo = np.sqrt(vsq / cp / To)
     Ma = cf.Ma_from_V_cpTo(v_cpTo, ga)
@@ -192,7 +197,11 @@ def test_nonuniform_grid():
     vr = np.zeros_like(vx)
     rmid = np.mean((r0, r1))
     vt = rtmom_ref / ro / vx / r
-    To = (I_ref + rmid * Omega * vt) / cp
+
+    hu0 = rgas*Tu0
+    ho = I_ref + rmid * Omega * vt
+    To = (ho-hu0)/cp + Tu0
+
     vsq = vx**2.0 + vr**2.0 + vt**2.0
     v_cpTo = np.sqrt(vsq / cp / To)
     Ma = cf.Ma_from_V_cpTo(v_cpTo, ga)
@@ -244,7 +253,9 @@ def test_uniform():
     rovx_ref = ro_ref * vx_ref
     rovr_ref = ro_ref * vr_ref
     rorvt_ref = ro_ref * r_ref * vt_ref
-    roe_ref = ro_ref * (cv * T_ref + 0.5 * vsq_ref)
+
+    roe_ref = ro_ref * (cv * (T_ref -Tu0) + 0.5 * vsq_ref)
+
     Omega = 0.0
 
     ro = ro_ref * np.ones_like(x)
@@ -253,7 +264,7 @@ def test_uniform():
     rorvt = rorvt_ref * np.ones_like(x)
 
     P_ref = ro_ref * rgas * T_ref
-    u_ref = T_ref * cv
+    u_ref = cv * (T_ref - Tu0)
     h_ref = u_ref + P_ref / ro_ref
     ho_ref = h_ref + 0.5 * vsq_ref
 
@@ -316,7 +327,7 @@ def test_supersonic():
     rovx_ref = ro_ref * vx_ref
     rovr_ref = ro_ref * vr_ref
     rorvt_ref = ro_ref * r_ref * vt_ref
-    roe_ref = ro_ref * (cv * T_ref + 0.5 * vsq_ref)
+    roe_ref = ro_ref * (cv * (T_ref-Tu0) + 0.5 * vsq_ref)
     Omega = 0.0
 
     ro = ro_ref * np.ones_like(x)
@@ -325,7 +336,7 @@ def test_supersonic():
     rorvt = rorvt_ref * np.ones_like(x)
 
     P_ref = ro_ref * rgas * T_ref
-    u_ref = T_ref * cv
+    u_ref = cv * (T_ref -Tu0)
     h_ref = u_ref + P_ref / ro_ref
     ho_ref = h_ref + 0.5 * vsq_ref
 
@@ -386,7 +397,7 @@ def test_supersonic_radial():
     rovx_ref = ro_ref * vx_ref
     rovr_ref = ro_ref * vr_ref
     rorvt_ref = ro_ref * r_ref * vt_ref
-    roe_ref = ro_ref * (cv * T_ref + 0.5 * vsq_ref)
+    roe_ref = ro_ref * (cv * (T_ref -Tu0) + 0.5 * vsq_ref)
     Omega = 0.0
 
     ro = ro_ref * np.ones_like(x)
@@ -395,7 +406,7 @@ def test_supersonic_radial():
     rorvt = rorvt_ref * np.ones_like(x)
 
     P_ref = ro_ref * rgas * T_ref
-    u_ref = T_ref * cv
+    u_ref = cv * (T_ref -Tu0)
     h_ref = u_ref + P_ref / ro_ref
     ho_ref = h_ref + 0.5 * vsq_ref
 
@@ -622,12 +633,12 @@ def test_radial_inflow():
         rovx_ref = ro_ref * vx_ref
         rovr_ref = ro_ref * vr_ref
         rorvt_ref = ro_ref * r_ref * vt_ref
-        roe_ref = ro_ref * (cv * T_ref + 0.5 * vsq_ref)
+        roe_ref = ro_ref * (cv * (T_ref-Tu0) + 0.5 * vsq_ref)
 
         ro = ro_ref * np.ones_like(x)
 
         P_ref = ro_ref * rgas * T_ref
-        u_ref = T_ref * cv
+        u_ref = cv * (T_ref -Tu0)
         h_ref = u_ref + P_ref / ro_ref
         ho_ref = h_ref + 0.5 * vsq_ref
 

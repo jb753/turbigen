@@ -176,7 +176,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2000, 'n_step_avg': 500, 'n_step_log': 100}
+settings = {'n_step': 2000, 'n_step_avg': 500, 'n_step_log': 100, 'CFL': 0.4, 'i_scheme': 0}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
@@ -214,11 +214,12 @@ for b in g:
 ax.set_ylabel('Alpha')
 # ax.set_ylim((0.4,2.))
 
-# # b = g[0][ni//2,:,:]
-# fig, ax = plt.subplots()
-# for b in g:
-#     bc = b[:,:,nk//2]
-#     hm = ax.contourf(bc.x, bc.r, bc.Ma)
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
+    ni, nj, nk = b.shape
+    bc = b[ni//2,:,nk//2]
+    hm = ax.plot(bc.r, bc.Vx)
 
 # ax.axis('equal')
 # plt.colorbar(hm)

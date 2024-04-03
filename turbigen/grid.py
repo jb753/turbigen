@@ -147,7 +147,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self):
+    def get_wall(self, trim=1):
 
         # Preallocate wall indicator with True on boundaries, False interior
         is_wall = np.ones(self.shape, dtype=bool)
@@ -157,7 +157,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
             # Unset wall indicator if patch is not wall
             if type(patch) in NOT_WALL_PATCHES:
-                is_wall[patch.get_slice(trim=1)] = False
+                is_wall[patch.get_slice(trim=trim)] = False
 
         return is_wall
 

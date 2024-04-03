@@ -842,18 +842,23 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
 end subroutine
 
-subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk)
+subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
     implicit none
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
     real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
+    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
     real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: r(ni, nj, nk)
+
+    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
+    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
+    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
 
     real*4, intent (inout)  :: mu
 
@@ -927,24 +932,25 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
 
     ! We need to assemble the viscous fluxes from the stress tensor components
-    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
-    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
-    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
+    call viscous_flux(fi, taui, ri, walli, ni, nj-1, nk-1)
+    call viscous_flux(fj, tauj, rj, wallj, ni-1, nj, nk-1)
+    call viscous_flux(fk, tauk, rk, wallk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    ! fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
 
 end subroutine
 
-subroutine viscous_flux(f, tau, r, ni, nj, nk)
+subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
 
     implicit none
     real*4, intent (inout) :: tau(ni, nj, nk, 6)
     real*4, intent (inout) :: f(ni, nj, nk, 3, 5)
     real*4, intent (inout) :: r(ni, nj, nk)
+    logical*1, intent (inout) :: wall(ni, nj, nk)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -977,6 +983,7 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
 
     ! energy
     f(:, :, :, :, 5) = 0e0
+
 
 end subroutine
 

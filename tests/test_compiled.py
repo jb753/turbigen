@@ -241,7 +241,7 @@ def test_div():
 
     x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
 
-    x += 0.05*z
+    x += 0.1*z
 
     # Convert Cartesian coordinates to polar
     r = np.sqrt(y**2 + z**2)
@@ -309,7 +309,8 @@ def test_grad():
 
     x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
 
-    # x += 0.05*z
+    # Skew a bit
+    x += 0.1*z
 
     # Convert Cartesian coordinates to polar
     r = np.sqrt(y**2 + z**2)
@@ -359,6 +360,6 @@ def test_grad():
     assert np.allclose(gradq[...,1], 2.*rc*tc, atol=1e-3)
     assert np.allclose(gradq[...,2], rc, atol=1e-3)
 
-test_grad()
+# test_grad()
 # test_div()
 # test_node_to_face()

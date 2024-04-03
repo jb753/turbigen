@@ -60,8 +60,6 @@ class NativeConfig(BaseSolver):
     damping_factor = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
-    n_step_ramp = 1
-
     i_scheme = 1
 
 class SolverBlock:
@@ -111,10 +109,18 @@ class SolverBlock:
         #   k faces: (ni-1, nj-1, nk)
         # equal to one if the face is a wall, zero otherwise
         self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
+        self.wall_nodes = block.get_wall(trim=0)
 
-        # Convert wall indicators to wall indices
-        # Which are indices into the flattend face arrays
-        self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
+        # ni, nj, nk = self.wall_nodes.shape
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # ax.plot(self.wall_nodes[:,nj//2, 0])
+        # plt.show()
+        # quit()
+
+        # # Convert wall indicators to wall indices
+        # # Which are indices into the flattend face arrays
+        # self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
 
         self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
         self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
@@ -191,6 +197,13 @@ class SolverBlock:
         for outlet in self.outlets:
             self.P.ravel(order="F")[outlet[0]] = outlet[1]
 
+    def set_walls(self):
+        """Zero the momentums on a wall."""
+        self.conserved[...,1][self.wall_nodes] = 0.
+        self.conserved[...,2][self.wall_nodes] = 0.
+        self.conserved[...,3][self.wall_nodes] = 0.
+        self.conserved[...,4][self.wall_nodes] = self.conserved[...,0][self.wall_nodes]*self.u[self.wall_nodes]
+
     def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
         Vr = self.conserved[..., 2] / self.conserved[..., 0]
@@ -255,7 +268,7 @@ class SolverBlock:
 
     def calculate_viscous(self):
         viscous_force(
-            self.conserved, self.f, self.mu, self.vol, self.dAi, self.dAj, self.dAk, self.r
+            self.conserved, self.f, self.mu, *self.wall_indicators, self.vol, self.dAi, self.dAj, self.dAk, self.r
         )
 
 
@@ -422,6 +435,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_outlets()
 
+            # sb.set_walls()
+
             sb.residual()
 
         # Send residuals to other blocks
@@ -561,6 +576,7 @@ def run(grid, settings={}, machine=None):
     ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
 
     ip, jp, kp = np.unravel_index(np.argmax(blocks_out[0].dU1[...,-1]),blocks_out[0].dU1[...,-1].shape)
+    jp = grid[0].shape[1]//2
 
     fig, ax = plt.subplots()
     for b in grid:
@@ -578,21 +594,56 @@ def run(grid, settings={}, machine=None):
         ax.plot(c.x, c.P, '-')
         ax.set_title('P')
 
-    plt.show()
 
-
+    # wallk = blocks[0].wall_indicators[2]
+    # print(wallk.shape)
     # fig, ax = plt.subplots()
-    # for b in grid:
-    #     ni, nj, nk = b.shape
-    #     c = b[:,jp,:].squeeze()
-    #     cm=ax.contourf(c.x, c.rt, c.Ma)
-    #     ax.plot(c.x, c.rt, 'k-',lw=0.5)
-    #     ax.plot(c.x.T, c.rt.T, 'k-',lw=0.5)
-    #     ax.plot(c.x[ip, kp], c.rt[ip, kp], 'r*')
-    #     ax.axis('equal')
-    #     plt.colorbar(cm)
-    #     # ax.plot(c.x, c.P)
+    # ax.plot(wallk[:,nj//2, 0],'o-')
+    # ax.plot(wallk[:,nj//2, 2],'+-')
+    # ax.plot(wallk[:,nj//2, -1],'^-')
+    # ax.plot(wallk[:,nj//2, -3],'x-')
     # plt.show()
+    # quit()
+
+    fig, ax = plt.subplots()
+
+    for b, sb in zip(grid, blocks):
+
+
+        # get face-centered x,rt
+        ni, nj, nk = b.shape
+        xrtf = [
+            np.empty((ni, nj - 1, nk - 1, 3), order="F", dtype=typ),
+            np.empty((ni - 1, nj, nk - 1, 3), order="F", dtype=typ),
+            np.empty((ni - 1, nj - 1, nk, 3), order="F", dtype=typ),
+        ]
+        xrtn = np.asfortranarray(np.stack((b.x,b.r, b.rt),axis=-1)).astype(typ)
+        node_to_face(xrtn, *xrtf)
+        print(xrtn.shape)
+        ii = 2
+        print(xrtf[ii].shape)
+        print(sb.wall_indicators[ii].shape)
+        xface = xrtf[ii][...,0][sb.wall_indicators[ii]==1]
+        rface = xrtf[ii][...,1][sb.wall_indicators[ii]==1]
+        rtface = xrtf[ii][...,2][sb.wall_indicators[ii]==1]
+
+        c = b[:,jp,:].squeeze()
+        rmean = c.r.mean()
+        ikeep = np.abs(rface/rmean-1.)<0.007
+        if ikeep.any():
+            xface = xface[ikeep]
+            rface = rface[ikeep]
+            rtface = rtface[ikeep]
+            ax.plot(xface, rtface, 'bo')
+
+        ni, nj, nk = b.shape
+        ax.plot(c.x, c.rt, 'k-',lw=0.2)
+        ax.plot(c.x.T, c.rt.T, 'k-',lw=0.2)
+        # ax.plot(
+        ax.axis('equal')
+        ax.grid('P')
+
+    plt.show()
 
 def get_geom(b):
     # Areas and volumes
@@ -636,7 +687,7 @@ def get_geom(b):
 #     return np.asfortranarray(dt)
 
 
-def get_wall(b):
+def get_wall(b, trim=1):
     # Find logical indices that zero the fluxes on wall faces
     thresh = 0.99  # To allow for floating point error
 
@@ -647,7 +698,7 @@ def get_wall(b):
         np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
         np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(), -1).astype(typ))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall(trim), -1).astype(typ))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)
