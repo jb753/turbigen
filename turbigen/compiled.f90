@@ -842,7 +842,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
 end subroutine
 
-subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dAj, dAk, r, ni, nj, nk)
+subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, wallk, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
     implicit none
 
@@ -854,6 +854,7 @@ subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dA
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: xlength(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: r(ni, nj, nk)
 
     logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
@@ -883,8 +884,13 @@ subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dA
 
     real*4 :: rc(ni-1, nj-1, nk-1)
     real*4 :: V(ni, nj, nk, 3)
+    real*4 :: Vc(ni-1, nj-1, nk-1, 3)
+    real*4 :: roc(ni-1, nj-1, nk-1)
     real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
     real*4 :: divV(ni-1, nj-1, nk-1)
+    real*4 :: vort(ni-1, nj-1, nk-1, 3)
+    real*4 :: vort_mag(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: mu_turb(ni-1, nj-1, nk-1)
     integer :: i
 
     ! real*4 :: Vxrt(ni, nj, nk, 3)
@@ -895,6 +901,8 @@ subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dA
     V(:,:,:,3) = V(:,:,:,3)/r
 
     call node_to_cell(r, rc, ni, nj, nk, 1)
+    call node_to_cell(V, Vc, ni, nj, nk, 1)
+    call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
     call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
 
     ! Calculate grad V
@@ -924,9 +932,32 @@ subroutine viscous_force(conserved, fvisc, mu, walli, wallj, wallk, vol, dAi, dA
     tauc(:,:,:,5) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
 
     ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
-    tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - V(:,:,:,3)/rc
+    tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
 
-    tauc = tauc * mu
+
+    ! Calculate vorticity
+    ! omega_x = dVr/dt - dVt/dr - Vt/r
+    vort = 0e0
+    vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
+    ! omega_r = dVt/dx - dVx/dt
+    vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
+    ! omega_t = dVx/dr - dVr/dx
+    vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
+    vort_mag = sqrt(sum(vort*vort,4))
+
+    mu_turb = roc*xlength*vort_mag
+    where (mu_turb/mu.ge.3000e0)
+        mu_turb = 3000e0*mu
+    end where
+
+    print *, 'ROC', minval(roc), maxval(roc)
+    print *, 'XLEN', minval(xlength), maxval(xlength)
+    print *, 'MU_TURB', minval(mu_turb), maxval(mu_turb)
+    
+
+    do i = 1,6
+        tauc(:,:,:,i) = tauc(:,:,:,i) *( mu + mu_turb)
+    end do
 
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)

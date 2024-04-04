@@ -224,34 +224,45 @@ def test_cell_to_face():
     # assert np.allclose(fj-fnode[:-1,:,:-1,:], 1.)
     # assert np.allclose(fk-fnode[:-1,:-1,:,:], 1.)
 
-def test_div():
+def make_cylinder(ni, nj, nk):
 
     # Geometry
     L = 0.1
-    yoffset = 2.1*L
+    rm = 1.
 
-    nj = 60
-    ni = 50
-    nk = 40
+    ARr = 1.0
+    dr = L * ARr
+
+    r1 = rm-dr/2.
+    r2 = rm+dr/2.
+
+    ARt = 1.0
+    pitch = dr/rm*ARt
 
     Nb = 1
-    xv = np.linspace(-L, L, ni)
-    yv = np.linspace(-L, L, nj) + yoffset
-    zv = -np.linspace(-L, L, nk)
+    xv = np.linspace(0, L, ni)
+    rv = np.linspace(r1, r2, nj)
+    tv = np.linspace(-pitch/2., pitch/2., nk)
 
-    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
-
-    x += 0.1*z
-
-    # Convert Cartesian coordinates to polar
-    r = np.sqrt(y**2 + z**2)
-    t = np.arctan2(-z, y)
-
-    xrt = np.stack((x, r, t))
+    xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+    skew = 60.
+    skewr = np.radians(skew)
+    xrt[2] += xrt[0]*np.tan(skewr)
 
     block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
     g = turbigen.grid.Grid([block,])
     g.check_coordinates()
+
+    return g
+
+
+def test_div():
+
+    nj = 40
+    ni = 42
+    nk = 44
+    g = make_cylinder(ni, nj, nk)
+
 
     b = g[0]
 
@@ -292,35 +303,10 @@ def test_div():
 
 def test_grad():
 
-
-    # Geometry
-    L = 0.1
-    yoffset = 10.1*L
-
-    refine_fac = 1
-    nj = 60*refine_fac
-    ni = 50*refine_fac
-    nk = 40*refine_fac
-
-    Nb = 1
-    xv = np.linspace(-L, L, ni)
-    yv = np.linspace(-L, L, nj) + yoffset
-    zv = -np.linspace(-L, L, nk)
-
-    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
-
-    # Skew a bit
-    x += 0.1*z
-
-    # Convert Cartesian coordinates to polar
-    r = np.sqrt(y**2 + z**2)
-    t = np.arctan2(-z, y)
-
-    xrt = np.stack((x, r, t))
-
-    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
-    g = turbigen.grid.Grid([block,])
-    g.check_coordinates()
+    nj = 40
+    ni = 42
+    nk = 44
+    g = make_cylinder(ni, nj, nk)
 
     b = g[0]
 
@@ -361,5 +347,5 @@ def test_grad():
     assert np.allclose(gradq[...,2], rc, atol=1e-3)
 
 # test_grad()
-# test_div()
+test_div()
 # test_node_to_face()

@@ -92,6 +92,13 @@ class SolverBlock:
         self.vol = np.asfortranarray(block.vol).astype(typ)
         self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
         self.Omega = block.Omega.mean().astype(typ)
+        xllim = block.pitch*0.5*(block.r.max()+block.r.min())*0.03
+        xlength = np.asfortranarray(np.clip(block.w,0., xllim)).astype(typ)
+        xlength = (0.41*xlength)**2.
+        self.xlength =np.asfortranarray(block.vol).astype(typ)*np.nan
+        node_to_cell(xlength, self.xlength)
+        self.mu_turb = np.asfortranarray(block.vol).astype(typ)*0.
+
 
         self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
         self.dU2 = self.conserved.copy(order="F").astype(typ) * np.nan
@@ -268,7 +275,17 @@ class SolverBlock:
 
     def calculate_viscous(self):
         viscous_force(
-            self.conserved, self.f, self.mu, *self.wall_indicators, self.vol, self.dAi, self.dAj, self.dAk, self.r
+            self.conserved,
+            self.f,
+            self.mu,
+            self.mu_turb,
+            self.xlength,
+            *self.wall_indicators,
+            self.vol,
+            self.dAi,
+            self.dAj,
+            self.dAk,
+            self.r
         )
 
 
@@ -420,8 +437,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
-        if not np.mod(istep, conf.n_step_dt):
-            exchange_periodics(blocks, bid_local, periodics, variable='conserved')
+        # if not np.mod(istep, conf.n_step_dt):
+        exchange_periodics(blocks, bid_local, periodics, variable='conserved')
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
@@ -456,8 +473,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if not np.mod(istep, 5) and istep > 100:
-                sb.calculate_viscous()
+            # if not np.mod(istep, 5) and istep > 100:
+            #     sb.calculate_viscous()
 
         if not np.mod(istep, conf.n_step_log) and istep > 0:
 
@@ -594,7 +611,6 @@ def run(grid, settings={}, machine=None):
         ax.plot(c.x, c.P, '-')
         ax.set_title('P')
 
-
     # wallk = blocks[0].wall_indicators[2]
     # print(wallk.shape)
     # fig, ax = plt.subplots()
@@ -604,6 +620,21 @@ def run(grid, settings={}, machine=None):
     # ax.plot(wallk[:,nj//2, -3],'x-')
     # plt.show()
     # quit()
+
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks_out):
+        ni, nj, nk = b.shape
+        ax.plot(b.x[:-1,nj//2, nk//2], sb.mu_turb[:,nj//2, nk//2]/b.mu)
+    ax.set_title('mu_turb/mu_lam')
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks_out):
+        ni, nj, nk = b.shape
+        ax.plot(b.rt[ni//2,nj//2, :-1], sb.xlength[ni//2,nj//2,:])
+    ax.set_title('xlength')
+
+    plt.show()
+
+    plt.show()
 
     fig, ax = plt.subplots()
 

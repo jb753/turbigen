@@ -641,24 +641,47 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        O = self.xrt[:, :-1, :-1, :]
-        A = self.xrt[:, 1:, 1:, :]
-        B = self.xrt[:, :-1, 1:, :]
-        C = self.xrt[:, 1:, :-1, :]
+        # Define the four vertices OBAC
+        #    B      A
+        #     *----*
+        #  ^  |    |
+        #  j  *----*
+        #    O      C
+        #      i>
+
+        xyz = self.xyz
+        O = xyz[:, :-1, :-1, :]
+        A = xyz[:, 1:, 1:, :]
+        B = xyz[:, :-1, 1:, :]
+        C = xyz[:, 1:, :-1, :]
+
+        # O = self.xrt[:, :-1, :-1, :]
+        # A = self.xrt[:, 1:, 1:, :]
+        # B = self.xrt[:, :-1, 1:, :]
+        # C = self.xrt[:, 1:, :-1, :]
 
         # Form three vectors AO, BO, CO
         AO = A - O
-        AO[2] *= A[1]  # Theta reference radius at A
-        BO = B - O
-        BO[2] *= B[1]  # Theta reference radius at B
-        CO = C - O
-        CO[2] *= C[1]  # Theta reference radius at C
+        BC = B - C
+        dAk = -0.5 * np.cross(AO, BC, axis=0)
 
-        return 0.5 * np.cross(AO, BO - CO, axis=0)
+        # convert to polar
+        _, _, tk = self.t_face
+        cost = np.cos(tk)
+        sint = np.sin(tk)
+        dAkx, dAky, dAkz = dAk
+        dAkr = -dAky*sint - dAkz*cost
+        dAkt = dAky*cost - dAkz*sint
+
+        return np.stack((dAkx, dAkr, dAkt))
 
     @dependent_property
     def r_face(self):
         return turbigen.util.node_to_face3(self.r)
+
+    @dependent_property
+    def t_face(self):
+        return turbigen.util.node_to_face3(self.t)
 
     @dependent_property
     def flux_all(self):
