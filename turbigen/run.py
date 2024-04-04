@@ -361,7 +361,7 @@ def run_single(conf, gguess=None, plot=False):
             break
 
     ell = np.array([b.surface_length(0.5) if b else np.nan for b in bld])
-    Re_surf = np.array(ell[ind_out] / ml.L_visc[ind_out]).astype(float)
+    Re_surf = np.array(ell / ml.L_visc).astype(float)
     Restr = np.array2string(Re_surf / 1e5, precision=1)
     logger.info(f"Re_surf/10^5={Restr}")
 
