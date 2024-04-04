@@ -119,7 +119,7 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
                 raise Exception(f"Unrecognised plot variable {vname}")
 
             if step:
-                dv = step
+                dv = step[iv]
 
             if coord_sys == "rtx":
                 v = np.tile(v,(3,))
