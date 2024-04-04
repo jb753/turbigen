@@ -1446,3 +1446,59 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
         return mpu.reshape(xr.shape[1:])
 
     return mp_from_xr, spf_actual
+
+def dA_Gauss(A, B, C, D):
+
+    v = np.stack((A,B,C,D,A),axis=0)
+
+    # Edges
+    dv = np.diff(v,axis=0)
+
+    # Edge midpoint vertices
+    vm = 0.5*(v[:-1] + v[1:])
+
+    # # Make theta into r.theta
+    # vm[:,2, ...] *= vm[:,1, ...]
+    # dv[:, 2, ...] *= vm[:,1, ...]
+    # vm[:,1, ...] *= 0.5
+
+    # Vector field
+    Fx = vm.copy()
+    Fr = vm.copy()
+    Ft = vm.copy()
+    Fx[:,0,:,:] = 0.
+    Fr[:,1,:,:] = 0.
+    Ft[:,2,:,:] = 0.
+    F = np.stack( (Fx, Fr, Ft) )
+
+    # Edge normals
+    dlx = np.stack(
+        (
+            dv[:,0,:,:],
+            -dv[:,2,:,:],
+            dv[:,1,:,:],
+        ),
+        axis=1
+    )
+    dlr = np.stack(
+        (
+            dv[:,2,:,:],
+            dv[:,1,:,:],
+            -dv[:,0,:,:],
+        ),
+        axis=1
+    )
+    dlt = np.stack(
+        (
+            -dv[:,1,:,:],
+            dv[:,0,:,:],
+            dv[:,2,:,:],
+        ),
+        axis=1
+    )
+    dl = np.stack((dlx, dlr, dlt))
+
+    # Apply Gauss' theorem for area
+    dA = 0.5 * np.sum(F*dl, axis=(2, 1))
+
+    return dA

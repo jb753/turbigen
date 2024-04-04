@@ -132,6 +132,10 @@ g = turbigen.grid.Grid(blocks)
 g.match_patches()
 g.check_coordinates()
 
+g[0].dAi_new
+print(g[0].vol_new[0,0,0], g[0].vol[0,0,0])
+quit()
+
 print('i', turbigen.util.vecnorm(g[0].dli).min())
 print('j', turbigen.util.vecnorm(g[0].dlj).min())
 print('k', turbigen.util.vecnorm(g[0].dlk).min())

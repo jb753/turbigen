@@ -684,6 +684,108 @@ class Kinematics:
         return turbigen.util.node_to_face3(self.t)
 
     @dependent_property
+    def rt_face(self):
+        return turbigen.util.node_to_face3(self.rt)
+
+    @dependent_property
+    def x_face(self):
+        return turbigen.util.node_to_face3(self.x)
+
+    @dependent_property
+    def dAi_new(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        v = self.xrrt
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        return util.dA_Gauss(A, B, C, D)
+
+
+    @dependent_property
+    def dAj_new(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        return -util.dA_Gauss(A, B, C, D)
+
+
+    @dependent_property
+    def dAk_new(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def vol_new(self):
+        # Volume
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Get face-centered coordinates
+        xi, xj, xk = self.x_face
+        ri, rj, rk = self.r_face
+        rti, rtj, rtk = self.rt_face
+        Fi = np.stack((xi, ri, rti))
+        Fj = np.stack((xj, rj, rtj))
+        Fk = np.stack((xk, rk, rtk))
+        dAi = self.dAi_new
+        dAj = self.dAj_new
+        dAk = self.dAk_new
+
+        # Volume by Gauss' theorem
+        Fisum = np.diff(np.sum(Fi*dAi, axis=0),axis=0)
+        Fjsum = np.diff(np.sum(Fj*dAj, axis=0),axis=1)
+        Fksum = np.diff(np.sum(Fk*dAk, axis=0),axis=2)
+        vol = Fisum + Fjsum + Fksum
+
+        return vol/3.
+
+
+    @dependent_property
     def flux_all(self):
         return np.stack(
             (
