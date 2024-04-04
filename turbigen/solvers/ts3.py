@@ -677,7 +677,7 @@ def _write_hdf5(grid, ts3_config):
 
     # Store old internal energy datum
     # Then set to zero as assumed by TS
-    Tu0_old = [b.Tu0 for b in grid]
+    Tu0_old = [b.Tu0 + 0. for b in grid]
     for b in grid:
         b.set_Tu0(0.)
 
