@@ -25,7 +25,7 @@ test ::
 	pytest
 
 compile ::
-	f2py -m compiled --opt='-O3 -fcheck=array-temp -ffast-math' -c turbigen/compiled.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	python -m numpy.f2py -m compiled --opt='-O3 -fcheck=array-temp -ffast-math' -c turbigen/compiled.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
 	mv compiled*.so turbigen
 
 

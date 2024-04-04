@@ -461,8 +461,8 @@ def run_single(conf, gguess=None, plot=False):
     Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
     # drow has dimensions: [LE/TE, irow]
-    dhub = np.mean(drow)
-    dcas = np.mean(drow)
+    dhub = np.nanmean(drow)
+    dcas = np.nanmean(drow)
     # Indicator for unbladed rows
     # ind_out = [True if b else False for b in bld]
     unbladed = [True if not b else False for b in bld]

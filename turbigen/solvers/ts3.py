@@ -675,6 +675,12 @@ def _write_hdf5(grid, ts3_config):
     input_file_path = os.path.join(ts3_config.workdir, "input.hdf5")
     f = h5py.File(input_file_path, "w")
 
+    # Store old internal energy datum
+    # Then set to zero as assumed by TS
+    Tu0_old = [b.Tu0 for b in grid]
+    for b in grid:
+        b.set_Tu0(0.)
+
     # Get gas properties from the inlet
     So1 = grid.inlet_patches[0].state
     cp = float(So1.cp)
@@ -831,6 +837,10 @@ def _write_hdf5(grid, ts3_config):
             assert nxpid < nxblk.attrs["np"]
 
     f.close()
+
+    # Reset the internal energy datum
+    for b, Tu0 in zip(grid, Tu0_old):
+        b.set_Tu0(Tu0)
 
 
 def _execute(ts3_config):

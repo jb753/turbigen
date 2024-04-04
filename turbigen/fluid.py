@@ -295,6 +295,12 @@ class PerfectState(StructuredData):
             self.P / self.Ps0
         )
 
+    def set_Tu0(self, Tu0):
+        P = self.P.copy()
+        T = self.T.copy()
+        self.Tu0 = Tu0
+        return self.set_P_T(P,T)
+
     def set_P_T(self, P, T):
         u = self.cv * (T - self.Tu0)
         rho = P / self.rgas / T
