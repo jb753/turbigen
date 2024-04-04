@@ -4,12 +4,13 @@ import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import matplotlib.patches as patches
 import warnings
 
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None, var=()):
+def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None, var=(), step=None, horiz_offset=0., title=None):
 
     logger.info("Contouring traverse planes...")
 
@@ -38,6 +39,7 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
         C = grid.unstructured_cut_marching(xrc)
 
         _, triangles, iunique = C.get_triangulation()
+        Npts = len(iunique)
 
         Cu = C.to_unstructured()
 
@@ -46,8 +48,29 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             c1 = Cu.y[iunique]
             c2 = Cu.z[iunique]
         elif coord_sys == "rtx":
-            c1 = Cu.rt[iunique]
-            c2 = -Cu.x[iunique]
+            pitch = Cu.pitch
+            rt_pitch = pitch * Cu.r.mean()
+            xrt = Cu.xrt[:,iunique]
+            tref = 0.5*(xrt[2].min()+xrt[2].max())
+            xrt[2] -= tref
+            xrt[0] *= -1.
+            # Repeat by +- a pitch
+            xrtp = xrt.copy()
+            xrtp[2] += pitch
+            xrtm = xrt.copy()
+            xrtm[2] -= pitch
+            xrt = np.concatenate((xrtm, xrt, xrtp),axis=-1)
+            c1 = xrt[1]*xrt[2]
+            c2 = xrt[0]
+
+            trim = triangles.copy()
+            tri = trim.copy()
+            tri += Npts
+            trip = tri.copy()
+            trip += Npts
+            triangles = np.concatenate((trim, tri, trip))
+
+
         else:
             raise Exception(f"Unrecognised coordinate system {coord_sys}")
 
@@ -95,6 +118,12 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             else:
                 raise Exception(f"Unrecognised plot variable {vname}")
 
+            if step:
+                dv = step[iv]
+
+            if coord_sys == "rtx":
+                v = np.tile(v,(3,))
+
             lev = turbigen.util.clipped_levels(v, dv, thresh=0.01)
 
             if lim:
@@ -113,12 +142,32 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
 
             cm.set_edgecolor("face")
 
-            ax.axis("equal")
-            # ax.axis('tight')
-            ax.axis("off")
             hc = plt.colorbar(cm, label=lab)
             hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv*2))
-            plt.tight_layout()
+            if title:
+                ax.set_title(title)
+
+            plt.tight_layout(pad=0.1)
+
+            ax.axis("equal")
+            ax.axis("off")
+
+
+            if coord_sys == "rtx":
+
+                rtlim = (np.array([-.5,.5])+horiz_offset)*rt_pitch
+                xlim = np.array([c2.min(), c2.max()])
+
+
+                # Hub and casing shading
+                dr = xlim.ptp()*0.05
+
+                # Add the rectangle patch to the axis
+                ax.add_patch(patches.Rectangle((rtlim[0], xlim[0]-dr), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
+                ax.add_patch(patches.Rectangle((rtlim[0], xlim[1]), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
+
+                ax.set_xlim(rtlim)
+
 
             figname = os.path.join(postdir, f"traverse_{vname}_{i}.pdf")
             plt.savefig(figname)

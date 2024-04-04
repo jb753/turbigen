@@ -60,6 +60,9 @@ class TS4Config(BaseSolver):
     point_probe = []
     """Specify point probes."""
 
+    logical_probe = []
+    """Specify logical probes."""
+
     tables_path = ""
     """Path to gas tables for real working fluids."""
 
@@ -320,7 +323,7 @@ def _read_flow(grid, fname, fname_avg):
         xrrtb = block.to_unstructured().xrrt.T
 
         # Get nearest neighbours from the TS4 grid
-        _, ind_pts = kdtree.query(xrrtb, workers=32)
+        _, ind_pts = kdtree.query(xrrtb, workers=-1)
 
         # Check these really are the points we want
         assert np.allclose(block.x, x[ind_pts].reshape(block.shape))
@@ -410,7 +413,8 @@ def _write_point_probe(ts4_conf, xyzp, dom, label):
     with open(probe_ofp, "a") as f:
         # Initialise probe list
         f.write(
-            f"""p = ts.process.probe.probe_definition.ProbeDefinition()
+            f"""
+p = ts.process.probe.probe_definition.ProbeDefinition()
 p.kind = "point"
 p.x = {xyzp[0].tolist()}
 p.y = {xyzp[1].tolist()}
@@ -425,8 +429,33 @@ p.nstep_save_start_2d = {istep_save_start}
 p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
 p.time_average = False  # Must be False in a steady calc?
 probe_list.append(p)
+
 """
         )
+
+def _write_logical_probe(ts4_conf, tag, label):
+    probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
+
+    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
+
+    with open(probe_ofp, "a") as f:
+        # Initialise probe list
+        f.write(
+            f"""
+p = ts.process.probe.probe_definition.ProbeDefinition()
+p.kind = "logical"
+p.val = "{tag}"
+p.fname_root = "logical_probe_{label}"
+p.write_2d = False
+p.nstep_save_start_1d = {istep_save_start}
+p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
+p.nstep_save_start_2d = 99999
+p.nstep_save_2d = 0
+probe_list.append(p)
+
+"""
+        )
+
 
 
 def _write_xr_probe(machine, ts4_conf, spf):
@@ -602,7 +631,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 
     # Write point probes
     if ts4_conf.point_probe:
-
         # Loop over a list of probes
         for pp_conf in ts4_conf.point_probe:
             xyz = np.array(pp_conf["xyz"]).T
@@ -613,6 +641,13 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.shape[0] == 3
 
             _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
+
+    # Write logical probes
+    if ts4_conf.logical_probe:
+        # Loop over a list of probes
+        for pp_conf in ts4_conf.logical_probe:
+
+            _write_logical_probe(ts4_conf, **pp_conf)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")

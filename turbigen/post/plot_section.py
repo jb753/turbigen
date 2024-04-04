@@ -36,6 +36,8 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
                 ax.plot(mps, surf.t, "-", label=f"spf={spf}")
             elif coord_sys == "xrt":
                 ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
+            elif coord_sys == "yz":
+                ax.plot(-surf.y, surf.z, "-", label=f"spf={spf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

@@ -361,7 +361,7 @@ def run_single(conf, gguess=None, plot=False):
             break
 
     ell = np.array([b.surface_length(0.5) if b else np.nan for b in bld])
-    Re_surf = np.array(ell[ind_out] / ml.L_visc[ind_out]).astype(float)
+    Re_surf = np.array(ell / ml.L_visc).astype(float)
     Restr = np.array2string(Re_surf / 1e5, precision=1)
     logger.info(f"Re_surf/10^5={Restr}")
 
@@ -461,8 +461,8 @@ def run_single(conf, gguess=None, plot=False):
     Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
     # drow has dimensions: [LE/TE, irow]
-    dhub = np.mean(drow)
-    dcas = np.mean(drow)
+    dhub = np.nanmean(drow)
+    dcas = np.nanmean(drow)
     # Indicator for unbladed rows
     # ind_out = [True if b else False for b in bld]
     unbladed = [True if not b else False for b in bld]

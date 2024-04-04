@@ -832,7 +832,6 @@ def _write_hdf5(grid, ts3_config):
 
     f.close()
 
-
 def _execute(ts3_config):
     """Using a given configuration, execute TS3."""
 
@@ -1017,9 +1016,19 @@ def _check_conv(ts3_config):
 def _run(grid, ts3_config):
     """Perform all steps on a grid and config."""
 
+    # Store old internal energy datum
+    # Then set to zero as assumed by TS
+    Tu0_old = [b.Tu0 for b in grid]
+    for b in grid:
+        b.set_Tu0(0.)
+
     _write_hdf5(grid, ts3_config)
     _execute(ts3_config)
     _read_hdf5(grid, ts3_config)
+
+    # Reset the internal energy datum
+    for b, Tu0 in zip(grid, Tu0_old):
+        b.set_Tu0(Tu0)
 
 
 def run(grid, settings, machine):
@@ -1060,13 +1069,6 @@ def run(grid, settings, machine):
         block.check_coordinates()
         block.check_wall_distance()
 
-    # Save the internal energy datum
-    Tu0_old = [b.Tu0 + 0. for b in grid]
-
-    # Set the internal energy datum to T=0 as assumed by Turbostream
-    for b in grid:
-        b.set_Tu0(0.)
-
     # Load balancing
     try:
         ts3_conf.ntask = int(np.minimum(int(os.environ["SLURM_NTASKS"]), len(grid)))
@@ -1105,10 +1107,6 @@ def run(grid, settings, machine):
 
     # Raise errors if the solution did not converge
     _check_conv(ts3_conf)
-
-    # Restore the internal energy datum
-    for b, Tu0b in zip(grid, Tu0_old):
-        block.set_Tu0(Tu0b)
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
 re_dts = re.compile(r"dts\s*:\s*(\d*)$")

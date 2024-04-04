@@ -901,6 +901,18 @@ class Composites:
         # We can directly use static enthalpy and velocity
         return self.h + 0.5 * self.V_rel**2.0
 
+    @dependent_property
+    def Vy(self):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        return self.Vr*cost - self.Vt*sint
+
+    @dependent_property
+    def Vz(self):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        return -self.Vr*sint - self.Vt*cost
+
     #
     # Fluxes
     #
