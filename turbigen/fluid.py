@@ -362,6 +362,8 @@ class RealState(StructuredData):
         "u",
     )
 
+    Tu0 = 0.
+
     _backend = "HEOS"
 
     def __repr__(self):
@@ -552,6 +554,10 @@ class RealState(StructuredData):
     def set_P_chi(self, P, chi):
         self._store(CoolProp.PQ_INPUTS, P, chi)
         return self
+
+    def set_Tu0(self, Tu0):
+        if Tu0:
+            raise NotImplementedError('Real gas does not support arbitrary u datum')
 
     def to_static(self, Ma):
         # Function to solve Ma for a scalar state
