@@ -2,6 +2,7 @@
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
+import numpy as np
 
 logger = turbigen.util.make_logger()
 
@@ -25,6 +26,9 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
 
             surf = grid.cut_blade_surfs()[irow][0][:, jspf, :].squeeze()
 
+            if ispf == 0:
+                tavg = 0.5*(surf.t.min()+surf.t.max())-np.pi/2.
+
             mlim = (-0.1, 1.1)
             mp_from_xr, spf_actual = turbigen.util.get_mp_from_xr(
                 grid, machine, irow, spf, mlim
@@ -37,7 +41,25 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
             elif coord_sys == "xrt":
                 ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
             elif coord_sys == "yz":
-                ax.plot(-surf.y, surf.z, "-", label=f"spf={spf}")
+
+                # Extract coordinates
+                yz = np.stack((surf.y,surf.z))
+
+                # Rotate so that r is horizontal
+                cost = np.cos(tavg)
+                sint = np.sin(tavg)
+                Rot = np.array([[cost, -sint], [sint, cost]])
+                yz = Rot @ yz
+
+                if ispf==0:
+                    for tnow in (surf.t.min(), surf.t.max()):
+                        rref = np.linspace(surf.r.min(), surf.r.max())
+                        tref = np.ones_like(rref)*tnow
+                        yzref = np.stack((rref * np.sin(tref),rref * np.cos(tref)))
+                        yzref = Rot @ yzref
+                        ax.plot(*yzref,'k--')
+
+                ax.plot(*yz, "-", label=f"spf={spf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)
@@ -53,5 +75,6 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
 
         plotname = os.path.join(postdir, f"section_row_{irow}.pdf")
         plt.tight_layout(pad=0)
+        print(ax.get_xlim())
         plt.savefig(plotname)
         plt.close()
