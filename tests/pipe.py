@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 1
+nblock = 4
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -138,8 +138,8 @@ def split_block(b, ind, axis):
     for p in b.patches:
         print(p)
 
-split_block(g[0])
-quit()
+# split_block(g[0])
+# quit()
 
 
 g.match_patches()
@@ -189,7 +189,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 5000, 'n_step_avg': 1000, 'n_step_log': 100, 'CFL': 0.7, 'i_scheme': 1, 'damping_factor': 0.}
+settings = {'n_step': 2000, 'n_step_avg': 1000, 'n_step_log': 100, 'CFL': 0.7, 'i_scheme': 1, 'damping_factor': 0.}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
@@ -232,7 +232,9 @@ fig, ax = plt.subplots()
 for b in g:
     ni, nj, nk = b.shape
     bc = b[ni//2,:,nk//2]
-    hm = ax.plot(bc.r, bc.Vx)
+    hm = ax.plot(bc.Vx, bc.r)
+    ax.set_title('Vprof')
+    plt.tight_layout()
 
 # ax.axis('equal')
 # plt.colorbar(hm)

@@ -863,6 +863,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     real*4 :: rj(ni-1, nj, nk-1)
     real*4 :: rk(ni-1, nj-1, nk)
 
+    real*4 :: visc_lim
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -888,7 +889,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     V(:,:,:,3) = V(:,:,:,3)/r
 
     call node_to_cell(r, rc, ni, nj, nk, 1)
-    call node_to_cell(V, Vc, ni, nj, nk, 1)
+    call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
     call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
 
@@ -910,7 +911,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ V(:,:,:,2))/rc - divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
@@ -933,14 +934,10 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     vort_mag = sqrt(sum(vort*vort,4))
 
     mu_turb = roc*xlength*vort_mag
-    where (mu_turb/mu.ge.3000e0)
-        mu_turb = 3000e0*mu
+    visc_lim = 1000e0*mu
+    where (mu_turb.ge.visc_lim)
+        mu_turb = visc_lim
     end where
-
-    print *, 'ROC', minval(roc), maxval(roc)
-    print *, 'XLEN', minval(xlength), maxval(xlength)
-    print *, 'MU_TURB', minval(mu_turb), maxval(mu_turb)
-
 
     do i = 1,6
         tauc(:,:,:,i) = tauc(:,:,:,i) *( mu + mu_turb)
@@ -955,10 +952,10 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     call viscous_flux(fk, tauk, rk, wallk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    ! fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
 
 end subroutine
 
@@ -994,7 +991,7 @@ subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
     f(:, :, :, 2, 3) = tau(:, :, :, 2)  ! tau_rr
     f(:, :, :, 3, 3) = tau(:, :, :, 6)  ! tau_rt
 
-    ! t-momentum
+    ! rt-momentum
     f(:, :, :, 1, 4) = tau(:, :, :, 5) * r  ! tau_tx
     f(:, :, :, 2, 4) = tau(:, :, :, 6) * r  ! tau_tr
     f(:, :, :, 3, 4) = tau(:, :, :, 3) * r  ! tau_tt

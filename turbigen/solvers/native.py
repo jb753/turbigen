@@ -62,6 +62,40 @@ class NativeConfig(BaseSolver):
     i_scheme = 1
 
 
+def get_dw(block):
+    # Cell height in each of i,j,k dirns
+    dli = turbigen.util.vecnorm(block.dli)
+    dlj = turbigen.util.vecnorm(block.dlj)
+    dlk = turbigen.util.vecnorm(block.dlk)
+    print(block.dlj.shape)
+
+    def node_to_face2(x):
+        return np.stack(
+            (
+                x[:-1, :-1],
+                x[1:, 1:],
+                x[:-1, 1:],
+                x[1:, :-1],
+            )
+        ).mean(axis=0)
+
+    ni, nj, nk = block.shape
+
+    dwi = np.asfortranarray(np.zeros((ni, nj - 1, nk - 1), dtype=typ))
+    dwi[0, :, :] = node_to_face2(dli[0, :, :])
+    dwi[-1, :, :] = node_to_face2(dli[-1, :, :])
+
+    dwj = np.asfortranarray(np.zeros((ni - 1, nj, nk - 1), dtype=typ))
+    dwj[:, 0, :] = node_to_face2(dlj[:, 0, :])
+    dwj[:, -1, :] = node_to_face2(dlj[:, -1, :])
+
+    dwk = np.asfortranarray(np.zeros((ni - 1, nj - 1, nk), dtype=typ))
+    dwk[:, :, 0] = node_to_face2(dlk[:, :, 0])
+    dwk[:, :, -1] = node_to_face2(dlk[:, :, -1])
+
+    return dwi, dwj, dwk
+
+
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
@@ -84,6 +118,8 @@ class SolverBlock:
         self.x = np.asfortranarray(block.x).astype(typ)
         self.r = np.asfortranarray(block.r).astype(typ)
         self.t = np.asfortranarray(block.t).astype(typ)
+
+        self.dw = get_dw(block)
 
         # Geometry
         self.r = np.asfortranarray(block.r).astype(typ)
@@ -449,8 +485,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_outlets()
 
-            # sb.set_walls()
-
             sb.residual()
 
         # Send residuals to other blocks
@@ -470,8 +504,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            # if not np.mod(istep, 5) and istep > 100:
-            #     sb.calculate_viscous()
+            if not np.mod(istep, 2) and istep > 100:
+                sb.calculate_viscous()
 
         if not np.mod(istep, conf.n_step_log) and istep > 0:
 
