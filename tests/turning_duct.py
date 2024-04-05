@@ -21,7 +21,7 @@ if rank > 0:
 # Geometry
 h = 0.1
 L = h * 4.0
-skew = 0.
+skew = 30.
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -31,7 +31,7 @@ rt = rm + 0.5 * h
 ga = 1.4
 cp = 1005.0
 mu = 1.8e-5
-Alpha = 0.0
+Alpha = 30.0
 Beta = 0.0
 Po1 = 1e5
 To1 = 300.0
@@ -67,11 +67,11 @@ rv = np.linspace(rh, rt, nj)
 
 xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
-xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1]
+xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1] * xrt[0]/L
 
-# squeeze the nozzle
-fac_noz = np.interp(xv, [0., L/2, L], [1., 0.65, 1.])[:,None,None]
-xrt[1] = (xrt[1] - rm)*fac_noz + rm
+# # squeeze the nozzle
+# fac_noz = np.interp(xv, [0., L/2, L], [1., 0.65, 1.])[:,None,None]
+# xrt[1] = (xrt[1] - rm)*fac_noz + rm
 
 patches = [
     turbigen.grid.InletPatch(i=0),
@@ -94,8 +94,6 @@ for iblock in range(nblock):
         patches = [
             turbigen.grid.InletPatch(i=0),
             turbigen.grid.OutletPatch(i=-1),
-            turbigen.grid.PeriodicPatch(k=0),
-            turbigen.grid.PeriodicPatch(k=-1),
         ]
 
     # First block has an inlet
@@ -103,8 +101,8 @@ for iblock in range(nblock):
         patches = [
             turbigen.grid.InletPatch(i=0),
             turbigen.grid.PeriodicPatch(i=-1),
-            turbigen.grid.PeriodicPatch(k=0),
-            turbigen.grid.PeriodicPatch(k=-1),
+            # turbigen.grid.PeriodicPatch(k=0, i=(0,10)),
+            # turbigen.grid.PeriodicPatch(k=-1, i=(0,10)),
         ]
 
     # Last block has outlet
@@ -112,8 +110,8 @@ for iblock in range(nblock):
         patches = [
             turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.OutletPatch(i=-1),
-            turbigen.grid.PeriodicPatch(k=0),
-            turbigen.grid.PeriodicPatch(k=-1),
+            # turbigen.grid.PeriodicPatch(k=0, i=(-10,-1)),
+            # turbigen.grid.PeriodicPatch(k=-1, i=(-10,-1)),
         ]
 
     # Middle blocks are both periodic
@@ -121,26 +119,11 @@ for iblock in range(nblock):
         patches = [
             turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.PeriodicPatch(i=-1),
-            turbigen.grid.PeriodicPatch(k=0),
-            turbigen.grid.PeriodicPatch(k=-1),
         ]
     blocks.append(turbigen.grid.PerfectBlock.from_coordinates(xrt[:,istb[iblock]:ienb[iblock],:,:], Nb, patches))
     blocks[-1].label=f'b{iblock}'
 
 g = turbigen.grid.Grid(blocks)
-
-def split_block(b, ind, axis):
-    # Split this block into two blocks
-    # b1 is from start to ind
-    # b2 is from ind to end
-
-    # Get patches that are intersected
-    for p in b.patches:
-        print(p)
-
-# split_block(g[0])
-# quit()
-
 
 g.match_patches()
 g.check_coordinates()
@@ -167,7 +150,7 @@ print('k', turbigen.util.vecnorm(g[0].dlk).min())
 
 So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
 So1.set_P_T(Po1, To1)
-g.apply_inlet(So1, Alpha, Beta)
+g.apply_inlet(So1, 0., Beta)
 g.calculate_wall_distance()
 g.apply_outlet(P1)
 
@@ -189,7 +172,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2000, 'n_step_avg': 1000, 'n_step_log': 100, 'CFL': 0.7, 'i_scheme': 1, 'damping_factor': 0.}
+settings = {'damping_factor': 0., 'n_step': 5000, 'n_step_avg': 1000, 'n_step_log': 100,  'CFL': 0.4, 'i_scheme': 0, 'smoothing_factor': 0.01}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
@@ -230,11 +213,17 @@ ax.set_ylabel('Alpha')
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
+    bc = b[:,0,-1]
+    hm = ax.plot(bc.x, bc.s,'-x')
+ax.set_ylabel('s')
+# ax.set_ylim((0.4,2.))
+
+# b = g[0][ni//2,:,:]
+fig, ax = plt.subplots()
+for b in g:
     ni, nj, nk = b.shape
     bc = b[ni//2,:,nk//2]
-    hm = ax.plot(bc.Vx, bc.r)
-    ax.set_title('Vprof')
-    plt.tight_layout()
+    hm = ax.plot(bc.r, bc.Vx)
 
 # ax.axis('equal')
 # plt.colorbar(hm)

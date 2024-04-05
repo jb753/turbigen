@@ -46,22 +46,22 @@ blades:
 # Computational mesh generation
 mesh:
   type: h  # Mesh topology
-  yplus: 15.0  # Non-dimensional wall distance
+  yplus: 30.0  # Non-dimensional wall distance
   resolution_factor: 0.5  # Double grid spacing in each direction
   # ni_TE: 4
-  # dm_TE: 0.04
-  # dm_LE: 0.003
+  # dm_TE: 0.02
+  # dm_LE: 0.005
 
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 1000
-  n_step_avg: 200
+  n_step: 2000
+  n_step_avg: 500
   n_step_log: 50
   damping_factor: 25.0
-  CFL: 0.7
+  CFL: 0.4
   smoothing_factor: 0.05
-  i_scheme: 1
+  i_scheme: 0
 
   # # Solver-specific configuration settings
   # nstep: 5000

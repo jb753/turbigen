@@ -25,9 +25,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     integer :: ip
 
-    real*4 :: Sn(ni, nj, nk)
-    real*4 :: Sc(ni-1, nj-1, nk-1)
-
     real*4 :: fn(ni, nj, nk, 3, 5)
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -40,8 +37,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     real*4, intent(inout) :: ho( ni, nj, nk)
     real*4, intent(inout) :: r( ni, nj, nk)
 
-    real*4 :: Vt( ni, nj, nk)
-
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
@@ -52,11 +47,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     ! integer, intent (in) :: nstep_avg
     ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
-
-    ! Calculate source term at nodes, average at cell center
-    Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
-    Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
-    call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
     call node_to_face( &
         P, Pi, Pj, Pk, &
@@ -85,9 +75,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
-
-    ! Add on source term
-    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc
 
     ! Add on body forces
     fsum_vol = fsum_vol + f
@@ -568,7 +555,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior i-faces are average of i and i+1
     xi(2:ni-1, :, :, :) = ( &
-        xc(1:ni-2, :, :, :) & 
+        xc(1:ni-2, :, :, :) &
         + xc(2:ni-1, :, :, :) &
     )/2e0
 
@@ -578,7 +565,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior j-faces are average of j and j+1
     xj(:, 2:nj-1, :, :) = ( &
-        xc(:, 1:nj-2, :, :) & 
+        xc(:, 1:nj-2, :, :) &
         + xc(:, 2:nj-1, :, :) &
     )/2e0
 
@@ -588,7 +575,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior k-faces are average of k and k+1
     xk(:, :, 2:nk-1, :) = ( &
-        xc(:, :, 1:nk-2, :) & 
+        xc(:, :, 1:nk-2, :) &
         + xc(:, :, 2:nk-1, :) &
     )/2e0
 
@@ -842,18 +829,24 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
 end subroutine
 
-subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk)
+subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, wallk, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
     implicit none
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
     real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
+    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
     real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: xlength(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: r(ni, nj, nk)
+
+    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
+    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
+    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
 
     real*4, intent (inout)  :: mu
 
@@ -870,6 +863,7 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     real*4 :: rj(ni-1, nj, nk-1)
     real*4 :: rk(ni-1, nj-1, nk)
 
+    real*4 :: visc_lim
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -878,8 +872,13 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
 
     real*4 :: rc(ni-1, nj-1, nk-1)
     real*4 :: V(ni, nj, nk, 3)
+    real*4 :: Vc(ni-1, nj-1, nk-1, 3)
+    real*4 :: roc(ni-1, nj-1, nk-1)
     real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
     real*4 :: divV(ni-1, nj-1, nk-1)
+    real*4 :: vort(ni-1, nj-1, nk-1, 3)
+    real*4 :: vort_mag(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: mu_turb(ni-1, nj-1, nk-1)
     integer :: i
 
     ! real*4 :: Vxrt(ni, nj, nk, 3)
@@ -890,6 +889,8 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     V(:,:,:,3) = V(:,:,:,3)/r
 
     call node_to_cell(r, rc, ni, nj, nk, 1)
+    call node_to_cell(V, Vc, ni, nj, nk, 3)
+    call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
     call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
 
     ! Calculate grad V
@@ -910,7 +911,7 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ V(:,:,:,2))/rc - divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
@@ -919,38 +920,58 @@ subroutine viscous_force(conserved, fvisc, mu, vol, dAi, dAj, dAk, r, ni, nj, nk
     tauc(:,:,:,5) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
 
     ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
-    tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - V(:,:,:,3)/rc
+    tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
 
-    tauc = tauc * mu
+
+    ! Calculate vorticity
+    ! omega_x = dVr/dt - dVt/dr - Vt/r
+    vort = 0e0
+    vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
+    ! omega_r = dVt/dx - dVx/dt
+    vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
+    ! omega_t = dVx/dr - dVr/dx
+    vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
+    vort_mag = sqrt(sum(vort*vort,4))
+
+    mu_turb = roc*xlength*vort_mag
+    visc_lim = 1000e0*mu
+    where (mu_turb.ge.visc_lim)
+        mu_turb = visc_lim
+    end where
+
+    do i = 1,6
+        tauc(:,:,:,i) = tauc(:,:,:,i) *( mu + mu_turb)
+    end do
 
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
 
     ! We need to assemble the viscous fluxes from the stress tensor components
-    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
-    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
-    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
+    call viscous_flux(fi, taui, ri, walli, ni, nj-1, nk-1)
+    call viscous_flux(fj, tauj, rj, wallj, ni-1, nj, nk-1)
+    call viscous_flux(fk, tauk, rk, wallk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
 
     ! Apply relaxation
-    ! fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    ! fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
 
 end subroutine
 
-subroutine viscous_flux(f, tau, r, ni, nj, nk)
+subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
 
     implicit none
     real*4, intent (inout) :: tau(ni, nj, nk, 6)
     real*4, intent (inout) :: f(ni, nj, nk, 3, 5)
     real*4, intent (inout) :: r(ni, nj, nk)
+    logical*1, intent (inout) :: wall(ni, nj, nk)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    ! 1 tau_xx 
+    ! 1 tau_xx
     ! 2 tau_rr
     ! 3 tau_tt
     ! 4 tau_xr
@@ -970,7 +991,7 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
     f(:, :, :, 2, 3) = tau(:, :, :, 2)  ! tau_rr
     f(:, :, :, 3, 3) = tau(:, :, :, 6)  ! tau_rt
 
-    ! t-momentum
+    ! rt-momentum
     f(:, :, :, 1, 4) = tau(:, :, :, 5) * r  ! tau_tx
     f(:, :, :, 2, 4) = tau(:, :, :, 6) * r  ! tau_tr
     f(:, :, :, 3, 4) = tau(:, :, :, 3) * r  ! tau_tt
@@ -978,5 +999,5 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
     ! energy
     f(:, :, :, :, 5) = 0e0
 
-end subroutine
 
+end subroutine

@@ -296,10 +296,11 @@ class PerfectState(StructuredData):
         )
 
     def set_Tu0(self, Tu0):
+        # Set the temperature for internal energy datum u(Tu0) = 0
         P = self.P.copy()
         T = self.T.copy()
         self.Tu0 = Tu0
-        return self.set_P_T(P,T)
+        return self.set_P_T(P, T)
 
     def set_P_T(self, P, T):
         u = self.cv * (T - self.Tu0)
@@ -360,6 +361,8 @@ class RealState(StructuredData):
         "rho",
         "u",
     )
+
+    Tu0 = 0.
 
     _backend = "HEOS"
 
@@ -551,6 +554,10 @@ class RealState(StructuredData):
     def set_P_chi(self, P, chi):
         self._store(CoolProp.PQ_INPUTS, P, chi)
         return self
+
+    def set_Tu0(self, Tu0):
+        if Tu0:
+            raise NotImplementedError('Real gas does not support arbitrary u datum')
 
     def to_static(self, Ma):
         # Function to solve Ma for a scalar state

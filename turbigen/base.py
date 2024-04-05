@@ -35,7 +35,7 @@ class StructuredData:
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
         self._order = order
-        if order == 'C':
+        if order == "C":
             self._data = np.full((self.nprop,) + shape, np.nan, order=order)
         else:
             self._data = np.full(shape + (self.nprop,), np.nan, order=order)
@@ -156,10 +156,12 @@ class StructuredData:
 
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
-        if self._order == 'C':
-            return self._data[ind,]
+        if self._order == "C":
+            return self._data[
+                ind,
+            ]
         else:
-            return self._data[...,ind]
+            return self._data[..., ind]
 
     def _set_data_by_key(self, key, val):
         if self._read_only:
@@ -167,15 +169,15 @@ class StructuredData:
         else:
             ind = self._lookup_index(key)
             if np.shape(val) == (1,):
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val[0]
                 else:
-                    self._data[...,ind] = val[0]
+                    self._data[..., ind] = val[0]
             else:
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val
                 else:
-                    self._data[...,ind] = val
+                    self._data[..., ind] = val
             self._dependent_property_cache.clear()
 
     def set_read_only(self):
@@ -641,24 +643,164 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        O = self.xrt[:, :-1, :-1, :]
-        A = self.xrt[:, 1:, 1:, :]
-        B = self.xrt[:, :-1, 1:, :]
-        C = self.xrt[:, 1:, :-1, :]
+        # Define the four vertices OBAC
+        #    B      A
+        #     *----*
+        #  ^  |    |
+        #  j  *----*
+        #    O      C
+        #      i>
+
+        xyz = self.xyz
+        O = xyz[:, :-1, :-1, :]
+        A = xyz[:, 1:, 1:, :]
+        B = xyz[:, :-1, 1:, :]
+        C = xyz[:, 1:, :-1, :]
+
+        # O = self.xrt[:, :-1, :-1, :]
+        # A = self.xrt[:, 1:, 1:, :]
+        # B = self.xrt[:, :-1, 1:, :]
+        # C = self.xrt[:, 1:, :-1, :]
 
         # Form three vectors AO, BO, CO
         AO = A - O
-        AO[2] *= A[1]  # Theta reference radius at A
-        BO = B - O
-        BO[2] *= B[1]  # Theta reference radius at B
-        CO = C - O
-        CO[2] *= C[1]  # Theta reference radius at C
+        BC = B - C
+        dAk = -0.5 * np.cross(AO, BC, axis=0)
 
-        return 0.5 * np.cross(AO, BO - CO, axis=0)
+        # convert to polar
+        _, _, tk = self.t_face
+        cost = np.cos(tk)
+        sint = np.sin(tk)
+        dAkx, dAky, dAkz = dAk
+        dAkr = -dAky * sint - dAkz * cost
+        dAkt = dAky * cost - dAkz * sint
+
+        return np.stack((dAkx, dAkr, dAkt))
 
     @dependent_property
     def r_face(self):
         return turbigen.util.node_to_face3(self.r)
+
+    @dependent_property
+    def t_face(self):
+        return turbigen.util.node_to_face3(self.t)
+
+    @dependent_property
+    def rt_face(self):
+        return turbigen.util.node_to_face3(self.rt)
+
+    @dependent_property
+    def x_face(self):
+        return turbigen.util.node_to_face3(self.x)
+
+    @dependent_property
+    def dAi_new(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        v = self.xrrt
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAj_new(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        return -util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAk_new(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def vol_new(self):
+        # Volume
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # # Get cell-centered coordinates
+        # xrtc = np.stack(
+        #     (
+        #         self.xrrt[:,:-1, :-1, :-1],
+        #         self.xrrt[:,1:, :-1, :-1],
+        #         self.xrrt[:,1:, 1:, :-1],
+        #         self.xrrt[:,:-1, 1:, :-1],
+        #         self.xrrt[:,:-1, :-1, 1:],
+        #         self.xrrt[:,1:, :-1, 1:],
+        #         self.xrrt[:,1:, 1:, 1:],
+        #         self.xrrt[:,:-1, 1:, 1:],
+        #     ),
+        # ).mean(axis=0)
+        xm = self.x.mean()
+        rm = self.r.mean()
+        rtm = self.rt.mean()
+        xrtm = np.array((xm, rm, rtm)).reshape(3, 1, 1, 1)
+
+        # Get face-centered coordinates
+        xi, xj, xk = self.x_face
+        ri, rj, rk = self.r_face
+        rti, rtj, rtk = self.rt_face
+        Fi = np.stack((xi, ri, rti)) - xrtm
+        Fj = np.stack((xj, rj, rtj)) - xrtm
+        Fk = np.stack((xk, rk, rtk)) - xrtm
+        dAi = self.dAi_new
+        dAj = self.dAj_new
+        dAk = self.dAk_new
+
+        # Volume by Gauss' theorem
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
+        vol = Fisum + Fjsum + Fksum
+
+        return vol / 3.0
 
     @dependent_property
     def flux_all(self):
@@ -882,13 +1024,13 @@ class Composites:
     def Vy(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return self.Vr*cost - self.Vt*sint
+        return self.Vr * cost - self.Vt * sint
 
     @dependent_property
     def Vz(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return -self.Vr*sint - self.Vt*cost
+        return -self.Vr * sint - self.Vt * cost
 
     #
     # Fluxes

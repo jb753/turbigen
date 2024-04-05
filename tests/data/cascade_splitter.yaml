@@ -67,6 +67,6 @@ mesh:
   gbcs_path: examples/meshes/cascade_splitter/mesh
   frac_outlet:  0.1
 
-post_process:
-  plot_pressure_distributions:
-    row_spf: [[0.3, 0.7],]
+# post_process:
+#   plot_pressure_distributions:
+#     row_spf: [[0.3, 0.7],]
