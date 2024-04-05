@@ -25,9 +25,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     integer :: ip
 
-    real*4 :: Sn(ni, nj, nk)
-    real*4 :: Sc(ni-1, nj-1, nk-1)
-
     real*4 :: fn(ni, nj, nk, 3, 5)
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -40,8 +37,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     real*4, intent(inout) :: ho( ni, nj, nk)
     real*4, intent(inout) :: r( ni, nj, nk)
 
-    real*4 :: Vt( ni, nj, nk)
-
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
@@ -52,11 +47,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     ! integer, intent (in) :: nstep_avg
     ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
-
-    ! Calculate source term at nodes, average at cell center
-    Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
-    Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
-    call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
     call node_to_face( &
         P, Pi, Pj, Pk, &
@@ -85,9 +75,6 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
-
-    ! Add on source term
-    fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc
 
     ! Add on body forces
     fsum_vol = fsum_vol + f
@@ -568,7 +555,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior i-faces are average of i and i+1
     xi(2:ni-1, :, :, :) = ( &
-        xc(1:ni-2, :, :, :) & 
+        xc(1:ni-2, :, :, :) &
         + xc(2:ni-1, :, :, :) &
     )/2e0
 
@@ -578,7 +565,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior j-faces are average of j and j+1
     xj(:, 2:nj-1, :, :) = ( &
-        xc(:, 1:nj-2, :, :) & 
+        xc(:, 1:nj-2, :, :) &
         + xc(:, 2:nj-1, :, :) &
     )/2e0
 
@@ -588,7 +575,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
     ! interior k-faces are average of k and k+1
     xk(:, :, 2:nk-1, :) = ( &
-        xc(:, :, 1:nk-2, :) & 
+        xc(:, :, 1:nk-2, :) &
         + xc(:, :, 2:nk-1, :) &
     )/2e0
 
@@ -953,7 +940,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     print *, 'ROC', minval(roc), maxval(roc)
     print *, 'XLEN', minval(xlength), maxval(xlength)
     print *, 'MU_TURB', minval(mu_turb), maxval(mu_turb)
-    
+
 
     do i = 1,6
         tauc(:,:,:,i) = tauc(:,:,:,i) *( mu + mu_turb)
@@ -987,7 +974,7 @@ subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    ! 1 tau_xx 
+    ! 1 tau_xx
     ! 2 tau_rr
     ! 3 tau_tt
     ! 4 tau_xr
@@ -1017,4 +1004,3 @@ subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
 
 
 end subroutine
-

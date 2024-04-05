@@ -31,7 +31,7 @@ rt = rm + 0.5 * h
 ga = 1.4
 cp = 1005.0
 mu = 1.8e-5
-Alpha = 30.0
+Alpha = 0.0
 Beta = 0.0
 Po1 = 1e5
 To1 = 300.0
@@ -43,8 +43,8 @@ P1 = Po1/cf.Po_P_from_Ma(M,ga)
 T1 = To1/cf.To_T_from_Ma(M,ga)
 
 
-nj = 33
-nk = 33
+nj = 17
+nk = 17
 
 AR = 1.0
 ni = int(nj/h*L)
@@ -81,7 +81,7 @@ patches = [
 ]
 
 blocks = []
-nblock = 4
+nblock = 1
 
 istb = [ni//nblock*iblock for iblock in range(nblock)]
 ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
@@ -129,12 +129,21 @@ for iblock in range(nblock):
 
 g = turbigen.grid.Grid(blocks)
 
+def split_block(b, ind, axis):
+    # Split this block into two blocks
+    # b1 is from start to ind
+    # b2 is from ind to end
+
+    # Get patches that are intersected
+    for p in b.patches:
+        print(p)
+
+split_block(g[0])
+quit()
+
+
 g.match_patches()
 g.check_coordinates()
-
-g[0].dAi_new
-print(g[0].vol_new[0,0,0], g[0].vol[0,0,0])
-quit()
 
 print('i', turbigen.util.vecnorm(g[0].dli).min())
 print('j', turbigen.util.vecnorm(g[0].dlj).min())
@@ -180,7 +189,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2000, 'n_step_avg': 500, 'n_step_log': 100, 'CFL': 0.4, 'i_scheme': 0}
+settings = {'n_step': 5000, 'n_step_avg': 1000, 'n_step_log': 100, 'CFL': 0.7, 'i_scheme': 1, 'damping_factor': 0.}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)

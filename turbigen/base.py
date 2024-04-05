@@ -35,7 +35,7 @@ class StructuredData:
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
         self._order = order
-        if order == 'C':
+        if order == "C":
             self._data = np.full((self.nprop,) + shape, np.nan, order=order)
         else:
             self._data = np.full(shape + (self.nprop,), np.nan, order=order)
@@ -156,10 +156,12 @@ class StructuredData:
 
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
-        if self._order == 'C':
-            return self._data[ind,]
+        if self._order == "C":
+            return self._data[
+                ind,
+            ]
         else:
-            return self._data[...,ind]
+            return self._data[..., ind]
 
     def _set_data_by_key(self, key, val):
         if self._read_only:
@@ -167,15 +169,15 @@ class StructuredData:
         else:
             ind = self._lookup_index(key)
             if np.shape(val) == (1,):
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val[0]
                 else:
-                    self._data[...,ind] = val[0]
+                    self._data[..., ind] = val[0]
             else:
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val
                 else:
-                    self._data[...,ind] = val
+                    self._data[..., ind] = val
             self._dependent_property_cache.clear()
 
     def set_read_only(self):
@@ -670,8 +672,8 @@ class Kinematics:
         cost = np.cos(tk)
         sint = np.sin(tk)
         dAkx, dAky, dAkz = dAk
-        dAkr = -dAky*sint - dAkz*cost
-        dAkt = dAky*cost - dAkz*sint
+        dAkr = -dAky * sint - dAkz * cost
+        dAkt = dAky * cost - dAkz * sint
 
         return np.stack((dAkx, dAkr, dAkt))
 
@@ -713,7 +715,6 @@ class Kinematics:
 
         return util.dA_Gauss(A, B, C, D)
 
-
     @dependent_property
     def dAj_new(self):
         # Vector area for j=const faces, Gauss' theorem method
@@ -735,7 +736,6 @@ class Kinematics:
         D = v[:, 1:, :, :-1]
 
         return -util.dA_Gauss(A, B, C, D)
-
 
     @dependent_property
     def dAk_new(self):
@@ -765,25 +765,42 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
+        # # Get cell-centered coordinates
+        # xrtc = np.stack(
+        #     (
+        #         self.xrrt[:,:-1, :-1, :-1],
+        #         self.xrrt[:,1:, :-1, :-1],
+        #         self.xrrt[:,1:, 1:, :-1],
+        #         self.xrrt[:,:-1, 1:, :-1],
+        #         self.xrrt[:,:-1, :-1, 1:],
+        #         self.xrrt[:,1:, :-1, 1:],
+        #         self.xrrt[:,1:, 1:, 1:],
+        #         self.xrrt[:,:-1, 1:, 1:],
+        #     ),
+        # ).mean(axis=0)
+        xm = self.x.mean()
+        rm = self.r.mean()
+        rtm = self.rt.mean()
+        xrtm = np.array((xm, rm, rtm)).reshape(3, 1, 1, 1)
+
         # Get face-centered coordinates
         xi, xj, xk = self.x_face
         ri, rj, rk = self.r_face
         rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri, rti))
-        Fj = np.stack((xj, rj, rtj))
-        Fk = np.stack((xk, rk, rtk))
+        Fi = np.stack((xi, ri, rti)) - xrtm
+        Fj = np.stack((xj, rj, rtj)) - xrtm
+        Fk = np.stack((xk, rk, rtk)) - xrtm
         dAi = self.dAi_new
         dAj = self.dAj_new
         dAk = self.dAk_new
 
         # Volume by Gauss' theorem
-        Fisum = np.diff(np.sum(Fi*dAi, axis=0),axis=0)
-        Fjsum = np.diff(np.sum(Fj*dAj, axis=0),axis=1)
-        Fksum = np.diff(np.sum(Fk*dAk, axis=0),axis=2)
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
         vol = Fisum + Fjsum + Fksum
 
-        return vol/3.
-
+        return vol / 3.0
 
     @dependent_property
     def flux_all(self):
@@ -832,17 +849,24 @@ class Kinematics:
         if not self.shape[1] == 3:
             raise Exception("This is not a triangulated cut.")
 
-        ntri, _ = self.shape
-        points, iunique, triangles = np.unique(
-            # np.stack((self.x, self.r, self.t)).reshape(2,-1)
-            self.xrt.reshape(3, -1),
-            axis=1,
-            return_index=True,
-            return_inverse=True,
-        )
-        triangles = triangles.reshape(-1, 3)
+        # Get face-centered coordinates
+        xi, xj, xk = self.x_face
+        ri, rj, rk = self.r_face
+        rti, rtj, rtk = self.rt_face
+        Fi = np.stack((xi, ri, rti))
+        Fj = np.stack((xj, rj, rtj))
+        Fk = np.stack((xk, rk, rtk))
+        dAi = self.dAi_new
+        dAj = self.dAj_new
+        dAk = self.dAk_new
 
-        return points, triangles, iunique
+        # Volume by Gauss' theorem
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
+        vol = Fisum + Fjsum + Fksum
+
+        return vol / 3.0
 
     #
     # Velocities
@@ -1007,13 +1031,13 @@ class Composites:
     def Vy(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return self.Vr*cost - self.Vt*sint
+        return self.Vr * cost - self.Vt * sint
 
     @dependent_property
     def Vz(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return -self.Vr*sint - self.Vt*cost
+        return -self.Vr * sint - self.Vt * cost
 
     #
     # Fluxes
