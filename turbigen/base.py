@@ -849,24 +849,17 @@ class Kinematics:
         if not self.shape[1] == 3:
             raise Exception("This is not a triangulated cut.")
 
-        # Get face-centered coordinates
-        xi, xj, xk = self.x_face
-        ri, rj, rk = self.r_face
-        rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri, rti))
-        Fj = np.stack((xj, rj, rtj))
-        Fk = np.stack((xk, rk, rtk))
-        dAi = self.dAi_new
-        dAj = self.dAj_new
-        dAk = self.dAk_new
+        ntri, _ = self.shape
+        points, iunique, triangles = np.unique(
+            # np.stack((self.x, self.r, self.t)).reshape(2,-1)
+            self.xrt.reshape(3, -1),
+            axis=1,
+            return_index=True,
+            return_inverse=True,
+        )
+        triangles = triangles.reshape(-1, 3)
 
-        # Volume by Gauss' theorem
-        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
-        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
-        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
-        vol = Fisum + Fjsum + Fksum
-
-        return vol / 3.0
+        return points, triangles, iunique
 
     #
     # Velocities
