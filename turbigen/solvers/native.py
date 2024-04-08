@@ -61,13 +61,13 @@ class NativeConfig(BaseSolver):
 
     i_scheme = 1
 
+    i_loss = 1
 
 def get_dw(block):
     # Cell height in each of i,j,k dirns
     dli = turbigen.util.vecnorm(block.dli)
     dlj = turbigen.util.vecnorm(block.dlj)
     dlk = turbigen.util.vecnorm(block.dlk)
-    print(block.dlj.shape)
 
     def node_to_face2(x):
         return np.stack(
@@ -504,10 +504,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if not np.mod(istep, 2) and istep > 100:
+            if not np.mod(istep, 2) and istep > 100 and conf.i_loss>0:
                 sb.calculate_viscous()
 
-        if not np.mod(istep, conf.n_step_log) and istep > 0:
+        if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
 
             # Send residuals to master proc
             dUnow = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
@@ -627,98 +627,75 @@ def run(grid, settings={}, machine=None):
     dUlog[:, 1:4] /= drhoV_ref
     dUlog[:, 4] /= drhoe_ref
 
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots()
-    ax.semilogy(dUlog)
-    ax.legend(
-        (r"$\rho$", r"$\rho V_x$", r"$\rho V_r$", r"$\rho r V_\theta$", r"$\rho e$")
-    )
-
-    ip, jp, kp = np.unravel_index(
-        np.argmax(blocks_out[0].dU1[..., -1]), blocks_out[0].dU1[..., -1].shape
-    )
-    jp = grid[0].shape[1] // 2
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:, nj // 2, 0].squeeze()
-        ax.plot(c.x, c.P, "-")
-        c = b[:, nj // 2, nk // 2].squeeze()
-        ax.plot(c.x, c.P, "-")
-        # c = b[:,nj//2,1].squeeze()
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:, nj // 2, -1].squeeze()
-        ax.plot(c.x, c.P, "-")
-        ax.set_title("P")
-
-    # wallk = blocks[0].wall_indicators[2]
-    # print(wallk.shape)
     # fig, ax = plt.subplots()
-    # ax.plot(wallk[:,nj//2, 0],'o-')
-    # ax.plot(wallk[:,nj//2, 2],'+-')
-    # ax.plot(wallk[:,nj//2, -1],'^-')
-    # ax.plot(wallk[:,nj//2, -3],'x-')
+    # ax.semilogy(dUlog)
+    # ax.legend(
+    #     (r"$\rho$", r"$\rho V_x$", r"$\rho V_r$", r"$\rho r V_\theta$", r"$\rho e$")
+    # )
+
+    # ip, jp, kp = np.unravel_index(
+    #     np.argmax(blocks_out[0].dU1[..., -1]), blocks_out[0].dU1[..., -1].shape
+    # )
+    # jp = grid[0].shape[1] // 2
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     ni, nj, nk = b.shape
+    #     c = b[:, nj // 2, 0].squeeze()
+    #     ax.plot(c.x, c.P, "-")
+    #     c = b[:, nj // 2, nk // 2].squeeze()
+    #     ax.plot(c.x, c.P, "-")
+    #     c = b[:, nj // 2, -1].squeeze()
+    #     ax.plot(c.x, c.P, "-")
+    #     ax.set_title("P")
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks_out):
+    #     ni, nj, nk = b.shape
+    #     ax.plot(b.x[:-1, nj // 2, nk // 2], sb.mu_turb[:, nj // 2, nk // 2] / b.mu)
+    # ax.set_title("mu_turb/mu_lam")
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks_out):
+    #     ni, nj, nk = b.shape
+    #     ax.plot(b.rt[ni // 2, nj // 2, :-1], sb.xlength[ni // 2, nj // 2, :])
+    # ax.set_title("xlength")
     # plt.show()
-    # quit()
+    # plt.show()
 
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks_out):
-        ni, nj, nk = b.shape
-        ax.plot(b.x[:-1, nj // 2, nk // 2], sb.mu_turb[:, nj // 2, nk // 2] / b.mu)
-    ax.set_title("mu_turb/mu_lam")
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks_out):
-        ni, nj, nk = b.shape
-        ax.plot(b.rt[ni // 2, nj // 2, :-1], sb.xlength[ni // 2, nj // 2, :])
-    ax.set_title("xlength")
-
-    plt.show()
-
-    plt.show()
-
-    fig, ax = plt.subplots()
-
-    for b, sb in zip(grid, blocks):
-
-        # get face-centered x,rt
-        ni, nj, nk = b.shape
-        xrtf = [
-            np.empty((ni, nj - 1, nk - 1, 3), order="F", dtype=typ),
-            np.empty((ni - 1, nj, nk - 1, 3), order="F", dtype=typ),
-            np.empty((ni - 1, nj - 1, nk, 3), order="F", dtype=typ),
-        ]
-        xrtn = np.asfortranarray(np.stack((b.x, b.r, b.rt), axis=-1)).astype(typ)
-        node_to_face(xrtn, *xrtf)
-        print(xrtn.shape)
-        ii = 2
-        print(xrtf[ii].shape)
-        print(sb.wall_indicators[ii].shape)
-        xface = xrtf[ii][..., 0][sb.wall_indicators[ii] == 1]
-        rface = xrtf[ii][..., 1][sb.wall_indicators[ii] == 1]
-        rtface = xrtf[ii][..., 2][sb.wall_indicators[ii] == 1]
-
-        c = b[:, jp, :].squeeze()
-        rmean = c.r.mean()
-        ikeep = np.abs(rface / rmean - 1.0) < 0.007
-        if ikeep.any():
-            xface = xface[ikeep]
-            rface = rface[ikeep]
-            rtface = rtface[ikeep]
-            ax.plot(xface, rtface, "bo")
-
-        ni, nj, nk = b.shape
-        ax.plot(c.x, c.rt, "k-", lw=0.2)
-        ax.plot(c.x.T, c.rt.T, "k-", lw=0.2)
-        # ax.plot(
-        ax.axis("equal")
-        ax.grid("P")
-
-    plt.show()
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     # get face-centered x,rt
+    #     ni, nj, nk = b.shape
+    #     xrtf = [
+    #         np.empty((ni, nj - 1, nk - 1, 3), order="F", dtype=typ),
+    #         np.empty((ni - 1, nj, nk - 1, 3), order="F", dtype=typ),
+    #         np.empty((ni - 1, nj - 1, nk, 3), order="F", dtype=typ),
+    #     ]
+    #     xrtn = np.asfortranarray(np.stack((b.x, b.r, b.rt), axis=-1)).astype(typ)
+    #     node_to_face(xrtn, *xrtf)
+    #     print(xrtn.shape)
+    #     ii = 2
+    #     print(xrtf[ii].shape)
+    #     print(sb.wall_indicators[ii].shape)
+    #     xface = xrtf[ii][..., 0][sb.wall_indicators[ii] == 1]
+    #     rface = xrtf[ii][..., 1][sb.wall_indicators[ii] == 1]
+    #     rtface = xrtf[ii][..., 2][sb.wall_indicators[ii] == 1]
+    #     c = b[:, jp, :].squeeze()
+    #     rmean = c.r.mean()
+    #     ikeep = np.abs(rface / rmean - 1.0) < 0.007
+    #     if ikeep.any():
+    #         xface = xface[ikeep]
+    #         rface = rface[ikeep]
+    #         rtface = rtface[ikeep]
+    #         ax.plot(xface, rtface, "bo")
+    #     ni, nj, nk = b.shape
+    #     ax.plot(c.x, c.rt, "k-", lw=0.2)
+    #     ax.plot(c.x.T, c.rt.T, "k-", lw=0.2)
+    #     # ax.plot(
+    #     ax.axis("equal")
+    #     ax.grid("P")
+    # plt.show()
 
 
 def get_geom(b):
