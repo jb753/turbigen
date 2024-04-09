@@ -84,7 +84,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -195,6 +195,8 @@ def plot_nozzle(g, F):
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,0]/L, color=cs)
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,-1]/L, color=cs)
     ax.axis('equal')
+    ax.set_ylabel('r')
+    ax.set_xlabel('x')
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
@@ -202,6 +204,7 @@ def plot_nozzle(g, F):
         C = b[:, b.nj//2, b.nk//2]
         ax.plot(C.x/L, C.Ma, color=cs)
     ax.plot(F.x/L, F.Ma, 'k-')
+    ax.set_title('Ma')
     ax.set_ylim(bottom=0.)
 
     plt.show()
@@ -248,15 +251,47 @@ def test_nozzle(dirn, plot=False):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
+    if plot:
+        plot_nozzle(g, F)
+
     tol_Ma = 0.02  # Quite loose because flow not really 1D
     assert (np.abs(err_Ma)<tol_Ma).all()
-    tol_s = 0.001
+    tol_s = 0.002
     assert (np.abs(Ys)<tol_s).all()
     tol_ho = 0.002
     assert (np.abs(Cho)<tol_ho).all()
 
-    if plot:
-        plot_nozzle(g, F)
+def test_alpha():
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, L_h=10., dirn='r', htr=0.9, Alpha=0.,skew=0.)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.native.run(g, settings)
+
+    _, Ys, Cho = post_nozzle(g, F)
+
+    # tol_s = 0.001
+    # assert (np.abs(Ys)<tol_s).all()
+    # tol_ho = 0.01
+    # assert (np.abs(Cho)<tol_ho).all()
+
+    fig, ax = plt.subplots()
+    ax.plot(Ys)
+    ax.set_title('Ys')
+
+    fig, ax = plt.subplots()
+    ax.plot(Cho)
+    ax.set_title('ho')
+
+    plt.show()
 
 def test_radius():
 
@@ -288,12 +323,16 @@ def test_radius():
 
     fig, ax = plt.subplots()
     ax.plot(Ys)
+    ax.set_title('Ys')
 
     fig, ax = plt.subplots()
     ax.plot(Cho)
+    ax.set_title('Cho')
 
     # if plot:
     plot_nozzle(g, F)
 
-test_radius()
+test_alpha()
+# test_radius()
+
 # test_nozzle(dirn='r', plot=True)

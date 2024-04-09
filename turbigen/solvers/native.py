@@ -56,7 +56,7 @@ class NativeConfig(BaseSolver):
 
     conv_lim = 1e-9
 
-    damping_factor = 25.0
+    damping_factor = 0.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
     i_scheme = 1
@@ -169,13 +169,21 @@ class SolverBlock:
         self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
+
             self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F")
             self.state._metadata = block._metadata
             self.state.set_rho_u(block.rho, block.u)
+
             self.state_inlets = [
                 turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F")
                 for inlet in self.inlets
             ]
+
+            self.state_outlets = [
+                turbigen.fluid.PerfectState(shape=outlet[0].shape, order="F")
+                for outlet in self.outlets
+            ]
+
         else:
             raise NotImplementedError()
 
@@ -185,6 +193,13 @@ class SolverBlock:
             rho_inlet = block.rho.ravel(order="F")[inlet[0]]
             u_inlet = block.u.ravel(order="F")[inlet[0]]
             state_inlet.set_rho_u(rho_inlet, u_inlet)
+
+        # Initialise  outlet states
+        for outlet, state_outlet in zip(self.outlets, self.state_outlets):
+            state_outlet._metadata = block._metadata
+            rho_out = block.rho.ravel(order="F")[outlet[0]]
+            u_out = block.u.ravel(order="F")[outlet[0]]
+            state_outlet.set_rho_u(rho_out, u_out)
 
     def set_inlets(self, rfin):
         """Set conserved variables on inlets by relaxing density changes."""
@@ -202,7 +217,7 @@ class SolverBlock:
             )
 
             # Check for flow reversal
-            rho_now[rho_now > rhoo] = rhoo * 0.999
+            rho_now[rho_now > rhoo] = rhoo * 0.9999
 
             # Isentropic expansion from stagnation state
             state.set_rho_s(rho_now, state.s)
@@ -224,7 +239,9 @@ class SolverBlock:
             Vtin = Vmin * tanAlpha
 
             # Reset conserved vars on inlet
-            # Do not reset the density - seems to compromise stability
+            # Not sure about reseting the inlet density - seems to compromise stability
+            # Needs a lower rfin if we reset the inlet density
+            self.conserved[..., 0].ravel(order="F")[ind] = rho_now # rho
             self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
             self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
@@ -236,8 +253,32 @@ class SolverBlock:
 
     def set_outlets(self):
         """Set static pressure on outlets."""
-        for outlet in self.outlets:
-            self.P.ravel(order="F")[outlet[0]] = outlet[1]
+
+        for patch, state in zip(self.outlets, self.state_outlets):
+
+            # Extract patch data
+            ind, P_exit = patch
+            P_exit = P_exit[0]
+
+            # Stagnation enthalpy from interior and imposed exit pressure
+            # set the outlet state
+            ho_exit = self.ho.ravel(order='F')[ind]
+            halfVsq_exit = self.halfVsq.ravel(order='F')[ind]
+            h_exit = ho_exit - halfVsq_exit
+            state.set_P_h(P_exit, h_exit)
+
+            # Update conserved vars
+            # rho and u change, V stay the same
+            fac_rho = state.rho/self.conserved[...,0].ravel(order='F')[ind]
+            for i in range(4):
+                self.conserved[...,i].ravel(order='F')[ind] *= fac_rho
+            self.conserved[...,4].ravel(order='F')[ind] = (
+                    state.rho*(state.u+halfVsq_exit)
+            )
+
+            # Update secondary vars
+            self.u.ravel(order="F")[ind] = state.u
+            self.P.ravel(order="F")[ind] = P_exit
 
     def set_walls(self):
         """Zero the momentums on a wall."""
@@ -444,7 +485,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.2  # /conf.CFL
+    rfin = 0.02
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
