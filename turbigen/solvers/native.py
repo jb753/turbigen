@@ -166,7 +166,21 @@ class SolverBlock:
         # self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
 
         self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
-        self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
+        self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
+
+        pp = block.outlet_patches[0]
+        ind_face, dA, A = pp.get_face_indices(order='F')
+        tavg = np.stack(
+            [
+                block.t.ravel(order='F')[ind] for ind in ind_face
+            ]
+        ).mean(axis=0)#*dA/A
+        print(tavg)
+        C = pp.get_cut()
+        print(C.t_face[0].reshape(-1))
+        assert np.isclose(tavg, C.t_face[0].reshape(-1)).all()
+
+        quit()
 
         if isinstance(block, turbigen.grid.PerfectBlock):
 
@@ -258,7 +272,6 @@ class SolverBlock:
 
             # Extract patch data
             ind, P_exit = patch
-            P_exit = P_exit[0]
 
             # Stagnation enthalpy from interior and imposed exit pressure
             # set the outlet state
@@ -394,6 +407,9 @@ def set_periodic(b1, b2, ind1, ind2):
     conserved1[ind1] = avg
     conserved2[ind2] = avg
 
+
+def get_outlet_data(patch):
+    return patch.get_flat_indices(order="F"), (patch.Pout + 0.0)
 
 def send_slave(block_split, procids, periodics, settings):
 

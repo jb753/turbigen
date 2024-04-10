@@ -1150,7 +1150,7 @@ class Patch:
         return ijk
 
     def get_flat_indices(self, order="C", perm=None, flip=None, extra_dim=0):
-        # Return indices of all points on patch into self.block.flat
+        # Return indices of all points on patch into self.block.ravel
         ijk = self.get_indices(extra_dim)
         shape = self.block.shape
         if extra_dim:
@@ -1161,7 +1161,46 @@ class Patch:
             if extra_dim:
                 perm = np.append(perm, 3)
             ind = np.flip(ind.transpose(perm), axis=flip)
+
         return ind.reshape(-1)
+
+    def get_face_indices(self, order="C", perm=None, flip=None, extra_dim=0):
+        # Return indices into self.block.ravel, 4 for each face
+
+        ijk = self.get_indices(extra_dim)
+        shape = self.block.shape
+
+        if extra_dim:
+            shape = shape + (extra_dim,)
+
+        ind = np.ravel_multi_index(ijk, shape, order=order)
+        if perm is not None:
+            perm = perm[1:] - 1
+            if extra_dim:
+                perm = np.append(perm, 3)
+            ind = np.flip(ind.transpose(perm), axis=flip)
+
+        # At this point ind has shape (di, dj, dk) and one of them is zero
+        di, dj, dk = ind.shape
+
+        C = self.get_cut()
+
+        if di == 1:
+            ind_face = np.stack(
+                (
+                    ind[0, :-1, :-1],
+                    ind[0, 1:, :-1],
+                    ind[0, :-1, 1:],
+                    ind[0, 1:, 1:],
+                )
+            ).reshape(4,-1)
+            dA = util.vecnorm(C.dAi).reshape(-1)
+        else:
+            raise NotImplementedError
+
+        A = np.sum(dA)
+
+        return ind_face, dA, A
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1334,8 +1373,6 @@ class OutletPatch(Patch):
     amplitude = 0.0
     phase = 0.0
 
-    def get_outlet_data(self):
-        return self.get_flat_indices(order="F"), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):
