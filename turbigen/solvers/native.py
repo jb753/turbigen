@@ -168,20 +168,6 @@ class SolverBlock:
         self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
-        pp = block.outlet_patches[0]
-        ind_face, dA, A = pp.get_face_indices(order='F')
-        tavg = np.stack(
-            [
-                block.t.ravel(order='F')[ind] for ind in ind_face
-            ]
-        ).mean(axis=0)#*dA/A
-        print(tavg)
-        C = pp.get_cut()
-        print(C.t_face[0].reshape(-1))
-        assert np.isclose(tavg, C.t_face[0].reshape(-1)).all()
-
-        quit()
-
         if isinstance(block, turbigen.grid.PerfectBlock):
 
             self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F")

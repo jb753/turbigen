@@ -1164,21 +1164,14 @@ class Patch:
 
         return ind.reshape(-1)
 
-    def get_face_indices(self, order="C", perm=None, flip=None, extra_dim=0):
-        # Return indices into self.block.ravel, 4 for each face
+    def get_A_avg_indices(self, order="C"):
+        # Return ind, w such that the area average of block prop is
+        # np.sum( prop.ravel(order)[ind]*w)
 
-        ijk = self.get_indices(extra_dim)
+        ijk = self.get_indices()
         shape = self.block.shape
 
-        if extra_dim:
-            shape = shape + (extra_dim,)
-
         ind = np.ravel_multi_index(ijk, shape, order=order)
-        if perm is not None:
-            perm = perm[1:] - 1
-            if extra_dim:
-                perm = np.append(perm, 3)
-            ind = np.flip(ind.transpose(perm), axis=flip)
 
         # At this point ind has shape (di, dj, dk) and one of them is zero
         di, dj, dk = ind.shape
@@ -1198,9 +1191,27 @@ class Patch:
         else:
             raise NotImplementedError
 
-        A = np.sum(dA)
+        ind_flat = ind.reshape(-1)
 
-        return ind_face, dA, A
+        # We want to express the area integral of a variable x
+        #   int x dA 
+        # as a weighted sum of the nodal values of x
+        nnode = np.size(ind)
+        nface = len(dA)
+
+        w = np.zeros((nnode,))
+
+        # Loop over faces
+        for iface in range(nface):
+            # For all four corners on this face, 
+            # add dA to the relavent nodal weight
+            for k in range(4):
+                w[ind_flat==ind_face[k, iface]] += dA[iface]
+
+        # Normalise
+        w /= 4.*np.sum(dA)
+
+        return ind_flat, w
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]

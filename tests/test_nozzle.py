@@ -2,6 +2,7 @@
 import turbigen.solvers.native
 import turbigen.compflow_native as cf
 import turbigen.grid
+import turbigen.util
 import numpy as np
 from timeit import default_timer as timer
 import sys
@@ -241,7 +242,6 @@ def test_nozzle(dirn, plot=False):
             [1.,1., 0.6, 1., 1.]
         ]
     )
-
     g, F = make_nozzle(xA, dirn=dirn)
 
 
@@ -307,7 +307,6 @@ def test_radius():
             [1.,1., 0.9, 0.9]
         ]
     )
-
     g, F = make_nozzle(xA, dirn='r',xnRR=xR, htr=0.9, Alpha=0.,skew=0.)
 
     np.set_printoptions(precision=2)
@@ -332,7 +331,35 @@ def test_radius():
     # if plot:
     plot_nozzle(g, F)
 
-test_alpha()
+def test_patch_A_avg():
+
+    # Make an arbitrary grid
+    xA = np.array(
+        [
+            [0.,0.02, 0.3, 0.98, 1.],
+            [1.,1., 0.6, 1., 1.]
+        ]
+    )
+    g, F = make_nozzle(xA)
+    block = g[0]
+    patch = block.outlet_patches[0]
+
+    # Calculate area average using weight
+    ind, w = patch.get_A_avg_indices(order='F')
+    rsqavg = np.sum((block.r.ravel(order='F')[ind]**2.)*w)
+
+    # Manually check the area average
+    C = patch.get_cut()
+    dA = turbigen.util.vecnorm(C.dAi)
+    rsqavg_check = np.sum((C.r_face[0]**2)*dA)/np.sum(dA)
+    assert np.isclose(rsqavg, rsqavg_check)
+
+
+
+
+
+test_patch_A_avg()
+# test_alpha()
 # test_radius()
 
 # test_nozzle(dirn='r', plot=True)
