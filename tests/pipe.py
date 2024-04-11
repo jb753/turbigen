@@ -189,7 +189,7 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'n_step': 2000, 'n_step_avg': 1000, 'n_step_log': 100, 'CFL': 0.7, 'i_scheme': 1, 'damping_factor': 0.}
+settings = {'n_step': 10000, 'n_step_avg': 1000, 'n_step_log': 100, 'i_loss': 0, 'damping_factor': 25.0}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
