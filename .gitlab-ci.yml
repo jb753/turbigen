@@ -14,6 +14,7 @@ test:
   - pip install -e ".[test]"
   - make compile
   - pytest
+  - pre-commit run --all
 
 docs:
   script:
