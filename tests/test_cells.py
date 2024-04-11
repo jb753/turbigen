@@ -1,0 +1,170 @@
+# import turbigen.solvers.native
+import turbigen.grid
+import numpy as np
+import turbigen.compflow_native as cf
+
+np.random.seed = 0
+
+def dot(a, b, axis=0):
+    return np.sum(a * b, axis=axis)
+
+def not_test_box():
+
+    print(f'Checking discretisation of a cube...')
+
+    # Geometry
+    L = 0.1
+    yoffset = 40.0*L
+
+    nn = 60
+    nj = nn
+    ni = nn+2
+    nk = nn+4
+
+    Nb = 1
+    xv = np.linspace(-L, L, ni)
+    yv = np.linspace(-L, L, nj) + yoffset
+    zv = -np.linspace(-L, L, nk)
+
+    x, y, z =  np.stack(np.meshgrid(xv, yv, zv, indexing='ij'))
+
+    # Convert Cartesian coordinates to polar
+    r = np.sqrt(y**2 + z**2)
+    t = np.arctan2(-z, y)
+
+    xrt = np.stack((x, r, t))
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    b = g[0]
+
+    # Get polar unit vectors for each cartesian dirn
+    tface = turbigen.util.node_to_face3(b.t)
+    ex = np.stack(
+            (
+                np.ones_like(tface[0]),
+                np.zeros_like(tface[0]),
+                np.zeros_like(tface[0]),
+            )
+    )
+
+    ez = np.stack(
+            (
+                np.zeros_like(tface[1]),
+                np.cos(tface[1]),
+                -np.sin(tface[1]),
+            )
+    )
+
+    ey = np.stack(
+            (
+                np.zeros_like(tface[2]),
+                np.sin(tface[2]),
+                np.cos(tface[2]),
+            )
+    )
+
+    # Check the areas have correct magnitude and direction
+    A = (2*L)**2
+    rtol_A = 1e-3
+    err_x = np.abs(dot(b.dAi_new,ex).sum(axis=(1,2))/A-1.)
+    err_z = np.abs(dot(b.dAj_new,ez).sum(axis=(0,2))/A-1.)
+    err_y = np.abs(dot(b.dAk_new,ey).sum(axis=(0,1))/A-1.)
+    print(f'Area errors Ax={err_x.max():.2e}, Ay={err_y.max():.2e}, Az={err_z.max():.2e}')
+    assert (err_x<rtol_A).all()
+    assert (err_y<rtol_A).all()
+    assert (err_z<rtol_A).all()
+
+    # Check the total volume
+    vol = (2*L)**3
+    err = vol/np.sum(b.vol_new)-1.
+    rtol_vol = 1e-5
+    print(f'Volume error = {err:.2e}')
+    assert np.abs(err) < rtol_vol
+
+
+def test_cylinder():
+
+    # Geometry
+    L = 0.1
+    rm = 10.
+    dr = 0.1
+
+    r1 = rm-dr/2.
+    r2 = rm+dr/2.
+
+    nj = 70
+    ni = 50
+    nk = 40
+
+    pitch = 2.*np.pi*dr/rm
+
+    Nb = 1
+    xv = np.linspace(0, L, ni)
+    rv = np.linspace(r1, r2, nj)
+    tv = np.linspace(-pitch/2., pitch/2., nk)
+
+    xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+
+    skew = 0.
+    skewr = np.radians(skew)
+    xrt[2] += xrt[0]*np.tan(skewr)
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, 1, [])
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    print(f'Checking discretisation of a cylinder...')
+
+    # Total areas should be
+    Ar1 = L*r1*pitch
+    Ar2 = L*r2*pitch
+    Ax = np.pi*(r2**2.-r1**2.) * pitch / 2. /np.pi
+    At = L*dr
+    Arside = (r2-r1)*pitch*L/2.
+    vol = Ax * L
+
+    b = g[0]
+
+    rtol_A = 1e-9
+    dAi = np.sum(b.dAi_new,axis=(2,3))
+    err_x = np.abs(dAi[0]/Ax-1.)
+    err_r = np.abs(dAi[1]/Ax)
+    err_t = np.abs(dAi[2]/Ax)
+    print(f'i-face errors: Ax={err_x.max():.2e}, Ar={err_r.max():.2e}, At={err_t.max():.2e}')
+    assert (err_x<rtol_A).all()
+    assert (err_r<rtol_A).all()
+    assert (err_t<rtol_A).all()
+
+    dAj = np.sum(b.dAj_new,axis=(1,3))
+    err_x = np.abs(dAj[0]/Ar1)
+    err_r = np.abs([dAj[1,0]/Ar1-1.,dAj[1,-1]/Ar2-1.])
+    err_t = np.abs(dAj[2]/Ar1)
+    print(f'j-face errors: Ax={err_x.max():.2e}, Ar={err_r.max():.2e}, At={err_t.max():.2e}')
+    assert (err_x<rtol_A).all()
+    assert (err_r<rtol_A).all()
+    assert (err_t<rtol_A).all()
+
+    dAk = np.sum(b.dAk_new,axis=(1,2))
+    if np.abs(skew)>0.:
+        Axskew = -At*np.tan(skewr)
+        err_x = np.abs(dAk[0]/Axskew-1.)
+    else:
+        err_x = np.abs(dAk[0]/At)
+    err_r = np.abs([dAk[1,0]/Arside-1., -dAk[1,-1]/Arside-1.])
+    err_t = np.abs(dAk[2]/At-1.)
+    print(f'k-face errors: Ax={err_x.max():.2e}, Ar={err_r.max():.2e}, At={err_t.max():.2e}')
+    assert (err_x<rtol_A).all()
+    assert (err_r<rtol_A).all()
+    assert (err_t<rtol_A).all()
+
+    # Check the total volume
+    err = vol/np.sum(b.vol_new)-1.
+    rtol_vol = 1e-12
+    print(f'Volume error = {err:.2e}')
+    assert np.abs(err) < rtol_vol
+
+# not_test_box()
+# test_cylinder()

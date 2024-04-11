@@ -351,7 +351,10 @@ def _write_throttle(ts4_conf, grid, fname):
         bcell_names = list(f["bcell_names"].attrs["names"])
         bcell_ind = [i for i, b in enumerate(bcell_names) if ts4_conf.outlet_tag in b]
         if not bcell_ind:
-            raise Exception(f'Could not find throttle outlet tag {ts4_conf.outlet_tag}, should be one of {bcell_names}')
+            raise Exception(
+                f"Could not find throttle outlet tag {ts4_conf.outlet_tag}, "
+                f"should be one of {bcell_names}"
+            )
 
     # Loop over outlet patches
     mass_target = []
@@ -433,6 +436,7 @@ probe_list.append(p)
 """
         )
 
+
 def _write_logical_probe(ts4_conf, tag, label):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
 
@@ -455,7 +459,6 @@ probe_list.append(p)
 
 """
         )
-
 
 
 def _write_xr_probe(machine, ts4_conf, spf):

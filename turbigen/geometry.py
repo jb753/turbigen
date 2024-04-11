@@ -770,43 +770,18 @@ class Blade:
 
         return xrtcam
 
-    def get_LE_cent(self, spf, fac_Rle=1.):
+    def get_LE_cent(self, spf, fac_Rle=1.0):
         """Get the centre of the leading edge."""
 
         # Make a meridional grid vector for just the le
         cam, thick = self._get_cam_thick(spf)
-        Rle = thick.R_LE/fac_Rle
+        Rle = thick.R_LE / fac_Rle
         m = util.cluster_cosine(500)
 
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtul = xrtul[:, :, m < 2.0 * Rle]
         xrtcam = np.mean(xrtul, axis=0)
         xrtLE = xrtcam[:, np.argmax(m > Rle)]
-
-        xyzcam = np.stack(
-            (
-                xrtcam[0],
-                xrtcam[1] * np.sin(xrtcam[2]),
-                xrtcam[1] * np.cos(xrtcam[2]),
-            )
-        )
-
-        xyzul = np.stack(
-            (
-                xrtul[:, 0],
-                xrtul[:, 1] * np.sin(xrtul[:, 2]),
-                xrtul[:, 1] * np.cos(xrtul[:, 2]),
-            ),
-            axis=1,
-        )
-
-        xyzLE = np.stack(
-            (
-                xrtLE[0],
-                xrtLE[1] * np.sin(xrtLE[2]),
-                xrtLE[1] * np.cos(xrtLE[2]),
-            )
-        )
 
         return xrtLE
 
@@ -876,7 +851,7 @@ class Machine:
             if b:
                 sections.append(b.get_coords(flip_theta=flip_theta))
             else:
-                sections.append([None,None])
+                sections.append([None, None])
         annulus = self.ann.get_coords()
         zcst = self.ann.get_interfaces()
         if self.split:
@@ -884,8 +859,8 @@ class Machine:
             for irow in range(len(sections)):
                 try:
                     split.append(self.split[irow].get_coords(flip_theta=flip_theta))
-                except:
-                    split.append([None,None])
+                except Exception:
+                    split.append([None, None])
         else:
             split = None
         return sections, annulus, zcst, self.Nb, self.tip, split
