@@ -195,6 +195,10 @@ def plot_nozzle(g, F):
         C = b[:, :, b.nk//2]
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,0]/L, color=cs)
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,-1]/L, color=cs)
+
+        ax.plot(C.x/L, C.r/L, 'k-', lw=0.1)
+        ax.plot(C.x.T/L, C.r.T/L, 'k-', lw=0.1)
+
     ax.axis('equal')
     ax.set_ylabel('r')
     ax.set_xlabel('x')
@@ -203,10 +207,19 @@ def plot_nozzle(g, F):
     for ib, b in enumerate(g):
         cs = f'C{ib}'
         C = b[:, b.nj//2, b.nk//2]
-        ax.plot(C.x/L, C.Ma, color=cs)
+        ax.plot(C.x/L, C.Ma, '-.',color=cs)
     ax.plot(F.x/L, F.Ma, 'k-')
     ax.set_title('Ma')
-    ax.set_ylim(bottom=0.)
+    ax.set_ylim((0,1))
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f'C{ib}'
+        C = b[:, b.nj//2, b.nk//2]
+        ax.plot(C.x/L, C.P/F.Po, color=cs)
+    ax.plot(F.x/L, F.P/F.Po, 'k-')
+    ax.set_title('P')
+    # ax.set_ylim(bottom=0.)
 
     plt.show()
 
@@ -215,7 +228,7 @@ def post_nozzle(g, F):
     Ma = np.concatenate([b.Ma[:-1,b.nj//2, b.nk//2] for b in g])
     err_Ma = Ma-F.Ma[:-1]
 
-    print(f'Mach error: mean={err_Ma.mean():.3e}, min={err_Ma.min():.3e}, max={err_Ma.max():.3e}')
+    print(f'Mach error: mean={err_Ma.mean():.2e}, min={err_Ma.min():.2e}, max={err_Ma.max():.2e}')
 
     T2 = F.T[-1]
     ho1 = F.ho[0]
@@ -261,7 +274,8 @@ def test_nozzle(dirn, plot=False):
     tol_ho = 0.002
     assert (np.abs(Cho)<tol_ho).all()
 
-def test_alpha():
+def test_uniform():
+    """Run the most basic parallel annulus."""
 
     xA = np.array(
         [
@@ -270,35 +284,28 @@ def test_alpha():
         ]
     )
 
-    g, F = make_nozzle(xA, L_h=10., dirn='r', htr=0.9, Alpha=0.,skew=0.)
+    g, F = make_nozzle(xA, htr=0.9)
 
     np.set_printoptions(precision=2)
 
     turbigen.solvers.native.run(g, settings)
 
-    _, Ys, Cho = post_nozzle(g, F)
+    err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    # tol_s = 0.001
-    # assert (np.abs(Ys)<tol_s).all()
-    # tol_ho = 0.01
-    # assert (np.abs(Cho)<tol_ho).all()
-
-    fig, ax = plt.subplots()
-    ax.plot(Ys)
-    ax.set_title('Ys')
-
-    fig, ax = plt.subplots()
-    ax.plot(Cho)
-    ax.set_title('ho')
-
-    plt.show()
+    tol_Ma = 1e-6
+    assert (np.abs(err_Ma)<tol_Ma).all()
+    tol_s = 1e-4
+    assert (np.abs(Ys)<tol_s).all()
+    tol_ho = 1e-4
+    assert (np.abs(Cho)<tol_ho).all()
 
 def test_radius():
+    """Constant area with radius change."""
 
     xA = np.array(
         [
-            [0.,0.02, 0.3, 0.98, 1.],
-            [1.,1., 0.6, 1., 1.]
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
         ]
     )
     xR = np.array(
@@ -307,7 +314,8 @@ def test_radius():
             [1.,1., 0.9, 0.9]
         ]
     )
-    g, F = make_nozzle(xA, dirn='r',xnRR=xR, htr=0.9, Alpha=0.,skew=0.)
+
+    g, F = make_nozzle(xA, L_h=10., xnRR=xR, htr=0.95)
 
     np.set_printoptions(precision=2)
 
@@ -315,21 +323,12 @@ def test_radius():
 
     _, Ys, Cho = post_nozzle(g, F)
 
-    # tol_s = 0.001
-    # assert (np.abs(Ys)<tol_s).all()
-    tol_ho = 0.01
-    # assert (np.abs(Cho)<tol_ho).all()
-
-    fig, ax = plt.subplots()
-    ax.plot(Ys)
-    ax.set_title('Ys')
-
-    fig, ax = plt.subplots()
-    ax.plot(Cho)
-    ax.set_title('Cho')
-
-    # if plot:
     plot_nozzle(g, F)
+
+    tol_s = 1e-3
+    assert (np.abs(Ys)<tol_s).all()
+    tol_ho = 1e-3
+    assert (np.abs(Cho)<tol_ho).all()
 
 def test_patch_A_avg():
 
@@ -358,7 +357,7 @@ def test_patch_A_avg():
 
 
 
-test_patch_A_avg()
+# test_patch_A_avg()
 # test_alpha()
 # test_radius()
 
