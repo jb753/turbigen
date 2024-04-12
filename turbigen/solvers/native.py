@@ -63,6 +63,7 @@ class NativeConfig(BaseSolver):
 
     i_loss = 1
 
+
 def get_dw(block):
     # Cell height in each of i,j,k dirns
     dli = turbigen.util.vecnorm(block.dli)
@@ -241,7 +242,7 @@ class SolverBlock:
             # Reset conserved vars on inlet
             # Not sure about reseting the inlet density - seems to compromise stability
             # Needs a lower rfin if we reset the inlet density
-            self.conserved[..., 0].ravel(order="F")[ind] = rho_now # rho
+            self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
             self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
             self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
             self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
@@ -261,18 +262,18 @@ class SolverBlock:
 
             # Stagnation enthalpy from interior and imposed exit pressure
             # set the outlet state
-            ho_exit = self.ho.ravel(order='F')[ind]
-            halfVsq_exit = self.halfVsq.ravel(order='F')[ind]
+            ho_exit = self.ho.ravel(order="F")[ind]
+            halfVsq_exit = self.halfVsq.ravel(order="F")[ind]
             h_exit = ho_exit - halfVsq_exit
             state.set_P_h(P_exit, h_exit)
 
             # Update conserved vars
             # rho and u change, V stay the same
-            fac_rho = state.rho/self.conserved[...,0].ravel(order='F')[ind]
+            fac_rho = state.rho / self.conserved[..., 0].ravel(order="F")[ind]
             for i in range(4):
-                self.conserved[...,i].ravel(order='F')[ind] *= fac_rho
-            self.conserved[...,4].ravel(order='F')[ind] = (
-                    state.rho*(state.u+halfVsq_exit)
+                self.conserved[..., i].ravel(order="F")[ind] *= fac_rho
+            self.conserved[..., 4].ravel(order="F")[ind] = state.rho * (
+                state.u + halfVsq_exit
             )
 
             # Update secondary vars
@@ -396,6 +397,7 @@ def set_periodic(b1, b2, ind1, ind2):
 
 def get_outlet_data(patch):
     return patch.get_flat_indices(order="F"), (patch.Pout + 0.0)
+
 
 def send_slave(block_split, procids, periodics, settings):
 
@@ -547,7 +549,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if not np.mod(istep, 2) and istep > 100 and conf.i_loss>0:
+            if not np.mod(istep, 2) and istep > 100 and conf.i_loss > 0:
                 sb.calculate_viscous()
 
         if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:

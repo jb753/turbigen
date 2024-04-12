@@ -1186,7 +1186,7 @@ class Patch:
                     ind[0, :-1, 1:],
                     ind[0, 1:, 1:],
                 )
-            ).reshape(4,-1)
+            ).reshape(4, -1)
             dA = util.vecnorm(C.dAi).reshape(-1)
         else:
             raise NotImplementedError
@@ -1194,7 +1194,7 @@ class Patch:
         ind_flat = ind.reshape(-1)
 
         # We want to express the area integral of a variable x
-        #   int x dA 
+        #   int x dA
         # as a weighted sum of the nodal values of x
         nnode = np.size(ind)
         nface = len(dA)
@@ -1203,13 +1203,13 @@ class Patch:
 
         # Loop over faces
         for iface in range(nface):
-            # For all four corners on this face, 
+            # For all four corners on this face,
             # add dA to the relavent nodal weight
             for k in range(4):
-                w[ind_flat==ind_face[k, iface]] += dA[iface]
+                w[ind_flat == ind_face[k, iface]] += dA[iface]
 
         # Normalise
-        w /= 4.*np.sum(dA)
+        w /= 4.0 * np.sum(dA)
 
         return ind_flat, w
 
@@ -1383,7 +1383,6 @@ class OutletPatch(Patch):
     force = False
     amplitude = 0.0
     phase = 0.0
-
 
 
 class RotatingPatch(Patch):
