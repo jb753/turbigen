@@ -19,9 +19,10 @@ test:
 docs:
   script:
   - python -V
+  - apt update && apt install -y gfortran libopenmpi-dev
   - pip install -U pip
   - pip install -e ".[docs]"
-  - make doc
+  - makehtrdoc  - makeHTRdoc
 
 pages:
   stage: deploy
