@@ -400,7 +400,7 @@ def test_radius(Alpha):
         ]
     )
 
-    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=0., tper=False)
+    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=0., tper=True)
 
     fig, ax = plt.subplots()
     b = g[0]
