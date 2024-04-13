@@ -59,6 +59,9 @@ class NativeConfig(BaseSolver):
     damping_factor = 0.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
+    nstep_damp = 100
+    """Number of steps to apply damping."""
+
     i_scheme = 1
 
     i_loss = 1
@@ -116,11 +119,10 @@ class SolverBlock:
         self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(typ)
         self.u = np.asfortranarray(block.u).astype(typ)
 
-        self.x = np.asfortranarray(block.x).astype(typ)
-        self.r = np.asfortranarray(block.r).astype(typ)
-        self.t = np.asfortranarray(block.t).astype(typ)
+        self.xrt = np.asfortranarray(np.moveaxis(block.xrt, 0, -1)).astype(typ)
 
         self.dw = get_dw(block)
+        self.pitch = block.pitch
 
         # Geometry
         self.r = np.asfortranarray(block.r).astype(typ)
@@ -366,6 +368,17 @@ class SolverBlock:
         )
 
 
+def get_periodic_data(patch):
+    ind = patch.get_flat_indices("F")
+    match = patch.match
+    perm, flip = match.get_match_perm_flip()
+    nxind = match.get_flat_indices("F", perm, flip)
+    bid = patch.block.grid.index(patch.block)
+    nxbid = match.block.grid.index(match.block)
+    return bid, ind, nxbid, nxind
+
+
+
 def get_periodics(g, procids):
 
     periodics = []
@@ -380,19 +393,11 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, nxbid, nxind = patch.get_periodic_data()
+        bid, ind, nxbid, nxind = get_periodic_data(patch)
         periodics.append((pid, bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
         pid += 1
 
     return periodics
-
-
-def set_periodic(b1, b2, ind1, ind2):
-    conserved1 = b1.conserved.ravel(order="F")
-    conserved2 = b2.conserved.ravel(order="F")
-    avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
-    conserved1[ind1] = avg
-    conserved2[ind2] = avg
 
 
 def get_outlet_data(patch):
@@ -428,43 +433,81 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
     # Update periodic boundaries
     for patch in periodics:
         pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
-        count = len(ind)
 
         b1 = blocks[bid_local[bid]]
 
         if variable == "conserved":
-            v1 = b1.conserved.ravel(order="F")
+            v1 = b1.conserved
         elif variable == "residual":
-            v1 = b1.dU1.ravel(order="F")
+            v1 = b1.dU1
+        elif variable == "coords":
+            v1 = b1.xrt
+        nv = v1.shape[-1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
 
             b2 = blocks[bid_local[nxbid]]
             if variable == "conserved":
-                v2 = b2.conserved.ravel(order="F")
+                v2 = b2.conserved
             elif variable == "residual":
-                v2 = b2.dU1.ravel(order="F")
+                v2 = b2.dU1
+            elif variable == "coords":
+                v2 = b2.xrt
 
-            avg = 0.5 * (v1[ind] + v2[nxind])
-            v1[ind] = avg
-            v2[nxind] = avg
+            for i in range(nv):
+                v1i = v1[...,i].ravel(order='F')
+                v2i = v2[...,i].ravel(order='F')
+
+                if variable == "coords":
+                    v1ii = v1i[ind].copy()
+                    v2ii = v2i[nxind].copy()
+                    # Take mod wrt pitch
+                    if i == 2:
+                        v1ii = np.mod(v1ii , b1.pitch) + 1.
+                        v2ii = np.mod(v2ii , b2.pitch) + 1.
+                    assert np.allclose(v1ii, v2ii)
+                    print('patch ok')
+                    continue
+
+                else:
+
+                    avg = 0.5 * (v1i[ind] + v2i[nxind])
+                    v1i[ind] = avg
+                    v2i[nxind] = avg
 
         # Otherwise, communication is needed
         else:
 
             # Preallocate a buffer to recieve data
+            di = len(ind)
+            count = di*nv
             nxv = np.empty((count,), dtype=typ)
+
+            # Assemble data to send
+            vs = np.empty((count,), dtype=typ)
+            for i in range(nv):
+                ist = i*di
+                ien = (i+1)*di
+                vs[ist:ien] = v1[...,i].ravel(order='F')[ind]
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
             # If our rank is higher than next rank, recieve first
             else:
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
-            v1[ind] = 0.5 * (v1[ind] + nxv)
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+
+            # Take average over both sides
+            vavg = 0.5*(vs+nxv)
+
+            # Assign back to the grid
+            for i in range(nv):
+                ist = i*di
+                ien = (i+1)*di
+                v1[...,i].ravel(order='F')[ind] = vavg[ist:ien]
 
 
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
@@ -512,6 +555,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     dUe_ref = None
 
+    # Check periodics
+    exchange_periodics(blocks, bid_local, periodics, variable="coords")
+
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
@@ -540,7 +586,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         for iblock in range(nblock):
             sb = blocks[iblock]
 
-            if conf.damping_factor:
+            if conf.damping_factor and istep>conf.nstep_damp:
                 sb.damp(conf.damping_factor)
 
             sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)

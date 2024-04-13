@@ -1280,16 +1280,6 @@ class PeriodicPatch(Patch):
 
         return Cnx
 
-    def get_periodic_data(self):
-        ind = self.get_flat_indices("F", extra_dim=5)
-        match = self.match
-        perm, flip = match.get_match_perm_flip()
-        nxind = match.get_flat_indices("F", perm, flip, extra_dim=5)
-        bid = self.block.grid.index(self.block)
-        nxbid = match.block.grid.index(match.block)
-        return bid, ind.tolist(), nxbid, nxind.tolist()
-
-
 class PorousPatch(PeriodicPatch):
     """Node-to-node matching periodicity with pressure loss."""
 

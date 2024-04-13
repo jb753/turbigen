@@ -57,7 +57,8 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
 
     # Make the coordinates
-    tv = np.linspace(-dt / 2., dt / 2., nk)
+    # tv = np.linspace(-dt / 2., dt / 2., nk)
+    tv = np.linspace(0., dt, nk)
     xv = np.linspace(0., L, ni)
     rv = np.linspace(rh, rt, nj)
 
@@ -142,7 +143,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Make the grid object
     g = turbigen.grid.Grid(blocks)
-    g.match_patches()
     g.check_coordinates()
 
     # Boundary conditions
@@ -163,7 +163,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
         b.Omega = 0.0
         b.set_P_T(P1, T1)
 
-    g.apply_periodic()
 
     # Evaulate 1D analytical
     Q1 = cf.mcpTo_APo_from_Ma(Ma1,ga)
@@ -180,6 +179,9 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     F.x = xv
     F.r = rm
     F.t = 0.
+
+    g.match_patches()
+    g.apply_periodic()
 
     return g, F
 
@@ -335,7 +337,7 @@ def test_nozzle(dirn, plot=False):
 
 @pytest.mark.parametrize("Alpha", (-30.,0.,30.))
 def test_uniform(Alpha):
-    """Run the most basic parallel annulus."""
+    """Run the most basic parallel annulus, grid aligned with flow."""
 
     xA = np.array(
         [
@@ -344,7 +346,7 @@ def test_uniform(Alpha):
         ]
     )
 
-    g, F = make_nozzle(xA, htr=0.9, Alpha=Alpha, skew=Alpha)
+    g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha)
 
     np.set_printoptions(precision=2)
 
@@ -352,11 +354,12 @@ def test_uniform(Alpha):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 5e-4
+    rtol = 2e-4
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
 
+@pytest.mark.parametrize("Alpha", (-30.,0.,30.))
 def test_skew(Alpha):
     """Run an axial flow with skewed grid."""
 
@@ -367,7 +370,7 @@ def test_skew(Alpha):
         ]
     )
 
-    g, F = make_nozzle(xA, htr=0.9, skew=Alpha, tper=True)
+    g, F = make_nozzle(xA, skew=Alpha, tper=True)
 
     np.set_printoptions(precision=2)
 
@@ -375,13 +378,10 @@ def test_skew(Alpha):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    plot_nozzle(g, F)
-
-    rtol = 5e-4
+    rtol = 2e-4
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
-
 
 @pytest.mark.parametrize("Alpha", (-30.,0.,30.))
 def test_radius(Alpha):
@@ -396,17 +396,29 @@ def test_radius(Alpha):
     xR = np.array(
         [
             [0.,0.02, 0.98, 1.],
-            [1.,1., 0.9, 0.9]
+            [1.,1., 0.9, .9]
         ]
     )
 
-    g, F = make_nozzle(xA, L_h=10., xnRR=xR, htr=0.95, Alpha=Alpha, skew=Alpha)
+    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=0., tper=False)
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    ax.plot(b.rt[0,:,:],b.r[0,:,:],'k-',lw=0.5)
+    ax.plot(b.rt[0,:,:].T,b.r[0,:,:].T,'k-',lw=0.5)
+    ax.axis('equal')
+    plt.show()
 
     np.set_printoptions(precision=2)
 
     turbigen.solvers.native.run(g, settings)
 
     _, Ys, Cho = post_nozzle(g, F)
+
+    Vx = np.concatenate([b.Vx[:-1,b.nj//2, b.nk//2] for b in g])
+    fig, ax = plt.subplots()
+    ax.plot(Vx)
+    plt.show()
 
     if Alpha:
         rVt = np.concatenate([b.rVt[:-1,b.nj//2, b.nk//2] for b in g])
@@ -423,6 +435,7 @@ def test_radius(Alpha):
     assert (np.abs(Cho)<tol_ho).all()
 
 def test_patch_A_avg():
+    """Check patch area averaging weights."""
 
     # Make an arbitrary grid
     xA = np.array(
@@ -446,12 +459,11 @@ def test_patch_A_avg():
     assert np.isclose(rsqavg, rsqavg_check)
 
 
-
-
-
 # test_patch_A_avg()
 # test_alpha()
-# test_radius(30.)
-# test_skew(30.)
+test_radius(0.)
+# test_skew(-30.)
+# print('testing uniform')
+# test_uniform(30)
 
 # test_nozzle(dirn='r', plot=True)
