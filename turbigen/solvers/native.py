@@ -126,10 +126,10 @@ class SolverBlock:
 
         # Geometry
         self.r = np.asfortranarray(block.r).astype(typ)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi_new, 0, -1)).astype(typ)
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj_new, 0, -1)).astype(typ)
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk_new, 0, -1)).astype(typ)
-        self.vol = np.asfortranarray(block.vol_new).astype(typ)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi_cr, 0, -1)).astype(typ)
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj_cr, 0, -1)).astype(typ)
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk_cr, 0, -1)).astype(typ)
+        self.vol = np.asfortranarray(block.vol).astype(typ)
         self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
         self.Omega = block.Omega.mean().astype(typ)
         xllim = block.pitch * 0.5 * (block.r.max() + block.r.min()) * 0.03

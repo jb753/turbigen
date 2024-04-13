@@ -716,6 +716,30 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
+    def dAi_cr(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        v = self.xyz
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[0]
+        return util.cart_to_pol(dA, t)
+
+    @dependent_property
     def dAj_new(self):
         # Vector area for j=const faces, Gauss' theorem method
         if not self.ndim == 3:
@@ -738,6 +762,31 @@ class Kinematics:
         return -util.dA_Gauss(A, B, C, D)
 
     @dependent_property
+    def dAj_cr(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[1]
+        return util.cart_to_pol(dA, t)
+
+
+    @dependent_property
     def dAk_new(self):
         # Vector area for k=const faces, Gauss' theorem method
         if not self.ndim == 3:
@@ -758,6 +807,31 @@ class Kinematics:
         D = v[:, 1:, :-1, :]
 
         return util.dA_Gauss(A, B, C, D)
+
+
+    @dependent_property
+    def dAk_cr(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[2]
+        return util.cart_to_pol(dA, t)
 
     @dependent_property
     def vol_new(self):

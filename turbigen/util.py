@@ -1463,11 +1463,6 @@ def dA_Gauss(A, B, C, D):
     # Edge midpoint vertices
     vm = 0.5 * (v[:-1] + v[1:])
 
-    # # Make theta into r.theta
-    # vm[:,2, ...] *= vm[:,1, ...]
-    # dv[:, 2, ...] *= vm[:,1, ...]
-    # vm[:,1, ...] *= 0.5
-
     # Vector field
     Fx = vm.copy()
     Fr = vm.copy()
@@ -1508,3 +1503,16 @@ def dA_Gauss(A, B, C, D):
     dA = 0.5 * np.sum(F * dl, axis=(2, 1))
 
     return dA
+
+
+def cart_to_pol(dA, t):
+
+    dAx, dAy, dAz = -dA
+    cost = np.cos(t)
+    sint = np.sin(t)
+
+    dAr = - dAy*sint - dAz*cost
+    dAt = dAy*cost - dAz*sint
+
+    return np.stack((dAx, dAr, dAt))
+
