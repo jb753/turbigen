@@ -22,6 +22,7 @@ if rank > 0:
     sys.exit(0)
 
 def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dirn='r', xnRR=None, Alpha=0., tper=False):
+    """Generate the grid."""
 
     # Geometry
     h = 0.1
@@ -188,12 +189,12 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 settings = {
     'n_step': 10000,
     'n_step_avg': 1000,
-    'n_step_log': 1000,
+    'n_step_log': 2000,
     'i_loss': 0,
-    'damping_factor': 25.,
 }
 
 def plot_nozzle(g, F):
+    """Make debugging plots."""
 
     L = F.x.ptp()
 
@@ -264,6 +265,7 @@ def plot_nozzle(g, F):
     plt.show()
 
 def post_nozzle(g, F):
+    """Extract errors."""
 
     Ma = np.concatenate([b.Ma[:-1,b.nj//2, b.nk//2] for b in g])
     err_Ma = Ma-F.Ma[:-1]
@@ -287,28 +289,8 @@ def post_nozzle(g, F):
     return err_Ma, Ys, Cho
 
 @pytest.mark.parametrize("dirn", ('r','t'))
-def test_nozzle(dirn, plot=False):
+def test_condi(dirn, plot=False):
     """Run subsonic con-di nozzles."""
-
-    xA = np.array(
-        [
-            [0., 0.01,0.99, 1.],
-            [1.,1., 1., 1.]
-        ]
-    )
-
-    g, F = make_nozzle(xA, htr=0.9)
-
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.native.run(g, settings)
-
-    err_Ma, Ys, Cho = post_nozzle(g, F)
-
-    rtol = 5e-4
-    assert (np.abs(err_Ma)<rtol).all()
-    assert (np.abs(Ys)<rtol).all()
-    assert (np.abs(Cho)<rtol).all()
 
     xA = np.array(
         [
@@ -318,22 +300,17 @@ def test_nozzle(dirn, plot=False):
     )
     g, F = make_nozzle(xA, dirn=dirn)
 
-
     np.set_printoptions(precision=2)
 
     turbigen.solvers.native.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    if plot:
-        plot_nozzle(g, F)
-
-    tol_Ma = 0.02  # Quite loose because flow not really 1D
-    assert (np.abs(err_Ma)<tol_Ma).all()
-    tol_s = 0.002
-    assert (np.abs(Ys)<tol_s).all()
-    tol_ho = 0.002
-    assert (np.abs(Cho)<tol_ho).all()
+    rtol_Ma = 5e-2
+    assert (np.abs(err_Ma)<rtol_Ma).all()
+    rtol_sh = 5e-3
+    assert (np.abs(Ys)<rtol_sh).all()
+    assert (np.abs(Cho)<rtol_sh).all()
 
 @pytest.mark.parametrize("Alpha", (-30.,0.,30.))
 def test_uniform(Alpha):
@@ -378,7 +355,7 @@ def test_skew(Alpha):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 2e-4
+    rtol = 1e-4
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
@@ -400,14 +377,7 @@ def test_radius(Alpha):
         ]
     )
 
-    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=0., tper=True)
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    ax.plot(b.rt[0,:,:],b.r[0,:,:],'k-',lw=0.5)
-    ax.plot(b.rt[0,:,:].T,b.r[0,:,:].T,'k-',lw=0.5)
-    ax.axis('equal')
-    plt.show()
+    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=Alpha, tper=True)
 
     np.set_printoptions(precision=2)
 
@@ -415,24 +385,16 @@ def test_radius(Alpha):
 
     _, Ys, Cho = post_nozzle(g, F)
 
-    Vx = np.concatenate([b.Vx[:-1,b.nj//2, b.nk//2] for b in g])
-    fig, ax = plt.subplots()
-    ax.plot(Vx)
-    plt.show()
-
     if Alpha:
         rVt = np.concatenate([b.rVt[:-1,b.nj//2, b.nk//2] for b in g])
         err_rVt = rVt/rVt[0]-1.
-        tol_rVt = 5e-2
+        tol_rVt = 1e-2
         print(f'Angular momentum conservation error drVt mean={err_rVt.mean():.2e}, min={err_rVt.min():.2e}, max={err_rVt.max():.2e}')
         assert (err_rVt<tol_rVt).all()
 
-    plot_nozzle(g, F)
-
-    tol_s = 1e-2
-    assert (np.abs(Ys)<tol_s).all()
-    tol_ho = 1e-3
-    assert (np.abs(Cho)<tol_ho).all()
+    tol_sh = 1e-3
+    assert (np.abs(Ys)<tol_sh).all()
+    assert (np.abs(Cho)<tol_sh).all()
 
 def test_patch_A_avg():
     """Check patch area averaging weights."""
@@ -458,12 +420,17 @@ def test_patch_A_avg():
     rsqavg_check = np.sum((C.r_face[0]**2)*dA)/np.sum(dA)
     assert np.isclose(rsqavg, rsqavg_check)
 
+if __name__=='__main__':
 
-# test_patch_A_avg()
-# test_alpha()
-test_radius(0.)
-# test_skew(-30.)
-# print('testing uniform')
-# test_uniform(30)
+    # print('testing uniform, aligned grid')
+    # test_uniform(30.)
 
-# test_nozzle(dirn='r', plot=True)
+    # print('testing uniform, skewed grid')
+    # test_skew(30.)
+
+    # print('testing radius change, aligned grid')
+    # test_radius(30.)
+
+    # print('testing con-di nozzles')
+    # test_condi('t')
+

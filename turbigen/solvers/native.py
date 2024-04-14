@@ -56,7 +56,7 @@ class NativeConfig(BaseSolver):
 
     conv_lim = 1e-9
 
-    damping_factor = 0.0
+    damping_factor = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
     nstep_damp = 100
@@ -126,10 +126,10 @@ class SolverBlock:
 
         # Geometry
         self.r = np.asfortranarray(block.r).astype(typ)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi_cr, 0, -1)).astype(typ)
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj_cr, 0, -1)).astype(typ)
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk_cr, 0, -1)).astype(typ)
-        self.vol = np.asfortranarray(block.vol).astype(typ)
+        self.dAi = np.asfortranarray(np.moveaxis(block.dAi_new, 0, -1)).astype(typ)
+        self.dAj = np.asfortranarray(np.moveaxis(block.dAj_new, 0, -1)).astype(typ)
+        self.dAk = np.asfortranarray(np.moveaxis(block.dAk_new, 0, -1)).astype(typ)
+        self.vol = np.asfortranarray(block.vol_new).astype(typ)
         self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
         self.Omega = block.Omega.mean().astype(typ)
         xllim = block.pitch * 0.5 * (block.r.max() + block.r.min()) * 0.03
@@ -467,7 +467,6 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                         v1ii = np.mod(v1ii , b1.pitch) + 1.
                         v2ii = np.mod(v2ii , b2.pitch) + 1.
                     assert np.allclose(v1ii, v2ii)
-                    print('patch ok')
                     continue
 
                 else:
@@ -717,77 +716,6 @@ def run(grid, settings={}, machine=None):
     dUlog[:, 0] /= drho_ref
     dUlog[:, 1:4] /= drhoV_ref
     dUlog[:, 4] /= drhoe_ref
-
-    # import matplotlib.pyplot as plt
-
-    # fig, ax = plt.subplots()
-    # ax.semilogy(dUlog)
-    # ax.legend(
-    #     (r"$\rho$", r"$\rho V_x$", r"$\rho V_r$", r"$\rho r V_\theta$", r"$\rho e$")
-    # )
-
-    # ip, jp, kp = np.unravel_index(
-    #     np.argmax(blocks_out[0].dU1[..., -1]), blocks_out[0].dU1[..., -1].shape
-    # )
-    # jp = grid[0].shape[1] // 2
-
-    # fig, ax = plt.subplots()
-    # for b in grid:
-    #     ni, nj, nk = b.shape
-    #     c = b[:, nj // 2, 0].squeeze()
-    #     ax.plot(c.x, c.P, "-")
-    #     c = b[:, nj // 2, nk // 2].squeeze()
-    #     ax.plot(c.x, c.P, "-")
-    #     c = b[:, nj // 2, -1].squeeze()
-    #     ax.plot(c.x, c.P, "-")
-    #     ax.set_title("P")
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks_out):
-    #     ni, nj, nk = b.shape
-    #     ax.plot(b.x[:-1, nj // 2, nk // 2], sb.mu_turb[:, nj // 2, nk // 2] / b.mu)
-    # ax.set_title("mu_turb/mu_lam")
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks_out):
-    #     ni, nj, nk = b.shape
-    #     ax.plot(b.rt[ni // 2, nj // 2, :-1], sb.xlength[ni // 2, nj // 2, :])
-    # ax.set_title("xlength")
-    # plt.show()
-    # plt.show()
-
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks):
-    #     # get face-centered x,rt
-    #     ni, nj, nk = b.shape
-    #     xrtf = [
-    #         np.empty((ni, nj - 1, nk - 1, 3), order="F", dtype=typ),
-    #         np.empty((ni - 1, nj, nk - 1, 3), order="F", dtype=typ),
-    #         np.empty((ni - 1, nj - 1, nk, 3), order="F", dtype=typ),
-    #     ]
-    #     xrtn = np.asfortranarray(np.stack((b.x, b.r, b.rt), axis=-1)).astype(typ)
-    #     node_to_face(xrtn, *xrtf)
-    #     print(xrtn.shape)
-    #     ii = 2
-    #     print(xrtf[ii].shape)
-    #     print(sb.wall_indicators[ii].shape)
-    #     xface = xrtf[ii][..., 0][sb.wall_indicators[ii] == 1]
-    #     rface = xrtf[ii][..., 1][sb.wall_indicators[ii] == 1]
-    #     rtface = xrtf[ii][..., 2][sb.wall_indicators[ii] == 1]
-    #     c = b[:, jp, :].squeeze()
-    #     rmean = c.r.mean()
-    #     ikeep = np.abs(rface / rmean - 1.0) < 0.007
-    #     if ikeep.any():
-    #         xface = xface[ikeep]
-    #         rface = rface[ikeep]
-    #         rtface = rtface[ikeep]
-    #         ax.plot(xface, rtface, "bo")
-    #     ni, nj, nk = b.shape
-    #     ax.plot(c.x, c.rt, "k-", lw=0.2)
-    #     ax.plot(c.x.T, c.rt.T, "k-", lw=0.2)
-    #     # ax.plot(
-    #     ax.axis("equal")
-    #     ax.grid("P")
-    # plt.show()
-
 
 def get_geom(b):
     # Areas and volumes

@@ -839,31 +839,13 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # # Get cell-centered coordinates
-        # xrtc = np.stack(
-        #     (
-        #         self.xrrt[:,:-1, :-1, :-1],
-        #         self.xrrt[:,1:, :-1, :-1],
-        #         self.xrrt[:,1:, 1:, :-1],
-        #         self.xrrt[:,:-1, 1:, :-1],
-        #         self.xrrt[:,:-1, :-1, 1:],
-        #         self.xrrt[:,1:, :-1, 1:],
-        #         self.xrrt[:,1:, 1:, 1:],
-        #         self.xrrt[:,:-1, 1:, 1:],
-        #     ),
-        # ).mean(axis=0)
-        xm = self.x.mean()
-        rm = self.r.mean()
-        rtm = self.rt.mean()
-        xrtm = np.array((xm, rm, rtm)).reshape(3, 1, 1, 1)
-
         # Get face-centered coordinates
         xi, xj, xk = self.x_face
         ri, rj, rk = self.r_face
         rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri, rti)) - xrtm
-        Fj = np.stack((xj, rj, rtj)) - xrtm
-        Fk = np.stack((xk, rk, rtk)) - xrtm
+        Fi = np.stack((xi, ri/2., rti))
+        Fj = np.stack((xj, rj/2., rtj))
+        Fk = np.stack((xk, rk/2., rtk))
         dAi = self.dAi_new
         dAj = self.dAj_new
         dAk = self.dAk_new

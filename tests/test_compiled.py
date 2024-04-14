@@ -270,10 +270,10 @@ def test_div():
     x = np.asfortranarray(np.ones((ni, nj, nk, 3)).astype(typ))
 
     divx = np.asfortranarray(np.ones_like(b.vol).astype(typ))
-    dAi = np.asfortranarray(np.moveaxis(b.dAi_cr,0,-1).astype(typ))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj_cr,0,-1).astype(typ))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk_cr,0,-1).astype(typ))
-    vol = np.asfortranarray(b.vol.astype(typ))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi_new,0,-1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj_new,0,-1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk_new,0,-1).astype(typ))
+    vol = np.asfortranarray(b.vol_new.astype(typ))
 
     rn = np.asfortranarray(b.r.astype(typ))
     ni, nj, nk = rn.shape
@@ -282,44 +282,58 @@ def test_div():
     turbigen.compiled.node_to_cell(rn, rc)
 
     print('Checking divergence of test fields...')
-    print('Note that in the x/r/rt coordinate system:\n'
-          '  div u = dux/dx + dur/dr + dut/dt/r')
+    print('Note that in a cylindrical coordinate system:\n'
+          '  div u = dux/dx + d(r*ur)/dr/r + dut/dt/r')
+
+    rtol = 1e-4
+
+    x[...,0] = 0.
+    x[...,1] = 0.
+    x[...,2] = 0.
+    turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
+    err = np.abs(divx)
+    print(f'div(0)=0 error={err.max():.2e}')
+    assert (err<rtol).all()
 
     x[...,0] = 0.
     x[...,1] = 1.
     x[...,2] = 0.
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
-    rtol = 1e-3
-    err = np.abs(divx)
-    print(f'div(er)=0 error={err.max():.2e}')
-    # assert (err<rtol).all()
+    err = np.abs(divx*rc-1)
+    print(f'div(er)=1/r error={err.max():.2e}')
+    assert (err<rtol).all()
 
     x[...,0] = 2.*b.x
+    x[...,1] = 0.
+    x[...,2] = 0.
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
     err = np.abs(divx/2.-1.)
     print(f'div(2x ex)=2 error={err.max():.2e}')
-    # assert (err<rtol).all()
+    assert (err<rtol).all()
 
     x[...,0] = 0.
+    x[...,1] = 0.
     x[...,2] = -b.t
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
     err = np.abs(divx/(-1./rc)-1.)
     print(f'div(-t et)=-1/r error={err.max():.2e}')
-    # assert (err<rtol).all()
+    assert (err<rtol).all()
 
-    x[...,2] = 0.
+    x[...,0] = 0.
     x[...,1] = 3.*b.r
+    x[...,2] = 0.
     turbigen.compiled.div(x, divx, vol, dAi, dAj, dAk)
-    err = np.abs(divx/3.-1.)
-    print(f'div(3r er)=3. error={err.max():.2e}')
-    # assert (err<rtol).all()
+    err = np.abs(divx/6.-1.)
+    print(f'div(3r er)=6. error={err.max():.2e}')
+    assert (err<rtol).all()
 
 
 def test_grad():
 
-    nj = 40
-    ni = 42
-    nk = 44
+    n = 40
+    nj = n
+    ni = n+2
+    nk = n+4
     g = make_cylinder(ni, nj, nk)
 
     b = g[0]
@@ -327,10 +341,10 @@ def test_grad():
     print('Checking grad of test fields...')
 
     gradq = np.asfortranarray(np.ones((ni-1, nj-1, nk-1, 3)).astype(typ))*np.nan
-    dAi = np.asfortranarray(np.moveaxis(b.dAi_cr,0,-1).astype(typ))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj_cr,0,-1).astype(typ))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk_cr,0,-1).astype(typ))
-    vol = np.asfortranarray(b.vol.astype(typ))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi_new,0,-1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj_new,0,-1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk_new,0,-1).astype(typ))
+    vol = np.asfortranarray(b.vol_new.astype(typ))
 
     rn = np.asfortranarray(b.r.astype(typ))
     tn = np.asfortranarray(b.t.astype(typ))
@@ -386,7 +400,3 @@ def test_grad():
     assert (err_x<rtol).all()
     assert (err_r<rtol).all()
     assert (err_t<rtol).all()
-
-# test_grad()
-test_div()
-# # test_node_to_face()

@@ -976,6 +976,26 @@ def node_to_face(var):
     )
 
 
+def node_to_cell(var):
+    """For a (...,ni,nj,nk) matrix of some property, average over eight corners of
+    each cell to produce an (...,ni-1,nj-1,nk-1) matrix of cell-centered properties."""
+    return np.mean(
+        np.stack(
+            (
+                var[..., :-1, :-1, :-1],  # i, j, k
+                var[..., 1:, :-1, :-1],  # i+1, j, k
+                var[..., :-1, 1:, :-1],  # i, j+1, k
+                var[..., 1:, 1:, :-1],  # i+1, j+1, k
+                var[..., :-1, :-1, 1:],  # i, j, k+1
+                var[..., 1:, :-1, 1:],  # i+1, j, k+1
+                var[..., :-1, 1:, 1:],  # i, j+1, k+1
+                var[..., 1:, 1:, 1:],  # i+1, j+1, k+1
+            ),
+        ),
+        axis=0,
+    )
+
+
 def subsample_cases(c, k, K):
     """Split into K parts, extract kth and other K-1 subsamples."""
     di = int(np.floor(len(c) / K))
@@ -1450,12 +1470,22 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 
 def dA_Gauss(A, B, C, D):
 
-    # Circular array of vertices
-    v = np.stack((A, B, C, D, A), axis=0)
+    # Assemble all vertices together (stack along second axis)
+    # xrrt[4, 3, ni, nj, nk]
+    xrrt = np.stack((A, B, C, D), axis=0).copy()
 
-    # Subtract cell-center coords to reduce round-off error
-    vc = np.stack((A, B, C, D), axis=0).mean(axis=0)
-    v -= vc
+    # Shift theta origin to face center
+    # This is important so that constant-theta faces have no radial area
+    t = xrrt[:,2]/xrrt[:,1]
+    t -= t.mean(axis=0)
+    xrrt[:,2] = xrrt[:,1]*t
+
+    # Subtract face-center coords to reduce round-off error
+    xrrtc = xrrt.mean(axis=0)
+    xrrt -= xrrtc
+
+    # Circular array of vertices
+    v = np.concatenate((xrrt, xrrt[0][None,...]), axis=0)
 
     # Edges
     dv = np.diff(v, axis=0)
