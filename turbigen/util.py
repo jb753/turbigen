@@ -1476,16 +1476,16 @@ def dA_Gauss(A, B, C, D):
 
     # Shift theta origin to face center
     # This is important so that constant-theta faces have no radial area
-    t = xrrt[:,2]/xrrt[:,1]
+    t = xrrt[:, 2] / xrrt[:, 1]
     t -= t.mean(axis=0)
-    xrrt[:,2] = xrrt[:,1]*t
+    xrrt[:, 2] = xrrt[:, 1] * t
 
     # Subtract face-center coords to reduce round-off error
     xrrtc = xrrt.mean(axis=0)
     xrrt -= xrrtc
 
     # Circular array of vertices
-    v = np.concatenate((xrrt, xrrt[0][None,...]), axis=0)
+    v = np.concatenate((xrrt, xrrt[0][None, ...]), axis=0)
 
     # Edges
     dv = np.diff(v, axis=0)
@@ -1541,8 +1541,7 @@ def cart_to_pol(dA, t):
     cost = np.cos(t)
     sint = np.sin(t)
 
-    dAr = - dAy*sint - dAz*cost
-    dAt = dAy*cost - dAz*sint
+    dAr = -dAy * sint - dAz * cost
+    dAt = dAy * cost - dAz * sint
 
     return np.stack((dAx, dAr, dAt))
-

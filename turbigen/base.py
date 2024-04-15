@@ -785,7 +785,6 @@ class Kinematics:
         t = self.t_face[1]
         return util.cart_to_pol(dA, t)
 
-
     @dependent_property
     def dAk_new(self):
         # Vector area for k=const faces, Gauss' theorem method
@@ -807,7 +806,6 @@ class Kinematics:
         D = v[:, 1:, :-1, :]
 
         return util.dA_Gauss(A, B, C, D)
-
 
     @dependent_property
     def dAk_cr(self):
@@ -843,9 +841,9 @@ class Kinematics:
         xi, xj, xk = self.x_face
         ri, rj, rk = self.r_face
         rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri/2., rti))
-        Fj = np.stack((xj, rj/2., rtj))
-        Fk = np.stack((xk, rk/2., rtk))
+        Fi = np.stack((xi, ri / 2.0, rti))
+        Fj = np.stack((xj, rj / 2.0, rtj))
+        Fk = np.stack((xk, rk / 2.0, rtk))
         dAi = self.dAi_new
         dAj = self.dAj_new
         dAk = self.dAk_new

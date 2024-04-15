@@ -1280,6 +1280,7 @@ class PeriodicPatch(Patch):
 
         return Cnx
 
+
 class PorousPatch(PeriodicPatch):
     """Node-to-node matching periodicity with pressure loss."""
 

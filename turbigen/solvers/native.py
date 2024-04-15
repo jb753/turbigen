@@ -378,7 +378,6 @@ def get_periodic_data(patch):
     return bid, ind, nxbid, nxind
 
 
-
 def get_periodics(g, procids):
 
     periodics = []
@@ -456,16 +455,16 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                 v2 = b2.xrt
 
             for i in range(nv):
-                v1i = v1[...,i].ravel(order='F')
-                v2i = v2[...,i].ravel(order='F')
+                v1i = v1[..., i].ravel(order="F")
+                v2i = v2[..., i].ravel(order="F")
 
                 if variable == "coords":
                     v1ii = v1i[ind].copy()
                     v2ii = v2i[nxind].copy()
                     # Take mod wrt pitch
                     if i == 2:
-                        v1ii = np.mod(v1ii , b1.pitch) + 1.
-                        v2ii = np.mod(v2ii , b2.pitch) + 1.
+                        v1ii = np.mod(v1ii, b1.pitch) + 1.0
+                        v2ii = np.mod(v2ii, b2.pitch) + 1.0
                     assert np.allclose(v1ii, v2ii)
                     continue
 
@@ -480,15 +479,15 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
             # Preallocate a buffer to recieve data
             di = len(ind)
-            count = di*nv
+            count = di * nv
             nxv = np.empty((count,), dtype=typ)
 
             # Assemble data to send
             vs = np.empty((count,), dtype=typ)
             for i in range(nv):
-                ist = i*di
-                ien = (i+1)*di
-                vs[ist:ien] = v1[...,i].ravel(order='F')[ind]
+                ist = i * di
+                ien = (i + 1) * di
+                vs[ist:ien] = v1[..., i].ravel(order="F")[ind]
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
@@ -500,13 +499,13 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
 
             # Take average over both sides
-            vavg = 0.5*(vs+nxv)
+            vavg = 0.5 * (vs + nxv)
 
             # Assign back to the grid
             for i in range(nv):
-                ist = i*di
-                ien = (i+1)*di
-                v1[...,i].ravel(order='F')[ind] = vavg[ist:ien]
+                ist = i * di
+                ien = (i + 1) * di
+                v1[..., i].ravel(order="F")[ind] = vavg[ist:ien]
 
 
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
@@ -585,7 +584,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         for iblock in range(nblock):
             sb = blocks[iblock]
 
-            if conf.damping_factor and istep>conf.nstep_damp:
+            if conf.damping_factor and istep > conf.nstep_damp:
                 sb.damp(conf.damping_factor)
 
             sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
@@ -716,6 +715,7 @@ def run(grid, settings={}, machine=None):
     dUlog[:, 0] /= drho_ref
     dUlog[:, 1:4] /= drhoV_ref
     dUlog[:, 4] /= drhoe_ref
+
 
 def get_geom(b):
     # Areas and volumes
