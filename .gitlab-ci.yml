@@ -22,7 +22,7 @@ docs:
   - apt update && apt install -y gfortran libopenmpi-dev
   - pip install -U pip
   - pip install -e ".[docs]"
-  - makehtrdoc  - makeHTRdoc
+  - make doc
 
 pages:
   stage: deploy

@@ -422,6 +422,8 @@ def test_patch_A_avg():
 
 if __name__=='__main__':
 
+    pass
+
     # print('testing uniform, aligned grid')
     # test_uniform(30.)
 
@@ -433,4 +435,3 @@ if __name__=='__main__':
 
     # print('testing con-di nozzles')
     # test_condi('t')
-
