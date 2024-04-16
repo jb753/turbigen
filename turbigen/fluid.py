@@ -333,6 +333,11 @@ class PerfectState(StructuredData):
         # assert np.allclose(self.P, P)
         return self
 
+    def set_P_rho(self, P, rho):
+        T = P / self.rgas / rho
+        self.set_P_T(P, T)
+        return self
+
     def set_rho_u(self, rho, u):
         self.rho = rho
         self.u = u

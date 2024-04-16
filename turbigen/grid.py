@@ -1164,7 +1164,7 @@ class Patch:
 
         return ind.reshape(-1)
 
-    def get_A_avg_indices(self, order="C"):
+    def get_A_avg_weights(self, order="C"):
         # Return ind, w such that the area average of block prop is
         # np.sum( prop.ravel(order)[ind]*w)
 
@@ -1193,6 +1193,10 @@ class Patch:
 
         ind_flat = ind.reshape(-1)
 
+        assert np.allclose(self.block.x.ravel(order=order)[ind_flat], C.x.reshape(-1))
+        assert np.allclose(self.block.r.ravel(order=order)[ind_flat], C.r.reshape(-1))
+        assert np.allclose(self.block.t.ravel(order=order)[ind_flat], C.t.reshape(-1))
+
         # We want to express the area integral of a variable x
         #   int x dA
         # as a weighted sum of the nodal values of x
@@ -1211,7 +1215,7 @@ class Patch:
         # Normalise
         w /= 4.0 * np.sum(dA)
 
-        return ind_flat, w
+        return w
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1349,18 +1353,6 @@ class InletPatch(Patch):
     amplitude = 0.0
     phase = 0.0
     rho_store = None
-
-    def get_inlet_data(self):
-        return (
-            self.get_flat_indices(order="F"),
-            self.state.P + 0.0,
-            self.state.T + 0.0,
-            self.Alpha + 0.0,
-            self.Beta + 0.0,
-            self.state.rho,
-            self.state.h,
-            self.get_cut().r.reshape(-1),
-        )
 
 
 class InviscidPatch(Patch):

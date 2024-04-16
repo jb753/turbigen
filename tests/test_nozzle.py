@@ -187,10 +187,12 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     return g, F
 
 settings = {
-    'n_step': 10000,
+    'n_step': 20000,
     'n_step_avg': 1000,
-    'n_step_log': 2000,
+    'n_step_log': 100,
     'i_loss': 0,
+    'i_exit': 1,
+    'i_inlet': 1,
 }
 
 def plot_nozzle(g, F):
@@ -411,7 +413,8 @@ def test_patch_A_avg():
     patch = block.outlet_patches[0]
 
     # Calculate area average using weight
-    ind, w = patch.get_A_avg_indices(order='F')
+    ind = patch.get_flat_indices(order='F')
+    w = patch.get_A_avg_weights(order='F')
     rsqavg = np.sum((block.r.ravel(order='F')[ind]**2.)*w)
 
     # Manually check the area average
@@ -420,12 +423,51 @@ def test_patch_A_avg():
     rsqavg_check = np.sum((C.r_face[0]**2)*dA)/np.sum(dA)
     assert np.isclose(rsqavg, rsqavg_check)
 
+def not_test_exit(Alpha):
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha, htr=0.7)
+
+    np.set_printoptions(precision=2)
+
+    settings = {
+        'n_step': 8000,
+        'n_step_avg': 100,
+        'n_step_log': 100,
+        'i_loss': 0,
+    }
+
+    turbigen.solvers.native.run(g, settings)
+
+    fig, ax = plt.subplots()
+    b = g[-1]
+    Cout = b[-1,:,b.nk//2]
+    ax.plot(Cout.x,Cout.Ma)
+    plt.show()
+
+
+    fig, ax = plt.subplots()
+    b = g[-1]
+    Cout = b[-1,:,b.nk//2]
+    ax.plot(Cout.P/F.P[-1]-1., Cout.r)
+    ax.set_title('P/Pout')
+    plt.show()
+
 if __name__=='__main__':
 
-    pass
+
+    # print('testing exit, aligned grid')
+    # test_patch_A_avg()
+    # test_exit(0.)
 
     # print('testing uniform, aligned grid')
-    # test_uniform(30.)
+    test_uniform(30.)
 
     # print('testing uniform, skewed grid')
     # test_skew(30.)

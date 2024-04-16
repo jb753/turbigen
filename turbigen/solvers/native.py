@@ -66,6 +66,10 @@ class NativeConfig(BaseSolver):
 
     i_loss = 1
 
+    i_exit = 1
+    i_inlet = 0
+    K_exit = 1.0
+
 
 def get_dw(block):
     # Cell height in each of i,j,k dirns
@@ -168,7 +172,7 @@ class SolverBlock:
         # # Which are indices into the flattend face arrays
         # self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
 
-        self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
+        self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
@@ -204,83 +208,237 @@ class SolverBlock:
             u_out = block.u.ravel(order="F")[outlet[0]]
             state_outlet.set_rho_u(rho_out, u_out)
 
-    def set_inlets(self, rfin):
+    def set_inlets(self, rfin, i_inlet):
         """Set conserved variables on inlets by relaxing density changes."""
 
         # Change inlet patches
         for patch, state in zip(self.inlets, self.state_inlets):
 
             # Expand patch data
-            ind, Po, To, Alpha, Beta, rhoo, ho, r = patch
+            ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, normal = patch
 
-            # Relax changes in density
-            rho_now = (
-                rfin * self.conserved[..., 0].ravel(order="F")[ind]
-                + (1.0 - rfin) * state.rho
-            )
-
-            # Check for flow reversal
-            rho_now[rho_now > rhoo] = rhoo * 0.9999
-
-            # Isentropic expansion from stagnation state
-            state.set_rho_s(rho_now, state.s)
-
-            # Pull out vars we need
-            h, u, P = state.h, state.u, state.P
-
-            # Get the velocity
-            dhin = ho - h
-            Vinsq = 2.0 * dhin
-            Vin = np.sqrt(Vinsq)
-
-            # Resolve velocity components
             tanAlpha = turbigen.util.tand(Alpha)
             tanBeta = turbigen.util.tand(Beta)
-            Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
-            Vrin = Vxin * tanBeta
-            Vmin = np.sqrt(Vxin**2 + Vrin**2)
-            Vtin = Vmin * tanAlpha
 
-            # Reset conserved vars on inlet
-            # Not sure about reseting the inlet density - seems to compromise stability
-            # Needs a lower rfin if we reset the inlet density
-            self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
-            self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
-            self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
-            self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
-            self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (u + 0.5 * Vinsq)
+            if i_inlet == 0:
 
-            # Reset pressure and hstag on inlet
-            self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
-            self.P.ravel(order="F")[ind] = P
+                # Relax changes in density
+                rho_now = (
+                    rfin * self.conserved[..., 0].ravel(order="F")[ind]
+                    + (1.0 - rfin) * state.rho
+                )
 
-    def set_outlets(self):
+                # Check for flow reversal
+                rho_now[rho_now > rhoo] = rhoo * 0.9999
+
+                # Isentropic expansion from stagnation state
+                state.set_rho_s(rho_now, state.s)
+
+                # Pull out vars we need
+                h, u, P = state.h, state.u, state.P
+
+                # Get the velocity
+                dhin = hoin - h
+                Vinsq = 2.0 * dhin
+                Vin = np.sqrt(Vinsq)
+
+                # Resolve velocity components
+                Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
+                Vrin = Vxin * tanBeta
+                Vmin = np.sqrt(Vxin**2 + Vrin**2)
+                Vtin = Vmin * tanAlpha
+
+                # Reset conserved vars on inlet
+                # Not sure about reseting the inlet density -
+                # seems to compromise stability
+                # Needs a lower rfin if we reset the inlet density
+                self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+                self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
+                self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
+                self.conserved[..., 3].ravel(order="F")[ind] = (
+                    rho_now * r * Vtin
+                )  # rhorVt
+                self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
+                    u + 0.5 * Vinsq
+                )
+
+                # Reset pressure and hstag on inlet
+                self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
+                self.P.ravel(order="F")[ind] = P
+
+            else:
+
+                # Extract properties from soln
+                rho = self.conserved[..., 0].ravel(order="F")[ind]
+                rhoVx = self.conserved[..., 1].ravel(order="F")[ind]
+                rhoVr = self.conserved[..., 2].ravel(order="F")[ind]
+                rhorVt = self.conserved[..., 3].ravel(order="F")[ind]
+                rhoe = self.conserved[..., 4].ravel(order="F")[ind]
+                P = self.P.ravel(order="F")[ind]
+                ho = self.ho.ravel(order="F")[ind]
+
+                # Calculate velocities
+                Vx = rhoVx / rho
+                Vr = rhoVr / rho
+                Vt = rhorVt / rho / r
+                Vm = np.sqrt(Vx**2 + Vr**2)
+
+                # Update the inlet state object using soln P and rho
+                # so we can read off other thermodynamic properties
+                state.set_P_rho(P, rho)
+                a = state.a
+                s = state.s
+                cv = state.cv
+                ga = state.gamma
+
+                # Calculate the inlet residuals
+                # Giles (1988) Eqn. (5.11)
+                R = np.stack(
+                    (
+                        P * (s - sin) / cv,
+                        rho * a * (Vt - tanAlpha * Vm),
+                        rho * (ho - hoin),
+                    )
+                )
+
+                # Calculate chics Eqn. (5.15)
+                Mm = Vm / a
+                Mt = Vt / a
+                gfac = 1.0 / (ga - 1.0)
+                Mtot = 1.0 + Mm + Mt * tanAlpha
+                dc1 = -R[0]
+                dc2 = (
+                    -R[0] * gfac * tanAlpha + R[1] * (1.0 + Mm) + R[2] * tanAlpha
+                ) / -Mtot
+                dc3 = (-R[0] * gfac - R[1] * Mt + R[2]) / -Mtot
+
+                # Calculate primitive changes
+                drho = (-dc1 + dc3) / a / a
+                dVm = dc3 / rho / a
+                dVt = dc2 / rho / a
+                dP = dc3
+
+                # Now evaluate new flow field
+                dVx = dVm * normal[0]
+                dVr = dVm * normal[1]
+                rho_new = rho + drho
+                Vx_new = Vx + dVx
+                Vr_new = Vr + dVr
+                Vt_new = Vt + dVt
+                P_new = P + dP
+
+                state.set_P_rho(P_new, rho_new)
+
+                halfVsq_new = 0.5 * (Vx_new**2 + Vr_new**2 + Vt_new**2)
+
+                # Perturb the conserved vars
+                rho[:] = rho_new
+                rhoVx[:] = rho_new * Vx_new
+                rhoVr[:] = rho_new * Vr_new
+                rhorVt[:] = rho_new * r * Vt_new
+                rhoe[:] = rho_new * (state.u + halfVsq_new)
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = state.P
+                self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
+
+    def set_outlets(self, i_exit, K_exit):
         """Set static pressure on outlets."""
 
         for patch, state in zip(self.outlets, self.state_outlets):
 
             # Extract patch data
-            ind, P_exit = patch
+            ind, P_exit, wA, normal, r = patch
 
-            # Stagnation enthalpy from interior and imposed exit pressure
-            # set the outlet state
-            ho_exit = self.ho.ravel(order="F")[ind]
-            halfVsq_exit = self.halfVsq.ravel(order="F")[ind]
-            h_exit = ho_exit - halfVsq_exit
-            state.set_P_h(P_exit, h_exit)
+            if i_exit == 0:
 
-            # Update conserved vars
-            # rho and u change, V stay the same
-            fac_rho = state.rho / self.conserved[..., 0].ravel(order="F")[ind]
-            for i in range(4):
-                self.conserved[..., i].ravel(order="F")[ind] *= fac_rho
-            self.conserved[..., 4].ravel(order="F")[ind] = state.rho * (
-                state.u + halfVsq_exit
-            )
+                # Stagnation enthalpy from interior and imposed exit pressure
+                # set the outlet state
+                ho_exit = self.ho.ravel(order="F")[ind]
+                halfVsq_exit = self.halfVsq.ravel(order="F")[ind]
+                h_exit = ho_exit - halfVsq_exit
+                state.set_P_h(P_exit, h_exit)
 
-            # Update secondary vars
-            self.u.ravel(order="F")[ind] = state.u
-            self.P.ravel(order="F")[ind] = P_exit
+                # Update conserved vars
+                # rho and u change, V stay the same
+                fac_rho = state.rho / self.conserved[..., 0].ravel(order="F")[ind]
+                for i in range(4):
+                    self.conserved[..., i].ravel(order="F")[ind] *= fac_rho
+                self.conserved[..., 4].ravel(order="F")[ind] = state.rho * (
+                    state.u + halfVsq_exit
+                )
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = P_exit
+
+            elif i_exit == 1:
+
+                # Characteristic boundary condition
+
+                # Extract the conserved vars from solution
+                rho = self.conserved[..., 0].ravel(order="F")[ind]
+                rhoVx = self.conserved[..., 1].ravel(order="F")[ind]
+                rhoVr = self.conserved[..., 2].ravel(order="F")[ind]
+                rhorVt = self.conserved[..., 3].ravel(order="F")[ind]
+                rhoe = self.conserved[..., 4].ravel(order="F")[ind]
+
+                # Update the state for this outlet from solution
+                u = self.u.ravel(order="F")[ind]
+                state.set_rho_u(rho, u)
+                a = state.a
+                P = state.P
+
+                # Apply a uniform correction
+                # Pav = np.sum(state.P*wA)
+                # dP = K_exit*(P_exit - Pav)
+
+                # Apply a local correction
+                dP = (P_exit - P) * 0.9
+
+                # dP = (P_exit - P) + (P_exit - Pav)
+
+                # # Force towards P_exit preserving a fraction of the variation
+                # # wrt area average
+                # Pav = np.sum(state.P*wA)
+                # dPav = P - Pav
+                # dP = K_exit*((P_exit+0.5*dPav) - P)
+
+                # Eqn. (80) from Giles (1992) gives perturbations to
+                # primative properties in terms of chics
+                # We want to send a wave upstream to drive the area-averaged
+                # pressure towards the target without altering the other chics
+                # So set c1 = c2 = c3 = 0
+                # and solve for perturbations due to c4 alone
+                dVm = -dP / rho / a
+                drho = dP / a / a
+                dVx = dVm * normal[0]
+                dVr = dVm * normal[1]
+
+                # We need to know u at the perturbed P and rho
+                # So set the outlet state to new values
+                rho_new = rho + drho
+                P_new = state.P + dP
+                state.set_P_rho(P_new, rho_new)
+
+                # New velocities
+                Vx_new = rhoVx / rho + dVx
+                Vr_new = rhoVr / rho + dVr
+                Vt_new = rhorVt / rho / r
+                halfVsq_new = 0.5 * (Vx_new**2 + Vr_new**2 + Vt_new**2)
+
+                # Perturb the conserved vars
+                rho[:] = rho_new
+                rhoVx[:] = rho_new * Vx_new
+                rhoVr[:] = rho_new * Vr_new
+                rhorVt[:] = rho_new * r * Vt_new
+                rhoe[:] = rho_new * (state.u + halfVsq_new)
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = state.P
+                self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
     def set_walls(self):
         """Zero the momentums on a wall."""
@@ -399,8 +557,49 @@ def get_periodics(g, procids):
     return periodics
 
 
+def get_inlet_data(patch):
+
+    _, di, dj, dk = np.shape(patch.get_indices())
+    C = patch.get_cut()
+    if di == 1:
+        dA = C.dAi
+    else:
+        raise NotImplementedError("This assumes the patch is on a const. i face")
+    normal = (dA / turbigen.util.vecnorm(dA)).mean(axis=(1, 2, 3))
+
+    return (
+        patch.get_flat_indices(order="F"),
+        patch.state.P + 0.0,
+        patch.state.T + 0.0,
+        patch.Alpha + 0.0,
+        patch.Beta + 0.0,
+        patch.state.rho,
+        patch.state.h,
+        patch.state.s,
+        patch.get_cut().r.reshape(-1),
+        normal,
+    )
+
+
 def get_outlet_data(patch):
-    return patch.get_flat_indices(order="F"), (patch.Pout + 0.0)
+
+    # Calculate a normal vector
+    # Assume the patch is flat
+    _, di, dj, dk = np.shape(patch.get_indices())
+
+    C = patch.get_cut()
+    if di == 1:
+        dA = C.dAi
+    else:
+        raise NotImplementedError("This assumes the patch is on a const. i face")
+    normal = (dA / turbigen.util.vecnorm(dA)).mean(axis=(1, 2, 3))
+
+    wA = patch.get_A_avg_weights(order="F")
+
+    # Nodal radii
+    r = C.r.reshape(-1)
+
+    return patch.get_flat_indices(order="F"), (patch.Pout + 0.0), wA, normal, r
 
 
 def send_slave(block_split, procids, periodics, settings):
@@ -570,9 +769,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
-            sb.set_inlets(rfin)
+            sb.set_inlets(rfin, conf.i_inlet)
 
-            sb.set_outlets()
+            sb.set_outlets(conf.i_exit, conf.K_exit)
 
             sb.residual()
 
@@ -705,16 +904,21 @@ def run(grid, settings={}, machine=None):
 
     dUlog = np.array(dUlog)
 
-    drho_ref = dUlog[1, 0]
-    drhoVx_ref = dUlog[1, 1]
-    drhoVr_ref = dUlog[1, 2]
-    drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
-    drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
-    drhoe_ref = dUlog[1, 4]
+    # drho_ref = dUlog[1, 0]
+    # drhoVx_ref = dUlog[1, 1]
+    # drhoVr_ref = dUlog[1, 2]
+    # drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
+    # drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
+    # drhoe_ref = dUlog[1, 4]
 
-    dUlog[:, 0] /= drho_ref
-    dUlog[:, 1:4] /= drhoV_ref
-    dUlog[:, 4] /= drhoe_ref
+    # dUlog[:, 0] /= drho_ref
+    # dUlog[:, 1:4] /= drhoV_ref
+    # dUlog[:, 4] /= drhoe_ref
+
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.semilogy(dUlog)
+    # plt.show()
 
 
 def get_geom(b):
