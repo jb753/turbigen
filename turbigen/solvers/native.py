@@ -67,8 +67,9 @@ class NativeConfig(BaseSolver):
     i_loss = 1
 
     i_exit = 1
-    i_inlet = 0
+    i_inlet = 1
     K_exit = 0.9
+    K_inlet = 0.2
 
     plot_conv = False
 
@@ -210,7 +211,7 @@ class SolverBlock:
             u_out = block.u.ravel(order="F")[outlet[0]]
             state_outlet.set_rho_u(rho_out, u_out)
 
-    def set_inlets(self, rfin, i_inlet):
+    def set_inlets(self, rfin, i_inlet, K_inlet):
         """Set conserved variables on inlets by relaxing density changes."""
 
         # Change inlet patches
@@ -219,7 +220,7 @@ class SolverBlock:
             # Expand patch data
             ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, normal = patch
 
-            tanAlpha = turbigen.util.tand(Alpha)
+            tanAl = turbigen.util.tand(Alpha)
             tanBeta = turbigen.util.tand(Beta)
             cosBeta = turbigen.util.cosd(Beta)
             sinBeta = turbigen.util.sind(Beta)
@@ -247,10 +248,10 @@ class SolverBlock:
                 Vin = np.sqrt(Vinsq)
 
                 # Resolve velocity components
-                Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
+                Vxin = Vin / np.sqrt((1.0 + tanAl**2) * (1.0 + tanBeta**2))
                 Vrin = Vxin * tanBeta
                 Vmin = np.sqrt(Vxin**2 + Vrin**2)
-                Vtin = Vmin * tanAlpha
+                Vtin = Vmin * tanAl
 
                 # Reset conserved vars on inlet
                 # Not sure about reseting the inlet density -
@@ -291,96 +292,78 @@ class SolverBlock:
                 state.set_P_rho(P, rho)
                 a = state.a
                 s = state.s
+                dsdrho = state.dsdrho_P
+                dhdrho = state.dhdrho_P
+                dsdP = state.dsdP_rho
+                dhdP = state.dhdP_rho
+                rhoa = rho * a
+                asq = a * a
 
                 # Calculate the inlet residuals
 
-                # # Giles (1988) Eqn. (5.11)
-                # R = np.stack(
-                #     (
-                #         P * (s - sin) / cv * 2.0,
-                #         rho * a * (Vt - tanAlpha * Vm),
-                #         rho * (ho - hoin),
-                #     )
-                # )
-
-                drho = np.empty_like(rho)
-                dVm = np.empty_like(rho)
-                dVt = np.empty_like(rho)
-                dP = np.empty_like(rho)
-
-                for i in range(len(ind)):
-
-                    # Dimensional residuals
-                    eps = (
-                        -np.stack(
-                            (
-                                s[i] - sin,
-                                Vt[i] - tanAlpha * Vm[i],
-                                ho[i] - hoin,
-                            )
-                        )
-                        * 0.2
+                # Dimensional residuals
+                eps = (
+                    np.stack(
+                        (
+                            s - sin,
+                            Vt - tanAl * Vm,
+                            ho - hoin,
+                        ),
+                        axis=-1,
                     )
+                    * -K_inlet
+                )[..., None]
 
-                    depsdF = np.stack(
+                # Jacobian
+                fac = (
+                    -Vm * dsdrho / rhoa
+                    - Vt * dsdrho * tanAl / rhoa
+                    - dhdP * dsdrho
+                    + dhdrho * dsdP
+                )
+                dcdeps = (
+                    np.stack(
                         [
-                            [state.dsdrho_P[i], 0.0, 0.0, state.dsdP_rho[i]],
-                            [0.0, -tanAlpha, 1.0, 0.0],
-                            [state.dhdrho_P[i], Vm[i], Vt[i], state.dhdP_rho[i]],
+                            [
+                                Vm * a / rho
+                                + Vt * a * tanAl / rho
+                                + asq * dhdP
+                                + dhdrho,
+                                Vt * (asq * dsdP + dsdrho),
+                                -asq * dsdP - dsdrho,
+                            ],
+                            [
+                                dhdrho * tanAl,
+                                -Vm * dsdrho
+                                - rhoa * dhdP * dsdrho
+                                + rhoa * dhdrho * dsdP,
+                                -dsdrho * tanAl,
+                            ],
+                            [dhdrho, Vt * dsdrho, -dsdrho],
                         ]
                     )
+                    / fac
+                )
+                dcdeps[2] *= 2
+                dcdeps = np.moveaxis(dcdeps, 2, 0)
 
-                    dFdc = np.stack(
-                        [
-                            [-1.0 / a[i] ** 2, 0.0, 0.5 / a[i] ** 2],
-                            [0.0, 0.0, 0.5 / rho[i] / a[i]],
-                            [0.0, 1.0 / rho[i] / a[i], 0.0],
-                            [0.0, 0.0, 0.5],
-                        ]
-                    )
+                c = dcdeps @ eps
+                c = c.squeeze().T
 
-                    B = np.linalg.inv(depsdF @ dFdc)
+                # Calculate primitive changes
+                drho = (-c[0] + 0.5 * c[2]) / asq
+                dVm = 0.5 * c[2] / rhoa
+                dVt = c[1] / rhoa
+                dP = 0.5 * c[2]
 
-                    c = B @ eps
-
-                    # Calculate primitive changes
-                    ai = a[i]
-                    rhoi = rho[i]
-                    drho[i] = (-c[0] + 0.5 * c[2]) / ai / ai
-                    dVm[i] = 0.5 * c[2] / rhoi / ai
-                    dVt[i] = c[1] / rhoi / ai
-                    dP[i] = 0.5 * c[2]
-
-                # print(dVt.mean())
-                # quit()
-                # # # Calculate chics Eqn. (5.15)
-                # # Mm = Vm / a
-                # # Mt = Vt / a
-                # # gfac = 1.0 / (ga - 1.0)
-                # # Mtot = 1.0 + Mm + Mt * tanAlpha
-                # # dc1 = -R[0]
-                # # dc2 = (
-                # #     -R[0] * gfac * tanAlpha + R[1] * (1.0 + Mm) + R[2] * tanAlpha
-                # # ) / -Mtot
-                # # dc3 = (-R[0] * gfac - R[1] * Mt + R[2]) / -Mtot
-
-                # # Calculate primitive changes
-                # drho = (-dc1 + dc3) / a / a
-                # dVm = dc3 / rho / a
-                # dVt = dc2 / rho / a
-                # dP = dc3
-
+                # Now evaluate new flow field
                 # Force onto the target beta
+                rho_new = rho + drho
+                P_new = P + dP
                 Vm_new = Vm + dVm
                 Vx_new = Vm_new * cosBeta
                 Vr_new = Vm_new * sinBeta
                 Vt_new = Vt + dVt
-
-                # Now evaluate new flow field
-                # dVx = dVm * normal[0]
-                # dVr = dVm * normal[1]
-                rho_new = rho + drho
-                P_new = P + dP
 
                 state.set_P_rho(P_new, rho_new)
 
@@ -394,13 +377,6 @@ class SolverBlock:
                 self.conserved[..., 4].ravel(order="F")[ind] = rho_new * (
                     state.u + halfVsq_new
                 )
-
-                # # Perturb the conserved vars
-                # rho[:] = rho_new
-                # rhoVx[:] = rho_new * Vx_new
-                # rhoVr[:] = rho_new * Vr_new
-                # rhorVt[:] = rho_new * r * Vt_new
-                # rhoe[:] = rho_new * (state.u + halfVsq_new)
 
                 # Update secondary vars
                 self.u.ravel(order="F")[ind] = state.u
@@ -833,7 +809,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
-            sb.set_inlets(rfin, conf.i_inlet)
+            sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
 
             sb.set_outlets(conf.i_exit, conf.K_exit)
 

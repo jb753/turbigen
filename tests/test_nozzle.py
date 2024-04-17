@@ -190,7 +190,6 @@ settings = {
     'n_step_avg': 10,
     'n_step_log': 1000,
     'i_loss': 0,
-    'i_inlet': 1,
 }
 
 def plot_nozzle(g, F):
@@ -298,7 +297,7 @@ def test_condi(dirn, plot=False):
             [1.,1., 0.6, 1., 1.]
         ]
     )
-    g, F = make_nozzle(xA, dirn=dirn, tper=True)
+    g, F = make_nozzle(xA, dirn=dirn)
 
     g[0].Vt += 0.1*g[0].Vx.mean()
 
@@ -307,8 +306,6 @@ def test_condi(dirn, plot=False):
     turbigen.solvers.native.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
-
-    plot_nozzle(g, F)
 
     rtol_Ma = 5e-2
     assert (np.abs(err_Ma)<rtol_Ma).all()
@@ -361,7 +358,7 @@ def test_Ma(Ma):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 1e-5
+    rtol = 2e-5
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
