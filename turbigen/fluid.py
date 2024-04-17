@@ -295,6 +295,23 @@ class PerfectState(StructuredData):
             self.P / self.Ps0
         )
 
+    @dependent_property
+    def dsdrho_P(self):
+        return -self.cp / self.rho
+
+    @dependent_property
+    def dsdP_rho(self):
+        return self.cv / self.P
+
+    @dependent_property
+    def dhdP_rho(self):
+        ga = self.gamma
+        return ga / (ga - 1.0) * self.rho
+
+    @dependent_property
+    def dhdrho_P(self):
+        return -self.cp * self.T / self.rho
+
     def set_Tu0(self, Tu0):
         # Set the temperature for internal energy datum u(Tu0) = 0
         P = self.P.copy()
@@ -517,6 +534,10 @@ class RealState(StructuredData):
 
     def set_P_h(self, P, h):
         self._store(CoolProp.HmassP_INPUTS, h, P)
+        return self
+
+    def set_P_rho(self, P, rho):
+        self._store(CoolProp.DmassP_INPUTS, rho, P)
         return self
 
     def set_P_s(self, P, s):

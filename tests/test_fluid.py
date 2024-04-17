@@ -333,6 +333,9 @@ def test_set_properties(S1):
     S2.set_rho_s(S1.rho, S1.s)
     assert S1 == S2
 
+    S2.set_P_rho(S1.P, S1.rho)
+    assert S1 == S2
+
     Ma_ref = 0.6
     So2 = S2.to_stagnation(Ma_ref)
     S2a = So2.to_static(Ma_ref)
@@ -369,3 +372,32 @@ def test_perfect():
     S2s = S1.copy().set_P_s(S2.P, S1.s)
     gae = (ga - 1.0) / ga
     assert np.isclose(S2s.T, S1.T * (S2.P / S1.P) ** gae)
+
+def test_perfect_deriv():
+    """Check that perfect gas derivatives are correct by finite difference"""
+
+    cp = 1105.0
+    ga = 1.3
+    rho1 = 1.
+    P1 = 1e5
+    delta = np.linspace(0.8, 1.2)
+    Pv = delta * P1
+    rhov = delta * rho1
+
+    S1 = fluid.PerfectState.from_properties(cp, ga, mu=1.8e-5, shape=delta.shape)
+
+    rtol = 1e-3
+
+    # by rho first at constant P
+    S1.set_P_rho(P1, rhov)
+    dsdrho = np.gradient(S1.s, rhov)
+    dhdrho = np.gradient(S1.h, rhov)
+    assert np.allclose(S1.dsdrho_P[1:-1], dsdrho[1:-1], rtol=rtol)
+    assert np.allclose(S1.dhdrho_P[1:-1], dhdrho[1:-1], rtol=rtol)
+
+    # by P first at constant rho
+    S1.set_P_rho(Pv, rho1)
+    dsdP = np.gradient(S1.s, Pv)
+    dhdP = np.gradient(S1.h, Pv)
+    assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
+    assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)

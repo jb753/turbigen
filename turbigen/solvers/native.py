@@ -59,7 +59,7 @@ class NativeConfig(BaseSolver):
     damping_factor = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
-    nstep_damp = 100
+    nstep_damp = 500
     """Number of steps to apply damping."""
 
     i_scheme = 1
@@ -68,7 +68,9 @@ class NativeConfig(BaseSolver):
 
     i_exit = 1
     i_inlet = 0
-    K_exit = 1.0
+    K_exit = 0.9
+
+    plot_conv = False
 
 
 def get_dw(block):
@@ -219,6 +221,8 @@ class SolverBlock:
 
             tanAlpha = turbigen.util.tand(Alpha)
             tanBeta = turbigen.util.tand(Beta)
+            cosBeta = turbigen.util.cosd(Beta)
+            sinBeta = turbigen.util.sind(Beta)
 
             if i_inlet == 0:
 
@@ -252,7 +256,7 @@ class SolverBlock:
                 # Not sure about reseting the inlet density -
                 # seems to compromise stability
                 # Needs a lower rfin if we reset the inlet density
-                self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+                # self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
                 self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
                 self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
                 self.conserved[..., 3].ravel(order="F")[ind] = (
@@ -273,7 +277,6 @@ class SolverBlock:
                 rhoVx = self.conserved[..., 1].ravel(order="F")[ind]
                 rhoVr = self.conserved[..., 2].ravel(order="F")[ind]
                 rhorVt = self.conserved[..., 3].ravel(order="F")[ind]
-                rhoe = self.conserved[..., 4].ravel(order="F")[ind]
                 P = self.P.ravel(order="F")[ind]
                 ho = self.ho.ravel(order="F")[ind]
 
@@ -288,55 +291,116 @@ class SolverBlock:
                 state.set_P_rho(P, rho)
                 a = state.a
                 s = state.s
-                cv = state.cv
-                ga = state.gamma
 
                 # Calculate the inlet residuals
-                # Giles (1988) Eqn. (5.11)
-                R = np.stack(
-                    (
-                        P * (s - sin) / cv,
-                        rho * a * (Vt - tanAlpha * Vm),
-                        rho * (ho - hoin),
+
+                # # Giles (1988) Eqn. (5.11)
+                # R = np.stack(
+                #     (
+                #         P * (s - sin) / cv * 2.0,
+                #         rho * a * (Vt - tanAlpha * Vm),
+                #         rho * (ho - hoin),
+                #     )
+                # )
+
+                drho = np.empty_like(rho)
+                dVm = np.empty_like(rho)
+                dVt = np.empty_like(rho)
+                dP = np.empty_like(rho)
+
+                for i in range(len(ind)):
+
+                    # Dimensional residuals
+                    eps = (
+                        -np.stack(
+                            (
+                                s[i] - sin,
+                                Vt[i] - tanAlpha * Vm[i],
+                                ho[i] - hoin,
+                            )
+                        )
+                        * 0.2
                     )
-                )
 
-                # Calculate chics Eqn. (5.15)
-                Mm = Vm / a
-                Mt = Vt / a
-                gfac = 1.0 / (ga - 1.0)
-                Mtot = 1.0 + Mm + Mt * tanAlpha
-                dc1 = -R[0]
-                dc2 = (
-                    -R[0] * gfac * tanAlpha + R[1] * (1.0 + Mm) + R[2] * tanAlpha
-                ) / -Mtot
-                dc3 = (-R[0] * gfac - R[1] * Mt + R[2]) / -Mtot
+                    depsdF = np.stack(
+                        [
+                            [state.dsdrho_P[i], 0.0, 0.0, state.dsdP_rho[i]],
+                            [0.0, -tanAlpha, 1.0, 0.0],
+                            [state.dhdrho_P[i], Vm[i], Vt[i], state.dhdP_rho[i]],
+                        ]
+                    )
 
-                # Calculate primitive changes
-                drho = (-dc1 + dc3) / a / a
-                dVm = dc3 / rho / a
-                dVt = dc2 / rho / a
-                dP = dc3
+                    dFdc = np.stack(
+                        [
+                            [-1.0 / a[i] ** 2, 0.0, 0.5 / a[i] ** 2],
+                            [0.0, 0.0, 0.5 / rho[i] / a[i]],
+                            [0.0, 1.0 / rho[i] / a[i], 0.0],
+                            [0.0, 0.0, 0.5],
+                        ]
+                    )
+
+                    B = np.linalg.inv(depsdF @ dFdc)
+
+                    c = B @ eps
+
+                    # Calculate primitive changes
+                    ai = a[i]
+                    rhoi = rho[i]
+                    drho[i] = (-c[0] + 0.5 * c[2]) / ai / ai
+                    dVm[i] = 0.5 * c[2] / rhoi / ai
+                    dVt[i] = c[1] / rhoi / ai
+                    dP[i] = 0.5 * c[2]
+
+                # print(dVt.mean())
+                # quit()
+                # # # Calculate chics Eqn. (5.15)
+                # # Mm = Vm / a
+                # # Mt = Vt / a
+                # # gfac = 1.0 / (ga - 1.0)
+                # # Mtot = 1.0 + Mm + Mt * tanAlpha
+                # # dc1 = -R[0]
+                # # dc2 = (
+                # #     -R[0] * gfac * tanAlpha + R[1] * (1.0 + Mm) + R[2] * tanAlpha
+                # # ) / -Mtot
+                # # dc3 = (-R[0] * gfac - R[1] * Mt + R[2]) / -Mtot
+
+                # # Calculate primitive changes
+                # drho = (-dc1 + dc3) / a / a
+                # dVm = dc3 / rho / a
+                # dVt = dc2 / rho / a
+                # dP = dc3
+
+                # Force onto the target beta
+                Vm_new = Vm + dVm
+                Vx_new = Vm_new * cosBeta
+                Vr_new = Vm_new * sinBeta
+                Vt_new = Vt + dVt
 
                 # Now evaluate new flow field
-                dVx = dVm * normal[0]
-                dVr = dVm * normal[1]
+                # dVx = dVm * normal[0]
+                # dVr = dVm * normal[1]
                 rho_new = rho + drho
-                Vx_new = Vx + dVx
-                Vr_new = Vr + dVr
-                Vt_new = Vt + dVt
                 P_new = P + dP
 
                 state.set_P_rho(P_new, rho_new)
 
                 halfVsq_new = 0.5 * (Vx_new**2 + Vr_new**2 + Vt_new**2)
 
-                # Perturb the conserved vars
-                rho[:] = rho_new
-                rhoVx[:] = rho_new * Vx_new
-                rhoVr[:] = rho_new * Vr_new
-                rhorVt[:] = rho_new * r * Vt_new
-                rhoe[:] = rho_new * (state.u + halfVsq_new)
+                # Reset conserved vars on inlet
+                self.conserved[..., 0].ravel(order="F")[ind] = rho_new
+                self.conserved[..., 1].ravel(order="F")[ind] = rho_new * Vx_new  # rhoVx
+                self.conserved[..., 2].ravel(order="F")[ind] = rho_new * Vr_new  # rhoVr
+                self.conserved[..., 3].ravel(order="F")[ind] = rho_new * r * Vt_new
+                self.conserved[..., 4].ravel(order="F")[ind] = rho_new * (
+                    state.u + halfVsq_new
+                )
+
+                # # Perturb the conserved vars
+                # rho[:] = rho_new
+                # rhoVx[:] = rho_new * Vx_new
+                # rhoVr[:] = rho_new * Vr_new
+                # rhorVt[:] = rho_new * r * Vt_new
+                # rhoe[:] = rho_new * (state.u + halfVsq_new)
 
                 # Update secondary vars
                 self.u.ravel(order="F")[ind] = state.u
@@ -395,7 +459,7 @@ class SolverBlock:
                 # dP = K_exit*(P_exit - Pav)
 
                 # Apply a local correction
-                dP = (P_exit - P) * 0.9
+                dP = (P_exit - P) * K_exit
 
                 # dP = (P_exit - P) + (P_exit - Pav)
 
@@ -729,7 +793,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.02
+    rfin = 0.1
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -904,21 +968,23 @@ def run(grid, settings={}, machine=None):
 
     dUlog = np.array(dUlog)
 
-    # drho_ref = dUlog[1, 0]
-    # drhoVx_ref = dUlog[1, 1]
-    # drhoVr_ref = dUlog[1, 2]
-    # drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
-    # drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
-    # drhoe_ref = dUlog[1, 4]
+    if conf.plot_conv:
+        drho_ref = dUlog[1, 0]
+        drhoVx_ref = dUlog[1, 1]
+        drhoVr_ref = dUlog[1, 2]
+        drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
+        drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
+        drhoe_ref = dUlog[1, 4]
 
-    # dUlog[:, 0] /= drho_ref
-    # dUlog[:, 1:4] /= drhoV_ref
-    # dUlog[:, 4] /= drhoe_ref
+        dUlog[:, 0] /= drho_ref
+        dUlog[:, 1:4] /= drhoV_ref
+        dUlog[:, 4] /= drhoe_ref
 
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.semilogy(dUlog)
-    # plt.show()
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        ax.semilogy(dUlog)
+        plt.show()
 
 
 def get_geom(b):
