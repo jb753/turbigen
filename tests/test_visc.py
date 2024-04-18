@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 10000,
-    'n_step_avg': 500,
+    'n_step': 32000,
+    'n_step_avg': 200,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
@@ -34,10 +34,10 @@ if rank > 0:
 def make_pipe():
     """Generate the grid."""
 
-    L_h = 8.
-    AR_merid=2.
+    L_h = 12.
+    AR_merid=4.
     AR_pitch=1.
-    htr = 0.9
+    htr = 0.99
 
     # Geometry
     h = 0.1
@@ -72,15 +72,15 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.005
-    dmax = 0.05
+    dw = 0.002
+    dmax = 0.04
     ER = 1.1
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
     ddmax = np.diff(cluv).max()*h
 
     # Numbers of grid points
     nj = len(cluv)
-    nk = 9
+    nk = 5
     ni = int(L/ddmax/AR_merid)
     print(ni, nj, nk)
 
@@ -229,33 +229,42 @@ def test_poiseuille():
     turbigen.solvers.native.run(g, settings)
 
     b = g[0]
-
-    fig, ax = plt.subplots()
     C = b[:, b.nj//2, b.nk//2]
     P = C.P
     Po1 = C.Po[0]
     P1 = C.P[0]
 
-    dPdx = np.gradient(C.P,C.x)
+    # fig, ax = plt.subplots()
+    for b in g:
+        C = b[:, b.nj//2, b.nk//2]
+        dPdx = np.gradient(C.P,C.x)
+        mu = F.mu
+        Cp = (C.P-P1)/(Po1-P1)
+        # ax.plot(C.x, Cp, '-x')
 
-    mu = F.mu
-    Cp = (P-P1)/(Po1-P1)
-    ax.plot(C.x, Cp, 'k-')
+    # fig, ax = plt.subplots()
+    # for b in g:
+        # C = b[:, b.nj//2, b.nk//2]
+        # ax.plot(C.x, C.Vx, '-x')
 
+    iplot = int(b.ni*0.9)
 
-    iplot = b.ni//3*2
-
-    fig, ax = plt.subplots()
+    b = g[-1]
     C = b[iplot, :, b.nk//2]
     h = C.r.ptp()
     rnorm = (C.r-C.r.min())/C.r.ptp()
     K = dPdx[iplot]/2./mu*h*h
     soln = -K * rnorm*(1.-rnorm)
-    ax.plot(C.Vx, rnorm, '-x')
-    ax.plot(soln, rnorm, '-x')
-    ax.set_title('r')
+    err = (C.Vx-soln)/soln.max()
 
-    plt.show()
+    # fig, ax = plt.subplots()
+    # ax.plot(C.Vx, rnorm, '-x')
+    # ax.plot(soln, rnorm, '-x')
+    # ax.set_title('r')
+    # plt.show()
+
+    print(f'Analytical solution error: {err.min()}, {err.max()}, {err.mean()}')
+    assert np.abs(err).mean()<0.05
 
 
 if __name__=='__main__':

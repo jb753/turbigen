@@ -977,14 +977,14 @@ def run(grid, settings={}, machine=None):
     #     # ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
     #     ax.axis('equal')
 
-    fig, ax = plt.subplots()
-    for b in grid:
-        C = b[:, b.nj // 2, :]
-        cm = ax.contourf(C.x, C.rt, C.Ma)
-        ax.plot(C.x, C.rt, "k-", lw=0.2)
-        ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
-        plt.colorbar(cm)
-        ax.axis("equal")
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:, b.nj // 2, :]
+    #     cm = ax.contourf(C.x, C.rt, C.Ma)
+    #     ax.plot(C.x, C.rt, "k-", lw=0.2)
+    #     ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
+    #     plt.colorbar(cm)
+    #     ax.axis("equal")
 
     # fig, ax = plt.subplots()
     # for b in grid:
@@ -1001,22 +1001,13 @@ def run(grid, settings={}, machine=None):
     #     ax.plot(b.x[sb.wall_nodes], b.rt[sb.wall_nodes], 'k*')
     #     ax.axis('equal')
 
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks_out):
-        C = b[:, b.nj // 2, :]
-        ax.plot(C.x, C.rt, "k-", lw=0.2)
-        ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
-        ax.plot(b.x[sb.wall_nodes], b.rt[sb.wall_nodes], "k*")
-        ax.axis("equal")
-
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks):
-        C = b[b.ni // 2, :, b.nk // 2]
-        r = C.r
-        rc = 0.5 * (r[:-1] + r[1:])
-        ax.plot(sb.f[b.ni // 2, :, b.nk // 2, 1], rc, "k-x")
-
-    plt.show()
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     C = b[b.ni // 2, :, b.nk // 2]
+    #     r = C.r
+    #     rc = 0.5 * (r[:-1] + r[1:])
+    #     ax.plot(sb.f[b.ni // 2, :, b.nk // 2, 1], rc, "k-x")
+    # plt.show()
 
     if conf.plot_conv:
 
