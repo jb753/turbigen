@@ -894,16 +894,20 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     real*4, intent (inout)  :: mu_turb(ni-1, nj-1, nk-1)
     integer :: i
 
-    ! real*4 :: Vxrt(ni, nj, nk, 3)
 
+    ! Evaluate velocities
     do i = 1,3
         V(:,:,:, i) = conserved(:,:,:,i+1)/conserved(:,:,:,1)
     end do
     V(:,:,:,3) = V(:,:,:,3)/r
 
+
+    ! Cell-centered vars
     call node_to_cell(r, rc, ni, nj, nk, 1)
     call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
+
+    ! Face-centered vars
     call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
 
     ! Calculate grad V
@@ -913,18 +917,20 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Calculate divergence of V
-    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
-    divV = divV*2e0/3e0
+    ! call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    ! divV = divV*2e0/3e0
 
     ! tau contains the six unique terms in the tensor
+    ! divV and gradV are cell-centered
+
     ! tau_xx = 2*dVx_dx - 2/3*divV
-    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
+    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1)! - divV
 
     ! tau_rr = 2*dVr_dr - 2/3*divV
-    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
+    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2)! - divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc! - divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
@@ -953,32 +959,34 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     end where
 
     do i = 1,6
-        tauc(:,:,:,i) = tauc(:,:,:,i) *( mu + mu_turb)
+        tauc(:,:,:,i) = -tauc(:,:,:,i) *( mu + mu_turb)
     end do
 
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
 
+
     ! We need to assemble the viscous fluxes from the stress tensor components
-    call viscous_flux(fi, taui, ri, walli, ni, nj-1, nk-1)
-    call viscous_flux(fj, tauj, rj, wallj, ni-1, nj, nk-1)
-    call viscous_flux(fk, tauk, rk, wallk, ni-1, nj-1, nk)
+    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
+    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
+    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
     ! Get the net flux into each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    ! fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
+    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    ! fvisc = 0.5e0*fvisc_new + 0.5e0*fvisc
+    ! fvisc = -fvisc_new
 
 end subroutine
 
-subroutine viscous_flux(f, tau, r, wall, ni, nj, nk)
+subroutine viscous_flux(f, tau, r, ni, nj, nk)
 
     implicit none
     real*4, intent (inout) :: tau(ni, nj, nk, 6)
     real*4, intent (inout) :: f(ni, nj, nk, 3, 5)
     real*4, intent (inout) :: r(ni, nj, nk)
-    logical*1, intent (inout) :: wall(ni, nj, nk)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj

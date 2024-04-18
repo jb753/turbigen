@@ -62,6 +62,8 @@ class NativeConfig(BaseSolver):
     nstep_damp = 500
     """Number of steps to apply damping."""
 
+    xllim_pitch = 0.03
+
     i_scheme = 1
 
     i_loss = 1
@@ -110,13 +112,15 @@ def get_dw(block):
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
-    def __init__(self, block):
+    def __init__(self, block, conf):
         """Initialise from a standard Block object."""
 
         # Primaries
         self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(
             typ
         )
+
+        self.conf = conf
 
         self.mu = block.mu
 
@@ -139,7 +143,9 @@ class SolverBlock:
         self.vol = np.asfortranarray(block.vol_new).astype(typ)
         self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
         self.Omega = block.Omega.mean().astype(typ)
-        xllim = block.pitch * 0.5 * (block.r.max() + block.r.min()) * 0.03
+        xllim = (
+            block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
+        )
         xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
         xlength = (0.41 * xlength) ** 2.0
         self.xlength = np.asfortranarray(block.vol).astype(typ) * np.nan
@@ -162,7 +168,7 @@ class SolverBlock:
         #   k faces: (ni-1, nj-1, nk)
         # equal to one if the face is a wall, zero otherwise
         self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
-        self.wall_nodes = block.get_wall(trim=0)
+        self.wall_nodes = block.get_wall()
 
         # ni, nj, nk = self.wall_nodes.shape
         # import matplotlib.pyplot as plt
@@ -482,12 +488,17 @@ class SolverBlock:
 
     def set_walls(self):
         """Zero the momentums on a wall."""
-        self.conserved[..., 1][self.wall_nodes] = 0.0
-        self.conserved[..., 2][self.wall_nodes] = 0.0
-        self.conserved[..., 3][self.wall_nodes] = 0.0
-        self.conserved[..., 4][self.wall_nodes] = (
-            self.conserved[..., 0][self.wall_nodes] * self.u[self.wall_nodes]
-        )
+        iwall = self.wall_nodes
+
+        # Update conserved vars
+        self.conserved[..., 1][iwall] = 0.0
+        self.conserved[..., 2][iwall] = 0.0
+        self.conserved[..., 3][iwall] = 0.0
+        self.conserved[..., 4][iwall] = self.conserved[..., 0][iwall] * self.u[iwall]
+
+        # Update secondary vars
+        self.ho[iwall] -= self.halfVsq[iwall]
+        self.halfVsq[iwall] = 0.0
 
     def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -550,7 +561,7 @@ class SolverBlock:
     def damp(self, fdamp):
         damp(self.dU1, fdamp)
 
-    def calculate_viscous(self):
+    def set_viscous(self):
         viscous_force(
             self.conserved,
             self.f,
@@ -570,9 +581,34 @@ def get_periodic_data(patch):
     ind = patch.get_flat_indices("F")
     match = patch.match
     perm, flip = match.get_match_perm_flip()
+    # print(f'Getting periodic {patch}')
+    # print('dir', patch.ijkdir)
+    # print('match dir', patch.match.ijkdir)
+    # print('perm',perm)
+    # print('flip',flip)
     nxind = match.get_flat_indices("F", perm, flip)
     bid = patch.block.grid.index(patch.block)
     nxbid = match.block.grid.index(match.block)
+
+    # Check the coords match
+    b1 = patch.block
+    b2 = patch.match.block
+
+    assert np.allclose(
+        b1.x.ravel(order="F")[ind],
+        b2.x.ravel(order="F")[nxind],
+    )
+
+    assert np.allclose(
+        b1.r.ravel(order="F")[ind],
+        b2.r.ravel(order="F")[nxind],
+    )
+
+    t1 = np.mod(b1.t.ravel(order="F")[ind], b1.pitch) + 1.0
+    t2 = np.mod(b2.t.ravel(order="F")[nxind], b2.pitch) + 1.0
+    dt = t1 - t2
+    assert np.allclose(t1, t2)
+
     return bid, ind, nxbid, nxind
 
 
@@ -642,7 +678,7 @@ def get_outlet_data(patch):
     return patch.get_flat_indices(order="F"), (patch.Pout + 0.0), wA, normal, r
 
 
-def send_slave(block_split, procids, periodics, settings):
+def send_slave(block_split, procids, periodics):
 
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
@@ -654,11 +690,6 @@ def send_slave(block_split, procids, periodics, settings):
 
     for iproc in range(1, size):
         comm.send(periodics, dest=iproc)
-
-    comm.Barrier()
-
-    for iproc in range(1, size):
-        comm.send(settings, dest=iproc)
 
     comm.Barrier()
 
@@ -678,8 +709,6 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             v1 = b1.conserved
         elif variable == "residual":
             v1 = b1.dU1
-        elif variable == "coords":
-            v1 = b1.xrt
         nv = v1.shape[-1]
 
         # Just set the periodic if on same rank
@@ -690,28 +719,14 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                 v2 = b2.conserved
             elif variable == "residual":
                 v2 = b2.dU1
-            elif variable == "coords":
-                v2 = b2.xrt
 
             for i in range(nv):
                 v1i = v1[..., i].ravel(order="F")
                 v2i = v2[..., i].ravel(order="F")
 
-                if variable == "coords":
-                    v1ii = v1i[ind].copy()
-                    v2ii = v2i[nxind].copy()
-                    # Take mod wrt pitch
-                    if i == 2:
-                        v1ii = np.mod(v1ii, b1.pitch) + 1.0
-                        v2ii = np.mod(v2ii, b2.pitch) + 1.0
-                    assert np.allclose(v1ii, v2ii)
-                    continue
-
-                else:
-
-                    avg = 0.5 * (v1i[ind] + v2i[nxind])
-                    v1i[ind] = avg
-                    v2i[nxind] = avg
+                avg = 0.5 * (v1i[ind] + v2i[nxind])
+                v1i[ind] = avg
+                v2i[nxind] = avg
 
         # Otherwise, communication is needed
         else:
@@ -730,12 +745,18 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
+                # print(f'rank {rank} sending to {nxprocid}')
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+                # print(f'rank {rank} waiting for {nxprocid}')
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                # print(f'rank {rank} done patch')
             # If our rank is higher than next rank, recieve first
             else:
+                # print(f'rank {rank} waiting for {nxprocid}')
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                # print(f'rank {rank} sending to {nxprocid}')
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+                # print(f'rank {rank} done patch')
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
@@ -758,14 +779,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         comm.Barrier()
         periodics_all = comm.recv()
         comm.Barrier()
-        conf = comm.recv()
-        comm.Barrier()
         master_flag = False
     else:
         master_flag = True
         dUlog = []
 
     # Calculate smoothing and inlet relaxation scaled by CFL
+    conf = blocks[0].conf
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
@@ -792,9 +812,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     dUe_ref = None
 
-    # Check periodics
-    exchange_periodics(blocks, bid_local, periodics, variable="coords")
-
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
@@ -806,12 +823,17 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb = blocks[iblock]
 
+            sb.set_walls()
+
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
             sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
 
             sb.set_outlets(conf.i_exit, conf.K_exit)
+
+            if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
+                sb.set_viscous()
 
             sb.residual()
 
@@ -823,7 +845,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         for iblock in range(nblock):
             sb = blocks[iblock]
 
-            if conf.damping_factor and istep > conf.nstep_damp:
+            if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
                 sb.damp(conf.damping_factor)
 
             sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
@@ -832,21 +854,22 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if not np.mod(istep, 2) and istep > 100 and conf.i_loss > 0:
-                sb.calculate_viscous()
-
         if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
+
+            # print(f'rank {rank} sending residuals')
 
             # Send residuals to master proc
             dUnow = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
 
             if rank:
                 comm.send(dUnow, dest=0)
-                terminate = np.empty((1,), dtype=int)
-                comm.Recv([terminate, 1, MPI.INT], source=0, tag=rank)
-                if terminate:
-                    comm.send(blocks, dest=0)
-                    return
+
+                # terminate = np.empty((1,), dtype=int)
+                # comm.Recv([terminate, 1, MPI.INT], source=0, tag=rank)
+                # if terminate:
+                #     comm.send(blocks, dest=0)
+                #     return
+
             else:
                 dUall = [
                     dUnow,
@@ -866,18 +889,20 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 dUlognow = np.stack(dUall).mean(axis=0)
                 dUlog.append(dUlognow)
 
-                if not dUe_ref:
-                    dUe_ref = dUlognow[-1] * conf.conv_lim
+                # if not dUe_ref:
+                #     dUe_ref = dUlognow[-1] * conf.conv_lim
+                # if dUlognow[-1] < dUe_ref:
+                #     terminate = np.array((1,), dtype=int)
+                # else:
+                #     terminate = np.array((0,), dtype=int)
 
-                if dUlognow[-1] < dUe_ref:
-                    terminate = np.array((1,), dtype=int)
-                else:
-                    terminate = np.array((0,), dtype=int)
-                for iproc in range(1, size):
-                    comm.Send([terminate, 1, MPI.INT], dest=iproc, tag=iproc)
+                # for iproc in range(1, size):
+                #     comm.Send([terminate, 1, MPI.INT], dest=iproc, tag=iproc)
 
-                if terminate:
-                    return blocks, dUlog
+                # if terminate:
+                #     return blocks, dUlog
+
+            # print(f'rank {rank} done logging {istep}')
 
     if master_flag:
         return blocks, dUlog
@@ -893,7 +918,7 @@ def run(grid, settings={}, machine=None):
 
     nodes = np.sum([b.size for b in grid])
 
-    blocks = [SolverBlock(b) for b in grid]
+    blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):
         b.bid = ib
 
@@ -913,10 +938,10 @@ def run(grid, settings={}, machine=None):
                 block_split[-1].append(b)
 
     logger.info("Sending data to processors...")
-    send_slave(block_split, procids, periodics, conf)
+    send_slave(block_split, procids, periodics)
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes, conf)
+    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes)
 
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
@@ -942,9 +967,60 @@ def run(grid, settings={}, machine=None):
 
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 
-    dUlog = np.array(dUlog)
+    import matplotlib.pyplot as plt
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:,b.nj//2,:]
+    #     ax.contourf(C.x, C.rt, C.rho)
+    #     # ax.plot(C.x, C.rt, 'k-', lw=0.2)
+    #     # ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
+    #     ax.axis('equal')
+
+    fig, ax = plt.subplots()
+    for b in grid:
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.Ma)
+        ax.plot(C.x, C.rt, "k-", lw=0.2)
+        ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
+        plt.colorbar(cm)
+        ax.axis("equal")
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:,b.nj//2,:]
+    #     cm = ax.contourf(C.x, C.rt, C.w)
+    #     plt.colorbar(cm)
+    #     ax.axis('equal')
+
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks_out):
+    #     C = b[:,:,b.nk//2]
+    #     ax.(C.x, C.r, sb.f[:,:,'k-', lw=0.2)
+    #     ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
+    #     ax.plot(b.x[sb.wall_nodes], b.rt[sb.wall_nodes], 'k*')
+    #     ax.axis('equal')
+
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks_out):
+        C = b[:, b.nj // 2, :]
+        ax.plot(C.x, C.rt, "k-", lw=0.2)
+        ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
+        ax.plot(b.x[sb.wall_nodes], b.rt[sb.wall_nodes], "k*")
+        ax.axis("equal")
+
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks):
+        C = b[b.ni // 2, :, b.nk // 2]
+        r = C.r
+        rc = 0.5 * (r[:-1] + r[1:])
+        ax.plot(sb.f[b.ni // 2, :, b.nk // 2, 1], rc, "k-x")
+
+    plt.show()
 
     if conf.plot_conv:
+
+        dUlog = np.array(dUlog)
         drho_ref = dUlog[1, 0]
         drhoVx_ref = dUlog[1, 1]
         drhoVr_ref = dUlog[1, 2]

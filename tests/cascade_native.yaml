@@ -45,23 +45,31 @@ blades:
 
 # Computational mesh generation
 mesh:
-  type: h  # Mesh topology
-  yplus: 30.0  # Non-dimensional wall distance
-  resolution_factor: 0.5  # Double grid spacing in each direction
-  # ni_TE: 4
-  # dm_TE: 0.02
-  # dm_LE: 0.005
+
+  type: oh
+  yplus: 30.
+  gbcs_path: runs/cascade_native/mesh
+  # resolution_factor: 0.5  # Double grid spacing in each direction
+
+  # type: h  # Mesh topology
+  # yplus: 30.0  # Non-dimensional wall distance
+  # resolution_factor: 0.5  # Double grid spacing in each direction
 
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 2000
-  n_step_avg: 500
-  n_step_log: 50
-  damping_factor: 25.0
-  CFL: 0.4
-  smoothing_factor: 0.05
-  i_scheme: 0
+  n_step: 500
+  n_step_avg: 1
+  n_step_log: 100
+  damping_factor: 10.0
+  # nstep_damp: -1
+  # CFL: 0.4
+  smoothing_factor: 0.02
+  # i_scheme: 0
+  # i_loss: 0
+  plot_conv: true
+  # i_inlet: 0
+  # i_exit: 0
 
   # # Solver-specific configuration settings
   # nstep: 5000

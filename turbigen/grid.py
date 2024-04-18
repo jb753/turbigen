@@ -147,7 +147,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self, trim=1):
+    def get_wall(self, trim=0):
 
         # Preallocate wall indicator with True on boundaries, False interior
         is_wall = np.ones(self.shape, dtype=bool)
@@ -1149,19 +1149,13 @@ class Patch:
         ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
         return ijk
 
-    def get_flat_indices(self, order="C", perm=None, flip=None, extra_dim=0):
+    def get_flat_indices(self, order="C", perm=None, flip=None):
         # Return indices of all points on patch into self.block.ravel
-        ijk = self.get_indices(extra_dim)
+        ijk = self.get_indices()
         shape = self.block.shape
-        if extra_dim:
-            shape = shape + (extra_dim,)
         ind = np.ravel_multi_index(ijk, shape, order=order)
         if perm is not None:
-            perm = perm[1:] - 1
-            if extra_dim:
-                perm = np.append(perm, 3)
-            ind = np.flip(ind.transpose(perm), axis=flip)
-
+            ind = np.flip(ind, axis=flip).transpose(perm)
         return ind.reshape(-1)
 
     def get_A_avg_weights(self, order="C"):
@@ -1271,8 +1265,10 @@ class PeriodicPatch(Patch):
                         perm[n] = m
                 flip[n] = 0
 
-        perm = np.insert(perm + 1, 0, 0)
-        flip = np.where(np.insert(flip, 0, 0))[0]
+        # perm = np.insert(perm + 1, 0, 0)
+        # flip = np.where(np.insert(flip, 0, 0))[0]
+
+        flip = np.where(flip)[0]
 
         return perm, flip
 
