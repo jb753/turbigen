@@ -6,7 +6,7 @@ import turbigen.compflow_native as cf
 def dot(a, b, axis=0):
     return np.sum(a * b, axis=axis)
 
-def not_test_box():
+def test_box():
 
     print(f'Checking discretisation of a cube...')
 

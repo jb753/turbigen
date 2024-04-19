@@ -161,6 +161,111 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         return is_wall
 
+    def get_wall_face(self):
+
+        ni, nj, nk = self.shape
+
+        # Zero means is a wall
+        # Positive values are not-wallness
+        iwall = np.zeros((ni, nj - 1, nk - 1), dtype=int)
+        iwall[1:-1, :, :] = 1
+
+        jwall = np.zeros((ni - 1, nj, nk - 1), dtype=int)
+        jwall[:, 1:-1, :] = 1
+
+        kwall = np.zeros((ni - 1, nj - 1, nk), dtype=int)
+        kwall[:, :, 1:-1] = 1
+
+        for patch in self.patches:
+
+            # Skip if this patch is a wall
+            if not type(patch) in NOT_WALL_PATCHES:
+                continue
+
+            nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
+            ijk_lim = patch.ijk_limits.copy()
+            ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+            ijk_lim[:, 1] += 1
+            ist, ien = ijk_lim[0]
+            jst, jen = ijk_lim[1]
+            kst, ken = ijk_lim[2]
+
+            # Increment the not wall indicator on the const-dirn
+            if patch.cdir == 0:
+                iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+            elif patch.cdir == 1:
+                jwall[ist : (ien - 1), jst : (jen - 1), kst : (ken - 1)] += 1
+            elif patch.cdir == 2:
+                # print(patch)
+                # print(ist, ien, jst, jen, kst, ken)
+                kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
+
+        # Now distribute the face not-wallness to the nodes
+        wall = np.zeros((ni, nj, nk), dtype=int)
+
+        # i-faces
+        wall[:, :-1, :-1] += iwall  # Bottom-left
+        wall[:, 1:, :-1] += iwall  # Bottom-right
+        wall[:, :-1, 1:] += iwall  # Top-left
+        wall[:, 1:, 1:] += iwall  # Top-right
+
+        # j-faces
+        wall[:-1, :, :-1] += jwall  # Bottom-left
+        wall[1:, :, :-1] += jwall  # Bottom-right
+        wall[:-1, :, 1:] += jwall  # Top-left
+        wall[1:, :, 1:] += jwall  # Top-right
+
+        # j-faces
+        wall[:-1, :-1, :] += kwall  # Bottom-left
+        wall[1:, :-1, :] += kwall  # Bottom-right
+        wall[:-1, 1:, :] += kwall  # Top-left
+        wall[1:, 1:, :] += kwall  # Top-right
+
+        # A node is *not* on a wall if *all* of the faces touching it are *not*
+        # walls. So the thresholds are:
+        #   corner: 3
+        #   edge: 4
+        #   face: 8
+        #   interior: large
+        thresh = np.zeros_like(wall, dtype=int)
+
+        thresh[0, :, :] = 8
+        thresh[-1, :, :] = 8
+        thresh[:, 0, :] = 8
+        thresh[:, -1, :] = 8
+        thresh[:, :, 0] = 8
+        thresh[:, :, -1] = 8
+
+        thresh[:, 0, 0] = 4
+        thresh[:, 0, -1] = 4
+        thresh[:, -1, 0] = 4
+        thresh[:, -1, -1] = 4
+        thresh[0, :, 0] = 4
+        thresh[0, :, -1] = 4
+        thresh[-1, :, 0] = 4
+        thresh[-1, :, -1] = 4
+        thresh[0, 0, :] = 4
+        thresh[0, -1, :] = 4
+        thresh[-1, 0, :] = 4
+        thresh[-1, -1, :] = 4
+
+        thresh[0, 0, 0] = 3
+        thresh[-1, 0, 0] = 3
+        thresh[0, -1, 0] = 3
+        thresh[-1, -1, 0] = 3
+        thresh[0, 0, -1] = 3
+        thresh[-1, 0, -1] = 3
+        thresh[0, -1, -1] = 3
+        thresh[-1, -1, -1] = 3
+
+        wall = (wall < thresh).astype(np.int8)
+
+        iwall = (iwall == 0.0).astype(np.int8)
+        jwall = (jwall == 0.0).astype(np.int8)
+        kwall = (kwall == 0.0).astype(np.int8)
+
+        return iwall, jwall, kwall, wall
+
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
 
@@ -566,7 +671,7 @@ class Grid:
         for block in self:
 
             # Assemble unstructured wall coordinates for this block
-            xrtbw = block.xrt[:, block.get_wall()].reshape(3, -1)
+            xrtbw = block.xrt[:, block.get_wall(trim=1)].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)
@@ -1115,6 +1220,10 @@ class Patch:
     @ijkdir.setter
     def ijkdir(self, value):
         self.idir, self.jdir, self.kdir = value
+
+    @property
+    def cdir(self):
+        return np.where(np.diff(self.ijk_limits, axis=1) == 0)[0][0]
 
     def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice
