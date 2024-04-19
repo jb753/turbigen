@@ -965,7 +965,6 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
 
-
     ! We need to assemble the viscous fluxes from the stress tensor components
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)

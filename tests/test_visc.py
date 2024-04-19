@@ -18,7 +18,7 @@ settings = {
     'plot_conv': True,
     # 'nstep_damp': -1,
     'xllim_pitch': 0.,
-    # 'i_loss': 0,
+    'i_loss': 0,
 }
 
 # Check our MPI rank
@@ -244,18 +244,18 @@ def test_poiseuille():
     Po1 = C.Po[0]
     P1 = C.P[0]
 
-    # fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
     for b in g:
         C = b[:, b.nj//2, b.nk//2]
         dPdx = np.gradient(C.P,C.x)
         mu = F.mu
         Cp = (C.P-P1)/(Po1-P1)
-        # ax.plot(C.x, Cp, '-x')
+        ax.plot(C.x, Cp, '-x')
 
-    # fig, ax = plt.subplots()
-    # for b in g:
-        # C = b[:, b.nj//2, b.nk//2]
-        # ax.plot(C.x, C.Vx, '-x')
+    fig, ax = plt.subplots()
+    for b in g:
+        C = b[:, b.nj//2, b.nk//2]
+        ax.plot(C.x, C.Vx, '-x')
 
     iplot = int(b.ni*0.9)
 
@@ -267,11 +267,11 @@ def test_poiseuille():
     soln = -K * rnorm*(1.-rnorm)
     err = (C.Vx-soln)/soln.max()
 
-    # fig, ax = plt.subplots()
-    # ax.plot(C.Vx, rnorm, '-x')
-    # ax.plot(soln, rnorm, '-x')
-    # ax.set_title('r')
-    # plt.show()
+    fig, ax = plt.subplots()
+    ax.plot(C.Vx, rnorm, '-x')
+    ax.plot(soln, rnorm, '-x')
+    ax.set_title('r')
+    plt.show()
 
     print(f'Analytical solution error: {err.min()}, {err.max()}, {err.mean()}')
     assert np.abs(err).mean()<0.05

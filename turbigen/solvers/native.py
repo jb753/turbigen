@@ -820,15 +820,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
-        # if not np.mod(istep, conf.n_step_dt):
-        exchange_periodics(blocks, bid_local, periodics, variable="conserved")
+        # Occasionally exchange the conserved variables
+        # Although the residuals are always exchanged, smoothing is not
+        # symmetric on each side of the boundary so values may drift.
+        if not np.mod(istep, conf.n_step_dt):
+            exchange_periodics(blocks, bid_local, periodics, variable="conserved")
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
 
-            sb.set_walls()
+            if conf.i_loss > 0:
+                sb.set_walls()
 
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
