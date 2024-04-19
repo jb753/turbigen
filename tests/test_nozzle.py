@@ -181,7 +181,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     F.t = 0.
 
     g.match_patches()
-    g.apply_periodic()
 
     return g, F
 

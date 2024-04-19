@@ -168,7 +168,12 @@ class SolverBlock:
         #   k faces: (ni-1, nj-1, nk)
         # equal to one if the face is a wall, zero otherwise
         self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
-        self.wall_nodes = block.get_wall()
+        self.wall_nodes = block.get_wall_old()
+
+        # # new
+        # iwall, jwall, kwall, wall = block.get_wall()
+        # self.wall_indicators = [np.asfortranarray(w) for w in (iwall, jwall, kwall)]
+        # self.wall_nodes = wall.astype(bool)
 
         # ni, nj, nk = self.wall_nodes.shape
         # import matplotlib.pyplot as plt
@@ -721,12 +726,12 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                 v2 = b2.dU1
 
             for i in range(nv):
-                v1i = v1[..., i].ravel(order="F")
-                v2i = v2[..., i].ravel(order="F")
+                v1i = v1[..., i].ravel(order="F")[ind]
+                v2i = v2[..., i].ravel(order="F")[nxind]
 
-                avg = 0.5 * (v1i[ind] + v2i[nxind])
-                v1i[ind] = avg
-                v2i[nxind] = avg
+                avg = 0.5 * (v1i + v2i)
+                v1[..., i].ravel(order="F")[ind] = avg
+                v2[..., i].ravel(order="F")[nxind] = avg
 
         # Otherwise, communication is needed
         else:
@@ -1083,7 +1088,7 @@ def get_wall(b, trim=1):
         np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
         np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(trim), -1).astype(typ))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall_old(trim), -1).astype(typ))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)

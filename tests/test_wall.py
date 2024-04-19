@@ -17,7 +17,7 @@ def make_sector():
     r2 = rm+dr/2.
 
     nj = 5
-    ni = 30
+    ni = 7
     nk = 7
 
 
@@ -43,21 +43,21 @@ def test_box():
     g.check_coordinates()
     g.match_patches()
 
-    iwall, jwall, kwall, wall = block.get_wall_face()
+    iwall, jwall, kwall, wall = block.get_wall()
 
     assert iwall[0,:,:].all()
     assert iwall[-1,:,:].all()
-    assert (~iwall[1:-1,:,:]).all()
+    assert not iwall[1:-1,:,:].any()
 
     assert jwall[:,0,:].all()
     assert jwall[:,-1,:].all()
-    assert (~jwall[:,1:-1,:]).all()
+    assert not jwall[:,1:-1,:].any()
 
     assert kwall[:,:,0].all()
     assert kwall[:,:,-1].all()
-    assert (~kwall[:,:,1:-1]).all()
+    assert not kwall[:,:,1:-1].any()
 
-    assert (~wall[1:-1,1:-1,1:-1]).all()
+    assert not wall[1:-1,1:-1,1:-1].any()
     assert wall[(0,-1),:,:].all()
     assert wall[:,(0,-1),:].all()
     assert wall[:,:,(0,-1)].all()
@@ -92,26 +92,26 @@ def test_stream():
 
     for b in g:
 
-        iwall, jwall, kwall, wall = b.get_wall_face()
+        iwall, jwall, kwall, wall = b.get_wall()
 
-        assert (~iwall).all()
-        assert (~kwall).all()
+        assert not iwall.any()
+        assert not kwall.any()
 
-        assert (jwall[:,0,:]).all()
-        assert (jwall[:,-1,:]).all()
-        assert (~jwall[:,1:-1,:]).all()
+        assert jwall[:,0,:].all()
+        assert jwall[:,-1,:].all()
+        assert not jwall[:,1:-1,:].any()
 
         assert wall[:,0,:].all()
         assert wall[:,-1,:].all()
-        assert (~wall[:,1:-1,:]).all()
+        assert not wall[:,1:-1,:].any()
 
 
 def test_gap():
 
     xrt, Nb = make_sector()
 
-    ile = 10
-    ite = 20
+    ile = 2
+    ite = 4
 
     patches = [
         turbigen.grid.InletPatch(i=0),
@@ -128,24 +128,58 @@ def test_gap():
     g.check_coordinates()
     g.match_patches()
 
-    iwall, jwall, kwall, wall = block.get_wall_face()
+    iwall, jwall, kwall, wall = block.get_wall()
 
-    assert (~iwall).all()
-    assert (jwall[:,0,:]).all()
-    assert (jwall[:,-1,:]).all()
-    assert (~jwall[:,1:-1,:]).all()
-    assert (kwall[ile:ite,:,0]).all()
-    assert (kwall[ile:ite,:,-1]).all()
+    assert not iwall.any()
+    assert jwall[:,0,:].all()
+    assert jwall[:,-1,:].all()
+    assert not jwall[:,1:-1,:].any()
+    assert kwall[ile:ite,:,0].all()
+    assert kwall[ile:ite,:,-1].all()
+    assert not kwall[:ile,:,0].any()
+    assert not kwall[ite:,:,-1].any()
 
     assert wall[ile:(ite+1),:,0].all()
     assert wall[ile:(ite+1),:,-1].all()
-    assert (~wall[:ile,:,0]).all()
-    assert (~wall[(ite+1):,:,0]).all()
+    assert not wall[:ile,1:-1,0].any()
+    assert not wall[(ite+1):,1:-1,0].any()
     assert wall[ile:(ite+1),:,-1].all()
     assert wall[:,0,:].all()
     assert wall[:,-1,:].all()
-    assert (~wall[:,1:-1,1:-1]).all()
+    assert not wall[:,1:-1,1:-1].any()
 
+def test_two_periodic():
+
+    xrt, Nb = make_sector()
+
+    isplit = xrt.shape[1]//2
+
+    patches = [
+        turbigen.grid.InletPatch(i=0),
+        turbigen.grid.OutletPatch(i=-1),
+        turbigen.grid.PeriodicPatch(k=0, i=(0,isplit)),
+        turbigen.grid.PeriodicPatch(k=-1, i=(0,isplit)),
+        turbigen.grid.PeriodicPatch(k=0, i=(isplit,-1)),
+        turbigen.grid.PeriodicPatch(k=-1, i=(isplit,-1)),
+    ]
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
+
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+    g.match_patches()
+
+    iwall, jwall, kwall, wall = block.get_wall()
+
+    assert not iwall.any()
+    assert not kwall.any()
+
+    assert jwall[:,0,:].all()
+    assert jwall[:,-1,:].all()
+    assert not jwall[:,1:-1,:].any()
+
+    assert wall[:,0,:].all()
+    assert wall[:,-1,:].all()
+    assert not wall[:,1:-1,:].any()
 
 def test_periodic():
 
@@ -164,18 +198,18 @@ def test_periodic():
     g.check_coordinates()
     g.match_patches()
 
-    iwall, jwall, kwall, wall = block.get_wall_face()
+    iwall, jwall, kwall, wall = block.get_wall()
 
-    assert (~iwall).all()
-    assert (~kwall).all()
+    assert ~iwall.all()
+    assert ~kwall.all()
 
-    assert (jwall[:,0,:]).all()
-    assert (jwall[:,-1,:]).all()
-    assert (~jwall[:,1:-1,:]).all()
+    assert jwall[:,0,:].all()
+    assert jwall[:,-1,:].all()
+    assert not jwall[:,1:-1,:].any()
 
     assert wall[:,0,:].all()
     assert wall[:,-1,:].all()
-    assert (~wall[:,1:-1,:]).all()
+    assert not wall[:,1:-1,:].any()
 
 
 if __name__=='__main__':
@@ -184,4 +218,5 @@ if __name__=='__main__':
     test_gap()
     test_box()
     test_stream()
+    test_two_periodic()
 

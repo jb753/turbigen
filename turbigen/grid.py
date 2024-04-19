@@ -147,21 +147,18 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self, trim=0):
-
+    def get_wall_old(self, trim=0):
         # Preallocate wall indicator with True on boundaries, False interior
         is_wall = np.ones(self.shape, dtype=bool)
         is_wall[1:-1, 1:-1, 1:-1] = False
-
         # Loop over patches
         for patch in self.patches:
             # Unset wall indicator if patch is not wall
             if type(patch) in NOT_WALL_PATCHES:
                 is_wall[patch.get_slice(trim=trim)] = False
-
         return is_wall
 
-    def get_wall_face(self):
+    def get_wall(self):
 
         ni, nj, nk = self.shape
 
@@ -226,7 +223,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         #   corner: 3
         #   edge: 4
         #   face: 8
-        #   interior: large
+        #   interior: 0
         thresh = np.zeros_like(wall, dtype=int)
 
         thresh[0, :, :] = 8
@@ -671,7 +668,8 @@ class Grid:
         for block in self:
 
             # Assemble unstructured wall coordinates for this block
-            xrtbw = block.xrt[:, block.get_wall(trim=1)].reshape(3, -1)
+            _, _, _, iwall = block.get_wall()
+            xrtbw = block.xrt[:, iwall.astype(bool)].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)

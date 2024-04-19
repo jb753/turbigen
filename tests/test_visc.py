@@ -18,6 +18,7 @@ settings = {
     'plot_conv': True,
     # 'nstep_damp': -1,
     'xllim_pitch': 0.,
+    # 'i_loss': 0,
 }
 
 # Check our MPI rank
@@ -105,7 +106,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 1
+    nblock = 2
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -169,6 +170,15 @@ def make_pipe():
     g.apply_inlet(So1, Alpha1, Beta)
     g.calculate_wall_distance()
     g.apply_outlet(P1)
+
+    # fig, ax = plt.subplots()
+    # lev = np.linspace(0,h/2,11)
+    # for b in g:
+    #     C = b[:,:,-1]
+    #     ax.contourf(C.x, C.r, C.w, lev)
+    # ax.axis('equal')
+    # plt.show()
+    # quit()
 
 
     # Initial guess
