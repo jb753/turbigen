@@ -12,13 +12,21 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 32000,
+    # 'n_step': 21600,
+    'n_step': 20000,
     'n_step_avg': 200,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
     'xllim_pitch': 0.,
     'i_loss': 0,
+    # "damping_factor" : 25.,
+    # "nstep_damp" : -1,
+    # "CFL" : 0.4,
+    # "i_scheme" : 0,
+    # "i_exit" : 0,
+    # "smoothing_factor" : 0.001,
+    # "smoothing_2nd_proportion" : 0.5
 }
 
 # Check our MPI rank
@@ -35,10 +43,10 @@ if rank > 0:
 def make_pipe():
     """Generate the grid."""
 
-    L_h = 12.
+    L_h = 6.
     AR_merid=4.
-    AR_pitch=1.
-    htr = 0.99
+    AR_pitch=0.5
+    htr = 0.95
 
     # Geometry
     h = 0.1
@@ -73,7 +81,7 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.002
+    dw = 0.02
     dmax = 0.04
     ER = 1.1
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
@@ -106,7 +114,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 2
+    nblock = 3
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -158,6 +166,13 @@ def make_pipe():
         )
         block.label=f'b{iblock}'
 
+        print(f'{block}')
+        print(f'xmin = {block.x.min()}')
+        print(f'xmax = {block.x.max()}')
+        for p in patches:
+            print(p)
+        print('')
+
         blocks.append(block)
 
     # Make the grid object
@@ -170,6 +185,16 @@ def make_pipe():
     g.apply_inlet(So1, Alpha1, Beta)
     g.calculate_wall_distance()
     g.apply_outlet(P1)
+
+    # fig, ax = plt.subplots()
+    # lev = np.linspace(0,h/2,11)
+    # b = g[-1]
+    # C = b[0,:,:]
+    # ax.contourf(C.z, C.y, C.w, lev)
+    # ax.axis('equal')
+    # plt.show()
+    # quit()
+
 
     # fig, ax = plt.subplots()
     # lev = np.linspace(0,h/2,11)
@@ -271,6 +296,14 @@ def test_poiseuille():
     ax.plot(C.Vx, rnorm, '-x')
     ax.plot(soln, rnorm, '-x')
     ax.set_title('r')
+    plt.show()
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[-1, :, :]
+    ax.plot(C.z, C.y, '-')
+    ax.plot(C.z.T, C.y.T, '-')
+    ax.axis('equal')
     plt.show()
 
     print(f'Analytical solution error: {err.min()}, {err.max()}, {err.mean()}')

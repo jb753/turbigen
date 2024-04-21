@@ -30,7 +30,7 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor = 0.01
+    smoothing_factor = 0.005
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
@@ -161,19 +161,19 @@ class SolverBlock:
         ni, nj, nk = block.shape
         self.f = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
 
-        # Get wall indicators
-        # These are three arrays of shape
-        #   i faces: (ni, nj-1, nk-1)
-        #   j faces: (ni-1, nj, nk-1)
-        #   k faces: (ni-1, nj-1, nk)
-        # equal to one if the face is a wall, zero otherwise
-        self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
-        self.wall_nodes = block.get_wall_old()
+        # # Get wall indicators
+        # # These are three arrays of shape
+        # #   i faces: (ni, nj-1, nk-1)
+        # #   j faces: (ni-1, nj, nk-1)
+        # #   k faces: (ni-1, nj-1, nk)
+        # # equal to one if the face is a wall, zero otherwise
+        # self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
+        # self.wall_nodes = block.get_wall_old()
 
-        # # new
-        # iwall, jwall, kwall, wall = block.get_wall()
-        # self.wall_indicators = [np.asfortranarray(w) for w in (iwall, jwall, kwall)]
-        # self.wall_nodes = wall.astype(bool)
+        # new
+        iwall, jwall, kwall, wall = block.get_wall()
+        self.wall_indicators = [np.asfortranarray(w) for w in (iwall, jwall, kwall)]
+        self.wall_nodes = wall.astype(bool)
 
         # ni, nj, nk = self.wall_nodes.shape
         # import matplotlib.pyplot as plt
@@ -823,13 +823,17 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Occasionally exchange the conserved variables
         # Although the residuals are always exchanged, smoothing is not
         # symmetric on each side of the boundary so values may drift.
-        if not np.mod(istep, conf.n_step_dt):
+        if not np.mod(istep, 10):
             exchange_periodics(blocks, bid_local, periodics, variable="conserved")
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
+
+            sb.smooth(sf2, sf4)
+
+            sb.set_secondary()
 
             if conf.i_loss > 0:
                 sb.set_walls()
@@ -859,9 +863,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
 
-            sb.smooth(sf2, sf4)
-
-            sb.set_secondary()
 
         if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
 
@@ -979,7 +980,7 @@ def run(grid, settings={}, machine=None):
     import matplotlib.pyplot as plt
 
     # fig, ax = plt.subplots()
-    # for b in grid:
+    # for b,  in grid:
     #     C = b[:,b.nj//2,:]
     #     ax.contourf(C.x, C.rt, C.rho)
     #     # ax.plot(C.x, C.rt, 'k-', lw=0.2)
@@ -1003,20 +1004,19 @@ def run(grid, settings={}, machine=None):
     #     ax.axis('equal')
 
     # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks_out):
-    #     C = b[:,:,b.nk//2]
-    #     ax.(C.x, C.r, sb.f[:,:,'k-', lw=0.2)
-    #     ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
-    #     ax.plot(b.x[sb.wall_nodes], b.rt[sb.wall_nodes], 'k*')
-    #     ax.axis('equal')
-
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks):
-    #     C = b[b.ni // 2, :, b.nk // 2]
-    #     r = C.r
-    #     rc = 0.5 * (r[:-1] + r[1:])
-    #     ax.plot(sb.f[b.ni // 2, :, b.nk // 2, 1], rc, "k-x")
+    # C1 = grid[0][-1,:,b.nk//2]
+    # ax.plot(C1.r, blocks_out[0].dU1[-1,:,b.nk//2,0], '-x')
+    # C2 = grid[1][0,:,b.nk//2]
+    # ax.plot(C2.r, blocks_out[1].dU1[0,:,b.nk//2,0], '-x')
+    #     # ax.axis('equal')
     # plt.show()
+
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks):
+        C = b[:, :, b.nk // 2]
+        ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
+    ax.axis('equal')
+    plt.show()
 
     if conf.plot_conv:
 

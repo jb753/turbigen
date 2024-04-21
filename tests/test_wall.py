@@ -212,8 +212,56 @@ def test_periodic():
     assert not wall[:,1:-1,:].any()
 
 
+def test_multiblock():
+
+    xrt, Nb = make_sector()
+
+    isplit = xrt.shape[1]//2
+
+    xrt = [
+        xrt[:, :(isplit+1), :, :],
+        xrt[:, isplit:, :, :]
+    ]
+
+    patches = [
+            [
+                turbigen.grid.InletPatch(i=0),
+                turbigen.grid.PeriodicPatch(k=0),
+                turbigen.grid.PeriodicPatch(k=-1),
+                turbigen.grid.PeriodicPatch(i=-1),
+            ],
+            [
+                turbigen.grid.PeriodicPatch(i=0),
+                turbigen.grid.PeriodicPatch(k=0),
+                turbigen.grid.PeriodicPatch(k=-1),
+                turbigen.grid.OutletPatch(i=-1),
+            ]
+    ]
+
+    blocks = [turbigen.grid.PerfectBlock.from_coordinates(xrti, Nb, pi) for xrti, pi in zip(xrt, patches)]
+
+    g = turbigen.grid.Grid(blocks)
+    g.check_coordinates()
+    g.match_patches()
+
+    for b in g:
+
+        iwall, jwall, kwall, wall = b.get_wall()
+
+        assert not iwall.any()
+        assert not kwall.any()
+
+        assert jwall[:,0,:].all()
+        assert jwall[:,-1,:].all()
+        assert not jwall[:,1:-1,:].any()
+
+        assert wall[:,0,:].all()
+        assert wall[:,-1,:].all()
+        assert not wall[:,1:-1,:].any()
+
 if __name__=='__main__':
 
+    test_multiblock()
     test_periodic()
     test_gap()
     test_box()

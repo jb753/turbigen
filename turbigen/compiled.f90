@@ -762,6 +762,30 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
+    ! Overide 4th-order values at corners with 2nd-order
+    ! i.e. only use 2nd order in the corners
+
+    ! xs4(1, 1, :, :)  = xs2(1, 1, :, :)
+    ! xs4(1, nj, :, :)  = xs2(1, nj, :, :)
+    ! xs4(1, :, 1, :)  = xs2(1, :, 1, :)
+    ! xs4(1, :, nk, :)  = xs2(1, :, nk, :)
+    ! xs4(ni, 1, :, :)  = xs2(ni, 1, :, :)
+    ! xs4(ni, nj, :, :)  = xs2(ni, nj, :, :)
+    ! xs4(ni, :, 1, :)  = xs2(ni, :, 1, :)
+    ! xs4(ni, :, nk, :)  = xs2(ni, :, nk, :)
+
+    ! Overide 4th-order values at corners with 2nd-order
+    ! i.e. only use 2nd order in the corners
+
+    ! xs4(1, 1, 1, :)  = xs2(1, 1, 1, :)
+    ! xs4(ni, 1, 1, :) = xs2(ni, 1, 1, :)
+    ! xs4(1, nj, 1, :) = xs2(1, nj, 1, :)
+    ! xs4(ni, nj, 1, :) = xs2(ni, nj, 1, :)
+    ! xs4(1, 1, nk, :)  = xs2(1, 1, nk, :)
+    ! xs4(ni, 1, nk, :) = xs2(ni, 1, nk, :)
+    ! xs4(1, nj, nk, :) = xs2(1, nj, nk, :)
+    ! xs4(ni, nj, nk, :) = xs2(ni, nj, nk, :)
+
     ! now smooth
     x = (1e0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3e0
 
