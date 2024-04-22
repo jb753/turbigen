@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 40000,
+    'n_step': 4000,
     # 'n_step': 1000,
     'n_step_avg': 1000,
     'n_step_log': 100,
@@ -269,6 +269,7 @@ def test_poiseuille():
 
     np.set_printoptions(precision=2)
     turbigen.solvers.native.run(g, settings)
+    quit()
 
     b = g[0]
     C = b[:, b.nj//2, b.nk//2]

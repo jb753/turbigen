@@ -1029,7 +1029,7 @@ end subroutine
 
 
 
-subroutine average_ijk(x1, x2, ijk1, ijk2, ni, nj, nk, nv, npt)
+subroutine get_ijk(x, xu, ijk, ni, nj, nk, nv, npt)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -1037,13 +1037,91 @@ subroutine average_ijk(x1, x2, ijk1, ijk2, ni, nj, nk, nv, npt)
     integer, intent (in)  :: nv
     integer, intent (in)  :: npt
 
-    real*4, intent (inout) :: x1(ni, nj, nk, nv)
-    real*4, intent (inout) :: x2(ni, nj, nk, nv)
+    real*4, intent (inout) :: x(ni, nj, nk, nv)
+    real*4, intent (out) :: xu(npt*nv)
+    integer*2, intent (in) :: ijk(3, npt)
+
+    integer :: ipt
+    integer :: i
+    integer :: j
+    integer :: k
+
+    ! If we have some points
+    if (npt > 0) then
+        ! Loop over all points
+        do ipt = 1,npt
+
+            ! Extract indices
+            i = ijk(1, ipt)
+            j = ijk(2, ipt)
+            k = ijk(3, ipt)
+
+            ! Loop over vars
+            do iv = 1,nv
+                xu(nv*(ipt-1)+iv) = x(i, j, k, iv)
+            end do
+
+        end do
+    end if
+
+end subroutine
+
+subroutine set_ijk_average(x, xu1, xu2, ijk, ni, nj, nk, nv, npt, nb)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nv
+    integer, intent (in)  :: npt
+
+    real*4, intent (inout) :: x(ni, nj, nk, nv)
+    integer*2, intent (inout) :: ijk(3, npt)
+
+    real*4, intent (inout) :: xu1(nb)
+    real*4, intent (inout) :: xu2(nb)
+
+    integer :: ipt
+    integer :: i
+    integer :: j
+    integer :: k
+    real*4 :: xua(nb)
+
+    xua = 0.5e0*(xu1 + xu2)
+
+    ! If we have some points
+    if (npt > 0) then
+        ! Loop over all points
+        do ipt = 1,npt
+
+            ! Extract indices
+            i = ijk(1, ipt)
+            j = ijk(2, ipt)
+            k = ijk(3, ipt)
+
+            ! Loop over vars
+            do iv = 1,nv
+                x(i, j, k, iv) = xua(nv*(ipt-1)+iv)
+            end do
+
+        end do
+    end if
+
+end subroutine
+
+subroutine average_ijk(x1, x2, ijk1, ijk2, npt)
+
+    ! integer, intent (in)  :: ni
+    ! integer, intent (in)  :: nj
+    ! integer, intent (in)  :: nk
+    integer, intent (in)  :: npt
+
+    real*4, intent (inout) :: x1(:, :, :, :)
+    real*4, intent (inout) :: x2(:, :, :, :)
     integer*2, intent (in) :: ijk1(3, npt)
     integer*2, intent (in) :: ijk2(3, npt)
 
     integer :: ipt
-    real*4 :: avg(nv)
+    real*4 :: avg(5)
 
     integer :: i1
     integer :: j1
@@ -1119,5 +1197,24 @@ subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
 
         end do
     end if
+
+end subroutine
+
+
+
+subroutine P_from_rho_u(rho, u, cvTu0, ga, P, ni)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4, intent (out) :: P(ni)
+    real*4, intent (in) :: u(ni)
+    real*4, intent (in) :: rho(ni)
+
+    real*4, intent (in) :: cvTu0
+    real*4, intent (in) :: ga
+
+    P = rho*(ga-1e0)*(u+ cvTu0)
 
 end subroutine

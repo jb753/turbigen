@@ -15,6 +15,8 @@ from turbigen.compiled import (
     viscous_force,
     set_walls,
     average_ijk,
+    get_ijk,
+    set_ijk_average,
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -183,17 +185,19 @@ class SolverBlock:
 
         if isinstance(block, turbigen.grid.PerfectBlock):
 
-            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F")
-            self.state._metadata = block._metadata
+            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F", typ=typ)
+            self.state.gamma = typ(block.gamma)
+            self.state.cp = typ(block.cp)
+            self.state.mu = typ(block.mu)
             self.state.set_rho_u(block.rho, block.u)
 
             self.state_inlets = [
-                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F")
+                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F", typ=typ)
                 for inlet in self.inlets
             ]
 
             self.state_outlets = [
-                turbigen.fluid.PerfectState(shape=outlet[0].shape, order="F")
+                turbigen.fluid.PerfectState(shape=outlet[0].shape, order="F", typ=typ)
                 for outlet in self.outlets
             ]
 
@@ -720,6 +724,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
         elif variable == "residual":
             v1 = b1.dU1
         nv = v1.shape[-1]
+        npt = ijk.shape[-1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
@@ -735,36 +740,27 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
         # Otherwise, communication is needed
         else:
 
-            # Preallocate a buffer to recieve data
-            di = len(ind)
-            count = di * nv
-            nxv = np.empty((count,), dtype=typ)
-
             # Assemble data to send
-            vs = np.empty((count,), dtype=typ)
-            for i in range(nv):
-                ist = i * di
-                ien = (i + 1) * di
-                vs[ist:ien] = v1[..., i].ravel(order="F")[ind]
+            vs = get_ijk(v1, ijk)
+            count = len(vs)
+
+            # Preallocate a buffer to recieve
+            nxv = np.empty_like(vs, dtype=typ)
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            # Otherwise, recieve first
             else:
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
 
             # Take average over both sides
-            vavg = 0.5 * (vs + nxv)
-
-            # Assign back to the grid
-            for i in range(nv):
-                ist = i * di
-                ien = (i + 1) * di
-                v1[..., i].ravel(order="F")[ind] = vavg[ist:ien]
+            set_ijk_average(v1, vs, nxv, ijk)
 
 
+# @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     comm = MPI.COMM_WORLD
@@ -888,6 +884,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         return blocks, dUlog
     else:
         comm.send(blocks, dest=0)
+
 
 
 def run(grid, settings={}, machine=None):

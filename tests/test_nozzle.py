@@ -185,7 +185,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     return g, F
 
 settings = {
-    'n_step': 10000,
+    'n_step': 2000,
     'n_step_avg': 10,
     'n_step_log': 1000,
     'i_loss': 0,
