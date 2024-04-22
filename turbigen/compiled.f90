@@ -1,25 +1,34 @@
 !! ! Compiled functions to speed up expensive calulations
 
-subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi, dAj, dAk, vol, &
-        resid, ni, nj, nk)
+subroutine residual(&
+    conserved, P, ho, r, ri, rj, rk, f, &
+    Omega, ijk_iwall, ijk_jwall, ijk_kwall, dt, dAi, dAj, dAk, vol, &
+    resid, &
+    ni, nj, nk, niwall, njwall, nkwall &
+    )
 
     implicit none
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
+    integer, intent (in)  :: niwall
+    integer, intent (in)  :: njwall
+    integer, intent (in)  :: nkwall
 
-    real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+    real*4, intent (in)  :: conserved(ni, nj, nk, 5)
     real*4, intent (inout) :: resid(ni, nj, nk, 5)
-    real*4, intent (inout)  :: Omega
-    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
-    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
-    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
-    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
-    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: Omega
+
+    integer*2, intent (in) :: ijk_iwall(3, niwall)
+    integer*2, intent (in) :: ijk_jwall(3, njwall)
+    integer*2, intent (in) :: ijk_kwall(3, nkwall)
+
+    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: dt(ni-1, nj-1, nk-1)
 
     real*4, intent (inout)  :: f(ni-1, nj-1, nk-1, 5)
 
@@ -36,9 +45,8 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     real*4 :: fsum_vol(ni-1, nj-1, nk-1, 5)
     real*4 :: resc(ni-1, nj-1, nk-1, 5)
 
-    real*4, intent(inout) :: P( ni, nj, nk)
-    real*4, intent(inout) :: ho( ni, nj, nk)
-    real*4, intent(inout) :: r( ni, nj, nk)
+    real*4, intent(in) :: P( ni, nj, nk)
+    real*4, intent(in) :: ho( ni, nj, nk)
 
     real*4 :: Vt( ni, nj, nk)
 
@@ -46,25 +54,20 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
 
-    real*4 :: ri( ni, nj-1, nk-1)
-    real*4 :: rj( ni-1, nj, nk-1)
-    real*4 :: rk( ni-1, nj-1, nk)
-
-    ! integer, intent (in) :: nstep_avg
-    ! real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
+    ! Radii
+    real*4, intent(in) :: r( ni, nj, nk)
+    real*4, intent(in) :: ri( ni, nj-1, nk-1)
+    real*4, intent(in) :: rj( ni-1, nj, nk-1)
+    real*4, intent(in) :: rk( ni-1, nj-1, nk)
 
     ! Calculate source term at nodes, average at cell center
     Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
     Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
     call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
+    ! Face-average pressure and radius on the faces
     call node_to_face( &
         P, Pi, Pj, Pk, &
-         ni, nj, nk, 1 &
-    )
-
-    call node_to_face( &
-        r, ri, rj, rk, &
          ni, nj, nk, 1 &
     )
 
@@ -79,9 +82,9 @@ subroutine residual(conserved, P, ho, r, f, Omega, walli, wallj, wallk, dt, dAi,
         )
     end do
 
-    call get_fluxes_face(fi, Pi, ri, walli, Omega, ni, nj-1, nk-1)
-    call get_fluxes_face(fj, Pj, rj, wallj, Omega, ni-1, nj, nk-1)
-    call get_fluxes_face(fk, Pk, rk, wallk, Omega, ni-1, nj-1, nk)
+    call get_fluxes_face(fi, Pi, ri, ijk_iwall, Omega, ni, nj-1, nk-1, niwall)
+    call get_fluxes_face(fj, Pj, rj, ijk_jwall, Omega, ni-1, nj, nk-1, njwall)
+    call get_fluxes_face(fk, Pk, rk, ijk_kwall, Omega, ni-1, nj-1, nk, nkwall)
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
@@ -239,34 +242,24 @@ subroutine get_fluxes_node(conserved, ho, r, flux, ni, nj, nk)
 
 end subroutine
 
-subroutine get_fluxes_face(flux, P, r, wall, Omega, ni, nj, nk)
+subroutine get_fluxes_face(flux, P, r, ijk_wall, Omega, ni, nj, nk, nwall)
 
     implicit none
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
 
     real*4, intent (in)  :: r(ni, nj, nk)
     real*4, intent (in)  :: Omega
 
     real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
 
-    integer :: ic
-    integer :: ip
-
     real*4, intent (in)  :: P(ni, nj, nk)
-    logical*1, intent (in)  :: wall(ni, nj, nk)
+    integer*2, intent (in)  :: ijk_wall(3, nwall)
 
-    ! zero convective fluxes on walls
-    do ip = 1,5
-        do ic = 1,3
-            where (wall)
-                flux(:, :, :, ic, ip) = 0e0
-            end where
-        end do
-    end do
-
+    call set_ijk_zero_5d(flux, ijk_wall, ni, nj, nk, 3, 5, nwall)
 
     ! pressure fluxes
     ! x-mom in x-dirn
@@ -334,7 +327,8 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*4, intent (inout)  :: xn(ni, nj, nk, np)
+    real*4, intent (in)  :: xn(ni, nj, nk, np)
+
     real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
     real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
     real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
@@ -762,30 +756,6 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
-    ! Overide 4th-order values at corners with 2nd-order
-    ! i.e. only use 2nd order in the corners
-
-    ! xs4(1, 1, :, :)  = xs2(1, 1, :, :)
-    ! xs4(1, nj, :, :)  = xs2(1, nj, :, :)
-    ! xs4(1, :, 1, :)  = xs2(1, :, 1, :)
-    ! xs4(1, :, nk, :)  = xs2(1, :, nk, :)
-    ! xs4(ni, 1, :, :)  = xs2(ni, 1, :, :)
-    ! xs4(ni, nj, :, :)  = xs2(ni, nj, :, :)
-    ! xs4(ni, :, 1, :)  = xs2(ni, :, 1, :)
-    ! xs4(ni, :, nk, :)  = xs2(ni, :, nk, :)
-
-    ! Overide 4th-order values at corners with 2nd-order
-    ! i.e. only use 2nd order in the corners
-
-    ! xs4(1, 1, 1, :)  = xs2(1, 1, 1, :)
-    ! xs4(ni, 1, 1, :) = xs2(ni, 1, 1, :)
-    ! xs4(1, nj, 1, :) = xs2(1, nj, 1, :)
-    ! xs4(ni, nj, 1, :) = xs2(ni, nj, 1, :)
-    ! xs4(1, 1, nk, :)  = xs2(1, 1, nk, :)
-    ! xs4(ni, 1, nk, :) = xs2(ni, 1, nk, :)
-    ! xs4(1, nj, nk, :) = xs2(1, nj, nk, :)
-    ! xs4(ni, nj, nk, :) = xs2(ni, nj, nk, :)
-
     ! now smooth
     x = (1e0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3e0
 
@@ -820,7 +790,7 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
 end subroutine
 
 
-subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
+subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     implicit none
 
@@ -830,7 +800,6 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: r(ni, nj, nk)
 
     real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
 
@@ -844,10 +813,8 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
     real*4 :: xk(ni-1, nj-1, nk, 3)
     real*4 :: xv(ni, nj, nk, 3)
 
-    real*4 :: rc(ni-1, nj-1, nk-1)
-
-    ! Find radii at cell centers
-    call node_to_cell(r, rc, ni, nj, nk, 1)
+    real*4, intent (inout)  :: r(ni, nj, nk)
+    real*4, intent (inout) :: rc(ni-1, nj-1, nk-1)
 
     xv = 0e0
 
@@ -866,7 +833,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, ni, nj, nk)
 
 end subroutine
 
-subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, wallk, vol, dAi, dAj, dAk, r, ni, nj, nk)
+subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, r, rc, ri, rj, rk, ni, nj, nk)
 
     implicit none
 
@@ -880,10 +847,10 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: xlength(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: r(ni, nj, nk)
-
-    logical*1, intent (inout)  :: walli(ni, nj-1, nk-1)
-    logical*1, intent (inout)  :: wallj(ni-1, nj, nk-1)
-    logical*1, intent (inout)  :: wallk(ni-1, nj-1, nk)
+    real*4, intent (inout)  :: rc(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: ri(ni, nj-1, nk-1)
+    real*4, intent (inout)  :: rj(ni-1, nj, nk-1)
+    real*4, intent (inout)  :: rk(ni-1, nj-1, nk)
 
     real*4, intent (inout)  :: mu
 
@@ -896,10 +863,6 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     real*4 :: tauj(ni-1, nj, nk-1, 6)
     real*4 :: tauk(ni-1, nj-1, nk, 6)
 
-    real*4 :: ri(ni, nj-1, nk-1)
-    real*4 :: rj(ni-1, nj, nk-1)
-    real*4 :: rk(ni-1, nj-1, nk)
-
     real*4 :: visc_lim
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
@@ -907,7 +870,6 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
     real*4 :: fk(ni-1, nj-1, nk, 3, 5)
 
 
-    real*4 :: rc(ni-1, nj-1, nk-1)
     real*4 :: V(ni, nj, nk, 3)
     real*4 :: Vc(ni-1, nj-1, nk-1, 3)
     real*4 :: roc(ni-1, nj-1, nk-1)
@@ -927,34 +889,30 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
 
 
     ! Cell-centered vars
-    call node_to_cell(r, rc, ni, nj, nk, 1)
     call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
 
-    ! Face-centered vars
-    call node_to_face(r, ri, rj, rk, ni, nj, nk, 1)
-
     ! Calculate grad V
     do i = 1,3
-        call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, ni, nj, nk)
+        call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     end do
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Calculate divergence of V
-    ! call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
-    ! divV = divV*2e0/3e0
+    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    divV = divV*2e0/3e0
 
     ! tau contains the six unique terms in the tensor
     ! divV and gradV are cell-centered
 
     ! tau_xx = 2*dVx_dx - 2/3*divV
-    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1)! - divV
+    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
 
     ! tau_rr = 2*dVr_dr - 2/3*divV
-    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2)! - divV
+    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc! - divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
@@ -999,8 +957,6 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, walli, wallj, w
 
     ! Apply relaxation
     fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
-    ! fvisc = 0.5e0*fvisc_new + 0.5e0*fvisc
-    ! fvisc = -fvisc_new
 
 end subroutine
 
@@ -1043,5 +999,76 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
     ! energy
     f(:, :, :, :, 5) = 0e0
 
+
+end subroutine
+
+subroutine set_ijk_zero_5d(x, ijk, ni, nj, nk, nv, nc, npt)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nv
+    integer, intent (in)  :: nc
+    integer, intent (in)  :: npt
+
+    real*4, intent (inout) :: x(ni, nj, nk, nv, nc)
+    integer*2, intent (in) :: ijk(3, npt)
+
+    integer :: ipt
+
+    ! If we have some points
+    if (npt > 0) then
+        ! Loop over all points
+        do ipt = 1,npt
+            ! Set to zero
+            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :, :) = 0e0
+        end do
+    end if
+
+end subroutine
+
+
+subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
+
+    real*4, intent (inout) :: conserved(ni, nj, nk, 5)
+    real*4, intent (inout) :: ho(ni, nj, nk)
+    real*4, intent (inout) :: halfVsq(ni, nj, nk)
+    real*4, intent (in) :: u(ni, nj, nk)
+    integer*2, intent (in) :: ijk(3, nwall)
+
+    integer :: iwall
+    integer :: i
+    integer :: j
+    integer :: k
+
+    if (nwall > 0) then
+        do iwall = 1,nwall
+
+            i = ijk(1,iwall)
+            j = ijk(2,iwall)
+            k = ijk(3,iwall)
+
+            ! Zero the momentum fluxes
+            conserved(i , j, k, 2) = 0e0
+            conserved(i , j, k, 3) = 0e0
+            conserved(i , j, k, 4) = 0e0
+
+            ! Energy is rho*u
+            conserved(i, j, k, 5) = & 
+                conserved(i, j, k, 1) * u(i, j, k)
+
+            ! Subtract dynamic enthalpy
+            ho(i, j, k) = ho(i, j, k) - halfVsq(i, j, k)
+
+            ! Zero the velocity magnitdue
+            halfVsq(i, j, k) = 0e0
+
+        end do
+    end if
 
 end subroutine

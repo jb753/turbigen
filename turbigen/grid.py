@@ -257,9 +257,9 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         wall = (wall < thresh).astype(np.int8)
 
-        iwall = (iwall == 0.0).astype(np.int8)
-        jwall = (jwall == 0.0).astype(np.int8)
-        kwall = (kwall == 0.0).astype(np.int8)
+        iwall = (iwall == 0).astype(np.int8)
+        jwall = (jwall == 0).astype(np.int8)
+        kwall = (kwall == 0).astype(np.int8)
 
         return iwall, jwall, kwall, wall
 
@@ -668,8 +668,8 @@ class Grid:
         for block in self:
 
             # Assemble unstructured wall coordinates for this block
-            _, _, _, iwall = block.get_wall()
-            xrtbw = block.xrt[:, iwall.astype(bool)].reshape(3, -1)
+            _, _, _, is_wall = block.get_wall()
+            xrtbw = block.xrt[:, is_wall.astype(bool)].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)
