@@ -30,7 +30,7 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor = 0.005
+    smoothing_factor = 0.01
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
@@ -521,6 +521,15 @@ class SolverBlock:
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
+
+        # # Reduce at boundaries
+        # fac = 0.5
+        # self.dt[0,:,:] *= fac
+        # self.dt[-1,:,:] *= fac
+        # # self.dt[:,0,:] *= fac
+        # # self.dt[:,-1,:] *= fac
+        # # self.dt[:,:,0] *= fac
+        # # self.dt[:,:,-1] *= fac
 
     # @profile
 

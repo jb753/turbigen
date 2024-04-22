@@ -13,13 +13,13 @@ import pytest
 
 settings = {
     # 'n_step': 21600,
-    'n_step': 20000,
+    'n_step': 40000,
     'n_step_avg': 200,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
     'xllim_pitch': 0.,
-    'i_loss': 0,
+    # 'i_loss': 0,
     # "damping_factor" : 25.,
     # "nstep_damp" : -1,
     # "CFL" : 0.4,
@@ -81,7 +81,7 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.02
+    dw = 0.002
     dmax = 0.04
     ER = 1.1
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
