@@ -1076,6 +1076,7 @@ subroutine average_ijk(x1, x2, ijk1, ijk2, ni, nj, nk, nv, npt)
 
 end subroutine
 
+
 subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni

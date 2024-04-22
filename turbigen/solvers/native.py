@@ -37,7 +37,7 @@ class NativeConfig(BaseSolver):
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_2nd_proportion = 0.5
+    smoothing_2nd_proportion = 0.25
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -732,13 +732,6 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
             average_ijk(v1, v2, ijk, nxijk)
 
-            # for i in range(nv):
-            #     v1i = v1[..., i].ravel(order="F")[ind]
-            #     v2i = v2[..., i].ravel(order="F")[nxind]
-            #     avg = 0.5 * (v1i + v2i)
-            #     v1[..., i].ravel(order="F")[ind] = avg
-            #     v2[..., i].ravel(order="F")[nxind] = avg
-
         # Otherwise, communication is needed
         else:
 
@@ -756,18 +749,11 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                # print(f'rank {rank} sending to {nxprocid}')
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-                # print(f'rank {rank} waiting for {nxprocid}')
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                # print(f'rank {rank} done patch')
-            # If our rank is higher than next rank, recieve first
             else:
-                # print(f'rank {rank} waiting for {nxprocid}')
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                # print(f'rank {rank} sending to {nxprocid}')
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-                # print(f'rank {rank} done patch')
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)

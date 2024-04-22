@@ -81,7 +81,7 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.001
+    dw = 0.002
     dmax = 0.04
     ER = 1.05
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
