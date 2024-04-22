@@ -361,7 +361,7 @@ def test_grad():
     rtol = 2e-4
 
     q = np.asfortranarray(np.ones_like(b.r)).astype(typ)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[...,0])
     err_r = np.abs(gradq[...,1])
     err_t = np.abs(gradq[...,2])
@@ -372,7 +372,7 @@ def test_grad():
 
 
     q = np.asfortranarray(b.x).astype(typ)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[...,0]-1.)
     err_r = np.abs(gradq[...,1])
     err_t = np.abs(gradq[...,2])
@@ -382,7 +382,7 @@ def test_grad():
     assert (err_t<rtol).all()
 
     q = np.asfortranarray(-2.*b.r).astype(typ)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[...,0])
     err_r = np.abs(gradq[...,1]/-2.-1.)
     err_t = np.abs(gradq[...,2])
@@ -392,7 +392,7 @@ def test_grad():
     assert (err_t<rtol).all()
 
     q = np.asfortranarray(b.r**2).astype(typ)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[...,0])
     err_r = np.abs(gradq[...,1]/(2*rc)-1.)
     err_t = np.abs(gradq[...,2])
@@ -402,7 +402,7 @@ def test_grad():
     assert (err_t<rtol).all()
 
     q = np.asfortranarray(b.t).astype(typ)
-    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn)
+    turbigen.compiled.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[...,0])
     err_r = np.abs(gradq[...,1])
     err_t = np.abs(gradq[...,2]/(1./rc)-1.)

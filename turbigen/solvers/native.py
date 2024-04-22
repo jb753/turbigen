@@ -14,6 +14,7 @@ from turbigen.compiled import (
     calculate_secondary,
     viscous_force,
     set_walls,
+    average_ijk,
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -36,7 +37,7 @@ class NativeConfig(BaseSolver):
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_2nd_proportion = 0.2
+    smoothing_2nd_proportion = 0.5
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -138,33 +139,32 @@ class SolverBlock:
         self.dw = get_dw(block)
         self.pitch = block.pitch
 
-        # Areas and volumes
+        # Geometry
+        self.r = to_fort(block.r)
+        self.rf = [to_fort(r) for r in block.r_face]
+
+        self.rc = to_fort(np.zeros_like(block.vol))
+        node_to_cell(self.r, self.rc)
+
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
         self.dAk = to_fort(block.dAk_new)
         self.vol = to_fort(block.vol_new)
         self.dlmin = to_fort(block.dlmin)
-
-        # Radii
-        self.r = to_fort(block.r)
-        self.rc = self.vol * 0.
-        node_to_cell(self.r, self.rc)
-        self.rf = [to_fort(rf) for rf in block.r_face]
-
         self.Omega = block.Omega.mean().astype(typ)
         xllim = (
             block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
         )
-        xlength = to_fort(np.clip(block.w, 0.0, xllim))
+        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
         xlength = (0.41 * xlength) ** 2.0
-        self.xlength = self.vol * 0.
+        self.xlength = to_fort(np.zeros_like(block.vol))
         node_to_cell(xlength, self.xlength)
-        self.mu_turb = self.vol * 0.0
+        self.mu_turb = to_fort(np.zeros_like(block.vol))
 
-        self.dU1 = self.conserved * np.nan
-        self.dU2 = self.conserved * np.nan
+        self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
+        self.dU2 = self.conserved.copy(order="F").astype(typ) * np.nan
 
-        self.conserved_avg = self.conserved.astype(np.double)
+        self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.0
 
         ni, nj, nk = block.shape
         self.f = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
@@ -585,38 +585,41 @@ class SolverBlock:
         )
 
 def get_periodic_data(patch):
-    ind = patch.get_flat_indices("F")
+
     match = patch.match
     perm, flip = match.get_match_perm_flip()
-    # print(f'Getting periodic {patch}')
-    # print('dir', patch.ijkdir)
-    # print('match dir', patch.match.ijkdir)
-    # print('perm',perm)
-    # print('flip',flip)
-    nxind = match.get_flat_indices("F", perm, flip)
+
+    ijk = patch.get_indices()
+    nxijk = match.get_indices(perm, flip)
+
     bid = patch.block.grid.index(patch.block)
     nxbid = match.block.grid.index(match.block)
+
+    ijk = ijk.reshape(3,-1)
+    nxijk = nxijk.reshape(3,-1)
 
     # Check the coords match
     b1 = patch.block
     b2 = patch.match.block
 
-    assert np.allclose(
-        b1.x.ravel(order="F")[ind],
-        b2.x.ravel(order="F")[nxind],
-    )
+    Npts = ijk.shape[-1]
+    for n in range(Npts):
 
-    assert np.allclose(
-        b1.r.ravel(order="F")[ind],
-        b2.r.ravel(order="F")[nxind],
-    )
+        ijknow = tuple(ijk[:,n])
+        nxijknow = tuple(nxijk[:,n])
 
-    t1 = np.mod(b1.t.ravel(order="F")[ind], b1.pitch) + 1.0
-    t2 = np.mod(b2.t.ravel(order="F")[nxind], b2.pitch) + 1.0
-    dt = t1 - t2
-    assert np.allclose(t1, t2)
+        assert np.isclose(b1.x[ijknow], b2.x[nxijknow],)
+        assert np.isclose(b1.r[ijknow], b2.r[nxijknow],)
 
-    return bid, ind, nxbid, nxind
+        t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
+        t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
+        assert np.allclose(t1, t2)
+
+    # For Fortran
+    ijk = np.asfortranarray(ijk+1).astype(np.int16)
+    nxijk = np.asfortranarray(nxijk+1).astype(np.int16)
+
+    return bid, ijk, nxbid, nxijk
 
 
 def get_periodics(g, procids):
@@ -708,7 +711,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
+        pid, bid, procid, ijk, nxbid, nxprocid, nxijk = patch
 
         b1 = blocks[bid_local[bid]]
 
@@ -727,13 +730,14 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             elif variable == "residual":
                 v2 = b2.dU1
 
-            for i in range(nv):
-                v1i = v1[..., i].ravel(order="F")[ind]
-                v2i = v2[..., i].ravel(order="F")[nxind]
+            average_ijk(v1, v2, ijk, nxijk)
 
-                avg = 0.5 * (v1i + v2i)
-                v1[..., i].ravel(order="F")[ind] = avg
-                v2[..., i].ravel(order="F")[nxind] = avg
+            # for i in range(nv):
+            #     v1i = v1[..., i].ravel(order="F")[ind]
+            #     v2i = v2[..., i].ravel(order="F")[nxind]
+            #     avg = 0.5 * (v1i + v2i)
+            #     v1[..., i].ravel(order="F")[ind] = avg
+            #     v2[..., i].ravel(order="F")[nxind] = avg
 
         # Otherwise, communication is needed
         else:
@@ -835,15 +839,15 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
+            if conf.i_loss > 0:
+                sb.set_walls()
+
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
             sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
 
             sb.set_outlets(conf.i_exit, conf.K_exit)
-
-            if conf.i_loss > 0:
-                sb.set_walls()
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()

@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    # 'n_step': 21600,
-    'n_step': 1000,
+    'n_step': 40000,
+    # 'n_step': 1000,
     'n_step_avg': 1000,
     'n_step_log': 100,
     'plot_conv': True,
@@ -81,9 +81,9 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.002
+    dw = 0.001
     dmax = 0.04
-    ER = 1.1
+    ER = 1.05
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
     ddmax = np.diff(cluv).max()*h
 
@@ -114,7 +114,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 1
+    nblock = 2
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -269,28 +269,6 @@ def test_poiseuille():
 
     np.set_printoptions(precision=2)
     turbigen.solvers.native.run(g, settings)
-
-    fig, ax = plt.subplots()
-    for b in g:
-        C = b[b.ni//2,:,1]
-        ax.plot(C.r, C.Vx)
-
-    fig, ax = plt.subplots()
-    for b in g:
-        C = b[b.ni//2,b.nj//2,:]
-        ax.plot(C.t, C.Vx)
-
-    fig, ax = plt.subplots()
-    lev = np.linspace(0,g[0].Vx.max(),11)
-    for b in g:
-        C = b[:,:,1]
-        ax.contourf(C.x, C.r, C.Vx,lev)
-    ax.axis('equal')
-    ax.set_title('Vx')
-    plt.show()
-    quit()
-
-
 
     b = g[0]
     C = b[:, b.nj//2, b.nk//2]

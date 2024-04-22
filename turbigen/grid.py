@@ -147,17 +147,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall_old(self, trim=0):
-        # Preallocate wall indicator with True on boundaries, False interior
-        is_wall = np.ones(self.shape, dtype=bool)
-        is_wall[1:-1, 1:-1, 1:-1] = False
-        # Loop over patches
-        for patch in self.patches:
-            # Unset wall indicator if patch is not wall
-            if type(patch) in NOT_WALL_PATCHES:
-                is_wall[patch.get_slice(trim=trim)] = False
-        return is_wall
-
     def get_wall(self):
 
         ni, nj, nk = self.shape
@@ -1244,17 +1233,26 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
-    def get_indices(self, extra_dim=0):
+    def get_indices(self, perm=None, flip=()):
         # Return ijk indices over the patch
         nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
         ijk_lim = self.ijk_limits.copy()
         ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
         ijk_lim[:, 1] += 1
-        if extra_dim:
-            ijk_lim = np.append(ijk_lim, [[0, extra_dim]], axis=0)
         ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
-        ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
+        ijk = np.stack(np.meshgrid(*ijkv, indexing="ij"))
+
+        if perm is not None:
+            ijk = np.stack(
+                [
+                    np.flip(ijkn, axis=flip).transpose(perm)
+                    for ijkn in ijk
+                ]
+            )
+
+
         return ijk
+
 
     def get_flat_indices(self, order="C", perm=None, flip=None):
         # Return indices of all points on patch into self.block.ravel

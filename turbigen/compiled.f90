@@ -1028,6 +1028,54 @@ subroutine set_ijk_zero_5d(x, ijk, ni, nj, nk, nv, nc, npt)
 end subroutine
 
 
+
+subroutine average_ijk(x1, x2, ijk1, ijk2, ni, nj, nk, nv, npt)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nv
+    integer, intent (in)  :: npt
+
+    real*4, intent (inout) :: x1(ni, nj, nk, nv)
+    real*4, intent (inout) :: x2(ni, nj, nk, nv)
+    integer*2, intent (in) :: ijk1(3, npt)
+    integer*2, intent (in) :: ijk2(3, npt)
+
+    integer :: ipt
+    real*4 :: avg(nv)
+
+    integer :: i1
+    integer :: j1
+    integer :: k1
+
+    integer :: i2
+    integer :: j2
+    integer :: k2
+
+    ! If we have some points
+    if (npt > 0) then
+        ! Loop over all points
+        do ipt = 1,npt
+
+            ! Extract indices
+            i1 = ijk1(1, ipt)
+            j1 = ijk1(2, ipt)
+            k1 = ijk1(3, ipt)
+            i2 = ijk2(1, ipt)
+            j2 = ijk2(2, ipt)
+            k2 = ijk2(3, ipt)
+
+            ! Get average
+            avg = 0.5e0*(x1(i1, j1, k1, :) + x2(i2, j2, k2, :))
+            x1(i1, j1, k1, :) = avg
+            x2(i2, j2, k2, :) = avg
+
+        end do
+    end if
+
+end subroutine
+
 subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni
