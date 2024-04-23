@@ -1199,22 +1199,3 @@ subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
     end if
 
 end subroutine
-
-
-
-subroutine P_from_rho_u(rho, u, cvTu0, ga, P, ni)
-
-    integer, intent (in)  :: ni
-    integer, intent (in)  :: nj
-    integer, intent (in)  :: nk
-
-    real*4, intent (out) :: P(ni)
-    real*4, intent (in) :: u(ni)
-    real*4, intent (in) :: rho(ni)
-
-    real*4, intent (in) :: cvTu0
-    real*4, intent (in) :: ga
-
-    P = rho*(ga-1e0)*(u+ cvTu0)
-
-end subroutine

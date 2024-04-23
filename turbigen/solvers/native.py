@@ -666,7 +666,7 @@ def get_inlet_data(patch):
         patch.state.rho,
         patch.state.h,
         patch.state.s,
-        patch.get_cut().r.reshape(-1),
+        to_fort(patch.get_cut().r.reshape(-1)),
         normal,
     )
 
@@ -760,7 +760,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             set_ijk_average(v1, vs, nxv, ijk)
 
 
-# @profile
+@profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     comm = MPI.COMM_WORLD
