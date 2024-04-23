@@ -86,7 +86,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -185,7 +185,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     return g, F
 
 settings = {
-    'n_step': 2000,
+    'n_step': 10000,
     'n_step_avg': 10,
     'n_step_log': 1000,
     'i_loss': 0,
@@ -301,6 +301,8 @@ def test_condi(dirn, plot=False):
     g[0].Vt += 0.1*g[0].Vx.mean()
 
     np.set_printoptions(precision=2)
+
+    print(g[0].T.min())
 
     turbigen.solvers.native.run(g, settings)
 
@@ -469,19 +471,19 @@ def not_test_exit(Alpha):
 
     turbigen.solvers.native.run(g, settings)
 
-    fig, ax = plt.subplots()
-    b = g[-1]
-    Cout = b[-1,:,b.nk//2]
-    ax.plot(Cout.x,Cout.Ma)
-    plt.show()
+    # fig, ax = plt.subplots()
+    # b = g[-1]
+    # Cout = b[-1,:,b.nk//2]
+    # ax.plot(Cout.x,Cout.Ma)
+    # plt.show()
 
 
-    fig, ax = plt.subplots()
-    b = g[-1]
-    Cout = b[-1,:,b.nk//2]
-    ax.plot(Cout.P/F.P[-1]-1., Cout.r)
-    ax.set_title('P/Pout')
-    plt.show()
+    # fig, ax = plt.subplots()
+    # b = g[-1]
+    # Cout = b[-1,:,b.nk//2]
+    # ax.plot(Cout.P/F.P[-1]-1., Cout.r)
+    # ax.set_title('P/Pout')
+    # plt.show()
 
 if __name__=='__main__':
 
@@ -503,4 +505,4 @@ if __name__=='__main__':
     # test_radius(30.)
 
     # print('testing con-di nozzles')
-    test_condi('r')
+    test_condi('t')

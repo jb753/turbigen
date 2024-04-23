@@ -33,6 +33,7 @@ subroutine residual(&
     real*4, intent (inout)  :: f(ni-1, nj-1, nk-1, 5)
 
     integer :: ip
+    integer :: ic
 
     real*4 :: Sn(ni, nj, nk)
     real*4 :: Sc(ni-1, nj-1, nk-1)
@@ -49,10 +50,21 @@ subroutine residual(&
     real*4, intent(in) :: ho( ni, nj, nk)
 
     real*4 :: Vt( ni, nj, nk)
+    real*4 :: Vx( ni, nj, nk)
+    real*4 :: rVt( ni, nj, nk)
+    real*4 :: Vr(ni, nj, nk)
 
     real*4 :: Pi( ni, nj-1, nk-1)
     real*4 :: Pj( ni-1, nj, nk-1)
     real*4 :: Pk( ni-1, nj-1, nk)
+
+    real*4 :: rovi( ni, nj-1, nk-1, 3)
+    real*4 :: rovj( ni-1, nj, nk-1, 3)
+    real*4 :: rovk( ni-1, nj-1, nk, 3)
+
+    real*4 :: fmi( ni, nj-1, nk-1, 5)
+    real*4 :: fmj( ni-1, nj, nk-1, 5)
+    real*4 :: fmk( ni-1, nj-1, nk, 5)
 
     ! Radii
     real*4, intent(in) :: r( ni, nj, nk)
@@ -65,26 +77,91 @@ subroutine residual(&
     Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
     call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
-    ! Face-average pressure and radius on the faces
+    ! Face-centered pressure 
     call node_to_face( &
         P, Pi, Pj, Pk, &
          ni, nj, nk, 1 &
     )
 
-    ! Evaluate convective fluxes at nodes
-    call get_fluxes_node(conserved, ho, r, fn, ni, nj, nk)
+    ! Evaluate the mass flux at face centers and store in rov
+    ! roVx
+    call node_to_face( conserved(:,:,:,2), &
+        rovi(:, :, :, 1), rovj(:, :, :, 1), rovk(:, :, :, 1), &
+        ni, nj, nk, 1 &
+    )
+    ! roVr
+    call node_to_face( conserved(:,:,:,3), &
+        rovi(:, :, :, 2), rovj(:, :, :, 2), rovk(:, :, :, 2), &
+        ni, nj, nk, 1 &
+    )
+    ! roVt
+    call node_to_face( conserved(:,:,:,4)/r, &
+        rovi(:, :, :, 3), rovj(:, :, :, 3), rovk(:, :, :, 3), &
+        ni, nj, nk, 1 &
+    )
 
-    ! Distribute to faces
+    ! Now evaluate the fluxes per unit mass of the other conserved 
+    ! quantities at face centers and store in fm
+    ! mass per unit mass = 1
+    fmi(:, :, :, 1) = 1e0  
+    fmj(:, :, :, 1) = 1e0  
+    fmk(:, :, :, 1) = 1e0  
+    ! axial momentum per unit mass = Vx
+    Vx = conserved(:, :, :, 2)/conserved(:, :, :, 1)
+    call node_to_face( Vx, &
+        fmi(:, :, :, 2), fmj(:, :, :, 2), fmk(:, :, :, 2), &
+        ni, nj, nk, 1 &
+    )
+    ! radial momentum per unit mass = Vx
+    Vr = conserved(:, :, :, 3)/conserved(:, :, :, 1)
+    call node_to_face( Vr, &
+        fmi(:, :, :, 3), fmj(:, :, :, 3), fmk(:, :, :, 3), &
+        ni, nj, nk, 1 &
+    )
+    ! moment of momentum per unit mass = rVt
+    rVt = conserved(:, :, :, 4)/conserved(:, :, :, 1)
+    call node_to_face( rVt, &
+        fmi(:, :, :, 4), fmj(:, :, :, 4), fmk(:, :, :, 4), &
+        ni, nj, nk, 1 &
+    )
+    ! energy flux per unit mass = ho
+    call node_to_face( ho, &
+        fmi(:, :, :, 5), fmj(:, :, :, 5), fmk(:, :, :, 5), &
+        ni, nj, nk, 1 &
+    )
+
+    ! We now multipli fm and rov to get the actual fluxes
     do ip = 1,5
-        call node_to_face( &
-            fn(:,:,:,:,ip), fi(:,:,:,:,ip), fj(:,:,:,:,ip), fk(:,:,:,:,ip), &
-            ni, nj, nk, 3 &
-        )
+        do ic = 1,3
+            fi(:, :, :, ic, ip) = rovi(:, :, :, ic) * fmi(:, :, :, ip)
+            fj(:, :, :, ic, ip) = rovj(:, :, :, ic) * fmj(:, :, :, ip)
+            fk(:, :, :, ic, ip) = rovk(:, :, :, ic) * fmk(:, :, :, ip)
+        end do
     end do
 
-    call get_fluxes_face(fi, Pi, ri, ijk_iwall, Omega, ni, nj-1, nk-1, niwall)
-    call get_fluxes_face(fj, Pj, rj, ijk_jwall, Omega, ni-1, nj, nk-1, njwall)
-    call get_fluxes_face(fk, Pk, rk, ijk_kwall, Omega, ni-1, nj-1, nk, nkwall)
+    ! zero convective fluxes on the wall
+    call set_ijk_zero_5d(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
+    call set_ijk_zero_5d(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
+    call set_ijk_zero_5d(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+
+    ! Add pressure fluxes
+    call add_pressure_fluxes(fi, Pi, ri, Omega, ni, nj-1, nk-1)
+    call add_pressure_fluxes(fj, Pj, rj, Omega, ni-1, nj, nk-1)
+    call add_pressure_fluxes(fk, Pk, rk, Omega, ni-1, nj-1, nk)
+
+    ! ! Evaluate convective fluxes at nodes
+    ! call get_fluxes_node(conserved, ho, r, fn, ni, nj, nk)
+    ! ! Distribute to faces
+    ! do ip = 1,5
+    !     call node_to_face( &
+    !         fn(:,:,:,:,ip), fi(:,:,:,:,ip), fj(:,:,:,:,ip), fk(:,:,:,:,ip), &
+    !         ni, nj, nk, 3 &
+    !     )
+    ! end do
+
+    ! call get_fluxes_face(fi, Pi, ri, ijk_iwall, Omega, ni, nj-1, nk-1, niwall)
+    ! call get_fluxes_face(fj, Pj, rj, ijk_jwall, Omega, ni-1, nj, nk-1, njwall)
+    ! call get_fluxes_face(fk, Pk, rk, ijk_kwall, Omega, ni-1, nj-1, nk, nkwall)
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
@@ -239,6 +316,31 @@ subroutine get_fluxes_node(conserved, ho, r, flux, ni, nj, nk)
     do ic = 1,3
         flux(:,:,:,ic,5) = flux(:,:,:,ic,1) * ho
     end do
+
+end subroutine
+
+subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: Omega
+    real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
+    real*4, intent (in)  :: P(ni, nj, nk)
+
+    ! pressure fluxes
+    ! x-mom in x-dirn
+    flux(:, :, :, 1, 2) = flux(:, :, :, 1, 2) + P
+    ! r-mom in r-dirn
+    flux(:, :, :, 2, 3) = flux(:, :, :, 2, 3) + P
+    ! rt-mom in t-dirn
+    flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
+    ! ho in t-dirn
+    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + Omega*r*P
+
 
 end subroutine
 

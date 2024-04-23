@@ -143,13 +143,6 @@ import numpy as np
 from turbigen.base import dependent_property, StructuredData
 import turbigen.util
 
-# Try to use compiled versions of hot path properties
-try:
-    from turbigen.compiled import P_from_rho_u
-except ImportError:
-    def P_from_rho_u(rho, u, cvTu0, gm1):
-        return rho*gm1*(u+ cvTu0)
-
 
 # Share tabular property data across instances in a class-level dict
 _abstract_states = {"HEOS": {}, "BICUBIC&HEOS": {}}
@@ -166,7 +159,7 @@ class PerfectState(StructuredData):
     # Arbitrary reference properties for entropy datum
     Ps0 = 1e5
     Ts0 = 300.0
-    cvTu0 = 300.0*718.0
+    Tu0 = 300.0
 
     def __eq__(self, other):
         if other is None:
@@ -275,7 +268,7 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def P(self):
-        return self.rho*(self.gamma-1.)*(self.u+ self.cvTu0)
+        return self.rho * (self.gamma - 1.0) * (self.u + self.cv*self.Tu0)
 
     @dependent_property
     def a(self):
@@ -283,11 +276,11 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def h(self):
-        return self.cp * self.T - self.cvTu0
+        return self.gamma * self.u + self.Tu0*self.rgas
 
     @dependent_property
     def T(self):
-        return (self.u  + self.cvTu0)/ self.cv
+        return self.u / self.cv + self.Tu0
 
     @property
     def is_two_phase(self):
@@ -325,7 +318,7 @@ class PerfectState(StructuredData):
         return self.set_P_T(P, T)
 
     def set_P_T(self, P, T):
-        u = self.cv * T - self.cvTu0
+        u = self.cv * (T - self.Tu0)
         rho = P / self.rgas / T
         return self.set_rho_u(rho, u)
 
@@ -335,7 +328,7 @@ class PerfectState(StructuredData):
         return self
 
     def set_h_s(self, h, s):
-        T = (h + self.cvTu0) / self.cp
+        T = (h + self.cv * self.Tu0) / self.cp
         P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
         self.set_P_T(P, T)
         assert np.allclose(self.h, h)
@@ -348,7 +341,7 @@ class PerfectState(StructuredData):
         return self
 
     def set_P_h(self, P, h):
-        T = (h + self.cvTu0) / self.cp
+        T = (h + self.cv * self.Tu0) / self.cp
         self.set_P_T(P, T)
         # print(self.h[0], h[0])
         # assert np.allclose(self.h, h)
@@ -368,7 +361,7 @@ class PerfectState(StructuredData):
     def set_rho_s(self, rho, s):
         rhos0 = self.Ps0 / self.rgas / self.Ts0
         T = self.Ts0 * np.exp((s + self.rgas * np.log(rho / rhos0)) / self.cv)
-        u = self.cv*T - self.cvTu0
+        u = self.cv * (T - self.Tu0)
         self.set_rho_u(rho, u)
         return self
 

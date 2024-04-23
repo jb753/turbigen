@@ -760,7 +760,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             set_ijk_average(v1, vs, nxv, ijk)
 
 
-@profile
+# @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     comm = MPI.COMM_WORLD
@@ -978,12 +978,18 @@ def run(grid, settings={}, machine=None):
     #     # ax.axis('equal')
     # plt.show()
 
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks):
-    #     C = b[:, :, b.nk // 2]
-    #     ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
-    # ax.axis('equal')
-    # plt.show()
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks):
+        C = b[:, b.nj // 2, :]
+        ax.contourf(C.x, C.rt, sb.dU1[:,b.nj//2,:,0])
+    ax.axis('equal')
+
+    fig, ax = plt.subplots()
+    for b, sb in zip(grid, blocks):
+        C = b[:, :, b.nk // 2]
+        ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
+    ax.axis('equal')
+    plt.show()
 
     if conf.plot_conv:
 
