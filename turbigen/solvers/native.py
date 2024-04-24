@@ -17,6 +17,7 @@ from turbigen.compiled import (
     average_ijk,
     get_ijk,
     set_ijk_average,
+    wall_function,
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -34,12 +35,12 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor = 0.005
+    smoothing_factor = 0.01
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_2nd_proportion = 0.25
+    smoothing_2nd_proportion = 0.2
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -179,6 +180,59 @@ class SolverBlock:
                 np.asfortranarray(np.argwhere(wall).T+1).astype(np.int16)
                 for wall in block.get_wall()
         ]
+
+        # Get wall length scales
+        # dli, dlj, dlk  = [to_fort(dl) for dl in block.get_dwall()]
+
+        # Get indices to face-average on first node off the wall
+        iwall1, jwall1, kwall1 = [ijk+0 for ijk in self.ijk_wall_face]
+        # iwall1[0,iwall1[0,:]==1] += 1
+        iwall1[0,iwall1[0,:]==ni] -= 1
+        # jwall1[1,jwall1[1,:]==1] += 1
+        jwall1[1,jwall1[1,:]==nj] -= 1
+        # kwall1[2,kwall1[2,:]==1] += 1
+        kwall1[2,kwall1[2,:]==nk] -= 1
+
+        self.dw_face = [
+            get_ijk(to_fort(dl), ijk) for dl, ijk in
+            zip(block.get_dwall(), [iwall1, jwall1, kwall1])
+        ]
+
+        dAijk = [
+                np.sqrt((self.dAi**2).sum(axis=-1)),
+                np.sqrt((self.dAj**2).sum(axis=-1)),
+                np.sqrt((self.dAk**2).sum(axis=-1)),
+        ]
+
+        self.dA_face = [
+            get_ijk(dA, ijk) for dA, ijk in
+            zip(dAijk, self.ijk_wall_face)
+        ]
+
+#         iwall1f = np.stack(
+#             ( iwall1, iwall1, iwall1, iwall1 ), axis=1
+#         )
+#         iwall1f[1,1,:] +=1
+#         iwall1f[2,2,:] +=1
+#         iwall1f[1,3,:] +=1
+#         iwall1f[2,3,:] +=1
+
+#         jwall1f = np.stack(
+#             ( jwall1, jwall1, jwall1, jwall1 ), axis=1
+#         )
+#         jwall1f[0,1,:] +=1
+#         jwall1f[2,2,:] +=1
+#         jwall1f[0,3,:] +=1
+#         jwall1f[2,3,:] +=1
+
+#         kwall1f = np.stack(
+#             ( kwall1, kwall1, kwall1, kwall1 ), axis=1
+#         )
+#         kwall1f[0,1,:] +=1
+#         kwall1f[1,2,:] +=1
+#         kwall1f[0,3,:] +=1
+#         kwall1f[1,3,:] +=1
+
 
         self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
@@ -502,6 +556,21 @@ class SolverBlock:
 
         set_walls(self.conserved, self.u, self.ho, self.halfVsq, self.ijk_wall_node)
 
+    def set_wall_function(self):
+        ni, nj, nk, _ = self.conserved.shape
+        for dirn, (dw, ijk, dA) in enumerate(zip(self.dw_face, self.ijk_wall_face, self.dA_face)):
+            nwall = ijk.shape[1]
+            if nwall:
+                wall_function(
+                        self.f,
+                        ijk,
+                        dirn+1,
+                        self.conserved,
+                        self.r,
+                        self.vol,
+                        dw,
+                        dA,
+                        self.mu, ni, nj, nk, nwall)
 
     def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -805,6 +874,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     dUe_ref = None
 
+    dUnow = np.empty((conf.n_step_log, nblock, 5))
+
+
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
@@ -821,8 +893,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if conf.i_loss > 0:
-                sb.set_walls()
+            # if conf.i_loss > 0:
+                # sb.set_walls()
 
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
@@ -833,6 +905,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
+                sb.set_wall_function()
 
             sb.residual()
 
@@ -851,12 +924,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.smooth(sf2, sf4)
 
+        # Record residuals
+        iilog = np.mod(istep-1, conf.n_step_log)
+        dUnow[iilog] = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
 
         if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
 
             # Send residuals to master proc
-            dUnow = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
-
             if rank:
                 comm.send(dUnow, dest=0)
 
@@ -866,17 +940,17 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 ]
                 for iproc in range(1, size):
                     dUall.append(comm.recv(source=iproc))
-                dUall = np.concatenate(dUall)
+                dUall = np.concatenate(dUall, axis=-1)
 
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / conf.n_step_log
                 tstart = ten
 
                 logger.info(f"{istep}: tpnps={tpnps:.3e}")
-                for ib, dU in enumerate(dUall):
+                for ib, dU in enumerate(dUall.mean(axis=0)):
                     logger.info(f"  block {ib}: {dU}")
 
-                dUlognow = np.stack(dUall).mean(axis=0)
+                dUlognow = np.stack(dUall).mean(axis=1)
                 dUlog.append(dUlognow)
 
 
@@ -993,7 +1067,7 @@ def run(grid, settings={}, machine=None):
 
     if conf.plot_conv:
 
-        dUlog = np.array(dUlog)
+        dUlog = np.concatenate(dUlog, axis=0)
         drho_ref = dUlog[1, 0]
         drhoVx_ref = dUlog[1, 1]
         drhoVr_ref = dUlog[1, 2]

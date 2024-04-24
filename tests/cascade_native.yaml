@@ -9,7 +9,7 @@ inlet:
   Po: 1e5  # Stagnation pressure [Pa]
   To: 300.  # Stagnation temperature [K]
   cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
-  mu: 1.8e-4  # Working fluid dynamic viscosity [kg/m/s]
+  mu: 1.8e-5  # Working fluid dynamic viscosity [kg/m/s]
   gamma: 1.4  # Working fluid ratio of specific heats [-]
 
 # Mean-line design
@@ -37,7 +37,7 @@ blades:
       # List of sections for this row
       - spf: 0.5  # Span fraction
         # Vector of thickness parameters
-        q_thick: [0.05, 0.12, 0.3, 0.02, 0.0, 0.18]
+        q_thick: [0.01, 0.05, 0.3, 0.02, 0.0, 0.18]
         # Vector of camber parameters
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
     # - ...
@@ -52,22 +52,22 @@ mesh:
   # # resolution_factor: 0.5  # Double grid spacing in each direction
 
   type: h  # Mesh topology
-  yplus: 30.0  # Non-dimensional wall distance
+  yplus: 15.0  # Non-dimensional wall distance
   resolution_factor: 0.5  # Double grid spacing in each direction
 
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 1000
-  n_step_avg: 1
+  n_step: 4000
+  n_step_avg: 500
   n_step_log: 100
-  damping_factor: 10.0
-  # nstep_damp: -1
-  CFL: 0.4
-  # smoothing_factor: 0.5
-  # smoothing_2nd_proportion: 1.
-  i_scheme: 0
-  i_loss: 0
+  damping_factor: 25.0
+  nstep_damp: -1
+  CFL: 0.7
+  # smoothing_factor: 0.05
+  # smoothing_2nd_proportion: 0.5
+  # i_scheme: 0
+  # i_loss: 0
   plot_conv: true
   # i_inlet: 0
   # i_exit: 0

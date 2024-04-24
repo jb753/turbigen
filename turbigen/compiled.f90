@@ -260,7 +260,6 @@ subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
         Vxrt(:,:,:, ic) = conserved(:,:,:,ic+1)/conserved(:,:,:,1)
     end do
     Vxrt(:,:,:,3) = Vxrt(:,:,:,3)/r
-
     halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
     u = conserved(:,:,:,5)/conserved(:,:,:,1) - halfVsq
@@ -1299,5 +1298,526 @@ subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
 
         end do
     end if
+
+end subroutine
+
+subroutine wall_function(f, ijk, dirn, conserved, r, vol, dw, dA, mu, ni, nj, nk, nwall)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
+
+    real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
+    integer*2, intent (in) :: ijk(3, nwall)
+    integer*2 :: dirn
+    real*4, intent (inout) :: conserved(ni, nj, nk, 5)
+    real*4, intent (in) :: r(ni, nj, nk)
+    real*4, intent (inout) :: vol(ni-1,nj-1,nk-1)
+
+    real*4, intent (in) :: dw(nwall)
+    real*4, intent (in) :: dA(nwall)
+    real*4, intent (in) :: mu
+
+    real*4 :: rw
+    real*4 :: rw0
+    real*4 :: Rew
+
+    real*4 :: roVxrtw(4)
+    real*4 :: Vxrtw(3)
+    real*4 :: vec(3)
+    real*4 :: roVxrtw0(4)
+    real*4 :: Vxrtw0(3)
+    real*4 :: row
+    real*4 :: Vw
+    integer :: iwall
+    integer :: i1
+    integer :: j1
+    integer :: k1
+    integer :: ic
+    integer :: jc
+    integer :: kc
+
+    real*4 :: a1
+    real*4 :: a2
+    real*4 :: a3
+    real*4 :: lnRew
+    real*4 :: cf
+    real*4 :: tauw
+    real*4 :: rc
+    real*4 :: yplus
+    real*4 :: vtau
+
+    a1 = 1.767e-3
+    a2 = 3.177e-2
+    a3 = 2.5614-1
+
+    roVxrtw = 0e0
+    row = 0e0
+    rw = 0e0
+
+    ! If we have at least one wall
+    if (nwall > 0) then
+        ! Loop over all points
+        do iwall = 1,nwall
+
+            ! Extract indices
+            i = ijk(1, iwall)
+            j = ijk(2, iwall)
+            k = ijk(3, iwall)
+
+            ! Choose wall direction
+            if (dirn.eq.1) then
+
+                ! These are i-faces
+
+                ! Face-centered density and velocity on wall
+                roVxrtw0 = ( &
+                      conserved(i, j  , k   ,1:4) &
+                    + conserved(i, j+1, k   ,1:4) &
+                    + conserved(i, j  , k+1 ,1:4) &
+                    + conserved(i, j+1, k+1 ,1:4) &
+                )/4e0
+                rw0 = ( &
+                      r(i, j  , k  ) &
+                    + r(i, j+1, k  ) &
+                    + r(i, j  , k+1) &
+                    + r(i, j+1, k+1) &
+                )/4e0
+
+                ! Choose the i index of one node off wall
+                if (i.eq.1) then
+                    i1 = i + 1
+                else
+                    i1 = i - 1
+                end if
+
+                ! Face-centered density and velocity
+                roVxrtw = ( &
+                      conserved(i1, j  , k   ,1:4) &
+                    + conserved(i1, j+1, k   ,1:4) &
+                    + conserved(i1, j  , k+1 ,1:4) &
+                    + conserved(i1, j+1, k+1 ,1:4) &
+                )/4e0
+                rw = ( &
+                      r(i1, j  , k  ) &
+                    + r(i1, j+1, k  ) &
+                    + r(i1, j  , k+1) &
+                    + r(i1, j+1, k+1) &
+                )/4e0
+
+            else if (dirn.eq.2) then
+
+                ! These are j-faces
+
+                ! Face-centered density and velocity on wall
+                roVxrtw0 = ( &
+                      conserved(i  , j, k  , 1:4) &
+                    + conserved(i+1, j, k  , 1:4) &
+                    + conserved(i  , j, k+1, 1:4) &
+                    + conserved(i+1, j, k+1, 1:4) &
+                )/4e0
+                rw0 = ( &
+                      r(i  , j, k  ) &
+                    + r(i+1, j, k  ) &
+                    + r(i  , j, k+1) &
+                    + r(i+1, j, k+1) &
+                )/4e0
+
+                ! Choose the j index of one node off wall
+                if (j.eq.1) then
+                    j1 = j + 1
+                else
+                    j1 = j- 1
+                end if
+
+                ! Face-centered density and velocity
+                roVxrtw = ( &
+                      conserved(i  , j1, k  , 1:4) &
+                    + conserved(i+1, j1, k  , 1:4) &
+                    + conserved(i  , j1, k+1, 1:4) &
+                    + conserved(i+1, j1, k+1, 1:4) &
+                )/4e0
+                rw = ( &
+                      r(i  , j1, k  ) &
+                    + r(i+1, j1, k  ) &
+                    + r(i  , j1, k+1) &
+                    + r(i+1, j1, k+1) &
+                )/4e0
+
+            else if (dirn.eq.3) then
+
+
+                ! These are k faces
+                ! Face-centered density and velocity
+                roVxrtw0 = ( &
+                      conserved(i  , j  , k, 1:4) &
+                    + conserved(i+1, j  , k, 1:4) &
+                    + conserved(i  , j+1, k, 1:4) &
+                    + conserved(i+1, j+1, k, 1:4) &
+                )/4e0
+                rw0 = ( &
+                      r(i  , j  , k) &
+                    + r(i+1, j  , k) &
+                    + r(i  , j+1, k) &
+                    + r(i+1, j+1, k) &
+                )/4e0
+
+                ! Choose index for one node off wall
+                if (k.eq.1) then
+                    k1 = k + 1
+                else
+                    k1 = k - 1
+                end if
+
+                ! Face-centered density and velocity
+                roVxrtw = ( &
+                      conserved(i  , j  , k1, 1:4) &
+                    + conserved(i+1, j  , k1, 1:4) &
+                    + conserved(i  , j+1, k1, 1:4) &
+                    + conserved(i+1, j+1, k1, 1:4) &
+                )/4e0
+                rw = ( &
+                      r(i  , j  , k1) &
+                    + r(i+1, j  , k1) &
+                    + r(i  , j+1, k1) &
+                    + r(i+1, j+1, k1) &
+                )/4e0
+
+            end if
+
+            roVxrtw(4) = roVxrtw(4)/rw
+            row = roVxrtw(1)
+            Vxrtw = roVxrtw(2:4)/row
+
+            roVxrtw0(4) = roVxrtw0(4)/rw0
+            row0 = roVxrtw0(1)
+            Vxrtw0 = roVxrtw0(2:4)/row0
+
+            ! Form the cell Reynolds
+            Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
+            Vw0 = sqrt(sum(Vxrtw0*Vxrtw0, 1))
+            Rew = row * Vw * dw(iwall)/mu
+            lnRew = alog(Rew)
+            if (Rew.lt.12.5e0) then
+                cf = 1e0/Rew
+            else
+                cf = a1 + a2/lnRew + a3/lnRew/lnRew
+            end if
+            tauw = cf * 0.5e0 * row *Vw*Vw
+
+            ! Get indices into the cell for this face
+            if (i.eq.ni) then
+                ic = ni-1
+            else
+                ic = i
+            end if
+            if (j.eq.nj) then
+                jc = nj-1
+            else
+                jc = j
+            end if
+            if (k.eq.nk) then
+                kc = nk-1
+            else
+                kc = k
+            end if
+
+            ! multiply by face area magnitude
+            ! direction is opposite to cell velocity
+            vec = -Vxrtw0*dA(iwall)/vol(ic, jc, kc)
+            if (Vw.gt.0e0) then
+                vec = vec/Vw0
+            else
+                vec = 0e0
+            end if
+            ! print*, ic, jc, kc
+
+            vtau = sqrt(tauw/row)
+            yplus = row*vtau*dw(iwall)/mu
+
+            ! print*, yplus
+            ! print*, Vxrtw, Vw
+            ! print*, vec
+
+            rc = ( &
+                r(ic, jc, kc) &
+                + r(ic+1, jc, kc) &
+                + r(ic, jc+1, kc) &
+                + r(ic+1, jc+1, kc) &
+                + r(ic, jc, kc+1) &
+                + r(ic+1, jc, kc+1) &
+                + r(ic, jc+1, kc+1) &
+                + r(ic+1, jc+1, kc+1) &
+            )/8e0
+
+            ! print*, i, j, k
+            ! print*, ic, jc, kc
+            ! print*, ni, nj, nk
+            ! print*, tauw, vec
+            ! print*, mu, row, Vw, dw(iwall)
+            ! print*, Rew, tauw, dA(iwall), vol(ic, jc, kc)
+
+
+            f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
+            f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
+            f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
+
+        end do
+    end if
+
+
+end subroutine
+
+subroutine Re_cell(f, conserved, r, vol, dw, dA, mu, ijk, ni, nj, nk, nwall)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
+
+    real*4, intent (inout) :: conserved(ni, nj, nk, 5)
+    real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
+    real*4, intent (inout) :: vol(ni-1,nj-1,nk-1)
+    integer*2, intent (in) :: ijk(3, nwall)
+    real*4, intent (in) :: dw(nwall)
+    real*4, intent (in) :: dA(nwall)
+    ! real*4, intent (in) :: rw(nwall)
+    real*4 :: rw
+    real*4, intent (in) :: r(ni, nj, nk)
+    real*4 :: Rew
+
+    real*4 :: Vxrtw(3)
+    real*4 :: vec(3)
+    real*4 :: row
+    real*4 :: Vw
+    real*4 :: mu
+    integer :: iwall
+    integer :: i1
+    integer :: j1
+    integer :: k1
+    integer :: ic
+    integer :: jc
+    integer :: kc
+
+    real*4 :: a1
+    real*4 :: a2
+    real*4 :: a3
+    real*4 :: lnRew
+    real*4 :: cf
+    real*4 :: tauw
+    real*4 :: rc
+    real*4 :: yplus
+    real*4 :: vtau
+
+    a1 = 1.767e-3
+    a2 = 3.177e-2
+    a3 = 2.5614-1
+
+    Vxrtw = 0e0
+    row = 0e0
+    rw = 0e0
+
+    if (nwall > 0) then
+        ! Loop over all points
+        do iwall = 1,nwall
+
+            ! Extract indices
+            i = ijk(1, iwall)
+            j = ijk(2, iwall)
+            k = ijk(3, iwall)
+
+            ! Choose wall direction
+            if ((i.eq.1).or.(i.eq.ni)) then
+
+                if (i.eq.1) then
+                    i1 = i + 1
+                else if (i.eq.ni) then
+                    i1 = i - 1
+                end if
+
+                ! Face-centered density and velocity
+                row = ( &
+                      conserved(i1, i  , j   ,1) &
+                    + conserved(i1, i+1, j   ,1) &
+                    + conserved(i1, i  , j+1 ,1) &
+                    + conserved(i1, i+1, j+1 ,1) &
+                )/4e0
+                rw = ( &
+                      r(i1, i  , j  ) &
+                    + r(i1, i+1, j  ) &
+                    + r(i1, i  , j+1) &
+                    + r(i1, i+1, j+1) &
+                )/4e0
+                Vxrtw(1) = ( &
+                      conserved(i1, j  , k  , 2) &
+                    + conserved(i1, j+1, k  , 2) &
+                    + conserved(i1, j  , k+1, 2) &
+                    + conserved(i1, j+1, k+1, 2) &
+                )/4e0/row
+                Vxrtw(2) = ( &
+                      conserved(i1, j  , k  , 3) &
+                    + conserved(i1, j+1, k  , 3) &
+                    + conserved(i1, j  , k+1, 3) &
+                    + conserved(i1, j+1, k+1, 3) &
+                )/4e0/row
+                Vxrtw(3) = ( &
+                      conserved(i1, j  , k  , 4) &
+                    + conserved(i1, j+1, k  , 4) &
+                    + conserved(i1, j  , k+1, 4) &
+                    + conserved(i1, j+1, k+1, 4) &
+                )/4e0/row/rw
+
+            else if ((j.eq.1).or.(j.eq.nj)) then
+
+                if (j.eq.1) then
+                    j1 = j + 1
+                else if (j.eq.nj) then
+                    j1 = j
+                end if
+
+                ! Face-centered density and velocity
+                row = ( &
+                      conserved(i  , j1, k  , 1) &
+                    + conserved(i+1, j1, k  , 1) &
+                    + conserved(i  , j1, k+1, 1) &
+                    + conserved(i+1, j1, k+1, 1) &
+                )/4e0
+                rw = ( &
+                      r(i  , j1, k  ) &
+                    + r(i+1, j1, k  ) &
+                    + r(i  , j1, k+1) &
+                    + r(i+1, j1, k+1) &
+                )/4e0
+                Vxrtw(1) = ( &
+                      conserved(i  , j1, k  , 2) &
+                    + conserved(i+1, j1, k  , 2) &
+                    + conserved(i  , j1, k+1, 2) &
+                    + conserved(i+1, j1, k+1, 2) &
+                )/4e0/row
+                Vxrtw(2) = ( &
+                      conserved(i  , j1, k  , 3) &
+                    + conserved(i+1, j1, k  , 3) &
+                    + conserved(i  , j1, k+1, 3) &
+                    + conserved(i+1, j1, k+1, 3) &
+                )/4e0/row
+                Vxrtw(3) = ( &
+                      conserved(i  , j1, k  , 4) &
+                    + conserved(i+1, j1, k  , 4) &
+                    + conserved(i  , j1, k+1, 4) &
+                    + conserved(i+1, j1, k+1, 4) &
+                )/4e0/row/rw
+
+            else if ((k.eq.1).or.(k.eq.nk)) then
+
+                if (k.eq.1) then
+                    k1 = k + 1
+                else if (k.eq.nk) then
+                    k1 = k - 1
+                end if
+
+                ! Face-centered density and velocity
+                row = ( &
+                      conserved(i  , j  , k1, 1) &
+                    + conserved(i+1, j  , k1, 1) &
+                    + conserved(i  , j+1, k1, 1) &
+                    + conserved(i+1, j+1, k1, 1) &
+                )/4e0
+                rw = ( &
+                      r(i  , j  , k1) &
+                    + r(i+1, j  , k1) &
+                    + r(i  , j+1, k1) &
+                    + r(i+1, j+1, k1) &
+                )/4e0
+                Vxrtw(1) = ( &
+                      conserved(i  , j  , k1, 2) &
+                    + conserved(i+1, j  , k1, 2) &
+                    + conserved(i  , j+1, k1, 2) &
+                    + conserved(i+1, j+1, k1, 2) &
+                )/4e0/row
+                Vxrtw(2) = ( &
+                      conserved(i  , j  , k1, 3) &
+                    + conserved(i+1, j  , k1, 3) &
+                    + conserved(i  , j+1, k1, 3) &
+                    + conserved(i+1, j+1, k1, 3) &
+                )/4e0/row
+                Vxrtw(3) = ( &
+                      conserved(i  , j  , k1, 4) &
+                    + conserved(i+1, j  , k1, 4) &
+                    + conserved(i  , j+1, k1, 4) &
+                    + conserved(i+1, j+1, k1, 4) &
+                )/4e0/row/rw
+                ! print*, k1
+                ! print*, i, j, k, Rew(iwall), Vw, dw(iwall)
+
+            end if
+
+            ! Form the cell Reynolds
+            Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
+            Rew = row * Vw * dw(iwall)/mu
+            lnRew = alog(Rew)
+            ! cf = a1 + a2/lnRew + a3/lnRew/lnRew
+            cf = 1e0/Rew
+            tauw = cf * 0.5e0 * row *Vw*Vw
+
+            if (i.eq.ni) then
+                ic = ni-1
+            else
+                ic = i
+            end if
+            if (j.eq.nj) then
+                jc = nj-1
+            else
+                jc = j
+            end if
+            if (k.eq.nk) then
+                kc = nk-1
+            else
+                kc = k
+            end if
+
+            ! multiply by face area magnitude
+            ! direction is opposite to cell velocity
+            vec = -Vxrtw*dA(iwall)/vol(ic, jc, kc)
+            if (Vw.gt.0) then
+                vec = vec/Vw
+            else
+                vec = 0e0
+            end if
+            ! print*, ic, jc, kc
+
+            vtau = sqrt(tauw/row)
+            yplus = row*vtau*dw(iwall)/mu
+
+            ! print*, yplus
+            ! print*, Vxrtw, Vw
+            ! print*, vec
+
+            rc = ( &
+                r(ic, jc, kc) &
+                + r(ic+1, jc, kc) &
+                + r(ic, jc+1, kc) &
+                + r(ic+1, jc+1, kc) &
+                + r(ic, jc, kc+1) &
+                + r(ic+1, jc, kc+1) &
+                + r(ic, jc+1, kc+1) &
+                + r(ic+1, jc+1, kc+1) &
+            )/8e0
+
+            print*, i, j, k
+            print*, ic, jc, kc
+            print*, ni, nj, nk
+            print*, tauw, vec
+            print*, mu, row, Vw, dw(iwall)
+            print*, Rew, tauw, dA(iwall), vol(ic, jc, kc)
+
+
+            f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
+            f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
+            f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
+
+        end do
+    end if
+
 
 end subroutine

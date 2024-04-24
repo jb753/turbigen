@@ -252,6 +252,41 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         return iwall, jwall, kwall, wall
 
+    def get_dwall(self):
+
+        # Get wall length scales at nodes
+        dli = turbigen.util.vecnorm(self.dli)
+        dlj = turbigen.util.vecnorm(self.dlj)
+        dlk = turbigen.util.vecnorm(self.dlk)
+
+        # Distribute length scales to faces
+        dlif = np.stack(
+            (
+                dli[:, :-1, :-1],
+                dli[:, 1:, :-1],
+                dli[:, :-1, 1:],
+                dli[:, 1:, 1:],
+            )
+        ).mean(axis=0)
+        dljf = np.stack(
+            (
+                dlj[:-1, :, :-1],
+                dlj[1:, :, :-1],
+                dlj[:-1, :, 1:],
+                dlj[1:, :, 1:],
+            )
+        ).mean(axis=0)
+        dlkf = np.stack(
+            (
+                dlk[:-1, :-1, :],
+                dlk[1:, :-1, :],
+                dlk[:-1, 1:, :],
+                dlk[1:, 1:, :],
+            )
+        ).mean(axis=0)
+
+        return dlif, dljf, dlkf
+
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
 

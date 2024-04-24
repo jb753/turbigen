@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 4000,
+    'n_step': 10000,
     # 'n_step': 1000,
-    'n_step_avg': 1000,
+    'n_step_avg': 100,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
@@ -81,7 +81,7 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.002
+    dw = 0.01
     dmax = 0.04
     ER = 1.05
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
@@ -269,7 +269,6 @@ def test_poiseuille():
 
     np.set_printoptions(precision=2)
     turbigen.solvers.native.run(g, settings)
-    quit()
 
     b = g[0]
     C = b[:, b.nj//2, b.nk//2]
