@@ -218,15 +218,12 @@ subroutine damp(resid, fdamp, ni, nj, nk)
 
 end subroutine
 
-subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ischeme, ni, nj, nk)
+subroutine step(conserved, resid1, resid2, istep, ischeme, ni, nj, nk)
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
     real*4, intent (inout) :: resid1(ni, nj, nk, 5)
     real*4, intent (inout) :: resid2(ni, nj, nk, 5)
     integer, intent (in) :: istep
-    integer, intent (in) :: istep_avg
-    integer, intent (in) :: nstep_avg
     integer, intent (in) :: ischeme
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -243,10 +240,6 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
             conserved = conserved + 2e0*resid1 - 1.65e0*resid2
             resid2 = resid1 - 0.65e0*resid2
         end if
-    end if
-
-    if (istep.ge.istep_avg) then
-        conserved_avg = conserved_avg + conserved/float(nstep_avg)
     end if
 
 end subroutine
@@ -1524,7 +1517,7 @@ subroutine wall_function(f, ijk, dirn, conserved, r, vol, dw, dA, mu, ni, nj, nk
             Vw0 = sqrt(sum(Vxrtw0*Vxrtw0, 1))
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
-            if (Rew.lt.12.5e0) then
+            if (Rew.lt.125e0) then
                 cf = 1e0/Rew
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew

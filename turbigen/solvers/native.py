@@ -936,6 +936,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     dUnow = np.empty((conf.n_step_log, nblock, 5))
 
+    # Now integrate forward
+    istep_avg = conf.n_step - conf.n_step_avg
 
     # Start the main time stepping loop
     for istep in range(conf.n_step):
@@ -945,6 +947,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # symmetric on each side of the boundary so values may drift.
         # if not np.mod(istep, 7):
         exchange_periodics(blocks, bid_local, periodics, variable="conserved")
+
+        if istep >= istep_avg:
+            self.conserved_avg += self.conserved/float(conf.n_step_avg)
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
@@ -973,15 +978,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Send residuals to other blocks
         # exchange_periodics(blocks, bid_local, periodics, variable="residual")
 
-        # Now integrate forward
-        istep_avg = conf.n_step - conf.n_step_avg
         for iblock in range(nblock):
             sb = blocks[iblock]
 
             if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
                 sb.damp(conf.damping_factor)
 
-            sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
+            sb.step(istep, conf.i_scheme)
 
             sb.smooth(sf2, sf4)
 

@@ -2,7 +2,7 @@
 #
 
 # All files relating to the case are held in a working directory
-workdir: runs/cascade
+workdir: runs/cascade_native
 
 # Perfect gas inlet state
 inlet:
@@ -62,14 +62,14 @@ mesh:
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 5000
-  n_step_avg: 500
+  n_step: 20000
+  n_step_avg: 1000
   n_step_log: 100
   damping_factor: 25.0
   nstep_damp: -1
   CFL: 0.4
-  smoothing_factor: 0.1
-  # smoothing_2nd_proportion: 1.0
+  smoothing_factor: 0.02
+  smoothing_2nd_proportion: 0.5
   i_scheme: 0
   # i_loss: 0
   plot_conv: true
