@@ -12,21 +12,21 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 10000,
+    'n_step': 2000,
     # 'n_step': 1000,
-    'n_step_avg': 100,
+    'n_step_avg': 500,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
-    'xllim_pitch': 0.,
-    # 'i_loss': 0,
+    'xllim_pitch': 0.03,
+    'i_loss': 0,
     # "damping_factor" : 25.,
     # "nstep_damp" : -1,
-    # "CFL" : 0.4,
+    # "CFL" : 0.7,
     # "i_scheme" : 0,
     # "i_exit" : 0,
-    # "smoothing_factor" : 0.001,
-    # "smoothing_2nd_proportion" : 0.5
+    # "smoothing_factor" : 0.05,
+    # "smoothing_2nd_proportion" : 1.0
 }
 
 # Check our MPI rank
@@ -39,6 +39,127 @@ size = comm.Get_size()
 if rank > 0:
     turbigen.solvers.native.run_slave()
     sys.exit(0)
+
+def make_plate():
+    """Generate the grid."""
+
+    AR_merid=2.
+    AR_pitch=1.
+    htr=0.9
+    Alpha1=10.
+    Ma1=0.4
+    skew=Alpha1+0.
+    h_cx = 3.
+    L_h = 1.
+
+    # Geometry
+    h = 0.1
+    L = L_h * h
+    rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
+    rh = rm - 0.5 * h
+    rt = rm + 0.5 * h
+
+    # Boundary conditions
+    ga = 1.4
+    cp = 1005.0
+    mu = 1.8e-3
+    Beta = 0.0
+    Po1 = 1e5
+    To1 = 300.0
+
+    # Set inlet Ma to get inlet static state
+    rgas = cp * (ga-1.)/ga
+    V = cf.V_cpTo_from_Ma(Ma1,ga)*np.sqrt(cp*To1)
+    P1 = Po1/cf.Po_P_from_Ma(Ma1,ga)
+    T1 = To1/cf.To_T_from_Ma(Ma1,ga)
+
+    # Numbers of grid points
+    nj = 17
+    nk = 17
+    ni = int(nj*L_h)
+
+    ile = ni//3
+    ite = ni*2//3
+    print(ile, ite)
+
+    # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
+    pitch = h/(nj-1)*(nk-1)*AR_pitch
+    Nb = int(2.0 * np.pi * rm / pitch)
+    dt = 2.0 * np.pi / float(Nb)
+    pitch_rt = dt*rm
+
+    cx = h / h_cx
+    dmin = cx/250.
+    dmax = cx/20.
+
+
+    # Make the coordinates
+    # tv = np.linspace(0., dt, nk)
+    ER = 1.1
+    tv = turbigen.clusterfunc.symmetric.free(0.002, 0.08, 1.2)*dt
+    x1 = np.flip(turbigen.clusterfunc.single.free(dmin, dmax, ER, 0., -L))
+    x2 = turbigen.clusterfunc.double.free(dmin, dmin*2, dmax, ER, 0., cx)
+    x3 = turbigen.clusterfunc.single.free(dmin*2, dmax, ER, cx, cx + L)
+    xv = np.linspace(0., L, ni)
+    xv = np.concatenate((x1, x2[1:], x3[1:]))
+    rv = np.linspace(rh, rt, nj)
+
+    ile = len(x1)
+    ite = ile + len(x2) - 1
+
+    xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+
+    # Apply skew
+    xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1]
+
+    # Split into blocks
+    blocks = []
+    nblock = 1
+
+    patches = [
+        turbigen.grid.InletPatch(i=0),
+        turbigen.grid.OutletPatch(i=-1),
+        turbigen.grid.InviscidPatch(j=0),
+        turbigen.grid.InviscidPatch(j=-1),
+        turbigen.grid.PeriodicPatch(k=0, i=(0,ile)),
+        turbigen.grid.PeriodicPatch(k=0, i=(ite,-1)),
+        turbigen.grid.PeriodicPatch(k=-1, i=(0,ile)),
+        turbigen.grid.PeriodicPatch(k=-1, i=(ite,-1)),
+        ]
+
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(
+            xrt, Nb, patches
+    )
+    block.label=f'b{0}'
+
+    blocks.append(block)
+
+    # Make the grid object
+    g = turbigen.grid.Grid(blocks)
+    g.check_coordinates()
+
+    # Boundary conditions
+    So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
+    So1.set_P_T(Po1, To1)
+    g.apply_inlet(So1, Alpha1, Beta)
+    g.calculate_wall_distance()
+    g.apply_outlet(P1)
+
+    # Initial guess
+    for b in g:
+        b.Vx = V
+        b.Vr = 0.
+        b.Vt = V*np.tan(np.radians(Alpha1))
+        b.cp = cp
+        b.gamma = ga
+        b.mu = mu
+        b.Omega = 0.0
+        b.set_P_T(P1, T1)
+
+    g.match_patches()
+
+    return g, ile, ite
 
 def make_pipe():
     """Generate the grid."""
@@ -253,6 +374,67 @@ def make_pipe():
 
     return g, F
 
+def test_plate():
+
+    g, ile, ite = make_plate()
+
+    # fig, ax = plt.subplots()
+    # b = g[0]
+    # lev = np.linspace(0., b.rt[0,-1,:].ptp()/2.,11)
+    # C = b[:,b.nj//2, :]
+    # ax.contourf(C.x, C.rt, C.w, lev)
+    # ax.axis('equal')
+
+#     fig, ax = plt.subplots()
+#     b = g[0]
+#     lev = np.linspace(0., b.rt[0,-1,:].ptp()/2.,11)
+#     C = b[:,b.nj//2, :]
+#     ax.plot(C.x, C.rt, 'k-', lw=0.2)
+#     ax.plot(C.x.T, C.rt.T,'k-',  lw=0.2)
+#     ax.axis('equal')
+
+    plt.show()
+
+    np.set_printoptions(precision=2)
+    turbigen.solvers.native.run(g, settings)
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(C.x[:,0], C.P[:,(2,-3)],'-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(C.x[:,0], C.P[:,(1,-2)],'-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(C.x[:,0], C.P[:,(0,-1)],'-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[ite,b.nj//2, :]
+    ax.plot(C.rt, C.Vx, '-kx')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[ite,b.nj//2, :]
+    ax.plot(C.rt, C.P, '-kx')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[b.ni//2, :, b.nk//2]
+    ax.plot(C.r, C.Vx, '-kx')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[b.ni//2, :, b.nk//2]
+    ax.plot(C.r, C.P, '-kx')
+
+    plt.show()
+
 def test_poiseuille():
 
     g, F = make_pipe()
@@ -311,7 +493,6 @@ def test_poiseuille():
     ax.plot(C.z, C.y, '-')
     ax.plot(C.z.T, C.y.T, '-')
     ax.axis('equal')
-    plt.show()
 
     print(f'Analytical solution error: {err.min()}, {err.max()}, {err.mean()}')
     assert np.abs(err).mean()<0.05
@@ -319,4 +500,5 @@ def test_poiseuille():
 
 if __name__=='__main__':
 
-    test_poiseuille()
+    test_plate()
+    # test_poiseuille()

@@ -48,25 +48,29 @@ mesh:
 
   # type: oh
   # yplus: 30.
+  # remote_host: gp-111
+  # gbcs_path: reuse
+  # round_TE: true
+
   # gbcs_path: runs/cascade_native/mesh
-  # # resolution_factor: 0.5  # Double grid spacing in each direction
+  # resolution_factor: 0.5  # Double grid spacing in each direction
 
   type: h  # Mesh topology
-  yplus: 15.0  # Non-dimensional wall distance
+  yplus: 30.0  # Non-dimensional wall distance
   resolution_factor: 0.5  # Double grid spacing in each direction
 
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 4000
+  n_step: 5000
   n_step_avg: 500
   n_step_log: 100
   damping_factor: 25.0
   nstep_damp: -1
-  CFL: 0.7
-  # smoothing_factor: 0.05
-  # smoothing_2nd_proportion: 0.5
-  # i_scheme: 0
+  CFL: 0.4
+  smoothing_factor: 0.1
+  # smoothing_2nd_proportion: 1.0
+  i_scheme: 0
   # i_loss: 0
   plot_conv: true
   # i_inlet: 0

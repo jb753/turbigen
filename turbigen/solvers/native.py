@@ -7,6 +7,7 @@ from turbigen.solvers.base import BaseSolver
 from turbigen.compiled import (
     smooth,
     node_to_cell,
+    cell_to_node,
     node_to_face,
     residual,
     step,
@@ -135,6 +136,7 @@ class SolverBlock:
 
         self.ho = to_fort(block.ho)
         self.P = to_fort(block.P)
+        self.Pref = to_fort(self.P.mean())
 
         self.halfVsq = to_fort(0.5 * block.V**2)
         self.u = to_fort(block.u)
@@ -171,6 +173,7 @@ class SolverBlock:
 
         ni, nj, nk = block.shape
         self.f = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.fwall = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
 
         # Get wall indicators
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -232,6 +235,62 @@ class SolverBlock:
 #         kwall1f[1,2,:] +=1
 #         kwall1f[0,3,:] +=1
 #         kwall1f[1,3,:] +=1
+
+        # Get nodal smoothing scaling factors
+
+        # Wall length scales at nodes
+        dli = turbigen.util.vecnorm(block.dli)
+        dlj = turbigen.util.vecnorm(block.dlj)
+        dlk = turbigen.util.vecnorm(block.dlk)
+
+        # Distribute length scales to cells
+        dli = np.stack(
+            (
+                dli[:, :-1, :-1],
+                dli[:, 1:, :-1],
+                dli[:, :-1, 1:],
+                dli[:, 1:, 1:],
+            )
+        ).mean(axis=0)
+        dlj = np.stack(
+            (
+                dlj[:-1, :, :-1],
+                dlj[1:, :, :-1],
+                dlj[:-1, :, 1:],
+                dlj[1:, :, 1:],
+            )
+        ).mean(axis=0)
+        dlk = np.stack(
+            (
+                dlk[:-1, :-1, :],
+                dlk[1:, :-1, :],
+                dlk[:-1, 1:, :],
+                dlk[1:, 1:, :],
+            )
+        ).mean(axis=0)
+
+        # Smoothing scale factors in each volume
+        Lref = block.vol_new**(1/3)
+        ssf = to_fort(np.stack(
+            (
+                dli/Lref,
+                dlj/Lref,
+                dlk/Lref,
+            ), axis=0
+        ))
+        ssfs = ssf.sum(axis=-1, keepdims=True)
+        ssf = ssf/ssfs
+
+        # Now distribute to nodes
+        self.ssf = to_fort(np.empty((3, ni, nj, nk)))
+        cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
+
+        # print('at ni//2, nj//2, k=0')
+        # print(self.ssf[ni//2, nj//2, 0, :])
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # ax.plot(self.ssf[ni//2,nj//2,:,1])
+        # plt.show()
 
 
         self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
@@ -562,7 +621,7 @@ class SolverBlock:
             nwall = ijk.shape[1]
             if nwall:
                 wall_function(
-                        self.f,
+                        self.fwall,
                         ijk,
                         dirn+1,
                         self.conserved,
@@ -601,11 +660,12 @@ class SolverBlock:
     def residual(self):
         residual(
             self.conserved,
-            self.P,
+            self.P-self.Pref,  # Only pressure differences matter
             self.ho,
             self.r,
             *self.rf,
             self.f,
+            self.fwall,
             self.Omega,
             *self.ijk_wall_face,
             self.dt,
@@ -636,7 +696,7 @@ class SolverBlock:
         self.P[:] = self.state.P
 
     def smooth(self, sf2, sf4):
-        smooth(self.conserved, sf2, sf4)
+        smooth(self.conserved, self.ssf, sf2, sf4)
 
     def damp(self, fdamp):
         damp(self.dU1, fdamp)
@@ -883,8 +943,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Occasionally exchange the conserved variables
         # Although the residuals are always exchanged, smoothing is not
         # symmetric on each side of the boundary so values may drift.
-        if not np.mod(istep, 10):
-            exchange_periodics(blocks, bid_local, periodics, variable="conserved")
+        # if not np.mod(istep, 7):
+        exchange_periodics(blocks, bid_local, periodics, variable="conserved")
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
@@ -893,8 +953,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            # if conf.i_loss > 0:
+            if conf.i_loss > 0:
                 # sb.set_walls()
+                sb.fwall[:] = 0.0
+                sb.set_wall_function()
 
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
@@ -905,12 +967,11 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
-                sb.set_wall_function()
 
             sb.residual()
 
         # Send residuals to other blocks
-        exchange_periodics(blocks, bid_local, periodics, variable="residual")
+        # exchange_periodics(blocks, bid_local, periodics, variable="residual")
 
         # Now integrate forward
         istep_avg = conf.n_step - conf.n_step_avg
@@ -940,7 +1001,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 ]
                 for iproc in range(1, size):
                     dUall.append(comm.recv(source=iproc))
-                dUall = np.concatenate(dUall, axis=-1)
+                dUall = np.concatenate(dUall, axis=1)
 
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / conf.n_step_log
@@ -1001,8 +1062,10 @@ def run(grid, settings={}, machine=None):
     for bsi in block_split:
         blocks_out.extend(bsi)
 
+    isort = np.argsort([b.bid for b in blocks_out])
+    blocks_out = [blocks_out[i] for i in isort]
+
     for b, sb in zip(grid, blocks_out):
-        # sb.set_secondary()
         cons_avg = np.moveaxis(sb.conserved_avg, -1, 0)
         b.set_conserved(cons_avg)
 
@@ -1052,18 +1115,18 @@ def run(grid, settings={}, machine=None):
     #     # ax.axis('equal')
     # plt.show()
 
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks):
-        C = b[:, b.nj // 2, :]
-        ax.contourf(C.x, C.rt, sb.dU1[:,b.nj//2,:,0])
-    ax.axis('equal')
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     C = b[:, b.nj // 2, :]
+    #     ax.contourf(C.x, C.rt, sb.dU1[:,b.nj//2,:,0])
+    # ax.axis('equal')
 
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks):
-        C = b[:, :, b.nk // 2]
-        ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
-    ax.axis('equal')
-    plt.show()
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     C = b[:, :, b.nk // 2]
+    #     ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
+    # ax.axis('equal')
+    # plt.show()
 
     if conf.plot_conv:
 

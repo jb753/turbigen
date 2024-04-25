@@ -1,7 +1,7 @@
 !! ! Compiled functions to speed up expensive calulations
 
 subroutine residual(&
-    conserved, P, ho, r, ri, rj, rk, f, &
+    conserved, P, ho, r, ri, rj, rk, f, fwall, &
     Omega, ijk_iwall, ijk_jwall, ijk_kwall, dt, dAi, dAj, dAk, vol, &
     resid, &
     ni, nj, nk, niwall, njwall, nkwall &
@@ -31,6 +31,7 @@ subroutine residual(&
     real*4, intent (in)  :: dt(ni-1, nj-1, nk-1)
 
     real*4, intent (inout)  :: f(ni-1, nj-1, nk-1, 5)
+    real*4, intent (inout)  :: fwall(ni-1, nj-1, nk-1, 5)
 
     integer :: ip
     integer :: ic
@@ -172,10 +173,21 @@ subroutine residual(&
     ! Add on body forces
     fsum_vol = fsum_vol + f
 
+    ! Add on wall functions
+    fsum_vol = fsum_vol + fwall
+
     ! Integrate forward in time
     do ip = 1, 5
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
+
+    ! ! Crudely reduce timestep on k boundaries
+    ! resc(:,:,1,:)  = resc(:,:,1,:) /8e0
+    ! resc(:,:,nk-1,:)  = resc(:,:,nk-1,:) /8e0
+    ! resc(:,:,2,:)  = resc(:,:,2,:) /4e0
+    ! resc(:,:,nk-2,:)  = resc(:,:,nk-2,:) /4e0
+    ! resc(:,:,3,:)  = resc(:,:,3,:) * /2e0
+    ! resc(:,:,nk-3,:)  = resc(:,:,nk-3,:) /2e0
 
     ! Distribute change to nodes
     call cell_to_node(resc, resid, ni, nj, nk, 5)
@@ -693,7 +705,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
 
 end subroutine
 
-subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
+subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array
 
     implicit none
@@ -707,58 +719,61 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     real*4, intent (in)  :: sf4
 
     real*4, intent (inout)  :: x(ni, nj, nk, np)
-    real*4 :: xs2(ni, nj, nk, np)
-    real*4 :: xs4(ni, nj, nk, np)
+    real*4, intent (inout)  :: ssf(ni, nj, nk, 3)
+    real*4 :: xs2(ni, nj, nk, np, 3)
+    real*4 :: xs4(ni, nj, nk, np, 3)
 
-    ! Initialise to zero
-    xs2 = 0e0
-    xs4 = 0e0
+    integer :: ip
+
+    ! ! Initialise to zero
+    ! xs2 = 0e0
+    ! xs4 = 0e0
 
     ! Accumulate 2nd-order smoothed values for each direcion in turn
     ! We will divide by three later
 
     ! i interior
-    xs2(2:ni-1, :, :, :) = xs2(2:ni-1, :, :, :) + ( &
+    xs2(2:ni-1, :, :, :, 1) = ( &
           x(1:ni-2, :, :, :) + x(3:ni, :, :, :) &
     )/2e0
 
     ! i start
-    xs2(1, :, :, :) = xs2(1, :, :, :) + ( &
+    xs2(1, :, :, :, 1) =  ( &
           2e0*x(2, :, :, :) - x(3, :, :, :) &
     )
 
     ! i end
-    xs2(ni, :, :, :) = xs2(ni, :, :, :) + ( &
+    xs2(ni, :, :, :, 1) = ( &
           2e0*x(ni-1, :, :, :) - x(ni-2, :, :, :) &
     )
 
     ! j interior
-    xs2(:, 2:nj-1, :, :) = xs2(:, 2:nj-1, :, :) + ( &
+    xs2(:, 2:nj-1, :, :, 2) = ( &
           x(:, 1:nj-2, :, :) + x(:, 3:nj,   :, :) &
     )/2e0
 
     ! j start
-    xs2(:, 1, :, :) = xs2(:, 1, :, :) + ( &
+    xs2(:, 1, :, :, 2) =  ( &
           2e0*x(:, 2, :, :) - x(:, 3,   :, :) &
     )
 
     ! j end
-    xs2(:, nj, :, :) = xs2(:, nj, :, :) + ( &
+    xs2(:, nj, :, :, 2) = ( &
           2e0*x(:, nj-1, :, :) - x(:, nj-2, :, :) &
     )
 
     ! k interior
-    xs2(:, :, 2:nk-1, :) = xs2(:, :, 2:nk-1, :) + ( &
+    xs2(:, :, 2:nk-1, :, 3) = ( &
           x(:, :, 1:nk-2, :) + x(:, :,   3:nk, :) &
     )/2e0
 
     ! k start
-    xs2(:, :, 1, :) = xs2(:, :, 1, :) + ( &
+    xs2(:, :, 1, :, 3) = ( &
           2e0*x(:, :, 2, :) - x(:, :,   3, :) &
     )
 
     ! k end
-    xs2(:, :, nk, :) = xs2(:, :, nk, :) + ( &
+    xs2(:, :, nk, :, 3) = ( &
           2e0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
     )
 
@@ -766,99 +781,105 @@ subroutine smooth(x, sf2, sf4, ni, nj, nk, np)
     ! We will divide by three later
 
     ! i interior
-    xs4(3:ni-2, :, :, :) = xs4(3:ni-2, :, :, :) + ( &
+    xs4(3:ni-2, :, :, :, 1) = ( &
         -     x(1:ni-4, :, :, :) + 4e0*x(2:ni-3, :, :, :) &
         + 4e0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
     )/6e0
 
     ! i=1
-    xs4(1, :, :, :) = xs4(1, :, :, :) + ( &
+    xs4(1, :, :, :, 1) =  ( &
           4e0*x(2, :, :, :) - 6e0*x(3, :, :, :) &
         + 4e0*x(4, :, :, :) -     x(5, :, :, :) &
     )
 
     ! i=2
-    xs4(2, :, :, :) = xs4(2, :, :, :) + ( &
+    xs4(2, :, :, :, 1) = ( &
               x(1, :, :, :) + 6e0*x(3, :, :, :) &
         - 4e0*x(4, :, :, :) +     x(5, :, :, :) &
     )/4e0
 
     ! i=ni-1
-    xs4(ni-1, :, :, :) = xs4(ni-1, :, :, :) + ( &
+    xs4(ni-1, :, :, :, 1) = ( &
               x(ni-4, :, :, :) - 4e0*x(ni-3, :, :, :) &
         + 6e0*x(ni-2, :, :, :) +     x(ni, :, :, :) &
     )/4e0
 
     ! i=ni
-    xs4(ni, :, :, :) = xs4(ni, :, :, :) + ( &
+    xs4(ni, :, :, :, 1) = ( &
         -     x(ni-4, :, :, :) + 4e0*x(ni-3, :, :, :) &
         - 6e0*x(ni-2, :, :, :) + 4e0*x(ni-1, :, :, :) &
     )
 
 
     ! j interior
-    xs4(:, 3:nj-2, :, :) = xs4(:, 3:nj-2, :, :) + ( &
+    xs4(:, 3:nj-2, :, :, 2) = ( &
         -     x(:, 1:nj-4, :, :) + 4e0*x(:, 2:nj-3, :, :) &
         + 4e0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
     )/6e0
 
     ! j=1
-    xs4(:, 1, :, :) = xs4(:, 1, :, :) + ( &
+    xs4(:, 1, :, :, 2) = ( &
           4e0*x(:, 2, :, :) - 6e0*x(:, 3, :, :) &
         + 4e0*x(:, 4, :, :) -     x(:, 5, :, :) &
     )
 
     ! j=2
-    xs4(:, 2, :, :) = xs4(:, 2, :, :) + ( &
+    xs4(:, 2, :, :, 2) = ( &
               x(:, 1, :, :) + 6e0*x(:, 3, :, :) &
         - 4e0*x(:, 4, :, :) +     x(:, 5, :, :) &
     )/4e0
 
     ! j=nj-1
-    xs4(:, nj-1, :, :) = xs4(:, nj-1, :, :) + ( &
+    xs4(:, nj-1, :, :, 2) = ( &
               x(:, nj-4, :, :) - 4e0*x(:, nj-3, :, :) &
         + 6e0*x(:, nj-2, :, :) +     x(:, nj, :, :) &
     )/4e0
 
     ! j=nj
-    xs4(:, nj, :, :) = xs4(:, nj, :, :) + ( &
+    xs4(:, nj, :, :, 2) = ( &
         -     x(:, nj-4, :, :) + 4e0*x(:, nj-3, :, :) &
         - 6e0*x(:, nj-2, :, :) + 4e0*x(:, nj-1, :, :) &
     )
 
 
     ! k interior
-    xs4(:, :, 3:nk-2, :) = xs4(:, :, 3:nk-2, :) + ( &
+    xs4(:, :, 3:nk-2, :, 3) = ( &
         -     x(:, :, 1:nk-4, :) + 4e0*x(:, :, 2:nk-3, :) &
         + 4e0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
     )/6e0
 
     ! k=1
-    xs4(:, :, 1, :) = xs4(:, :, 1, :) + ( &
+    xs4(:, :, 1, :, 3) = ( &
           4e0*x(:, :, 2, :) - 6e0*x(:, :, 3, :) &
         + 4e0*x(:, :, 4, :) -     x(:, :, 5, :) &
     )
 
     ! k=2
-    xs4(:, :, 2, :) = xs4(:, :, 2, :) + ( &
+    xs4(:, :, 2, :, 3) = ( &
               x(:, :, 1, :) + 6e0*x(:, :, 3, :) &
         - 4e0*x(:, :, 4, :) +     x(:, :, 5, :) &
     )/4e0
 
     ! k=nk-1
-    xs4(:, :, nk-1, :) = xs4(:, :, nk-1, :) + ( &
+    xs4(:, :, nk-1, :, 3) = ( &
               x(:, :, nk-4, :) - 4e0*x(:, :, nk-3, :) &
         + 6e0*x(:, :, nk-2, :) +     x(:, :, nk, :) &
     )/4e0
 
     ! k=nk
-    xs4(:, :, nk, :) = xs4(:, :, nk, :) + ( &
+    xs4(:, :, nk, :, 3) = ( &
         -     x(:, :, nk-4, :) + 4e0*x(:, :, nk-3, :) &
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
+    ! Apply the scale factors for each direction
+    do ip = 1,np
+        xs2(:, :, :, ip, :) = xs2(:, :, :, ip, :) * ssf(:, :, :, :)
+        xs4(:, :, :, ip, :) = xs4(:, :, :, ip, :) * ssf(:, :, :, :)
+    end do
+
     ! now smooth
-    x = (1e0-sf2-sf4)*x + (sf2*xs2 + sf4*xs4)/3e0
+    x = (1e0-sf2-sf4)*x + (sf2*sum(xs2,5) + sf4*sum(xs4,5))
 
 end subroutine
 
@@ -1026,12 +1047,16 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, 
 
 
     ! Calculate vorticity
+    ! From multall
     ! omega_x = dVr/dt - dVt/dr - Vt/r
+    ! omega_r = dVt/dx - dVx/dt
+    ! omega_t = dVx/dr - dVr/dx
+    ! From databook curl V
+    ! omega_x = (1/r)[d(rVt)/dr - dVr/dt]
+    ! omega_r = (1/r)[d(Vx)/dt - d(rVt)/dz]
     vort = 0e0
     vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
-    ! omega_r = dVt/dx - dVx/dt
     vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
-    ! omega_t = dVx/dr - dVr/dx
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
     vort_mag = sqrt(sum(vort*vort,4))
 
@@ -1057,7 +1082,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, 
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
+    fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
 
 end subroutine
 
