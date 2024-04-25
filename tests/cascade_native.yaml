@@ -37,7 +37,7 @@ blades:
       # List of sections for this row
       - spf: 0.5  # Span fraction
         # Vector of thickness parameters
-        q_thick: [0.05, 0.12, 0.3, 0.02, 0.0, 0.18]
+        q_thick: [0.01, 0.05, 0.3, 0.02, 0.0, 0.18]
         # Vector of camber parameters
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
     # - ...
@@ -45,23 +45,36 @@ blades:
 
 # Computational mesh generation
 mesh:
+
+  # type: oh
+  # yplus: 30.
+  # remote_host: gp-111
+  # gbcs_path: reuse
+  # round_TE: true
+
+  # gbcs_path: runs/cascade_native/mesh
+  # resolution_factor: 0.5  # Double grid spacing in each direction
+
   type: h  # Mesh topology
-  yplus: 500.0  # Non-dimensional wall distance
+  yplus: 30.0  # Non-dimensional wall distance
   resolution_factor: 0.5  # Double grid spacing in each direction
-  # ni_TE: 4
-  # dm_TE: 0.04
-  # dm_LE: 0.003
 
 # CFD solver
 solver:
   type: native  # Which solver
-  n_step: 1000
-  n_step_avg: 200
+  n_step: 5000
+  n_step_avg: 500
   n_step_log: 100
   damping_factor: 25.0
+  nstep_damp: -1
   CFL: 0.4
-  smoothing_factor: 0.05
+  smoothing_factor: 0.1
+  # smoothing_2nd_proportion: 1.0
   i_scheme: 0
+  # i_loss: 0
+  plot_conv: true
+  # i_inlet: 0
+  # i_exit: 0
 
   # # Solver-specific configuration settings
   # nstep: 5000

@@ -3,7 +3,6 @@ import os
 import turbigen.util
 import turbigen.camber
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 logger = turbigen.util.make_logger()
@@ -29,7 +28,11 @@ def post(grid, machine, meanline, postdir, row_spf):
             cam, _ = machine.bld[irow]._get_cam_thick(spf)
 
             if isinstance(cam, turbigen.camber.Taylor):
-                chi_str = r"$\displaystyle\hat{\chi} = \frac{\chi - \chi_\mathrm{in} }{\chi_\mathrm{out} - \chi_\mathrm{in}}$"
+                chi_str = (
+                    r"$\displaystyle\hat{\chi} = "
+                    r"\frac{\chi - \chi_\mathrm{in} }"
+                    r"{\chi_\mathrm{out} - \chi_\mathrm{in}}$"
+                )
 
             title_str = (
                 (r"$\chi_\mathrm{in}=%.1f^\circ$, " % cam.chi(0.0))
@@ -40,17 +43,17 @@ def post(grid, machine, meanline, postdir, row_spf):
             )
 
             ax.set_title(title_str, pad=10)
-            ax.text(0.025, 0.95, chi_str, va='top')
+            ax.text(0.025, 0.95, chi_str, va="top")
             plt.tight_layout()
 
-            col=f'C{ispf}'
-            ax.plot(m, cam.chi_hat(m), "-", color=col, label=f'spf={spf}')
+            col = f"C{ispf}"
+            ax.plot(m, cam.chi_hat(m), "-", color=col, label=f"spf={spf}")
 
             mctrl = (0.0, 0.5, 1.0)
             ax.plot(mctrl, cam.chi_hat(mctrl), "o", color=col, ms=10)
-            ax.set_ylim((0.,1.))
+            ax.set_ylim((0.0, 1.0))
 
-        ax.legend(loc='lower right')
+        ax.legend(loc="lower right")
 
         plotname = os.path.join(postdir, f"camber_row_{irow}.pdf")
         plt.savefig(plotname)

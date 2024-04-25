@@ -31,14 +31,14 @@ class StructuredData:
     _read_only = False
     _data_rows = ()
 
-    def __init__(self, shape=(), order="C"):
+    def __init__(self, shape=(), order="C", typ=np.double):
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
         self._order = order
-        if order == 'C':
-            self._data = np.full((self.nprop,) + shape, np.nan, order=order)
+        if order == "C":
+            self._data = np.full((self.nprop,) + shape, np.nan, order=order, dtype=typ)
         else:
-            self._data = np.full(shape + (self.nprop,), np.nan, order=order)
+            self._data = np.full(shape + (self.nprop,), np.nan, order=order, dtype=typ)
         self._metadata = {}
         self._dependent_property_cache = {}
 
@@ -156,10 +156,12 @@ class StructuredData:
 
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
-        if self._order == 'C':
-            return self._data[ind,]
+        if self._order == "C":
+            return self._data[
+                ind,
+            ]
         else:
-            return self._data[...,ind]
+            return self._data[..., ind]
 
     def _set_data_by_key(self, key, val):
         if self._read_only:
@@ -167,15 +169,15 @@ class StructuredData:
         else:
             ind = self._lookup_index(key)
             if np.shape(val) == (1,):
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val[0]
                 else:
-                    self._data[...,ind] = val[0]
+                    self._data[..., ind] = val[0]
             else:
-                if self._order == 'C':
+                if self._order == "C":
                     self._data[ind] = val
                 else:
-                    self._data[...,ind] = val
+                    self._data[..., ind] = val
             self._dependent_property_cache.clear()
 
     def set_read_only(self):
@@ -670,8 +672,8 @@ class Kinematics:
         cost = np.cos(tk)
         sint = np.sin(tk)
         dAkx, dAky, dAkz = dAk
-        dAkr = -dAky*sint - dAkz*cost
-        dAkt = dAky*cost - dAkz*sint
+        dAkr = -dAky * sint - dAkz * cost
+        dAkt = dAky * cost - dAkz * sint
 
         return np.stack((dAkx, dAkr, dAkt))
 
@@ -713,6 +715,29 @@ class Kinematics:
 
         return util.dA_Gauss(A, B, C, D)
 
+    @dependent_property
+    def dAi_cr(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        v = self.xyz
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[0]
+        return util.cart_to_pol(dA, t)
 
     @dependent_property
     def dAj_new(self):
@@ -736,6 +761,29 @@ class Kinematics:
 
         return -util.dA_Gauss(A, B, C, D)
 
+    @dependent_property
+    def dAj_cr(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[1]
+        return util.cart_to_pol(dA, t)
 
     @dependent_property
     def dAk_new(self):
@@ -760,6 +808,30 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
+    def dAk_cr(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[2]
+        return util.cart_to_pol(dA, t)
+
+    @dependent_property
     def vol_new(self):
         # Volume
         if not self.ndim == 3:
@@ -769,21 +841,20 @@ class Kinematics:
         xi, xj, xk = self.x_face
         ri, rj, rk = self.r_face
         rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri, rti))
-        Fj = np.stack((xj, rj, rtj))
-        Fk = np.stack((xk, rk, rtk))
+        Fi = np.stack((xi, ri / 2.0, rti))
+        Fj = np.stack((xj, rj / 2.0, rtj))
+        Fk = np.stack((xk, rk / 2.0, rtk))
         dAi = self.dAi_new
         dAj = self.dAj_new
         dAk = self.dAk_new
 
         # Volume by Gauss' theorem
-        Fisum = np.diff(np.sum(Fi*dAi, axis=0),axis=0)
-        Fjsum = np.diff(np.sum(Fj*dAj, axis=0),axis=1)
-        Fksum = np.diff(np.sum(Fk*dAk, axis=0),axis=2)
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
         vol = Fisum + Fjsum + Fksum
 
-        return vol/3.
-
+        return vol / 3.0
 
     @dependent_property
     def flux_all(self):
@@ -1007,13 +1078,13 @@ class Composites:
     def Vy(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return self.Vr*cost - self.Vt*sint
+        return self.Vr * cost - self.Vt * sint
 
     @dependent_property
     def Vz(self):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
-        return -self.Vr*sint - self.Vt*cost
+        return -self.Vr * sint - self.Vt * cost
 
     #
     # Fluxes

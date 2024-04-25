@@ -90,8 +90,7 @@ def submit(conf, basedir=None, verbose=True):
         else ""
     )
 
-    error_handler_str = (
-r"""trap 'handle_error' ERR
+    error_handler_str = r"""trap 'handle_error' ERR
 handle_error() {
     echo "Command failed, starting a shell on ${HOSTNAME}. Attach using:" > failed.txt
     echo "ssh -t $HOSTNAME tmux att" >> failed.txt
@@ -103,7 +102,6 @@ handle_error() {
     # Keep the job running until it times out
     sleep 36h
 }"""
-)
 
     hours, frac_hours = divmod(cj["hours"], 1)
     mins = frac_hours * 60

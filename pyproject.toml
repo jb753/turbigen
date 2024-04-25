@@ -11,6 +11,7 @@ dependencies = [
     'h5py',
     'numpy-stl',
     'metis',
+    'mpi4py',
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ docs = [
 ]
 test = [
     'pytest~=6.2.5',
+    'pre-commit~=3.6.0',
 ]
 
 [project.scripts]

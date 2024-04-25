@@ -2,7 +2,6 @@
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 logger = turbigen.util.make_logger()
@@ -22,7 +21,6 @@ def post(grid, machine, meanline, postdir, row_spf):
         ax.set_ylabel(r"Thickness")
         ax.set_xlim((0.0, 1.0))
 
-
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
 
@@ -40,7 +38,7 @@ def post(grid, machine, meanline, postdir, row_spf):
             ax.set_title(title_str, pad=10)
             plt.tight_layout()
 
-            col=f'C{ispf}'
+            col = f"C{ispf}"
             ax.plot(m, thick.t(m), "-", color=col, label="Real space, $t/c_m$")
             ax.plot(m, thick.tau(m), "--", color=col, label=r"Shape space, $\tau/c_m$")
 

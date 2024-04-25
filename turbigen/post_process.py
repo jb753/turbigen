@@ -43,7 +43,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
 
         # Find a zero crossing near LE
         iz_all = np.where(
-                (np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1]
+            (np.abs(np.diff(np.sign(Vi))) > 0) & (np.abs(zeta) < 0.3)[:-1]
         )[0]
         iiz = np.argmin(np.abs(zeta[iz_all]))
         iz = iz_all[iiz]
@@ -66,8 +66,8 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
         dxrrt = xrrt_le_cent - xrrt_le_stag
 
         # Small pitch angle => the leading edge is oriented axially
-        denom = np.sqrt(dxrrt[0]**2 + dxrrt[1]**2)
-        chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2],denom)).item()
+        denom = np.sqrt(dxrrt[0] ** 2 + dxrrt[1] ** 2)
+        chi_stag_row[j] = np.degrees(np.arctan2(dxrrt[2], denom)).item()
 
         # If we are going radially inwards then flip sign
         if current_Beta < 0.0:

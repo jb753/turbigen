@@ -7,12 +7,18 @@ from turbigen.solvers.base import BaseSolver
 from turbigen.compiled import (
     smooth,
     node_to_cell,
+    cell_to_node,
     node_to_face,
     residual,
     step,
     damp,
     calculate_secondary,
-    viscous_force
+    viscous_force,
+    set_walls,
+    average_ijk,
+    get_ijk,
+    set_ijk_average,
+    wall_function,
 )
 from timeit import default_timer as timer
 from mpi4py import MPI
@@ -23,7 +29,6 @@ logger = turbigen.util.make_logger()
 logger.setLevel(level=logging.INFO)
 
 typ = np.float32
-
 
 
 class NativeConfig(BaseSolver):
@@ -60,86 +65,255 @@ class NativeConfig(BaseSolver):
     damping_factor = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
+    nstep_damp = 500
+    """Number of steps to apply damping."""
+
+    xllim_pitch = 0.03
+
     i_scheme = 1
+
+    i_loss = 1
+
+    i_exit = 1
+    i_inlet = 1
+    K_exit = 0.9
+    K_inlet = 0.2
+
+    plot_conv = False
+
+
+def get_dw(block):
+    # Cell height in each of i,j,k dirns
+    dli = turbigen.util.vecnorm(block.dli)
+    dlj = turbigen.util.vecnorm(block.dlj)
+    dlk = turbigen.util.vecnorm(block.dlk)
+
+    def node_to_face2(x):
+        return np.stack(
+            (
+                x[:-1, :-1],
+                x[1:, 1:],
+                x[:-1, 1:],
+                x[1:, :-1],
+            )
+        ).mean(axis=0)
+
+    ni, nj, nk = block.shape
+
+    dwi = np.asfortranarray(np.zeros((ni, nj - 1, nk - 1), dtype=typ))
+    dwi[0, :, :] = node_to_face2(dli[0, :, :])
+    dwi[-1, :, :] = node_to_face2(dli[-1, :, :])
+
+    dwj = np.asfortranarray(np.zeros((ni - 1, nj, nk - 1), dtype=typ))
+    dwj[:, 0, :] = node_to_face2(dlj[:, 0, :])
+    dwj[:, -1, :] = node_to_face2(dlj[:, -1, :])
+
+    dwk = np.asfortranarray(np.zeros((ni - 1, nj - 1, nk), dtype=typ))
+    dwk[:, :, 0] = node_to_face2(dlk[:, :, 0])
+    dwk[:, :, -1] = node_to_face2(dlk[:, :, -1])
+
+    return dwi, dwj, dwk
+
+def to_fort(x):
+    if x.ndim > 3:
+        x2 = np.moveaxis(x,0, -1)
+    else:
+        x2 = x
+    return np.asfortranarray(x2).astype(typ)
 
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
-    def __init__(self, block):
+    def __init__(self, block, conf):
         """Initialise from a standard Block object."""
 
-
         # Primaries
-        self.conserved = np.asfortranarray(np.moveaxis(block.conserved, 0, -1)).astype(typ)
+        self.conserved = to_fort(block.conserved)
+
+        self.conf = conf
 
         self.mu = block.mu
 
-        self.ho = np.asfortranarray(block.ho).astype(typ)
-        self.P = np.asfortranarray(block.P).astype(typ)
+        self.ho = to_fort(block.ho)
+        self.P = to_fort(block.P)
+        self.Pref = to_fort(self.P.mean())
 
-        self.halfVsq = np.asfortranarray(0.5 * block.V**2).astype(typ)
-        self.u = np.asfortranarray(block.u).astype(typ)
+        self.halfVsq = to_fort(0.5 * block.V**2)
+        self.u = to_fort(block.u)
 
-        self.x = np.asfortranarray(block.x).astype(typ)
-        self.r = np.asfortranarray(block.r).astype(typ)
-        self.t = np.asfortranarray(block.t).astype(typ)
+        self.dw = get_dw(block)
+        self.pitch = block.pitch
 
         # Geometry
-        self.r = np.asfortranarray(block.r).astype(typ)
-        self.dAi = np.asfortranarray(np.moveaxis(block.dAi, 0, -1)).astype(typ)
-        self.dAj = np.asfortranarray(np.moveaxis(block.dAj, 0, -1)).astype(typ)
-        self.dAk = np.asfortranarray(np.moveaxis(block.dAk, 0, -1)).astype(typ)
-        self.vol = np.asfortranarray(block.vol).astype(typ)
-        self.dlmin = np.asfortranarray(block.dlmin).astype(typ)
-        self.Omega = block.Omega.mean().astype(typ)
-        xllim = block.pitch*0.5*(block.r.max()+block.r.min())*0.03
-        xlength = np.asfortranarray(np.clip(block.w,0., xllim)).astype(typ)
-        xlength = (0.41*xlength)**2.
-        self.xlength =np.asfortranarray(block.vol).astype(typ)*np.nan
-        node_to_cell(xlength, self.xlength)
-        self.mu_turb = np.asfortranarray(block.vol).astype(typ)*0.
+        self.r = to_fort(block.r)
+        self.rf = [to_fort(r) for r in block.r_face]
 
+        self.rc = to_fort(np.zeros_like(block.vol))
+        node_to_cell(self.r, self.rc)
+
+        self.dAi = to_fort(block.dAi_new)
+        self.dAj = to_fort(block.dAj_new)
+        self.dAk = to_fort(block.dAk_new)
+        self.vol = to_fort(block.vol_new)
+        self.dlmin = to_fort(block.dlmin)
+        self.Omega = block.Omega.mean().astype(typ)
+        xllim = (
+            block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
+        )
+        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
+        xlength = (0.41 * xlength) ** 2.0
+        self.xlength = to_fort(np.zeros_like(block.vol))
+        node_to_cell(xlength, self.xlength)
+        self.mu_turb = to_fort(np.zeros_like(block.vol))
 
         self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
         self.dU2 = self.conserved.copy(order="F").astype(typ) * np.nan
-        self._flag_scree = False
 
-        self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.
+        self.conserved_avg = self.conserved.copy(order="F").astype(np.double) * 0.0
 
         ni, nj, nk = block.shape
-        self.f = np.zeros((ni-1, nj-1, nk-1, 5), order="F", dtype=typ)
+        self.f = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.fwall = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
 
         # Get wall indicators
-        # These are three arrays of shape
-        #   i faces: (ni, nj-1, nk-1)
-        #   j faces: (ni-1, nj, nk-1)
-        #   k faces: (ni-1, nj-1, nk)
-        # equal to one if the face is a wall, zero otherwise
-        self.wall_indicators = [np.asfortranarray(w) for w in get_wall(block)]
-        self.wall_nodes = block.get_wall(trim=0)
+        # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
+        # Note 1-indexed for Fortran
+        # self.wall_nodes = block.get_wall_old().astype(bool)
+        *self.ijk_wall_face, self.ijk_wall_node = [
+                np.asfortranarray(np.argwhere(wall).T+1).astype(np.int16)
+                for wall in block.get_wall()
+        ]
 
-        # ni, nj, nk = self.wall_nodes.shape
+        # Get wall length scales
+        # dli, dlj, dlk  = [to_fort(dl) for dl in block.get_dwall()]
+
+        # Get indices to face-average on first node off the wall
+        iwall1, jwall1, kwall1 = [ijk+0 for ijk in self.ijk_wall_face]
+        # iwall1[0,iwall1[0,:]==1] += 1
+        iwall1[0,iwall1[0,:]==ni] -= 1
+        # jwall1[1,jwall1[1,:]==1] += 1
+        jwall1[1,jwall1[1,:]==nj] -= 1
+        # kwall1[2,kwall1[2,:]==1] += 1
+        kwall1[2,kwall1[2,:]==nk] -= 1
+
+        self.dw_face = [
+            get_ijk(to_fort(dl), ijk) for dl, ijk in
+            zip(block.get_dwall(), [iwall1, jwall1, kwall1])
+        ]
+
+        dAijk = [
+                np.sqrt((self.dAi**2).sum(axis=-1)),
+                np.sqrt((self.dAj**2).sum(axis=-1)),
+                np.sqrt((self.dAk**2).sum(axis=-1)),
+        ]
+
+        self.dA_face = [
+            get_ijk(dA, ijk) for dA, ijk in
+            zip(dAijk, self.ijk_wall_face)
+        ]
+
+#         iwall1f = np.stack(
+#             ( iwall1, iwall1, iwall1, iwall1 ), axis=1
+#         )
+#         iwall1f[1,1,:] +=1
+#         iwall1f[2,2,:] +=1
+#         iwall1f[1,3,:] +=1
+#         iwall1f[2,3,:] +=1
+
+#         jwall1f = np.stack(
+#             ( jwall1, jwall1, jwall1, jwall1 ), axis=1
+#         )
+#         jwall1f[0,1,:] +=1
+#         jwall1f[2,2,:] +=1
+#         jwall1f[0,3,:] +=1
+#         jwall1f[2,3,:] +=1
+
+#         kwall1f = np.stack(
+#             ( kwall1, kwall1, kwall1, kwall1 ), axis=1
+#         )
+#         kwall1f[0,1,:] +=1
+#         kwall1f[1,2,:] +=1
+#         kwall1f[0,3,:] +=1
+#         kwall1f[1,3,:] +=1
+
+        # Get nodal smoothing scaling factors
+
+        # Wall length scales at nodes
+        dli = turbigen.util.vecnorm(block.dli)
+        dlj = turbigen.util.vecnorm(block.dlj)
+        dlk = turbigen.util.vecnorm(block.dlk)
+
+        # Distribute length scales to cells
+        dli = np.stack(
+            (
+                dli[:, :-1, :-1],
+                dli[:, 1:, :-1],
+                dli[:, :-1, 1:],
+                dli[:, 1:, 1:],
+            )
+        ).mean(axis=0)
+        dlj = np.stack(
+            (
+                dlj[:-1, :, :-1],
+                dlj[1:, :, :-1],
+                dlj[:-1, :, 1:],
+                dlj[1:, :, 1:],
+            )
+        ).mean(axis=0)
+        dlk = np.stack(
+            (
+                dlk[:-1, :-1, :],
+                dlk[1:, :-1, :],
+                dlk[:-1, 1:, :],
+                dlk[1:, 1:, :],
+            )
+        ).mean(axis=0)
+
+        # Smoothing scale factors in each volume
+        Lref = block.vol_new**(1/3)
+        ssf = to_fort(np.stack(
+            (
+                dli/Lref,
+                dlj/Lref,
+                dlk/Lref,
+            ), axis=0
+        ))
+        ssfs = ssf.sum(axis=-1, keepdims=True)
+        ssf = ssf/ssfs
+
+        # Now distribute to nodes
+        self.ssf = to_fort(np.empty((3, ni, nj, nk)))
+        cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
+
+        # print('at ni//2, nj//2, k=0')
+        # print(self.ssf[ni//2, nj//2, 0, :])
         # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
-        # ax.plot(self.wall_nodes[:,nj//2, 0])
+        # ax.plot(self.ssf[ni//2,nj//2,:,1])
         # plt.show()
-        # quit()
 
-        # # Convert wall indicators to wall indices
-        # # Which are indices into the flattend face arrays
-        # self.walls = [np.where((w > 0.99).flat)[0] for w in self.wall_indicators]
 
-        self.inlets = [patch.get_inlet_data() for patch in block.inlet_patches]
-        self.outlets = [patch.get_outlet_data() for patch in block.outlet_patches]
+        self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
+        self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
-            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F")
-            self.state._metadata = block._metadata
+
+            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F", typ=typ)
+            self.state.gamma = typ(block.gamma)
+            self.state.cp = typ(block.cp)
+            self.state.mu = typ(block.mu)
             self.state.set_rho_u(block.rho, block.u)
+
             self.state_inlets = [
-                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F")
+                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F", typ=typ)
                 for inlet in self.inlets
             ]
+
+            self.state_outlets = [
+                turbigen.fluid.PerfectState(shape=outlet[0].shape, order="F", typ=typ)
+                for outlet in self.outlets
+            ]
+
         else:
             raise NotImplementedError()
 
@@ -150,66 +324,312 @@ class SolverBlock:
             u_inlet = block.u.ravel(order="F")[inlet[0]]
             state_inlet.set_rho_u(rho_inlet, u_inlet)
 
-    def set_inlets(self, rfin):
+        # Initialise  outlet states
+        for outlet, state_outlet in zip(self.outlets, self.state_outlets):
+            state_outlet._metadata = block._metadata
+            rho_out = block.rho.ravel(order="F")[outlet[0]]
+            u_out = block.u.ravel(order="F")[outlet[0]]
+            state_outlet.set_rho_u(rho_out, u_out)
+
+    def set_inlets(self, rfin, i_inlet, K_inlet):
         """Set conserved variables on inlets by relaxing density changes."""
 
         # Change inlet patches
         for patch, state in zip(self.inlets, self.state_inlets):
 
             # Expand patch data
-            ind, Po, To, Alpha, Beta, rhoo, ho, r = patch
+            ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, normal = patch
 
-            # Relax changes in density
-            rho_now = (
-                rfin * self.conserved[..., 0].ravel(order="F")[ind] + (1.-rfin) * state.rho
-            )
-
-            # Check for flow reversal
-            rho_now[rho_now > rhoo] = rhoo * 0.999
-
-            # Isentropic expansion from stagnation state
-            state.set_rho_s(rho_now, state.s)
-
-            # Pull out vars we need
-            h, u, P = state.h, state.u, state.P
-
-            # Get the velocity
-            dhin = ho - h
-            Vinsq = 2.0 * dhin
-            Vin = np.sqrt(Vinsq)
-
-            # Resolve velocity components
-            tanAlpha = turbigen.util.tand(Alpha)
+            tanAl = turbigen.util.tand(Alpha)
             tanBeta = turbigen.util.tand(Beta)
-            Vxin = Vin / np.sqrt((1.0 + tanAlpha**2) * (1.0 + tanBeta**2))
-            Vrin = Vxin * tanBeta
-            Vmin = np.sqrt(Vxin**2 + Vrin**2)
-            Vtin = Vmin * tanAlpha
+            cosBeta = turbigen.util.cosd(Beta)
+            sinBeta = turbigen.util.sind(Beta)
 
-            # Reset conserved vars on inlet
-            # Do not reset the density - seems to compromise stability
-            self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
-            self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
-            self.conserved[..., 3].ravel(order="F")[ind] = rho_now * r * Vtin  # rhorVt
-            self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
-                u + 0.5 * Vinsq
-            ) 
+            if i_inlet == 0:
 
-            # Reset pressure and hstag on inlet
-            self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
-            self.P.ravel(order="F")[ind] = P
+                # Relax changes in density
+                rho_now = (
+                    rfin * self.conserved[..., 0].ravel(order="F")[ind]
+                    + (1.0 - rfin) * state.rho
+                )
 
-    def set_outlets(self):
+                # Check for flow reversal
+                rho_now[rho_now > rhoo] = rhoo * 0.9999
+
+                # Isentropic expansion from stagnation state
+                state.set_rho_s(rho_now, state.s)
+
+                # Pull out vars we need
+                h, u, P = state.h, state.u, state.P
+
+                # Get the velocity
+                dhin = hoin - h
+                Vinsq = 2.0 * dhin
+                Vin = np.sqrt(Vinsq)
+
+                # Resolve velocity components
+                Vxin = Vin / np.sqrt((1.0 + tanAl**2) * (1.0 + tanBeta**2))
+                Vrin = Vxin * tanBeta
+                Vmin = np.sqrt(Vxin**2 + Vrin**2)
+                Vtin = Vmin * tanAl
+
+                # Reset conserved vars on inlet
+                # Not sure about reseting the inlet density -
+                # seems to compromise stability
+                # Needs a lower rfin if we reset the inlet density
+                # self.conserved[..., 0].ravel(order="F")[ind] = rho_now  # rho
+                self.conserved[..., 1].ravel(order="F")[ind] = rho_now * Vxin  # rhoVx
+                self.conserved[..., 2].ravel(order="F")[ind] = rho_now * Vrin  # rhoVr
+                self.conserved[..., 3].ravel(order="F")[ind] = (
+                    rho_now * r * Vtin
+                )  # rhorVt
+                self.conserved[..., 4].ravel(order="F")[ind] = rho_now * (
+                    u + 0.5 * Vinsq
+                )
+
+                # Reset pressure and hstag on inlet
+                self.ho.ravel(order="F")[ind] = h + 0.5 * Vin**2
+                self.P.ravel(order="F")[ind] = P
+
+            else:
+
+                # Extract properties from soln
+                rho = self.conserved[..., 0].ravel(order="F")[ind]
+                rhoVx = self.conserved[..., 1].ravel(order="F")[ind]
+                rhoVr = self.conserved[..., 2].ravel(order="F")[ind]
+                rhorVt = self.conserved[..., 3].ravel(order="F")[ind]
+                P = self.P.ravel(order="F")[ind]
+                ho = self.ho.ravel(order="F")[ind]
+
+                # Calculate velocities
+                Vx = rhoVx / rho
+                Vr = rhoVr / rho
+                Vt = rhorVt / rho / r
+                Vm = np.sqrt(Vx**2 + Vr**2)
+
+                # Update the inlet state object using soln P and rho
+                # so we can read off other thermodynamic properties
+                state.set_P_rho(P, rho)
+                a = state.a
+                s = state.s
+                dsdrho = state.dsdrho_P
+                dhdrho = state.dhdrho_P
+                dsdP = state.dsdP_rho
+                dhdP = state.dhdP_rho
+                rhoa = rho * a
+                asq = a * a
+
+                # Calculate the inlet residuals
+
+                # Dimensional residuals
+                eps = (
+                    np.stack(
+                        (
+                            s - sin,
+                            Vt - tanAl * Vm,
+                            ho - hoin,
+                        ),
+                        axis=-1,
+                    )
+                    * -K_inlet
+                )[..., None]
+
+                # Jacobian
+                fac = (
+                    -Vm * dsdrho / rhoa
+                    - Vt * dsdrho * tanAl / rhoa
+                    - dhdP * dsdrho
+                    + dhdrho * dsdP
+                )
+                dcdeps = (
+                    np.stack(
+                        [
+                            [
+                                Vm * a / rho
+                                + Vt * a * tanAl / rho
+                                + asq * dhdP
+                                + dhdrho,
+                                Vt * (asq * dsdP + dsdrho),
+                                -asq * dsdP - dsdrho,
+                            ],
+                            [
+                                dhdrho * tanAl,
+                                -Vm * dsdrho
+                                - rhoa * dhdP * dsdrho
+                                + rhoa * dhdrho * dsdP,
+                                -dsdrho * tanAl,
+                            ],
+                            [dhdrho, Vt * dsdrho, -dsdrho],
+                        ]
+                    )
+                    / fac
+                )
+                dcdeps[2] *= 2
+                dcdeps = np.moveaxis(dcdeps, 2, 0)
+
+                c = dcdeps @ eps
+                c = c.squeeze().T
+
+                # Calculate primitive changes
+                drho = (-c[0] + 0.5 * c[2]) / asq
+                dVm = 0.5 * c[2] / rhoa
+                dVt = c[1] / rhoa
+                dP = 0.5 * c[2]
+
+                # Now evaluate new flow field
+                # Force onto the target beta
+                rho_new = rho + drho
+                P_new = P + dP
+                Vm_new = Vm + dVm
+                Vx_new = Vm_new * cosBeta
+                Vr_new = Vm_new * sinBeta
+                Vt_new = Vt + dVt
+
+                state.set_P_rho(P_new, rho_new)
+
+                halfVsq_new = 0.5 * (Vx_new**2 + Vr_new**2 + Vt_new**2)
+
+                # Reset conserved vars on inlet
+                self.conserved[..., 0].ravel(order="F")[ind] = rho_new
+                self.conserved[..., 1].ravel(order="F")[ind] = rho_new * Vx_new  # rhoVx
+                self.conserved[..., 2].ravel(order="F")[ind] = rho_new * Vr_new  # rhoVr
+                self.conserved[..., 3].ravel(order="F")[ind] = rho_new * r * Vt_new
+                self.conserved[..., 4].ravel(order="F")[ind] = rho_new * (
+                    state.u + halfVsq_new
+                )
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = state.P
+                self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
+
+    def set_outlets(self, i_exit, K_exit):
         """Set static pressure on outlets."""
-        for outlet in self.outlets:
-            self.P.ravel(order="F")[outlet[0]] = outlet[1]
+
+        for patch, state in zip(self.outlets, self.state_outlets):
+
+            # Extract patch data
+            ind, P_exit, wA, normal, r = patch
+
+            if i_exit == 0:
+
+                # Stagnation enthalpy from interior and imposed exit pressure
+                # set the outlet state
+                ho_exit = self.ho.ravel(order="F")[ind]
+                halfVsq_exit = self.halfVsq.ravel(order="F")[ind]
+                h_exit = ho_exit - halfVsq_exit
+                state.set_P_h(P_exit, h_exit)
+
+                # Update conserved vars
+                # rho and u change, V stay the same
+                fac_rho = state.rho / self.conserved[..., 0].ravel(order="F")[ind]
+                for i in range(4):
+                    self.conserved[..., i].ravel(order="F")[ind] *= fac_rho
+                self.conserved[..., 4].ravel(order="F")[ind] = state.rho * (
+                    state.u + halfVsq_exit
+                )
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = P_exit
+
+            elif i_exit == 1:
+
+                # Characteristic boundary condition
+
+                # Extract the conserved vars from solution
+                rho = self.conserved[..., 0].ravel(order="F")[ind]
+                rhoVx = self.conserved[..., 1].ravel(order="F")[ind]
+                rhoVr = self.conserved[..., 2].ravel(order="F")[ind]
+                rhorVt = self.conserved[..., 3].ravel(order="F")[ind]
+                rhoe = self.conserved[..., 4].ravel(order="F")[ind]
+
+                # Update the state for this outlet from solution
+                u = self.u.ravel(order="F")[ind]
+                state.set_rho_u(rho, u)
+                a = state.a
+                P = state.P
+
+                # Apply a uniform correction
+                # Pav = np.sum(state.P*wA)
+                # dP = K_exit*(P_exit - Pav)
+
+                # Apply a local correction
+                dP = (P_exit - P) * K_exit
+
+                # dP = (P_exit - P) + (P_exit - Pav)
+
+                # # Force towards P_exit preserving a fraction of the variation
+                # # wrt area average
+                # Pav = np.sum(state.P*wA)
+                # dPav = P - Pav
+                # dP = K_exit*((P_exit+0.5*dPav) - P)
+
+                # Eqn. (80) from Giles (1992) gives perturbations to
+                # primative properties in terms of chics
+                # We want to send a wave upstream to drive the area-averaged
+                # pressure towards the target without altering the other chics
+                # So set c1 = c2 = c3 = 0
+                # and solve for perturbations due to c4 alone
+                dVm = -dP / rho / a
+                drho = dP / a / a
+                dVx = dVm * normal[0]
+                dVr = dVm * normal[1]
+
+                # We need to know u at the perturbed P and rho
+                # So set the outlet state to new values
+                rho_new = rho + drho
+                P_new = state.P + dP
+                state.set_P_rho(P_new, rho_new)
+
+                # New velocities
+                Vx_new = rhoVx / rho + dVx
+                Vr_new = rhoVr / rho + dVr
+                Vt_new = rhorVt / rho / r
+                halfVsq_new = 0.5 * (Vx_new**2 + Vr_new**2 + Vt_new**2)
+
+                # Perturb the conserved vars
+                rho[:] = rho_new
+                rhoVx[:] = rho_new * Vx_new
+                rhoVr[:] = rho_new * Vr_new
+                rhorVt[:] = rho_new * r * Vt_new
+                rhoe[:] = rho_new * (state.u + halfVsq_new)
+
+                # Update secondary vars
+                self.u.ravel(order="F")[ind] = state.u
+                self.P.ravel(order="F")[ind] = state.P
+                self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
     def set_walls(self):
         """Zero the momentums on a wall."""
-        self.conserved[...,1][self.wall_nodes] = 0.
-        self.conserved[...,2][self.wall_nodes] = 0.
-        self.conserved[...,3][self.wall_nodes] = 0.
-        self.conserved[...,4][self.wall_nodes] = self.conserved[...,0][self.wall_nodes]*self.u[self.wall_nodes]
+
+        # iwall = self.wall_nodes
+        # # Update conserved vars
+        # self.conserved[..., 1][iwall] = 0.0
+        # self.conserved[..., 2][iwall] = 0.0
+        # self.conserved[..., 3][iwall] = 0.0
+        # self.conserved[..., 4][iwall] = self.conserved[..., 0][iwall] * self.u[iwall]
+        # # Update secondary vars
+        # self.ho[iwall] -= self.halfVsq[iwall]
+        # self.halfVsq[iwall] = 0.0
+
+        set_walls(self.conserved, self.u, self.ho, self.halfVsq, self.ijk_wall_node)
+
+    def set_wall_function(self):
+        ni, nj, nk, _ = self.conserved.shape
+        for dirn, (dw, ijk, dA) in enumerate(zip(self.dw_face, self.ijk_wall_face, self.dA_face)):
+            nwall = ijk.shape[1]
+            if nwall:
+                wall_function(
+                        self.fwall,
+                        ijk,
+                        dirn+1,
+                        self.conserved,
+                        self.r,
+                        self.vol,
+                        dw,
+                        dA,
+                        self.mu, ni, nj, nk, nwall)
 
     def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -228,17 +648,26 @@ class SolverBlock:
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
 
-    # @profile
+        # # Reduce at boundaries
+        # fac = 0.5
+        # self.dt[0,:,:] *= fac
+        # self.dt[-1,:,:] *= fac
+        # # self.dt[:,0,:] *= fac
+        # # self.dt[:,-1,:] *= fac
+        # # self.dt[:,:,0] *= fac
+        # # self.dt[:,:,-1] *= fac
 
     def residual(self):
         residual(
             self.conserved,
-            self.P,
+            self.P-self.Pref,  # Only pressure differences matter
             self.ho,
             self.r,
+            *self.rf,
             self.f,
+            self.fwall,
             self.Omega,
-            *self.wall_indicators,
+            *self.ijk_wall_face,
             self.dt,
             self.dAi,
             self.dAj,
@@ -259,7 +688,6 @@ class SolverBlock:
             ischeme,
         )
 
-
     def set_secondary(self):
 
         calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
@@ -268,27 +696,63 @@ class SolverBlock:
         self.P[:] = self.state.P
 
     def smooth(self, sf2, sf4):
-        smooth(self.conserved, sf2, sf4)
+        smooth(self.conserved, self.ssf, sf2, sf4)
 
     def damp(self, fdamp):
         damp(self.dU1, fdamp)
 
-    def calculate_viscous(self):
+    def set_viscous(self):
         viscous_force(
             self.conserved,
             self.f,
             self.mu,
             self.mu_turb,
             self.xlength,
-            *self.wall_indicators,
             self.vol,
             self.dAi,
             self.dAj,
             self.dAk,
-            self.r
+            self.r,
+            self.rc,
+            *self.rf,
         )
 
+def get_periodic_data(patch):
 
+    match = patch.match
+    perm, flip = match.get_match_perm_flip()
+
+    ijk = patch.get_indices()
+    nxijk = match.get_indices(perm, flip)
+
+    bid = patch.block.grid.index(patch.block)
+    nxbid = match.block.grid.index(match.block)
+
+    ijk = ijk.reshape(3,-1)
+    nxijk = nxijk.reshape(3,-1)
+
+    # Check the coords match
+    b1 = patch.block
+    b2 = patch.match.block
+
+    Npts = ijk.shape[-1]
+    for n in range(Npts):
+
+        ijknow = tuple(ijk[:,n])
+        nxijknow = tuple(nxijk[:,n])
+
+        assert np.isclose(b1.x[ijknow], b2.x[nxijknow],)
+        assert np.isclose(b1.r[ijknow], b2.r[nxijknow],)
+
+        t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
+        t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
+        assert np.allclose(t1, t2)
+
+    # For Fortran
+    ijk = np.asfortranarray(ijk+1).astype(np.int16)
+    nxijk = np.asfortranarray(nxijk+1).astype(np.int16)
+
+    return bid, ijk, nxbid, nxijk
 
 
 def get_periodics(g, procids):
@@ -305,22 +769,59 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, nxbid, nxind = patch.get_periodic_data()
+        bid, ind, nxbid, nxind = get_periodic_data(patch)
         periodics.append((pid, bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
         pid += 1
 
     return periodics
 
 
-def set_periodic(b1, b2, ind1, ind2):
-    conserved1 = b1.conserved.ravel(order="F")
-    conserved2 = b2.conserved.ravel(order="F")
-    avg = 0.5 * (conserved1[ind1] + conserved2[ind2])
-    conserved1[ind1] = avg
-    conserved2[ind2] = avg
+def get_inlet_data(patch):
+
+    _, di, dj, dk = np.shape(patch.get_indices())
+    C = patch.get_cut()
+    if di == 1:
+        dA = C.dAi
+    else:
+        raise NotImplementedError("This assumes the patch is on a const. i face")
+    normal = (dA / turbigen.util.vecnorm(dA)).mean(axis=(1, 2, 3))
+
+    return (
+        patch.get_flat_indices(order="F"),
+        patch.state.P + 0.0,
+        patch.state.T + 0.0,
+        patch.Alpha + 0.0,
+        patch.Beta + 0.0,
+        patch.state.rho,
+        patch.state.h,
+        patch.state.s,
+        to_fort(patch.get_cut().r.reshape(-1)),
+        normal,
+    )
 
 
-def send_slave(block_split, procids, periodics, settings):
+def get_outlet_data(patch):
+
+    # Calculate a normal vector
+    # Assume the patch is flat
+    _, di, dj, dk = np.shape(patch.get_indices())
+
+    C = patch.get_cut()
+    if di == 1:
+        dA = C.dAi
+    else:
+        raise NotImplementedError("This assumes the patch is on a const. i face")
+    normal = (dA / turbigen.util.vecnorm(dA)).mean(axis=(1, 2, 3))
+
+    wA = patch.get_A_avg_weights(order="F")
+
+    # Nodal radii
+    r = C.r.reshape(-1)
+
+    return patch.get_flat_indices(order="F"), (patch.Pout + 0.0), wA, normal, r
+
+
+def send_slave(block_split, procids, periodics):
 
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
@@ -335,59 +836,60 @@ def send_slave(block_split, procids, periodics, settings):
 
     comm.Barrier()
 
-    for iproc in range(1, size):
-        comm.send(settings, dest=iproc)
 
-    comm.Barrier()
-
-def exchange_periodics(blocks, bid_local, periodics, variable='conserved'):
+def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    size = comm.Get_size()
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
-        count = len(ind)
+        pid, bid, procid, ijk, nxbid, nxprocid, nxijk = patch
 
         b1 = blocks[bid_local[bid]]
 
-        if variable=='conserved':
-            v1 = b1.conserved.ravel(order='F')
-        elif variable=='residual':
-            v1 = b1.dU1.ravel(order='F')
+        if variable == "conserved":
+            v1 = b1.conserved
+        elif variable == "residual":
+            v1 = b1.dU1
+        nv = v1.shape[-1]
+        npt = ijk.shape[-1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
 
             b2 = blocks[bid_local[nxbid]]
-            if variable=='conserved':
-                v2 = b2.conserved.ravel(order='F')
-            elif variable=='residual':
-                v2 = b2.dU1.ravel(order='F')
+            if variable == "conserved":
+                v2 = b2.conserved
+            elif variable == "residual":
+                v2 = b2.dU1
 
-            avg = 0.5 * (v1[ind] + v2[nxind])
-            v1[ind] = avg
-            v2[nxind] = avg
+            average_ijk(v1, v2, ijk, nxijk)
 
         # Otherwise, communication is needed
         else:
 
-            # Preallocate a buffer to recieve data
-            nxv = np.empty((count,), dtype=typ)
+            # Assemble data to send
+            vs = get_ijk(v1, ijk)
+            count = len(vs)
+
+            # Preallocate a buffer to recieve
+            nxv = np.empty_like(vs, dtype=typ)
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-            # If our rank is higher than next rank, recieve first
+            # Otherwise, recieve first
             else:
                 comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                comm.Send([v1[ind], count, MPI.REAL4], dest=nxprocid, tag=pid)
-            v1[ind] = 0.5 * (v1[ind] + nxv)
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+
+            # Take average over both sides
+            set_ijk_average(v1, vs, nxv, ijk)
 
 
+# @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     comm = MPI.COMM_WORLD
@@ -399,19 +901,17 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         comm.Barrier()
         periodics_all = comm.recv()
         comm.Barrier()
-        conf = comm.recv()
-        comm.Barrier()
         master_flag = False
     else:
         master_flag = True
         dUlog = []
 
-
     # Calculate smoothing and inlet relaxation scaled by CFL
+    conf = blocks[0].conf
     sf = conf.CFL * conf.smoothing_factor
     sf2 = sf * conf.smoothing_2nd_proportion
     sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
-    rfin = 0.5#0.2/conf.CFL
+    rfin = 0.1
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -434,95 +934,92 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     dUe_ref = None
 
+    dUnow = np.empty((conf.n_step_log, nblock, 5))
+
+
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
-        # if not np.mod(istep, conf.n_step_dt):
-        exchange_periodics(blocks, bid_local, periodics, variable='conserved')
+        # Occasionally exchange the conserved variables
+        # Although the residuals are always exchanged, smoothing is not
+        # symmetric on each side of the boundary so values may drift.
+        # if not np.mod(istep, 7):
+        exchange_periodics(blocks, bid_local, periodics, variable="conserved")
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
 
+            sb.set_secondary()
+
+            if conf.i_loss > 0:
+                # sb.set_walls()
+                sb.fwall[:] = 0.0
+                sb.set_wall_function()
+
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
-            sb.set_inlets(rfin)
+            sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
 
-            sb.set_outlets()
+            sb.set_outlets(conf.i_exit, conf.K_exit)
 
-            # sb.set_walls()
+            if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
+                sb.set_viscous()
 
             sb.residual()
 
         # Send residuals to other blocks
-        exchange_periodics(blocks, bid_local, periodics, variable='residual')
+        # exchange_periodics(blocks, bid_local, periodics, variable="residual")
 
         # Now integrate forward
-        istep_avg =  conf.n_step-conf.n_step_avg
+        istep_avg = conf.n_step - conf.n_step_avg
         for iblock in range(nblock):
             sb = blocks[iblock]
 
-            if conf.damping_factor:
+            if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
                 sb.damp(conf.damping_factor)
 
             sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
 
             sb.smooth(sf2, sf4)
 
-            sb.set_secondary()
+        # Record residuals
+        iilog = np.mod(istep-1, conf.n_step_log)
+        dUnow[iilog] = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
 
-            # if not np.mod(istep, 5) and istep > 100:
-            #     sb.calculate_viscous()
-
-        if not np.mod(istep, conf.n_step_log) and istep > 0:
+        if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
 
             # Send residuals to master proc
-            dUnow = np.stack([np.abs(b.dU1.mean(axis=(0,1,2))) for b in blocks])
-
             if rank:
                 comm.send(dUnow, dest=0)
-                terminate = np.empty((1,),dtype=int)
-                comm.Recv([terminate, 1, MPI.INT], source=0, tag=rank)
-                if terminate:
-                    comm.send(blocks, dest=0)
-                    return
+
             else:
-                dUall = [dUnow,]
+                dUall = [
+                    dUnow,
+                ]
                 for iproc in range(1, size):
                     dUall.append(comm.recv(source=iproc))
-                dUall = np.concatenate(dUall)
+                dUall = np.concatenate(dUall, axis=1)
 
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / conf.n_step_log
                 tstart = ten
 
                 logger.info(f"{istep}: tpnps={tpnps:.3e}")
-                for ib, dU in enumerate(dUall):
+                for ib, dU in enumerate(dUall.mean(axis=0)):
                     logger.info(f"  block {ib}: {dU}")
 
-                dUlognow = np.stack(dUall).mean(axis=0)
+                dUlognow = np.stack(dUall).mean(axis=1)
                 dUlog.append(dUlognow)
-
-                if not dUe_ref:
-                    dUe_ref = dUlognow[-1]*conf.conv_lim
-
-                if dUlognow[-1] < dUe_ref:
-                    terminate = np.array((1,), dtype=int)
-                else:
-                    terminate = np.array((0,), dtype=int)
-                for iproc in range(1, size):
-                    comm.Send([terminate, 1, MPI.INT], dest=iproc, tag=iproc)
-
-                if terminate:
-                    return blocks, dUlog
 
 
     if master_flag:
         return blocks, dUlog
     else:
         comm.send(blocks, dest=0)
+
 
 
 def run(grid, settings={}, machine=None):
@@ -533,7 +1030,7 @@ def run(grid, settings={}, machine=None):
 
     nodes = np.sum([b.size for b in grid])
 
-    blocks = [SolverBlock(b) for b in grid]
+    blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):
         b.bid = ib
 
@@ -553,10 +1050,10 @@ def run(grid, settings={}, machine=None):
                 block_split[-1].append(b)
 
     logger.info("Sending data to processors...")
-    send_slave(block_split, procids, periodics, conf)
+    send_slave(block_split, procids, periodics)
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes, conf)
+    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes)
 
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
@@ -565,116 +1062,92 @@ def run(grid, settings={}, machine=None):
     for bsi in block_split:
         blocks_out.extend(bsi)
 
+    isort = np.argsort([b.bid for b in blocks_out])
+    blocks_out = [blocks_out[i] for i in isort]
+
     for b, sb in zip(grid, blocks_out):
-        # sb.set_secondary()
         cons_avg = np.moveaxis(sb.conserved_avg, -1, 0)
         b.set_conserved(cons_avg)
 
-
-    mdot_in = 0.
+    mdot_in = 0.0
     for patch in grid.inlet_patches:
         Cm, A, _ = patch.get_cut().mix_out()
         mdot_in += Cm.rho * Cm.Vm * A
 
-    mdot_out = 0.
+    mdot_out = 0.0
     for patch in grid.outlet_patches:
         Cm, A, _ = patch.get_cut().mix_out()
         mdot_out += Cm.rho * Cm.Vm * A
 
-    logger.info(f'Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%')
-
-
-    dUlog = np.array(dUlog)
-    dUlog /= dUlog[0]
+    logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.semilogy(dUlog)
-    ax.legend((r'$\rho$',r'$\rho V_x$',r'$\rho V_r$',r'$\rho r V_\theta$',r'$\rho e$'))
 
-    ip, jp, kp = np.unravel_index(np.argmax(blocks_out[0].dU1[...,-1]),blocks_out[0].dU1[...,-1].shape)
-    jp = grid[0].shape[1]//2
-
-    fig, ax = plt.subplots()
-    for b in grid:
-        ni, nj, nk = b.shape
-        c = b[:,nj//2,0].squeeze()
-        ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,nk//2].squeeze()
-        ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,1].squeeze()
-        # c = b[:,nj//2,1].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        # c = b[:,nj//2,-2].squeeze()
-        # ax.plot(c.x, c.P, '-')
-        c = b[:,nj//2,-1].squeeze()
-        ax.plot(c.x, c.P, '-')
-        ax.set_title('P')
-
-    # wallk = blocks[0].wall_indicators[2]
-    # print(wallk.shape)
     # fig, ax = plt.subplots()
-    # ax.plot(wallk[:,nj//2, 0],'o-')
-    # ax.plot(wallk[:,nj//2, 2],'+-')
-    # ax.plot(wallk[:,nj//2, -1],'^-')
-    # ax.plot(wallk[:,nj//2, -3],'x-')
+    # for b,  in grid:
+    #     C = b[:,b.nj//2,:]
+    #     ax.contourf(C.x, C.rt, C.rho)
+    #     # ax.plot(C.x, C.rt, 'k-', lw=0.2)
+    #     # ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
+    #     ax.axis('equal')
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:, b.nj // 2, :]
+    #     cm = ax.contourf(C.x, C.rt, C.Ma)
+    #     ax.plot(C.x, C.rt, "k-", lw=0.2)
+    #     ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
+    #     plt.colorbar(cm)
+    #     ax.axis("equal")
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:,b.nj//2,:]
+    #     cm = ax.contourf(C.x, C.rt, C.w)
+    #     plt.colorbar(cm)
+    #     ax.axis('equal')
+
+    # fig, ax = plt.subplots()
+    # C1 = grid[0][-1,:,b.nk//2]
+    # ax.plot(C1.r, blocks_out[0].dU1[-1,:,b.nk//2,0], '-x')
+    # C2 = grid[1][0,:,b.nk//2]
+    # ax.plot(C2.r, blocks_out[1].dU1[0,:,b.nk//2,0], '-x')
+    #     # ax.axis('equal')
     # plt.show()
-    # quit()
 
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks_out):
-        ni, nj, nk = b.shape
-        ax.plot(b.x[:-1,nj//2, nk//2], sb.mu_turb[:,nj//2, nk//2]/b.mu)
-    ax.set_title('mu_turb/mu_lam')
-    fig, ax = plt.subplots()
-    for b, sb in zip(grid, blocks_out):
-        ni, nj, nk = b.shape
-        ax.plot(b.rt[ni//2,nj//2, :-1], sb.xlength[ni//2,nj//2,:])
-    ax.set_title('xlength')
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     C = b[:, b.nj // 2, :]
+    #     ax.contourf(C.x, C.rt, sb.dU1[:,b.nj//2,:,0])
+    # ax.axis('equal')
 
-    plt.show()
+    # fig, ax = plt.subplots()
+    # for b, sb in zip(grid, blocks):
+    #     C = b[:, :, b.nk // 2]
+    #     ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
+    # ax.axis('equal')
+    # plt.show()
 
-    plt.show()
+    if conf.plot_conv:
 
-    fig, ax = plt.subplots()
+        dUlog = np.concatenate(dUlog, axis=0)
+        drho_ref = dUlog[1, 0]
+        drhoVx_ref = dUlog[1, 1]
+        drhoVr_ref = dUlog[1, 2]
+        drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
+        drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
+        drhoe_ref = dUlog[1, 4]
 
-    for b, sb in zip(grid, blocks):
+        dUlog[:, 0] /= drho_ref
+        dUlog[:, 1:4] /= drhoV_ref
+        dUlog[:, 4] /= drhoe_ref
 
+        import matplotlib.pyplot as plt
 
-        # get face-centered x,rt
-        ni, nj, nk = b.shape
-        xrtf = [
-            np.empty((ni, nj - 1, nk - 1, 3), order="F", dtype=typ),
-            np.empty((ni - 1, nj, nk - 1, 3), order="F", dtype=typ),
-            np.empty((ni - 1, nj - 1, nk, 3), order="F", dtype=typ),
-        ]
-        xrtn = np.asfortranarray(np.stack((b.x,b.r, b.rt),axis=-1)).astype(typ)
-        node_to_face(xrtn, *xrtf)
-        print(xrtn.shape)
-        ii = 2
-        print(xrtf[ii].shape)
-        print(sb.wall_indicators[ii].shape)
-        xface = xrtf[ii][...,0][sb.wall_indicators[ii]==1]
-        rface = xrtf[ii][...,1][sb.wall_indicators[ii]==1]
-        rtface = xrtf[ii][...,2][sb.wall_indicators[ii]==1]
+        fig, ax = plt.subplots()
+        ax.semilogy(dUlog)
+        plt.show()
 
-        c = b[:,jp,:].squeeze()
-        rmean = c.r.mean()
-        ikeep = np.abs(rface/rmean-1.)<0.007
-        if ikeep.any():
-            xface = xface[ikeep]
-            rface = rface[ikeep]
-            rtface = rtface[ikeep]
-            ax.plot(xface, rtface, 'bo')
-
-        ni, nj, nk = b.shape
-        ax.plot(c.x, c.rt, 'k-',lw=0.2)
-        ax.plot(c.x.T, c.rt.T, 'k-',lw=0.2)
-        # ax.plot(
-        ax.axis('equal')
-        ax.grid('P')
-
-    plt.show()
 
 def get_geom(b):
     # Areas and volumes
@@ -729,7 +1202,7 @@ def get_wall(b, trim=1):
         np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
         np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
     ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall(trim), -1).astype(typ))
+    wn = np.asfortranarray(np.expand_dims(b.get_wall_old(trim), -1).astype(typ))
 
     # Calculate nodal values of wall indicator
     node_to_face(wn, *wf)

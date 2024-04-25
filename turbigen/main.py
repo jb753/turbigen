@@ -104,17 +104,18 @@ def main():
 
     # try:
 
-    # # Check our MPI rank
-    # import mpi4py
-    # comm = MPI.COMM_WORLD
-    # rank = comm.Get_rank()
-    # print(rank)
-    # # # Jump to solver slave process if not first rank
-    # # if rank > 0:
-    # #     import turbigen.solvers.native
-    # #     turbigen.solvers.native.run_slave()
-    # #     print(rank)
-    # #     sys.exit(0)
+    # Check our MPI rank
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    # Jump to solver slave process if not first rank
+    if rank > 0:
+        from turbigen.solvers import native
+
+        # import turbigen.solvers.native
+        native.run_slave()
+        sys.exit(0)
 
     # except ImportError:
     #     # Just run serially if we cannot import mpi4py

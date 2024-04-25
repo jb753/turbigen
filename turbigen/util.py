@@ -976,6 +976,26 @@ def node_to_face(var):
     )
 
 
+def node_to_cell(var):
+    """For a (...,ni,nj,nk) matrix of some property, average over eight corners of
+    each cell to produce an (...,ni-1,nj-1,nk-1) matrix of cell-centered properties."""
+    return np.mean(
+        np.stack(
+            (
+                var[..., :-1, :-1, :-1],  # i, j, k
+                var[..., 1:, :-1, :-1],  # i+1, j, k
+                var[..., :-1, 1:, :-1],  # i, j+1, k
+                var[..., 1:, 1:, :-1],  # i+1, j+1, k
+                var[..., :-1, :-1, 1:],  # i, j, k+1
+                var[..., 1:, :-1, 1:],  # i+1, j, k+1
+                var[..., :-1, 1:, 1:],  # i, j+1, k+1
+                var[..., 1:, 1:, 1:],  # i+1, j+1, k+1
+            ),
+        ),
+        axis=0,
+    )
+
+
 def subsample_cases(c, k, K):
     """Split into K parts, extract kth and other K-1 subsamples."""
     di = int(np.floor(len(c) / K))
@@ -1447,58 +1467,81 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 
     return mp_from_xr, spf_actual
 
+
 def dA_Gauss(A, B, C, D):
 
-    v = np.stack((A,B,C,D,A),axis=0)
+    # Assemble all vertices together (stack along second axis)
+    # xrrt[4, 3, ni, nj, nk]
+    xrrt = np.stack((A, B, C, D), axis=0).copy()
+
+    # Shift theta origin to face center
+    # This is important so that constant-theta faces have no radial area
+    t = xrrt[:, 2] / xrrt[:, 1]
+    t -= t.mean(axis=0)
+    xrrt[:, 2] = xrrt[:, 1] * t
+
+    # Subtract face-center coords to reduce round-off error
+    xrrtc = xrrt.mean(axis=0)
+    xrrt -= xrrtc
+
+    # Circular array of vertices
+    v = np.concatenate((xrrt, xrrt[0][None, ...]), axis=0)
 
     # Edges
-    dv = np.diff(v,axis=0)
+    dv = np.diff(v, axis=0)
 
     # Edge midpoint vertices
-    vm = 0.5*(v[:-1] + v[1:])
-
-    # # Make theta into r.theta
-    # vm[:,2, ...] *= vm[:,1, ...]
-    # dv[:, 2, ...] *= vm[:,1, ...]
-    # vm[:,1, ...] *= 0.5
+    vm = 0.5 * (v[:-1] + v[1:])
 
     # Vector field
     Fx = vm.copy()
     Fr = vm.copy()
     Ft = vm.copy()
-    Fx[:,0,:,:] = 0.
-    Fr[:,1,:,:] = 0.
-    Ft[:,2,:,:] = 0.
-    F = np.stack( (Fx, Fr, Ft) )
+    Fx[:, 0, :, :, :] = 0.0
+    Fr[:, 1, :, :, :] = 0.0
+    Ft[:, 2, :, :, :] = 0.0
+    F = np.stack((Fx, Fr, Ft))
 
     # Edge normals
     dlx = np.stack(
         (
-            dv[:,0,:,:],
-            -dv[:,2,:,:],
-            dv[:,1,:,:],
+            dv[:, 0, :, :, :],
+            -dv[:, 2, :, :, :],
+            dv[:, 1, :, :, :],
         ),
-        axis=1
+        axis=1,
     )
     dlr = np.stack(
         (
-            dv[:,2,:,:],
-            dv[:,1,:,:],
-            -dv[:,0,:,:],
+            dv[:, 2, :, :, :],
+            dv[:, 1, :, :, :],
+            -dv[:, 0, :, :, :],
         ),
-        axis=1
+        axis=1,
     )
     dlt = np.stack(
         (
-            -dv[:,1,:,:],
-            dv[:,0,:,:],
-            dv[:,2,:,:],
+            -dv[:, 1, :, :, :],
+            dv[:, 0, :, :, :],
+            dv[:, 2, :, :, :],
         ),
-        axis=1
+        axis=1,
     )
     dl = np.stack((dlx, dlr, dlt))
 
     # Apply Gauss' theorem for area
-    dA = 0.5 * np.sum(F*dl, axis=(2, 1))
+    dA = 0.5 * np.sum(F * dl, axis=(2, 1))
 
     return dA
+
+
+def cart_to_pol(dA, t):
+
+    dAx, dAy, dAz = -dA
+    cost = np.cos(t)
+    sint = np.sin(t)
+
+    dAr = -dAy * sint - dAz * cost
+    dAt = dAy * cost - dAz * sint
+
+    return np.stack((dAx, dAr, dAt))

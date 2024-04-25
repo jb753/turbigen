@@ -42,13 +42,8 @@ verify-sdist ::
 
 TARBALL := $(shell mkdir -p dist && find dist -name '*.tar.gz' | sort | tail -1)
 
-FIG_PY := $(wildcard fig/*.py)
-FIG_PDF := $(FIG_PY:%.py=%.pdf)
-
-fig : $(FIG_PDF)
-
-fig/%.pdf : fig/%.py
-	python $<
+lint ::
+	pre-commit run -a
 
 clean ::
 	rm -rf fig/*.pdf

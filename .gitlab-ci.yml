@@ -9,15 +9,17 @@ test:
   stage: test
   script:
   - python -V
-  - apt update && apt install -y gfortran
+  - apt update && apt install -y gfortran libopenmpi-dev
   - pip install -U pip
   - pip install -e ".[test]"
   - make compile
   - pytest
+  - pre-commit run --all
 
 docs:
   script:
   - python -V
+  - apt update && apt install -y gfortran libopenmpi-dev
   - pip install -U pip
   - pip install -e ".[docs]"
   - make doc

@@ -209,11 +209,10 @@ class Taylor:
         self._coeff = self._fit_coeff()
 
     def chi(self, m):
-        return self.chi_in +  self.chi_hat(m) * self.Dchi
+        return self.chi_in + self.chi_hat(m) * self.Dchi
 
     def chi_hat(self, m):
         return np.polyval(self._coeff, m)
-
 
     def dydm(self, m):
         return np.tan(np.radians(self.chi(m)))

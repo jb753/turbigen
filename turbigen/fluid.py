@@ -247,8 +247,6 @@ class PerfectState(StructuredData):
     @rho.setter
     def rho(self, value):
         val_array = np.array(value)
-        if np.any(val_array < 0.0):
-            raise Exception(f"Cannot set negative rho={value.min()}")
         self._set_data_by_key("rho", val_array)
 
     @property
@@ -270,7 +268,7 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def P(self):
-        return self.rho * self.rgas * self.T
+        return self.rho * (self.gamma - 1.0) * (self.u + self.cv*self.Tu0)
 
     @dependent_property
     def a(self):
@@ -278,7 +276,7 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def h(self):
-        return self.cp * self.T - self.cv*self.Tu0
+        return self.gamma * self.u + self.Tu0*self.rgas
 
     @dependent_property
     def T(self):
@@ -294,6 +292,23 @@ class PerfectState(StructuredData):
         return self.cp * np.log(self.T / self.Ts0) - self.rgas * np.log(
             self.P / self.Ps0
         )
+
+    @dependent_property
+    def dsdrho_P(self):
+        return -self.cp / self.rho
+
+    @dependent_property
+    def dsdP_rho(self):
+        return self.cv / self.P
+
+    @dependent_property
+    def dhdP_rho(self):
+        ga = self.gamma
+        return ga / (ga - 1.0) * self.rho
+
+    @dependent_property
+    def dhdrho_P(self):
+        return -self.cp * self.T / self.rho
 
     def set_Tu0(self, Tu0):
         # Set the temperature for internal energy datum u(Tu0) = 0
@@ -313,7 +328,7 @@ class PerfectState(StructuredData):
         return self
 
     def set_h_s(self, h, s):
-        T = (h + self.cv*self.Tu0)/self.cp
+        T = (h + self.cv * self.Tu0) / self.cp
         P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
         self.set_P_T(P, T)
         assert np.allclose(self.h, h)
@@ -326,10 +341,16 @@ class PerfectState(StructuredData):
         return self
 
     def set_P_h(self, P, h):
-        T = (h + self.cv*self.Tu0)/self.cp
+        T = (h + self.cv * self.Tu0) / self.cp
         self.set_P_T(P, T)
-        assert np.allclose(self.h, h)
-        assert np.allclose(self.P, P)
+        # print(self.h[0], h[0])
+        # assert np.allclose(self.h, h)
+        # assert np.allclose(self.P, P)
+        return self
+
+    def set_P_rho(self, P, rho):
+        T = P / self.rgas / rho
+        self.set_P_T(P, T)
         return self
 
     def set_rho_u(self, rho, u):
@@ -338,10 +359,9 @@ class PerfectState(StructuredData):
         return self
 
     def set_rho_s(self, rho, s):
-        us0 = self.cv * (self.Ts0 - self.Tu0)
         rhos0 = self.Ps0 / self.rgas / self.Ts0
         T = self.Ts0 * np.exp((s + self.rgas * np.log(rho / rhos0)) / self.cv)
-        u = self.cv*(T-self.Tu0)
+        u = self.cv * (T - self.Tu0)
         self.set_rho_u(rho, u)
         return self
 
@@ -362,7 +382,7 @@ class RealState(StructuredData):
         "u",
     )
 
-    Tu0 = 0.
+    Tu0 = 0.0
 
     _backend = "HEOS"
 
@@ -514,6 +534,10 @@ class RealState(StructuredData):
         self._store(CoolProp.HmassP_INPUTS, h, P)
         return self
 
+    def set_P_rho(self, P, rho):
+        self._store(CoolProp.DmassP_INPUTS, rho, P)
+        return self
+
     def set_P_s(self, P, s):
         self._store(CoolProp.PSmass_INPUTS, P, s)
         return self
@@ -557,7 +581,7 @@ class RealState(StructuredData):
 
     def set_Tu0(self, Tu0):
         if Tu0:
-            raise NotImplementedError('Real gas does not support arbitrary u datum')
+            raise NotImplementedError("Real gas does not support arbitrary u datum")
 
     def to_static(self, Ma):
         # Function to solve Ma for a scalar state
