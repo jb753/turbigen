@@ -78,7 +78,7 @@ subroutine residual(&
     Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
     call node_to_cell(Sn, Sc, ni, nj, nk, 1)
 
-    ! Face-centered pressure 
+    ! Face-centered pressure
     call node_to_face( &
         P, Pi, Pj, Pk, &
          ni, nj, nk, 1 &
@@ -101,12 +101,12 @@ subroutine residual(&
         ni, nj, nk, 1 &
     )
 
-    ! Now evaluate the fluxes per unit mass of the other conserved 
+    ! Now evaluate the fluxes per unit mass of the other conserved
     ! quantities at face centers and store in fm
     ! mass per unit mass = 1
-    fmi(:, :, :, 1) = 1e0  
-    fmj(:, :, :, 1) = 1e0  
-    fmk(:, :, :, 1) = 1e0  
+    fmi(:, :, :, 1) = 1e0
+    fmj(:, :, :, 1) = 1e0
+    fmk(:, :, :, 1) = 1e0
     ! axial momentum per unit mass = Vx
     Vx = conserved(:, :, :, 2)/conserved(:, :, :, 1)
     call node_to_face( Vx, &
@@ -180,6 +180,9 @@ subroutine residual(&
     do ip = 1, 5
         resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
     end do
+
+    ! Halve energy eqn step
+    ! resc(:,:,:,5)  = resc(:,:,:,5) / 2e0
 
     ! ! Crudely reduce timestep on k boundaries
     ! resc(:,:,1,:)  = resc(:,:,1,:) /8e0
@@ -1053,15 +1056,16 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, 
     ! omega_t = dVx/dr - dVr/dx
     ! From databook curl V
     ! omega_x = (1/r)[d(rVt)/dr - dVr/dt]
-    ! omega_r = (1/r)[d(Vx)/dt - d(rVt)/dz]
+    ! omega_r = (1/r)[d(Vx)/dt - d(rVt)/dx]
+    ! omega_t = d(Vx)/dr - d(Vr)/dx
     vort = 0e0
-    vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
-    vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
+    vort(:,:,:,1) = gradV(:,:,:, 2, 3) + (Vc(:,:,:,3) - gradV(:,:,:,3,2))/rc
+    vort(:,:,:,2) = gradV(:,:,:, 3, 1)/rc - gradV(:,:,:,1,3)
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
     vort_mag = sqrt(sum(vort*vort,4))
 
     mu_turb = roc*xlength*vort_mag
-    visc_lim = 1000e0*mu
+    visc_lim = 3000e0*mu
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where
@@ -1312,7 +1316,7 @@ subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
             conserved(i , j, k, 4) = 0e0
 
             ! Energy is rho*u
-            conserved(i, j, k, 5) = & 
+            conserved(i, j, k, 5) = &
                 conserved(i, j, k, 1) * u(i, j, k)
 
             ! Subtract dynamic enthalpy
@@ -1524,11 +1528,13 @@ subroutine wall_function(f, ijk, dirn, conserved, r, vol, dw, dA, mu, ni, nj, nk
             Vw0 = sqrt(sum(Vxrtw0*Vxrtw0, 1))
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
-            if (Rew.lt.12.5e0) then
-                cf = 1e0/Rew
-            else
-                cf = a1 + a2/lnRew + a3/lnRew/lnRew
-            end if
+            ! if (Rew.lt.12.5e0) then
+                ! print*, 'laminar'
+                ! cf = 1e0/Rew
+            ! else
+                ! print*, 'turb'
+            cf = a1 + a2/lnRew + a3/lnRew/lnRew
+            ! end if
             tauw = cf * 0.5e0 * row *Vw*Vw
 
             ! Get indices into the cell for this face

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 2000,
+    'n_step': 1000,
     # 'n_step': 1000,
     'n_step_avg': 500,
     'n_step_log': 100,
@@ -20,12 +20,12 @@ settings = {
     # 'nstep_damp': -1,
     'xllim_pitch': 0.03,
     'i_loss': 0,
-    # "damping_factor" : 25.,
-    # "nstep_damp" : -1,
+    "damping_factor" : 10.,
+    "nstep_damp" : -1,
     # "CFL" : 0.7,
     # "i_scheme" : 0,
     # "i_exit" : 0,
-    # "smoothing_factor" : 0.05,
+    # "smoothing_factor" : 0.1,
     # "smoothing_2nd_proportion" : 1.0
 }
 
@@ -401,17 +401,17 @@ def test_plate():
     fig, ax = plt.subplots()
     b = g[0]
     C = b[:,b.nj//2, :]
-    ax.plot(C.x[:,0], C.P[:,(2,-3)],'-x')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
     ax.plot(C.x[:,0], C.P[:,(1,-2)],'-x')
 
     fig, ax = plt.subplots()
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(C.x[:,0], C.P[:,(0,-1)],'-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(C.x[:,0], C.To[:,(0,-1)],'-x')
 
     fig, ax = plt.subplots()
     b = g[0]
@@ -425,13 +425,9 @@ def test_plate():
 
     fig, ax = plt.subplots()
     b = g[0]
-    C = b[b.ni//2, :, b.nk//2]
-    ax.plot(C.r, C.Vx, '-kx')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[b.ni//2, :, b.nk//2]
-    ax.plot(C.r, C.P, '-kx')
+    C = b[:,b.nj//2, :]
+    ax.contourf(C.x, C.rt, C.P)
+    ax.axis('equal')
 
     plt.show()
 
