@@ -25,8 +25,8 @@ test ::
 	pytest
 
 compile ::
-	python -m numpy.f2py -m compiled --opt='-O3 -fcheck=array-temp -ffast-math' -c turbigen/compiled.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
-	mv compiled*.so turbigen
+	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp -ffast-math -fmax-errors=1' -c turbigen/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv embsolve*.so turbigen
 
 
 verify-sdist ::

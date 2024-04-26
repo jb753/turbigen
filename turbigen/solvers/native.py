@@ -4,22 +4,24 @@ import turbigen.fluid
 import turbigen.flowfield
 import turbigen.grid
 from turbigen.solvers.base import BaseSolver
-from turbigen.compiled import (
-    smooth,
-    node_to_cell,
-    cell_to_node,
-    node_to_face,
-    residual,
-    step,
-    damp,
-    calculate_secondary,
-    viscous_force,
-    set_walls,
-    average_ijk,
-    get_ijk,
-    set_ijk_average,
-    wall_function,
-)
+from turbigen.embsolve import embsolve
+
+# (
+#     smooth,
+#     cell_to_node,
+#     node_to_face,
+#     residual,
+#     step,
+#     damp,
+#     calculate_secondary,
+#     viscous_force,
+#     set_walls,
+#     average_ijk,
+#     get_ijk,
+#     set_ijk_average,
+#     wall_function,
+# )
+
 from timeit import default_timer as timer
 from mpi4py import MPI
 import logging
@@ -114,12 +116,14 @@ def get_dw(block):
 
     return dwi, dwj, dwk
 
+
 def to_fort(x):
     if x.ndim > 3:
-        x2 = np.moveaxis(x,0, -1)
+        x2 = np.moveaxis(x, 0, -1)
     else:
         x2 = x
     return np.asfortranarray(x2).astype(typ)
+
 
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
@@ -149,7 +153,7 @@ class SolverBlock:
         self.rf = [to_fort(r) for r in block.r_face]
 
         self.rc = to_fort(np.zeros_like(block.vol))
-        node_to_cell(self.r, self.rc)
+        embsolve.node_to_cell(self.r, self.rc)
 
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
@@ -163,7 +167,7 @@ class SolverBlock:
         xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
         xlength = (0.41 * xlength) ** 2.0
         self.xlength = to_fort(np.zeros_like(block.vol))
-        node_to_cell(xlength, self.xlength)
+        embsolve.node_to_cell(xlength, self.xlength)
         self.mu_turb = to_fort(np.zeros_like(block.vol))
 
         self.dU1 = self.conserved.copy(order="F").astype(typ) * np.nan
@@ -180,61 +184,36 @@ class SolverBlock:
         # Note 1-indexed for Fortran
         # self.wall_nodes = block.get_wall_old().astype(bool)
         *self.ijk_wall_face, self.ijk_wall_node = [
-                np.asfortranarray(np.argwhere(wall).T+1).astype(np.int16)
-                for wall in block.get_wall()
+            np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
+            for wall in block.get_wall()
         ]
 
         # Get wall length scales
         # dli, dlj, dlk  = [to_fort(dl) for dl in block.get_dwall()]
 
         # Get indices to face-average on first node off the wall
-        iwall1, jwall1, kwall1 = [ijk+0 for ijk in self.ijk_wall_face]
+        iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face]
         # iwall1[0,iwall1[0,:]==1] += 1
-        iwall1[0,iwall1[0,:]==ni] -= 1
+        iwall1[0, iwall1[0, :] == ni] -= 1
         # jwall1[1,jwall1[1,:]==1] += 1
-        jwall1[1,jwall1[1,:]==nj] -= 1
+        jwall1[1, jwall1[1, :] == nj] -= 1
         # kwall1[2,kwall1[2,:]==1] += 1
-        kwall1[2,kwall1[2,:]==nk] -= 1
+        kwall1[2, kwall1[2, :] == nk] -= 1
 
         self.dw_face = [
-            get_ijk(to_fort(dl), ijk) for dl, ijk in
-            zip(block.get_dwall(), [iwall1, jwall1, kwall1])
+            embsolve.get_ijk(to_fort(dl), ijk)
+            for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
 
         dAijk = [
-                np.sqrt((self.dAi**2).sum(axis=-1)),
-                np.sqrt((self.dAj**2).sum(axis=-1)),
-                np.sqrt((self.dAk**2).sum(axis=-1)),
+            np.sqrt((self.dAi**2).sum(axis=-1)),
+            np.sqrt((self.dAj**2).sum(axis=-1)),
+            np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
 
         self.dA_face = [
-            get_ijk(dA, ijk) for dA, ijk in
-            zip(dAijk, self.ijk_wall_face)
+            embsolve.get_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face)
         ]
-
-#         iwall1f = np.stack(
-#             ( iwall1, iwall1, iwall1, iwall1 ), axis=1
-#         )
-#         iwall1f[1,1,:] +=1
-#         iwall1f[2,2,:] +=1
-#         iwall1f[1,3,:] +=1
-#         iwall1f[2,3,:] +=1
-
-#         jwall1f = np.stack(
-#             ( jwall1, jwall1, jwall1, jwall1 ), axis=1
-#         )
-#         jwall1f[0,1,:] +=1
-#         jwall1f[2,2,:] +=1
-#         jwall1f[0,3,:] +=1
-#         jwall1f[2,3,:] +=1
-
-#         kwall1f = np.stack(
-#             ( kwall1, kwall1, kwall1, kwall1 ), axis=1
-#         )
-#         kwall1f[0,1,:] +=1
-#         kwall1f[1,2,:] +=1
-#         kwall1f[0,3,:] +=1
-#         kwall1f[1,3,:] +=1
 
         # Get nodal smoothing scaling factors
 
@@ -270,20 +249,23 @@ class SolverBlock:
         ).mean(axis=0)
 
         # Smoothing scale factors in each volume
-        Lref = block.vol_new**(1/3)
-        ssf = to_fort(np.stack(
-            (
-                dli/Lref,
-                dlj/Lref,
-                dlk/Lref,
-            ), axis=0
-        ))
+        Lref = block.vol_new ** (1 / 3)
+        ssf = to_fort(
+            np.stack(
+                (
+                    dli / Lref,
+                    dlj / Lref,
+                    dlk / Lref,
+                ),
+                axis=0,
+            )
+        )
         ssfs = ssf.sum(axis=-1, keepdims=True)
-        ssf = ssf/ssfs
+        ssf = ssf / ssfs
 
         # Now distribute to nodes
         self.ssf = to_fort(np.empty((3, ni, nj, nk)))
-        cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
+        embsolve.cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
 
         # print('at ni//2, nj//2, k=0')
         # print(self.ssf[ni//2, nj//2, 0, :])
@@ -292,13 +274,14 @@ class SolverBlock:
         # ax.plot(self.ssf[ni//2,nj//2,:,1])
         # plt.show()
 
-
         self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
 
-            self.state = turbigen.fluid.PerfectState(shape=block.shape, order="F", typ=typ)
+            self.state = turbigen.fluid.PerfectState(
+                shape=block.shape, order="F", typ=typ
+            )
             self.state.gamma = typ(block.gamma)
             self.state.cp = typ(block.cp)
             self.state.mu = typ(block.mu)
@@ -600,36 +583,28 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = state.P
                 self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
-    def set_walls(self):
-        """Zero the momentums on a wall."""
-
-        # iwall = self.wall_nodes
-        # # Update conserved vars
-        # self.conserved[..., 1][iwall] = 0.0
-        # self.conserved[..., 2][iwall] = 0.0
-        # self.conserved[..., 3][iwall] = 0.0
-        # self.conserved[..., 4][iwall] = self.conserved[..., 0][iwall] * self.u[iwall]
-        # # Update secondary vars
-        # self.ho[iwall] -= self.halfVsq[iwall]
-        # self.halfVsq[iwall] = 0.0
-
-        set_walls(self.conserved, self.u, self.ho, self.halfVsq, self.ijk_wall_node)
-
     def set_wall_function(self):
         ni, nj, nk, _ = self.conserved.shape
-        for dirn, (dw, ijk, dA) in enumerate(zip(self.dw_face, self.ijk_wall_face, self.dA_face)):
+        for dirn, (dw, ijk, dA) in enumerate(
+            zip(self.dw_face, self.ijk_wall_face, self.dA_face)
+        ):
             nwall = ijk.shape[1]
             if nwall:
-                wall_function(
-                        self.fwall,
-                        ijk,
-                        dirn+1,
-                        self.conserved,
-                        self.r,
-                        self.vol,
-                        dw,
-                        dA,
-                        self.mu, ni, nj, nk, nwall)
+                embsolve.wall_function(
+                    self.fwall,
+                    ijk,
+                    dirn + 1,
+                    self.conserved,
+                    self.r,
+                    self.vol,
+                    dw,
+                    dA,
+                    self.mu,
+                    ni,
+                    nj,
+                    nk,
+                    nwall,
+                )
 
     def set_timestep(self, CFL):
         Vx = self.conserved[..., 1] / self.conserved[..., 0]
@@ -643,7 +618,7 @@ class SolverBlock:
 
         Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(typ)
         Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=typ)
-        node_to_cell(Va_node, Va_cell)
+        embsolve.node_to_cell(Va_node, Va_cell)
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
         self.dt = CFL * self.dlmin / (aref + Vref)
@@ -658,9 +633,9 @@ class SolverBlock:
         # # self.dt[:,:,-1] *= fac
 
     def residual(self):
-        residual(
+        embsolve.residual(
             self.conserved,
-            self.P-self.Pref,  # Only pressure differences matter
+            self.P - self.Pref,  # Only pressure differences matter
             self.ho,
             self.r,
             *self.rf,
@@ -676,33 +651,30 @@ class SolverBlock:
             self.dU1,
         )
 
-    def step(self, istep, istep_avg, nstep_avg, ischeme):
-        step(
+    def step(self, istep, ischeme):
+        embsolve.step(
             self.conserved,
-            self.conserved_avg,
             self.dU1,
             self.dU2,
             istep,
-            istep_avg,
-            nstep_avg,
             ischeme,
         )
 
     def set_secondary(self):
 
-        calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
+        embsolve.calculate_secondary(self.r, self.conserved, self.halfVsq, self.u)
         self.state.set_rho_u(self.conserved[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
 
     def smooth(self, sf2, sf4):
-        smooth(self.conserved, self.ssf, sf2, sf4)
+        embsolve.smooth(self.conserved, self.ssf, sf2, sf4)
 
     def damp(self, fdamp):
-        damp(self.dU1, fdamp)
+        embsolve.damp(self.dU1, fdamp)
 
     def set_viscous(self):
-        viscous_force(
+        embsolve.viscous_force(
             self.conserved,
             self.f,
             self.mu,
@@ -717,6 +689,7 @@ class SolverBlock:
             *self.rf,
         )
 
+
 def get_periodic_data(patch):
 
     match = patch.match
@@ -728,8 +701,8 @@ def get_periodic_data(patch):
     bid = patch.block.grid.index(patch.block)
     nxbid = match.block.grid.index(match.block)
 
-    ijk = ijk.reshape(3,-1)
-    nxijk = nxijk.reshape(3,-1)
+    ijk = ijk.reshape(3, -1)
+    nxijk = nxijk.reshape(3, -1)
 
     # Check the coords match
     b1 = patch.block
@@ -738,19 +711,25 @@ def get_periodic_data(patch):
     Npts = ijk.shape[-1]
     for n in range(Npts):
 
-        ijknow = tuple(ijk[:,n])
-        nxijknow = tuple(nxijk[:,n])
+        ijknow = tuple(ijk[:, n])
+        nxijknow = tuple(nxijk[:, n])
 
-        assert np.isclose(b1.x[ijknow], b2.x[nxijknow],)
-        assert np.isclose(b1.r[ijknow], b2.r[nxijknow],)
+        assert np.isclose(
+            b1.x[ijknow],
+            b2.x[nxijknow],
+        )
+        assert np.isclose(
+            b1.r[ijknow],
+            b2.r[nxijknow],
+        )
 
         t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
         t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
         assert np.allclose(t1, t2)
 
     # For Fortran
-    ijk = np.asfortranarray(ijk+1).astype(np.int16)
-    nxijk = np.asfortranarray(nxijk+1).astype(np.int16)
+    ijk = np.asfortranarray(ijk + 1).astype(np.int16)
+    nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
 
     return bid, ijk, nxbid, nxijk
 
@@ -852,8 +831,6 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             v1 = b1.conserved
         elif variable == "residual":
             v1 = b1.dU1
-        nv = v1.shape[-1]
-        npt = ijk.shape[-1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
@@ -864,13 +841,13 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             elif variable == "residual":
                 v2 = b2.dU1
 
-            average_ijk(v1, v2, ijk, nxijk)
+            embsolve.average_ijk(v1, v2, ijk, nxijk)
 
         # Otherwise, communication is needed
         else:
 
             # Assemble data to send
-            vs = get_ijk(v1, ijk)
+            vs = embsolve.get_ijk(v1, ijk)
             count = len(vs)
 
             # Preallocate a buffer to recieve
@@ -886,7 +863,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
 
             # Take average over both sides
-            set_ijk_average(v1, vs, nxv, ijk)
+            embsolve.set_ijk_average(v1, vs, nxv, ijk)
 
 
 # @profile
@@ -932,8 +909,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     tstart = timer()
 
-    dUe_ref = None
-
     dUnow = np.empty((conf.n_step_log, nblock, 5))
 
     # Now integrate forward
@@ -948,13 +923,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # if not np.mod(istep, 7):
         exchange_periodics(blocks, bid_local, periodics, variable="conserved")
 
-        if istep >= istep_avg:
-            self.conserved_avg += self.conserved/float(conf.n_step_avg)
-
         # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
+
+            if istep >= istep_avg:
+                sb.conserved_avg += sb.conserved / float(conf.n_step_avg)
 
             sb.set_secondary()
 
@@ -989,7 +964,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             sb.smooth(sf2, sf4)
 
         # Record residuals
-        iilog = np.mod(istep-1, conf.n_step_log)
+        iilog = np.mod(istep - 1, conf.n_step_log)
         dUnow[iilog] = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
 
         if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
@@ -1017,12 +992,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 dUlognow = np.stack(dUall).mean(axis=1)
                 dUlog.append(dUlognow)
 
-
     if master_flag:
         return blocks, dUlog
     else:
         comm.send(blocks, dest=0)
-
 
 
 def run(grid, settings={}, machine=None):
@@ -1084,53 +1057,6 @@ def run(grid, settings={}, machine=None):
 
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 
-    import matplotlib.pyplot as plt
-
-    # fig, ax = plt.subplots()
-    # for b,  in grid:
-    #     C = b[:,b.nj//2,:]
-    #     ax.contourf(C.x, C.rt, C.rho)
-    #     # ax.plot(C.x, C.rt, 'k-', lw=0.2)
-    #     # ax.plot(C.x.T, C.rt.T, 'k-', lw=0.2)
-    #     ax.axis('equal')
-
-    # fig, ax = plt.subplots()
-    # for b in grid:
-    #     C = b[:, b.nj // 2, :]
-    #     cm = ax.contourf(C.x, C.rt, C.Ma)
-    #     ax.plot(C.x, C.rt, "k-", lw=0.2)
-    #     ax.plot(C.x.T, C.rt.T, "k-", lw=0.2)
-    #     plt.colorbar(cm)
-    #     ax.axis("equal")
-
-    # fig, ax = plt.subplots()
-    # for b in grid:
-    #     C = b[:,b.nj//2,:]
-    #     cm = ax.contourf(C.x, C.rt, C.w)
-    #     plt.colorbar(cm)
-    #     ax.axis('equal')
-
-    # fig, ax = plt.subplots()
-    # C1 = grid[0][-1,:,b.nk//2]
-    # ax.plot(C1.r, blocks_out[0].dU1[-1,:,b.nk//2,0], '-x')
-    # C2 = grid[1][0,:,b.nk//2]
-    # ax.plot(C2.r, blocks_out[1].dU1[0,:,b.nk//2,0], '-x')
-    #     # ax.axis('equal')
-    # plt.show()
-
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks):
-    #     C = b[:, b.nj // 2, :]
-    #     ax.contourf(C.x, C.rt, sb.dU1[:,b.nj//2,:,0])
-    # ax.axis('equal')
-
-    # fig, ax = plt.subplots()
-    # for b, sb in zip(grid, blocks):
-    #     C = b[:, :, b.nk // 2]
-    #     ax.contourf(C.x, C.r, sb.dU1[:,:,b.nk//2,0])
-    # ax.axis('equal')
-    # plt.show()
-
     if conf.plot_conv:
 
         dUlog = np.concatenate(dUlog, axis=0)
@@ -1150,66 +1076,3 @@ def run(grid, settings={}, machine=None):
         fig, ax = plt.subplots()
         ax.semilogy(dUlog)
         plt.show()
-
-
-def get_geom(b):
-    # Areas and volumes
-    dAi = np.asfortranarray(np.moveaxis(b.dAi, 0, -1))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj, 0, -1))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk, 0, -1))
-    vol = np.asfortranarray(b.vol)
-
-    # Shortest side length
-    dli = turbigen.util.vecnorm(b.dli)
-    dlj = turbigen.util.vecnorm(b.dlj)
-    dlk = turbigen.util.vecnorm(b.dlk)
-    dli = 0.25 * (
-        dli[:, :-1, :-1] + dli[:, :-1, 1:] + dli[:, 1:, :-1] + dli[:, :-1, :-1]
-    )
-    dlj = 0.25 * (
-        dlj[:-1, :, :-1] + dlj[:-1, :, 1:] + dlj[1:, :, :-1] + dlj[:-1, :, :-1]
-    )
-    dlk = 0.25 * (
-        dlk[:-1, :-1, :] + dlk[:-1, 1:, :] + dlk[1:, :-1, :] + dlk[:-1, :-1, :]
-    )
-    dlmin = np.asfortranarray(np.minimum(dli, dlj, dlk))
-
-    # Wall locations
-    wall = get_wall(b)
-
-    # Reference frame angular velocity
-    Omega = b.Omega.mean()
-
-    return dAi, dAj, dAk, vol, dlmin, wall, Omega
-
-
-# def get_timestep(b, dlmin, CFL):
-#     ni, nj, nk = b.shape
-#     Va_node = np.asfortranarray(np.stack((b.V, b.a), axis=-1))
-#     Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F")
-#     node_to_cell(Va_node, Va_cell)
-#     Vref = Va_cell[..., 0]
-#     aref = Va_cell[..., 1]
-#     dt = CFL * dlmin / (aref + Vref)
-#     return np.asfortranarray(dt)
-
-
-def get_wall(b, trim=1):
-    # Find logical indices that zero the fluxes on wall faces
-    thresh = 0.99  # To allow for floating point error
-
-    # Preallocate face indices
-    ni, nj, nk = b.shape
-    wf = [
-        np.empty((ni, nj - 1, nk - 1, 1), order="F", dtype=typ),
-        np.empty((ni - 1, nj, nk - 1, 1), order="F", dtype=typ),
-        np.empty((ni - 1, nj - 1, nk, 1), order="F", dtype=typ),
-    ]
-    wn = np.asfortranarray(np.expand_dims(b.get_wall_old(trim), -1).astype(typ))
-
-    # Calculate nodal values of wall indicator
-    node_to_face(wn, *wf)
-
-    wfl = [(wfn > thresh)[..., 0].astype(np.int8) for wfn in wf]
-
-    return wfl

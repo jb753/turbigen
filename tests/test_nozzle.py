@@ -298,11 +298,7 @@ def test_condi(dirn, plot=False):
     )
     g, F = make_nozzle(xA, dirn=dirn)
 
-    g[0].Vt += 0.1*g[0].Vx.mean()
-
     np.set_printoptions(precision=2)
-
-    print(g[0].T.min())
 
     turbigen.solvers.native.run(g, settings)
 
