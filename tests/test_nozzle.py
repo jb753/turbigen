@@ -431,7 +431,7 @@ def test_patch_A_avg():
         ]
     )
     g, F = make_nozzle(xA)
-    block = g[0]
+    block = g[-1]
     patch = block.outlet_patches[0]
 
     # Calculate area average using weight
@@ -484,12 +484,13 @@ def not_test_exit(Alpha):
 if __name__=='__main__':
 
 
+    # pass
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
     # test_exit(0.)
 
     # print('testing uniform, vary Ma')
-    # test_Ma(0.9)
+    test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
     # test_uniform(30.)
@@ -501,4 +502,4 @@ if __name__=='__main__':
     # test_radius(30.)
 
     # print('testing con-di nozzles')
-    test_condi('t')
+    # test_condi('t')

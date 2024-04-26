@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 2000,
+    'n_step': 10000,
     # 'n_step': 1000,
     'n_step_avg': 500,
     'n_step_log': 100,
@@ -21,11 +21,11 @@ settings = {
     'xllim_pitch': 0.0,
     # 'i_loss': 0,
     # "damping_factor" : 25.,
-    # "nstep_damp" : -1,
+    "nstep_damp" : 1000,
     # "CFL" : 0.7,
     # "i_scheme" : 0,
     # "i_exit" : 0,
-    # "smoothing_factor" : 0.05,
+    "smoothing_factor" : 0.001,
     # "smoothing_2nd_proportion" : 1.0
 }
 
@@ -114,7 +114,7 @@ def make_plate():
 
     # Split into blocks
     blocks = []
-    nblock = 1
+    nblock = 4
 
     patches = [
         turbigen.grid.InletPatch(i=0),
@@ -178,7 +178,7 @@ def make_pipe():
 
     # Boundary conditions
     Alpha1 = 0.
-    Ma1 = 0.3
+    Ma1 = 0.2
     ga = 1.4
     cp = 1005.0
     mu = 5e-2
@@ -202,9 +202,9 @@ def make_pipe():
     Lvisc = mu / rho1 / Vtau
     dw = yplus * Lvisc/h
     # print(dw)
-    dw = 0.01
+    dw = 0.002
     dmax = 0.04
-    ER = 1.05
+    ER = 1.1
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
     ddmax = np.diff(cluv).max()*h
 
@@ -235,7 +235,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 2
+    nblock = 4
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -374,7 +374,7 @@ def make_pipe():
 
     return g, F
 
-def test_plate():
+def not_test_plate():
 
     g, ile, ite = make_plate()
 

@@ -153,7 +153,6 @@ class SolverBlock:
         xlength = (0.41 * xlength) ** 2.0
         self.xlength = to_fort(np.zeros_like(block.vol))
         embsolve.node_to_cell(xlength, self.xlength)
-        self.mu_turb = to_fort(np.zeros_like(block.vol))
 
         self.dU1 = self.cons.copy(order="F").astype(typ) * np.nan
         self.dU2 = self.cons.copy(order="F").astype(typ) * np.nan
@@ -257,6 +256,12 @@ class SolverBlock:
         # fig, ax = plt.subplots()
         # ax.plot(self.ssf[ni//2,nj//2,:,1])
         # plt.show()
+
+        self.tau = [
+            to_fort(np.empty((6, ni, nj - 1, nk - 1))),
+            to_fort(np.empty((6, ni - 1, nj, nk - 1))),
+            to_fort(np.empty((6, ni - 1, nj - 1, nk))),
+        ]
 
         self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
@@ -654,18 +659,33 @@ class SolverBlock:
         embsolve.damp(self.dU1, fdamp)
 
     def set_viscous(self):
-        embsolve.viscous_force(
+
+        # Get shear stresses on faces
+        embsolve.shear_stress(
             self.cons,
-            self.fb,
             self.mu,
-            self.mu_turb,
             self.xlength,
+            *self.tau,
             self.vol,
             self.dAi,
             self.dAj,
             self.dAk,
             self.r,
             self.rc,
+        )
+
+        # Match shear stresses across periodics
+        #
+        # ...
+
+        # Convert shear stresses to body force
+        embsolve.viscous_force(
+            self.fb,
+            *self.tau,
+            self.vol,
+            self.dAi,
+            self.dAj,
+            self.dAk,
             *self.rf,
         )
 
@@ -847,6 +867,52 @@ def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
             embsolve.set_by_ijk(v1, vavg, ijk)
 
 
+def exchange_periodic_tau(blocks, bid_local, periodics):
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    # Update periodic boundaries
+    for patch in periodics:
+        pid, bid, procid, ijk, nxbid, nxprocid, nxijk = patch
+
+        b1 = blocks[bid_local[bid]]
+
+        # Just set the periodic if on same rank
+        if nxprocid == rank:
+
+            b2 = blocks[bid_local[nxbid]]
+
+            for idir, (tau1, tau2) in enumerate(zip(b1.tau, b2.tau)):
+                pass
+                # embsolve.face_average_by_ijk(tau1, tau2, ijk, nxijk, i)
+
+        # Otherwise, communication is needed
+        else:
+
+            raise NotImplementedError
+
+            # # Assemble data to send
+            # vs = embsolve.get_by_ijk(v1, ijk)
+            # count = len(vs)
+
+            # # Preallocate a buffer to recieve
+            # nxv = np.empty_like(vs, dtype=typ)
+
+            # # If our rank is lower than next rank, send first
+            # if rank < nxprocid:
+            #     comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+            #     comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            # # Otherwise, recieve first
+            # else:
+            #     comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            #     comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+
+            # # Take average over both sides
+            # vavg = 0.5 * (vs + nxv)
+            # embsolve.set_by_ijk(v1, vavg, ijk)
+
+
 # @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
@@ -923,6 +989,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
+                # exchange_periodic_tau(blocks, bid_local, periodics)
                 sb.set_wall_function()
 
             sb.residual()

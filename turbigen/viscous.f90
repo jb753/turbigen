@@ -1,12 +1,10 @@
 ! Routines for adding viscous effects
 
-subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, r, rc, ri, rj, rk, ni, nj, nk)
+subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     implicit none
 
     real*4, intent (inout)  :: cons(ni, nj, nk, 5)
-    real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
-    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
     real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
     real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
@@ -15,9 +13,6 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
     real*4, intent (inout)  :: xlength(ni-1, nj-1, nk-1)
     real*4, intent (inout)  :: r(ni, nj, nk)
     real*4, intent (inout)  :: rc(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: ri(ni, nj-1, nk-1)
-    real*4, intent (inout)  :: rj(ni-1, nj, nk-1)
-    real*4, intent (inout)  :: rk(ni-1, nj-1, nk)
 
     real*4, intent (inout)  :: mu
 
@@ -26,16 +21,11 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
     integer, intent (in)  :: nk
 
     real*4 :: tauc(ni-1, nj-1, nk-1, 6)
-    real*4 :: taui(ni, nj-1, nk-1, 6)
-    real*4 :: tauj(ni-1, nj, nk-1, 6)
-    real*4 :: tauk(ni-1, nj-1, nk, 6)
+    real*4, intent (inout) :: taui(ni, nj-1, nk-1, 6)
+    real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
+    real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
 
     real*4 :: visc_lim
-
-    real*4 :: fi(ni, nj-1, nk-1, 3, 5)
-    real*4 :: fj(ni-1, nj, nk-1, 3, 5)
-    real*4 :: fk(ni-1, nj-1, nk, 3, 5)
-
 
     real*4 :: V(ni, nj, nk, 3)
     real*4 :: Vc(ni-1, nj-1, nk-1, 3)
@@ -44,7 +34,7 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
     real*4 :: divV(ni-1, nj-1, nk-1)
     real*4 :: vort(ni-1, nj-1, nk-1, 3)
     real*4 :: vort_mag(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: mu_turb(ni-1, nj-1, nk-1)
+    real*4 :: mu_turb(ni-1, nj-1, nk-1)
     integer :: i
 
 
@@ -53,7 +43,6 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
         V(:,:,:, i) = cons(:,:,:,i+1)/cons(:,:,:,1)
     end do
     V(:,:,:,3) = V(:,:,:,3)/r
-
 
     ! Cell-centered vars
     call node_to_cell(V, Vc, ni, nj, nk, 3)
@@ -90,33 +79,65 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
     ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
     tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
 
-
     ! Calculate vorticity
-    ! From multall
-    ! omega_x = dVr/dt - dVt/dr - Vt/r
-    ! omega_r = dVt/dx - dVx/dt
-    ! omega_t = dVx/dr - dVr/dx
-    ! From databook curl V
-    ! omega_x = (1/r)[d(rVt)/dr - dVr/dt]
-    ! omega_r = (1/r)[d(Vx)/dt - d(rVt)/dz]
-    vort = 0e0
     vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
     vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
     vort_mag = sqrt(sum(vort*vort,4))
 
+    ! Set turbulent viscosity using mixing length
     mu_turb = roc*xlength*vort_mag
-    visc_lim = 1000e0*mu
+
+    ! Apply a limiting turbulent viscosity ratio
+    visc_lim = 3000e0*mu
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where
 
+    ! Get shear stress for a Newtonian fluid
     do i = 1,6
         tauc(:,:,:,i) = -tauc(:,:,:,i) *( mu + mu_turb)
     end do
 
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
+
+    ! Before evaluating the fluxes, we need to average across periodics
+    ! To make shear stress continuous
+
+end subroutine
+
+subroutine viscous_force(fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk, ni, nj, nk)
+
+    implicit none
+
+    real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
+
+    real*4, intent (inout) :: taui(ni, nj-1, nk-1, 6)
+    real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
+    real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
+
+    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+
+    real*4, intent (inout)  :: ri(ni, nj-1, nk-1)
+    real*4, intent (inout)  :: rj(ni-1, nj, nk-1)
+    real*4, intent (inout)  :: rk(ni-1, nj-1, nk)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real*4 :: fi(ni, nj-1, nk-1, 3, 5)
+    real*4 :: fj(ni-1, nj, nk-1, 3, 5)
+    real*4 :: fk(ni-1, nj-1, nk, 3, 5)
+
+    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
+
+    real*4 :: rfvisc
+    rfvisc = 0.1e0
 
     ! We need to assemble the viscous fluxes from the stress tensor components
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
@@ -127,7 +148,7 @@ subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, 
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
+    fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
 
 end subroutine
 
