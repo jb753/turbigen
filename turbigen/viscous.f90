@@ -80,6 +80,7 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
     tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
 
     ! Calculate vorticity
+    vort = 0e0
     vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
     vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
@@ -89,7 +90,7 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
     mu_turb = roc*xlength*vort_mag
 
     ! Apply a limiting turbulent viscosity ratio
-    visc_lim = 3000e0*mu
+    visc_lim = 1000e0*mu
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where

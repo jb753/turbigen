@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 10000,
+    'n_step': 15000,
     # 'n_step': 1000,
     'n_step_avg': 500,
     'n_step_log': 100,
@@ -164,7 +164,7 @@ def make_plate():
 def make_pipe():
     """Generate the grid."""
 
-    L_h = 6.
+    L_h = 8.
     AR_merid=4.
     AR_pitch=0.5
     htr = 0.95
@@ -194,14 +194,6 @@ def make_pipe():
     rho1 = P1/rgas/T1
 
     # Calculate dwall for target yplus
-    yplus = 1.
-    Re = rho1 * V * h / mu
-    Cf = (2.0 * np.log10(Re) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (rho1 * V**2)
-    Vtau = np.sqrt(tauw / rho1)
-    Lvisc = mu / rho1 / Vtau
-    dw = yplus * Lvisc/h
-    # print(dw)
     dw = 0.002
     dmax = 0.04
     ER = 1.1

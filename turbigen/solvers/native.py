@@ -63,7 +63,7 @@ class NativeConfig(BaseSolver):
     i_exit = 1
     i_inlet = 1
     K_exit = 0.9
-    K_inlet = 0.2
+    K_inlet = 0.3
 
     plot_conv = False
 
@@ -701,6 +701,9 @@ def get_periodic_data(patch):
     bid = patch.block.grid.index(patch.block)
     nxbid = match.block.grid.index(match.block)
 
+    d = ijk.shape.index(1)
+    nxd = nxijk.shape.index(1)
+
     ijk = ijk.reshape(3, -1)
     nxijk = nxijk.reshape(3, -1)
 
@@ -731,7 +734,7 @@ def get_periodic_data(patch):
     ijk = np.asfortranarray(ijk + 1).astype(np.int16)
     nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
 
-    return bid, ijk, nxbid, nxijk
+    return bid, ijk, d, nxbid, nxijk, nxd
 
 
 def get_periodics(g, procids):
@@ -748,8 +751,10 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, nxbid, nxind = get_periodic_data(patch)
-        periodics.append((pid, bid, procids[bid], ind, nxbid, procids[nxbid], nxind))
+        bid, ind, d, nxbid, nxind, nxd = get_periodic_data(patch)
+        periodics.append(
+            (pid, bid, procids[bid], ind, d, nxbid, procids[nxbid], nxind, nxd)
+        )
         pid += 1
 
     return periodics
@@ -823,7 +828,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ijk, nxbid, nxprocid, nxijk = patch
+        pid, bid, procid, ijk, _, nxbid, nxprocid, nxijk, _ = patch
 
         b1 = blocks[bid_local[bid]]
 
@@ -874,7 +879,7 @@ def exchange_periodic_tau(blocks, bid_local, periodics):
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ijk, nxbid, nxprocid, nxijk = patch
+        pid, bid, procid, ijk, d, nxbid, nxprocid, nxijk, nxd = patch
 
         b1 = blocks[bid_local[bid]]
 
@@ -883,9 +888,11 @@ def exchange_periodic_tau(blocks, bid_local, periodics):
 
             b2 = blocks[bid_local[nxbid]]
 
-            for idir, (tau1, tau2) in enumerate(zip(b1.tau, b2.tau)):
-                pass
-                # embsolve.face_average_by_ijk(tau1, tau2, ijk, nxijk, i)
+            # Choose the correct ijk shear stress for each patch
+            tau1 = b1.tau[d - 1]
+            tau2 = b2.tau[nxd - 1]
+
+            embsolve.face_average_by_ijk(tau1, tau2, ijk, nxijk, d, nxd)
 
         # Otherwise, communication is needed
         else:
@@ -941,11 +948,11 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
-        pid, bid, procid, ind, nxbid, nxprocid, nxind = patch
+        pid, bid, procid, ind, d, nxbid, nxprocid, nxind, nxd = patch
         if procid == rank:
             periodics.append(patch)
         elif nxprocid == rank:
-            periodics.append((pid, nxbid, nxprocid, nxind, bid, procid, ind))
+            periodics.append((pid, nxbid, nxprocid, nxind, nxd, bid, procid, ind, d))
 
     bids = [b.bid for b in blocks]
 
@@ -989,7 +996,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
-                # exchange_periodic_tau(blocks, bid_local, periodics)
+                exchange_periodic_tau(blocks, bid_local, periodics)
                 sb.set_wall_function()
 
             sb.residual()
