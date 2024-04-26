@@ -4,17 +4,70 @@
 ! fiddly bits like block patching and boundary conditions
 module embsolve
 
+    implicit none
+
 contains
 
+    ! Using the current flow field, calculate changes to conserved
+    ! variables that advance the solution in time. Specifically,
+    ! 1) Evaluate fluxes of conserved quantities across each face
+    ! 2) Sum fluxes into each cell
+    ! 3) Add on body forces and source terms (defined per unit vol)
+    ! 4) The net flow and body force for each cell is the 'residual' of
+    !    the conservation equations:
+    !       resid = vol * d(cons)/dt = flux_net + source * vol
+    !    The change in the conserved variables is given by integrating
+    !    forward in time:
+    !       d(cons) = resid * dt / vol = (flux_net/vol + source) * dt
+    !
     subroutine residual(&
-        conserved, P, ho, r, ri, rj, rk, f, fwall, &
-        Omega, ijk_iwall, ijk_jwall, ijk_kwall, dt, dAi, dAj, dAk, vol, &
-        resid, &
-        ni, nj, nk, niwall, njwall, nkwall &
+        cons, Vxrt, P, ho, fb, &              ! Flow properties and body force
+        Omega, &                              ! Reference frame angular velocity
+        r, ri, rj, rk, &                      ! Node and face-centered radii
+        dAi, dAj, dAk, vol, dt, &             ! Cell areas, volumes, time step
+        ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+        resid, &                              ! Residual out
+        ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
         )
 
-        implicit none
+        ! Number of conserved variables nv = 5
+        ! Number of coordinate directions nc = 3
+        ! Have to use magic numbers or f2py thinks they should be dummy args
 
+        ! Flow properties and body force
+        ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
+        real*4, intent (in) :: cons(ni, nj, nk, 5)
+        real*4, intent (in) :: Vxrt(ni, nj, nk, 3)
+        real*4, intent (in) :: P   (ni, nj, nk)
+        real*4, intent (in) :: ho  (ni, nj, nk)
+        ! Cell body force per unit volume (and potential mass/energy sources)
+        real*4, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
+
+        ! Reference frame angular velocity
+        real*4, intent (in)  :: Omega
+
+        ! Radii at nodes and face centers
+        real*4, intent(in) :: r( ni, nj, nk)
+        real*4, intent(in) :: ri( ni, nj-1, nk-1)
+        real*4, intent(in) :: rj( ni-1, nj, nk-1)
+        real*4, intent(in) :: rk( ni-1, nj-1, nk)
+
+        ! Cell areas, volumes, time steps
+        real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+        real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+        real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+        real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+        real*4, intent (in)  :: dt(ni-1, nj-1, nk-1)
+
+        ! Wall locations
+        integer*2, intent (in) :: ijk_iwall(3, niwall)
+        integer*2, intent (in) :: ijk_jwall(3, njwall)
+        integer*2, intent (in) :: ijk_kwall(3, nkwall)
+
+        ! Residual out
+        real*4, intent (inout) :: resid(ni, nj, nk, 5)
+
+        ! Numbers of points dummy args
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
@@ -22,213 +75,226 @@ contains
         integer, intent (in)  :: njwall
         integer, intent (in)  :: nkwall
 
-        real*4, intent (in)  :: conserved(ni, nj, nk, 5)
-        real*4, intent (inout) :: resid(ni, nj, nk, 5)
+        ! End of argument declarations
+        ! Begin working variables
+
+        ! Fluxes on cell faces for each dirn and eqn
+        real*4 :: fluxi(ni, nj-1, nk-1, 3, 5)
+        real*4 :: fluxj(ni-1, nj, nk-1, 3, 5)
+        real*4 :: fluxk(ni-1, nj-1, nk, 3, 5)
+
+        ! For the centrifugal source term
+        real*4 :: S(ni, nj, nk)
+        real*4 :: Sc(ni-1, nj-1, nk-1)
+        real*4 :: rho(ni, nj, nk)
+        real*4 :: Vt(ni, nj, nk)
+
+        ! Net fluxes for each cell
+        real*4 :: fsum(ni-1, nj-1, nk-1, 5)
+        ! Cell-centered residual
+        real*4 :: residc(ni-1, nj-1, nk-1, 5)
+
+        integer :: iv
+
+        ! End of working variable declarations
+
+        ! Calculate the convective fluxes
+        call set_fluxes( &
+            cons, Vxrt, P, ho, &              ! Flow properties and body force
+            Omega, &                              ! Reference frame angular velocity
+            r, ri, rj, rk, &                      ! Node and face-centered radii
+            ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+            fluxi, fluxj, fluxk, &                ! Fluxes out
+            ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
+            )
+
+        ! Evaluate source term at nodes, average to cell center
+        rho = cons(:, :, :, 1)
+        Vt = Vxrt(:, :, :, 3)
+        S = (rho*Vt*Vt + P)/r
+        call node_to_cell(S, Sc, ni, nj, nk, 1)
+
+        ! Sum fluxes to get the net flux into each cell
+        call sum_fluxes( &
+            fluxi, fluxj, fluxk, &  ! Fluxes on the faces
+            dAi, dAj, dAk, vol, &   ! Cell geometry
+            fsum, &                 ! Net flux per unit volume out
+            ni, nj, nk, 5 &         ! Numbers of points for dummy args
+        )
+
+        ! Add on source term to the radial momentum eqn
+        fsum(:,:,:,3) = fsum(:,:,:,3) + Sc
+
+        ! Add on body forces per unit volume
+        fsum = fsum + fb
+
+        ! Integrate all equations forward in time
+        do iv = 1, 5
+            residc(:,:,:,iv)  = fsum( :,:,:,iv) * dt
+        end do
+
+        ! Distribute change to nodes
+        call cell_to_node(residc, resid, ni, nj, nk, 5)
+
+    end subroutine
+
+    subroutine set_fluxes( &
+        cons, Vxrt, P, ho, &                  ! Flow properties
+        Omega, &                              ! Reference frame angular velocity
+        r, ri, rj, rk, &                      ! Node and face-centered radii
+        ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+        fluxi, fluxj, fluxk, &                ! Fluxes out
+        ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
+        )
+
+        ! Flow properties and body force
+        ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
+        real*4, intent (in) :: cons(ni, nj, nk, 5)
+        real*4, intent (in) :: Vxrt(ni, nj, nk, 3)
+        real*4, intent (in) :: P   (ni, nj, nk)
+        real*4, intent (in) :: ho  (ni, nj, nk)
+
+        ! Reference frame angular velocity
         real*4, intent (in)  :: Omega
 
-        integer*2, intent (in) :: ijk_iwall(3, niwall)
-        integer*2, intent (in) :: ijk_jwall(3, njwall)
-        integer*2, intent (in) :: ijk_kwall(3, nkwall)
-
-        real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-        real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-        real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-        real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
-        real*4, intent (in)  :: dt(ni-1, nj-1, nk-1)
-
-        real*4, intent (inout)  :: f(ni-1, nj-1, nk-1, 5)
-        real*4, intent (inout)  :: fwall(ni-1, nj-1, nk-1, 5)
-
-        integer :: ip
-        integer :: ic
-
-        real*4 :: Sn(ni, nj, nk)
-        real*4 :: Sc(ni-1, nj-1, nk-1)
-
-        real*4 :: fn(ni, nj, nk, 3, 5)
-        real*4 :: fi(ni, nj-1, nk-1, 3, 5)
-        real*4 :: fj(ni-1, nj, nk-1, 3, 5)
-        real*4 :: fk(ni-1, nj-1, nk, 3, 5)
-
-        real*4 :: fsum_vol(ni-1, nj-1, nk-1, 5)
-        real*4 :: resc(ni-1, nj-1, nk-1, 5)
-
-        real*4, intent(in) :: P( ni, nj, nk)
-        real*4, intent(in) :: ho( ni, nj, nk)
-
-        real*4 :: Vt( ni, nj, nk)
-        real*4 :: Vx( ni, nj, nk)
-        real*4 :: rVt( ni, nj, nk)
-        real*4 :: Vr(ni, nj, nk)
-
-        real*4 :: Pi( ni, nj-1, nk-1)
-        real*4 :: Pj( ni-1, nj, nk-1)
-        real*4 :: Pk( ni-1, nj-1, nk)
-
-        real*4 :: rovi( ni, nj-1, nk-1, 3)
-        real*4 :: rovj( ni-1, nj, nk-1, 3)
-        real*4 :: rovk( ni-1, nj-1, nk, 3)
-
-        real*4 :: fmi( ni, nj-1, nk-1, 5)
-        real*4 :: fmj( ni-1, nj, nk-1, 5)
-        real*4 :: fmk( ni-1, nj-1, nk, 5)
-
-        ! Radii
+        ! Radii at nodes and face centers
         real*4, intent(in) :: r( ni, nj, nk)
         real*4, intent(in) :: ri( ni, nj-1, nk-1)
         real*4, intent(in) :: rj( ni-1, nj, nk-1)
         real*4, intent(in) :: rk( ni-1, nj-1, nk)
 
-        ! Calculate source term at nodes, average at cell center
-        Vt = conserved(:,:,:,4)/conserved(:,:,:,1)/r
-        Sn(:, :, :) = (conserved(:,:,:,1) * Vt*Vt + P)/r
-        call node_to_cell(Sn, Sc, ni, nj, nk, 1)
+        ! Wall locations
+        integer*2, intent (in) :: ijk_iwall(3, niwall)
+        integer*2, intent (in) :: ijk_jwall(3, njwall)
+        integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
-        ! Face-centered pressure
-        call node_to_face( &
-            P, Pi, Pj, Pk, &
-            ni, nj, nk, 1 &
-        )
+        ! Fluxes out
+        real*4, intent (inout) :: fluxi(ni, nj-1, nk-1, 3, 5)
+        real*4, intent (inout) :: fluxj(ni-1, nj, nk-1, 3, 5)
+        real*4, intent (inout) :: fluxk(ni-1, nj-1, nk, 3, 5)
 
-        ! Evaluate the mass flux at face centers and store in rov
-        ! roVx
-        call node_to_face( conserved(:,:,:,2), &
-            rovi(:, :, :, 1), rovj(:, :, :, 1), rovk(:, :, :, 1), &
-            ni, nj, nk, 1 &
-        )
-        ! roVr
-        call node_to_face( conserved(:,:,:,3), &
-            rovi(:, :, :, 2), rovj(:, :, :, 2), rovk(:, :, :, 2), &
-            ni, nj, nk, 1 &
-        )
-        ! roVt
-        call node_to_face( conserved(:,:,:,4)/r, &
-            rovi(:, :, :, 3), rovj(:, :, :, 3), rovk(:, :, :, 3), &
-            ni, nj, nk, 1 &
-        )
+        ! Numbers of points dummy args
+        integer, intent (in)  :: ni
+        integer, intent (in)  :: nj
+        integer, intent (in)  :: nk
+        integer, intent (in)  :: niwall
+        integer, intent (in)  :: njwall
+        integer, intent (in)  :: nkwall
 
-        ! Now evaluate the fluxes per unit mass of the other conserved
-        ! quantities at face centers and store in fm
-        ! mass per unit mass = 1
-        fmi(:, :, :, 1) = 1e0
-        fmj(:, :, :, 1) = 1e0
-        fmk(:, :, :, 1) = 1e0
-        ! axial momentum per unit mass = Vx
-        Vx = conserved(:, :, :, 2)/conserved(:, :, :, 1)
-        call node_to_face( Vx, &
-            fmi(:, :, :, 2), fmj(:, :, :, 2), fmk(:, :, :, 2), &
-            ni, nj, nk, 1 &
-        )
-        ! radial momentum per unit mass = Vx
-        Vr = conserved(:, :, :, 3)/conserved(:, :, :, 1)
-        call node_to_face( Vr, &
-            fmi(:, :, :, 3), fmj(:, :, :, 3), fmk(:, :, :, 3), &
-            ni, nj, nk, 1 &
-        )
-        ! moment of momentum per unit mass = rVt
-        rVt = conserved(:, :, :, 4)/conserved(:, :, :, 1)
-        call node_to_face( rVt, &
-            fmi(:, :, :, 4), fmj(:, :, :, 4), fmk(:, :, :, 4), &
-            ni, nj, nk, 1 &
-        )
-        ! energy flux per unit mass = ho
-        call node_to_face( ho, &
-            fmi(:, :, :, 5), fmj(:, :, :, 5), fmk(:, :, :, 5), &
-            ni, nj, nk, 1 &
-        )
+        ! End of input declarations
 
-        ! We now multipli fm and rov to get the actual fluxes
-        do ip = 1,5
-            do ic = 1,3
-                fi(:, :, :, ic, ip) = rovi(:, :, :, ic) * fmi(:, :, :, ip)
-                fj(:, :, :, ic, ip) = rovj(:, :, :, ic) * fmj(:, :, :, ip)
-                fk(:, :, :, ic, ip) = rovk(:, :, :, ic) * fmk(:, :, :, ip)
+        ! Declare working variables
+
+        ! Face pressures
+        real*4 :: Pi( ni, nj-1, nk-1)
+        real*4 :: Pj( ni-1, nj, nk-1)
+        real*4 :: Pk( ni-1, nj-1, nk)
+
+        ! Fluxes per unit mass
+        real*4 :: fmass( ni, nj, nk, 4)
+        real*4 :: fmassi( ni, nj-1, nk-1, 4)
+        real*4 :: fmassj( ni-1, nj, nk-1, 4)
+        real*4 :: fmassk( ni-1, nj-1, nk, 4)
+
+        ! Mass fluxes
+        real*4 :: rhoV(ni, nj, nk, 3)
+        real*4 :: rhoVi(ni, nj-1, nk-1, 3)
+        real*4 :: rhoVj(ni-1, nj, nk-1, 3)
+        real*4 :: rhoVk(ni-1, nj-1, nk, 3)
+
+        ! Misc
+        real*4 :: rVt( ni, nj, nk)
+        real*4 :: rho(ni, nj, nk)
+        real*4 :: Vx(ni, nj, nk)
+        real*4 :: Vr(ni, nj, nk)
+        real*4 :: Vt(ni, nj, nk)
+        integer :: id
+        integer :: ip
+
+        rho = cons(:,:,:,1)
+        Vx = Vxrt(:,:,:,1)
+        Vr = Vxrt(:,:,:,2)
+        Vt = Vxrt(:,:,:,3)
+        rVt = Vt*r
+        rhoV = cons(:, :, :, 2:4)
+        rhoV(:, :, :, 3) = rhoV(:, :, :, 3)/r
+
+        ! Calculate face-centered pressure
+        call node_to_face( P, Pi, Pj, Pk, ni, nj, nk, 1)
+
+        ! Evaluate the mass flux at face centers, store in rhoV
+        call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
+
+        ! Now evaluate the nodal fluxes per unit mass of other quantities
+        fmass(:, :, :, 1) = Vx  ! axial momentum per unit mass
+        fmass(:, :, :, 2) = Vr  ! radial momentum per unit mass
+        fmass(:, :, :, 3) = rVt ! angular momentum per unit mass
+        fmass(:, :, :, 4) = ho  ! energy per unit mass
+
+        ! Distribute to the faces
+        call node_to_face( fmass, fmassi, fmassj, fmassk, ni, nj, nk, 4)
+
+        ! Mass fluxes first
+        fluxi(:, :, :, :, 1) = rhoVi
+        fluxj(:, :, :, :, 1) = rhoVj
+        fluxk(:, :, :, :, 1) = rhoVk
+
+        ! Now multiply fmass and rhoV for fluxes of other quantites
+        do ip = 1,4
+            do id = 1,3
+                fluxi(:, :, :, id, ip+1) = rhoVi(:, :, :, id) * fmassi(:, :, :, ip)
+                fluxj(:, :, :, id, ip+1) = rhoVj(:, :, :, id) * fmassj(:, :, :, ip)
+                fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
             end do
         end do
 
         ! zero convective fluxes on the wall
-        call set_ijk_zero_5d(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
-        call set_ijk_zero_5d(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
-        call set_ijk_zero_5d(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+        call zero_wall_fluxes(fluxi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
+        call zero_wall_fluxes(fluxj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
+        call zero_wall_fluxes(fluxk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
 
         ! Add pressure fluxes
-        call add_pressure_fluxes(fi, Pi, ri, Omega, ni, nj-1, nk-1)
-        call add_pressure_fluxes(fj, Pj, rj, Omega, ni-1, nj, nk-1)
-        call add_pressure_fluxes(fk, Pk, rk, Omega, ni-1, nj-1, nk)
-
-        ! ! Evaluate convective fluxes at nodes
-        ! call get_fluxes_node(conserved, ho, r, fn, ni, nj, nk)
-        ! ! Distribute to faces
-        ! do ip = 1,5
-        !     call node_to_face( &
-        !         fn(:,:,:,:,ip), fi(:,:,:,:,ip), fj(:,:,:,:,ip), fk(:,:,:,:,ip), &
-        !         ni, nj, nk, 3 &
-        !     )
-        ! end do
-
-        ! call get_fluxes_face(fi, Pi, ri, ijk_iwall, Omega, ni, nj-1, nk-1, niwall)
-        ! call get_fluxes_face(fj, Pj, rj, ijk_jwall, Omega, ni-1, nj, nk-1, njwall)
-        ! call get_fluxes_face(fk, Pk, rk, ijk_kwall, Omega, ni-1, nj-1, nk, nkwall)
-
-        ! Get the net flux into each cell
-        call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fsum_vol, ni, nj, nk, 5)
-
-        ! Add on source term
-        fsum_vol(:,:,:,3) = fsum_vol(:,:,:,3) + Sc
-
-        ! Add on body forces
-        fsum_vol = fsum_vol + f
-
-        ! Add on wall functions
-        fsum_vol = fsum_vol + fwall
-
-        ! Integrate forward in time
-        do ip = 1, 5
-            resc(:,:,:,ip)  = fsum_vol( :,:,:,ip) * dt
-        end do
-
-        ! ! Crudely reduce timestep on k boundaries
-        ! resc(:,:,1,:)  = resc(:,:,1,:) /8e0
-        ! resc(:,:,nk-1,:)  = resc(:,:,nk-1,:) /8e0
-        ! resc(:,:,2,:)  = resc(:,:,2,:) /4e0
-        ! resc(:,:,nk-2,:)  = resc(:,:,nk-2,:) /4e0
-        ! resc(:,:,3,:)  = resc(:,:,3,:) * /2e0
-        ! resc(:,:,nk-3,:)  = resc(:,:,nk-3,:) /2e0
-
-        ! Distribute change to nodes
-        call cell_to_node(resc, resid, ni, nj, nk, 5)
+        call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
+        call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)
+        call add_pressure_fluxes(fluxk, Pk, rk, Omega, ni-1, nj-1, nk)
 
     end subroutine
 
-    subroutine damp(resid, fdamp, ni, nj, nk)
-        ! Apply negative feedback to damp down large residuals
-        ! Denton (2017)
+    ! Apply negative feedback to damp down large changes, Denton (2017)
+    subroutine damp(R, fdamp, ni, nj, nk)
 
-        real*4, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
+
+        integer, intent (in) :: ni
+        integer, intent (in) :: nj
+        integer, intent (in) :: nk
+
+        integer :: ip
+
+        real*4, intent (inout) :: R(ni-1, nj-1, nk-1, 5)
         real*4, intent (in) :: fdamp
-        real*4 :: resid_abs(ni-1, nj-1, nk-1, 5)
-        real*4 :: resid_avg(5)
+        real*4 :: R_abs(ni-1, nj-1, nk-1, 5)
+        real*4 :: R_avg(5)
 
         ! Calculate absolute and average values over all cells
-        resid_abs = abs(resid)
-        resid_avg = sum(sum(sum(resid_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
+        R_abs = abs(R)
+        R_avg = sum(sum(sum(R_abs,1),1),1)/float((ni-1)*(nj-1)*(nk-1))
 
-        ! Apply damping to all conserved residuals
-        where (resid_avg.eq.0)
-            resid_avg = 1e-9
+        ! Apply damping to all cons Ruals
+        where (R_avg.eq.0)
+            R_avg = 1e-9
         end where
         do ip = 1, 5
-            resid(:,:,:,ip) = resid(:,:,:,ip) &
-                / (1e0 + resid_abs(:,:,:,ip)/resid_avg(ip)/fdamp)
+            R(:,:,:,ip) = R(:,:,:,ip) &
+                / (1e0 + R_abs(:,:,:,ip)/R_avg(ip)/fdamp)
         end do
 
     end subroutine
 
-    subroutine step(conserved, resid1, resid2, istep, ischeme, ni, nj, nk)
+    subroutine step(cons, R1, R2, istep, ischeme, ni, nj, nk)
 
-        real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
-        real*4, intent (inout) :: resid1(ni, nj, nk, 5)
-        real*4, intent (inout) :: resid2(ni, nj, nk, 5)
+        real*4, intent (inout)  :: cons(ni, nj, nk, 5)
+        real*4, intent (inout) :: R1(ni, nj, nk, 5)
+        real*4, intent (inout) :: R2(ni, nj, nk, 5)
         integer, intent (in) :: istep
         integer, intent (in) :: ischeme
         integer, intent (in)  :: ni
@@ -236,21 +302,21 @@ contains
         integer, intent (in)  :: nk
 
         if (istep.eq.0) then
-            conserved = conserved + resid1
-            resid2 = resid1
+            cons = cons + R1
+            R2 = R1
         else
             if (ischeme.eq.0) then
-                conserved = conserved + 2e0*resid1 - resid2
-                resid2 = resid1
+                cons = cons + 2e0*R1 - R2
+                R2 = R1
             else
-                conserved = conserved + 2e0*resid1 - 1.65e0*resid2
-                resid2 = resid1 - 0.65e0*resid2
+                cons = cons + 2e0*R1 - 1.65e0*R2
+                R2 = R1 - 0.65e0*R2
             end if
         end if
 
     end subroutine
 
-    subroutine calculate_secondary(r, conserved, halfVsq, u, ni, nj, nk)
+    subroutine secondary(r, cons, Vxrt, halfVsq, u, ni, nj, nk)
 
         implicit none
 
@@ -258,74 +324,21 @@ contains
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
 
-        real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+        real*4, intent (inout)  :: cons(ni, nj, nk, 5)
+        real*4, intent (inout)  :: Vxrt(ni, nj, nk, 3)
         real*4, intent (inout)  :: halfVsq(ni, nj, nk)
         real*4, intent (inout)  :: u(ni, nj, nk)
         real*4, intent (inout)  :: r(ni, nj, nk)
-        real*4 :: Vxrt(ni, nj, nk, 3)
 
         integer :: ic
 
-
         do ic = 1,3
-            Vxrt(:,:,:, ic) = conserved(:,:,:,ic+1)/conserved(:,:,:,1)
+            Vxrt(:,:,:, ic) = cons(:,:,:,ic+1)/cons(:,:,:,1)
         end do
         Vxrt(:,:,:,3) = Vxrt(:,:,:,3)/r
         halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
-        u = conserved(:,:,:,5)/conserved(:,:,:,1) - halfVsq
-
-    end subroutine
-
-    subroutine get_fluxes_node(conserved, ho, r, flux, ni, nj, nk)
-
-        implicit none
-
-        integer, intent (in)  :: ni
-        integer, intent (in)  :: nj
-        integer, intent (in)  :: nk
-
-        real*4, intent (in)  :: conserved(ni, nj, nk, 5)
-        real*4, intent (in)  :: ho(ni, nj, nk)
-        real*4, intent (in)  :: r(ni, nj, nk)
-
-        real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
-
-        integer :: ic
-
-        real*4 :: Vx(ni, nj, nk)
-        real*4 :: Vr(ni, nj, nk)
-        real*4 :: rVt(ni, nj, nk)
-
-        ! Calculate velocities
-        Vx = conserved(:, :, :,2)/conserved(:,:,:,1)
-        Vr = conserved(:, :, :,3)/conserved(:,:,:,1)
-        rVt = conserved(:, :, :,4)/conserved(:,:,:,1)
-
-        ! mass fluxes in each direction
-        flux(:,:,:,1,1) = conserved(:, :, :,2)  ! rhoVx
-        flux(:,:,:,2,1) = conserved(:, :, :,3)  ! rhoVr
-        flux(:,:,:,3,1) = conserved(:, :, :,4)/r  ! rhoVt=rhorVt/r
-
-        ! x-mom flux for each coordinate direction
-        do ic = 1,3
-            flux(:,:,:,ic,2) = flux(:,:,:,ic,1) * Vx
-        end do
-
-        ! r-mom flux for each coordinate direction
-        do ic = 1,3
-            flux(:,:,:,ic,3) = flux(:,:,:,ic,1) * Vr
-        end do
-
-        ! rt-mom flux for each coordinate direction
-        do ic = 1,3
-            flux(:,:,:,ic,4) = flux(:,:,:,ic,1) * rVt
-        end do
-
-        ! ho flux for each coordinate direction
-        do ic = 1,3
-            flux(:,:,:,ic,5) = flux(:,:,:,ic,1) * ho
-        end do
+        u = cons(:,:,:,5)/cons(:,:,:,1) - halfVsq
 
     end subroutine
 
@@ -340,38 +353,6 @@ contains
         real*4, intent (in)  :: Omega
         real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
         real*4, intent (in)  :: P(ni, nj, nk)
-
-        ! pressure fluxes
-        ! x-mom in x-dirn
-        flux(:, :, :, 1, 2) = flux(:, :, :, 1, 2) + P
-        ! r-mom in r-dirn
-        flux(:, :, :, 2, 3) = flux(:, :, :, 2, 3) + P
-        ! rt-mom in t-dirn
-        flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
-        ! ho in t-dirn
-        flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + Omega*r*P
-
-
-    end subroutine
-
-    subroutine get_fluxes_face(flux, P, r, ijk_wall, Omega, ni, nj, nk, nwall)
-
-        implicit none
-
-        integer, intent (in)  :: ni
-        integer, intent (in)  :: nj
-        integer, intent (in)  :: nk
-        integer, intent (in)  :: nwall
-
-        real*4, intent (in)  :: r(ni, nj, nk)
-        real*4, intent (in)  :: Omega
-
-        real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
-
-        real*4, intent (in)  :: P(ni, nj, nk)
-        integer*2, intent (in)  :: ijk_wall(3, nwall)
-
-        call set_ijk_zero_5d(flux, ijk_wall, ni, nj, nk, 3, 5, nwall)
 
         ! pressure fluxes
         ! x-mom in x-dirn
@@ -954,11 +935,11 @@ contains
 
     end subroutine
 
-    subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, r, rc, ri, rj, rk, ni, nj, nk)
+    subroutine viscous_force(cons, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, dAk, r, rc, ri, rj, rk, ni, nj, nk)
 
         implicit none
 
-        real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
+        real*4, intent (inout)  :: cons(ni, nj, nk, 5)
         real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
         real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
@@ -1004,14 +985,14 @@ contains
 
         ! Evaluate velocities
         do i = 1,3
-            V(:,:,:, i) = conserved(:,:,:,i+1)/conserved(:,:,:,1)
+            V(:,:,:, i) = cons(:,:,:,i+1)/cons(:,:,:,1)
         end do
         V(:,:,:,3) = V(:,:,:,3)/r
 
 
         ! Cell-centered vars
         call node_to_cell(V, Vc, ni, nj, nk, 3)
-        call node_to_cell(conserved(:,:,:,1), roc, ni, nj, nk, 1)
+        call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
 
         ! Calculate grad V
         do i = 1,3
@@ -1127,7 +1108,7 @@ contains
 
     end subroutine
 
-    subroutine set_ijk_zero_5d(x, ijk, ni, nj, nk, nv, nc, npt)
+    subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nv, nc, npt)
 
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
@@ -1153,8 +1134,9 @@ contains
     end subroutine
 
 
-
-    subroutine get_ijk(x, xu, ijk, ni, nj, nk, nv, npt)
+    ! Retrieve data from the 4D array x at the given list of ijk
+    ! Return in an unstructured list
+    subroutine get_by_ijk(x, xu, ijk, ni, nj, nk, nv, npt)
 
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
@@ -1168,6 +1150,7 @@ contains
 
         integer :: ipt
         integer :: i
+        integer :: iv
         integer :: j
         integer :: k
 
@@ -1197,6 +1180,7 @@ contains
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
         integer, intent (in)  :: nv
+        integer, intent (in)  :: nb
         integer, intent (in)  :: npt
 
         real*4, intent (inout) :: x(ni, nj, nk, nv)
@@ -1207,6 +1191,7 @@ contains
 
         integer :: ipt
         integer :: i
+        integer :: iv
         integer :: j
         integer :: k
         real*4 :: xua(nb)
@@ -1280,14 +1265,14 @@ contains
     end subroutine
 
 
-    subroutine set_walls(conserved, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
+    subroutine set_walls(cons, u, ho, halfVsq, ijk, ni, nj, nk, nwall)
 
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
         integer, intent (in)  :: nwall
 
-        real*4, intent (inout) :: conserved(ni, nj, nk, 5)
+        real*4, intent (inout) :: cons(ni, nj, nk, 5)
         real*4, intent (inout) :: ho(ni, nj, nk)
         real*4, intent (inout) :: halfVsq(ni, nj, nk)
         real*4, intent (in) :: u(ni, nj, nk)
@@ -1306,13 +1291,13 @@ contains
                 k = ijk(3,iwall)
 
                 ! Zero the momentum fluxes
-                conserved(i , j, k, 2) = 0e0
-                conserved(i , j, k, 3) = 0e0
-                conserved(i , j, k, 4) = 0e0
+                cons(i , j, k, 2) = 0e0
+                cons(i , j, k, 3) = 0e0
+                cons(i , j, k, 4) = 0e0
 
                 ! Energy is rho*u
-                conserved(i, j, k, 5) = &
-                    conserved(i, j, k, 1) * u(i, j, k)
+                cons(i, j, k, 5) = &
+                    cons(i, j, k, 1) * u(i, j, k)
 
                 ! Subtract dynamic enthalpy
                 ho(i, j, k) = ho(i, j, k) - halfVsq(i, j, k)
@@ -1325,7 +1310,7 @@ contains
 
     end subroutine
 
-    subroutine wall_function(f, ijk, dirn, conserved, r, vol, dw, dA, mu, ni, nj, nk, nwall)
+    subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwall)
 
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
@@ -1335,7 +1320,7 @@ contains
         real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
         integer*2, intent (in) :: ijk(3, nwall)
         integer*2 :: dirn
-        real*4, intent (inout) :: conserved(ni, nj, nk, 5)
+        real*4, intent (inout) :: cons(ni, nj, nk, 5)
         real*4, intent (in) :: r(ni, nj, nk)
         real*4, intent (inout) :: vol(ni-1,nj-1,nk-1)
 
@@ -1352,9 +1337,14 @@ contains
         real*4 :: vec(3)
         real*4 :: roVxrtw0(4)
         real*4 :: Vxrtw0(3)
+        real*4 :: row0
         real*4 :: row
         real*4 :: Vw
+        real*4 :: Vw0
         integer :: iwall
+        integer :: i
+        integer :: j
+        integer :: k
         integer :: i1
         integer :: j1
         integer :: k1
@@ -1380,6 +1370,10 @@ contains
         row = 0e0
         rw = 0e0
 
+        roVxrtw0 = 0e0
+        row0 = 0e0
+        rw0 = 0e0
+
         ! If we have at least one wall
         if (nwall > 0) then
             ! Loop over all points
@@ -1397,10 +1391,10 @@ contains
 
                     ! Face-centered density and velocity on wall
                     roVxrtw0 = ( &
-                        conserved(i, j  , k   ,1:4) &
-                        + conserved(i, j+1, k   ,1:4) &
-                        + conserved(i, j  , k+1 ,1:4) &
-                        + conserved(i, j+1, k+1 ,1:4) &
+                        cons(i, j  , k   ,1:4) &
+                        + cons(i, j+1, k   ,1:4) &
+                        + cons(i, j  , k+1 ,1:4) &
+                        + cons(i, j+1, k+1 ,1:4) &
                     )/4e0
                     rw0 = ( &
                         r(i, j  , k  ) &
@@ -1418,10 +1412,10 @@ contains
 
                     ! Face-centered density and velocity
                     roVxrtw = ( &
-                        conserved(i1, j  , k   ,1:4) &
-                        + conserved(i1, j+1, k   ,1:4) &
-                        + conserved(i1, j  , k+1 ,1:4) &
-                        + conserved(i1, j+1, k+1 ,1:4) &
+                        cons(i1, j  , k   ,1:4) &
+                        + cons(i1, j+1, k   ,1:4) &
+                        + cons(i1, j  , k+1 ,1:4) &
+                        + cons(i1, j+1, k+1 ,1:4) &
                     )/4e0
                     rw = ( &
                         r(i1, j  , k  ) &
@@ -1436,10 +1430,10 @@ contains
 
                     ! Face-centered density and velocity on wall
                     roVxrtw0 = ( &
-                        conserved(i  , j, k  , 1:4) &
-                        + conserved(i+1, j, k  , 1:4) &
-                        + conserved(i  , j, k+1, 1:4) &
-                        + conserved(i+1, j, k+1, 1:4) &
+                        cons(i  , j, k  , 1:4) &
+                        + cons(i+1, j, k  , 1:4) &
+                        + cons(i  , j, k+1, 1:4) &
+                        + cons(i+1, j, k+1, 1:4) &
                     )/4e0
                     rw0 = ( &
                         r(i  , j, k  ) &
@@ -1457,10 +1451,10 @@ contains
 
                     ! Face-centered density and velocity
                     roVxrtw = ( &
-                        conserved(i  , j1, k  , 1:4) &
-                        + conserved(i+1, j1, k  , 1:4) &
-                        + conserved(i  , j1, k+1, 1:4) &
-                        + conserved(i+1, j1, k+1, 1:4) &
+                        cons(i  , j1, k  , 1:4) &
+                        + cons(i+1, j1, k  , 1:4) &
+                        + cons(i  , j1, k+1, 1:4) &
+                        + cons(i+1, j1, k+1, 1:4) &
                     )/4e0
                     rw = ( &
                         r(i  , j1, k  ) &
@@ -1475,10 +1469,10 @@ contains
                     ! These are k faces
                     ! Face-centered density and velocity
                     roVxrtw0 = ( &
-                        conserved(i  , j  , k, 1:4) &
-                        + conserved(i+1, j  , k, 1:4) &
-                        + conserved(i  , j+1, k, 1:4) &
-                        + conserved(i+1, j+1, k, 1:4) &
+                        cons(i  , j  , k, 1:4) &
+                        + cons(i+1, j  , k, 1:4) &
+                        + cons(i  , j+1, k, 1:4) &
+                        + cons(i+1, j+1, k, 1:4) &
                     )/4e0
                     rw0 = ( &
                         r(i  , j  , k) &
@@ -1496,10 +1490,10 @@ contains
 
                     ! Face-centered density and velocity
                     roVxrtw = ( &
-                        conserved(i  , j  , k1, 1:4) &
-                        + conserved(i+1, j  , k1, 1:4) &
-                        + conserved(i  , j+1, k1, 1:4) &
-                        + conserved(i+1, j+1, k1, 1:4) &
+                        cons(i  , j  , k1, 1:4) &
+                        + cons(i+1, j  , k1, 1:4) &
+                        + cons(i  , j+1, k1, 1:4) &
+                        + cons(i+1, j+1, k1, 1:4) &
                     )/4e0
                     rw = ( &
                         r(i  , j  , k1) &
@@ -1593,244 +1587,5 @@ contains
 
     end subroutine
 
-    subroutine Re_cell(f, conserved, r, vol, dw, dA, mu, ijk, ni, nj, nk, nwall)
-
-        integer, intent (in)  :: ni
-        integer, intent (in)  :: nj
-        integer, intent (in)  :: nk
-        integer, intent (in)  :: nwall
-
-        real*4, intent (inout) :: conserved(ni, nj, nk, 5)
-        real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
-        real*4, intent (inout) :: vol(ni-1,nj-1,nk-1)
-        integer*2, intent (in) :: ijk(3, nwall)
-        real*4, intent (in) :: dw(nwall)
-        real*4, intent (in) :: dA(nwall)
-        ! real*4, intent (in) :: rw(nwall)
-        real*4 :: rw
-        real*4, intent (in) :: r(ni, nj, nk)
-        real*4 :: Rew
-
-        real*4 :: Vxrtw(3)
-        real*4 :: vec(3)
-        real*4 :: row
-        real*4 :: Vw
-        real*4 :: mu
-        integer :: iwall
-        integer :: i1
-        integer :: j1
-        integer :: k1
-        integer :: ic
-        integer :: jc
-        integer :: kc
-
-        real*4 :: a1
-        real*4 :: a2
-        real*4 :: a3
-        real*4 :: lnRew
-        real*4 :: cf
-        real*4 :: tauw
-        real*4 :: rc
-        real*4 :: yplus
-        real*4 :: vtau
-
-        a1 = 1.767e-3
-        a2 = 3.177e-2
-        a3 = 2.5614-1
-
-        Vxrtw = 0e0
-        row = 0e0
-        rw = 0e0
-
-        if (nwall > 0) then
-            ! Loop over all points
-            do iwall = 1,nwall
-
-                ! Extract indices
-                i = ijk(1, iwall)
-                j = ijk(2, iwall)
-                k = ijk(3, iwall)
-
-                ! Choose wall direction
-                if ((i.eq.1).or.(i.eq.ni)) then
-
-                    if (i.eq.1) then
-                        i1 = i + 1
-                    else if (i.eq.ni) then
-                        i1 = i - 1
-                    end if
-
-                    ! Face-centered density and velocity
-                    row = ( &
-                        conserved(i1, i  , j   ,1) &
-                        + conserved(i1, i+1, j   ,1) &
-                        + conserved(i1, i  , j+1 ,1) &
-                        + conserved(i1, i+1, j+1 ,1) &
-                    )/4e0
-                    rw = ( &
-                        r(i1, i  , j  ) &
-                        + r(i1, i+1, j  ) &
-                        + r(i1, i  , j+1) &
-                        + r(i1, i+1, j+1) &
-                    )/4e0
-                    Vxrtw(1) = ( &
-                        conserved(i1, j  , k  , 2) &
-                        + conserved(i1, j+1, k  , 2) &
-                        + conserved(i1, j  , k+1, 2) &
-                        + conserved(i1, j+1, k+1, 2) &
-                    )/4e0/row
-                    Vxrtw(2) = ( &
-                        conserved(i1, j  , k  , 3) &
-                        + conserved(i1, j+1, k  , 3) &
-                        + conserved(i1, j  , k+1, 3) &
-                        + conserved(i1, j+1, k+1, 3) &
-                    )/4e0/row
-                    Vxrtw(3) = ( &
-                        conserved(i1, j  , k  , 4) &
-                        + conserved(i1, j+1, k  , 4) &
-                        + conserved(i1, j  , k+1, 4) &
-                        + conserved(i1, j+1, k+1, 4) &
-                    )/4e0/row/rw
-
-                else if ((j.eq.1).or.(j.eq.nj)) then
-
-                    if (j.eq.1) then
-                        j1 = j + 1
-                    else if (j.eq.nj) then
-                        j1 = j
-                    end if
-
-                    ! Face-centered density and velocity
-                    row = ( &
-                        conserved(i  , j1, k  , 1) &
-                        + conserved(i+1, j1, k  , 1) &
-                        + conserved(i  , j1, k+1, 1) &
-                        + conserved(i+1, j1, k+1, 1) &
-                    )/4e0
-                    rw = ( &
-                        r(i  , j1, k  ) &
-                        + r(i+1, j1, k  ) &
-                        + r(i  , j1, k+1) &
-                        + r(i+1, j1, k+1) &
-                    )/4e0
-                    Vxrtw(1) = ( &
-                        conserved(i  , j1, k  , 2) &
-                        + conserved(i+1, j1, k  , 2) &
-                        + conserved(i  , j1, k+1, 2) &
-                        + conserved(i+1, j1, k+1, 2) &
-                    )/4e0/row
-                    Vxrtw(2) = ( &
-                        conserved(i  , j1, k  , 3) &
-                        + conserved(i+1, j1, k  , 3) &
-                        + conserved(i  , j1, k+1, 3) &
-                        + conserved(i+1, j1, k+1, 3) &
-                    )/4e0/row
-                    Vxrtw(3) = ( &
-                        conserved(i  , j1, k  , 4) &
-                        + conserved(i+1, j1, k  , 4) &
-                        + conserved(i  , j1, k+1, 4) &
-                        + conserved(i+1, j1, k+1, 4) &
-                    )/4e0/row/rw
-
-                else if ((k.eq.1).or.(k.eq.nk)) then
-
-                    if (k.eq.1) then
-                        k1 = k + 1
-                    else if (k.eq.nk) then
-                        k1 = k - 1
-                    end if
-
-                    ! Face-centered density and velocity
-                    row = ( &
-                        conserved(i  , j  , k1, 1) &
-                        + conserved(i+1, j  , k1, 1) &
-                        + conserved(i  , j+1, k1, 1) &
-                        + conserved(i+1, j+1, k1, 1) &
-                    )/4e0
-                    rw = ( &
-                        r(i  , j  , k1) &
-                        + r(i+1, j  , k1) &
-                        + r(i  , j+1, k1) &
-                        + r(i+1, j+1, k1) &
-                    )/4e0
-                    Vxrtw(1) = ( &
-                        conserved(i  , j  , k1, 2) &
-                        + conserved(i+1, j  , k1, 2) &
-                        + conserved(i  , j+1, k1, 2) &
-                        + conserved(i+1, j+1, k1, 2) &
-                    )/4e0/row
-                    Vxrtw(2) = ( &
-                        conserved(i  , j  , k1, 3) &
-                        + conserved(i+1, j  , k1, 3) &
-                        + conserved(i  , j+1, k1, 3) &
-                        + conserved(i+1, j+1, k1, 3) &
-                    )/4e0/row
-                    Vxrtw(3) = ( &
-                        conserved(i  , j  , k1, 4) &
-                        + conserved(i+1, j  , k1, 4) &
-                        + conserved(i  , j+1, k1, 4) &
-                        + conserved(i+1, j+1, k1, 4) &
-                    )/4e0/row/rw
-                    ! print*, k1
-                    ! print*, i, j, k, Rew(iwall), Vw, dw(iwall)
-
-                end if
-
-                ! Form the cell Reynolds
-                Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
-                Rew = row * Vw * dw(iwall)/mu
-                lnRew = alog(Rew)
-                ! cf = a1 + a2/lnRew + a3/lnRew/lnRew
-                cf = 1e0/Rew
-                tauw = cf * 0.5e0 * row *Vw*Vw
-
-                if (i.eq.ni) then
-                    ic = ni-1
-                else
-                    ic = i
-                end if
-                if (j.eq.nj) then
-                    jc = nj-1
-                else
-                    jc = j
-                end if
-                if (k.eq.nk) then
-                    kc = nk-1
-                else
-                    kc = k
-                end if
-
-                ! multiply by face area magnitude
-                ! direction is opposite to cell velocity
-                vec = -Vxrtw*dA(iwall)/vol(ic, jc, kc)
-                if (Vw.gt.0) then
-                    vec = vec/Vw
-                else
-                    vec = 0e0
-                end if
-
-                vtau = sqrt(tauw/row)
-                yplus = row*vtau*dw(iwall)/mu
-
-                rc = ( &
-                    r(ic, jc, kc) &
-                    + r(ic+1, jc, kc) &
-                    + r(ic, jc+1, kc) &
-                    + r(ic+1, jc+1, kc) &
-                    + r(ic, jc, kc+1) &
-                    + r(ic+1, jc, kc+1) &
-                    + r(ic, jc+1, kc+1) &
-                    + r(ic+1, jc+1, kc+1) &
-                )/8e0
-
-                f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
-                f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
-                f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
-
-            end do
-        end if
-
-
-    end subroutine
 
 end module embsolve

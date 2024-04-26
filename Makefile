@@ -25,7 +25,7 @@ test ::
 	pytest
 
 compile ::
-	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp -ffast-math -fmax-errors=1' -c turbigen/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp -ffast-math -fmax-errors=1' -c turbigen/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1 only: residual smooth div grad node_to_face node_to_cell cell_to_node cell_to_face get_by_ijk secondary damp step
 	mv embsolve*.so turbigen
 
 
