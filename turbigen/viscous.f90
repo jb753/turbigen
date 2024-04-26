@@ -138,7 +138,7 @@ subroutine viscous_force(fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk
     real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
 
     real*4 :: rfvisc
-    rfvisc = 0.1e0
+    rfvisc = 0.2e0
 
     ! We need to assemble the viscous fluxes from the stress tensor components
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)

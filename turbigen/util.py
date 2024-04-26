@@ -1545,3 +1545,13 @@ def cart_to_pol(dA, t):
     dAt = dAy * cost - dAz * sint
 
     return np.stack((dAx, dAr, dAt))
+
+
+def moving_average(x, n):
+    xa = x.copy()
+    N = x.shape[1]
+    for i in range(N):
+        ist = np.max(i - n, 0)
+        ien = i + 1
+        xa[:, i] = x[:, ist:ien].sum(axis=1) / (ien - ist)
+    return xa

@@ -46,6 +46,9 @@ class NativeConfig(BaseSolver):
     n_step_avg = 1
     """Number of time steps to average over."""
 
+    nloss = 1
+    """Number of time steps between viscous force updates."""
+
     conv_lim = 1e-9
 
     damping_factor = 25.0
@@ -162,7 +165,7 @@ class SolverBlock:
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
 
-        # Get wall indicators
+        # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
         # Note 1-indexed for Fortran
         # self.wall_nodes = block.get_wall_old().astype(bool)
@@ -171,29 +174,24 @@ class SolverBlock:
             for wall in block.get_wall()
         ]
 
-        # Get wall length scales
-        # dli, dlj, dlk  = [to_fort(dl) for dl in block.get_dwall()]
-
-        # Get indices to face-average on first node off the wall
+        # Get indices to first node off the wall
         iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face]
-        # iwall1[0,iwall1[0,:]==1] += 1
         iwall1[0, iwall1[0, :] == ni] -= 1
-        # jwall1[1,jwall1[1,:]==1] += 1
         jwall1[1, jwall1[1, :] == nj] -= 1
-        # kwall1[2,kwall1[2,:]==1] += 1
         kwall1[2, kwall1[2, :] == nk] -= 1
 
+        # Get wall cell size
         self.dw_face = [
             embsolve.get_by_ijk(to_fort(dl), ijk)
             for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
 
+        # Get wall area magnitudes
         dAijk = [
             np.sqrt((self.dAi**2).sum(axis=-1)),
             np.sqrt((self.dAj**2).sum(axis=-1)),
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
-
         self.dA_face = [
             embsolve.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face)
         ]
@@ -658,9 +656,7 @@ class SolverBlock:
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
 
-    def set_viscous(self):
-
-        # Get shear stresses on faces
+    def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,
             self.mu,
@@ -674,11 +670,7 @@ class SolverBlock:
             self.rc,
         )
 
-        # Match shear stresses across periodics
-        #
-        # ...
-
-        # Convert shear stresses to body force
+    def set_viscous_force(self):
         embsolve.viscous_force(
             self.fb,
             *self.tau,
@@ -690,6 +682,66 @@ class SolverBlock:
         )
 
 
+def trim_i(ijk):
+    if ijk[0, 0, 0, 0] < ijk[0, -1, 0, 0]:
+        # i is in ascending order
+        ijk = ijk[:, :-1, :, :]
+    else:
+        # i is in descending order
+        ijk = ijk[:, 1:, :, :]
+    return ijk
+
+
+def trim_j(ijk):
+    if ijk[1, 0, 0, 0] < ijk[1, 0, -1, 0]:
+        # j is in ascending order
+        ijk = ijk[:, :, :-1, :]
+    else:
+        # j is in descending order
+        ijk = ijk[:, :, 1:, :]
+    return ijk
+
+
+def trim_k(ijk):
+    if ijk[2, 0, 0, 0] < ijk[2, 0, 0, -1]:
+        # k is in ascending order
+        ijk = ijk[:, :, :, :-1]
+    else:
+        # k is in descending order
+        ijk = ijk[:, :, :, 1:]
+    return ijk
+
+
+def face_indices(ijk):
+    # Given (3, di, dj, dk) array of nodal indices, get face indices
+
+    # Choose direction
+    _, di, dj, dk = ijk.shape
+
+    if di == 1:
+
+        # Constant-i face
+        # Trim off the highest valued j and k
+        ijk = trim_j(ijk)
+        ijk = trim_k(ijk)
+
+    elif dj == 1:
+
+        # Constant-j face
+        # Trim off the highest valued i and k
+        ijk = trim_i(ijk)
+        ijk = trim_k(ijk)
+
+    elif dk == 1:
+
+        # Constant-k face
+        # Trim off the highest valued i and j
+        ijk = trim_i(ijk)
+        ijk = trim_j(ijk)
+
+    return ijk
+
+
 def get_periodic_data(patch):
 
     match = patch.match
@@ -697,6 +749,9 @@ def get_periodic_data(patch):
 
     ijk = patch.get_indices()
     nxijk = match.get_indices(perm, flip)
+
+    ijkf = face_indices(ijk).reshape(3, -1)
+    nxijkf = face_indices(nxijk).reshape(3, -1)
 
     bid = patch.block.grid.index(patch.block)
     nxbid = match.block.grid.index(match.block)
@@ -733,8 +788,10 @@ def get_periodic_data(patch):
     # For Fortran
     ijk = np.asfortranarray(ijk + 1).astype(np.int16)
     nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
+    ijkf = np.asfortranarray(ijkf + 1).astype(np.int16)
+    nxijkf = np.asfortranarray(nxijkf + 1).astype(np.int16)
 
-    return bid, ijk, d, nxbid, nxijk, nxd
+    return bid, ijk, ijkf, d, nxbid, nxijk, nxijkf, nxd
 
 
 def get_periodics(g, procids):
@@ -751,9 +808,21 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, d, nxbid, nxind, nxd = get_periodic_data(patch)
+        bid, ind, indf, d, nxbid, nxind, nxindf, nxd = get_periodic_data(patch)
         periodics.append(
-            (pid, bid, procids[bid], ind, d, nxbid, procids[nxbid], nxind, nxd)
+            (
+                pid,
+                bid,
+                procids[bid],
+                ind,
+                indf,
+                d,
+                nxbid,
+                procids[nxbid],
+                nxind,
+                nxindf,
+                nxd,
+            )
         )
         pid += 1
 
@@ -821,30 +890,24 @@ def send_slave(block_split, procids, periodics):
     comm.Barrier()
 
 
-def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
+def exchange_cons(blocks, bid_local, periodics):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ijk, _, nxbid, nxprocid, nxijk, _ = patch
+        pid, bid, procid, ijk, _, _, nxbid, nxprocid, nxijk, _, _ = patch
 
         b1 = blocks[bid_local[bid]]
 
-        if variable == "cons":
-            v1 = b1.cons
-        elif variable == "residual":
-            v1 = b1.dU1
+        v1 = b1.cons
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
 
             b2 = blocks[bid_local[nxbid]]
-            if variable == "cons":
-                v2 = b2.cons
-            elif variable == "residual":
-                v2 = b2.dU1
+            v2 = b2.cons
 
             embsolve.average_by_ijk(v1, v2, ijk, nxijk)
 
@@ -872,14 +935,14 @@ def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
             embsolve.set_by_ijk(v1, vavg, ijk)
 
 
-def exchange_periodic_tau(blocks, bid_local, periodics):
+def exchange_tau(blocks, bid_local, periodics):
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
     # Update periodic boundaries
     for patch in periodics:
-        pid, bid, procid, ijk, d, nxbid, nxprocid, nxijk, nxd = patch
+        pid, bid, procid, ijk, ijkf, d, nxbid, nxprocid, nxijk, nxijkf, nxd = patch
 
         b1 = blocks[bid_local[bid]]
 
@@ -892,7 +955,8 @@ def exchange_periodic_tau(blocks, bid_local, periodics):
             tau1 = b1.tau[d - 1]
             tau2 = b2.tau[nxd - 1]
 
-            embsolve.face_average_by_ijk(tau1, tau2, ijk, nxijk, d, nxd)
+            embsolve.average_by_ijk(tau1, tau2, ijkf, nxijkf)
+            # embsolve.face_average_by_ijk(tau1, tau2, ijkf, nxijkf, d, nxd)
 
         # Otherwise, communication is needed
         else:
@@ -948,11 +1012,13 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
-        pid, bid, procid, ind, d, nxbid, nxprocid, nxind, nxd = patch
+        pid, bid, procid, ind, indf, d, nxbid, nxprocid, nxind, nxindf, nxd = patch
         if procid == rank:
             periodics.append(patch)
         elif nxprocid == rank:
-            periodics.append((pid, nxbid, nxprocid, nxind, nxd, bid, procid, ind, d))
+            periodics.append(
+                (pid, nxbid, nxprocid, nxind, nxindf, nxd, bid, procid, ind, indf, d)
+            )
 
     bids = [b.bid for b in blocks]
 
@@ -971,47 +1037,56 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Start the main time stepping loop
     for istep in range(conf.n_step):
 
-        # Occasionally exchange the cons variables
-        # Although the residuals are always exchanged, smoothing is not
-        # symmetric on each side of the boundary so values may drift.
-        # if not np.mod(istep, 7):
-        exchange_periodics(blocks, bid_local, periodics, variable="cons")
+        # Exchange conserved variables across periodic patches
+        exchange_cons(blocks, bid_local, periodics)
 
         # Calculate residual for all blocks
         for iblock in range(nblock):
 
             sb = blocks[iblock]
+            sb.set_secondary()
 
+            # Accumulate average
             if istep >= istep_avg:
                 sb.cons_avg += sb.cons / float(conf.n_step_avg)
 
-            sb.set_secondary()
-
+            # Update time steps using local Mach
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
+            # Apply boundary conditions
             sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
-
             sb.set_outlets(conf.i_exit, conf.K_exit)
 
-            if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
-                sb.set_viscous()
-                exchange_periodic_tau(blocks, bid_local, periodics)
+            # If this is a viscous calculation
+            # Update the viscous forces every nloss time steps
+            # Not right at the start of the calculation for stability
+            if not np.mod(istep, conf.nloss) and istep > 100 and conf.i_loss > 0:
+
+                # Evaluate the components of viscous stress tensor
+                sb.set_viscous_stress()
+
+                # Average the stresses on periodic faces
+                # This vital for convergence at block boundaries
+                exchange_tau(blocks, bid_local, periodics)
+
+                # Convert the viscous stress into body force by summing fluxes
+                sb.set_viscous_force()
+
+                # Add forces on each cell due to wall funcions
                 sb.set_wall_function()
 
+            # Calculate nodal changes
             sb.residual()
 
-        # Send residuals to other blocks
-        # exchange_periodics(blocks, bid_local, periodics, variable="residual")
-
-        for iblock in range(nblock):
-            sb = blocks[iblock]
-
+            # Apply damping if requested
             if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
                 sb.damp(conf.damping_factor)
 
+            # Take a time step
             sb.step(istep, conf.i_scheme)
 
+            # Stabilise the solution by smoothing
             sb.smooth(sf2, sf4)
 
         # Record residuals
@@ -1121,6 +1196,8 @@ def run(grid, settings={}, machine=None):
         dUlog[:, 0] /= drho_ref
         dUlog[:, 1:4] /= drhoV_ref
         dUlog[:, 4] /= drhoe_ref
+
+        dUlog = turbigen.util.moving_average(dUlog, conf.n_step_log)
 
         import matplotlib.pyplot as plt
 
