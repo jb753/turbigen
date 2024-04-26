@@ -86,7 +86,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Split into blocks
     blocks = []
-    nblock = 1
+    nblock = 4
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni

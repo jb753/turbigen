@@ -571,7 +571,7 @@ class SolverBlock:
             nwall = ijk.shape[1]
             if nwall:
                 embsolve.wall_function(
-                    self.fwall,
+                    self.fb,
                     ijk,
                     dirn + 1,
                     self.cons,
@@ -656,7 +656,7 @@ class SolverBlock:
     def set_viscous(self):
         embsolve.viscous_force(
             self.cons,
-            self.f,
+            self.fb,
             self.mu,
             self.mu_turb,
             self.xlength,
@@ -821,7 +821,7 @@ def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
             elif variable == "residual":
                 v2 = b2.dU1
 
-            embsolve.average_ijk(v1, v2, ijk, nxijk)
+            embsolve.average_by_ijk(v1, v2, ijk, nxijk)
 
         # Otherwise, communication is needed
         else:
@@ -843,7 +843,8 @@ def exchange_periodics(blocks, bid_local, periodics, variable="cons"):
                 comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
 
             # Take average over both sides
-            embsolve.set_ijk_average(v1, vs, nxv, ijk)
+            vavg = 0.5 * (vs + nxv)
+            embsolve.set_by_ijk(v1, vavg, ijk)
 
 
 # @profile
@@ -913,11 +914,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb.set_secondary()
 
-            if conf.i_loss > 0:
-                # sb.set_walls()
-                sb.fwall[:] = 0.0
-                sb.set_wall_function()
-
             if not np.mod(istep, conf.n_step_dt):
                 sb.set_timestep(conf.CFL)
 
@@ -927,6 +923,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
+                sb.set_wall_function()
 
             sb.residual()
 

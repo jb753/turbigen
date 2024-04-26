@@ -18,8 +18,8 @@ settings = {
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
-    'xllim_pitch': 0.03,
-    'i_loss': 0,
+    'xllim_pitch': 0.0,
+    # 'i_loss': 0,
     # "damping_factor" : 25.,
     # "nstep_damp" : -1,
     # "CFL" : 0.7,
@@ -500,5 +500,5 @@ def test_poiseuille():
 
 if __name__=='__main__':
 
-    test_plate()
-    # test_poiseuille()
+    # test_plate()
+    test_poiseuille()
