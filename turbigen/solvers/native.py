@@ -169,14 +169,19 @@ class SolverBlock:
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
         # Note 1-indexed for Fortran
-        # self.wall_nodes = block.get_wall_old().astype(bool)
         *self.ijk_wall_face, self.ijk_wall_node = [
             np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
             for wall in block.get_wall()
         ]
 
+        # Get indices for wall functions
+        *self.ijk_wall_face_slip, _ = [
+            np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
+            for wall in block.get_wall(ignore_slip=True)
+        ]
+
         # Get indices to first node off the wall
-        iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face]
+        iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face_slip]
         iwall1[0, iwall1[0, :] == ni] -= 1
         jwall1[1, jwall1[1, :] == nj] -= 1
         kwall1[2, kwall1[2, :] == nk] -= 1
@@ -194,7 +199,7 @@ class SolverBlock:
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
         self.dA_face = [
-            embsolve.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face)
+            embsolve.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
         # Get nodal smoothing scaling factors
@@ -570,7 +575,7 @@ class SolverBlock:
     def set_wall_function(self):
         ni, nj, nk, _ = self.cons.shape
         for dirn, (dw, ijk, dA) in enumerate(
-            zip(self.dw_face, self.ijk_wall_face, self.dA_face)
+            zip(self.dw_face, self.ijk_wall_face_slip, self.dA_face)
         ):
             nwall = ijk.shape[1]
             if nwall:
@@ -1147,6 +1152,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     s = state.s
                     ho = sb.ho.ravel(order='F')[ind]
                     T = state.T
+                    h = state.h
                     mdotnow = (wA*rhoVxrt).sum()
                     mdot2 += mdotnow*sb.Nb
                     s2 += (wA*rhoVxrt*s).sum()

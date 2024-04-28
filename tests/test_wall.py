@@ -62,6 +62,30 @@ def test_box():
     assert wall[:,(0,-1),:].all()
     assert wall[:,:,(0,-1)].all()
 
+def test_box2():
+
+    xrt, Nb = make_sector()
+    patches = [
+        turbigen.grid.OutletPatch(i=0),
+        turbigen.grid.OutletPatch(i=-1),
+        turbigen.grid.OutletPatch(j=0),
+        turbigen.grid.OutletPatch(j=-1),
+        turbigen.grid.OutletPatch(k=0),
+        turbigen.grid.OutletPatch(k=-1),
+    ]
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
+
+    g = turbigen.grid.Grid([block,])
+    g.check_coordinates()
+
+    iwall, jwall, kwall, wall = block.get_wall()
+
+    assert not iwall.any()
+    assert not jwall.any()
+    assert not kwall.any()
+    assert not wall.any()
+
 def test_stream():
 
     xrt1, Nb = make_sector()
@@ -261,6 +285,7 @@ def test_multiblock():
 
 if __name__=='__main__':
 
+    test_box2()
     test_multiblock()
     test_periodic()
     test_gap()

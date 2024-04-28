@@ -265,6 +265,12 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
         ! Loop over all points
         do iwall = 1,nwall
 
+            ! Skip inviscid walls
+            ! Marked with negative dw
+            if (dw(iwall).lt.0.) then
+                continue
+            end if
+
             ! Extract indices
             i = ijk(1, iwall)
             j = ijk(2, iwall)

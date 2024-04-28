@@ -147,7 +147,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self):
+    def get_wall(self, ignore_slip=False):
 
         ni, nj, nk = self.shape
 
@@ -165,8 +165,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
 
             # Skip if this patch is a wall
-            if not type(patch) in NOT_WALL_PATCHES:
-                continue
+            if ignore_slip:
+                if not type(patch) in NOT_SLIPWALL_PATCHES:
+                    continue
+            else:
+                if not type(patch) in NOT_WALL_PATCHES:
+                    continue
 
             nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
             ijk_lim = patch.ijk_limits.copy()
@@ -180,10 +184,8 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             if patch.cdir == 0:
                 iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
             elif patch.cdir == 1:
-                jwall[ist : (ien - 1), jst : (jen - 1), kst : (ken - 1)] += 1
+                jwall[ist : (ien - 1), jst : jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
-                # print(patch)
-                # print(ist, ien, jst, jen, kst, ken)
                 kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
         # Now distribute the face not-wallness to the nodes
@@ -1558,6 +1560,15 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
+]
+NOT_SLIPWALL_PATCHES = [
+    InletPatch,
+    OutletPatch,
+    MixingPatch,
+    PeriodicPatch,
+    PorousPatch,
+    ProbePatch,
+    InviscidPatch,
 ]
 
 
