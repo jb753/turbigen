@@ -122,6 +122,7 @@ class SolverBlock:
         self.cons = to_fort(block.conserved)
 
         self.conf = conf
+        self.Nb = block.Nb
 
         self.mu = block.mu
 
@@ -308,7 +309,7 @@ class SolverBlock:
         for patch, state in zip(self.inlets, self.state_inlets):
 
             # Expand patch data
-            ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, normal = patch
+            ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, _ = patch
 
             tanAl = turbigen.util.tand(Alpha)
             tanBeta = turbigen.util.tand(Beta)
@@ -839,6 +840,8 @@ def get_inlet_data(patch):
         raise NotImplementedError("This assumes the patch is on a const. i face")
     normal = (dA / turbigen.util.vecnorm(dA)).mean(axis=(1, 2, 3))
 
+    wA = patch.get_A_avg_weights(order="F")
+
     return (
         patch.get_flat_indices(order="F"),
         patch.state.P + 0.0,
@@ -849,7 +852,7 @@ def get_inlet_data(patch):
         patch.state.h,
         patch.state.s,
         to_fort(patch.get_cut().r.reshape(-1)),
-        normal,
+        wA,
     )
 
 
@@ -1000,6 +1003,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     else:
         master_flag = True
         dUlog = []
+        Yslog = []
+        merrlog = []
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     conf = blocks[0].conf
@@ -1093,25 +1098,101 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         iilog = np.mod(istep - 1, conf.n_step_log)
         dUnow[iilog] = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
 
-        if conf.n_step_log > 0 and not np.mod(istep, conf.n_step_log) and istep > 0:
+        # Intermittently print convergence
+        if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
+
+            # Inlet mass-avg props
+            mdot1 = 0.
+            s1 = 0.
+            ho1 = 0.
+            h1 = 0.
+            A1 = 0.
+            for sb in blocks:
+                for patch in sb.inlets:
+                    ind, _, _, _, _, _, _, _, _, wA = patch
+                    rhoVxrt = np.stack(
+                        (
+                            sb.cons[:,:,:,1].ravel(order='F')[ind],
+                            sb.cons[:,:,:,2].ravel(order='F')[ind],
+                            sb.cons[:,:,:,3].ravel(order='F')[ind],
+                        )
+                    )
+                    s = sb.state.s.ravel(order='F')[ind]
+                    h = sb.state.h.ravel(order='F')[ind]
+                    ho = sb.ho.ravel(order='F')[ind]
+                    mdotnow = (wA*rhoVxrt).sum()
+                    mdot1 += mdotnow*sb.Nb
+                    s1 += (wA*rhoVxrt*s).sum()
+                    ho1 += (wA*rhoVxrt*ho).sum()
+                    h1 += (wA*h).sum()
+                    A1 += wA.sum()
+
+            # Outlet mass-avg props
+            mdot2 = 0.
+            s2 = 0.
+            ho2 = 0.
+            h2 = 0.
+            A2 = 0.
+            T2 = 0.
+            for sb in blocks:
+                for patch, state in zip(sb.outlets, sb.state_outlets):
+                    ind, _, wA, _, _ = patch
+                    rhoVxrt = np.stack(
+                        (
+                            sb.cons[:,:,:,1].ravel(order='F')[ind],
+                            sb.cons[:,:,:,2].ravel(order='F')[ind],
+                            sb.cons[:,:,:,3].ravel(order='F')[ind],
+                        )
+                    )
+                    s = state.s
+                    ho = sb.ho.ravel(order='F')[ind]
+                    T = state.T
+                    mdotnow = (wA*rhoVxrt).sum()
+                    mdot2 += mdotnow*sb.Nb
+                    s2 += (wA*rhoVxrt*s).sum()
+                    ho2 += (wA*rhoVxrt*ho).sum()
+                    T2 += (wA*T).sum()
+                    h2 += (wA*h).sum()
+                    A2 += wA.sum()
+
+            mhs = np.array([mdot1, ho1, s1, mdot2, ho2, s2, h1, h2, A1, A2, T2])
 
             # Send residuals to master proc
             if rank:
                 comm.send(dUnow, dest=0)
+                comm.send(mhs, dest=0)
 
             else:
                 dUall = [
                     dUnow,
                 ]
                 for iproc in range(1, size):
+
                     dUall.append(comm.recv(source=iproc))
+                    mhs += comm.recv(source=iproc)
+
                 dUall = np.concatenate(dUall, axis=1)
+
+                # Mass weight all inlet/exits
+                mhs[1:3] /= mhs[0]
+                mhs[4:6] /= mhs[3]
+                merr = (mhs[3]/mhs[0]-1.)*100.
+                merrlog.append(merr)
+
+                # Area weight static enthalpy
+                mhs[6] /= mhs[8]
+                mhs[7] /= mhs[9]
+                mhs[10] /= mhs[9]
+                Ys = mhs[10]*(mhs[5]-mhs[2])/(mhs[4]-mhs[7])
+                Yslog.append(Ys)
 
                 ten = timer()
                 tpnps = (ten - tstart) / nodes / conf.n_step_log
                 tstart = ten
 
                 logger.info(f"{istep}: tpnps={tpnps:.3e}")
+                logger.info(f"  Mass in, out, err = {mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%")
+                logger.info(f"   Ys = {Ys:.3e}")
                 for ib, dU in enumerate(dUall.mean(axis=0)):
                     logger.info(f"  block {ib}: {dU}")
 
@@ -1119,7 +1200,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 dUlog.append(dUlognow)
 
     if master_flag:
-        return blocks, dUlog
+        return blocks, dUlog, merrlog, Yslog
     else:
         comm.send(blocks, dest=0)
 
@@ -1155,7 +1236,7 @@ def run(grid, settings={}, machine=None):
     send_slave(block_split, procids, periodics)
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog = run_slave(block_split[0], periodics, nodes)
+    block_split[0], dUlog, merrlog, Yslog = run_slave(block_split[0], periodics, nodes)
 
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
@@ -1182,6 +1263,7 @@ def run(grid, settings={}, machine=None):
         mdot_out += Cm.rho * Cm.Vm * A
 
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
+    print(mdot_in, mdot_out)
 
     if conf.plot_conv:
 
@@ -1203,4 +1285,15 @@ def run(grid, settings={}, machine=None):
 
         fig, ax = plt.subplots()
         ax.semilogy(dUlog)
+        plt.tight_layout()
+
+        fig, ax = plt.subplots()
+        ax.plot(Yslog)
+        ax.set_ylabel('Entropy Loss Coefficient, $Y_s$')
+        plt.tight_layout()
+
+        fig, ax = plt.subplots()
+        ax.plot(merrlog)
+        ax.set_ylabel(r'Mass Conservation Error $\varepsilon \dot{m}/\%$')
+        plt.tight_layout()
         plt.show()

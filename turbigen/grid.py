@@ -1321,7 +1321,7 @@ class Patch:
                     ind[0, 1:, 1:],
                 )
             ).reshape(4, -1)
-            dA = util.vecnorm(C.dAi).reshape(-1)
+            dA = C.dAi.reshape(3,-1)
         else:
             raise NotImplementedError
 
@@ -1335,19 +1335,19 @@ class Patch:
         #   int x dA
         # as a weighted sum of the nodal values of x
         nnode = np.size(ind)
-        nface = len(dA)
+        nface = dA.shape[-1]
 
-        w = np.zeros((nnode,))
+        w = np.zeros((3, nnode,))
 
         # Loop over faces
         for iface in range(nface):
             # For all four corners on this face,
             # add dA to the relavent nodal weight
             for k in range(4):
-                w[ind_flat == ind_face[k, iface]] += dA[iface]
+                w[:, ind_flat == ind_face[k, iface]] += dA[:, (iface,)]
 
         # Normalise
-        w /= 4.0 * np.sum(dA)
+        w /= 4.0
 
         return w
 

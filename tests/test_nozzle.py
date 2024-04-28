@@ -185,10 +185,11 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     return g, F
 
 settings = {
-    'n_step': 10000,
+    'n_step': 2000,
     'n_step_avg': 10,
-    'n_step_log': 1000,
+    'n_step_log': 100,
     'i_loss': 0,
+    'plot_conv': True,
 }
 
 def plot_nozzle(g, F):
@@ -490,7 +491,7 @@ if __name__=='__main__':
     # test_exit(0.)
 
     # print('testing uniform, vary Ma')
-    test_Ma(0.9)
+    # test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
     # test_uniform(30.)
@@ -502,4 +503,4 @@ if __name__=='__main__':
     # test_radius(30.)
 
     # print('testing con-di nozzles')
-    # test_condi('t')
+    test_condi('t')
