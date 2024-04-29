@@ -416,9 +416,21 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 + r(ic+1, jc+1, kc+1) &
             )/8e0
 
+            if (dirn.eq.1) then
+
+                f(ic, jc, kc, 2) = 0e0
+                f(ic, jc, kc, 3) = 0e0
+                f(ic, jc, kc, 4) = 0e0
+
+            end if
+
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
+
+            ! f(ic, jc, kc, 2) =  vec(1)*tauw
+            ! f(ic, jc, kc, 3) =  0e0
+            ! f(ic, jc, kc, 4) =  0e0
 
         end do
     end if

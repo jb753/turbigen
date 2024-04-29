@@ -385,6 +385,20 @@ def test_plate_turb():
     # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim_ref': 'span', 'nstep': 20000, 'nstep_avg': 1000}
     # g.run(conf_ts3, None)
 
+    settings = {
+        'n_step': 10000,
+        # 'n_step': 1000,
+        'n_step_avg': 1000,
+        'n_step_log': 100,
+        'plot_conv': True,
+        # 'nstep_damp': -1,
+        'xllim_pitch': 100.0,
+        # 'i_loss': 0,
+        # "damping_factor" : 25.,
+        # "nstep_damp" : -1,
+        # "smoothing_factor" : 0.005
+    }
+
     # g = make_plate()
     g = make_plate(mu=1.8e-4)
 
@@ -416,16 +430,17 @@ def test_plate_turb():
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(x, cf, '-x')
-    ax.set_ylim([0., 0.08])
+    # ax.set_ylim([0., 0.08])
 
-    np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
-    ax.plot(*xcf_ts3, '-o')
+    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
+    # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
+    # ax.plot(*xcf_ts3, '-o')
 
-    x0 = 0.02
-    xx = x[x>x0]-x0
-    cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
-    ax.plot(xx, cflam, 'k--')
+    # x0 = 0.02
+    # xx = x[x>x0]-x0
+    # cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
+    # ax.plot(xx, cflam, 'k--')
+
     plt.show()
 
     # plt.savefig('beans.pdf')
@@ -475,16 +490,12 @@ def test_plate_lam():
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(x, cf, '-x')
-    ax.set_ylim([0., 0.08])
+    # ax.set_ylim([0., 0.08])
 
     # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
     # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
     # ax.plot(*xcf_ts3, '-o')
 
-    x0 = 0.02
-    xx = x[x>x0]-x0
-    cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
-    ax.plot(xx, cflam, 'k--')
     plt.show()
 
     # plt.savefig('beans.pdf')
@@ -583,6 +594,6 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    # test_plate_turb()
-    test_plate_lam()
+    test_plate_turb()
+    # test_plate_lam()
     # test_poiseuille()

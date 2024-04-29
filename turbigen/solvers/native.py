@@ -46,7 +46,7 @@ class NativeConfig(BaseSolver):
     n_step_avg = 1
     """Number of time steps to average over."""
 
-    nloss = 1
+    nloss = 5
     """Number of time steps between viscous force updates."""
 
     conv_lim = 1e-9
@@ -191,7 +191,6 @@ class SolverBlock:
             embsolve.get_by_ijk(to_fort(dl), ijk)
             for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
-        print(self.dw_face[1].mean())
 
         # Get wall area magnitudes
         dAijk = [
@@ -199,10 +198,6 @@ class SolverBlock:
             np.sqrt((self.dAj**2).sum(axis=-1)),
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
-
-        print(self.dAi[0, 0, 0, :])
-        print(dAijk[0][0, 0, 0])
-        quit()
 
         self.dA_face = [
             embsolve.get_by_ijk(dA, ijk)
