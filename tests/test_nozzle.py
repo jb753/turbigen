@@ -86,7 +86,7 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Split into blocks
     blocks = []
-    nblock = 1
+    nblock = 4
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -185,10 +185,11 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     return g, F
 
 settings = {
-    'n_step': 10000,
+    'n_step': 5000,
     'n_step_avg': 10,
-    'n_step_log': 1000,
+    'n_step_log': 100,
     'i_loss': 0,
+    'plot_conv': True,
 }
 
 def plot_nozzle(g, F):
@@ -298,11 +299,7 @@ def test_condi(dirn, plot=False):
     )
     g, F = make_nozzle(xA, dirn=dirn)
 
-    g[0].Vt += 0.1*g[0].Vx.mean()
-
     np.set_printoptions(precision=2)
-
-    print(g[0].T.min())
 
     turbigen.solvers.native.run(g, settings)
 
@@ -435,7 +432,7 @@ def test_patch_A_avg():
         ]
     )
     g, F = make_nozzle(xA)
-    block = g[0]
+    block = g[-1]
     patch = block.outlet_patches[0]
 
     # Calculate area average using weight
@@ -488,6 +485,7 @@ def not_test_exit(Alpha):
 if __name__=='__main__':
 
 
+    # pass
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
     # test_exit(0.)

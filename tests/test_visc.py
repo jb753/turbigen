@@ -12,21 +12,17 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 30000,
+    'n_step': 10000,
     # 'n_step': 1000,
     'n_step_avg': 500,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
-    # 'xllim_pitch': 0.03,
+    'xllim_pitch': 0.0,
     # 'i_loss': 0,
-    # "damping_factor" : 10.,
-    # "nstep_damp" : -1,
-    # "CFL" : 0.7,
-    # "i_scheme" : 0,
-    # "i_exit" : 0,
+    # "damping_factor" : 25.,
+    # "nstep_damp" : 1000,
     "smoothing_factor" : 0.001
-    # "smoothing_2nd_proportion" : 1.0
 }
 
 # Check our MPI rank
@@ -43,14 +39,13 @@ if rank > 0:
 def make_plate():
     """Generate the grid."""
 
-    AR_merid=2.
+    AR_merid=1.
     AR_pitch=1.
     htr=0.9
-    Alpha1=10.
-    Ma1=0.4
-    skew=Alpha1+0.
-    h_cx = 3.
-    L_h = 1.
+    Alpha1=0.
+    Ma1=0.3
+    skew=0.
+    L_h = 4.
 
     # Geometry
     h = 0.1
@@ -62,7 +57,7 @@ def make_plate():
     # Boundary conditions
     ga = 1.4
     cp = 1005.0
-    mu = 1.8e-3
+    mu = 1.8e-2
     Beta = 0.0
     Po1 = 1e5
     To1 = 300.0
@@ -73,67 +68,85 @@ def make_plate():
     P1 = Po1/cf.Po_P_from_Ma(Ma1,ga)
     T1 = To1/cf.To_T_from_Ma(Ma1,ga)
 
-    # Numbers of grid points
-    nj = 17
-    nk = 17
-    ni = int(nj*L_h)
+    # Radial grid points
+    ER = 1.1
+    d1 = 0.01*h
+    # d2 = 0.05*h
+    dmax = 0.1*h
+    # rv = turbigen.clusterfunc.double.free(d1, d2, dmax, ER, rh, rt)
+    rv = turbigen.clusterfunc.single.free(d1, dmax, ER, rh, rt)
+    dmax1 = np.diff(rv).max()
+    nj = len(rv)
 
-    ile = ni//3
-    ite = ni*2//3
-    print(ile, ite)
-
+    # Circumferential grid points
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
-    pitch = h/(nj-1)*(nk-1)*AR_pitch
+    nk = 5
+    pitch = dmax1*(nk-1)*AR_pitch
     Nb = int(2.0 * np.pi * rm / pitch)
     dt = 2.0 * np.pi / float(Nb)
-    pitch_rt = dt*rm
+    tv = np.linspace(0., dt, nk)
 
-    cx = h / h_cx
-    dmin = cx/250.
-    dmax = cx/20.
-
-
-    # Make the coordinates
-    # tv = np.linspace(0., dt, nk)
-    ER = 1.1
-    tv = turbigen.clusterfunc.symmetric.free(0.002, 0.08, 1.2)*dt
-    x1 = np.flip(turbigen.clusterfunc.single.free(dmin, dmax, ER, 0., -L))
-    x2 = turbigen.clusterfunc.double.free(dmin, dmin*2, dmax, ER, 0., cx)
-    x3 = turbigen.clusterfunc.single.free(dmin*2, dmax, ER, cx, cx + L)
+    # Axial grid points
+    ni = int(L/dmax/AR_merid)
     xv = np.linspace(0., L, ni)
-    xv = np.concatenate((x1, x2[1:], x3[1:]))
-    rv = np.linspace(rh, rt, nj)
-
-    ile = len(x1)
-    ite = ile + len(x2) - 1
 
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
-    # Apply skew
-    xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1]
+    # Stretch vertically
+    xn = xv/xv[-1]
+    stretch = np.expand_dims(np.linspace(1., 1.06, ni), (1,2))
+    xrt[1] = (xrt[1] - rh)*stretch + rh
 
     # Split into blocks
     blocks = []
     nblock = 1
+    istb = [ni//nblock*iblock for iblock in range(nblock)]
+    ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
+    ienb[-1] = ni
 
-    patches = [
-        turbigen.grid.InletPatch(i=0),
-        turbigen.grid.OutletPatch(i=-1),
-        turbigen.grid.InviscidPatch(j=0),
-        turbigen.grid.InviscidPatch(j=-1),
-        turbigen.grid.PeriodicPatch(k=0, i=(0,ile)),
-        turbigen.grid.PeriodicPatch(k=0, i=(ite,-1)),
-        turbigen.grid.PeriodicPatch(k=-1, i=(0,ile)),
-        turbigen.grid.PeriodicPatch(k=-1, i=(ite,-1)),
-        ]
+    for iblock in range(nblock):
 
+        # Special case for only one block
+        if nblock == 1:
+            patches = [
+                turbigen.grid.InletPatch(i=0),
+                turbigen.grid.OutletPatch(i=-1),
+            ]
 
-    block = turbigen.grid.PerfectBlock.from_coordinates(
-            xrt, Nb, patches
-    )
-    block.label=f'b{0}'
+        # First block has an inlet
+        elif iblock == 0:
+            patches = [
+                turbigen.grid.InletPatch(i=0),
+                turbigen.grid.PeriodicPatch(i=-1),
+            ]
 
-    blocks.append(block)
+        # Last block has outlet
+        elif iblock==(nblock-1):
+            patches = [
+                turbigen.grid.PeriodicPatch(i=0),
+                turbigen.grid.OutletPatch(i=-1),
+            ]
+
+        # Middle blocks are both periodic
+        else:
+            patches = [
+                turbigen.grid.PeriodicPatch(i=0),
+                turbigen.grid.PeriodicPatch(i=-1),
+            ]
+
+        patches.extend([
+            turbigen.grid.PeriodicPatch(k=0),
+            turbigen.grid.PeriodicPatch(k=-1),
+            turbigen.grid.InviscidPatch(j=-1),
+            ]
+        )
+
+        block = turbigen.grid.PerfectBlock.from_coordinates(
+                xrt[:,istb[iblock]:ienb[iblock],:,:], Nb, patches
+        )
+        block.label=f'b{iblock}'
+
+        blocks.append(block)
 
     # Make the grid object
     g = turbigen.grid.Grid(blocks)
@@ -150,7 +163,7 @@ def make_plate():
     for b in g:
         b.Vx = V
         b.Vr = 0.
-        b.Vt = V*np.tan(np.radians(Alpha1))
+        b.Vt = 0.
         b.cp = cp
         b.gamma = ga
         b.mu = mu
@@ -159,12 +172,12 @@ def make_plate():
 
     g.match_patches()
 
-    return g, ile, ite
+    return g
 
 def make_pipe():
     """Generate the grid."""
 
-    L_h = 6.
+    L_h = 8.
     AR_merid=4.
     AR_pitch=0.5
     htr = 0.95
@@ -193,18 +206,9 @@ def make_pipe():
     T1 = To1/cf.To_T_from_Ma(Ma1,ga)
     rho1 = P1/rgas/T1
 
-    # Calculate dwall for target yplus
-    yplus = 1.
-    Re = rho1 * V * h / mu
-    Cf = (2.0 * np.log10(Re) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (rho1 * V**2)
-    Vtau = np.sqrt(tauw / rho1)
-    Lvisc = mu / rho1 / Vtau
-    dw = yplus * Lvisc/h
-    # print(dw)
-    dw = 0.01
+    dw = 0.002
     dmax = 0.04
-    ER = 1.05
+    ER = 1.1
     cluv = turbigen.clusterfunc.symmetric.free(dw, dmax, ER)
     ddmax = np.diff(cluv).max()*h
 
@@ -235,7 +239,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 2
+    nblock = 4
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -374,62 +378,34 @@ def make_pipe():
 
     return g, F
 
-def test_plate():
+def not_test_plate():
 
-    g, ile, ite = make_plate()
-
-    # fig, ax = plt.subplots()
-    # b = g[0]
-    # lev = np.linspace(0., b.rt[0,-1,:].ptp()/2.,11)
-    # C = b[:,b.nj//2, :]
-    # ax.contourf(C.x, C.rt, C.w, lev)
-    # ax.axis('equal')
-
-#     fig, ax = plt.subplots()
-#     b = g[0]
-#     lev = np.linspace(0., b.rt[0,-1,:].ptp()/2.,11)
-#     C = b[:,b.nj//2, :]
-#     ax.plot(C.x, C.rt, 'k-', lw=0.2)
-#     ax.plot(C.x.T, C.rt.T,'k-',  lw=0.2)
-#     ax.axis('equal')
-
-    plt.show()
+    g = make_plate()
 
     np.set_printoptions(precision=2)
     turbigen.solvers.native.run(g, settings)
 
+    cf = []
+    x = []
+    for b in g:
+        Cj2 = b[:,2,0]
+        Cj1 = b[:,1,0]
+        Cj0 = b[:,0,0]
+        Cjm = b[:,b.nj//2,0]
+        Vinf = Cjm.Vx
+        rhoinf = Cjm.rho
+        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
+        tauw = dVdy * Cj0.mu
+        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
+        x.append(Cjm.x)
+    x = np.concatenate(x)
+    cf = np.concatenate(cf)
     fig, ax = plt.subplots()
     b = g[0]
     C = b[:,b.nj//2, :]
-    ax.plot(C.x[:,0], C.P[:,(1,-2)],'-x')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
-    ax.plot(C.x[:,0], C.P[:,(0,-1)],'-x')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
-    ax.plot(C.x[:,0], C.To[:,(0,-1)],'-x')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[ite,b.nj//2, :]
-    ax.plot(C.rt, C.Vx, '-kx')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[ite,b.nj//2, :]
-    ax.plot(C.rt, C.P, '-kx')
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
-    ax.contourf(C.x, C.rt, C.P)
-    ax.axis('equal')
-
+    ax.plot(x, cf, 'kx')
     plt.show()
+
 
 def test_poiseuille():
 
@@ -500,8 +476,29 @@ def test_poiseuille():
     print(f'mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f}, error={(mdot_analytical/mdot-1.)*100:.2f}%')
     assert np.abs(err).mean()<0.05
 
+def not_test_blasius():
+
+    ni = 51
+    nj = 37
+
+    xr = np.loadtxt('tests/blasius_grid.dat').reshape(2,nj, ni).transpose((0, 2, 1))
+    print(xr.shape)
+
+    Minf = 0.1
+    Pinf_imp = 6.0
+    Tinf_imp = 700.
+    mu_imp = 6.5044372E-04
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.plot(xr[0], xr[1], 'k.-')
+    ax.plot(xr[0].T, xr[1].T, 'k.-')
+    ax.axis('equal')
+    plt.show()
+    quit()
+
 
 if __name__=='__main__':
 
-    # test_plate()
-    test_poiseuille()
+    not_test_plate()
+    # test_poiseuille()

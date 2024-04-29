@@ -147,7 +147,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self):
+    def get_wall(self, ignore_slip=False):
 
         ni, nj, nk = self.shape
 
@@ -165,8 +165,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
 
             # Skip if this patch is a wall
-            if not type(patch) in NOT_WALL_PATCHES:
-                continue
+            if ignore_slip:
+                if not type(patch) in NOT_SLIPWALL_PATCHES:
+                    continue
+            else:
+                if not type(patch) in NOT_WALL_PATCHES:
+                    continue
 
             nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
             ijk_lim = patch.ijk_limits.copy()
@@ -180,10 +184,8 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             if patch.cdir == 0:
                 iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
             elif patch.cdir == 1:
-                jwall[ist : (ien - 1), jst : (jen - 1), kst : (ken - 1)] += 1
+                jwall[ist : (ien - 1), jst : jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
-                # print(patch)
-                # print(ist, ien, jst, jen, kst, ken)
                 kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
         # Now distribute the face not-wallness to the nodes
@@ -1321,7 +1323,7 @@ class Patch:
                     ind[0, 1:, 1:],
                 )
             ).reshape(4, -1)
-            dA = util.vecnorm(C.dAi).reshape(-1)
+            dA = C.dAi.reshape(3,-1)
         else:
             raise NotImplementedError
 
@@ -1335,19 +1337,19 @@ class Patch:
         #   int x dA
         # as a weighted sum of the nodal values of x
         nnode = np.size(ind)
-        nface = len(dA)
+        nface = dA.shape[-1]
 
-        w = np.zeros((nnode,))
+        w = np.zeros((3, nnode,))
 
         # Loop over faces
         for iface in range(nface):
             # For all four corners on this face,
             # add dA to the relavent nodal weight
             for k in range(4):
-                w[ind_flat == ind_face[k, iface]] += dA[iface]
+                w[:, ind_flat == ind_face[k, iface]] += dA[:, (iface,)]
 
         # Normalise
-        w /= 4.0 * np.sum(dA)
+        w /= 4.0
 
         return w
 
@@ -1558,6 +1560,15 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
+]
+NOT_SLIPWALL_PATCHES = [
+    InletPatch,
+    OutletPatch,
+    MixingPatch,
+    PeriodicPatch,
+    PorousPatch,
+    ProbePatch,
+    InviscidPatch,
 ]
 
 
