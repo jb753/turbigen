@@ -14,15 +14,15 @@ import pytest
 settings = {
     'n_step': 10000,
     # 'n_step': 1000,
-    'n_step_avg': 500,
+    'n_step_avg': 1000,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
     'xllim_pitch': 0.0,
     # 'i_loss': 0,
     # "damping_factor" : 25.,
-    # "nstep_damp" : 1000,
-    "smoothing_factor" : 0.001
+    # "nstep_damp" : -1,
+    # "smoothing_factor" : 0.005
 }
 
 # Check our MPI rank
@@ -47,7 +47,7 @@ def make_plate(Tu0=300.):
     L_h = 4.
 
     # Geometry
-    h = 0.1
+    h = 0.2
     L = L_h * h
     rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
     rh = rm - 0.5 * h
@@ -69,9 +69,10 @@ def make_plate(Tu0=300.):
 
     # Radial grid points
     ER = 1.1
-    d1 = 0.01*h
-    # d2 = 0.05*h
-    dmax = 0.1*h
+    # d1 = 0.01*h
+    # dmax = 0.1*h
+    d1 = 0.005*h
+    dmax = 0.05*h
     # rv = turbigen.clusterfunc.double.free(d1, d2, dmax, ER, rh, rt)
     rv = turbigen.clusterfunc.single.free(d1, dmax, ER, rh, rt)
     dmax1 = np.diff(rv).max()
@@ -400,7 +401,8 @@ def not_test_plate():
         Vinf = Cjm.Vx
         rhoinf = Cjm.rho
         dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
-        tauw = dVdy * Cj0.mu
+        mu = Cj0.mu
+        tauw = dVdy * mu
         cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
         x.append(Cjm.x)
     x = np.concatenate(x)
@@ -409,12 +411,18 @@ def not_test_plate():
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(x, cf, '-x')
+    ax.set_ylim([0., 0.08])
 
     xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
-    ax.plot(*xcs_ts3, '-o')
-    # plt.show()
+    ax.plot(*xcf_ts3, '-o')
 
-    plt.savefig('beans.pdf')
+    x0 = 0.02
+    xx = x[x>x0]-x0
+    cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
+    ax.plot(xx, cflam, 'k--')
+    plt.show()
+
+    # plt.savefig('beans.pdf')
     # np.savetxt('xcf.csv', np.stack((x, cf)))
 
 

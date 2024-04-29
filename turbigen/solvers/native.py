@@ -255,6 +255,7 @@ class SolverBlock:
         # Now distribute to nodes
         self.ssf = to_fort(np.empty((3, ni, nj, nk)))
         embsolve.cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
+        # self.ssf = to_fort(np.ones((3, ni, nj, nk))/3.)
 
         # print('at ni//2, nj//2, k=0')
         # print(self.ssf[ni//2, nj//2, 0, :])
