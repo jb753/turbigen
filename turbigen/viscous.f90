@@ -445,10 +445,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             vtau = sqrt(tauw/row)
             yplus = row*vtau*dw(iwall)/mu
-
-            ! print*, yplus
-            ! print*, Vxrtw, Vw
-            ! print*, vec
+            print*,yplus
 
             rc = ( &
                 r(ic, jc, kc) &
@@ -460,14 +457,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 + r(ic, jc+1, kc+1) &
                 + r(ic+1, jc+1, kc+1) &
             )/8e0
-
-            ! print*, i, j, k
-            ! print*, ic, jc, kc
-            ! print*, ni, nj, nk
-            ! print*, tauw, vec
-            ! print*, mu, row, Vw, dw(iwall)
-            ! print*, Rew, tauw, dA(iwall), vol(ic, jc, kc)
-
 
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw

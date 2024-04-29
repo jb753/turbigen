@@ -1,5 +1,5 @@
 """Viscous test cases."""
-# import turbigen.solvers.native
+import turbigen.solvers.native
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -25,17 +25,17 @@ settings = {
     # "smoothing_factor" : 0.005
 }
 
-# # Check our MPI rank
-# from mpi4py import MPI
-# comm = MPI.COMM_WORLD
-# rank = comm.Get_rank()
-# size = comm.Get_size()
-# # Jump to solver slave process if not first rank
-# if rank > 0:
-#     turbigen.solvers.native.run_slave()
-#     sys.exit(0)
+# Check our MPI rank
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+# Jump to solver slave process if not first rank
+if rank > 0:
+    turbigen.solvers.native.run_slave()
+    sys.exit(0)
 
-def make_plate(Tu0=300., mu):
+def make_plate(mu, Tu0=300.):
     """Generate the grid."""
 
     AR_merid=1.
@@ -381,14 +381,20 @@ def make_pipe():
 
 def test_plate_turb():
 
-    g = make_plate(Tu0=0., mu=1.8e-4)
-    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim_ref': 'span', 'nstep': 20000, 'nstep_avg': 1000}
-    g.run(conf_ts3, None)
+    # g = make_plate(mu=1.8e-4)
+    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim_ref': 'span', 'nstep': 20000, 'nstep_avg': 1000}
+    # g.run(conf_ts3, None)
 
     # g = make_plate()
+    g = make_plate(mu=1.8e-4)
 
-    # np.set_printoptions(precision=2)
-    # turbigen.solvers.native.run(g, settings)
+    np.set_printoptions(precision=2)
+    turbigen.solvers.native.run(g, settings)
+
+    fig, ax = plt.subplots()
+    C = g[-1][-2,:,0]
+    ax.plot(C.Vx, C.r, '-x')
+    plt.show()
 
     cf = []
     x = []
@@ -563,5 +569,5 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    not_test_plate()
+    test_plate_turb()
     # test_poiseuille()
