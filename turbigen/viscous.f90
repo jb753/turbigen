@@ -108,7 +108,10 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
 
 end subroutine
 
-subroutine viscous_force(fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk, ni, nj, nk)
+subroutine viscous_force( &
+        fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk, &
+        ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+        ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
 
@@ -130,6 +133,15 @@ subroutine viscous_force(fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
+    integer, intent (in)  :: niwall
+    integer, intent (in)  :: njwall
+    integer, intent (in)  :: nkwall
+
+
+    ! Wall locations
+    integer*2, intent (in) :: ijk_iwall(3, niwall)
+    integer*2, intent (in) :: ijk_jwall(3, njwall)
+    integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -145,11 +157,18 @@ subroutine viscous_force(fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
+    ! No fluxes on walls
+    ! We add back using wall functions later
+    call zero_wall_fluxes(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
+    call zero_wall_fluxes(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
+    call zero_wall_fluxes(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
+    ! fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
+    fvisc = fvisc_new
 
 end subroutine
 
@@ -445,7 +464,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             vtau = sqrt(tauw/row)
             yplus = row*vtau*dw(iwall)/mu
-            print*,yplus
+            ! print*,yplus
 
             rc = ( &
                 r(ic, jc, kc) &

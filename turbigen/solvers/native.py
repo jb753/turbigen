@@ -575,29 +575,6 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = state.P
                 self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
-    def set_wall_function(self):
-        ni, nj, nk, _ = self.cons.shape
-        for dirn, (dw, ijk, dA) in enumerate(
-            zip(self.dw_face, self.ijk_wall_face_slip, self.dA_face)
-        ):
-            nwall = ijk.shape[1]
-            if nwall:
-                embsolve.wall_function(
-                    self.fb,
-                    ijk,
-                    dirn + 1,
-                    self.cons,
-                    self.r,
-                    self.vol,
-                    dw,
-                    dA,
-                    self.mu,
-                    ni,
-                    nj,
-                    nk,
-                    nwall,
-                )
-
     def set_timestep(self, CFL):
         Vx = self.cons[..., 1] / self.cons[..., 0]
         Vr = self.cons[..., 2] / self.cons[..., 0]
@@ -688,7 +665,31 @@ class SolverBlock:
             self.dAj,
             self.dAk,
             *self.rf,
+            *self.ijk_wall_face_slip,
         )
+
+    def set_wall_function(self):
+        ni, nj, nk, _ = self.cons.shape
+        for dirn, (dw, ijk, dA) in enumerate(
+            zip(self.dw_face, self.ijk_wall_face_slip, self.dA_face)
+        ):
+            nwall = ijk.shape[1]
+            if nwall:
+                embsolve.wall_function(
+                    self.fb,
+                    ijk,
+                    dirn + 1,
+                    self.cons,
+                    self.r,
+                    self.vol,
+                    dw,
+                    dA,
+                    self.mu,
+                    ni,
+                    nj,
+                    nk,
+                    nwall,
+                )
 
 
 def trim_i(ijk):

@@ -18,7 +18,7 @@ settings = {
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
-    'xllim_pitch': 0.0,
+    'xllim_pitch': 100.0,
     # 'i_loss': 0,
     # "damping_factor" : 25.,
     # "nstep_damp" : -1,
