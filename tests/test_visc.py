@@ -30,13 +30,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-
 # Jump to solver slave process if not first rank
 if rank > 0:
     turbigen.solvers.native.run_slave()
     sys.exit(0)
 
-def make_plate():
+def make_plate(Tu0=300.):
     """Generate the grid."""
 
     AR_merid=1.
@@ -155,6 +154,7 @@ def make_plate():
     # Boundary conditions
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
     So1.set_P_T(Po1, To1)
+    So1.set_Tu0(Tu0)
     g.apply_inlet(So1, Alpha1, Beta)
     g.calculate_wall_distance()
     g.apply_outlet(P1)
@@ -169,6 +169,7 @@ def make_plate():
         b.mu = mu
         b.Omega = 0.0
         b.set_P_T(P1, T1)
+        b.set_Tu0(Tu0)
 
     g.match_patches()
 
@@ -380,18 +381,22 @@ def make_pipe():
 
 def not_test_plate():
 
+    # g = make_plate(Tu0=0.)
+    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc'}
+    # g.run(conf_ts3, None)
+
     g = make_plate()
 
-    np.set_printoptions(precision=2)
+    # np.set_printoptions(precision=2)
     turbigen.solvers.native.run(g, settings)
 
     cf = []
     x = []
     for b in g:
-        Cj2 = b[:,2,0]
-        Cj1 = b[:,1,0]
-        Cj0 = b[:,0,0]
-        Cjm = b[:,b.nj//2,0]
+        Cj2 = b[1:,2,0]
+        Cj1 = b[1:,1,0]
+        Cj0 = b[1:,0,0]
+        Cjm = b[1:,b.nj//2,0]
         Vinf = Cjm.Vx
         rhoinf = Cjm.rho
         dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
@@ -403,8 +408,14 @@ def not_test_plate():
     fig, ax = plt.subplots()
     b = g[0]
     C = b[:,b.nj//2, :]
-    ax.plot(x, cf, 'kx')
-    plt.show()
+    ax.plot(x, cf, '-x')
+
+    xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
+    ax.plot(*xcs_ts3, '-o')
+    # plt.show()
+
+    plt.savefig('beans.pdf')
+    # np.savetxt('xcf.csv', np.stack((x, cf)))
 
 
 def test_poiseuille():
