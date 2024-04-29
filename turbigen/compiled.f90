@@ -221,15 +221,12 @@ subroutine damp(resid, fdamp, ni, nj, nk)
 
 end subroutine
 
-subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nstep_avg, ischeme, ni, nj, nk)
+subroutine step(conserved, resid1, resid2, istep, ischeme, ni, nj, nk)
 
     real*4, intent (inout)  :: conserved(ni, nj, nk, 5)
-    real*8, intent (inout)  :: conserved_avg(ni, nj, nk, 5)
     real*4, intent (inout) :: resid1(ni, nj, nk, 5)
     real*4, intent (inout) :: resid2(ni, nj, nk, 5)
     integer, intent (in) :: istep
-    integer, intent (in) :: istep_avg
-    integer, intent (in) :: nstep_avg
     integer, intent (in) :: ischeme
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -246,10 +243,6 @@ subroutine step(conserved, conserved_avg, resid1, resid2, istep, istep_avg, nste
             conserved = conserved + 2e0*resid1 - 1.65e0*resid2
             resid2 = resid1 - 0.65e0*resid2
         end if
-    end if
-
-    if (istep.ge.istep_avg) then
-        conserved_avg = conserved_avg + conserved/float(nstep_avg)
     end if
 
 end subroutine
@@ -781,7 +774,6 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
     )
 
     ! Accumulate 4th-order smoothed values for each direcion in turn
-    ! We will divide by three later
 
     ! i interior
     xs4(3:ni-2, :, :, :, 1) = ( &
@@ -874,6 +866,22 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
         -     x(:, :, nk-4, :) + 4e0*x(:, :, nk-3, :) &
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
+
+    ! ! Disable 4th-order at the boundaries
+    ! xs4(1, :, :, :, :) = xs2(1, :, :, :, :)
+    ! xs4(ni, :, :, :, :) =xs2(ni, :, :, :, :)
+    ! xs4(:, 1, :, :, :) = xs2(:, 1, :, :, :)
+    ! xs4(:, nj, :, :, :) =xs2(:, nj, :, :, :)
+    ! xs4(:, :, 1, :, :) = xs2(:, :, 1, :, :)
+    ! xs4(:, :, nk, :, :) = xs2(:, :, nk, :, :)
+    ! ! Disable 4th-order one off boundaries
+    ! xs4(2, :, :, :, :) =  xs2(2, :, :, :, :)
+    ! xs4(ni-1, :, :, :, :) = xs2(ni-1, :, :, :, :)
+    ! xs4(:, 2, :, :, :) =  xs2(:, 2, :, :, :)
+    ! xs4(:, nj-1, :, :, :) = xs2(:, nj-1, :, :, :)
+    ! xs4(:, :, 2, :, :) =  xs2(:, :, 2, :, :)
+    ! xs4(:, :, nk-1, :, :) =  xs2(:, :, nk-1, :, :)
+
 
     ! Apply the scale factors for each direction
     do ip = 1,np
@@ -1086,7 +1094,7 @@ subroutine viscous_force(conserved, fvisc, mu, mu_turb, xlength, vol, dAi, dAj, 
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = 0.1e0*fvisc_new + 0.9e0*fvisc
+    fvisc = 0.2e0*fvisc_new + 0.8e0*fvisc
 
 end subroutine
 
@@ -1528,13 +1536,11 @@ subroutine wall_function(f, ijk, dirn, conserved, r, vol, dw, dA, mu, ni, nj, nk
             Vw0 = sqrt(sum(Vxrtw0*Vxrtw0, 1))
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
-            ! if (Rew.lt.12.5e0) then
-                ! print*, 'laminar'
-                ! cf = 1e0/Rew
-            ! else
-                ! print*, 'turb'
-            cf = a1 + a2/lnRew + a3/lnRew/lnRew
-            ! end if
+            if (Rew.lt.125e0) then
+                cf = 1e0/Rew
+            else
+                cf = a1 + a2/lnRew + a3/lnRew/lnRew
+            end if
             tauw = cf * 0.5e0 * row *Vw*Vw
 
             ! Get indices into the cell for this face

@@ -93,6 +93,8 @@ class TS3Config(BaseSolver):
     xllim_free = 0.1
     free_turb = 0.05
 
+    adaptive_smoothing = 1
+
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
         av = DEFAULT_AV.copy()

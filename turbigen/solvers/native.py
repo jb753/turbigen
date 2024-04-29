@@ -686,15 +686,12 @@ class SolverBlock:
             self.dU1,
         )
 
-    def step(self, istep, istep_avg, nstep_avg, ischeme):
+    def step(self, istep, ischeme):
         step(
             self.conserved,
-            self.conserved_avg,
             self.dU1,
             self.dU2,
             istep,
-            istep_avg,
-            nstep_avg,
             ischeme,
         )
 
@@ -869,8 +866,6 @@ def exchange_periodics(blocks, bid_local, periodics, variable="conserved"):
             v1 = b1.conserved
         elif variable == "residual":
             v1 = b1.dU1
-        nv = v1.shape[-1]
-        npt = ijk.shape[-1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
@@ -949,9 +944,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     tstart = timer()
 
-    dUe_ref = None
-
     dUnow = np.empty((conf.n_step_log, nblock, 5))
+
+    # Now integrate forward
+    istep_avg = conf.n_step - conf.n_step_avg
 
     # Start the main time stepping loop
     for istep in range(conf.n_step):
@@ -967,9 +963,14 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             sb = blocks[iblock]
 
+            if istep >= istep_avg:
+                sb.conserved_avg += sb.conserved / float(conf.n_step_avg)
+
             sb.set_secondary()
 
-            # if conf.i_loss > 0:
+            if conf.i_loss > 0:
+                sb.fwall[:] = 0.0
+                sb.set_wall_function()
             # sb.set_walls()
 
             if not np.mod(istep, conf.n_step_dt):
@@ -981,23 +982,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             if not np.mod(istep, 5) and istep > 100 and conf.i_loss > 0:
                 sb.set_viscous()
-                sb.fwall[:] = 0.0
-                sb.set_wall_function()
 
             sb.residual()
 
         # Send residuals to other blocks
-        # exchange_periodics(blocks, bid_local, periodics, variable="residual")
+        exchange_periodics(blocks, bid_local, periodics, variable="residual")
 
-        # Now integrate forward
-        istep_avg = conf.n_step - conf.n_step_avg
         for iblock in range(nblock):
             sb = blocks[iblock]
 
             if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
                 sb.damp(conf.damping_factor)
 
-            sb.step(istep, istep_avg, conf.n_step_avg, conf.i_scheme)
+            sb.step(istep, conf.i_scheme)
 
             sb.smooth(sf2, sf4)
 
@@ -1098,12 +1095,49 @@ def run(grid, settings={}, machine=None):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()
+    ax.set_title("Vx")
     for b in grid:
-        C = b[:, b.nj // 2, :]
-        cm = ax.contourf(C.x, C.rt, C.To)
-        ax.axis("equal")
-    plt.colorbar(cm)
+        for ii in (45, 48, 50):
+            C = b[ii, b.nj // 2, :]
+            ax.plot(C.Vx, (C.t - C.t.min()) / C.pitch)
+
+    fig, ax = plt.subplots()
+    ax.set_title("Vr")
+    for b in grid:
+        for ii in (45, 48, 50):
+            C = b[ii, b.nj // 2, :]
+            ax.plot(C.Vr, (C.t - C.t.min()) / C.pitch)
+
+    fig, ax = plt.subplots()
+    ax.set_title("Vt")
+    for b in grid:
+        for ii in (45, 48, 50):
+            C = b[ii, b.nj // 2, :]
+            ax.plot(C.Vt, (C.t - C.t.min()) / C.pitch)
+
+    fig, ax = plt.subplots()
+    ax.set_title("rho")
+    for b in grid:
+        for ii in (45, 48, 50):
+            C = b[ii, b.nj // 2, :]
+            ax.plot(C.rho, (C.t - C.t.min()) / C.pitch)
+
+    fig, ax = plt.subplots()
+    ax.set_title("P")
+    for b in grid:
+        for ii in (45, 48, 50):
+            C = b[ii, b.nj // 2, :]
+            ax.plot(C.P, (C.t - C.t.min()) / C.pitch)
+
     plt.show()
+
+    # fig, ax = plt.subplots()
+    # for b in grid:
+    #     C = b[:, b.nj // 2, :]
+    #     cm = ax.contourf(C.x, C.rt, C.Vx)
+    #     ax.axis("equal")
+    # plt.colorbar(cm)
+    # plt.show()
 
     # fig, ax = plt.subplots()
     # for b in grid:
@@ -1145,12 +1179,15 @@ def run(grid, settings={}, machine=None):
     if conf.plot_conv:
 
         dUlog = np.concatenate(dUlog, axis=0)
-        drho_ref = dUlog[1, 0]
-        drhoVx_ref = dUlog[1, 1]
-        drhoVr_ref = dUlog[1, 2]
-        drhoVt_ref = dUlog[1, 3] / np.mean(blocks_out[0].r)
+        r_ref = np.mean(blocks_out[0].r)
+        dUlog[:, 3] /= r_ref
+        ii = tuple(range(conf.n_step_log))
+        drho_ref = dUlog[ii, 0].max()
+        drhoVx_ref = dUlog[ii, 1].max()
+        drhoVr_ref = dUlog[ii, 2].max()
+        drhoVt_ref = dUlog[ii, 3].max()
         drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
-        drhoe_ref = dUlog[1, 4]
+        drhoe_ref = dUlog[ii, 4].max()
 
         dUlog[:, 0] /= drho_ref
         dUlog[:, 1:4] /= drhoV_ref
@@ -1158,8 +1195,11 @@ def run(grid, settings={}, machine=None):
 
         import matplotlib.pyplot as plt
 
+        omin = dUlog[conf.n_step_log :, :].min()
+
         fig, ax = plt.subplots()
         ax.semilogy(dUlog)
+        ax.set_ylim(bottom=omin)
         plt.show()
 
 

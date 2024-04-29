@@ -12,20 +12,20 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 1000,
+    'n_step': 30000,
     # 'n_step': 1000,
     'n_step_avg': 500,
     'n_step_log': 100,
     'plot_conv': True,
     # 'nstep_damp': -1,
-    'xllim_pitch': 0.03,
-    'i_loss': 0,
-    "damping_factor" : 10.,
-    "nstep_damp" : -1,
+    # 'xllim_pitch': 0.03,
+    # 'i_loss': 0,
+    # "damping_factor" : 10.,
+    # "nstep_damp" : -1,
     # "CFL" : 0.7,
     # "i_scheme" : 0,
     # "i_exit" : 0,
-    # "smoothing_factor" : 0.1,
+    "smoothing_factor" : 0.001
     # "smoothing_2nd_proportion" : 1.0
 }
 
@@ -178,7 +178,7 @@ def make_pipe():
 
     # Boundary conditions
     Alpha1 = 0.
-    Ma1 = 0.3
+    Ma1 = 0.2
     ga = 1.4
     cp = 1005.0
     mu = 5e-2
@@ -490,11 +490,18 @@ def test_poiseuille():
     ax.plot(C.z.T, C.y.T, '-')
     ax.axis('equal')
 
+    Cm, A, _ = C.mix_out()
+    mdot = Cm.rho * Cm.Vm * A
+    rho = Cm.rho
+    w = 2.*np.pi*0.5*(C.r.min()+C.r.max())
+    mdot_analytical =  -rho * w*h * K / 6.
+
     print(f'Analytical solution error: {err.min()}, {err.max()}, {err.mean()}')
+    print(f'mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f}, error={(mdot_analytical/mdot-1.)*100:.2f}%')
     assert np.abs(err).mean()<0.05
 
 
 if __name__=='__main__':
 
-    test_plate()
-    # test_poiseuille()
+    # test_plate()
+    test_poiseuille()
