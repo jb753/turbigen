@@ -157,11 +157,13 @@ subroutine viscous_force( &
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
-    ! No fluxes on walls
-    ! We add back using wall functions later
-    call zero_wall_fluxes(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
-    call zero_wall_fluxes(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
-    call zero_wall_fluxes(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+    ! ! No fluxes on walls
+    ! ! We add back using wall functions later
+    ! call zero_wall_fluxes(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
+    ! call zero_wall_fluxes(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
+    ! call zero_wall_fluxes(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+
+    ! fj(:, 1, :, :, :) = 0e0
 
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
@@ -234,18 +236,13 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
     real*4, intent (in) :: mu
 
     real*4 :: rw
-    real*4 :: rw0
     real*4 :: Rew
 
     real*4 :: roVxrtw(4)
     real*4 :: Vxrtw(3)
     real*4 :: vec(3)
-    real*4 :: roVxrtw0(4)
-    real*4 :: Vxrtw0(3)
-    real*4 :: row0
     real*4 :: row
     real*4 :: Vw
-    real*4 :: Vw0
     integer :: iwall
     integer :: i
     integer :: j
@@ -267,7 +264,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
     real*4 :: yplus
     real*4 :: vtau
 
-    a1 = 1.767e-3
+    a1 = -1.767e-3
     a2 = 3.177e-2
     a3 = 2.5614-1
 
@@ -275,20 +272,10 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
     row = 0e0
     rw = 0e0
 
-    roVxrtw0 = 0e0
-    row0 = 0e0
-    rw0 = 0e0
-
     ! If we have at least one wall
     if (nwall > 0) then
         ! Loop over all points
         do iwall = 1,nwall
-
-            ! Skip inviscid walls
-            ! Marked with negative dw
-            if (dw(iwall).lt.0.) then
-                continue
-            end if
 
             ! Extract indices
             i = ijk(1, iwall)
@@ -299,20 +286,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             if (dirn.eq.1) then
 
                 ! These are i-faces
-
-                ! Face-centered density and velocity on wall
-                roVxrtw0 = ( &
-                    cons(i, j  , k   ,1:4) &
-                    + cons(i, j+1, k   ,1:4) &
-                    + cons(i, j  , k+1 ,1:4) &
-                    + cons(i, j+1, k+1 ,1:4) &
-                )/4e0
-                rw0 = ( &
-                    r(i, j  , k  ) &
-                    + r(i, j+1, k  ) &
-                    + r(i, j  , k+1) &
-                    + r(i, j+1, k+1) &
-                )/4e0
 
                 ! Choose the i index of one node off wall
                 if (i.eq.1) then
@@ -339,20 +312,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
                 ! These are j-faces
 
-                ! Face-centered density and velocity on wall
-                roVxrtw0 = ( &
-                    cons(i  , j, k  , 1:4) &
-                    + cons(i+1, j, k  , 1:4) &
-                    + cons(i  , j, k+1, 1:4) &
-                    + cons(i+1, j, k+1, 1:4) &
-                )/4e0
-                rw0 = ( &
-                    r(i  , j, k  ) &
-                    + r(i+1, j, k  ) &
-                    + r(i  , j, k+1) &
-                    + r(i+1, j, k+1) &
-                )/4e0
-
                 ! Choose the j index of one node off wall
                 if (j.eq.1) then
                     j1 = j + 1
@@ -376,21 +335,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             else if (dirn.eq.3) then
 
-
-                ! These are k faces
-                ! Face-centered density and velocity
-                roVxrtw0 = ( &
-                    cons(i  , j  , k, 1:4) &
-                    + cons(i+1, j  , k, 1:4) &
-                    + cons(i  , j+1, k, 1:4) &
-                    + cons(i+1, j+1, k, 1:4) &
-                )/4e0
-                rw0 = ( &
-                    r(i  , j  , k) &
-                    + r(i+1, j  , k) &
-                    + r(i  , j+1, k) &
-                    + r(i+1, j+1, k) &
-                )/4e0
 
                 ! Choose index for one node off wall
                 if (k.eq.1) then
@@ -419,17 +363,12 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             row = roVxrtw(1)
             Vxrtw = roVxrtw(2:4)/row
 
-            roVxrtw0(4) = roVxrtw0(4)/rw0
-            row0 = roVxrtw0(1)
-            Vxrtw0 = roVxrtw0(2:4)/row0
-
             ! Form the cell Reynolds
             Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
-            Vw0 = sqrt(sum(Vxrtw0*Vxrtw0, 1))
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
             if (Rew.lt.125e0) then
-                cf = 1e0/Rew
+                cf = 2e0/Rew
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
@@ -454,9 +393,9 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             ! multiply by face area magnitude
             ! direction is opposite to cell velocity
-            vec = -Vxrtw0*dA(iwall)/vol(ic, jc, kc)
+            vec = -Vxrtw*dA(iwall)/vol(ic, jc, kc)
             if (Vw.gt.0e0) then
-                vec = vec/Vw0
+                vec = vec/Vw
             else
                 vec = 0e0
             end if

@@ -432,14 +432,28 @@ def test_plate_turb():
 
 def test_plate_lam():
 
-    g = make_plate(Tu0=0., mu=1.8e-2)
-    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
-    g.run(conf_ts3, None)
+    # g = make_plate(Tu0=0., mu=1.8e-2)
+    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
+    # # g.run(conf_ts3, None)
 
-    # g = make_plate()
+    g = make_plate(mu=1.8e-2)
 
-    # np.set_printoptions(precision=2)
-    # turbigen.solvers.native.run(g, settings)
+    np.set_printoptions(precision=2)
+    settings = {
+        'n_step': 10000,
+        # 'n_step': 1000,
+        'n_step_avg': 1000,
+        'n_step_log': 100,
+        'plot_conv': True,
+        # 'nstep_damp': -1,
+        'xllim_pitch': 0.0,
+        # 'i_loss': 0,
+        # "damping_factor" : 25.,
+        # "nstep_damp" : -1,
+        # "smoothing_factor" : 0.005
+    }
+
+    turbigen.solvers.native.run(g, settings)
 
     cf = []
     x = []
@@ -463,9 +477,9 @@ def test_plate_lam():
     ax.plot(x, cf, '-x')
     ax.set_ylim([0., 0.08])
 
-    np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
-    ax.plot(*xcf_ts3, '-o')
+    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
+    # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
+    # ax.plot(*xcf_ts3, '-o')
 
     x0 = 0.02
     xx = x[x>x0]-x0
@@ -569,5 +583,6 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    test_plate_turb()
+    # test_plate_turb()
+    test_plate_lam()
     # test_poiseuille()
