@@ -1,5 +1,5 @@
 """Viscous test cases."""
-import turbigen.solvers.native
+# import turbigen.solvers.native
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -25,17 +25,17 @@ settings = {
     # "smoothing_factor" : 0.005
 }
 
-# Check our MPI rank
-from mpi4py import MPI
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-# Jump to solver slave process if not first rank
-if rank > 0:
-    turbigen.solvers.native.run_slave()
-    sys.exit(0)
+# # Check our MPI rank
+# from mpi4py import MPI
+# comm = MPI.COMM_WORLD
+# rank = comm.Get_rank()
+# size = comm.Get_size()
+# # Jump to solver slave process if not first rank
+# if rank > 0:
+#     turbigen.solvers.native.run_slave()
+#     sys.exit(0)
 
-def make_plate(Tu0=300.):
+def make_plate(Tu0=300., mu):
     """Generate the grid."""
 
     AR_merid=1.
@@ -56,7 +56,6 @@ def make_plate(Tu0=300.):
     # Boundary conditions
     ga = 1.4
     cp = 1005.0
-    mu = 1.8e-2
     Beta = 0.0
     Po1 = 1e5
     To1 = 300.0
@@ -380,16 +379,16 @@ def make_pipe():
 
     return g, F
 
-def not_test_plate():
+def test_plate_turb():
 
-    # g = make_plate(Tu0=0.)
-    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc'}
-    # g.run(conf_ts3, None)
+    g = make_plate(Tu0=0., mu=1.8e-4)
+    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim_ref': 'span', 'nstep': 20000, 'nstep_avg': 1000}
+    g.run(conf_ts3, None)
 
-    g = make_plate()
+    # g = make_plate()
 
     # np.set_printoptions(precision=2)
-    turbigen.solvers.native.run(g, settings)
+    # turbigen.solvers.native.run(g, settings)
 
     cf = []
     x = []
@@ -413,6 +412,7 @@ def not_test_plate():
     ax.plot(x, cf, '-x')
     ax.set_ylim([0., 0.08])
 
+    np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
     xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
     ax.plot(*xcf_ts3, '-o')
 
@@ -423,7 +423,51 @@ def not_test_plate():
     plt.show()
 
     # plt.savefig('beans.pdf')
-    # np.savetxt('xcf.csv', np.stack((x, cf)))
+
+def test_plate_lam():
+
+    g = make_plate(Tu0=0., mu=1.8e-2)
+    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
+    g.run(conf_ts3, None)
+
+    # g = make_plate()
+
+    # np.set_printoptions(precision=2)
+    # turbigen.solvers.native.run(g, settings)
+
+    cf = []
+    x = []
+    for b in g:
+        Cj2 = b[1:,2,0]
+        Cj1 = b[1:,1,0]
+        Cj0 = b[1:,0,0]
+        Cjm = b[1:,b.nj//2,0]
+        Vinf = Cjm.Vx
+        rhoinf = Cjm.rho
+        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
+        mu = Cj0.mu
+        tauw = dVdy * mu
+        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
+        x.append(Cjm.x)
+    x = np.concatenate(x)
+    cf = np.concatenate(cf)
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(x, cf, '-x')
+    ax.set_ylim([0., 0.08])
+
+    np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
+    xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
+    ax.plot(*xcf_ts3, '-o')
+
+    x0 = 0.02
+    xx = x[x>x0]-x0
+    cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
+    ax.plot(xx, cflam, 'k--')
+    plt.show()
+
+    # plt.savefig('beans.pdf')
 
 
 def test_poiseuille():
