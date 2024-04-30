@@ -167,7 +167,7 @@ subroutine viscous_force( &
     real*4 :: rfvisc
     rfvisc = 0.2e0
 
-    ! No shear stress one face off wall
+    ! No shear stress at wall
     ! We add back using wall functions later
     call zero_wall_stress(taui, ijk_iwall, 1, ni, nj-1, nk-1, niwall)
     call zero_wall_stress(tauj, ijk_jwall, 2, ni-1, nj, nk-1, njwall)
@@ -201,8 +201,8 @@ subroutine viscous_force( &
     )
 
     ! Apply relaxation
-    ! fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
-    fvisc = fvisc_new
+    fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
+    ! fvisc = fvisc_new
 
 end subroutine
 
@@ -417,25 +417,26 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             end if
             tauw = cf * 0.5e0 * row *Vw*Vw
 
-            ! ! Get indices into the cell for this face
-            ! if (i.eq.ni) then
-            !     ic = ni-1
-            ! else
-            !     ic = i
-            ! end if
-            ! if (j.eq.nj) then
-            !     jc = nj-1
-            ! else
-            !     jc = j
-            ! end if
-            ! if (k.eq.nk) then
-            !     kc = nk-1
-            ! else
-            !     kc = k
-            ! end if
-            ic = i1
-            jc = j1
-            kc = k1
+            ! Get indices into the cell for this face
+            if (i.eq.ni) then
+                ic = ni-1
+            else
+                ic = i
+            end if
+            if (j.eq.nj) then
+                jc = nj-1
+            else
+                jc = j
+            end if
+            if (k.eq.nk) then
+                kc = nk-1
+            else
+                kc = k
+            end if
+
+            ! ic = i1
+            ! jc = j1
+            ! kc = k1
 
             ! multiply by face area magnitude
             ! direction is opposite to cell velocity
@@ -465,6 +466,10 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
+
+            ! f(ic, jc, kc, 2) =  vec(1)*tauw
+            ! f(ic, jc, kc, 3) =  vec(2)*tauw
+            ! f(ic, jc, kc, 4) =  rc*vec(3)*tauw
 
         end do
     end if
@@ -573,50 +578,50 @@ subroutine zero_wall_stress(tau, ijk, dirn, ni, nj, nk, nwall)
                 cycle
             end if
 
-            ! Choose wall direction
-            if (dirn.eq.1) then
+            ! ! Choose wall direction
+            ! if (dirn.eq.1) then
 
-                ! These are i-faces
+            !     ! These are i-faces
 
-                ! Choose the i index of one node off wall
-                if (i.eq.1) then
-                    i1 = i + 1
-                else
-                    i1 = i - 1
-                end if
-                j1 = j
-                k1 = k
+            !     ! Choose the i index of one node off wall
+            !     if (i.eq.1) then
+            !         i1 = i + 1
+            !     else
+            !         i1 = i - 1
+            !     end if
+            !     j1 = j
+            !     k1 = k
 
-            else if (dirn.eq.2) then
+            ! else if (dirn.eq.2) then
 
-                ! These are j-faces
+            !     ! These are j-faces
 
-                ! Choose the j index of one node off wall
-                if (j.eq.1) then
-                    j1 = j + 1
-                else
-                    j1 = j- 1
-                end if
-                i1 = i
-                k1 = k
+            !     ! Choose the j index of one node off wall
+            !     if (j.eq.1) then
+            !         j1 = j + 1
+            !     else
+            !         j1 = j- 1
+            !     end if
+            !     i1 = i
+            !     k1 = k
 
-            else if (dirn.eq.3) then
+            ! else if (dirn.eq.3) then
 
-                ! This is a k-face
+            !     ! This is a k-face
 
-                ! Choose index for one node off wall
-                if (k.eq.1) then
-                    k1 = k + 1
-                else
-                    k1 = k - 1
-                end if
-                i1 = i
-                j1 = j
+            !     ! Choose index for one node off wall
+            !     if (k.eq.1) then
+            !         k1 = k + 1
+            !     else
+            !         k1 = k - 1
+            !     end if
+            !     i1 = i
+            !     j1 = j
 
-            end if
+            ! end if
 
-            ! Now set shear stress to zero one face off wall
-            tau(i1, j1, k1, :) = 0e0
+            ! ! Now set shear stress to zero one face off wall
+            tau(i, j, k, :) = 0e0
 
         end do
 
