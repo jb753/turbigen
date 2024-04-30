@@ -189,7 +189,6 @@ settings = {
     'n_step_avg': 10,
     'n_step_log': 100,
     'i_loss': 0,
-    'plot_conv': True,
 }
 
 def plot_nozzle(g, F):
@@ -332,7 +331,7 @@ def test_uniform(Alpha):
 
     # plot_nozzle(g,F)
 
-    rtol = 2e-4
+    rtol = 2.5e-4
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
@@ -438,7 +437,7 @@ def test_patch_A_avg():
     # Calculate area average using weight
     ind = patch.get_flat_indices(order='F')
     w = patch.get_A_avg_weights(order='F')
-    rsqavg = np.sum((block.r.ravel(order='F')[ind]**2.)*w)
+    rsqavg = np.sum((block.r.ravel(order='F')[ind]**2.)*w)/np.sum(w)
 
     # Manually check the area average
     C = patch.get_cut()

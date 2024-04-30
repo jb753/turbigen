@@ -43,17 +43,22 @@ end subroutine
 ! Given two 4D arrays and lists of ijk indexes into each,
 ! average the variables at corresponding indexes and assign
 ! back to both the original arrays
-subroutine average_by_ijk(x1, x2, ijk1, ijk2, npt)
+subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni, nj, nk, npt, nv)
 
     integer, intent (in)  :: npt
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in) :: nv
 
-    real*4, intent (inout) :: x1(:, :, :, :)
-    real*4, intent (inout) :: x2(:, :, :, :)
+    real*4, intent (inout) :: x1(ni, nj, nk, nv)
+    real*4, intent (inout) :: x2(ni, nj, nk, nv)
     integer*2, intent (in) :: ijk1(3, npt)
     integer*2, intent (in) :: ijk2(3, npt)
 
     integer :: ipt
-    real*4 :: avg(5)
+    real*4 :: avg(nv)
+
 
     integer :: i1
     integer :: j1

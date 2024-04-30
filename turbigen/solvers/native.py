@@ -204,6 +204,20 @@ class SolverBlock:
             for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
+        # Put dummy values in zero-length ijk
+        for n in range(3):
+            ijk = self.ijk_wall_face_slip[n]
+            if ijk.shape[-1] == 0:
+                ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
+                self.ijk_wall_face_slip[n] = ijkdum
+                self.dw_face[n] = to_fort(np.ones((1,)))
+                self.dA_face[n] = to_fort(np.ones((1,)))
+
+        # self.dA_face = [
+        #     to_fort(embsolve.get_by_ijk(dA, ijk).reshape(-1,3).T)
+        #     for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
+        # ]
+
         # Get nodal smoothing scaling factors
 
         # Wall length scales at nodes
@@ -265,9 +279,9 @@ class SolverBlock:
         # plt.show()
 
         self.tau = [
-            to_fort(np.empty((6, ni, nj - 1, nk - 1))),
-            to_fort(np.empty((6, ni - 1, nj, nk - 1))),
-            to_fort(np.empty((6, ni - 1, nj - 1, nk))),
+            to_fort(np.zeros((6, ni, nj - 1, nk - 1))),
+            to_fort(np.zeros((6, ni - 1, nj, nk - 1))),
+            to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
         self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
@@ -659,13 +673,18 @@ class SolverBlock:
     def set_viscous_force(self):
         embsolve.viscous_force(
             self.fb,
+            self.cons,
             *self.tau,
             self.vol,
             self.dAi,
             self.dAj,
             self.dAk,
+            self.r,
             *self.rf,
             *self.ijk_wall_face_slip,
+            *self.dw_face,
+            *self.dA_face,
+            self.mu,
         )
 
     def set_wall_function(self):
@@ -1082,7 +1101,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 sb.set_viscous_force()
 
                 # Add forces on each cell due to wall funcions
-                sb.set_wall_function()
+                # sb.set_wall_function()
 
             # Calculate nodal changes
             sb.residual()

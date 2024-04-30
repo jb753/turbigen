@@ -109,8 +109,11 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
 end subroutine
 
 subroutine viscous_force( &
-        fvisc, taui, tauj, tauk, vol, dAi, dAj, dAk, ri, rj, rk, &
-        ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+        fvisc, cons, taui, tauj, tauk, vol, dAi, dAj, dAk, r, ri, rj, rk, &
+        ijk_iwall, ijk_jwall, ijk_kwall, &
+        dw_iwall, dw_jwall, dw_kwall, &
+        dA_iwall, dA_jwall, dA_kwall, &
+        mu, &
         ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
@@ -121,14 +124,17 @@ subroutine viscous_force( &
     real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
     real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
 
-    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
 
-    real*4, intent (inout)  :: ri(ni, nj-1, nk-1)
-    real*4, intent (inout)  :: rj(ni-1, nj, nk-1)
-    real*4, intent (inout)  :: rk(ni-1, nj-1, nk)
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: ri(ni, nj-1, nk-1)
+    real*4, intent (in)  :: rj(ni-1, nj, nk-1)
+    real*4, intent (in)  :: rk(ni-1, nj-1, nk)
+
+    real*4, intent (in) :: cons(ni, nj, nk, 5)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -137,11 +143,20 @@ subroutine viscous_force( &
     integer, intent (in)  :: njwall
     integer, intent (in)  :: nkwall
 
+    real*4, intent (in) :: mu
 
     ! Wall locations
     integer*2, intent (in) :: ijk_iwall(3, niwall)
     integer*2, intent (in) :: ijk_jwall(3, njwall)
     integer*2, intent (in) :: ijk_kwall(3, nkwall)
+
+    real*4, intent (in) :: dw_iwall(niwall)
+    real*4, intent (in) :: dw_jwall(njwall)
+    real*4, intent (in) :: dw_kwall(nkwall)
+
+    real*4, intent (in) :: dA_iwall(niwall)
+    real*4, intent (in) :: dA_jwall(njwall)
+    real*4, intent (in) :: dA_kwall(nkwall)
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -152,21 +167,38 @@ subroutine viscous_force( &
     real*4 :: rfvisc
     rfvisc = 0.2e0
 
-    ! We need to assemble the viscous fluxes from the stress tensor components
+    ! No shear stress one face off wall
+    ! We add back using wall functions later
+    call zero_wall_stress(taui, ijk_iwall, 1, ni, nj-1, nk-1, niwall)
+    call zero_wall_stress(tauj, ijk_jwall, 2, ni-1, nj, nk-1, njwall)
+    call zero_wall_stress(tauk, ijk_kwall, 3, ni-1, nj-1, nk, nkwall)
+
+    ! Assemble the viscous fluxes from the stress tensor components
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
-    ! ! No fluxes on walls
-    ! ! We add back using wall functions later
-    ! call zero_wall_fluxes(fi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
-    ! call zero_wall_fluxes(fj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
-    ! call zero_wall_fluxes(fk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
-
-    ! fj(:, 1, :, :, :) = 0e0
-
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
+
+    ! ! Zero the forces on cells at the wall
+    ! ! Because with wall functions the velocity gradient at the wall should
+    ! ! have no effect on the solution. We only care about the shear stress
+    ! ! that is transmitted up to the next cell off the wall.
+    ! call zero_wall_forces(fvisc_new, ijk_iwall, ni, nj, nk, niwall)
+    ! call zero_wall_forces(fvisc_new, ijk_jwall, ni, nj, nk, njwall)
+    ! call zero_wall_forces(fvisc_new, ijk_kwall, ni, nj, nk, nkwall)
+
+    ! ! Add on forces one cell off wall due to stress from wall function
+    call wall_function( &
+        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+    )
+    call wall_function( &
+        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+    )
+    call wall_function( &
+        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+    )
 
     ! Apply relaxation
     ! fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
@@ -177,9 +209,9 @@ end subroutine
 subroutine viscous_flux(f, tau, r, ni, nj, nk)
 
     implicit none
-    real*4, intent (inout) :: tau(ni, nj, nk, 6)
-    real*4, intent (inout) :: f(ni, nj, nk, 3, 5)
-    real*4, intent (inout) :: r(ni, nj, nk)
+    real*4, intent (in) :: tau(ni, nj, nk, 6)
+    real*4, intent (out) :: f(ni, nj, nk, 3, 5)
+    real*4, intent (in) :: r(ni, nj, nk)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -226,10 +258,10 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
     real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
     integer*2, intent (in) :: ijk(3, nwall)
-    integer*2 :: dirn
-    real*4, intent (inout) :: cons(ni, nj, nk, 5)
+    integer, intent(in) :: dirn
+    real*4, intent (in) :: cons(ni, nj, nk, 5)
     real*4, intent (in) :: r(ni, nj, nk)
-    real*4, intent (inout) :: vol(ni-1,nj-1,nk-1)
+    real*4, intent (in) :: vol(ni-1,nj-1,nk-1)
 
     real*4, intent (in) :: dw(nwall)
     real*4, intent (in) :: dA(nwall)
@@ -282,6 +314,11 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             j = ijk(2, iwall)
             k = ijk(3, iwall)
 
+            ! Skip dummy points
+            if (i.lt.0) then
+                cycle
+            end if
+
             ! Choose wall direction
             if (dirn.eq.1) then
 
@@ -293,6 +330,8 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 else
                     i1 = i - 1
                 end if
+                j1 = j
+                k1 = k
 
                 ! Face-centered density and velocity
                 roVxrtw = ( &
@@ -318,6 +357,8 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 else
                     j1 = j- 1
                 end if
+                i1 = i
+                k1 = k
 
                 ! Face-centered density and velocity
                 roVxrtw = ( &
@@ -342,6 +383,8 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 else
                     k1 = k - 1
                 end if
+                i1 = i
+                j1 = j
 
                 ! Face-centered density and velocity
                 roVxrtw = ( &
@@ -374,22 +417,25 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             end if
             tauw = cf * 0.5e0 * row *Vw*Vw
 
-            ! Get indices into the cell for this face
-            if (i.eq.ni) then
-                ic = ni-1
-            else
-                ic = i
-            end if
-            if (j.eq.nj) then
-                jc = nj-1
-            else
-                jc = j
-            end if
-            if (k.eq.nk) then
-                kc = nk-1
-            else
-                kc = k
-            end if
+            ! ! Get indices into the cell for this face
+            ! if (i.eq.ni) then
+            !     ic = ni-1
+            ! else
+            !     ic = i
+            ! end if
+            ! if (j.eq.nj) then
+            !     jc = nj-1
+            ! else
+            !     jc = j
+            ! end if
+            ! if (k.eq.nk) then
+            !     kc = nk-1
+            ! else
+            !     kc = k
+            ! end if
+            ic = i1
+            jc = j1
+            kc = k1
 
             ! multiply by face area magnitude
             ! direction is opposite to cell velocity
@@ -416,24 +462,164 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 + r(ic+1, jc+1, kc+1) &
             )/8e0
 
-            if (dirn.eq.1) then
-
-                f(ic, jc, kc, 2) = 0e0
-                f(ic, jc, kc, 3) = 0e0
-                f(ic, jc, kc, 4) = 0e0
-
-            end if
-
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
 
-            ! f(ic, jc, kc, 2) =  vec(1)*tauw
-            ! f(ic, jc, kc, 3) =  0e0
-            ! f(ic, jc, kc, 4) =  0e0
+        end do
+    end if
+
+
+end subroutine
+
+
+subroutine zero_wall_forces(f, ijk, ni, nj, nk, nwall)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
+
+    real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
+    integer*2, intent (in) :: ijk(3, nwall)
+
+    integer :: i
+    integer :: j
+    integer :: k
+    integer :: iwall
+    integer :: ic
+    integer :: jc
+    integer :: kc
+
+    ! If we have at least one wall
+    if (nwall > 0) then
+
+        ! Loop over all points
+        do iwall = 1,nwall
+
+            ! Extract indices
+            i = ijk(1, iwall)
+            j = ijk(2, iwall)
+            k = ijk(3, iwall)
+
+            ! Skip dummy points
+            if (i.lt.0) then
+                cycle
+            end if
+
+            ! Get indices into the cells for this face
+            if (i.eq.ni) then
+                ic = ni-1
+            else
+                ic = i
+            end if
+            if (j.eq.nj) then
+                jc = nj-1
+            else
+                jc = j
+            end if
+            if (k.eq.nk) then
+                kc = nk-1
+            else
+                kc = k
+            end if
+
+            ! Set momentum forcings to zero
+            f(ic, jc, kc, 2:4) = 0e0
 
         end do
     end if
 
+
+end subroutine
+
+
+subroutine zero_wall_stress(tau, ijk, dirn, ni, nj, nk, nwall)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nwall
+
+    integer, intent (in)  :: dirn
+
+    ! Warning: depending on which direction faces we are setting,
+    ! tau will have smaller dimension, e.g.
+    !   taui(ni, nj-1, nk-1, 6)
+    real*4, intent (inout) :: tau(ni, nj, nk, 6)
+    integer*2, intent (in) :: ijk(3, nwall)
+
+    integer :: i
+    integer :: j
+    integer :: k
+    integer :: iwall
+    integer :: i1 = 0
+    integer :: j1 = 0
+    integer :: k1 = 0
+
+    ! If we have at least one wall
+    if (nwall > 0) then
+
+        ! Loop over all points
+        do iwall = 1,nwall
+
+            ! Extract indices
+            i = ijk(1, iwall)
+            j = ijk(2, iwall)
+            k = ijk(3, iwall)
+
+            ! Skip dummy points
+            if (i.lt.0) then
+                cycle
+            end if
+
+            ! Choose wall direction
+            if (dirn.eq.1) then
+
+                ! These are i-faces
+
+                ! Choose the i index of one node off wall
+                if (i.eq.1) then
+                    i1 = i + 1
+                else
+                    i1 = i - 1
+                end if
+                j1 = j
+                k1 = k
+
+            else if (dirn.eq.2) then
+
+                ! These are j-faces
+
+                ! Choose the j index of one node off wall
+                if (j.eq.1) then
+                    j1 = j + 1
+                else
+                    j1 = j- 1
+                end if
+                i1 = i
+                k1 = k
+
+            else if (dirn.eq.3) then
+
+                ! This is a k-face
+
+                ! Choose index for one node off wall
+                if (k.eq.1) then
+                    k1 = k + 1
+                else
+                    k1 = k - 1
+                end if
+                i1 = i
+                j1 = j
+
+            end if
+
+            ! Now set shear stress to zero one face off wall
+            tau(i1, j1, k1, :) = 0e0
+
+        end do
+
+    end if
 
 end subroutine
