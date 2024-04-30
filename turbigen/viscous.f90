@@ -415,7 +415,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
-            tauw = cf * 0.5e0 * row *Vw*Vw
+            tauw = cf * 0.5e0 * row *Vw*Vw / 2e0
 
             ! Get indices into the cell for this face
             if (i.eq.ni) then
