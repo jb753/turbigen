@@ -27,12 +27,12 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor_4th = 0.001
+    smoothing_factor_4th = 0.0001
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_factor_2nd = 1.0
+    smoothing_factor_2nd = 0.0
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -1035,8 +1035,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     conf = blocks[0].conf
-    sf2 = conf.CFL * conf.smoothing_factor_2nd
-    sf4 = conf.CFL * conf.smoothing_factor_4th
+    # sf2 = conf.CFL * conf.smoothing_factor_2nd
+    # sf4 = conf.CFL * conf.smoothing_factor_4th
+    sf2 = conf.smoothing_factor_2nd
+    sf4 = conf.smoothing_factor_4th
     rfin = 0.1
 
     # Only keep relevent periodics

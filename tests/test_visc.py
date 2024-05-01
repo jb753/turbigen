@@ -90,7 +90,7 @@ def make_plate(mu, Tu0=300.):
 
     # Axial grid points
     di = dmax*AR_merid
-    clule = .1
+    clule = .5
     di1 = di*clule
     ERi = 1.2
     xup = np.flip(turbigen.clusterfunc.single.free(di1, di, ERi, 0., -h))
@@ -98,6 +98,9 @@ def make_plate(mu, Tu0=300.):
     xdn = turbigen.clusterfunc.single.free(di1, di, ERi, 0., L)
     xv = np.concatenate( (xup, xdn[1:]))
     ni = len(xv)
+
+    # ni = int((L+h)/di)
+    # xv = np.linspace(-h, L, ni)
 
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
@@ -479,13 +482,13 @@ def test_plate_lam_yp5():
     g = make_plate(mu=8e-4)
     np.set_printoptions(precision=2)
     settings = {
-        'n_step': 10000,
+        'n_step': 20000,
         'n_step_avg': 1000,
         'n_step_log': 100,
         'plot_conv': True,
         'xllim_pitch': 0.0,
-        'CFL': 0.4,
-        'i_scheme': 0,
+        # 'i_scheme': 0,
+        # 'i_loss': 0,
     }
     turbigen.solvers.native.run(g, settings)
 

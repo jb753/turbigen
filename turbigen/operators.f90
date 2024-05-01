@@ -219,17 +219,18 @@ subroutine smooth(x, P, nu, ssf, sf2, sf4, ni, nj, nk, np)
 
     ! calculate local smoothing factors for each direction
     sf2n = sf2*nu
+    where (sf2n.lt.(sf4*0.2e0))
+        sf2n = sf4*0.2e0
+    end where
     sf4n = sf4-sf2n
     where (sf4n.lt.0e0)
         sf4n = 0e0
     end where
-    print*, maxval(sf2n*3e0), maxval(sf4n*3e0)
+    ! print*, maxval(sf2n*3e0), maxval(sf4n*3e0)
 
-    ! ! Apply the scale factors for cell aspect ratio
-    ! do ip = 1,np
-    !     xs2(:, :, :, ip, :) = xs2(:, :, :, ip, :) * ssf(:, :, :, :)
-    !     xs4(:, :, :, ip, :) = xs4(:, :, :, ip, :) * ssf(:, :, :, :)
-    ! end do
+    ! Apply the scale factors for cell aspect ratio
+    sf2n = sf2n * ssf * 3e0
+    sf4n = sf4n * ssf * 3e0
 
     ! loop over properties
     do ip=1,np
