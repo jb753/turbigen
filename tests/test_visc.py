@@ -26,14 +26,17 @@ settings = {
 }
 
 # Check our MPI rank
-from mpi4py import MPI
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-# Jump to solver slave process if not first rank
-if rank > 0:
-    turbigen.solvers.native.run_slave()
-    sys.exit(0)
+try:
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    # Jump to solver slave process if not first rank
+    if rank > 0:
+        turbigen.solvers.native.run_slave()
+        sys.exit(0)
+except ImportError:
+    pass
 
 def make_plate(mu, Tu0=300.):
     """Generate the grid."""
@@ -454,22 +457,21 @@ def test_plate_turb():
 def test_plate_lam_yp5():
     """Run boundary layer with yplus ~ 5."""
 
-    # g = make_plate(Tu0=0., mu=1.8e-2)
-    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
-    # # g.run(conf_ts3, None)
+    g = make_plate(Tu0=0., mu=8e-4)
+    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/plate_yp5', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000, 'adaptive_smoothing': 0, 'facsecin': 0.01, 'sfin': 0.002}
+    g.run(conf_ts3, None)
 
-    g = make_plate(mu=8e-4)
+    # g = make_plate(mu=8e-4)
 
-    np.set_printoptions(precision=2)
-    settings = {
-        'n_step': 10000,
-        'n_step_avg': 1000,
-        'n_step_log': 100,
-        'plot_conv': True,
-        'xllim_pitch': 0.0,
-    }
-
-    turbigen.solvers.native.run(g, settings)
+    # np.set_printoptions(precision=2)
+    # settings = {
+    #     'n_step': 10000,
+    #     'n_step_avg': 1000,
+    #     'n_step_log': 100,
+    #     'plot_conv': True,
+    #     'xllim_pitch': 0.0,
+    # }
+    # turbigen.solvers.native.run(g, settings)
 
     cf = []
     x = []
@@ -487,6 +489,8 @@ def test_plate_lam_yp5():
         x.append(Cjm.x)
     x = np.concatenate(x)
     cf = np.concatenate(cf)
+
+    np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x, cf)))
 
     fig, ax = plt.subplots()
     b = g[0]

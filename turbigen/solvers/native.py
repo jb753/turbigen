@@ -7,7 +7,7 @@ from turbigen.solvers.base import BaseSolver
 from turbigen.embsolve import embsolve
 
 from timeit import default_timer as timer
-from mpi4py import MPI
+
 import logging
 
 logger = turbigen.util.make_logger()
@@ -16,6 +16,10 @@ logger.setLevel(level=logging.INFO)
 
 typ = np.float32
 
+try:
+    from mpi4py import MPI
+except ImportError:
+    pass
 
 class NativeConfig(BaseSolver):
     """Settings with default values for the native solver."""
