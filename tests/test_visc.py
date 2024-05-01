@@ -47,7 +47,7 @@ def make_plate(mu, Tu0=300.):
     Alpha1=0.
     Ma1=0.3
     skew=0.
-    L_h = 4.
+    L_h = 8.
 
     # Geometry
     h = 0.2
@@ -89,15 +89,29 @@ def make_plate(mu, Tu0=300.):
     tv = np.linspace(0., dt, nk)
 
     # Axial grid points
-    ni = int(L/dmax/AR_merid)
-    xv = np.linspace(0., L, ni)
+    di = dmax*AR_merid
+    clule = .1
+    di1 = di*clule
+    ERi = 1.2
+    xup = np.flip(turbigen.clusterfunc.single.free(di1, di, ERi, 0., -h))
+    ile = len(xup)
+    xdn = turbigen.clusterfunc.single.free(di1, di, ERi, 0., L)
+    xv = np.concatenate( (xup, xdn[1:]))
+    ni = len(xv)
 
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
     # Stretch vertically
     xn = xv/xv[-1]
-    stretch = np.expand_dims(np.linspace(1., 1.06, ni), (1,2))
+    stretch = np.expand_dims(np.interp(xn, [0.,1.],[1., 1.06]), (1,2))
     xrt[1] = (xrt[1] - rh)*stretch + rh
+
+    # fig, ax = plt.subplots()
+    # ax.plot(xrt[0,:,:,0], xrt[1,:,:,0],'k-',lw=0.5)
+    # ax.plot(xrt[0,:,:,0].T, xrt[1,:,:,0].T,'k-',lw=0.5)
+    # ax.axis('equal')
+    # plt.show()
+    # quit()
 
     # Split into blocks
     blocks = []
@@ -113,6 +127,7 @@ def make_plate(mu, Tu0=300.):
             patches = [
                 turbigen.grid.InletPatch(i=0),
                 turbigen.grid.OutletPatch(i=-1),
+                turbigen.grid.InviscidPatch(i=(0,ile),j=0),
             ]
 
         # First block has an inlet
@@ -457,21 +472,22 @@ def test_plate_turb():
 def test_plate_lam_yp5():
     """Run boundary layer with yplus ~ 5."""
 
-    g = make_plate(Tu0=0., mu=8e-4)
-    conf_ts3 = {'type': 'ts3', 'workdir': 'runs/plate_yp5', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000, 'adaptive_smoothing': 0, 'facsecin': 0.01, 'sfin': 0.002}
-    g.run(conf_ts3, None)
+    # g = make_plate(Tu0=0., mu=8e-4)
+    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/plate_yp5', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000, 'adaptive_smoothing': 0, 'facsecin': 0.01, 'sfin': 0.002}
+    # g.run(conf_ts3, None)
 
-    # g = make_plate(mu=8e-4)
-
-    # np.set_printoptions(precision=2)
-    # settings = {
-    #     'n_step': 10000,
-    #     'n_step_avg': 1000,
-    #     'n_step_log': 100,
-    #     'plot_conv': True,
-    #     'xllim_pitch': 0.0,
-    # }
-    # turbigen.solvers.native.run(g, settings)
+    g = make_plate(mu=8e-4)
+    np.set_printoptions(precision=2)
+    settings = {
+        'n_step': 10000,
+        'n_step_avg': 1000,
+        'n_step_log': 100,
+        'plot_conv': True,
+        'xllim_pitch': 0.0,
+        'CFL': 0.4,
+        'i_scheme': 0,
+    }
+    turbigen.solvers.native.run(g, settings)
 
     cf = []
     x = []
@@ -490,17 +506,33 @@ def test_plate_lam_yp5():
     x = np.concatenate(x)
     cf = np.concatenate(cf)
 
-    np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x, cf)))
+    # np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x, cf)))
+    xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,1, 0]
+    ax.plot(C.x, C.Vx, '-x')
+    plt.show()
+    # ax.set_ylim([n0., 0.08])
 
     fig, ax = plt.subplots()
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(x, cf, '-x')
+    ax.plot(*xcf_ts3, '-x')
 
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[-2,:, 0]
-    ax.plot(C.Vx, C.r, '-x')
+    x0 = 0.0
+    xx = x[x>0.]
+    Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
+    ax.plot(xx, 0.644/np.sqrt(Rex),'k--')
+
+    ax.set_ylim((0.,0.005))
+
+    # fig, ax = plt.subplots()
+    # b = g[0]
+    # C = b[-2,:, 0]
+    # ax.plot(C.Vx, C.r, '-x')
 
     plt.show()
 

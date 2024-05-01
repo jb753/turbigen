@@ -21,17 +21,18 @@ try:
 except ImportError:
     pass
 
+
 class NativeConfig(BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
 
-    smoothing_factor = 0.01
+    smoothing_factor_4th = 0.001
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_2nd_proportion = 0.2
+    smoothing_factor_2nd = 1.0
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -169,6 +170,7 @@ class SolverBlock:
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.nu = np.zeros((ni, nj, nk, 3), order="F", dtype=typ)
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -655,7 +657,7 @@ class SolverBlock:
         self.P[:] = self.state.P
 
     def smooth(self, sf2, sf4):
-        embsolve.smooth(self.cons, self.ssf, sf2, sf4)
+        embsolve.smooth(self.cons, self.P, self.nu, self.ssf, sf2, sf4)
 
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
@@ -1033,9 +1035,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     conf = blocks[0].conf
-    sf = conf.CFL * conf.smoothing_factor
-    sf2 = sf * conf.smoothing_2nd_proportion
-    sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
+    sf2 = conf.CFL * conf.smoothing_factor_2nd
+    sf4 = conf.CFL * conf.smoothing_factor_4th
     rfin = 0.1
 
     # Only keep relevent periodics
@@ -1293,6 +1294,21 @@ def run(grid, settings={}, machine=None):
     for patch in grid.outlet_patches:
         Cm, A, _ = patch.get_cut().mix_out()
         mdot_out += Cm.rho * Cm.Vm * A
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].nu[:,:,1,0])
+    # ax.axis('equal')
+    x = grid[0].x[:, 0, 1]
+    nu = blocks_out[0].nu[:, 0, 1, 0]
+    k2 = 1.0
+    eps4 = 0.005
+    sf2 = k2 * nu
+    sf4 = np.maximum(0.0, eps4 - sf2)
+    ax.plot(x, sf2)
+    ax.plot(x, sf4)
+    plt.show()
 
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 

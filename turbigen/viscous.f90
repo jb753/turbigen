@@ -169,28 +169,28 @@ subroutine viscous_force( &
 
     ! No shear stress at wall
     ! We add back using wall functions later
-    call zero_wall_stress(taui, ijk_iwall, 1, ni, nj-1, nk-1, niwall)
-    call zero_wall_stress(tauj, ijk_jwall, 2, ni-1, nj, nk-1, njwall)
-    call zero_wall_stress(tauk, ijk_kwall, 3, ni-1, nj-1, nk, nkwall)
+    call zero_wall_stress(taui, ijk_iwall, ni, nj-1, nk-1, niwall)
+    call zero_wall_stress(tauj, ijk_jwall, ni-1, nj, nk-1, njwall)
+    call zero_wall_stress(tauk, ijk_kwall, ni-1, nj-1, nk, nkwall)
 
     ! Assemble the viscous fluxes from the stress tensor components
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
-    ! Get the net flux into each cell
+    ! Get the net viscous force on each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
-    ! ! ! Add on wall cell forces due to stress from wall function
-    ! call wall_function( &
-    !     fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
-    ! )
-    ! call wall_function( &
-    !     fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
-    ! )
-    ! call wall_function( &
-    !     fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
-    ! )
+    ! ! Add on wall cell forces due to stress from wall function
+    call wall_function( &
+        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+    )
+    call wall_function( &
+        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+    )
+    call wall_function( &
+        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+    )
 
     ! Apply relaxation
     fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
@@ -404,7 +404,8 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             lnRew = alog(Rew)
             if (Rew.lt.125e0) then
                 cf = 2e0/Rew
-                print*,'lam'
+                ! cf = 1e0/Rew
+                ! print*,'lam'
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
@@ -443,7 +444,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             vtau = sqrt(tauw/row)
             yplus = row*vtau*dw(iwall)/mu
-            print*,yplus
+            ! print*,yplus
 
             rc = ( &
                 r(ic, jc, kc) &
@@ -532,14 +533,12 @@ subroutine zero_wall_forces(f, ijk, ni, nj, nk, nwall)
 end subroutine
 
 
-subroutine zero_wall_stress(tau, ijk, dirn, ni, nj, nk, nwall)
+subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     integer, intent (in)  :: nwall
-
-    integer, intent (in)  :: dirn
 
     ! Warning: depending on which direction faces we are setting,
     ! tau will have smaller dimension, e.g.
@@ -551,9 +550,6 @@ subroutine zero_wall_stress(tau, ijk, dirn, ni, nj, nk, nwall)
     integer :: j
     integer :: k
     integer :: iwall
-    integer :: i1 = 0
-    integer :: j1 = 0
-    integer :: k1 = 0
 
     ! If we have at least one wall
     if (nwall > 0) then
@@ -571,49 +567,6 @@ subroutine zero_wall_stress(tau, ijk, dirn, ni, nj, nk, nwall)
                 cycle
             end if
 
-            ! ! Choose wall direction
-            ! if (dirn.eq.1) then
-
-            !     ! These are i-faces
-
-            !     ! Choose the i index of one node off wall
-            !     if (i.eq.1) then
-            !         i1 = i + 1
-            !     else
-            !         i1 = i - 1
-            !     end if
-            !     j1 = j
-            !     k1 = k
-
-            ! else if (dirn.eq.2) then
-
-            !     ! These are j-faces
-
-            !     ! Choose the j index of one node off wall
-            !     if (j.eq.1) then
-            !         j1 = j + 1
-            !     else
-            !         j1 = j- 1
-            !     end if
-            !     i1 = i
-            !     k1 = k
-
-            ! else if (dirn.eq.3) then
-
-            !     ! This is a k-face
-
-            !     ! Choose index for one node off wall
-            !     if (k.eq.1) then
-            !         k1 = k + 1
-            !     else
-            !         k1 = k - 1
-            !     end if
-            !     i1 = i
-            !     j1 = j
-
-            ! end if
-
-            ! ! Now set shear stress to zero one face off wall
             tau(i, j, k, :) = 0e0
 
         end do
