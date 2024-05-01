@@ -181,24 +181,16 @@ subroutine viscous_force( &
     ! Get the net flux into each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
 
-    ! ! Zero the forces on cells at the wall
-    ! ! Because with wall functions the velocity gradient at the wall should
-    ! ! have no effect on the solution. We only care about the shear stress
-    ! ! that is transmitted up to the next cell off the wall.
-    ! call zero_wall_forces(fvisc_new, ijk_iwall, ni, nj, nk, niwall)
-    ! call zero_wall_forces(fvisc_new, ijk_jwall, ni, nj, nk, njwall)
-    ! call zero_wall_forces(fvisc_new, ijk_kwall, ni, nj, nk, nkwall)
-
-    ! ! Add on forces one cell off wall due to stress from wall function
-    call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
-    )
+    ! ! ! Add on wall cell forces due to stress from wall function
+    ! call wall_function( &
+    !     fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+    ! )
+    ! call wall_function( &
+    !     fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+    ! )
+    ! call wall_function( &
+    !     fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+    ! )
 
     ! Apply relaxation
     fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
@@ -412,10 +404,11 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             lnRew = alog(Rew)
             if (Rew.lt.125e0) then
                 cf = 2e0/Rew
+                print*,'lam'
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
-            tauw = cf * 0.5e0 * row *Vw*Vw / 2e0
+            tauw = cf * 0.5e0 * row *Vw*Vw
 
             ! Get indices into the cell for this face
             if (i.eq.ni) then
@@ -450,7 +443,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
 
             vtau = sqrt(tauw/row)
             yplus = row*vtau*dw(iwall)/mu
-            ! print*,yplus
+            print*,yplus
 
             rc = ( &
                 r(ic, jc, kc) &

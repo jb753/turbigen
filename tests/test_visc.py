@@ -67,11 +67,11 @@ def make_plate(mu, Tu0=300.):
     T1 = To1/cf.To_T_from_Ma(Ma1,ga)
 
     # Radial grid points
-    ER = 1.1
+    ER = 1.05
     # d1 = 0.01*h
     # dmax = 0.1*h
     d1 = 0.005*h
-    dmax = 0.05*h
+    dmax = 0.1*h
     # rv = turbigen.clusterfunc.double.free(d1, d2, dmax, ER, rh, rt)
     rv = turbigen.clusterfunc.single.free(d1, dmax, ER, rh, rt)
     dmax1 = np.diff(rv).max()
@@ -435,6 +435,12 @@ def test_plate_turb():
     # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
     # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
     # ax.plot(*xcf_ts3, '-o')
+    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
+    xcf_ts3 = np.loadtxt('tests/xcf_turb_ts3.csv')
+    ax.plot(*xcf_ts3, '-o')
+    ax.set_ylim([0., 0.0002])
+
+
 
     # x0 = 0.02
     # xx = x[x>x0]-x0
@@ -445,7 +451,57 @@ def test_plate_turb():
 
     # plt.savefig('beans.pdf')
 
+def test_plate_lam_yp5():
+    """Run boundary layer with yplus ~ 5."""
+
+    # g = make_plate(Tu0=0., mu=1.8e-2)
+    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
+    # # g.run(conf_ts3, None)
+
+    g = make_plate(mu=8e-4)
+
+    np.set_printoptions(precision=2)
+    settings = {
+        'n_step': 10000,
+        'n_step_avg': 1000,
+        'n_step_log': 100,
+        'plot_conv': True,
+        'xllim_pitch': 0.0,
+    }
+
+    turbigen.solvers.native.run(g, settings)
+
+    cf = []
+    x = []
+    for b in g:
+        Cj2 = b[1:,2,0]
+        Cj1 = b[1:,1,0]
+        Cj0 = b[1:,0,0]
+        Cjm = b[1:,b.nj//2,0]
+        Vinf = Cjm.Vx
+        rhoinf = Cjm.rho
+        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
+        mu = Cj0.mu
+        tauw = dVdy * mu
+        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
+        x.append(Cjm.x)
+    x = np.concatenate(x)
+    cf = np.concatenate(cf)
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,b.nj//2, :]
+    ax.plot(x, cf, '-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[-2,:, 0]
+    ax.plot(C.Vx, C.r, '-x')
+
+    plt.show()
+
 def test_plate_lam():
+    """Run boundary layer with yplus < 1."""
 
     # g = make_plate(Tu0=0., mu=1.8e-2)
     # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
@@ -493,12 +549,10 @@ def test_plate_lam():
     # ax.set_ylim([0., 0.08])
 
     # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
-    # ax.plot(*xcf_ts3, '-o')
+    xcf_ts3 = np.loadtxt('tests/xcf_turb_ts3.csv')
+    ax.plot(*xcf_ts3, '-o')
 
     plt.show()
-
-    # plt.savefig('beans.pdf')
 
 
 def test_poiseuille():
@@ -594,6 +648,6 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    test_plate_turb()
-    # test_plate_lam()
+    # test_plate_turb()
+    test_plate_lam_yp5()
     # test_poiseuille()
