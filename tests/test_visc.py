@@ -482,13 +482,14 @@ def test_plate_lam_yp5():
     g = make_plate(mu=8e-4)
     np.set_printoptions(precision=2)
     settings = {
-        'n_step': 20000,
-        'n_step_avg': 1000,
+        'n_step': 160000,
+        'n_step_avg': 1,
         'n_step_log': 100,
         'plot_conv': True,
         'xllim_pitch': 0.0,
         # 'i_scheme': 0,
-        # 'i_loss': 0,
+        # 'CFL': 0.4,
+        'i_loss': 0,
     }
     turbigen.solvers.native.run(g, settings)
 
@@ -530,7 +531,7 @@ def test_plate_lam_yp5():
     Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
     ax.plot(xx, 0.644/np.sqrt(Rex),'k--')
 
-    ax.set_ylim((0.,0.005))
+    ax.set_ylim((0.,0.006))
 
     # fig, ax = plt.subplots()
     # b = g[0]
