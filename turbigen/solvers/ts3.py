@@ -671,9 +671,11 @@ def _write_hdf5(grid, ts3_config):
 
     # Store old internal energy datum
     # Then set to zero as assumed by TS
-    Tu0_old = [b.Tu0 for b in grid]
+    Tu0_old = grid[0].Tu0
     for b in grid:
         b.set_Tu0(0.0)
+    for p in grid.inlet_patches:
+        p.state.set_Tu0(0.0)
 
     # Determine reference radii for mixing length limit
     rref = np.empty((grid.nrow,))
@@ -841,8 +843,10 @@ def _write_hdf5(grid, ts3_config):
     f.close()
 
     # Reset the internal energy datum
-    for b, Tu0 in zip(grid, Tu0_old):
-        b.set_Tu0(Tu0)
+    for b in grid:
+        b.set_Tu0(Tu0_old)
+    for p in grid.inlet_patches:
+        p.state.set_Tu0(Tu0_old)
 
 
 def _execute(ts3_config):
