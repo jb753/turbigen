@@ -176,6 +176,21 @@ subroutine smooth(x, P, nu, ssf, sf2, sf4, ni, nj, nk, np)
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
+    ! Override two end points
+    ! xs4(1:2, :, :, :,:) = xs2(1:2, :, :, :, :)
+    ! xs4((ni-1):ni, :, :, :,:) = xs2((ni-1):ni, :, :, :, :)
+    ! xs4(:, 1:2, :, :,:) = xs2(:, 1:2, :, :, :)
+    ! xs4(:, (nj-1):nj,:, :, :) = xs2(:, (nj-1):nj, :, :, :)
+
+    ! Override one end point
+    ! xs4(1, :, :, :,:) = xs2(1, :, :, :, :)
+    ! xs4(ni, :, :, :,:) = xs2(ni, :, :, :, :)
+    ! xs4(:, 1, :, :,:) = xs2(:, 1, :, :, :)
+    ! xs4(:, nj,:, :, :) = xs2(:, nj, :, :, :)
+
+    ! xs4(:, :, 1:2, :,:) = xs2(:, :, 1:2, :, :)
+    ! xs4(:, :, (nk-1):nk, :,:) = xs2(:, :, (nk-1):nk, :, :)
+
     ! Calculate the pressure sensor
 
     ! interior i
@@ -219,9 +234,9 @@ subroutine smooth(x, P, nu, ssf, sf2, sf4, ni, nj, nk, np)
 
     ! calculate local smoothing factors for each direction
     sf2n = sf2*nu
-    where (sf2n.lt.(sf4*0.2e0))
-        sf2n = sf4*0.2e0
-    end where
+    ! where (sf2n.lt.(sf4*0.2e0))
+    !     sf2n = sf4*0.2e0
+    ! end where
     sf4n = sf4-sf2n
     where (sf4n.lt.0e0)
         sf4n = 0e0

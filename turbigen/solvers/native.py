@@ -27,12 +27,12 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor_4th = 0.0001
+    smoothing_factor_4th = 0.01
     """Artificial dissipation to suppress central-differencing instability and
     reduce overshoots at sharp discontinuities. Increased values are more
     robust, but less accurate."""
 
-    smoothing_factor_2nd = 0.0
+    smoothing_factor_2nd = 1.0
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -975,15 +975,19 @@ def exchange_tau(blocks, bid_local, periodics):
     for patch in periodics:
         pid, bid, procid, ijk, ijkf, d, nxbid, nxprocid, nxijk, nxijkf, nxd = patch
 
+        # Extract home block
         b1 = blocks[bid_local[bid]]
+
+        # Chose ijk face direction for home patch
+        tau1 = b1.tau[d - 1]
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
 
+            # Extract away block
             b2 = blocks[bid_local[nxbid]]
 
-            # Choose the correct ijk shear stress for each patch
-            tau1 = b1.tau[d - 1]
+            # Chose ijk face direction for away patch
             tau2 = b2.tau[nxd - 1]
 
             embsolve.average_by_ijk(tau1, tau2, ijkf, nxijkf)
@@ -991,27 +995,25 @@ def exchange_tau(blocks, bid_local, periodics):
         # Otherwise, communication is needed
         else:
 
-            raise NotImplementedError
+            # Assemble data to send
+            vs = embsolve.get_by_ijk(tau1, ijkf)
+            count = len(vs)
 
-            # # Assemble data to send
-            # vs = embsolve.get_by_ijk(v1, ijk)
-            # count = len(vs)
+            # Preallocate a buffer to recieve
+            nxv = np.empty_like(vs, dtype=typ)
 
-            # # Preallocate a buffer to recieve
-            # nxv = np.empty_like(vs, dtype=typ)
+            # If our rank is lower than next rank, send first
+            if rank < nxprocid:
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+            # Otherwise, recieve first
+            else:
+                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
 
-            # # If our rank is lower than next rank, send first
-            # if rank < nxprocid:
-            #     comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-            #     comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-            # # Otherwise, recieve first
-            # else:
-            #     comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-            #     comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-
-            # # Take average over both sides
-            # vavg = 0.5 * (vs + nxv)
-            # embsolve.set_by_ijk(v1, vavg, ijk)
+            # Take average over both sides
+            vavg = 0.5 * (vs + nxv)
+            embsolve.set_by_ijk(tau1, vavg, ijkf)
 
 
 # @profile
@@ -1067,172 +1069,180 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
-    # Start the main time stepping loop
-    for istep in range(conf.n_step):
+    try:
+        # Start the main time stepping loop
+        for istep in range(conf.n_step):
 
-        # Exchange conserved variables across periodic patches
-        exchange_cons(blocks, bid_local, periodics)
+            # Exchange conserved variables across periodic patches
+            exchange_cons(blocks, bid_local, periodics)
 
-        # Calculate residual for all blocks
-        for iblock in range(nblock):
+            # Calculate residual for all blocks
+            for iblock in range(nblock):
 
-            sb = blocks[iblock]
+                sb = blocks[iblock]
 
-            sb.set_secondary()
+                sb.set_secondary()
 
-            # Accumulate average
-            if istep >= istep_avg:
-                sb.cons_avg += sb.cons / float(conf.n_step_avg)
+                # Accumulate average
+                if istep >= istep_avg:
+                    sb.cons_avg += sb.cons / float(conf.n_step_avg)
 
-            # Update time steps using local Mach
-            if not np.mod(istep, conf.n_step_dt):
-                sb.set_timestep(conf.CFL)
+                # Update time steps using local Mach
+                if not np.mod(istep, conf.n_step_dt):
+                    sb.set_timestep(conf.CFL)
 
-            # Apply boundary conditions
-            sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
-            sb.set_outlets(conf.i_exit, conf.K_exit)
+                # Apply boundary conditions
+                sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
+                sb.set_outlets(conf.i_exit, conf.K_exit)
 
-            # If this is a viscous calculation
-            # Update the viscous forces every nloss time steps
-            # Not right at the start of the calculation for stability
-            if not np.mod(istep, conf.nloss) and istep > 100 and conf.i_loss > 0:
+                # If this is a viscous calculation
+                # Update the viscous forces every nloss time steps
+                # Not right at the start of the calculation for stability
+                if not np.mod(istep, conf.nloss) and istep > 100 and conf.i_loss > 0:
 
-                # Evaluate the components of viscous stress tensor
-                sb.set_viscous_stress()
+                    # Evaluate the components of viscous stress tensor
+                    sb.set_viscous_stress()
 
-                # Average the stresses on periodic faces
-                # This vital for convergence at block boundaries
-                exchange_tau(blocks, bid_local, periodics)
+                    # Average the stresses on periodic faces
+                    # This vital for convergence at block boundaries
+                    exchange_tau(blocks, bid_local, periodics)
 
-                # Convert the viscous stress into body force by summing fluxes
-                sb.set_viscous_force()
+                    # Convert the viscous stress into body force by summing fluxes
+                    sb.set_viscous_force()
 
-                # Add forces on each cell due to wall funcions
-                # sb.set_wall_function()
+                # Calculate nodal changes
+                sb.residual()
 
-            # Calculate nodal changes
-            sb.residual()
+            for iblock in range(nblock):
+                sb = blocks[iblock]
 
-        for iblock in range(nblock):
-            sb = blocks[iblock]
+                # Apply damping if requested
+                if conf.damping_factor and (
+                    istep < conf.nstep_damp or conf.nstep_damp < 0
+                ):
+                    sb.damp(conf.damping_factor)
 
-            # Apply damping if requested
-            if conf.damping_factor and (istep < conf.nstep_damp or conf.nstep_damp < 0):
-                sb.damp(conf.damping_factor)
+                # Take a time step
+                sb.step(istep, conf.i_scheme)
 
-            # Take a time step
-            sb.step(istep, conf.i_scheme)
+                # Stabilise the solution by smoothing
+                sb.smooth(sf2, sf4)
 
-            # Stabilise the solution by smoothing
-            sb.smooth(sf2, sf4)
+            # Record residuals
+            iilog = np.mod(istep - 1, conf.n_step_log)
+            dUnow[iilog] = np.stack(
+                [np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks]
+            )
 
-        # Record residuals
-        iilog = np.mod(istep - 1, conf.n_step_log)
-        dUnow[iilog] = np.stack([np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks])
+            # Intermittently print convergence
+            if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
 
-        # Intermittently print convergence
-        if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
-
-            # Inlet mass-avg props
-            mdot1 = 0.0
-            s1 = 0.0
-            ho1 = 0.0
-            h1 = 0.0
-            A1 = 0.0
-            for sb in blocks:
-                for patch in sb.inlets:
-                    ind, _, _, _, _, _, _, _, _, wA = patch
-                    rhoVxrt = np.stack(
-                        (
-                            sb.cons[:, :, :, 1].ravel(order="F")[ind],
-                            sb.cons[:, :, :, 2].ravel(order="F")[ind],
-                            sb.cons[:, :, :, 3].ravel(order="F")[ind],
+                # Inlet mass-avg props
+                mdot1 = 0.0
+                s1 = 0.0
+                ho1 = 0.0
+                h1 = 0.0
+                A1 = 0.0
+                for sb in blocks:
+                    for patch in sb.inlets:
+                        ind, _, _, _, _, _, _, _, _, wA = patch
+                        rhoVxrt = np.stack(
+                            (
+                                sb.cons[:, :, :, 1].ravel(order="F")[ind],
+                                sb.cons[:, :, :, 2].ravel(order="F")[ind],
+                                sb.cons[:, :, :, 3].ravel(order="F")[ind],
+                            )
                         )
-                    )
-                    s = sb.state.s.ravel(order="F")[ind]
-                    h = sb.state.h.ravel(order="F")[ind]
-                    ho = sb.ho.ravel(order="F")[ind]
-                    mdotnow = (wA * rhoVxrt).sum()
-                    mdot1 += mdotnow * sb.Nb
-                    s1 += (wA * rhoVxrt * s).sum()
-                    ho1 += (wA * rhoVxrt * ho).sum()
-                    h1 += (wA * h).sum()
-                    A1 += wA.sum()
+                        s = sb.state.s.ravel(order="F")[ind]
+                        h = sb.state.h.ravel(order="F")[ind]
+                        ho = sb.ho.ravel(order="F")[ind]
+                        mdotnow = (wA * rhoVxrt).sum()
+                        mdot1 += mdotnow * sb.Nb
+                        s1 += (wA * rhoVxrt * s).sum()
+                        ho1 += (wA * rhoVxrt * ho).sum()
+                        h1 += (wA * h).sum()
+                        A1 += wA.sum()
 
-            # Outlet mass-avg props
-            mdot2 = 0.0
-            s2 = 0.0
-            ho2 = 0.0
-            h2 = 0.0
-            A2 = 0.0
-            T2 = 0.0
-            for sb in blocks:
-                for patch, state in zip(sb.outlets, sb.state_outlets):
-                    ind, _, wA, _, _ = patch
-                    rhoVxrt = np.stack(
-                        (
-                            sb.cons[:, :, :, 1].ravel(order="F")[ind],
-                            sb.cons[:, :, :, 2].ravel(order="F")[ind],
-                            sb.cons[:, :, :, 3].ravel(order="F")[ind],
+                # Outlet mass-avg props
+                mdot2 = 0.0
+                s2 = 0.0
+                ho2 = 0.0
+                h2 = 0.0
+                A2 = 0.0
+                T2 = 0.0
+                for sb in blocks:
+                    for patch, state in zip(sb.outlets, sb.state_outlets):
+                        ind, _, wA, _, _ = patch
+                        rhoVxrt = np.stack(
+                            (
+                                sb.cons[:, :, :, 1].ravel(order="F")[ind],
+                                sb.cons[:, :, :, 2].ravel(order="F")[ind],
+                                sb.cons[:, :, :, 3].ravel(order="F")[ind],
+                            )
                         )
+                        s = state.s
+                        ho = sb.ho.ravel(order="F")[ind]
+                        T = state.T
+                        h = state.h
+                        mdotnow = (wA * rhoVxrt).sum()
+                        mdot2 += mdotnow * sb.Nb
+                        s2 += (wA * rhoVxrt * s).sum()
+                        ho2 += (wA * rhoVxrt * ho).sum()
+                        T2 += (wA * T).sum()
+                        h2 += (wA * h).sum()
+                        A2 += wA.sum()
+
+                mhs = np.array([mdot1, ho1, s1, mdot2, ho2, s2, h1, h2, A1, A2, T2])
+
+                # Send residuals to master proc
+                if rank:
+                    comm.send(dUnow, dest=0)
+                    comm.send(mhs, dest=0)
+
+                else:
+                    dUall = [
+                        dUnow,
+                    ]
+                    for iproc in range(1, size):
+
+                        dUall.append(comm.recv(source=iproc))
+                        mhs += comm.recv(source=iproc)
+
+                    dUall = np.concatenate(dUall, axis=1)
+
+                    # Mass weight all inlet/exits
+                    mhs[1:3] /= mhs[0]
+                    mhs[4:6] /= mhs[3]
+                    merr = (mhs[3] / mhs[0] - 1.0) * 100.0
+                    merrlog.append(merr)
+
+                    # Area weight static enthalpy
+                    mhs[6] /= mhs[8]
+                    mhs[7] /= mhs[9]
+                    mhs[10] /= mhs[9]
+                    Ys = mhs[10] * (mhs[5] - mhs[2]) / (mhs[4] - mhs[7])
+                    Yslog.append(Ys)
+
+                    ten = timer()
+                    tpnps = (ten - tstart) / nodes / conf.n_step_log
+                    tstart = ten
+
+                    logger.info(f"{istep}: tpnps={tpnps:.3e}")
+                    logger.info(
+                        "  Mass in, out, err = "
+                        f"{mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%"
                     )
-                    s = state.s
-                    ho = sb.ho.ravel(order="F")[ind]
-                    T = state.T
-                    h = state.h
-                    mdotnow = (wA * rhoVxrt).sum()
-                    mdot2 += mdotnow * sb.Nb
-                    s2 += (wA * rhoVxrt * s).sum()
-                    ho2 += (wA * rhoVxrt * ho).sum()
-                    T2 += (wA * T).sum()
-                    h2 += (wA * h).sum()
-                    A2 += wA.sum()
+                    logger.info(f"   Ys = {Ys:.3e}")
+                    for ib, dU in enumerate(dUall.mean(axis=0)):
+                        logger.info(f"  block {ib}: {dU}")
 
-            mhs = np.array([mdot1, ho1, s1, mdot2, ho2, s2, h1, h2, A1, A2, T2])
+                    dUlognow = np.stack(dUall).mean(axis=1)
+                    dUlog.append(dUlognow)
 
-            # Send residuals to master proc
-            if rank:
-                comm.send(dUnow, dest=0)
-                comm.send(mhs, dest=0)
-
-            else:
-                dUall = [
-                    dUnow,
-                ]
-                for iproc in range(1, size):
-
-                    dUall.append(comm.recv(source=iproc))
-                    mhs += comm.recv(source=iproc)
-
-                dUall = np.concatenate(dUall, axis=1)
-
-                # Mass weight all inlet/exits
-                mhs[1:3] /= mhs[0]
-                mhs[4:6] /= mhs[3]
-                merr = (mhs[3] / mhs[0] - 1.0) * 100.0
-                merrlog.append(merr)
-
-                # Area weight static enthalpy
-                mhs[6] /= mhs[8]
-                mhs[7] /= mhs[9]
-                mhs[10] /= mhs[9]
-                Ys = mhs[10] * (mhs[5] - mhs[2]) / (mhs[4] - mhs[7])
-                Yslog.append(Ys)
-
-                ten = timer()
-                tpnps = (ten - tstart) / nodes / conf.n_step_log
-                tstart = ten
-
-                logger.info(f"{istep}: tpnps={tpnps:.3e}")
-                logger.info(
-                    f"  Mass in, out, err = {mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%"
-                )
-                logger.info(f"   Ys = {Ys:.3e}")
-                for ib, dU in enumerate(dUall.mean(axis=0)):
-                    logger.info(f"  block {ib}: {dU}")
-
-                dUlognow = np.stack(dUall).mean(axis=1)
-                dUlog.append(dUlognow)
+    except KeyboardInterrupt:
+        for iblock in range(nblock):
+            sb = blocks[iblock]
+            sb.cons_avg = sb.cons
 
     if master_flag:
         return blocks, dUlog, merrlog, Yslog
@@ -1297,20 +1307,32 @@ def run(grid, settings={}, machine=None):
         Cm, A, _ = patch.get_cut().mix_out()
         mdot_out += Cm.rho * Cm.Vm * A
 
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].nu[:,:,1,0])
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].dU1[:,:,1,0])
+    # ax.plot(grid[0].x[:,:,1], grid[0].r[:,:,1],'k-',lw=0.2)
+    # ax.plot(grid[0].x[:,:,1].T, grid[0].r[:,:,1].T,'k-',lw=0.2)
     # ax.axis('equal')
-    x = grid[0].x[:, 0, 1]
-    nu = blocks_out[0].nu[:, 0, 1, 0]
-    k2 = 1.0
-    eps4 = 0.005
-    sf2 = k2 * nu
-    sf4 = np.maximum(0.0, eps4 - sf2)
-    ax.plot(x, sf2)
-    ax.plot(x, sf4)
-    plt.show()
+    # fig, ax = plt.subplots()
+    # b = grid[0]
+    # ax.contourf(b.y[b.ni//2,:,:], b.z[b.ni//2,:,:],blocks_out[0].dU1[b.ni//2,:,:,0])
+    # ax.plot(b.y[b.ni//2,:,:], b.z[b.ni//2,:,:],'k-',lw=0.2)
+    # ax.plot(b.y[b.ni//2,:,:].T, b.z[b.ni//2,:,:].T,'k-',lw=0.2)
+    # ax.axis('equal')
+    # plt.show()
+
+    # fig, ax = plt.subplots()
+    # # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].nu[:,:,1,0])
+    # # ax.axis('equal')
+    # x = grid[0].x[:, 0, 1]
+    # nu = blocks_out[0].nu[:, 0, 1, 0]
+    # k2 = 1.0
+    # eps4 = 0.005
+    # sf2 = k2 * nu
+    # sf4 = np.maximum(0.0, eps4 - sf2)
+    # ax.plot(x, sf2)
+    # ax.plot(x, sf4)
+    # plt.show()
 
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 

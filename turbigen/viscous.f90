@@ -403,9 +403,9 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
             if (Rew.lt.125e0) then
+                ! Note: the TS user manual is off by factor of 2
+                ! The below is correct and as in MULTALL
                 cf = 2e0/Rew
-                ! cf = 1e0/Rew
-                ! print*,'lam'
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
@@ -428,10 +428,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 kc = k
             end if
 
-            ! ic = i1
-            ! jc = j1
-            ! kc = k1
-
             ! multiply by face area magnitude
             ! direction is opposite to cell velocity
             vec = -Vxrtw*dA(iwall)/vol(ic, jc, kc)
@@ -440,11 +436,9 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             else
                 vec = 0e0
             end if
-            ! print*, ic, jc, kc
 
-            vtau = sqrt(tauw/row)
-            yplus = row*vtau*dw(iwall)/mu
-            ! print*,yplus
+            ! vtau = sqrt(tauw/row)
+            ! yplus = row*vtau*dw(iwall)/mu
 
             rc = ( &
                 r(ic, jc, kc) &
@@ -460,10 +454,6 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
-
-            ! f(ic, jc, kc, 2) =  vec(1)*tauw
-            ! f(ic, jc, kc, 3) =  vec(2)*tauw
-            ! f(ic, jc, kc, 4) =  rc*vec(3)*tauw
 
         end do
     end if
