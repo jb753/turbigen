@@ -82,7 +82,7 @@ def make_plate(mu, Tu0=300.):
 
     # Circumferential grid points
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
-    nk = 5
+    nk = 17
     pitch = dmax1*(nk-1)*AR_pitch
     Nb = int(2.0 * np.pi * rm / pitch)
     dt = 2.0 * np.pi / float(Nb)
@@ -90,7 +90,7 @@ def make_plate(mu, Tu0=300.):
 
     # Axial grid points
     di = dmax*AR_merid
-    clule = .5
+    clule = .1
     di1 = di*clule
     ERi = 1.2
     xup = np.flip(turbigen.clusterfunc.single.free(di1, di, ERi, 0., -h))
@@ -104,10 +104,10 @@ def make_plate(mu, Tu0=300.):
 
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
-    # Stretch vertically
-    xn = xv/xv[-1]
-    stretch = np.expand_dims(np.interp(xn, [0.,1.],[1., 1.06]), (1,2))
-    xrt[1] = (xrt[1] - rh)*stretch + rh
+    # # Stretch vertically
+    # xn = xv/xv[-1]
+    # stretch = np.expand_dims(np.interp(xn, [0.,1.],[1., 1.06]), (1,2))
+    # xrt[1] = (xrt[1] - rh)*stretch + rh
 
     # fig, ax = plt.subplots()
     # ax.plot(xrt[0,:,:,0], xrt[1,:,:,0],'k-',lw=0.5)
@@ -122,6 +122,9 @@ def make_plate(mu, Tu0=300.):
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
+
+    if ile > ienb[0]:
+        raise Exception('Blocks too small')
 
     for iblock in range(nblock):
 
@@ -138,6 +141,7 @@ def make_plate(mu, Tu0=300.):
             patches = [
                 turbigen.grid.InletPatch(i=0),
                 turbigen.grid.PeriodicPatch(i=-1),
+                turbigen.grid.InviscidPatch(i=(0,ile),j=0),
             ]
 
         # Last block has outlet
@@ -482,14 +486,11 @@ def test_plate_lam_yp5():
     g = make_plate(mu=8e-4)
     np.set_printoptions(precision=2)
     settings = {
-        'n_step': 160000,
+        'n_step': 100000,
         'n_step_avg': 1,
         'n_step_log': 100,
         'plot_conv': True,
         'xllim_pitch': 0.0,
-        # 'i_scheme': 0,
-        # 'CFL': 0.4,
-        'i_loss': 0,
     }
     turbigen.solvers.native.run(g, settings)
 

@@ -167,14 +167,92 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
         - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
     )
 
-    ! Apply the scale factors for each direction
-    do ip = 1,np
-        xs2(:, :, :, ip, :) = xs2(:, :, :, ip, :) * ssf(:, :, :, :)
-        xs4(:, :, :, ip, :) = xs4(:, :, :, ip, :) * ssf(:, :, :, :)
-    end do
+    ! Override two end points
+    ! xs4(1:2, :, :, :,:) = xs2(1:2, :, :, :, :)
+    ! xs4((ni-1):ni, :, :, :,:) = xs2((ni-1):ni, :, :, :, :)
+    ! xs4(:, 1:2, :, :,:) = xs2(:, 1:2, :, :, :)
+    ! xs4(:, (nj-1):nj,:, :, :) = xs2(:, (nj-1):nj, :, :, :)
 
-    ! now smooth
-    x = (1e0-sf2-sf4)*x + (sf2*sum(xs2,5) + sf4*sum(xs4,5))
+    ! Override one end point
+    ! xs4(1, :, :, :,:) = xs2(1, :, :, :, :)
+    ! xs4(ni, :, :, :,:) = xs2(ni, :, :, :, :)
+    ! xs4(:, 1, :, :,:) = xs2(:, 1, :, :, :)
+    ! xs4(:, nj,:, :, :) = xs2(:, nj, :, :, :)
+
+    ! xs4(:, :, 1:2, :,:) = xs2(:, :, 1:2, :, :)
+    ! xs4(:, :, (nk-1):nk, :,:) = xs2(:, :, (nk-1):nk, :, :)
+
+    ! Calculate the pressure sensor
+
+    ! interior i
+    nu(2:ni-1, :, :, 1) = &
+        abs(P(1:ni-2, :, :) - 2e0*P(2:ni-1, :, :) + P(3:ni, :, :)) &
+        /  (P(1:ni-2, :, :) + 2e0*P(2:ni-1, :, :) + P(3:ni, :, :))
+
+    ! start/end i
+    nu(1, :, :, 1) = &
+        abs(P(1, :, :) - 2e0*P(2, :, :) + P(3, :, :)) &
+        /  (P(1, :, :) + 2e0*P(2, :, :) + P(3, :, :))
+    nu(ni, :, :, 1) = &
+        abs(P(ni, :, :) - 2e0*P(ni-1, :, :) + P(ni-2, :, :)) &
+        /  (P(ni, :, :) + 2e0*P(ni-1, :, :) + P(ni-2, :, :))
+
+    ! interior j
+    nu(:, 2:nj-1, :, 2) = &
+        abs(P(:, 1:nj-2, :) - 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :)) &
+        /  (P(:, 1:nj-2, :) + 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :))
+
+    ! start/end j
+    nu(:, 1, :, 2) = &
+        abs(P(:, 1, :) - 2e0*P(:, 2, :) + P(:, 3, :)) &
+        /  (P(:, 1, :) + 2e0*P(:, 2, :) + P(:, 3, :))
+    nu(:, nj, :, 2) = &
+        abs(P(:, nj, :) - 2e0*P(:, nj-1, :) + P(:, nj-2, :)) &
+        /  (P(:, nj, :) + 2e0*P(:, nj-1, :) + P(:, nj-2, :))
+
+    ! interior k
+    nu(:, :, 2:nk-1, 3) = &
+        abs(P(:, :, 1:nk-2) - 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk)) &
+        /  (P(:, :, 1:nk-2) + 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk))
+
+    ! start/end k
+    nu(:, :, 1, 3) = &
+        abs(P(:, :, 1) - 2e0*P(:, :, 2) + P(:, :, 3)) &
+        /  (P(:, :, 1) + 2e0*P(:, :, 2) + P(:, :, 3))
+    nu(:, :, nk, 3) = &
+        abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
+        /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
+
+    ! calculate local smoothing factors for each direction
+    sf2n = sf2*nu
+    ! where (sf2n.lt.(sf4*0.2e0))
+    !     sf2n = sf4*0.2e0
+    ! end where
+    sf4n = sf4-sf2n
+    where (sf4n.lt.0e0)
+        sf4n = 0e0
+    end where
+    ! print*, maxval(sf2n*3e0), maxval(sf4n*3e0)
+
+    ! Apply the scale factors for cell aspect ratio
+    sf2n = sf2n * ssf * 3e0
+    sf4n = sf4n * ssf * 3e0
+
+    ! loop over properties
+    do ip=1,np
+
+        ! Products of local smoothing factors and flow property
+        ! Summed over all grid directions
+        sfx2 = sum(sf2n*xs2(:,:,:,ip,:),4)
+        sfx4 = sum(sf4n*xs4(:,:,:,ip,:),4)
+
+        ! Total smoothing factor for all grid directions
+        sftn = sum(sf2n + sf4n,4)
+
+        ! Do the smoothing
+        x(:,:,:,ip) = (1e0-sftn)*x(:,:,:,ip)  + sfx2 + sfx4
+
+    end do
 
 end subroutine
 
