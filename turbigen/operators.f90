@@ -1,6 +1,6 @@
 ! Operators for div/grad/smoothing on the grid
 
-subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
+subroutine smooth(x, P, nu, ssf, sf2, sf4, ni, nj, nk, np)
     ! Smooth the 4D array
 
     implicit none
@@ -15,17 +15,21 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
 
     real*4, intent (inout)  :: x(ni, nj, nk, np)
     real*4, intent (inout)  :: ssf(ni, nj, nk, 3)
+    real*4, intent (in)  :: P(ni, nj, nk)
     real*4 :: xs2(ni, nj, nk, np, 3)
     real*4 :: xs4(ni, nj, nk, np, 3)
+    real*4, intent(inout) :: nu(ni, nj, nk, 3)
+
+    real*4 :: sfx2(ni, nj, nk)
+    real*4 :: sfx4(ni, nj, nk)
+    real*4 :: sf2n(ni, nj, nk, 3)
+    real*4 :: sf4n(ni, nj, nk, 3)
+
+    real*4 :: sftn(ni, nj, nk)
 
     integer :: ip
 
-    ! ! Initialise to zero
-    ! xs2 = 0e0
-    ! xs4 = 0e0
-
-    ! Accumulate 2nd-order smoothed values for each direcion in turn
-    ! We will divide by three later
+    ! 2nd-order smoothed values for each direcion
 
     ! i interior
     xs2(2:ni-1, :, :, :, 1) = ( &
@@ -72,8 +76,7 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
         2e0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
     )
 
-    ! Accumulate 4th-order smoothed values for each direcion in turn
-    ! We will divide by three later
+    ! 4th-order smoothed values for each direcion
 
     ! i interior
     xs4(3:ni-2, :, :, :, 1) = ( &
@@ -168,10 +171,10 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
     )
 
     ! Override two end points
-    ! xs4(1:2, :, :, :,:) = xs2(1:2, :, :, :, :)
-    ! xs4((ni-1):ni, :, :, :,:) = xs2((ni-1):ni, :, :, :, :)
-    ! xs4(:, 1:2, :, :,:) = xs2(:, 1:2, :, :, :)
-    ! xs4(:, (nj-1):nj,:, :, :) = xs2(:, (nj-1):nj, :, :, :)
+    xs4(1:2, :, :, :,:) = xs2(1:2, :, :, :, :)
+    xs4((ni-1):ni, :, :, :,:) = xs2((ni-1):ni, :, :, :, :)
+    xs4(:, 1:2, :, :,:) = xs2(:, 1:2, :, :, :)
+    xs4(:, (nj-1):nj,:, :, :) = xs2(:, (nj-1):nj, :, :, :)
 
     ! Override one end point
     ! xs4(1, :, :, :,:) = xs2(1, :, :, :, :)
@@ -223,16 +226,12 @@ subroutine smooth(x, ssf, sf2, sf4, ni, nj, nk, np)
         abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
         /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
 
-    ! calculate local smoothing factors for each direction
+    ! Calculate local smoothing factors for each direction
     sf2n = sf2*nu
-    ! where (sf2n.lt.(sf4*0.2e0))
-    !     sf2n = sf4*0.2e0
-    ! end where
     sf4n = sf4-sf2n
     where (sf4n.lt.0e0)
         sf4n = 0e0
     end where
-    ! print*, maxval(sf2n*3e0), maxval(sf4n*3e0)
 
     ! Apply the scale factors for cell aspect ratio
     sf2n = sf2n * ssf * 3e0

@@ -170,6 +170,7 @@ class SolverBlock:
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.nu = np.zeros((ni, nj, nk, 3), order="F", dtype=typ)
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -656,7 +657,7 @@ class SolverBlock:
         self.P[:] = self.state.P
 
     def smooth(self, sf2, sf4):
-        embsolve.smooth(self.cons, self.ssf, sf2, sf4)
+        embsolve.smooth(self.cons, self.P, self.nu, self.ssf, sf2, sf4)
 
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
@@ -1036,9 +1037,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     conf = blocks[0].conf
-    sf = conf.CFL * conf.smoothing_factor
-    sf2 = sf * conf.smoothing_2nd_proportion
-    sf4 = sf * (1.0 - conf.smoothing_2nd_proportion)
+    sf2 = conf.smoothing_factor_2nd
+    sf4 = conf.smoothing_factor_4th
     rfin = 0.1
 
     # Only keep relevent periodics

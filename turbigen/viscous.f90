@@ -75,6 +75,7 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
 
     ! tau_xt = tau_tx = dVx_dt/r + dVt_dx
     tauc(:,:,:,5) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
+    ! tauc(:,:,:,5) = tauc(:,:,:,5)/2e0
 
     ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
     tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
@@ -90,7 +91,7 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
     mu_turb = roc*xlength*vort_mag
 
     ! Apply a limiting turbulent viscosity ratio
-    visc_lim = 1000e0*mu
+    visc_lim = 3000e0*mu
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where
@@ -410,6 +411,7 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
             end if
             tauw = cf * 0.5e0 * row *Vw*Vw
+            ! tauw = cf * row *Vw*Vw/8e0
 
             ! Get indices into the cell for this face
             if (i.eq.ni) then
