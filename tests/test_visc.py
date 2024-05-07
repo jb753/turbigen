@@ -1,5 +1,5 @@
 """Viscous test cases."""
-import turbigen.solvers.native
+import turbigen.solvers.embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -33,7 +33,7 @@ try:
     size = comm.Get_size()
     # Jump to solver slave process if not first rank
     if rank > 0:
-        turbigen.solvers.native.run_slave()
+        turbigen.solvers.embsolve.run_slave()
         sys.exit(0)
 except ImportError:
     pass
@@ -47,7 +47,7 @@ def make_plate(mu, Tu0=300.):
     Alpha1=0.
     Ma1=0.3
     skew=0.
-    L_h = 8.
+    L_h = 4.
 
     # Geometry
     h = 0.2
@@ -68,11 +68,10 @@ def make_plate(mu, Tu0=300.):
     V = cf.V_cpTo_from_Ma(Ma1,ga)*np.sqrt(cp*To1)
     P1 = Po1/cf.Po_P_from_Ma(Ma1,ga)
     T1 = To1/cf.To_T_from_Ma(Ma1,ga)
+    rho1 = P1/rgas/T1
 
     # Radial grid points
     ER = 1.05
-    # d1 = 0.01*h
-    # dmax = 0.1*h
     d1 = 0.005*h
     dmax = 0.1*h
     # rv = turbigen.clusterfunc.double.free(d1, d2, dmax, ER, rh, rt)
@@ -82,7 +81,7 @@ def make_plate(mu, Tu0=300.):
 
     # Circumferential grid points
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
-    nk = 17
+    nk = 5
     pitch = dmax1*(nk-1)*AR_pitch
     Nb = int(2.0 * np.pi * rm / pitch)
     dt = 2.0 * np.pi / float(Nb)
@@ -104,10 +103,14 @@ def make_plate(mu, Tu0=300.):
 
     xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
 
-    # # Stretch vertically
-    # xn = xv/xv[-1]
-    # stretch = np.expand_dims(np.interp(xn, [0.,1.],[1., 1.06]), (1,2))
-    # xrt[1] = (xrt[1] - rh)*stretch + rh
+    # Calculate Blasius displacement thickness
+    xv0 = xv[xv>0.]
+    delstar = 1.72*np.sqrt(mu*xv0/V/rho1)
+
+    # # Stretch vertically to account for displacement thickness
+    xn = xv/xv[-1]
+    stretch = np.expand_dims(np.interp(xv, xv0, delstar/h+1.), (1,2))
+    xrt[1] = (xrt[1] - rh)*stretch + rh
 
     # fig, ax = plt.subplots()
     # ax.plot(xrt[0,:,:,0], xrt[1,:,:,0],'k-',lw=0.5)
@@ -411,7 +414,7 @@ def test_plate_turb():
     # g.run(conf_ts3, None)
 
     settings = {
-        'n_step': 10000,
+        'n_step': 50000,
         # 'n_step': 1000,
         'n_step_avg': 1000,
         'n_step_log': 100,
@@ -428,7 +431,7 @@ def test_plate_turb():
     g = make_plate(mu=1.8e-4)
 
     np.set_printoptions(precision=2)
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     fig, ax = plt.subplots()
     C = g[-1][-2,:,0]
@@ -486,13 +489,16 @@ def test_plate_lam_yp5():
     g = make_plate(mu=8e-4)
     np.set_printoptions(precision=2)
     settings = {
-        'n_step': 100000,
+        'n_step': 50000,
         'n_step_avg': 1,
         'n_step_log': 100,
         'plot_conv': True,
         'xllim_pitch': 0.0,
+        'smooth4': 0.001,
+        'smooth2_adapt': 0.5,
+        'smooth2_const': 0.001,
     }
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     cf = []
     x = []
@@ -518,6 +524,14 @@ def test_plate_lam_yp5():
     b = g[0]
     C = b[:,1, 0]
     ax.plot(C.x, C.Vx, '-x')
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[:,1, 0]
+    ax.plot(C.x, C.P, '-x')
+    plt.show()
+    # ax.set_ylim([n0., 0.08])
+
     plt.show()
     # ax.set_ylim([n0., 0.08])
 
@@ -565,7 +579,7 @@ def test_plate_lam():
         # "smoothing_factor" : 0.005
     }
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     cf = []
     x = []
@@ -611,7 +625,7 @@ def test_poiseuille():
 
 
     np.set_printoptions(precision=2)
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     b = g[0]
     C = b[:, b.nj//2, b.nk//2]

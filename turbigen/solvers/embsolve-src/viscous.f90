@@ -1,6 +1,6 @@
 ! Routines for adding viscous effects
 
-subroutine shear_stress(cons, T, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
+subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     implicit none
 
@@ -28,11 +28,11 @@ subroutine shear_stress(cons, T, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, d
     real*4 :: visc_lim
 
     real*4 :: V(ni, nj, nk, 3)
-    real*4 :: T(ni, nj, nk)
+    ! real*4 :: T(ni, nj, nk)
     real*4 :: Vc(ni-1, nj-1, nk-1, 3)
     real*4 :: roc(ni-1, nj-1, nk-1)
     real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
-    real*4 :: gradT(ni-1, nj-1, nk-1, 3)
+    ! real*4 :: gradT(ni-1, nj-1, nk-1, 3)
     real*4 :: divV(ni-1, nj-1, nk-1)
     real*4 :: vort(ni-1, nj-1, nk-1, 3)
     real*4 :: vort_mag(ni-1, nj-1, nk-1)
@@ -57,7 +57,7 @@ subroutine shear_stress(cons, T, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, d
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Temperature gradients
-    call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
+    ! call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     ! Calculate divergence of V
     call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
@@ -415,11 +415,11 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
                 ! Note: the TS user manual is off by factor of 2
                 ! The below is correct and as in MULTALL
                 cf = 2e0/Rew
+                tauw = cf * 0.5e0 * row *Vw*Vw
             else
                 cf = a1 + a2/lnRew + a3/lnRew/lnRew
+                tauw = cf * row *Vw*Vw/8e0
             end if
-            ! tauw = cf * 0.5e0 * row *Vw*Vw
-            tauw = cf * row *Vw*Vw/8e0
 
             ! Get indices into the cell for this face
             if (i.eq.ni) then

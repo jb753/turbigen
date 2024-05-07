@@ -25,11 +25,11 @@ test ::
 	pytest
 
 compile-slow ::
-	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp,bounds -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	python -m numpy.f2py -m embsolvec --opt='-O3 -fcheck=array-temp,bounds -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
 	mv embsolve*.so turbigen/solvers
 
 compile ::
-	python -m numpy.f2py -m embsolve --opt='-O3 -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	python -m numpy.f2py -m embsolvec --opt='-O3 -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
 	mv embsolve*.so turbigen/solvers
 
 

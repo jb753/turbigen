@@ -4,7 +4,10 @@ import turbigen.fluid
 import turbigen.flowfield
 import turbigen.grid
 from turbigen.solvers.base import BaseSolver
-from turbigen.embsolve import embsolve
+
+# from turbigen.embsolve import embsolve
+
+from turbigen.solvers.embsolvec import *
 
 from timeit import default_timer as timer
 
@@ -27,12 +30,14 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smoothing_factor_4th = 0.01
-    """Artificial dissipation to suppress central-differencing instability and
-    reduce overshoots at sharp discontinuities. Increased values are more
-    robust, but less accurate."""
+    smooth4 = 0.01
+    """Fourth-order smoothing factor."""
 
-    smoothing_factor_2nd = 1.0
+    smooth2_adapt = 1.0
+    """Second-order smoothing factor, adaptive on pressure."""
+
+    smooth2_const = 0.0
+    """Second-order smoothing factor, constant throughout the flow."""
 
     CFL = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -171,7 +176,6 @@ class SolverBlock:
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
-        self.nu = np.zeros((ni, nj, nk, 3), order="F", dtype=typ)
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -260,7 +264,7 @@ class SolverBlock:
 
         # Smoothing scale factors in each volume
         Lref = block.vol_new ** (1 / 3)
-        ssf = to_fort(
+        L = to_fort(
             np.stack(
                 (
                     dli / Lref,
@@ -270,19 +274,19 @@ class SolverBlock:
                 axis=0,
             )
         )
-        ssfs = ssf.sum(axis=-1, keepdims=True)
-        ssf = ssf / ssfs
+        Ls = L.sum(axis=-1, keepdims=True)
+        L = L / Ls * 3.0
 
         # Now distribute to nodes
-        self.ssf = to_fort(np.empty((3, ni, nj, nk)))
-        embsolve.cell_to_node(ssf, self.ssf, ni, nj, nk, 3)
-        # self.ssf = to_fort(np.ones((3, ni, nj, nk))/3.)
+        self.L = to_fort(np.empty((3, ni, nj, nk)))
+        embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
+        # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
 
         # print('at ni//2, nj//2, k=0')
-        # print(self.ssf[ni//2, nj//2, 0, :])
+        # print(self.L[ni//2, nj//2, 0, :])
         # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
-        # ax.plot(self.ssf[ni//2,nj//2,:,1])
+        # ax.plot(self.L[ni//2,nj//2,:,1])
         # plt.show()
 
         self.tau = [
@@ -658,8 +662,8 @@ class SolverBlock:
         self.P[:] = self.state.P
         self.T[:] = self.state.T
 
-    def smooth(self, sf2, sf4):
-        embsolve.smooth(self.cons, self.P, self.nu, self.ssf, sf2, sf4)
+    def smooth(self, sf2, sf4, sf2min):
+        embsolve.smooth(self.cons, self.P, self.L, sf4, sf2, sf2min)
 
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
@@ -1039,8 +1043,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     conf = blocks[0].conf
-    sf2 = conf.smoothing_factor_2nd
-    sf4 = conf.smoothing_factor_4th
+    sf2 = conf.smooth2_adapt
+    sf4 = conf.smooth4
+    sf2min = conf.smooth2_const
     rfin = 0.1
 
     # Only keep relevent periodics
@@ -1126,7 +1131,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 sb.step(istep, conf.i_scheme)
 
                 # Stabilise the solution by smoothing
-                sb.smooth(sf2, sf4)
+                sb.smooth(sf2, sf4, sf2min)
 
             # Record residuals
             iilog = np.mod(istep - 1, conf.n_step_log)
@@ -1234,7 +1239,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     )
                     logger.info(f"   Ys = {Ys:.3e}")
                     for ib, dU in enumerate(dUall.mean(axis=0)):
-                        logger.info(f"  block {ib}: {dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} {dU[3]:.2e} {dU[4]:.2e}")
+                        logger.info(
+                            f"  block {ib}: {dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} {dU[3]:.2e} {dU[4]:.2e}"
+                        )
 
                     dUlognow = np.stack(dUall).mean(axis=1)
                     dUlog.append(dUlognow)
