@@ -24,13 +24,13 @@ sdist ::
 test ::
 	pytest
 
-compile ::
-	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp,bounds -ffast-math -fmax-errors=1' -c turbigen/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
-	mv embsolve*.so turbigen
+compile-slow ::
+	python -m numpy.f2py -m embsolve --opt='-O3 -fcheck=array-temp,bounds -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv embsolve*.so turbigen/solvers
 
-compile-fast ::
-	python -m numpy.f2py -m embsolve --opt='-O3 -ffast-math -fmax-errors=1' -c turbigen/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
-	mv embsolve*.so turbigen
+compile ::
+	python -m numpy.f2py -m embsolve --opt='-O3 -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv embsolve*.so turbigen/solvers
 
 
 
