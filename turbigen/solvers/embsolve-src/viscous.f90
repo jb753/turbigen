@@ -166,8 +166,8 @@ subroutine viscous_force( &
     real*4, intent (in) :: dA_jwall(njwall)
     real*4, intent (in) :: dA_kwall(nkwall)
 
-    real*4, intent (in) :: tauw_lam_mult
-    real*4, intent (in) :: tauw_turb_mult
+    real*4, intent (inout) :: tauw_lam_mult
+    real*4, intent (inout) :: tauw_turb_mult
 
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
@@ -272,8 +272,8 @@ subroutine wall_function(f, ijk, dirn, cons, &
     real*4, intent (in) :: dA(nwall)
     real*4, intent (in) :: mu
 
-    real*4, intent (in) :: tauw_lam_mult
-    real*4, intent (in) :: tauw_turb_mult
+    real*4, intent (inout) :: tauw_lam_mult
+    real*4, intent (inout) :: tauw_turb_mult
 
     real*4 :: rw
     real*4 :: Rew
@@ -422,7 +422,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
             if (Rew.lt.125e0) then
                 ! Note: the TS user manual is off by factor of 2
                 ! The below is correct and as in MULTALL
-                cf = 2e0/Rew! * tauw_lam_mult
+                cf = 2e0/Rew * tauw_lam_mult
             else
                 cf = (a1 + a2/lnRew + a3/lnRew/lnRew) * tauw_turb_mult
             end if

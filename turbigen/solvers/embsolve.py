@@ -80,8 +80,8 @@ class NativeConfig(BaseSolver):
 
     plot_conv = False
 
-    tauw_lam_mult = np.float32(1.0)
-    tauw_turb_mult = np.float32(1.0 / 16.0)
+    tauw_lam_mult = 1.0
+    tauw_turb_mult = 1.0 / 4.0
 
 
 def get_dw(block):
@@ -1245,7 +1245,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     logger.info(f"   Ys = {Ys:.3e}")
                     for ib, dU in enumerate(dUall.mean(axis=0)):
                         logger.info(
-                            f"  block {ib}: {dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} {dU[3]:.2e} {dU[4]:.2e}"
+                            f"  block {ib}: "
+                            "{dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} "
+                            "{dU[3]:.2e} {dU[4]:.2e}"
                         )
 
                     dUlognow = np.stack(dUall).mean(axis=1)
