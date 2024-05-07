@@ -12,17 +12,15 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 10000,
-    # 'n_step': 1000,
-    'n_step_avg': 1000,
+    'n_step': 30000,
+    'n_step_avg': 1,
     'n_step_log': 100,
     'plot_conv': True,
-    # 'nstep_damp': -1,
-    'xllim_pitch': 100.0,
-    # 'i_loss': 0,
-    # "damping_factor" : 25.,
-    # "nstep_damp" : -1,
-    # "smoothing_factor" : 0.005
+    'xllim_pitch': 0.0,
+    'smooth4': 0.001,
+    'smooth2_adapt': 0.5,
+    'smooth2_const': 0.001,
+    'tauw_lam_mult': 0.5,
 }
 
 # Check our MPI rank
@@ -47,7 +45,7 @@ def make_plate(mu, Tu0=300.):
     Alpha1=0.
     Ma1=0.3
     skew=0.
-    L_h = 4.
+    L_h = 8.
 
     # Geometry
     h = 0.2
@@ -268,7 +266,7 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni//nblock*iblock for iblock in range(nblock)]
     ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -407,194 +405,55 @@ def make_pipe():
 
     return g, F
 
-def test_plate_turb():
-
-    # g = make_plate(mu=1.8e-4)
-    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim_ref': 'span', 'nstep': 20000, 'nstep_avg': 1000}
-    # g.run(conf_ts3, None)
-
-    settings = {
-        'n_step': 50000,
-        # 'n_step': 1000,
-        'n_step_avg': 1000,
-        'n_step_log': 100,
-        'plot_conv': True,
-        # 'nstep_damp': -1,
-        'xllim_pitch': 100.0,
-        # 'i_loss': 0,
-        # "damping_factor" : 25.,
-        # "nstep_damp" : -1,
-        # "smoothing_factor" : 0.005
-    }
-
-    # g = make_plate()
-    g = make_plate(mu=1.8e-4)
-
-    np.set_printoptions(precision=2)
-    turbigen.solvers.embsolve.run(g, settings)
-
-    fig, ax = plt.subplots()
-    C = g[-1][-2,:,0]
-    ax.plot(C.Vx, C.r, '-x')
-    plt.show()
-
-    cf = []
-    x = []
-    for b in g:
-        Cj2 = b[1:,2,0]
-        Cj1 = b[1:,1,0]
-        Cj0 = b[1:,0,0]
-        Cjm = b[1:,b.nj//2,0]
-        Vinf = Cjm.Vx
-        rhoinf = Cjm.rho
-        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
-        mu = Cj0.mu
-        tauw = dVdy * mu
-        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
-        x.append(Cjm.x)
-    x = np.concatenate(x)
-    cf = np.concatenate(cf)
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
-    ax.plot(x, cf, '-x')
-    # ax.set_ylim([0., 0.08])
-
-    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    # xcf_ts3 = np.loadtxt('tests/xcf_ts3.csv')
-    # ax.plot(*xcf_ts3, '-o')
-    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    xcf_ts3 = np.loadtxt('tests/xcf_turb_ts3.csv')
-    ax.plot(*xcf_ts3, '-o')
-    ax.set_ylim([0., 0.0002])
-
-
-
-    # x0 = 0.02
-    # xx = x[x>x0]-x0
-    # cflam = 0.664*(rhoinf[0]*Vinf[0]/mu *xx)**-0.5
-    # ax.plot(xx, cflam, 'k--')
-
-    plt.show()
-
-    # plt.savefig('beans.pdf')
-
-def test_plate_lam_yp5():
+def test_plate_lam():
     """Run boundary layer with yplus ~ 5."""
 
-    # g = make_plate(Tu0=0., mu=8e-4)
-    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/plate_yp5', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000, 'adaptive_smoothing': 0, 'facsecin': 0.01, 'sfin': 0.002}
-    # g.run(conf_ts3, None)
-
     g = make_plate(mu=8e-4)
-
-    settings = {
-        'n_step': 30000,
-        'n_step_avg': 1,
-        'n_step_log': 100,
-        'plot_conv': True,
-        'xllim_pitch': 0.0,
-        'smooth4': 0.001,
-        'smooth2_adapt': 0.5,
-        'smooth2_const': 0.001,
-    }
 
     turbigen.solvers.embsolve.run(g, settings)
 
     # Extract skin friction
-    cf = []
-    x = []
-    for b in g:
-        Cj2 = b[1:,2,0]
-        Cj1 = b[1:,1,0]
-        Cj0 = b[1:,0,0]
-        Cjm = b[1:,b.nj//2,0]
-        Vinf = Cjm.Vx
-        rhoinf = Cjm.rho
-        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
-        mu = Cj0.mu
-        tauw = dVdy * mu
-        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
-        x.append(Cjm.x)
-    x = np.concatenate(x)
-    cf = np.concatenate(cf)
-    # np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x, cf)))
+    b = g[0]
+    Cj2 = b[1:,2,0]
+    Cj1 = b[1:,1,0]
+    Cj0 = b[1:,0,0]
+    Cjm = b[1:,b.nj//2,0]
+    Vinf = Cjm.Vx
+    rhoinf = Cjm.rho
+    dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
+    mu = Cj0.mu
+    tauw = dVdy * mu
 
-    # Load reference data
-    xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
+    cf = tauw/(0.5*rhoinf*Vinf*Vinf)
+    x = Cjm.x
 
     # Setup figure
     fig, ax = plt.subplots()
     ax.set_ylim((0.,0.006))
 
     # Plot skin friction
-    b = g[0]
-    C = b[:,b.nj//2, :]
+    xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
     ax.plot(x, cf, '-x')
-    ax.plot(*xcf_ts3, '-x')
+    ax.plot(*xcf_ts3, '-^')
 
     # Plot correlation
     x0 = 0.0
     xx = x[x>0.]
     Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
-    ax.plot(xx, 0.644/np.sqrt(Rex),'k--')
+    cf_corr =  0.644/np.sqrt(Rex)
+    ax.plot(xx, cf_corr,'k--')
 
+    # Get error
+    err = (cf[x>0.] - cf_corr)[xx>0.25]
+    assert err.mean()<1e-4
 
-    plt.show()
-
-def test_plate_lam():
-    """Run boundary layer with yplus < 1."""
-
-    # g = make_plate(Tu0=0., mu=1.8e-2)
-    # conf_ts3 = {'type': 'ts3', 'workdir': 'runs/visc', 'ilos': 1, 'xllim': 0., 'nstep': 20000, 'nstep_avg': 1000}
-    # # g.run(conf_ts3, None)
-
-    g = make_plate(mu=1.8e-2)
-
-    np.set_printoptions(precision=2)
-    settings = {
-        'n_step': 10000,
-        # 'n_step': 1000,
-        'n_step_avg': 1000,
-        'n_step_log': 100,
-        'plot_conv': True,
-        # 'nstep_damp': -1,
-        'xllim_pitch': 0.0,
-        # 'i_loss': 0,
-        # "damping_factor" : 25.,
-        # "nstep_damp" : -1,
-        # "smoothing_factor" : 0.005
-    }
-
-    turbigen.solvers.embsolve.run(g, settings)
-
-    cf = []
-    x = []
-    for b in g:
-        Cj2 = b[1:,2,0]
-        Cj1 = b[1:,1,0]
-        Cj0 = b[1:,0,0]
-        Cjm = b[1:,b.nj//2,0]
-        Vinf = Cjm.Vx
-        rhoinf = Cjm.rho
-        dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
-        mu = Cj0.mu
-        tauw = dVdy * mu
-        cf.append(tauw/(0.5*rhoinf*Vinf*Vinf))
-        x.append(Cjm.x)
-    x = np.concatenate(x)
-    cf = np.concatenate(cf)
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,b.nj//2, :]
-    ax.plot(x, cf, '-x')
-    # ax.set_ylim([0., 0.08])
-
-    # np.savetxt('tests/xcf_ts3.csv', np.stack((x, cf)))
-    xcf_ts3 = np.loadtxt('tests/xcf_turb_ts3.csv')
-    ax.plot(*xcf_ts3, '-o')
+    print('Blasius cf error')
+    print('mean', err.mean())
+    print('max', err.max())
+    print('min', err.min())
 
     plt.show()
+
 
 
 def test_poiseuille():
@@ -690,6 +549,5 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    # test_plate_turb()
-    test_plate_lam_yp5()
+    test_plate_lam()
     # test_poiseuille()

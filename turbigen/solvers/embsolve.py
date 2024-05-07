@@ -1246,8 +1246,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     for ib, dU in enumerate(dUall.mean(axis=0)):
                         logger.info(
                             f"  block {ib}: "
-                            "{dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} "
-                            "{dU[3]:.2e} {dU[4]:.2e}"
+                            f"{dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} "
+                            f"{dU[3]:.2e} {dU[4]:.2e}"
                         )
 
                     dUlognow = np.stack(dUall).mean(axis=1)
