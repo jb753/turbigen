@@ -1,0 +1,217 @@
+! Evaluate and summing fluxes
+
+subroutine set_fluxes( &
+    cons, Vxrt, P, ho, &                  ! Flow properties
+    Omega, &                              ! Reference frame angular velocity
+    r, ri, rj, rk, &                      ! Node and face-centered radii
+    ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+    fluxi, fluxj, fluxk, &                ! Fluxes out
+    ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
+    )
+
+    ! Flow properties and body force
+    ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
+    real*4, intent (in) :: cons(ni, nj, nk, 5)
+    real*4, intent (in) :: Vxrt(ni, nj, nk, 3)
+    real*4, intent (in) :: P   (ni, nj, nk)
+    real*4, intent (in) :: ho  (ni, nj, nk)
+
+    ! Reference frame angular velocity
+    real*4, intent (in)  :: Omega
+
+    ! Radii at nodes and face centers
+    real*4, intent(in) :: r( ni, nj, nk)
+    real*4, intent(in) :: ri( ni, nj-1, nk-1)
+    real*4, intent(in) :: rj( ni-1, nj, nk-1)
+    real*4, intent(in) :: rk( ni-1, nj-1, nk)
+
+    ! Wall locations
+    integer*2, intent (in) :: ijk_iwall(3, niwall)
+    integer*2, intent (in) :: ijk_jwall(3, njwall)
+    integer*2, intent (in) :: ijk_kwall(3, nkwall)
+
+    ! Fluxes out
+    real*4, intent (inout) :: fluxi(ni, nj-1, nk-1, 3, 5)
+    real*4, intent (inout) :: fluxj(ni-1, nj, nk-1, 3, 5)
+    real*4, intent (inout) :: fluxk(ni-1, nj-1, nk, 3, 5)
+
+    ! Numbers of points dummy args
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: niwall
+    integer, intent (in)  :: njwall
+    integer, intent (in)  :: nkwall
+
+    ! End of input declarations
+
+    ! Declare working variables
+
+    ! Face pressures
+    real*4 :: Pi( ni, nj-1, nk-1)
+    real*4 :: Pj( ni-1, nj, nk-1)
+    real*4 :: Pk( ni-1, nj-1, nk)
+
+    ! Fluxes per unit mass
+    real*4 :: fmass( ni, nj, nk, 4)
+    real*4 :: fmassi( ni, nj-1, nk-1, 4)
+    real*4 :: fmassj( ni-1, nj, nk-1, 4)
+    real*4 :: fmassk( ni-1, nj-1, nk, 4)
+
+    ! Mass fluxes
+    real*4 :: rhoV(ni, nj, nk, 3)
+    real*4 :: rhoVi(ni, nj-1, nk-1, 3)
+    real*4 :: rhoVj(ni-1, nj, nk-1, 3)
+    real*4 :: rhoVk(ni-1, nj-1, nk, 3)
+
+    ! Misc
+    real*4 :: rVt( ni, nj, nk)
+    real*4 :: rho(ni, nj, nk)
+    real*4 :: Vx(ni, nj, nk)
+    real*4 :: Vr(ni, nj, nk)
+    real*4 :: Vt(ni, nj, nk)
+    integer :: id
+    integer :: ip
+
+    rho = cons(:,:,:,1)
+    Vx = Vxrt(:,:,:,1)
+    Vr = Vxrt(:,:,:,2)
+    Vt = Vxrt(:,:,:,3)
+    rVt = Vt*r
+    rhoV = cons(:, :, :, 2:4)
+    rhoV(:, :, :, 3) = rhoV(:, :, :, 3)/r
+
+    ! Calculate face-centered pressure
+    call node_to_face( P, Pi, Pj, Pk, ni, nj, nk, 1)
+
+    ! Evaluate the mass flux at face centers, store in rhoV
+    call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
+
+    ! Now evaluate the nodal fluxes per unit mass of other quantities
+    fmass(:, :, :, 1) = Vx  ! axial momentum per unit mass
+    fmass(:, :, :, 2) = Vr  ! radial momentum per unit mass
+    fmass(:, :, :, 3) = rVt ! angular momentum per unit mass
+    fmass(:, :, :, 4) = ho  ! energy per unit mass
+
+    ! Distribute to the faces
+    call node_to_face( fmass, fmassi, fmassj, fmassk, ni, nj, nk, 4)
+
+    ! Mass fluxes first
+    fluxi(:, :, :, :, 1) = rhoVi
+    fluxj(:, :, :, :, 1) = rhoVj
+    fluxk(:, :, :, :, 1) = rhoVk
+
+    ! Now multiply fmass and rhoV for fluxes of other quantites
+    do ip = 1,4
+        do id = 1,3
+            fluxi(:, :, :, id, ip+1) = rhoVi(:, :, :, id) * fmassi(:, :, :, ip)
+            fluxj(:, :, :, id, ip+1) = rhoVj(:, :, :, id) * fmassj(:, :, :, ip)
+            fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
+        end do
+    end do
+
+    ! zero convective fluxes on the wall
+    call zero_wall_fluxes(fluxi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
+    call zero_wall_fluxes(fluxj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
+    call zero_wall_fluxes(fluxk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
+
+    ! Add pressure fluxes
+    call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
+    call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)
+    call add_pressure_fluxes(fluxk, Pk, rk, Omega, ni-1, nj-1, nk)
+
+end subroutine
+
+subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: Omega
+    real*4, intent (out) :: flux(ni, nj, nk, 3, 5)
+    real*4, intent (in)  :: P(ni, nj, nk)
+
+    ! pressure fluxes
+    ! x-mom in x-dirn
+    flux(:, :, :, 1, 2) = flux(:, :, :, 1, 2) + P
+    ! r-mom in r-dirn
+    flux(:, :, :, 2, 3) = flux(:, :, :, 2, 3) + P
+    ! rt-mom in t-dirn
+    flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
+    ! ho in t-dirn
+    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + Omega*r*P
+
+
+end subroutine
+
+
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
+
+    implicit none
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
+
+    integer :: ip
+
+    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+
+    real*4, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
+    real*4, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
+    real*4, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
+
+    real*4 :: fisum(ni, nj-1, nk-1)
+    real*4 :: fjsum(ni-1, nj, nk-1)
+    real*4 :: fksum(ni-1, nj-1, nk)
+
+    real*4, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
+
+    fsum = 0e0
+    do ip = 1, np
+        ! Dot product areas with the fluxes
+        fisum = sum(dAi*fi(:,:,:,:,ip),4)
+        fjsum = sum(dAj*fj(:,:,:,:,ip),4)
+        fksum = sum(dAk*fk(:,:,:,:,ip),4)
+        ! Net flux per unit volume
+        fsum(:, :, :, ip) = (&
+            fisum(1:ni-1,:,:) - fisum(2:ni,:,:) & ! i faces
+            + fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:) & ! j faces
+            + fksum(:,:,1:nk-1) - fksum(:,:,2:nk) & ! k faces
+        )/vol
+    end do
+
+end subroutine
+
+
+subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nv, nc, npt)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nv
+    integer, intent (in)  :: nc
+    integer, intent (in)  :: npt
+
+    real*4, intent (inout) :: x(ni, nj, nk, nv, nc)
+    integer*2, intent (in) :: ijk(3, npt)
+
+    integer :: ipt
+
+    ! If we have some points
+    if (npt > 0) then
+        ! Loop over all points
+        do ipt = 1,npt
+            ! Set to zero
+            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :, :) = 0e0
+        end do
+    end if
+
+end subroutine
