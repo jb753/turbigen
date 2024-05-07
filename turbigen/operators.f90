@@ -175,6 +175,8 @@ subroutine smooth(x, P, nu, ssf, sf2, sf4, ni, nj, nk, np)
     xs4((ni-1):ni, :, :, :,:) = xs2((ni-1):ni, :, :, :, :)
     xs4(:, 1:2, :, :,:) = xs2(:, 1:2, :, :, :)
     xs4(:, (nj-1):nj,:, :, :) = xs2(:, (nj-1):nj, :, :, :)
+    xs4(:, :, 1:2, :,:) = xs2(:, :, 1:2, :, :)
+    xs4(:, :, (nk-1):nk, :,:) = xs2(:, :, (nk-1):nk, :, :)
 
     ! Override one end point
     ! xs4(1, :, :, :,:) = xs2(1, :, :, :, :)

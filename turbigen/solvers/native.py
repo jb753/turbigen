@@ -137,6 +137,7 @@ class SolverBlock:
 
         self.halfVsq = to_fort(0.5 * block.V**2)
         self.u = to_fort(block.u)
+        self.T = to_fort(block.T)
 
         self.dw = get_dw(block)
         self.pitch = block.pitch
@@ -655,6 +656,7 @@ class SolverBlock:
         self.state.set_rho_u(self.cons[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
         self.P[:] = self.state.P
+        self.T[:] = self.state.T
 
     def smooth(self, sf2, sf4):
         embsolve.smooth(self.cons, self.P, self.nu, self.ssf, sf2, sf4)
@@ -1232,7 +1234,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     )
                     logger.info(f"   Ys = {Ys:.3e}")
                     for ib, dU in enumerate(dUall.mean(axis=0)):
-                        logger.info(f"  block {ib}: {dU}")
+                        logger.info(f"  block {ib}: {dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} {dU[3]:.2e} {dU[4]:.2e}")
 
                     dUlognow = np.stack(dUall).mean(axis=1)
                     dUlog.append(dUlognow)
