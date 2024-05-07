@@ -121,7 +121,7 @@ subroutine viscous_force( &
         ijk_iwall, ijk_jwall, ijk_kwall, &
         dw_iwall, dw_jwall, dw_kwall, &
         dA_iwall, dA_jwall, dA_kwall, &
-        mu, &
+        mu, tauw_lam_mult, tauw_turb_mult, &
         ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
@@ -166,6 +166,9 @@ subroutine viscous_force( &
     real*4, intent (in) :: dA_jwall(njwall)
     real*4, intent (in) :: dA_kwall(nkwall)
 
+    real*4, intent (in) :: tauw_lam_mult
+    real*4, intent (in) :: tauw_turb_mult
+
     real*4 :: fi(ni, nj-1, nk-1, 3, 5)
     real*4 :: fj(ni-1, nj, nk-1, 3, 5)
     real*4 :: fk(ni-1, nj-1, nk, 3, 5)
@@ -191,18 +194,17 @@ subroutine viscous_force( &
 
     ! ! Add on wall cell forces due to stress from wall function
     call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, niwall &
     )
     call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, njwall &
     )
     call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, nkwall &
     )
 
     ! Apply relaxation
     fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
-    ! fvisc = fvisc_new
 
 end subroutine
 
@@ -249,7 +251,10 @@ end subroutine
 
 
 ! Add on cell forces due to wall functions
-subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwall)
+subroutine wall_function(f, ijk, dirn, cons, &
+        r, vol, dw, dA, mu, &
+        tauw_lam_mult, tauw_turb_mult, &
+        ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -266,6 +271,9 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
     real*4, intent (in) :: dw(nwall)
     real*4, intent (in) :: dA(nwall)
     real*4, intent (in) :: mu
+
+    real*4, intent (in) :: tauw_lam_mult
+    real*4, intent (in) :: tauw_turb_mult
 
     real*4 :: rw
     real*4 :: Rew
@@ -414,12 +422,11 @@ subroutine wall_function(f, ijk, dirn, cons, r, vol, dw, dA, mu, ni, nj, nk, nwa
             if (Rew.lt.125e0) then
                 ! Note: the TS user manual is off by factor of 2
                 ! The below is correct and as in MULTALL
-                cf = 2e0/Rew
-                tauw = cf * 0.5e0 * row *Vw*Vw
+                cf = 2e0/Rew! * tauw_lam_mult
             else
-                cf = a1 + a2/lnRew + a3/lnRew/lnRew
-                tauw = cf * row *Vw*Vw/8e0
+                cf = (a1 + a2/lnRew + a3/lnRew/lnRew) * tauw_turb_mult
             end if
+            tauw = cf * 0.5e0 * row *Vw*Vw
 
             ! Get indices into the cell for this face
             if (i.eq.ni) then

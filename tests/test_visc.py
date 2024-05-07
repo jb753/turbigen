@@ -487,9 +487,9 @@ def test_plate_lam_yp5():
     # g.run(conf_ts3, None)
 
     g = make_plate(mu=8e-4)
-    np.set_printoptions(precision=2)
+
     settings = {
-        'n_step': 50000,
+        'n_step': 30000,
         'n_step_avg': 1,
         'n_step_log': 100,
         'plot_conv': True,
@@ -498,8 +498,10 @@ def test_plate_lam_yp5():
         'smooth2_adapt': 0.5,
         'smooth2_const': 0.001,
     }
+
     turbigen.solvers.embsolve.run(g, settings)
 
+    # Extract skin friction
     cf = []
     x = []
     for b in g:
@@ -516,42 +518,27 @@ def test_plate_lam_yp5():
         x.append(Cjm.x)
     x = np.concatenate(x)
     cf = np.concatenate(cf)
-
     # np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x, cf)))
+
+    # Load reference data
     xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
 
+    # Setup figure
     fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,1, 0]
-    ax.plot(C.x, C.Vx, '-x')
+    ax.set_ylim((0.,0.006))
 
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[:,1, 0]
-    ax.plot(C.x, C.P, '-x')
-    plt.show()
-    # ax.set_ylim([n0., 0.08])
-
-    plt.show()
-    # ax.set_ylim([n0., 0.08])
-
-    fig, ax = plt.subplots()
+    # Plot skin friction
     b = g[0]
     C = b[:,b.nj//2, :]
     ax.plot(x, cf, '-x')
     ax.plot(*xcf_ts3, '-x')
 
+    # Plot correlation
     x0 = 0.0
     xx = x[x>0.]
     Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
     ax.plot(xx, 0.644/np.sqrt(Rex),'k--')
 
-    ax.set_ylim((0.,0.006))
-
-    # fig, ax = plt.subplots()
-    # b = g[0]
-    # C = b[-2,:, 0]
-    # ax.plot(C.Vx, C.r, '-x')
 
     plt.show()
 

@@ -80,6 +80,9 @@ class NativeConfig(BaseSolver):
 
     plot_conv = False
 
+    tauw_lam_mult = np.float32(1.0)
+    tauw_turb_mult = np.float32(1.0 / 16.0)
+
 
 def get_dw(block):
     # Cell height in each of i,j,k dirns
@@ -697,6 +700,8 @@ class SolverBlock:
             *self.dw_face,
             *self.dA_face,
             self.mu,
+            self.conf.tauw_lam_mult,
+            self.conf.tauw_turb_mult,
         )
 
     def set_wall_function(self):
