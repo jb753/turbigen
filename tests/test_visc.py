@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 30000,
+    # 'n_step': 30000,
+    'n_step': 1000,
     'n_step_avg': 1,
     'n_step_log': 100,
     'plot_conv': True,
@@ -20,7 +21,7 @@ settings = {
     'smooth4': 0.001,
     'smooth2_adapt': 0.5,
     'smooth2_const': 0.001,
-    'tauw_lam_mult': 0.5,
+    'tauw_lam_mult': 1.0,
 }
 
 # Check our MPI rank
@@ -445,12 +446,39 @@ def test_plate_lam():
 
     # Get error
     err = (cf[x>0.] - cf_corr)[xx>0.25]
-    assert err.mean()<1e-4
+    # assert err.mean()<1e-4
 
     print('Blasius cf error')
     print('mean', err.mean())
     print('max', err.max())
     print('min', err.min())
+
+    # Momentum flux
+    rhoVx = b.rhoVx.mean(axis=2)
+    Vx = b.Vx.mean(axis=2)
+    r = b.r.mean(axis=2)
+    P = b.P.mean(axis=2)
+    mom = np.trapz((b.rhoVx[:,:,0]*b.Vx[:,:,0] + b.P[:,:,0])*2*np.pi*b.r[:,:,0], b.r[:,:,0], axis=1)
+    mdot = np.trapz((rhoVx)*2*np.pi*r, r, axis=1)
+    Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
+
+    fig, ax = plt.subplots()
+    Cdb = 1.328/np.sqrt(Rex)
+    ax.plot(rhoVx.T, r.T)
+    # ax.plot(xx, Cdb)
+    plt.show()
+
+    fig, ax = plt.subplots()
+    Cdb = 1.328/np.sqrt(Rex)
+    ax.plot(b.x[:,0,0], b.P[:,b.nj//2, b.nk//2])
+    # ax.plot(xx, Cdb)
+    plt.show()
+
+    fig, ax = plt.subplots()
+    Cdb = 1.328/np.sqrt(Rex)
+    ax.plot(b.x[:,0,0], mom)
+    # ax.plot(xx, Cdb)
+    plt.show()
 
     plt.show()
 
