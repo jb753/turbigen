@@ -12,16 +12,14 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 50000,
-    # 'n_step': 5000,
+    'n_step': 30000,
     'n_step_avg': 1,
     'n_step_log': 100,
-    'plot_conv': True,
+    'plot_conv': False,
     'xllim_pitch': 0.0,
     'smooth4': 0.0005,
     'smooth2_adapt': 0.5,
     'smooth2_const': 0.001,
-    'tauw_lam_mult': 1.0,
 }
 
 # Check our MPI rank
@@ -409,13 +407,13 @@ def make_pipe():
 def test_plate_lam():
     """Run boundary layer with yplus ~ 5."""
 
-    g = make_plate(mu=8e-4, Tu0=0.)
-    set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_yp5/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
-    import turbigen.solvers.ts3
-    turbigen.solvers.ts3.run(g, set_ts3, None)
+    # g = make_plate(mu=8e-4, Tu0=0.)
+    # set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_yp5/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    # import turbigen.solvers.ts3
+    # turbigen.solvers.ts3.run(g, set_ts3, None)
 
-    # g = make_plate(mu=8e-4)
-    # turbigen.solvers.embsolve.run(g, settings)
+    g = make_plate(mu=8e-4)
+    turbigen.solvers.embsolve.run(g, settings)
 
     # Extract skin friction
     b = g[0]
@@ -432,7 +430,7 @@ def test_plate_lam():
     cf = tauw/(0.5*rhoinf*Vinf*Vinf)
     x = Cjm.x
 
-    xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
+    # xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
 
     # Setup figure
     fig, ax = plt.subplots()
@@ -440,22 +438,28 @@ def test_plate_lam():
 
     # Plot skin friction
     xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
-    ax.plot(x, cf, '-x')
-    ax.plot(*xcf_ts3, '-^')
+    ax.plot(x, cf, '-', label='embsolve')
+    ax.plot(*xcf_ts3, '-', label='TS3')
 
     # Plot correlation
     x0 = 0.0
     xx = x[x>0.]
     Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
     cf_corr =  0.644/np.sqrt(Rex)
-    ax.plot(xx, cf_corr,'k--')
+    ax.plot(xx, cf_corr,'k--', label='Blasius')
+
+    ax.set_ylabel('Skin Friction Coefficient, $C_f$')
+    ax.set_xlabel('Streamwise Distance, $x/L$')
+    ax.legend()
+    plt.tight_layout(pad=0.1)
+    plt.savefig('tests/blasius_cf.pdf')
 
     # Get error
     err = (cf[x>0.] - cf_corr)[xx>0.25]
-    # assert err.mean()<1e-4
+    assert np.abs(err).mean()<1e-4
 
     print('Blasius cf error')
-    print('mean', err.mean())
+    print('mean', np.abs(err).mean())
     print('max', err.max())
     print('min', err.min())
 
@@ -478,7 +482,7 @@ def test_plate_lam():
 
     # Drag coefficient
     dyn_head = 0.5*rhoinf.mean()*(Vinf.mean()**2)
-    Cd = (force_width/dyn_head/x)[x>0.]
+    Cd = force_width[x>0.]/dyn_head[x>0.]/x[x>0.]
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
     Cdts3 = np.loadtxt('tests/xcd_yp5_ts3.csv')
@@ -487,6 +491,16 @@ def test_plate_lam():
     Cdb = 1.328/np.sqrt(Rex)
     print(Cdb.mean(), Cdb.min(), Cdb.max())
     print(Cd.mean(), Cd.min(), Cd.max())
+
+
+    err = (Cd/Cdb-1.)[xx>0.25]
+    assert np.abs(err).mean()<0.05
+
+    print('Blasius drag error')
+    print('mean', np.abs(err).mean())
+    print('max', err.max())
+    print('min', err.min())
+
     # Cdb /= Cdb[-1]/Cd[-1]
     xxn = xx/xx[-1]
     xxts3 = Cdts3[0]/xx[-1]
@@ -499,9 +513,7 @@ def test_plate_lam():
     ax.legend()
     plt.tight_layout(pad=0.1)
     plt.savefig('tests/blasius_cd.pdf')
-    plt.show()
-
-    plt.show()
+    # plt.show()
 
 
 
@@ -518,9 +530,14 @@ def test_poiseuille():
     # ax.axis('equal')
     # plt.show()
 
+    settings2 = settings.copy()
+    settings2["smooth2_const"] = 0.0
+    settings2["smooth4"] = 0.001
+    settings2["plot_conv"] = True
+
 
     np.set_printoptions(precision=2)
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings2)
 
     b = g[0]
     C = b[:, b.nj//2, b.nk//2]
@@ -598,5 +615,5 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
-    test_plate_lam()
-    # test_poiseuille()
+    # test_plate_lam()
+    test_poiseuille()

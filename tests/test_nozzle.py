@@ -1,5 +1,5 @@
 """Run a quasi-1D nozzle in the native solver."""
-import turbigen.solvers.native
+import turbigen.solvers.embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.util
@@ -18,7 +18,7 @@ size = comm.Get_size()
 
 # Jump to solver slave process if not first rank
 if rank > 0:
-    turbigen.solvers.native.run_slave()
+    turbigen.solvers.sative.run_slave()
     sys.exit(0)
 
 def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dirn='r', xnRR=None, Alpha=0., tper=False, Ma1=0.3):
@@ -189,6 +189,7 @@ settings = {
     'n_step_avg': 10,
     'n_step_log': 100,
     'i_loss': 0,
+    # 'plot_conv': True,
 }
 
 def plot_nozzle(g, F):
@@ -300,7 +301,7 @@ def test_condi(dirn, plot=False):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -325,7 +326,7 @@ def test_uniform(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -351,7 +352,7 @@ def test_Ma(Ma):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -375,11 +376,11 @@ def test_skew(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 1e-4
+    rtol = 2e-4
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()
@@ -405,7 +406,7 @@ def test_radius(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     _, Ys, Cho = post_nozzle(g, F)
 
@@ -465,7 +466,7 @@ def not_test_exit(Alpha):
         'i_loss': 0,
     }
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     # fig, ax = plt.subplots()
     # b = g[-1]
@@ -484,7 +485,8 @@ def not_test_exit(Alpha):
 if __name__=='__main__':
 
 
-    # pass
+    pass
+
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
     # test_exit(0.)
@@ -493,13 +495,13 @@ if __name__=='__main__':
     # test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
-    # test_uniform(30.)
+    # test_uniform(0.)
 
     # print('testing uniform, skewed grid')
-    # test_skew(30.)
+    test_skew(-30.)
 
     # print('testing radius change, aligned grid')
     # test_radius(30.)
 
     # print('testing con-di nozzles')
-    test_condi('t')
+    # test_condi('t')

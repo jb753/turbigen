@@ -2,7 +2,13 @@
 import turbigen.grid
 import numpy as np
 import turbigen.compflow_native as cf
-from turbigen.solvers.native import get_periodic_data, embsolve, to_fort
+import turbigen.solvers.embsolve
+
+typ = np.float32
+def to_fort(x):
+    """Convert an array to Fortran."""
+    x = np.asfortranarray(x.copy()).astype(typ)
+    return x
 
 def test_box():
 
@@ -10,9 +16,9 @@ def test_box():
     L = 0.1
     yoffset = 40.0*L
 
-    nj = 3
-    ni = 3
-    nk = 3
+    ni = 5
+    nj = 7
+    nk = 9
 
     Nb = 1
     xv = np.linspace(-L, L, ni)
@@ -43,7 +49,7 @@ def test_box():
     g.check_coordinates()
     g.match_patches()
 
-    bid, ijk, ijkf, d, nxbid, nxijk, nxijkf, nxd = get_periodic_data(g[0].patches[0])
+    bid, ijk, ijkf, d, nxbid, nxijk, nxijkf, nxd = turbigen.solvers.embsolve.get_periodic_data(g[0].patches[0])
 
     xf1 = g[0].x_face[0]
     xf2 = g[1].x_face[0]
@@ -54,15 +60,13 @@ def test_box():
     tf1 = g[0].t_face[0]
     tf2 = g[1].t_face[0]
 
-    xrtf1 = np.stack((xf1, rf1, tf1))
-    xrtf2 = np.stack((xf2, rf2, tf2))
+    xrtf1 = to_fort(np.stack((xf1, rf1, tf1),axis=-1))
+    xrtf2 = to_fort(np.stack((xf2, rf2, tf2),axis=-1))
 
-    xrt1_out = embsolve.get_by_ijk(to_fort(xrtf1), ijkf)
-    xrt2_out = embsolve.get_by_ijk(to_fort(xrtf2), nxijkf)
+    xrt1u = turbigen.solvers.embsolve.embsolve.get_by_ijk(xrtf1, ijkf)
+    xrt2u = turbigen.solvers.embsolve.embsolve.get_by_ijk(xrtf2, nxijkf)
 
-
-    assert np.allclose(xrt1_out, xrt2_out)
+    assert np.allclose(xrt1u, xrt2u)
 
 if __name__=='__main__':
-
     test_box()
