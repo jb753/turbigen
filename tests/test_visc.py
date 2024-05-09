@@ -454,30 +454,36 @@ def test_plate_lam():
     print('min', err.min())
 
     # Momentum flux
-    rhoVx = b.rhoVx.mean(axis=2)
+    rho = b.rho.mean(axis=2)
     Vx = b.Vx.mean(axis=2)
     r = b.r.mean(axis=2)
     P = b.P.mean(axis=2)
-    mom = np.trapz((b.rhoVx[:,:,0]*b.Vx[:,:,0] + b.P[:,:,0])*2*np.pi*b.r[:,:,0], b.r[:,:,0], axis=1)
-    mdot = np.trapz((rhoVx)*2*np.pi*r, r, axis=1)
-    Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
+    x = b.x[:,0,0]
+    dr = np.diff(r, axis=-1)
+    rm = 0.5*(r[:,1:] + r[:,:-1])
+    rho = 0.5*(rho[:,1:]+rho[:,:-1])
+    Vx = 0.5*(Vx[:,1:]+Vx[:,:-1])
+    P = 0.5*(P[:,1:]+P[:,:-1])
+    mom = np.sum((rho*Vx*Vx + P)*2*np.pi*rm*dr, axis=-1)
+
+    # Force on plate = mom in - mom out
+    force = mom-mom[0]  # [N]
+    force_width = force/(2*np.pi*b.r.min())
+
+    # Drag coefficient
+    dyn_head = 0.5*rhoinf.mean()*(Vinf.mean()**2)
+    Cd = (force_width/dyn_head/x)[x>0.]
+
+    # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
 
     fig, ax = plt.subplots()
     Cdb = 1.328/np.sqrt(Rex)
-    ax.plot(rhoVx.T, r.T)
-    # ax.plot(xx, Cdb)
-    plt.show()
-
-    fig, ax = plt.subplots()
-    Cdb = 1.328/np.sqrt(Rex)
-    ax.plot(b.x[:,0,0], b.P[:,b.nj//2, b.nk//2])
-    # ax.plot(xx, Cdb)
-    plt.show()
-
-    fig, ax = plt.subplots()
-    Cdb = 1.328/np.sqrt(Rex)
-    ax.plot(b.x[:,0,0], mom)
-    # ax.plot(xx, Cdb)
+    print(Cdb.mean(), Cdb.min(), Cdb.max())
+    print(Cd.mean(), Cd.min(), Cd.max())
+    ax.plot(xx, Cd)
+    ax.plot(xx, Cdb)
+    ax.set_ylim(bottom=0.)
+    # ax.set_ylim([0.,0.025])
     plt.show()
 
     plt.show()
