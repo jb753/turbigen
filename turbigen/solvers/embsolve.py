@@ -81,7 +81,7 @@ class NativeConfig(BaseSolver):
     plot_conv = False
 
     tauw_lam_mult = 1.0
-    tauw_turb_mult = 1.0 / 4.0
+    tauw_turb_mult = 1.0
 
 
 def get_dw(block):

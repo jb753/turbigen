@@ -482,7 +482,7 @@ def test_plate_lam():
 
     # Drag coefficient
     dyn_head = 0.5*rhoinf.mean()*(Vinf.mean()**2)
-    Cd = force_width[x>0.]/dyn_head[x>0.]/x[x>0.]
+    Cd = force_width[x>0.]/dyn_head/x[x>0.]
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
     Cdts3 = np.loadtxt('tests/xcd_yp5_ts3.csv')

@@ -61,16 +61,16 @@ mesh:
 
 # CFD solver
 solver:
-  type: native  # Which solver
-  n_step: 10000
+  type: embsolve  # Which solver
+  n_step: 8000
   n_step_avg: 1000
   n_step_log: 100
   nstep_damp: -1
   plot_conv: true
   # i_scheme: 0
   # CFL: 0.4
-  smoothing_factor_4th: 0.01
-  smoothing_factor_2nd: 1.0
+  # smoothing_factor_4th: 0.01
+  tauw_turb_mult: 0.25
 
 post_process:
   contour_traverse:
