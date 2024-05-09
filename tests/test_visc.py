@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    'n_step': 40000,
-    # 'n_step': 10000,
+    'n_step': 50000,
+    # 'n_step': 5000,
     'n_step_avg': 1,
     'n_step_log': 100,
     'plot_conv': True,
@@ -482,11 +482,17 @@ def test_plate_lam():
     print(Cdb.mean(), Cdb.min(), Cdb.max())
     print(Cd.mean(), Cd.min(), Cd.max())
     # Cdb /= Cdb[-1]/Cd[-1]
-    ax.plot(xx, Cd)
-    ax.plot(*Cdts3)
-    ax.plot(xx, Cdb, 'k--')
-    # ax.set_ylim(bottom=0.)
+    xxn = xx/xx[-1]
+    xxts3 = Cdts3[0]/xx[-1]
+    ax.plot(xxn, Cd, label='embsolve')
+    ax.plot(xxts3, Cdts3[1], label='TS3')
+    ax.plot(xxn, Cdb, 'k--', label='Blasius')
     ax.set_ylim([0.,0.020])
+    ax.set_ylabel('Drag Coefficient, $C_D$')
+    ax.set_xlabel('Streamwise Distance, $x/L$')
+    ax.legend()
+    plt.tight_layout(pad=0.1)
+    plt.savefig('tests/blasius_cd.pdf')
     plt.show()
 
     plt.show()
