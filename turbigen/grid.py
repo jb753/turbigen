@@ -184,7 +184,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             if patch.cdir == 0:
                 iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
             elif patch.cdir == 1:
-                jwall[ist : (ien - 1), jst : jen, kst : (ken - 1)] += 1
+                jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
                 kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
@@ -1280,16 +1280,9 @@ class Patch:
         ijk = np.stack(np.meshgrid(*ijkv, indexing="ij"))
 
         if perm is not None:
-            ijk = np.stack(
-                [
-                    np.flip(ijkn, axis=flip).transpose(perm)
-                    for ijkn in ijk
-                ]
-            )
-
+            ijk = np.stack([np.flip(ijkn, axis=flip).transpose(perm) for ijkn in ijk])
 
         return ijk
-
 
     def get_flat_indices(self, order="C", perm=None, flip=None):
         # Return indices of all points on patch into self.block.ravel
@@ -1323,7 +1316,7 @@ class Patch:
                     ind[0, 1:, 1:],
                 )
             ).reshape(4, -1)
-            dA = C.dAi.reshape(3,-1)
+            dA = C.dAi.reshape(3, -1)
         else:
             raise NotImplementedError
 
@@ -1339,7 +1332,12 @@ class Patch:
         nnode = np.size(ind)
         nface = dA.shape[-1]
 
-        w = np.zeros((3, nnode,))
+        w = np.zeros(
+            (
+                3,
+                nnode,
+            )
+        )
 
         # Loop over faces
         for iface in range(nface):

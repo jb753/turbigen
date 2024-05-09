@@ -268,7 +268,7 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def P(self):
-        return self.rho * (self.gamma - 1.0) * (self.u + self.cv*self.Tu0)
+        return self.rho * (self.gamma - 1.0) * (self.u + self.cv * self.Tu0)
 
     @dependent_property
     def a(self):
@@ -276,7 +276,7 @@ class PerfectState(StructuredData):
 
     @dependent_property
     def h(self):
-        return self.gamma * self.u + self.Tu0*self.rgas
+        return self.gamma * self.u + self.Tu0 * self.rgas
 
     @dependent_property
     def T(self):
