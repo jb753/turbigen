@@ -409,9 +409,13 @@ def make_pipe():
 def test_plate_lam():
     """Run boundary layer with yplus ~ 5."""
 
-    g = make_plate(mu=8e-4)
+    g = make_plate(mu=8e-4, Tu0=0.)
+    set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_yp5/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    import turbigen.solvers.ts3
+    turbigen.solvers.ts3.run(g, set_ts3, None)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    # g = make_plate(mu=8e-4)
+    # turbigen.solvers.embsolve.run(g, settings)
 
     # Extract skin friction
     b = g[0]
@@ -427,6 +431,8 @@ def test_plate_lam():
 
     cf = tauw/(0.5*rhoinf*Vinf*Vinf)
     x = Cjm.x
+
+    xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
 
     # Setup figure
     fig, ax = plt.subplots()
