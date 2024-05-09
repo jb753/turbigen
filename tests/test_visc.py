@@ -12,13 +12,13 @@ import matplotlib.pyplot as plt
 import pytest
 
 settings = {
-    # 'n_step': 30000,
-    'n_step': 1000,
+    'n_step': 40000,
+    # 'n_step': 10000,
     'n_step_avg': 1,
     'n_step_log': 100,
     'plot_conv': True,
     'xllim_pitch': 0.0,
-    'smooth4': 0.001,
+    'smooth4': 0.0005,
     'smooth2_adapt': 0.5,
     'smooth2_const': 0.001,
     'tauw_lam_mult': 1.0,
@@ -46,10 +46,10 @@ def make_plate(mu, Tu0=300.):
     Alpha1=0.
     Ma1=0.3
     skew=0.
-    L_h = 8.
+    L_h = 4.
 
     # Geometry
-    h = 0.2
+    h = 0.5
     L = L_h * h
     rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
     rh = rm - 0.5 * h
@@ -71,8 +71,8 @@ def make_plate(mu, Tu0=300.):
 
     # Radial grid points
     ER = 1.05
-    d1 = 0.005*h
-    dmax = 0.1*h
+    d1 = 0.005*0.2
+    dmax = 0.1*0.2
     # rv = turbigen.clusterfunc.double.free(d1, d2, dmax, ER, rh, rt)
     rv = turbigen.clusterfunc.single.free(d1, dmax, ER, rh, rt)
     dmax1 = np.diff(rv).max()
@@ -106,10 +106,10 @@ def make_plate(mu, Tu0=300.):
     xv0 = xv[xv>0.]
     delstar = 1.72*np.sqrt(mu*xv0/V/rho1)
 
-    # # Stretch vertically to account for displacement thickness
-    xn = xv/xv[-1]
-    stretch = np.expand_dims(np.interp(xv, xv0, delstar/h+1.), (1,2))
-    xrt[1] = (xrt[1] - rh)*stretch + rh
+    # # # Stretch vertically to account for displacement thickness
+    # xn = xv/xv[-1]
+    # stretch = np.expand_dims(np.interp(xv, xv0, delstar/h+1.), (1,2))
+    # xrt[1] = (xrt[1] - rh)*stretch + rh
 
     # fig, ax = plt.subplots()
     # ax.plot(xrt[0,:,:,0], xrt[1,:,:,0],'k-',lw=0.5)
@@ -467,7 +467,7 @@ def test_plate_lam():
     mom = np.sum((rho*Vx*Vx + P)*2*np.pi*rm*dr, axis=-1)
 
     # Force on plate = mom in - mom out
-    force = mom-mom[0]  # [N]
+    force = mom[0]-mom  # [N]
     force_width = force/(2*np.pi*b.r.min())
 
     # Drag coefficient
@@ -475,15 +475,18 @@ def test_plate_lam():
     Cd = (force_width/dyn_head/x)[x>0.]
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
+    Cdts3 = np.loadtxt('tests/xcd_yp5_ts3.csv')
 
     fig, ax = plt.subplots()
     Cdb = 1.328/np.sqrt(Rex)
     print(Cdb.mean(), Cdb.min(), Cdb.max())
     print(Cd.mean(), Cd.min(), Cd.max())
+    # Cdb /= Cdb[-1]/Cd[-1]
     ax.plot(xx, Cd)
-    ax.plot(xx, Cdb)
-    ax.set_ylim(bottom=0.)
-    # ax.set_ylim([0.,0.025])
+    ax.plot(*Cdts3)
+    ax.plot(xx, Cdb, 'k--')
+    # ax.set_ylim(bottom=0.)
+    ax.set_ylim([0.,0.020])
     plt.show()
 
     plt.show()
