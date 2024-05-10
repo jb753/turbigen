@@ -407,24 +407,24 @@ def make_pipe():
 def test_plate_turb():
     """Run boundary layer with yplus ~ 30."""
 
-    # g = make_plate(mu=8e-4, Tu0=0.)
-    # set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_yp5/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
-    # import turbigen.solvers.ts3
-    # turbigen.solvers.ts3.run(g, set_ts3, None)
+    g = make_plate(mu=0.5e-4, Tu0=0.)
+    set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_turb/', 'nstep': 10000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    import turbigen.solvers.ts3
+    turbigen.solvers.ts3.run(g, set_ts3, None)
 
-    g = make_plate(mu=0.5e-4)
-    settings = {
-        'n_step': 10000,
-        'n_step_avg': 1,
-        'n_step_log': 100,
-        'plot_conv': True,
-        'xllim_pitch': 0.0,
-        'smooth4': 0.0005,
-        'smooth2_adapt': 0.5,
-        'smooth2_const': 0.001,
-    }
 
-    turbigen.solvers.embsolve.run(g, settings)
+    # g = make_plate(mu=0.5e-4)
+    # settings = {
+    #     'n_step': 10000,
+    #     'n_step_avg': 1,
+    #     'n_step_log': 100,
+    #     'plot_conv': True,
+    #     'xllim_pitch': 0.0,
+    #     'smooth4': 0.0005,
+    #     'smooth2_adapt': 0.5,
+    #     'smooth2_const': 0.001,
+    # }
+    # turbigen.solvers.embsolve.run(g, settings)
 
     # Extract skin friction
     b = g[0]
@@ -441,14 +441,14 @@ def test_plate_turb():
     cf = tauw/(0.5*rhoinf*Vinf*Vinf)
     x = Cjm.x
 
-    # xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
+    xcf_ts3 = np.savetxt('tests/xcf_yp5_turb.csv', np.stack((x,cf)))
 
     # Setup figure
     fig, ax = plt.subplots()
     # ax.set_ylim((0.,0.006))
 
     # Plot skin friction
-    xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
+    xcf_ts3 = np.loadtxt('tests/xcf_yp5_turb.csv')
     ax.plot(x, cf, '-', label='embsolve')
     ax.plot(*xcf_ts3, '-', label='TS3')
 
@@ -496,7 +496,8 @@ def test_plate_turb():
     Cd = force_width[x>0.]/dyn_head/x[x>0.]
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
-    Cdts3 = np.loadtxt('tests/xcd_yp5_ts3.csv')
+    np.savetxt('tests/xcd_yp5_turb.csv', np.stack((xx, Cd)))
+    Cdts3 = np.loadtxt('tests/xcd_yp5_turb.csv')
 
     fig, ax = plt.subplots()
     Cdb = 1.328/np.sqrt(Rex)
