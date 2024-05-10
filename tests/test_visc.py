@@ -407,24 +407,25 @@ def make_pipe():
 def test_plate_turb():
     """Run boundary layer with yplus ~ 30."""
 
-    g = make_plate(mu=0.5e-4, Tu0=0.)
-    set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_turb/', 'nstep': 10000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
-    import turbigen.solvers.ts3
-    turbigen.solvers.ts3.run(g, set_ts3, None)
+    # g = make_plate(mu=0.5e-4, Tu0=0.)
+    # set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_turb/', 'nstep': 10000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    # import turbigen.solvers.ts3
+    # turbigen.solvers.ts3.run(g, set_ts3, None)
 
 
-    # g = make_plate(mu=0.5e-4)
-    # settings = {
-    #     'n_step': 10000,
-    #     'n_step_avg': 1,
-    #     'n_step_log': 100,
-    #     'plot_conv': True,
-    #     'xllim_pitch': 0.0,
-    #     'smooth4': 0.0005,
-    #     'smooth2_adapt': 0.5,
-    #     'smooth2_const': 0.001,
-    # }
-    # turbigen.solvers.embsolve.run(g, settings)
+    g = make_plate(mu=0.5e-4)
+    settings = {
+        'n_step': 20000,
+        # 'n_step': 5000,
+        'n_step_avg': 1,
+        'n_step_log': 100,
+        'plot_conv': True,
+        'xllim_pitch': 10000.0,
+        'smooth4': 0.0002,
+        'smooth2_adapt': 1.0,
+        'smooth2_const': 0.002,
+    }
+    turbigen.solvers.embsolve.run(g, settings)
 
     # Extract skin friction
     b = g[0]
@@ -441,7 +442,11 @@ def test_plate_turb():
     cf = tauw/(0.5*rhoinf*Vinf*Vinf)
     x = Cjm.x
 
-    xcf_ts3 = np.savetxt('tests/xcf_yp5_turb.csv', np.stack((x,cf)))
+    fig, ax = plt.subplots()
+    ax.plot(b.Vx[-10,:,0], b.r[-10,:,0], '-x')
+    plt.show()
+
+    # xcf_ts3 = np.savetxt('tests/xcf_yp5_turb.csv', np.stack((x,cf)))
 
     # Setup figure
     fig, ax = plt.subplots()
@@ -455,8 +460,6 @@ def test_plate_turb():
     # Plot correlation
     x0 = 0.0
     xx = x[x>0.]
-    Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
-    cf_corr =  0.644/np.sqrt(Rex)
     # ax.plot(xx, cf_corr,'k--', label='Blasius')
 
     ax.set_ylabel('Skin Friction Coefficient, $C_f$')
@@ -466,13 +469,13 @@ def test_plate_turb():
     # plt.savefig('tests/blasius_cf.pdf')
 
     # Get error
-    err = (cf[x>0.] - cf_corr)[xx>0.25]
-    # assert np.abs(err).mean()<1e-4
+    err = (cf[x>0.]/xcf_ts3[1][x>0.]-1.)[xx>0.25]
+    assert np.abs(err).mean()<0.05
 
-    # print('Blasius cf error')
-    # print('mean', np.abs(err).mean())
-    # print('max', err.max())
-    # print('min', err.min())
+    print('TS3 cf rel error')
+    print('mean', np.abs(err).mean())
+    print('max', err.max())
+    print('min', err.min())
 
     # Momentum flux
     rho = b.rho.mean(axis=2)
@@ -496,19 +499,18 @@ def test_plate_turb():
     Cd = force_width[x>0.]/dyn_head/x[x>0.]
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
-    np.savetxt('tests/xcd_yp5_turb.csv', np.stack((xx, Cd)))
+    # np.savetxt('tests/xcd_yp5_turb.csv', np.stack((xx, Cd)))
     Cdts3 = np.loadtxt('tests/xcd_yp5_turb.csv')
 
     fig, ax = plt.subplots()
-    Cdb = 1.328/np.sqrt(Rex)
 
-    err = (Cd/Cdb-1.)[xx>0.25]
-    # assert np.abs(err).mean()<0.05
+    err = (Cd/Cdts3[1]-1.)[xx>0.25]
+    assert np.abs(err).mean()<0.05
 
-    # print('Blasius drag error')
-    # print('mean', np.abs(err).mean())
-    # print('max', err.max())
-    # print('min', err.min())
+    print('TS4 rel drag error')
+    print('mean', np.abs(err).mean())
+    print('max', err.max())
+    print('min', err.min())
 
     # Cdb /= Cdb[-1]/Cd[-1]
     xxn = xx/xx[-1]
