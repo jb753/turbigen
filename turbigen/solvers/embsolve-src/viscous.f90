@@ -307,7 +307,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
 
     a1 = -1.767e-3
     a2 = 3.177e-2
-    a3 = 2.5614-1
+    a3 = 2.5614e-1
 
     roVxrtw = 0e0
     row = 0e0
@@ -419,7 +419,8 @@ subroutine wall_function(f, ijk, dirn, cons, &
             Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
             Rew = row * Vw * dw(iwall)/mu
             lnRew = alog(Rew)
-            if (Rew.lt.125e0) then
+            ! if (Rew.lt.125e0) then
+            if (Rew.lt.127.53373025e0) then
                 ! Note: the TS user manual is off by factor of 2
                 ! The below is correct and as in MULTALL
                 cf = 2e0/Rew * tauw_lam_mult
@@ -471,67 +472,6 @@ subroutine wall_function(f, ijk, dirn, cons, &
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
-
-        end do
-    end if
-
-
-end subroutine
-
-
-subroutine zero_wall_forces(f, ijk, ni, nj, nk, nwall)
-
-    integer, intent (in)  :: ni
-    integer, intent (in)  :: nj
-    integer, intent (in)  :: nk
-    integer, intent (in)  :: nwall
-
-    real*4, intent (inout) :: f(ni-1, nj-1, nk-1, 5)
-    integer*2, intent (in) :: ijk(3, nwall)
-
-    integer :: i
-    integer :: j
-    integer :: k
-    integer :: iwall
-    integer :: ic
-    integer :: jc
-    integer :: kc
-
-    ! If we have at least one wall
-    if (nwall > 0) then
-
-        ! Loop over all points
-        do iwall = 1,nwall
-
-            ! Extract indices
-            i = ijk(1, iwall)
-            j = ijk(2, iwall)
-            k = ijk(3, iwall)
-
-            ! Skip dummy points
-            if (i.lt.0) then
-                cycle
-            end if
-
-            ! Get indices into the cells for this face
-            if (i.eq.ni) then
-                ic = ni-1
-            else
-                ic = i
-            end if
-            if (j.eq.nj) then
-                jc = nj-1
-            else
-                jc = j
-            end if
-            if (k.eq.nk) then
-                kc = nk-1
-            else
-                kc = k
-            end if
-
-            ! Set momentum forcings to zero
-            f(ic, jc, kc, 2:4) = 0e0
 
         end do
     end if

@@ -404,6 +404,126 @@ def make_pipe():
 
     return g, F
 
+def test_plate_turb():
+    """Run boundary layer with yplus ~ 30."""
+
+    # g = make_plate(mu=8e-4, Tu0=0.)
+    # set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_yp5/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    # import turbigen.solvers.ts3
+    # turbigen.solvers.ts3.run(g, set_ts3, None)
+
+    g = make_plate(mu=0.5e-4)
+    settings = {
+        'n_step': 10000,
+        'n_step_avg': 1,
+        'n_step_log': 100,
+        'plot_conv': True,
+        'xllim_pitch': 0.0,
+        'smooth4': 0.0005,
+        'smooth2_adapt': 0.5,
+        'smooth2_const': 0.001,
+    }
+
+    turbigen.solvers.embsolve.run(g, settings)
+
+    # Extract skin friction
+    b = g[0]
+    Cj2 = b[1:,2,0]
+    Cj1 = b[1:,1,0]
+    Cj0 = b[1:,0,0]
+    Cjm = b[1:,b.nj//2,0]
+    Vinf = Cjm.Vx
+    rhoinf = Cjm.rho
+    dVdy = (Cj2.Vx-Cj1.Vx)/(Cj2.r-Cj1.r)
+    mu = Cj0.mu
+    tauw = dVdy * mu
+
+    cf = tauw/(0.5*rhoinf*Vinf*Vinf)
+    x = Cjm.x
+
+    # xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
+
+    # Setup figure
+    fig, ax = plt.subplots()
+    # ax.set_ylim((0.,0.006))
+
+    # Plot skin friction
+    xcf_ts3 = np.loadtxt('tests/xcf_yp5_ts3.csv')
+    ax.plot(x, cf, '-', label='embsolve')
+    ax.plot(*xcf_ts3, '-', label='TS3')
+
+    # Plot correlation
+    x0 = 0.0
+    xx = x[x>0.]
+    Rex = rhoinf[x>0.] * Vinf[x>0.] * (xx-x0) / mu
+    cf_corr =  0.644/np.sqrt(Rex)
+    # ax.plot(xx, cf_corr,'k--', label='Blasius')
+
+    ax.set_ylabel('Skin Friction Coefficient, $C_f$')
+    ax.set_xlabel('Streamwise Distance, $x/L$')
+    ax.legend()
+    plt.tight_layout(pad=0.1)
+    # plt.savefig('tests/blasius_cf.pdf')
+
+    # Get error
+    err = (cf[x>0.] - cf_corr)[xx>0.25]
+    # assert np.abs(err).mean()<1e-4
+
+    # print('Blasius cf error')
+    # print('mean', np.abs(err).mean())
+    # print('max', err.max())
+    # print('min', err.min())
+
+    # Momentum flux
+    rho = b.rho.mean(axis=2)
+    Vx = b.Vx.mean(axis=2)
+    r = b.r.mean(axis=2)
+    P = b.P.mean(axis=2)
+    x = b.x[:,0,0]
+    dr = np.diff(r, axis=-1)
+    rm = 0.5*(r[:,1:] + r[:,:-1])
+    rho = 0.5*(rho[:,1:]+rho[:,:-1])
+    Vx = 0.5*(Vx[:,1:]+Vx[:,:-1])
+    P = 0.5*(P[:,1:]+P[:,:-1])
+    mom = np.sum((rho*Vx*Vx + P)*2*np.pi*rm*dr, axis=-1)
+
+    # Force on plate = mom in - mom out
+    force = mom[0]-mom  # [N]
+    force_width = force/(2*np.pi*b.r.min())
+
+    # Drag coefficient
+    dyn_head = 0.5*rhoinf.mean()*(Vinf.mean()**2)
+    Cd = force_width[x>0.]/dyn_head/x[x>0.]
+
+    # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
+    Cdts3 = np.loadtxt('tests/xcd_yp5_ts3.csv')
+
+    fig, ax = plt.subplots()
+    Cdb = 1.328/np.sqrt(Rex)
+
+    err = (Cd/Cdb-1.)[xx>0.25]
+    # assert np.abs(err).mean()<0.05
+
+    # print('Blasius drag error')
+    # print('mean', np.abs(err).mean())
+    # print('max', err.max())
+    # print('min', err.min())
+
+    # Cdb /= Cdb[-1]/Cd[-1]
+    xxn = xx/xx[-1]
+    xxts3 = Cdts3[0]/xx[-1]
+    ax.plot(xxn, Cd, label='embsolve')
+    ax.plot(xxts3, Cdts3[1], label='TS3')
+    # ax.plot(xxn, Cdb, 'k--', label='Blasius')
+    # ax.set_ylim([0.,0.020])
+    ax.set_ylim(bottom=0.)
+    ax.set_ylabel('Drag Coefficient, $C_D$')
+    ax.set_xlabel('Streamwise Distance, $x/L$')
+    ax.legend()
+    plt.tight_layout(pad=0.1)
+    plt.show()
+    # plt.savefig('tests/blasius_cd.pdf')
+
 def test_plate_lam():
     """Run boundary layer with yplus ~ 5."""
 
@@ -489,9 +609,6 @@ def test_plate_lam():
 
     fig, ax = plt.subplots()
     Cdb = 1.328/np.sqrt(Rex)
-    print(Cdb.mean(), Cdb.min(), Cdb.max())
-    print(Cd.mean(), Cd.min(), Cd.max())
-
 
     err = (Cd/Cdb-1.)[xx>0.25]
     assert np.abs(err).mean()<0.05
@@ -615,5 +732,6 @@ def not_test_blasius():
 
 if __name__=='__main__':
 
+    test_plate_turb()
     # test_plate_lam()
-    test_poiseuille()
+    # test_poiseuille()
