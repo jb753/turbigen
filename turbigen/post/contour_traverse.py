@@ -108,9 +108,9 @@ def post(
                 # Choose compressor or turbine definition
                 PR = (P2 / P1)[i]
                 if PR > 1.0:
-                    v = T2 * (s - s1[i]) / (ho1 - h1)
+                    v = T2[i] * (s - s1[i]) / (ho1[i] - h1[i])
                 else:
-                    v = T2 * (s - s1[i]) / (ho2 - h2)
+                    v = T2[i] * (s - s1[i]) / (ho2[i] - h2[i])
 
                 lab = "Entropy Loss Coefficient, $Y_s$"
 

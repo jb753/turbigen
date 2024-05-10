@@ -439,11 +439,6 @@ def run_single(conf, gguess=None, plot=False):
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
 
-    # solver_type = conf.solver.get("type")
-    # if not solver_type:
-    #     logger.iter("No solver specified, quitting.")
-    #     sys.exit(0)
-
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
 
@@ -600,7 +595,9 @@ def run_single(conf, gguess=None, plot=False):
             b.w[:] = 0.0
 
     if conf.solver:
-        conf.solver["workdir"] = workdir
+        conf.solver["workdir"] = solve_workdir = os.path.join(workdir, 'solve')
+        if not os.path.exists(solve_workdir):
+            os.makedirs(solve_workdir, exist_ok=True)
 
     g.check_coordinates()
 
@@ -839,9 +836,6 @@ def run_single(conf, gguess=None, plot=False):
         log_line(pdict, log_fields)
 
     if opt_converged:
-
-        # Checking the phase is expensive, so only do at end of iteration
-        turbigen.post_process.check_phase(g)
 
         out_vars = meanline_design.inverse(ml_out)
         out_vars.pop("So1")

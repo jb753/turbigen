@@ -262,6 +262,36 @@ z_cst_line("Z_%d_out" % nrow).streamwise_number_of_points(int(conf["nx_dn"]))
 for n in range(nrow):
     row(n+1).set_row_interpolation_spacing(float(conf["span_interp"]))
 
+# Apply fillets
+print "Setting fillets..."
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    # If the radius is nonzero
+    if conf["R_fillet"]:
+        
+        Rf = conf["R_fillet"]
+        njf = int(conf["nj_fillet"])
+        is_butterfly = int(conf["is_butterfly"])
+        nkf = int(conf["nk_fillet"])
+
+        # How many blades to configure
+        if n in conf["splitter"]:
+            ib = (1,2)
+        else:
+            ib = (1,)
+
+        for iib in ib:
+            f = row(n1).blade(iib).hub_fillet()
+            f.set_radius_at_leading_edge(Rf)
+            f.set_radius_at_trailing_edge(Rf)
+            f.set_number_of_points_in_spanwise_direction(njf)
+            f.set_butterfly_topology(is_butterfly)
+            f.set_butterfly_radial_number_of_points(nkf)
+            f.set_minimum_angle(25)
+            f.set_create_geometry(0)
+
+
 ## generate 3D
 print "Generating 3D mesh..."
 select_all()

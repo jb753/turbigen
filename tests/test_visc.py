@@ -408,7 +408,7 @@ def test_plate_turb():
     """Run boundary layer with yplus ~ 30."""
 
     g = make_plate(mu=0.5e-4, Tu0=0.)
-    set_ts3 = {'ilos': 1, 'xllim': 0., 'xllim_free': 0., 'workdir': 'runs/plate_turb/', 'nstep': 10000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0., 'facsecin': 0.0005, 'fmgrid': 0.}
+    set_ts3 = {'ilos': 1, 'xllim': 1e9, 'xllim_free': 0., 'workdir': 'runs/plate_turb/', 'nstep': 100000, 'nstep_avg': 1000, 'dampin': 1e9, 'sfin': 0.5, 'facsecin': 0.001, 'fmgrid': 0.}
     import turbigen.solvers.ts3
     turbigen.solvers.ts3.run(g, set_ts3, None)
 
