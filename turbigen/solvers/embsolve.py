@@ -30,10 +30,10 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smooth4 = 0.01
+    smooth4 = 0.005
     """Fourth-order smoothing factor."""
 
-    smooth2_adapt = 1.0
+    smooth2_adapt = 0.5
     """Second-order smoothing factor, adaptive on pressure."""
 
     smooth2_const = 0.0
@@ -603,7 +603,7 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = state.P
                 self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
-    def set_timestep(self, CFL):
+    def set_timestep(self, CFL, relax=0.):
         Vx = self.cons[..., 1] / self.cons[..., 0]
         Vr = self.cons[..., 2] / self.cons[..., 0]
         Vt = self.cons[..., 3] / self.cons[..., 0] / self.r
@@ -618,7 +618,11 @@ class SolverBlock:
         embsolve.node_to_cell(Va_node, Va_cell)
         Vref = Va_cell[..., 0]
         aref = Va_cell[..., 1]
-        self.dt = CFL * self.dlmin / (aref + Vref)
+        dt_new = CFL * self.dlmin / (aref + Vref)
+        if relax:
+            self.dt = relax*dt_new + (1.-relax)*self.dt
+        else:
+            self.dt = dt_new
 
         # # Reduce at boundaries
         # fac = 0.5
@@ -1047,10 +1051,11 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         merrlog = []
 
     # Calculate smoothing and inlet relaxation scaled by CFL
+    CFL_ref = 0.7
     conf = blocks[0].conf
-    sf2 = conf.smooth2_adapt
-    sf4 = conf.smooth4
-    sf2min = conf.smooth2_const
+    sf2 = conf.smooth2_adapt * conf.CFL / CFL_ref
+    sf4 = conf.smooth4 * conf.CFL / CFL_ref
+    sf2min = conf.smooth2_const * conf.CFL / CFL_ref
     rfin = 0.1
 
     # Only keep relevent periodics
@@ -1079,6 +1084,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
+    for iblock in range(nblock):
+        blocks[iblock].set_timestep(conf.CFL)
+
     try:
         # Start the main time stepping loop
         for istep in range(conf.n_step):
@@ -1099,7 +1107,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
                 # Update time steps using local Mach
                 if not np.mod(istep, conf.n_step_dt):
-                    sb.set_timestep(conf.CFL)
+                    sb.set_timestep(conf.CFL, relax=0.25)
 
                 # Apply boundary conditions
                 sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
@@ -1114,8 +1122,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     sb.set_viscous_stress()
 
                     # Average the stresses on periodic faces
-                    # This vital for convergence at block boundaries
-                    exchange_tau(blocks, bid_local, periodics)
+                    # exchange_tau(blocks, bid_local, periodics)
 
                     # Convert the viscous stress into body force by summing fluxes
                     sb.set_viscous_force()
