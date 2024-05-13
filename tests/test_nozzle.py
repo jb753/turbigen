@@ -492,13 +492,13 @@ if __name__=='__main__':
     # test_exit(0.)
 
     # print('testing uniform, vary Ma')
-    # test_Ma(0.9)
+    test_Ma(0.6)
 
     # print('testing uniform, aligned grid')
     # test_uniform(0.)
 
     # print('testing uniform, skewed grid')
-    test_skew(-30.)
+    # test_skew(-30.)
 
     # print('testing radius change, aligned grid')
     # test_radius(30.)
