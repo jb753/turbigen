@@ -102,30 +102,31 @@ def _make_argparser():
 def main():
     """Parse command-line arguments and call turbigen appropriately."""
 
-    try:
-
-        # Check our MPI rank
-        from mpi4py import MPI
-
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        # Jump to solver slave process if not first rank
-        if rank > 0:
-            from turbigen.solvers import native
-
-            # import turbigen.solvers.native
-            native.run_slave()
-            sys.exit(0)
-
-    except ImportError:
-        # Just run serially if we cannot import mpi4py
-        pass
-
     # Run the parser on sys.argv and collect input data
     args = _make_argparser().parse_args()
 
     # Load input data in dictionary format
     d = turbigen.util.read_yaml(args.CONFIG_YAML)
+
+    # If we are planning to use embsolve
+    if d.get("solver").get("type") == 'embsolve':
+        try:
+
+            # Check our MPI rank
+            from mpi4py import MPI
+            comm = MPI.COMM_WORLD
+            rank = comm.Get_rank()
+
+            # Jump to solver slave process if not first rank
+            if rank > 0:
+                from turbigen.solvers import embsolve
+                embsolve.run_slave()
+                sys.exit(0)
+
+        except ImportError:
+
+            # Just run serially if we cannot import mpi4py
+            pass
 
     # Check that we have a workdir before making a config object
     # This is because we might want to edit the input file before loading proper

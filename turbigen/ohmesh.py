@@ -57,7 +57,7 @@ class OHMeshConfig(BaseConfig):
 
     untwist_outlet = False
 
-    round_TE = False
+    round_TE = True
 
     nj_tip = 25
     frac_inlet = 0.9
