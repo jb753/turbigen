@@ -2,11 +2,12 @@
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
+import numpy as np
 
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
+def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt", compare=None):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -38,6 +39,12 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
                 ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
             elif coord_sys == "yz":
                 ax.plot(-surf.y, surf.z, "-", label=f"spf={spf}")
+
+            if compare:
+                if (compare_dat:=compare[irow][ispf]):
+                    dat = np.loadtxt(compare_dat)
+                    ax.plot(*dat, "k-", label="Datum")
+
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

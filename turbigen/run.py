@@ -18,6 +18,9 @@ import turbigen.average
 import turbigen.annulus
 import numpy as np
 from timeit import default_timer as timer
+from scipy.interpolate import interp1d
+from scipy.optimize import minimize
+from scipy.spatial import KDTree
 
 
 logger = util.make_logger()
@@ -163,7 +166,7 @@ def run_single(conf, gguess=None, plot=False):
     # parameters to make q_camber
     qstar_save = []
     qcamber_save = []
-    # vexpon = np.array(conf.blades.get("vortex_expon"),None)
+    chi_save = []
     for irow, row in enumerate(conf.sections):
         if row:
             row["spf"] = np.array(row["spf"])
@@ -180,6 +183,7 @@ def run_single(conf, gguess=None, plot=False):
             else:
                 logger.debug(f"Vortex exponent irow={irow} is {vexpon_row}")
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
+            chi_save.append(Alpha_rel)
             Chi = Alpha_rel + qstar_camber[:, :2]
             if np.any(np.abs(Chi) > 90.0):
                 raise Exception(
@@ -224,6 +228,7 @@ def run_single(conf, gguess=None, plot=False):
         ]
         * conf.nrow,
     )
+    fit_data = conf.blades.get("fit", None)
     for irow, row in enumerate(conf.sections):
         if row:
             row_now = row.copy()
@@ -249,15 +254,98 @@ def run_single(conf, gguess=None, plot=False):
                     fac_thick = np.array([f**2.0, f, 1.0, 1.0, f, f])
                     # fac_thick = np.array([f, f, 1.0, 1.0, f, 1.0])
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
-            bld.append(
-                geometry.Blade(
+
+            bld_now = geometry.Blade(
                     streamsurface=ann.xr_row(irow),
                     mstack=mstack[irow],
                     thick_type=thick_type[irow],
                     camber_type=camber_type[irow],
                     **row_now,
                 )
-            )
+
+            if fit_data and False:
+                if fit_data[irow]:
+
+                    fit_xrrt = np.loadtxt(fit_data[irow])
+                    xrfit = fit_xrrt[:2]
+
+                    # Locate the span fraction at which to fit
+                    m = np.linspace(0.,1.)
+
+                    def eval_spf_err(spfnow, xrfit):
+
+                        xrref = bld_now.streamsurface(spfnow, m)
+                        if xrfit[0].ptp() > xrfit[1].ptp():
+                            xrfit = xrfit[:,np.argsort(xrfit[0])]
+                            xrint = np.stack((xrref[0], np.interp(xrref[0], *xrfit)))
+                        else:
+                            xrfit = xrfit[:,np.argsort(xrfit[1])]
+                            xrint = np.stack((np.interp(xrref[1], *xrfit[(1,2),]), xrref[1]))
+
+                        err = np.sqrt(np.mean((xrint - xrref)**2.))
+                        return err
+
+                    spf_good = minimize(eval_spf_err, 0.5, args=(xrfit,)).x[0]
+                    xr_good = bld_now.streamsurface(spf_good, m)
+
+                    logger.info(f'Fitting row {irow} at spf={spf_good:.3f} to coordinates {fit_data[irow]} ...')
+
+                    # Now assemble a KDTree to look up distances from fitted
+                    # surface to nearest target data
+                    xrtfit = fit_xrrt[(0, 2),]
+                    tree = KDTree(xrtfit.T)
+
+                    def eval_fit_err(q, tree, spf, bld):
+
+                        bld.set_pvec(q)
+
+                        # Get fitted surface coords
+                        xrtul = np.concatenate(bld.evaluate_section(spf, nchord=100),axis=-1)
+
+                        # print(xrtul.shape)
+                        # print(xrtul.mean(axis=1))
+                        # print(xrtfit.mean(axis=1))
+                        # quit()
+
+                        # Lookup shortest distances to target coords
+                        dist, _ = tree.query(xrtul[(0,2),].T)
+
+                        # import matplotlib.pyplot as plt
+                        # fig, ax = plt.subplots()
+                        # ax.plot(dist)
+                        # plt.show()
+                        # quit()
+
+                        # Output the RMS error
+                        return np.sqrt(np.mean(dist**2))
+
+                    q0 = bld_now.get_pvec()
+                    bnd = bld_now.get_bound()
+                    # q0[-1] += 1.
+                    # opts = {'maxiter': 100000, 'fatol': 1e-9, 'xatol': 1e-9}
+                    # res = minimize(eval_fit_err,q0, args=(tree, spf_good, bld_now),method='Nelder-Mead', bounds=bnd)#, options=opts)
+
+                    # Convert the tanChi camber parameters to recamber
+                    Chi = np.degrees(np.arctan(bld_now.q_camber[:,:2]))
+                    # print(Chi)
+                    qstar_save[irow][:,:2] = - (Chi - chi_save[irow])
+                    # quit()
+
+
+                    # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
+                    # import matplotlib.pyplot as plt
+                    # fig, ax = plt.subplots()
+                    # ax.plot(*xrtu[(0,2),],'-')
+                    # ax.plot(*xrtl[(0,2),],'-')
+                    # ax.plot(*xrtfit,'x')
+                    # ax.axis('equal')
+                    # plt.show()
+
+
+                # quit()
+
+            bld.append(bld_now)
+
             # Now consider if we need splitters
             if conf.splitter:
                 if not (splitter_now := conf.splitter[irow]):

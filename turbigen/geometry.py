@@ -575,6 +575,28 @@ class Blade:
         else:
             self.mlim = np.array(mlim)
 
+    def get_pvec(self):
+        qthick = self.q_thick.reshape(-1)
+        qcam = self.q_camber.reshape(-1)
+        toff = [self.theta_offset,]
+        return np.concatenate((qthick, qcam, toff))
+
+    def get_bound(self):
+        Nspf, Nthick = self.q_thick.shape
+        _, Ncam = self.q_camber.shape
+        bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
+        bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
+        bound_toff = ((-np.pi, np.pi),)
+        bound = np.concatenate((bound_thick,bound_cam,bound_toff), axis=0)
+        return bound
+
+    def set_pvec(self, q):
+        self.theta_offset = q[-1]
+        Nspf, Nthick = self.q_thick.shape
+        _, Ncam = self.q_camber.shape
+        self.q_thick = q[:(Nthick*Nspf)].reshape(Nspf, Nthick)
+        self.q_camber = q[(Nthick*Nspf):-1].reshape(Nspf, Ncam)
+
     @property
     def nsect(self):
         return len(self.spf)

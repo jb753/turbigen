@@ -167,6 +167,9 @@ class Taylor:
     def tanwedge(self):
         return self.q_thick[5]
 
+    eps = 1e-3
+    qbound = ((eps, .5), (eps, 0.5), (0.05, 0.95), (-0.1, 0.1), (eps, 0.2), (eps, 1.))
+
     @classmethod
     def from_fit(cls, m, t):
         r"""Initialise by fitting geometry parameters to coordinates.
