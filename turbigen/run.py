@@ -263,7 +263,7 @@ def run_single(conf, gguess=None, plot=False):
                     **row_now,
                 )
 
-            if fit_data and False:
+            if fit_data:
                 if fit_data[irow]:
 
                     fit_xrrt = np.loadtxt(fit_data[irow])
@@ -295,12 +295,14 @@ def run_single(conf, gguess=None, plot=False):
                     xrtfit = fit_xrrt[(0, 2),]
                     tree = KDTree(xrtfit.T)
 
-                    def eval_fit_err(q, tree, spf, bld):
+                    def eval_fit_err(q, tree, spf, bldi):
 
-                        bld.set_pvec(q)
+                        bldi.set_pvec(q)
 
                         # Get fitted surface coords
-                        xrtul = np.concatenate(bld.evaluate_section(spf, nchord=100),axis=-1)
+                        xrtul = np.concatenate(bldi.evaluate_section(spf, nchord=100),axis=-1)
+                        xrtul[2] *= xrtul[1]
+                        xrtul = xrtul[(0, 2),]
 
                         # print(xrtul.shape)
                         # print(xrtul.mean(axis=1))
@@ -308,7 +310,7 @@ def run_single(conf, gguess=None, plot=False):
                         # quit()
 
                         # Lookup shortest distances to target coords
-                        dist, _ = tree.query(xrtul[(0,2),].T)
+                        dist, _ = tree.query(xrtul.T)
 
                         # import matplotlib.pyplot as plt
                         # fig, ax = plt.subplots()
@@ -323,14 +325,17 @@ def run_single(conf, gguess=None, plot=False):
                     bnd = bld_now.get_bound()
                     # q0[-1] += 1.
                     # opts = {'maxiter': 100000, 'fatol': 1e-9, 'xatol': 1e-9}
-                    # res = minimize(eval_fit_err,q0, args=(tree, spf_good, bld_now),method='Nelder-Mead', bounds=bnd)#, options=opts)
+                    res = minimize(eval_fit_err,q0, args=(tree, spf_good, bld_now),method='Nelder-Mead', bounds=bnd)#, options=opts)
 
                     # Convert the tanChi camber parameters to recamber
                     Chi = np.degrees(np.arctan(bld_now.q_camber[:,:2]))
-                    # print(Chi)
+                    # # print(Chi)
                     qstar_save[irow][:,:2] = - (Chi - chi_save[irow])
-                    # quit()
+                    # # quit()
 
+                    # print(bld_now.q_camber)
+                    # print(bld_now.q_thick)
+                    # print(qstar_save)
 
                     # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
                     # import matplotlib.pyplot as plt
@@ -340,9 +345,7 @@ def run_single(conf, gguess=None, plot=False):
                     # ax.plot(*xrtfit,'x')
                     # ax.axis('equal')
                     # plt.show()
-
-
-                # quit()
+                    # quit()
 
             bld.append(bld_now)
 
@@ -526,6 +529,9 @@ def run_single(conf, gguess=None, plot=False):
     logger.info(f"Nblade={Nb}, s_cm={s_cm_str}, tip={tips}")
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
+    # print(np.degrees(np.arctan(mac.bld[0].q_camber[:,:2])))
+    # print(np.degrees(np.arctan(mac.bld[1].q_camber[:,:2])))
+    # quit()
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh

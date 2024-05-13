@@ -42,7 +42,7 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt", compare=Non
 
             if compare:
                 if (compare_dat:=compare[irow][ispf]):
-                    dat = np.loadtxt(compare_dat)
+                    dat = np.loadtxt(compare_dat)[(0, 2),]
                     ax.plot(*dat, "k-", label="Datum")
 
 
