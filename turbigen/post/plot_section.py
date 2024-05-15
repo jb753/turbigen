@@ -41,9 +41,10 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt", compare=Non
                 ax.plot(-surf.y, surf.z, "-", label=f"spf={spf}")
 
             if compare:
-                if (compare_dat:=compare[irow][ispf]):
-                    dat = np.loadtxt(compare_dat)[(0, 2),]
-                    ax.plot(*dat, "k-", label="Datum")
+                if (compare_dat:=compare[irow]):
+                    print(ispf)
+                    xrrt = turbigen.util.read_sections(compare_dat)[ispf]
+                    ax.plot(*xrrt[(0,2),], '--',color=f'C{ispf}')
 
 
             # dt = surf.pitch * 0.2

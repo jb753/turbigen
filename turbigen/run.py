@@ -300,7 +300,7 @@ def run_single(conf, gguess=None, plot=False):
                         bldi.set_pvec(q)
 
                         # Get fitted surface coords
-                        xrtul = np.concatenate(bldi.evaluate_section(spf, nchord=100),axis=-1)
+                        xrtul = np.concatenate(bldi.evaluate_section(spf, nchord=50),axis=-1)
                         xrtul[2] *= xrtul[1]
                         xrtul = xrtul[(0, 2),]
 
