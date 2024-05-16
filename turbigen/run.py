@@ -229,6 +229,8 @@ def run_single(conf, gguess=None, plot=False):
         * conf.nrow,
     )
     fit_data = conf.blades.get("fit", None)
+    theta_off = conf.blades.get("theta_offset", np.zeros((conf.nrow,)))
+    fit_flag = False
     for irow, row in enumerate(conf.sections):
         if row:
             row_now = row.copy()
@@ -260,77 +262,81 @@ def run_single(conf, gguess=None, plot=False):
                     mstack=mstack[irow],
                     thick_type=thick_type[irow],
                     camber_type=camber_type[irow],
+                    theta_offset=theta_off[irow],
                     **row_now,
                 )
 
             if fit_data:
-                if fit_data[irow]:
+                if (fit_data_path:=fit_data[irow]):
+                    fit_flag = True
 
-                    fit_xrrt = np.loadtxt(fit_data[irow])
-                    xrfit = fit_xrrt[:2]
+                    # Read coordinates of all sections
+                    xrrt_target_all = turbigen.util.read_sections(fit_data_path)
 
-                    # Locate the span fraction at which to fit
+                    # Locate the span fractions at which to fit
                     m = np.linspace(0.,1.)
+                    spf_fit = []
+                    for xrrt_target in xrrt_target_all:
 
-                    def eval_spf_err(spfnow, xrfit):
+                        xrfit = xrrt_target[:2]
 
-                        xrref = bld_now.streamsurface(spfnow, m)
-                        if xrfit[0].ptp() > xrfit[1].ptp():
-                            xrfit = xrfit[:,np.argsort(xrfit[0])]
-                            xrint = np.stack((xrref[0], np.interp(xrref[0], *xrfit)))
-                        else:
-                            xrfit = xrfit[:,np.argsort(xrfit[1])]
-                            xrint = np.stack((np.interp(xrref[1], *xrfit[(1,2),]), xrref[1]))
+                        def eval_spf_err(spfnow, xrfit):
 
-                        err = np.sqrt(np.mean((xrint - xrref)**2.))
-                        return err
+                            xrref = bld_now.streamsurface(spfnow, m)
+                            if xrfit[0].ptp() > xrfit[1].ptp():
+                                xrfit = xrfit[:,np.argsort(xrfit[0])]
+                                xrint = np.stack((xrref[0], np.interp(xrref[0], *xrfit)))
+                            else:
+                                xrfit = xrfit[:,np.argsort(xrfit[1])]
+                                xrint = np.stack((np.interp(xrref[1], *xrfit[(1,2),]), xrref[1]))
 
-                    spf_good = minimize(eval_spf_err, 0.5, args=(xrfit,)).x[0]
-                    xr_good = bld_now.streamsurface(spf_good, m)
+                            err = np.sqrt(np.mean((xrint - xrref)**2.))
+                            return err
 
-                    logger.info(f'Fitting row {irow} at spf={spf_good:.3f} to coordinates {fit_data[irow]} ...')
+                        spf_good = minimize(eval_spf_err, 0.5, args=(xrfit,)).x[0]
+                        spf_fit.append(spf_good)
+
+                    spf_fit = np.array(spf_fit)
+
+                    spf_str = np.array2string(spf_fit, precision=2)
+
+                    # Join target coordinates into one point cloud
+                    xrrt_target_cloud = np.concatenate(xrrt_target_all,axis=1)
 
                     # Now assemble a KDTree to look up distances from fitted
-                    # surface to nearest target data
-                    xrtfit = fit_xrrt[(0, 2),]
-                    tree = KDTree(xrtfit.T)
+                    # surface to nearest target coordinate
+                    trees = [KDTree(xrrt_target_all[isect][(0, 2),].T) for isect in range(3)]
 
-                    def eval_fit_err(q, tree, spf, bldi):
+                    for _ in range(1):
 
-                        bldi.set_pvec(q)
+                        for isect in range(len(spf_fit)):
 
-                        # Get fitted surface coords
-                        xrtul = np.concatenate(bldi.evaluate_section(spf, nchord=50),axis=-1)
-                        xrtul[2] *= xrtul[1]
-                        xrtul = xrtul[(0, 2),]
+                            logger.info(f'Fitting row {irow} at spf={spf_fit[isect]:.3f} to coordinates {fit_data[irow]} ...')
 
-                        # print(xrtul.shape)
-                        # print(xrtul.mean(axis=1))
-                        # print(xrtfit.mean(axis=1))
-                        # quit()
+                            def eval_fit_err(q, tree, spf, bldi, isect):
 
-                        # Lookup shortest distances to target coords
-                        dist, _ = tree.query(xrtul.T)
+                                bldi.set_pvec(q, isect)
 
-                        # import matplotlib.pyplot as plt
-                        # fig, ax = plt.subplots()
-                        # ax.plot(dist)
-                        # plt.show()
-                        # quit()
+                                # Get fitted surface coords
+                                xrtul = np.concatenate(bldi.evaluate_section(spf, nchord=50),axis=-1)
+                                xrtul[2] *= xrtul[1]
+                                xrtul = xrtul[(0, 2),]
 
-                        # Output the RMS error
-                        return np.sqrt(np.mean(dist**2))
+                                # Lookup shortest distances to target coords
+                                dist, _ = tree.query(xrtul.T)
 
-                    q0 = bld_now.get_pvec()
-                    bnd = bld_now.get_bound()
-                    # q0[-1] += 1.
-                    # opts = {'maxiter': 100000, 'fatol': 1e-9, 'xatol': 1e-9}
-                    res = minimize(eval_fit_err,q0, args=(tree, spf_good, bld_now),method='Nelder-Mead', bounds=bnd)#, options=opts)
+                                return np.sqrt(np.mean(dist**2))
+
+                            q0 = bld_now.get_pvec(isect)
+                            bnd = bld_now.get_bound(isect)
+                            opts = {'maxiter': 1000, 'fatol': 1e-9, 'xatol': 1e-9}
+                            res = minimize(eval_fit_err,q0, args=(trees[isect], spf_fit[isect], bld_now,isect),method='Nelder-Mead', bounds=bnd, options=opts)
 
                     # Convert the tanChi camber parameters to recamber
                     Chi = np.degrees(np.arctan(bld_now.q_camber[:,:2]))
                     # # print(Chi)
-                    qstar_save[irow][:,:2] = - (Chi - chi_save[irow])
+                    qstar_save[irow][:,:2] = (Chi - chi_save[irow])
+                    qstar_save[irow][:,2:] = bld_now.q_camber[:,2:]
                     # # quit()
 
                     # print(bld_now.q_camber)
@@ -338,11 +344,15 @@ def run_single(conf, gguess=None, plot=False):
                     # print(qstar_save)
 
                     # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
+                    # xrrtu = xrtu.copy()
+                    # xrrtl = xrtl.copy()
+                    # xrrtu[2]*= xrrtu[1]
+                    # xrrtl[2]*= xrrtl[1]
                     # import matplotlib.pyplot as plt
                     # fig, ax = plt.subplots()
-                    # ax.plot(*xrtu[(0,2),],'-')
-                    # ax.plot(*xrtl[(0,2),],'-')
-                    # ax.plot(*xrtfit,'x')
+                    # ax.plot(*xrrtu[(0,2),],'-')
+                    # ax.plot(*xrrtl[(0,2),],'-')
+                    # ax.plot(*xrrt_target_all[-1][(0,2),],'x')
                     # ax.axis('equal')
                     # plt.show()
                     # quit()
@@ -541,6 +551,13 @@ def run_single(conf, gguess=None, plot=False):
         if row:
             row.pop("q_camber", None)
             row["qstar_camber"] = qstar_save[irow].tolist()
+            row["q_thick"] = bld[irow].q_thick.tolist()
+
+    # Write out the fitted sections
+    if fit_flag:
+        conf.blades["theta_offset"] = [b.theta_offset for b in bld]
+        conf.blades.pop("fit",None)
+        conf.write(os.path.join(workdir, "config.yaml"))
 
     # Set row, hub, casing spacings using yplus and flat-plate correlations
     yplus = np.atleast_2d(conf.mesh["yplus"]).T
