@@ -4,19 +4,15 @@
 # Set up the Linux environment ready to run turbigen
 
 # If we are running on the Cambridge HPC then prepare modules
-if [[ $(hostname) =~ "login-" ]] || [[ $(hostname) =~ "gpu-q" ]]; then
+if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-q" ]]; then
 
     # Load modules
     . /etc/profile.d/modules.sh
     module purge
-    if [ $(which pyenv) ]; then
-        echo "Found pyenv, using currently activated python version."
-    else
-        module load python-3.9.6-gcc-5.4.0-sbr552h
-    fi
+    module load python-3.9.6-gcc-5.4.0-sbr552h
     module load metis-5.1.0-gcc-5.4.0-rcmbph3
     # Load correct libraries on login/compute nodes
-    if [[ $(hostname) =~ "login-e" ]]; then
+    if [[ "$(hostname)" =~ "login-e" ]]; then
         module load rhel7/default-gpu
     else
         module load rhel8/default-amp
