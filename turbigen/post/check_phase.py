@@ -16,5 +16,3 @@ def post(
         n = (b.is_two_phase).sum()
         if n:
             logger.info(f"Block {ib}: {n}/{b.size} cells not in gas phase")
-
-

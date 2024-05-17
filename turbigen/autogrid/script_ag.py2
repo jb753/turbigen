@@ -269,7 +269,7 @@ for n in range(nrow):
 
     # If the radius is nonzero
     if conf["R_fillet"]:
-        
+
         Rf = conf["R_fillet"]
         njf = int(conf["nj_fillet"])
         is_butterfly = int(conf["is_butterfly"])

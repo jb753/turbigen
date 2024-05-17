@@ -1556,33 +1556,33 @@ def moving_average(x, n):
         xa[:, i] = x[:, ist:ien].sum(axis=1) / (ien - ist)
     return xa
 
+
 def write_sections(xrrt, fname):
     """Dump section coordinates in a format turbigen can read."""
     Nsect = len(xrrt)
-    with open(fname,'w') as f:
-        f.write('Blade section xrt coordinates for turbigen\n')
-        f.write(f'Nsect = {Nsect}\n')
+    with open(fname, "w") as f:
+        f.write("Blade section xrt coordinates for turbigen\n")
+        f.write(f"Nsect = {Nsect}\n")
         for isect in range(Nsect):
-            f.write(f'Section {isect}\n')
+            f.write(f"Section {isect}\n")
             Nc, Npts = xrrt[isect].shape
             assert Nc == 3
-            f.write(f'Npts = {Npts}\n')
+            f.write(f"Npts = {Npts}\n")
             for c in xrrt[isect]:
-                np.savetxt(f,c.reshape(1,-1))
+                np.savetxt(f, c.reshape(1, -1))
+
 
 def read_sections(fname):
     """Load section coordinates from a formatted data file."""
-    with open(fname,'r') as f:
+    with open(fname, "r") as f:
         f.readline()  # Skip header
         Nsect = int(f.readline().split()[-1])
         xrrt = []
         for isect in range(Nsect):
             f.readline()  # Skip header
-            Npts = int(f.readline().split()[-1])
+            f.readline()  # Skip Npts
             xrrt.append(
-                np.stack(
-                    [[float(n) for n in f.readline().split()] for _ in range(3)]
-                )
+                np.stack([[float(n) for n in f.readline().split()] for _ in range(3)])
             )
 
     return xrrt

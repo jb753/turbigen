@@ -64,12 +64,10 @@ class OHMeshConfig(BaseConfig):
     frac_outlet = 0.15
     relax_outlet = 1
 
-
-    R_fillet = 0.
+    R_fillet = 0.0
     nj_fillet = 17
     is_butterfly = False
     nk_fillet = 9
-
 
     def __setattr__(self, key, value):
         if key not in dir(self):
@@ -140,7 +138,7 @@ class OHMeshConfig(BaseConfig):
             "R_fillet": self.R_fillet,
             "nk_fillet": self.nk_fillet,
             "nj_fillet": self.nj_fillet,
-            "is_butterfly": self.is_butterfly
+            "is_butterfly": self.is_butterfly,
         }
 
 

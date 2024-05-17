@@ -3,9 +3,10 @@ from turbigen import util
 import turbigen.flowfield
 from scipy.optimize import brentq
 
+
 def _Vxr_from_Vm_Beta(Vm, Beta):
 
-    tansqBeta = np.tan(np.radians(Beta))**2
+    tansqBeta = np.tan(np.radians(Beta)) ** 2
 
     # Branch on pitch angle to avoid infinities
     if np.abs(Beta) < 45.0:
@@ -18,6 +19,7 @@ def _Vxr_from_Vm_Beta(Vm, Beta):
         Vx = np.sqrt(Vm**2 - Vr**2)
 
     return Vx, Vr
+
 
 def _solve_static(So, mdot, A, Alpha, Beta):
     """Find static conditions for a given upstream stagnation, mass flow and area."""
@@ -74,8 +76,8 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
     # We want the length of input data to be a multiple of two
     # An inlet and an exit for each blade row
     N = len(rh)
-    assert np.mod(N,2) == 0
-    nrow = N//2
+    assert np.mod(N, 2) == 0
+    nrow = N // 2
 
     # Make input data arrays
     rh = np.array(rh).reshape((N,))
@@ -89,23 +91,25 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
     A = np.pi * (rt**2 - rh**2)
 
     # Blade speeds
-    Omega = rpm/60. * 2.* np.pi
-    U = Omega*rrms
+    Omega = rpm / 60.0 * 2.0 * np.pi
+    U = Omega * rrms
 
     # Preallocate thermodynamic states and velocity vectors
     S = So1.empty(shape=(N,))
-    Vxrt = np.empty((3,N))
+    Vxrt = np.empty((3, N))
 
     # Find the inlet static state first
-    Sin, Vxrt[:,0] = _solve_static(So1, mdot, A[0], Alpha[0], Beta[0])
+    Sin, Vxrt[:, 0] = _solve_static(So1, mdot, A[0], Alpha[0], Beta[0])
 
     # Use inlet static as initial guess for all stations
-    S = [Sin,]
+    S = [
+        Sin,
+    ]
 
     # Loop over rows
     for irow in range(nrow):
-        ist = irow*2
-        ien = ist+1
+        ist = irow * 2
+        ien = ist + 1
 
         # We always know the row inlet velocity vector and state
         # Outlet is an initial guess
@@ -117,23 +121,23 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
         # Get velocity components in relative frame
         U1 = U[ist]
         U2 = U[ien]
-        Vt1rel = Vxrt[2,ist]-U1
-        Vm1 = np.sqrt(np.sum(Vxrt[:2,ist]**2))
+        Vt1rel = Vxrt[2, ist] - U1
+        Vm1 = np.sqrt(np.sum(Vxrt[:2, ist] ** 2))
         V1rel = np.sqrt(Vm1**2 + Vt1rel**2)
 
         tanAlrel2 = np.tan(np.radians(Alpha[ien]))
 
         # Rothalpy at inlet
-        I1 = S1.h + 0.5*(V1rel**2 - U1**2)
+        I1 = S1.h + 0.5 * (V1rel**2 - U1**2)
 
         # Loop to converge exit density
         for _ in range(10):
 
             # Set exit meridional velocity by cons of mass
-            Vm2 = mdot/S2.rho/A[ien]
+            Vm2 = mdot / S2.rho / A[ien]
 
             # Use rothalpy to set exit enthalpy
-            h2 = I1 - 0.5*(Vm2**2)*(1+tanAlrel2**2) + 0.5*U1**2
+            h2 = I1 - 0.5 * (Vm2**2) * (1 + tanAlrel2**2) + 0.5 * U1**2
 
             # Update density assuming lossless
             S2.set_h_s(h2, S2.s)
@@ -141,42 +145,40 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
         S.append(S2)
 
         # Resolve the velocity components
-        Vt2rel = Vm2*tanAlrel2
-        Vt2 = Vt2rel+U2
-        I2 = S2.h + 0.5*(Vt2**2 + Vm2**2) - 0.5*U2**2
-        Vxrt[:2,ien] = _Vxr_from_Vm_Beta(Vm2, Beta[ien])
-        Vxrt[2,ien] = Vt2
+        Vt2rel = Vm2 * tanAlrel2
+        Vt2 = Vt2rel + U2
+        Vxrt[:2, ien] = _Vxr_from_Vm_Beta(Vm2, Beta[ien])
+        Vxrt[2, ien] = Vt2
 
         # If not the last blade row, deal with the gap
-        if irow < (nrow-1):
+        if irow < (nrow - 1):
 
             S2a = S2.copy()
 
-            tanAlrel2a = np.tan(np.radians(Alpha[ien+1]))
+            tanAlrel2a = np.tan(np.radians(Alpha[ien + 1]))
 
             # Loop to converge exit density
             for _ in range(10):
 
                 # Set exit meridional velocity by cons of mass
-                Vm2a = mdot/S2a.rho/A[ien+1]
+                Vm2a = mdot / S2a.rho / A[ien + 1]
 
                 # Use yaw to get rel tangential
                 Vt2arel = tanAlrel2a * Vm2a
-                Vt2a = Vt2arel + U[ien+1]
+                Vt2a = Vt2arel + U[ien + 1]
                 V2a = np.sqrt(Vt2a**2 + Vm2a**2)
 
                 # Use total enthalpy to set exit enthalpy
-                ho2 = S2.h + 0.5*(Vt2**2 + Vm2**2)
-                h2a = ho2 - 0.5*V2a**2
+                ho2 = S2.h + 0.5 * (Vt2**2 + Vm2**2)
+                h2a = ho2 - 0.5 * V2a**2
 
                 # Update density assuming lossless
                 S2a.set_h_s(h2a, S2a.s)
 
-                Vxrt[:2,ien+1] = _Vxr_from_Vm_Beta(Vm2a, Beta[ien+1])
-                Vxrt[2,ien+1] = Vt2a
+                Vxrt[:2, ien + 1] = _Vxr_from_Vm_Beta(Vm2a, Beta[ien + 1])
+                Vxrt[2, ien + 1] = Vt2a
 
             S.append(S2a)
-
 
     return turbigen.flowfield.make_mean_line(rrms, A, Omega, Vxrt, So1.stack(S))
 

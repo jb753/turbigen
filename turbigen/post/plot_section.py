@@ -2,12 +2,20 @@
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
-import numpy as np
 
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt", compare=None, K_offset=0.):
+def post(
+    grid,
+    machine,
+    meanline,
+    postdir,
+    row_spf,
+    coord_sys="mpt",
+    compare=None,
+    K_offset=0.0,
+):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -43,15 +51,14 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt", compare=Non
                 x1 = -surf.y
                 x2 = surf.z
 
-            xoff = K_offset*(spf-0.5)*x2.ptp()
+            xoff = K_offset * (spf - 0.5) * x2.ptp()
 
-            ax.plot(x1,x2+xoff, "-", label=f"spf={spf}")
+            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
 
             if compare:
-                if (compare_dat:=compare[irow]):
+                if compare_dat := compare[irow]:
                     xrrt = turbigen.util.read_sections(compare_dat)[ispf]
-                    ax.plot(xrrt[0],xrrt[2]+xoff, '--',color=f'C{ispf}')
-
+                    ax.plot(xrrt[0], xrrt[2] + xoff, "--", color=f"C{ispf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

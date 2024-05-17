@@ -571,49 +571,49 @@ class Blade:
         self.q_camber = np.reshape(q_camber, (N, -1))
         self.mstack = mstack
         if mlim is None:
-            self.mlim = np.tile((0., 1.), (N, 1))
+            self.mlim = np.tile((0.0, 1.0), (N, 1))
         else:
             self.mlim = np.array(mlim)
 
     def get_pvec(self, isect=None):
-        if not isect is None:
-            qthick = self.q_thick[isect,:]
-            qcam = self.q_camber[isect,:]
+        if isect is not None:
+            qthick = self.q_thick[isect, :]
+            qcam = self.q_camber[isect, :]
             # mlim = self.mlim[isect,:]
         else:
             qthick = self.q_thick.reshape(-1)
             qcam = self.q_camber.reshape(-1)
             # mlim = self.mlim.reshape(-1)
-        toff = [self.theta_offset,]
+        toff = [
+            self.theta_offset,
+        ]
         return np.concatenate((qthick, qcam, toff))
 
     def get_bound(self, isect=None):
         Nspf, Nthick = self.q_thick.shape
-        if not isect is None:
+        if isect is not None:
             Nspf = 1
         _, Ncam = self.q_camber.shape
         bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
         bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
-        bound_mlim = ((-0.1,0.1,), (0.9,1.1))
         bound_toff = ((-np.pi, np.pi),)
-        # bound = np.concatenate((bound_thick,bound_cam,bound_mlim,bound_toff), axis=0)
-        bound = np.concatenate((bound_thick,bound_cam,bound_toff), axis=0)
+        bound = np.concatenate((bound_thick, bound_cam, bound_toff), axis=0)
         return bound
 
     def set_pvec(self, q, isect=None):
         self.theta_offset = q[-1]
         Nspf, Nthick = self.q_thick.shape
         _, Ncam = self.q_camber.shape
-        if not isect is None:
+        if isect is not None:
             Nspf = 1
-        ithick = Nthick*Nspf
-        icam = ithick+(Ncam*Nspf)
+        ithick = Nthick * Nspf
+        icam = ithick + (Ncam * Nspf)
         # im = icam+2*Nspf
-        if not isect is None:
+        if isect is not None:
             # print(q[icam:im],self.mlim[isect,:])
             # quit()
-            self.q_thick[isect,:] = q[:ithick]
-            self.q_camber[isect,:] = q[ithick:icam]
+            self.q_thick[isect, :] = q[:ithick]
+            self.q_camber[isect, :] = q[ithick:icam]
             # self.mlim[isect,:] = q[icam:im]
         else:
             self.q_thick = q[:ithick].reshape(Nspf, Nthick)

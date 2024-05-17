@@ -109,17 +109,19 @@ def main():
     d = turbigen.util.read_yaml(args.CONFIG_YAML)
 
     # If we are planning to use embsolve
-    if d.get("solver").get("type") == 'embsolve':
+    if d.get("solver").get("type") == "embsolve":
         try:
 
             # Check our MPI rank
             from mpi4py import MPI
+
             comm = MPI.COMM_WORLD
             rank = comm.Get_rank()
 
             # Jump to solver slave process if not first rank
             if rank > 0:
                 from turbigen.solvers import embsolve
+
                 embsolve.run_slave()
                 sys.exit(0)
 
