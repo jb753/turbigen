@@ -109,7 +109,7 @@ def main():
     d = turbigen.util.read_yaml(args.CONFIG_YAML)
 
     # If we are planning to use embsolve
-    if d.get("solver").get("type") == "embsolve":
+    if d.get("solver", {}).get("type") == "embsolve":
         try:
 
             # Check our MPI rank

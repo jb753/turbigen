@@ -4,7 +4,7 @@
 # Set up the Linux environment ready to run turbigen
 
 # If we are running on the Cambridge HPC then prepare modules
-if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-q" ]]; then
+if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-" ]]; then
 
     # Load modules
     . /etc/profile.d/modules.sh
