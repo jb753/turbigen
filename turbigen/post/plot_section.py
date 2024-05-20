@@ -6,7 +6,16 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
+def post(
+    grid,
+    machine,
+    meanline,
+    postdir,
+    row_spf,
+    coord_sys="mpt",
+    compare=None,
+    K_offset=0.0,
+):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -33,11 +42,23 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
             mps = mp_from_xr(surf.xr)
 
             if coord_sys == "mpt":
-                ax.plot(mps, surf.t, "-", label=f"spf={spf}")
+                x1 = mps
+                x2 = surf.t
             elif coord_sys == "xrt":
-                ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
+                x1 = surf.x
+                x2 = surf.rt
             elif coord_sys == "yz":
-                ax.plot(-surf.y, surf.z, "-", label=f"spf={spf}")
+                x1 = -surf.y
+                x2 = surf.z
+
+            xoff = K_offset * (spf - 0.5) * x2.ptp()
+
+            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
+
+            if compare:
+                if compare_dat := compare[irow]:
+                    xrrt = turbigen.util.read_sections(compare_dat)[ispf]
+                    ax.plot(xrrt[0], xrrt[2] + xoff, "--", color=f"C{ispf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

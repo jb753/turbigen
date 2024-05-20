@@ -18,6 +18,8 @@ import turbigen.average
 import turbigen.annulus
 import numpy as np
 from timeit import default_timer as timer
+from scipy.optimize import minimize
+from scipy.spatial import KDTree
 
 
 logger = util.make_logger()
@@ -163,7 +165,7 @@ def run_single(conf, gguess=None, plot=False):
     # parameters to make q_camber
     qstar_save = []
     qcamber_save = []
-    # vexpon = np.array(conf.blades.get("vortex_expon"),None)
+    chi_save = []
     for irow, row in enumerate(conf.sections):
         if row:
             row["spf"] = np.array(row["spf"])
@@ -180,6 +182,7 @@ def run_single(conf, gguess=None, plot=False):
             else:
                 logger.debug(f"Vortex exponent irow={irow} is {vexpon_row}")
                 Alpha_rel = ml.Alpha_rel_free_vortex(row["spf"], vexpon_row)[:, ind]
+            chi_save.append(Alpha_rel)
             Chi = Alpha_rel + qstar_camber[:, :2]
             if np.any(np.abs(Chi) > 90.0):
                 raise Exception(
@@ -224,6 +227,9 @@ def run_single(conf, gguess=None, plot=False):
         ]
         * conf.nrow,
     )
+    fit_data = conf.blades.get("fit", None)
+    theta_off = conf.blades.get("theta_offset", np.zeros((conf.nrow,)))
+    fit_flag = False
     for irow, row in enumerate(conf.sections):
         if row:
             row_now = row.copy()
@@ -249,15 +255,137 @@ def run_single(conf, gguess=None, plot=False):
                     fac_thick = np.array([f**2.0, f, 1.0, 1.0, f, f])
                     # fac_thick = np.array([f, f, 1.0, 1.0, f, 1.0])
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
-            bld.append(
-                geometry.Blade(
-                    streamsurface=ann.xr_row(irow),
-                    mstack=mstack[irow],
-                    thick_type=thick_type[irow],
-                    camber_type=camber_type[irow],
-                    **row_now,
-                )
+
+            bld_now = geometry.Blade(
+                streamsurface=ann.xr_row(irow),
+                mstack=mstack[irow],
+                thick_type=thick_type[irow],
+                camber_type=camber_type[irow],
+                theta_offset=theta_off[irow],
+                **row_now,
             )
+
+            if fit_data:
+                if fit_data_path := fit_data[irow]:
+                    fit_flag = True
+
+                    # Read coordinates of all sections
+                    xrrt_target_all = turbigen.util.read_sections(fit_data_path)
+
+                    # Locate the span fractions at which to fit
+                    m = np.linspace(0.0, 1.0)
+                    spf_fit = []
+                    for xrrt_target in xrrt_target_all:
+
+                        xrfit = xrrt_target[:2]
+
+                        def eval_spf_err(spfnow, xrfit):
+
+                            xrref = bld_now.streamsurface(spfnow, m)
+                            if xrfit[0].ptp() > xrfit[1].ptp():
+                                xrfit = xrfit[:, np.argsort(xrfit[0])]
+                                xrint = np.stack(
+                                    (xrref[0], np.interp(xrref[0], *xrfit))
+                                )
+                            else:
+                                xrfit = xrfit[:, np.argsort(xrfit[1])]
+                                xrint = np.stack(
+                                    (
+                                        np.interp(
+                                            xrref[1],
+                                            *xrfit[
+                                                (1, 2),
+                                            ],
+                                        ),
+                                        xrref[1],
+                                    )
+                                )
+
+                            err = np.sqrt(np.mean((xrint - xrref) ** 2.0))
+                            return err
+
+                        spf_good = minimize(eval_spf_err, 0.5, args=(xrfit,)).x[0]
+                        spf_fit.append(spf_good)
+
+                    spf_fit = np.array(spf_fit)
+
+                    # Now assemble a KDTree to look up distances from fitted
+                    # surface to nearest target coordinate
+                    trees = [
+                        KDTree(
+                            xrrt_target_all[isect][
+                                (0, 2),
+                            ].T
+                        )
+                        for isect in range(3)
+                    ]
+
+                    for _ in range(1):
+
+                        for isect in range(len(spf_fit)):
+
+                            logger.info(
+                                f"Fitting row {irow} at spf={spf_fit[isect]:.3f} "
+                                f"to coordinates {fit_data[irow]} ..."
+                            )
+
+                            def eval_fit_err(q, tree, spf, bldi, isect):
+
+                                bldi.set_pvec(q, isect)
+
+                                # Get fitted surface coords
+                                xrtul = np.concatenate(
+                                    bldi.evaluate_section(spf, nchord=50), axis=-1
+                                )
+                                xrtul[2] *= xrtul[1]
+                                xrtul = xrtul[
+                                    (0, 2),
+                                ]
+
+                                # Lookup shortest distances to target coords
+                                dist, _ = tree.query(xrtul.T)
+
+                                return np.sqrt(np.mean(dist**2))
+
+                            q0 = bld_now.get_pvec(isect)
+                            bnd = bld_now.get_bound(isect)
+                            opts = {"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-9}
+                            minimize(
+                                eval_fit_err,
+                                q0,
+                                args=(trees[isect], spf_fit[isect], bld_now, isect),
+                                method="Nelder-Mead",
+                                bounds=bnd,
+                                options=opts,
+                            )
+
+                    # Convert the tanChi camber parameters to recamber
+                    Chi = np.degrees(np.arctan(bld_now.q_camber[:, :2]))
+                    # # print(Chi)
+                    qstar_save[irow][:, :2] = Chi - chi_save[irow]
+                    qstar_save[irow][:, 2:] = bld_now.q_camber[:, 2:]
+                    # # quit()
+
+                    # print(bld_now.q_camber)
+                    # print(bld_now.q_thick)
+                    # print(qstar_save)
+
+                    # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
+                    # xrrtu = xrtu.copy()
+                    # xrrtl = xrtl.copy()
+                    # xrrtu[2]*= xrrtu[1]
+                    # xrrtl[2]*= xrrtl[1]
+                    # import matplotlib.pyplot as plt
+                    # fig, ax = plt.subplots()
+                    # ax.plot(*xrrtu[(0,2),],'-')
+                    # ax.plot(*xrrtl[(0,2),],'-')
+                    # ax.plot(*xrrt_target_all[-1][(0,2),],'x')
+                    # ax.axis('equal')
+                    # plt.show()
+                    # quit()
+
+            bld.append(bld_now)
+
             # Now consider if we need splitters
             if conf.splitter:
                 if not (splitter_now := conf.splitter[irow]):
@@ -438,6 +566,9 @@ def run_single(conf, gguess=None, plot=False):
     logger.info(f"Nblade={Nb}, s_cm={s_cm_str}, tip={tips}")
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
+    # print(np.degrees(np.arctan(mac.bld[0].q_camber[:,:2])))
+    # print(np.degrees(np.arctan(mac.bld[1].q_camber[:,:2])))
+    # quit()
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
@@ -447,6 +578,13 @@ def run_single(conf, gguess=None, plot=False):
         if row:
             row.pop("q_camber", None)
             row["qstar_camber"] = qstar_save[irow].tolist()
+            row["q_thick"] = bld[irow].q_thick.tolist()
+
+    # Write out the fitted sections
+    if fit_flag:
+        conf.blades["theta_offset"] = [b.theta_offset for b in bld]
+        conf.blades.pop("fit", None)
+        conf.write(os.path.join(workdir, "config.yaml"))
 
     # Set row, hub, casing spacings using yplus and flat-plate correlations
     yplus = np.atleast_2d(conf.mesh["yplus"]).T
@@ -595,7 +733,7 @@ def run_single(conf, gguess=None, plot=False):
             b.w[:] = 0.0
 
     if conf.solver:
-        conf.solver["workdir"] = solve_workdir = os.path.join(workdir, 'solve')
+        conf.solver["workdir"] = solve_workdir = os.path.join(workdir, "solve")
         if not os.path.exists(solve_workdir):
             os.makedirs(solve_workdir, exist_ok=True)
 

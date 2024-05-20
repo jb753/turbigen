@@ -1070,7 +1070,10 @@ def run(grid, settings, machine):
 
     if ts3_conf.skip and soln_exists:
         logger.info("Skipping running, loading previous solution.")
-        _read_hdf5(grid, ts3_conf)
+        try:
+            _read_hdf5(grid, ts3_conf)
+        except ValueError:
+            logger.info("Failed, will continue with initial guess.")
         return
 
     # Final check of the mesh

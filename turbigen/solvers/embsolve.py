@@ -30,10 +30,10 @@ class NativeConfig(BaseSolver):
 
     _name = "Native"
 
-    smooth4 = 0.005
+    smooth4 = 0.01
     """Fourth-order smoothing factor."""
 
-    smooth2_adapt = 0.5
+    smooth2_adapt = 1.0
     """Second-order smoothing factor, adaptive on pressure."""
 
     smooth2_const = 0.0
@@ -603,7 +603,7 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = state.P
                 self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
-    def set_timestep(self, CFL, relax=0.):
+    def set_timestep(self, CFL, relax=0.0):
         Vx = self.cons[..., 1] / self.cons[..., 0]
         Vr = self.cons[..., 2] / self.cons[..., 0]
         Vt = self.cons[..., 3] / self.cons[..., 0] / self.r
@@ -620,7 +620,7 @@ class SolverBlock:
         aref = Va_cell[..., 1]
         dt_new = CFL * self.dlmin / (aref + Vref)
         if relax:
-            self.dt = relax*dt_new + (1.-relax)*self.dt
+            self.dt = relax * dt_new + (1.0 - relax) * self.dt
         else:
             self.dt = dt_new
 

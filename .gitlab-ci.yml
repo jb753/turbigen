@@ -12,6 +12,7 @@ test:
   - apt update && apt install -y gfortran libopenmpi-dev
   - pip install -U pip
   - pip install -e ".[test]"
+  - pip install -e ".[embsolve]"
   - make compile
   - pytest
   - pre-commit run --all

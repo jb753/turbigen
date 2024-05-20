@@ -419,7 +419,7 @@ def test_plate_turb():
         # 'n_step': 5000,
         'n_step_avg': 1,
         'n_step_log': 100,
-        'plot_conv': True,
+        'plot_conv': False,
         'xllim_pitch': 10000.0,
         'smooth4': 0.0002,
         'smooth2_adapt': 1.0,
@@ -653,7 +653,7 @@ def test_poiseuille():
     settings2 = settings.copy()
     settings2["smooth2_const"] = 0.0
     settings2["smooth4"] = 0.001
-    settings2["plot_conv"] = True
+    settings2["plot_conv"] = False
 
 
     np.set_printoptions(precision=2)
