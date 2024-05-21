@@ -58,7 +58,7 @@ def post(
             if compare:
                 if compare_dat := compare[irow]:
                     xrrt = turbigen.util.read_sections(compare_dat)[ispf]
-                    ax.plot(xrrt[0], xrrt[2] + xoff, "--", color=f"C{ispf}")
+                    ax.plot(xrrt[0], xrrt[2] + xoff, ".", color=f"C{ispf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)
@@ -70,7 +70,7 @@ def post(
 
         ax.legend()
         ax.set_aspect("equal", adjustable="box")
-        ax.axis("off")
+        # ax.axis("off")
 
         plotname = os.path.join(postdir, f"section_row_{irow}.pdf")
         plt.tight_layout(pad=0)

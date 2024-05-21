@@ -271,6 +271,14 @@ def run_single(conf, gguess=None, plot=False):
 
                     # Read coordinates of all sections
                     xrrt_target_all = turbigen.util.read_sections(fit_data_path)
+                    nsect_dat = len(xrrt_target_all)
+                    nsect_conf = len(bld_now.spf)
+                    if not nsect_dat == nsect_conf:
+                        raise Exception(
+                            f"Mismatching number of sections to fit, "
+                            f"{nsect_conf} in the config and "
+                            f"{nsect_dat} in the coordinates"
+                        )
 
                     # Locate the span fractions at which to fit
                     m = np.linspace(0.0, 1.0)
@@ -317,7 +325,7 @@ def run_single(conf, gguess=None, plot=False):
                                 (0, 2),
                             ].T
                         )
-                        for isect in range(3)
+                        for isect in range(nsect_dat)
                     ]
 
                     for _ in range(1):
@@ -361,28 +369,8 @@ def run_single(conf, gguess=None, plot=False):
 
                     # Convert the tanChi camber parameters to recamber
                     Chi = np.degrees(np.arctan(bld_now.q_camber[:, :2]))
-                    # # print(Chi)
                     qstar_save[irow][:, :2] = Chi - chi_save[irow]
                     qstar_save[irow][:, 2:] = bld_now.q_camber[:, 2:]
-                    # # quit()
-
-                    # print(bld_now.q_camber)
-                    # print(bld_now.q_thick)
-                    # print(qstar_save)
-
-                    # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
-                    # xrrtu = xrtu.copy()
-                    # xrrtl = xrtl.copy()
-                    # xrrtu[2]*= xrrtu[1]
-                    # xrrtl[2]*= xrrtl[1]
-                    # import matplotlib.pyplot as plt
-                    # fig, ax = plt.subplots()
-                    # ax.plot(*xrrtu[(0,2),],'-')
-                    # ax.plot(*xrrtl[(0,2),],'-')
-                    # ax.plot(*xrrt_target_all[-1][(0,2),],'x')
-                    # ax.axis('equal')
-                    # plt.show()
-                    # quit()
 
             bld.append(bld_now)
 
@@ -566,9 +554,6 @@ def run_single(conf, gguess=None, plot=False):
     logger.info(f"Nblade={Nb}, s_cm={s_cm_str}, tip={tips}")
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
-    # print(np.degrees(np.arctan(mac.bld[0].q_camber[:,:2])))
-    # print(np.degrees(np.arctan(mac.bld[1].q_camber[:,:2])))
-    # quit()
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh

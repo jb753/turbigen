@@ -127,4 +127,3 @@ def post(grid, machine, meanline, postdir):
             stl_name = os.path.join(postdir, f"splitter_{iblade}.stl")
             mesh.save(stl_name)
             logger.info(f"Wrote row {iblade} splitter xyz to {stl_name}")
-
