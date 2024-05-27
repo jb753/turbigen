@@ -88,6 +88,7 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
 
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         ax.legend()
+        ax.grid(False)
         plt.tight_layout()
         plt.savefig(plotname)
         plt.close()

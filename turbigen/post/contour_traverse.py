@@ -160,11 +160,14 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
 
 
                 # Hub and casing shading
-                dr = xlim.ptp()*0.05
+                dr = xlim.ptp()*0.07
 
                 # Add the rectangle patch to the axis
-                ax.add_patch(patches.Rectangle((rtlim[0], xlim[0]-dr), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
-                ax.add_patch(patches.Rectangle((rtlim[0], xlim[1]), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
+                # ax.add_patch(patches.Rectangle((rtlim[0], xlim[0]-dr), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
+                # ax.add_patch(patches.Rectangle((rtlim[0], xlim[1]), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
+
+                ax.text(rtlim.mean(), xlim[0]-dr, 'Hub', ha='center', va='center')
+                ax.text(rtlim.mean(), xlim[1]+dr, 'Casing', ha='center', va='center')
 
                 ax.set_xlim(rtlim)
 
