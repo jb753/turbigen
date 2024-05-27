@@ -31,14 +31,14 @@ class StructuredData:
     _read_only = False
     _data_rows = ()
 
-    def __init__(self, shape=(), order="C"):
+    def __init__(self, shape=(), order="C", typ=np.double):
         if not isinstance(shape, tuple):
             raise ValueError(f"Invalid input shape, got {shape}, expected a tuple")
         self._order = order
         if order == "C":
-            self._data = np.full((self.nprop,) + shape, np.nan, order=order)
+            self._data = np.full((self.nprop,) + shape, np.nan, order=order, dtype=typ)
         else:
-            self._data = np.full(shape + (self.nprop,), np.nan, order=order)
+            self._data = np.full(shape + (self.nprop,), np.nan, order=order, dtype=typ)
         self._metadata = {}
         self._dependent_property_cache = {}
 
@@ -716,6 +716,30 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
+    def dAi_cr(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        v = self.xyz
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[0]
+        return util.cart_to_pol(dA, t)
+
+    @dependent_property
     def dAj_new(self):
         # Vector area for j=const faces, Gauss' theorem method
         if not self.ndim == 3:
@@ -736,6 +760,30 @@ class Kinematics:
         D = v[:, 1:, :, :-1]
 
         return -util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAj_cr(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[1]
+        return util.cart_to_pol(dA, t)
 
     @dependent_property
     def dAk_new(self):
@@ -760,36 +808,42 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
+    def dAk_cr(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xyz
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        dA = util.dA_Gauss(A, B, C, D)
+        t = self.t_face[2]
+        return util.cart_to_pol(dA, t)
+
+    @dependent_property
     def vol_new(self):
         # Volume
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
 
-        # # Get cell-centered coordinates
-        # xrtc = np.stack(
-        #     (
-        #         self.xrrt[:,:-1, :-1, :-1],
-        #         self.xrrt[:,1:, :-1, :-1],
-        #         self.xrrt[:,1:, 1:, :-1],
-        #         self.xrrt[:,:-1, 1:, :-1],
-        #         self.xrrt[:,:-1, :-1, 1:],
-        #         self.xrrt[:,1:, :-1, 1:],
-        #         self.xrrt[:,1:, 1:, 1:],
-        #         self.xrrt[:,:-1, 1:, 1:],
-        #     ),
-        # ).mean(axis=0)
-        xm = self.x.mean()
-        rm = self.r.mean()
-        rtm = self.rt.mean()
-        xrtm = np.array((xm, rm, rtm)).reshape(3, 1, 1, 1)
-
         # Get face-centered coordinates
         xi, xj, xk = self.x_face
         ri, rj, rk = self.r_face
         rti, rtj, rtk = self.rt_face
-        Fi = np.stack((xi, ri, rti)) - xrtm
-        Fj = np.stack((xj, rj, rtj)) - xrtm
-        Fk = np.stack((xk, rk, rtk)) - xrtm
+        Fi = np.stack((xi, ri / 2.0, rti))
+        Fj = np.stack((xj, rj / 2.0, rtj))
+        Fk = np.stack((xk, rk / 2.0, rtk))
         dAi = self.dAi_new
         dAj = self.dAj_new
         dAk = self.dAk_new

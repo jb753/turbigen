@@ -7,7 +7,16 @@ import numpy as np
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
+def post(
+    grid,
+    machine,
+    meanline,
+    postdir,
+    row_spf,
+    coord_sys="mpt",
+    compare=None,
+    K_offset=0.0,
+):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -37,29 +46,42 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
             mps = mp_from_xr(surf.xr)
 
             if coord_sys == "mpt":
-                ax.plot(mps, surf.t, "-", label=f"spf={spf}")
+                x1 = mps
+                x2 = surf.t
             elif coord_sys == "xrt":
-                ax.plot(surf.x, surf.rt, "-", label=f"spf={spf}")
+                x1 = surf.x
+                x2 = surf.rt
             elif coord_sys == "yz":
+                x1 = -surf.y
+                x2 = surf.z
 
-                # Extract coordinates
-                yz = np.stack((surf.y,surf.z))
+                # # Extract coordinates
+                # yz = np.stack((surf.y,surf.z))
 
-                # Rotate so that r is horizontal
-                cost = np.cos(tavg)
-                sint = np.sin(tavg)
-                Rot = np.array([[cost, -sint], [sint, cost]])
-                yz = Rot @ yz
+                # # Rotate so that r is horizontal
+                # cost = np.cos(tavg)
+                # sint = np.sin(tavg)
+                # Rot = np.array([[cost, -sint], [sint, cost]])
+                # yz = Rot @ yz
 
-                if ispf==0:
-                    for tnow in (surf.t.min(), surf.t.max()):
-                        rref = np.linspace(surf.r.min(), surf.r.max())
-                        tref = np.ones_like(rref)*tnow
-                        yzref = np.stack((rref * np.sin(tref),rref * np.cos(tref)))
-                        yzref = Rot @ yzref
-                        ax.plot(*yzref,'k--')
+                # if ispf==0:
+                #     for tnow in (surf.t.min(), surf.t.max()):
+                #         rref = np.linspace(surf.r.min(), surf.r.max())
+                #         tref = np.ones_like(rref)*tnow
+                #         yzref = np.stack((rref * np.sin(tref),rref * np.cos(tref)))
+                #         yzref = Rot @ yzref
+                #         ax.plot(*yzref,'k--')
 
-                ax.plot(*yz, "-", label=f"spf={spf}")
+                # ax.plot(*yz, "-", label=f"spf={spf}")
+
+            xoff = K_offset * (spf - 0.5) * x2.ptp()
+
+            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
+
+            if compare:
+                if compare_dat := compare[irow]:
+                    xrrt = turbigen.util.read_sections(compare_dat)[ispf]
+                    ax.plot(xrrt[0], xrrt[2] + xoff, ".", color=f"C{ispf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)
@@ -71,7 +93,7 @@ def post(grid, machine, meanline, postdir, row_spf, coord_sys="mpt"):
 
         ax.legend()
         ax.set_aspect("equal", adjustable="box")
-        ax.axis("off")
+        # ax.axis("off")
 
         plotname = os.path.join(postdir, f"section_row_{irow}.pdf")
         plt.tight_layout(pad=0)

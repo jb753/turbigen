@@ -24,9 +24,14 @@ sdist ::
 test ::
 	pytest
 
+compile-slow ::
+	python -m numpy.f2py -m embsolvec --opt='-O3 -fcheck=array-temp,bounds -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv embsolve*.so turbigen/solvers
+
 compile ::
-	python -m numpy.f2py -m compiled --opt='-O3 -fcheck=array-temp -ffast-math' -c turbigen/compiled.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
-	mv compiled*.so turbigen
+	python -m numpy.f2py -m embsolvec --opt='-O3 -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 -DF2PY_REPORT_ON_ARRAY_COPY=1
+	mv embsolve*.so turbigen/solvers
+
 
 
 verify-sdist ::
@@ -42,13 +47,8 @@ verify-sdist ::
 
 TARBALL := $(shell mkdir -p dist && find dist -name '*.tar.gz' | sort | tail -1)
 
-FIG_PY := $(wildcard fig/*.py)
-FIG_PDF := $(FIG_PY:%.py=%.pdf)
-
-fig : $(FIG_PDF)
-
-fig/%.pdf : fig/%.py
-	python $<
+lint ::
+	pre-commit run -a
 
 clean ::
 	rm -rf fig/*.pdf

@@ -12,6 +12,9 @@ class Brind:
 
     DEFAULT_PVEC = np.array([0.0, 0.0, 1.0, 1.0, 0.0])
 
+    eps = 1e-3
+    qbound = ((-5.0, 5.0), (-5.0, 5.0), (0.0, 3.0), (0.0, 3.0), (-0.2, 0.2))
+
     def __init__(self, q_camber):
         # Store input parameter vector
         self.q_camber = np.reshape(q_camber, 5)
@@ -209,11 +212,10 @@ class Taylor:
         self._coeff = self._fit_coeff()
 
     def chi(self, m):
-        return self.chi_in +  self.chi_hat(m) * self.Dchi
+        return self.chi_in + self.chi_hat(m) * self.Dchi
 
     def chi_hat(self, m):
         return np.polyval(self._coeff, m)
-
 
     def dydm(self, m):
         return np.tan(np.radians(self.chi(m)))

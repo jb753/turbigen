@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, fac_RLE=1.):
+def post(grid, machine, meanline, postdir, fac_RLE=1.0):
 
     logger.info("Plotting incidence")
     data = turbigen.util.incidence(grid, machine, meanline, fac_RLE)

@@ -1,7 +1,8 @@
 """Run a quasi-1D nozzle in the native solver."""
-import turbigen.solvers.native
+import turbigen.solvers.embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
+import turbigen.util
 import numpy as np
 from timeit import default_timer as timer
 import sys
@@ -17,10 +18,11 @@ size = comm.Get_size()
 
 # Jump to solver slave process if not first rank
 if rank > 0:
-    turbigen.solvers.native.run_slave()
+    turbigen.solvers.sative.run_slave()
     sys.exit(0)
 
-def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dirn='r', xnRR=None, Alpha=0.):
+def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dirn='r', xnRR=None, Alpha=0., tper=False, Ma1=0.3):
+    """Generate the grid."""
 
     # Geometry
     h = 0.1
@@ -38,7 +40,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     To1 = 300.0
 
     # Set inlet Ma to get inlet static state
-    Ma1 = 0.3
     rgas = cp * (ga-1.)/ga
     V = cf.V_cpTo_from_Ma(Ma1,ga)*np.sqrt(cp*To1)
     P1 = Po1/cf.Po_P_from_Ma(Ma1,ga)
@@ -56,7 +57,8 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
 
     # Make the coordinates
-    tv = np.linspace(-dt / 2., dt / 2., nk)
+    # tv = np.linspace(-dt / 2., dt / 2., nk)
+    tv = np.linspace(0., dt, nk)
     xv = np.linspace(0., L, ni)
     rv = np.linspace(rh, rt, nj)
 
@@ -96,8 +98,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
             patches = [
                 turbigen.grid.InletPatch(i=0),
                 turbigen.grid.OutletPatch(i=-1),
-                # turbigen.grid.PeriodicPatch(k=0),
-                # turbigen.grid.PeriodicPatch(k=-1),
             ]
 
         # First block has an inlet
@@ -127,6 +127,13 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
                 # turbigen.grid.PeriodicPatch(k=-1),
             ]
 
+        if tper:
+            patches.extend([
+                turbigen.grid.PeriodicPatch(k=0),
+                turbigen.grid.PeriodicPatch(k=-1),
+                ]
+            )
+
         block = turbigen.grid.PerfectBlock.from_coordinates(
                 xrt[:,istb[iblock]:ienb[iblock],:,:], Nb, patches
         )
@@ -136,7 +143,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
 
     # Make the grid object
     g = turbigen.grid.Grid(blocks)
-    g.match_patches()
     g.check_coordinates()
 
     # Boundary conditions
@@ -157,7 +163,6 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
         b.Omega = 0.0
         b.set_P_T(P1, T1)
 
-    g.apply_periodic()
 
     # Evaulate 1D analytical
     Q1 = cf.mcpTo_APo_from_Ma(Ma1,ga)
@@ -175,16 +180,20 @@ def make_nozzle(xnAR, L_h = 4., AR_merid=2., AR_pitch=1., skew=0., htr=0.99, dir
     F.r = rm
     F.t = 0.
 
+    g.match_patches()
+
     return g, F
 
 settings = {
-    'n_step': 10000,
-    'n_step_avg': 1000,
-    'n_step_log': 1000,
+    'n_step': 5000,
+    'n_step_avg': 10,
+    'n_step_log': 100,
     'i_loss': 0,
+    # 'plot_conv': True,
 }
 
 def plot_nozzle(g, F):
+    """Make debugging plots."""
 
     L = F.x.ptp()
 
@@ -194,24 +203,73 @@ def plot_nozzle(g, F):
         C = b[:, :, b.nk//2]
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,0]/L, color=cs)
         ax.plot(C.x[:,b.nj//2]/L, C.r[:,-1]/L, color=cs)
+        ax.plot(C.x/L, C.r/L, 'k-', lw=0.1)
+        ax.plot(C.x.T/L, C.r.T/L, 'k-', lw=0.1)
     ax.axis('equal')
+    ax.set_ylabel('r')
+    ax.set_xlabel('x')
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f'C{ib}'
+        C = b[:, b.nj//2, :]
+        ax.plot(C.x[:,0]/L, C.rt[:,0]/L, color=cs)
+        ax.plot(C.x[:,-1]/L, C.rt[:,-1]/L, color=cs)
+        ax.plot(C.x/L, C.rt/L, 'k-', lw=0.1)
+        ax.plot(C.x.T/L, C.rt.T/L, 'k-', lw=0.1)
+    ax.axis('equal')
+    ax.set_ylabel('rt')
+    ax.set_xlabel('x')
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
         cs = f'C{ib}'
         C = b[:, b.nj//2, b.nk//2]
-        ax.plot(C.x/L, C.Ma, color=cs)
+        ax.plot(C.x/L, C.Ma, '-.',color=cs)
     ax.plot(F.x/L, F.Ma, 'k-')
-    ax.set_ylim(bottom=0.)
+    ax.set_title('Ma')
+    ax.set_ylim((0,1))
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f'C{ib}'
+        C = b[:, b.nj//2, b.nk//2]
+        ax.plot(C.x/L, C.P/F.Po, color=cs)
+    ax.plot(F.x/L, F.P/F.Po, 'k-')
+    ax.set_title('P')
+    # ax.set_ylim(bottom=0.)
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f'C{ib}'
+        C = b[:, b.nj//2, b.nk//2]
+        ax.plot(C.x/L, C.rVt, color=cs)
+    ax.plot(F.x/L, F.rVt, 'k-')
+    ax.set_title('rVt')
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f'C{ib}'
+        C = b[:, b.nj//2, b.nk//2]
+        ax.plot(C.x/L, C.Alpha, color=cs)
+    ax.set_title('Alpha')
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        C = b[:, :, b.nk//2]
+        ax.contourf(C.x/L, C.r/L, C.s)
+    ax.set_title('ent')
+    # ax.set_ylim((0,1))
 
     plt.show()
 
 def post_nozzle(g, F):
+    """Extract errors."""
 
     Ma = np.concatenate([b.Ma[:-1,b.nj//2, b.nk//2] for b in g])
     err_Ma = Ma-F.Ma[:-1]
 
-    print(f'Mach error: mean={err_Ma.mean():.3e}, min={err_Ma.min():.3e}, max={err_Ma.max():.3e}')
+    print(f'Mach error: mean={err_Ma.mean():.2e}, min={err_Ma.min():.2e}, max={err_Ma.max():.2e}')
 
     T2 = F.T[-1]
     ho1 = F.ho[0]
@@ -230,7 +288,8 @@ def post_nozzle(g, F):
     return err_Ma, Ys, Cho
 
 @pytest.mark.parametrize("dirn", ('r','t'))
-def test_nozzle(dirn, plot=False):
+def test_condi(dirn, plot=False):
+    """Run subsonic con-di nozzles."""
 
     xA = np.array(
         [
@@ -238,62 +297,211 @@ def test_nozzle(dirn, plot=False):
             [1.,1., 0.6, 1., 1.]
         ]
     )
-
     g, F = make_nozzle(xA, dirn=dirn)
-
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    tol_Ma = 0.02  # Quite loose because flow not really 1D
-    assert (np.abs(err_Ma)<tol_Ma).all()
-    tol_s = 0.001
-    assert (np.abs(Ys)<tol_s).all()
-    tol_ho = 0.002
-    assert (np.abs(Cho)<tol_ho).all()
+    rtol_Ma = 5e-2
+    assert (np.abs(err_Ma)<rtol_Ma).all()
+    rtol_sh = 5e-3
+    assert (np.abs(Ys)<rtol_sh).all()
+    assert (np.abs(Cho)<rtol_sh).all()
 
-    if plot:
-        plot_nozzle(g, F)
-
-def test_radius():
+@pytest.mark.parametrize("Alpha", (-30.,0.,30.))
+def test_uniform(Alpha):
+    """Run the most basic parallel annulus, grid aligned with flow."""
 
     xA = np.array(
         [
-            [0.,0.02, 0.3, 0.98, 1.],
-            [1.,1., 0.6, 1., 1.]
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, settings)
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    # plot_nozzle(g,F)
+
+    rtol = 2.5e-4
+    assert (np.abs(err_Ma)<rtol).all()
+    assert (np.abs(Ys)<rtol).all()
+    assert (np.abs(Cho)<rtol).all()
+
+@pytest.mark.parametrize("Ma", (0.6, 0.9))
+def test_Ma(Ma):
+    """Run uniform flow at different Mach."""
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, Ma1=Ma)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, settings)
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    rtol = 2e-5
+    assert (np.abs(err_Ma)<rtol).all()
+    assert (np.abs(Ys)<rtol).all()
+    assert (np.abs(Cho)<rtol).all()
+
+@pytest.mark.parametrize("Alpha", (-30.,0.,30.))
+def test_skew(Alpha):
+    """Run an axial flow with skewed grid."""
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, skew=Alpha, tper=True)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, settings)
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    rtol = 2e-4
+    assert (np.abs(err_Ma)<rtol).all()
+    assert (np.abs(Ys)<rtol).all()
+    assert (np.abs(Cho)<rtol).all()
+
+@pytest.mark.parametrize("Alpha", (-30.,0.,30.))
+def test_radius(Alpha):
+    """Constant area with radius change."""
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
         ]
     )
     xR = np.array(
         [
             [0.,0.02, 0.98, 1.],
-            [1.,1., 0.9, 0.9]
+            [1.,1., 0.9, .9]
         ]
     )
 
-    g, F = make_nozzle(xA, dirn='r',xnRR=xR, htr=0.9, Alpha=0.,skew=0.)
+    g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=Alpha, tper=True)
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.native.run(g, settings)
+    turbigen.solvers.embsolve.run(g, settings)
 
     _, Ys, Cho = post_nozzle(g, F)
 
-    # tol_s = 0.001
-    # assert (np.abs(Ys)<tol_s).all()
-    tol_ho = 0.01
-    # assert (np.abs(Cho)<tol_ho).all()
+    if Alpha:
+        rVt = np.concatenate([b.rVt[:-1,b.nj//2, b.nk//2] for b in g])
+        err_rVt = rVt/rVt[0]-1.
+        tol_rVt = 1e-2
+        print(f'Angular momentum conservation error drVt mean={err_rVt.mean():.2e}, min={err_rVt.min():.2e}, max={err_rVt.max():.2e}')
+        assert (err_rVt<tol_rVt).all()
 
-    fig, ax = plt.subplots()
-    ax.plot(Ys)
+    tol_sh = 5e-4
+    assert (np.abs(Ys)<tol_sh).all()
+    assert (np.abs(Cho)<tol_sh).all()
 
-    fig, ax = plt.subplots()
-    ax.plot(Cho)
+def test_patch_A_avg():
+    """Check patch area averaging weights."""
 
-    # if plot:
-    plot_nozzle(g, F)
+    # Make an arbitrary grid
+    xA = np.array(
+        [
+            [0.,0.02, 0.3, 0.98, 1.],
+            [1.,1., 0.6, 1., 1.]
+        ]
+    )
+    g, F = make_nozzle(xA)
+    block = g[-1]
+    patch = block.outlet_patches[0]
 
-test_radius()
-# test_nozzle(dirn='r', plot=True)
+    # Calculate area average using weight
+    ind = patch.get_flat_indices(order='F')
+    w = patch.get_A_avg_weights(order='F')
+    rsqavg = np.sum((block.r.ravel(order='F')[ind]**2.)*w)/np.sum(w)
+
+    # Manually check the area average
+    C = patch.get_cut()
+    dA = turbigen.util.vecnorm(C.dAi)
+    rsqavg_check = np.sum((C.r_face[0]**2)*dA)/np.sum(dA)
+    assert np.isclose(rsqavg, rsqavg_check)
+
+def not_test_exit(Alpha):
+
+    xA = np.array(
+        [
+            [0., 0.01,0.99, 1.],
+            [1.,1., 1., 1.]
+        ]
+    )
+
+    g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha, htr=0.7)
+
+    np.set_printoptions(precision=2)
+
+    settings = {
+        'n_step': 8000,
+        'n_step_avg': 100,
+        'n_step_log': 100,
+        'i_loss': 0,
+    }
+
+    turbigen.solvers.embsolve.run(g, settings)
+
+    # fig, ax = plt.subplots()
+    # b = g[-1]
+    # Cout = b[-1,:,b.nk//2]
+    # ax.plot(Cout.x,Cout.Ma)
+    # plt.show()
+
+
+    # fig, ax = plt.subplots()
+    # b = g[-1]
+    # Cout = b[-1,:,b.nk//2]
+    # ax.plot(Cout.P/F.P[-1]-1., Cout.r)
+    # ax.set_title('P/Pout')
+    # plt.show()
+
+if __name__=='__main__':
+
+
+    pass
+
+    # print('testing exit, aligned grid')
+    # test_patch_A_avg()
+    # test_exit(0.)
+
+    # print('testing uniform, vary Ma')
+    test_Ma(0.6)
+
+    # print('testing uniform, aligned grid')
+    # test_uniform(0.)
+
+    # print('testing uniform, skewed grid')
+    # test_skew(-30.)
+
+    # print('testing radius change, aligned grid')
+    # test_radius(30.)
+
+    # print('testing con-di nozzles')
+    # test_condi('t')

@@ -1,0 +1,101 @@
+# Annotated minimal example configuration to run a turbine cascade
+#
+
+# All files relating to the case are held in a working directory
+workdir: runs/plate
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5  # Stagnation pressure [Pa]
+  To: 300.  # Stagnation temperature [K]
+  cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
+  mu: 1.8e-4  # Working fluid dynamic viscosity [kg/m/s]
+  gamma: 1.4  # Working fluid ratio of specific heats [-]
+
+# Mean-line design
+mean_line:
+  type: cascade  # Choose turbomachine from turbigen.meanline
+  # Aerodynamic parameters required for mean-line design
+  span1: 0.1
+  span2: 0.1
+  Alpha1: 0.
+  Alpha2: 60.
+  Ma2: 0.6
+  Yh: 0.0
+  htr: 0.95
+
+# Annulus shape using meridional aspect ratios
+annulus:
+  AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+  AR_chord: 1.6  # Span to chord
+
+# Blade shapes
+blades:
+  # List of rows
+  - Nb: 200  # Set number of blades using circulation coeff
+    sections:
+      # List of sections for this row
+      - spf: 0.5  # Span fraction
+        # Vector of thickness parameters
+        q_thick: [0.01, 0.03, 0.4, 0.02, 0.0, 0.18]
+        # Vector of camber parameters
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+    # - ...
+  # - ...
+
+# Computational mesh generation
+mesh:
+
+  # type: oh
+  # yplus: 30.
+  # remote_host: gp-111
+  # gbcs_path: reuse
+  # round_TE: true
+
+  # gbcs_path: runs/cascade_native/mesh
+  # resolution_factor: 0.5  # Double grid spacing in each direction
+
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Double grid spacing in each direction
+
+# CFD solver
+solver:
+  type: native  # Which solver
+  n_step: 8000
+  n_step_avg: 1
+  n_step_log: 100
+  damping_factor: 25.0
+  nstep_damp: -1
+  CFL: 0.1
+  # smoothing_factor: 0.1
+  # smoothing_2nd_proportion: 1.0
+  i_scheme: 0
+  # i_loss: 0
+  plot_conv: true
+  # i_inlet: 0
+  # i_exit: 0
+
+  # # Solver-specific configuration settings
+  # nstep: 5000
+  # nstep_avg: 1000
+  # rtol_mdot: 0.02
+  # # ...
+
+post_process:
+  contour_traverse:
+    mnorm: [2.1,]
+    coord_sys: yz
+    var: ['Ys', 'Vm']
+  plot_nose:
+    row_spf: [[0.6,],]
+  plot_section:
+    row_spf: [[0.2,0.5,0.8],]
+    coord_sys: xrt
+  plot_pressure_distributions:
+    row_spf: [[0.6,],]
+    write_raw: true
+  plot_incidence:
+  plot_annulus:
+    show_control_points: false
+    write_raw: true

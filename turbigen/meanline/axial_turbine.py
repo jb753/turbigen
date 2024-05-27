@@ -103,7 +103,7 @@ def forward(
     Vxrt = np.stack((Vx, Vr, Vt))
 
     S = turbigen.fluid.PerfectState.from_properties(cp, ga, So1.mu, shape=rm.shape)
-    S.set_P_T(P,T)
+    S.set_P_T(P, T)
 
     ml = turbigen.flowfield.make_mean_line(rrms, A, Omega, Vxrt, S)
 

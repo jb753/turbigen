@@ -90,6 +90,7 @@ def make_stencil(ityp, jtyp, ktyp, order):
 
     return D
 
+
 # Second-order accurate
 KERN2 = {
     # Interior
@@ -129,14 +130,14 @@ KERN2 = {
 }
 
 
-def laplacian2(x, sf=1.):
+def laplacian2(x, sf=1.0):
     # x has shape [ni,nj,nk]
     # return smoothed nodal values, second-order accuarte
 
     xs = np.full_like(x, np.nan)
 
     def conv(y, sten):
-        return convolve(y, sf*KERN2[sten], mode="valid").squeeze()
+        return convolve(y, sf * KERN2[sten], mode="valid").squeeze()
 
     # Interior
     xs[1:-1, 1:-1, 1:-1] = conv(x, "ijk")
@@ -181,4 +182,3 @@ def laplacian2(x, sf=1.):
     assert not np.isnan(xs).any()
 
     return xs
-

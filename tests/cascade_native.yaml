@@ -2,7 +2,7 @@
 #
 
 # All files relating to the case are held in a working directory
-workdir: runs/cascade
+workdir: runs/cascade_native
 
 # Perfect gas inlet state
 inlet:
@@ -18,8 +18,8 @@ mean_line:
   # Aerodynamic parameters required for mean-line design
   span1: 0.1
   span2: 0.12
-  Alpha1: 40.
-  Alpha2: -60.
+  Alpha1: -40.
+  Alpha2: 60.
   Ma2: 0.6
   Yh: 0.1
   htr: 0.9
@@ -37,7 +37,7 @@ blades:
       # List of sections for this row
       - spf: 0.5  # Span fraction
         # Vector of thickness parameters
-        q_thick: [0.05, 0.12, 0.3, 0.02, 0.0, 0.18]
+        q_thick: [0.01, 0.05, 0.3, 0.02, 0.0, 0.18]
         # Vector of camber parameters
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
     # - ...
@@ -45,35 +45,37 @@ blades:
 
 # Computational mesh generation
 mesh:
+
+  # type: oh
+  # yplus: 30.
+  # remote_host: gp-111
+  # gbcs_path: reuse
+  # round_TE: true
+
+  # gbcs_path: runs/cascade_native/mesh
+  # resolution_factor: 0.5  # Double grid spacing in each direction
+
   type: h  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
-  resolution_factor: 0.5  # Double grid spacing in each direction
-  # ni_TE: 4
-  # dm_TE: 0.02
-  # dm_LE: 0.005
+  # resolution_factor: 0.5  # Double grid spacing in each direction
 
 # CFD solver
 solver:
-  type: native  # Which solver
-  n_step: 2000
+  type: embsolve  # Which solver
+  n_step: 8000
   n_step_avg: 500
-  n_step_log: 50
-  damping_factor: 25.0
-  CFL: 0.4
-  smoothing_factor: 0.05
-  i_scheme: 0
-
-  # # Solver-specific configuration settings
-  # nstep: 5000
-  # nstep_avg: 1000
-  # rtol_mdot: 0.02
-  # # ...
+  n_step_log: 100
+  nstep_damp: -1
+  plot_conv: true
+  i_loss: 0
 
 post_process:
   contour_traverse:
     mnorm: [2.1,]
     coord_sys: yz
-    var: ['Ys', 'Vm']
+    var: ['Ys',]
+    step: [0.05,]
+    lim: [[-0.05,0.8,],]
   plot_nose:
     row_spf: [[0.6,],]
   plot_section:

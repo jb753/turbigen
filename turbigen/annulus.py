@@ -171,20 +171,16 @@ class Smooth:
                 # Find a bracket safely
                 dx_lower = None
 
-                # print(f'Setting chord k={k}')
-                # print('High guess')
                 # High guess
                 for rel_dx in (0.1, 0.2, 0.4, 0.8, 1.6):
                     dx_upper = dxref * rel_dx
                     err = _iter_chord(dx_upper, k)
-                    # print(f'err={err}')
                     if err > 0.0:
                         break
                     else:
                         dx_lower = dxref * rel_dx
 
                 # Low guess
-                # print('Low guess')
                 if dx_lower is None:
                     for rel_dx in (0.1, 0.2, 0.4, 0.8, 1.6):
                         dx_lower = -dxref * rel_dx

@@ -190,7 +190,7 @@ fraction `spf` and vectors of thickness and camber parameters, `q_thick` and
 The number of blades can be set via three choices: directly using `Nb`, a
 non-dimensional circulation using `Co`, or the Lieblein diffusion factor `DFL`.
 Thickness and camber vectors are interpolated between each of the specified
-span fractions. 
+span fractions.
 
 Tip gaps can be modelled by adding a `tip` key to the row configuration. The
 gap is normalised by the mean of the inlet and exit span.

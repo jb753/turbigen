@@ -81,40 +81,6 @@ def medial_axis(xy, plot=False):
     return xy_med
 
 
-# def boundary_layer_Po_Poinf(spf, delta, Mainf, ga, verbose=False):
-#     """Return stagnation pressure ratio in a boundary layer."""
-
-#     expon = 1.0 / 7.0
-#     d99 = delta * 0.99
-
-#     # Specify velocity
-#     V_Vinf = np.ones_like(spf)
-#     V_Vinf[spf < d99] = (spf[spf < d99] / delta) ** expon
-#     V_Vinf[spf > (1.0 - d99)] = ((1.0 - spf[spf > (1.0 - d99)]) / delta) ** expon
-
-#     # Evaluate thicknesses and shape factor
-#     del_star = np.trapz(1.0 - V_Vinf[spf < d99], spf[spf < d99])
-#     theta = np.trapz((1.0 - V_Vinf[spf < d99]) * V_Vinf[spf < d99], spf[spf < d99])
-#     H = del_star / theta
-
-#     if verbose:
-#         print("H", H)
-#         print("del_star", del_star)
-#         print("theta", theta)
-
-#     # Get Mach number
-#     V_cpTo_inf = cf.V_cpTo_from_Ma(Mainf, ga)
-#     Po_Pinf = cf.Po_P_from_Ma(Mainf, ga)
-#     V_cpTo = V_cpTo_inf * V_Vinf
-#     Ma = cf.Ma_from_V_cpTo(V_cpTo, ga)
-
-#     # Transform to stagnation pressure ratio
-#     Po_P = cf.Po_P_from_Ma(Ma, ga)
-#     Po_Poinf = Po_P / Po_Pinf
-
-#     return Po_Poinf
-
-
 def reduce_scalar(x):
     """Convert something to a scalar float if possible."""
     if np.shape(x) in ((), (1,)):
@@ -976,6 +942,26 @@ def node_to_face(var):
     )
 
 
+def node_to_cell(var):
+    """For a (...,ni,nj,nk) matrix of some property, average over eight corners of
+    each cell to produce an (...,ni-1,nj-1,nk-1) matrix of cell-centered properties."""
+    return np.mean(
+        np.stack(
+            (
+                var[..., :-1, :-1, :-1],  # i, j, k
+                var[..., 1:, :-1, :-1],  # i+1, j, k
+                var[..., :-1, 1:, :-1],  # i, j+1, k
+                var[..., 1:, 1:, :-1],  # i+1, j+1, k
+                var[..., :-1, :-1, 1:],  # i, j, k+1
+                var[..., 1:, :-1, 1:],  # i+1, j, k+1
+                var[..., :-1, 1:, 1:],  # i, j+1, k+1
+                var[..., 1:, 1:, 1:],  # i+1, j+1, k+1
+            ),
+        ),
+        axis=0,
+    )
+
+
 def subsample_cases(c, k, K):
     """Split into K parts, extract kth and other K-1 subsamples."""
     di = int(np.floor(len(c) / K))
@@ -1177,7 +1163,6 @@ def next_numbered_dir(basename):
     # Make a regular expression to extract the id from a dir name
     restr = stem.replace("*", r"(\d*)")
     re_id = re.compile(restr)
-    # print(re_id.match('beans_0001').groups()[0])
 
     cur_id = -1
 
@@ -1450,23 +1435,28 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 
 def dA_Gauss(A, B, C, D):
 
-    # Circular array of vertices
-    v = np.stack((A, B, C, D, A), axis=0)
+    # Assemble all vertices together (stack along second axis)
+    # xrrt[4, 3, ni, nj, nk]
+    xrrt = np.stack((A, B, C, D), axis=0).copy()
 
-    # Subtract cell-center coords to reduce round-off error
-    vc = np.stack((A, B, C, D), axis=0).mean(axis=0)
-    v -= vc
+    # Shift theta origin to face center
+    # This is important so that constant-theta faces have no radial area
+    t = xrrt[:, 2] / xrrt[:, 1]
+    t -= t.mean(axis=0)
+    xrrt[:, 2] = xrrt[:, 1] * t
+
+    # Subtract face-center coords to reduce round-off error
+    xrrtc = xrrt.mean(axis=0)
+    xrrt -= xrrtc
+
+    # Circular array of vertices
+    v = np.concatenate((xrrt, xrrt[0][None, ...]), axis=0)
 
     # Edges
     dv = np.diff(v, axis=0)
 
     # Edge midpoint vertices
     vm = 0.5 * (v[:-1] + v[1:])
-
-    # # Make theta into r.theta
-    # vm[:,2, ...] *= vm[:,1, ...]
-    # dv[:, 2, ...] *= vm[:,1, ...]
-    # vm[:,1, ...] *= 0.5
 
     # Vector field
     Fx = vm.copy()
@@ -1508,3 +1498,56 @@ def dA_Gauss(A, B, C, D):
     dA = 0.5 * np.sum(F * dl, axis=(2, 1))
 
     return dA
+
+
+def cart_to_pol(dA, t):
+
+    dAx, dAy, dAz = -dA
+    cost = np.cos(t)
+    sint = np.sin(t)
+
+    dAr = -dAy * sint - dAz * cost
+    dAt = dAy * cost - dAz * sint
+
+    return np.stack((dAx, dAr, dAt))
+
+
+def moving_average(x, n):
+    xa = x.copy()
+    N = x.shape[1]
+    for i in range(N):
+        ist = np.max(i - n, 0)
+        ien = i + 1
+        xa[:, i] = x[:, ist:ien].sum(axis=1) / (ien - ist)
+    return xa
+
+
+def write_sections(xrrt, fname):
+    """Dump section coordinates in a format turbigen can read."""
+    Nsect = len(xrrt)
+    with open(fname, "w") as f:
+        f.write("Blade section xrt coordinates for turbigen\n")
+        f.write(f"Nsect = {Nsect}\n")
+        for isect in range(Nsect):
+            f.write(f"Section {isect}\n")
+            Nc, Npts = xrrt[isect].shape
+            assert Nc == 3
+            f.write(f"Npts = {Npts}\n")
+            for c in xrrt[isect]:
+                np.savetxt(f, c.reshape(1, -1))
+
+
+def read_sections(fname):
+    """Load section coordinates from a formatted data file."""
+    with open(fname, "r") as f:
+        f.readline()  # Skip header
+        Nsect = int(f.readline().split()[-1])
+        xrrt = []
+        for isect in range(Nsect):
+            f.readline()  # Skip header
+            f.readline()  # Skip Npts
+            xrrt.append(
+                np.stack([[float(n) for n in f.readline().split()] for _ in range(3)])
+            )
+
+    return xrrt

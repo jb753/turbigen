@@ -233,51 +233,12 @@ class MeridionalLine:
         m = s + 0.0
         m /= m[-1]
 
-        # # # Now we want to remap arc length such that
-        # # # s(t=k) = k for integer k
-        # s /= s[-1] / (self.N - 1)
-        # sref = np.interp(t, tt, s)
-        # stilde = np.empty_like(s)
-        # for k in range(self.N - 1):
-        #     ind = np.logical_and(tt >= k, tt <= k + 1)
-        #     stilde[ind] = (s[ind] - sref[k]) / (sref[k + 1] - sref[k]) + k
-
         # Spline parameter to normalised meridional distance and inverse
-        # self._pt = scipy.interpolate.PchipInterpolator(m, tt, extrapolate=False)
-
-        # try:
-        #     self._pt = scipy.interpolate.PchipInterpolator(m, tt)
-        # except ValueError:
-        #     import matplotlib.pyplot as plt
-        #     fig, ax = plt.subplots()
-        #     ax.plot(m,tt,'k-x')
-        #     plt.savefig('test.pdf')
-        #     print(m)
-        #     print(tt)
-        #     quit()
-
         self._pt = scipy.interpolate.PchipInterpolator(m, self._t_clu)
-        # self._pm = scipy.interpolate.PchipInterpolator(
-        #     self._t_clu, m, extrapolate=False
-        # )
 
         self.chords = np.diff(np.interp(self.t, self._t_clu, s))
         self.mctrl = np.interp(self.t, self._t_clu, m)
         self.mclu = m[1:-1]
-        # self._ps(self.t))
-        # self._ps = scipy.interpolate.PchipInterpolator(
-        #     self._t_clu, s, extrapolate=False
-        # )
-
-    # @property
-    # def chords(self):
-    #     """Dimensional arc lengths between each control point."""
-    #     return
-
-    # @property
-    # def mctrl(self):
-    #     """Normalised meridional coordinates at the control points."""
-    #     return self._pm(self.t)
 
     def _xr(self, t):
         """Meridional coordinates as function of spline parameter."""
@@ -571,9 +532,54 @@ class Blade:
         self.q_camber = np.reshape(q_camber, (N, -1))
         self.mstack = mstack
         if mlim is None:
-            self.mlim = np.tile((0, 1), (N, 1))
+            self.mlim = np.tile((0.0, 1.0), (N, 1))
         else:
             self.mlim = np.array(mlim)
+
+    def get_pvec(self, isect=None):
+        if isect is not None:
+            qthick = self.q_thick[isect, :]
+            qcam = self.q_camber[isect, :]
+            # mlim = self.mlim[isect,:]
+        else:
+            qthick = self.q_thick.reshape(-1)
+            qcam = self.q_camber.reshape(-1)
+            # mlim = self.mlim.reshape(-1)
+        toff = [
+            self.theta_offset,
+        ]
+        return np.concatenate((qthick, qcam, toff))
+
+    def get_bound(self, isect=None):
+        Nspf, Nthick = self.q_thick.shape
+        if isect is not None:
+            Nspf = 1
+        _, Ncam = self.q_camber.shape
+        bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
+        bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
+        bound_toff = ((-np.pi, np.pi),)
+        bound = np.concatenate((bound_thick, bound_cam, bound_toff), axis=0)
+        return bound
+
+    def set_pvec(self, q, isect=None):
+        self.theta_offset = q[-1]
+        Nspf, Nthick = self.q_thick.shape
+        _, Ncam = self.q_camber.shape
+        if isect is not None:
+            Nspf = 1
+        ithick = Nthick * Nspf
+        icam = ithick + (Ncam * Nspf)
+        # im = icam+2*Nspf
+        if isect is not None:
+            # print(q[icam:im],self.mlim[isect,:])
+            # quit()
+            self.q_thick[isect, :] = q[:ithick]
+            self.q_camber[isect, :] = q[ithick:icam]
+            # self.mlim[isect,:] = q[icam:im]
+        else:
+            self.q_thick = q[:ithick].reshape(Nspf, Nthick)
+            self.q_camber = q[ithick:icam].reshape(Nspf, Ncam)
+            # self.mlim = q[icam:im].reshape(Nspf, 2)
 
     @property
     def nsect(self):
@@ -770,43 +776,18 @@ class Blade:
 
         return xrtcam
 
-    def get_LE_cent(self, spf, fac_Rle=1.):
+    def get_LE_cent(self, spf, fac_Rle=1.0):
         """Get the centre of the leading edge."""
 
         # Make a meridional grid vector for just the le
         cam, thick = self._get_cam_thick(spf)
-        Rle = thick.R_LE/fac_Rle
+        Rle = thick.R_LE / fac_Rle
         m = util.cluster_cosine(500)
 
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtul = xrtul[:, :, m < 2.0 * Rle]
         xrtcam = np.mean(xrtul, axis=0)
         xrtLE = xrtcam[:, np.argmax(m > Rle)]
-
-        xyzcam = np.stack(
-            (
-                xrtcam[0],
-                xrtcam[1] * np.sin(xrtcam[2]),
-                xrtcam[1] * np.cos(xrtcam[2]),
-            )
-        )
-
-        xyzul = np.stack(
-            (
-                xrtul[:, 0],
-                xrtul[:, 1] * np.sin(xrtul[:, 2]),
-                xrtul[:, 1] * np.cos(xrtul[:, 2]),
-            ),
-            axis=1,
-        )
-
-        xyzLE = np.stack(
-            (
-                xrtLE[0],
-                xrtLE[1] * np.sin(xrtLE[2]),
-                xrtLE[1] * np.cos(xrtLE[2]),
-            )
-        )
 
         return xrtLE
 
@@ -876,7 +857,7 @@ class Machine:
             if b:
                 sections.append(b.get_coords(flip_theta=flip_theta))
             else:
-                sections.append([None,None])
+                sections.append([None, None])
         annulus = self.ann.get_coords()
         zcst = self.ann.get_interfaces()
         if self.split:
@@ -884,8 +865,8 @@ class Machine:
             for irow in range(len(sections)):
                 try:
                     split.append(self.split[irow].get_coords(flip_theta=flip_theta))
-                except:
-                    split.append([None,None])
+                except Exception:
+                    split.append([None, None])
         else:
             split = None
         return sections, annulus, zcst, self.Nb, self.tip, split

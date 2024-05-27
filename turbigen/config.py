@@ -225,10 +225,13 @@ class Config:
                 )
 
     def _check_iterate(self):
-        if (mlconf:=self.iterate.get('mean_line')):
-            for v in mlconf.get('match_tolerance'):
+        if mlconf := self.iterate.get("mean_line"):
+            for v in mlconf.get("match_tolerance"):
                 if v not in self.mean_line:
-                    raise Exception(f'Unknown mean-line match variable \'{v}\', should be one of {list(self.mean_line.keys())}')
+                    raise Exception(
+                        f"Unknown mean-line match variable '{v}', "
+                        f"should be one of {list(self.mean_line.keys())}"
+                    )
 
     @classmethod
     def read(cls, yaml_file):

@@ -147,19 +147,147 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def get_wall(self, trim=1):
+    def get_wall(self, ignore_slip=False):
 
-        # Preallocate wall indicator with True on boundaries, False interior
-        is_wall = np.ones(self.shape, dtype=bool)
-        is_wall[1:-1, 1:-1, 1:-1] = False
+        ni, nj, nk = self.shape
 
-        # Loop over patches
+        # Zero means is a wall
+        # Positive values are not-wallness
+        iwall = np.zeros((ni, nj - 1, nk - 1), dtype=int)
+        iwall[1:-1, :, :] = 1
+
+        jwall = np.zeros((ni - 1, nj, nk - 1), dtype=int)
+        jwall[:, 1:-1, :] = 1
+
+        kwall = np.zeros((ni - 1, nj - 1, nk), dtype=int)
+        kwall[:, :, 1:-1] = 1
+
         for patch in self.patches:
-            # Unset wall indicator if patch is not wall
-            if type(patch) in NOT_WALL_PATCHES:
-                is_wall[patch.get_slice(trim=trim)] = False
 
-        return is_wall
+            # Skip if this patch is a wall
+            if ignore_slip:
+                if not type(patch) in NOT_SLIPWALL_PATCHES:
+                    continue
+            else:
+                if not type(patch) in NOT_WALL_PATCHES:
+                    continue
+
+            nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
+            ijk_lim = patch.ijk_limits.copy()
+            ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+            ijk_lim[:, 1] += 1
+            ist, ien = ijk_lim[0]
+            jst, jen = ijk_lim[1]
+            kst, ken = ijk_lim[2]
+
+            # Increment the not wall indicator on the const-dirn
+            if patch.cdir == 0:
+                iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+            elif patch.cdir == 1:
+                jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
+            elif patch.cdir == 2:
+                kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
+
+        # Now distribute the face not-wallness to the nodes
+        wall = np.zeros((ni, nj, nk), dtype=int)
+
+        # i-faces
+        wall[:, :-1, :-1] += iwall  # Bottom-left
+        wall[:, 1:, :-1] += iwall  # Bottom-right
+        wall[:, :-1, 1:] += iwall  # Top-left
+        wall[:, 1:, 1:] += iwall  # Top-right
+
+        # j-faces
+        wall[:-1, :, :-1] += jwall  # Bottom-left
+        wall[1:, :, :-1] += jwall  # Bottom-right
+        wall[:-1, :, 1:] += jwall  # Top-left
+        wall[1:, :, 1:] += jwall  # Top-right
+
+        # j-faces
+        wall[:-1, :-1, :] += kwall  # Bottom-left
+        wall[1:, :-1, :] += kwall  # Bottom-right
+        wall[:-1, 1:, :] += kwall  # Top-left
+        wall[1:, 1:, :] += kwall  # Top-right
+
+        # A node is *not* on a wall if *all* of the faces touching it are *not*
+        # walls. So the thresholds are:
+        #   corner: 3
+        #   edge: 4
+        #   face: 8
+        #   interior: 0
+        thresh = np.zeros_like(wall, dtype=int)
+
+        thresh[0, :, :] = 8
+        thresh[-1, :, :] = 8
+        thresh[:, 0, :] = 8
+        thresh[:, -1, :] = 8
+        thresh[:, :, 0] = 8
+        thresh[:, :, -1] = 8
+
+        thresh[:, 0, 0] = 4
+        thresh[:, 0, -1] = 4
+        thresh[:, -1, 0] = 4
+        thresh[:, -1, -1] = 4
+        thresh[0, :, 0] = 4
+        thresh[0, :, -1] = 4
+        thresh[-1, :, 0] = 4
+        thresh[-1, :, -1] = 4
+        thresh[0, 0, :] = 4
+        thresh[0, -1, :] = 4
+        thresh[-1, 0, :] = 4
+        thresh[-1, -1, :] = 4
+
+        thresh[0, 0, 0] = 3
+        thresh[-1, 0, 0] = 3
+        thresh[0, -1, 0] = 3
+        thresh[-1, -1, 0] = 3
+        thresh[0, 0, -1] = 3
+        thresh[-1, 0, -1] = 3
+        thresh[0, -1, -1] = 3
+        thresh[-1, -1, -1] = 3
+
+        wall = (wall < thresh).astype(np.int8)
+
+        iwall = (iwall == 0).astype(np.int8)
+        jwall = (jwall == 0).astype(np.int8)
+        kwall = (kwall == 0).astype(np.int8)
+
+        return iwall, jwall, kwall, wall
+
+    def get_dwall(self):
+
+        # Get wall length scales at nodes
+        dli = turbigen.util.vecnorm(self.dli)
+        dlj = turbigen.util.vecnorm(self.dlj)
+        dlk = turbigen.util.vecnorm(self.dlk)
+
+        # Distribute length scales to faces
+        dlif = np.stack(
+            (
+                dli[:, :-1, :-1],
+                dli[:, 1:, :-1],
+                dli[:, :-1, 1:],
+                dli[:, 1:, 1:],
+            )
+        ).mean(axis=0)
+        dljf = np.stack(
+            (
+                dlj[:-1, :, :-1],
+                dlj[1:, :, :-1],
+                dlj[:-1, :, 1:],
+                dlj[1:, :, 1:],
+            )
+        ).mean(axis=0)
+        dlkf = np.stack(
+            (
+                dlk[:-1, :-1, :],
+                dlk[1:, :-1, :],
+                dlk[:-1, 1:, :],
+                dlk[1:, 1:, :],
+            )
+        ).mean(axis=0)
+
+        return dlif, dljf, dlkf
 
     def check_coordinates(self):
         """Raise an error if coordinates are invalid."""
@@ -566,7 +694,8 @@ class Grid:
         for block in self:
 
             # Assemble unstructured wall coordinates for this block
-            xrtbw = block.xrt[:, block.get_wall()].reshape(3, -1)
+            _, _, _, is_wall = block.get_wall()
+            xrtbw = block.xrt[:, is_wall.astype(bool)].reshape(3, -1)
 
             # Replicate by +/- a pitch
             pitch = 2.0 * np.pi / float(block.Nb)
@@ -1116,6 +1245,10 @@ class Patch:
     def ijkdir(self, value):
         self.idir, self.jdir, self.kdir = value
 
+    @property
+    def cdir(self):
+        return np.where(np.diff(self.ijk_limits, axis=1) == 0)[0][0]
+
     def get_slice(self, offset=0, trim=0):
         # Convert inclusive start/end to indices for range slice
         sl = []
@@ -1137,31 +1270,86 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
-    def get_indices(self, extra_dim=0):
+    def get_indices(self, perm=None, flip=()):
         # Return ijk indices over the patch
         nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
         ijk_lim = self.ijk_limits.copy()
         ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
         ijk_lim[:, 1] += 1
-        if extra_dim:
-            ijk_lim = np.append(ijk_lim, [[0, extra_dim]], axis=0)
         ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
-        ijk = tuple(np.meshgrid(*ijkv, indexing="ij"))
+        ijk = np.stack(np.meshgrid(*ijkv, indexing="ij"))
+
+        if perm is not None:
+            ijk = np.stack([np.flip(ijkn, axis=flip).transpose(perm) for ijkn in ijk])
+
         return ijk
 
-    def get_flat_indices(self, order="C", perm=None, flip=None, extra_dim=0):
-        # Return indices of all points on patch into self.block.flat
-        ijk = self.get_indices(extra_dim)
+    def get_flat_indices(self, order="C", perm=None, flip=None):
+        # Return indices of all points on patch into self.block.ravel
+        ijk = self.get_indices()
         shape = self.block.shape
-        if extra_dim:
-            shape = shape + (extra_dim,)
         ind = np.ravel_multi_index(ijk, shape, order=order)
         if perm is not None:
-            perm = perm[1:] - 1
-            if extra_dim:
-                perm = np.append(perm, 3)
-            ind = np.flip(ind.transpose(perm), axis=flip)
+            ind = np.flip(ind, axis=flip).transpose(perm)
         return ind.reshape(-1)
+
+    def get_A_avg_weights(self, order="C"):
+        # Return ind, w such that the area average of block prop is
+        # np.sum( prop.ravel(order)[ind]*w)
+
+        ijk = self.get_indices()
+        shape = self.block.shape
+
+        ind = np.ravel_multi_index(ijk, shape, order=order)
+
+        # At this point ind has shape (di, dj, dk) and one of them is zero
+        di, dj, dk = ind.shape
+
+        C = self.get_cut()
+
+        if di == 1:
+            ind_face = np.stack(
+                (
+                    ind[0, :-1, :-1],
+                    ind[0, 1:, :-1],
+                    ind[0, :-1, 1:],
+                    ind[0, 1:, 1:],
+                )
+            ).reshape(4, -1)
+            dA = C.dAi.reshape(3, -1)
+        else:
+            raise NotImplementedError
+
+        ind_flat = ind.reshape(-1)
+
+        assert np.allclose(self.block.x.ravel(order=order)[ind_flat], C.x.reshape(-1))
+        assert np.allclose(self.block.r.ravel(order=order)[ind_flat], C.r.reshape(-1))
+        assert np.allclose(self.block.t.ravel(order=order)[ind_flat], C.t.reshape(-1))
+
+        # We want to express the area integral of a variable x
+        #   int x dA
+        # as a weighted sum of the nodal values of x
+        nnode = np.size(ind)
+        nface = dA.shape[-1]
+
+        w = np.zeros(
+            (
+                3,
+                nnode,
+            )
+        )
+
+        # Loop over faces
+        for iface in range(nface):
+            # For all four corners on this face,
+            # add dA to the relavent nodal weight
+            for k in range(4):
+                w[:, ind_flat == ind_face[k, iface]] += dA[:, (iface,)]
+
+        # Normalise
+        w /= 4.0
+
+        return w
 
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
@@ -1217,8 +1405,10 @@ class PeriodicPatch(Patch):
                         perm[n] = m
                 flip[n] = 0
 
-        perm = np.insert(perm + 1, 0, 0)
-        flip = np.where(np.insert(flip, 0, 0))[0]
+        # perm = np.insert(perm + 1, 0, 0)
+        # flip = np.where(np.insert(flip, 0, 0))[0]
+
+        flip = np.where(flip)[0]
 
         return perm, flip
 
@@ -1229,15 +1419,6 @@ class PeriodicPatch(Patch):
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
 
         return Cnx
-
-    def get_periodic_data(self):
-        ind = self.get_flat_indices("F", extra_dim=5)
-        match = self.match
-        perm, flip = match.get_match_perm_flip()
-        nxind = match.get_flat_indices("F", perm, flip, extra_dim=5)
-        bid = self.block.grid.index(self.block)
-        nxbid = match.block.grid.index(match.block)
-        return bid, ind.tolist(), nxbid, nxind.tolist()
 
 
 class PorousPatch(PeriodicPatch):
@@ -1309,18 +1490,6 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
 
-    def get_inlet_data(self):
-        return (
-            self.get_flat_indices(order="F"),
-            self.state.P + 0.0,
-            self.state.T + 0.0,
-            self.Alpha + 0.0,
-            self.Beta + 0.0,
-            self.state.rho,
-            self.state.h,
-            self.get_cut().r.reshape(-1),
-        )
-
 
 class InviscidPatch(Patch):
     pass
@@ -1333,9 +1502,6 @@ class OutletPatch(Patch):
     force = False
     amplitude = 0.0
     phase = 0.0
-
-    def get_outlet_data(self):
-        return self.get_flat_indices(order="F"), (self.Pout + 0.0,)
 
 
 class RotatingPatch(Patch):
@@ -1392,6 +1558,15 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
+]
+NOT_SLIPWALL_PATCHES = [
+    InletPatch,
+    OutletPatch,
+    MixingPatch,
+    PeriodicPatch,
+    PorousPatch,
+    ProbePatch,
+    InviscidPatch,
 ]
 
 

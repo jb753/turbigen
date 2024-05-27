@@ -10,7 +10,19 @@ import warnings
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None, var=(), step=None, horiz_offset=0., title=None):
+def post(
+    grid,
+    machine,
+    meanline,
+    postdir,
+    mnorm=None,
+    coord_sys="yz",
+    lim=None,
+    var=(),
+    step=None,
+    horiz_offset=0.0,
+    title=None,
+):
 
     logger.info("Contouring traverse planes...")
 
@@ -50,17 +62,17 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
         elif coord_sys == "rtx":
             pitch = Cu.pitch
             rt_pitch = pitch * Cu.r.mean()
-            xrt = Cu.xrt[:,iunique]
-            tref = 0.5*(xrt[2].min()+xrt[2].max())
+            xrt = Cu.xrt[:, iunique]
+            tref = 0.5 * (xrt[2].min() + xrt[2].max())
             xrt[2] -= tref
-            xrt[0] *= -1.
+            xrt[0] *= -1.0
             # Repeat by +- a pitch
             xrtp = xrt.copy()
             xrtp[2] += pitch
             xrtm = xrt.copy()
             xrtm[2] -= pitch
-            xrt = np.concatenate((xrtm, xrt, xrtp),axis=-1)
-            c1 = xrt[1]*xrt[2]
+            xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
+            c1 = xrt[1] * xrt[2]
             c2 = xrt[0]
 
             trim = triangles.copy()
@@ -69,7 +81,6 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             trip = tri.copy()
             trip += Npts
             triangles = np.concatenate((trim, tri, trip))
-
 
         else:
             raise Exception(f"Unrecognised coordinate system {coord_sys}")
@@ -97,9 +108,9 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
                 # Choose compressor or turbine definition
                 PR = (P2 / P1)[i]
                 if PR > 1.0:
-                    v = T2 * (s - s1[i]) / (ho1 - h1)
+                    v = T2[i] * (s - s1[i]) / (ho1[i] - h1[i])
                 else:
-                    v = T2 * (s - s1[i]) / (ho2 - h2)
+                    v = T2[i] * (s - s1[i]) / (ho2[i] - h2[i])
 
                 lab = "Entropy Loss Coefficient, $Y_s$"
 
@@ -114,7 +125,6 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
                 dv = 0.05
                 v = Cu.Vm[iunique] / Vref
 
-
             else:
                 raise Exception(f"Unrecognised plot variable {vname}")
 
@@ -122,7 +132,7 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
                 dv = step[iv]
 
             if coord_sys == "rtx":
-                v = np.tile(v,(3,))
+                v = np.tile(v, (3,))
 
             lev = turbigen.util.clipped_levels(v, dv, thresh=0.01)
 
@@ -138,12 +148,20 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             # does not take it as a kwarg. So catch and hide this warning.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                cm = ax.tricontourf(c1, c2, v, lev, triangles=triangles, cmap="cubehelix", linestyles="none")
+                cm = ax.tricontourf(
+                    c1,
+                    c2,
+                    v,
+                    lev,
+                    triangles=triangles,
+                    cmap="cubehelix",
+                    linestyles="none",
+                )
 
             cm.set_edgecolor("face")
 
             hc = plt.colorbar(cm, label=lab)
-            hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv*2))
+            hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
             if title:
                 ax.set_title(title)
 
@@ -152,12 +170,10 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
             ax.axis("equal")
             ax.axis("off")
 
-
             if coord_sys == "rtx":
 
-                rtlim = (np.array([-.5,.5])+horiz_offset)*rt_pitch
+                rtlim = (np.array([-0.5, 0.5]) + horiz_offset) * rt_pitch
                 xlim = np.array([c2.min(), c2.max()])
-
 
                 # Hub and casing shading
                 dr = xlim.ptp()*0.07
@@ -170,7 +186,6 @@ def post(grid, machine, meanline, postdir, mnorm=None, coord_sys="yz", lim=None,
                 ax.text(rtlim.mean(), xlim[1]+dr, 'Casing', ha='center', va='center')
 
                 ax.set_xlim(rtlim)
-
 
             figname = os.path.join(postdir, f"traverse_{vname}_{i}.pdf")
             plt.savefig(figname)
