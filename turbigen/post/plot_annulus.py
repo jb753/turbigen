@@ -8,7 +8,7 @@ logger = turbigen.util.make_logger()
 
 
 def post(
-    grid,
+    _,
     machine,
     meanline,
     postdir,

@@ -81,7 +81,17 @@ def post(
             if compare:
                 if compare_dat := compare[irow]:
                     xrrt = turbigen.util.read_sections(compare_dat)[ispf]
-                    ax.plot(xrrt[0], xrrt[2] + xoff, ".", color=f"C{ispf}")
+                    if coord_sys == 'xrt':
+                        x1c = xrrt[0]
+                        x2c = xrrt[2]
+                    elif coord_sys == 'yz':
+                        tc = xrrt[2]/xrrt[1]
+                        x1c = xrrt[1] * np.sin(tc)
+                        x2c = xrrt[1] * np.cos(tc)
+                    else:
+                        pass
+
+                    ax.plot(x1c, x2c + xoff, ".", color=f"C{ispf}")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)
