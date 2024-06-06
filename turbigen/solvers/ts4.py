@@ -38,7 +38,7 @@ class TS4Config(BaseSolver):
     custom_pipeline.py input_ts3.hdf5 input_ts4`"""
 
     environment_script = (
-        "/usr/local/software/turbostream/ts4282/bashrc_module_ts4282_a100"
+        "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
     )
     """Setup environment shell script to be sourced before running."""
 
