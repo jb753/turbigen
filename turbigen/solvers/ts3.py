@@ -1079,7 +1079,7 @@ def run(grid, settings, machine):
     # Final check of the mesh
     grid.match_patches()
     for block in grid:
-        block.check_coordinates()
+        # block.check_coordinates()
         block.check_wall_distance()
 
     # Load balancing

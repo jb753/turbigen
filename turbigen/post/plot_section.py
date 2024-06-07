@@ -35,8 +35,8 @@ def post(
 
             surf = grid.cut_blade_surfs()[irow][0][:, jspf, :].squeeze()
 
-            if ispf == 0:
-                tavg = 0.5*(surf.t.min()+surf.t.max())-np.pi/2.
+            # if ispf == 0:
+            #     tavg = 0.5 * (surf.t.min() + surf.t.max()) - np.pi / 2.0
 
             mlim = (-0.1, 1.1)
             mp_from_xr, spf_actual = turbigen.util.get_mp_from_xr(
@@ -81,11 +81,11 @@ def post(
             if compare:
                 if compare_dat := compare[irow]:
                     xrrt = turbigen.util.read_sections(compare_dat)[ispf]
-                    if coord_sys == 'xrt':
+                    if coord_sys == "xrt":
                         x1c = xrrt[0]
                         x2c = xrrt[2]
-                    elif coord_sys == 'yz':
-                        tc = xrrt[2]/xrrt[1]
+                    elif coord_sys == "yz":
+                        tc = xrrt[2] / xrrt[1]
                         x1c = xrrt[1] * np.sin(tc)
                         x2c = xrrt[1] * np.cos(tc)
                     else:

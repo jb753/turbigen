@@ -20,7 +20,7 @@ general, a different dimensional arc length.
 """
 
 import turbigen.util
-from turbigen.geometry import MeridionalLine, LinearLine
+from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar, newton
 
 import numpy as np
@@ -401,5 +401,3 @@ class Smooth:
         A = 2 * np.pi * xr_mid[1] * span
 
         return A
-
-

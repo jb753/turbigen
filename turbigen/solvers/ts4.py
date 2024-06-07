@@ -336,13 +336,12 @@ def _read_flow(grid, fname, fname_avg):
         block.Vt = vt[ind_pts].reshape(block.shape)
 
         # Set thermodynamic properties
-        Tu0_old = block.Tu0 + 0.
-        block.Tu0 = 0.
+        Tu0_old = block.Tu0 + 0.0
+        block.Tu0 = 0.0
         block.set_rho_u(
             ro[ind_pts].reshape(block.shape), u[ind_pts].reshape(block.shape)
         )
         block.set_Tu0(Tu0_old)
-
 
         # Assign turbulent viscosity
         block.mu_turb = turb0[ind_pts].reshape(block.shape)
