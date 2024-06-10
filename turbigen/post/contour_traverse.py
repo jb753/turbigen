@@ -4,7 +4,6 @@ import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import matplotlib.patches as patches
 import warnings
 
 logger = turbigen.util.make_logger()
@@ -175,15 +174,10 @@ def post(
                 rtlim = (np.array([-0.5, 0.5]) + horiz_offset) * rt_pitch
                 xlim = np.array([c2.min(), c2.max()])
 
-                # Hub and casing shading
-                dr = xlim.ptp()*0.07
-
-                # Add the rectangle patch to the axis
-                # ax.add_patch(patches.Rectangle((rtlim[0], xlim[0]-dr), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
-                # ax.add_patch(patches.Rectangle((rtlim[0], xlim[1]), rt_pitch, dr, fill=True, hatch='/', color='grey', alpha=0.5, linestyle='none'))
-
-                ax.text(rtlim.mean(), xlim[0]-dr, 'Hub', ha='center', va='center')
-                ax.text(rtlim.mean(), xlim[1]+dr, 'Casing', ha='center', va='center')
+                # Hub and casing labels
+                dr = xlim.ptp() * 0.07
+                ax.text(rtlim.mean(), xlim[0] - dr, "Hub", ha="center", va="center")
+                ax.text(rtlim.mean(), xlim[1] + dr, "Casing", ha="center", va="center")
 
                 ax.set_xlim(rtlim)
 

@@ -722,8 +722,6 @@ def run_single(conf, gguess=None, plot=False):
         if not os.path.exists(solve_workdir):
             os.makedirs(solve_workdir, exist_ok=True)
 
-    g.check_coordinates()
-
     # The grid is ready to run. At this point, we can 'install' it
     if conf.install:
         install_type = conf.install.pop("type")
@@ -757,6 +755,8 @@ def run_single(conf, gguess=None, plot=False):
         conf.install["type"] = install_type
 
     else:
+
+        g.check_coordinates()
 
         if gguess:
             g.apply_guess_3d(gguess)

@@ -38,7 +38,7 @@ class TS4Config(BaseSolver):
     custom_pipeline.py input_ts3.hdf5 input_ts4`"""
 
     environment_script = (
-        "/usr/local/software/turbostream/ts4282/bashrc_module_ts4282_a100"
+        "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
     )
     """Setup environment shell script to be sourced before running."""
 
@@ -336,13 +336,12 @@ def _read_flow(grid, fname, fname_avg):
         block.Vt = vt[ind_pts].reshape(block.shape)
 
         # Set thermodynamic properties
-        Tu0_old = block.Tu0 + 0.
-        block.Tu0 = 0.
+        Tu0_old = block.Tu0 + 0.0
+        block.Tu0 = 0.0
         block.set_rho_u(
             ro[ind_pts].reshape(block.shape), u[ind_pts].reshape(block.shape)
         )
         block.set_Tu0(Tu0_old)
-
 
         # Assign turbulent viscosity
         block.mu_turb = turb0[ind_pts].reshape(block.shape)

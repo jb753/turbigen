@@ -187,6 +187,8 @@ fraction `spf` and vectors of thickness and camber parameters, `q_thick` and
     * Camber line slope at trailing edge
     * Camber line curvature at mid-chord
 
+All lengths are normalised by the meridional chord.
+
 The number of blades can be set via three choices: directly using `Nb`, a
 non-dimensional circulation using `Co`, or the Lieblein diffusion factor `DFL`.
 Thickness and camber vectors are interpolated between each of the specified
