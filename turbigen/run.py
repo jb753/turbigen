@@ -591,6 +591,9 @@ def run_single(conf, gguess=None, plot=False):
     mesh_settings = conf.mesh.copy()
     mesh_settings.pop("yplus")
     mesh_settings.pop("type")
+    check_coords = mesh_settings.pop("check_coords", True)
+    if not check_coords:
+        logger.info('Be careful: the mesh coordinate check is disabled in the input file')
 
     times.append(timer())
 
@@ -733,7 +736,8 @@ def run_single(conf, gguess=None, plot=False):
         logger.debug("Successfully imported.")
         gi = install_module.forward(g, mac, **conf.install)
 
-        gi.check_coordinates()
+        if check_coords:
+            gi.check_coordinates()
 
         if gguess:
             gi.apply_guess_3d(gguess)
@@ -756,7 +760,8 @@ def run_single(conf, gguess=None, plot=False):
 
     else:
 
-        g.check_coordinates()
+        if check_coords:
+            g.check_coordinates()
 
         if gguess:
             g.apply_guess_3d(gguess)
