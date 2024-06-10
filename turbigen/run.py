@@ -809,6 +809,7 @@ def run_single(conf, gguess=None, plot=False):
         os.makedirs(postdir, exist_ok=True)
 
     for post_name, post_conf in conf.post_process.items():
+        logger.debug(f"Running post function {post_name}")
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}
