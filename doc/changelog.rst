@@ -4,11 +4,23 @@ Changelog
 v1.8.0
 ^^^^^^
 
+* Fit blade sections to coordinates read from a file
+* Overhaul post processing with separate functions for all plots
+* Rewrite LE incidence calculation to work generally for axial and radial
+* Allow off-design operation with rpm_adjust and mass_adjust settings
+* Setting for inviscid boudary condition on zero-radius rod
 * When running installed turbomachine, reuse installed initial guess
 * Allow install function to return inverse design variables to mean line
-* Fix bounds error on annulus interpolation due to floating point error
+* Add rounded trailing edge and fillet options to autogrid meshing
 * Check for membership of the turbostream group before running TS3
 * Error if we cannot locate the specified TS4 throttle tag
+* Allow arbitrary setting of perfect gas internal energy datum
+* Handle errors in cluster jobs and hold the node for debugging
+* Allow unbladed rows in OH meshes
+* Close off the tip of unshrouded rotor blades in STL export
+* Make the coordinate check optional for debugging
+* Fix bounds error on annulus interpolation due to floating point error
+
 
 v1.7.0
 ^^^^^^
