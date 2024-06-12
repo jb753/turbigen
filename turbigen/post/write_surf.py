@@ -8,6 +8,7 @@ import stl
 
 logger = turbigen.util.make_logger()
 
+
 def get_stl_data(section, close_tip):
 
     xrt_ps = section[0, ...]
@@ -114,6 +115,7 @@ def get_stl_data(section, close_tip):
             data["vectors"][ku] = xyz_ku
 
     return data
+
 
 def post(grid, machine, meanline, postdir):
 
