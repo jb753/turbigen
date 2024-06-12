@@ -592,6 +592,9 @@ def run_single(conf, gguess=None, plot=False):
     mesh_settings.pop("yplus")
     mesh_settings.pop("type")
     slip_hub_inlet = mesh_settings.pop("slip_hub_inlet", False)
+    check_coords = mesh_settings.pop("check_coords", True)
+    if not check_coords:
+        logger.info('Be careful: the mesh coordinate check is disabled in the input file')
 
     times.append(timer())
 
@@ -734,7 +737,8 @@ def run_single(conf, gguess=None, plot=False):
         logger.debug("Successfully imported.")
         gi = install_module.forward(g, mac, **conf.install)
 
-        gi.check_coordinates()
+        if check_coords:
+            gi.check_coordinates()
 
         if gguess:
             gi.apply_guess_3d(gguess)
@@ -757,7 +761,8 @@ def run_single(conf, gguess=None, plot=False):
 
     else:
 
-        g.check_coordinates()
+        if check_coords:
+            g.check_coordinates()
 
         if gguess:
             g.apply_guess_3d(gguess)
@@ -810,6 +815,7 @@ def run_single(conf, gguess=None, plot=False):
         os.makedirs(postdir, exist_ok=True)
 
     for post_name, post_conf in conf.post_process.items():
+        logger.debug(f"Running post function {post_name}")
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}

@@ -64,7 +64,8 @@ class OHMeshConfig(BaseConfig):
     frac_outlet = 0.15
     relax_outlet = 1
 
-    R_fillet = 0.0
+    R_fillet_hub = 0.0
+    R_fillet_shd = 0.0
     nj_fillet = 17
     is_butterfly = False
     nk_fillet = 9
@@ -138,7 +139,8 @@ class OHMeshConfig(BaseConfig):
             "splitter": splitter,
             "span_interp": self.span_interpolation,
             "blade_streamwise_weight": self.blade_streamwise_weight,
-            "R_fillet": self.R_fillet,
+            "R_fillet_hub": self.R_fillet_hub,
+            "R_fillet_shd": self.R_fillet_shd,
             "nk_fillet": self.nk_fillet,
             "nj_fillet": self.nj_fillet,
             "is_butterfly": self.is_butterfly,
@@ -203,6 +205,8 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         else:
             splitter = []
         ag_config = mesh_config.to_autogrid_dict(chi_ref, dhub, dcas, dsurf, splitter)
+        ag_config['Nb'] = machine.Nb.tolist()
+        ag_config['tip'] = machine.tip.tolist()
         success = turbigen.autogrid.autogrid.make_mesh(
             output_stem, *machine.get_coords(), Omega, ag_config
         )
