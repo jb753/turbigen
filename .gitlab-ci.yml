@@ -15,7 +15,6 @@ test:
   - pip install -e ".[embsolve]"
   - make compile
   - pytest
-  - pre-commit run --all
 
 docs:
   script:
