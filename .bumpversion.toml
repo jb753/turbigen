@@ -14,3 +14,5 @@ allow_dirty = false
 commit = true
 message = "Bump version: {current_version} → {new_version}"
 commit_args = ""
+[[ tool.bumpversion.files ]]
+filename = "pyproject.toml"
