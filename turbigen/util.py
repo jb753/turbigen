@@ -81,40 +81,6 @@ def medial_axis(xy, plot=False):
     return xy_med
 
 
-# def boundary_layer_Po_Poinf(spf, delta, Mainf, ga, verbose=False):
-#     """Return stagnation pressure ratio in a boundary layer."""
-
-#     expon = 1.0 / 7.0
-#     d99 = delta * 0.99
-
-#     # Specify velocity
-#     V_Vinf = np.ones_like(spf)
-#     V_Vinf[spf < d99] = (spf[spf < d99] / delta) ** expon
-#     V_Vinf[spf > (1.0 - d99)] = ((1.0 - spf[spf > (1.0 - d99)]) / delta) ** expon
-
-#     # Evaluate thicknesses and shape factor
-#     del_star = np.trapz(1.0 - V_Vinf[spf < d99], spf[spf < d99])
-#     theta = np.trapz((1.0 - V_Vinf[spf < d99]) * V_Vinf[spf < d99], spf[spf < d99])
-#     H = del_star / theta
-
-#     if verbose:
-#         print("H", H)
-#         print("del_star", del_star)
-#         print("theta", theta)
-
-#     # Get Mach number
-#     V_cpTo_inf = cf.V_cpTo_from_Ma(Mainf, ga)
-#     Po_Pinf = cf.Po_P_from_Ma(Mainf, ga)
-#     V_cpTo = V_cpTo_inf * V_Vinf
-#     Ma = cf.Ma_from_V_cpTo(V_cpTo, ga)
-
-#     # Transform to stagnation pressure ratio
-#     Po_P = cf.Po_P_from_Ma(Ma, ga)
-#     Po_Poinf = Po_P / Po_Pinf
-
-#     return Po_Poinf
-
-
 def reduce_scalar(x):
     """Convert something to a scalar float if possible."""
     if np.shape(x) in ((), (1,)):
@@ -1197,7 +1163,6 @@ def next_numbered_dir(basename):
     # Make a regular expression to extract the id from a dir name
     restr = stem.replace("*", r"(\d*)")
     re_id = re.compile(restr)
-    # print(re_id.match('beans_0001').groups()[0])
 
     cur_id = -1
 

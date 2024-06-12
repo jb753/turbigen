@@ -20,7 +20,7 @@ general, a different dimensional arc length.
 """
 
 import turbigen.util
-from turbigen.geometry import MeridionalLine, LinearLine
+from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar, newton
 
 import numpy as np
@@ -171,20 +171,16 @@ class Smooth:
                 # Find a bracket safely
                 dx_lower = None
 
-                # print(f'Setting chord k={k}')
-                # print('High guess')
                 # High guess
                 for rel_dx in (0.1, 0.2, 0.4, 0.8, 1.6):
                     dx_upper = dxref * rel_dx
                     err = _iter_chord(dx_upper, k)
-                    # print(f'err={err}')
                     if err > 0.0:
                         break
                     else:
                         dx_lower = dxref * rel_dx
 
                 # Low guess
-                # print('Low guess')
                 if dx_lower is None:
                     for rel_dx in (0.1, 0.2, 0.4, 0.8, 1.6):
                         dx_lower = -dxref * rel_dx
@@ -405,180 +401,3 @@ class Smooth:
         A = 2 * np.pi * xr_mid[1] * span
 
         return A
-
-
-class Aircon:
-    def __init__(
-        self,
-        rmid12,
-        span12,
-        Beta12,
-        drin,
-        htrin,
-        xleak,
-        Lout,
-        Lmotor,
-        rmotor,
-        ARnoz=None,
-    ):
-        logger.debug("STARTING AIRCON ANNULUS DESIGN")
-
-        # Calculate inlet radius
-        rsin = (rmid12 + 0.5 * span12 * np.cos(np.radians(Beta12)))[0] - drin
-
-        rhin = htrin * rsin
-        rmin = 0.5 * (rsin + rhin)
-        Hin = rsin - rhin
-        logger.debug(f"rsin={rsin:.4f}, rhin={rhin:.4f}")
-
-        # Calculate outlet
-        rout = rmid12[-1] + Lout
-        if ARnoz:
-            HRout = ARnoz / rout * rmid12[-1]
-            Hout = span12[-1] * HRout
-        else:
-            Hout = span12[-1]
-
-        # Add inlet and exit stations
-        Beta = np.concatenate(((0.0,), Beta12, (90.0,)))
-        rmid = np.concatenate(((rmin,), rmid12, (rout,)))
-        span = np.concatenate(((Hin,), span12, (Hout,)))
-        logger.debug(f"Beta={Beta}")
-        logger.debug(f"rmid={rmid}")
-        logger.debug(f"span={span}")
-
-        x12 = -span12 * 0.5 * turbigen.util.sind(Beta12)
-        xmid = np.concatenate(((xleak,), x12, (x12[-1],)))
-
-        cosBeta = turbigen.util.cosd(Beta)
-        sinBeta = turbigen.util.sind(Beta)
-
-        # Hub/casing coordinates
-        xhub = xmid + 0.5 * span * sinBeta
-        xcas = xmid - 0.5 * span * sinBeta
-        rhub = rmid - 0.5 * span * cosBeta
-        rcas = rmid + 0.5 * span * cosBeta
-
-        xcas[1] -= 0.01
-
-        Beta_cas = Beta.copy()
-
-        DLmotor = Lmotor * 0.1
-        # rmin = rmid12[1] * 0.05
-        rmin = rhub[0]
-        thub = np.linspace(0.0, len(xhub) - 1, len(xhub))
-        xmotor = np.array([-Lmotor - DLmotor, -Lmotor, 0.0])
-        rmot = np.array([rmin, rmotor, rmotor + 0.065])
-        tmotor = np.array([0.5, 0.6, 0.7])
-        xhub = np.insert(xhub, 1, xmotor)
-        rhub = np.insert(rhub, 1, rmot)
-        rhub[0] = rmin
-        thub = np.insert(thub, 1, tmotor)
-
-        self.hub = LinearLine(xhub, rhub, thub)
-        Beta_cas[1] = 30.0
-        self.cas = MeridionalLine(xcas, rcas, Beta_cas).smooth(slope_max=10.0)
-        # self.cas = LinearLine(xcas, rcas)
-
-        self.span = span
-
-    def xr_row(self, irow):
-        """Return a streamsurface for a blade row."""
-
-        # We need to map a fraction of meridional distance to mctrl on hub and casing
-        ictrl = 1 + irow * 2
-        mch = self.hub.mctrl[
-            (ictrl, ictrl + 1),
-        ]
-        mcc = self.cas.mctrl[
-            (ictrl, ictrl + 1),
-        ]
-
-        def func(spf, s):
-            mh = s * mch[1] + (1.0 - s) * mch[0]
-            mc = s * mcc[1] + (1.0 - s) * mcc[0]
-            return spf * self.cas.xr(mc) + (1.0 - spf) * self.hub.xr(mh)
-
-        return func
-
-    def chords(self, spf):
-        """Dimensional arc lengths between each control point."""
-        mq = np.linspace(0.0, self._mctl[-1], 1000)
-        xrq = self.evaluate_xr(mq, spf)
-        sq = turbigen.util.cum_arc_length(xrq)
-        sctl = np.interp(self._mctl, mq, sq)
-        return np.diff(sctl)
-
-    @property
-    def npts(self):
-        return self.cas.N
-
-    @property
-    def nrow(self):
-        return (self.cas.N - 2) // 2
-
-    @property
-    def _mctl(self):
-        return np.linspace(0, self.npts - 1, self.npts)
-
-    def evaluate_xr(self, t, spf):
-        tb, spfb = np.broadcast_arrays(t, spf)
-
-        # t is a vector that describes grid spacings where each unit interval
-        # corresponds to a gap or blade
-        # We need to map to meridional distance fractions
-        # tctrl = np.linspace(0, self.npts - 1, self.npts)
-        mhub = np.interp(tb, self.hub.tctrl, self.hub.mctrl)
-        mcas = np.interp(tb, self.cas.tctrl, self.cas.mctrl)
-
-        # Evaluate hub and casing coordinates
-        xr_hub = self.hub.xr(mhub)
-        xr_cas = self.cas.xr(mcas)
-
-        # Finally evaluate the meridional grid
-        spf1 = np.expand_dims(np.stack((1.0 - spfb, spfb)), 1)
-        xr_hc = np.stack((xr_hub, xr_cas))
-        xr = np.sum(spf1 * xr_hc, axis=0)
-
-        return xr
-
-    def get_cut_planes(self, offset):
-        """For each row, return (x,r) points on hub casing offset chords up/downstream.
-
-        Returns axes: [x or r, row, hub or cas]"""
-
-        if offset is None:
-            offset = 0.02 * np.ones((self.nrow * 2,))
-            offset[::2] *= -1.0
-
-        t = np.arange(0.0, self.nrow * 2.0) + 1.0
-        chords_blades = np.repeat(self.chords(0.5)[1::2], 2)
-        chords_gaps = self.chords(0.5)[0::2]
-        chords_gaps = np.concatenate(
-            [[chords_gaps[0]], np.repeat(chords_gaps[1:-1], 2), [chords_gaps[-1]]]
-        )
-        # t += np.tile((-offset, offset), (self.nrow,)) * chords_blades / chords_gaps
-        t += offset * chords_blades / chords_gaps
-
-        spf = np.reshape([0.0, 1.0], (1, -1))
-        return self.evaluate_xr(t.reshape(-1, 1), spf).transpose(1, 0, 2)
-
-    def get_cut_plane(self, t):
-        """(x,r) points on hub and casing at given normalise merdional coord."""
-        spf = np.reshape([0.0, 1.0], (1, -1))
-        xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
-        return xrc
-
-    def get_coords(self, nseg=100):
-        """Sample the coordinates of hub and casing lines in AutoGrid style."""
-        N = 3
-        s = np.linspace(0.0, N, N * nseg + 1)
-        xr = self.evaluate_xr(s, [[0], [1]]).transpose(1, 2, 0)
-        return xr
-
-    def get_interfaces(self):
-        """Meridional coordinates of row interfaces."""
-        t = np.arange(2.5, (self.nrow + 1.5), 2.0)
-        xr_hub = self.evaluate_xr(t, 0)
-        xr_cas = self.evaluate_xr(t, 1)
-        return np.stack((xr_hub, xr_cas)).transpose(2, 0, 1)

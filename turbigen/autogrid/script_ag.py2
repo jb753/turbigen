@@ -37,8 +37,9 @@ with open(CONF_FILE,'r') as f:
     conf = json.load(f, object_pairs_hook=unicode_to_ascii_hook)
 
 # Number of blades must be grepped from file because AG doesn't read in!
-nb_str = os.popen('grep PERIOD mesh.geomTurbo').read()
-nb = [float(nbi.split()[-1]) for nbi in nb_str.splitlines()]
+# nb_str = os.popen('grep PERIOD mesh.geomTurbo').read()
+# nb = [float(nbi.split()[-1]) for nbi in nb_str.splitlines()]
+nb = conf["Nb"]
 
 # If this is NOT a cascade, make blade counts integers
 if not conf["is_cascade"]:
@@ -52,6 +53,15 @@ set_preference('numberOfGridLevel',int(4))
 # Load the geomTurbo
 print('Reading geometry: ' + os.getcwd() + '/mesh.geomTurbo')
 a5_init_new_project_from_a_geomTurbo_file(os.getcwd() + '/mesh.geomTurbo')
+
+if conf["inlet_bulb"]=="radial":
+    set_inlet_bulb_radial_topology()
+elif conf["inlet_bulb"]=="rounded":
+    set_inlet_bulb_rounded_topology()
+elif conf["inlet_bulb"]=="sharp":
+    set_inlet_bulb_sharp_topology()
+if conf["inlet_bulb"]:
+    set_inlet_bulb_singular_line(int(0))
 
 print("Setting default topology...")
 
@@ -267,25 +277,41 @@ print "Setting fillets..."
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
+    is_butterfly = int(conf["is_butterfly"])
+    nkf = int(conf["nk_fillet"])
+
     # If the radius is nonzero
-    if conf["R_fillet"]:
+    if conf["R_fillet_hub"]:
+        Rfh = conf["R_fillet_hub"]
+    else:
+        Rfh = 0.
 
-        Rf = conf["R_fillet"]
-        njf = int(conf["nj_fillet"])
-        is_butterfly = int(conf["is_butterfly"])
-        nkf = int(conf["nk_fillet"])
+    if conf["R_fillet_shd"] and not conf["tip"][n]:
+        Rfs = conf["R_fillet_shd"]
+    else:
+        Rfs = 0.
 
-        # How many blades to configure
-        if n in conf["splitter"]:
-            ib = (1,2)
-        else:
-            ib = (1,)
+    # How many blades to configure
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
 
-        for iib in ib:
+    for iib in ib:
+        if Rfh:
             f = row(n1).blade(iib).hub_fillet()
-            f.set_radius_at_leading_edge(Rf)
-            f.set_radius_at_trailing_edge(Rf)
-            f.set_number_of_points_in_spanwise_direction(njf)
+            f.set_radius_at_leading_edge(Rfh)
+            f.set_radius_at_trailing_edge(Rfh)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_hub"]))
+            f.set_butterfly_topology(is_butterfly)
+            f.set_butterfly_radial_number_of_points(nkf)
+            f.set_minimum_angle(25)
+            f.set_create_geometry(0)
+        if Rfs:
+            f = row(n1).blade(iib).shroud_fillet()
+            f.set_radius_at_leading_edge(Rfs)
+            f.set_radius_at_trailing_edge(Rfs)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_shd"]))
             f.set_butterfly_topology(is_butterfly)
             f.set_butterfly_radial_number_of_points(nkf)
             f.set_minimum_angle(25)

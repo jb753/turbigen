@@ -349,7 +349,7 @@ def _execute_on_remote(cmd, remote, via):
 COMMAND: {cmd_str}
 STDOUT: {e.output.decode(sys.getfilesystemencoding()).strip()}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}"""
-        ) from e
+        ) from None
     return out
 
 
@@ -511,6 +511,11 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
     with open(conf_path, "w") as f:
         json.dump(conf, f)
     assert os.path.exists(conf_path)
+
+    # AutoGrid expects only one zero-radius point on hub
+    if (hub[:,1]==0.).any():
+        inose = np.where(np.diff(hub[:,1])>0.)[0][0]
+        hub = np.concatenate((hub[(inose,),:], hub[(inose+3):,:]))
 
     rpm = Omega / 2.0 / np.pi * 60.0
     geomturbo_path = os.path.join(tmp_dir, "mesh.geomTurbo")

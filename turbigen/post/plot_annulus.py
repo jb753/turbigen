@@ -8,7 +8,7 @@ logger = turbigen.util.make_logger()
 
 
 def post(
-    grid,
+    _,
     machine,
     meanline,
     postdir,
@@ -16,6 +16,7 @@ def post(
     show_control_points=True,
     show_blades=True,
     write_raw=False,
+    compare=False,
 ):
 
     logger.info("Plotting annulus lines")
@@ -37,13 +38,13 @@ def post(
                 *ann.hub.mctrl[
                     isten,
                 ],
-                Npts
+                Npts,
             )
             mcas = np.linspace(
                 *ann.cas.mctrl[
                     isten,
                 ],
-                Npts
+                Npts,
             )
             xrhub = ann.hub.xr(mhub)
             xrcas = ann.cas.xr(mcas)
@@ -70,6 +71,14 @@ def post(
     x = ann.hub.xr((0.0, 1.0))[0]
     if show_axis:
         ax.plot(x, np.zeros_like(x), "k-.")
+
+    if compare:
+        if compare_dat := compare[irow]:
+            xrrt_all = turbigen.util.read_sections(compare_dat)
+            for ispf, xrrt in enumerate(xrrt_all):
+                x1c = xrrt[0]
+                x2c = xrrt[1]
+                ax.plot(x1c, x2c, ".", ms=1, color=f"C{ispf}")
 
     ax.axis("equal")
     ax.axis("off")

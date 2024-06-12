@@ -1,4 +1,5 @@
 """Save plots of incidence."""
+import numpy as np
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
@@ -25,6 +26,8 @@ def post(grid, machine, meanline, postdir, fac_RLE=1.0):
             ax[0].legend()
             ax[1].set_xlabel("Incidence/deg")
             ax[1].plot(inc, spf)
+
+            ax[1].set_xlim(np.quantile(inc, [0.01, 0.99]))
 
             pltname = os.path.join(postdir, f"incidence_row_{irow}_blade_{jblade}.pdf")
             plt.tight_layout(pad=0.1)

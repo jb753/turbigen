@@ -92,7 +92,7 @@ def submit(conf, basedir=None, verbose=True):
 
     error_handler_str = r"""trap 'handle_error' ERR
 handle_error() {
-    echo "Command failed, starting a shell on ${HOSTNAME}. Attach using:" > failed.txt
+    echo "# Command failed, starting a shell on ${HOSTNAME}. Attach using:" > failed.txt
     echo "ssh -t $HOSTNAME tmux att" >> failed.txt
     # Run the shell in a detached tmux session
     # Starting a tmux sesison without a tty seems flaky

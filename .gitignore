@@ -31,3 +31,4 @@ tests/run*/
 slurm-*.out
 tests/*.log
 matplotlibrc
+*.lprof

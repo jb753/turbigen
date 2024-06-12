@@ -271,6 +271,14 @@ def run_single(conf, gguess=None, plot=False):
 
                     # Read coordinates of all sections
                     xrrt_target_all = turbigen.util.read_sections(fit_data_path)
+                    nsect_dat = len(xrrt_target_all)
+                    nsect_conf = len(bld_now.spf)
+                    if not nsect_dat == nsect_conf:
+                        raise Exception(
+                            f"Mismatching number of sections to fit, "
+                            f"{nsect_conf} in the config and "
+                            f"{nsect_dat} in the coordinates"
+                        )
 
                     # Locate the span fractions at which to fit
                     m = np.linspace(0.0, 1.0)
@@ -317,7 +325,7 @@ def run_single(conf, gguess=None, plot=False):
                                 (0, 2),
                             ].T
                         )
-                        for isect in range(3)
+                        for isect in range(nsect_dat)
                     ]
 
                     for _ in range(1):
@@ -361,28 +369,8 @@ def run_single(conf, gguess=None, plot=False):
 
                     # Convert the tanChi camber parameters to recamber
                     Chi = np.degrees(np.arctan(bld_now.q_camber[:, :2]))
-                    # # print(Chi)
                     qstar_save[irow][:, :2] = Chi - chi_save[irow]
                     qstar_save[irow][:, 2:] = bld_now.q_camber[:, 2:]
-                    # # quit()
-
-                    # print(bld_now.q_camber)
-                    # print(bld_now.q_thick)
-                    # print(qstar_save)
-
-                    # xrtu, xrtl = bld_now.evaluate_section(spf_good, nchord=100)
-                    # xrrtu = xrtu.copy()
-                    # xrrtl = xrtl.copy()
-                    # xrrtu[2]*= xrrtu[1]
-                    # xrrtl[2]*= xrrtl[1]
-                    # import matplotlib.pyplot as plt
-                    # fig, ax = plt.subplots()
-                    # ax.plot(*xrrtu[(0,2),],'-')
-                    # ax.plot(*xrrtl[(0,2),],'-')
-                    # ax.plot(*xrrt_target_all[-1][(0,2),],'x')
-                    # ax.axis('equal')
-                    # plt.show()
-                    # quit()
 
             bld.append(bld_now)
 
@@ -566,9 +554,6 @@ def run_single(conf, gguess=None, plot=False):
     logger.info(f"Nblade={Nb}, s_cm={s_cm_str}, tip={tips}")
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
-    # print(np.degrees(np.arctan(mac.bld[0].q_camber[:,:2])))
-    # print(np.degrees(np.arctan(mac.bld[1].q_camber[:,:2])))
-    # quit()
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
@@ -606,6 +591,10 @@ def run_single(conf, gguess=None, plot=False):
     mesh_settings = conf.mesh.copy()
     mesh_settings.pop("yplus")
     mesh_settings.pop("type")
+    slip_hub_inlet = mesh_settings.pop("slip_hub_inlet", False)
+    check_coords = mesh_settings.pop("check_coords", True)
+    if not check_coords:
+        logger.info('Be careful: the mesh coordinate check is disabled in the input file')
 
     times.append(timer())
 
@@ -634,13 +623,13 @@ def run_single(conf, gguess=None, plot=False):
     logger.debug(f"Mesh generation took {np.diff(times)[-1]:.1f}s")
     logger.info(f"Mesh Npts/10^6={g.ncell/1e6:.2f}")
 
-    if conf.plot:
-        for spf in (0.1, 0.5, 0.9):
-            for system in ("xrt", "yz"):
-                pltname = os.path.join(
-                    workdir, f"mesh_b2b_{system}_spf_{int(spf*10)}.pdf"
-                )
-                turbigen.plot.plot_grid_b2b(g, spf, system == "xrt", pltname)
+    # Make zero-radius rods inviscid
+    if slip_hub_inlet:
+        bi = g.inlet_patches[0].block
+        drhub = np.diff(bi[:,0,0].r)
+        inose = np.where(drhub>1e-6)[0][0]
+        bi.add_patch(grid.InviscidPatch(i=(0,inose), j=0))
+
 
     # Ready to apply boundary conditions now
     logger.info("Applying boundary conditions...")
@@ -737,8 +726,6 @@ def run_single(conf, gguess=None, plot=False):
         if not os.path.exists(solve_workdir):
             os.makedirs(solve_workdir, exist_ok=True)
 
-    g.check_coordinates()
-
     # The grid is ready to run. At this point, we can 'install' it
     if conf.install:
         install_type = conf.install.pop("type")
@@ -750,7 +737,8 @@ def run_single(conf, gguess=None, plot=False):
         logger.debug("Successfully imported.")
         gi = install_module.forward(g, mac, **conf.install)
 
-        gi.check_coordinates()
+        if check_coords:
+            gi.check_coordinates()
 
         if gguess:
             gi.apply_guess_3d(gguess)
@@ -772,6 +760,9 @@ def run_single(conf, gguess=None, plot=False):
         conf.install["type"] = install_type
 
     else:
+
+        if check_coords:
+            g.check_coordinates()
 
         if gguess:
             g.apply_guess_3d(gguess)
@@ -824,6 +815,7 @@ def run_single(conf, gguess=None, plot=False):
         os.makedirs(postdir, exist_ok=True)
 
     for post_name, post_conf in conf.post_process.items():
+        logger.debug(f"Running post function {post_name}")
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}

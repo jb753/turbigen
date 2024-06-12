@@ -64,10 +64,14 @@ class OHMeshConfig(BaseConfig):
     frac_outlet = 0.15
     relax_outlet = 1
 
-    R_fillet = 0.0
-    nj_fillet = 17
+    R_fillet_hub = 0.0
+    R_fillet_shd = 0.0
+    nj_fillet_hub = 17
+    nj_fillet_shd = 17
     is_butterfly = False
     nk_fillet = 9
+
+    inlet_bulb = ""
 
     def __setattr__(self, key, value):
         if key not in dir(self):
@@ -103,6 +107,7 @@ class OHMeshConfig(BaseConfig):
             "is_cascade": False,
             "fix_h_blocks": self.fix_h_blocks,
             "nrow": nrow,
+            "inlet_bulb": self.inlet_bulb,
             "nx_up": self.ni_inlet,
             "nx_dn": self.ni_outlet,
             "nx_mix": 9,
@@ -135,9 +140,11 @@ class OHMeshConfig(BaseConfig):
             "splitter": splitter,
             "span_interp": self.span_interpolation,
             "blade_streamwise_weight": self.blade_streamwise_weight,
-            "R_fillet": self.R_fillet,
+            "R_fillet_hub": self.R_fillet_hub,
+            "R_fillet_shd": self.R_fillet_shd,
             "nk_fillet": self.nk_fillet,
-            "nj_fillet": self.nj_fillet,
+            "nj_fillet_hub": self.nj_fillet_hub,
+            "nj_fillet_shd": self.nj_fillet_shd,
             "is_butterfly": self.is_butterfly,
         }
 
@@ -173,7 +180,10 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         raise Exception("workdir for OH meshing not set")
     output_stem = os.path.join(os.path.abspath(workdir), "mesh")
 
-    if mesh_config.gbcs_path == "":
+    if (mesh_config.gbcs_path == "reuse") or (os.path.exists(os.path.join(output_stem +'.g') )):
+        logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
+
+    elif mesh_config.gbcs_path == "":
         chi_ref = []
         is_unbladed = []
         for bld in machine.bld:
@@ -197,6 +207,8 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         else:
             splitter = []
         ag_config = mesh_config.to_autogrid_dict(chi_ref, dhub, dcas, dsurf, splitter)
+        ag_config['Nb'] = machine.Nb.tolist()
+        ag_config['tip'] = machine.tip.tolist()
         success = turbigen.autogrid.autogrid.make_mesh(
             output_stem, *machine.get_coords(), Omega, ag_config
         )
@@ -204,8 +216,6 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         if not success:
             raise Exception("Meshing failed.")
 
-    elif mesh_config.gbcs_path == "reuse":
-        logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
 
     else:
         output_stem = os.path.abspath(mesh_config.gbcs_path)

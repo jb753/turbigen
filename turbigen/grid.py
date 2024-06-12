@@ -1365,6 +1365,7 @@ class PeriodicPatch(Patch):
     """Node-to-node matching periodicity."""
 
     match = None
+    cartesian = False
 
     def check_match(self, other, rtol=1e-4):
         return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)

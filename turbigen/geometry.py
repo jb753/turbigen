@@ -233,51 +233,12 @@ class MeridionalLine:
         m = s + 0.0
         m /= m[-1]
 
-        # # # Now we want to remap arc length such that
-        # # # s(t=k) = k for integer k
-        # s /= s[-1] / (self.N - 1)
-        # sref = np.interp(t, tt, s)
-        # stilde = np.empty_like(s)
-        # for k in range(self.N - 1):
-        #     ind = np.logical_and(tt >= k, tt <= k + 1)
-        #     stilde[ind] = (s[ind] - sref[k]) / (sref[k + 1] - sref[k]) + k
-
         # Spline parameter to normalised meridional distance and inverse
-        # self._pt = scipy.interpolate.PchipInterpolator(m, tt, extrapolate=False)
-
-        # try:
-        #     self._pt = scipy.interpolate.PchipInterpolator(m, tt)
-        # except ValueError:
-        #     import matplotlib.pyplot as plt
-        #     fig, ax = plt.subplots()
-        #     ax.plot(m,tt,'k-x')
-        #     plt.savefig('test.pdf')
-        #     print(m)
-        #     print(tt)
-        #     quit()
-
         self._pt = scipy.interpolate.PchipInterpolator(m, self._t_clu)
-        # self._pm = scipy.interpolate.PchipInterpolator(
-        #     self._t_clu, m, extrapolate=False
-        # )
 
         self.chords = np.diff(np.interp(self.t, self._t_clu, s))
         self.mctrl = np.interp(self.t, self._t_clu, m)
         self.mclu = m[1:-1]
-        # self._ps(self.t))
-        # self._ps = scipy.interpolate.PchipInterpolator(
-        #     self._t_clu, s, extrapolate=False
-        # )
-
-    # @property
-    # def chords(self):
-    #     """Dimensional arc lengths between each control point."""
-    #     return
-
-    # @property
-    # def mctrl(self):
-    #     """Normalised meridional coordinates at the control points."""
-    #     return self._pm(self.t)
 
     def _xr(self, t):
         """Meridional coordinates as function of spline parameter."""
