@@ -66,7 +66,8 @@ class OHMeshConfig(BaseConfig):
 
     R_fillet_hub = 0.0
     R_fillet_shd = 0.0
-    nj_fillet = 17
+    nj_fillet_hub = 17
+    nj_fillet_shd = 17
     is_butterfly = False
     nk_fillet = 9
 
@@ -142,7 +143,8 @@ class OHMeshConfig(BaseConfig):
             "R_fillet_hub": self.R_fillet_hub,
             "R_fillet_shd": self.R_fillet_shd,
             "nk_fillet": self.nk_fillet,
-            "nj_fillet": self.nj_fillet,
+            "nj_fillet_hub": self.nj_fillet_hub,
+            "nj_fillet_shd": self.nj_fillet_shd,
             "is_butterfly": self.is_butterfly,
         }
 

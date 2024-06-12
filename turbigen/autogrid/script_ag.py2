@@ -277,7 +277,6 @@ print "Setting fillets..."
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
-    njf = int(conf["nj_fillet"])
     is_butterfly = int(conf["is_butterfly"])
     nkf = int(conf["nk_fillet"])
 
@@ -303,7 +302,7 @@ for n in range(nrow):
             f = row(n1).blade(iib).hub_fillet()
             f.set_radius_at_leading_edge(Rfh)
             f.set_radius_at_trailing_edge(Rfh)
-            f.set_number_of_points_in_spanwise_direction(njf)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_hub"]))
             f.set_butterfly_topology(is_butterfly)
             f.set_butterfly_radial_number_of_points(nkf)
             f.set_minimum_angle(25)
@@ -312,7 +311,7 @@ for n in range(nrow):
             f = row(n1).blade(iib).shroud_fillet()
             f.set_radius_at_leading_edge(Rfs)
             f.set_radius_at_trailing_edge(Rfs)
-            f.set_number_of_points_in_spanwise_direction(njf)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_shd"]))
             f.set_butterfly_topology(is_butterfly)
             f.set_butterfly_radial_number_of_points(nkf)
             f.set_minimum_angle(25)
