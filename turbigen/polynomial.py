@@ -12,6 +12,8 @@ import turbigen.util
 import turbigen.flowfield
 import turbigen.post_process
 
+logger = turbigen.util.make_logger()
+
 
 def legcoeff(n):
     r"""Coefficients of a univariate Legendre polynomial.
@@ -427,7 +429,7 @@ class DesignSpace:
             self._polys[v] = c
             if self.show_timing:
                 stop = timer()
-                print(f"Fitted {v} to {len(y)} points in {start-stop}")
+                logger.info(f"Fitted {v} to {len(y)} points in {start-stop}")
         return self._polys[v]
 
     def _fit_eval(self, xi, v, der=None):

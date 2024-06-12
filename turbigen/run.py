@@ -594,7 +594,9 @@ def run_single(conf, gguess=None, plot=False):
     slip_hub_inlet = mesh_settings.pop("slip_hub_inlet", False)
     check_coords = mesh_settings.pop("check_coords", True)
     if not check_coords:
-        logger.info('Be careful: the mesh coordinate check is disabled in the input file')
+        logger.info(
+            "Be careful: the mesh coordinate check is disabled in the input file"
+        )
 
     times.append(timer())
 
@@ -626,10 +628,9 @@ def run_single(conf, gguess=None, plot=False):
     # Make zero-radius rods inviscid
     if slip_hub_inlet:
         bi = g.inlet_patches[0].block
-        drhub = np.diff(bi[:,0,0].r)
-        inose = np.where(drhub>1e-6)[0][0]
-        bi.add_patch(grid.InviscidPatch(i=(0,inose), j=0))
-
+        drhub = np.diff(bi[:, 0, 0].r)
+        inose = np.where(drhub > 1e-6)[0][0]
+        bi.add_patch(grid.InviscidPatch(i=(0, inose), j=0))
 
     # Ready to apply boundary conditions now
     logger.info("Applying boundary conditions...")
@@ -1050,14 +1051,23 @@ def run(conf, plot=False):
         log_line(None, log_fields)
         log_line("-", log_fields)
 
+        # Apply the nstep scaling factor
+        fac_nstep_initial = conf.iterate.get("fac_nstep_initial", 1.0)
+        nstep_old = conf.solver["nstep"]
+        conf.solver["nstep"] = int(fac_nstep_initial * nstep_old)
+
         for i in range(max_iter):
             iterdir = os.path.join(basedir, "%04d" % i)
             os.makedirs(iterdir, exist_ok=True)
             conf.workdir = iterdir
+
             # Disable soft start once we have a good initial guess
             if i > 0 and ("soft_start" in conf.solver):
                 conf.solver["soft_start"] = False
             ml_out, opt_converged, gguess = run_single(conf, gguess)
+
+            # Reset nstep
+            conf.solver["nstep"] = nstep_old
 
             # Check for stopit to interrupt iterations
             stopit_path = os.path.join(basedir, "stopit")

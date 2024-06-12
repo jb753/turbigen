@@ -8,6 +8,8 @@ from scipy.stats.qmc import LatinHypercube
 import numpy as np
 import os
 
+logger = util.make_logger()
+
 
 class Config:
     REAL_INLET_KEYS = set(["Po", "To", "fluid_name"])
@@ -204,8 +206,7 @@ class Config:
                             f" {func_param_names}"
                         )
                 func_param_names = [p.name for p in func_params]
-            except AttributeError as e:
-                print(e)
+            except AttributeError:
                 raise ConfigError(f'Invalid mean-line type "{meanline_type}"') from None
         else:
             raise ConfigError("Missing a mean-line type")
@@ -352,7 +353,7 @@ class Config:
         database_file = os.path.abspath(self.database["conf_path"])
 
         if verbose:
-            print(f"Interpolating from: {database_file}:")
+            logger.iter(f"Interpolating from: {database_file}:")
 
         independent = self.database["independent"]
         if not independent:
@@ -362,7 +363,7 @@ class Config:
 
         # Do nothing if database not created yet
         if not os.path.exists(database_file):
-            print("Database not found, skipping interpolation")
+            logger.iter("Database not found, skipping interpolation")
             return
 
         database = read_database(database_file)
@@ -405,7 +406,7 @@ class Config:
         # Assemble query points
         xq = np.empty((1, nx))
         if verbose:
-            print("Independent variables:")
+            logger.iter("Independent variables:")
         for j, v in enumerate(independent):
             if v in ("Co", "Cb", "tip"):
                 xq[0, j] = self.blades[v][0]
@@ -413,7 +414,7 @@ class Config:
                 xq[0, j] = self.mean_line[v]
 
             if verbose:
-                print(f"  {v} = {xq[0, j]:.3f}")
+                logger.iter(f"  {v} = {xq[0, j]:.3f}")
 
         # Normalise independent variables by mean value
         xn = np.mean(x, axis=0, keepdims=True)
@@ -422,7 +423,7 @@ class Config:
 
         # Perform interpolation
         if verbose:
-            print("Dependent variables:")
+            logger.iter("Dependent variables:")
         warned = False
 
         for j, v in enumerate(dependent):
@@ -434,7 +435,7 @@ class Config:
 
             except (AssertionError, RuntimeError):  # (AssertionError, QhullError):
                 if not warned:
-                    print("Falling back to nearest-neighbour")
+                    logger.iter("Falling back to nearest-neighbour")
                     warned = True
                 yq_now = griddata(
                     x[:npts_lim, :], y[:npts_lim, j], xq, method="nearest", rescale=True
@@ -442,7 +443,7 @@ class Config:
 
             self.mean_line[v] = float(yq_now)
             if verbose:
-                print(f"  {v} = {float(yq_now):.3f}")
+                logger.iter(f"  {v} = {float(yq_now):.3f}")
 
         for irow in range(nrow):
             for isect in range(nsect[irow]):
@@ -467,9 +468,13 @@ class Config:
 
                     self.sections[irow]["qstar_camber"][isect][iq] = float(qiq)
                     if iq == 0:
-                        print(f"  inc: irow={irow}, isect={isect} = {float(qiq):.2f}")
+                        logger.iter(
+                            f"  inc: irow={irow}, isect={isect} = {float(qiq):.2f}"
+                        )
                     if iq == 1:
-                        print(f"  dev: irow={irow}, isect={isect} = {float(qiq):.2f}")
+                        logger.iter(
+                            f"  dev: irow={irow}, isect={isect} = {float(qiq):.2f}"
+                        )
 
     def sample_hypercube(self):
         """Return copies of this config sampled over hypercube specified therein."""

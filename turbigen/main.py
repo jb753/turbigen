@@ -186,12 +186,12 @@ def main():
     if conf.job:
         hostname = socket.gethostname()
         if hostname.startswith("gpu"):
-            print(
+            logger.info(
                 f"Running on compute node {hostname}, declining to submit job to queue."
             )
             conf.job = {}
         elif not shutil.which("sbatch"):
-            print("No `sbatch` on PATH, declining to submit job to queue.")
+            logger.info("No `sbatch` on PATH, declining to submit job to queue.")
             conf.job = {}
 
     # No logging if we are just submitting a job

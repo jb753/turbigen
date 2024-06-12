@@ -245,8 +245,7 @@ def _unit_free(dmin, dmax, ERmax, mult=8):
     Nhigh = nhigh * mult + 1
     try:
         x = _unit_fixed(dmin, dmax, ERmax, Nhigh, check=True)
-    except ClusteringException as e:
-        print(e)
+    except ClusteringException:
         raise ClusteringException(
             f"Failed to cluster with high number of points guess Nhigh={Nhigh}"
         )

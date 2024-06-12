@@ -178,7 +178,9 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         raise Exception("workdir for OH meshing not set")
     output_stem = os.path.join(os.path.abspath(workdir), "mesh")
 
-    if (mesh_config.gbcs_path == "reuse") or (os.path.exists(os.path.join(output_stem +'.g') )):
+    if (mesh_config.gbcs_path == "reuse") or (
+        os.path.exists(os.path.join(output_stem + ".g"))
+    ):
         logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
 
     elif mesh_config.gbcs_path == "":
@@ -205,15 +207,14 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         else:
             splitter = []
         ag_config = mesh_config.to_autogrid_dict(chi_ref, dhub, dcas, dsurf, splitter)
-        ag_config['Nb'] = machine.Nb.tolist()
-        ag_config['tip'] = machine.tip.tolist()
+        ag_config["Nb"] = machine.Nb.tolist()
+        ag_config["tip"] = machine.tip.tolist()
         success = turbigen.autogrid.autogrid.make_mesh(
             output_stem, *machine.get_coords(), Omega, ag_config
         )
 
         if not success:
             raise Exception("Meshing failed.")
-
 
     else:
         output_stem = os.path.abspath(mesh_config.gbcs_path)

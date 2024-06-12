@@ -513,9 +513,9 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
     assert os.path.exists(conf_path)
 
     # AutoGrid expects only one zero-radius point on hub
-    if (hub[:,1]==0.).any():
-        inose = np.where(np.diff(hub[:,1])>0.)[0][0]
-        hub = np.concatenate((hub[(inose,),:], hub[(inose+3):,:]))
+    if (hub[:, 1] == 0.0).any():
+        inose = np.where(np.diff(hub[:, 1]) > 0.0)[0][0]
+        hub = np.concatenate((hub[(inose,), :], hub[(inose + 3) :, :]))
 
     rpm = Omega / 2.0 / np.pi * 60.0
     geomturbo_path = os.path.join(tmp_dir, "mesh.geomTurbo")
