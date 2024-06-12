@@ -591,6 +591,7 @@ def run_single(conf, gguess=None, plot=False):
     mesh_settings = conf.mesh.copy()
     mesh_settings.pop("yplus")
     mesh_settings.pop("type")
+    slip_hub_inlet = mesh_settings.pop("slip_hub_inlet", False)
 
     times.append(timer())
 
@@ -619,13 +620,13 @@ def run_single(conf, gguess=None, plot=False):
     logger.debug(f"Mesh generation took {np.diff(times)[-1]:.1f}s")
     logger.info(f"Mesh Npts/10^6={g.ncell/1e6:.2f}")
 
-    if conf.plot:
-        for spf in (0.1, 0.5, 0.9):
-            for system in ("xrt", "yz"):
-                pltname = os.path.join(
-                    workdir, f"mesh_b2b_{system}_spf_{int(spf*10)}.pdf"
-                )
-                turbigen.plot.plot_grid_b2b(g, spf, system == "xrt", pltname)
+    # Make zero-radius rods inviscid
+    if slip_hub_inlet:
+        bi = g.inlet_patches[0].block
+        drhub = np.diff(bi[:,0,0].r)
+        inose = np.where(drhub>1e-6)[0][0]
+        bi.add_patch(grid.InviscidPatch(i=(0,inose), j=0))
+
 
     # Ready to apply boundary conditions now
     logger.info("Applying boundary conditions...")

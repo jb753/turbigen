@@ -53,6 +53,15 @@ set_preference('numberOfGridLevel',int(4))
 print('Reading geometry: ' + os.getcwd() + '/mesh.geomTurbo')
 a5_init_new_project_from_a_geomTurbo_file(os.getcwd() + '/mesh.geomTurbo')
 
+if conf["inlet_bulb"]=="radial":
+    set_inlet_bulb_radial_topology()
+elif conf["inlet_bulb"]=="rounded":
+    set_inlet_bulb_rounded_topology()
+elif conf["inlet_bulb"]=="sharp":
+    set_inlet_bulb_sharp_topology()
+if conf["inlet_bulb"]:
+    set_inlet_bulb_singular_line(int(0))
+
 print("Setting default topology...")
 
 nrow = conf["nrow"]

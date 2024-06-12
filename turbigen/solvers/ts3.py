@@ -458,7 +458,10 @@ def _get_patch_kind(patch):
     elif isinstance(patch, turbigen.grid.PorousPatch):
         return 17
     elif isinstance(patch, turbigen.grid.PeriodicPatch):
-        return 5
+        if patch.cartesian:
+            return 16
+        else:
+            return 5
     elif isinstance(patch, turbigen.grid.InviscidPatch):
         return 7
     elif isinstance(patch, turbigen.grid.ProbePatch):

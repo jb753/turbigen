@@ -69,6 +69,8 @@ class OHMeshConfig(BaseConfig):
     is_butterfly = False
     nk_fillet = 9
 
+    inlet_bulb = ""
+
     def __setattr__(self, key, value):
         if key not in dir(self):
             raise TypeError(f"Invalid OH-mesh configuration variable '{key}'")
@@ -103,6 +105,7 @@ class OHMeshConfig(BaseConfig):
             "is_cascade": False,
             "fix_h_blocks": self.fix_h_blocks,
             "nrow": nrow,
+            "inlet_bulb": self.inlet_bulb,
             "nx_up": self.ni_inlet,
             "nx_dn": self.ni_outlet,
             "nx_mix": 9,
@@ -173,7 +176,10 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         raise Exception("workdir for OH meshing not set")
     output_stem = os.path.join(os.path.abspath(workdir), "mesh")
 
-    if mesh_config.gbcs_path == "":
+    if (mesh_config.gbcs_path == "reuse") or (os.path.exists(os.path.join(output_stem +'.g') )):
+        logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
+
+    elif mesh_config.gbcs_path == "":
         chi_ref = []
         is_unbladed = []
         for bld in machine.bld:
@@ -204,8 +210,6 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
         if not success:
             raise Exception("Meshing failed.")
 
-    elif mesh_config.gbcs_path == "reuse":
-        logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
 
     else:
         output_stem = os.path.abspath(mesh_config.gbcs_path)
