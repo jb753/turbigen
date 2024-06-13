@@ -774,201 +774,6 @@ class Grid:
         solver = importlib.import_module(f".{solver_type}", package="turbigen.solvers")
         return solver.run(self, settings_copy, machine)
 
-    def unstructured_cut(self, xr_cut):
-        """xr_cut has axes [x or r, point on cutting line]."""
-
-        logger.debug("Taking an unstructured cut")
-        logger.debug(f"Cut plane xr_cut={xr_cut}")
-
-        # Determine cut plane slope
-        xc, rc = xr_cut
-        dxrc = np.diff(xr_cut, axis=1)
-
-        bp = []
-
-        def _is_above(xq, rq, xrc):
-            xc, rc = xrc
-            dxc = np.diff(xc)
-            drc = np.diff(rc)
-            if not dxc == 0.0:
-                return rq >= rc[0] + drc / dxc * (xq - xc[0])
-            elif not drc == 0.0:
-                return xq >= xc[0] + dxc / drc * (rq - rc[0])
-            else:
-                raise Exception("Cannot cut with dx and dr both zero")
-
-        # Loop over blocks
-        for block in self:
-            logger.debug("****")
-            logger.debug(
-                f"Block xrt = {block.x.mean(), block.r.mean(), block.t.mean()}"
-            )
-
-            assert not np.isnan(block.mu_turb).any()
-
-            dist = turbigen.util.signed_distance(xr_cut, block.xr)
-
-            # Identify zero crossings of signed distance
-            dsgn = np.abs(np.diff(np.sign(dist), axis=0))
-
-            if np.logical_not(dsgn).all():
-                logger.debug("This block is not cut.")
-                continue
-            logger.debug("Block is intersected.")
-
-            # Determine the i indices on each side of cut
-            ni, nj, nk = block.shape
-
-            icut = np.argmax(dsgn, axis=0, keepdims=True)
-            # If there are no zero crossing, then argmax will return icut=0
-            # If the first cell is cut, argmax will return icut=1
-
-            # Get xr coordinates on either side of cut
-            xrti = np.take_along_axis(block.xrt, icut[None, ...], axis=1)
-            xrtip1 = np.take_along_axis(block.xrt, icut[None, ...] + 1, axis=1)
-
-            # Solve for cut fraction along i grid lines
-            Dxrti = xrtip1 - xrti
-
-            # Choose if the cut is axial or radial
-            if np.abs(dxrc[0]) > np.abs(dxrc[1]):
-                drdx = dxrc[1] / dxrc[0]
-                frac_cut = (rc[0] - xrti[1] + drdx * (xrti[0] - xc[0])) / (
-                    Dxrti[1] - drdx * Dxrti[0]
-                )
-            else:
-                dxdr = dxrc[0] / dxrc[1]
-                if np.any((Dxrti[0] - dxdr * Dxrti[1]) == 0):
-                    continue
-                frac_cut = (xc[0] - xrti[0] + dxdr * (xrti[1] - rc[0])) / (
-                    Dxrti[0] - dxdr * Dxrti[1]
-                )
-            # Remove grid lines with no zero crossing
-            frac_cut[icut == 0] = np.nan
-
-            assert not (np.isnan(block._data).any())
-
-            # xi = np.take_along_axis(block.x, icut, axis=0)
-            # xip1 = np.take_along_axis(block.x, icut+1, axis=0)
-            # ri = np.take_along_axis(block.r, icut, axis=0)
-            # rip1 = np.take_along_axis(block.r, icut +1, axis=0)
-
-            # # Solve for cut fraction along i grid lines
-            # Dri = rip1 - ri
-            # Dxi = xip1 - xi
-
-            # # Choose if the cut is axial or radial
-            # logger.debug(f"dxc={dxc}, drc={drc}")
-            # if np.abs(dxc) > np.abs(drc):
-            #     drdx = drc / dxc
-            #     logger.debug(f"This is an r~const cut. drdx={drdx}")
-            #     frac_cut = (rc[0] - ri + drdx * (xi - xc[0])) / (Dri - drdx * Dxi)
-
-            # else:
-            #     dxdr = dxc / drc
-            #     logger.debug(f"This is an x~const cut. dxdr={dxdr}")
-            #     frac_cut = (xc[0] - xi + dxdr * (ri - rc[0])) / (Dxi - dxdr * Dri)
-
-            # OLD WAY
-            # # Points outside the block will have cut fractions outside unit interval
-            # frac_cut[frac_cut < 0.0] = np.nan
-            # frac_cut[frac_cut > 1.0] = np.nan
-            # NEW WAY
-            # frac_cut[icut == 0] = np.nan
-
-            bpi = np.take_along_axis(block._data, icut[None, ...], axis=1)
-            bpip1 = np.take_along_axis(block._data, icut[None, ...] + 1, axis=1)
-            bp_now = np.squeeze((1.0 - frac_cut) * bpi + frac_cut * bpip1)
-
-            # # Evaluate the flow properties at these cut fractions
-            # bp_now = np.zeros((block.nprop, nj, nk))
-            # for ind in range(block.nprop):
-            #     bpi = np.take_along_axis(block._data[ind], icut, axis=0)
-            #     bpip1 = np.take_along_axis(block._data[ind], icut+1, axis=0)
-            #     bp_now[ind, :, :] = np.squeeze(
-            #         (1.0 - frac_cut) * bpi + frac_cut * bpip1
-            #     )
-
-            # Trim nans
-            kgood = [0, nk - 1]
-            abort = False
-            if np.any(np.isnan(bp_now[0])):
-                for j in range(nj):
-                    xx = bp_now[0, j, :]
-                    kgood_now = np.atleast_1d(np.squeeze(np.argwhere(~np.isnan(xx))))
-                    if len(kgood_now) == 0:
-                        abort = True
-                        continue
-                    kgood[0] = np.maximum(kgood[0], kgood_now[0])
-                    kgood[-1] = np.minimum(kgood[-1], kgood_now[-1])
-                # bp_now = np.delete(bp_now, knan, axis=2)
-                if abort:
-                    continue
-                # bp_now = bp_now[:, :, kgood[0] : (kgood[-1] + 1)]
-                bp_now = bp_now[:, :, kgood[0] : (kgood[-1])]
-
-            if bp_now.shape[-1] == 1:
-                continue
-
-            if np.any(np.isnan(bp_now)):
-                for iprop in range(block.nprop):
-                    print(
-                        f"{block._data_rows[iprop]}:"
-                        f" {np.sum(np.isnan(bp_now[iprop]))}/{np.size(bp_now[iprop])}"
-                    )
-                # import matplotlib.pyplot as plt
-                # print(kgood)
-                # fig, ax = plt.subplots()
-                # m = ax.contourf(frac_cut.squeeze())
-                # plt.colorbar(m)
-                # plt.show()
-                raise Exception("NaNs remain in unstructured cut:")
-            # if np.any(np.isnan(bp_now)):
-            #     continue
-            # assert not np.any(np.isnan(bp_now))
-
-            last_block = block
-
-            bp.append(bp_now)
-
-        # Now join the blocks together
-        assert np.ptp([bpi.shape[1] for bpi in bp]) == 0
-        bp_tmp = []
-        for i, bpi in enumerate(bp):
-            if bpi.shape[-1] <= 1:
-                continue
-            if bpi[2, 0, 0] > bpi[2, 0, -1]:
-                bp_now = np.flip(bpi, axis=2)
-            else:
-                bp_now = np.copy(bpi)
-            if i < len(bp):
-                bp_now = bp_now[:, :, :-1]
-            bp_tmp.append(bp_now)
-        bp = bp_tmp
-
-        rtref = [bpi[2, 0, 0] for bpi in bp]
-        bp = [bp[i] for i in np.argsort(rtref)]
-        bp_all = np.concatenate(bp, axis=2)
-
-        # Insert a singleton i dimension
-        bp_all = np.expand_dims(bp_all, 1)
-
-        cut = last_block.empty(shape=bp_all.shape[1:])
-        cut._data = bp_all
-        cut._metadata = last_block._metadata
-
-        cut.Omega = cut.Omega.mean()
-
-        if not np.isnan(block.xrt).any():
-            assert not np.isnan(cut.xrt).any()
-
-        if not np.isnan(block.Vxrt).any():
-            assert not np.isnan(cut.P).any()
-            assert not np.isnan(cut.T).any()
-            assert not np.isnan(cut.Vxrt).any()
-
-        return cut
-
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""
 
@@ -1083,6 +888,16 @@ class Grid:
     def spf_index(self, spf):
         return np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
 
+    def cut_span_unstructured(self, spf, annulus):
+        bcut = []
+        print("beans")
+        for block in self:
+            bnow = block.meridional_slice(annulus.get_span_curve(spf))
+            print("beans")
+            if bnow:
+                bcut.append(bnow.squeeze())
+        return bcut
+
     def cut_span(self, spf):
         # Find j index nearest to requested span fraction
         jspf = self.spf_index(spf)
@@ -1105,10 +920,6 @@ class Grid:
                 bcut.append(block[:, jspf, :])
                 logger.debug(f"Main block jcut={jspf}")
         return bcut
-
-    def cut_span_unstructured(self, spf, annulus):
-        """Use annulus geometry to perform an unstructured cut."""
-        pass
 
     def partition(self, N):
         nb = len(self)

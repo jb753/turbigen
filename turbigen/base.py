@@ -1161,52 +1161,33 @@ class Composites:
 
     def meridional_slice(self, xrc):
         """Slice a 2D cut using a meridional curve."""
-        if not self.ndim == 2:
-            raise Exception(
-                "Can only meridonal slice on 2D cuts; "
-                f"this cut has shape {self.shape}"
-            )
 
         # Get signed distance
-        xr = self.xr
-        dist = util.signed_distance_piecewise(xrc, xr)
-
-        # # dist = util.signed_distance(xrc[:,(0,-1)], xr)
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # ax.plot(*xr, 'rx', ms=2)
-        # ax.plot(xr[0,0,:],xr[1,0,:], 'r-')
-        # ax.plot(xr[0,:,0],xr[1,:,0], 'b-')
-        # ax.plot(*xrc, 'b-')
-        # ax.contourf(*xr, dist, 20,cmap='RdBu')
-        # ax.axis('equal')
-        # plt.show()
-        # print(xrc.shape, self.xr.shape)
-        # print(dist.min(), dist.max())
-        # quit()
-        # print('ni', 'nj', self.shape)
+        dist = util.signed_distance_piecewise(xrc, self.xr)
 
         # Get j indices above slice
-        jcut = np.argmax(dist > 0, axis=1) - 1
+        jcut = np.argmax(dist > 0, axis=1, keepdims=True) - 1
 
+        # Preallocate
         data = self._data
-        nv, ni, nj = self._data.shape
-
+        nv, ni, nj, nk = self._data.shape
         data_cut = np.empty(
             (
                 nv,
                 ni,
+                nk,
             )
         )
         for i in range(ni):
             jnow = jcut[i]
-            dist_now = dist[i, (jnow, jnow + 1)]
+            dist_now = dist[i, (jnow, jnow + 1), :]
             frac = -dist_now[0] / (dist_now[1] - dist_now[0])
-            data_cut[:, i] = (
-                data[:, i, jnow] + (data[:, i, jnow + 1] - data[:, i, jnow]) * frac
-            )
+            data_cut[:, i, :] = (
+                data[:, i, jnow, :]
+                + (data[:, i, jnow + 1, :] - data[:, i, jnow, :]) * frac
+            )[:, 0, 0, :]
 
-        out = self.empty(shape=(ni,))
+        out = self.empty(shape=(ni, nk))
         out._data = data_cut
         out._metadata = self._metadata
         return out

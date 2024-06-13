@@ -21,7 +21,8 @@ general, a different dimensional arc length.
 
 import turbigen.util
 from turbigen.geometry import MeridionalLine
-from scipy.optimize import minimize, root_scalar, newton
+from scipy.optimize import minimize, root_scalar
+import scipy.interpolate
 
 import numpy as np
 
@@ -366,38 +367,30 @@ class Smooth:
         xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
         return xrc
 
-    def A(self, m):
-        """Flow area as function of normalised meridional distance."""
+    def get_span_curve(self, spf, n=201):
+        """Meridional xr curve along a given span fraction."""
+        m_ref = np.linspace(0.0, self.npts - 1, n)
+        return self.evaluate_xr(m_ref, spf).squeeze()
 
-        m0 = np.clip(np.atleast_1d(m), 0.005, 0.995)
+    def get_mp_from_xr(self, spf):
 
-        xr_mid = self.xr_mid(m0)
+        # We want to plot along a general meridional surface
+        # So brute force a mapping from x/r to meridional distance
 
-        def _iter(mh):
-            """Distance between mid on midspan and mhub ."""
-            xr_hub = self.hub.xr(mh)
-            norm_hub = self.hub.normal(mh)
-            dxr_span = xr_mid - xr_hub
-            mag_span = np.linalg.norm(dxr_span, ord=2, axis=0, keepdims=True)
-            dxr_span /= mag_span
-            return np.sum(dxr_span * norm_hub, axis=0)
+        # Evaluate xr as a function of meridonal distance using machine geometry
+        xr_ref = self.get_span_curve(spf, 5001)
 
-        m1 = m0.copy()
-        m1[m1 < 0.5] = m1[m1 < 0.5] + 0.001
-        m1[m1 >= 0.5] = m1[m1 >= 0.5] - 0.001
-        mout = newton(_iter, x0=m0, x1=m1)
+        # Calculate normalised meridional distance (angles are angles)
+        dxr = np.diff(xr_ref, n=1, axis=1)
+        dm = np.sqrt(np.sum(dxr**2.0, axis=0))
+        rc = 0.5 * (xr_ref[1, 1:] + xr_ref[1, :-1])
+        mp_ref = turbigen.util.cumsum0(dm / rc)
+        assert (np.diff(mp_ref) > 0.0).all()
 
-        # Deal with end points
-        mout[m0 > 0.999] = 1.0
-        mout[m0 < 0.001] = 0.0
+        def mp_from_xr(xr):
+            func = scipy.interpolate.NearestNDInterpolator(xr_ref.T, mp_ref)
+            xru = xr.reshape(2, -1)
+            mpu = func(xru.T)  # % - mp_stack
+            return mpu.reshape(xr.shape[1:])
 
-        # Fill in any NaNs
-        inan = np.logical_or(np.isnan(mout), np.abs(mout) > 10.0 * np.median(mout))
-        m0_fill = np.interp(m, m[~inan], mout[~inan]) - 0.001
-        m1_fill = m0_fill + 0.001
-        mout = newton(_iter, x0=m0_fill, x1=m1_fill)
-
-        span = 2.0 * np.sqrt(np.sum((xr_mid - self.hub.xr(mout)) ** 2.0, axis=0))
-        A = 2 * np.pi * xr_mid[1] * span
-
-        return A
+        return mp_from_xr

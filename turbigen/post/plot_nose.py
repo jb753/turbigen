@@ -27,39 +27,27 @@ def post(grid, machine, meanline, postdir, row_spf):
             (iin, iout),
         ]
 
-        xr_row = machine.ann.xr_row(irow)
-
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
 
-            surf = grid.cut_blade_surfs()[irow][0].squeeze()
+            # Blade surface cut
+            surf = grid.cut_blade_surfs()[irow][0]
+            surf = surf.meridional_slice(machine.ann.get_span_curve(spf))
+            cut = grid.cut_span_unstructured(spf, machine.ann)
 
-            # We want to plot along a general meridional surface
-            m_ref = np.linspace(-1.0, 2.0)
-            xr_ref = xr_row(spf, m_ref).squeeze()
+            # fig, ax = plt.subplots()
+            # ax.plot(*surf.squeeze().xr, "rx")
+            # ax.plot(*xr_ref, "k-")
+            # ax.plot(*xr_ref2, "m-x")
+            # ax.plot(*SS.xr, "bo")
+            # ax.axis("equal")
+            # plt.show()
 
-            # side = grid.cut_blade_sides()[irow][0].squeeze()
+            # quit()
 
-            SS = surf.meridional_slice(xr_ref)
+            # jspf = grid.spf_index(spf)
 
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots()
-            ax.plot(*surf.xr, "rx")
-            ax.plot(*xr_ref, "k-")
-            ax.plot(*SS.xr, "bo")
-            ax.axis("equal")
-            plt.show()
-
-            quit()
-
-            jspf = grid.spf_index(spf)
-
-            mp_from_xr, spf_actual = turbigen.util.get_mp_from_xr(
-                grid, machine, irow, spf, (-0.2, 0.2)
-            )
-
-            cut = grid.cut_span(spf)
+            mp_from_xr = machine.ann.get_mp_from_xr(spf)
 
             fig, ax = plt.subplots()
 
@@ -98,13 +86,13 @@ def post(grid, machine, meanline, postdir, row_spf):
                     ax.contourf(mpb, b.t + b.pitch, Cp, lev_Cp)
 
             mps = mp_from_xr(surf.xr)
-            mstag = mps[surf.i_stag[jspf], jspf]
-            tstag = surf.t[surf.i_stag[jspf], jspf]
+            mstag = mps[surf.i_stag].squeeze()
+            tstag = surf.t[surf.i_stag].squeeze()
 
-            xrtLE = machine.bld[irow].get_LE_cent(spf_actual)
+            xrtLE = machine.bld[irow].get_LE_cent(spf)
             mpLE = mp_from_xr(xrtLE[:2])
 
-            xrtcam = machine.bld[irow].get_camber_line(spf_actual)
+            xrtcam = machine.bld[irow].get_camber_line(spf)
             mpcam = mp_from_xr(xrtcam[:2])
 
             if grid.is_hmesh:

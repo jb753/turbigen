@@ -1177,7 +1177,7 @@ def signed_distance_piecewise(xrc, xr):
     # as the closest point switches from one segment to the next
     # so brute force refine the input cut curve
     ns = xrc.shape[-1]
-    refine_fac = 100
+    refine_fac = 2
     tc = np.linspace(0.0, 1.0, ns)
     xrc = scipy.interpolate.interp1d(tc, xrc, axis=-1)(
         np.linspace(0, 1.0, ns * refine_fac)
