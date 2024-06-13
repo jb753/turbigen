@@ -1159,6 +1159,71 @@ class Composites:
         # Mass fluxes in x and r dirns
         return self.flux_mass * self.s
 
+    def meridional_slice(self, xrc):
+        """Slice a 2D cut using a meridional curve."""
+        if not self.ndim == 2:
+            raise Exception(
+                "Can only meridonal slice on 2D cuts; "
+                f"this cut has shape {self.shape}"
+            )
+
+        # Get signed distance
+        xr = self.xr
+        dist = util.signed_distance_piecewise(xrc, xr)
+
+        # # dist = util.signed_distance(xrc[:,(0,-1)], xr)
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # ax.plot(*xr, 'rx', ms=2)
+        # ax.plot(xr[0,0,:],xr[1,0,:], 'r-')
+        # ax.plot(xr[0,:,0],xr[1,:,0], 'b-')
+        # ax.plot(*xrc, 'b-')
+        # ax.contourf(*xr, dist, 20,cmap='RdBu')
+        # ax.axis('equal')
+        # plt.show()
+        # print(xrc.shape, self.xr.shape)
+        # print(dist.min(), dist.max())
+        # quit()
+        # print('ni', 'nj', self.shape)
+
+        # Get j indices above slice
+        jcut = np.argmax(dist > 0, axis=1) - 1
+
+        data = self._data
+        nv, ni, nj = self._data.shape
+
+        data_cut = np.empty(
+            (
+                nv,
+                ni,
+            )
+        )
+        for i in range(ni):
+            jnow = jcut[i]
+            dist_now = dist[i, (jnow, jnow + 1)]
+            frac = -dist_now[0] / (dist_now[1] - dist_now[0])
+            data_cut[:, i] = (
+                data[:, i, jnow] + (data[:, i, jnow + 1] - data[:, i, jnow]) * frac
+            )
+
+        out = self.empty(shape=(ni,))
+        out._data = data_cut
+        out._metadata = self._metadata
+        return out
+        # data_cut[0] =
+
+        # data = self._data
+        # data1 = np.take_along_axis(data, jcut3, axis=2)
+        # data2 = np.take_along_axis(data, jcut3-1, axis=2)
+        # dist1 = np.take_along_axis(dist, jcut2, axis=0)
+        # dist2 = np.take_along_axis(dist, jcut2-1, axis=0)
+        # print(dist1.shape)
+        # frac = dist1/(dist2-dist1)
+        #                 # frac = -dist[ijk_st] / (dist[ijk_en] - dist[ijk_st])
+        # print(frac.min(), frac.max())
+        # # data_cut =
+        # quit()
+
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
         return turbigen.average.mix_out(self)

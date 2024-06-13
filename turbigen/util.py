@@ -8,7 +8,7 @@ import importlib
 import scipy.interpolate
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.optimize import minimize, leastsq, root_scalar
-from scipy.spatial import Voronoi, ConvexHull
+from scipy.spatial import Voronoi, ConvexHull, KDTree
 from scipy.signal import medfilt
 from scipy.interpolate import griddata
 import yaml
@@ -1147,6 +1147,62 @@ def signed_distance(xrc, xr):
     dxrc = np.diff(xrc, axis=1)
 
     return dxrc[0] * (xrc[1, 0] - xr[1]) - (xrc[0, 0] - xr[0]) * dxrc[1]
+
+
+def signed_distance_piecewise(xrc, xr):
+    """Distance above or below a piecewise line in meridional plane.
+
+    Note that this becomes increasingly inaccurate far away from the
+    curve but the zero level is correct (which is sufficient for cutting).
+
+    Parameters
+    ----------
+    xrc: (2, ns)
+        Coordinates of the cut plane with ns segments.
+    xr: (2,...) array
+        Meridional coordinates to cut.
+
+    Returns
+    ------
+    ds: (...) array
+        Signed distance above or below the cut.
+
+    """
+
+    assert xrc.shape[0] == 2
+    assert xrc.ndim == 2
+    assert xr.shape[0] == 2
+
+    # A coarse curve will lead to discontinuities in signed distance
+    # as the closest point switches from one segment to the next
+    # so brute force refine the input cut curve
+    ns = xrc.shape[-1]
+    refine_fac = 100
+    tc = np.linspace(0.0, 1.0, ns)
+    xrc = scipy.interpolate.interp1d(tc, xrc, axis=-1)(
+        np.linspace(0, 1.0, ns * refine_fac)
+    )
+
+    # Signed distance from all query points to all cut curve segments
+    dxrc = np.diff(xrc, axis=1)
+    xru = xr.reshape(2, -1)
+    xre = np.expand_dims(xru, -1)
+    dsua = dxrc[0, :] * (xrc[1, :-1] - xre[1]) - (xrc[0, :-1] - xre[0]) * dxrc[1, :]
+
+    # Build a KDTree to find midpoints of the cut curve segments
+    xrcm = 0.5 * (xrc[:, 1:] + xrc[:, :-1])
+    tree = KDTree(xrcm.T)
+
+    # Find the nearest neighbour segment on the cut curve to every query point
+    du, iu = tree.query(xru.T)
+
+    # Select the signed distance for nearest line segment
+    dsu = np.empty_like(du)
+    for i in range(len(du)):
+        dsu[i] = dsua[i, iu[i]]
+
+    # Return in same shape as input
+    return dsu.reshape(xr.shape[1:])
 
 
 def next_numbered_dir(basename):

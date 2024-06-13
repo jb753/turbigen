@@ -27,12 +27,33 @@ def post(grid, machine, meanline, postdir, row_spf):
             (iin, iout),
         ]
 
+        xr_row = machine.ann.xr_row(irow)
+
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
 
-            jspf = grid.spf_index(spf)
-
             surf = grid.cut_blade_surfs()[irow][0].squeeze()
+
+            # We want to plot along a general meridional surface
+            m_ref = np.linspace(-1.0, 2.0)
+            xr_ref = xr_row(spf, m_ref).squeeze()
+
+            # side = grid.cut_blade_sides()[irow][0].squeeze()
+
+            SS = surf.meridional_slice(xr_ref)
+
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots()
+            ax.plot(*surf.xr, "rx")
+            ax.plot(*xr_ref, "k-")
+            ax.plot(*SS.xr, "bo")
+            ax.axis("equal")
+            plt.show()
+
+            quit()
+
+            jspf = grid.spf_index(spf)
 
             mp_from_xr, spf_actual = turbigen.util.get_mp_from_xr(
                 grid, machine, irow, spf, (-0.2, 0.2)

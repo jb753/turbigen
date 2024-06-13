@@ -1106,6 +1106,10 @@ class Grid:
                 logger.debug(f"Main block jcut={jspf}")
         return bcut
 
+    def cut_span_unstructured(self, spf, annulus):
+        """Use annulus geometry to perform an unstructured cut."""
+        pass
+
     def partition(self, N):
         nb = len(self)
 
