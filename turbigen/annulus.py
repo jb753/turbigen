@@ -367,9 +367,11 @@ class Smooth:
         xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
         return xrc
 
-    def get_span_curve(self, spf, n=201):
+    def get_span_curve(self, spf, n=201, mlim=None):
         """Meridional xr curve along a given span fraction."""
-        m_ref = np.linspace(0.0, self.npts - 1, n)
+        if not mlim:
+            mlim = (0.0, self.npts - 1)
+        m_ref = np.linspace(*mlim, n)
         return self.evaluate_xr(m_ref, spf).squeeze()
 
     def get_mp_from_xr(self, spf):

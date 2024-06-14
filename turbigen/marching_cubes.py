@@ -653,15 +653,7 @@ def marching_cubes(data, dist):
 
                         # Perform linear interpolation
                         frac = -dist[ijk_st] / (dist[ijk_en] - dist[ijk_st])
-                        if frac < 0.0 or frac > 1.0:
-                            print("Dist at the vertices")
-                            for v in range(8):
-                                print(f"v{v}: {dist[_vijk(dist.shape,v)][i,j,k]}")
-                            print(f"cube_index={icube[i,j,k]:08b}")
-                            print(f"edge_index={edge_index[i,j,k]:012b}")
-                            print(f"frac={frac}, e={e}, i={i}, j={j}, k={k}")
-                            print(f"dist={(dist[ijk_en],dist[ijk_st])}")
-                            raise Exception("cutting failed")
+                        assert (frac >= 0.0) and (frac <= 1.0)
                         cut_edges[e] = (
                             data[ijk4_st] + (data[ijk4_en] - data[ijk4_st]) * frac
                         )

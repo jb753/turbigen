@@ -1,11 +1,15 @@
 """Functions for running turbigen using the SLURM queue."""
 import os
 import subprocess
+from turbigen.util import make_logger
 
 SBATCH_FILE = "submit.sh"
 YAML_FILE = "config.yaml"
 LOG_FILE = "log_turbigen.txt"
 TURBIGEN_ROOT = "/".join(__file__.split("/")[:-2])
+
+
+logger = make_logger()
 
 
 def _parse_jid(s):
@@ -153,13 +157,13 @@ turbigen {yaml_path} &> {log_path}
             f"sbatch {SBATCH_FILE}", shell=True, stderr=subprocess.PIPE
         )
     except subprocess.CalledProcessError as e:
-        print(e.stderr.decode("utf-8"))
+        logger.info(e.stderr.decode("utf-8"))
         raise e
 
     jid = _parse_jid(sbatch_out)
     os.chdir(orig_workdir)
     if verbose:
-        print(f"Submitted SLURM jobid={jid} in {workdir}")
+        logger.info(f"Submitted SLURM jobid={jid} in {workdir}")
 
     return jid
 
@@ -219,7 +223,7 @@ turbigen {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/config.yaml &>\
             f"sbatch {SBATCH_FILE}", shell=True, stderr=subprocess.PIPE
         )
     except subprocess.CalledProcessError as e:
-        print(e.stderr.decode("utf-8"))
+        logger.info(e.stderr.decode("utf-8"))
         raise e
     os.chdir(orig_workdir)
 
@@ -241,9 +245,9 @@ def submit_batches(confs, basedir, Nrun, verbose=True):
         dependency = None
         for conf in conf_set:
             if 0 < iconf:
-                print("\r", end="")
+                logger.info("\r", end="")
             conf.job["dependency"] = dependency
             submit(conf, basedir, verbose=False)
-            print(f"Submitted {iconf}/{Nconf}", end="")
+            logger.info(f"Submitted {iconf}/{Nconf}", end="")
             iconf += 1
-    print("")
+    logger.info("")

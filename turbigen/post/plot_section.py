@@ -107,6 +107,5 @@ def post(
 
         plotname = os.path.join(postdir, f"section_row_{irow}.pdf")
         plt.tight_layout(pad=0)
-        print(ax.get_xlim())
         plt.savefig(plotname)
         plt.close()

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf):
+def post(grid, machine, meanline, postdir, row_spf, fac_Rle):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -30,11 +30,28 @@ def post(grid, machine, meanline, postdir, row_spf):
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
 
-            # Blade surface cut
-            surf = grid.cut_blade_surfs()[irow][0]
-            surf = surf.meridional_slice(machine.ann.get_span_curve(spf))
-            cut = grid.cut_span_unstructured(spf, machine.ann)
+            # Get a reasonably fine meridional curve to define the visualisation surf
+            xr_vis = machine.ann.get_span_curve(spf, n=101)
 
+            # Take cuts on the vis surface
+            surf = grid.cut_blade_surfs()[irow][0]
+            surf = surf.meridional_slice(xr_vis)
+            cut = grid.cut_span_unstructured(xr_vis)
+
+            # fig, ax = plt.subplots()
+            # ax.plot(*xr, "k-x")
+            # # fig, ax = plt.subplots(2,1)
+            # # ii = np.arange(0,xr.shape[1]-1)
+            # # dx = np.diff(xr[0])
+            # # dr = np.diff(xr[1])
+            # # i0x = np.where(dx==0.)
+            # # i0r = np.where(dr==0.)
+            # # ax[0].plot(ii,dx, "k-x")
+            # # ax[0].plot(ii[i0x],dx[i0x], "ro")
+            # # ax[1].plot(ii,dr, "k-x")
+            # # ax[1].plot(ii[i0r],dr[i0r], "ro")
+            # # plt.show()
+            # # quit()
             # fig, ax = plt.subplots()
             # ax.plot(*surf.squeeze().xr, "rx")
             # ax.plot(*xr_ref, "k-")
@@ -47,13 +64,24 @@ def post(grid, machine, meanline, postdir, row_spf):
 
             # jspf = grid.spf_index(spf)
 
-            mp_from_xr = machine.ann.get_mp_from_xr(spf)
+            # Now generate a mapping from xr to meridional distance
+            # around the leading edge only
+            mlim_le = irow * 2 + 1 + np.array([-0.2, 0.3])
+            xr_ref = machine.ann.get_span_curve(spf, n=1999, mlim=mlim_le)
+            mp_from_xr = machine.ann.get_mp_from_xr(xr_ref)
 
-            fig, ax = plt.subplots()
+            # Find coordinates of the stagnation point in this mapping
+            mps = mp_from_xr(surf.xr)
+            mstag = mps[surf.i_stag].squeeze()
+            tstag = surf.t[surf.i_stag].squeeze()
 
             Pall = np.concatenate([b.P.reshape(-1) for b in cut])
             mpall = np.concatenate([mp_from_xr(b.xr).reshape(-1) for b in cut])
-            Pred = Pall[np.abs(mpall) < 0.18]
+
+            # Clip pressures outside the plot range
+            mlim_plot = mp_from_xr(xr_ref[:, (1, -2)])
+            Pred = Pall[mpall > mlim_plot[0]]
+            Pred = Pall[mpall < mlim_plot[-1]]
 
             if Po2 > Po1:
                 # Compressor
@@ -65,6 +93,8 @@ def post(grid, machine, meanline, postdir, row_spf):
             dCp = 0.1
             lev_Cp = turbigen.util.clipped_levels(Cpall, dCp)
 
+            fig, ax = plt.subplots()
+            # ax.plot(*surf.squeeze().xr, "rx")
             for b in cut:
 
                 P = b.P
@@ -85,15 +115,26 @@ def post(grid, machine, meanline, postdir, row_spf):
                 if grid.is_hmesh:
                     ax.contourf(mpb, b.t + b.pitch, Cp, lev_Cp)
 
-            mps = mp_from_xr(surf.xr)
-            mstag = mps[surf.i_stag].squeeze()
-            tstag = surf.t[surf.i_stag].squeeze()
-
-            xrtLE = machine.bld[irow].get_LE_cent(spf)
+            xrtLE = machine.bld[irow].get_LE_cent(spf, fac_Rle=fac_Rle)
             mpLE = mp_from_xr(xrtLE[:2])
 
             xrtcam = machine.bld[irow].get_camber_line(spf)
             mpcam = mp_from_xr(xrtcam[:2])
+
+            # xrtLLE = machine.bld[irow].get_LE_cent(spf, fac_Rle=100.0)
+            # mpLLE = mp_from_xr(xrtLLE[:2])
+            # xrLEline = machine.ann.evaluate_xr(1.0, np.linspace(0.0, 1.0))
+
+            # fig, ax = plt.subplots()
+            # ax.plot(*xr_vis, "k-")
+            # ax.plot(*xrtLLE[:2],'r^')
+            # ax.plot(*xrLEline,'b-')
+            # ax.plot(*surf.xr,'m-')
+            # ax.plot(*surf_hub.xr,'m-')
+            # ax.plot(*surf_cas.xr,'m-')
+            # ax.axis('equal')
+            # plt.show()
+            # quit()
 
             if grid.is_hmesh:
                 tstag += surf.pitch

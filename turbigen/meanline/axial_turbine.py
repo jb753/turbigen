@@ -244,20 +244,14 @@ def _nondim_stage_from_Lam(
     # Catch the warning from scipy that derivatives are zero
     with warnings.catch_warnings():
         warnings.filterwarnings("error")
-        try:
-            Al_soln = root_scalar(
-                iter_Al,
-                bracket=tuple(
-                    Al_guess[
-                        (i0 - 1, i0 + 1),
-                    ]
-                ),
-            ).root
-        except ValueError as e:
-            print("debug info..")
-            print("Al_guess", Al_guess)
-            print("Lam errors", Lam_guess)
-            raise e
+        Al_soln = root_scalar(
+            iter_Al,
+            bracket=tuple(
+                Al_guess[
+                    (i0 - 1, i0 + 1),
+                ]
+            ),
+        ).root
 
     # Once we have a solution for the exit flow angle, evaluate stage geometry
     _, P_Po1, T_To1, Vx_U, Vt_U, Dr_Drin, U_sqrt_cpTo1 = _nondim_stage_from_Al(

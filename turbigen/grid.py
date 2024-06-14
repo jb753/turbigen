@@ -299,19 +299,19 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         try:
             assert np.isfinite(self.xrt).all()
         except AssertionError:
-            print(
+            logger.iter(
                 np.nanmean(self.xrt[0]),
                 np.nanmin(self.xrt[0]),
                 np.nanmax(self.xrt[0].max),
                 np.sum(np.isnan(self.xrt[0])),
             )
-            print(
+            logger.iter(
                 np.nanmean(self.xrt[1]),
                 np.nanmin(self.xrt[1]),
                 np.nanmax(self.xrt[1].max),
                 np.sum(np.isnan(self.xrt[1])),
             )
-            print(
+            logger.iter(
                 np.nanmean(self.xrt[2]),
                 np.nanmin(self.xrt[2]),
                 np.nanmax(self.xrt[2].max),
@@ -681,7 +681,7 @@ class Grid:
                 C = patch.get_cut()
                 Cm = C.mix_out()[0]
                 if Cm.Mam > 1.0:
-                    print(
+                    logger.iter(
                         f"Warning: outlet Mam={Cm.Mam:.3f} is choked; this can affect"
                         " mass flow continuity."
                     )
@@ -888,12 +888,10 @@ class Grid:
     def spf_index(self, spf):
         return np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
 
-    def cut_span_unstructured(self, spf, annulus):
+    def cut_span_unstructured(self, xr):
         bcut = []
-        print("beans")
         for block in self:
-            bnow = block.meridional_slice(annulus.get_span_curve(spf))
-            print("beans")
+            bnow = block.meridional_slice(xr)
             if bnow:
                 bcut.append(bnow.squeeze())
         return bcut

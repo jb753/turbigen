@@ -1191,7 +1191,8 @@ def signed_distance_piecewise(xrc, xr):
         # Calculate absolute distance field for this segment
         a = xr - xrce[:, i]  # Segment start to point
         b = xrce[:, i + 1] - xrce[:, i]  # Parallel to segment
-        h = np.clip(dot(a, b) / dot(b, b), 0.0, 1.0)  # Distance along segment
+        L = np.maximum(dot(b, b), 1e-9)
+        h = np.clip(dot(a, b) / L, 0.0, 1.0)  # Distance along segment
         l = a - b * h  # Subtract parallel component to get perp distance
         di = np.sqrt(dot(l, l))  # Get length
 
@@ -1375,24 +1376,31 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
                 [bldnow.get_LE_cent(spf[j], fac_Rle).squeeze() for j in range(nj)],
                 axis=-1,
             )
+            xrt_nose = np.stack(
+                [bldnow.get_LE_cent(spf[j], 100.0).squeeze() for j in range(nj)],
+                axis=-1,
+            )
 
             # Get vector between stagnation point and centre of LE
             dxrt = xrt_cent - xrt_stag
 
+            # Get vector between nose and centre of LE
+            dxrt_nose = xrt_cent - xrt_nose
+
             # Multiply theta component by reference radius
             dxrrt = dxrt.copy()
+            dxrrt_nose = dxrt_nose.copy()
             rref = 0.5 * (xrt_cent + xrt_stag)[1]
             dxrrt[2] *= rref
+            dxrrt_nose[2] *= rref
 
             # Calculate angle
             denom = np.sqrt(dxrrt[0] ** 2 + dxrrt[1] ** 2)
             chi_stag_now = np.degrees(np.arctan2(dxrrt[2], denom))
+            denom_nose = np.sqrt(dxrrt_nose[0] ** 2 + dxrrt_nose[1] ** 2)
+            chi_metal_now = np.degrees(np.arctan2(dxrrt_nose[2], denom_nose))
 
-            # # If we are going radially inwards then flip sign
-            # if meanline.Beta[irow * 2] < -45.0:
-            #     chi_stag_now *= -1.0
-
-            chi_stag[-1].append(np.stack((spf, chi_stag_now)))
+            chi_stag[-1].append(np.stack((spf, chi_stag_now, chi_metal_now)))
 
     return chi_stag
 
@@ -1410,10 +1418,10 @@ def incidence(grid, machine, meanline, fac_Rle=1.0):
 
         for jblade, chi_stag_blade in enumerate(chi_stag_row):
 
-            spf, chi_stag = chi_stag_blade
+            spf, chi_stag, chi_metal = chi_stag_blade
 
-            bldnow = machine.split[irow] if jblade else machine.bld[irow]
-            chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
+            # bldnow = machine.split[irow] if jblade else machine.bld[irow]
+            # chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
 
             # Smooth
             nsmooth = 10
