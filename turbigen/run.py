@@ -615,8 +615,10 @@ def run_single(conf, gguess=None, plot=False):
         ohmesh_config = ohmesh.OHMeshConfig(**mesh_settings)
         ohmesh_config.workdir = workdir
 
+        Omega = ml.Omega[::2]
+
         # Make the grid object
-        g = ohmesh.make_grid(mac, ohmesh_config, dhub, dcas, drow, unbladed)
+        g = ohmesh.make_grid(mac, ohmesh_config, dhub, dcas, drow, unbladed, Omega)
 
     else:
         raise Exception(f'Unrecognised mesh type "{mesh_type}"')
