@@ -8,7 +8,7 @@ import importlib
 import scipy.interpolate
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.optimize import minimize, leastsq, root_scalar
-from scipy.spatial import Voronoi, ConvexHull, KDTree
+from scipy.spatial import Voronoi, ConvexHull
 from scipy.signal import medfilt
 from scipy.interpolate import griddata
 import yaml
@@ -1173,36 +1173,39 @@ def signed_distance_piecewise(xrc, xr):
     assert xrc.ndim == 2
     assert xr.shape[0] == 2
 
-    # A coarse curve will lead to discontinuities in signed distance
-    # as the closest point switches from one segment to the next
-    # so brute force refine the input cut curve
-    ns = xrc.shape[-1]
-    refine_fac = 2
-    tc = np.linspace(0.0, 1.0, ns)
-    xrc = scipy.interpolate.interp1d(tc, xrc, axis=-1)(
-        np.linspace(0, 1.0, ns * refine_fac)
-    )
+    # Preallocate the signed distance
+    d = np.full(xr.shape[1:], np.inf)
 
-    # Signed distance from all query points to all cut curve segments
-    dxrc = np.diff(xrc, axis=1)
-    xru = xr.reshape(2, -1)
-    xre = np.expand_dims(xru, -1)
-    dsua = dxrc[0, :] * (xrc[1, :-1] - xre[1]) - (xrc[0, :-1] - xre[0]) * dxrc[1, :]
+    # Expand dimensions of cut line so it broadcasts
+    add_dims = [i for i in range(2, xr.ndim + 1)]
+    xrce = np.expand_dims(xrc, add_dims)
 
-    # Build a KDTree to find midpoints of the cut curve segments
-    xrcm = 0.5 * (xrc[:, 1:] + xrc[:, :-1])
-    tree = KDTree(xrcm.T)
+    # Dot product over the first axis
+    def dot(a, b):
+        return np.einsum("i...,i...", a, b)
 
-    # Find the nearest neighbour segment on the cut curve to every query point
-    du, iu = tree.query(xru.T)
+    # Loop over line segments
+    ni = xrc.shape[1]
+    for i in range(ni - 1):
 
-    # Select the signed distance for nearest line segment
-    dsu = np.empty_like(du)
-    for i in range(len(du)):
-        dsu[i] = dsua[i, iu[i]]
+        # Calculate absolute distance field for this segment
+        a = xr - xrce[:, i]  # Segment start to point
+        b = xrce[:, i + 1] - xrce[:, i]  # Parallel to segment
+        h = np.clip(dot(a, b) / dot(b, b), 0.0, 1.0)  # Distance along segment
+        l = a - b * h  # Subtract parallel component to get perp distance
+        di = np.sqrt(dot(l, l))  # Get length
 
-    # Return in same shape as input
-    return dsu.reshape(xr.shape[1:])
+        # Get the smallest absolute value
+        ind = np.where(di < np.abs(d))
+
+        # Make the distance signed
+        c = np.array([-b[1], b[0]])  # Vector perp to segment
+        di *= np.sign(dot(l, c))
+
+        # Assign where we have a new smallest absolute distance
+        d[ind] = di[ind]
+
+    return d
 
 
 def next_numbered_dir(basename):
