@@ -169,7 +169,7 @@ def _get_stagger_topology(Al):
     ]
 
 
-def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
+def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, Omega, skip=False):
     logger.info("Generating OH-mesh...")
 
     dsurf = np.mean(dsurf, axis=0)
@@ -196,9 +196,6 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, skip=False):
             #     chi_ref.append(np.zeros((2,)))
             #     is_unbladed.append(1)
         chi_ref = np.concatenate(chi_ref)
-
-        # We fill in the rotation speeds later
-        Omega = np.zeros((len(chi_ref),))
 
         logger.info("Making a new mesh.")
         splitter = []
