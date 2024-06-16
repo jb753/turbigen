@@ -1688,3 +1688,13 @@ def interpolate_block(xr_hub, xr_cas, spf):
     xr = spf*(xr_cas-xr_hub)+xr_hub
 
     return xr
+
+
+def extrude_block(xr, t):
+    _, ni, nj = xr.shape
+    nk = t.shape[0]
+    xr = xr.reshape(2, ni, nj, 1)
+    t = t.reshape(1, 1, 1, nk)
+    xr = np.tile(xr,(1,1,1,nk))
+    t = np.tile(t, (1,ni, nj, 1))
+    return np.concatenate((xr, t), axis=0)
