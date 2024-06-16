@@ -1618,3 +1618,73 @@ def read_sections(fname):
             )
 
     return xrrt
+
+def offset_curve(xr, d, flip=False):
+    """Offset meridional curve by a perpendicular distance.
+
+    Parameters
+    ----------
+    xr: (2, N) array
+        Coordinates of the original curve.
+    d: scalar or (M,) array
+        Perpendicular distances.
+
+    """
+
+    # Check input
+    assert xr.shape[0] == 2
+    assert xr.ndim == 2
+
+    # Edge length vectors
+    dxr = np.diff(xr, axis=1)
+
+    # Perpendicular vectors, edge-centered
+    perp_edge = np.stack((-dxr[1], dxr[0]))
+    perp_edge /= np.linalg.norm(perp_edge, axis=0, keepdims=True)
+
+    # Put the perpendicular vectors back to nodes
+    perp_node = np.concatenate((perp_edge[:,(0,)], 0.5*(perp_edge[:,:-1]+perp_edge[:,1:]), perp_edge[:,(-1,)]), axis=1)
+
+    # Arrange vectors so they broadcast
+    d = np.array(d).reshape(1,1,-1)
+    perp_node = perp_node.reshape(2,-1,1)
+    xr = xr.reshape(2,-1,1)
+
+    # Choose direction
+    if flip:
+        d *= -1.
+
+    # Add on the distance
+    xr_offset = xr + perp_node * d
+
+    return xr_offset
+
+def interpolate_curve(xr, sq, axis):
+    """Interpolate along a curve at given length fractions."""
+
+    s = cum_arc_length(xr, axis=axis)
+    s /= s[(-1,),:]
+    xrq = np.empty((2, len(sq), xr.shape[2]))
+    for k in range(xr.shape[2]):
+        xrq[:,:,k] = scipy.interpolate.interp1d(s[:,k], xr[:,:,k], axis=axis)(sq)
+
+    return xrq
+
+
+def angle_curve(xr):
+    """Angle of slope of a curve."""
+    dxr = np.diff(xr,1)
+    tanchi = dxr[1]/dxr[0]
+    return np.degrees(np.arctan2(dxr[1],dxr[0]))
+
+def interpolate_block(xr_hub, xr_cas, spf):
+    """Make a block given points on hub/casing and span fractions."""
+
+    # Ensure the arrays broadcast
+    spf = spf.reshape(1,1,-1)
+    xr_hub = xr_hub.reshape(2,-1,1)
+    xr_cas = xr_cas.reshape(2,-1,1)
+
+    xr = spf*(xr_cas-xr_hub)+xr_hub
+
+    return xr
