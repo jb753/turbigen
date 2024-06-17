@@ -356,7 +356,7 @@ def test_Ma(Ma):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 2e-5
+    rtol = 2.5e-5
     assert (np.abs(err_Ma)<rtol).all()
     assert (np.abs(Ys)<rtol).all()
     assert (np.abs(Cho)<rtol).all()

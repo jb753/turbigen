@@ -371,7 +371,9 @@ class MeridionalLine:
         # tclu = np.reshape(
         #     [i + util.cluster_cosine(50) for i in range(self.N - 1)], (-1,)
         # )
-        jerk = np.trapezoid(np.gradient(self.kappa(self.mclu), self.mclu) ** 2.0, self.mclu)
+        jerk = np.trapezoid(
+            np.gradient(self.kappa(self.mclu), self.mclu) ** 2.0, self.mclu
+        )
         Ltot = np.sum(self.chords)
         return jerk * Ltot**2.0
 
