@@ -77,14 +77,14 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         util.write_yaml_compressed(d, fname)
 
     @classmethod
-    def from_coordinates(cls, xrt, Nb, patches=()):
+    def from_coordinates(cls, xrt, Nb, patches=(), label=None):
         # Make empty object of correct shape
         block = cls(shape=xrt.shape[1:])
         block.xrt = xrt
         block._metadata = {"Nb": Nb, "patches": patches}
         for p in patches:
             p.block = block
-        block.label = None
+        block.label = label
         return block
 
     @property
