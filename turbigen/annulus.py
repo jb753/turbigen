@@ -369,18 +369,15 @@ class Smooth:
 
     def get_span_curve(self, spf, n=201, mlim=None):
         """Meridional xr curve along a given span fraction."""
-        if not mlim:
+        if mlim is None:
             mlim = (0.0, self.npts - 1)
         m_ref = np.linspace(*mlim, n)
         return self.evaluate_xr(m_ref, spf).squeeze()
 
-    def get_mp_from_xr(self, spf):
+    def get_mp_from_xr(self, xr_ref):
 
         # We want to plot along a general meridional surface
         # So brute force a mapping from x/r to meridional distance
-
-        # Evaluate xr as a function of meridonal distance using machine geometry
-        xr_ref = self.get_span_curve(spf, 5001)
 
         # Calculate normalised meridional distance (angles are angles)
         dxr = np.diff(xr_ref, n=1, axis=1)
