@@ -1326,6 +1326,10 @@ class ProbePatch(Patch):
     pass
 
 
+class CoolingPatch(Patch):
+    pass
+
+
 class NonMatchPatch(Patch):
     match = None
 
@@ -1372,6 +1376,7 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
+    CoolingPatch,
 ]
 NOT_SLIPWALL_PATCHES = [
     InletPatch,
@@ -1381,6 +1386,7 @@ NOT_SLIPWALL_PATCHES = [
     PorousPatch,
     ProbePatch,
     InviscidPatch,
+    CoolingPatch,
 ]
 
 
