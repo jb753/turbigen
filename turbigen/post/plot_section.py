@@ -74,7 +74,7 @@ def post(
 
                 # ax.plot(*yz, "-", label=f"spf={spf}")
 
-            xoff = K_offset * (spf - 0.5) * x2.ptp()
+            xoff = K_offset * (spf - 0.5) * np.ptp(x2)
 
             ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
 

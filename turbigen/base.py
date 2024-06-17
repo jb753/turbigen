@@ -1263,7 +1263,7 @@ class Composites:
         P = self.P
 
         # Extract surface distance, normalise to [-1,1] on each j-line
-        z = self.zeta / self.zeta.ptp(axis=0) * 2.0 - 1.0
+        z = self.zeta / np.ptp(self.zeta, axis=0) * 2.0 - 1.0
 
         # Find pressure maxima
         # This must be a loop over j because there can be a different number of
@@ -1456,34 +1456,34 @@ class MeanLine:
         if np.isnan(mdot).any():
             raise Exception("NaN mass flow rate")
 
-        if mdot.ptp() > (mdot[0] * rtol):
+        if np.ptp(mdot) > (mdot[0] * rtol):
             raise Exception(f"Mass is not conserved, mdot={mdot}")
-        assert mdot.ptp() < (mdot[0] * rtol)
+        assert np.ptp(mdot) < (mdot[0] * rtol)
 
         # Check that rothalpy is conserved in blade rows
         I = self.I
         if (self.Omega == 0.0).all():
             Itol = I[0] * rtol
         else:
-            Itol = I.ptp() * rtol
+            Itol = np.ptp(I) * rtol
 
         irow = np.where(np.abs(np.diff(I)) < Itol)[0]
         logger.debug("Checking row rothalpies")
         for iIrow, Irow in enumerate(np.array_split(I, irow)[1:]):
             logger.debug(f"Irow: {Irow}")
-            if Irow.ptp() > Itol:
+            if np.ptp(Irow) > Itol:
                 raise Exception(
                     f"Rothalpy not conserved in row {iIrow}: I = [{Irow[0], Irow[1]}]"
                 )
 
         # Check that stagnation enthalpy is conserved between blade rows
         ho = self.ho
-        hotol = ho.ptp() * rtol
+        hotol = np.ptp(ho) * rtol
         igap = np.where(np.abs(np.diff(I)) < Itol)[0] + 1
         logger.debug("Checking gap enthalpies")
         for igap, hogap in enumerate(np.array_split(ho, igap)[1:-1]):
             logger.debug(f"hogap: {hogap}")
-            if not np.all(hogap.ptp() < hotol):
+            if not np.all(np.ptp(hogap) < hotol):
                 raise Exception(
                     f"Absolute stagnation enthalpy not conserved across gap {igap}: ho"
                     f" = [{hogap[0], hogap[1]}]"

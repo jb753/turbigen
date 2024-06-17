@@ -33,7 +33,7 @@ def test_box():
 
     xrt1 = np.stack((x, r, t))
     xrt2 = xrt1.copy()
-    xrt2[0] += xrt1[0].ptp()
+    xrt2[0] += np.ptp(xrt1[0])
 
     xrt2 = np.flip(xrt2,axis=(3,1))
 

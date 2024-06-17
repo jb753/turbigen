@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, fac_Rle):
+def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
@@ -108,7 +108,7 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle):
 
                 mpb = mp_from_xr(b.xr)
 
-                if mpb.ptp() < b.pitch * 0.01:
+                if np.ptp(mpb) < b.pitch * 0.01:
                     continue
 
                 ax.contourf(mpb, b.t, Cp, lev_Cp)

@@ -158,8 +158,8 @@ def test_shape():
 
         # Check we actually have different properties in the array
         if np.size(S.h) > 1:
-            assert np.isclose(S.h.ptp(), h.ptp())
-            assert S.s.ptp() > 0.0
+            assert np.isclose(np.ptp(S.h), np.ptp(h))
+            assert np.ptp(S.s) > 0.0
 
 
 def test_superheat():

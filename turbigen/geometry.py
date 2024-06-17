@@ -351,7 +351,7 @@ class MeridionalLine:
 
         # m = np.linspace(0.,1.,40*(self.N-1))[1:-1]
 
-        strain = np.trapz(self.kappa(self.mclu) ** 2.0, self.mclu)
+        strain = np.trapezoid(self.kappa(self.mclu) ** 2.0, self.mclu)
         Ltot = np.sum(self.chords)
         return strain * Ltot**2.0
 
@@ -371,7 +371,7 @@ class MeridionalLine:
         # tclu = np.reshape(
         #     [i + util.cluster_cosine(50) for i in range(self.N - 1)], (-1,)
         # )
-        jerk = np.trapz(np.gradient(self.kappa(self.mclu), self.mclu) ** 2.0, self.mclu)
+        jerk = np.trapezoid(np.gradient(self.kappa(self.mclu), self.mclu) ** 2.0, self.mclu)
         Ltot = np.sum(self.chords)
         return jerk * Ltot**2.0
 
@@ -409,10 +409,10 @@ class MeridionalLine:
 
         # Integrate
         delta = (
-            np.trapz(dx_lower, m)
-            + np.trapz(dx_upper, m)
-            + np.trapz(dr_lower, m)
-            + np.trapz(dr_upper, m)
+            np.trapezoid(dx_lower, m)
+            + np.trapezoid(dx_upper, m)
+            + np.trapezoid(dr_lower, m)
+            + np.trapezoid(dr_upper, m)
         )
         Ltot = np.sum(self.chords)
         return delta / Ltot
@@ -686,9 +686,9 @@ class Blade:
 
         # now remap to mlim
         mlim = self._get_mlim(spf)
-        mu_LTE = mlim[0] + mlim.ptp() * mu_LTE
-        ml_LTE = mlim[0] + mlim.ptp() * ml_LTE
-        mcam = mlim[0] + mlim.ptp() * mcam
+        mu_LTE = mlim[0] + np.ptp(mlim) * mu_LTE
+        ml_LTE = mlim[0] + np.ptp(mlim) * ml_LTE
+        mcam = mlim[0] + np.ptp(mlim) * mcam
         chord = util.arc_length(self.streamsurface(0.5, mcam))
 
         # Find coordinates on stream surface of upper/lower/camber points

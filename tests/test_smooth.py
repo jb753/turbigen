@@ -193,7 +193,7 @@ def test_smooth_converge():
     for istep in range(10000):
         Xnew = np.asfortranarray(X.copy()).astype(typ)
         embsolve.smooth(Xnew, P4, L, sf2, sf4, sf2min=0.)
-        derr = X.ptp() - Xnew.ptp()
+        derr = np.ptp(X) - np.ptp(Xnew)
         X = Xnew
 
     assert derr < 1e-5

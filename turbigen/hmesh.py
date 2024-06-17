@@ -288,7 +288,7 @@ def _theta_limits(
     # Must handle axial and radial inlets differently
 
     # If x varies more than r near LE, is axial, split on min x
-    if xrt_u[0][:10].ptp() > xrt_u[1][:10].ptp():
+    if np.ptp(xrt_u[0][:10]) > np.ptp(xrt_u[1][:10]):
         ind_split = 0
         iule = np.argmin(xrt_u[ind_split])
         ille = np.argmin(xrt_l[ind_split])
@@ -329,8 +329,8 @@ def _theta_limits(
     m_u /= m_u[-1]
     m_l /= m_l[-1]
 
-    m_u = mlim[0] + mlim.ptp() * m_u
-    m_l = mlim[0] + mlim.ptp() * m_l
+    m_u = mlim[0] + np.ptp(mlim) * m_u
+    m_l = mlim[0] + np.ptp(mlim) * m_l
 
     # Interpolate the pitchwise limits
     # Values outside unit interval constant at boundary values

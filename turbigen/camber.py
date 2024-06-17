@@ -46,8 +46,8 @@ class Brind:
         y -= y[0]
 
         # Scale to unit meridional distance
-        y /= m.ptp()
-        m /= m.ptp()
+        y /= np.ptp(m)
+        m /= np.ptp(m)
 
         # Fit quadratics to robustly estimate end gradients
         delta = 0.15
