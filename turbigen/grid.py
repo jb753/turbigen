@@ -332,7 +332,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         assert (self.w >= 0.0).all()
 
         # No huge distances
-        Lmax = np.max(self.xrrt.ptp(axis=(1, 2, 3)))
+        Lmax = np.max(np.ptp(self.xrrt, axis=(1, 2, 3)))
         assert (self.w < Lmax).all()
 
     def get_connected(self, max_depth=10):
@@ -1068,7 +1068,7 @@ class Patch:
         for lim in self.ijk_limits:
             lim_now = lim.copy()
 
-            if lim.ptp() == 0:
+            if np.ptp(lim) == 0:
                 if lim[0] == 0:
                     lim_now += offset
                 else:
@@ -1260,7 +1260,7 @@ class MixingPatch(Patch):
         C = [self.get_cut(), other.get_cut()]
 
         # Reference length to set meridional tolerance
-        Lref = np.max((C[0].x.ptp(), C[0].r.ptp()))
+        Lref = np.max((np.ptp(C[0].x), np.ptp(C[0].r)))
 
         # Check these cuts satisfy the conditions
         try:
@@ -1284,7 +1284,7 @@ class MixingPatch(Patch):
             self.match = other
             other.match = self
 
-            if nj.ptp() == 0:
+            if np.ptp(nj) == 0:
                 dt = np.stack(
                     [np.diff(Ci.t[:, :, (0, -1)], axis=-1).squeeze() for Ci in C]
                 )
@@ -1478,8 +1478,8 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                     err = np.abs(xrt_next - xrt[0])
 
                 # Test for coordinate equality
-                dxref = xrt_next[0].ptp()
-                drref = xrt_next[1].ptp()
+                dxref = np.ptp(xrt_next[0])
+                drref = np.ptp(xrt_next[1])
                 Lref = np.max((dxref, drref))
                 err_rel = np.empty_like(err)
                 err_rel[0] = err[0, :] / Lref

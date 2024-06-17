@@ -280,7 +280,7 @@ def mix_out(F):
     rt = F.rt.squeeze()
     t = F.t.squeeze()
 
-    assert F.Omega.ptp() == 0.0
+    assert np.ptp(F.Omega) == 0.0
     Omega = np.float64(F.Omega.mean())
     s = F.s.squeeze()
 

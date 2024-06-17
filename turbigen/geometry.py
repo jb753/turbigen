@@ -686,9 +686,9 @@ class Blade:
 
         # now remap to mlim
         mlim = self._get_mlim(spf)
-        mu_LTE = mlim[0] + mlim.ptp() * mu_LTE
-        ml_LTE = mlim[0] + mlim.ptp() * ml_LTE
-        mcam = mlim[0] + mlim.ptp() * mcam
+        mu_LTE = mlim[0] + np.ptp(mlim) * mu_LTE
+        ml_LTE = mlim[0] + np.ptp(mlim) * ml_LTE
+        mcam = mlim[0] + np.ptp(mlim) * mcam
         chord = util.arc_length(self.streamsurface(0.5, mcam))
 
         # Find coordinates on stream surface of upper/lower/camber points

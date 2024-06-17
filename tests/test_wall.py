@@ -91,7 +91,7 @@ def test_stream():
     xrt1, Nb = make_sector()
 
     xrt2 = xrt1.copy()
-    xrt2[0] += xrt1[0].ptp()
+    xrt2[0] += np.ptp(xrt1[0])
 
     patches1 = [
         turbigen.grid.InletPatch(i=0),

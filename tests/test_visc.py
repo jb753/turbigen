@@ -682,8 +682,8 @@ def test_poiseuille():
 
     b = g[-1]
     C = b[iplot, :, b.nk//2]
-    h = C.r.ptp()
-    rnorm = (C.r-C.r.min())/C.r.ptp()
+    h = np.ptp(C.r)
+    rnorm = (C.r-C.r.min())/np.ptp(C.r)
     K = dPdx[iplot]/2./mu*h*h
     soln = -K * rnorm*(1.-rnorm)
     err = (C.Vx-soln)/soln.max()

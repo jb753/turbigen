@@ -127,7 +127,7 @@ def inverse(ml):
     """
     psi = -(ml.ho[-1] - ml.ho[0]) / (ml.U[2] ** 2.0)
     Lam = (ml.h[3] - ml.h[2]) / (ml.h[3] - ml.h[0])
-    loss_split = (ml.s[1] - ml.s[0]) / ml.s.ptp()
+    loss_split = (ml.s[1] - ml.s[0]) / np.ptp(ml.s)
     out = {
         "So1": ml.empty().set_P_h(ml.Po[0], ml.ho[0]),
         "htr": ml.htr[0],

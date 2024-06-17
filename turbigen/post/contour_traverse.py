@@ -175,7 +175,7 @@ def post(
                 xlim = np.array([c2.min(), c2.max()])
 
                 # Hub and casing labels
-                dr = xlim.ptp() * 0.07
+                dr = np.ptp(xlim) * 0.07
                 ax.text(rtlim.mean(), xlim[0] - dr, "Hub", ha="center", va="center")
                 ax.text(rtlim.mean(), xlim[1] + dr, "Casing", ha="center", va="center")
 

@@ -195,7 +195,7 @@ settings = {
 def plot_nozzle(g, F):
     """Make debugging plots."""
 
-    L = F.x.ptp()
+    L = np.ptp(F.x)
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):

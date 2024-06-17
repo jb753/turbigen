@@ -130,12 +130,12 @@ class TS3Config(BaseSolver):
         bv["nblade"] = block.Nb
         bv["fblade"] = float(block.Nb)
 
-        assert block.rpm.ptp() == 0.0
+        assert np.ptp(block.rpm) == 0.0
         rpm = block.rpm.mean()
         if self.convert_sliding and rpm == 0.0:
             for patch in block.patches:
                 if isinstance(patch, turbigen.grid.MixingPatch):
-                    assert patch.match.block.rpm.ptp() == 0.0
+                    assert np.ptp(patch.match.block.rpm) == 0.0
                     rpm = patch.match.block.rpm.mean()
                     break
         bv["rpm"] = rpm
@@ -143,7 +143,7 @@ class TS3Config(BaseSolver):
         if self.Lref_xllim == "pitch":
             bv["xllim"] = 2.0 * np.pi * rref / float(block.Nb) * self.xllim
         elif self.Lref_xllim == "span":
-            span = block.r.ptp()
+            span = np.ptp(block.r)
             bv["xllim"] = span * self.xllim
         elif self.Lref_xllim == "fix":
             bv["xllim"] = self.xllim
