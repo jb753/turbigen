@@ -468,6 +468,8 @@ def _get_patch_kind(patch):
         return 8
     elif isinstance(patch, turbigen.grid.NonMatchPatch):
         return 15
+    elif isinstance(patch, turbigen.grid.CoolingPatch):
+        return 6
     else:
         raise Exception(f"No TS3 patch kind defined for {patch}")
 
@@ -586,6 +588,18 @@ def _patch_variables(patch, ts3_config):
             pv["throttle_k0"], pv["throttle_k2"], pv["throttle_k1"] = patch.Kpid
         if patch.force:
             pv.pop("pout")
+    elif isinstance(patch, turbigen.grid.CoolingPatch):
+        pv.update(
+            {
+                "cool_mass": patch.cool_mass,
+                "cool_pstag": patch.cool_pstag,
+                "cool_tstag": patch.cool_tstag,
+                "cool_type": patch.cool_type,
+                "cool_angle_def": patch.cool_angle_def,
+                "cool_sangle": patch.cool_sangle,
+                "cool_xangle": patch.cool_xangle,
+            }
+        )
 
     return pv
 

@@ -738,7 +738,7 @@ def run_single(conf, gguess=None, plot=False):
         install_module = turbigen.util.load_install(install_type)
 
         logger.debug("Successfully imported.")
-        gi = install_module.forward(g, mac, **conf.install)
+        gi = install_module.forward(g, mac, ml, **conf.install)
 
         if check_coords:
             gi.check_coordinates()

@@ -1327,7 +1327,13 @@ class ProbePatch(Patch):
 
 
 class CoolingPatch(Patch):
-    pass
+    cool_mass = 0.0
+    cool_pstag = 0.0
+    cool_tstag = 0.0
+    cool_sangle = 0.0
+    cool_xangle = 0.0
+    cool_angle_def = 0.0
+    cool_type = 0
 
 
 class NonMatchPatch(Patch):
