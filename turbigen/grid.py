@@ -87,6 +87,19 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         block.label = label
         return block
 
+    def transpose(self, order):
+
+        # Rearrange the data
+        order1 = [
+            0,
+        ] + [o + 1 for o in order]
+        self._data = self._data.transpose(order1)
+        self._dependent_property_cache.clear()
+
+        # Rearrange the patches
+        for patch in self.patches:
+            patch.ijk_limits = patch.ijk_limits[order, :]
+
     @property
     def w(self):
         return self._get_data_by_key("w")
@@ -1269,7 +1282,8 @@ class MixingPatch(Patch):
             for Ci in C:
                 assert (np.ptp(Ci.xr, axis=-1) < Lref * rtol).all()
         except AssertionError:
-            raise Exception(f"Invalid mixing patch indices {self} {other}")
+            # raise Exception(f"Invalid mixing patch indices {self} {other}")
+            return False
 
         # Get coordinates of hub and casing on each patch
         # xr has dimensions: [which patch, x or r, hub/casing]
