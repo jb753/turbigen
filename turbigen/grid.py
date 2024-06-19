@@ -77,15 +77,28 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         util.write_yaml_compressed(d, fname)
 
     @classmethod
-    def from_coordinates(cls, xrt, Nb, patches=()):
+    def from_coordinates(cls, xrt, Nb, patches=(), label=None):
         # Make empty object of correct shape
         block = cls(shape=xrt.shape[1:])
         block.xrt = xrt
         block._metadata = {"Nb": Nb, "patches": patches}
         for p in patches:
             p.block = block
-        block.label = None
+        block.label = label
         return block
+
+    def transpose(self, order):
+
+        # Rearrange the data
+        order1 = [
+            0,
+        ] + [o + 1 for o in order]
+        self._data = self._data.transpose(order1)
+        self._dependent_property_cache.clear()
+
+        # Rearrange the patches
+        for patch in self.patches:
+            patch.ijk_limits = patch.ijk_limits[order, :]
 
     @property
     def w(self):
@@ -355,7 +368,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         assert (self.w >= 0.0).all()
 
         # No huge distances
-        Lmax = np.max(self.xrrt.ptp(axis=(1, 2, 3)))
+        Lmax = np.max(np.ptp(self.xrrt, axis=(1, 2, 3)))
         assert (self.w < Lmax).all()
 
     def get_connected(self, max_depth=10):
@@ -1091,7 +1104,7 @@ class Patch:
         for lim in self.ijk_limits:
             lim_now = lim.copy()
 
-            if lim.ptp() == 0:
+            if np.ptp(lim) == 0:
                 if lim[0] == 0:
                     lim_now += offset
                 else:
@@ -1283,7 +1296,7 @@ class MixingPatch(Patch):
         C = [self.get_cut(), other.get_cut()]
 
         # Reference length to set meridional tolerance
-        Lref = np.max((C[0].x.ptp(), C[0].r.ptp()))
+        Lref = np.max((np.ptp(C[0].x), np.ptp(C[0].r)))
 
         # Check these cuts satisfy the conditions
         try:
@@ -1292,7 +1305,8 @@ class MixingPatch(Patch):
             for Ci in C:
                 assert (np.ptp(Ci.xr, axis=-1) < Lref * rtol).all()
         except AssertionError:
-            raise Exception(f"Invalid mixing patch indices {self} {other}")
+            # raise Exception(f"Invalid mixing patch indices {self} {other}")
+            return False
 
         # Get coordinates of hub and casing on each patch
         # xr has dimensions: [which patch, x or r, hub/casing]
@@ -1307,7 +1321,7 @@ class MixingPatch(Patch):
             self.match = other
             other.match = self
 
-            if nj.ptp() == 0:
+            if np.ptp(nj) == 0:
                 dt = np.stack(
                     [np.diff(Ci.t[:, :, (0, -1)], axis=-1).squeeze() for Ci in C]
                 )
@@ -1347,6 +1361,16 @@ class RotatingPatch(Patch):
 
 class ProbePatch(Patch):
     pass
+
+
+class CoolingPatch(Patch):
+    cool_mass = 0.0
+    cool_pstag = 0.0
+    cool_tstag = 0.0
+    cool_sangle = 0.0
+    cool_xangle = 0.0
+    cool_angle_def = 0.0
+    cool_type = 0
 
 
 class NonMatchPatch(Patch):
@@ -1395,6 +1419,7 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
+    CoolingPatch,
 ]
 NOT_SLIPWALL_PATCHES = [
     InletPatch,
@@ -1404,6 +1429,7 @@ NOT_SLIPWALL_PATCHES = [
     PorousPatch,
     ProbePatch,
     InviscidPatch,
+    CoolingPatch,
 ]
 
 
@@ -1501,8 +1527,8 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                     err = np.abs(xrt_next - xrt[0])
 
                 # Test for coordinate equality
-                dxref = xrt_next[0].ptp()
-                drref = xrt_next[1].ptp()
+                dxref = np.ptp(xrt_next[0])
+                drref = np.ptp(xrt_next[1])
                 Lref = np.max((dxref, drref))
                 err_rel = np.empty_like(err)
                 err_rel[0] = err[0, :] / Lref

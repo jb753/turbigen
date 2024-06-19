@@ -610,7 +610,7 @@ def test_radial_inflow():
     x, rt = np.meshgrid(xv, rtv, indexing="ij")
     r = np.ones_like(x) * r_ref
     t = rt / r
-    xnorm = (x - x.min()) / x.ptp()
+    xnorm = (x - x.min()) / np.ptp(x)
 
     # Define a base state that we want to conserve
     rgas = 287.0

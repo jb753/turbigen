@@ -130,12 +130,12 @@ class TS3Config(BaseSolver):
         bv["nblade"] = block.Nb
         bv["fblade"] = float(block.Nb)
 
-        assert block.rpm.ptp() == 0.0
+        assert np.ptp(block.rpm) == 0.0
         rpm = block.rpm.mean()
         if self.convert_sliding and rpm == 0.0:
             for patch in block.patches:
                 if isinstance(patch, turbigen.grid.MixingPatch):
-                    assert patch.match.block.rpm.ptp() == 0.0
+                    assert np.ptp(patch.match.block.rpm) == 0.0
                     rpm = patch.match.block.rpm.mean()
                     break
         bv["rpm"] = rpm
@@ -143,7 +143,7 @@ class TS3Config(BaseSolver):
         if self.Lref_xllim == "pitch":
             bv["xllim"] = 2.0 * np.pi * rref / float(block.Nb) * self.xllim
         elif self.Lref_xllim == "span":
-            span = block.r.ptp()
+            span = np.ptp(block.r)
             bv["xllim"] = span * self.xllim
         elif self.Lref_xllim == "fix":
             bv["xllim"] = self.xllim
@@ -468,6 +468,8 @@ def _get_patch_kind(patch):
         return 8
     elif isinstance(patch, turbigen.grid.NonMatchPatch):
         return 15
+    elif isinstance(patch, turbigen.grid.CoolingPatch):
+        return 6
     else:
         raise Exception(f"No TS3 patch kind defined for {patch}")
 
@@ -586,6 +588,18 @@ def _patch_variables(patch, ts3_config):
             pv["throttle_k0"], pv["throttle_k2"], pv["throttle_k1"] = patch.Kpid
         if patch.force:
             pv.pop("pout")
+    elif isinstance(patch, turbigen.grid.CoolingPatch):
+        pv.update(
+            {
+                "cool_mass": patch.cool_mass,
+                "cool_pstag": patch.cool_pstag,
+                "cool_tstag": patch.cool_tstag,
+                "cool_type": patch.cool_type,
+                "cool_angle_def": patch.cool_angle_def,
+                "cool_sangle": patch.cool_sangle,
+                "cool_xangle": patch.cool_xangle,
+            }
+        )
 
     return pv
 

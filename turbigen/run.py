@@ -290,7 +290,7 @@ def run_single(conf, gguess=None, plot=False):
                         def eval_spf_err(spfnow, xrfit):
 
                             xrref = bld_now.streamsurface(spfnow, m)
-                            if xrfit[0].ptp() > xrfit[1].ptp():
+                            if np.ptp(xrfit[0]) > np.ptp(xrfit[1]):
                                 xrfit = xrfit[:, np.argsort(xrfit[0])]
                                 xrint = np.stack(
                                     (xrref[0], np.interp(xrref[0], *xrfit))
@@ -694,7 +694,7 @@ def run_single(conf, gguess=None, plot=False):
 
     if throttle_pid:
         restart_fac = 0.5 if gguess else 1.0
-        norm_fac = ml.P.ptp() / ml.mdot[-1]
+        norm_fac = np.ptp(ml.P) / ml.mdot[-1]
         g.apply_throttle(
             ml.mdot[-1] * (1.0 + mass_adjust),
             np.array(throttle_pid) * norm_fac * restart_fac,
@@ -738,7 +738,7 @@ def run_single(conf, gguess=None, plot=False):
         install_module = turbigen.util.load_install(install_type)
 
         logger.debug("Successfully imported.")
-        gi = install_module.forward(g, mac, **conf.install)
+        gi = install_module.forward(g, mac, ml, **conf.install)
 
         if check_coords:
             gi.check_coordinates()

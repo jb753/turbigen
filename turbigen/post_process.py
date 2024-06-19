@@ -38,7 +38,7 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
 
         # Take surface distance and normalise to (-1, 1)
         zeta = surf.zeta[:, j]
-        zeta /= 0.5 * zeta.ptp()
+        zeta /= 0.5 * np.ptp(zeta)
         zeta -= 1.0
 
         # Find a zero crossing near LE

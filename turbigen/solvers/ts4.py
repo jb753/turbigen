@@ -99,6 +99,8 @@ class TS4Config(BaseSolver):
     precon_fac_ramp_en = 1.0
     precon_sigma_pgr = 3.0
 
+    halo_implementation = 1
+
     @property
     def config_path(self):
         return os.path.join(self.workdir, "config.ofp")

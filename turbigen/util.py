@@ -52,7 +52,7 @@ def medial_axis(xy, plot=False):
     # https://stackoverflow.com/a/69485899
     hull = ConvexHull(xy.T)
     A, b = hull.equations[:, :-1], hull.equations[:, -1:]
-    tol = xy[0].ptp() * 1e-3
+    tol = np.ptp(xy[0]) * 1e-3
     xy_med = vor.vertices
 
     xy_med = xy_med[np.all(np.matmul(xy_med, A.T) + b.T < -tol, axis=1)].T
@@ -655,7 +655,7 @@ def resample(x, f, mult=None):
     """Multiply number of points in x by f, keeping relative spacings."""
     if np.isclose(f, 1.0):
         return x
-    xnorm = (x - x[0]) / x.ptp()
+    xnorm = (x - x[0]) / np.ptp(x)
     npts = len(x)
     npts_new = np.round((npts - 1) * f).astype(int) + 1
     if mult:
@@ -663,7 +663,7 @@ def resample(x, f, mult=None):
     inorm = np.linspace(0.0, 1.0, npts)
     inorm_new = np.linspace(0.0, 1.0, npts_new)
     xnorm_new = np.interp(inorm_new, inorm, xnorm)
-    xnew = xnorm_new * x.ptp() + x[0]
+    xnew = xnorm_new * np.ptp(x) + x[0]
 
     assert np.allclose(
         xnew[
@@ -1619,6 +1619,7 @@ def read_sections(fname):
 
     return xrrt
 
+
 def offset_curve(xr, d, flip=False):
     """Offset meridional curve by a perpendicular distance.
 
@@ -1643,49 +1644,57 @@ def offset_curve(xr, d, flip=False):
     perp_edge /= np.linalg.norm(perp_edge, axis=0, keepdims=True)
 
     # Put the perpendicular vectors back to nodes
-    perp_node = np.concatenate((perp_edge[:,(0,)], 0.5*(perp_edge[:,:-1]+perp_edge[:,1:]), perp_edge[:,(-1,)]), axis=1)
+    perp_node = np.concatenate(
+        (
+            perp_edge[:, (0,)],
+            0.5 * (perp_edge[:, :-1] + perp_edge[:, 1:]),
+            perp_edge[:, (-1,)],
+        ),
+        axis=1,
+    )
 
     # Arrange vectors so they broadcast
-    d = np.array(d).reshape(1,1,-1)
-    perp_node = perp_node.reshape(2,-1,1)
-    xr = xr.reshape(2,-1,1)
+    d = np.array(d).reshape(1, 1, -1)
+    perp_node = perp_node.reshape(2, -1, 1)
+    xr = xr.reshape(2, -1, 1)
 
     # Choose direction
     if flip:
-        d *= -1.
+        d *= -1.0
 
     # Add on the distance
     xr_offset = xr + perp_node * d
 
     return xr_offset
 
+
 def interpolate_curve(xr, sq, axis):
     """Interpolate along a curve at given length fractions."""
 
     s = cum_arc_length(xr, axis=axis)
-    s /= s[(-1,),:]
+    s /= s[(-1,), :]
     xrq = np.empty((2, len(sq), xr.shape[2]))
     for k in range(xr.shape[2]):
-        xrq[:,:,k] = scipy.interpolate.interp1d(s[:,k], xr[:,:,k], axis=axis)(sq)
+        xrq[:, :, k] = scipy.interpolate.interp1d(s[:, k], xr[:, :, k], axis=axis)(sq)
 
     return xrq
 
 
 def angle_curve(xr):
     """Angle of slope of a curve."""
-    dxr = np.diff(xr,1)
-    tanchi = dxr[1]/dxr[0]
-    return np.degrees(np.arctan2(dxr[1],dxr[0]))
+    dxr = np.diff(xr, 1)
+    return np.degrees(np.arctan2(dxr[1], dxr[0]))
+
 
 def interpolate_block(xr_hub, xr_cas, spf):
     """Make a block given points on hub/casing and span fractions."""
 
     # Ensure the arrays broadcast
-    spf = spf.reshape(1,1,-1)
-    xr_hub = xr_hub.reshape(2,-1,1)
-    xr_cas = xr_cas.reshape(2,-1,1)
+    spf = spf.reshape(1, 1, -1)
+    xr_hub = xr_hub.reshape(2, -1, 1)
+    xr_cas = xr_cas.reshape(2, -1, 1)
 
-    xr = spf*(xr_cas-xr_hub)+xr_hub
+    xr = spf * (xr_cas - xr_hub) + xr_hub
 
     return xr
 
@@ -1695,6 +1704,6 @@ def extrude_block(xr, t):
     nk = t.shape[0]
     xr = xr.reshape(2, ni, nj, 1)
     t = t.reshape(1, 1, 1, nk)
-    xr = np.tile(xr,(1,1,1,nk))
-    t = np.tile(t, (1,ni, nj, 1))
+    xr = np.tile(xr, (1, 1, 1, nk))
+    t = np.tile(t, (1, ni, nj, 1))
     return np.concatenate((xr, t), axis=0)

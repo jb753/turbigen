@@ -283,7 +283,7 @@ def inverse(ml):
     Deta_s = ml.T[-1] / (ml.ho[-1] - ml.ho[0])
     Deta_h = 1.0 / (ml.ho[-1] - ml.ho[0])
     s_nomix = ml.s - Dsmix
-    Dho = ml.ho.ptp()
+    Dho = np.ptp(ml.ho)
     try:
         Asurf = ml.Asurf
     except Exception:
