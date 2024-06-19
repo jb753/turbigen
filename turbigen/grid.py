@@ -147,6 +147,29 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
+    def trim(self, i=None, j=None, k=None):
+        """Extract a subset of this block in-place, correct patch indices."""
+
+        if i:
+            self._data = self._data[:,i[0]:i[1],:,:]
+            for p in self.patches:
+                isten = p.ijk_lim[0,:]
+                # new i = old i - itrim_start
+                isten[isten>0] = isten[isten>0] - i[0]
+                # new ni = itrim_end - itrim_start
+                # if a patch index exceeds new ni-1 then
+                # it was previously located on old ni-1
+                # so move to new ni-1
+                ni_new = i[1]-i[0]
+                isten[isten>(ni_new-1)] = ni_new - 1
+
+
+        if j:
+            raise NotImplementedError
+        if k:
+            raise NotImplementedError
+
+
     def get_wall(self, ignore_slip=False):
 
         ni, nj, nk = self.shape
