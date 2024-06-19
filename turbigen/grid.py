@@ -166,7 +166,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         if i:
             self._data = self._data[:,i[0]:i[1],:,:]
             for p in self.patches:
-                isten = p.ijk_lim[0,:]
+                isten = p.ijk_limits[0,:]
                 # new i = old i - itrim_start
                 isten[isten>0] = isten[isten>0] - i[0]
                 # new ni = itrim_end - itrim_start

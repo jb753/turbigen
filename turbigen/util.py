@@ -1668,16 +1668,22 @@ def offset_curve(xr, d, flip=False):
     return xr_offset
 
 
-def interpolate_curve(xr, sq, axis):
+def interpolate_curve_2d(xr, sq, axis):
     """Interpolate along a curve at given length fractions."""
-
     s = cum_arc_length(xr, axis=axis)
     s /= s[(-1,), :]
     xrq = np.empty((2, len(sq), xr.shape[2]))
     for k in range(xr.shape[2]):
         xrq[:, :, k] = scipy.interpolate.interp1d(s[:, k], xr[:, :, k], axis=axis)(sq)
-
     return xrq
+
+def interpolate_curve_1d(xr, sq):
+    """Interpolate along a curve at given length fractions."""
+    s = cum_arc_length(xr, axis=1)
+    s /= s[-1]
+    xrq = scipy.interpolate.interp1d(s, xr, axis=1)(sq)
+    return xrq
+
 
 
 def angle_curve(xr):
