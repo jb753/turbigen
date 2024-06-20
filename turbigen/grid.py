@@ -163,25 +163,28 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def trim(self, i=None, j=None, k=None):
         """Extract a subset of this block in-place, correct patch indices."""
 
+        logger.debug(f"Trimming block {self}")
         if i:
-            self._data = self._data[:,i[0]:i[1],:,:]
+            ni_old = self.shape[0]
+            logger.debug(f"i limits={i}")
+            if i[1] < 0:
+                i = (i[0], ni_old + i[1])
+            logger.debug(f"corrected i limits={i}")
+            self._data = self._data[:, i[0] : (i[1] + 1), :, :]
+            ni_new = self.shape[0]
+            logger.debug(f"old ni={ni_old}")
+            logger.debug(f"new ni={ni_new}")
             for p in self.patches:
-                isten = p.ijk_limits[0,:]
-                # new i = old i - itrim_start
-                isten[isten>0] = isten[isten>0] - i[0]
-                # new ni = itrim_end - itrim_start
-                # if a patch index exceeds new ni-1 then
-                # it was previously located on old ni-1
-                # so move to new ni-1
-                ni_new = i[1]-i[0]
-                isten[isten>(ni_new-1)] = ni_new - 1
-
+                isten = p.ijk_limits[0, :]
+                isten_old = isten.copy()
+                isten[isten == ni_old - 1] = -1
+                isten[isten > 0] = isten[isten > 0] - i[0]
+                logger.debug(isten_old, "->", isten)
 
         if j:
             raise NotImplementedError
         if k:
             raise NotImplementedError
-
 
     def get_wall(self, ignore_slip=False):
 
@@ -583,10 +586,16 @@ class Grid:
                 raise Exception(f"Wrong number of {type(patches[0])} to match")
             for P1 in patches:
                 for P2 in patches:
-                    if P1 is P2:  # or P1.match or P2.match:
-                        continue
-                    elif P1.check_match(P2):
-                        break
+                    try:
+                        if P1 is P2:  # or p1.match or p2.match:
+                            continue
+                        elif P1.check_match(P2):
+                            break
+                    except Exception as e:
+                        logger.info("Error checking match:")
+                        logger.info(P1)
+                        logger.info(P2)
+                        raise e
             for P in patches:
                 if P.match is None:
                     raise Exception(

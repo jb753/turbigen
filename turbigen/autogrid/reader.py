@@ -152,6 +152,12 @@ def read(g_file, bcs_file, Lref=1.0):
 
     g = turbigen.grid.Grid(blocks)
 
+    # Verify that the patch indices are valid
+    for p in g.periodic_patches:
+        ijk = p.ijk_limits
+        nijk = np.reshape(p.block.shape, (3, 1))
+        assert (ijk < nijk).all()
+
     g.match_patches()
 
     return g

@@ -1677,13 +1677,13 @@ def interpolate_curve_2d(xr, sq, axis):
         xrq[:, :, k] = scipy.interpolate.interp1d(s[:, k], xr[:, :, k], axis=axis)(sq)
     return xrq
 
+
 def interpolate_curve_1d(xr, sq):
     """Interpolate along a curve at given length fractions."""
     s = cum_arc_length(xr, axis=1)
     s /= s[-1]
     xrq = scipy.interpolate.interp1d(s, xr, axis=1)(sq)
     return xrq
-
 
 
 def angle_curve(xr):
@@ -1712,4 +1712,15 @@ def extrude_block(xr, t):
     t = t.reshape(1, 1, 1, nk)
     xr = np.tile(xr, (1, 1, 1, nk))
     t = np.tile(t, (1, ni, nj, 1))
+    return np.concatenate((xr, t), axis=0)
+
+
+def extrude_block_2d(xr, t):
+    _, ni, nj = xr.shape
+    nj2, nk = t.shape
+    assert nj == nj2
+    xr = xr.reshape(2, ni, nj, 1)
+    t = t.reshape(1, 1, nj, nk)
+    xr = np.tile(xr, (1, 1, 1, nk))
+    t = np.tile(t, (1, ni, 1, 1))
     return np.concatenate((xr, t), axis=0)
