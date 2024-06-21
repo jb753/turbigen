@@ -85,7 +85,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for p in patches:
             p.block = block
             # Check the limit indices are valid
-            nijk = block.shape.reshape(3, 1)
+            nijk = np.reshape(block.shape,(3, 1))
             if not (p.ijk_limits < nijk).all():
                 raise Exception(
                     f"Patch indices {p.ijk_limits} exceed block size {nijk}"
