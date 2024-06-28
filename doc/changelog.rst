@@ -1,6 +1,19 @@
 Changelog
 =========
 
+v1.9.0
+^^^^^^
+
+* Add post-processing functions for unstructured cuts at constant span fraction
+* Put rotational speeds in AutoGrid geomTurbo file when OH meshing
+* Support TS3 cooling patches
+* Method to allow trimming of grid blocks in pre-processing
+* Compatability fixes for numpy 2 and pin dependency versions
+* Add TS4 halo_implementation setting
+* Fix bug with zero wall distance on non-matching patches
+* Check patch indices are consistent with block size before writing TS3 input
+
+
 v1.8.0
 ^^^^^^
 
