@@ -333,6 +333,10 @@ class Kinematics:
         return np.stack((self.x, self.y, self.z))
 
     @dependent_property
+    def yz(self):
+        return np.stack((self.y, self.z))
+
+    @dependent_property
     def y(self):
         return self.r * np.sin(self.t)
 
