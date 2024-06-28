@@ -841,7 +841,6 @@ def _write_hdf5(grid, ts3_config):
         blk = f[f"block{ib}"]
         nptch = blk.attrs["np"]
         logger.debug(f"bid={ib}, np={nptch}, len(patches)={len(grid[ib].patches)}")
-        # assert nptch == len(grid[ib].patches)
         for ip in range(nptch):
             pch = blk[f"patch{ip}"]
             bid = pch.attrs["bid"]
@@ -854,6 +853,23 @@ def _write_hdf5(grid, ts3_config):
                 f"bid={bid}, pid={pid}, "
                 f'nxbid={nxbid}, nxpid={nxpid}, nxnp={nxblk.attrs["np"]}'
             )
+            ni = blk.attrs["ni"]
+            nj = blk.attrs["nj"]
+            nk = blk.attrs["nk"]
+            ist = pch.attrs["ist"]
+            jst = pch.attrs["jst"]
+            kst = pch.attrs["kst"]
+            ien = pch.attrs["ien"]
+            jen = pch.attrs["jen"]
+            ken = pch.attrs["ken"]
+
+            assert ist < ni
+            assert ien < (ni + 1)
+            assert jst < nj
+            assert jen < (nj + 1)
+            assert kst < nk
+            assert ken < (nk + 1)
+
             assert nxbid < nb
             assert nxpid < nxblk.attrs["np"]
 

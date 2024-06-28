@@ -84,6 +84,13 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         block._metadata = {"Nb": Nb, "patches": patches}
         for p in patches:
             p.block = block
+            # Check the limit indices are valid
+            nijk = np.reshape(block.shape,(3, 1))
+            if not (p.ijk_limits < nijk).all():
+                raise Exception(
+                    f"Patch indices {p.ijk_limits} exceed block size {nijk}"
+                )
+
         block.label = label
         return block
 
@@ -175,11 +182,37 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             logger.debug(f"old ni={ni_old}")
             logger.debug(f"new ni={ni_new}")
             for p in self.patches:
+                logger.debug(f"Fixing patch {p}")
                 isten = p.ijk_limits[0, :]
                 isten_old = isten.copy()
                 isten[isten == ni_old - 1] = -1
                 isten[isten > 0] = isten[isten > 0] - i[0]
-                logger.debug(isten_old, "->", isten)
+                logger.debug(f"{isten_old}->{isten}")
+
+            # Now adjust the patches that reference this block
+            logger.debug("Now updating the matching patches")
+            for p2 in self.grid.periodic_patches:
+                if p2.match is None:
+                    raise Exception("Must match patches before trimming the block")
+                if (p2.block is self) or (p2.match.block is not self):
+                    continue
+                logger.debug(f"{p2}")
+                if p2.idir == 0:
+                    logger.debug("next patch i matches trim block i")
+                    isten = p2.ijk_limits[0, :]
+                    isten[isten == ni_old - 1] = -1
+                    isten[isten > 0] = isten[isten > 0] - i[0]
+                    logger.debug(f"{isten_old}->{isten}")
+                elif p2.jdir == 0:
+                    logger.debug("next patch j matches trim block i")
+                elif p2.kdir == 0:
+                    logger.debug("next patch k matches trim block i")
+                elif p2.idir == 3:
+                    logger.debug("next patch i matches trim block -i")
+                elif p2.jdir == 3:
+                    logger.debug("next patch j matches trim block -i")
+                elif p2.kdir == 3:
+                    logger.debug("next patch k matches trim block -i")
 
         if j:
             raise NotImplementedError
@@ -1429,6 +1462,7 @@ NOT_WALL_PATCHES = [
     PorousPatch,
     ProbePatch,
     CoolingPatch,
+    NonMatchPatch,
 ]
 NOT_SLIPWALL_PATCHES = [
     InletPatch,
@@ -1439,6 +1473,7 @@ NOT_SLIPWALL_PATCHES = [
     ProbePatch,
     InviscidPatch,
     CoolingPatch,
+    NonMatchPatch,
 ]
 
 
