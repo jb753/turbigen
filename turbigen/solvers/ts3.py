@@ -589,6 +589,7 @@ def _patch_variables(patch, ts3_config):
         if patch.force:
             pv.pop("pout")
     elif isinstance(patch, turbigen.grid.CoolingPatch):
+        patch.check()
         pv.update(
             {
                 "cool_mass": patch.cool_mass,
@@ -598,6 +599,8 @@ def _patch_variables(patch, ts3_config):
                 "cool_angle_def": patch.cool_angle_def,
                 "cool_sangle": patch.cool_sangle,
                 "cool_xangle": patch.cool_xangle,
+                "cool_frac_area": 1.0,
+                "cool_mach": patch.cool_mach,
             }
         )
 

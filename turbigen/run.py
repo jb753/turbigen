@@ -746,7 +746,7 @@ def run_single(conf, gguess=None, plot=False):
         if gguess:
             gi.apply_guess_3d(gguess)
             if throttle_pid:
-                gi.update_outlet()
+                gi.update_outlet(rf=0.5)
 
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')
@@ -846,12 +846,13 @@ def run_single(conf, gguess=None, plot=False):
 
     pdict = {"Min": mins}
 
+    out_vars = meanline_design.inverse(ml_out)
+    if conf.install:
+        out_vars.update(install_inverse)
+
     mean_line_converged = True
     if mean_opt_conf := conf.iterate.get("mean_line"):
         rf_mean = mean_opt_conf.get("relaxation_factor", 0.5)
-        out_vars = meanline_design.inverse(ml_out)
-        if conf.install:
-            out_vars.update(install_inverse)
 
         match_vars = mean_opt_conf.get("match_tolerance", {})
         for v in match_vars:
@@ -970,7 +971,7 @@ def run_single(conf, gguess=None, plot=False):
 
     if opt_converged:
 
-        out_vars = meanline_design.inverse(ml_out)
+        # out_vars = meanline_design.inverse(ml_out)
         out_vars.pop("So1")
         var_fields = ("Design variable", "Nom   ", "CFD   ")
         log_line(None, var_fields)

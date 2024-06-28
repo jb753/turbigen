@@ -85,7 +85,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for p in patches:
             p.block = block
             # Check the limit indices are valid
-            nijk = np.reshape(block.shape,(3, 1))
+            nijk = np.reshape(block.shape, (3, 1))
             if not (p.ijk_limits < nijk).all():
                 raise Exception(
                     f"Patch indices {p.ijk_limits} exceed block size {nijk}"
@@ -449,6 +449,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def periodic_patches(self):
         return self.find_patches(PeriodicPatch)
 
+    @property
+    def cooling_patches(self):
+        return self.find_patches(CoolingPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -465,6 +469,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             # When shapes match exactly, just take a copy
             self.Vxrt = other.Vxrt.copy()
             self.set_rho_u(other.rho, other.u)
+            self.mu_turb = other.mu_turb.copy()
         else:
             # Otherwise, interpolate by index
 
@@ -478,6 +483,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             self.Vx = interpn(ijkv_other, other.Vx, ijk)
             self.Vr = interpn(ijkv_other, other.Vr, ijk)
             self.Vt = interpn(ijkv_other, other.Vt, ijk)
+            self.mu_turb = interpn(ijkv_other, other.mu_turb, ijk)
             rho = interpn(ijkv_other, other.rho, ijk)
             u = interpn(ijkv_other, other.u, ijk)
             self.set_rho_u(rho, u)
@@ -597,6 +603,10 @@ class Grid:
     @property
     def periodic_patches(self):
         return self.find_patches(PeriodicPatch)
+
+    @property
+    def cooling_patches(self):
+        return self.find_patches(CoolingPatch)
 
     @property
     def nonmatch_patches(self):
@@ -748,10 +758,12 @@ class Grid:
             patch.mdot_target = mdot
             patch.Kpid = Kpid
 
-    def update_outlet(self):
+    def update_outlet(self, rf=1.0):
         for patch in self.outlet_patches:
             if patch.mdot_target:
-                patch.Pout = patch.get_cut().P.mean()
+                P_old = patch.Pout + 0.0
+                P_new = patch.get_cut().P.mean()
+                patch.Pout = rf * P_new + (1.0 - rf) * P_old
 
     def check_outlet_choke(self):
         for patch in self.outlet_patches:
@@ -1413,6 +1425,34 @@ class CoolingPatch(Patch):
     cool_xangle = 0.0
     cool_angle_def = 0.0
     cool_type = 0
+    cool_mach = np.nan
+
+    def check(self):
+
+        # Complain about negative values
+        if self.cool_mass <= 0.0:
+            raise Exception(f"{self} has negative cool_mass={self.cool_mass}")
+        if self.cool_pstag <= 0.0:
+            raise Exception(f"{self} has negative cool_pstag={self.cool_pstag}")
+        if self.cool_tstag <= 0.0:
+            raise Exception(f"{self} has negative cool_tstag={self.cool_tstag}")
+        if self.cool_mach <= 0.0:
+            raise Exception(f"{self} has negative cool_mach={self.cool_mach}")
+
+        # Complain about large values
+        val_max = 1e8
+        if self.cool_mass > val_max:
+            raise Exception(f"{self} has suspiciously large cool_mass={self.cool_mass}")
+        if self.cool_pstag > val_max:
+            raise Exception(
+                f"{self} has suspiciously large cool_pstag={self.cool_pstag}"
+            )
+        if self.cool_tstag > val_max:
+            raise Exception(
+                f"{self} has suspiciously large cool_tstag={self.cool_tstag}"
+            )
+        if self.cool_mach > val_max:
+            raise Exception(f"{self} has suspiciously large cool_mach={self.cool_mach}")
 
 
 class NonMatchPatch(Patch):
