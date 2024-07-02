@@ -758,7 +758,7 @@ class Grid:
             patch.mdot_target = mdot
             patch.Kpid = Kpid
 
-    def update_outlet(self, rf=1.0):
+    def update_outlet(self, rf=0.5):
         for patch in self.outlet_patches:
             if patch.mdot_target:
                 P_old = patch.Pout + 0.0

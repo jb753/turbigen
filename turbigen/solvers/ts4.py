@@ -101,6 +101,8 @@ class TS4Config(BaseSolver):
 
     halo_implementation = 1
 
+    interpolation_update = 1  # 1 to freeze interpolating plane posn
+
     @property
     def config_path(self):
         return os.path.join(self.workdir, "config.ofp")
@@ -217,27 +219,18 @@ def _read_ofp(fname):
 
 
 DEFAULT_CONFIG = {
-    "cfl": 25.0,
+    "cfl": 50.0,
     "cfl_ramp": 1,
     "cfl_ramp_nstep": 500,
     "cfl_ramp_st": 1.0,
-    "cfl_turb_fac": 1.0,
+    "cfl_turb_fac": 0.25,
     "fluid_model": 0,
-    "gmres_coarsest_sweeps": 4,
-    "gmres_niter": 50,
-    "gmres_niter_turb": 50,
-    "gmres_nrestart": 50,
-    "gmres_nrestart_turb": 50,
-    "gmres_selector_size": 8,
-    "gmres_selector_size_turb": 8,
-    "gmres_tol": 1e-2,
-    "gmres_tol_turb": 1e-6,
     "implicit_scheme": 1,
     "inlet_relax_fac": 0.5,
     "interpolation_extend_fac": 0.5,
     "interpolation_time_step_fac": 0.1,
     "istep_avg_start": 4000,
-    "jacobian_diagonal_fac": 0.3,
+    # "jacobian_diagonal_fac": 0.3,
     "kappa2": 1.0,
     "kappa4": 1.0 / 128.0,
     "mixing_alpha": 1.0,
@@ -251,7 +244,7 @@ DEFAULT_CONFIG = {
     "mixing_rf_ramp_nstep": 500,
     "mixing_rf_ramp_st": 0.05,
     "mixing_rf_ramp_en": 0.25,
-    "node_ordering_option": 1,
+    "node_ordering_option": 2,
     "nstep": 5000,
     "prandtl_turbulent": 0.9,
     "sa_helicity_model": 0,
@@ -274,6 +267,7 @@ DEFAULT_CONFIG = {
     "pout_fac_ramp": 0,
     "pout_fac_ramp_st": 0.8,
     "pout_fac_ramp_en": 1.0,
+    "use_gpu_direct": 1,
 }
 
 
@@ -398,6 +392,8 @@ def _write_throttle(ts4_conf, grid, fname):
 
     if mdot_flag or ts4_conf.area_avg_pout:
         _write_ofp(throt_file_path, throt_ofp)
+
+    return mdot_flag
 
 
 def _write_probes_ofp(ts4_conf):
@@ -564,12 +560,17 @@ def run(grid, settings, machine):
     nnode = int(os.environ["SLURM_NNODES"])
     npernode = ngpu // nnode
 
+    # Write throttle config file
+    throttle_flag = _write_throttle(ts4_conf, grid, input_file_path)
+
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
         ts3_conf.nstep = ts4_conf.nstep_ts3
         ts3_conf.ntask = ngpu
         ts3_conf.nnode = nnode
         turbigen.solvers.ts3._run(grid, ts3_conf)
+        if throttle_flag:
+            grid.update_outlet()
 
     turbigen.solvers.ts3._write_hdf5(grid, ts3_conf)
 
@@ -625,9 +626,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     if not ts4_conf.custom_pipeline:
         _write_wall_distance(grid, input_file_path)
 
-    # Write throttle config file
-    _write_throttle(ts4_conf, grid, input_file_path)
-
     # Write probe config file
     if ts4_conf.spf_probe or ts4_conf.point_probe:
         _write_probes_ofp(ts4_conf)
@@ -664,7 +662,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         f"cd {ts4_conf.workdir};"
         f"mpirun -np {ngpu} python $TSHOME/$TSDIR/bin/turbostream.py"
         " config.ofp input_ts4.hdf5 input_ts4.hdf5 input_ts4.hdf5 output_ts4"
-        f" {npernode} > log_ts4.txt 2> err.txt"
+        f" {npernode} --fname_out_procid=procids.hdf5 > log_ts4.txt 2> err.txt"
     )
     sleep(1)
 

@@ -746,7 +746,7 @@ def run_single(conf, gguess=None, plot=False):
         if gguess:
             gi.apply_guess_3d(gguess)
             if throttle_pid:
-                gi.update_outlet(rf=0.5)
+                gi.update_outlet()
 
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')
@@ -969,10 +969,14 @@ def run_single(conf, gguess=None, plot=False):
     if conf.iterate:
         log_line(pdict, log_fields)
 
+    out_vars.pop("So1")
+    inverse_path = os.path.join(workdir, "inverse.yaml")
+    turbigen.util.write_yaml(out_vars, inverse_path)
+    logger.debug(f"Wrote inversion to {inverse_path}")
+
     if opt_converged:
 
         # out_vars = meanline_design.inverse(ml_out)
-        out_vars.pop("So1")
         var_fields = ("Design variable", "Nom   ", "CFD   ")
         log_line(None, var_fields)
         log_line("-", var_fields)
@@ -986,10 +990,6 @@ def run_single(conf, gguess=None, plot=False):
                 var_fields,
             )
         logger.iter(f"eta_tt={ml_out.eta_tt:.3f}, eta_ts={ml_out.eta_ts:.3f}")
-
-        inverse_path = os.path.join(workdir, "inverse.yaml")
-        turbigen.util.write_yaml(out_vars, inverse_path)
-        logger.debug(f"Wrote inversion to {inverse_path}")
 
     # Write out the nominal and actual mean lines
     actual_ml_path = os.path.join(workdir, "mean_line_actual.yaml")

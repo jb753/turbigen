@@ -95,6 +95,10 @@ class TS3Config(BaseSolver):
 
     adaptive_smoothing = 1
 
+    sa_helicity_option = 0
+    sa_ch1 = 0.71
+    sa_ch2 = 0.6
+
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
         av = DEFAULT_AV.copy()
