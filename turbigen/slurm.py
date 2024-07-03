@@ -171,6 +171,7 @@ turbigen {yaml_path} &> {log_path}
 def submit_array(confs, basedir, Nmax):
     # Assign ids and make workdir for each config
     N = len(confs)
+    logger.iter("Making workdirs...")
     ids, workdirs = _make_rundirs(basedir, N)
 
     job_name = os.path.basename(basedir) + "_array"
@@ -178,6 +179,7 @@ def submit_array(confs, basedir, Nmax):
     maxstr = f"%{Nmax}" if Nmax else ""
 
     # Write a turbigen config to each dir
+    logger.iter("Writing configs into workdirs...")
     for n in range(N):
         # Delete job info
         conf_out = confs[n].copy()
@@ -222,6 +224,7 @@ turbigen {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/config.yaml &>\
         subprocess.check_output(
             f"sbatch {SBATCH_FILE}", shell=True, stderr=subprocess.PIPE
         )
+        logger.iter("Submitted array job.")
     except subprocess.CalledProcessError as e:
         logger.info(e.stderr.decode("utf-8"))
         raise e
@@ -245,9 +248,9 @@ def submit_batches(confs, basedir, Nrun, verbose=True):
         dependency = None
         for conf in conf_set:
             if 0 < iconf:
-                logger.info("\r", end="")
+                logger.iter("\r", end="")
             conf.job["dependency"] = dependency
             submit(conf, basedir, verbose=False)
-            logger.info(f"Submitted {iconf}/{Nconf}", end="")
+            logger.iter(f"Submitted {iconf}/{Nconf}", end="")
             iconf += 1
-    logger.info("")
+    logger.iter("")

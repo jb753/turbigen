@@ -185,7 +185,7 @@ def main():
     logger.setLevel(level=log_level)
 
     # Remove job config if we are on a compute node or cannot find sbatch
-    if conf.job:
+    if conf.job and not conf.hypercube:
         hostname = socket.gethostname()
         if hostname.startswith("gpu"):
             logger.info(
