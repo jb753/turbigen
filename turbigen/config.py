@@ -29,7 +29,10 @@ class Config:
         self.post_process = d.get("post_process", {})
         self.install = d.get("install", {})
 
-        self.workdir = os.path.abspath(d["workdir"])
+        if workdir := d["workdir"]:
+            self.workdir = os.path.abspath(workdir)
+        else:
+            self.workdir = None
 
         self.plot = d.get("plot", False)
         self.wdist = d.get("wdist", True)
@@ -355,8 +358,7 @@ class Config:
         if verbose:
             logger.iter(f"Interpolating from: {database_file}:")
 
-        independent = self.database["independent"]
-        if not independent:
+        if not (independent := self.database.get("independent")):
             return None
 
         dependent = self.database["dependent"]
@@ -508,10 +510,14 @@ class Config:
         for vi in v:
             c = self.copy()
             for j, varname in enumerate(self.hypercube["limits"]):
+
                 if varname in ("Co", "Cb", "tip"):
                     c.blades[varname][0] = float(vi[j])
+                elif varname in c.install:
+                    c.install[varname] = float(vi[j])
                 else:
                     c.mean_line[varname] = float(vi[j])
+
             call.append(c)
 
         return call

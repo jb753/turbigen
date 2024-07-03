@@ -182,6 +182,8 @@ def main():
     else:
         log_level = logging.INFO
 
+    logger.setLevel(level=log_level)
+
     # Remove job config if we are on a compute node or cannot find sbatch
     if conf.job:
         hostname = socket.gethostname()
@@ -199,7 +201,6 @@ def main():
         log_path = os.path.join(workdir, "log_turbigen.txt")
         fh = logging.FileHandler(log_path)
         fh.setLevel(log_level)
-        logger.setLevel(level=log_level)
         logger.addHandler(fh)
         logger.iter(f"TURBIGEN v{turbigen.__version__}")
         logger.iter(

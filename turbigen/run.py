@@ -593,10 +593,6 @@ def run_single(conf, gguess=None, plot=False):
     mesh_settings.pop("type")
     slip_hub_inlet = mesh_settings.pop("slip_hub_inlet", False)
     check_coords = mesh_settings.pop("check_coords", True)
-    if not check_coords:
-        logger.info(
-            "Be careful: the mesh coordinate check is disabled in the input file"
-        )
 
     times.append(timer())
 
@@ -622,6 +618,13 @@ def run_single(conf, gguess=None, plot=False):
 
     else:
         raise Exception(f'Unrecognised mesh type "{mesh_type}"')
+
+    if not check_coords:
+        logger.info(
+            "Be careful: the mesh coordinate check is disabled in the input file"
+        )
+    else:
+        g.check_coordinates()
 
     times.append(timer())
     logger.debug(f"Mesh generation took {np.diff(times)[-1]:.1f}s")
