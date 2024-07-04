@@ -362,6 +362,8 @@ class Config:
             return None
 
         dependent = self.database["dependent"]
+        if dependent is None:
+            dependent = []
 
         # Do nothing if database not created yet
         if not os.path.exists(database_file):

@@ -695,12 +695,18 @@ def run_single(conf, gguess=None, plot=False):
     if mass_adjust:
         logger.info(f"Running off-design: adjusted mass flow rate by {mass_adjust:+}")
 
+    # Reduce the pid constants on restart to prevent instability
     if throttle_pid:
-        restart_fac = 0.5 if gguess else 1.0
+        restart_fac_default = [0.5, 1.0, 1.0]
+        restart_fac = (
+            conf.operating_point.get("restart_fac", restart_fac_default)
+            if gguess
+            else 1.0
+        )
         norm_fac = np.ptp(ml.P) / ml.mdot[-1]
         g.apply_throttle(
             ml.mdot[-1] * (1.0 + mass_adjust),
-            np.array(throttle_pid) * norm_fac * restart_fac,
+            np.array(throttle_pid) * norm_fac * np.array(restart_fac),
         )
 
     # Choose whether the blocks are real or perfect

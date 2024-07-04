@@ -84,6 +84,8 @@ def post(
         else:
             raise Exception(f"Unrecognised coordinate system {coord_sys}")
 
+        ii = int(ti / 2 - 1)
+
         for iv, vname in enumerate(var):
 
             if vname == "Yp":
@@ -99,27 +101,36 @@ def post(
 
                 lab = "Stagnation Pressure Loss Coefficient, $Y_p$"
 
-            if vname == "Ys":
+            elif vname == "Ys":
 
                 dv = 0.1
                 s = Cu.s[iunique]
 
                 # Choose compressor or turbine definition
-                PR = (P2 / P1)[i]
+                PR = (P2 / P1)[ii]
                 if PR > 1.0:
-                    v = T2[i] * (s - s1[i]) / (ho1[i] - h1[i])
+                    v = T2[ii] * (s - s1[ii]) / (ho1[ii] - h1[ii])
                 else:
-                    v = T2[i] * (s - s1[i]) / (ho2[i] - h2[i])
+                    v = T2[ii] * (s - s1[ii]) / (ho2[ii] - h2[ii])
 
                 lab = "Entropy Loss Coefficient, $Y_s$"
 
+            elif vname == "Cho":
+
+                dv = 0.1
+                ho = Cu.ho[iunique]
+
+                v = (ho - ho1[ii]) / np.abs(ho2[ii] - ho1[ii])
+
+                lab = "Work Coefficient, $C_{h_0}$"
+
             elif vname == "Vm":
 
-                if U[i] == 0.0:
+                if U[ii] == 0.0:
                     Vref = Cu.Vm[iunique].mean()
                     lab = r"Meridional Velocity, $V_m/\overline{V_m}$"
                 else:
-                    Vref = U[i]
+                    Vref = U[ii]
                     lab = r"Meridional Velocity, $V_m/U$"
                 dv = 0.05
                 v = Cu.Vm[iunique] / Vref

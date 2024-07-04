@@ -12,6 +12,7 @@ def post(
     machine,
     meanline,
     postdir,
+    cut_planes=[],
     show_axis=False,
     show_control_points=True,
     show_blades=True,
@@ -60,6 +61,10 @@ def post(
             xr_d2 = spf1 * xrcas + spf * xrhub
             ax.plot(*xr_d1, "-", color=grey, solid_capstyle="butt")
             ax.plot(*xr_d2, "-", color=grey, solid_capstyle="butt")
+
+    for tcut in cut_planes:
+        xrc = ann.get_cut_plane(tcut)[0]
+        ax.plot(*xrc, "-", color="C0")
 
     xr_hub = ann.hub.xr(m)
     xr_cas = ann.cas.xr(m)
