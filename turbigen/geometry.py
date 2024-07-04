@@ -785,11 +785,22 @@ class Blade:
         cam, thick = self._get_cam_thick(spf)
         Rle = thick.R_LE / fac_Rle
         m = util.cluster_cosine(500)
-
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtul = xrtul[:, :, m < 2.0 * Rle]
         xrtcam = np.mean(xrtul, axis=0)
         xrtLE = xrtcam[:, np.argmax(m > Rle)]
+
+        return xrtLE
+
+    def get_nose(self, spf):
+        """Get the nose of the aerofoil leading edge."""
+
+        # Make a meridional grid vector for just the le
+        cam, thick = self._get_cam_thick(spf)
+        m = util.cluster_cosine(500)
+        xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
+        xrtcam = np.mean(xrtul, axis=0)
+        xrtLE = xrtcam[:,0]
 
         return xrtLE
 
