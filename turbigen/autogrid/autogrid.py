@@ -339,17 +339,28 @@ def _execute_on_remote(cmd, remote, via):
     )
     if via:
         cmd_str = _add_via(cmd_str, via)
-    try:
-        out = subprocess.check_output(
-            cmd_str, shell=True, stderr=subprocess.PIPE
-        ).decode("ascii")
-    except subprocess.CalledProcessError as e:
+
+    ntry = 3
+    for itry in range(ntry):
+        try:
+            out = subprocess.check_output(
+                cmd_str, shell=True, stderr=subprocess.PIPE
+            ).decode("ascii")
+            success = True
+            break
+        except subprocess.CalledProcessError as e:
+            success = False
+            eout = e
+            sleep((itry + 1) * 30.0)
+
+    if not success:
         raise Exception(
-            f"""Running remote command failed, exit code {e.returncode}
+            f"""Running remote command failed thrice, exit code {eout.returncode}
 COMMAND: {cmd_str}
-STDOUT: {e.output.decode(sys.getfilesystemencoding()).strip()}
-STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}"""
+STDOUT: {eout.output.decode(sys.getfilesystemencoding()).strip()}
+STDERR: {eout.stderr.decode(sys.getfilesystemencoding()).strip()}"""
         ) from None
+
     return out
 
 

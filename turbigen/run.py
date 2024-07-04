@@ -888,7 +888,7 @@ def run_single(conf, gguess=None, plot=False):
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
-        mdot_err = np.abs(ml_out.mdot / ml.mdot - 1)[0]
+        mdot_err = np.abs(ml_out.mdot / ml.mdot - 1)[-1]
         inc_target = inc_conf.get("target", 0.0)
         inc_tol = inc_conf["tolerance"]
         inc_clip = inc_conf.get("clip", 0.5)

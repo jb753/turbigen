@@ -15,7 +15,7 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
         if not spfrow:
             continue
 
-        logger.info(f"Plotting row={irow} at spf={spfrow}")
+        logger.info(f"Plotting nose row={irow} at spf={spfrow}")
 
         # Extract reference pressure from mean-line
         iin = irow * 2
