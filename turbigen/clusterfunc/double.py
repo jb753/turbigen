@@ -235,6 +235,6 @@ def _unit_free(dx0, dx1, dmax, ERmax, mult=8, rtol=1e-2):
                 n += 1
 
     if not flag:
-        raise ClusteringException("Could not double cluster")
+        raise ClusteringException(f"Could not double cluster with dx0={dx0}, dx1={dx1}, dmax={dmax}, ERmax={ERmax}")
 
     return x

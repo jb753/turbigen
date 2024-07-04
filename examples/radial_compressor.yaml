@@ -84,4 +84,16 @@ solver:
   nstep: 16000
   nstep_avg: 1000
   type: ts3
+
+iterate:
+  fac_nstep_initial: 3.0
+  deviation:
+    clip: 5.0
+    relaxation_factor: 2.0
+    tolerance: 1.0
+  incidence:
+    clip: 2.0
+    relaxation_factor: 0.2
+    target: 0.0
+    tolerance: 5.0
 ...

@@ -1359,6 +1359,9 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
         chi_stag.append([])
 
+        if surfi is None:
+            continue
+
         # Loop over main/splitter
         for jbld, surfj in enumerate(surfi):
 
@@ -1376,8 +1379,9 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
                 [bldnow.get_LE_cent(spf[j], fac_Rle).squeeze() for j in range(nj)],
                 axis=-1,
             )
+
             xrt_nose = np.stack(
-                [bldnow.get_LE_cent(spf[j], 100.0).squeeze() for j in range(nj)],
+                [bldnow.get_nose(spf[j]).squeeze() for j in range(nj)],
                 axis=-1,
             )
 
