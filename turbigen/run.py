@@ -883,6 +883,7 @@ def run_single(conf, gguess=None, plot=False):
 
         # Evaluate incidence
         fac_Rle = inc_conf.get("fac_RLE", 1.0)
+
         data = turbigen.util.incidence(g, mac, ml, fac_Rle)
 
         # Extract configuration parameters
@@ -897,17 +898,18 @@ def run_single(conf, gguess=None, plot=False):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
 
-                spf, inc = data[irow][0][:2]
+                chi = turbigen.util.incidence_unstructured(
+                        g, mac, irow, row["spf"]
+                )
+
+                inc = np.diff(chi[0], axis=0).squeeze()
 
                 inc -= inc_target
-                inc = np.interp(row["spf"], spf, inc)
 
                 if (np.abs(inc) > inc_tol).any():
                     inc_converged = False
 
                 dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
-                if np.isnan(dinc).any():
-                    raise Exception(f"dinc={dinc} is nan")
 
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0
@@ -925,9 +927,8 @@ def run_single(conf, gguess=None, plot=False):
                     if splitter_now := conf.splitter[irow]:
                         logger.debug(f"CORRECTING SPLITTER row={irow}")
 
-                        spf, inc = data[irow][1][:2]
+                        inc = np.diff(chi[1], axis=0).squeeze()
                         inc -= inc_target
-                        inc = np.interp(splitter_now["spf"], spf, inc)
 
                         if (np.abs(inc) > inc_tol).any():
                             inc_converged = False

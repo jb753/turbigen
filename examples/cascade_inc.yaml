@@ -36,9 +36,13 @@ blades:
     sections:
       # List of sections for this row
       - spf: 0.5  # Span fraction
-        # Vector of thickness parameters
         q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
-        # Vector of camber parameters
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.2  # Span fraction
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.9  # Span fraction
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
     # - ...
   # - ...
@@ -72,7 +76,7 @@ post_process:
     # coord_sys: yz
     # var: ['Ys', 'Vm']
   plot_nose:
-    row_spf: [[0.6,],]
+    row_spf: [[0.2,0.5,0.9,],]
   # plot_section:
   #   row_spf: [[0.2,0.5,0.8],]
   #   coord_sys: xrt

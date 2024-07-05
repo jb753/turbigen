@@ -1204,19 +1204,6 @@ class Composites:
         out._data = data_cut
         out._metadata = self._metadata
         return out
-        # data_cut[0] =
-
-        # data = self._data
-        # data1 = np.take_along_axis(data, jcut3, axis=2)
-        # data2 = np.take_along_axis(data, jcut3-1, axis=2)
-        # dist1 = np.take_along_axis(dist, jcut2, axis=0)
-        # dist2 = np.take_along_axis(dist, jcut2-1, axis=0)
-        # print(dist1.shape)
-        # frac = dist1/(dist2-dist1)
-        #                 # frac = -dist[ijk_st] / (dist[ijk_en] - dist[ijk_st])
-        # print(frac.min(), frac.max())
-        # # data_cut =
-        # quit()
 
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
