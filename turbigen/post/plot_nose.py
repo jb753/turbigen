@@ -74,6 +74,7 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
             mps = mp_from_xr(surf.xr)
             mstag = mps[surf.i_stag].squeeze()
             tstag = surf.t[surf.i_stag].squeeze()
+            xrstag = surf.xr[:, surf.i_stag].squeeze()
 
             Pall = np.concatenate([b.P.reshape(-1) for b in cut])
             mpall = np.concatenate([mp_from_xr(b.xr).reshape(-1) for b in cut])
@@ -93,7 +94,8 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
             dCp = 0.1
             lev_Cp = turbigen.util.clipped_levels(Cpall, dCp)
 
-            fig, ax = plt.subplots()
+            fig, ax2 = plt.subplots(1, 2)
+            ax = ax2[0]
             # ax.plot(*surf.squeeze().xr, "rx")
             for b in cut:
 
@@ -120,6 +122,12 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
 
             xrtcam = machine.bld[irow].get_camber_line(spf)
             mpcam = mp_from_xr(xrtcam[:2])
+
+            ax2[1].plot(*xrstag, "r+")
+            ax2[1].plot(*xrtLE[:2], "bx")
+            ax2[1].plot(*xrtcam[:2], "m-")
+            # ax2[1].plot(*xr_vis, "k-")
+            ax2[1].plot(*surf.xr, "k-")
 
             # xrtLLE = machine.bld[irow].get_LE_cent(spf, fac_Rle=100.0)
             # mpLLE = mp_from_xr(xrtLLE[:2])

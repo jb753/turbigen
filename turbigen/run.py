@@ -906,6 +906,8 @@ def run_single(conf, gguess=None, plot=False):
                     inc_converged = False
 
                 dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+                if np.isnan(dinc).any():
+                    raise Exception(f"dinc={dinc} is nan")
 
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0

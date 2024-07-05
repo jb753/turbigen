@@ -1368,13 +1368,59 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
             surf = surfj.squeeze()
             _, nj = surf.shape
 
-            spf = [surf.spf[surf.i_stag[j], j] for j in range(nj)]
+            istag_mean = np.round(np.nanmean(surf.i_stag)).astype(int)
+            spf_mesh = np.array([surf.spf[istag_mean, j] for j in range(nj)])
+
+            # spf_mesh = [surf.spf[surf.i_stag[j], j] for j in range(nj)]
 
             # Get coordinates of stagnation point
             xrt_stag = surf.xrt_stag
 
-            # Get coordinates of LE center
+            # Set up a conversion from mesh spf to blade spf at LE
+            spf_blade = np.linspace(0.,1.,101)
             bldnow = machine.split[irow] if jbld else machine.bld[irow]
+            xrtLE_blade = np.stack(
+                [bldnow.get_nose(spfb).squeeze() for spfb in spf_blade],
+                axis=-1
+            )
+
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots()
+            fig2, ax2 = plt.subplots()
+            for spf_target in [0.,0.5,1.]:
+                jplot = np.argmin(np.abs(spf_mesh-spf_target))
+                spf_plot = spf_mesh[jplot]
+                print(spf_plot)
+                ax.plot(*surf[:,jplot].yz,'k-')
+                xrtsect = np.stack(bldnow.evaluate_section(spf_plot-0.01), axis=0)
+                ysect = xrtsect[:,1,:]*np.sin(xrtsect[:,2,:])
+                zsect = xrtsect[:,1,:]*np.cos(xrtsect[:,2,:])
+                ax.plot(ysect[0], zsect[0],'-')
+                ax.plot(ysect[1], zsect[1],'-')
+                ax.axis('equal')
+
+                ax2.plot(*surf[:,jplot].xr,'k-')
+                ax2.plot(*xrtsect[0][:2],'-')
+                ax2.plot(*xrtsect[1][:2],'-')
+                ax2.axis('equal')
+
+            plt.show()
+            # quit()
+
+            fig, ax = plt.subplots()
+            ax.plot(*xrt_stag[:2],'-x')
+            ax.plot(*xrtLE_blade[:2],'-+')
+
+            fig, ax = plt.subplots()
+            ax.plot(*xrt_stag[(0,2),],'-x')
+            ax.plot(*xrtLE_blade[(0,2),],'-+')
+
+            plt.show()
+            quit()
+
+
+            # Get coordinates of LE center
             xrt_cent = np.stack(
                 [bldnow.get_LE_cent(spf[j], fac_Rle).squeeze() for j in range(nj)],
                 axis=-1,

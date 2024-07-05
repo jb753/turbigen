@@ -361,7 +361,7 @@ class Config:
         if not (independent := self.database.get("independent")):
             return None
 
-        dependent = self.database["dependent"]
+        dependent = self.database.get("dependent")
         if dependent is None:
             dependent = []
 

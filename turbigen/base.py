@@ -1090,6 +1090,15 @@ class Composites:
         sint = np.sin(self.t)
         return -self.Vr * sint - self.Vt * cost
 
+    @dependent_property
+    def P_rot(self):
+        # Rotary static pressure
+        S = self.copy()
+        # Replace horel with rothalpy
+        # i.e. subtract blade speed dyn head from h
+        S.set_h_s(self.h - 0.5 * self.U**2, self.s)
+        return S.P
+
     #
     # Fluxes
     #
@@ -1164,7 +1173,7 @@ class Composites:
         return self.flux_mass * self.s
 
     def meridional_slice(self, xrc):
-        """Slice a 2D cut using a meridional curve."""
+        """Slice a block cut using a meridional curve."""
 
         # Get signed distance
         dist = util.signed_distance_piecewise(xrc, self.xr)
@@ -1264,7 +1273,8 @@ class Composites:
                 f"this cut has shape {self.shape}"
             )
 
-        P = self.P
+        # Use rotary static pressure to take out centrifugal pressure gradient
+        P = self.P_rot
 
         # Extract surface distance, normalise to [-1,1] on each j-line
         z = self.zeta / np.ptp(self.zeta, axis=0) * 2.0 - 1.0
@@ -1288,7 +1298,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except Exception:
+            except Exception as e:
                 istag[j] = 0
 
         return istag
