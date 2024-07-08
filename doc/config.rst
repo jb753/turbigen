@@ -348,7 +348,7 @@ fraction, `loss_split`:
        match_tolerance:
          eta_tt: 0.005  # Efficiency to within 0.5%
          loss_split: 0.05  # Loss fraction to within 5%
-     relaxation_factor: 0.5  # Change is half difference CFD-nominal
+       relaxation_factor: 0.5  # Change is half difference CFD-nominal
 
 To match mean-line flow angle to the mixed-out CFD value, include a `deviation` key. The trailing-edge recamber of all rows is iterated simultaneously. An example configuration is:
 
@@ -375,6 +375,27 @@ To locate the stagnation point on the nose of the blades, include an `incidence`
 
 In the event of instability, `clip` and `relaxation_factor` can be
 reduced for all three adjustments.
+
+A complete iteration configuration looks something like this:
+
+.. code-block:: yaml
+
+    iterate:
+      deviation:
+        clip: 5.0
+        relaxation_factor: 2.0
+        tolerance: 1.0
+      incidence:
+        clip: 2.0
+        relaxation_factor: 0.2
+        target: 0.0
+        tolerance: 5.0
+      mean_line:
+        match_tolerance:
+          eta_tt: 0.005
+          loss_split: 0.05
+        relaxation_factor: 0.5
+
 
 .. _cnf-job:
 
