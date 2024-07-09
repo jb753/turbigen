@@ -212,7 +212,7 @@ def run_single(conf, gguess=None, plot=False):
         * conf.nrow,
     )
     thick_rm = conf.blades.get("thick_rm")
-    thick_span = conf.blades.get("thick_span")
+    thick_span = conf.blades.pop("thick_span", None)
     thick_type = conf.blades.get(
         "thick_type",
         [
