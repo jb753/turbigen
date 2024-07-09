@@ -1359,7 +1359,7 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     ist = irow * 2 + 1
     ien = ist + 1
     m = np.linspace(ist, ien, 101)
-    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).squeeze()
+    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(2,-1,nspf)
 
     # Meridional velocity vector at inlet to this row
     Vxrt = ml[irow * 2].Vxrt
