@@ -4,7 +4,6 @@ import os
 import json
 from multiprocessing import Pool
 from itertools import repeat
-import importlib
 import numpy as np
 from timeit import default_timer as timer
 from scipy.spatial import Delaunay
@@ -306,9 +305,8 @@ class DesignSpace:
         self._polys = {}
         self.basis = basis
 
-        meanline_design = importlib.import_module(
-            f".{meanline_type}", package="turbigen.meanline"
-        )
+        meanline_design = turbigen.util.load_mean_line(meanline_type)
+
         self._meanline_inverse = meanline_design.inverse
 
         self.set_independent(independent)

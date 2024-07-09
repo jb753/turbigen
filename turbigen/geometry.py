@@ -800,7 +800,7 @@ class Blade:
         m = util.cluster_cosine(500)
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtcam = np.mean(xrtul, axis=0)
-        xrtLE = xrtcam[:,0]
+        xrtLE = xrtcam[:,0].squeeze()
 
         return xrtLE
 

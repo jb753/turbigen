@@ -1348,6 +1348,57 @@ def node_to_face3(x):
     return xi, xj, xk
 
 
+def incidence_unstructured(grid, machine, irow, spf, plot=False):
+
+    # Pull out 2D cuts of blades and splitters
+    surfs = grid.cut_blade_surfs()[irow]
+
+    nspf = len(spf)
+
+    # Meridional curves for target span fractions
+    ist = irow * 2 + 1
+    ien = ist + 1
+    m = np.linspace(ist, ien, 101)
+    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).squeeze()
+
+    # Loop over main/splitter
+    chi = []
+    for jbld, surfj in enumerate(surfs):
+
+        surf = surfj.squeeze()
+
+        # Get the current blade object
+        bldnow = machine.split[irow] if jbld else machine.bld[irow]
+
+        # Loop over span fractions
+        # Unstructure cut through current surface along the
+        # target span fraction curves
+        xrt_stag = np.empty((3, nspf))
+        xrt_nose = np.empty((3, nspf))
+        xrt_cent = np.empty((3, nspf))
+        for k in range(len(spf)):
+
+            # Cut at this span fraction
+            C = surf[..., None].meridional_slice(xr_spf[:, :, k])
+
+            # Stag point coordinates
+            xrt_stag[:, k] = C.xrt_stag.squeeze()
+
+            # Geometric nose coordinates
+            xrt_nose[:, k] = bldnow.get_nose(spf[k])
+
+            # Leading edge centre
+            xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
+
+        # Calculate the angles
+        chi_flow = yaw_from_xrt(xrt_stag, xrt_cent)
+        chi_metal = yaw_from_xrt(xrt_nose, xrt_cent)
+
+        chi.append(np.stack((chi_metal, chi_flow)))
+
+    return chi
+
+
 def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
     surfs = grid.cut_blade_surfs()
@@ -1368,13 +1419,47 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
             surf = surfj.squeeze()
             _, nj = surf.shape
 
-            spf = [surf.spf[surf.i_stag[j], j] for j in range(nj)]
+            istag_mean = np.round(np.nanmean(surf.i_stag)).astype(int)
+            spf = np.array([surf.spf[istag_mean, j] for j in range(nj)])
+
+            # spf_mesh = [surf.spf[surf.i_stag[j], j] for j in range(nj)]
 
             # Get coordinates of stagnation point
             xrt_stag = surf.xrt_stag
 
-            # Get coordinates of LE center
+            # Set up a conversion from mesh spf to blade spf at LE
             bldnow = machine.split[irow] if jbld else machine.bld[irow]
+
+            # import matplotlib.pyplot as plt
+            # fig, ax = plt.subplots()
+            # fig2, ax2 = plt.subplots()
+            # for spf_target in [0.,0.5,1.]:
+            #     jplot = np.argmin(np.abs(spf_mesh-spf_target))
+            #     spf_plot = spf_mesh[jplot]
+            #     print(spf_plot)
+            #     ax.plot(*surf[:,jplot].yz,'k-')
+            #     xrtsect = np.stack(bldnow.evaluate_section(spf_plot-0.01), axis=0)
+            #     ysect = xrtsect[:,1,:]*np.sin(xrtsect[:,2,:])
+            #     zsect = xrtsect[:,1,:]*np.cos(xrtsect[:,2,:])
+            #     ax.plot(ysect[0], zsect[0],'-')
+            #     ax.plot(ysect[1], zsect[1],'-')
+            #     ax.axis('equal')
+            # ax2.plot(*surf[:,jplot].xr,'k-')
+            # ax2.plot(*xrtsect[0][:2],'-')
+            # ax2.plot(*xrtsect[1][:2],'-')
+            # ax2.axis('equal')
+            # plt.show()
+            # # quit()
+            # fig, ax = plt.subplots()
+            # ax.plot(*xrt_stag[:2],'-x')
+            # ax.plot(*xrtLE_blade[:2],'-+')
+            # fig, ax = plt.subplots()
+            # ax.plot(*xrt_stag[(0,2),],'-x')
+            # ax.plot(*xrtLE_blade[(0,2),],'-+')
+            # plt.show()
+            # quit()
+
+            # Get coordinates of LE center
             xrt_cent = np.stack(
                 [bldnow.get_LE_cent(spf[j], fac_Rle).squeeze() for j in range(nj)],
                 axis=-1,
@@ -1407,6 +1492,24 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
             chi_stag[-1].append(np.stack((spf, chi_stag_now, chi_metal_now)))
 
     return chi_stag
+
+
+def yaw_from_xrt(xrt1, xrt2):
+
+    # Vector between the points
+    dxrt = xrt2 - xrt1
+
+    # Midpoint radius
+    rmid = 0.5 * (xrt1[1] + xrt2[1])
+
+    # Distances in each direction
+    dist_merid = vecnorm(dxrt[:2])
+    dist_theta = rmid * dxrt[2]
+
+    # Trigonometry
+    yaw = np.degrees(np.arctan2(dist_theta, dist_merid))
+
+    return yaw
 
 
 def incidence(grid, machine, meanline, fac_Rle=1.0):

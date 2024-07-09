@@ -1,6 +1,21 @@
 Changelog
 =========
 
+v1.9.1
+^^^^^^
+
+* Add retry for AutoGrid connections
+* Use unstructured spanwise cuts to calculate incidence
+* More robust tip H-meshing
+* Incidence correction bugfix for unbladed cases
+* Only reduce proportional part of PID controller gain on restart
+* Clean up the hypercube running code
+* Turbostream 3 SA helicity correction
+* Better Turbostream 4 application variable defaults
+* Use turbulent viscosity from old solution on restart
+* Fix error in docs iterate config
+
+
 v1.9.0
 ^^^^^^
 

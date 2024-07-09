@@ -1,0 +1,89 @@
+# Annotated minimal example configuration to run a turbine cascade
+#
+
+# All files relating to the case are held in a working directory
+workdir: runs/cascade
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5  # Stagnation pressure [Pa]
+  To: 300.  # Stagnation temperature [K]
+  cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
+  mu: 1.8e-5  # Working fluid dynamic viscosity [kg/m/s]
+  gamma: 1.4  # Working fluid ratio of specific heats [-]
+
+# Mean-line design
+mean_line:
+  type: cascade  # Choose turbomachine from turbigen.meanline
+  # Aerodynamic parameters required for mean-line design
+  span1: 0.1
+  span2: 0.12
+  Alpha1: 40.
+  Alpha2: -65.
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+
+# Annulus shape using meridional aspect ratios
+annulus:
+  AR_gap: [0.8, 0.9]  # Span to inlet/exit boundary distance
+  AR_chord: 1.6  # Span to chord
+
+# Blade shapes
+blades:
+  # List of rows
+  - Co: 0.7  # Set number of blades using circulation coeff
+    sections:
+      # List of sections for this row
+      - spf: 0.5  # Span fraction
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.2  # Span fraction
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.9  # Span fraction
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+    # - ...
+  # - ...
+
+# Computational mesh generation
+mesh:
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Double grid spacing in each direction
+
+# CFD solver
+solver:
+  type: ts3  # Which solver
+  # Solver-specific configuration settings
+  nstep: 5000
+  nstep_avg: 1000
+  rtol_mdot: 0.02
+  # ...
+
+iterate:
+  incidence:
+    clip: 2.0
+    relaxation_factor: 0.2
+    rtol_mdot: 0.5
+    target: -1.0
+    tolerance: 2.0
+
+post_process:
+  # contour_traverse:
+    # mnorm: [2.1,]
+    # coord_sys: yz
+    # var: ['Ys', 'Vm']
+  plot_nose:
+    row_spf: [[0.2,0.5,0.9,],]
+  # plot_section:
+  #   row_spf: [[0.2,0.5,0.8],]
+  #   coord_sys: xrt
+  # plot_pressure_distributions:
+  #   row_spf: [[0.6,],]
+  #   write_raw: true
+  # plot_incidence:
+  # plot_annulus:
+  #   show_control_points: false
+  #   write_raw: true

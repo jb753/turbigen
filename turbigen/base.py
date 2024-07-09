@@ -1090,6 +1090,15 @@ class Composites:
         sint = np.sin(self.t)
         return -self.Vr * sint - self.Vt * cost
 
+    @dependent_property
+    def P_rot(self):
+        # Rotary static pressure
+        S = self.copy()
+        # Replace horel with rothalpy
+        # i.e. subtract blade speed dyn head from h
+        S.set_h_s(self.h - 0.5 * self.U**2, self.s)
+        return S.P
+
     #
     # Fluxes
     #
@@ -1164,7 +1173,7 @@ class Composites:
         return self.flux_mass * self.s
 
     def meridional_slice(self, xrc):
-        """Slice a 2D cut using a meridional curve."""
+        """Slice a block cut using a meridional curve."""
 
         # Get signed distance
         dist = util.signed_distance_piecewise(xrc, self.xr)
@@ -1195,19 +1204,6 @@ class Composites:
         out._data = data_cut
         out._metadata = self._metadata
         return out
-        # data_cut[0] =
-
-        # data = self._data
-        # data1 = np.take_along_axis(data, jcut3, axis=2)
-        # data2 = np.take_along_axis(data, jcut3-1, axis=2)
-        # dist1 = np.take_along_axis(dist, jcut2, axis=0)
-        # dist2 = np.take_along_axis(dist, jcut2-1, axis=0)
-        # print(dist1.shape)
-        # frac = dist1/(dist2-dist1)
-        #                 # frac = -dist[ijk_st] / (dist[ijk_en] - dist[ijk_st])
-        # print(frac.min(), frac.max())
-        # # data_cut =
-        # quit()
 
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
@@ -1264,7 +1260,8 @@ class Composites:
                 f"this cut has shape {self.shape}"
             )
 
-        P = self.P
+        # Use rotary static pressure to take out centrifugal pressure gradient
+        P = self.P_rot
 
         # Extract surface distance, normalise to [-1,1] on each j-line
         z = self.zeta / np.ptp(self.zeta, axis=0) * 2.0 - 1.0
@@ -1288,7 +1285,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except Exception:
+            except Exception as e:
                 istag[j] = 0
 
         return istag

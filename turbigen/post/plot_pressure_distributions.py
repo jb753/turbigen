@@ -7,7 +7,9 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
+def post(
+    grid, machine, meanline, postdir, row_spf, write_raw=False, use_rot=False, lim=None
+):
 
     lnst = ["-", "--"]
 
@@ -27,9 +29,14 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
         Po1, Po2 = meanline.Po_rel[
             (iin, iout),
         ]
-        P1, P2 = meanline.P[
-            (iin, iout),
-        ]
+        if use_rot:
+            P1, P2 = meanline.P_rot[
+                (iin, iout),
+            ]
+        else:
+            P1, P2 = meanline.P[
+                (iin, iout),
+            ]
 
         # Get all blades in this row
         surfs = grid.cut_blade_surfs()[irow]
@@ -37,7 +44,6 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
         fig, ax = plt.subplots()
         ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
         ax.set_xlim((0.0, 1.0))
-        ax.set_ylabel(r"Static Pressure, $C_p$")
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
@@ -51,7 +57,12 @@ def post(grid, machine, meanline, postdir, row_spf, write_raw=False, lim=None):
                 snow = surf[:, jspf, :]
 
                 # Extract pressure and non-dimensionalise
-                P = snow.P
+                if use_rot:
+                    P = snow.P_rot
+                    ax.set_ylabel(r"Reduced Static Pressure, $C_{p^*}$")
+                else:
+                    P = snow.P
+                    ax.set_ylabel(r"Static Pressure, $C_p$")
                 if Po2 > Po1:
                     # Compressor
                     Cp = (P - Po1) / (Po1 - P1)
