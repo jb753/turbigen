@@ -1348,7 +1348,7 @@ def node_to_face3(x):
     return xi, xj, xk
 
 
-def incidence_unstructured(grid, machine, irow, spf, plot=False):
+def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
 
     # Pull out 2D cuts of blades and splitters
     surfs = grid.cut_blade_surfs()[irow]
@@ -1360,6 +1360,9 @@ def incidence_unstructured(grid, machine, irow, spf, plot=False):
     ien = ist + 1
     m = np.linspace(ist, ien, 101)
     xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).squeeze()
+
+    # Meridional velocity vector at inlet to this row
+    Vxrt = ml[irow * 2].Vxrt
 
     # Loop over main/splitter
     chi = []
@@ -1391,8 +1394,8 @@ def incidence_unstructured(grid, machine, irow, spf, plot=False):
             xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
 
         # Calculate the angles
-        chi_flow = yaw_from_xrt(xrt_stag, xrt_cent)
-        chi_metal = yaw_from_xrt(xrt_nose, xrt_cent)
+        chi_flow = yaw_from_xrt(xrt_stag, xrt_cent, Vxrt)
+        chi_metal = yaw_from_xrt(xrt_nose, xrt_cent, Vxrt)
 
         chi.append(np.stack((chi_metal, chi_flow)))
 
@@ -1494,7 +1497,7 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
     return chi_stag
 
 
-def yaw_from_xrt(xrt1, xrt2):
+def yaw_from_xrt(xrt1, xrt2, Vxrt):
 
     # Vector between the points
     dxrt = xrt2 - xrt1
@@ -1506,8 +1509,17 @@ def yaw_from_xrt(xrt1, xrt2):
     dist_merid = vecnorm(dxrt[:2])
     dist_theta = rmid * dxrt[2]
 
+    # As of now, dist_merid is always positive, which is not what we want
+    # So if the meridional component is going against flow, switch the sign
+    dist_merid *= np.sign(np.sum(np.reshape(Vxrt[:2], (2, 1)) * dxrt[:2]))
+
     # Trigonometry
     yaw = np.degrees(np.arctan2(dist_theta, dist_merid))
+
+    # If the angle has gone past 180. then we need to correct the sign
+    if Vxrt[2] < 0.0:
+        ind_flip = np.logical_and(dist_merid < 0.0, dist_theta > 0.0)
+        yaw[ind_flip] = yaw[ind_flip] - 360.0
 
     return yaw
 
