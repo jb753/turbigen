@@ -82,13 +82,14 @@ class HMeshConfig(BaseConfig):
                 dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, Lmain
             )
 
-            spf_tip = util.cluster_two_sided_free(
-                Lmain, 1.0, dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span
-            )
-
-            spf_tip = clusterfunc.double.free(
-                dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span, Lmain, 1.0
-            )
+            try:
+                spf_tip = clusterfunc.double.free(
+                    dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span, Lmain, 1.0
+                )
+            except turbigen.clusterfunc.exceptions.ClusteringException:
+                spf_tip = clusterfunc.double.fixed(
+                    dspf_tip, dspf_tip, njtip_min, Lmain, 1.0
+                )
 
             spf_main = util.resample(spf_main, self.resolution_factor)
             spf_tip = util.resample(spf_tip, self.resolution_factor)
