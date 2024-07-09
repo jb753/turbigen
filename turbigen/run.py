@@ -881,11 +881,6 @@ def run_single(conf, gguess=None, plot=False):
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
 
-        # Evaluate incidence
-        fac_Rle = inc_conf.get("fac_RLE", 1.0)
-
-        data = turbigen.util.incidence(g, mac, ml, fac_Rle)
-
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
@@ -898,9 +893,7 @@ def run_single(conf, gguess=None, plot=False):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
 
-                chi = turbigen.util.incidence_unstructured(
-                        g, mac, irow, row["spf"]
-                )
+                chi = turbigen.util.incidence_unstructured(g, mac, ml, irow, row["spf"])
 
                 inc = np.diff(chi[0], axis=0).squeeze()
 
@@ -964,6 +957,12 @@ def run_single(conf, gguess=None, plot=False):
                 if (np.abs(dev) > dev_conf["tolerance"]).any():
                     dev_converged = False
                 ddev = -np.clip(dev * rf_dev, -dev_clip, dev_clip)
+
+                # Do not try to correct for deviation if LE is at
+                # very large incidence (because fully separated)
+                if np.abs(inc.flat[imax]) > 45.0:
+                    ddev *= 0.0
+
                 qstar_save[irow][:, 1] += ddev
                 pdict["Dev"] = np.atleast_1d(dev)[0]
                 pdict["DDev"] = np.atleast_1d(ddev)[0]
