@@ -1050,7 +1050,7 @@ def run(conf, plot=False):
     if conf.database.get("conf_path"):
         conf.interpolate_from_database()
 
-    if conf.iterate:
+    if conf.iterate and conf.solver:
         gguess = None
 
         max_iter = conf.iterate.get("max_iter", 20)
