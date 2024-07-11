@@ -673,11 +673,11 @@ def run_single(conf, gguess=None, plot=False):
 
     g.apply_rotation(rot_types, Omega)
 
-    if "Beta1_override" in conf.solver:
-        Beta1 = conf.solver.pop("Beta1_override")
-        g.apply_inlet(So1, ml.Alpha[0], Beta1)
-    else:
-        Beta1 = ml.Beta[0]
+    # Set inlet pitch angle using orientation of
+    # the inlet patch grid (assuming on a constant i face)
+    # This allow the annulus lines to differ from mean-line pitch angle
+    Ain = g.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
+    Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
 
     # # Inlet and outlet
     g.apply_inlet(So1, ml.Alpha[0], Beta1)
@@ -793,9 +793,6 @@ def run_single(conf, gguess=None, plot=False):
 
     if cut_offset is not None:
         conf.solver["cut_offset"] = cut_offset
-
-    if not np.isclose(Beta1, ml.Beta[0]):
-        conf.solver["Beta1_override"] = Beta1
 
     logger.info("Post-processing...")
 

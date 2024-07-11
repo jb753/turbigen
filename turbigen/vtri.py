@@ -39,7 +39,17 @@ def annulus_geometry_from_flow(Vxrt, mdot, rho, phi, htr):
     Vm = turbigen.util.vecnorm(Vxrt[:2])
     U = Vm / phi
     A = mdot / Vm / rho
-    rrms = np.sqrt(A / np.pi * 0.5 * (1.0 + htr**2) / (1 - htr**2))
+
+    cosBeta = np.cos(np.arctan2(Vxrt[1], Vxrt[0]))
+
+    # Use a generic definition of hub/tip ratio
+    K = (1.0 - htr) / (1.0 + htr)
+    rmid = np.sqrt(A / 4.0 / np.pi / K)
+    H = A / 2.0 / np.pi / rmid
+    rhub = rmid - H / 2.0 * cosBeta
+    rcas = rmid + H / 2.0 * cosBeta
+
+    rrms = np.sqrt(0.5 * (rhub**2 + rcas**2))
     Omega = U / rrms
 
     return rrms, A, Omega

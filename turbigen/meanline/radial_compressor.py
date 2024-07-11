@@ -166,6 +166,10 @@ def forward(
 def inverse(ml):
     """Reverse a radial compressor mean-line to design variables."""
 
+    # Generalised HTR
+    K = ml.A[0] / 4.0 / np.pi / ml.rmid[0] ** 2
+    htr = (1.0 - K) / (1.0 + K)
+
     out = {
         "So1": ml.stagnation[0],
         "PR_tt": ml.PR_tt,
@@ -174,11 +178,14 @@ def inverse(ml):
         "phi1": ml.phi[0],
         "Alpha1": ml.Alpha[0],
         "Ma1_rel": ml.Ma_rel[0],
-        "htr1": ml.htr[0],
+        "htr1": htr,
         "Alpha2_rel": ml.Alpha_rel[1],
         "DH_rotor": ml.V_rel[1] / ml.V_rel[0],
         "DH_diff": ml.V[-1] / ml.V[1],
         "VmR_diff": ml.Vm[3] / ml.Vm[1],
         "Ys": (ml.s[2] - ml.s[0]) * ml.T[0] / (ml.ho[0] - ml.h[0]),
+        "Beta1": ml.Beta[0],
+        "Beta2": ml.Beta[1],
+        "Beta3": ml.Beta[3],
     }
     return out

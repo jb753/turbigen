@@ -189,12 +189,15 @@ class Smooth:
                         if err < 0.0:
                             break
 
-                root_scalar(
-                    _iter_chord,
-                    bracket=(dx_lower, dx_upper),
-                    args=(k,),
-                    xtol=dxref * 1e-3,
-                )
+                try:
+                    root_scalar(
+                        _iter_chord,
+                        bracket=(dx_lower, dx_upper),
+                        args=(k,),
+                        xtol=dxref * 1e-3,
+                    )
+                except ValueError:
+                    pass
 
         for k in range(1, self.npts - 2):
             _solve_k(k)
