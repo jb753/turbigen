@@ -12,14 +12,17 @@ export DISPLAY=:0.0
 # Where are the temporary mesh files stored
 mkdir -p $HOME/tmp
 
-# Get filenames
+# Get arguments
 WAT_FILE="$1"
-
-if [ -z "$WAT_FILE" ]; then
-    WAT_FILE="$HOME/.ag_queue.txt"
-fi
+DELETE="$2"
 
 echo "AG server starting, waiting for jobs in $WAT_FILE"
+
+if [ "$DELETE" ]; then
+    echo "Deletion of completed meshes is enabled"
+else
+    echo "Will not delete completed meshes"
+fi
 
 # Wait for a random amount of time to avoid races when
 # multiple servers start at the same time
@@ -64,11 +67,11 @@ do
             echo "$(date -Iminutes): $SCR completed."
             touch finished
             cd ..
-            sleep 30
-            # # As a safety check, only delete if 'tmp' is in the name
-            # if [[ $SCR =~ "tmp" ]]; then
-            #     rm -rf "$SCR"
-            # fi
+            sleep 40
+            # As a safety check, only delete if 'tmp' is in the name
+            if [[ $SCR =~ "tmp" ]]; then
+                rm -rf "$SCR"
+            fi
         else
             touch failed
             echo "$(date -Iminutes): $SCR failed."
