@@ -60,9 +60,6 @@ def _make_argparser():
         version=f"%(prog)s {turbigen.__version__}",
     )
     parser.add_argument(
-        "-p", "--plot", help="enable debug plotting", action="store_true"
-    )
-    parser.add_argument(
         "-J",
         "--no-job",
         help="disable submission of cluster job",
@@ -89,7 +86,12 @@ def _make_argparser():
         help="run on an edited copy of the configuration file (using $EDITOR)",
         action="store_true",
     )
-
+    parser.add_argument(
+        "-m",
+        "--meanline-debug",
+        help="perform the mean-line design, print out debugging information and stop",
+        action="store_true",
+    )
     parser.add_argument(
         "-W",
         "--no-wdist",
@@ -171,7 +173,7 @@ def main():
             conf.solver["skip"] = True
 
     conf.wdist &= not args.no_wdist
-    conf.plot |= args.plot
+    conf.mean_line["debug"] = args.meanline_debug
 
     # Choose log level
     # sys.tracebacklimit = 1000 if args.verbose else 1

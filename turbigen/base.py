@@ -1,6 +1,7 @@
 import numpy as np
 from turbigen import util
 import turbigen.average
+import sys
 
 logger = util.make_logger()
 
@@ -1451,15 +1452,18 @@ class MeanLine:
 
         logger.info("Checking mean-line conservation...")
 
+        check_failed = False
+
         # Check mass is conserved
         rtol = 1e-2
         mdot = self.mdot
         if np.isnan(mdot).any():
-            raise Exception("NaN mass flow rate")
+            check_failed = True
+            logger.iter("NaN mass flow rate")
 
         if np.ptp(mdot) > (mdot[0] * rtol):
-            raise Exception(f"Mass is not conserved, mdot={mdot}")
-        assert np.ptp(mdot) < (mdot[0] * rtol)
+            check_failed = True
+            logger.iter(f"Mass is not conserved, mdot={mdot}")
 
         # Check that rothalpy is conserved in blade rows
         I = self.I
@@ -1473,7 +1477,8 @@ class MeanLine:
         for iIrow, Irow in enumerate(np.array_split(I, irow)[1:]):
             logger.debug(f"Irow: {Irow}")
             if np.ptp(Irow) > Itol:
-                raise Exception(
+                check_failed = True
+                logger.iter(
                     f"Rothalpy not conserved in row {iIrow}: I = [{Irow[0], Irow[1]}]"
                 )
 
@@ -1485,10 +1490,40 @@ class MeanLine:
         for igap, hogap in enumerate(np.array_split(ho, igap)[1:-1]):
             logger.debug(f"hogap: {hogap}")
             if not np.all(np.ptp(hogap) < hotol):
-                raise Exception(
+                check_failed = True
+                logger.iter(
                     f"Absolute stagnation enthalpy not conserved across gap {igap}: ho"
                     f" = [{hogap[0], hogap[1]}]"
                 )
+
+        return not check_failed
+
+    def show_debug(self):
+        np.set_printoptions(linewidth=np.inf, precision=4, floatmode='maxprec_equal')
+        logger.iter(f"rrms: {self.rrms}")
+        logger.iter(f"rhub: {self.rhub}")
+        logger.iter(f"rtip: {self.rtip}")
+        logger.iter(f"A: {self.A}")
+        logger.iter(f"To: {self.To}")
+        logger.iter(f"T: {self.T}")
+        logger.iter(f"Po: {self.Po}")
+        logger.iter(f"P: {self.P}")
+        logger.iter(f"Vx: {self.Vx}")
+        logger.iter(f"Vr: {self.Vr}")
+        logger.iter(f"Vt: {self.Vt}")
+        logger.iter(f"Vt_rel: {self.Vt_rel}")
+        logger.iter(f"Ma: {self.Ma}")
+        logger.iter(f"Ma_rel {self.Ma_rel}")
+        logger.iter(f"U: {self.U}")
+        logger.iter(f"Al: {self.Alpha}")
+        logger.iter(f"Al_rel: {self.Alpha_rel}")
+        logger.iter(f"Beta: {self.Beta}")
+        logger.iter(f"Omega: {self.Omega}")
+        logger.iter(f"mdot: {self.mdot}")
+        logger.iter(f"ho: {self.ho}")
+        logger.iter(f"rho: {self.rho}")
+
+
 
     def __str__(self):
         Pstr = np.array2string(self.Po / 1e5, precision=4)
