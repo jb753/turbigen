@@ -899,7 +899,14 @@ def run_single(conf, gguess=None, plot=False):
                 if (np.abs(inc) > inc_tol).any():
                     inc_converged = False
 
-                dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+                # Drop the relaxation factor if we are very near
+                # to the tolerance
+                if (np.abs(inc) < inc_tol * 1.5).all():
+                    fac_close = 0.5
+                else:
+                    fac_close = 1.0
+
+                dinc = np.clip(inc * fac_close * rf_inc, -inc_clip, inc_clip)
 
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0
