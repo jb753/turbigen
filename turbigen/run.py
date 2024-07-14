@@ -89,7 +89,7 @@ def run_single(conf, gguess=None):
     meanline_design = util.load_mean_line(conf.mean_line_type)
 
     # Check for the meanline debug flag
-    meanline_debug = conf.mean_line.pop('debug', False)
+    meanline_debug = conf.mean_line.pop("debug", False)
 
     # Feed mean-line arguments to the function
     times.append(timer())
@@ -98,14 +98,19 @@ def run_single(conf, gguess=None):
     logger.debug(f"Mean-line design took {np.diff(times)[-1]:.1f}s")
     if not ml.check():
         ml.show_debug()
-        raise Exception('Mean-line conservation checks failed, have printed debugging information') from None
+        raise Exception(
+            "Mean-line conservation checks failed, have printed debugging information"
+        ) from None
     elif meanline_debug:
-        logger.iter(f"Printing mean-line design and quitting...")
+        logger.iter("Mean-line debugging requested...")
+        logger.iter("Design variables:")
+        for k, v in conf.mean_line.items():
+            logger.iter(f"{k}: {v}")
+        logger.iter("Flow field:")
         ml.show_debug()
         sys.exit(0)
     else:
         logger.info(ml)
-
 
     # Check inversion is consistent
     try:
@@ -592,7 +597,6 @@ def run_single(conf, gguess=None):
         hmesh_config = hmesh.HMeshConfig(**mesh_settings)
         # Make the grid object
         g = hmesh.make_grid(mac, hmesh_config, dhub, dcas, drow, unbladed)
-
 
     elif mesh_type == "oh":
         tips *= 0.5 * (ml.span[::2] + ml.span[1::2])
