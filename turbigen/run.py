@@ -955,11 +955,6 @@ def run_single(conf, gguess=None):
                     dev_converged = False
                 ddev = -np.clip(dev * rf_dev, -dev_clip, dev_clip)
 
-                # Do not try to correct for deviation if LE is at
-                # very large incidence (because fully separated)
-                if np.abs(inc.flat[imax]) > 45.0:
-                    ddev *= 0.0
-
                 qstar_save[irow][:, 1] += ddev
                 pdict["Dev"] = np.atleast_1d(dev)[0]
                 pdict["DDev"] = np.atleast_1d(ddev)[0]
