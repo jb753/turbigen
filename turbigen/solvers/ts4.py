@@ -560,17 +560,13 @@ def run(grid, settings, machine):
     nnode = int(os.environ["SLURM_NNODES"])
     npernode = ngpu // nnode
 
-    # Write throttle config file
-    throttle_flag = _write_throttle(ts4_conf, grid, input_file_path)
-
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
         ts3_conf.nstep = ts4_conf.nstep_ts3
         ts3_conf.ntask = ngpu
         ts3_conf.nnode = nnode
         turbigen.solvers.ts3._run(grid, ts3_conf)
-        if throttle_flag:
-            grid.update_outlet()
+        grid.update_outlet()
 
     turbigen.solvers.ts3._write_hdf5(grid, ts3_conf)
 
@@ -621,6 +617,9 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         ) from None
 
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
+
+    # Write throttle config file
+    throttle_flag = _write_throttle(ts4_conf, grid, input_file_path)
 
     # Assume that the custom pipeline will set wall distances for us
     if not ts4_conf.custom_pipeline:
