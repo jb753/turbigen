@@ -342,7 +342,7 @@ class DesignSpace:
         else:
             raise Exception(f'Unknown basis "{self.basis}"')
         self._inds = inds
-        self.nbasis = len(inds)
+        self.ndof = len(inds)
 
         # Pre-compute Vandermode-like matrix for fitting
         self._A = np.column_stack([legval(self._xn_train, i) for i in inds])
@@ -364,6 +364,8 @@ class DesignSpace:
         self._xu = np.max(self._x_train, axis=0, keepdims=True)
         self._xn_train = 2.0 * (self._x_train - self._xl) / (self._xu - self._xl) - 1.0
         self._xn_test = 2.0 * (self._x_test - self._xl) / (self._xu - self._xl) - 1.0
+
+        self.ntrain = len(self._train)
 
     @classmethod
     def from_database(
