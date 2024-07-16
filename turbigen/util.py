@@ -1827,6 +1827,9 @@ def interpolate_block(xr_hub, xr_cas, spf):
     return xr
 
 
+def meshgrid_block(x, r, t):
+    return np.stack(np.meshgrid(x, r, t, indexing='ij'))
+
 def extrude_block(xr, t):
     _, ni, nj = xr.shape
     nk = t.shape[0]
