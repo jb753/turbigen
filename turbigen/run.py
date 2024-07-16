@@ -96,6 +96,7 @@ def run_single(conf, gguess=None):
     ml = meanline_design.forward(So1=So1, **conf.mean_line)
     times.append(timer())
     logger.debug(f"Mean-line design took {np.diff(times)[-1]:.1f}s")
+    logger.info(ml)
     if not ml.check():
         ml.show_debug()
         raise Exception(
@@ -109,8 +110,6 @@ def run_single(conf, gguess=None):
         logger.iter("Flow field:")
         ml.show_debug()
         sys.exit(0)
-    else:
-        logger.info(ml)
 
     # Check inversion is consistent
     try:
@@ -135,6 +134,7 @@ def run_single(conf, gguess=None):
         atol = 0.1
 
         error = False
+        logger.debug(f"Checking {v}")
         if conf.mean_line[v] == 0.0:
             if not np.allclose(conf.mean_line[v], params_inv[v], atol=atol):
                 error = True
@@ -168,6 +168,8 @@ def run_single(conf, gguess=None):
     annulus_type = conf.annulus.pop("type", "Smooth")
     Annulus = util.load_annulus(annulus_type)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
+    post_func = util.load_post("plot_annulus").post
+
     conf.annulus["type"] = annulus_type
     logger.info(ann)
     times.append(timer())
@@ -484,7 +486,7 @@ def run_single(conf, gguess=None):
     logger.info(f"Re_surf/10^5={Restr}")
 
     # Preallocate number of blades
-    Nb = np.full_like(row_rmid, np.nan)
+    Nb = np.zeros_like(row_rmid)
 
     # Loop over rows and choose method for number of blades
     for irow in range(len(Nb)):
@@ -510,6 +512,8 @@ def run_single(conf, gguess=None):
 
     iunbladed = np.where(np.logical_not(ind_out))[0]
     Nb[iunbladed] = Nb[iunbladed - 1]
+    if Nb[0] < 1:
+        Nb[0] = Nb[1]
     Nb = np.round(Nb).astype(int)
 
     s = 2.0 * np.pi * row_rmid[ind_out] / Nb[ind_out]
