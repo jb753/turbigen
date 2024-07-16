@@ -62,6 +62,8 @@ def legcoeff(n):
         c = np.array([63.0, 0.0, -70.0, 0.0, 15.0, 0.0]) / 8.0
     elif n == 6:
         c = np.array([231.0, 0.0, -315.0, 0.0, 105.0, 0.0, -5.0]) / 16.0
+    elif n == 7:
+        c = np.array([429.0, 0.0, -693.0, 0.0, 315.0, 0.0, -35.0, 0.]) / 16.0
     else:
         raise ValueError(f"Do not know Legendre coefficients for n={n}")
     return c
@@ -510,7 +512,10 @@ class DesignSpace:
 
     def MSE_test(self, v, edge=0.0):
         yy = self.get_calibration_test(v, edge)
-        return np.nanmean((yy[0] - yy[1]) ** 2.0)
+        if np.isnan(yy[1]).all():
+            return np.nan
+        else:
+            return np.nanmean((yy[0] - yy[1]) ** 2.0)
 
     def Rsq(self, v):
         return _Rsq(*self.get_calibration_train(v))
@@ -523,6 +528,38 @@ class DesignSpace:
 
     def RMSE_test(self, v, edge=0.0):
         return np.sqrt(self.MSE_test(v, edge))
+
+    def get_pareto(self, v_names, negate):
+        v = np.stack([self._get_data_var(self._train, vn) for vn in v_names])
+
+        # Initialise front arbitrarily
+        nv, npts = v.shape
+
+        for iv in range(nv):
+            if negate[iv]:
+                v[iv] *= -1.
+
+        isort = np.argsort(v[0])
+
+        ifront = [isort[0],]
+
+        for inow in isort[1:]:
+
+            # If this point is better in one respect than any existing, 
+            # add it to the list
+            vnow = v[:,inow].reshape(nv,-1)
+            if (vnow>v[:,ifront]).any():
+
+                # If this point dominates any others
+                # Remove the old points
+                idom = np.where((vnow>v[:,ifront]).all(axis=0))[0]
+                for iidom in reversed(idom):
+                    ifront.pop(iidom)
+
+                # Add new point to list
+                ifront.append(inow)
+
+        return np.array(ifront).astype(int)
 
 
 def _case(mean_line_type, mls, Nk, k, o, varname, independent):
