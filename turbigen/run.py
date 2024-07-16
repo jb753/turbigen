@@ -13,7 +13,6 @@ from turbigen import (
 )
 from turbigen.exceptions import ConfigError
 import turbigen.post_process
-import turbigen.plot
 import turbigen.average
 import turbigen.annulus
 import numpy as np
@@ -71,7 +70,7 @@ def log_line(d, fields):
     sys.stdout.flush()
 
 
-def run_single(conf, gguess=None, plot=False):
+def run_single(conf, gguess=None):
     """Run turbigen on a config object."""
 
     times = []
@@ -89,13 +88,28 @@ def run_single(conf, gguess=None, plot=False):
 
     meanline_design = util.load_mean_line(conf.mean_line_type)
 
+    # Check for the meanline debug flag
+    meanline_debug = conf.mean_line.pop("debug", False)
+
     # Feed mean-line arguments to the function
     times.append(timer())
     ml = meanline_design.forward(So1=So1, **conf.mean_line)
-    logger.info(ml)
     times.append(timer())
     logger.debug(f"Mean-line design took {np.diff(times)[-1]:.1f}s")
-    # ml.check()
+    logger.info(ml)
+    if not ml.check():
+        ml.show_debug()
+        raise Exception(
+            "Mean-line conservation checks failed, have printed debugging information"
+        ) from None
+    elif meanline_debug:
+        logger.iter("Mean-line debugging requested...")
+        logger.iter("Design variables:")
+        for k, v in conf.mean_line.items():
+            logger.iter(f"{k}: {v}")
+        logger.iter("Flow field:")
+        ml.show_debug()
+        sys.exit(0)
 
     # Check inversion is consistent
     try:
@@ -451,19 +465,6 @@ def run_single(conf, gguess=None, plot=False):
 
     ind_out = [True if b else False for b in bld]
 
-    if conf.plot:
-        for ib, b in enumerate(bld):
-            if b:
-                fname_xrt = os.path.join(workdir, "blade_%d_xrt.pdf" % ib)
-                fname_rrt = os.path.join(workdir, "blade_%d_rrt.pdf" % ib)
-                fname_cam = os.path.join(workdir, "camber_%d_xrt.pdf" % ib)
-                fname_split = os.path.join(workdir, "splitter_%d_xrt.pdf" % ib)
-                turbigen.plot.plot_blade(b, spf=[0.0, 0.5, 1.0], fname=fname_xrt)
-                turbigen.plot.plot_blade(
-                    b, spf=[0.0, 0.5, 1.0], fname=fname_rrt, xr=False
-                )
-                turbigen.plot.plot_camber_line(b, fname_cam)
-
     # Surface length
     ell = np.array([b.surface_length(0.5) if b else None for b in bld])
 
@@ -529,12 +530,6 @@ def run_single(conf, gguess=None, plot=False):
                     / Nb[irow]
                     * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
                 )
-
-    if conf.plot:
-        for ib, b in enumerate(bld):
-            if b:
-                if splitter and splitter[ib]:
-                    turbigen.plot.plot_splitter(b, splitter[ib], Nb[ib], fname_split)
 
     ml.Nb = np.repeat(Nb, 2)
     ml.Co = conf.blades.get("Co")
@@ -606,9 +601,6 @@ def run_single(conf, gguess=None, plot=False):
         hmesh_config = hmesh.HMeshConfig(**mesh_settings)
         # Make the grid object
         g = hmesh.make_grid(mac, hmesh_config, dhub, dcas, drow, unbladed)
-
-        if conf.plot:
-            turbigen.plot.plot_hmesh(g, workdir)
 
     elif mesh_type == "oh":
         tips *= 0.5 * (ml.span[::2] + ml.span[1::2])
@@ -904,7 +896,14 @@ def run_single(conf, gguess=None, plot=False):
                 if (np.abs(inc) > inc_tol).any():
                     inc_converged = False
 
-                dinc = np.clip(inc * rf_inc, -inc_clip, inc_clip)
+                # Drop the relaxation factor if we are very near
+                # to the tolerance
+                if (np.abs(inc) < inc_tol * 1.5).all():
+                    fac_close = 0.5
+                else:
+                    fac_close = 1.0
+
+                dinc = np.clip(inc * fac_close * rf_inc, -inc_clip, inc_clip)
 
                 if mdot_err > rtol_mdot_inc:
                     dinc *= 0.0
@@ -960,11 +959,6 @@ def run_single(conf, gguess=None, plot=False):
                     dev_converged = False
                 ddev = -np.clip(dev * rf_dev, -dev_clip, dev_clip)
 
-                # Do not try to correct for deviation if LE is at
-                # very large incidence (because fully separated)
-                if np.abs(inc.flat[imax]) > 45.0:
-                    ddev *= 0.0
-
                 qstar_save[irow][:, 1] += ddev
                 pdict["Dev"] = np.atleast_1d(dev)[0]
                 pdict["DDev"] = np.atleast_1d(ddev)[0]
@@ -1016,7 +1010,7 @@ def run_single(conf, gguess=None, plot=False):
     return ml_out, opt_converged, gguess
 
 
-def run(conf, plot=False):
+def run(conf):
     basedir = conf.workdir
 
     if conf.hypercube:
@@ -1149,7 +1143,7 @@ def run(conf, plot=False):
                 break
 
     else:
-        ml_out, _, gguess = run_single(conf, plot=plot)
+        ml_out, _, gguess = run_single(conf)
         opt_converged = True
 
     if not opt_converged:

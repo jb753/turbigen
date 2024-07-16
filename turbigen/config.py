@@ -203,6 +203,8 @@ class Config:
                         )
                 func_param_names = [p.name for p in func_params]
                 for k in self.mean_line:
+                    if k == "debug":
+                        continue
                     if k not in func_param_names:
                         raise ConfigError(
                             f'Meanline parameter "{k}" is not valid, expecting one of'

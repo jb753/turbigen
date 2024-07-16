@@ -219,6 +219,8 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         if k:
             raise NotImplementedError
 
+        logger.debug("Sucessfully trimmed block.")
+
     def get_wall(self, ignore_slip=False):
 
         ni, nj, nk = self.shape
@@ -664,10 +666,31 @@ class Grid:
 
         if self.nrow == 1:
             return [list(self)]
-        else:
+        elif self.nrow == 2:
             blkin = self.inlet_patches[0].block.get_connected()
             blkout = [b for b in self._blocks if b not in blkin]
             return [blkin, blkout]
+        else:
+            blk = []
+            # Start at inlet
+            blk.append(self.inlet_patches[0].block.get_connected())
+            mix_visited = []
+            for irow in range(1, self.nrow - 1):
+                # Look for a mixing patch in the previous row
+                for p in self.mixing_patches:
+                    if p.block in blk[-1] and p not in mix_visited:
+                        # Add the patches on the other side of mixing patch
+                        blk.append(p.match.block.get_connected())
+                        mix_visited.append(p)
+                        break
+            blk.append(self.outlet_patches[0].block.get_connected())
+            # Check for any orphan blocks and arbitrarily put on last row
+            blk_flat = sum(blk, [])
+            for b in self._blocks:
+                if b not in blk_flat:
+                    blk[-1].append(b)
+
+            return blk
 
     def row_index(self, block):
         for irow, row_block in enumerate(self.row_blocks):
