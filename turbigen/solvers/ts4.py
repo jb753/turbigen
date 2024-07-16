@@ -389,6 +389,8 @@ def _write_throttle(ts4_conf, grid, fname):
     }
 
     throt_file_path = os.path.join(ts4_conf.workdir, "throttle_config.ofp")
+    if os.path.exists(throt_file_path):
+        os.remove(throt_file_path)
 
     if mdot_flag or ts4_conf.area_avg_pout:
         _write_ofp(throt_file_path, throt_ofp)
@@ -544,6 +546,12 @@ def run(grid, settings, machine):
             body_force_str = re.sub(
                 rf"{k}\s*=.*$", f"{k} = {v}", body_force_str, flags=re.MULTILINE
             )
+
+        # Check syntax
+        try:
+            compile(body_force_str, 'dummy.py', 'exec')
+        except Exception as e:
+            raise Exception('Error in body force template!') from e
 
         dest_body_force = os.path.join(ts4_conf.workdir, "body_force_config.ofp")
         with open(dest_body_force, "w") as f:
