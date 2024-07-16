@@ -151,12 +151,6 @@ def run_single(conf, gguess=None):
     workdir = conf.workdir
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
-
-    # # Write out the config
-    # conf_out = conf.copy()
-    # conf_out.interpolate = {}
-    # conf_out.write(os.path.join(workdir, "config.yaml"))
-
     conf.write(os.path.join(workdir, "config.yaml"))
 
     if not conf.annulus:
@@ -166,6 +160,7 @@ def run_single(conf, gguess=None):
     times.append(timer())
     conf._check_annulus()
     annulus_type = conf.annulus.pop("type", "Smooth")
+    logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
     post_func = util.load_post("plot_annulus").post

@@ -185,7 +185,7 @@ def inverse(ml):
     DH = (ml.V[1:] / ml.V[:-1])[1:]
     DH[1] = ml.V_rel[3] / ml.V_rel[2]
 
-    VmR = (ml.Vm[1:] / ml.Vm[:-1])[1:]
+    VmR = (ml.Vm[1:] / ml.Vm[:-1])[2:]
 
     out = {
         "So1": ml.stagnation[0],
@@ -194,10 +194,10 @@ def inverse(ml):
         "phi1": ml.phi[2],
         "Ma1_rel": ml.Ma_rel[2],
         "htr1a": htr,
-        "DH": DH,
-        "VmR": VmR,
-        "Ys": (ml.s[2:] - ml.s[0]) * ml.To[0] / (0.5 * ml.ao[0] ** 2),
-        "Beta": ml.Beta[2:],
+        "DH": DH.tolist(),
+        "VmR": VmR.tolist(),
+        "Ys": ((ml.s[2:] - ml.s[0]) * ml.To[0] / (0.5 * ml.ao[0] ** 2)).tolist(),
+        "Beta": ml.Beta[2:].tolist(),
         "RR_indu": ml.rrms[2] / ml.rrms[1],
     }
     return out
