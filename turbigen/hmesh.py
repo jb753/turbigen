@@ -405,6 +405,11 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
     blocks = []
 
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+
     # Loop over rows
     nrow = mac.Nrow
     assert dsurf.shape == (2, nrow)

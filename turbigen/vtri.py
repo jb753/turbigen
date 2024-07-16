@@ -48,8 +48,20 @@ def annulus_geometry_from_flow(Vxrt, mdot, rho, phi, htr):
     H = A / 2.0 / np.pi / rmid
     rhub = rmid - H / 2.0 * cosBeta
     rcas = rmid + H / 2.0 * cosBeta
-
     rrms = np.sqrt(0.5 * (rhub**2 + rcas**2))
     Omega = U / rrms
 
     return rrms, A, Omega
+
+
+def solve_rrms(A, htr, Beta=0.0):
+
+    cosBeta = turbigen.util.cosd(Beta)
+    K = (1.0 - htr) / (1.0 + htr)
+    rmid = np.sqrt(A / 4.0 / np.pi / K)
+    H = A / 2.0 / np.pi / rmid
+    rhub = rmid - H / 2.0 * cosBeta
+    rcas = rmid + H / 2.0 * cosBeta
+    rrms = np.sqrt(0.5 * (rhub**2 + rcas**2))
+
+    return rrms
