@@ -452,7 +452,7 @@ class Impeller:
 
     @property
     def R_LE(self):
-        return self.tmax / self.a
+        return self.tmax / self.a * 5. / 2.
 
     @property
     def mmax(self):

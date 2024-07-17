@@ -33,7 +33,7 @@ class Smooth:
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
     def __init__(
-        self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.0
+        self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.0, smooth=True,
     ):
         r"""Construct an annulus from geometric parameters.
 
@@ -199,8 +199,10 @@ class Smooth:
                 except ValueError:
                     pass
 
-        for k in range(1, self.npts - 2):
-            _solve_k(k)
+        if smooth:
+
+            for k in range(1, self.npts - 2):
+                _solve_k(k)
 
         # err_out_abs = self.chords(0.5) - Ds
         # err_out_rel = err_out_abs / self.chords(0.5)
