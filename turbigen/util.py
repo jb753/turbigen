@@ -1248,6 +1248,9 @@ def load_mean_line(mean_line_type):
     else:
         # Use as a file path
         mod_file = os.path.abspath(mean_line_type)
+        # If abs path not found, look relative
+        if not os.path.exists(mod_file):
+            mod_file = os.path.split(mod_file)[-1]
         mod_name = os.path.basename(mean_line_type)
         spec = importlib.util.spec_from_file_location(
             f"turbigen.meanline.{mod_name}", mod_file
