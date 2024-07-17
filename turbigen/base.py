@@ -1094,11 +1094,17 @@ class Composites:
     @dependent_property
     def P_rot(self):
         # Rotary static pressure
-        S = self.copy()
-        # Replace horel with rothalpy
-        # i.e. subtract blade speed dyn head from h
-        S.set_h_s(self.h - 0.5 * self.U**2, self.s)
-        return S.P
+        if self.Omega.any():
+            S = self.copy()
+            # In rotating frame
+            # Replace horel with rothalpy
+            # i.e. subtract blade speed dyn head from h
+            S.set_h_s(self.h - 0.5 * self.U**2, self.s)
+            P = S.P
+        else:
+            # Just use normal static pressure in stationary frame
+            P = self.P
+        return P
 
     #
     # Fluxes
