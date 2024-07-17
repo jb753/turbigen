@@ -63,7 +63,7 @@ def legcoeff(n):
     elif n == 6:
         c = np.array([231.0, 0.0, -315.0, 0.0, 105.0, 0.0, -5.0]) / 16.0
     elif n == 7:
-        c = np.array([429.0, 0.0, -693.0, 0.0, 315.0, 0.0, -35.0, 0.]) / 16.0
+        c = np.array([429.0, 0.0, -693.0, 0.0, 315.0, 0.0, -35.0, 0.0]) / 16.0
     else:
         raise ValueError(f"Do not know Legendre coefficients for n={n}")
     return c
@@ -480,10 +480,6 @@ class DesignSpace:
         with open(fname, "w") as f:
             json.dump(fit_data, f)
 
-        import IPython
-
-        IPython.embed()
-
     def get_calibration_train(self, v):
         xs = self._x_train
         ys = self._get_y_train(v)
@@ -537,22 +533,24 @@ class DesignSpace:
 
         for iv in range(nv):
             if negate[iv]:
-                v[iv] *= -1.
+                v[iv] *= -1.0
 
         isort = np.argsort(v[0])
 
-        ifront = [isort[0],]
+        ifront = [
+            isort[0],
+        ]
 
         for inow in isort[1:]:
 
-            # If this point is better in one respect than any existing, 
+            # If this point is better in one respect than any existing,
             # add it to the list
-            vnow = v[:,inow].reshape(nv,-1)
-            if (vnow>v[:,ifront]).any():
+            vnow = v[:, inow].reshape(nv, -1)
+            if (vnow > v[:, ifront]).any():
 
                 # If this point dominates any others
                 # Remove the old points
-                idom = np.where((vnow>v[:,ifront]).all(axis=0))[0]
+                idom = np.where((vnow > v[:, ifront]).all(axis=0))[0]
                 for iidom in reversed(idom):
                     ifront.pop(iidom)
 
@@ -604,3 +602,57 @@ def crossvalidate(mls, Nk, orders, varname, independent):
     err = np.mean(err, axis=0)
 
     return err, err_err
+
+
+class FittedDesignSpace:
+    def __init__(self, fit_json):
+        """Load a previously fitted design space.
+
+        Parameters
+        ----------
+        fit_json: str
+            Filename of the fit coefficients in JSON format
+
+        """
+
+        # Get the json data
+        with open(fit_json, "r") as f:
+            fit_data = json.load(f)
+
+        # Store the data as arrays
+        self._independent = np.array(fit_data["vars"])
+        self._nvar = len(self._independent)
+        self._xl = np.array(fit_data["xl"])
+        self._xu = np.array(fit_data["xu"])
+        self._k = np.array(fit_data["k"])
+        self._c = np.array(fit_data["c"])
+
+    def __call__(self, x):
+        """Evaluate the fitted design space at query points.
+
+        Parameters
+        ----------
+        x: array (nvar, npoint)
+            Values of the independent variables, first dimension equal to
+            number of independent variables in the fit, second the number of
+            query points
+
+        """
+
+        # Check shape of input
+        x = np.asarray(x)
+        if not x.shape[0] == self._nvar:
+            raise Exception(
+                f"The input data has first axis length {x.shape[0]}, "
+                f"expected the number of independent variables {self._nvar}"
+            )
+
+        # Transpose for compatibility with other functions
+        # Get normalised x coordinates at predictor locations
+        xn = 2.0 * (x.T - self._xl) / (self._xu - self._xl) - 1.0
+
+        # Evaluate the fit
+        A = np.column_stack([legval(xn, k) for k in self._k])
+        y = np.matmul(A, self._c)
+
+        return y
