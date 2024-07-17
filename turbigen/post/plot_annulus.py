@@ -95,3 +95,5 @@ def post(
     if write_raw:
         rawname = os.path.join(postdir, "annulus_raw")
         np.savez_compressed(rawname, xr_hub=xr_hub, xr_cas=xr_cas)
+
+    plt.close()

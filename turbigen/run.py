@@ -858,14 +858,17 @@ def run_single(conf, gguess=None):
                 err = np.inf
                 var_new = out_vars[v]
             else:
-                err = np.abs(conf.mean_line[v] - out_vars[v])
-                var_new = out_vars[v] * rf_mean + (1.0 - rf_mean) * conf.mean_line[v]
-            dvar = var_new - conf.mean_line[v]
-            pdict[v] = out_vars[v]
-            pdict["D" + v] = dvar
+                var_ml = np.array(conf.mean_line[v])
+                var_cfd = np.array(out_vars[v])
+                err = np.abs(var_ml - var_cfd).max()
+                var_new = var_cfd * rf_mean + (1.0 - rf_mean) * var_ml
+            dvar = var_new - var_ml
+            imax = np.argmax(err)
+            pdict[v] = var_cfd[imax]
+            pdict["D" + v] = dvar[imax]
             if err > match_vars[v]:
                 mean_line_converged = False
-            conf.mean_line[v] = util.reduce_scalar(var_new)
+            conf.mean_line[v] = util.reduce_scalar(var_new).tolist()
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):

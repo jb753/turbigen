@@ -43,9 +43,6 @@ class HMeshConfig(BaseConfig):
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
-    nk_unbladed = 81
-    """Number of pitchwise points across unbladed rows."""
-
     dspf_mid = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
 
@@ -184,7 +181,7 @@ class HMeshConfig(BaseConfig):
 
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
         dm_mid_unbladed = np.minimum(
-            self.dspf_mid * AR_row * self.AR_merid_unbladed, 0.05
+            self.dspf_mid * AR_row * self.AR_merid_unbladed, 0.1
         )
         # dm_upstream_LE_unbladed = dm_TE * pitch_chord[0] / pitch_chord[1]
         # dm_downstream_TE_unbladed = dm_TE * pitch_chord[-1] / pitch_chord[1]
@@ -457,11 +454,13 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
         # Nominal pitch fractions first
         if unbladed[irow]:
-            pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
-                AR_row, pitch_chord_ref[1]
-            )
             if irow == 0:
-                nk_not_resampled = len(pitch_frac_nom)
+                nk_not_resampled = 33
+                pitch_frac_nom = np.linspace(0., 1., nk_not_resampled)
+            else:
+                pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
+                    AR_row, pitch_chord_ref[1]
+                )
         else:
             safety_fac = 1.01
             pitch_frac_nom = mesh_config.pitchwise_grid(

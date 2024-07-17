@@ -1522,6 +1522,7 @@ class MeanLine:
         logger.iter(f"mdot: {self.mdot}")
         logger.iter(f"ho: {self.ho}")
         logger.iter(f"rho: {self.rho}")
+        logger.iter(f"s: {self.s}")
 
 
 
@@ -1645,7 +1646,8 @@ class MeanLine:
         total_out = self.cosAlpha_rel[1::2] / self.VmR[::2] * (centrifugal + tangential)
         total = np.where(self.ARflow[::2] > 1.0, total_in, total_out)
 
-        return np.abs(Co / total)
+        with np.errstate(divide='ignore'):
+            return np.abs(Co / total)
 
     #
     # Non-dimensionals
