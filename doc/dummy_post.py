@@ -1,4 +1,4 @@
-"""Dummy module for documenting all post processing."""
+"""All available post-processing routines are described below with the arguments they take."""
 
 import turbigen.post
 import turbigen.util
