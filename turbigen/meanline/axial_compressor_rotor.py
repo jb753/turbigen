@@ -1,9 +1,12 @@
 import turbigen.flowfield
 import numpy as np
+from turbigen import util
 
 
 def forward(So1, PR, mdot, phi, psi, htr1, etatt):
     """Caluclate mean-line from inlet and design variables."""
+
+    util.check_scalar(mdot=mdot, PR=PR, phi=phi, psi=psi, htr1=htr1, etatt=etatt)
 
     # Get the ideal exit state
     So2s = So1.copy()  # Duplicate the inlet state

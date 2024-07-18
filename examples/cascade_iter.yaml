@@ -1,6 +1,6 @@
-# Demonstrate fitting the camber and thickness parameters to coordinates
+# Apply iteration to correct incidence, loss, deviation of a turbine cascade
 
-workdir: runs/cascade_fit
+workdir: runs/cascade_iter
 
 inlet:
   Po: 1e5
@@ -30,16 +30,28 @@ blades:
       - spf: 0.7
         q_thick: [0.05, 0.08, 0.3, 0.02, 0.02, 0.18]
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
-    # The above camber and thickness are used as an initial guess for fitting
-    fit: tests/data/sections.dat
 
+iterate:
+  mean_line:
+    relaxation_factor: 0.5
+    match_tolerance:
+      Yh: 0.01
+  deviation:
+    clip: 5.0
+    relaxation_factor: 2.0
+    tolerance: 1.0
+  incidence:
+    clip: 2.0
+    relaxation_factor: 0.2
+    target: 2.0
+    tolerance: 5.0
 
 mesh:
   type: h
   yplus: 30.0
 
-post_process:
-  plot_section:
-    row_spf: [[0.3,0.7]]
-    coord_sys: xrt
-    compare: ['tests/data/sections.dat',]
+solver:
+  type: ts3
+  nstep: 5000
+  nstep_avg: 1000
+  rtol_mdot: 0.02

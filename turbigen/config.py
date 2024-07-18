@@ -199,7 +199,8 @@ class Config:
                     if (p.default is p.empty) and (self.mean_line.get(p.name) is None):
                         raise ConfigError(
                             f'No value specified for required "{meanline_type}" design'
-                            f' parameter "{p.name}"'
+                            f' parameter "{p.name}", '
+                            f"you supplied {list(self.mean_line.keys())}"
                         )
                 func_param_names = [p.name for p in func_params]
                 for k in self.mean_line:

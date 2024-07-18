@@ -3,9 +3,7 @@ from turbigen import util
 import turbigen.flowfield
 
 
-def forward(
-    So1, span1, span2, Alpha1, Alpha2, Ma2, Yh=0.0, htr=0.99, RR=1.0, Beta=(0.0, 0.0)
-):
+def forward(So1, span, Alpha, Ma2, Yh=0.0, htr=0.99, RR=1.0, Beta=(0.0, 0.0)):
     r"""Design the mean-line for a single-row stationary cascade.
 
     The minimal set of design choices are: spans, yaw angles, and exit Mach
@@ -16,11 +14,10 @@ def forward(
     Parameters
     ----------
     So1: State
-        Object specifing the working fluid and its state at inlet.
-    span1, span2: float
+        Object specifying the working fluid and its state at inlet.
+    span: (2,) array
         Inlet and outlet spans, :math:`H`.
-    Alpha1: float
-    Alpha2: float
+    Alpha: (2,) array
         Inlet and outlet yaw angles, :math:`\alpha/^\circ`.
     Ma2: float
         Exit Mach number, :math:`\Ma_2`.
@@ -44,11 +41,12 @@ def forward(
 
     """
 
-    span = np.array((span1, span2))
-    Alpha = np.array((Alpha1, Alpha2))
-    span = np.reshape(span, 2)
-    Alpha = np.reshape(Alpha, 2)
-    Beta = np.reshape(Beta, 2)
+    util.check_scalar(Ma2=Ma2, Yh=Yh, htr=htr)
+    util.check_vector((2,), span=span, Alpha=Alpha, Beta=Beta)
+
+    span = np.array(span)
+    Alpha = np.array(Alpha)
+    Beta = np.array(Beta)
 
     # Trig
     cosBeta = util.cosd(Beta)
@@ -165,10 +163,8 @@ def inverse(ml):
 
     out = {
         "So1": ml.stagnation[0],
-        "span1": ml.span[0],
-        "span2": ml.span[1],
-        "Alpha1": ml.Alpha[0],
-        "Alpha2": ml.Alpha[1],
+        "span": ml.span,
+        "Alpha": ml.Alpha,
         "Ma2": ml.Ma[1],
         "Yh": Yh_out,
         "htr": ml.htr[0],

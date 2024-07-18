@@ -1,6 +1,7 @@
 """Mean-line design of a radial impeller with vaneless diffuser"""
 import numpy as np
 import turbigen.flowfield
+from turbigen import util
 
 
 def forward(
@@ -51,6 +52,20 @@ def forward(
 
 
     """
+
+    util.check_scalar(
+        PR_tt=PR_tt,
+        eta_tt=eta_tt,
+        mdot=mdot,
+        phi1=phi1,
+        Alpha1=Alpha1,
+        Ma1_rel=Ma1_rel,
+        htr1=htr1,
+        Alpha2_rel=Alpha2_rel,
+        loss_split=loss_split,
+        DH_rotor=DH_rotor,
+        DH_diff=DH_diff,
+    )
 
     # Fully radial outlet pitch angle
     Beta2 = 90.0

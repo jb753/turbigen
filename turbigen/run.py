@@ -86,7 +86,7 @@ def run_single(conf, gguess=None):
     # Dynamically load the design functions based on machine type in config
     if not conf.mean_line_type:
         raise ConfigError("No mean-line type specified; quitting.")
-    logger.info(f"Designing a {conf.mean_line_type}...")
+    logger.info(f"Designing a {conf.mean_line_type} mean line...")
 
     meanline_design = util.load_mean_line(conf.mean_line_type)
 
@@ -258,15 +258,15 @@ def run_single(conf, gguess=None):
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
             if thick_span:
                 f = (
-                        thick_span[irow]
-                        * ml.span[::2][irow]
-                        / ann.chords(0.5)[1:-1:2][irow]
-                        / 2.0
+                    thick_span[irow]
+                    * ml.span[::2][irow]
+                    / ann.chords(0.5)[1:-1:2][irow]
+                    / 2.0
                 )
                 if thick_type[irow] == "Impeller":
                     fac_thick = np.array([f, 1.0, 1.0, f])
                 else:
-                    fac_thick = np.array([f ** 2.0, f, 1.0, 1.0, f, f])
+                    fac_thick = np.array([f**2.0, f, 1.0, 1.0, f, f])
                     # fac_thick = np.array([f, f, 1.0, 1.0, f, 1.0])
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
 
@@ -365,7 +365,7 @@ def run_single(conf, gguess=None):
                                 # Lookup shortest distances to target coords
                                 dist, _ = tree.query(xrtul.T)
 
-                                return np.sqrt(np.mean(dist ** 2))
+                                return np.sqrt(np.mean(dist**2))
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
@@ -519,10 +519,10 @@ def run_single(conf, gguess=None):
         for irow in range(len(Nb)):
             if conf.splitter[irow]:
                 splitter[irow].theta_offset += (
-                        2.0
-                        * np.pi
-                        / Nb[irow]
-                        * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
+                    2.0
+                    * np.pi
+                    / Nb[irow]
+                    * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
                 )
 
     ml.Nb = np.repeat(Nb, 2)
@@ -551,6 +551,9 @@ def run_single(conf, gguess=None):
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
+    if not conf.mesh:
+        logger.iter("Cannot proceed further without mesh configuration, quitting.")
+        sys.exit(1)
 
     # Restore the relative camber
     for irow, row in enumerate(conf.sections):
@@ -566,9 +569,9 @@ def run_single(conf, gguess=None):
         conf.write(os.path.join(workdir, "config.yaml"))
 
     # Set row, hub, casing spacings using yplus and flat-plate correlations
-    yplus = np.atleast_2d(conf.mesh["yplus"]).T
+    yplus = np.atleast_2d(conf.mesh.get("yplus", 30.0)).T
     Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref ** 2.0)
+    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)
     Vtau = np.sqrt(tauw / ml.rho_ref)
     Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
@@ -839,8 +842,6 @@ def run_single(conf, gguess=None):
         log_fields += (v,)
         log_fields += ("D" + v,)
 
-    # log_line({'Iter':0, 'Row': 1, 'Inc':5.,'Dev': 4.5},log_fields)
-
     pdict = {"Min": mins}
 
     out_vars = meanline_design.inverse(ml_out)
@@ -948,8 +949,8 @@ def run_single(conf, gguess=None):
             row["qstar_camber"] = qstar_save[irow].tolist()
 
     opt_converged = (
-                            dev_converged and inc_converged and mean_line_converged
-                    ) or conf.solver.get("skip")
+        dev_converged and inc_converged and mean_line_converged
+    ) or conf.solver.get("skip")
 
     if conf.iterate:
         log_line(pdict, log_fields)
@@ -1084,7 +1085,11 @@ def run(conf):
     if conf.database.get("conf_path"):
         conf.interpolate_from_database()
 
-    if conf.iterate and conf.solver:
+    if conf.iterate:
+        if not conf.solver:
+            raise Exception(
+                "Cannot iterate the design without a CFD solver configured."
+            )
         gguess = None
 
         max_iter = conf.iterate.get("max_iter", 20)

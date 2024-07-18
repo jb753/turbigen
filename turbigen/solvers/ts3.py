@@ -1097,9 +1097,7 @@ def run(grid, settings, machine):
             )
     except KeyError:
         if not ts3_conf.skip:
-            raise Exception(
-                "No turbostream group on this machine - are you on the HPC?"
-            ) from None
+            raise Exception("Cannot locate turbostream - are you on the HPC?") from None
 
     input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
     output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")

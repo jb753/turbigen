@@ -1,4 +1,4 @@
-# All files relating to the case are held in a working directory
+# A completed config for the tutorial
 workdir: runs/rotor
 
 # Perfect gas inlet state
