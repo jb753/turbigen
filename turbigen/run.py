@@ -162,8 +162,18 @@ def run_single(conf, gguess=None):
     annulus_type = conf.annulus.pop("type", "Smooth")
     logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
+    annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
-    post_func = util.load_post("plot_annulus").post
+    if annulus_debug:
+        logger.iter("Annulus debugging requested...")
+        post_func = util.load_post("plot_annulus").post
+        post_conf = conf.post_process.get("plot_annulus")
+        if post_conf is None:
+            post_conf = {}
+        mac_ann = geometry.Machine(ann, [], [], [], [])
+        post_func(None, mac_ann, None, workdir, **post_conf)
+        logger.iter(f"Wrote annulus plot to {workdir}")
+        sys.exit(0)
 
     conf.annulus["type"] = annulus_type
     logger.info(ann)

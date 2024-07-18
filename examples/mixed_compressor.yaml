@@ -4,7 +4,6 @@ annulus:
   AR_chord: [10.0, -1.0, -1.0]  # -1 to set by minimising curvature
   AR_gap: [1.5, -1.0, -1.0 , 0.5]
   nozzle_ratio: 0.8
-  smooth: true
 
 blades:
 - {}

@@ -221,7 +221,7 @@ class Config:
         Annulus = util.load_annulus(self.annulus.get("type", "Smooth"))
         sig = signature(Annulus)
         for k in self.annulus:
-            if k not in sig.parameters and not k == "type":
+            if k not in sig.parameters and not k in ["type", "debug"]:
                 raise ConfigError(f'Invalid annulus design parameter "{k}"')
         for p in list(sig.parameters.values())[3:]:
             if (p.default is p.empty) and (self.annulus.get(p.name) is None):

@@ -103,7 +103,6 @@ mathjax3_config = {
 bibtex_bibfiles = ["refs.bib"]
 bibtex_reference_style = "author_year"
 
-
 rst_epilog = f"""
 .. |ProjectVersion| replace:: {release}
 """

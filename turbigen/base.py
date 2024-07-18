@@ -71,6 +71,10 @@ class StructuredData:
         """Save this object to a yaml file."""
         util.write_yaml(self.to_dict(), fname, mode)
 
+    def write_npz(self, fname, mode="w"):
+        """Save this object to an npz file."""
+        np.savez_compressed(fname, **self.to_dict())
+
     @classmethod
     def stack(cls, sd, axis=0):
         out = cls()
@@ -1505,7 +1509,7 @@ class MeanLine:
         return not check_failed
 
     def show_debug(self):
-        np.set_printoptions(linewidth=np.inf, precision=4, floatmode='maxprec_equal')
+        np.set_printoptions(linewidth=np.inf, precision=4, floatmode="maxprec_equal")
         logger.iter(f"rrms: {self.rrms}")
         logger.iter(f"rhub: {self.rhub}")
         logger.iter(f"rtip: {self.rtip}")
@@ -1529,8 +1533,6 @@ class MeanLine:
         logger.iter(f"ho: {self.ho}")
         logger.iter(f"rho: {self.rho}")
         logger.iter(f"s: {self.s}")
-
-
 
     def __str__(self):
         Pstr = np.array2string(self.Po / 1e5, precision=4)
@@ -1652,7 +1654,7 @@ class MeanLine:
         total_out = self.cosAlpha_rel[1::2] / self.VmR[::2] * (centrifugal + tangential)
         total = np.where(self.ARflow[::2] > 1.0, total_in, total_out)
 
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide="ignore"):
             return np.abs(Co / total)
 
     #
