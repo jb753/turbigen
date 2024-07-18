@@ -3,7 +3,7 @@ Configuration file format
 
 The working example below illustrates the general layout of a :program:`turbigen` configuration file. More specimens are available in the :file:`examples` directory.
 
-.. literalinclude:: ../examples/cascade.yaml
+.. literalinclude:: ../examples/turbine_cascade.yaml
    :language: yaml
 
 Input data is specified in a text-based `YAML
