@@ -79,6 +79,17 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
     assert np.mod(N, 2) == 0
     nrow = N // 2
 
+    util.check_scalar(mdot=mdot)
+
+    util.check_vector(
+        (N,),
+        rh=rh,
+        rt=rt,
+        rpm=rpm,
+        Alpha_rel=Alpha_rel,
+        Beta=Beta,
+    )
+
     # Make input data arrays
     rh = np.array(rh).reshape((N,))
     rt = np.array(rt).reshape((N,))
@@ -131,7 +142,7 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
         I1 = S1.h + 0.5 * (V1rel**2 - U1**2)
 
         # Loop to converge exit density
-        for _ in range(10):
+        for _ in range(50):
 
             # Set exit meridional velocity by cons of mass
             Vm2 = mdot / S2.rho / A[ien]

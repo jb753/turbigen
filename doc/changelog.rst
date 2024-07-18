@@ -1,6 +1,12 @@
 Changelog
 =========
 
+v1.10.1
+^^^^^^^
+
+* Bugfix for AutoGrid server not reading the delete switch
+* Bugfix for scalar mean-line iterate variables
+
 v1.10.0
 ^^^^^^^
 

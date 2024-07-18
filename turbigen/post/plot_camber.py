@@ -33,6 +33,12 @@ def post(grid, machine, meanline, postdir, row_spf):
                     r"\frac{\chi - \chi_\mathrm{in} }"
                     r"{\chi_\mathrm{out} - \chi_\mathrm{in}}$"
                 )
+            else:
+                chi_str = (
+                    r"$\displaystyle\hat{\chi} = "
+                    r"\frac{\tan\chi - \tan\chi_\mathrm{in} }"
+                    r"{\tan\chi_\mathrm{out} - \tan\chi_\mathrm{in}}$"
+                )
 
             title_str = (
                 (r"$\chi_\mathrm{in}=%.1f^\circ$, " % cam.chi(0.0))

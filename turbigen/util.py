@@ -6,6 +6,7 @@ import os
 import sys
 import importlib
 import scipy.interpolate
+from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.optimize import minimize, leastsq, root_scalar
 from scipy.spatial import Voronoi, ConvexHull
@@ -22,6 +23,21 @@ logging.addLevelName(logging.ITER, "ITER")
 logging.basicConfig(format="%(message)s")
 
 
+def check_scalar(**kwargs):
+    """Raise a helpful error message if any of the inputs are not scalar."""
+    for k, v in kwargs.items():
+        if not np.isscalar(v):
+            raise ConfigError(f"{k}={v} is a vector, but expected a scalar.")
+
+
+def check_vector(shape, **kwargs):
+    """Raise a helpful error message if any inputs do not have specified shape."""
+    for k, v in kwargs.items():
+        shape_in = np.atleast_1d(v).shape
+        if not shape_in == shape:
+            raise ConfigError(f"{k}={v} has shape {shape_in}, but expected {shape}")
+
+
 # Logic to allow dumping of numpy float64
 def represent_float(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:float", str(data))
@@ -36,6 +52,14 @@ def represent_int(dumper, data):
 
 
 yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
+
+
+# Dumping np.ndarray as a list
+def represent_ndarray(dumper, data):
+    return dumper.represent_list(data.tolist())
+
+
+yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
 
 
 def medial_axis(xy, plot=False):
@@ -1362,7 +1386,9 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     ist = irow * 2 + 1
     ien = ist + 1
     m = np.linspace(ist, ien, 101)
-    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(2,-1,nspf)
+    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(
+        2, -1, nspf
+    )
 
     # Meridional velocity vector at inlet to this row
     Vxrt = ml[irow * 2].Vxrt_rel
@@ -1524,8 +1550,8 @@ def yaw_from_xrt(xrt1, xrt2, Vxrt, yaw_ref=None):
     if yaw_ref is not None:
         # Calculate angle relative to the wrap angle
         yaw_rel = yaw - yaw_ref
-        yaw_rel[yaw_rel<180.] += 360.
-        yaw_rel[yaw_rel>180.] -= 360.
+        yaw_rel[yaw_rel < 180.0] += 360.0
+        yaw_rel[yaw_rel > 180.0] -= 360.0
         yaw = yaw_rel + yaw_ref
 
     return yaw
@@ -1832,7 +1858,8 @@ def interpolate_block(xr_hub, xr_cas, spf):
 
 
 def meshgrid_block(x, r, t):
-    return np.stack(np.meshgrid(x, r, t, indexing='ij'))
+    return np.stack(np.meshgrid(x, r, t, indexing="ij"))
+
 
 def extrude_block(xr, t):
     _, ni, nj = xr.shape

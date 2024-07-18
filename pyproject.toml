@@ -1,6 +1,6 @@
 [project]
 name = "turbigen"
-version = "1.10.0"
+version = "1.10.1"
 requires-python = ">=3.9"
 dependencies = [
     'CoolProp~=6.6.0',
