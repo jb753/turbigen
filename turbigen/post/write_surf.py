@@ -137,6 +137,11 @@ def post(grid, machine, meanline, postdir):
     # Write an stl for each blade
     for iblade, section in enumerate(sections):
 
+        # Skip unbladed rows, e.g. vaneless diffuser
+        if section[0] is None:
+            logger.info(f"Skipping unbladed row {iblade}")
+            continue
+
         mesh = stl.mesh.Mesh(get_stl_data(section, tip[iblade]))
 
         stl_name = os.path.join(postdir, f"blade_{iblade}.stl")
