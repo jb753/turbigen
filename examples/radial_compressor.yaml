@@ -87,6 +87,12 @@ solver:
 
 iterate:
   fac_nstep_initial: 3.0
+  mean_line:
+    relaxation_factor: 0.5
+    match_tolerance:
+      eta_tt: 0.01
+      loss_split: 0.01
+
   deviation:
     clip: 5.0
     relaxation_factor: 2.0
