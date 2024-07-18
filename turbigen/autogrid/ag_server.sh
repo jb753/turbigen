@@ -67,10 +67,12 @@ do
             echo "$(date -Iminutes): $SCR completed."
             touch finished
             cd ..
-            sleep 40
+            sleep 30
             # As a safety check, only delete if 'tmp' is in the name
-            if [[ $SCR =~ "tmp" ]]; then
-                rm -rf "$SCR"
+            if [ "$DELETE" ]; then
+                if [[ $SCR =~ "tmp" ]]; then
+                    rm -rf "$SCR"
+                fi
             fi
         else
             touch failed
