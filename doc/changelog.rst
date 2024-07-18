@@ -1,6 +1,24 @@
 Changelog
 =========
 
+v1.10.0
+^^^^^^^
+
+* Use rotation-corrected static pressure to find stagnation points
+* Add mixed-flow mean-line with mixed and pure radial examples
+* Script to read polynomial coefficients and evaluate a previously-fitted design space
+* Allow unbladed first row in H-mesh
+* Add a syntax check for TS4 body force template
+* Generalise to multi-stage machines
+* Wrap the incidence angle with respect to camber angle
+* Bugfix for TS4 throttle config
+* Add -m command-line switch to debug the mean-line
+* Take CFD inlet pitch angle from the mesh, not mean-line design
+* Implement command-line options for AutoGrid server
+* Bugfix to allow incidence correction on only one section
+* Reduce LE recamber when incidence is close to tolerance
+
+
 v1.9.1
 ^^^^^^
 
