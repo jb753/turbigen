@@ -43,9 +43,6 @@ class HMeshConfig(BaseConfig):
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
-    nk_unbladed = 81
-    """Number of pitchwise points across unbladed rows."""
-
     dspf_mid = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
 
@@ -183,7 +180,9 @@ class HMeshConfig(BaseConfig):
         dm_boundary = self.AR_stream * pitch_chord / nrt  # * self.resolution_factor
 
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
-        dm_mid_unbladed = self.dspf_mid * AR_row * self.AR_merid_unbladed
+        dm_mid_unbladed = np.minimum(
+            self.dspf_mid * AR_row * self.AR_merid_unbladed, 0.1
+        )
         # dm_upstream_LE_unbladed = dm_TE * pitch_chord[0] / pitch_chord[1]
         # dm_downstream_TE_unbladed = dm_TE * pitch_chord[-1] / pitch_chord[1]
 
@@ -197,7 +196,7 @@ class HMeshConfig(BaseConfig):
 
             t_upstream = np.linspace(-L[0], 0.0, npts[0])
             t_chord = np.linspace(0.0, 1.0, npts[1])
-            t_downstream = np.linspace(0.0, L[1], npts[2]) + L[1]
+            t_downstream = np.linspace(0.0, L[1], npts[2]) + 1.0
 
             t_upstream = util.resample(t_upstream, self.resolution_factor)
             t_downstream = util.resample(t_downstream, self.resolution_factor)
@@ -405,11 +404,6 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
     blocks = []
 
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    ax.axis("equal")
-
     # Loop over rows
     nrow = mac.Nrow
     assert dsurf.shape == (2, nrow)
@@ -455,9 +449,13 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
         # Nominal pitch fractions first
         if unbladed[irow]:
-            pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
-                AR_row, pitch_chord_ref[1]
-            )
+            if irow == 0:
+                nk_not_resampled = 33
+                pitch_frac_nom = np.linspace(0., 1., nk_not_resampled)
+            else:
+                pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
+                    AR_row, pitch_chord_ref[1]
+                )
         else:
             safety_fac = 1.01
             pitch_frac_nom = mesh_config.pitchwise_grid(
@@ -473,8 +471,8 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
             mesh_config.pitchwise_grid_fixed_npts(
                 drt_norm, pitch_chord_max, AR_row, len(pitch_frac_not_resampled)
             )
+            nk_not_resampled = len(pitch_frac_not_resampled)
         nk = len(pitch_frac_nom)
-        nk_not_resampled = len(pitch_frac_not_resampled)
         logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
 
         # Spanwise grid
@@ -582,9 +580,15 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
             if theta_lim is not None:
                 theta_lim_old = theta_lim.copy()
             else:
-                raise Exception(
-                    "No theta limits from previous row to set unbladed row pitch"
-                )
+                theta_lim_old = np.zeros((2, ni, nj))
+                Nb = mac.Nb[irow]
+                dtheta = 2.0 * np.pi / float(Nb)
+                theta_lim_old[0] = -dtheta / 2.0
+                theta_lim_old[1] = +dtheta / 2.0
+                Theta = np.zeros((2,))
+                # raise Exception(
+                #     "No theta limits from previous row to set unbladed row pitch"
+                # )
             theta_lim = np.zeros((2, ni, nj))
 
             # Get skew angle from previous blade row

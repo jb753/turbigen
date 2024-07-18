@@ -1,7 +1,17 @@
 """Functions to run turbigen on config objects."""
 import os
-import sys
 import shutil
+import sys
+from timeit import default_timer as timer
+
+import numpy as np
+from scipy.optimize import minimize
+from scipy.spatial import KDTree
+
+import turbigen.annulus
+import turbigen.average
+import turbigen.post_process
+import turbigen.flowfield
 from turbigen import (
     fluid,
     grid,
@@ -12,14 +22,6 @@ from turbigen import (
     ohmesh,
 )
 from turbigen.exceptions import ConfigError
-import turbigen.post_process
-import turbigen.average
-import turbigen.annulus
-import numpy as np
-from timeit import default_timer as timer
-from scipy.optimize import minimize
-from scipy.spatial import KDTree
-
 
 logger = util.make_logger()
 
@@ -151,12 +153,6 @@ def run_single(conf, gguess=None):
     workdir = conf.workdir
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
-
-    # # Write out the config
-    # conf_out = conf.copy()
-    # conf_out.interpolate = {}
-    # conf_out.write(os.path.join(workdir, "config.yaml"))
-
     conf.write(os.path.join(workdir, "config.yaml"))
 
     if not conf.annulus:
@@ -166,6 +162,7 @@ def run_single(conf, gguess=None):
     times.append(timer())
     conf._check_annulus()
     annulus_type = conf.annulus.pop("type", "Smooth")
+    logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
     post_func = util.load_post("plot_annulus").post
@@ -261,15 +258,15 @@ def run_single(conf, gguess=None):
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
             if thick_span:
                 f = (
-                    thick_span[irow]
-                    * ml.span[::2][irow]
-                    / ann.chords(0.5)[1:-1:2][irow]
-                    / 2.0
+                        thick_span[irow]
+                        * ml.span[::2][irow]
+                        / ann.chords(0.5)[1:-1:2][irow]
+                        / 2.0
                 )
                 if thick_type[irow] == "Impeller":
                     fac_thick = np.array([f, 1.0, 1.0, f])
                 else:
-                    fac_thick = np.array([f**2.0, f, 1.0, 1.0, f, f])
+                    fac_thick = np.array([f ** 2.0, f, 1.0, 1.0, f, f])
                     # fac_thick = np.array([f, f, 1.0, 1.0, f, 1.0])
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
 
@@ -348,14 +345,12 @@ def run_single(conf, gguess=None):
                     for _ in range(1):
 
                         for isect in range(len(spf_fit)):
-
                             logger.info(
                                 f"Fitting row {irow} at spf={spf_fit[isect]:.3f} "
                                 f"to coordinates {fit_data[irow]} ..."
                             )
 
                             def eval_fit_err(q, tree, spf, bldi, isect):
-
                                 bldi.set_pvec(q, isect)
 
                                 # Get fitted surface coords
@@ -370,7 +365,7 @@ def run_single(conf, gguess=None):
                                 # Lookup shortest distances to target coords
                                 dist, _ = tree.query(xrtul.T)
 
-                                return np.sqrt(np.mean(dist**2))
+                                return np.sqrt(np.mean(dist ** 2))
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
@@ -409,7 +404,6 @@ def run_single(conf, gguess=None):
                 tmain = np.full(nsect, np.nan)
                 mref = np.full(nsect, np.nan)
                 for isect in range(nsect):
-
                     # Get angles of main blade camber line
                     mlim_sect = splitter_now["mlim"][isect]
                     spf_sect = splitter_now["spf"][isect]
@@ -525,10 +519,10 @@ def run_single(conf, gguess=None):
         for irow in range(len(Nb)):
             if conf.splitter[irow]:
                 splitter[irow].theta_offset += (
-                    2.0
-                    * np.pi
-                    / Nb[irow]
-                    * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
+                        2.0
+                        * np.pi
+                        / Nb[irow]
+                        * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
                 )
 
     ml.Nb = np.repeat(Nb, 2)
@@ -574,7 +568,7 @@ def run_single(conf, gguess=None):
     # Set row, hub, casing spacings using yplus and flat-plate correlations
     yplus = np.atleast_2d(conf.mesh["yplus"]).T
     Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)
+    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref ** 2.0)
     Vtau = np.sqrt(tauw / ml.rho_ref)
     Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
@@ -625,7 +619,7 @@ def run_single(conf, gguess=None):
 
     times.append(timer())
     logger.debug(f"Mesh generation took {np.diff(times)[-1]:.1f}s")
-    logger.info(f"Mesh Npts/10^6={g.ncell/1e6:.2f}")
+    logger.info(f"Mesh Npts/10^6={g.ncell / 1e6:.2f}")
 
     # Make zero-radius rods inviscid
     if slip_hub_inlet:
@@ -853,24 +847,8 @@ def run_single(conf, gguess=None):
     if conf.install:
         out_vars.update(install_inverse)
 
-    mean_line_converged = True
-    if mean_opt_conf := conf.iterate.get("mean_line"):
-        rf_mean = mean_opt_conf.get("relaxation_factor", 0.5)
-
-        match_vars = mean_opt_conf.get("match_tolerance", {})
-        for v in match_vars:
-            if conf.mean_line[v] is None:
-                err = np.inf
-                var_new = out_vars[v]
-            else:
-                err = np.abs(conf.mean_line[v] - out_vars[v])
-                var_new = out_vars[v] * rf_mean + (1.0 - rf_mean) * conf.mean_line[v]
-            dvar = var_new - conf.mean_line[v]
-            pdict[v] = out_vars[v]
-            pdict["D" + v] = dvar
-            if err > match_vars[v]:
-                mean_line_converged = False
-            conf.mean_line[v] = util.reduce_scalar(var_new)
+    # Adjust the mean-line if the config requests it
+    mean_line_converged = iter_mean_line(conf, out_vars, pdict)
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
@@ -970,8 +948,8 @@ def run_single(conf, gguess=None):
             row["qstar_camber"] = qstar_save[irow].tolist()
 
     opt_converged = (
-        dev_converged and inc_converged and mean_line_converged
-    ) or conf.solver.get("skip")
+                            dev_converged and inc_converged and mean_line_converged
+                    ) or conf.solver.get("skip")
 
     if conf.iterate:
         log_line(pdict, log_fields)
@@ -1008,6 +986,66 @@ def run_single(conf, gguess=None):
     sys.stdout.flush()
 
     return ml_out, opt_converged, gguess
+
+
+def iter_mean_line(conf, vars_cfd, pdict):
+    """Compare the CFD and nominal mean-lines, adjust .
+
+    Parameters
+    ----------
+    conf: Config object for the last run
+    vars_cfd: dict of design variables calculated from last CFD, keyed by variable name
+    pdict: dict of colums to print logging information
+    """
+
+    # If we do not have mean-line iteration configured, say we are converged
+    if not (mean_iter_conf := conf.iterate.get("mean_line")):
+        return True
+
+    # Initialise flag and set False later if any discrepancies exceed tolerance
+    mean_line_converged = True
+
+    # Extract values from mean-line iterate config
+    rf = mean_iter_conf.get("relaxation_factor", 0.5)
+    tols_match = mean_iter_conf.get("match_tolerance", {})
+
+    # Loop over the design variables we want to match
+    for vname, vtol in tols_match.items():
+
+        # Get the CFD value for this design variable
+        var_cfd = np.atleast_1d(vars_cfd[vname])
+
+        # If there was no nominal value for this var, then set it straight to CFD value
+        var_nom = conf.mean_line.get(vname)
+        if var_nom is None:
+            err = np.inf
+            var_new = vars_cfd
+
+        # If there was a nominal value specified, then apply relaxation
+        else:
+            var_nom = np.array(var_nom)
+            err = np.abs(var_nom - var_cfd).max()
+            var_new = var_cfd * rf + (1.0 - rf) * var_nom
+
+        # Calculate the change to be applied to the nominal values in config
+        dvar = var_new - var_nom
+
+        # Insert convergence log data
+        imax = np.argmax(err)
+        pdict[vname] = var_cfd[imax]
+        pdict["D" + vname] = dvar[imax]
+
+        # We have not converged if the err tolerance is exceeded
+        if err > tols_match[vname]:
+            mean_line_converged = False
+
+        # Assign back to the configuration
+        if len(var_new) == 1:
+            conf.mean_line[vname] = var_new.item()
+        else:
+            conf.mean_line[vname] = var_new.tolist()
+
+    return mean_line_converged
 
 
 def run(conf):

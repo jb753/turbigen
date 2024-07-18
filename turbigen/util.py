@@ -1248,6 +1248,9 @@ def load_mean_line(mean_line_type):
     else:
         # Use as a file path
         mod_file = os.path.abspath(mean_line_type)
+        # If abs path not found, look relative
+        if not os.path.exists(mod_file):
+            mod_file = os.path.split(mod_file)[-1]
         mod_name = os.path.basename(mean_line_type)
         spec = importlib.util.spec_from_file_location(
             f"turbigen.meanline.{mod_name}", mod_file
@@ -1362,7 +1365,7 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(2,-1,nspf)
 
     # Meridional velocity vector at inlet to this row
-    Vxrt = ml[irow * 2].Vxrt
+    Vxrt = ml[irow * 2].Vxrt_rel
 
     # Loop over main/splitter
     chi = []
@@ -1394,8 +1397,8 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
             xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
 
         # Calculate the angles
-        chi_flow = yaw_from_xrt(xrt_stag, xrt_cent, Vxrt)
         chi_metal = yaw_from_xrt(xrt_nose, xrt_cent, Vxrt)
+        chi_flow = yaw_from_xrt(xrt_stag, xrt_cent, Vxrt, yaw_ref=chi_metal)
 
         chi.append(np.stack((chi_metal, chi_flow)))
 
@@ -1497,7 +1500,7 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
     return chi_stag
 
 
-def yaw_from_xrt(xrt1, xrt2, Vxrt):
+def yaw_from_xrt(xrt1, xrt2, Vxrt, yaw_ref=None):
 
     # Vector between the points
     dxrt = xrt2 - xrt1
@@ -1516,10 +1519,14 @@ def yaw_from_xrt(xrt1, xrt2, Vxrt):
     # Trigonometry
     yaw = np.degrees(np.arctan2(dist_theta, dist_merid))
 
-    # If the angle has gone past 180. then we need to correct the sign
-    if Vxrt[2] < 0.0:
-        ind_flip = np.logical_and(dist_merid < 0.0, dist_theta > 0.0)
-        yaw[ind_flip] = yaw[ind_flip] - 360.0
+    # Out of arctan2, yaw is always -180 to 180
+    # But we need to wrap with respect to the reference angle
+    if yaw_ref is not None:
+        # Calculate angle relative to the wrap angle
+        yaw_rel = yaw - yaw_ref
+        yaw_rel[yaw_rel<180.] += 360.
+        yaw_rel[yaw_rel>180.] -= 360.
+        yaw = yaw_rel + yaw_ref
 
     return yaw
 
@@ -1823,6 +1830,9 @@ def interpolate_block(xr_hub, xr_cas, spf):
 
     return xr
 
+
+def meshgrid_block(x, r, t):
+    return np.stack(np.meshgrid(x, r, t, indexing='ij'))
 
 def extrude_block(xr, t):
     _, ni, nj = xr.shape

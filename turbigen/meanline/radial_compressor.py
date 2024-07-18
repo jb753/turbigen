@@ -1,203 +1,402 @@
 """Mean-line design of a radial impeller with vaneless diffuser"""
 import numpy as np
 import turbigen.flowfield
-import turbigen.vtri
-import turbigen.util
 
 
 def forward(
     So1,
-    # Duty
     PR_tt,
+    eta_tt,
     mdot,
-    # Kinematic
     phi1,
+    Alpha1,
     Ma1_rel,
-    DH,
-    VmR,
-    # Geometric
-    htr1a,
-    RR_indu,
-    # Loss
-    Ys,
-    Beta,
+    htr1,
+    Alpha2_rel,
+    loss_split,
+    DH_rotor,
+    DH_diff,
 ):
-    """Design the mean-line for a radial compressor with vaneless diffuser."""
+    """Design the mean-line for a vaneless radial compressor.
 
-    MAXITER = 100
+    Parameters
+    ----------
+    So1: State
+        Object specifing the working fluid and its state at inlet.
+    PR_tt : float
+        Stagnation pressure ratio
+    eta_tt : float
+        Estimate of total-to-total isentropic efficiency.
+    mdot : float
+        Mass flow rate.
+    Alpha1 : float
+        Impeller inlet yaw angle.
+    Ma1_rel : float
+        Impeller inlet relative Mach number.
+    htr1 : float
+        Impeller inlet hub-to-tip ratio.
+    Alpha2_rel : float
+        Impeller exit yaw angle.
+    loss_split : float
+        Guess of entropy rise split between impeller and diffuser.
+    DHimp : float
+        Impeller de Haller number.
+    DHdiff : float
+        Diffuser de Haller number.
 
-    # We shall use the following notation for states
-    # (1a) inducer inlet
-    # (1b) inducer outlet
-    # (1)  rotor inlet
-    # (2)  rotor outlet
-    # (3)  diffuser inlet
-    # (4)  diffuser outlet
+    Returns
+    -------
+    ml: MeanLine
+        An object specifying the flow along the mean line.
 
-    # Assume inducer inlet is axial
-    Beta1a = 0.0
 
-    # Use pseudo entropy loss coefficient to guess entropy
-    # throughout the machine (update later based on CFD solution)
-    # Ys = To1*(s-s1)/(0.5*a01^2)
-    s = turbigen.util.cumsum0(Ys) * (0.5 * So1.a**2) / So1.T + So1.s
-    s = np.repeat(s, [1, 2, 1, 1, 1])
+    """
 
-    # Calculate work using duty and loss guess
+    # Fully radial outlet pitch angle
+    Beta2 = 90.0
+
+    # Calculate outlet state using
     Po3 = So1.P * PR_tt
-    So3 = So1.copy().set_P_s(Po3, s[-1])
+    So3s = So1.copy().set_P_s(Po3, So1.s)
+    ho3 = So1.h + (So3s.h - So1.h) / eta_tt
+    So3 = So1.copy().set_P_h(Po3, ho3)
 
-    # We can now define all stagnation states
-    ho3 = So3.h
-    ho1 = So1.h
-    ho = np.array([ho1, ho1, ho1, ho3, ho3, ho3])
-    So = So1.empty(shape=(6,)).set_h_s(ho, s)
+    #
+    # We shall use the following notation for states
+    # (1) impeller inlet
+    # (2) impeller outlet
+    # (3) diffuser outlet
 
-    # We need a velocity scale. Use the inlet relative Mach.
-    # But don't know static states yet
-    # Plan is to guess static states, calc velocity everywhere
-    # Then update static states based on known stagnation
-    S = So.copy()
-    hguess = ho - 0.5 * (So1.a) ** 2
-    S.set_h_s(hguess, s)
-    atol_h = 1e-6 * 0.5 * So1.a**2
-    converged = False
-    for _ in range(MAXITER):
+    # Precalculate some trig
+    tanAlpha1 = np.tan(np.radians(Alpha1))
+    cosAlpha1 = np.cos(np.radians(Alpha1))
+    tanAlpha2_rel = np.tan(np.radians(Alpha2_rel))
+    tanBeta2 = np.tan(np.radians(Beta2))
 
-        # Speed of sound sets relative velocity magnitude
-        V1_rel = S.a[2] * Ma1_rel
+    #
+    # (i) set rotor inlet state using, Ma1_rel, Al1, phi, Ypigv
+    #
 
-        # Trigonometry for the rotor inlet velocity
-        Vm1 = V1_rel * (1.0 + (phi1**-2)) ** -0.5
+    # Solve for the axial Mach at rotor inlet
+    Max1 = Ma1_rel * (1.0 + (tanAlpha1 - 1.0 / phi1) ** 2.0) ** -0.5
 
-        # Flow coefficient sets blade speed at rotor LE
-        U1 = Vm1 / phi1
+    # Resolve by IGV angle to get total Mach
+    Ma1 = Max1 / cosAlpha1
+    S1 = So1.to_static(Ma1)
 
-        # Inducer inlet velocity from de Haller
-        # Assuming no inlet swirl and Vt1a = Vt1 = 0
-        Vm1a = Vm1 / DH[0]
+    # # Guess lossless and iterate
+    # So1 = Soin.copy()
+    maxiter = 10
+    # for _ in range(maxiter):
+    #     Po1 = So1.P - Ypigv * (So1.P - S1.P)
+    #     So1.set_P_h(Po1, Soin.h)
 
-        # Rotor exit rel velocity from prescribed de Haller
-        V2_rel = DH[1] * V1_rel
-        Vm2 = VmR[0] * Vm1
-        Vt2_rel = -np.sqrt(V2_rel**2 - Vm2**2)
+    #
+    # (ii) evaluate rotor inlet velocities and geometry using mdot, htr
+    #
 
-        # Conserve rothalpy to set exit blade speed
-        I1 = S.h[2] + 0.5 * (V1_rel**2.0 - U1**2.0)
+    # Velocities
+    Vx1 = Max1 * S1.a
+    Vrel1 = Ma1_rel * S1.a
+    Vt1 = Vx1 * tanAlpha1
+    U1 = Vx1 / phi1
 
-        # No analytical solution for rotor exit
-        # Must iterate from initial guesses
-        h2 = S.h[3]
-        ho2 = So.h[3]
-        U2 = U1
-        converged = False
-        rtol_U = 1e-4
-        for _ in range(MAXITER):
-            U2_new = np.sqrt(2.0 * (h2 + 0.5 * V2_rel**2 - I1))
-            dU2 = np.abs(U2_new - U2)
-            h2 = ho2 - 0.5 * (Vm2**2.0 + (Vt2_rel + U2_new) ** 2.0)
-            U2 = U2_new
-            if dU2 / U2_new < rtol_U:
-                converged = True
-                break
-        if not converged:
-            raise Exception("U2 iteration did not converge")
-
-        # Absolute velocity at rotor exit
-        Vt2 = Vt2_rel + U2
-        V2 = np.sqrt(Vt2**2 + Vm2**2)
-
-        # Prescribe diffuser velocities by de Haller
-        V3 = V2 * DH[2]
-        V4 = V3 * DH[3]
-
-        # Assemble all the velocities and static enthalpy
-        V = np.array([Vm1a, Vm1, Vm1, V2, V3, V4])
-        h_new = ho - 0.5 * V**2
-
-        # Convergence check
-        dh = h_new - S.h
-        if dh.max() < atol_h:
-            converged = True
-            break
-
-        # Update static state
-        S.set_h_s(S.h + 0.1 * dh, s)
-
-    if not converged:
-        raise Exception("Iteration for h did not converge")
-
-    # Kinematic design is done
-    # We now need to set the flow areas and radii to achieve these velocities
-
-    # Inducer inlet radius from hub to tip ratio
-    A1a = mdot / Vm1a / S.rho[0]
-    rrms1a = turbigen.vtri.solve_rrms(A1a, htr1a, Beta1a)
-
-    # Prescribed inducer radius ratio for rotor inlet
-    rrms1 = RR_indu * rrms1a
-    A1 = mdot / Vm1 / S.rho[1]
-
-    # Can now set Omega and r2 using blade speeds
+    # Geometry
+    A1 = mdot / Vx1 / S1.rho
+    # rmid1 = np.sqrt(A1 / 4.0 / np.pi * (1.0 + htr1) / (1.0 - htr1))
+    # span1 = A1 / 2.0 / np.pi / rmid1
+    rrms1 = np.sqrt(A1 / np.pi * 0.5 * (1.0 + htr1**2) / (1 - htr1**2))
     Omega = U1 / rrms1
+
+    #
+    # (iii) prescribe rotor DeHaller and angles to set rel frame velocities
+    #
+
+    # Velocities
+    Vrel2 = DH_rotor * Vrel1
+    # Vr2 = Vrel2 / np.sqrt(1.0 + tanAlpha2_rel**2.0)
+    Vr2 = Vrel2 * np.cos(np.radians(Alpha2_rel))
+    # print(Vr2, Vr2_check)
+    Vtrel2 = Vr2 * tanAlpha2_rel
+    Vm2 = Vr2 * np.sqrt(1.0 / tanBeta2**2.0 + 1.0)
+    Vx2 = Vr2 / tanBeta2
+
+    #
+    # (iv) We need a general way of specifying rotor loss. Choose a prescribed
+    # fraction of entropy rise between rotor inlet and machine outlet. This
+    # choice can be updated in response to CFD results.
+    #
+    # Together with stagnation enthalpy, this fixes rotor exit stagntaion state
+    #
+
+    s2 = So1.s + loss_split * (So3.s - So1.s)
+    So2 = So1.copy().set_h_s(So3.h, s2)
+
+    # Inlet rothalpy
+    I1 = S1.h + 0.5 * (Vrel1**2.0 - U1**2.0)
+
+    # # Iterate on rotor exit static state
+    # Ma2 = 0.01  # Initial guess
+    # rf = 0.5  # Relaxation factor
+    # for _ in range(maxiter):
+    #     # New static state
+    #     S2 = So2.to_static(Ma2)
+    #     # New relative stagnation state
+    #     Marel2 = Vrel2 / S2.a
+    #     Sorel2 = S2.to_stagnation(Marel2)
+    #     # Conserve rothalpy to get U2, V2
+    #     U2 = np.sqrt(2.0 * (Sorel2.h - I1))
+    #     Vt2 = Vtrel2 + U2
+    #     V2 = np.sqrt(Vx2**2.0 + Vr2**2.0 + Vt2**2.0)
+    #     # Updated guess of Mach with relaxation
+    #     Ma2_new = V2 / S2.a
+    #     Ma2 = rf * Ma2_new + (1.0 - rf) * Ma2
+    # print(U2)
+
+    h2 = So2.h
+    for _ in range(maxiter):
+        U2 = np.sqrt(2.0 * (h2 + 0.5 * Vrel2**2 - I1))
+        h2 = So2.h - 0.5 * (Vr2**2.0 + (Vtrel2 + U2) ** 2.0)
+
+    S2 = So2.copy().set_h_s(h2, So2.s)
+    Vt2 = Vtrel2 + U2
+    V2 = np.sqrt(Vx2**2 + Vr2**2 + Vt2**2)
+
+    # Misc other results
+    Alpha2 = np.degrees(np.arctan(Vt2 / Vm2))
+    A2 = mdot / S2.rho / Vm2
     rrms2 = U2 / Omega
-    A2 = mdot / Vm2 / S.rho[3]
 
-    # Set radius by conserving angular momentum across gap
-    # Set area by conserving mass
-    Vm3 = Vm2 * VmR[1]
-    Vt3 = np.sqrt(V3**2 - Vm3**2)
-    mom = rrms2 * Vt2
-    rrms3 = mom / Vt3
-    assert rrms3 > rrms2
-    A3 = mdot / Vm3 / S.rho[4]
+    V3 = DH_diff * V2
 
-    Vm4 = Vm3 * VmR[2]
-    Vt4 = np.sqrt(V4**2 - Vm4**2)
-    mom = rrms3 * Vt3
-    rrms4 = mom / Vt4
-    assert rrms4 > rrms3
-    A4 = mdot / Vm4 / S.rho[5]
+    # Iterate on diffuser exit static state
+    Ma3 = 0.6  # Initial guess
+    rf = 0.5  # Relaxation factor
+    for _ in range(maxiter * 2):
+        # New static state
+        S3 = So3.to_static(Ma3)
+        Ma3_new = V3 / S3.a
+        Ma3 = rf * Ma3_new + (1.0 - rf) * Ma3
 
-    Vm = np.array([Vm1a, Vm1a, Vm1, Vm2, Vm3, Vm4])
-    Vt = np.array([0.0, 0.0, 0.0, Vt2, Vt3, Vt4])
-    Beta_all = np.array([Beta1a, Beta1a, Beta[0], Beta[1], Beta[2], Beta[3]])
-    Vx = Vm * turbigen.util.cosd(Beta_all)
-    Vr = Vm * turbigen.util.sind(Beta_all)
+    #
+    # (vi) select radius ratio that is consistent
+    #
 
-    rrms_all = np.array([rrms1a, rrms1a, rrms1, rrms2, rrms3, rrms4])
-    A_all = np.array([A1a, A1a, A1, A2, A3, A4])
-    Omega_all = np.array([0.0, 0.0, Omega, Omega, 0.0, 0.0])
+    # Conserve moment of momentum
+    mom2 = rrms2 * S2.rho * Vt2
+
+    V3 = Ma3 * S3.a
+    RR3 = np.sqrt(((mdot / A2) ** 2.0 + (mom2 / rrms2) ** 2.0)) / S3.rho / V3
+    A3 = A2 * RR3
+    rrms3 = rrms2 * RR3
+
+    Vr3 = mdot / S3.rho / A3
+    Vt3 = mom2 / S3.rho / rrms3
+    Alpha3 = np.degrees(np.arctan(Vt3 / Vr3))
+
+    # Dummy state
+    rrms2a = rrms2 + 0.7 * (rrms3 - rrms2)
+    A2a = A2 * rrms2a / rrms2
+    So2a = So3.copy()
+
+    # Iterate on diffuser exit static state
+    Ma2a = Ma3 + 0.0  # Initial guess
+    rf = 0.5  # Relaxation factor
+    for _ in range(maxiter):
+        S2a = So2a.to_static(Ma2a)
+        Vr2a = mdot / S2a.rho / A2a
+        Vt2a = mom2 / S2a.rho / rrms2a
+        V2a = np.sqrt(Vr2a**2.0 + Vt2a**2.0)
+        Ma2a = V2a / S2a.a
+
+    S_all = S1.stack((S1, S2, S2a, S3))
+
+    rrms_all = np.array([rrms1, rrms2, rrms2a, rrms3])
+    A_all = np.array([A1, A2, A2a, A3])
+    Omega_all = np.array([Omega, Omega, 0.0, 0.0])
+
+    Vx = (Vx1, 0.0, 0.0, 0.0)
+    Vr = (0.0, Vr2, Vr2a, Vr3)
+    Vt = (Vt1, Vt2, Vt2a, Vt3)
     Vxrt = np.stack((Vx, Vr, Vt))
 
-    ml = turbigen.flowfield.make_mean_line(rrms_all, A_all, Omega_all, Vxrt, S)
+    Al_all = np.array([Alpha1, Alpha2, Alpha2, Alpha3])
+    Be_all = np.array([0.0, 90.0, 90.0, 90.0])
+
+    ml = turbigen.flowfield.make_mean_line(rrms_all, A_all, Omega_all, Vxrt, S_all)
+
+    assert np.allclose(ml.Alpha, Al_all, atol=0.1)
+    assert np.allclose(ml.Beta, Be_all, atol=0.1)
 
     return ml
 
 
 def inverse(ml):
-    """Reverse a radial compressor mean-line to design variables."""
+    """Reverse a radial compressor mean-line to design variables.
 
-    # Generalised HTR
-    K = ml.A[0] / 4.0 / np.pi / ml.rmid[0] ** 2
-    htr = (1.0 - K) / (1.0 + K)
+    Parameters
+    ----------
+    ml: MeanLine
+        A mean-line object specifying flow in a radial compressor.
 
-    DH = (ml.V[1:] / ml.V[:-1])[1:]
-    DH[1] = ml.V_rel[3] / ml.V_rel[2]
+    Returns
+    -------
+    out : dict
+        Dictionary of aerodynamic design parameters with fields:
+        `So1`, `PR_tt`, `eta_tt`, `mdot`, `phi1`, `Alpha1`, `Ma1_rel`, `htr1`,
+        `Alpha2_rel`, `loss_split`, `DHimp`, `DHdiff`
+        The fields have the same meanings as in :func:`forward`.
+    """
+    # Pull out states
+    try:
+        Sdot = ml.Sdot_wall
+    except Exception:
+        Sdot = np.nan * np.ones((2, 2))
+    try:
+        ske = 0.5 * np.array(ml.ske)
+    except Exception:
+        ske = np.full((1,), np.nan)
+    try:
+        Sdot_tip = ml.Sdot_tip
+    except Exception:
+        Sdot_tip = np.nan
+    try:
+        mdot_stall = ml.mdot_stall
+    except Exception:
+        mdot_stall = np.nan
+    try:
+        mdot_choke = ml.mdot_choke
+    except Exception:
+        mdot_choke = np.nan
+    try:
+        Co1 = ml.Co[0]
+    except Exception:
+        Co1 = np.nan
+    try:
+        Dsmix = np.array(ml.Ds_mix).tolist()
+    except Exception:
+        Dsmix = np.zeros_like(ml.s).tolist()
+    try:
+        blockage = ml.blockage[1]
+    except Exception:
+        blockage = np.nan
+    Deta_s = ml.T[-1] / (ml.ho[-1] - ml.ho[0])
+    Deta_h = 1.0 / (ml.ho[-1] - ml.ho[0])
+    s_nomix = ml.s - Dsmix
+    Dho = np.ptp(ml.ho)
+    try:
+        Asurf = ml.Asurf
+    except Exception:
+        Asurf = np.nan * np.ones((2, 2))
+    Asurf_norm = np.sum(Asurf) / (Dho**-0.5) / ml.Q[0]
+    Ds = ml.r[-1] * 2.0 * (Dho**0.25) * (ml.Q[0] ** -0.5)
+    Os = ml.Omega[0] * (ml.Q[0] ** 0.5) * (Dho**-0.75)
+    pc = 100.0
+    Deta_surf = np.sum(Sdot) / ml.mdot[0] * Deta_s * pc
 
-    VmR = (ml.Vm[1:] / ml.Vm[:-1])[1:]
+    Deta_surf_arr = np.array(Sdot) / ml.mdot[0] * Deta_s * pc
+    Asurf_norm_arr = np.array(Asurf) / (Dho**-0.5) / ml.Q[0]
+    with np.errstate(invalid="ignore"):
+        V3av_arr = Deta_surf_arr / Asurf_norm_arr
+
+    RR = ml.rrms[1] / ml.rrms[0]
 
     out = {
         "So1": ml.stagnation[0],
         "PR_tt": ml.PR_tt,
+        "eta_tt_pc": ml.eta_tt * pc,
+        "eta_ts_pc": ml.eta_ts * pc,
+        "eta_tt": ml.eta_tt,
+        "eta_poly": ml.eta_poly * pc,
+        "eta_tt_nomix": (ml.eta_tt + Dsmix[-1] * Deta_s) * pc,
         "mdot": ml.mdot[0],
-        "phi1": ml.phi[2],
-        "Ma1_rel": ml.Ma_rel[2],
-        "htr1a": htr,
-        "DH": DH,
-        "VmR": VmR,
-        "Ys": (ml.s[2:] - ml.s[0]) * ml.To[0] / (0.5 * ml.ao[0] ** 2),
-        "Beta": ml.Beta[2:],
-        "RR_indu": ml.rrms[2] / ml.rrms[1],
+        "phi1": ml.phi[0],
+        "Alpha1": ml.Alpha[0],
+        "Ma1_rel": ml.Ma_rel[0],
+        "htr1": ml.htr[0],
+        "Alpha2_rel": ml.Alpha_rel[1],
+        "DH_rotor": ml.V_rel[1] / ml.V_rel[0],
+        "DH_diff": ml.V[-1] / ml.V[1],
+        "loss_split": (s_nomix[1] - -s_nomix[0]) / (s_nomix[-1] - s_nomix[0]),
+        "RR": ml.rrms[1] / ml.rrms[0],
+        "DR": ml.rho[1] / ml.rho[0],
+        "VmR": ml.Vm[1] / ml.Vm[0],
+        "Vm1_Vrel1": ml.Vm[0] / ml.V_rel[0],
+        "psi_turn": -0.5 * (ml.V_rel[1] ** 2.0 - ml.V_rel[0] ** 2.0) / ml.U[0] ** 2.0,
+        "psi_ke": 0.5 * (ml.V[1] ** 2.0 - ml.V[0] ** 2.0) / ml.U[0] ** 2.0,
+        "psi_rad": 0.5 * (ml.U[1] ** 2 - ml.U[0] ** 2) / ml.U[0] ** 2.0,
+        "Nb1": ml.Nb[0],
+        "Ma2": ml.Ma[1],
+        "psi2": (ml.ho[-1] - ml.ho[0]) / ml.U[1] ** 2.0,
+        "Phi": ml.mdot[0] / ml.stagnation.rho[0] / (ml.rrms[1] * 2.0) ** 2 / ml.U[1],
+        "psi_tot": (ml.ho[-1] - ml.ho[0]) / ml.U[0] ** 2.0,
+        "Deta_surf": Deta_surf,
+        "blockage1": blockage,
+        "Deta_mix": Dsmix[-1] * Deta_s * pc,
+        "Deta_tt": (1.0 - ml.eta_tt) * pc,
+        "Deta_ts": (1.0 - ml.eta_ts) * pc,
+        "Deta_ke": (ml.eta_tt - ml.eta_ts) * pc,
+        "Deta_ske": (ske / ml.mdot[0] * Deta_h).tolist()[-1] * pc,
+        "Deta_tip": np.sum(Sdot_tip) / ml.mdot[0] * Deta_s * pc,
+        "Deta_imp": (ml.s[1] - ml.s[0]) * Deta_s * pc,
+        "Deta_diff": (ml.s[-1] - ml.s[1]) * Deta_s * pc,
+        "rs1_r2": ml.rtip[0] / ml.rrms[1],
+        "rs1_rm1": ml.rtip[0] / ml.rrms[0],
+        "r3": ml.rrms[-1],
+        "r2": ml.rrms[1],
+        "r1": ml.rrms[0],
+        "rs1": ml.rtip[0],
+        "rh1": ml.rhub[0],
+        "stall_margin": mdot_stall / ml.mdot[0] - 1.0,
+        "choke_margin": mdot_choke / ml.mdot[0] - 1.0,
+        "range": 1.0 - mdot_stall / mdot_choke,
+        "Co1": Co1,
+        "Omega1": ml.Omega[0],
+        "U1": ml.U[0],
+        "MU2": ml.U[1] / ml.ao[0],
+        "Alpha3": ml.Alpha[2],
+        "Asurf": Asurf_norm,
+        "Vrel1": ml.V_rel[0],
+        "Vrel2": ml.V_rel[1],
+        "Vt2": ml.Vt[1],
+        "V3": ml.V[2],
+        "V3av": Deta_surf / Asurf_norm,
+        "V3av00": V3av_arr[0, 0],
+        "V3av01": V3av_arr[0, 1],
+        "V3av10": V3av_arr[1, 0],
+        "V3av11": V3av_arr[1, 1],
+        "A00": Asurf_norm_arr[0, 0],
+        "A01": Asurf_norm_arr[0, 1],
+        "A10": Asurf_norm_arr[1, 0],
+        "A11": Asurf_norm_arr[1, 1],
+        "AR1": ml.ARflow[0],
+        "Ds": Ds,
+        "Os": Os,
+        "logDs": np.log10(Ds),
+        "logOs": np.log10(Os),
+        "span0": ml.span[0],
+        "Asurf_bld": Asurf[0][0],
+        "Asurf_ann": Asurf[0][1],
+        # "Lsurf1": ml.Lsurf[0],
+        # "Lsurf1_recip": 1.0 / ml.Lsurf[0],
+        "turning": np.diff(
+            ml.Alpha_rel[
+                (
+                    0,
+                    1,
+                ),
+            ]
+        )[0],
+        "pitch1": 2.0 * np.pi * ml.rrms[0] / ml.Nb[0],
+        "V1": ml.V[0],
+        "V2": ml.V[1],
+        "Co_term1": (1 - RR**2.0) / ml.phi[0],
+        "Co_term2": ml.tanAlpha_rel[0],
+        "Co_term3": -RR * ml.tanAlpha_rel[1] * ml.Vm[1] / ml.Vm[0],
+        "Co_term123": (
+            ml.tanAlpha_rel[0]
+            + (1 - RR**2.0) / ml.phi[0]
+            - RR * ml.tanAlpha_rel[1] * ml.Vm[1] / ml.Vm[0]
+        ),
     }
     return out
