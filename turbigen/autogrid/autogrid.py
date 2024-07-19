@@ -260,7 +260,6 @@ def _write_geomturbo(
 
     # NOW DEFINE ROWS
     for i in range(n_row):
-
         if ps[i] is None:
             continue
 
@@ -351,7 +350,9 @@ def _execute_on_remote(cmd, remote, via):
         except subprocess.CalledProcessError as e:
             success = False
             eout = e
-            sleep((itry + 1) * 30.0)
+            delay = (itry + 1) * 30
+            sleep(delay)
+            logger.info(f"Running remote command failed, retrying after {delay}s")
 
     if not success:
         raise Exception(

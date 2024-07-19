@@ -1,4 +1,5 @@
 """Functions to run turbigen on config objects."""
+
 import os
 import shutil
 import sys
@@ -12,6 +13,7 @@ import turbigen.annulus
 import turbigen.average
 import turbigen.post_process
 import turbigen.flowfield
+import turbigen.yaml
 from turbigen import (
     fluid,
     grid,
@@ -85,7 +87,7 @@ def run_single(conf, gguess=None):
     # Dynamically load the design functions based on machine type in config
     if not conf.mean_line_type:
         raise ConfigError("No mean-line type specified; quitting.")
-    logger.info(f"Designing a {conf.mean_line_type}...")
+    logger.info(f"Designing a {conf.mean_line_type} mean line...")
 
     meanline_design = util.load_mean_line(conf.mean_line_type)
 
@@ -163,8 +165,18 @@ def run_single(conf, gguess=None):
     annulus_type = conf.annulus.pop("type", "Smooth")
     logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
+    annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
-    post_func = util.load_post("plot_annulus").post
+    if annulus_debug:
+        logger.iter("Annulus debugging requested...")
+        post_func = util.load_post("plot_annulus").post
+        post_conf = conf.post_process.get("plot_annulus")
+        if post_conf is None:
+            post_conf = {}
+        mac_ann = geometry.Machine(ann, [], [], [], [])
+        post_func(None, mac_ann, None, workdir, **post_conf)
+        logger.iter(f"Wrote annulus plot to {workdir}")
+        sys.exit(0)
 
     conf.annulus["type"] = annulus_type
     logger.info(ann)
@@ -257,15 +269,15 @@ def run_single(conf, gguess=None):
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
             if thick_span:
                 f = (
-                        thick_span[irow]
-                        * ml.span[::2][irow]
-                        / ann.chords(0.5)[1:-1:2][irow]
-                        / 2.0
+                    thick_span[irow]
+                    * ml.span[::2][irow]
+                    / ann.chords(0.5)[1:-1:2][irow]
+                    / 2.0
                 )
                 if thick_type[irow] == "Impeller":
                     fac_thick = np.array([f, 1.0, 1.0, f])
                 else:
-                    fac_thick = np.array([f ** 2.0, f, 1.0, 1.0, f, f])
+                    fac_thick = np.array([f**2.0, f, 1.0, 1.0, f, f])
                     # fac_thick = np.array([f, f, 1.0, 1.0, f, 1.0])
                 row_now["q_thick"] = fac_thick * row_now["q_thick"]
 
@@ -288,7 +300,7 @@ def run_single(conf, gguess=None):
                     nsect_conf = len(bld_now.spf)
                     if not nsect_dat == nsect_conf:
                         raise Exception(
-                            f"Mismatching number of sections to fit, "
+                            "Mismatching number of sections to fit, "
                             f"{nsect_conf} in the config and "
                             f"{nsect_dat} in the coordinates"
                         )
@@ -297,11 +309,9 @@ def run_single(conf, gguess=None):
                     m = np.linspace(0.0, 1.0)
                     spf_fit = []
                     for xrrt_target in xrrt_target_all:
-
                         xrfit = xrrt_target[:2]
 
                         def eval_spf_err(spfnow, xrfit):
-
                             xrref = bld_now.streamsurface(spfnow, m)
                             if np.ptp(xrfit[0]) > np.ptp(xrfit[1]):
                                 xrfit = xrfit[:, np.argsort(xrfit[0])]
@@ -342,7 +352,6 @@ def run_single(conf, gguess=None):
                     ]
 
                     for _ in range(1):
-
                         for isect in range(len(spf_fit)):
                             logger.info(
                                 f"Fitting row {irow} at spf={spf_fit[isect]:.3f} "
@@ -364,7 +373,7 @@ def run_single(conf, gguess=None):
                                 # Lookup shortest distances to target coords
                                 dist, _ = tree.query(xrtul.T)
 
-                                return np.sqrt(np.mean(dist ** 2))
+                                return np.sqrt(np.mean(dist**2))
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
@@ -421,7 +430,7 @@ def run_single(conf, gguess=None):
                     logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
                     logger.debug(
                         "splitter q_camber deg "
-                        f'{util.atand(splitter_now["q_camber"][isect])}'
+                        f"{util.atand(splitter_now['q_camber'][isect])}"
                     )
 
                     # The relative mstack for splitter is same as for main blade.
@@ -518,10 +527,10 @@ def run_single(conf, gguess=None):
         for irow in range(len(Nb)):
             if conf.splitter[irow]:
                 splitter[irow].theta_offset += (
-                        2.0
-                        * np.pi
-                        / Nb[irow]
-                        * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
+                    2.0
+                    * np.pi
+                    / Nb[irow]
+                    * conf.blades.get("pitch_frac_splitter", 0.5)[irow]
                 )
 
     ml.Nb = np.repeat(Nb, 2)
@@ -550,6 +559,9 @@ def run_single(conf, gguess=None):
 
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
+    if not conf.mesh:
+        logger.iter("Cannot proceed further without mesh configuration, quitting.")
+        sys.exit(1)
 
     # Restore the relative camber
     for irow, row in enumerate(conf.sections):
@@ -565,9 +577,9 @@ def run_single(conf, gguess=None):
         conf.write(os.path.join(workdir, "config.yaml"))
 
     # Set row, hub, casing spacings using yplus and flat-plate correlations
-    yplus = np.atleast_2d(conf.mesh["yplus"]).T
+    yplus = np.atleast_2d(conf.mesh.get("yplus", 30.0)).T
     Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref ** 2.0)
+    tauw = Cf * 0.5 * (ml.rho_ref * ml.V_ref**2.0)
     Vtau = np.sqrt(tauw / ml.rho_ref)
     Lvisc = np.atleast_2d((ml.mu_ref / ml.rho_ref) / Vtau)
     drow = yplus * Lvisc
@@ -762,7 +774,6 @@ def run_single(conf, gguess=None):
         conf.install["type"] = install_type
 
     else:
-
         if check_coords:
             g.check_coordinates()
 
@@ -820,10 +831,13 @@ def run_single(conf, gguess=None):
             post_conf = {}
         post_func(g, mac, ml_out, postdir, **post_conf)
 
+    # Save some 3D geometry into the meanline for later design space fitting
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
     ml_out.tip = tips[0]
     ml_out.Ds_mix = Dsmix
+
+    # Save the workdir so we can cross-reference if the output ml is added to the database
     ml_out.workdir = workdir
 
     end_time = timer()
@@ -838,8 +852,6 @@ def run_single(conf, gguess=None):
         log_fields += (v,)
         log_fields += ("D" + v,)
 
-    # log_line({'Iter':0, 'Row': 1, 'Inc':5.,'Dev': 4.5},log_fields)
-
     pdict = {"Min": mins}
 
     out_vars = meanline_design.inverse(ml_out)
@@ -851,7 +863,6 @@ def run_single(conf, gguess=None):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
@@ -863,7 +874,6 @@ def run_single(conf, gguess=None):
         for irow, row in enumerate(conf.sections):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
-
                 chi = turbigen.util.incidence_unstructured(g, mac, ml, irow, row["spf"])
 
                 inc = np.diff(chi[0], axis=0).squeeze()
@@ -947,19 +957,18 @@ def run_single(conf, gguess=None):
             row["qstar_camber"] = qstar_save[irow].tolist()
 
     opt_converged = (
-                            dev_converged and inc_converged and mean_line_converged
-                    ) or conf.solver.get("skip")
+        dev_converged and inc_converged and mean_line_converged
+    ) or conf.solver.get("skip")
 
     if conf.iterate:
         log_line(pdict, log_fields)
 
     out_vars.pop("So1")
     inverse_path = os.path.join(workdir, "inverse.yaml")
-    turbigen.util.write_yaml(out_vars, inverse_path)
+    turbigen.yaml.write_yaml(out_vars, inverse_path)
     logger.debug(f"Wrote inversion to {inverse_path}")
 
     if opt_converged:
-
         # out_vars = meanline_design.inverse(ml_out)
         var_fields = ("Design variable", "Nom   ", "CFD   ")
         log_line(None, var_fields)
@@ -1010,7 +1019,6 @@ def iter_mean_line(conf, vars_cfd, pdict):
 
     # Loop over the design variables we want to match
     for vname, vtol in tols_match.items():
-
         # Get the CFD value for this design variable
         var_cfd = np.atleast_1d(vars_cfd[vname])
 
@@ -1083,7 +1091,11 @@ def run(conf):
     if conf.database.get("conf_path"):
         conf.interpolate_from_database()
 
-    if conf.iterate and conf.solver:
+    if conf.iterate:
+        if not conf.solver:
+            raise Exception(
+                "Cannot iterate the design without a CFD solver configured."
+            )
         gguess = None
 
         max_iter = conf.iterate.get("max_iter", 20)
@@ -1142,7 +1154,6 @@ def run(conf):
                 os.remove(stopit_path)
 
             if opt_converged:
-
                 if not conf.solver.get("skip"):
                     logger.debug("Moving converged solution up to work dir")
                     for f in os.listdir(iterdir):

@@ -19,21 +19,29 @@ general, a different dimensional arc length.
 
 """
 
-import turbigen.util
+from turbigen import util
 from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar
 import scipy.interpolate
 
 import numpy as np
 
-logger = turbigen.util.make_logger()
+logger = util.make_logger()
 
 
 class Smooth:
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
     def __init__(
-        self, rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio=1.0, rcout_offset=0.0, smooth=True,
+        self,
+        rmid,
+        span,
+        Beta,
+        AR_chord,
+        AR_gap,
+        nozzle_ratio=1.0,
+        rcout_offset=0.0,
+        smooth=True,
     ):
         r"""Construct an annulus from geometric parameters.
 
@@ -58,12 +66,23 @@ class Smooth:
 
         """
 
+        npt = len(rmid)
+        nrow = npt // 2
+        ngap = nrow + 1
+        nchord = nrow
+
+        # Check input data
+        util.check_scalar(nozzle_ratio=nozzle_ratio, rcout_offset=rcout_offset)
+        util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
+        util.check_vector((ngap,), AR_gap=AR_gap)
+        util.check_vector((nchord,), AR_chord=AR_chord)
+
         # Store input data
-        self.rmid = np.reshape(rmid, -1)
-        self.span = np.reshape(span, -1)
-        self.Beta = np.reshape(Beta, -1)
-        self.AR_chord = np.reshape(AR_chord, -1)
-        self.AR_gap = np.reshape(AR_gap, -1)
+        self.rmid = np.reshape(rmid, (npt,))
+        self.span = np.reshape(span, (npt,))
+        self.Beta = np.reshape(Beta, (npt,))
+        self.AR_chord = np.reshape(AR_chord, (nchord,))
+        self.AR_gap = np.reshape(AR_gap, (ngap,))
         self.nozzle_ratio = nozzle_ratio
 
         # Assemble vectors of all ARs and spans
@@ -86,7 +105,7 @@ class Smooth:
         Ds[AR < 0.0] = -1.0
 
         # Integrate x
-        xmid = turbigen.util.cumsum0(Dx)
+        xmid = util.cumsum0(Dx)
         xmid -= xmid[1]  # Place x origin at first row LE
 
         # Extended r coords
@@ -200,7 +219,6 @@ class Smooth:
                     pass
 
         if smooth:
-
             for k in range(1, self.npts - 2):
                 _solve_k(k)
 
@@ -259,7 +277,7 @@ class Smooth:
                     (i, i + 1),
                 ]
             )
-            chords[i] = turbigen.util.arc_length(
+            chords[i] = util.arc_length(
                 spf * self.cas.xr(mcas) + (1.0 - spf) * self.hub.xr(mhub)
             )
         return chords
@@ -380,7 +398,6 @@ class Smooth:
         return self.evaluate_xr(m_ref, spf).squeeze()
 
     def get_mp_from_xr(self, xr_ref):
-
         # We want to plot along a general meridional surface
         # So brute force a mapping from x/r to meridional distance
 
@@ -388,7 +405,7 @@ class Smooth:
         dxr = np.diff(xr_ref, n=1, axis=1)
         dm = np.sqrt(np.sum(dxr**2.0, axis=0))
         rc = 0.5 * (xr_ref[1, 1:] + xr_ref[1, :-1])
-        mp_ref = turbigen.util.cumsum0(dm / rc)
+        mp_ref = util.cumsum0(dm / rc)
         assert (np.diff(mp_ref) > 0.0).all()
 
         def mp_from_xr(xr):

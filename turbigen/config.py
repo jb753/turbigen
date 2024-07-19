@@ -1,6 +1,8 @@
 """Object to encapsulate a configuration file."""
+
 from turbigen import util, fluid
 from turbigen.exceptions import ConfigError
+import turbigen.yaml
 from inspect import signature
 from scipy.interpolate import griddata
 from scipy.spatial import QhullError
@@ -17,7 +19,6 @@ class Config:
     PITCH_KEYS = set(["Nb", "Co", "DFL", "Cb"])
 
     def __init__(self, d):
-
         # Blank configs if not there
         self.mesh = d.get("mesh", {})
         self.solver = d.get("solver", {})
@@ -190,7 +191,6 @@ class Config:
         """Make sure that the mean-line data is valid."""
         if meanline_type := self.mean_line_type:
             try:
-
                 design = util.load_mean_line(self.mean_line_type)
 
                 sig = signature(design.forward)
@@ -199,7 +199,8 @@ class Config:
                     if (p.default is p.empty) and (self.mean_line.get(p.name) is None):
                         raise ConfigError(
                             f'No value specified for required "{meanline_type}" design'
-                            f' parameter "{p.name}"'
+                            f' parameter "{p.name}", '
+                            f"you supplied {list(self.mean_line.keys())}"
                         )
                 func_param_names = [p.name for p in func_params]
                 for k in self.mean_line:
@@ -221,7 +222,7 @@ class Config:
         Annulus = util.load_annulus(self.annulus.get("type", "Smooth"))
         sig = signature(Annulus)
         for k in self.annulus:
-            if k not in sig.parameters and not k == "type":
+            if k not in sig.parameters and k not in ["type", "debug"]:
                 raise ConfigError(f'Invalid annulus design parameter "{k}"')
         for p in list(sig.parameters.values())[3:]:
             if (p.default is p.empty) and (self.annulus.get(p.name) is None):
@@ -242,7 +243,7 @@ class Config:
     @classmethod
     def read(cls, yaml_file):
         """Initialise from a yaml configuration file."""
-        din = util.read_yaml(yaml_file)
+        din = turbigen.yaml.read_yaml(yaml_file)
         return cls(din)
 
     def to_dict(self):
@@ -332,7 +333,7 @@ class Config:
         d = self.to_dict()
         if runid is not None:
             d["runid"] = runid
-        util.write_yaml(d, yaml_file, mode)
+        turbigen.yaml.write_yaml(d, yaml_file, mode)
 
     def get_inlet(self):
         """Return a State object for the inlet working fluid."""
@@ -514,7 +515,6 @@ class Config:
         for vi in v:
             c = self.copy()
             for j, varname in enumerate(self.hypercube["limits"]):
-
                 if varname in ("Co", "Cb", "tip"):
                     c.blades[varname][0] = float(vi[j])
                 elif varname in c.install:

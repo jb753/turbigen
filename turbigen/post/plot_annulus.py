@@ -1,4 +1,5 @@
 """Save plots of annulus lines."""
+
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
@@ -12,14 +13,32 @@ def post(
     machine,
     meanline,
     postdir,
-    cut_planes=[],
+    mnorm_traverse=[],
     show_axis=False,
     show_control_points=True,
     show_blades=True,
     write_raw=False,
     compare=False,
 ):
+    """plot_annulus(mnorm_cut=[], show_axis=False, show_control_points=True, show_blades=True, write_raw=False, compare=None)
+    Plot a meridional x-r view of the annulus lines of the turbomachine.
 
+    Parameters
+    ----------
+    mnorm_cut: list
+        Show cut planes at the given normalised meridional coordinates.
+    show_axis: bool
+        Add a dot-dash centreline at zero radius to show the axis of the machine.
+    show_control_points: bool
+        Show the control points at the inlet and exit of each row defining the shape.
+    show_blades: bool
+        Hatch bladed areas in the plot.
+    write_raw: bool
+        Save the hub and casing coordinates to an npz file.
+    compare: str
+        Path to an xrt data file with meridional coordinates to compare to current annulus.
+
+    """  # noqa:E501
     logger.info("Plotting annulus lines")
 
     m = np.linspace(0.0, 1.0, 100)
@@ -62,7 +81,7 @@ def post(
             ax.plot(*xr_d1, "-", color=grey, solid_capstyle="butt")
             ax.plot(*xr_d2, "-", color=grey, solid_capstyle="butt")
 
-    for tcut in cut_planes:
+    for tcut in mnorm_traverse:
         xrc = ann.get_cut_plane(tcut)[0]
         ax.plot(*xrc, "-", color="C0")
 

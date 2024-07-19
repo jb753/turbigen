@@ -1,4 +1,5 @@
 """Save plots of pressure distributions."""
+
 import numpy as np
 import os
 import turbigen.util
@@ -10,14 +11,38 @@ logger = turbigen.util.make_logger()
 def post(
     grid, machine, meanline, postdir, row_spf, write_raw=False, use_rot=False, lim=None
 ):
+    """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
+    Plot static pressure on blade surface as a function of chordwise distance.
+
+    The horizontal axis is surface distance away from the stagnation point.
+    The vertical axis is a static pressure coefficient defined using the mean-line inlet dynamic head in compressors,
+    and the isentropic exit dynamic head in turbines.
+
+    Parameters
+    ----------
+    row_spf: list
+        For each row of the machine,  a nested list of span fractions to plot at. For example, in a three-row machine,
+        to plot the first row at mid-span, the second row at three locations, and omit the third row, use
+        `[[0.5,], [0.1, 0.5, 0.9,], []]`.
+    write_raw: bool
+        Save the raw pressure coefficient and surface distance data to an npz file.
+    use_rot: bool
+        Plot using the rotary static pressure to take out centrifugal effects.
+    lim: (2,) iterable
+        Vertical limits, set automatically if omitted.
+
+    """
 
     lnst = ["-", "--"]
 
     raw_data = {}
 
+    nrow = machine.Nrow
+    if not len(row_spf) == nrow:
+        raise Exception(f"row_spf should be of length nrow={nrow}, got {len(row_spf)}")
+
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
-
         if not spfrow:
             continue
 
@@ -47,13 +72,11 @@ def post(
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-
             # Find the j-index corresponding to current span fraction on main blade
             jspf = np.argmin(np.abs(surfs[0].spf[1, :, 0] - spf))
 
             # Loop over main/splitter
             for isurf, surf in enumerate(surfs):
-
                 snow = surf[:, jspf, :]
 
                 # Extract pressure and non-dimensionalise

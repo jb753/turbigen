@@ -1,5 +1,7 @@
 """Mean-line design for an axial turbine stage, assuming perfect gas."""
+
 from turbigen import compflow_native as compflow
+from turbigen import util
 import warnings
 from scipy.optimize import root_scalar
 import turbigen.flowfield
@@ -59,8 +61,22 @@ def forward(
 
     """
 
-    # if not isinstance(So1, fluid.PerfectState):
-    #     raise NotImplementedError("axial_turbine does not support real gases")
+    if not isinstance(So1, turbigen.fluid.PerfectState):
+        raise NotImplementedError("axial_turbine does not support real gases")
+
+    util.check_scalar(
+        htr=htr,
+        Omega=Omega,
+        Alpha1=Alpha1,
+        phi=phi,
+        psi=psi,
+        Lam=Lam,
+        Ma2=Ma2,
+        eta=eta,
+        loss_split=loss_split,
+        VmR12=VmR12,
+        VmR23=VmR23,
+    )
 
     ga = So1.gamma
     rgas = So1.rgas

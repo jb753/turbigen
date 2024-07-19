@@ -3,6 +3,7 @@
 The purpose of these objects is to evaluate camber lines in streamsurface
 coordinates a function of chordwise position.
 """
+
 import numpy as np
 from scipy.optimize import minimize
 

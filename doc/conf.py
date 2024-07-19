@@ -38,6 +38,7 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "autodocsumm",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
     "matplotlib.sphinxext.plot_directive",
@@ -102,7 +103,6 @@ mathjax3_config = {
 
 bibtex_bibfiles = ["refs.bib"]
 bibtex_reference_style = "author_year"
-
 
 rst_epilog = f"""
 .. |ProjectVersion| replace:: {release}

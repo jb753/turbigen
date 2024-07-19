@@ -74,7 +74,7 @@ The following turbomachine architectures are currently implemented
 
 Cascade
 -------
-.. automodule:: turbigen.meanline.cascade
+.. automodule:: turbigen.meanline.turbine_cascade
    :members:
 
 Axial turbine

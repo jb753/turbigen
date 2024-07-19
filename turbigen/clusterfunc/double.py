@@ -1,4 +1,5 @@
 """Distribute points with symmetric clustering."""
+
 import numpy as np
 from turbigen.clusterfunc.exceptions import ClusteringException
 import turbigen.clusterfunc.check
@@ -37,7 +38,7 @@ def fixed(dx0, dx1, N, x0=0.0, x1=1.0):
 
     if np.isclose(x0, x1):
         raise ClusteringException(
-            f"Cannot distribute points without distinct start and end points, "
+            "Cannot distribute points without distinct start and end points, "
             f"got x0={x0} and x1={x1}"
         )
 
@@ -82,7 +83,7 @@ def free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
 
     if np.isclose(x0, x1):
         raise ClusteringException(
-            f"Cannot distribute points without distinct start and end points, "
+            "Cannot distribute points without distinct start and end points, "
             f"got x0={x0} and x1={x1}"
         )
 
@@ -235,6 +236,9 @@ def _unit_free(dx0, dx1, dmax, ERmax, mult=8, rtol=1e-2):
                 n += 1
 
     if not flag:
-        raise ClusteringException(f"Could not double cluster with dx0={dx0}, dx1={dx1}, dmax={dmax}, ERmax={ERmax}")
+        raise ClusteringException(
+            f"Could not double cluster with dx0={dx0}, dx1={dx1}, dmax={dmax},"
+            f" ERmax={ERmax}"
+        )
 
     return x

@@ -3,7 +3,7 @@ Configuration file format
 
 The working example below illustrates the general layout of a :program:`turbigen` configuration file. More specimens are available in the :file:`examples` directory.
 
-.. literalinclude:: ../examples/cascade.yaml
+.. literalinclude:: ../examples/turbine_cascade.yaml
    :language: yaml
 
 Input data is specified in a text-based `YAML
@@ -29,7 +29,7 @@ The following sections give more detail on each of the keys.
 workdir
 --------
 
-Specifies relatice or absolute path to a working directory for the run. If
+Specifies relative or absolute path to a working directory for the run. If
 present, `*` is replaced with a new numbered directory on each invocation of
 the program. Examples:
 
@@ -82,7 +82,7 @@ Under the `mean_line` key, a `type` key is required to specify the architecture
 or topology of turbomachine to design. This can either be: one the built-in
 mean-lines listed in in :py:mod:`turbigen.meanline`, or a file path to a
 user-written mean-line module that provides the correct functions. Also
-specified are the aerodynamic or geometric paramters needed to solve for the
+specified are the aerodynamic or geometric parameters needed to solve for the
 flow along the mean-line for the current turbomachine type. The design
 variables are fed directly into the `forward` mean-line design functions in
 :py:mod:`turbigen.meanline` (see the :ref:`Mean line page <ml>` for more
@@ -122,7 +122,7 @@ detail) The configuration file might look like:
 annulus
 -------
 
-With mean radii and areas fixed by the mean-line deisgn, meridional aspect
+With mean radii and areas fixed by the mean-line design, meridional aspect
 ratios set the length of the machine. For a turbomachine with `N` rows: there
 are `N+1` aspect ratios defining the spacing between rows and the inlet and
 exit boundaries set in `AR_gap`;  and `N` aspect ratios defining the blade
@@ -405,7 +405,7 @@ job
 Automations are in place for running :program:`turbigen` as a SLURM queue job
 using the `sbatch` command. Some parameters are hardcoded assuming the
 University of Cambridge Wilkes3 cluster and may require modifying for different
-systems. Sumbitting jobs requires the following
+systems. Submitting jobs requires the following
 configuration:
 
 

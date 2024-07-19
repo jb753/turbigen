@@ -134,7 +134,7 @@ class MeridionalLine:
         self.scurve = np.zeros_like(self.x)
 
         # A vector of fit parameter, clustered near segment leading/trailing edges
-        tclu1 = util.cluster_two_sided_step(200, 0.0002, 0.0002)
+        tclu1 = util.cluster_cosine(200)
         self._t_clu = np.unique(
             np.reshape(
                 [i + tclu1 for i in range(int(self.t.max()))],
@@ -769,7 +769,6 @@ class Blade:
         return np.maximum(Lu, Ll)
 
     def get_camber_line(self, spf):
-
         cam, thick = self._get_cam_thick(spf)
         m = util.cluster_cosine(500)
 
@@ -800,7 +799,7 @@ class Blade:
         m = util.cluster_cosine(500)
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtcam = np.mean(xrtul, axis=0)
-        xrtLE = xrtcam[:,0].squeeze()
+        xrtLE = xrtcam[:, 0].squeeze()
 
         return xrtLE
 
@@ -858,10 +857,10 @@ class Machine:
         """Make a machine object from component objects."""
 
         self.ann = ann
-        self.bld = util.tolist(bld)
-        self.Nb = util.tolist(Nb)
-        self.tip = util.tolist(tip)
-        self.split = util.tolist(split) if split else None
+        self.bld = bld
+        self.Nb = Nb
+        self.tip = tip
+        self.split = split if split else None
         self.Nrow = len(self.bld)
 
     def get_coords(self, flip_theta=False):

@@ -92,7 +92,6 @@ iterate:
     match_tolerance:
       eta_tt: 0.01
       loss_split: 0.01
-
   deviation:
     clip: 5.0
     relaxation_factor: 2.0

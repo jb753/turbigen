@@ -1,4 +1,5 @@
 """Generate thermodynamic property tables in TS4 format."""
+
 from CoolProp import CoolProp as CP
 import numpy as np
 from multiprocessing import Pool

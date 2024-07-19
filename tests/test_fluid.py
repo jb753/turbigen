@@ -373,12 +373,13 @@ def test_perfect():
     gae = (ga - 1.0) / ga
     assert np.isclose(S2s.T, S1.T * (S2.P / S1.P) ** gae)
 
+
 def test_perfect_deriv():
     """Check that perfect gas derivatives are correct by finite difference"""
 
     cp = 1105.0
     ga = 1.3
-    rho1 = 1.
+    rho1 = 1.0
     P1 = 1e5
     delta = np.linspace(0.8, 1.2)
     Pv = delta * P1

@@ -16,7 +16,7 @@ def unit_single(x, Dmin, Dmax, ERmax, rtol=1e-9):
 
     if not ((x >= 0.0) & (x <= 1.0 + rtol)).all():
         raise ClusteringException(
-            f"Normalised values outside unit interval, "
+            "Normalised values outside unit interval, "
             f"min(x)={x.min()}, max(x)={x.max()}."
         )
 
@@ -64,7 +64,7 @@ def unit_symmetric(x, Dmin, Dmax, ERmax, rtol=1e-9):
 
     if not ((x >= 0.0) & (x <= 1.0 + rtol)).all():
         raise ClusteringException(
-            f"Normalised values outside unit interval, "
+            "Normalised values outside unit interval, "
             f"min(x)={x.min()}, max(x)={x.max()}."
         )
 

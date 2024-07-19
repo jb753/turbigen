@@ -1,8 +1,9 @@
 """Mean-line design of a radial impeller with vaneless diffuser"""
+
 import numpy as np
 import turbigen.flowfield
 import turbigen.vtri
-import turbigen.util
+from turbigen import util
 
 
 def forward(
@@ -18,11 +19,25 @@ def forward(
     # Geometric
     htr1a,
     RR_indu,
+    Beta,
     # Loss
     Ys,
-    Beta,
 ):
     """Design the mean-line for a radial compressor with vaneless diffuser."""
+
+    # Verify input scalars
+    util.check_scalar(
+        PR_tt=PR_tt,
+        mdot=mdot,
+        phi1=phi1,
+        Ma1_rel=Ma1_rel,
+        htr1a=htr1a,
+        RR_indu=RR_indu,
+    )
+
+    # Check shapes of vectors
+    util.check_vector((4,), Ys=Ys, DH=DH, Beta=Beta)
+    util.check_vector((3,), VmR=VmR)
 
     MAXITER = 100
 
@@ -40,7 +55,7 @@ def forward(
     # Use pseudo entropy loss coefficient to guess entropy
     # throughout the machine (update later based on CFD solution)
     # Ys = To1*(s-s1)/(0.5*a01^2)
-    s = np.concatenate(((0.,0.), Ys)) * (0.5 * So1.a**2) / So1.T + So1.s
+    s = np.concatenate(((0.0, 0.0), Ys)) * (0.5 * So1.a**2) / So1.T + So1.s
 
     # Calculate work using duty and loss guess
     Po3 = So1.P * PR_tt
@@ -62,7 +77,6 @@ def forward(
     atol_h = 1e-6 * 0.5 * So1.a**2
     converged = False
     for _ in range(MAXITER):
-
         # Speed of sound sets relative velocity magnitude
         V1_rel = S.a[2] * Ma1_rel
 
@@ -161,8 +175,8 @@ def forward(
     Vm = np.array([Vm1a, Vm1a, Vm1, Vm2, Vm3, Vm4])
     Vt = np.array([0.0, 0.0, 0.0, Vt2, Vt3, Vt4])
     Beta_all = np.array([Beta1a, Beta1a, Beta[0], Beta[1], Beta[2], Beta[3]])
-    Vx = Vm * turbigen.util.cosd(Beta_all)
-    Vr = Vm * turbigen.util.sind(Beta_all)
+    Vx = Vm * util.cosd(Beta_all)
+    Vr = Vm * util.sind(Beta_all)
 
     rrms_all = np.array([rrms1a, rrms1a, rrms1, rrms2, rrms3, rrms4])
     A_all = np.array([A1a, A1a, A1, A2, A3, A4])

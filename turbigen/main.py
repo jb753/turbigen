@@ -1,7 +1,9 @@
 """Entry point for running turbigen from the shell."""
+
 import logging
 import subprocess
 import turbigen.util
+import turbigen.yaml
 import turbigen.run
 import socket
 import shutil
@@ -26,7 +28,6 @@ sys.excepthook = my_excepthook
 
 
 def _make_argparser():
-
     # Set up argument parsing
     parser = argparse.ArgumentParser(
         description=(
@@ -86,10 +87,17 @@ def _make_argparser():
         help="run on an edited copy of the configuration file (using $EDITOR)",
         action="store_true",
     )
+
     parser.add_argument(
         "-m",
         "--meanline-debug",
         help="perform the mean-line design, print out debugging information and stop",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-a",
+        "--annulus-debug",
+        help="perform the annulus design, print out debugging information and stop",
         action="store_true",
     )
     parser.add_argument(
@@ -108,12 +116,11 @@ def main():
     args = _make_argparser().parse_args()
 
     # Load input data in dictionary format
-    d = turbigen.util.read_yaml(args.CONFIG_YAML)
+    d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
 
     # If we are planning to use embsolve
     if d.get("solver", {}).get("type") == "embsolve":
         try:
-
             # Check our MPI rank
             from mpi4py import MPI
 
@@ -128,7 +135,6 @@ def main():
                 sys.exit(0)
 
         except ImportError:
-
             # Just run serially if we cannot import mpi4py
             pass
 
@@ -151,7 +157,7 @@ def main():
 
     # Write config file into the working directory
     working_config = os.path.join(workdir, "config.yaml")
-    turbigen.util.write_yaml(d, working_config)
+    turbigen.yaml.write_yaml(d, working_config)
 
     # Edit the config file if requested
     if args.edit:
@@ -174,6 +180,7 @@ def main():
 
     conf.wdist &= not args.no_wdist
     conf.mean_line["debug"] = args.meanline_debug
+    conf.annulus["debug"] = args.annulus_debug
 
     # Choose log level
     # sys.tracebacklimit = 1000 if args.verbose else 1

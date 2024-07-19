@@ -1,4 +1,5 @@
 """Save pressure field around the nose."""
+
 import numpy as np
 import os
 import turbigen.util
@@ -8,10 +9,8 @@ logger = turbigen.util.make_logger()
 
 
 def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
-
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
-
         if not spfrow:
             continue
 
@@ -29,7 +28,6 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-
             # Get a reasonably fine meridional curve to define the visualisation surf
             xr_vis = machine.ann.get_span_curve(spf, n=101)
 
@@ -98,7 +96,6 @@ def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
             ax = ax2[0]
             # ax.plot(*surf.squeeze().xr, "rx")
             for b in cut:
-
                 P = b.P
 
                 if Po2 > Po1:

@@ -10,11 +10,9 @@ inlet:
   gamma: 1.4
 
 mean_line:
-  type: cascade
-  span1: 0.1
-  span2: 0.12
-  Alpha1: 40.
-  Alpha2: -65.
+  type: turbine_cascade
+  span: [0.1, 0.12]
+  Alpha: [40., -65.]
   Ma2: 0.6
   Yh: 0.1
   htr: 0.9

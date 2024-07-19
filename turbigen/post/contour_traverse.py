@@ -1,4 +1,5 @@
 """Contour loss coefficient over traverse plane."""
+
 import os
 import turbigen.util
 import numpy as np
@@ -14,14 +15,39 @@ def post(
     machine,
     meanline,
     postdir,
-    mnorm=None,
+    mnorm=[],
     coord_sys="yz",
     lim=None,
     var=(),
     step=None,
-    horiz_offset=0.0,
+    theta_offset=0.0,
     title=None,
 ):
+    """contour_traverse(norm=[], coord_sys="yz", var=(), lim=None, step=None, theta_offset=0.0, title=None)
+    Plot flow-field contours over a traverse cut at constant streamwise position.
+
+    This is useful, for example, to give an indication of the distribution of loss downstream of blade rows.
+
+    Parameters
+    ----------
+    mnorm_cut: list
+        Normalised meridional coordinates at which to take the cuts. The coordinate is defined 0 at the inlet plane,
+        1 at the first row LE, 2 at the first row TE, 3 at the second row LE, and so on. For example, to cut
+        just upstream and downstream of the first row, use [0.95, 2.05]
+    coord_sys: str
+        Which coordinate system to plot in. `yz` for axials or `rtx` for radials.
+    var: list of str
+        Variable names to plot. Select from `Yp, Ys, Cho, Vm`.
+    lim: list of (2,) list
+        Upper and lower contour limits for each plot variable, omit to set automatically.
+    step: list of float
+        Contour steps for each plot variable, omit to set automatically.
+    theta_offset: float
+        Angular offset of the plot as a fraction of pitch. Use to line up wakes in different simulations.
+    title: str
+        String to add as a plot title, omit for no title.
+
+    """
 
     logger.info("Contouring traverse planes...")
 
@@ -30,7 +56,6 @@ def post(
 
     # Loop over stations
     for i, ti in enumerate(mnorm):
-
         # Extract reference pressures
         Po1 = meanline.Po_rel[::2]
         P1 = meanline.P[::2]
@@ -87,9 +112,7 @@ def post(
         ii = int(ti / 2 - 1)
 
         for iv, vname in enumerate(var):
-
             if vname == "Yp":
-
                 dv = 0.1
                 Po_rel = Cu.Po_rel[iunique]
                 # Choose compressor or turbine definition
@@ -102,7 +125,6 @@ def post(
                 lab = "Stagnation Pressure Loss Coefficient, $Y_p$"
 
             elif vname == "Ys":
-
                 dv = 0.1
                 s = Cu.s[iunique]
 
@@ -116,7 +138,6 @@ def post(
                 lab = "Entropy Loss Coefficient, $Y_s$"
 
             elif vname == "Cho":
-
                 dv = 0.1
                 ho = Cu.ho[iunique]
 
@@ -125,7 +146,6 @@ def post(
                 lab = "Work Coefficient, $C_{h_0}$"
 
             elif vname == "Vm":
-
                 if U[ii] == 0.0:
                     Vref = Cu.Vm[iunique].mean()
                     lab = r"Meridional Velocity, $V_m/\overline{V_m}$"
@@ -181,8 +201,7 @@ def post(
             ax.axis("off")
 
             if coord_sys == "rtx":
-
-                rtlim = (np.array([-0.5, 0.5]) + horiz_offset) * rt_pitch
+                rtlim = (np.array([-0.5, 0.5]) + theta_offset) * rt_pitch
                 xlim = np.array([c2.min(), c2.max()])
 
                 # Hub and casing labels

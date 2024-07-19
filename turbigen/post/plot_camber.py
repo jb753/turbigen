@@ -1,4 +1,5 @@
 """Save plot of camber line."""
+
 import os
 import turbigen.util
 import turbigen.camber
@@ -9,13 +10,11 @@ logger = turbigen.util.make_logger()
 
 
 def post(grid, machine, meanline, postdir, row_spf):
-
     # Meridional locations to plot at
     m = turbigen.util.cluster_cosine(50)
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
-
         # Set up axes
         fig, ax = plt.subplots()
         ax.set_xlabel(r"Meridional Distance, $m/c_m$")
@@ -24,14 +23,19 @@ def post(grid, machine, meanline, postdir, row_spf):
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-
             cam, _ = machine.bld[irow]._get_cam_thick(spf)
 
             if isinstance(cam, turbigen.camber.Taylor):
                 chi_str = (
-                    r"$\displaystyle\hat{\chi} = "
+                    r"$\hat{\chi} = "
                     r"\frac{\chi - \chi_\mathrm{in} }"
                     r"{\chi_\mathrm{out} - \chi_\mathrm{in}}$"
+                )
+            else:
+                chi_str = (
+                    r"$\hat{\chi} = "
+                    r"\frac{\tan\chi - \tan\chi_\mathrm{in} }"
+                    r"{\tan\chi_\mathrm{out} - \tan\chi_\mathrm{in}}$"
                 )
 
             title_str = (

@@ -302,7 +302,6 @@ class SolverBlock:
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
-
             self.state = turbigen.fluid.PerfectState(
                 shape=block.shape, order="F", typ=typ
             )
@@ -343,7 +342,6 @@ class SolverBlock:
 
         # Change inlet patches
         for patch, state in zip(self.inlets, self.state_inlets):
-
             # Expand patch data
             ind, Po, To, Alpha, Beta, rhoo, hoin, sin, r, _ = patch
 
@@ -353,7 +351,6 @@ class SolverBlock:
             sinBeta = turbigen.util.sind(Beta)
 
             if i_inlet == 0:
-
                 # Relax changes in density
                 rho_now = (
                     rfin * self.cons[..., 0].ravel(order="F")[ind]
@@ -395,7 +392,6 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = P
 
             else:
-
                 # Extract properties from soln
                 rho = self.cons[..., 0].ravel(order="F")[ind]
                 rhoVx = self.cons[..., 1].ravel(order="F")[ind]
@@ -510,12 +506,10 @@ class SolverBlock:
         """Set static pressure on outlets."""
 
         for patch, state in zip(self.outlets, self.state_outlets):
-
             # Extract patch data
             ind, P_exit, wA, normal, r = patch
 
             if i_exit == 0:
-
                 # Stagnation enthalpy from interior and imposed exit pressure
                 # set the outlet state
                 ho_exit = self.ho.ravel(order="F")[ind]
@@ -537,7 +531,6 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = P_exit
 
             elif i_exit == 1:
-
                 # Characteristic boundary condition
 
                 # Extract the cons vars from solution
@@ -662,7 +655,6 @@ class SolverBlock:
         )
 
     def set_secondary(self):
-
         embsolve.secondary(self.r, self.cons, self.Vxrt, self.halfVsq, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
@@ -769,21 +761,18 @@ def face_indices(ijk):
     _, di, dj, dk = ijk.shape
 
     if di == 1:
-
         # Constant-i face
         # Trim off the highest valued j and k
         ijk = trim_j(ijk)
         ijk = trim_k(ijk)
 
     elif dj == 1:
-
         # Constant-j face
         # Trim off the highest valued i and k
         ijk = trim_i(ijk)
         ijk = trim_k(ijk)
 
     elif dk == 1:
-
         # Constant-k face
         # Trim off the highest valued i and j
         ijk = trim_i(ijk)
@@ -793,7 +782,6 @@ def face_indices(ijk):
 
 
 def get_periodic_data(patch):
-
     match = patch.match
     perm, flip = match.get_match_perm_flip()
 
@@ -818,7 +806,6 @@ def get_periodic_data(patch):
 
     Npts = ijk.shape[-1]
     for n in range(Npts):
-
         ijknow = tuple(ijk[:, n])
         nxijknow = tuple(nxijk[:, n])
 
@@ -845,13 +832,11 @@ def get_periodic_data(patch):
 
 
 def get_periodics(g, procids):
-
     periodics = []
     seen = []
     pid = 0
 
     for patch in g.periodic_patches:
-
         if patch in seen:
             continue
         else:
@@ -880,7 +865,6 @@ def get_periodics(g, procids):
 
 
 def get_inlet_data(patch):
-
     _, di, dj, dk = np.shape(patch.get_indices())
 
     wA = patch.get_A_avg_weights(order="F")
@@ -900,7 +884,6 @@ def get_inlet_data(patch):
 
 
 def get_outlet_data(patch):
-
     # Calculate a normal vector
     # Assume the patch is flat
     _, di, dj, dk = np.shape(patch.get_indices())
@@ -921,7 +904,6 @@ def get_outlet_data(patch):
 
 
 def send_slave(block_split, procids, periodics):
-
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
 
@@ -937,7 +919,6 @@ def send_slave(block_split, procids, periodics):
 
 
 def exchange_cons(blocks, bid_local, periodics):
-
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -951,7 +932,6 @@ def exchange_cons(blocks, bid_local, periodics):
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
-
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
 
@@ -959,7 +939,6 @@ def exchange_cons(blocks, bid_local, periodics):
 
         # Otherwise, communication is needed
         else:
-
             # Assemble data to send
             vs = embsolve.get_by_ijk(v1, ijk)
             count = len(vs)
@@ -982,7 +961,6 @@ def exchange_cons(blocks, bid_local, periodics):
 
 
 def exchange_tau(blocks, bid_local, periodics):
-
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -998,7 +976,6 @@ def exchange_tau(blocks, bid_local, periodics):
 
         # Just set the periodic if on same rank
         if nxprocid == rank:
-
             # Extract away block
             b2 = blocks[bid_local[nxbid]]
 
@@ -1009,7 +986,6 @@ def exchange_tau(blocks, bid_local, periodics):
 
         # Otherwise, communication is needed
         else:
-
             # Assemble data to send
             vs = embsolve.get_by_ijk(tau1, ijkf)
             count = len(vs)
@@ -1033,7 +1009,6 @@ def exchange_tau(blocks, bid_local, periodics):
 
 # @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
-
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
@@ -1090,13 +1065,11 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     try:
         # Start the main time stepping loop
         for istep in range(conf.n_step):
-
             # Exchange conserved variables across periodic patches
             exchange_cons(blocks, bid_local, periodics)
 
             # Calculate residual for all blocks
             for iblock in range(nblock):
-
                 sb = blocks[iblock]
 
                 sb.set_secondary()
@@ -1117,7 +1090,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 # Update the viscous forces every nloss time steps
                 # Not right at the start of the calculation for stability
                 if not np.mod(istep, conf.nloss) and istep > 100 and conf.i_loss > 0:
-
                     # Evaluate the components of viscous stress tensor
                     sb.set_viscous_stress()
 
@@ -1153,7 +1125,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
             # Intermittently print convergence
             if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
-
                 # Inlet mass-avg props
                 mdot1 = 0.0
                 s1 = 0.0
@@ -1221,7 +1192,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                         dUnow,
                     ]
                     for iproc in range(1, size):
-
                         dUall.append(comm.recv(source=iproc))
                         mhs += comm.recv(source=iproc)
 
@@ -1272,7 +1242,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
 
 def run(grid, settings={}, machine=None):
-
     conf = NativeConfig(**settings)
 
     logger.info("Intialising native solver...")
@@ -1358,7 +1327,6 @@ def run(grid, settings={}, machine=None):
     logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 
     if conf.plot_conv:
-
         dUlog = np.concatenate(dUlog, axis=0)
         r_ref = np.mean(blocks_out[0].r)
         dUlog[:, 3] /= r_ref

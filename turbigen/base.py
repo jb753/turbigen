@@ -1,7 +1,7 @@
 import numpy as np
 from turbigen import util
+import turbigen.yaml
 import turbigen.average
-import sys
 
 logger = util.make_logger()
 
@@ -69,7 +69,11 @@ class StructuredData:
 
     def write(self, fname, mode="w"):
         """Save this object to a yaml file."""
-        util.write_yaml(self.to_dict(), fname, mode)
+        turbigen.yaml.write_yaml(self.to_dict(), fname, mode)
+
+    def write_npz(self, fname, mode="w"):
+        """Save this object to an npz file."""
+        np.savez_compressed(fname, **self.to_dict())
 
     @classmethod
     def stack(cls, sd, axis=0):
@@ -556,7 +560,6 @@ class Kinematics:
 
     @dependent_property
     def dlmin(self):
-
         # Shortest side length
         dli = turbigen.util.vecnorm(self.dli)
         dlj = turbigen.util.vecnorm(self.dlj)
@@ -1225,7 +1228,6 @@ class Composites:
         self.set_rho_u(rho, u)
 
     def area_average(self):
-
         dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
         conserved = np.moveaxis(self.conserved, -1, 1)
@@ -1279,7 +1281,6 @@ class Composites:
         _, nj = self.shape
         istag = np.full((nj,), 0, dtype=int)
         for j in range(nj):
-
             # Calculate gradient and curvature
             dP = np.diff(P[:, j])
 
@@ -1292,7 +1293,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except Exception as e:
+            except Exception:
                 istag[j] = 0
 
         return istag
@@ -1373,7 +1374,6 @@ class MeanLine:
         return F
 
     def interpolate_guess(self, ann):
-
         # Get coordinates along mean-line
         npts = 100
         sg = np.linspace(0.0, ann._mctl[-1], npts)
@@ -1505,7 +1505,7 @@ class MeanLine:
         return not check_failed
 
     def show_debug(self):
-        np.set_printoptions(linewidth=np.inf, precision=4, floatmode='maxprec_equal')
+        np.set_printoptions(linewidth=np.inf, precision=4, floatmode="maxprec_equal")
         logger.iter(f"rrms: {self.rrms}")
         logger.iter(f"rhub: {self.rhub}")
         logger.iter(f"rtip: {self.rtip}")
@@ -1529,8 +1529,6 @@ class MeanLine:
         logger.iter(f"ho: {self.ho}")
         logger.iter(f"rho: {self.rho}")
         logger.iter(f"s: {self.s}")
-
-
 
     def __str__(self):
         Pstr = np.array2string(self.Po / 1e5, precision=4)
@@ -1652,7 +1650,7 @@ class MeanLine:
         total_out = self.cosAlpha_rel[1::2] / self.VmR[::2] * (centrifugal + tangential)
         total = np.where(self.ARflow[::2] > 1.0, total_in, total_out)
 
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide="ignore"):
             return np.abs(Co / total)
 
     #
@@ -1806,20 +1804,20 @@ class MeanLine:
         self._set_metadata_by_key("ske", ske)
 
     @property
-    def Asurf(self):
-        return self._get_metadata_by_key("Asurf")
+    def A_wall(self):
+        return self._get_metadata_by_key("A_wall")
 
-    @Asurf.setter
-    def Asurf(self, Asurf):
-        self._set_metadata_by_key("Asurf", Asurf)
+    @A_wall.setter
+    def A_wall(self, Asurf):
+        self._set_metadata_by_key("A_wall", Asurf)
 
     @property
-    def Sdot_wall(self):
-        return self._get_metadata_by_key("Sdot_wall")
+    def Sdot_surf(self):
+        return self._get_metadata_by_key("Sdot_surf")
 
-    @Sdot_wall.setter
-    def Sdot_wall(self, Sdot_wall):
-        self._set_metadata_by_key("Sdot_wall", Sdot_wall)
+    @Sdot_surf.setter
+    def Sdot_surf(self, Sdot_surf):
+        self._set_metadata_by_key("Sdot_surf", Sdot_surf)
 
     @property
     def Sdot_tip(self):
@@ -1854,14 +1852,6 @@ class MeanLine:
         self._set_metadata_by_key("Ds_mix", Ds_mix)
 
     @property
-    def blockage(self):
-        return self._get_metadata_by_key("blockage")
-
-    @blockage.setter
-    def blockage(self, blockage):
-        self._set_metadata_by_key("blockage", blockage)
-
-    @property
     def tip(self):
         return self._get_metadata_by_key("tip")
 
@@ -1879,7 +1869,6 @@ class MeanLine:
 
 
 class BaseConfig:
-
     _name = "Base"
 
     def __repr__(self):
