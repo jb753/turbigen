@@ -1,7 +1,7 @@
 import numpy as np
 from turbigen import util
+import turbigen.yaml
 import turbigen.average
-import sys
 
 logger = util.make_logger()
 
@@ -69,7 +69,7 @@ class StructuredData:
 
     def write(self, fname, mode="w"):
         """Save this object to a yaml file."""
-        util.write_yaml(self.to_dict(), fname, mode)
+        turbigen.yaml.write_yaml(self.to_dict(), fname, mode)
 
     @classmethod
     def stack(cls, sd, axis=0):
@@ -1292,7 +1292,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except Exception as e:
+            except Exception:
                 istag[j] = 0
 
         return istag
@@ -1505,7 +1505,7 @@ class MeanLine:
         return not check_failed
 
     def show_debug(self):
-        np.set_printoptions(linewidth=np.inf, precision=4, floatmode='maxprec_equal')
+        np.set_printoptions(linewidth=np.inf, precision=4, floatmode="maxprec_equal")
         logger.iter(f"rrms: {self.rrms}")
         logger.iter(f"rhub: {self.rhub}")
         logger.iter(f"rtip: {self.rtip}")
@@ -1529,8 +1529,6 @@ class MeanLine:
         logger.iter(f"ho: {self.ho}")
         logger.iter(f"rho: {self.rho}")
         logger.iter(f"s: {self.s}")
-
-
 
     def __str__(self):
         Pstr = np.array2string(self.Po / 1e5, precision=4)
@@ -1652,7 +1650,7 @@ class MeanLine:
         total_out = self.cosAlpha_rel[1::2] / self.VmR[::2] * (centrifugal + tangential)
         total = np.where(self.ARflow[::2] > 1.0, total_in, total_out)
 
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide="ignore"):
             return np.abs(Co / total)
 
     #

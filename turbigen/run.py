@@ -12,6 +12,7 @@ import turbigen.annulus
 import turbigen.average
 import turbigen.post_process
 import turbigen.flowfield
+import turbigen.yaml
 from turbigen import (
     fluid,
     grid,
@@ -957,7 +958,7 @@ def run_single(conf, gguess=None):
 
     out_vars.pop("So1")
     inverse_path = os.path.join(workdir, "inverse.yaml")
-    turbigen.util.write_yaml(out_vars, inverse_path)
+    turbigen.yaml.write_yaml(out_vars, inverse_path)
     logger.debug(f"Wrote inversion to {inverse_path}")
 
     if opt_converged:

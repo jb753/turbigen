@@ -1,6 +1,7 @@
 """A general multiblock structured grid class."""
 import numpy as np
 from turbigen import util
+import turbigen.yaml
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.marching_cubes
@@ -74,7 +75,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def write(self, fname):
         """Save this object to a yaml file."""
         d = self.to_dict(strip_patches=True)
-        util.write_yaml_compressed(d, fname)
+        turbigen.yaml.write_yaml_compressed(d, fname)
 
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=(), label=None):

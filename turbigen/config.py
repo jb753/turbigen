@@ -1,6 +1,7 @@
 """Object to encapsulate a configuration file."""
 from turbigen import util, fluid
 from turbigen.exceptions import ConfigError
+import turbigen.yaml
 from inspect import signature
 from scipy.interpolate import griddata
 from scipy.spatial import QhullError
@@ -243,7 +244,7 @@ class Config:
     @classmethod
     def read(cls, yaml_file):
         """Initialise from a yaml configuration file."""
-        din = util.read_yaml(yaml_file)
+        din = turbigen.yaml.read_yaml(yaml_file)
         return cls(din)
 
     def to_dict(self):
@@ -333,7 +334,7 @@ class Config:
         d = self.to_dict()
         if runid is not None:
             d["runid"] = runid
-        util.write_yaml(d, yaml_file, mode)
+        turbigen.yaml.write_yaml(d, yaml_file, mode)
 
     def get_inlet(self):
         """Return a State object for the inlet working fluid."""

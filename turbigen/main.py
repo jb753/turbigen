@@ -2,6 +2,7 @@
 import logging
 import subprocess
 import turbigen.util
+import turbigen.yaml
 import turbigen.run
 import socket
 import shutil
@@ -151,7 +152,7 @@ def main():
 
     # Write config file into the working directory
     working_config = os.path.join(workdir, "config.yaml")
-    turbigen.util.write_yaml(d, working_config)
+    turbigen.yaml.write_yaml(d, working_config)
 
     # Edit the config file if requested
     if args.edit:
