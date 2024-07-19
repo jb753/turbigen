@@ -57,3 +57,4 @@ post_process:
   plot_section:
     row_spf: [[0.5,],]
     coord_sys: xrt
+  calc_surf_dissipation:

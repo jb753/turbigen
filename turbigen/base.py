@@ -1804,20 +1804,20 @@ class MeanLine:
         self._set_metadata_by_key("ske", ske)
 
     @property
-    def Asurf(self):
-        return self._get_metadata_by_key("Asurf")
+    def A_wall(self):
+        return self._get_metadata_by_key("A_wall")
 
-    @Asurf.setter
-    def Asurf(self, Asurf):
-        self._set_metadata_by_key("Asurf", Asurf)
+    @A_wall.setter
+    def A_wall(self, Asurf):
+        self._set_metadata_by_key("A_wall", Asurf)
 
     @property
-    def Sdot_wall(self):
-        return self._get_metadata_by_key("Sdot_wall")
+    def Sdot_surf(self):
+        return self._get_metadata_by_key("Sdot_surf")
 
-    @Sdot_wall.setter
-    def Sdot_wall(self, Sdot_wall):
-        self._set_metadata_by_key("Sdot_wall", Sdot_wall)
+    @Sdot_surf.setter
+    def Sdot_surf(self, Sdot_surf):
+        self._set_metadata_by_key("Sdot_surf", Sdot_surf)
 
     @property
     def Sdot_tip(self):
@@ -1850,14 +1850,6 @@ class MeanLine:
     @Ds_mix.setter
     def Ds_mix(self, Ds_mix):
         self._set_metadata_by_key("Ds_mix", Ds_mix)
-
-    @property
-    def blockage(self):
-        return self._get_metadata_by_key("blockage")
-
-    @blockage.setter
-    def blockage(self, blockage):
-        self._set_metadata_by_key("blockage", blockage)
 
     @property
     def tip(self):

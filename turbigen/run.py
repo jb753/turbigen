@@ -832,10 +832,13 @@ def run_single(conf, gguess=None):
             post_conf = {}
         post_func(g, mac, ml_out, postdir, **post_conf)
 
+    # Save some 3D geometry into the meanline for later design space fitting
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
     ml_out.tip = tips[0]
     ml_out.Ds_mix = Dsmix
+
+    # Save the workdir so we can cross-reference if the output ml is added to the database
     ml_out.workdir = workdir
 
     end_time = timer()
