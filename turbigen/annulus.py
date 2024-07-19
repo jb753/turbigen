@@ -219,7 +219,6 @@ class Smooth:
                     pass
 
         if smooth:
-
             for k in range(1, self.npts - 2):
                 _solve_k(k)
 
@@ -399,7 +398,6 @@ class Smooth:
         return self.evaluate_xr(m_ref, spf).squeeze()
 
     def get_mp_from_xr(self, xr_ref):
-
         # We want to plot along a general meridional surface
         # So brute force a mapping from x/r to meridional distance
 

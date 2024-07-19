@@ -8,7 +8,6 @@ logger = turbigen.util.make_logger()
 
 
 def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_prefix):
-
     if plot_prefix:
         import matplotlib.pyplot as plt
 
@@ -75,7 +74,6 @@ def _calc_blade_inc(irow, current_surf, current_blade, current_Beta, plot, plot_
 
         # Choose how to calculate angle
         if np.abs(current_Beta) < 45.0:
-
             if plot and j in jplot and plot_prefix:
                 fig, ax = plt.subplots()
                 ax.plot(surf.x[:, j], surf.rt[:, j], "-")
@@ -153,7 +151,6 @@ def incidence(g, machine, Beta_in, plot=False):
     chi_stag = []
     chi_stag_splitter = []
     for irow, blocks in enumerate(g.row_blocks):
-
         if surfs[irow] is None:
             spf.append(None)
             chi_stag.append(None)

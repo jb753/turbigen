@@ -1,4 +1,5 @@
 """Find all examples and confirm that they will run without errors."""
+
 import os, sys, shutil
 from turbigen import util, main, config, run
 from tempfile import mkdtemp
@@ -15,6 +16,7 @@ example_confs = util.find(EXAMPLE_DIR, "yaml")
 
 logger = util.make_logger()
 logger.setLevel(level=logging.INFO)
+
 
 @pytest.mark.parametrize("conf_yaml", example_confs)
 def test_example(conf_yaml, usegpu):

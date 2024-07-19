@@ -1,4 +1,5 @@
 """Save plot of camber line."""
+
 import os
 import turbigen.util
 import turbigen.camber
@@ -9,13 +10,11 @@ logger = turbigen.util.make_logger()
 
 
 def post(grid, machine, meanline, postdir, row_spf):
-
     # Meridional locations to plot at
     m = turbigen.util.cluster_cosine(50)
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
-
         # Set up axes
         fig, ax = plt.subplots()
         ax.set_xlabel(r"Meridional Distance, $m/c_m$")
@@ -24,7 +23,6 @@ def post(grid, machine, meanline, postdir, row_spf):
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-
             cam, _ = machine.bld[irow]._get_cam_thick(spf)
 
             if isinstance(cam, turbigen.camber.Taylor):

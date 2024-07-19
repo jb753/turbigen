@@ -2,7 +2,6 @@
 
 
 class BaseSolver:
-
     skip = False
     """False to run the CFD as normal, True to write out initial guess and read
     back in, or use a previous solution if available."""

@@ -19,6 +19,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
    meanline
    mesh
    solver
+   post
    changelog
    references
    license

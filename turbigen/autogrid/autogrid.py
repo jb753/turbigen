@@ -260,7 +260,6 @@ def _write_geomturbo(
 
     # NOW DEFINE ROWS
     for i in range(n_row):
-
         if ps[i] is None:
             continue
 

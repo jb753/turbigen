@@ -1,4 +1,5 @@
 """Functions to run turbigen on config objects."""
+
 import os
 import shutil
 import sys
@@ -12,6 +13,7 @@ import turbigen.annulus
 import turbigen.average
 import turbigen.post_process
 import turbigen.flowfield
+import turbigen.yaml
 from turbigen import (
     fluid,
     grid,
@@ -299,7 +301,7 @@ def run_single(conf, gguess=None):
                     nsect_conf = len(bld_now.spf)
                     if not nsect_dat == nsect_conf:
                         raise Exception(
-                            f"Mismatching number of sections to fit, "
+                            "Mismatching number of sections to fit, "
                             f"{nsect_conf} in the config and "
                             f"{nsect_dat} in the coordinates"
                         )
@@ -308,11 +310,9 @@ def run_single(conf, gguess=None):
                     m = np.linspace(0.0, 1.0)
                     spf_fit = []
                     for xrrt_target in xrrt_target_all:
-
                         xrfit = xrrt_target[:2]
 
                         def eval_spf_err(spfnow, xrfit):
-
                             xrref = bld_now.streamsurface(spfnow, m)
                             if np.ptp(xrfit[0]) > np.ptp(xrfit[1]):
                                 xrfit = xrfit[:, np.argsort(xrfit[0])]
@@ -353,7 +353,6 @@ def run_single(conf, gguess=None):
                     ]
 
                     for _ in range(1):
-
                         for isect in range(len(spf_fit)):
                             logger.info(
                                 f"Fitting row {irow} at spf={spf_fit[isect]:.3f} "
@@ -432,7 +431,7 @@ def run_single(conf, gguess=None):
                     logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
                     logger.debug(
                         "splitter q_camber deg "
-                        f'{util.atand(splitter_now["q_camber"][isect])}'
+                        f"{util.atand(splitter_now['q_camber'][isect])}"
                     )
 
                     # The relative mstack for splitter is same as for main blade.
@@ -776,7 +775,6 @@ def run_single(conf, gguess=None):
         conf.install["type"] = install_type
 
     else:
-
         if check_coords:
             g.check_coordinates()
 
@@ -863,7 +861,6 @@ def run_single(conf, gguess=None):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
@@ -875,7 +872,6 @@ def run_single(conf, gguess=None):
         for irow, row in enumerate(conf.sections):
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
-
                 chi = turbigen.util.incidence_unstructured(g, mac, ml, irow, row["spf"])
 
                 inc = np.diff(chi[0], axis=0).squeeze()
@@ -967,11 +963,10 @@ def run_single(conf, gguess=None):
 
     out_vars.pop("So1")
     inverse_path = os.path.join(workdir, "inverse.yaml")
-    turbigen.util.write_yaml(out_vars, inverse_path)
+    turbigen.yaml.write_yaml(out_vars, inverse_path)
     logger.debug(f"Wrote inversion to {inverse_path}")
 
     if opt_converged:
-
         # out_vars = meanline_design.inverse(ml_out)
         var_fields = ("Design variable", "Nom   ", "CFD   ")
         log_line(None, var_fields)
@@ -1022,7 +1017,6 @@ def iter_mean_line(conf, vars_cfd, pdict):
 
     # Loop over the design variables we want to match
     for vname, vtol in tols_match.items():
-
         # Get the CFD value for this design variable
         var_cfd = np.atleast_1d(vars_cfd[vname])
 
@@ -1158,7 +1152,6 @@ def run(conf):
                 os.remove(stopit_path)
 
             if opt_converged:
-
                 if not conf.solver.get("skip"):
                     logger.debug("Moving converged solution up to work dir")
                     for f in os.listdir(iterdir):

@@ -1,4 +1,5 @@
 """Distribute points with single-sided clustering."""
+
 import numpy as np
 import turbigen.clusterfunc.util
 from turbigen.clusterfunc.exceptions import ClusteringException
@@ -37,7 +38,7 @@ def fixed(dmin, dmax, ERmax, N, x0=0.0, x1=1.0, check=True):
 
     if np.isclose(x0, x1):
         raise ClusteringException(
-            f"Cannot distribute points without distinct start and end points, "
+            "Cannot distribute points without distinct start and end points, "
             f"got x0={x0} and x1={x1}"
         )
 
@@ -81,10 +82,8 @@ def free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
 
     if np.isclose(x0, x1):
         raise ClusteringException(
-            (
-                "Cannot distribute points without distinct start and end points,  "
-                f"got x0={x0} and x1={x1}"
-            )
+            "Cannot distribute points without distinct start and end points,  "
+            f"got x0={x0} and x1={x1}"
         )
 
     # Scale the unit distribution between the given values
@@ -183,7 +182,7 @@ def _unit_fixed(dmin, dmax, ERmax, N, check=True):
         LL = _iter_dmax(ERmax, dmax)
         if LL < 0.0:
             raise ClusteringException(
-                f"Not enough points to cluster with "
+                "Not enough points to cluster with "
                 f"dmin={dmin}, ERmax={ERmax}, dmax={dmax} capping, "
                 f"total length only {LL+1}."
             )
@@ -239,7 +238,7 @@ def _unit_free(dmin, dmax, ERmax, mult=8):
     if nhigh == nlow:
         raise ClusteringException(
             f"Unable to find distinct guesses for numbers of points with mult={mult}, "
-            f"try decreasing mult"
+            "try decreasing mult"
         )
 
     Nhigh = nhigh * mult + 1

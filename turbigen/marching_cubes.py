@@ -9,6 +9,7 @@ The implementation is based on:
 https://paulbourke.net/geometry/polygonise/
 
 """
+
 import numpy as np
 
 
@@ -630,7 +631,6 @@ def marching_cubes(data, dist):
     for i in range(ni - 1):
         for j in range(nj - 1):
             for k in range(nk - 1):
-
                 # Skip uncut cells
                 if not edge_index[i, j, k]:
                     continue
@@ -640,10 +640,8 @@ def marching_cubes(data, dist):
 
                 # Loop over the vertices
                 for e in range(12):
-
                     # If the edge index contains the bit
                     if edge_index[i, j, k] & 2**e:
-
                         # Get start and end indices for the edge
                         ijk_st, ijk_en = _eijk(i, j, k, e)
 
@@ -665,7 +663,6 @@ def marching_cubes(data, dist):
 
                 # Loop over the triangle indices in threes
                 for itri in range(0, len(triangle_index), 3):
-
                     # Sentinel value indices no more triangles
                     if triangle_index[itri] == -1:
                         break

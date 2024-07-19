@@ -1,18 +1,14 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
+
 # from . import compflow as cf
 import numpy as np
-import gzip
 import os
 import sys
 import importlib
 import scipy.interpolate
 from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
-from scipy.optimize import minimize, leastsq, root_scalar
-from scipy.spatial import Voronoi, ConvexHull
-from scipy.signal import medfilt
 from scipy.interpolate import griddata
-import yaml
 import re
 
 import logging
@@ -38,81 +34,6 @@ def check_vector(shape, **kwargs):
             raise ConfigError(f"{k}={v} has shape {shape_in}, but expected {shape}")
 
 
-# Logic to allow dumping of numpy float64
-def represent_float(dumper, data):
-    return dumper.represent_scalar("tag:yaml.org,2002:float", str(data))
-
-
-yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
-
-
-# Logic to allow dumping int to yaml
-def represent_int(dumper, data):
-    return dumper.represent_scalar("tag:yaml.org,2002:int", str(data))
-
-
-yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
-
-
-# Dumping np.ndarray as a list
-def represent_ndarray(dumper, data):
-    return dumper.represent_list(data.tolist())
-
-
-yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
-
-
-def medial_axis(xy, plot=False):
-    """ "Find medial axis using Voronoi triangulation.
-
-    Parameters
-    ----------
-    xy: (2, N) array
-        Plane coordinates for loop of upper and lower surfaces"""
-
-    vor = Voronoi(xy.T)
-
-    # Form medial axis by discarding Voronoi vertices outside section
-    # https://stackoverflow.com/a/69485899
-    hull = ConvexHull(xy.T)
-    A, b = hull.equations[:, :-1], hull.equations[:, -1:]
-    tol = np.ptp(xy[0]) * 1e-3
-    xy_med = vor.vertices
-
-    xy_med = xy_med[np.all(np.matmul(xy_med, A.T) + b.T < -tol, axis=1)].T
-
-    # Arrange coordinates in order of increasing meridional coodinate
-    xy_med = xy_med[:, np.argsort(xy_med[0])]
-
-    # if plot:
-    #     from IPython import embed; embed()
-    #     import matplotlib.pyplot as plt
-    #     fig, ax = plt.subplots()
-    #     ax.plot(*xy, "kx")
-    #     ax.plot(*xy_med, "ro")
-    #     ax.axis("equal")
-    #     ax.set_xlim((0.,0.02))
-    #     ax.set_ylim((0.7,0.8))
-    #     plt.savefig("test2.pdf")
-    #     quit()
-
-    # Remove outliers with median filter
-    xy_med = xy_med[:, np.argsort(xy_med[0])]
-    if xy_med.shape[1] == 0:
-        raise ValueError("Failed to find medial axis")
-    xy_med[1] = medfilt(xy_med[1])
-
-    return xy_med
-
-
-def reduce_scalar(x):
-    """Convert something to a scalar float if possible."""
-    if np.shape(x) in ((), (1,)):
-        return x.item()
-    else:
-        return x
-
-
 def cell_to_node(x):
     """One-dimensional centered values to nodal values."""
     return np.concatenate(
@@ -128,186 +49,30 @@ def cell_to_node(x):
     )
 
 
-class DiscontinuousBPoly:
-    def __init__(self, x, yl=None, yr=None, p=None):
-        """Initialise a discontinous piecewise Bernstein polynomial.
-
-        Parameters
-        ----------
-        x: (n,) array
-            Sample points.
-        yl: (n-1,m) nested list
-            yl[i][j] is the j-th derivative to the left of x[i+1].
-        yr: (n-1,m) nested list
-            yl[i][j] is the j-th derivative to the right of x[i].
-        """
-
-        self.x = x.reshape(-1)
-        self.n = len(self.x)
-
-        if p:
-            self._p = p
-
-        else:
-            self._p = []
-            for i in range(self.n - 1):
-                xnow = x[i : i + 2]
-                ynow = np.stack((yr[i], yl[i]))
-                self._p.append(scipy.interpolate.BPoly.from_derivatives(xnow, ynow))
-
-    def derivative(self, nu=1):
-        """Take derivative and return a new object."""
-        return DiscontinuousBPoly(self.x, p=[p.derivative(nu) for p in self._p])
-
-    def __call__(self, x):
-        """Evaluate the piecewise polynomial."""
-        # Assign the input points to a polynomial bin
-        ind = np.digitize(x, self.x) - 1
-
-        # Evalute each polynomial
-        y = np.empty_like(x)
-        for i in range(self.n - 1):
-            y[ind == i] = self._p[i](x[ind == i])
-
-        # Special case for last bin end
-        y[x == self.x[-1]] = self._p[-1](x[x == self.x[-1]])
-
-        return y
-
-
 def cluster_cosine(npts):
-    """Return a cosinusoidal clustering function with a set number of points."""
+    """Cosinusoidal cluster on unit interval with a set number of points."""
     # Define a non-dimensional clustering function
     return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
 
 
-def _invert_sinhx_x(y):
-    """Return solution x for y = sinh(x)/x in Eqns. (62-67)."""
-
-    y1 = y - 1.0
-    x_low = np.sqrt(6.0 * y1) * (
-        1.0
-        - 0.15 * y1
-        + 0.057321429 * y1**2.0
-        - 0.024907295 * y1**3.0
-        + 0.0077424461 * y1**4.0
-        - 0.0010794123 * y1**5.0
-    )
-
-    v = np.log(y)
-    w = 1.0 / y - 0.028527431
-    x_high = (
-        v
-        + (1.0 + 1.0 / v) * np.log(2.0 * v)
-        - 0.02041793
-        + 0.24902722 * w
-        + 1.9496443 * w**2.0
-        - 2.6294547 * w**3.0
-        + 8.56795911 * w**4.0
-    )
-
-    return np.where(y < 2.7829681, x_low, x_high)
-
-
-def _invert_sinx_x(y):
-    """Return solution x for y = sin(x)/x from Eqns. (68-71)."""
-
-    x_low = np.pi * (
-        1.0
-        - y
-        + y**2.0
-        - (1.0 + np.pi**2.0 / 6.0) * y**3.0
-        + 6.794732 * y**4.0
-        - 13.205501 * y**5.0
-        + 11.726095 * y**6.0
-    )
-
-    y1 = 1.0 - y
-    x_high = np.sqrt(6.0 * y1) * (
-        1.0
-        + 0.15 * y1
-        + 0.057321429 * y1**2.0
-        + 0.048774238 * y1**3.0
-        - 0.053337753 * y1**4.0
-        + 0.075845134 * y1**5.0
-    )
-
-    return np.where(y < 0.26938972, x_low, x_high)
-
-
-def cluster_two_sided_slope(npts, s0, s1):
-    """Two sided analytic clustering function after Vinokur."""
-
-    A = np.sqrt(s0 * s1)
-    B = np.sqrt(s0 / s1)
-
-    xi = np.linspace(0.0, 1.0, npts)
-
-    if np.abs(B - 1.0) < 0.001:
-        # Eqn. (52)
-        u = xi * (1.0 + 2.0 * (B - 1.0) * (xi - 0.5) * (1.0 - xi))
-    elif B < 1.0:
-        # Solve Eqn. (49)
-        Dx = _invert_sinx_x(B)
-        assert np.isclose(np.sin(Dx) / Dx, B, rtol=1e-1)
-        # Eqn. (50)
-        u = 0.5 * (1.0 + np.tan(Dx * (xi - 0.5)) / np.tan(Dx / 2.0))
-    elif B >= 1.0:
-        # Solve Eqn. (46)
-        Dy = _invert_sinhx_x(B)
-        assert np.isclose(np.sinh(Dy) / Dy, B, rtol=1e-1)
-        # Eqn. (47)
-        u = 0.5 * (1.0 + np.tanh(Dy * (xi - 0.5)) / np.tanh(Dy / 2.0))
-    else:
-        breakpoint()
-        raise Exception(f"Unexpected B={B}, s0={s0}, s1={s1}")
-
-    t = u / (A + (1.0 - A) * u)
-
-    return t
-
-
-def cluster_two_sided_step(npts, dt0, dt1):
-    """Two-sided clustering by cell width."""
-
-    def _iter(s):
-        t = cluster_two_sided_slope(npts, *(10.0**s))
-        err_le = np.abs((t[1] - t[0]) / dt0 - 1.0)
-        err_te = np.abs((t[-1] - t[-2]) / dt1 - 1.0)
-        return err_le + err_te
-
-    dunif = 1.0 / npts
-    s0 = dunif / dt0
-    s1 = dt1 / dunif
-    x0 = np.log10([s0, s1])
-    bnd = ((-6, 6),) * 2
-    res = minimize(_iter, x0, bounds=bnd, tol=1e-9)
-    s_opt = 10.0 ** (res.x)
-    t = cluster_two_sided_slope(npts, *s_opt)
-    err_dt0 = np.abs((t[1] - t[0]) / dt0 - 1.0)
-    err_dt1 = np.abs((t[-1] - t[-2]) / dt1 - 1.0)
-    if err_dt0 > 0.1 or err_dt1 > 0.1:
-        raise Exception(
-            f"Clustering failed, npts={npts}, dt0={dt0}, dt1={dt1},"
-            f"actual_dt0={t[1]-t[0]}, , actual_dt1={t[-1]-t[-2]}, "
-        )
-    return cluster_two_sided_slope(npts, *s_opt)
-
-
 def cumsum0(x, axis=None):
+    """Cumulative summation including an inital zero, input same length as output."""
     return np.insert(np.cumsum(x, axis=axis), 0, 0.0, axis=axis)
 
 
 def cumtrapz0(x, *args):
+    """Cumulative integration including an inital zero, input same length as output."""
     return np.insert(cumtrapz(x, *args), 0, 0.0)
 
 
 def arc_length(xr):
+    """Arc length along second axis, assuming x/r on first axis"""
     dxr = np.diff(xr, n=1, axis=1) ** 2.0
     return np.sum(np.sqrt(np.sum(dxr, axis=0)))
 
 
 def cum_arc_length(xr, axis=1):
+    """Cumulative arc length along a given axis, assuming x/r on first axis"""
     dxr = np.diff(xr, n=1, axis=axis) ** 2.0
     ds = np.sqrt(np.sum(dxr, axis=0, keepdims=True))
     s = cumsum0(ds, axis=axis)[0]
@@ -315,22 +80,27 @@ def cum_arc_length(xr, axis=1):
 
 
 def tand(x):
+    """Tangent of degree angle"""
     return np.tan(np.radians(x))
 
 
 def atand(x):
+    """Arctangent to degree angle"""
     return np.degrees(np.arctan(x))
 
 
 def atan2d(y, x):
+    """2D arctangent to degree angle"""
     return np.degrees(np.arctan2(y, x))
 
 
 def cosd(x):
+    """Cosine of degree angle"""
     return np.cos(np.radians(x))
 
 
 def sind(x):
+    """Sine of degree angle"""
     return np.sin(np.radians(x))
 
 
@@ -341,81 +111,6 @@ def tolist(x):
         ]
     else:
         return x
-
-
-class UniqueKeyLoader(yaml.SafeLoader):
-    def construct_mapping(self, node, deep=False):
-        mapping = []
-        for key_node, value_node in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if key in mapping:
-                raise Exception(f'Config: duplicate key "{key}"')
-            mapping.append(key)
-        return super().construct_mapping(node, deep)
-
-
-def read_yaml(fname):
-    """Read a dictionary from file."""
-
-    # Patch YAML loader to get scientific notation correct
-    loader = UniqueKeyLoader
-    loader.add_implicit_resolver(
-        "tag:yaml.org,2002:float",
-        re.compile(
-            """^(?:
-        [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
-        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
-        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
-        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
-        |[-+]?\\.(?:inf|Inf|INF)
-        |\\.(?:nan|NaN|NAN))$""",
-            re.X,
-        ),
-        list("-+0123456789."),
-    )
-
-    # Read the YAML
-    with open(fname, "r") as f:
-        config = yaml.load(f, Loader=loader)
-
-    return config
-
-
-def read_yaml_list(fname):
-    """Read a list of dictionaries from YAML file."""
-    # Patch YAML loader to get scientific notation correct
-    loader = UniqueKeyLoader
-    loader.add_implicit_resolver(
-        "tag:yaml.org,2002:float",
-        re.compile(
-            """^(?:
-        [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
-        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
-        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
-        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
-        |[-+]?\\.(?:inf|Inf|INF)
-        |\\.(?:nan|NaN|NAN))$""",
-            re.X,
-        ),
-        list("-+0123456789."),
-    )
-    # Read the YAML
-    with open(fname, "r") as f:
-        config = list(yaml.load_all(f, Loader=loader))
-
-    return config
-
-
-def write_yaml(d, fname, mode="w"):
-    """Write a dictionary to file."""
-    with open(fname, mode) as f:
-        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
-
-
-def write_yaml_compressed(d, fname):
-    """Write a dictionary to compressed file."""
-    with gzip.open(fname, "wt") as f:
-        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
 
 
 def list_of_dict_to_dict_of_list(ldict):
@@ -440,14 +135,6 @@ def list_of_dict_to_dict_of_list(ldict):
     return dictl
 
 
-class NoneDict(dict):
-    def __init__(self, *args, **kwargs):
-        self.update(*args, **kwargs)
-
-    def __getitem__(self, key):
-        return dict.__getitem__(self, key) if key in self else None
-
-
 def find(path, pattern=None):
     """Return all files under `path` with the substring `pattern`."""
     results = []
@@ -456,40 +143,6 @@ def find(path, pattern=None):
             if not pattern or (pattern in f):
                 results.append(os.path.join(root, f))
     return results
-
-
-def circle_fit(x, y):
-    def _iter(xyc):
-        xc, yc = xyc
-        R = np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-        return R - R.mean()
-
-    xyc0 = (np.mean(x), np.mean(y))
-
-    xyc_opt = leastsq(_iter, xyc0)[0]
-    R_opt = np.mean(np.sqrt((x - xyc_opt[0]) ** 2 + (y - xyc_opt[1]) ** 2))
-
-    return xyc_opt, R_opt
-
-
-def centroid(loop_xrt):
-    # Area and centroid of the loop
-    terms_cross = (
-        loop_xrt[0, :-1] * loop_xrt[1, 1:] - loop_xrt[0, 1:] * loop_xrt[1, :-1]
-    )
-    terms_rt = loop_xrt[1, :-1] + loop_xrt[1, 1:]
-    terms_x = loop_xrt[0, :-1] + loop_xrt[0, 1:]
-    Area = 0.5 * np.sum(terms_cross)
-    rt_cent = np.sum(terms_rt * terms_cross) / 6.0 / Area
-    x_cent = np.sum(terms_x * terms_cross) / 6.0 / Area
-
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.plot(*loop_xrt,'k-x')
-    # ax.plot(x_cent, rt_cent,'ro')
-    # plt.savefig('cent.pdf')
-
-    return (x_cent, rt_cent)
 
 
 def to_basic_type(x):
@@ -504,159 +157,6 @@ def to_basic_type(x):
 
 def vecnorm(x):
     return np.sqrt(np.einsum("i...,i...", x, x))
-
-
-def cluster_ER_by_npts(Dstart, Dend, ER, npts, exact_length):
-    if Dstart > Dend:
-        raise ValueError(f"Dstart={Dstart} should be < than Dend={Dend}")
-
-    # Work out how many expanding points we need to hit Dend
-    n1 = np.floor(1 + np.log(Dend / Dstart) / np.log(ER)).astype(int)
-
-    # Subtract expanding from total to get number uniform points
-    n2 = npts - n1
-
-    # Spacings in expanding section
-    Dn1 = Dstart * ER ** np.arange(0, n1)
-
-    # Spacings in uniform section
-    if exact_length:
-        Lt = 1.0 - np.sum(Dn1)
-        N = n2
-
-        if N <= 2:
-            raise ValueError(f"Clustering failed with Dstart={Dstart}, Dend={Dend}")
-
-        Dst = Dn1[-1]
-        Den = Dend
-        A = 3 * (-2 * Lt + N * (Den + Dst)) * (N - 1) / (N * (N - 2))
-        B = -(6 * Lt + N**2 * (2 * Den + 4 * Dst) + N * (-Den - 5 * Dst - 6 * Lt)) / (
-            N * (N - 2)
-        )
-        C = Dst
-        inorm = np.linspace(0.0, 1.0, N)
-        Dn2 = A * inorm**2.0 + B * inorm + C
-    else:
-        Dn2 = np.ones((n2,)) * Dn1[-1]
-
-    # Concatenate
-    Dout = np.concatenate([Dn1, Dn2])
-    yout = cumsum0(Dout)
-
-    # yout /= yout[-1]
-
-    return yout
-
-
-def cluster_one_sided_ER(Dstart, Dend, ER, rtol=0.01):
-    if Dstart > Dend:
-        flip = True
-        Dstart, Dend = Dend, Dstart
-    else:
-        flip = False
-
-    def _iter_npts(N):
-        return cluster_ER_by_npts(Dstart, Dend, ER, N, exact_length=False)[-1] - 1.0
-
-    # Minimum number of points if all expanding
-    nlow = np.floor(1 + np.log(Dend / Dstart) / np.log(ER)).astype(int) + 1
-    errlow = _iter_npts(nlow)
-    if errlow > 0.0:
-        raise ValueError(
-            f"Clustering failed with Dstart={Dstart} Dend={Dend} ER={ER}, increase ER"
-        )
-
-    # Increase maximum number of points until target length reached
-    nhigh = nlow + 0
-    max_iter = 50
-    for _ in range(max_iter):
-        nhigh = np.round(nhigh * 1.5).astype(int)
-        errhigh = _iter_npts(nhigh)
-        if errhigh > 1.0:
-            break
-    if errhigh < 0.0:
-        raise ValueError("Clustering failed")
-
-    # Find number of points by binary search
-    dn = nhigh - nlow
-    for _ in range(max_iter):
-        nnew = (nlow + nhigh) // 2
-        errnew = _iter_npts(nnew)
-        if errnew < 0.0:
-            nlow = nnew
-            errlow = errnew
-        else:
-            nhigh = nnew
-            errhigh = errnew
-        dn = nhigh - nlow
-        if dn == 1:
-            break
-
-    # Finally, evaluate the distribution and scale to unit interval
-    x = cluster_ER_by_npts(Dstart, Dend, ER, nlow, exact_length=True)
-
-    dx = np.diff(x)
-    assert np.isclose(dx[0], Dstart)
-    assert np.isclose(dx[-1], Dend)
-    assert np.isclose(x[0], 0.0)
-    assert np.isclose(x[-1], 1.0)
-    assert (dx > 0.0).all()
-
-    if flip:
-        x = 1.0 - np.flip(x)
-
-    dx = np.diff(x)
-    assert np.isclose(x[0], 0.0)
-    assert np.isclose(x[-1], 1.0)
-    assert (dx > 0.0).all()
-
-    # ERout = dx[1:]/dx[:-1]
-    # ERout[ERout<1.] = 1./ERout[ERout<1.]
-    # rtol = 1e-1
-    # assert (ERout<ER*(1+rtol)).all()
-
-    return x
-
-
-def cluster_two_sided_ER(Dstart, Dmid, Dend, ER, rtol=0.01, fix_mid=True):
-    if not fix_mid:
-        Dmid_now = Dmid + 0.0
-        maxiter = 1000
-        for _ in range(maxiter):
-            logger
-            try:
-                return cluster_two_sided_ER(
-                    Dstart, Dmid_now, Dend, ER, rtol, fix_mid=True
-                )
-            except ValueError:
-                Dmid_now *= 0.9
-                logger.debug(f"Reducing Dmid={Dmid_now}")
-        raise Exception(f"failed, Dstart={Dstart}, Dmid={Dmid}, Dend={Dend}, ER={ER}")
-
-    x1 = cluster_one_sided_ER(Dstart * 2.0, Dmid * 2.0, ER, rtol) * 0.5
-    x2 = cluster_one_sided_ER(Dend * 2.0, Dmid * 2.0, ER, rtol) * 0.5
-
-    x = np.concatenate([x1[:-1], 1.0 - np.flip(x2)])
-    dx = np.diff(x)
-    assert np.isclose(dx[0], Dstart, rtol=rtol)
-    assert np.isclose(dx[-1], Dend, rtol=rtol)
-    assert (dx > 0.0).all()
-    imid = len(x1) - 1
-    assert np.allclose(
-        dx[
-            (imid, imid - 1),
-        ],
-        Dmid,
-        rtol=rtol,
-    )
-    assert np.allclose(
-        x[
-            (0, -1),
-        ],
-        (0.0, 1.0),
-        rtol=rtol,
-    )
-    return x
 
 
 def angles_to_velocities(V, Alpha, Beta):
@@ -734,220 +234,6 @@ def _match(x, y):
 
 def relax(xold, xnew, rf):
     return xold * (1.0 - rf) + xnew * rf
-
-
-def cluster_new_free(Dst, Dmax, ERmax):
-    # Number of points needed to expand Dst to Dmax at full stretch
-    N1 = np.ceil(np.log(Dmax / Dst) / np.log(ERmax)) + 1
-
-    # Evaluate coordinates
-    dx1 = Dst * ERmax ** np.arange(0, N1 - 1)
-    L1 = np.sum(dx1)
-
-    # Check if we will need a unifor section
-    if L1 < 1.0:
-        # Uniform needed
-        dx1max = dx1[-1]
-        L1 = np.sum(dx1)
-        N2 = np.ceil((1.0 - L1) / 0.5 / (dx1max + Dmax)).astype(int)
-        if N2 == 1:
-            # Reduce ER a bit
-            return cluster_new_free(Dst, Dmax, ERmax * 0.99)
-        else:
-            Dmax_adjust = (1.0 - L1) / N2 / 0.5 - dx1max
-            dx2 = np.linspace(dx1max, Dmax_adjust, N2)
-
-        dx = np.concatenate((dx1, dx2))
-
-    else:
-        # Truncate the expansion
-        x1 = cumsum0(dx1)
-        N = np.argmax(x1 > 1.0) + 1
-
-        # Closure to return L and dLdER as function of ER
-        def _iter(ERi):
-            # Length error
-            L = Dst * (1.0 - ERi ** (N - 1)) / (1.0 - ERi) - 1.0
-            # Derivative
-            dL = (
-                Dst
-                * ((N - 2.0) * ERi**N - (N - 1.0) * ERi ** (N - 1.0) + ERi)
-                / (1.0 - ERi) ** 2.0
-                / ERi
-            )
-            return L, dL
-
-        # Solve for the ER that gives unit length
-        ER = root_scalar(_iter, x0=ERmax, fprime=True).root
-        dx = Dst * ER ** np.arange(0, N - 1)
-
-    x = cumsum0(dx)
-
-    assert x[0] == 0.0
-    assert np.isclose(x[-1], 1.0)
-    assert np.isclose(dx[0], Dst, rtol=1e-2)
-    assert np.all(dx <= Dmax)
-    assert np.all(dx > 0.0)
-
-    return x
-
-
-def cluster_two_sided_free(x1, x2, dx1, dx2, dxmax, ER):
-    L = np.abs(x2 - x1)
-    D1 = dx1 / L * 2.0
-    D2 = dx2 / L * 2.0
-    Dmax = dxmax / L * 2.0
-
-    xh1 = cluster_new_free(D1, Dmax, ER) * 0.5
-    xh2 = np.flip(1.0 - cluster_new_free(D2, Dmax, ER)) * 0.5 + 0.5
-    x12 = np.concatenate((xh1[:-1], xh2))
-    x = x1 + (x2 - x1) * x12
-    dx = np.diff(x) * np.sign(x2 - x1)
-
-    assert np.isclose(x[0], x1)
-    assert np.isclose(x[-1], x2)
-    assert np.isclose(dx[0], dx1)
-    assert np.isclose(dx[-1], dx2)
-    assert (np.abs(dx) > 0.0).all()
-    assert (np.abs(dx) < dxmax).all()
-
-    return x
-
-
-def cluster_two_sided(x1, x2, dxmin, dxmax, ER, N):
-    L = np.abs(x2 - x1)
-    Dst = dxmin / L * 2.0
-    Den = dxmax / L * 2.0
-    if np.mod(N, 2):
-        npts1 = N // 2 + 1
-        xh = 0.5 * cluster_new(Dst, Den, ER, npts1)
-        x = np.concatenate((xh[:-1], 1.0 - np.flip(xh)))
-    else:
-        npts1 = (N + 1) // 2 + 1
-        xh1 = 0.5 * cluster_new(Dst, Den, ER, npts1)
-        xh2 = 0.5 * cluster_new(Dst, Den, ER, npts1 - 1)
-        x = np.concatenate((xh1[:-1], 1.0 - np.flip(xh2)))
-    dx = np.diff(x)
-    assert np.isclose(x[0], 0.0)
-    assert np.isclose(x[-1], 1.0)
-    assert np.all(dx > 0.0)
-    if not len(x) == N:
-        raise Exception(
-            f"Wrong number of points, N={N}, npts1={npts1}, len(x)={len(x)}"
-        )
-    assert np.isfinite(x).all()
-    xdim = x1 + (x2 - x1) * x
-    return xdim
-
-
-def cluster_one_sided(x1, x2, dxmin, dxmax, ER, N):
-    L = np.abs(x2 - x1)
-    Dst = dxmin / L
-    Den = dxmax / L
-    x = cluster_new(Dst, Den, ER, N)
-    dx = np.diff(x)
-    assert np.isclose(x[0], 0.0)
-    assert np.isclose(x[-1], 1.0)
-    assert np.all(dx > 0.0)
-    assert len(x) == N
-    assert np.isfinite(x).all()
-    xdim = x1 + (x2 - x1) * x
-    return xdim
-
-
-def cluster_new(Dst, Dmax, ERmax, N):
-    # Number of points needed to expand Dst to Dmax at full stretch
-    N1 = np.ceil(np.log(Dmax / Dst) / np.log(ERmax)) + 1
-
-    if N1 >= N:
-        # We will not reach Dmax before using up all points, so just expansion
-        # needed
-
-        # Closure to return L and dLdER as function of ER
-        def _iter(ERi):
-            # Length error
-            L = Dst * (1.0 - ERi ** (N - 1)) / (1.0 - ERi) - 1.0
-            # Derivative
-            dL = (
-                Dst
-                * ((N - 2.0) * ERi**N - (N - 1.0) * ERi ** (N - 1.0) + ERi)
-                / (1.0 - ERi) ** 2.0
-                / ERi
-            )
-            return L, dL
-
-        # Solve for the ER that gives unit length
-        ER = root_scalar(_iter, x0=ERmax, fprime=True).root
-
-        # Evaluate coordinates
-        dx = Dst * ER ** np.arange(0, N - 1)
-        x = cumsum0(dx)
-
-    else:
-        # If we reach Dmax before using up all points, then a uniform section
-        # shall be needed.
-
-        dx1 = Dst * ERmax ** np.arange(0, N1 - 1)
-        dx1max = Dst * ERmax ** (N1 - 2)
-        L1 = np.sum(dx1)
-
-        # Linear increase in spacing
-        N2 = N - N1
-        L2 = N2 * 0.5 * (dx1max + Dmax)
-
-        if L1 + L2 < 1.0:
-            raise ValueError(
-                f"""Not enough points to cluster.
-{L1 + L2},
-ERmax={ERmax}, Dst={Dst}, Dmax={Dmax}, N={N}
-Increase ERmax, Dst, Dmax, or N."""
-            )
-        else:
-            # We have too many points
-            # reduce Dmax by reducing N1
-            for dn in range(0, int(N1)):
-                N1_now = N1 - dn
-
-                # dx1now = Dst * ERmax ** np.arange(0, N1_now - 1)
-                # L1 = np.sum(dx1now)
-
-                L1 = Dst * (1.0 - ERmax ** (N1_now - 1)) / (1.0 - ERmax)
-                dx1max = Dst * ERmax ** (N1_now - 2)
-                L2 = 1.0 - L1
-                N2 = N - N1_now
-                if L2 / N2 > dx1max:
-                    Dmax_now = 2.0 * L2 / N2 - dx1max
-                    if Dmax_now > Dmax:
-                        # We need to use one more expanding point but solve for
-                        N1_now += 1
-                        N2 = N - N1_now
-                        L1 = Dst * (1.0 - ERmax ** (N1_now - 1)) / (1.0 - ERmax)
-                        dx1max = Dst * ERmax ** (N1_now - 2)
-                        L2 = 1.0 - L1
-                        Dmax_now = 2.0 * L2 / N2 - dx1max
-                    dx1 = Dst * ERmax ** np.arange(0, N1_now - 1)
-                    dx2 = np.linspace(dx1max, Dmax_now, int(N2))
-                    dx = np.concatenate((dx1, dx2))
-                    x = cumsum0(dx)
-                    break
-
-            # If we reach this point, then even with a uniform grid the
-            # spacings will be smaller than those requested.
-            if N1 == 0 or N1_now == 1:
-                x = np.linspace(0.0, 1.0, N)
-
-        assert len(x) == N
-        assert x[0] == 0.0
-        assert np.isclose(x[-1], 1.0)
-        dx = np.diff(x)
-        # assert np.isclose(dx[0], Dst, rtol=1e-2)
-        ER = dx[1:] / dx[:-1]
-        ER[ER < 1.0] = 1.0 / ER[ER < 1.0]
-        if np.any(ER > ERmax * 1.01):
-            raise ValueError(f"Expansion ratio {ER.max()} exceeds ERmax={ERmax}")
-        assert np.all(dx <= Dmax)
-
-    return x
 
 
 def node_to_face(var):
@@ -1148,10 +434,6 @@ def interpolate_transfinite(c, plot=False):
 logger = make_logger()
 
 
-def rms(x):
-    return np.sqrt(np.mean(np.array(x) ** 2))
-
-
 def round_mg(n, mult=8):
     return int(mult * np.ceil((n - 1) / mult)) + 1
 
@@ -1211,7 +493,6 @@ def signed_distance_piecewise(xrc, xr):
     # Loop over line segments
     ni = xrc.shape[1]
     for i in range(ni - 1):
-
         # Calculate absolute distance field for this segment
         a = xr - xrce[:, i]  # Segment start to point
         b = xrce[:, i + 1] - xrce[:, i]  # Parallel to segment
@@ -1234,7 +515,6 @@ def signed_distance_piecewise(xrc, xr):
 
 
 def next_numbered_dir(basename):
-
     # Find the ids of existing directories
     base_dir, stem = os.path.split(basename)
 
@@ -1376,7 +656,6 @@ def node_to_face3(x):
 
 
 def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
-
     # Pull out 2D cuts of blades and splitters
     surfs = grid.cut_blade_surfs()[irow]
 
@@ -1396,7 +675,6 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     # Loop over main/splitter
     chi = []
     for jbld, surfj in enumerate(surfs):
-
         surf = surfj.squeeze()
 
         # Get the current blade object
@@ -1409,7 +687,6 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
         xrt_nose = np.empty((3, nspf))
         xrt_cent = np.empty((3, nspf))
         for k in range(len(spf)):
-
             # Cut at this span fraction
             C = surf[..., None].meridional_slice(xr_spf[:, :, k])
 
@@ -1432,14 +709,12 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
 
 
 def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
-
     surfs = grid.cut_blade_surfs()
 
     chi_stag = []
 
     # Loop over rows
     for irow, surfi in enumerate(surfs):
-
         chi_stag.append([])
 
         if surfi is None:
@@ -1447,7 +722,6 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
         # Loop over main/splitter
         for jbld, surfj in enumerate(surfi):
-
             surf = surfj.squeeze()
             _, nj = surf.shape
 
@@ -1527,7 +801,6 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
 
 def yaw_from_xrt(xrt1, xrt2, Vxrt, yaw_ref=None):
-
     # Vector between the points
     dxrt = xrt2 - xrt1
 
@@ -1558,18 +831,15 @@ def yaw_from_xrt(xrt1, xrt2, Vxrt, yaw_ref=None):
 
 
 def incidence(grid, machine, meanline, fac_Rle=1.0):
-
     chi_stag_all = stagnation_point_angle(grid, machine, meanline, fac_Rle)
 
     out = []
 
     # Loop over rows
     for irow, chi_stag_row in enumerate(chi_stag_all):
-
         out.append([])
 
         for jblade, chi_stag_blade in enumerate(chi_stag_row):
-
             spf, chi_stag, chi_metal = chi_stag_blade
 
             # bldnow = machine.split[irow] if jblade else machine.bld[irow]
@@ -1602,7 +872,6 @@ def qinv(x, q):
 
 
 def clipped_levels(x, dx=None, thresh=0.001):
-
     xmin = qinv(x, thresh)
     xmax = qinv(x, 1.0 - thresh)
     if dx:
@@ -1616,7 +885,6 @@ def clipped_levels(x, dx=None, thresh=0.001):
 
 
 def get_mp_from_xr(grid, machine, irow, spf, mlim):
-
     # Start by choosing a j-index to plot along
     jspf = grid.spf_index(spf)
 
@@ -1653,7 +921,6 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 
 
 def dA_Gauss(A, B, C, D):
-
     # Assemble all vertices together (stack along second axis)
     # xrrt[4, 3, ni, nj, nk]
     xrrt = np.stack((A, B, C, D), axis=0).copy()
@@ -1720,7 +987,6 @@ def dA_Gauss(A, B, C, D):
 
 
 def cart_to_pol(dA, t):
-
     dAx, dAy, dAz = -dA
     cost = np.cos(t)
     sint = np.sin(t)

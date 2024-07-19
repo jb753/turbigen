@@ -1,4 +1,5 @@
 """Classes to represent flow fields."""
+
 import numpy as np
 import turbigen.base
 import turbigen.fluid

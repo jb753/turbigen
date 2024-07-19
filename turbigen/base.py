@@ -1,7 +1,7 @@
 import numpy as np
 from turbigen import util
+import turbigen.yaml
 import turbigen.average
-import sys
 
 logger = util.make_logger()
 
@@ -69,7 +69,7 @@ class StructuredData:
 
     def write(self, fname, mode="w"):
         """Save this object to a yaml file."""
-        util.write_yaml(self.to_dict(), fname, mode)
+        turbigen.yaml.write_yaml(self.to_dict(), fname, mode)
 
     def write_npz(self, fname, mode="w"):
         """Save this object to an npz file."""
@@ -560,7 +560,6 @@ class Kinematics:
 
     @dependent_property
     def dlmin(self):
-
         # Shortest side length
         dli = turbigen.util.vecnorm(self.dli)
         dlj = turbigen.util.vecnorm(self.dlj)
@@ -1229,7 +1228,6 @@ class Composites:
         self.set_rho_u(rho, u)
 
     def area_average(self):
-
         dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
         conserved = np.moveaxis(self.conserved, -1, 1)
@@ -1283,7 +1281,6 @@ class Composites:
         _, nj = self.shape
         istag = np.full((nj,), 0, dtype=int)
         for j in range(nj):
-
             # Calculate gradient and curvature
             dP = np.diff(P[:, j])
 
@@ -1296,7 +1293,7 @@ class Composites:
             # Now take the candiate point with maximum pressure
             try:
                 istag[j] = izj[np.argsort(P[izj, j])][-1]
-            except Exception as e:
+            except Exception:
                 istag[j] = 0
 
         return istag
@@ -1377,7 +1374,6 @@ class MeanLine:
         return F
 
     def interpolate_guess(self, ann):
-
         # Get coordinates along mean-line
         npts = 100
         sg = np.linspace(0.0, ann._mctl[-1], npts)
@@ -1881,7 +1877,6 @@ class MeanLine:
 
 
 class BaseConfig:
-
     _name = "Base"
 
     def __repr__(self):

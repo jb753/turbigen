@@ -1,11 +1,12 @@
 Post-processing
 ===============
 
-:program:`turbigen` can generate plots of the designed geometry and CFD-predicted flow field, or write out data to files, on completion
-of a run. This post-processing is configured using the `post_process` key in
+:program:`turbigen` can generate plots of the designed geometry and CFD-predicted flow field, or write out such data to files, on completion
+of a run.
+The plots or data files appear in a subdirectory of the working directory named `post`.
+Post-processing is configured using the `post_process` key in
 a YAML input file, which may list one or more of the modules under :py:mod:`turbigen.post`, and provide arguments as subkeys.  For example, to write out surface
 coordinates for CAD, and plot the first row chordwise pressure distribution at three spanwise locations:
-The plots or data files appear in a subdirectory of the working directory named `post`.
 
 
 .. code-block:: yaml
@@ -18,7 +19,7 @@ The plots or data files appear in a subdirectory of the working directory named 
 
 
 
-
 .. automodule:: doc.dummy_post
+   :autosummary:
    :members:
    :imported-members:

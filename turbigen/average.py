@@ -1,4 +1,5 @@
 """Functions for mixed-out averaging."""
+
 import numpy as np
 import turbigen.util
 import scipy.optimize

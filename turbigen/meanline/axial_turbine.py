@@ -1,4 +1,5 @@
 """Mean-line design for an axial turbine stage, assuming perfect gas."""
+
 from turbigen import compflow_native as compflow
 from turbigen import util
 import warnings

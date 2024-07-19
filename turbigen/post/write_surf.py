@@ -10,7 +10,6 @@ logger = turbigen.util.make_logger()
 
 
 def get_stl_data(section, close_tip):
-
     xrt_ps = section[0, ...]
     xrt_ss = section[1, ...]
     xrt_section = np.concatenate((xrt_ps, np.flip(xrt_ss, axis=1)), axis=1)
@@ -47,7 +46,6 @@ def get_stl_data(section, close_tip):
 
     # Add on tip if needed
     if close_tip:
-
         # Extra faces for the tip
         ni_tip = xrt_ps.shape[1]
         nface += 2 * (ni_tip - 2) + 1
@@ -56,7 +54,6 @@ def get_stl_data(section, close_tip):
 
     for i in range(ni - 1):
         for j in range(nj - 1):
-
             # Calculate 1D face indices from 2D node indices
             kl = 2 * (i + (ni - 1) * j)
             ku = kl + 1
@@ -78,7 +75,6 @@ def get_stl_data(section, close_tip):
             data["vectors"][ku] = xyz_ku
 
     if close_tip:
-
         kface_st = 2 * (ni - 1) * (nj - 1)
 
         # Single triangle at LE
@@ -92,7 +88,6 @@ def get_stl_data(section, close_tip):
         data["vectors"][kface_st] = xyz_nose
 
         for i in range(1, ni_tip - 1):
-
             xyz_kl = np.stack(
                 (
                     xyz_ps[-1, i, :],
@@ -120,8 +115,9 @@ def get_stl_data(section, close_tip):
 def post(grid, machine, meanline, postdir):
     """write_surf()
 
-    Write machine geometry to a file for CAD import. Generates a triangulated
-    Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud."""
+    Write machine surface geometry to files.
+
+    Generates a triangulated Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud."""
 
     # Extract coordinates
     sections, annulus, zcst, Nb, tip, splitters = machine.get_coords()
@@ -140,7 +136,6 @@ def post(grid, machine, meanline, postdir):
 
     # Write an stl for each blade
     for iblade, section in enumerate(sections):
-
         # Skip unbladed rows, e.g. vaneless diffuser
         if section[0] is None:
             logger.info(f"Skipping unbladed row {iblade}")

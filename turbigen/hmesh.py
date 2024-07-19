@@ -451,7 +451,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         if unbladed[irow]:
             if irow == 0:
                 nk_not_resampled = 33
-                pitch_frac_nom = np.linspace(0., 1., nk_not_resampled)
+                pitch_frac_nom = np.linspace(0.0, 1.0, nk_not_resampled)
             else:
                 pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
                     AR_row, pitch_chord_ref[1]
@@ -630,7 +630,6 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
             #     pass
 
         else:
-
             theta_lim = np.zeros((2, ni, nj))
 
             if not mesh_config.recluster:

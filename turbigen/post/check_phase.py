@@ -1,4 +1,5 @@
 """Save plots of annulus lines."""
+
 import turbigen.util
 
 logger = turbigen.util.make_logger()
@@ -12,7 +13,8 @@ def post(
 ):
     """check_phase()
 
-    Print number of computational cells in two-phase region to the log file.
+    Print number of computational cells in the two-phase region to the log file.
+
     This is useful to check if real working fluids remain gaseous throughout
     the turbomachine."""
 

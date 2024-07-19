@@ -1,4 +1,5 @@
 """Functions to write, run, and read for the Turbostream 3 solver."""
+
 import numpy as np
 from timeit import default_timer as timer
 import turbigen.grid
@@ -344,7 +345,6 @@ def _read_flow(grid, fname, fname_avg):
 
 
 def _write_throttle(ts4_conf, grid, fname):
-
     # Get indices for outlet bcells
     with h5py.File(fname, "r") as f:
         bcell_names = list(f["bcell_names"].attrs["names"])
@@ -549,9 +549,9 @@ def run(grid, settings, machine):
 
         # Check syntax
         try:
-            compile(body_force_str, 'dummy.py', 'exec')
+            compile(body_force_str, "dummy.py", "exec")
         except Exception as e:
-            raise Exception('Error in body force template!') from e
+            raise Exception("Error in body force template!") from e
 
         dest_body_force = os.path.join(ts4_conf.workdir, "body_force_config.ofp")
         with open(dest_body_force, "w") as f:
@@ -627,7 +627,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
 
     # Write throttle config file
-    throttle_flag = _write_throttle(ts4_conf, grid, input_file_path)
+    _write_throttle(ts4_conf, grid, input_file_path)
 
     # Assume that the custom pipeline will set wall distances for us
     if not ts4_conf.custom_pipeline:
@@ -659,7 +659,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     if ts4_conf.logical_probe:
         # Loop over a list of probes
         for pp_conf in ts4_conf.logical_probe:
-
             _write_logical_probe(ts4_conf, **pp_conf)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
@@ -679,7 +678,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         monitor_proc = subprocess.Popen(monitor_cmd, shell=True)
 
     try:
-
         subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
 
     # TODO catch keyboard interrupt here
@@ -698,7 +696,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     if istep_nan := _check_nan(log_path):
         raise Exception(f"TS4 diverged at step {istep_nan}")
     else:
-
         # Check convergence
         istep = np.linspace(0, ts4_conf.nstep - 1, ts4_conf.nstep)
         resid, inlet, outlet = _read_convergence(log_path, ts4_conf.nstep)

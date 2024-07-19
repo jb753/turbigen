@@ -1,4 +1,5 @@
 """Start the AutoGrid server shell script with args."""
+
 import os
 import argparse
 import subprocess
@@ -42,7 +43,6 @@ def _make_argparser():
 
 
 def main():
-
     # Get file path to the shell script
     script_name = os.path.join(os.path.dirname(__file__), "ag_server.sh")
 

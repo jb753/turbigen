@@ -1,4 +1,5 @@
 """Save plots of incidence."""
+
 import numpy as np
 import os
 import turbigen.util
@@ -8,14 +9,11 @@ logger = turbigen.util.make_logger()
 
 
 def post(grid, machine, meanline, postdir, fac_RLE=1.0):
-
     logger.info("Plotting incidence")
     data = turbigen.util.incidence(grid, machine, meanline, fac_RLE)
 
     for irow in range(len(data)):
-
         for jblade in range(len(data[irow])):
-
             spf, inc, chi_stag, chi_metal = data[irow][jblade]
 
             fig, ax = plt.subplots(1, 2)
