@@ -75,8 +75,7 @@ def log_line(d, fields):
 def run_single(conf, gguess=None):
     """Run turbigen on a config object."""
 
-    times = []
-    times.append(timer())
+    times = [timer(),]
 
     # Inlet state
     logger.debug("Getting inlet state...")
