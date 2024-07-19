@@ -10,6 +10,11 @@ def post(
     meanline,
     postdir,
 ):
+    """check_phase()
+
+    Print number of computational cells in two-phase region to the log file.
+    This is useful to check if real working fluids remain gaseous throughout
+    the turbomachine."""
 
     logger.info("Checking for cells in two-phase region...")
     for ib, b in enumerate(grid):

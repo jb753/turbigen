@@ -71,6 +71,10 @@ class StructuredData:
         """Save this object to a yaml file."""
         turbigen.yaml.write_yaml(self.to_dict(), fname, mode)
 
+    def write_npz(self, fname, mode="w"):
+        """Save this object to an npz file."""
+        np.savez_compressed(fname, **self.to_dict())
+
     @classmethod
     def stack(cls, sd, axis=0):
         out = cls()

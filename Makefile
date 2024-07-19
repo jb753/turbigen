@@ -13,7 +13,7 @@ install ::
 	pre-commit install
 
 doc-dev ::
-	sphinx-autobuild doc doc/_build --watch turbigen
+	sphinx-autobuild doc doc/_build --watch="turbigen,doc"
 
 doc ::
 	sphinx-build -W doc doc/_build

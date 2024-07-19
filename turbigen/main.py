@@ -87,10 +87,17 @@ def _make_argparser():
         help="run on an edited copy of the configuration file (using $EDITOR)",
         action="store_true",
     )
+
     parser.add_argument(
         "-m",
         "--meanline-debug",
         help="perform the mean-line design, print out debugging information and stop",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-a",
+        "--annulus-debug",
+        help="perform the annulus design, print out debugging information and stop",
         action="store_true",
     )
     parser.add_argument(
@@ -175,6 +182,7 @@ def main():
 
     conf.wdist &= not args.no_wdist
     conf.mean_line["debug"] = args.meanline_debug
+    conf.annulus["debug"] = args.annulus_debug
 
     # Choose log level
     # sys.tracebacklimit = 1000 if args.verbose else 1
