@@ -19,7 +19,7 @@ coordinates for CAD, and plot the first row chordwise pressure distribution at t
 
 
 
-
 .. automodule:: doc.dummy_post
+   :autosummary:
    :members:
    :imported-members:
