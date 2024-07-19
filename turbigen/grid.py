@@ -1,4 +1,5 @@
 """A general multiblock structured grid class."""
+
 import numpy as np
 from turbigen import util
 import turbigen.yaml
@@ -66,16 +67,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         bnew.mu_turb = np.full_like(bnew.w, np.nan)
         return bnew
 
-    def to_dict(self, strip_patches=False):
-        d = super().to_dict()
-        if strip_patches:
-            d["metadata"].pop("patches")
-        return d
-
-    def write(self, fname):
-        """Save this object to a yaml file."""
-        d = self.to_dict(strip_patches=True)
-        turbigen.yaml.write_yaml_compressed(d, fname)
+    def write_npz(self, fname):
+        """Save this object to an npz file."""
+        d = self.to_dict()
+        d["metadata"].pop("patches")
+        d.update(d.pop("metadata"))
+        np.savez_compressed(fname, **d)
 
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=(), label=None):
@@ -96,7 +93,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return block
 
     def transpose(self, order):
-
         # Rearrange the data
         order1 = [
             0,
@@ -223,7 +219,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         logger.debug("Sucessfully trimmed block.")
 
     def get_wall(self, ignore_slip=False):
-
         ni, nj, nk = self.shape
 
         # Zero means is a wall
@@ -238,7 +233,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         kwall[:, :, 1:-1] = 1
 
         for patch in self.patches:
-
             # Skip if this patch is a wall
             if ignore_slip:
                 if not type(patch) in NOT_SLIPWALL_PATCHES:
@@ -330,7 +324,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return iwall, jwall, kwall, wall
 
     def get_dwall(self):
-
         # Get wall length scales at nodes
         dli = turbigen.util.vecnorm(self.dli)
         dlj = turbigen.util.vecnorm(self.dlj)
@@ -806,7 +799,6 @@ class Grid:
         # Loop over blocks
         xrrt_wall_block = []
         for block in self:
-
             # Assemble unstructured wall coordinates for this block
             _, _, _, is_wall = block.get_wall()
             xrtbw = block.xrt[:, is_wall.astype(bool)].reshape(3, -1)
@@ -972,9 +964,7 @@ class Grid:
                     )
                     surfs.append([cut_now])
         else:
-
             for row_block in self.row_blocks:
-
                 # Preallocate list for this row
                 surfs.append([])
 
@@ -1298,7 +1288,6 @@ class PeriodicPatch(Patch):
         return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
 
     def get_match_perm_flip(self):
-
         # We need to establise a permutation order and set of flips that will
         # transform the other coordinates to our indexing
         perm = np.empty(3, dtype=int)
@@ -1341,7 +1330,6 @@ class PeriodicPatch(Patch):
         return perm, flip
 
     def get_match_cut(self, offset=0):
-
         Cnx = self.match.get_cut(offset)
         perm, flip = self.get_match_perm_flip()
         Cnx._data = np.flip(Cnx._data.transpose(perm), axis=flip).copy()
@@ -1452,7 +1440,6 @@ class CoolingPatch(Patch):
     cool_mach = np.nan
 
     def check(self):
-
         # Complain about negative values
         if self.cool_mass <= 0.0:
             raise Exception(f"{self} has negative cool_mass={self.cool_mass}")

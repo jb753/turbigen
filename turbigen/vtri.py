@@ -1,4 +1,5 @@
 """Utility functions for manipulating velocity triangles."""
+
 import numpy as np
 import turbigen.util
 
@@ -35,7 +36,6 @@ def resolve_magnitude(V, Alpha, Beta):
 
 
 def annulus_geometry_from_flow(Vxrt, mdot, rho, phi, htr):
-
     Vm = turbigen.util.vecnorm(Vxrt[:2])
     U = Vm / phi
     A = mdot / Vm / rho
@@ -55,7 +55,6 @@ def annulus_geometry_from_flow(Vxrt, mdot, rho, phi, htr):
 
 
 def solve_rrms(A, htr, Beta=0.0):
-
     cosBeta = turbigen.util.cosd(Beta)
     K = (1.0 - htr) / (1.0 + htr)
     rmid = np.sqrt(A / 4.0 / np.pi / K)

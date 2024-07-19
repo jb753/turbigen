@@ -542,12 +542,10 @@ class DesignSpace:
         ]
 
         for inow in isort[1:]:
-
             # If this point is better in one respect than any existing,
             # add it to the list
             vnow = v[:, inow].reshape(nv, -1)
             if (vnow > v[:, ifront]).any():
-
                 # If this point dominates any others
                 # Remove the old points
                 idom = np.where((vnow > v[:, ifront]).all(axis=0))[0]

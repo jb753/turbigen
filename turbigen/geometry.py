@@ -769,7 +769,6 @@ class Blade:
         return np.maximum(Lu, Ll)
 
     def get_camber_line(self, spf):
-
         cam, thick = self._get_cam_thick(spf)
         m = util.cluster_cosine(500)
 

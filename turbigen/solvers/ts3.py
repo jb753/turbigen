@@ -794,11 +794,9 @@ def _write_hdf5(grid, ts3_config):
 
             # Patch properties
             for name, val in _patch_properties(patch).items():
-
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
                     if force_type := patch.force_type:
-
                         t = _get_time_vector(ts3_config)
                         nt = len(t)
                         F = 1.0 + patch.amplitude * np.sin(
@@ -923,7 +921,6 @@ Are you on a HPC compute node?"""
     with subprocess.Popen(
         cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
     ) as proc:
-
         # Until process has finished, check regularly for divergence
         try:
             while proc.poll() is None:
@@ -1065,11 +1062,9 @@ def _check_conv(ts3_config):
         )
 
     logger.info(
-        (
-            f"mdot drift = {log.mdot_drift*100.:.1f}%, "
-            f"mdot error = {log.mdot_err*100.:.1f}%, "
-            f"eta_drift = {log.eta_drift*100.:.1f}%"
-        )
+        f"mdot drift = {log.mdot_drift*100.:.1f}%, "
+        f"mdot error = {log.mdot_err*100.:.1f}%, "
+        f"eta_drift = {log.eta_drift*100.:.1f}%"
     )
 
 
@@ -1185,7 +1180,6 @@ class TS3Log:
 
         # Loop over lines in the file
         with open(fname, "r") as f:
-
             # First, look for number of steps
             for line in f:
                 match = re_nstep.search(line)
@@ -1226,9 +1220,7 @@ class TS3Log:
                 logger.debug(f"* Parsing nstep={self.nstep[ilog]}")
 
                 try:
-
                     if not dts:
-
                         # Loop over lines until we find mdot
                         logger.debug("Finding mass flow rate...")
 
@@ -1241,7 +1233,6 @@ class TS3Log:
                                 break
 
                     else:
-
                         for line in f:
                             if re_nstep.search(line):
                                 logger.debug(f'Found: "{line.strip()}"')

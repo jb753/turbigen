@@ -1,4 +1,5 @@
 """Compare TS4 gas tables with known good."""
+
 import numpy as np
 import os
 from turbigen.tables import make_tables
@@ -24,7 +25,7 @@ def test_compare_tables():
 
     tables_good_npz = os.path.join(DATA_DIR, "water_table_known_good.npz")
     if not os.path.exists(tables_good_npz):
-        pytest.skip(f'Known good table {tables_good_npz} not found')
+        pytest.skip(f"Known good table {tables_good_npz} not found")
     tables_good = np.load(tables_good_npz)
     # tables_good = np.load(os.path.join(DATA_DIR, "water_coarse.npz"))
 
@@ -61,11 +62,9 @@ def test_compare_hydrogen():
     # Load good tables
     tables_good_npz = os.path.join(DATA_DIR, "hydrogen_table_known_good.npz")
     if not os.path.exists(tables_good_npz):
-        pytest.skip(f'Known good table {tables_good_npz} not found')
+        pytest.skip(f"Known good table {tables_good_npz} not found")
     tables_good = np.load(tables_good_npz)
     # tables_good = np.load(os.path.join(DATA_DIR, "water_coarse.npz"))
-
-
 
     # Get temporary director to save new tables
     tmp_dir = mkdtemp()

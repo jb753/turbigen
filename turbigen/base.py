@@ -560,7 +560,6 @@ class Kinematics:
 
     @dependent_property
     def dlmin(self):
-
         # Shortest side length
         dli = turbigen.util.vecnorm(self.dli)
         dlj = turbigen.util.vecnorm(self.dlj)
@@ -1229,7 +1228,6 @@ class Composites:
         self.set_rho_u(rho, u)
 
     def area_average(self):
-
         dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
         conserved = np.moveaxis(self.conserved, -1, 1)
@@ -1283,7 +1281,6 @@ class Composites:
         _, nj = self.shape
         istag = np.full((nj,), 0, dtype=int)
         for j in range(nj):
-
             # Calculate gradient and curvature
             dP = np.diff(P[:, j])
 
@@ -1377,7 +1374,6 @@ class MeanLine:
         return F
 
     def interpolate_guess(self, ann):
-
         # Get coordinates along mean-line
         npts = 100
         sg = np.linspace(0.0, ann._mctl[-1], npts)
@@ -1881,7 +1877,6 @@ class MeanLine:
 
 
 class BaseConfig:
-
     _name = "Base"
 
     def __repr__(self):

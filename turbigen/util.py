@@ -1,4 +1,5 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
+
 # from . import compflow as cf
 import numpy as np
 import os
@@ -674,7 +675,6 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     # Loop over main/splitter
     chi = []
     for jbld, surfj in enumerate(surfs):
-
         surf = surfj.squeeze()
 
         # Get the current blade object
@@ -715,7 +715,6 @@ def stagnation_point_angle(grid, machine, meanline, fac_Rle=1.0):
 
     # Loop over rows
     for irow, surfi in enumerate(surfs):
-
         chi_stag.append([])
 
         if surfi is None:
@@ -838,11 +837,9 @@ def incidence(grid, machine, meanline, fac_Rle=1.0):
 
     # Loop over rows
     for irow, chi_stag_row in enumerate(chi_stag_all):
-
         out.append([])
 
         for jblade, chi_stag_blade in enumerate(chi_stag_row):
-
             spf, chi_stag, chi_metal = chi_stag_blade
 
             # bldnow = machine.split[irow] if jblade else machine.bld[irow]

@@ -1,4 +1,5 @@
 """Object to encapsulate a configuration file."""
+
 from turbigen import util, fluid
 from turbigen.exceptions import ConfigError
 import turbigen.yaml
@@ -18,7 +19,6 @@ class Config:
     PITCH_KEYS = set(["Nb", "Co", "DFL", "Cb"])
 
     def __init__(self, d):
-
         # Blank configs if not there
         self.mesh = d.get("mesh", {})
         self.solver = d.get("solver", {})
@@ -191,7 +191,6 @@ class Config:
         """Make sure that the mean-line data is valid."""
         if meanline_type := self.mean_line_type:
             try:
-
                 design = util.load_mean_line(self.mean_line_type)
 
                 sig = signature(design.forward)
@@ -223,7 +222,7 @@ class Config:
         Annulus = util.load_annulus(self.annulus.get("type", "Smooth"))
         sig = signature(Annulus)
         for k in self.annulus:
-            if k not in sig.parameters and not k in ["type", "debug"]:
+            if k not in sig.parameters and k not in ["type", "debug"]:
                 raise ConfigError(f'Invalid annulus design parameter "{k}"')
         for p in list(sig.parameters.values())[3:]:
             if (p.default is p.empty) and (self.annulus.get(p.name) is None):
@@ -516,7 +515,6 @@ class Config:
         for vi in v:
             c = self.copy()
             for j, varname in enumerate(self.hypercube["limits"]):
-
                 if varname in ("Co", "Cb", "tip"):
                     c.blades[varname][0] = float(vi[j])
                 elif varname in c.install:

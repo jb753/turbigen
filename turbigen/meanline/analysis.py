@@ -5,7 +5,6 @@ from scipy.optimize import brentq
 
 
 def _Vxr_from_Vm_Beta(Vm, Beta):
-
     tansqBeta = np.tan(np.radians(Beta)) ** 2
 
     # Branch on pitch angle to avoid infinities
@@ -143,7 +142,6 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
 
         # Loop to converge exit density
         for _ in range(50):
-
             # Set exit meridional velocity by cons of mass
             Vm2 = mdot / S2.rho / A[ien]
 
@@ -163,14 +161,12 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
 
         # If not the last blade row, deal with the gap
         if irow < (nrow - 1):
-
             S2a = S2.copy()
 
             tanAlrel2a = np.tan(np.radians(Alpha[ien + 1]))
 
             # Loop to converge exit density
             for _ in range(10):
-
                 # Set exit meridional velocity by cons of mass
                 Vm2a = mdot / S2a.rho / A[ien + 1]
 
@@ -195,7 +191,6 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
 
 
 def inverse(ml):
-
     out = {
         "So1": ml.stagnation[0],
         "rh": ml.rhub.tolist(),

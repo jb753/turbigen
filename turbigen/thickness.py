@@ -9,6 +9,7 @@ The trailing edge thickness is input as the total thickness, with half
 contributed by each side.
 
 """
+
 import numpy as np
 from scipy.optimize import minimize
 
@@ -452,7 +453,7 @@ class Impeller:
 
     @property
     def R_LE(self):
-        return self.tmax / self.a * 5. / 2.
+        return self.tmax / self.a * 5.0 / 2.0
 
     @property
     def mmax(self):

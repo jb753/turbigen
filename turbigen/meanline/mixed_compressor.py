@@ -1,4 +1,5 @@
 """Mean-line design of a radial impeller with vaneless diffuser"""
+
 import numpy as np
 import turbigen.flowfield
 import turbigen.vtri
@@ -76,7 +77,6 @@ def forward(
     atol_h = 1e-6 * 0.5 * So1.a**2
     converged = False
     for _ in range(MAXITER):
-
         # Speed of sound sets relative velocity magnitude
         V1_rel = S.a[2] * Ma1_rel
 

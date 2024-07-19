@@ -1,4 +1,5 @@
 """All functions to plot things."""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import turbigen.geometry
@@ -326,7 +327,6 @@ def plot_blade(self, spf, ax=None, fname=None, xr=True):
 
 
 def plot_splitter(main, split, Nb, fname=None):
-
     import matplotlib.pyplot as plt
 
     fig1, ax1 = plt.subplots()
@@ -399,7 +399,6 @@ def plot_splitter(main, split, Nb, fname=None):
 
 
 def plot_grid_b2b(g, spf, axial, fname=None):
-
     C = g.cut_span(spf)
 
     fig, ax = plt.subplots(figsize=(10, 10))

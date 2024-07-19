@@ -1,4 +1,5 @@
 """Entry point for running turbigen from the shell."""
+
 import logging
 import subprocess
 import turbigen.util
@@ -27,7 +28,6 @@ sys.excepthook = my_excepthook
 
 
 def _make_argparser():
-
     # Set up argument parsing
     parser = argparse.ArgumentParser(
         description=(
@@ -116,12 +116,11 @@ def main():
     args = _make_argparser().parse_args()
 
     # Load input data in dictionary format
-    d = turbigen.util.read_yaml(args.CONFIG_YAML)
+    d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
 
     # If we are planning to use embsolve
     if d.get("solver", {}).get("type") == "embsolve":
         try:
-
             # Check our MPI rank
             from mpi4py import MPI
 
@@ -136,7 +135,6 @@ def main():
                 sys.exit(0)
 
         except ImportError:
-
             # Just run serially if we cannot import mpi4py
             pass
 

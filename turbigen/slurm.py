@@ -1,4 +1,5 @@
 """Functions for running turbigen using the SLURM queue."""
+
 import os
 import subprocess
 from turbigen.util import make_logger

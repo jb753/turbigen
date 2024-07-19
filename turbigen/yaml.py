@@ -1,4 +1,5 @@
 """Functions for reading and writing YAML files."""
+
 import yaml
 import gzip
 import re

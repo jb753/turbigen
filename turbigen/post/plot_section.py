@@ -1,4 +1,3 @@
-"""Save pressure field around the nose."""
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
@@ -17,10 +16,26 @@ def post(
     compare=None,
     K_offset=0.0,
 ):
+    """plot_section(row_spf, coord_sys="mpt", compare=None, K_offset=0.0)
+    Plot views of the blade sections.
+
+    Parameters
+    ----------
+    row_spf: list
+        For each row of the machine,  a nested list of span fractions to plot at. For example, in a three-row machine,
+        to plot the first row at mid-span, the second row at three locations, and omit the third row, use
+        `[[0.5,], [0.1, 0.5, 0.9,], []]`.
+    coord_sys: str
+        Which coordinate system to use, `mpt` for unwrapped radial or `xrt` for axial machines.
+    compare: str
+        Path to an xrt data file with coordinates to compare to current sections.
+    K_offset: float
+        Tangential offset factor of the sections. Use to prevent sections from overlapping.
+
+    """
 
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
-
         if not spfrow:
             continue
 
@@ -30,7 +45,6 @@ def post(
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-
             jspf = grid.spf_index(spf)
 
             surf = grid.cut_blade_surfs()[irow][0][:, jspf, :].squeeze()

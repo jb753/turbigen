@@ -1,4 +1,5 @@
 """Mean-line design of a radial impeller with vaneless diffuser"""
+
 import numpy as np
 import turbigen.flowfield
 from turbigen import util

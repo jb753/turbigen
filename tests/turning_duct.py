@@ -7,6 +7,7 @@ import sys
 
 # Check our MPI rank
 from mpi4py import MPI
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
@@ -17,11 +18,10 @@ if rank > 0:
     sys.exit(0)
 
 
-
 # Geometry
 h = 0.1
 L = h * 4.0
-skew = 30.
+skew = 30.0
 htr = 0.9
 rm = 0.5 * h * (1.0 + htr) / (1.0 - htr)
 rh = rm - 0.5 * h
@@ -37,37 +37,37 @@ Po1 = 1e5
 To1 = 300.0
 
 M = 0.3
-rgas = cp * (ga-1.)/ga
-V = cf.V_cpTo_from_Ma(M,ga)*np.sqrt(cp*To1)
-P1 = Po1/cf.Po_P_from_Ma(M,ga)
-T1 = To1/cf.To_T_from_Ma(M,ga)
+rgas = cp * (ga - 1.0) / ga
+V = cf.V_cpTo_from_Ma(M, ga) * np.sqrt(cp * To1)
+P1 = Po1 / cf.Po_P_from_Ma(M, ga)
+T1 = To1 / cf.To_T_from_Ma(M, ga)
 
 
 nj = 17
 nk = 17
 
 AR = 1.0
-ni = int(nj/h*L)
-print(f'ni={ni}, nj={nj}, nk={nk}')
-print(f'ncell/1e6={ni*nj*nk/1e6}')
+ni = int(nj / h * L)
+print(f"ni={ni}, nj={nj}, nk={nk}")
+print(f"ncell/1e6={ni*nj*nk/1e6}")
 # quit()
-pitch = h/(nj-1)*(nk-1)*AR
+pitch = h / (nj - 1) * (nk - 1) * AR
 Nb = int(2.0 * np.pi * rm / pitch)
 print(Nb)
 dt = 2.0 * np.pi / float(Nb)
-dk = rm*dt/(nk-1)
-dj = h/nj
-di = L/ni
-print('AR',dj/dk)
-print('AR',dj/di)
+dk = rm * dt / (nk - 1)
+dj = h / nj
+di = L / ni
+print("AR", dj / dk)
+print("AR", dj / di)
 # quit()
-tv = np.linspace(-dt / 2., dt / 2., nk)
-xv = np.linspace(0., L, ni)
+tv = np.linspace(-dt / 2.0, dt / 2.0, nk)
+xv = np.linspace(0.0, L, ni)
 rv = np.linspace(rh, rt, nj)
 
-xrt = np.stack(np.meshgrid(xv, rv, tv, indexing='ij'))
+xrt = np.stack(np.meshgrid(xv, rv, tv, indexing="ij"))
 
-xrt[2] += xrt[0] * np.tan(np.radians(skew))/xrt[1] * xrt[0]/L
+xrt[2] += xrt[0] * np.tan(np.radians(skew)) / xrt[1] * xrt[0] / L
 
 # # squeeze the nozzle
 # fac_noz = np.interp(xv, [0., L/2, L], [1., 0.65, 1.])[:,None,None]
@@ -83,8 +83,8 @@ patches = [
 blocks = []
 nblock = 4
 
-istb = [ni//nblock*iblock for iblock in range(nblock)]
-ienb = [ni//nblock*(iblock+1)+1 for iblock in range(nblock)]
+istb = [ni // nblock * iblock for iblock in range(nblock)]
+ienb = [ni // nblock * (iblock + 1) + 1 for iblock in range(nblock)]
 ienb[-1] = ni
 
 for iblock in range(nblock):
@@ -106,7 +106,7 @@ for iblock in range(nblock):
         ]
 
     # Last block has outlet
-    elif iblock==(nblock-1):
+    elif iblock == (nblock - 1):
         patches = [
             turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.OutletPatch(i=-1),
@@ -120,18 +120,21 @@ for iblock in range(nblock):
             turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.PeriodicPatch(i=-1),
         ]
-    blocks.append(turbigen.grid.PerfectBlock.from_coordinates(xrt[:,istb[iblock]:ienb[iblock],:,:], Nb, patches))
-    blocks[-1].label=f'b{iblock}'
+    blocks.append(
+        turbigen.grid.PerfectBlock.from_coordinates(
+            xrt[:, istb[iblock] : ienb[iblock], :, :], Nb, patches
+        )
+    )
+    blocks[-1].label = f"b{iblock}"
 
 g = turbigen.grid.Grid(blocks)
 
 g.match_patches()
 g.check_coordinates()
 
-print('i', turbigen.util.vecnorm(g[0].dli).min())
-print('j', turbigen.util.vecnorm(g[0].dlj).min())
-print('k', turbigen.util.vecnorm(g[0].dlk).min())
-
+print("i", turbigen.util.vecnorm(g[0].dli).min())
+print("j", turbigen.util.vecnorm(g[0].dlj).min())
+print("k", turbigen.util.vecnorm(g[0].dlk).min())
 
 
 # for b in g:
@@ -150,14 +153,14 @@ print('k', turbigen.util.vecnorm(g[0].dlk).min())
 
 So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
 So1.set_P_T(Po1, To1)
-g.apply_inlet(So1, 0., Beta)
+g.apply_inlet(So1, 0.0, Beta)
 g.calculate_wall_distance()
 g.apply_outlet(P1)
 
 for b in g:
     b.Vx = V
-    b.Vr = 0.
-    b.Vt = V*np.tan(np.radians(Alpha))
+    b.Vr = 0.0
+    b.Vt = V * np.tan(np.radians(Alpha))
     b.cp = cp
     b.gamma = ga
     b.mu = mu
@@ -172,57 +175,65 @@ import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3)
 
-settings = {'damping_factor': 0., 'n_step': 5000, 'n_step_avg': 1000, 'n_step_log': 100,  'CFL': 0.4, 'i_scheme': 0, 'smoothing_factor': 0.01}
+settings = {
+    "damping_factor": 0.0,
+    "n_step": 5000,
+    "n_step_avg": 1000,
+    "n_step_log": 100,
+    "CFL": 0.4,
+    "i_scheme": 0,
+    "smoothing_factor": 0.01,
+}
 
 tst = timer()
 turbigen.solvers.native.run(g, settings)
 ten = timer()
-print(ten-tst)
+print(ten - tst)
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.P/Po1,'-x')
-ax.plot(bc.x[-1], P1/Po1,'k*')
-ax.set_ylim((0.4,1.))
+    bc = b[:, 0, -1]
+    hm = ax.plot(bc.x, bc.P / Po1, "-x")
+ax.plot(bc.x[-1], P1 / Po1, "k*")
+ax.set_ylim((0.4, 1.0))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.To/To1,'-x')
+    bc = b[:, 0, -1]
+    hm = ax.plot(bc.x, bc.To / To1, "-x")
 # ax.set_ylim((0.4,2.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.Ma,'-x')
-ax.set_ylabel('Ma')
+    bc = b[:, 0, -1]
+    hm = ax.plot(bc.x, bc.Ma, "-x")
+ax.set_ylabel("Ma")
 # ax.set_ylim((0.4,2.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.Alpha,'-x')
-ax.set_ylabel('Alpha')
+    bc = b[:, 0, -1]
+    hm = ax.plot(bc.x, bc.Alpha, "-x")
+ax.set_ylabel("Alpha")
 # ax.set_ylim((0.4,2.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
-    bc = b[:,0,-1]
-    hm = ax.plot(bc.x, bc.s,'-x')
-ax.set_ylabel('s')
+    bc = b[:, 0, -1]
+    hm = ax.plot(bc.x, bc.s, "-x")
+ax.set_ylabel("s")
 # ax.set_ylim((0.4,2.))
 
 # b = g[0][ni//2,:,:]
 fig, ax = plt.subplots()
 for b in g:
     ni, nj, nk = b.shape
-    bc = b[ni//2,:,nk//2]
+    bc = b[ni // 2, :, nk // 2]
     hm = ax.plot(bc.r, bc.Vx)
 
 # ax.axis('equal')
