@@ -380,10 +380,12 @@ class DesignSpace:
         extrapolate=True,
         fac_extrap=None,
         show_timing=False,
+        shuffle=True
     ):
         # Shuffle the designs
-        ishuf = np.random.permutation(len(mls))
-        mls = [mls[iishuf] for iishuf in ishuf]
+        if shuffle:
+            ishuf = np.random.permutation(len(mls))
+            mls = [mls[iishuf] for iishuf in ishuf]
         mean_line_type = mls[0]._metadata["mean_line_type"]
 
         return cls(
@@ -413,11 +415,6 @@ class DesignSpace:
     def _get_y_train(self, v):
         """Retrieve a dependent variable by name from training data."""
         return self._get_data_var(self._train, v)
-
-    def _get_x_pred(self):
-        """Retrieve independent variables at prediction locations."""
-        # These are broadcast agains one another later, so just use a normal list
-        return [getattr(self, v) for v in self._independent]
 
     def _fit_coeff(self, v):
         """Get fit coefficients for predictor of a variable by name."""

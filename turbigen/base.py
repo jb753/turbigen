@@ -1864,7 +1864,7 @@ class MeanLine:
 
     @property
     def workdir(self):
-        return self._get_metadata_by_key("tip")
+        return self._get_metadata_by_key("workdir")
 
     @workdir.setter
     def workdir(self, workdir):
