@@ -1197,17 +1197,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
                     dUall = np.concatenate(dUall, axis=1)
 
-                    # Mass weight all inlet/exits
-                    mhs[1:3] /= mhs[0]
-                    mhs[4:6] /= mhs[3]
-                    merr = (mhs[3] / mhs[0] - 1.0) * 100.0
-                    merrlog.append(merr)
+                    with np.errstate(divide="ignore", invalid="ignore"):
 
-                    # Area weight static enthalpy
-                    mhs[6] /= mhs[8]
-                    mhs[7] /= mhs[9]
-                    mhs[10] /= mhs[9]
-                    Ys = mhs[10] * (mhs[5] - mhs[2]) / (mhs[4] - mhs[7])
+                        # Mass weight all inlet/exits
+                        mhs[1:3] /= mhs[0]
+                        mhs[4:6] /= mhs[3]
+                        merr = (mhs[3] / mhs[0] - 1.0) * 100.0
+                        merrlog.append(merr)
+
+                        # Area weight static enthalpy
+                        mhs[6] /= mhs[8]
+                        mhs[7] /= mhs[9]
+                        mhs[10] /= mhs[9]
+                        Ys = mhs[10] * (mhs[5] - mhs[2]) / (mhs[4] - mhs[7])
                     Yslog.append(Ys)
 
                     ten = timer()
@@ -1324,7 +1326,8 @@ def run(grid, settings={}, machine=None):
     # ax.plot(x, sf4)
     # plt.show()
 
-    logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
+    if not mdot_out == 0.0:
+        logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
 
     if conf.plot_conv:
         dUlog = np.concatenate(dUlog, axis=0)
