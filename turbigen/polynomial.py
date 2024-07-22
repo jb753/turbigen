@@ -525,7 +525,8 @@ class DesignSpace:
     def RMSE_test(self, v, edge=0.0):
         return np.sqrt(self.MSE_test(v, edge))
 
-    def get_pareto(self, v_names, negate):
+    def get_pareto_database(self, v_names, negate):
+
         v = np.stack([self._get_data_var(self._train, vn) for vn in v_names])
 
         # Initialise front arbitrarily
@@ -555,8 +556,9 @@ class DesignSpace:
                 # Add new point to list
                 ifront.append(inow)
 
-        return np.array(ifront).astype(int)
+        ifront = np.array(ifront).astype(int)
 
+        return [self._train[i] for i in ifront]
 
 def _case(mean_line_type, mls, Nk, k, o, varname, independent):
     mtest, mtrain = turbigen.util.subsample_cases(mls, k, Nk)
