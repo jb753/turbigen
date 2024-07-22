@@ -113,9 +113,9 @@ def get_stl_data(section, close_tip):
 
 
 def post(grid, machine, meanline, postdir):
-    """write_surf()
+    """write_stl()
 
-    Write machine surface geometry to files.
+    Write machine surface geometry to stl files.
 
     Generates a triangulated Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud."""
 
