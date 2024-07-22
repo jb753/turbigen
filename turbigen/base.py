@@ -1848,7 +1848,7 @@ class MeanLine:
 
     @property
     def Ds_mix(self):
-        return self._get_metadata_by_key("Ds_mix", default=np.nan)
+        return self._get_metadata_by_key("Ds_mix", default=0.)
 
     @Ds_mix.setter
     def Ds_mix(self, Ds_mix):
