@@ -83,7 +83,7 @@ def test_periodic():
     Beta = 0.
 
     # Set an initial guess
-    L = block.x.ptp()
+    L = np.ptp(block.x)
     pitch_frac = block.t/block.pitch
     length_frac = block.x/L
     block.rho = pitch_frac + 2. + length_frac **2.

@@ -3,6 +3,7 @@
 import numpy as np
 import turbigen.base
 import turbigen.fluid
+import turbigen.yaml
 from multiprocessing import Pool
 import os
 
@@ -114,5 +115,5 @@ def read_mean_line_database(database_file):
     # Initialise the objects in parallel
     Nworker = os.cpu_count()
     with Pool(Nworker) as p:
-        ml = p.map(mean_line_from_dict, turbigen.util.read_yaml_list(database_file))
+        ml = p.map(mean_line_from_dict, turbigen.yaml.read_yaml_list(database_file))
     return ml
