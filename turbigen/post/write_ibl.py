@@ -11,7 +11,7 @@ logger = turbigen.util.make_logger()
 
 
 def _format_point(xyz):
-    return " ".join(f"{xyzi:.3}" for xyzi in xyz)
+    return " ".join(f"{xyzi:.3}" for xyzi in xyz) + "\n"
 
 
 def _write_surf(f, xyz):

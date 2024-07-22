@@ -288,10 +288,7 @@ def inverse(ml):
         Co1 = ml.Co[0]
     except Exception:
         Co1 = np.nan
-    try:
-        Dsmix = np.array(ml.Ds_mix).tolist()
-    except Exception:
-        Dsmix = np.zeros_like(ml.s).tolist()
+    Dsmix = np.atleast_1d(ml.Ds_mix)
     try:
         blockage = ml.blockage[1]
     except Exception:
