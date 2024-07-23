@@ -132,21 +132,11 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
-    # def _get_data_by_key(self, ind):
-    #     return self._data[ind,]
-
-    # def _set_data_by_key(self, ind, val):
-    #     if self._read_only:
-    #         raise Exception(f"Cannot modify read-only {self}")
-    #     else:
-    #         self._data[ind] = val
-    #         self._dependent_property_cache.clear()
-
     def _get_metadata_by_key(self, key, default=None):
-        if default:
-            return self._metadata.get(key, default)
-        else:
+        if default is None:
             return self._metadata[key]
+        else:
+            return self._metadata.get(key, default)
 
     def _set_metadata_by_key(self, key, val):
         if self._read_only:
@@ -1812,11 +1802,11 @@ class MeanLine:
 
     @A_surf.setter
     def A_surf(self, A_surf):
-        self._set_metadata_by_key("A_wall", A_surf)
+        self._set_metadata_by_key("A_surf", A_surf)
 
     @property
     def Sdot_surf(self):
-        return self._get_metadata_by_key("Sdot_surf", np.nan)
+        return self._get_metadata_by_key("Sdot_surf", default=np.nan)
 
     @Sdot_surf.setter
     def Sdot_surf(self, Sdot_surf):
@@ -1848,7 +1838,7 @@ class MeanLine:
 
     @property
     def Ds_mix(self):
-        return self._get_metadata_by_key("Ds_mix")
+        return self._get_metadata_by_key("Ds_mix", default=0.0)
 
     @Ds_mix.setter
     def Ds_mix(self, Ds_mix):
@@ -1864,7 +1854,7 @@ class MeanLine:
 
     @property
     def workdir(self):
-        return self._get_metadata_by_key("tip")
+        return self._get_metadata_by_key("workdir")
 
     @workdir.setter
     def workdir(self, workdir):

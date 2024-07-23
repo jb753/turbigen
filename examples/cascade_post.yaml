@@ -37,7 +37,8 @@ mesh:
 
 
 post_process:
-  write_surf:
+  write_ibl:
+  write_stl:
   check_phase:
   plot_annulus:
   write_cuts:

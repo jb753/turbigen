@@ -104,5 +104,6 @@ iterate:
 
 post_process:
   plot_annulus:
-  write_surf:
+  write_stl:
+  write_ibl:
 ...

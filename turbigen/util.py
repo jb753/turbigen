@@ -78,6 +78,8 @@ def cum_arc_length(xr, axis=1):
     s = cumsum0(ds, axis=axis)[0]
     return s
 
+def rms(x):
+    return np.sqrt(np.mean(np.array(x)**2))
 
 def tand(x):
     """Tangent of degree angle"""

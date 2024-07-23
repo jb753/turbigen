@@ -6,7 +6,7 @@ import turbigen.util
 
 
 def post(
-    grid, _, meanline, __, Cd=0.002  # machine arg not used  # postdir arg not used
+    grid, machine, meanline, __, Cd=0.002  # machine arg not used  # postdir arg not used
 ):
     r"""calc_surf_dissipation(Cd=0.002)
 
@@ -35,12 +35,20 @@ def post(
     Cin = grid.inlet_patches[0].get_cut().mix_out()[0]
     sin = Cin.s
 
+    # Get the final station cut plane
+    xr_cut = machine.ann.get_cut_planes(None)[-1]
+
+    # dist = turbigen.util.signed_distance(xr_cut, block.xr)
+
     def _integrate_cut(C, rel, w=None):
         C = C.squeeze()
         # Pull out the face-centered properties we need
         dA = np.linalg.norm(C.surface_area, axis=-1, ord=2)
         rho = turbigen.util.node_to_face(C.rho)
         T = turbigen.util.node_to_face(C.T)
+        x = turbigen.util.node_to_face(C.x)
+        r = turbigen.util.node_to_face(C.r)
+        xr = np.stack((x,r))
 
         # Isentropic to local static pressure
         Cs = C.copy().set_P_s(C.P, sin)
@@ -60,6 +68,10 @@ def post(
             wf = np.ones_like(dA)
         else:
             wf = turbigen.util.node_to_face(w.squeeze())
+
+        # Exclude cells downstream of last cut plane
+        dist = turbigen.util.signed_distance(xr_cut, xr)
+        wf[dist > 0.] = 0.
 
         # Multiply by the wall indicator to zero out non-walls
         # Perform the integration and accumulate total
