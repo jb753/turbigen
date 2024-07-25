@@ -18,7 +18,7 @@ def _make_argparser():
             "extra file to notify the remote machine of sucess. If the "
             "delete flag is specified, it then removes the tempory dir."
         ),
-        usage="%(prog)s [--delete] QUEUE_FILE",
+        usage="%(prog)s [--delete] [--workers=1] QUEUE_FILE",
         add_help="False",
     )
 
@@ -39,6 +39,14 @@ def _make_argparser():
         action="store_true",
     )
 
+    parser.add_argument(
+        "-w",
+        "--workers",
+        help="number of parallel workers, default serial",
+        default=1,
+        type=int,
+    )
+
     return parser
 
 
@@ -51,8 +59,17 @@ def main():
     cmd_str = [script_name,] + [
         os.path.expandvars(args.QUEUE_FILE),
     ]
-    if args.delete:
-        cmd_str += ["--delete"]
 
-    # Run the command
-    subprocess.run(cmd_str)
+    if args.delete:
+        cmd_str += ["1"]
+    else:
+        cmd_str += ["0"]
+
+    # Start the workers
+    worker_procs = []
+    for i in range(args.workers):
+        worker_procs.append(subprocess.Popen(cmd_str + [str(i)]))
+
+    # Wait for all subprocesses to complete
+    for proc in worker_procs:
+        proc.wait()
