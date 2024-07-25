@@ -78,8 +78,10 @@ def cum_arc_length(xr, axis=1):
     s = cumsum0(ds, axis=axis)[0]
     return s
 
+
 def rms(x):
-    return np.sqrt(np.mean(np.array(x)**2))
+    return np.sqrt(np.mean(np.array(x) ** 2))
+
 
 def tand(x):
     """Tangent of degree angle"""
@@ -1148,3 +1150,41 @@ def extrude_block_2d(xr, t):
     xr = np.tile(xr, (1, 1, 1, nk))
     t = np.tile(t, (1, ni, 1, 1))
     return np.concatenate((xr, t), axis=0)
+
+
+def arg_smallest_positive(x):
+    x = x.copy()
+    xbig = 2 * np.max(np.abs(x))
+    x[x < 0.0] = xbig
+    return np.argmin(x)
+
+
+def arg_largest_negative(x):
+    x = x.copy()
+    xbig = 2 * np.max(np.abs(x))
+    x[x > 0.0] = -xbig
+    return np.argmax(x)
+
+
+def unwrap_xr(xr):
+
+    # Get an unstructured list of xr coords
+    xru = xr.reshape(2, -1)
+
+    # Sort by the product of x and r
+    # isort = np.argsort(np.prod(xru,axis=0))
+    isort = np.argsort(xru[0])
+    xru = xru[:, isort]
+
+    # Integrate arc length
+    rc = 0.5 * (xru[1, :1] + xru[1, :-1])
+    dxr = np.diff(xru, axis=1) ** 2
+    dm = np.sqrt(np.sum(dxr, axis=0))
+    dmp = dm / rc
+    mp = cumsum0(dmp)
+
+    # Invert the sorting
+    isort_inverse = np.array([np.where(isort == i)[0] for i in range(len(isort))])
+    mp = mp[isort_inverse]
+
+    return mp.reshape(xr.shape[1:])
