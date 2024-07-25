@@ -560,7 +560,7 @@ def read_database(database_file):
     """Load a list of configs from a database file."""
     confs = []
     runids = []
-    for d in util.read_yaml_list(database_file):
+    for d in turbigen.yaml.read_yaml_list(database_file):
         runids.append(d.pop("runid", 0))
         confs.append(Config(d))
     # Make sure order is consistent

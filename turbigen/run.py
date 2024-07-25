@@ -77,8 +77,9 @@ def log_line(d, fields):
 def run_single(conf, gguess=None):
     """Run turbigen on a config object."""
 
-    times = []
-    times.append(timer())
+    times = [
+        timer(),
+    ]
 
     # Inlet state
     logger.debug("Getting inlet state...")
@@ -836,7 +837,7 @@ def run_single(conf, gguess=None):
     ml_out.Co = conf.blades.get("Co")
     ml_out.Lsurf = ell
     ml_out.tip = tips[0]
-    ml_out.Ds_mix = Dsmix
+    ml_out.Ds_mix = np.array(Dsmix)
 
     # Save the workdir so we can cross-reference if the output ml is added to the database
     ml_out.workdir = workdir
@@ -864,6 +865,7 @@ def run_single(conf, gguess=None):
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
+
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
@@ -871,18 +873,22 @@ def run_single(conf, gguess=None):
         inc_target = inc_conf.get("target", 0.0)
         inc_tol = inc_conf["tolerance"]
         inc_clip = inc_conf.get("clip", 0.5)
+        atol_chi = inc_conf.get("atol_chi", 0.1)
 
+        inc_history = inc_conf.get("history", None)
+
+        # Preallocate for a new step in the incidence history
+        inc_history_new = []
         for irow, row in enumerate(conf.sections):
+
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
                 chi = turbigen.util.incidence_unstructured(g, mac, ml, irow, row["spf"])
 
-                inc = np.diff(chi[0], axis=0).squeeze()
+                inc = np.atleast_1d(np.diff(chi[0], axis=0).squeeze())
 
                 inc -= inc_target
-
-                if (np.abs(inc) > inc_tol).any():
-                    inc_converged = False
+                inc_now = np.stack((qstar_save[irow][:, 0], inc))[None, ...]
 
                 # Drop the relaxation factor if we are very near
                 # to the tolerance
@@ -893,8 +899,59 @@ def run_single(conf, gguess=None):
 
                 dinc = np.clip(inc * fac_close * rf_inc, -inc_clip, inc_clip)
 
-                if mdot_err > rtol_mdot_inc:
-                    dinc *= 0.0
+                # Overwrite incidence change if we can see from history
+                # that the target is bracketed
+                if inc_history and False:
+
+                    # Get history so far
+                    inc_old = np.array(inc_history[irow])
+
+                    # Append incidence now to history and record
+                    inc_all = np.concatenate((inc_old, inc_now))
+                    inc_history_new.append(inc_all)
+
+                    # We want to remember the most recent positive and
+                    # negative values of incidence for each section
+                    nhist, _, nsect = inc_all.shape
+                    inc_bracket = np.full((2, 2, nsect), np.nan)
+
+                    nrecent = np.minimum(nhist, 4)
+
+                    # Loop over sections
+                    for j in range(nsect):
+
+                        # Get most recent -ve
+                        for k in range(nrecent):
+                            inc_k = inc_all[-1 - k, :, j]
+                            if inc_k[1] < 0.0:
+                                inc_bracket[0, :, j] = inc_k
+                                break
+
+                        # Then get most recent +ve
+                        for k in range(nrecent):
+                            inc_k = inc_all[-1 - k, :, j]
+                            if inc_k[1] > 0.0:
+                                inc_bracket[1, :, j] = inc_k
+                                break
+
+                        # If we found a bracket, then use it to set recamber
+                        if not np.isnan(inc_bracket[:, :, j]).any():
+
+                            # print(f"sect j={j} is bracketed")
+                            # print(inc_bracket[:, :, j])
+
+                            # Binary search for next recamber
+                            dchi_next = np.mean(inc_bracket[:, 0, j])
+                            if (np.abs(dchi_next) > atol_chi).any():
+                                inc_converged = False
+                                # print("not converged")
+                            dinc[j] = dchi_next - qstar_save[irow][j, 0]
+
+                else:
+                    if (np.abs(inc) > inc_tol).any():
+                        inc_converged = False
+                    inc_history_new.append(inc_now)
+
                 qstar_save[irow][:, 0] += dinc
 
                 imax = np.argmax(np.abs(inc.flat))
@@ -933,6 +990,10 @@ def run_single(conf, gguess=None):
                             )
                             pdict["Inc"] = inc.flat[imax] + inc_target
                             pdict["DInc"] = dinc_splitter.flat[imax]
+            else:
+                inc_history_new.append(None)
+
+        inc_conf["history"] = inc_history_new
 
     dev_converged = True
     if dev_conf := conf.iterate.get("deviation"):
