@@ -330,7 +330,7 @@ def _scp_from_remote(to_path, from_path, remote, via=None):
         raise Exception("Could not scp from remote, command %s" % cmd_str)
 
 
-def _execute_on_remote(cmd, remote, via):
+def _execute_on_remote(cmd, remote, via, ntry=3):
     """Run a shell command on remote and return the output."""
     cmd_str = "ssh -q %s '%s'" % (
         remote,
@@ -339,7 +339,6 @@ def _execute_on_remote(cmd, remote, via):
     if via:
         cmd_str = _add_via(cmd_str, via)
 
-    ntry = 3
     for itry in range(ntry):
         try:
             out = subprocess.check_output(
@@ -350,9 +349,9 @@ def _execute_on_remote(cmd, remote, via):
         except subprocess.CalledProcessError as e:
             success = False
             eout = e
-            delay = (itry + 1) * 30
-            sleep(delay)
+            delay = (itry + 1) * 10
             logger.info(f"Running remote command failed, retrying after {delay}s")
+            sleep(delay)
 
     if not success:
         raise Exception(
@@ -410,12 +409,6 @@ def _run_remote(
     for ext in ("g", "bcs"):
         remote_mesh_files = os.path.join(tmpdir, f"mesh.{ext}")
         _scp_from_remote(gbcs_output_dir, remote_mesh_files, remote, via)
-
-    # # Delete the temporary directory
-    # if tmpdir.startswith("/home/jb753/tmp"):
-    #     pass
-    #     # logger.debug("Deleting local temp dir... ")
-    #     # _execute_on_remote("rm -r %s" % tmpdir, via)
 
     # Check the g and bcs arrived
     logger.debug("Checking g and bcs have arrived... ")
@@ -560,8 +553,9 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
 
     # Check the AG worker is running on remote
     try:
-        _execute_on_remote("pgrep ag_server.sh", remote, via).strip()
-    except subprocess.CalledProcessError:
+        logger.debug("Checking the AutoGrid server is running...")
+        _execute_on_remote("pgrep ag_server.sh", remote, via, ntry=1).strip()
+    except Exception:
         raise Exception("ag_server.sh is not running on %s" % remote) from None
 
     # Execute the meshing process on remote machine

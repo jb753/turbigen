@@ -65,6 +65,9 @@ def post(
             elif coord_sys == "xrt":
                 x1 = surf.x
                 x2 = surf.rt
+            elif coord_sys == "rrt":
+                x1 = surf.r
+                x2 = surf.rt
             elif coord_sys == "yz":
                 x1 = -surf.y
                 x2 = surf.z
@@ -100,8 +103,27 @@ def post(
                         x2c = xrrt[2]
                     elif coord_sys == "yz":
                         tc = xrrt[2] / xrrt[1]
+
+                        # Snap the radii
+                        rmin = surf.r.min()
+                        rmax = surf.r.max()
+                        dr = rmax - rmin
+                        xrrt[1] -= np.min(xrrt[1])
+                        xrrt[1] *= dr / np.ptp(xrrt[1])
+                        xrrt[1] += rmin
+
+                        # Offset the angle
+                        tc += np.radians(30.0)
+
                         x1c = xrrt[1] * np.sin(tc)
                         x2c = xrrt[1] * np.cos(tc)
+
+                    elif coord_sys == "rrt":
+                        x1c = xrrt[1]
+                        tc = xrrt[2] / xrrt[1]
+                        tc -= tc.min()
+                        tc *= -1
+                        x2c = x1c * tc
                     else:
                         pass
 

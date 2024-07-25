@@ -519,6 +519,8 @@ class Config:
                     c.blades[varname][0] = float(vi[j])
                 elif varname in c.install:
                     c.install[varname] = float(vi[j])
+                elif varname in c.annulus:
+                    c.annulus[varname] = float(vi[j])
                 else:
                     c.mean_line[varname] = float(vi[j])
 
