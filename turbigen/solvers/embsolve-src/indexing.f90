@@ -43,7 +43,7 @@ end subroutine
 ! Given two 4D arrays and lists of ijk indexes into each,
 ! average the variables at corresponding indexes and assign
 ! back to both the original arrays
-subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt, nv)
+subroutine average_by_ijk(x1, x2, ijk1, ijk2, rf, ni1, nj1, nk1, ni2, nj2, nk2, npt, nv)
 
     integer, intent (in)  :: npt
     integer, intent (in)  :: ni1
@@ -58,9 +58,11 @@ subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt,
     real*4, intent (inout) :: x2(ni2, nj2, nk2, nv)
     integer*2, intent (in) :: ijk1(3, npt)
     integer*2, intent (in) :: ijk2(3, npt)
+    real*4, intent (in) :: rf
 
     integer :: ipt
     real*4 :: avg(nv)
+    real*4 :: rf1
 
 
     integer :: i1
@@ -70,6 +72,8 @@ subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt,
     integer :: i2
     integer :: j2
     integer :: k2
+
+    rf1 = 1e0 - rf
 
     ! If we have some points
     if (npt > 0) then
@@ -86,8 +90,8 @@ subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt,
 
             ! Get average
             avg = 0.5e0*(x1(i1, j1, k1, :) + x2(i2, j2, k2, :))
-            x1(i1, j1, k1, :) = avg
-            x2(i2, j2, k2, :) = avg
+            x1(i1, j1, k1, :) = avg*rf + x1(i1, j1, k1, :)*rf1
+            x2(i2, j2, k2, :) = avg*rf + x2(i2, j2, k2, :)*rf1
 
         end do
     end if
