@@ -1191,3 +1191,11 @@ def unwrap_xr(xr):
     mp = mp[isort_inverse]
 
     return mp.reshape(xr.shape[1:])
+
+
+def smooth_1d(x, sf, nsmooth):
+    # Smooth
+    for _ in range(nsmooth):
+        xa = 0.5 * (x[:-2] + x[2:])
+        x[1:-1] = sf * xa + (1.0 - sf) * x[1:-1]
+    return x
