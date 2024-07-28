@@ -1193,6 +1193,10 @@ def unwrap_xr(xr):
     return mp.reshape(xr.shape[1:])
 
 
+def relax(x_old, x_new, rf):
+    return x_new * rf + x_old * (1.0 - rf)
+
+
 def smooth_1d(x, sf, nsmooth):
     # Smooth
     for _ in range(nsmooth):
