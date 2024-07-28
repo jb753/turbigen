@@ -53,7 +53,6 @@ class Curve:
         """Create a Curve by concatenating other curves."""
 
         curves = list(args)
-        ncurve = len(curves)
 
         # Sort the curves in an order of connectivity
         # Starting with the first curve
@@ -77,6 +76,12 @@ class Curve:
         else:
             xy_roll = np.roll(self.xy, n, axis=1)
         return Curve(*xy_roll)
+
+    @property
+    def angle(self):
+        """Angle of slope of this curve."""
+        dxy = self.dxy
+        return np.degrees(np.arctan2(dxy[1], dxy[0]))
 
     @property
     def is_closed(self):
@@ -118,6 +123,10 @@ class Curve:
             ),
             axis=1,
         )
+        if self.is_closed:
+            perp_end = np.mean(perp_edge[:, (0, -1)], axis=1)
+            perp_node[:, 0] = perp_end
+            perp_node[:, -1] = perp_end
 
         return perp_node
 
@@ -137,12 +146,37 @@ class Curve:
     def __contains__(self, key):
         return (self == key).any()
 
-    # def index(self, point):
-    #     ind = np.isclose(self.xy, point.xy.reshape(2,1)).all(axis=0)
-    #     if ind.any():
-    #         return ind
-    #     else:
-    #         raise ValueError(f'{point} is not in {self}')
+    def copy(self):
+        return Curve(*self.xy)
+
+    def project_to_x(self, xp):
+        xy = self.xy.copy()
+        xy[0] = xp
+        return Curve(*xy)
+
+    def split_by_angle(self, angles):
+        isplit = [np.argmin(np.abs(self.angle - angi)) + 1 for angi in angles]
+        isplit = (
+            [
+                0,
+            ]
+            + isplit
+            + [
+                self.n - 1,
+            ]
+        )
+        if not (np.diff(isplit) > 0).all():
+            raise Exception(
+                f"Found non-monotonic split indices {isplit} for angles={angles} "
+            )
+        nsplit = len(isplit) - 1
+        curves = [self[isplit[k] : (isplit[k + 1] + 1)] for k in range(nsplit)]
+        if self.is_closed:
+            curve_end = Curve.from_join(curves[-1], curves[0]).reversed
+            curves = curves[1:-1] + [
+                curve_end,
+            ]
+        return curves
 
 
 class Block:
@@ -152,6 +186,18 @@ class Block:
         self.ni, self.nj = np.shape(x)
         util.check_vector(self.shape, x=x, y=y)
         self.xy = np.stack((x, y))
+
+    def __getitem__(self, key):
+        # There are four cases:
+        if not len(key) == 2:
+            raise Exception(f"Need two indices for a Block, got {len(key)}")
+        i, j = key
+        if np.isscalar(i) and np.isscalar(j):
+            return Point(*self.xy[:, i, j])
+        elif np.isscalar(i) or np.isscalar(j):
+            return Curve(*self.xy[:, i, j])
+        else:
+            return Block(*self.xy[:, i, j])
 
     @classmethod
     def from_offset(cls, c, L, flip=False):
