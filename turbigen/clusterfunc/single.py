@@ -36,6 +36,8 @@ def fixed(dmin, dmax, ERmax, N, x0=0.0, x1=1.0, check=True):
 
     """
 
+    assert isinstance(N, int)
+
     if np.isclose(x0, x1):
         raise ClusteringException(
             "Cannot distribute points without distinct start and end points, "
@@ -79,6 +81,8 @@ def free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
         Grid vector of clustered points.
 
     """
+
+    assert isinstance(mult, int)
 
     if np.isclose(x0, x1):
         raise ClusteringException(
