@@ -478,8 +478,6 @@ def not_test_exit(Alpha):
 
 if __name__ == "__main__":
 
-    pass
-
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
     # test_exit(0.)

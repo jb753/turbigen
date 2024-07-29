@@ -83,6 +83,8 @@ class NativeConfig(BaseSolver):
     tauw_lam_mult = 1.0
     tauw_turb_mult = 1.0
 
+    rf_periodic = 0.5
+
 
 def get_dw(block):
     # Cell height in each of i,j,k dirns
@@ -918,7 +920,7 @@ def send_slave(block_split, procids, periodics):
     comm.Barrier()
 
 
-def exchange_cons(blocks, bid_local, periodics):
+def exchange_cons(blocks, bid_local, periodics, rf):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -935,7 +937,7 @@ def exchange_cons(blocks, bid_local, periodics):
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
 
-            embsolve.average_by_ijk(v1, v2, ijk, nxijk)
+            embsolve.average_by_ijk(v1, v2, ijk, nxijk, rf)
 
         # Otherwise, communication is needed
         else:
@@ -957,7 +959,8 @@ def exchange_cons(blocks, bid_local, periodics):
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
-            embsolve.set_by_ijk(v1, vavg, ijk)
+            vnew = vavg * rf + vs * (1.0 - rf)
+            embsolve.set_by_ijk(v1, vnew, ijk)
 
 
 def exchange_tau(blocks, bid_local, periodics):
@@ -1066,7 +1069,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Start the main time stepping loop
         for istep in range(conf.n_step):
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics)
+            exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
 
             # Calculate residual for all blocks
             for iblock in range(nblock):
