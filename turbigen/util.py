@@ -52,7 +52,10 @@ def cell_to_node(x):
 def cluster_cosine(npts):
     """Cosinusoidal cluster on unit interval with a set number of points."""
     # Define a non-dimensional clustering function
-    return 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
+    xc = 0.5 * (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, npts)))
+    xc -= xc[0]
+    xc /= xc[-1]
+    return xc
 
 
 def cumsum0(x, axis=None):
@@ -1188,3 +1191,15 @@ def unwrap_xr(xr):
     mp = mp[isort_inverse]
 
     return mp.reshape(xr.shape[1:])
+
+
+def relax(x_old, x_new, rf):
+    return x_new * rf + x_old * (1.0 - rf)
+
+
+def smooth_1d(x, sf, nsmooth):
+    # Smooth
+    for _ in range(nsmooth):
+        xa = 0.5 * (x[:-2] + x[2:])
+        x[1:-1] = sf * xa + (1.0 - sf) * x[1:-1]
+    return x
