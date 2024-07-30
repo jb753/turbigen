@@ -1,6 +1,6 @@
 # Run a cascade at an off-design pressure ratio
 
-workdir: runs/cascade_post
+workdir: runs/cascade_off_design
 
 inlet:
   Po: 1e5
@@ -35,6 +35,12 @@ mesh:
   type: h
   yplus: 30.0
 
+solver:
+  type: ts3
+  nstep: 10000
+  nstep_avg: 2000
+  rtol_mdot: 0.02
+
 
 operating_point:
-  PR_ts: 0.7
+  PR_ts: 0.5
