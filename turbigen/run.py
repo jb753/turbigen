@@ -652,6 +652,14 @@ def run_single(conf, gguess=None):
         logger.info(f"Running off-design: adjusted rpms by {rpm_adjust:+}")
     ml.Omega *= 1.0 + rpm_adjust
 
+    PR = conf.operating_point.get("PR_ts", None)
+    Pout = ml.P[-1]
+    if PR is not None:
+        Pout = ml.Po[0] * PR
+        logger.info(
+            f"Running off-design: setting total-static pressure ratio PR_ts={PR}"
+        )
+
     for Omi, tip in zip(ml.Omega[::2], mac.tip):
         if Omi:
             if tip:
@@ -685,7 +693,7 @@ def run_single(conf, gguess=None):
 
     # # Inlet and outlet
     g.apply_inlet(So1, ml.Alpha[0], Beta1)
-    g.apply_outlet(ml.P[-1])
+    g.apply_outlet(Pout)
 
     # Configure throttle
     mass_adjust = conf.operating_point.get("mass_adjust", 0.0)
