@@ -1805,6 +1805,14 @@ class MeanLine:
         self._set_metadata_by_key("A_surf", A_surf)
 
     @property
+    def Vcubed(self):
+        return self._get_metadata_by_key("Vcubed")
+
+    @Vcubed.setter
+    def Vcubed(self, Vcubed):
+        self._set_metadata_by_key("Vcubed", Vcubed)
+
+    @property
     def Sdot_surf(self):
         return self._get_metadata_by_key("Sdot_surf", default=np.nan)
 

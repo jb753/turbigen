@@ -1161,6 +1161,7 @@ def run(conf):
         gguess = None
 
         max_iter = conf.iterate.get("max_iter", 20)
+        min_iter = conf.iterate.get("min_iter", 1)
         logger.iter(f"Iterating for max_iter={max_iter} iterations")
 
         log_fields = LOG_FIELDS + ()
@@ -1215,7 +1216,7 @@ def run(conf):
 
                 os.remove(stopit_path)
 
-            if opt_converged:
+            if opt_converged and i >= (min_iter - 1):
                 if not conf.solver.get("skip"):
                     logger.debug("Moving converged solution up to work dir")
                     for f in os.listdir(iterdir):

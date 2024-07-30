@@ -6,7 +6,11 @@ import turbigen.util
 
 
 def post(
-    grid, machine, meanline, __, Cd=0.002  # machine arg not used  # postdir arg not used
+    grid,
+    machine,
+    meanline,
+    __,
+    Cd=0.002,  # machine arg not used  # postdir arg not used
 ):
     r"""calc_surf_dissipation(Cd=0.002)
 
@@ -48,7 +52,7 @@ def post(
         T = turbigen.util.node_to_face(C.T)
         x = turbigen.util.node_to_face(C.x)
         r = turbigen.util.node_to_face(C.r)
-        xr = np.stack((x,r))
+        xr = np.stack((x, r))
 
         # Isentropic to local static pressure
         Cs = C.copy().set_P_s(C.P, sin)
@@ -71,14 +75,22 @@ def post(
 
         # Exclude cells downstream of last cut plane
         dist = turbigen.util.signed_distance(xr_cut, xr)
-        wf[dist > 0.] = 0.
+        wf[dist > 0.0] = 0.0
 
         # Multiply by the wall indicator to zero out non-walls
         # Perform the integration and accumulate total
-        return Cd * np.sum(wf * rho * Vs**3.0 / T * dA) * C.Nb, np.sum(wf * dA) * C.Nb
+        # return Cd * np.sum(wf * rho * Vs**3.0 / T * dA) * C.Nb, np.sum(wf * dA) * C.Nb
+
+        # Multiply by the wall indicator to zero out non-walls
+        # Perform the integration and accumulate total
+        A = np.sum(wf * dA) * C.Nb
+        Sdot = Cd * np.sum(wf * rho * Vs**3 / T * dA) * C.Nb
+        V3 = np.sum(Vs**3 * dA) * C.Nb
+        return Sdot, V3, A
 
     Sdot = np.zeros((grid.nrow, 2))
     Asurf = np.zeros((grid.nrow, 2))
+    V3 = np.zeros((grid.nrow, 2))
     for irow, row_block in enumerate(grid.row_blocks):
         for block in row_block:
             # Preallocate wall indicator
@@ -97,24 +109,27 @@ def post(
             # Hub and casing
             for ind in (0, -1):
                 if is_rot[:, ind, :].all():
-                    Sdot_now, A_now = _integrate_cut(block[:, ind, :], True)
+                    Sdot_now, V3_now, A_now = _integrate_cut(block[:, ind, :], True)
                 else:
-                    Sdot_now, A_now = _integrate_cut(block[:, ind, :], False)
+                    Sdot_now, V3_now, A_now = _integrate_cut(block[:, ind, :], False)
                 Sdot[irow, 0] += Sdot_now
+                V3[irow, 0] += V3_now
                 Asurf[irow, 0] += A_now
 
             # Blade surfaces
             for ind in (0, -1):
                 if is_rot[:, :, ind].all():
-                    Sdot_now, A_now = _integrate_cut(
+                    Sdot_now, V3_now, A_now = _integrate_cut(
                         block[:, :, ind], True, is_wall[:, :, ind]
                     )
                 else:
-                    Sdot_now, A_now = _integrate_cut(
+                    Sdot_now, V3_now, A_now = _integrate_cut(
                         block[:, :, ind], False, is_wall[:, :, ind]
                     )
                 Sdot[irow, 1] += Sdot_now
+                V3[irow, 1] += V3_now
                 Asurf[irow, 1] += A_now
 
     meanline.Sdot_surf = Sdot
     meanline.A_surf = Asurf
+    meanline.Vcubed = V3
