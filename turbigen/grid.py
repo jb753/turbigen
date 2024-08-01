@@ -1195,10 +1195,8 @@ class Patch:
         ijk_lim[:, 1] += 1
         ijkv = [list(range(*ijkl)) for ijkl in ijk_lim]
         ijk = np.stack(np.meshgrid(*ijkv, indexing="ij"))
-
         if perm is not None:
             ijk = np.stack([np.flip(ijkn, axis=flip).transpose(perm) for ijkn in ijk])
-
         return ijk
 
     def get_flat_indices(self, order="C", perm=None, flip=None):
