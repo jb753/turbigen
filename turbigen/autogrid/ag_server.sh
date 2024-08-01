@@ -116,6 +116,13 @@ do
     if [ -z "$SCR" ]; then
         sleep $((RANDOM % 10))
 
+    # If by some malfunction the queued directory does not exist, skip it
+    elif [ ! -d "$SCR" ]; then
+        echo "$WORKER --- $(date -Iminutes): $SCR queued but does not exist."
+
+    # If by some malfunction the queued directory has already began meshing, skip it
+    elif [ -f "$SCR/out.log" ]; then
+        echo "$WORKER --- $(date -Iminutes): $SCR queued but already meshing."
 
     # If jobs are waiting and we have a license, do the meshing
     elif check_license_avail; then

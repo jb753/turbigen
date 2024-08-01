@@ -83,7 +83,7 @@ class NativeConfig(BaseSolver):
     tauw_lam_mult = 1.0
     tauw_turb_mult = 1.0
 
-    rf_periodic = 0.5
+    rf_periodic = 1.0
 
 
 def get_dw(block):
