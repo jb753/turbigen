@@ -1798,7 +1798,7 @@ class MeanLine:
 
     @property
     def A_surf(self):
-        return self._get_metadata_by_key("A_surf")
+        return self._get_metadata_by_key("A_surf", default=np.nan)
 
     @A_surf.setter
     def A_surf(self, A_surf):
