@@ -327,7 +327,7 @@ def run_single(conf, gguess=None):
                                         np.interp(
                                             xrref[1],
                                             *xrfit[
-                                                (1, 2),
+                                                (1, 0),
                                             ],
                                         ),
                                         xrref[1],
@@ -344,14 +344,19 @@ def run_single(conf, gguess=None):
 
                     # Now assemble a KDTree to look up distances from fitted
                     # surface to nearest target coordinate
-                    trees = [
-                        KDTree(
-                            xrrt_target_all[isect][
-                                (0, 2),
-                            ].T
+
+                    xyz_tg = [
+                        np.stack(
+                            (
+                                xrrt_tg[0],
+                                xrrt_tg[1] * np.sin(xrrt_tg[2] / xrrt_tg[1]),
+                                xrrt_tg[1] * np.cos(xrrt_tg[2] / xrrt_tg[1]),
+                            )
                         )
-                        for isect in range(nsect_dat)
+                        for xrrt_tg in xrrt_target_all
                     ]
+
+                    trees = [KDTree(xyz_tg[isect].T) for isect in range(nsect_dat)]
 
                     for _ in range(1):
                         for isect in range(len(spf_fit)):
@@ -360,33 +365,89 @@ def run_single(conf, gguess=None):
                                 f"to coordinates {fit_data[irow]} ..."
                             )
 
-                            def eval_fit_err(q, tree, spf, bldi, isect):
+                            def eval_fit_err(q, tree, spf, bldi, isect, plot):
+
                                 bldi.set_pvec(q, isect)
 
                                 # Get fitted surface coords
                                 xrtul = np.concatenate(
-                                    bldi.evaluate_section(spf, nchord=50), axis=-1
+                                    bldi.evaluate_section(spf, nchord=65),
+                                    axis=-1
+                                    # bldi.evaluate_section(spf, m=np.linspace(0.,1.)), axis=-1
                                 )
-                                xrtul[2] *= xrtul[1]
-                                xrtul = xrtul[
-                                    (0, 2),
-                                ]
+                                xyz_ul = np.stack(
+                                    (
+                                        xrtul[0],
+                                        xrtul[1] * np.sin(xrtul[2]),
+                                        xrtul[1] * np.cos(xrtul[2]),
+                                    )
+                                )
 
+                                # xrtul[2] *= xrtul[1]
+                                # xrtul = xrtul[
+                                #     (0, 2),
+                                # ]
                                 # Lookup shortest distances to target coords
-                                dist, _ = tree.query(xrtul.T)
+                                # dist, _ = tree.query(xrtul.T)
+                                dist, _ = tree.query(xyz_ul.T)
+                                dist_rms = np.sqrt(np.mean(dist**2))
 
-                                return np.sqrt(np.mean(dist**2))
+                                if plot == True:
+                                    import matplotlib.pyplot as plt
+
+                                    fig, ax = plt.subplots()
+                                    ax.axis("equal")
+                                    ax.plot(*xyz_ul[1:], "-x", color="C0", ms=1)
+                                    ax.plot(*xyz_tg[isect][1:], "x", color="C1", ms=1)
+
+                                    thick_now = bldi._get_cam_thick(spf)[1]
+                                    fig, ax = plt.subplots()
+                                    mm = np.linspace(0.0, 1)
+                                    ax.plot(mm, thick_now.t(mm))
+
+                                    plt.show()
+
+                                return dist_rms
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
                             opts = {"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-9}
-                            minimize(
+                            # eval_fit_err(q0, trees[isect], spf_fit[isect], bld_now, isect, True)
+                            # for _ in range(3):
+                            res = minimize(
                                 eval_fit_err,
                                 q0,
-                                args=(trees[isect], spf_fit[isect], bld_now, isect),
+                                args=(
+                                    trees[isect],
+                                    spf_fit[isect],
+                                    bld_now,
+                                    isect,
+                                    False,
+                                ),
                                 method="Nelder-Mead",
                                 bounds=bnd,
                                 options=opts,
+                            )
+                            q0 = res.x
+                            for _ in range(0):
+                                res = minimize(
+                                    eval_fit_err,
+                                    q0,
+                                    args=(
+                                        trees[isect],
+                                        spf_fit[isect],
+                                        bld_now,
+                                        isect,
+                                        False,
+                                    ),
+                                    method="Nelder-Mead",
+                                    bounds=bnd,
+                                    options=opts,
+                                )
+                                q0 = res.x
+
+                            eval_fit_err(
+                                q0, trees[isect], spf_fit[isect], bld_now, isect, True
                             )
 
                     # Convert the tanChi camber parameters to recamber

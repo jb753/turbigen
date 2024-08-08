@@ -537,16 +537,15 @@ class Blade:
             self.mlim = np.tile((0.0, 1.0), (N, 1))
         else:
             self.mlim = np.array(mlim)
+        self.dtheta = np.zeros((N, 1))
 
     def get_pvec(self, isect=None):
         if isect is not None:
             qthick = self.q_thick[isect, :]
             qcam = self.q_camber[isect, :]
-            # mlim = self.mlim[isect,:]
         else:
             qthick = self.q_thick.reshape(-1)
             qcam = self.q_camber.reshape(-1)
-            # mlim = self.mlim.reshape(-1)
         toff = [
             self.theta_offset,
         ]
@@ -590,9 +589,9 @@ class Blade:
     @property
     def _interp_method(self):
         if self.nsect == 1:
-            return None
+            return "const"
         elif self.nsect == 2:
-            return "slinear"
+            return "linear"
         elif self.nsect == 3:
             return "quadratic"
         else:
@@ -642,17 +641,7 @@ class Blade:
         return cam, thick
 
     def _get_mlim(self, spf):
-        if len(self.spf) == 1:
-            mlim = self.mlim[0]
-        else:
-            mlim = scipy.interpolate.interp1d(
-                self.spf,
-                self.mlim,
-                fill_value="extrapolate",
-                axis=0,
-                kind=self._interp_method,
-            )(spf)
-        return mlim
+        return util.interp1d_linear_extrap(self.spf, self.mlim)(spf)
 
     def evaluate_section(self, spf, nchord=10000, ncusp=0, debug=False, m=None):
         """Coordinates of upper and lower surfaces at one span fraction."""
@@ -701,9 +690,15 @@ class Blade:
         # Project camber angle onto streamsurface
         theta = util.cumtrapz0(dydm / xr[1], mcam * chord_full)
         # Stack so that camber theta=0 at a certain position
-        theta -= np.interp(self.mstack, m, theta)
+
+        if self.mstack < 0.0:
+            theta -= np.interp(-self.mstack, xr[1], theta)
+        else:
+            theta -= np.interp(self.mstack, m, theta)
+
         # Add on the whole blade angular offset
         theta += self.theta_offset
+        theta += util.interp1d_linear_extrap(self.spf, self.dtheta)(spf)
 
         # drtu = Dy * chord
         # drtl = -Dy * chord

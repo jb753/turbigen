@@ -15,6 +15,8 @@ def post(
     coord_sys="mpt",
     compare=None,
     K_offset=0.0,
+    t_offset=0.0,
+    x_cut=None,
 ):
     """plot_section(row_spf, coord_sys="mpt", compare=None, K_offset=0.0)
     Plot views of the blade sections.
@@ -47,7 +49,16 @@ def post(
         for ispf, spf in enumerate(spfrow):
             jspf = grid.spf_index(spf)
 
-            surf = grid.cut_blade_surfs()[irow][0][:, jspf, :].squeeze()
+            if x_cut:
+                xrnow = np.stack(
+                    (
+                        np.full((2,), x_cut[ispf]),
+                        (1e-6, 1e3),
+                    )
+                )
+                surf = grid.cut_blade_surfs()[irow][0].meridional_slice(xrnow)
+            else:
+                surf = grid.cut_blade_surfs()[irow][0][:, jspf, :].squeeze()
 
             # if ispf == 0:
             #     tavg = 0.5 * (surf.t.min() + surf.t.max()) - np.pi / 2.0
@@ -104,16 +115,21 @@ def post(
                     elif coord_sys == "yz":
                         tc = xrrt[2] / xrrt[1]
 
-                        # Snap the radii
-                        rmin = surf.r.min()
-                        rmax = surf.r.max()
-                        dr = rmax - rmin
-                        xrrt[1] -= np.min(xrrt[1])
-                        xrrt[1] *= dr / np.ptp(xrrt[1])
-                        xrrt[1] += rmin
+                        # Snap the theta
+                        # Current section
+                        tmed_cut = np.mean([tc.min(), tc.max()])
+                        tmed_dat = np.mean([surf.t.min(), surf.t.max()])
+                        # # Snap the radii
+                        # rmin = surf.r.min()
+                        # rmax = surf.r.max()
+                        # dr = rmax - rmin
+                        # xrrt[1] -= np.min(xrrt[1])
+                        # xrrt[1] *= dr / np.ptp(xrrt[1])
+                        # xrrt[1] += rmin
 
                         # Offset the angle
-                        tc += np.radians(30.0)
+                        # tc += np.radians(t_offset)
+                        # tc += (tmed_dat - tmed_cut)
 
                         x1c = xrrt[1] * np.sin(tc)
                         x2c = xrrt[1] * np.cos(tc)
@@ -127,7 +143,7 @@ def post(
                     else:
                         pass
 
-                    ax.plot(x1c, x2c + xoff, ".", color=f"C{ispf}")
+                    ax.plot(x1c, x2c + xoff, "x", color=f"C{ispf}", ms=2)
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

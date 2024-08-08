@@ -1203,3 +1203,48 @@ def smooth_1d(x, sf, nsmooth):
         xa = 0.5 * (x[:-2] + x[2:])
         x[1:-1] = sf * xa + (1.0 - sf) * x[1:-1]
     return x
+
+
+def interp1d_linear_extrap(x, y, axis=0):
+    """Extend the default scipy interp1d with linear end extrapolation."""
+
+    N = len(x)
+
+    if N == 1:
+        # Define a function that returns only point
+        def spline(xq):
+            return np.take(y.copy(), 0, axis=axis)
+
+    elif N == 2:
+
+        spline = scipy.interpolate.interp1d(
+            x, y, fill_value="extrapolate", axis=axis, kind="linear"
+        )
+
+    else:
+
+        spline = scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
+
+        # determine the slope at the left edge
+        leftx = spline.x[0]
+        lefty = spline(leftx)
+        leftslope = spline(leftx, nu=1).reshape(1, -1)
+
+        # add a new breakpoint just to the left and use the
+        # known slope to construct the PPoly coefficients.
+        leftxnext = np.nextafter(leftx, leftx - 1)
+        leftynext = (lefty + leftslope * (leftxnext - leftx)).reshape(1, -1)
+        Z = np.zeros_like(leftslope)
+        leftcoeffs = np.array([Z, Z, leftslope, leftynext])
+        spline.extend(leftcoeffs, np.r_[leftxnext])
+
+        # repeat with additional knots to the right
+        rightx = spline.x[-1]
+        righty = spline(rightx)
+        rightslope = spline(rightx, nu=1).reshape(1, -1)
+        rightxnext = np.nextafter(rightx, rightx + 1)
+        rightynext = (righty + rightslope * (rightxnext - rightx)).reshape(1, -1)
+        rightcoeffs = np.array([Z, Z, rightslope, rightynext])
+        spline.extend(rightcoeffs, np.r_[rightxnext])
+
+    return spline
