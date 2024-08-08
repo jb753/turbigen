@@ -179,7 +179,7 @@ class Brind:
         slope_le, slope_te, kappa = self.q_camber[2:]
 
         # Curvature parameter
-        A[2] = [3.0, 3.0, 1.0, 0.0, 0.0]
+        A[2] = [3.0, 3.0, 2.0, 0.0, 0.0]
         b[2] = kappa
 
         # LE gradient
