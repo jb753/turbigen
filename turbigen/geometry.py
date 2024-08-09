@@ -538,6 +538,7 @@ class Blade:
         else:
             self.mlim = np.array(mlim)
         self.dtheta = np.zeros((N, 1))
+        # self.dtheta[-1] -= 0.1
 
     def get_pvec(self, isect=None):
         if isect is not None:
@@ -826,8 +827,12 @@ class Blade:
 
         """
 
+        eps = 1e-4
         xrt = np.stack(
-            [self.evaluate_section(spf, nchord) for spf in np.linspace(0.0, 1.0, nspf)]
+            [
+                self.evaluate_section(spf, nchord)
+                for spf in np.linspace(-eps, 1.0 + eps, nspf)
+            ]
         ).transpose(1, 0, 3, 2)
 
         if flip_theta:

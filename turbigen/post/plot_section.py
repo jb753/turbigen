@@ -141,7 +141,8 @@ def post(
                     else:
                         pass
 
-                    ax.plot(x1c, x2c + xoff, "x", color="k", ms=2, alpha=0.2)
+                    # ax.plot(x1c, x2c + xoff, "x", color="k", ms=2)
+                    ax.plot(x1c, x2c + xoff, "x", color=f"C{ispf}", ms=2)
 
             ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
 
