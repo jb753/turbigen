@@ -543,13 +543,15 @@ class Blade:
         if isect is not None:
             qthick = self.q_thick[isect, :]
             qcam = self.q_camber[isect, :]
+            mlim = self.mlim[isect, :]
         else:
             qthick = self.q_thick.reshape(-1)
             qcam = self.q_camber.reshape(-1)
+            mlim = self.mlim.reshape(-1)
         toff = [
             self.theta_offset,
         ]
-        return np.concatenate((qthick, qcam, toff))
+        return np.concatenate((qthick, qcam, mlim, toff))
 
     def get_bound(self, isect=None):
         Nspf, Nthick = self.q_thick.shape
@@ -558,8 +560,16 @@ class Blade:
         _, Ncam = self.q_camber.shape
         bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
         bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
+        bound_mlim = np.tile(((-0.1, 0.1), (0.9, 1.1)), (Nspf, 1))
+        dm = 1e-9
+        bound_mlim = np.array(
+            (
+                (self.mlim[:, 0] - dm, self.mlim[:, 0] + dm),
+                (self.mlim[:, 1] - dm, self.mlim[:, 1] + dm),
+            )
+        ).squeeze()
         bound_toff = ((-np.pi, np.pi),)
-        bound = np.concatenate((bound_thick, bound_cam, bound_toff), axis=0)
+        bound = np.concatenate((bound_thick, bound_cam, bound_mlim, bound_toff), axis=0)
         return bound
 
     def set_pvec(self, q, isect=None):
@@ -570,17 +580,17 @@ class Blade:
             Nspf = 1
         ithick = Nthick * Nspf
         icam = ithick + (Ncam * Nspf)
-        # im = icam+2*Nspf
+        im = icam + 2 * Nspf
         if isect is not None:
             # print(q[icam:im],self.mlim[isect,:])
             # quit()
             self.q_thick[isect, :] = q[:ithick]
             self.q_camber[isect, :] = q[ithick:icam]
-            # self.mlim[isect,:] = q[icam:im]
+            self.mlim[isect, :] = q[icam:im]
         else:
             self.q_thick = q[:ithick].reshape(Nspf, Nthick)
             self.q_camber = q[ithick:icam].reshape(Nspf, Ncam)
-            # self.mlim = q[icam:im].reshape(Nspf, 2)
+            self.mlim = q[icam:im].reshape(Nspf, 2)
 
     @property
     def nsect(self):

@@ -104,8 +104,6 @@ def post(
 
             xoff = K_offset * (spf - 0.5) * np.ptp(x2)
 
-            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
-
             if compare:
                 if compare_dat := compare[irow]:
                     xrrt = turbigen.util.read_sections(compare_dat)[ispf]
@@ -113,14 +111,14 @@ def post(
                         x1c = xrrt[0]
                         x2c = xrrt[2]
                     elif coord_sys == "yz":
-                        tc = xrrt[2] / xrrt[1]
+                        tc = -xrrt[2] / xrrt[1]
 
                         # Snap the theta
                         # Current section
-                        tmed_cut = np.mean([tc.min(), tc.max()])
-                        tmed_dat = np.mean([surf.t.min(), surf.t.max()])
+                        # tmed_cut = np.mean([tc.min(), tc.max()])
+                        # tmed_dat = np.mean([surf.t.min(), surf.t.max()])
                         # # Snap the radii
-                        # rmin = surf.r.min()
+
                         # rmax = surf.r.max()
                         # dr = rmax - rmin
                         # xrrt[1] -= np.min(xrrt[1])
@@ -143,7 +141,17 @@ def post(
                     else:
                         pass
 
-                    ax.plot(x1c, x2c + xoff, "x", color=f"C{ispf}", ms=2)
+                    ax.plot(x1c, x2c + xoff, "x", color="k", ms=2, alpha=0.2)
+
+            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
+
+            if coord_sys == "yz":
+                N = 50
+                rln = surf.r.min() * np.ones((N,))
+                tln = -np.linspace(surf.t.min(), surf.t.max(), N)
+                yln = rln * np.sin(tln)
+                zln = rln * np.cos(tln)
+                ax.plot(yln, zln, "k--")
 
             # dt = surf.pitch * 0.2
             # ax.set_ylim(tstag - dt, tstag + dt)

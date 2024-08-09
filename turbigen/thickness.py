@@ -172,10 +172,10 @@ class Taylor:
     qbound = (
         (eps, 0.1),
         (eps, 0.5),
-        (0.05, 0.95),
+        (0.25, 0.95),
         (-10.0, 10.0),
         (0.02, 0.2),
-        (eps, 1.0),
+        (0.01, 1.0),
     )
 
     @classmethod
@@ -356,7 +356,6 @@ class Taylor:
         s = np.array(s)
 
         coeff_front, coeff_rear = self._coeff
-
         tau = np.empty_like(s)
         tau[s <= self.s_tmax] = np.polyval(coeff_front, s[s <= self.s_tmax])
         tau[s > self.s_tmax] = np.polyval(coeff_rear, s[s > self.s_tmax])
@@ -488,5 +487,211 @@ class Impeller:
             + C * m[iLE]
         )
         t[iTE] = np.polyval(self._coeffTE, m[iTE])
+
+        return t
+
+
+class CircularLE:
+    def __init__(self, q_thick):
+        r"""
+
+        Parameters
+        ----------
+        q_thick: (6,) array
+            Geometry parameter vector with elements:
+                * Leading-edge radius, :math:`R_\LE\,`;
+                * Maximum thickness, :math:`t_\max\,`;
+                * Location of maximum thickness, :math:`m_\max\,`;
+                * Curvature at maximum thickness, :math:`\kappa_\max\,`;
+                * Trailing edge thickness, :math:`2t_\TE\,`;
+                * Leading edge wedge angle tangent, :math:`\tan\zeta\,`.
+                * Trailing edge wedge angle tangent, :math:`\tan\zeta\,`.
+                * Ellipse ratio
+
+        """
+
+        # Record inputs
+        self.q_thick = np.reshape(q_thick, 8)
+
+        # Cache for polynomial coefficients
+        self._coeff_cache = {}
+        self._use_cache = True
+
+    eps = 1e-3
+    qbound = (
+        (eps, 0.05),
+        (eps, 0.5),
+        (0.05, 0.95),
+        (-10.0, 10.0),
+        (0.005, 0.2),
+        (eps, 1.0),
+        (eps, 2.0),
+        (0.2, 10.0),
+    )
+
+    @property
+    def R_LE(self):
+        return self.q_thick[0]
+
+    @property
+    def t_max(self):
+        return self.q_thick[1]
+
+    @property
+    def m_max(self):
+        return self.q_thick[2]
+
+    @property
+    def kappa(self):
+        return self.q_thick[3]
+
+    @property
+    def t_TE(self):
+        return self.q_thick[4]
+
+    @property
+    def wedge_LE(self):
+        return self.q_thick[5]
+
+    @property
+    def wedge_TE(self):
+        return self.q_thick[6]
+
+    @property
+    def a(self):
+        return self.q_thick[7]
+
+    @property
+    def xb(self):
+        # R = self.R_LE
+        # Rsq = R**2
+        # ysq = self.wedge_LE**2
+        # return (-np.sqrt(Rsq*ysq*(ysq+1.)) + R*(ysq + 1.))/(ysq+1.)
+        dy = self.wedge_LE
+        R = self.R_LE
+        a = self.a
+        k = np.sqrt(1.0 + (a * dy) ** 2)
+        return a * R * (1.0 - a * dy / k)
+
+    @property
+    def tb(self):
+        R = self.R_LE
+        Rsq = R**2
+        return np.sqrt(Rsq - (self.xb / self.a - R) ** 2)
+
+    def __hash__(self):
+        """Hash based on tuple of the geometry parameters."""
+        return hash(tuple(self.q_thick))
+
+    @property
+    def _coeff(self):
+        """Coefficients for piecewise polynomials in shape space."""
+
+        # Skip if we have already fitted polynomials for current params
+        if self._use_cache and (hash(self) in self._coeff_cache):
+            return self._coeff_cache[hash(self)]
+
+        # Rear coefficients are easiest
+        # Curvature continuous from max thickness down to trailing edge
+        # Needs a quartic because we specify five boundary conditions
+
+        # For brevity
+        # Powers of meridional location of max thickness
+        x4 = self.m_max**4
+        x3 = self.m_max**3
+        x2 = self.m_max**2
+        x1 = self.m_max
+
+        # Fit the quartic
+        A = np.empty((5, 5))
+        b = np.empty((5, 1))
+
+        # Value of max thickness
+        # f(xm) = tm
+        A[0] = [x4, x3, x2, x1, 1.0]
+        b[0] = self.t_max
+
+        # Slope at max thickness
+        # A stationary point
+        # f'(xm) = 0
+        A[1] = [4.0 * x3, 3.0 * x2, 2.0 * x1, 1.0, 0.0]
+        b[1] = 0.0
+
+        # Curvature at max thickness
+        # f''(xm) = kappa
+        A[2] = [12.0 * x2, 6.0 * x1, 2.0, 0.0, 0.0]
+        b[2] = self.kappa
+
+        # Value at trailing edge
+        # f(1) = tte
+        A[3] = [1.0, 1.0, 1.0, 1.0, 1.0]
+        b[3] = self.t_TE
+
+        # Slope at trailing edge
+        # f(1) = -tan wedge
+        A[4] = [4.0, 3.0, 2.0, 1.0, 0.0]
+        b[4] = -self.wedge_TE
+
+        coeff_rear = np.linalg.solve(A, b).reshape(-1)
+
+        # Determine the slope and value at LE blend point
+        # from the wedge angle
+        xb = self.xb
+        dtb = self.wedge_LE
+        tb = self.tb
+
+        xb4 = xb**4
+        xb3 = xb**3
+        xb2 = xb**2
+
+        # Fit front cubic, overwrite TE bconds
+        # (other bcond at max thickness are the same)
+        # Value at blend f(xb) = tb
+        A[3] = [xb4, xb3, xb2, xb, 1.0]
+        b[3] = tb
+
+        # Slope at blend f'(xb) = wedge_TE
+        A[4] = [4.0 * xb3, 3.0 * xb2, 2.0 * xb, 1.0, 0.0]
+        b[4] = dtb
+
+        coeff_front = np.linalg.solve(A, b).reshape(-1)
+
+        # Store
+        coeff = np.stack((coeff_front, coeff_rear))
+        if self._use_cache:
+            self._coeff_cache[hash(self)] = coeff
+
+        return coeff
+
+    def t(self, m):
+        r"""Thickness as function of normalised meridional distance.
+
+        Parameters
+        ----------
+        m: (N,) array
+            Fractions of normalised meridional distance to evaluate at.
+
+        Returns
+        -------
+        t: (N,) array
+            Samples of thickness distribution at the requested points :math:`t(m)`.
+
+        """
+        coeff_front, coeff_rear = self._coeff
+
+        t = np.full_like(m, np.nan)
+
+        # Circular LE
+        R = self.R_LE
+        Rsq = R**2
+        ind_circ = m < self.xb
+        t[ind_circ] = np.sqrt(Rsq - (m[ind_circ] / self.a - R) ** 2)
+
+        # Quartics for front and rear
+        coeff_front, coeff_rear = self._coeff
+        ind_front = np.logical_and(m >= self.xb, m <= self.m_max)
+        t[ind_front] = np.polyval(coeff_front, m[ind_front])
+        ind_rear = m > self.m_max
+        t[ind_rear] = np.polyval(coeff_rear, m[ind_rear])
 
         return t

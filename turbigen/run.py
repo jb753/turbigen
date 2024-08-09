@@ -348,7 +348,7 @@ def run_single(conf, gguess=None):
                     xyz_tg = [
                         np.stack(
                             (
-                                xrrt_tg[0],
+                                # xrrt_tg[0],
                                 xrrt_tg[1] * np.sin(xrrt_tg[2] / xrrt_tg[1]),
                                 xrrt_tg[1] * np.cos(xrrt_tg[2] / xrrt_tg[1]),
                             )
@@ -371,13 +371,23 @@ def run_single(conf, gguess=None):
 
                                 # Get fitted surface coords
                                 xrtul = np.concatenate(
-                                    bldi.evaluate_section(spf, nchord=65),
-                                    axis=-1
-                                    # bldi.evaluate_section(spf, m=np.linspace(0.,1.)), axis=-1
+                                    [
+                                        np.concatenate(
+                                            bldi.evaluate_section(
+                                                spf + dspf, nchord=65
+                                            ),
+                                            axis=-1,
+                                        )
+                                        # for dspf in [-0.01, 0., 0.01]],
+                                        for dspf in [
+                                            0.0,
+                                        ]
+                                    ],
+                                    axis=-1,
                                 )
                                 xyz_ul = np.stack(
                                     (
-                                        xrtul[0],
+                                        # xrtul[0],
                                         xrtul[1] * np.sin(xrtul[2]),
                                         xrtul[1] * np.cos(xrtul[2]),
                                     )
@@ -392,18 +402,26 @@ def run_single(conf, gguess=None):
                                 dist, _ = tree.query(xyz_ul.T)
                                 dist_rms = np.sqrt(np.mean(dist**2))
 
-                                if plot == True:
+                                if plot:
                                     import matplotlib.pyplot as plt
 
                                     fig, ax = plt.subplots()
                                     ax.axis("equal")
-                                    ax.plot(*xyz_ul[1:], "-x", color="C0", ms=1)
-                                    ax.plot(*xyz_tg[isect][1:], "x", color="C1", ms=1)
+                                    ax.plot(*xyz_ul, "x", color="C0", ms=1)
+                                    ax.plot(*xyz_tg[isect], "x", color="C1", ms=1)
+
+                                    # fig, ax = plt.subplots()
+                                    # ax.axis("equal")
+                                    # rr_ul = np.sqrt((xyz_ul[1:]**2).sum(axis=0))
+                                    # rr_tg = np.sqrt((xyz_tg[isect][1:]**2).sum(axis=0))
+                                    # ax.plot(xyz_ul[0], rr_ul, "x", color="C0", ms=1)
+                                    # ax.plot(xyz_tg[isect][0], rr_tg, "x", color="C1", ms=1)
 
                                     thick_now = bldi._get_cam_thick(spf)[1]
                                     fig, ax = plt.subplots()
-                                    mm = np.linspace(0.0, 1)
+                                    mm = util.cluster_cosine(201)
                                     ax.plot(mm, thick_now.t(mm))
+                                    ax.axis("equal")
 
                                     plt.show()
 
@@ -411,6 +429,10 @@ def run_single(conf, gguess=None):
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
+                            # print(np.concatenate((q0[...,None],bnd), axis=-1))
+                            # print(q0<bnd[:,0])
+                            # print(q0>bnd[:,1])
+                            # quit()
                             opts = {"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-9}
                             # eval_fit_err(q0, trees[isect], spf_fit[isect], bld_now, isect, True)
                             # for _ in range(3):
@@ -429,7 +451,7 @@ def run_single(conf, gguess=None):
                                 options=opts,
                             )
                             q0 = res.x
-                            for _ in range(0):
+                            for _ in range(3):
                                 res = minimize(
                                     eval_fit_err,
                                     q0,

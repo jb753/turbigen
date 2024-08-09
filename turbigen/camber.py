@@ -14,7 +14,7 @@ class Brind:
     DEFAULT_PVEC = np.array([0.0, 0.0, 1.0, 1.0, 0.0])
 
     eps = 1e-3
-    qbound = ((-5.0, 5.0), (-5.0, 5.0), (0.0, 4.0), (0.0, 4.0), (-0.2, 0.2))
+    qbound = ((-5.0, 5.0), (-5.0, 5.0), (0.0, 10.0), (0.0, 10.0), (-5.0, 5.0))
 
     def __init__(self, q_camber):
         # Store input parameter vector

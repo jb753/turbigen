@@ -500,8 +500,6 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
         )
 
     # Write the conf and geomturbo to a temporary directory
-    # base_tmp = f'/rds/user/{os.environ["USER"]}/hpc-work/tmp'
-    # base_tmp = gettempdir()
     base_tmp = output_dir
     if not os.path.isdir(base_tmp):
         os.mkdir(base_tmp)
