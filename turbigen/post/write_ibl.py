@@ -11,7 +11,7 @@ logger = turbigen.util.make_logger()
 
 
 def _format_point(xyz):
-    return " ".join(f"{xyzi:.3}" for xyzi in xyz) + "\n"
+    return " ".join(f"{xyzi:.12}" for xyzi in xyz) + "\n"
 
 
 def _write_surf(f, xyz):
@@ -21,12 +21,13 @@ def _write_surf(f, xyz):
     assert xyz.shape[0] == 3
     assert xyz.ndim == 3
 
-    # Header
-    f.write("begin section\n")
-    f.write("begin curve\n")
-
     # Loop over sections first, then points on the section
     for j in range(xyz.shape[2]):
+
+        # Header
+        f.write("begin section\n")
+        f.write("begin curve\n")
+
         for i in range(xyz.shape[1]):
             f.write(_format_point(xyz[:, i, j]))
 
@@ -62,7 +63,7 @@ def _write_blade(f, bld, nspan, nchord):
     )
 
     # Join into an 'o-grid', dropping a point at LE to avoid repeats
-    xrt = np.concatenate((np.flip(xrt_ul[1], axis=1), xrt_ul[0, :, 1:, :]), axis=1)
+    xrt = np.concatenate((xrt_ul[0, :, 1:, :], np.flip(xrt_ul[1], axis=1)), axis=1)
 
     # Convert to Cartesian
     y = xrt[1] * np.cos(xrt[2])
