@@ -110,6 +110,15 @@ class Curve:
         return c01.interpolate(sn)
 
     @classmethod
+    def from_cluster_double(cls, p0, p1, d0, d1, dmax, ER=1.2):
+        c01 = Curve.from_points(p0, p1)
+        d0n = d0 / c01.S
+        d1n = d1 / c01.S
+        dmaxn = dmax / c01.S
+        sn = clusterfunc.double.free(d0n, d1n, dmaxn, ER, mult=4)
+        return c01.interpolate(sn)
+
+    @classmethod
     def from_uniform(cls, p0, p1, N):
         c01 = Curve.from_points(p0, p1)
         sn = np.linspace(0.0, 1.0, N)
@@ -238,6 +247,20 @@ class Curve:
 
     def plot(self, ax):
         ax.plot(*self.xy, ".-", lw=0.5, ms=1)
+
+    def offset(self, L, flip=False):
+
+        # Check input
+        assert np.isscalar(L)
+
+        # Choose direction
+        if flip:
+            L *= -1.0
+
+        # Add on the distance
+        xy_offset = self.xy + self.perp_node * L
+
+        return Curve(*xy_offset)
 
 
 class Block:

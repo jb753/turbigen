@@ -631,21 +631,26 @@ class Blade:
             thick = self._Thick(self.q_thick[0])
             cam = self._Cam(self.q_camber[0])
         else:
-            # Interpolate the parameters
-            qthick = scipy.interpolate.interp1d(
-                self.spf,
-                self.q_thick,
-                fill_value="extrapolate",
-                axis=0,
-                kind=self._interp_method,
-            )
-            qcam = scipy.interpolate.interp1d(
-                self.spf,
-                self.q_camber,
-                fill_value="extrapolate",
-                axis=0,
-                kind=self._interp_method,
-            )
+
+            # # Interpolate the parameters
+            # qthick = scipy.interpolate.interp1d(
+            #     self.spf,
+            #     self.q_thick,
+            #     fill_value="extrapolate",
+            #     axis=0,
+            #     kind=self._interp_method,
+            # )
+            # qcam = scipy.interpolate.interp1d(
+            #     self.spf,
+            #     self.q_camber,
+            #     fill_value="extrapolate",
+            #     axis=0,
+            #     kind=self._interp_method,
+            # )
+
+            qcam = util.interp1d_linear_extrap(self.spf, self.q_camber)
+            qthick = util.interp1d_linear_extrap(self.spf, self.q_thick)
+
             thick = self._Thick(qthick(spf).reshape(-1))
             cam = self._Cam(qcam(spf).reshape(-1))
 
@@ -828,7 +833,6 @@ class Blade:
         """
 
         eps = 1e-4
-        eps = 0.05
         xrt = np.stack(
             [
                 self.evaluate_section(spf, nchord)
@@ -844,20 +848,8 @@ class Blade:
     def get_chi(self, spf):
         """Interpolate metal angles at a given span fraction."""
 
-        # Create thickness and camber lines
-        if len(self.spf) == 1:
-            # Constant values
-            cam = self._Cam(self.q_camber[0])
-        else:
-            # Interpolate the parameters
-            qcam = scipy.interpolate.interp1d(
-                self.spf,
-                self.q_camber,
-                fill_value="extrapolate",
-                axis=0,
-                kind=self._interp_method,
-            )
-            cam = self._Cam(qcam(spf).reshape(-1))
+        cam, _ = self._get_cam_thick(spf)
+
         return cam.chi((0.0, 1.0))
 
 
