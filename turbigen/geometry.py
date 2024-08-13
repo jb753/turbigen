@@ -529,15 +529,19 @@ class Blade:
         # Store input data
         self.streamsurface = streamsurface
         self.spf = np.reshape(spf, -1)
+        # Sort everything by spf
+        isort = np.argsort(self.spf)
+        self.spf = self.spf[isort]
         N = len(self.spf)
-        self.q_thick = np.reshape(q_thick, (N, -1))
-        self.q_camber = np.reshape(q_camber, (N, -1))
+        self.q_thick = np.reshape(q_thick, (N, -1))[isort]
+        self.q_camber = np.reshape(q_camber, (N, -1))[isort]
         self.mstack = mstack
         if mlim is None:
             self.mlim = np.tile((0.0, 1.0), (N, 1))
         else:
-            self.mlim = np.array(mlim)
+            self.mlim = np.array(mlim)[isort]
         self.dtheta = np.zeros((N, 1))
+
         # self.dtheta[-1] -= 0.1
 
     def get_pvec(self, isect=None):
