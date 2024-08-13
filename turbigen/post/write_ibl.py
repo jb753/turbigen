@@ -55,7 +55,7 @@ def _write_curve(f, xyz):
 def _write_blade(f, bld, nspan, nchord):
 
     # Span fractions to write at, linearly spaced
-    spf = np.linspace(0.0, 1.0, nspan)
+    spf = np.linspace(-0.05, 1.05, nspan)
 
     # Get pressure and suction sides
     xrt_ul = np.stack([bld.evaluate_section(spfi, nchord) for spfi in spf]).transpose(

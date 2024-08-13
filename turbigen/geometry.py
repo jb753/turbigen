@@ -832,6 +832,7 @@ class Blade:
         """
 
         eps = 1e-4
+        eps = 0.05
         xrt = np.stack(
             [
                 self.evaluate_section(spf, nchord)

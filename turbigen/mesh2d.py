@@ -3,6 +3,10 @@ import numpy as np
 from turbigen import util
 from turbigen import clusterfunc
 from scipy.interpolate import interp1d
+from enum import Enum
+from dataclasses import dataclass
+
+Edge = Enum("Edge", ["i0", "ni", "j0", "nj"])
 
 
 class Point:
@@ -214,6 +218,15 @@ class Curve:
         """End point of the curve."""
         return Point(*self.xy[:, -1])
 
+    def xy_mod(self, pitch):
+        """Coordinates with modulus wrt pitch on vertical."""
+        return np.stack(
+            (
+                self.x,
+                np.mod(self.y, pitch),
+            )
+        )
+
     def __eq__(self, other):
         return np.isclose(self.xy, other.xy).all(axis=0)
 
@@ -239,19 +252,28 @@ class Curve:
     def plot(self, ax):
         ax.plot(*self.xy, ".-", lw=0.5, ms=1)
 
+    @property
+    def shape(self):
+        return (self.ni,)
+
 
 class Block:
-    def __init__(self, x, y):
+    def __init__(self, x, y, label=None):
         """A 2-D grid of points in 2D space."""
         # Check input
         self.ni, self.nj = np.shape(x)
         util.check_vector(self.shape, x=x, y=y)
         self.xy = np.stack((x, y))
+        self.conn = {k: [] for k in Edge}
+        self.label = label
         # Check that there are no repeats
         if (self.dxyi == 0.0).all(axis=0).any():
             raise Exception("Could not create block, repeated points in i-dirn.")
         if (self.dxyj == 0.0).all(axis=0).any():
             raise Exception("Could not create block, repeated points in j-dirn.")
+
+    def __repr__(self):
+        return f"Block(label={self.label})"
 
     def __getitem__(self, key):
         if not len(key) == 2:
@@ -426,6 +448,33 @@ class Block:
         ax.plot(*self.xy, "k-", lw=0.5)
         ax.plot(*self.T.xy, "k-", lw=0.5)
 
+    @property
+    def edges(self):
+        """Curves for the bounding edges of this block in i0, ni, j0, nj order."""
+        return {
+            Edge.i0: self[0, :],
+            Edge.ni: self[-1, :],
+            Edge.j0: self[:, 0],
+            Edge.nj: self[:, -1],
+        }
+
+
+@dataclass
+class Conn:
+    """A periodic connection between nodes."""
+
+    b: Block
+    e: Edge
+    st: int
+    en: int
+    flip: bool
+
+    def get_xy(self):
+        xy = self.b.edges[self.e][self.st : self.en]
+        if self.flip:
+            xy = np.flip(xy)
+        return xy
+
 
 def split_by_angle(block, angles, j=-1):
 
@@ -463,12 +512,76 @@ def split_by_angle(block, angles, j=-1):
     return curves, isplit, ds
 
 
-def find_periodic(blocks, pitch):
-    pass
+def find_periodic(b1, b2, pitch=None, ax=None):
+    """Locate periodic nodes and assemble their indices."""
 
-    # periodics = []
-    # nb = len(blocks)
-    # for n in range(nb):
-    #     for m in range(nb):
-    #         ind_match = np.where(blocks
-    #
+    # Loop over all combinations of edges
+    for e1, c1 in b1.edges.items():
+        for e2, c2 in b2.edges.items():
+
+            ds = np.minimum(c1.ds.min(), c2.ds.min()) * 1e-3
+
+            # Skip if the edges are the same
+            if b1 is b2 and e1 == e2:
+                continue
+
+            # Compare the nodes on each edge
+            i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+
+            # Only consider connections involving multiple elements
+            # (Ignore single points and len(2) repeated single points)
+            if len(i1) <= 2:
+                continue
+
+            # Add to plot
+            if ax:
+                ax.plot(*c1[i1].xy, "ro")
+                ax.plot(*c2[i2].xy, "bx")
+
+            # Check for a flipped indexing
+            flip = bool((np.diff(i1) < 0).any())
+
+            assert len(get_st_en(i1, c1.n)) == len(get_st_en(i2, c2.n))
+            # Todo add Conn for both sides to a global list
+            # Not storing as an attribute on each block;w
+            #
+
+            # # Store the connection data
+            # for (st, en) in get_st_en(i1, c1.n):
+            #     b2.conn[e2].append(Conn(b1, e1, st, en, flip))
+            # for (st, en) in get_st_en(i2, c2.n):
+            #     b1.conn[e1].append(Conn(b2, e2, st, en, flip))
+
+
+def get_st_en(ind, n):
+
+    st = []
+    en = []
+    dind = np.diff(ind)
+
+    gaps = np.where(dind > 1)[0]
+
+    st.append(int(ind[0]))
+    for iseg in range(len(gaps)):
+        en.append(ind[gaps[iseg]])
+        st.append(ind[gaps[iseg] + 1])
+    en.append(int(ind[-1]))
+
+    return tuple(zip(st, en))
+
+
+# x = np.array([1,2,3,5,6,7])
+# print(x)
+# print(get_st_en(x, 10))
+# quit()
+
+
+# def find_periodic(blocks, pitch):
+#     pass
+
+# periodics = []
+# nb = len(blocks)
+# for n in range(nb):
+#     for m in range(nb):
+#         ind_match = np.where(blocks
+#
