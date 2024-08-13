@@ -495,3 +495,9 @@ def find_periodic(blocks, pitch):
     #     for m in range(nb):
     #         ind_match = np.where(blocks
     #
+
+
+def concatenate_blocks(*args):
+    """Join a sequence of Blocks, automatically reorienting as needed."""
+
+    blocks = list(args)
