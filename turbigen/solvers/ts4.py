@@ -203,7 +203,11 @@ def _write_wall_distance(g, fname):
 def _write_ofp(fname, var):
     """Write a dictionary of configuration variables in ofp format."""
     with open(fname, "w") as f:
-        f.writelines([k + " = " + str(v) + "\n" for k, v in var.items()])
+        for k, v in var.items():
+            if isinstance(v, list):
+                f.write(k + " = [" + ", ".join([str(vi) for vi in v]) + "]\n")
+            else:
+                f.write(k + " = " + str(v) + "\n")
 
 
 def _read_ofp(fname):
@@ -564,8 +568,8 @@ def run(grid, settings, machine):
     ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir).robust()
 
     # Get number of GPUs from environment var
-    ngpu = int(os.environ["SLURM_NTASKS"])
-    nnode = int(os.environ["SLURM_NNODES"])
+    ngpu = int(os.environ.get("SLURM_NTASKS", 1))
+    nnode = int(os.environ.get("SLURM_NNODES", 1))
     npernode = ngpu // nnode
 
     if ts4_conf.nstep_ts3:

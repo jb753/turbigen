@@ -2,6 +2,7 @@
 
 import numpy as np
 from turbigen import util
+from turbigen import mesh2d as m2d
 import turbigen.yaml
 import turbigen.fluid
 import turbigen.flowfield
@@ -571,6 +572,11 @@ class Grid:
 
     def index(self, block):
         return [block is bi for bi in self._blocks].index(True)
+
+    def block_by_label(self, label):
+        for b in self:
+            if b.label == label:
+                return b
 
     def find_patches(self, cls):
         patches = []
@@ -1320,9 +1326,6 @@ class PeriodicPatch(Patch):
                         perm[n] = m
                 flip[n] = 0
 
-        # perm = np.insert(perm + 1, 0, 0)
-        # flip = np.where(np.insert(flip, 0, 0))[0]
-
         flip = np.where(flip)[0]
 
         return perm, flip
@@ -1470,36 +1473,6 @@ class NonMatchPatch(Patch):
     def check_match(self, other, rtol=1e-4):
         return _get_patch_connectivity(self, other, corners_only=True, rtol=rtol)
 
-        # # Get the four corners of each patch
-        # C = [self.get_cut(), other.get_cut()]
-        # xrt = np.stack(
-        #     [Ci.xrt.squeeze()[:, [0, 0, -1, -1], [0, -1, 0, -1]] for Ci in C]
-        # )
-
-        # # Number of blades  should be equal on both patches
-        # nb = np.array([Ci.Nb for Ci in C])
-        # if nb.ptp() > 0:
-        #     return False
-
-        # # Get coordinates
-        # Lref = np.max((C[0].x.ptp(), C[0].r.ptp()))
-
-        # # Cope with circumferential offset by taking mod wrt pitch
-        # pitch = 2.0 * np.pi / float(nb[0])
-        # xrt[:, 2] = np.mod(xrt[:, 2], pitch)
-
-        # # Sort coordinates in a unique order
-        # for xrti in xrt:
-        #     xrti[:] = xrti[:, np.argsort(np.prod(xrti, axis=0))]
-
-        # # Test for equality
-        # err = np.abs(np.diff(xrt, axis=0).squeeze())
-        # err_rel = np.empty_like(err)
-        # err_rel[:2] = err[:2, :] / Lref
-        # err_rel[2] = err[2, :] / pitch
-
-        # return err_rel.max() < rtol
-
 
 # Default is that block edges are walls
 # So we want to identify patches that are NOT walls
@@ -1644,3 +1617,48 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                     return True
 
     return False
+
+
+def from_mesh2d(blocks_in, labels, conn, dmax, Nb):
+    """Extrude a set of 2D blocks and patch them toghether."""
+
+    # Flattend the connections list
+    conn = sum(conn, ())
+
+    # Get mean radius
+    rmin = np.min([b.y.min() for b in blocks_in])
+    rmax = np.max([b.y.max() for b in blocks_in])
+    rmean = 0.5 * (rmin + rmax)
+
+    # Lay out circumferential grid vector
+    # drt = 2 * dmax * (nk - 1)
+    # Nb = np.round(2 * np.pi * rmean / drt).astype(int)
+
+    # Theta semi-interval
+    Dt = np.pi / Nb
+
+    # Required number of points
+    nk = np.round(2.0 * Dt * rmean / dmax).astype(int)
+
+    tv = np.linspace(-Dt, Dt, nk)
+
+    blocks_out = []
+    for b_in, l_in in zip(blocks_in, labels):
+        patches = []
+        for c in conn:
+            if c.b is b_in:
+                if c.e == m2d.Edge.i0:
+                    p = PeriodicPatch(i=0, j=(c.st, c.en))
+                elif c.e == m2d.Edge.ni:
+                    p = PeriodicPatch(i=-1, j=(c.st, c.en))
+                elif c.e == m2d.Edge.j0:
+                    p = PeriodicPatch(i=(c.st, c.en), j=0)
+                elif c.e == m2d.Edge.nj:
+                    p = PeriodicPatch(i=(c.st, c.en), j=-1)
+                patches.append(p)
+        blocks_out.append(
+            PerfectBlock.from_coordinates(b_in.extrude(tv), Nb, patches, label=l_in)
+        )
+    g = Grid(blocks_out)
+    g.match_patches()
+    return g

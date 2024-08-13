@@ -141,17 +141,31 @@ for c in c_all:
 # for p in p_all:
 #     p.plot(ax)
 #
+b_omesh.label = 'omesh'
+b_inlet.label = 'inlet'
+b_outlet.label = 'outlet'
+b_up.label = 'up'
+b_dn.label = 'dn'
 
 b_all = [b_omesh, b_inlet, b_outlet, b_up, b_dn]
 for b in b_all:
     b.plot(ax)
 
-#
-plt.show()
-xy = b_omesh.xy
-print(b_omesh.shape)
-print(b_omesh.ij[0,0,:])
-print(b_omesh.ij[0,:,0])
+for b1 in b_all:
+    for b2 in b_all:
+        m2d.find_periodic(b2, b1, pitch, ax)
+
+for b in b_all:
+    for e in m2d.Edge:
+        for c in b.conn[e]:
+            
+# print(b_inlet.conn[m2d.Edge.ni][0].get_xy().shape)
+
+#for c in b_omesh.conn[m2d.Edge.nj]:
+#    print(c.get_xy())
+## m2d.find_periodic(b_omesh, b_inlet, ax)
+##
+#plt.show()
 
 quit()
 

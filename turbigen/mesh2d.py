@@ -3,6 +3,10 @@ import numpy as np
 from turbigen import util
 from turbigen import clusterfunc
 from scipy.interpolate import interp1d
+from enum import Enum
+from dataclasses import dataclass
+
+Edge = Enum("Edge", ["i0", "ni", "j0", "nj"])
 
 
 class Point:
@@ -25,6 +29,9 @@ class Point:
 
     def plot(self, ax):
         ax.plot(*self.xy, "o")
+
+    def copy(self):
+        return Point(*self.xy.squeeze().copy())
 
 
 class Curve:
@@ -223,6 +230,18 @@ class Curve:
         """End point of the curve."""
         return Point(*self.xy[:, -1])
 
+    def xy_mod(self, pitch):
+        """Coordinates with modulus wrt pitch on vertical."""
+        if pitch:
+            return np.stack(
+                (
+                    self.x,
+                    np.mod(self.y, pitch),
+                )
+            )
+        else:
+            return self.xy
+
     def __eq__(self, other):
         return np.isclose(self.xy, other.xy).all(axis=0)
 
@@ -234,6 +253,8 @@ class Curve:
 
     def interpolate(self, snq):
         """Interpolate new points on the Curve by normalised distance"""
+        if isinstance(snq, int):
+            snq = np.linspace(0.0, 1.0, snq)
         return Curve(*interp1d(self.sn, self.xy, axis=1)(snq))
 
     def decluster(self, f=1.0):
@@ -262,19 +283,28 @@ class Curve:
 
         return Curve(*xy_offset)
 
+    @property
+    def shape(self):
+        return (self.ni,)
+
 
 class Block:
-    def __init__(self, x, y):
+    def __init__(self, x, y, label=None):
         """A 2-D grid of points in 2D space."""
         # Check input
         self.ni, self.nj = np.shape(x)
         util.check_vector(self.shape, x=x, y=y)
         self.xy = np.stack((x, y))
+        self.conn = {k: [] for k in Edge}
+        self.label = label
         # Check that there are no repeats
         if (self.dxyi == 0.0).all(axis=0).any():
             raise Exception("Could not create block, repeated points in i-dirn.")
         if (self.dxyj == 0.0).all(axis=0).any():
             raise Exception("Could not create block, repeated points in j-dirn.")
+
+    def __repr__(self):
+        return f"Block(label={self.label})"
 
     def __getitem__(self, key):
         if not len(key) == 2:
@@ -422,24 +452,15 @@ class Block:
 
     @property
     def T(self):
-        return Block(*self.xy.transpose(0, 2, 1))
+        return Block(*self.xy.transpose(0, 2, 1).copy())
 
     @property
-    def xyu(self):
-        return self.xy.reshape(2, -1)
+    def y(self):
+        return self.xy[1]
 
     @property
-    def ij(self):
-        return np.stack(
-            np.meshgrid(*[np.arange(0, n) for n in self.shape], indexing="ij")
-        )
-
-    @property
-    def iju(self):
-        return self.ij.reshape(2, 1)
-
-    def iju_corner(self):
-        pass
+    def x(self):
+        return self.xy[0]
 
     @property
     def shape(self):
@@ -448,6 +469,47 @@ class Block:
     def plot(self, ax):
         ax.plot(*self.xy, "k-", lw=0.5)
         ax.plot(*self.T.xy, "k-", lw=0.5)
+
+    def flip(self, axis):
+        return Block(*np.flip(self.xy, axis=axis + 1).copy())
+
+    def extrude(self, zv):
+        return np.stack(
+            np.broadcast_arrays(
+                *self.xy[..., None],
+                zv.reshape(1, 1, -1),
+            )
+        )
+
+    @property
+    def edges(self):
+        """Curves for the bounding edges of this block in i0, ni, j0, nj order."""
+        return {
+            Edge.i0: self[0, :],
+            Edge.ni: self[-1, :],
+            Edge.j0: self[:, 0],
+            Edge.nj: self[:, -1],
+        }
+
+
+@dataclass
+class Conn:
+    """A periodic connection between nodes."""
+
+    b: Block
+    e: Edge
+    st: int
+    en: int
+    flip: bool
+
+    def __post_init__(self):
+        assert self.st <= self.en
+
+    def get_xy(self):
+        xy = self.b.edges[self.e][self.st : self.en]
+        if self.flip:
+            xy = np.flip(xy)
+        return xy
 
 
 def split_by_angle(block, angles, j=-1):
@@ -486,18 +548,148 @@ def split_by_angle(block, angles, j=-1):
     return curves, isplit, ds
 
 
-def find_periodic(blocks, pitch):
-    pass
-
-    # periodics = []
-    # nb = len(blocks)
-    # for n in range(nb):
-    #     for m in range(nb):
-    #         ind_match = np.where(blocks
-    #
-
-
 def concatenate_blocks(*args):
     """Join a sequence of Blocks, automatically reorienting as needed."""
 
     blocks = list(args)
+
+    # Orient the blocks to have a consistent orientation
+    nb = len(blocks)
+    for ib in range(nb):
+
+        b = blocks[ib]
+
+        # First make sure that i ~ x and j ~ y
+        if np.abs(b.dxyi[1]).mean() > np.abs(b.dxyi[0]).mean():
+            b = b.T
+
+        # Now make sure that i is +x
+        if b.dxyi[0].mean() < 0.0:
+            b = b.flip(axis=0)
+
+        # Now make sure that j is +y
+        if b.dxyj[1].mean() < 0.0:
+            b = b.flip(axis=1)
+
+        blocks[ib] = b
+
+    # Next we need to determine the concatenation axis
+    xya = np.array([b.xy.mean(axis=(1, 2)) for b in blocks])
+    axis = np.argmax(np.abs(np.diff(xya, axis=0).sum(axis=0)))
+    blocks = [blocks[ib] for ib in np.argsort(xya[:, axis])]
+
+    # Remove first point from blocks other than start to avoid repeats
+    if axis == 0:
+        xyb = [b.xy[:, :-1, :] for b in blocks] + [blocks[-1].xy[:, (-1,), :]]
+    else:
+        xyb = [b.xy[:, :, :-1] for b in blocks] + [blocks[-1].xy[:, :, (-1,)]]
+
+    xy = np.concatenate(xyb, axis=axis + 1)
+
+    return Block(*xy)
+
+
+def find_periodic(b1, b2, pitch, ax):
+
+    conn = []
+
+    # Loop over all combinations of edges
+    for e1, c1 in b1.edges.items():
+        for e2, c2 in b2.edges.items():
+
+            ds = np.minimum(c1.ds.min(), c2.ds.min()) * 1e-3
+
+            # Skip if the edges are the same
+            if b1 is b2 and e1 == e2:
+                continue
+
+            # Compare the nodes on each edge
+            i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+
+            # Only consider connections involving multiple elements
+            # (Ignore single points and len(2) repeated single points)
+            if len(i1) <= 2:
+                continue
+
+            # Add to plot
+            if ax:
+                ax.plot(*c1[i1].xy, "ro")
+                ax.plot(*c2[i2].xy, "bx")
+
+            # Check for a flipped indexing
+            flip1 = bool((np.diff(i1) < 0).any())
+            flip2 = bool((np.diff(i2) < 0).any())
+            flip = flip1 or flip2
+
+            sten1 = get_st_en(i1, c1.n, flip1)
+            sten2 = get_st_en(i2, c2.n, flip2)
+            nseg = len(sten1)
+            for iseg in range(nseg):
+                conn.append(
+                    (
+                        Conn(b1, e1, *sten1[iseg], flip),
+                        Conn(b2, e2, *sten2[iseg], flip),
+                    )
+                )
+
+    return conn
+
+    # Todo add Conn for both sides to a global list
+    # Not storing as an attribute on each block;w
+    #
+
+
+def find_periodics(blocks, pitch=None, ax=None):
+    """Locate periodic nodes and assemble their indices."""
+
+    conn = []
+
+    # Loop over all combinations of blocks
+    for b1 in blocks:
+        for b2 in blocks:
+            conn.extend(find_periodic(b1, b2, pitch, ax))
+
+    # Remove reversed repeats
+    nconn = len(conn)
+    for iconn in reversed(range(nconn)):
+        crev = tuple(reversed(conn[iconn]))
+        if crev in conn:
+            conn.pop(iconn)
+
+    return conn
+
+
+def get_st_en(ind, n, flip):
+
+    st = []
+    en = []
+    dind = np.diff(ind)
+
+    gaps = np.where(dind > 1)[0]
+
+    st.append(int(ind[0]))
+    for iseg in range(len(gaps)):
+        en.append(ind[gaps[iseg]])
+        st.append(ind[gaps[iseg] + 1])
+    en.append(int(ind[-1]))
+
+    if flip:
+        st, en = en, st
+    return tuple(zip(st, en))
+
+
+# x = np.array([1,2,3,5,6,7])
+# print(x)
+# print(get_st_en(x, 10))
+# quit()
+
+
+# def find_periodic(blocks, pitch):
+#     pass
+
+# periodics = []
+# nb = len(blocks)
+# for n in range(nb):
+#     for m in range(nb):
+#         ind_match = np.where(blocks
+#

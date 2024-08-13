@@ -1248,3 +1248,34 @@ def interp1d_linear_extrap(x, y, axis=0):
         spline.extend(rightcoeffs, np.r_[rightxnext])
 
     return spline
+
+
+def intersect_indices(x, y, tol):
+
+    # Ensure the input matrices have the correct shape
+    assert x.shape[0] == 2 and y.shape[0] == 2, "Both matrices must have 2 rows."
+
+    # Initialize empty lists to store indices
+    ix = []
+    iy = []
+
+    # Iterate over each column in matrix y
+    for j in range(y.shape[1]):
+
+        # Find the column in x that matches the current column in y
+        match = np.where((np.isclose(x, y[:, j : j + 1], atol=tol)).all(axis=0))[0]
+        if len(match) > 0:
+            iy.append(j)  # Append the index of y
+            ix.append(match[0])  # Append the corresponding index of x
+
+    # Convert the index lists to numpy arrays
+    # ix = ix,dtype=int
+    # iy = np.array(iy,dtype=int)
+
+    return ix, iy
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
