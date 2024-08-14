@@ -261,7 +261,7 @@ for n in range(nrow):
 # Blend the outlet k-grid lines to radial with theta=constant
 if conf["untwist_outlet"]:
     row(nrow).set_untwist_downstream_block(int(1))
-    row(nrow).set_untwist_downstream_block_stream_location(30)
+    row(nrow).set_untwist_downstream_block_stream_location(50)
 
 
 # Set number of points in inlet/exit ducts

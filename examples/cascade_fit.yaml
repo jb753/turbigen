@@ -32,6 +32,7 @@ blades:
         qstar_camber: [0., 0., 1.0, 1.0, 0.0]
     # The above camber and thickness are used as an initial guess for fitting
     fit: tests/data/sections.dat
+    fit_mode: xrt
 
 
 mesh:

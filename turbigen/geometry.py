@@ -565,14 +565,26 @@ class Blade:
         _, Ncam = self.q_camber.shape
         bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
         bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
-        bound_mlim = np.tile(((-0.1, 0.1), (0.9, 1.1)), (Nspf, 1))
+        bound_mlim = np.tile(((-0.0, 0.0), (1.0, 1.0)), (Nspf, 1))
         dm = 1e-9
-        bound_mlim = np.array(
-            (
-                (self.mlim[:, 0] - dm, self.mlim[:, 0] + dm),
-                (self.mlim[:, 1] - dm, self.mlim[:, 1] + dm),
+        if isect is not None:
+            bound_mlim = np.array(
+                [
+                    [self.mlim[isect, 0] - dm, self.mlim[isect, 0] + dm],
+                    [self.mlim[isect, 1] - dm, self.mlim[isect, 1] + dm],
+                ]
             )
-        ).squeeze()
+        else:
+            bound_mlim = np.concatenate(
+                [
+                    [
+                        [self.mlim[ispf, 0] - dm, self.mlim[ispf, 0] + dm],
+                        [self.mlim[ispf, 1] - dm, self.mlim[ispf, 1] + dm],
+                    ]
+                    for ispf in range(len(self.spf))
+                ],
+                axis=0,
+            )
         bound_toff = ((-np.pi, np.pi),)
         bound = np.concatenate((bound_thick, bound_cam, bound_mlim, bound_toff), axis=0)
         return bound

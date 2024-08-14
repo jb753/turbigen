@@ -255,6 +255,7 @@ def run_single(conf, gguess=None):
         * conf.nrow,
     )
     fit_data = conf.blades.get("fit", None)
+    fit_mode = conf.blades.get("fit_mode", None)
     theta_off = conf.blades.get("theta_offset", np.zeros((conf.nrow,)))
     fit_flag = False
     for irow, row in enumerate(conf.sections):
@@ -344,17 +345,29 @@ def run_single(conf, gguess=None):
 
                     # Now assemble a KDTree to look up distances from fitted
                     # surface to nearest target coordinate
-
-                    xyz_tg = [
-                        np.stack(
-                            (
-                                # xrrt_tg[0],
-                                xrrt_tg[1] * np.sin(xrrt_tg[2] / xrrt_tg[1]),
-                                xrrt_tg[1] * np.cos(xrrt_tg[2] / xrrt_tg[1]),
+                    if fit_mode[irow] == "xrt":
+                        xyz_tg = [
+                            np.stack(
+                                (
+                                    xrrt_tg[0],
+                                    xrrt_tg[2],
+                                )
                             )
-                        )
-                        for xrrt_tg in xrrt_target_all
-                    ]
+                            for xrrt_tg in xrrt_target_all
+                        ]
+                    elif fit_mode[irow] == "yz":
+                        xyz_tg = [
+                            np.stack(
+                                (
+                                    # xrrt_tg[0],
+                                    xrrt_tg[1] * np.sin(xrrt_tg[2] / xrrt_tg[1]),
+                                    xrrt_tg[1] * np.cos(xrrt_tg[2] / xrrt_tg[1]),
+                                )
+                            )
+                            for xrrt_tg in xrrt_target_all
+                        ]
+                    else:
+                        raise Exception(f"Unrecognised fit_mode: {fit_mode}")
 
                     trees = [KDTree(xyz_tg[isect].T) for isect in range(nsect_dat)]
 
@@ -385,18 +398,23 @@ def run_single(conf, gguess=None):
                                     ],
                                     axis=-1,
                                 )
-                                xyz_ul = np.stack(
-                                    (
-                                        # xrtul[0],
-                                        xrtul[1] * np.sin(xrtul[2]),
-                                        xrtul[1] * np.cos(xrtul[2]),
-                                    )
-                                )
 
-                                # xrtul[2] *= xrtul[1]
-                                # xrtul = xrtul[
-                                #     (0, 2),
-                                # ]
+                                if fit_mode[irow] == "xrt":
+                                    xyz_ul = np.stack(
+                                        (
+                                            xrtul[0],
+                                            xrtul[2],
+                                        )
+                                    )
+
+                                elif fit_mode[irow] == "yz":
+                                    xyz_ul = np.stack(
+                                        (
+                                            xrtul[1] * np.sin(xrtul[2]),
+                                            xrtul[1] * np.cos(xrtul[2]),
+                                        )
+                                    )
+
                                 # Lookup shortest distances to target coords
                                 # dist, _ = tree.query(xrtul.T)
                                 dist, _ = tree.query(xyz_ul.T)
@@ -429,13 +447,7 @@ def run_single(conf, gguess=None):
 
                             q0 = bld_now.get_pvec(isect)
                             bnd = bld_now.get_bound(isect)
-                            # print(np.concatenate((q0[...,None],bnd), axis=-1))
-                            # print(q0<bnd[:,0])
-                            # print(q0>bnd[:,1])
-                            # quit()
                             opts = {"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-9}
-                            # eval_fit_err(q0, trees[isect], spf_fit[isect], bld_now, isect, True)
-                            # for _ in range(3):
                             res = minimize(
                                 eval_fit_err,
                                 q0,
