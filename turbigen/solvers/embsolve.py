@@ -153,7 +153,9 @@ class SolverBlock:
         self.pitch = block.pitch
 
         # Geometry
+        self.x = to_fort(block.x)
         self.r = to_fort(block.r)
+        self.t = to_fort(block.t)
         self.rf = [to_fort(r) for r in block.r_face]
 
         self.rc = to_fort(np.zeros_like(block.vol))
@@ -937,6 +939,14 @@ def exchange_cons(blocks, bid_local, periodics, rf):
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
 
+            # # print(ijk.shape)
+            # # quit()
+            # for ipt in range(ijk.shape[0]):
+            #     i1, j1, k1 = ijk[:,ipt]-1
+            #     i2, j2, k2 = nxijk[:,ipt]-1
+            #     assert np.isclose(b1.r[i1, j1, k1], b2.r[i2, j2, k2])
+            #     assert np.isclose(b1.x[i1, j1, k1], b2.x[i2, j2, k2])
+
             embsolve.average_by_ijk(v1, v2, ijk, nxijk, rf)
 
         # Otherwise, communication is needed
@@ -1069,7 +1079,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Start the main time stepping loop
         for istep in range(conf.n_step):
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
+            for _ in range(100):
+                exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
 
             # Calculate residual for all blocks
             for iblock in range(nblock):

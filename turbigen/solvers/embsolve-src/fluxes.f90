@@ -110,7 +110,7 @@ subroutine set_fluxes( &
         end do
     end do
 
-    ! zero convective fluxes on the wall
+    ! ! zero convective fluxes on the wall
     call zero_wall_fluxes(fluxi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
     call zero_wall_fluxes(fluxj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
     call zero_wall_fluxes(fluxk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)

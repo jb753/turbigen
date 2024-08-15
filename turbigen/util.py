@@ -239,10 +239,6 @@ def _match(x, y):
         return False
 
 
-def relax(xold, xnew, rf):
-    return xold * (1.0 - rf) + xnew * rf
-
-
 def node_to_face(var):
     """For a (...,n,m) matrix of some property, average over the four corners of
     each face to produce an (...,n-1,m-1) matrix of face-centered properties."""
@@ -1269,8 +1265,8 @@ def intersect_indices(x, y, tol):
             ix.append(match[0])  # Append the corresponding index of x
 
     # Convert the index lists to numpy arrays
-    # ix = ix,dtype=int
-    # iy = np.array(iy,dtype=int)
+    ix = np.array(ix, dtype=int)
+    iy = np.array(iy, dtype=int)
 
     return ix, iy
 

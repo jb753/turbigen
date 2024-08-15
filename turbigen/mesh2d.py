@@ -502,7 +502,8 @@ class Conn:
     flip: bool
 
     def __post_init__(self):
-        assert self.st <= self.en
+        if self.st >= self.en:
+            raise Exception(f"Conn bad indices {self.st}>={self.en}")
 
     def get_xy(self):
         xy = self.b.edges[self.e][self.st : self.en]
@@ -588,6 +589,46 @@ def concatenate_blocks(*args):
     return Block(*xy)
 
 
+def get_st_en_new(*args):
+
+    ind = np.stack(args)
+    nind = len(ind)
+
+    # Gaps between segments are where any of the indices jump
+    d = np.abs(np.diff(ind, axis=1))
+    gap = np.where(np.any(d > 1, axis=0))[0]
+    nseg = len(gap) + 1
+
+    # Preallocate start and end indices for the segments
+    start = np.zeros((nind, nseg), dtype=int)
+    end = np.zeros((nind, nseg), dtype=int)
+
+    # Fill in the known first and last
+    start[:, 0] = ind[:, 0]
+    end[:, -1] = ind[:, -1]
+
+    # Loop over gaps
+    for iseg in range(nseg - 1):
+        for iind in range(nind):
+            end[iind, iseg] = ind[iind, gap[iseg]]
+            start[iind, iseg + 1] = ind[iind, gap[iseg] + 1]
+
+    # Flip if needed
+    flip = np.any((end - start) < 0, axis=0)
+
+    # Make sure start < end
+    iflip = end < start
+    start[iflip], end[iflip] = end[iflip], start[iflip]
+
+    # Remove segments of length one
+    i2 = np.logical_not(np.any((end - start) == 0, axis=0))
+    start = start[:, i2]
+    end = end[:, i2]
+    flip = flip[i2]
+
+    return start, end, flip
+
+
 def find_periodic(b1, b2, pitch, ax):
 
     conn = []
@@ -615,21 +656,38 @@ def find_periodic(b1, b2, pitch, ax):
                 ax.plot(*c1[i1].xy, "ro")
                 ax.plot(*c2[i2].xy, "bx")
 
-            # Check for a flipped indexing
-            flip1 = bool((np.diff(i1) < 0).any())
-            flip2 = bool((np.diff(i2) < 0).any())
-            flip = flip1 or flip2
+            # Convert the lists of indices into continous segments
+            # with start and end points, and record if a flip is needed
+            start, end, flip = get_st_en_new(i1, i2)
 
-            sten1 = get_st_en(i1, c1.n, flip1)
-            sten2 = get_st_en(i2, c2.n, flip2)
-            nseg = len(sten1)
+            # Now loop over the segments that join these blocks
+            # And store the connectivity information
+            nseg = len(flip)
             for iseg in range(nseg):
                 conn.append(
                     (
-                        Conn(b1, e1, *sten1[iseg], flip),
-                        Conn(b2, e2, *sten2[iseg], flip),
+                        Conn(b1, e1, start[0, iseg], end[0, iseg], bool(flip[iseg])),
+                        Conn(b2, e2, start[1, iseg], end[1, iseg], bool(flip[iseg])),
                     )
                 )
+
+            # # Check for a flipped indexing
+            # flip1 = bool((np.diff(i1) < 0).any())
+            # flip2 = bool((np.diff(i2) < 0).any())
+            # flip = flip1 or flip2
+            # sten1 = get_st_en(i1, c1.n, flip1)
+            # sten2 = get_st_en(i2, c2.n, flip2)
+            # nseg = len(sten1)
+            # if len(sten1) != len(sten2):
+            #     get_st_en_new(i1, i2)
+            #     quit()
+            # for iseg in range(nseg):
+            #     conn.append(
+            #         (
+            #             Conn(b1, e1, *sten1[iseg], flip),
+            #             Conn(b2, e2, *sten2[iseg], flip),
+            #         )
+            #     )
 
     return conn
 
@@ -644,16 +702,11 @@ def find_periodics(blocks, pitch=None, ax=None):
     conn = []
 
     # Loop over all combinations of blocks
-    for b1 in blocks:
-        for b2 in blocks:
-            conn.extend(find_periodic(b1, b2, pitch, ax))
-
-    # Remove reversed repeats
-    nconn = len(conn)
-    for iconn in reversed(range(nconn)):
-        crev = tuple(reversed(conn[iconn]))
-        if crev in conn:
-            conn.pop(iconn)
+    # Including the same block twice
+    nb = len(blocks)
+    for ib1 in range(nb):
+        for ib2 in range(ib1, nb):
+            conn.extend(find_periodic(blocks[ib1], blocks[ib2], pitch, ax))
 
     return conn
 
