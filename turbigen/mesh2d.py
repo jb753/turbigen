@@ -373,7 +373,6 @@ class Block:
         dj1 = b.dsj[-1, :].mean()  # Average j-spacing on the new curve
         dln1 = AR * dj1 / L
         dln0 = dl0 / L
-        print(dln0, dln1)
         clu = clusterfunc.single.free(dln0, dln1, ER)
         bclu = b.interpolate_i(clu)
         return bclu

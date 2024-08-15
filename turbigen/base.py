@@ -1653,7 +1653,7 @@ class MeanLine:
     @dependent_property
     def phi(self):
         with np.errstate(divide="ignore"):
-            return np.where(self.U != 0.0, self.Vm / self.U, np.nan)
+            return np.where(self.U != 0.0, self.Vm / np.abs(self.U), np.nan)
 
     @dependent_property
     def PR_tt(self):
