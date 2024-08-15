@@ -50,11 +50,11 @@ c = util.AttrDict()
 ni = 33
 nk = 17
 
-c.AB = m2d.Curve.from_uniform(p.A, p.B, ni)
+c.AB = m2d.Curve.from_uniform(p.A, p.B, ni-4)
 c.BG = m2d.Curve.from_uniform(p.B, p.G, ni)
 c.GH = m2d.Curve.from_uniform(p.G, p.H, ni)
 
-c.DC = m2d.Curve.from_uniform(p.D, p.C, ni)
+c.DC = m2d.Curve.from_uniform(p.D, p.C, ni-4)
 c.CJ = m2d.Curve.from_uniform(p.C, p.J, ni)
 c.JI = m2d.Curve.from_uniform(p.J, p.I, ni)
 
@@ -106,7 +106,7 @@ cp = 1005.
 ga = 1.4
 mu = 1.84e-5
 Tu0 = 300.
-Alpha1 = 30.
+Alpha1 = 0.
 Beta = 0.
 Ma1 = 0.3
 
@@ -136,10 +136,24 @@ for b in g:
     b.set_P_T(P1, T1)
     b.set_Tu0(Tu0)
 
+# Check walls on inlet
+iwall, jwall, kwall, wall = g['ABCD'].get_wall()
+assert not iwall.any()
+assert not kwall.any()
+assert jwall[:,(0,-1),:].all()
+assert not jwall[:,1:-1,:].any()
+
+# Check walls on outlet
+iwall, jwall, kwall, wall = g['GHIJ'].get_wall()
+assert not iwall.any()
+assert not kwall.any()
+assert jwall[:,(0,-1),:].all()
+assert not jwall[:,1:-1,:].any()
+
 settings = {
     "i_loss": 0,
-    "n_step": 1000,
-    "n_step_avg": 100,
+    "n_step": 5000,
+    "n_step_avg": 1000,
     "n_step_log": 100,
     "plot_conv": True,
 }
@@ -154,11 +168,11 @@ turbigen.solvers.embsolve.run(g, settings)
 jplot = 5
 
 fig, ax = plt.subplots()
-C = g[0][:,jplot,ni//2]
+C = g['ABCD'][:,jplot,-1]
 ax.plot(C.x, C.Vx)
-C = g[1][:,jplot,ni//2]
+C = g['GHIJ'][:,jplot,-1]
 ax.plot(C.x, C.Vx)
-C = g[0][:,jplot,ni//2]
+C = g['BGFE'][:,jplot,-1]
 ax.plot(C.x, C.Vx)
 
 fig, ax = plt.subplots()
@@ -166,6 +180,13 @@ levP = np.linspace(P1*0.9, Po1, 17)
 for b in g:
     C = b[:,jplot,:]
     ax.contourf(C.x, C.rt, C.P, levP)
+ax.axis('equal')
+
+fig, ax = plt.subplots()
+levV = np.linspace(V*0.5, V*1.5, 17)
+for b in g:
+    C = b[:,jplot,:]
+    ax.contourf(C.x, C.rt, C.Vx, levV)
 ax.axis('equal')
 
 fig, ax = plt.subplots()

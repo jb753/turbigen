@@ -826,6 +826,22 @@ def get_periodic_data(patch):
         t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
         assert np.allclose(t1, t2)
 
+    # Check we have the correct number of points
+    npt = patch.get_cut().to_unstructured().shape[0]
+    assert ijk.shape[1] == npt
+    assert nxijk.shape[1] == npt
+
+    # Check the indices are in correct range
+    assert ijk.min() >= 0
+    assert ijk[0].max() < b1.ni
+    assert ijk[1].max() < b1.nj
+    assert ijk[2].max() < b1.nk
+
+    assert nxijk.min() >= 0
+    assert nxijk[0].max() < b2.ni
+    assert nxijk[1].max() < b2.nj
+    assert nxijk[2].max() < b2.nk
+
     # For Fortran
     ijk = np.asfortranarray(ijk + 1).astype(np.int16)
     nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
@@ -1079,8 +1095,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         # Start the main time stepping loop
         for istep in range(conf.n_step):
             # Exchange conserved variables across periodic patches
-            for _ in range(100):
-                exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
+            exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
 
             # Calculate residual for all blocks
             for iblock in range(nblock):

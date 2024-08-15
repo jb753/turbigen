@@ -233,8 +233,11 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         kwall = np.zeros((ni - 1, nj - 1, nk), dtype=int)
         kwall[:, :, 1:-1] = 1
 
+        # The plan is to loop over all patches, and increment a
+        # wall indicator for all nodes on each not-wall patch
         for patch in self.patches:
-            # Skip if this patch is a wall
+
+            # Skip if this patch *is* a wall
             if ignore_slip:
                 if not type(patch) in NOT_SLIPWALL_PATCHES:
                     continue
@@ -242,21 +245,38 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 if not type(patch) in NOT_WALL_PATCHES:
                     continue
 
+            # Make block number of points in each direction
+            # same size as ijk_limits (3, 2)
             nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
+
+            # Get ijk limits of this patch, accounting for -ve ends
             ijk_lim = patch.ijk_limits.copy()
             ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+
+            # Make the end values exclusive for Python range convention
             ijk_lim[:, 1] += 1
             ist, ien = ijk_lim[0]
             jst, jen = ijk_lim[1]
             kst, ken = ijk_lim[2]
 
-            # Increment the not wall indicator on the const-dirn
+            # print(patch)
+            # print(self.shape)
+            # print(ijk_lim)
+
+            # # Increment the not wall indicator on the const-dirn
+            # iwall[ist:ien, jst : jen, kst : ken] += 1
+            # jwall[ist:ien, jst : jen, kst : ken] += 1
+            # kwall[ist:ien, jst : jen, kst : ken] += 1
+
             if patch.cdir == 0:
-                iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+                iwall[ist:ien, jst:jen, kst:ken] += 1
+                # iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
             elif patch.cdir == 1:
-                jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
+                jwall[ist:ien, jst:jen, kst:ken] += 1
+                # jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
-                kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
+                kwall[ist:ien, jst:jen, kst:ken] += 1
+                # kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
         # Now distribute the face not-wallness to the nodes
         wall = np.zeros((ni, nj, nk), dtype=int)

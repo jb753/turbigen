@@ -184,9 +184,9 @@ cp = 1005.
 ga = 1.4
 mu = 1.84e-5
 Tu0 = 300.
-Alpha1 = 30.
+Alpha1 = 0.
 Beta = 0.
-Ma1 = 0.3
+Ma1 = 0.5
 
 
 # Set inlet Ma to get inlet static state
@@ -217,7 +217,7 @@ for b in g:
 
 settings = {
     "i_loss": 0,
-    "n_step": 5000,
+    "n_step": 10000,
     "n_step_avg": 1000,
     "n_step_log": 100,
     "plot_conv": True,
@@ -234,17 +234,17 @@ turbigen.solvers.embsolve.run(g, settings)
 
 jplot = 5
 fig, ax = plt.subplots()
-levP = np.linspace(P1*0.9, Po1, 17)
+levP = np.linspace(P1*0.8, Po1, 17)
 for b in g:
     C = b[:,jplot,:]
     ax.contourf(C.x, C.rt, C.P, levP)
 ax.axis('equal')
 
 fig, ax = plt.subplots()
-levV = np.linspace(-V*0.5, V*0.5, 17)
+levw = np.linspace(0., 0.1*pitch, 17)
 for b in g:
     C = b[:,jplot,:]
-    ax.contourf(C.x, C.rt, C.Vt, levV)
+    ax.contourf(C.x, C.rt, C.w, levw)
 ax.axis('equal')
 plt.show()
 
