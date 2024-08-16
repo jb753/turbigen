@@ -83,6 +83,8 @@ b.BGFE.label = 'BGFE'
 b.EFJC.label = 'EFJC'
 b.GHIJ.label = 'GHIJ'
 
+m2d.find_periodic(b.ABCD, b.BGFE, pitch, None)
+
 conn = m2d.find_periodics(list(b.values()), pitch)
 
 fig, ax = plt.subplots()
@@ -144,6 +146,7 @@ assert jwall[:,(0,-1),:].all()
 assert not jwall[:,1:-1,:].any()
 
 # Check walls on outlet
+
 iwall, jwall, kwall, wall = g['GHIJ'].get_wall()
 assert not iwall.any()
 assert not kwall.any()

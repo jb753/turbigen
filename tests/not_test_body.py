@@ -168,8 +168,12 @@ b_dn.label = 'lower'
 b_all = [b_omesh, b_inlet, b_outlet, b_up, b_dn]
 conn = m2d.find_periodics(b_all, pitch)
 
-# for b in b_all:
-#     b.plot(ax)
+# conn = m2d.find_periodic(b_omesh,b_outlet, pitch, None)
+# for c in conn:
+#     print('***')
+#     print(c[0])
+#     print(c[1])
+# quit()
 
 g = turbigen.grid.from_mesh2d_xrt(b_all, conn, c_iin.ds.mean(), pitch)
 g.check_coordinates()
@@ -217,173 +221,35 @@ for b in g:
 
 settings = {
     "i_loss": 0,
-    "n_step": 10000,
-    "n_step_avg": 1000,
+    "n_step": 20000,
+    "n_step_avg": 2000,
     "n_step_log": 100,
     "plot_conv": True,
 }
 turbigen.solvers.embsolve.run(g, settings)
 
-#fig, ax = plt.subplots()
-#C = g['inlet'][0,:,:]
-#ax.plot(C.r, C.t, 'k-', lw=0.2)
-#ax.plot(C.r.T, C.t.T, 'k-', lw=0.2)
-#ax.axis('equal')
-#plt.show()
+# jplot = 5
+
+# fig, ax = plt.subplots()
+# C = g['omesh'][:,jplot,0]
+# ax.plot(C.x, C.P)
+# plt.show()
 
 
-jplot = 5
-fig, ax = plt.subplots()
-levP = np.linspace(P1*0.8, Po1, 17)
-for b in g:
-    C = b[:,jplot,:]
-    ax.contourf(C.x, C.rt, C.P, levP)
-ax.axis('equal')
+# fig, ax = plt.subplots()
+# levP = np.linspace(P1*0.8, Po1, 17)
+# for b in g:
+#     C = b[:,jplot,:]
+#     ax.contourf(C.x, C.rt, C.P, levP)
+# ax.axis('equal')
 
-fig, ax = plt.subplots()
-levw = np.linspace(0., 0.1*pitch, 17)
-for b in g:
-    C = b[:,jplot,:]
-    ax.contourf(C.x, C.rt, C.w, levw)
-ax.axis('equal')
-plt.show()
+# fig, ax = plt.subplots()
+# levw = np.linspace(0., 0.1*pitch, 17)
+# for b in g:
+#     C = b[:,jplot,:]
+#     ax.contourf(C.x, C.rt, C.w, levw)
+# for c in c_all:
+#     c.plot(ax)
+# ax.axis('equal')
+# plt.show()
 
-plt.show()
-
-## for b1 in b_all:
-##     for b2 in b_all:
-##         m2d.find_periodic(b2, b1, pitch, ax)
-
-## for b in b_all:
-##     for e in m2d.Edge:
-##         for c in b.conn[e]:
-## print(b_inlet.conn[m2d.Edge.ni][0].get_xy().shape)
-
-##for c in b_omesh.conn[m2d.Edge.nj]:
-##    print(c.get_xy())
-### m2d.find_periodic(b_omesh, b_inlet, ax)
-###
-#plt.show()
-
-#quit()
-
-##
-## plt.show()
-##
-##
-##
-## d1 = d_omesh[-1]-d_omesh[-2]
-## d2 = d1*4
-##
-## CO = bO[:,-1]
-## angles = [-135, 135, 45, -45]
-## curves, isplit = CO.split_by_angle(angles)
-##
-## dW = bO[isplit[1]:isplit[2],-2:].dsj.mean()
-## dE = bO[isplit[3]:isplit[4],-2:].dsj.mean()
-##
-## bW = m2d.Block.from_project_to_x(curves[1], xlim[0], dW, 2.)
-## bE = m2d.Block.from_project_to_x(curves[3], xlim[1], dE, 2.)
-## # Cin = curves[1].project_to_x(xlim[0])
-## # Cout = curves[-1].project_to_x(xlim[1])
-##
-##
-## fig, ax = plt.subplots()
-## ax.axis('equal')
-## ax.plot(*bO.xy, 'k-')
-## ax.plot(*bO.T.xy, 'k-')
-## for c in curves:
-##     ax.plot(*c.xy, '-o')
-## # ax.plot(*Cin.xy, 'b-x')
-## # ax.plot(*Cout.xy, 'b-x')
-## ax.plot(*bW.xy, 'k-')
-## ax.plot(*bW.T.xy, 'k-')
-## ax.plot(*bE.xy, 'k-')
-## ax.plot(*bE.T.xy, 'k-')
-## plt.show()
-## quit()
-##
-##
-## # # Find split points
-## # ang = turbigen.util.angle_curve(xyso[:,:,-1])
-## # isplit = [np.argmin(np.abs(ang - si)) for si in [45, -45, 135, -135]]
-## # displit = np.diff(isplit)
-## # print(displit)
-##
-## # ni1 = 25
-## # xy_WNW = extend_x_from_point(xyso[:, isplit[0], -1], xlim[0], d1, d2, ni1)
-## # xy_ENE = extend_x_from_point(xyso[:, isplit[1], -1], xlim[1], d1, d2, ni1)
-## # xy_ESE = extend_x_from_point(xyso[:, isplit[2], -1], xlim[0], d1, d2, ni1)
-## # xy_WSW = extend_x_from_point(xyso[:, isplit[3], -1], xlim[1], d1, d2, ni1)
-##
-## # ni_per = 2*ni1 + displit[0] - 1
-## # xy12_top = np.array((xlim, (pitch/2, pitch/2)))
-##
-## # xy_bot = xy_top.copy()
-## # xy_bot[1] *= -1.
-##
-## # xy_top_match = np.concatenate(
-## #     (
-## #         xy_WNW[:,:-1],
-## #         xyso[:,isplit[0]:(isplit[1]+1),-1],
-## #         xy_ENE[:,1:]
-## #     ),
-## #     axis=1
-## # )
-## # s_top = turbigen.util.cum_arc_length(xy_top_match)
-## # s_top /= s_top[-1]
-## # s_top = turbigen.util.smooth_1d(s_top, 1.0, 100)
-##
-## xy_top = turbigen.util.interpolate_curve_1d(xy12_top, s_top)
-##
-## nk1 = 9
-##
-## xy12_in_N = np.stack((xy_top_match[:,0],xy_top[:,0]),axis=1)
-## xy_in_N = turbigen.util.interpolate_curve_1d(xy12_in_N, np.linspace(0., 1., nk1))
-## xy12_out_N = np.stack((xy_top_match[:,-1],xy_top[:,-1]),axis=1)
-## xy_out_N = turbigen.util.interpolate_curve_1d(xy12_out_N, np.linspace(0., 1., nk1))
-##
-##
-## print(xy_top.shape)
-## print(xy_top_match.shape)
-## xy_N = turbigen.util.interpolate_transfinite(
-##         (
-##             xy_top_match,
-##             xy_in_N,
-##             xy_top,
-##             xy_out_N,
-##         )
-## )
-##
-## # xy_in_W = turbigen.util.interpolate_curve_1d(
-## # print(isplit)
-## # fig, ax = plt.subplots()
-## # ax.plot(ang)
-## # ax.plot(np.arange(len(ang))[isplit],ang[isplit],'kx')
-## # plt.show()
-##
-## fig, ax = plt.subplots()
-## # ax.plot(*xyu, '-x')
-## print(xyso.shape)
-## ax.plot(*xyso, 'k-')
-## ax.plot(*xyso.transpose(0,2,1), 'k-')
-## ax.plot(*xyso[:,isplit,-1], 'bs')
-## ax.plot(*xy_WNW, '.-')
-## ax.plot(*xy_ENE, '.-')
-## ax.plot(*xy_ESE, '.-')
-## ax.plot(*xy_WSW, '.-')
-## ax.plot(*xy_top, 'r.-')
-##
-## ax.plot(*xy_N, 'k-')
-## ax.plot(*xy_N.transpose(0,2,1), 'k-')
-##
-## # ax.plot(*xy_top_match, 'r.-')
-## # ax.plot(*xy_bot, 'b.-')
-## # ax.plot(*xy_in_N, 'm.-')
-## # ax.plot(*xy_out_N, 'm.-')
-##
-## # ax.plot(xlim, pitch2/2, 'k-')
-## # ax.plot(xlim, -pitch2/2, 'k-')
-## ax.axis('equal')
-## plt.show()
-##

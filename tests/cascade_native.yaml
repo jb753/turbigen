@@ -60,12 +60,12 @@ mesh:
 # CFD solver
 solver:
   type: embsolve  # Which solver
-  n_step: 2000
-  n_step_avg: 100
+  n_step: 10000
+  n_step_avg: 1000
   n_step_log: 100
   nstep_damp: -1
   plot_conv: true
-  smooth2_adapt: 2.0
+  # smooth2_adapt: 2.0
   i_loss: 1
 
 post_process:
