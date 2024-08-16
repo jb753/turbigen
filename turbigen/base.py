@@ -1281,7 +1281,7 @@ class Composites:
             izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
 
             # Only keep maxima close to LE
-            izj = izj[np.abs(z[izj, j]) < 0.3]
+            izj = izj[np.abs(z[izj, j]) < 0.2]
 
             # Now take the candiate point with maximum pressure
             try:

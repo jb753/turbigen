@@ -1656,6 +1656,8 @@ def from_mesh2d(blocks_in, labels, conn, dmax, Nb):
                 elif c.e == m2d.Edge.nj:
                     p = PeriodicPatch(i=(c.st, c.en), j=-1)
                 patches.append(p)
+        # Always need to be periodic in the extruded k direction
+        patches.extend([PeriodicPatch(k=0), PeriodicPatch(k=-1)])
         blocks_out.append(
             PerfectBlock.from_coordinates(b_in.extrude(tv), Nb, patches, label=l_in)
         )

@@ -327,9 +327,9 @@ def _read_flow(grid, fname, fname_avg):
         _, ind_pts = kdtree.query(xrrtb, workers=-1)
 
         # Check these really are the points we want
-        # assert np.allclose(block.x, x[ind_pts].reshape(block.shape))
-        # assert np.allclose(block.r, r[ind_pts].reshape(block.shape))
-        # assert np.allclose(block.t, t[ind_pts].reshape(block.shape))
+        assert np.allclose(block.x, x[ind_pts].reshape(block.shape))
+        assert np.allclose(block.r, r[ind_pts].reshape(block.shape))
+        assert np.allclose(block.t, t[ind_pts].reshape(block.shape))
 
         # Assign the velocities
         block.Vx = vx[ind_pts].reshape(block.shape)
@@ -517,6 +517,9 @@ def run(grid, settings, machine):
         if soln_exists:
             logger.info("Skipping running, loading previous solution.")
             _read_flow(grid, output_file_path, output_avg_file_path)
+            # Write out for debugging
+            ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir)
+            turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
         else:
             logger.info("Skipping running, keeping initial guess.")
         return
@@ -728,3 +731,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 
     # Restore the sign of inlet pitch angle
     inpatch.Beta *= -1.0
+
+    # Write out the ts4 flowfield to ts3 for debugging
+    turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")

@@ -498,6 +498,7 @@ class Blade:
         thick_type=None,
         camber_type=None,
         mlim=None,
+        dtheta=None,
         theta_offset=0.0,
     ):
         """Initialise a blade row with geometry parameters.
@@ -540,9 +541,10 @@ class Blade:
             self.mlim = np.tile((0.0, 1.0), (N, 1))
         else:
             self.mlim = np.array(mlim)[isort]
-        self.dtheta = np.zeros((N, 1))
-
-        # self.dtheta[-1] -= 0.1
+        if dtheta is None:
+            self.dtheta = np.zeros((N, 1))
+        else:
+            self.dtheta = np.array(dtheta)[isort]
 
     def get_pvec(self, isect=None):
         if isect is not None:

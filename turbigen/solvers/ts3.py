@@ -690,7 +690,7 @@ def _get_wall_rpms(block):
     return dict(zip(keys, vals))
 
 
-def _write_hdf5(grid, ts3_config):
+def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
     """Using a given configuration, write grid object to an hdf5."""
 
     # Store old internal energy datum
@@ -706,7 +706,7 @@ def _write_hdf5(grid, ts3_config):
     for irow, row_block in enumerate(grid.row_blocks):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
-    input_file_path = os.path.join(ts3_config.workdir, "input.hdf5")
+    input_file_path = os.path.join(ts3_config.workdir, fname)
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet

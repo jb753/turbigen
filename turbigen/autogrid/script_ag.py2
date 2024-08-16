@@ -157,7 +157,7 @@ for n in range(nrow):
     if n1 == 1:
         z = compute_default_relative_z_cst_line(n1, 0, conf["frac_up"])
         z.set_linear_shape()
-        if conf["fix_h_blocks"]:
+        if conf["fix_h_inlet"]:
             z.geometry_is_fixed()
         else:
             z.geometry_is_not_fixed()
@@ -171,7 +171,7 @@ for n in range(nrow):
     if n1 == nrow:
         z = compute_default_relative_z_cst_line(n1, 2, conf["frac_dn"])
         z.set_linear_shape()
-        if conf["fix_h_blocks"]:
+        if conf["fix_h_outlet"]:
             z.geometry_is_fixed()
         else:
             z.geometry_is_not_fixed()

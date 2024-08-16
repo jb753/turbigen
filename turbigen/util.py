@@ -1226,26 +1226,30 @@ def interp1d_linear_extrap(x, y, axis=0):
         spline = scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
 
         # determine the slope at the left edge
-        leftx = spline.x[0]
+        leftx = np.atleast_1d(spline.x[0])
         lefty = spline(leftx)
-        leftslope = spline(leftx, nu=1).reshape(1, -1)
+        leftslope = spline(leftx, nu=1)
 
         # add a new breakpoint just to the left and use the
         # known slope to construct the PPoly coefficients.
         leftxnext = np.nextafter(leftx, leftx - 1)
-        leftynext = (lefty + leftslope * (leftxnext - leftx)).reshape(1, -1)
+        leftynext = lefty + leftslope * (leftxnext - leftx)
         Z = np.zeros_like(leftslope)
-        leftcoeffs = np.array([Z, Z, leftslope, leftynext])
-        spline.extend(leftcoeffs, np.r_[leftxnext])
+        leftcoeffs = np.expand_dims(
+            np.concatenate([Z, Z, leftslope, leftynext], axis=0), 1
+        )
+        spline.extend(leftcoeffs, leftxnext)
 
         # repeat with additional knots to the right
-        rightx = spline.x[-1]
+        rightx = np.atleast_1d(spline.x[-1])
         righty = spline(rightx)
-        rightslope = spline(rightx, nu=1).reshape(1, -1)
+        rightslope = spline(rightx, nu=1)
         rightxnext = np.nextafter(rightx, rightx + 1)
-        rightynext = (righty + rightslope * (rightxnext - rightx)).reshape(1, -1)
-        rightcoeffs = np.array([Z, Z, rightslope, rightynext])
-        spline.extend(rightcoeffs, np.r_[rightxnext])
+        rightynext = righty + rightslope * (rightxnext - rightx)
+        rightcoeffs = np.expand_dims(
+            np.concatenate([Z, Z, rightslope, rightynext]), axis=1
+        )
+        spline.extend(rightcoeffs, rightxnext)
 
     return spline
 
