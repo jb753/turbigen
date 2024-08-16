@@ -502,7 +502,10 @@ class Conn:
     flip: bool
 
     def __post_init__(self):
-        assert self.st <= self.en
+        self.st = int(self.st)
+        self.en = int(self.en)
+        if self.st >= self.en:
+            raise Exception(f"Conn bad indices {self.st}>={self.en}")
 
     def get_xy(self):
         xy = self.b.edges[self.e][self.st : self.en]
@@ -588,6 +591,46 @@ def concatenate_blocks(*args):
     return Block(*xy)
 
 
+def get_st_en_new(*args):
+
+    ind = np.stack(args)
+    nind = len(ind)
+
+    # Gaps between segments are where any of the indices jump
+    d = np.abs(np.diff(ind, axis=1))
+    gap = np.where(np.any(d > 1, axis=0))[0]
+    nseg = len(gap) + 1
+
+    # Preallocate start and end indices for the segments
+    start = np.zeros((nind, nseg), dtype=int)
+    end = np.zeros((nind, nseg), dtype=int)
+
+    # Fill in the known first and last
+    start[:, 0] = ind[:, 0]
+    end[:, -1] = ind[:, -1]
+
+    # Loop over gaps
+    for iseg in range(nseg - 1):
+        for iind in range(nind):
+            end[iind, iseg] = ind[iind, gap[iseg]]
+            start[iind, iseg + 1] = ind[iind, gap[iseg] + 1]
+
+    # Flip if needed
+    flip = np.any((end - start) < 0, axis=0)
+
+    # Make sure start < end
+    iflip = end < start
+    start[iflip], end[iflip] = end[iflip], start[iflip]
+
+    # Remove segments of length one
+    i2 = np.logical_not(np.any((end - start) == 0, axis=0))
+    start = start[:, i2]
+    end = end[:, i2]
+    flip = flip[i2]
+
+    return start, end, flip
+
+
 def find_periodic(b1, b2, pitch, ax):
 
     conn = []
@@ -603,33 +646,74 @@ def find_periodic(b1, b2, pitch, ax):
                 continue
 
             # Compare the nodes on each edge
-            i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+            # i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+            i1, i2 = util.intersect_indices(c1.xy, c2.xy, ds)
 
             # Only consider connections involving multiple elements
-            # (Ignore single points and len(2) repeated single points)
-            if len(i1) <= 2:
-                continue
+            if len(i1) <= 1:
+
+                # Check if there are any periodic matches
+                i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+
+                if len(i1) <= 1:
+                    continue
 
             # Add to plot
             if ax:
                 ax.plot(*c1[i1].xy, "ro")
                 ax.plot(*c2[i2].xy, "bx")
 
-            # Check for a flipped indexing
-            flip1 = bool((np.diff(i1) < 0).any())
-            flip2 = bool((np.diff(i2) < 0).any())
-            flip = flip1 or flip2
+            # Convert the lists of indices into continous segments
+            # with start and end points, and record if a flip is needed
+            start, end, flip = get_st_en_new(i1, i2)
 
-            sten1 = get_st_en(i1, c1.n, flip1)
-            sten2 = get_st_en(i2, c2.n, flip2)
-            nseg = len(sten1)
+            # If one of the blocks is closed, and we patch over the repeated
+            # point, then we also need to repeat in the patching
+            # This is a more straightforward way to deal with the problem
+            # than allowing for one-many point matching
+            # TODO implement this for other edge and direction combinations
+            if e1 == Edge.nj and b1[:, -1].is_closed and (0 in start[0]):
+                # Find ending index of ni-2, which is the segment that
+                # needs to be extended to ni-1 to close the curve
+                iend = np.where(end[0] == (b1.ni - 2))
+
+                # Do the extension on b1
+                end[0][iend] += 1
+
+                # Now we must also extend the b2 connection
+                if flip[iend]:
+                    start[1][iend] -= 1
+                else:
+                    start[1][iend] += 1
+
+            # Now loop over the segments that join these blocks
+            # And store the connectivity information
+            nseg = len(flip)
             for iseg in range(nseg):
                 conn.append(
                     (
-                        Conn(b1, e1, *sten1[iseg], flip),
-                        Conn(b2, e2, *sten2[iseg], flip),
+                        Conn(b1, e1, start[0, iseg], end[0, iseg], bool(flip[iseg])),
+                        Conn(b2, e2, start[1, iseg], end[1, iseg], bool(flip[iseg])),
                     )
                 )
+
+            # # Check for a flipped indexing
+            # flip1 = bool((np.diff(i1) < 0).any())
+            # flip2 = bool((np.diff(i2) < 0).any())
+            # flip = flip1 or flip2
+            # sten1 = get_st_en(i1, c1.n, flip1)
+            # sten2 = get_st_en(i2, c2.n, flip2)
+            # nseg = len(sten1)
+            # if len(sten1) != len(sten2):
+            #     get_st_en_new(i1, i2)
+            #     quit()
+            # for iseg in range(nseg):
+            #     conn.append(
+            #         (
+            #             Conn(b1, e1, *sten1[iseg], flip),
+            #             Conn(b2, e2, *sten2[iseg], flip),
+            #         )
+            #     )
 
     return conn
 
@@ -644,9 +728,11 @@ def find_periodics(blocks, pitch=None, ax=None):
     conn = []
 
     # Loop over all combinations of blocks
-    for b1 in blocks:
-        for b2 in blocks:
-            conn.extend(find_periodic(b1, b2, pitch, ax))
+    # Including the same block twice
+    nb = len(blocks)
+    for ib1 in range(nb):
+        for ib2 in range(ib1, nb):
+            conn.extend(find_periodic(blocks[ib1], blocks[ib2], pitch, ax))
 
     # Remove reversed repeats
     nconn = len(conn)
@@ -675,20 +761,3 @@ def get_st_en(ind, n, flip):
     if flip:
         st, en = en, st
     return tuple(zip(st, en))
-
-
-# x = np.array([1,2,3,5,6,7])
-# print(x)
-# print(get_st_en(x, 10))
-# quit()
-
-
-# def find_periodic(blocks, pitch):
-#     pass
-
-# periodics = []
-# nb = len(blocks)
-# for n in range(nb):
-#     for m in range(nb):
-#         ind_match = np.where(blocks
-#

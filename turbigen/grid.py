@@ -233,8 +233,11 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         kwall = np.zeros((ni - 1, nj - 1, nk), dtype=int)
         kwall[:, :, 1:-1] = 1
 
+        # The plan is to loop over all patches, and increment a
+        # wall indicator for all nodes on each not-wall patch
         for patch in self.patches:
-            # Skip if this patch is a wall
+
+            # Skip if this patch *is* a wall
             if ignore_slip:
                 if not type(patch) in NOT_SLIPWALL_PATCHES:
                     continue
@@ -242,20 +245,44 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 if not type(patch) in NOT_WALL_PATCHES:
                     continue
 
+            # Make block number of points in each direction
+            # same size as ijk_limits (3, 2)
             nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
+
+            # Get ijk limits of this patch, accounting for -ve ends
             ijk_lim = patch.ijk_limits.copy()
             ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+
+            # Make the end values exclusive for Python range convention
             ijk_lim[:, 1] += 1
             ist, ien = ijk_lim[0]
             jst, jen = ijk_lim[1]
             kst, ken = ijk_lim[2]
 
-            # Increment the not wall indicator on the const-dirn
+            # print(patch)
+            # print(self.shape)
+            # print(ijk_lim)
+
+            # # Increment the not wall indicator on the const-dirn
+            # iwall[ist:ien, jst : jen, kst : ken] += 1
+            # jwall[ist:ien, jst : jen, kst : ken] += 1
+            # kwall[ist:ien, jst : jen, kst : ken] += 1
+
             if patch.cdir == 0:
+                # iwall[ist:ien, jst:jen, kst:ken] += 1
                 iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+                # print(f'Setting iwall for {patch}')
+                # print(patch.block.shape)
+                # print(ijk_lim)
+                # kwall[ist:ien, jst:jen, kst:ken] += 1
             elif patch.cdir == 1:
+                # jwall[ist:ien, jst:jen, kst:ken] += 1
                 jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
+                # print(f'Setting kwall for {patch}')
+                # print(patch.block.shape)
+                # print(ijk_lim)
+                # kwall[ist:ien, jst:jen, kst:ken] += 1
                 kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
         # Now distribute the face not-wallness to the nodes
@@ -558,7 +585,10 @@ class Grid:
         return len(self._blocks)
 
     def __getitem__(self, key):
-        return self._blocks[key]
+        if isinstance(key, str):
+            return self.block_by_label(key)
+        else:
+            return self._blocks[key]
 
     def extend(self, g):
         self._blocks += g._blocks
@@ -646,7 +676,7 @@ class Grid:
                     raise Exception(
                         "Could not match patch "
                         f"bid={self._blocks.index(P.block)} "
-                        f"pid={P.block.patches.index(P)} {P}"
+                        f"pid={P.block.patches.index(P)} {P} {P.block}"
                     )
 
     @property
@@ -1134,6 +1164,9 @@ class Patch:
                 en = ijk + 1
         return st, en
 
+    def __repr__(self):
+        return f"{self.__class__}(i={self.ijk_limits[0]}, j={self.ijk_limits[1]}, k={self.ijk_limits[2]})"
+
     def __init__(self, i=None, j=None, k=None, label=None):
         """Select a subset of a block by indices."""
 
@@ -1619,28 +1652,40 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
     return False
 
 
-def from_mesh2d(blocks_in, labels, conn, dmax, Nb):
+def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="xr"):
     """Extrude a set of 2D blocks and patch them toghether."""
+
+    if labels is None:
+        labels = [b.label for b in blocks_in]
 
     # Flattend the connections list
     conn = sum(conn, ())
 
-    # Get mean radius
-    rmin = np.min([b.y.min() for b in blocks_in])
-    rmax = np.max([b.y.max() for b in blocks_in])
-    rmean = 0.5 * (rmin + rmax)
+    if mode == "xr":
 
-    # Lay out circumferential grid vector
-    # drt = 2 * dmax * (nk - 1)
-    # Nb = np.round(2 * np.pi * rmean / drt).astype(int)
+        # Extrude in theta direction
 
-    # Theta semi-interval
-    Dt = np.pi / Nb
+        # Get mean radius
+        rmin = np.min([b.y.min() for b in blocks_in])
+        rmax = np.max([b.y.max() for b in blocks_in])
+        rmean = 0.5 * (rmin + rmax)
 
-    # Required number of points
-    nk = np.round(2.0 * Dt * rmean / dmax).astype(int)
+        # Theta semi-interval
+        Dt = np.pi / Nb
+        # Required number of points
+        nk = np.round(2.0 * Dt * rmean / dmax).astype(int)
+        # Theta vector
+        zv = np.linspace(-Dt, Dt, nk)
 
-    tv = np.linspace(-Dt, Dt, nk)
+    elif mode == "xrt":
+
+        # Extrude in radial dirn
+        nk = 9
+        htr = 0.99
+        Dr = (nk - 1) * dmax
+        rm = Dr / 2.0 / (1 - htr) * (1 + htr)
+        Nb = np.round(2.0 * np.pi * rm / pitch).astype(int)
+        zv = np.linspace(rm - Dr / 2.0, rm + Dr / 2.0, nk)
 
     blocks_out = []
     for b_in, l_in in zip(blocks_in, labels):
@@ -1659,8 +1704,53 @@ def from_mesh2d(blocks_in, labels, conn, dmax, Nb):
         # Always need to be periodic in the extruded k direction
         patches.extend([PeriodicPatch(k=0), PeriodicPatch(k=-1)])
         blocks_out.append(
-            PerfectBlock.from_coordinates(b_in.extrude(tv), Nb, patches, label=l_in)
+            PerfectBlock.from_coordinates(b_in.extrude(zv), Nb, patches, label=l_in)
         )
+
+    g = Grid(blocks_out)
+    # g.match_patches()
+    return g
+
+
+def from_mesh2d_xrt(blocks_in, conn, dmax, pitch):
+    """Extrude a set of 2D blocks and patch them toghether."""
+
+    labels = [b.label for b in blocks_in]
+
+    # Flattend the connections list
+    conn = sum(conn, ())
+
+    # Extrude in radial dirn
+    nk = 9
+    htr = 0.95
+    Dr = (nk - 1) * dmax
+    # Calculate rough rm for non-integer Nb
+    rm = Dr / 2.0 / (1 - htr) * (1 + htr)
+    Nb = np.round(2.0 * np.pi * rm / pitch).astype(int)
+    # Now use rounded Nb to get new rm
+    rm = float(Nb) * pitch / 2 / np.pi
+    rv = np.linspace(rm - Dr / 2.0, rm + Dr / 2.0, nk)
+
+    blocks_out = []
+    for b_in, l_in in zip(blocks_in, labels):
+        patches = []
+        for c in conn:
+            if c.b is b_in:
+                if c.e == m2d.Edge.i0:
+                    p = PeriodicPatch(i=0, k=(c.st, c.en))
+                elif c.e == m2d.Edge.ni:
+                    p = PeriodicPatch(i=-1, k=(c.st, c.en))
+                elif c.e == m2d.Edge.j0:
+                    p = PeriodicPatch(i=(c.st, c.en), k=0)
+                elif c.e == m2d.Edge.nj:
+                    p = PeriodicPatch(i=(c.st, c.en), k=-1)
+                patches.append(p)
+        xrrt = b_in.extrude(rv)[
+            (0, 2, 1),
+        ].transpose(0, 1, 3, 2)
+        xrt = np.stack((xrrt[0], xrrt[1], xrrt[2] / rm))
+        blocks_out.append(PerfectBlock.from_coordinates(xrt, Nb, patches, label=l_in))
+
     g = Grid(blocks_out)
     g.match_patches()
     return g

@@ -1,9 +1,26 @@
 import numpy as np
+import turbigen.compflow_native as cf
 import matplotlib.pyplot as plt
 from turbigen import util
 import turbigen.clusterfunc
+import turbigen.grid
+import turbigen.fluid
+import turbigen.solvers.embsolve
 
 from turbigen import mesh2d as m2d
+
+# Check our MPI rank
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+# Jump to solver slave process if not first rank
+if rank > 0:
+    from turbigen.solvers import embsolve
+
+    embsolve.run_slave()
+    quit()
 
 def thickness(m, R, mmax):
     t = np.full_like(m, R)
@@ -134,8 +151,8 @@ b_dn = m2d.Block.from_transfinite(c_pdn[1], c_odn, c_spoke[0], c_spoke[1])
 # Plotting
 #
 c_all = c_pup + c_pdn + [c_srf, c_tin, c_tout, c_odn, c_oup, c_iin, c_oout]# + c_spoke
-for c in c_all:
-    c.plot(ax)
+# for c in c_all:
+#     c.plot(ax)
 
 # p_all = p_end + []
 # for p in p_all:
@@ -144,148 +161,95 @@ for c in c_all:
 b_omesh.label = 'omesh'
 b_inlet.label = 'inlet'
 b_outlet.label = 'outlet'
-b_up.label = 'up'
-b_dn.label = 'dn'
+b_up.label = 'upper'
+b_dn.label = 'lower'
+
 
 b_all = [b_omesh, b_inlet, b_outlet, b_up, b_dn]
-for b in b_all:
-    b.plot(ax)
+conn = m2d.find_periodics(b_all, pitch)
 
-for b1 in b_all:
-    for b2 in b_all:
-        m2d.find_periodic(b2, b1, pitch, ax)
-
-for b in b_all:
-    for e in m2d.Edge:
-        for c in b.conn[e]:
-            
-# print(b_inlet.conn[m2d.Edge.ni][0].get_xy().shape)
-
-#for c in b_omesh.conn[m2d.Edge.nj]:
-#    print(c.get_xy())
-## m2d.find_periodic(b_omesh, b_inlet, ax)
-##
-#plt.show()
-
-quit()
-
-#
-# plt.show()
-#
-#
-#
-# d1 = d_omesh[-1]-d_omesh[-2]
-# d2 = d1*4
-#
-# CO = bO[:,-1]
-# angles = [-135, 135, 45, -45]
-# curves, isplit = CO.split_by_angle(angles)
-#
-# dW = bO[isplit[1]:isplit[2],-2:].dsj.mean()
-# dE = bO[isplit[3]:isplit[4],-2:].dsj.mean()
-#
-# bW = m2d.Block.from_project_to_x(curves[1], xlim[0], dW, 2.)
-# bE = m2d.Block.from_project_to_x(curves[3], xlim[1], dE, 2.)
-# # Cin = curves[1].project_to_x(xlim[0])
-# # Cout = curves[-1].project_to_x(xlim[1])
-#
-#
-# fig, ax = plt.subplots()
-# ax.axis('equal')
-# ax.plot(*bO.xy, 'k-')
-# ax.plot(*bO.T.xy, 'k-')
-# for c in curves:
-#     ax.plot(*c.xy, '-o')
-# # ax.plot(*Cin.xy, 'b-x')
-# # ax.plot(*Cout.xy, 'b-x')
-# ax.plot(*bW.xy, 'k-')
-# ax.plot(*bW.T.xy, 'k-')
-# ax.plot(*bE.xy, 'k-')
-# ax.plot(*bE.T.xy, 'k-')
-# plt.show()
+# conn = m2d.find_periodic(b_omesh,b_outlet, pitch, None)
+# for c in conn:
+#     print('***')
+#     print(c[0])
+#     print(c[1])
 # quit()
-#
-#
-# # # Find split points
-# # ang = turbigen.util.angle_curve(xyso[:,:,-1])
-# # isplit = [np.argmin(np.abs(ang - si)) for si in [45, -45, 135, -135]]
-# # displit = np.diff(isplit)
-# # print(displit)
-#
-# # ni1 = 25
-# # xy_WNW = extend_x_from_point(xyso[:, isplit[0], -1], xlim[0], d1, d2, ni1)
-# # xy_ENE = extend_x_from_point(xyso[:, isplit[1], -1], xlim[1], d1, d2, ni1)
-# # xy_ESE = extend_x_from_point(xyso[:, isplit[2], -1], xlim[0], d1, d2, ni1)
-# # xy_WSW = extend_x_from_point(xyso[:, isplit[3], -1], xlim[1], d1, d2, ni1)
-#
-# # ni_per = 2*ni1 + displit[0] - 1
-# # xy12_top = np.array((xlim, (pitch/2, pitch/2)))
-#
-# # xy_bot = xy_top.copy()
-# # xy_bot[1] *= -1.
-#
-# # xy_top_match = np.concatenate(
-# #     (
-# #         xy_WNW[:,:-1],
-# #         xyso[:,isplit[0]:(isplit[1]+1),-1],
-# #         xy_ENE[:,1:]
-# #     ),
-# #     axis=1
-# # )
-# # s_top = turbigen.util.cum_arc_length(xy_top_match)
-# # s_top /= s_top[-1]
-# # s_top = turbigen.util.smooth_1d(s_top, 1.0, 100)
-#
-# xy_top = turbigen.util.interpolate_curve_1d(xy12_top, s_top)
-#
-# nk1 = 9
-#
-# xy12_in_N = np.stack((xy_top_match[:,0],xy_top[:,0]),axis=1)
-# xy_in_N = turbigen.util.interpolate_curve_1d(xy12_in_N, np.linspace(0., 1., nk1))
-# xy12_out_N = np.stack((xy_top_match[:,-1],xy_top[:,-1]),axis=1)
-# xy_out_N = turbigen.util.interpolate_curve_1d(xy12_out_N, np.linspace(0., 1., nk1))
-#
-#
-# print(xy_top.shape)
-# print(xy_top_match.shape)
-# xy_N = turbigen.util.interpolate_transfinite(
-#         (
-#             xy_top_match,
-#             xy_in_N,
-#             xy_top,
-#             xy_out_N,
-#         )
-# )
-#
-# # xy_in_W = turbigen.util.interpolate_curve_1d(
-# # print(isplit)
-# # fig, ax = plt.subplots()
-# # ax.plot(ang)
-# # ax.plot(np.arange(len(ang))[isplit],ang[isplit],'kx')
-# # plt.show()
-#
+
+g = turbigen.grid.from_mesh2d_xrt(b_all, conn, c_iin.ds.mean(), pitch)
+g.check_coordinates()
+
+# Now apply boundary conditions
+g['inlet'].add_patch(turbigen.grid.InletPatch(i=0))
+g['outlet'].add_patch(turbigen.grid.OutletPatch(i=-1))
+
+Po1 = 1e5
+To1 = 300.
+cp = 1005.
+ga = 1.4
+mu = 1.84e-5
+Tu0 = 300.
+Alpha1 = 0.
+Beta = 0.
+Ma1 = 0.5
+
+
+# Set inlet Ma to get inlet static state
+V = cf.V_cpTo_from_Ma(Ma1, ga) * np.sqrt(cp * To1)
+P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
+T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
+
+
+# Boundary conditions
+So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
+So1.set_P_T(Po1, To1)
+So1.set_Tu0(Tu0)
+g.apply_inlet(So1, Alpha1, Beta)
+g.calculate_wall_distance()
+g.apply_outlet(P1)
+
+# Initial guess
+for b in g:
+    b.Vx = V
+    b.Vr = 0.0
+    b.Vt = 0.0
+    b.cp = cp
+    b.gamma = ga
+    b.mu = mu
+    b.Omega = 0.0
+    b.set_P_T(P1, T1)
+    b.set_Tu0(Tu0)
+
+settings = {
+    "i_loss": 0,
+    "n_step": 20000,
+    "n_step_avg": 2000,
+    "n_step_log": 100,
+    "plot_conv": True,
+}
+turbigen.solvers.embsolve.run(g, settings)
+
+# jplot = 5
+
 # fig, ax = plt.subplots()
-# # ax.plot(*xyu, '-x')
-# print(xyso.shape)
-# ax.plot(*xyso, 'k-')
-# ax.plot(*xyso.transpose(0,2,1), 'k-')
-# ax.plot(*xyso[:,isplit,-1], 'bs')
-# ax.plot(*xy_WNW, '.-')
-# ax.plot(*xy_ENE, '.-')
-# ax.plot(*xy_ESE, '.-')
-# ax.plot(*xy_WSW, '.-')
-# ax.plot(*xy_top, 'r.-')
-#
-# ax.plot(*xy_N, 'k-')
-# ax.plot(*xy_N.transpose(0,2,1), 'k-')
-#
-# # ax.plot(*xy_top_match, 'r.-')
-# # ax.plot(*xy_bot, 'b.-')
-# # ax.plot(*xy_in_N, 'm.-')
-# # ax.plot(*xy_out_N, 'm.-')
-#
-# # ax.plot(xlim, pitch2/2, 'k-')
-# # ax.plot(xlim, -pitch2/2, 'k-')
+# C = g['omesh'][:,jplot,0]
+# ax.plot(C.x, C.P)
+# plt.show()
+
+
+# fig, ax = plt.subplots()
+# levP = np.linspace(P1*0.8, Po1, 17)
+# for b in g:
+#     C = b[:,jplot,:]
+#     ax.contourf(C.x, C.rt, C.P, levP)
+# ax.axis('equal')
+
+# fig, ax = plt.subplots()
+# levw = np.linspace(0., 0.1*pitch, 17)
+# for b in g:
+#     C = b[:,jplot,:]
+#     ax.contourf(C.x, C.rt, C.w, levw)
+# for c in c_all:
+#     c.plot(ax)
 # ax.axis('equal')
 # plt.show()
-#
+

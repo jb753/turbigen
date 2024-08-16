@@ -153,7 +153,9 @@ class SolverBlock:
         self.pitch = block.pitch
 
         # Geometry
+        self.x = to_fort(block.x)
         self.r = to_fort(block.r)
+        self.t = to_fort(block.t)
         self.rf = [to_fort(r) for r in block.r_face]
 
         self.rc = to_fort(np.zeros_like(block.vol))
@@ -824,6 +826,22 @@ def get_periodic_data(patch):
         t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
         assert np.allclose(t1, t2)
 
+    # Check we have the correct number of points
+    npt = patch.get_cut().to_unstructured().shape[0]
+    assert ijk.shape[1] == npt
+    assert nxijk.shape[1] == npt
+
+    # Check the indices are in correct range
+    assert ijk.min() >= 0
+    assert ijk[0].max() < b1.ni
+    assert ijk[1].max() < b1.nj
+    assert ijk[2].max() < b1.nk
+
+    assert nxijk.min() >= 0
+    assert nxijk[0].max() < b2.ni
+    assert nxijk[1].max() < b2.nj
+    assert nxijk[2].max() < b2.nk
+
     # For Fortran
     ijk = np.asfortranarray(ijk + 1).astype(np.int16)
     nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
@@ -936,6 +954,14 @@ def exchange_cons(blocks, bid_local, periodics, rf):
         if nxprocid == rank:
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
+
+            # # print(ijk.shape)
+            # # quit()
+            # for ipt in range(ijk.shape[0]):
+            #     i1, j1, k1 = ijk[:,ipt]-1
+            #     i2, j2, k2 = nxijk[:,ipt]-1
+            #     assert np.isclose(b1.r[i1, j1, k1], b2.r[i2, j2, k2])
+            #     assert np.isclose(b1.x[i1, j1, k1], b2.x[i2, j2, k2])
 
             embsolve.average_by_ijk(v1, v2, ijk, nxijk, rf)
 

@@ -20,7 +20,7 @@ def make_sector():
     r2 = rm + dr / 2.0
 
     nj = 5
-    ni = 7
+    ni = 9
     nk = 7
 
     Nb = int(2.0 * np.pi * rm / dr)
@@ -147,7 +147,7 @@ def test_gap():
     xrt, Nb = make_sector()
 
     ile = 2
-    ite = 4
+    ite = 5
 
     patches = [
         turbigen.grid.InletPatch(i=0),
@@ -170,10 +170,12 @@ def test_gap():
 
     iwall, jwall, kwall, wall = block.get_wall()
 
+    print(g[0].shape)
     assert not iwall.any()
     assert jwall[:, 0, :].all()
     assert jwall[:, -1, :].all()
     assert not jwall[:, 1:-1, :].any()
+    print(kwall[ile:(ite+1), :, 0])
     assert kwall[ile:ite, :, 0].all()
     assert kwall[ile:ite, :, -1].all()
     assert not kwall[:ile, :, 0].any()

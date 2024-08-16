@@ -235,7 +235,7 @@ DEFAULT_CONFIG = {
     "interpolation_extend_fac": 0.5,
     "interpolation_time_step_fac": 0.1,
     "istep_avg_start": 4000,
-    # "jacobian_diagonal_fac": 0.3,
+    "halo_implementation": 1,
     "kappa2": 1.0,
     "kappa4": 1.0 / 128.0,
     "mixing_alpha": 1.0,
