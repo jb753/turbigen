@@ -502,6 +502,8 @@ class Conn:
     flip: bool
 
     def __post_init__(self):
+        self.st = int(self.st)
+        self.en = int(self.en)
         if self.st >= self.en:
             raise Exception(f"Conn bad indices {self.st}>={self.en}")
 
@@ -644,12 +646,17 @@ def find_periodic(b1, b2, pitch, ax):
                 continue
 
             # Compare the nodes on each edge
-            i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+            # i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+            i1, i2 = util.intersect_indices(c1.xy, c2.xy, ds)
 
             # Only consider connections involving multiple elements
-            # (Ignore single points and len(2) repeated single points)
-            if len(i1) <= 2:
-                continue
+            if len(i1) <= 1:
+
+                # Check if there are any periodic matches
+                i1, i2 = util.intersect_indices(c1.xy_mod(pitch), c2.xy_mod(pitch), ds)
+
+                if len(i1) <= 1:
+                    continue
 
             # Add to plot
             if ax:
@@ -659,6 +666,25 @@ def find_periodic(b1, b2, pitch, ax):
             # Convert the lists of indices into continous segments
             # with start and end points, and record if a flip is needed
             start, end, flip = get_st_en_new(i1, i2)
+
+            # If one of the blocks is closed, and we patch over the repeated
+            # point, then we also need to repeat in the patching
+            # This is a more straightforward way to deal with the problem
+            # than allowing for one-many point matching
+            # TODO implement this for other edge and direction combinations
+            if e1 == Edge.nj and b1[:, -1].is_closed and (0 in start[0]):
+                # Find ending index of ni-2, which is the segment that
+                # needs to be extended to ni-1 to close the curve
+                iend = np.where(end[0] == (b1.ni - 2))
+
+                # Do the extension on b1
+                end[0][iend] += 1
+
+                # Now we must also extend the b2 connection
+                if flip[iend]:
+                    start[1][iend] -= 1
+                else:
+                    start[1][iend] += 1
 
             # Now loop over the segments that join these blocks
             # And store the connectivity information
@@ -708,6 +734,13 @@ def find_periodics(blocks, pitch=None, ax=None):
         for ib2 in range(ib1, nb):
             conn.extend(find_periodic(blocks[ib1], blocks[ib2], pitch, ax))
 
+    # Remove reversed repeats
+    nconn = len(conn)
+    for iconn in reversed(range(nconn)):
+        crev = tuple(reversed(conn[iconn]))
+        if crev in conn:
+            conn.pop(iconn)
+
     return conn
 
 
@@ -728,20 +761,3 @@ def get_st_en(ind, n, flip):
     if flip:
         st, en = en, st
     return tuple(zip(st, en))
-
-
-# x = np.array([1,2,3,5,6,7])
-# print(x)
-# print(get_st_en(x, 10))
-# quit()
-
-
-# def find_periodic(blocks, pitch):
-#     pass
-
-# periodics = []
-# nb = len(blocks)
-# for n in range(nb):
-#     for m in range(nb):
-#         ind_match = np.where(blocks
-#

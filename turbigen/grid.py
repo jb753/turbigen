@@ -269,14 +269,21 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             # kwall[ist:ien, jst : jen, kst : ken] += 1
 
             if patch.cdir == 0:
-                iwall[ist:ien, jst:jen, kst:ken] += 1
-                # iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+                # iwall[ist:ien, jst:jen, kst:ken] += 1
+                iwall[ist:ien, jst : (jen - 1), kst : (ken - 1)] += 1
+                # print(f'Setting iwall for {patch}')
+                # print(patch.block.shape)
+                # print(ijk_lim)
+                # kwall[ist:ien, jst:jen, kst:ken] += 1
             elif patch.cdir == 1:
-                jwall[ist:ien, jst:jen, kst:ken] += 1
-                # jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
+                # jwall[ist:ien, jst:jen, kst:ken] += 1
+                jwall[ist : (ien - 1), jst:jen, kst : (ken - 1)] += 1
             elif patch.cdir == 2:
-                kwall[ist:ien, jst:jen, kst:ken] += 1
-                # kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
+                # print(f'Setting kwall for {patch}')
+                # print(patch.block.shape)
+                # print(ijk_lim)
+                # kwall[ist:ien, jst:jen, kst:ken] += 1
+                kwall[ist : (ien - 1), jst : (jen - 1), kst:ken] += 1
 
         # Now distribute the face not-wallness to the nodes
         wall = np.zeros((ni, nj, nk), dtype=int)
