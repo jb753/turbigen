@@ -607,6 +607,7 @@ class Grid:
         for b in self:
             if b.label == label:
                 return b
+        raise KeyError(f'label "{label}" not found in grid')
 
     def find_patches(self, cls):
         patches = []
@@ -665,6 +666,8 @@ class Grid:
                         if P1 is P2:  # or p1.match or p2.match:
                             continue
                         elif P1.check_match(P2):
+                            # Now verify that reference frame angular
+                            # velocity is the same on each side
                             break
                     except Exception as e:
                         logger.info("Error checking match:")
@@ -1322,7 +1325,16 @@ class PeriodicPatch(Patch):
     cartesian = False
 
     def check_match(self, other, rtol=1e-4):
-        return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
+        is_match = _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
+        if is_match:
+            Omega = [P.block.Omega.mean() for P in [self, other]]
+            if not np.isnan(Omega).any() and not np.isclose(*Omega):
+                raise Exception(
+                    f"Reference frame angular velocites {Omega} does not match across {self} and {other}"
+                )
+            return True
+        else:
+            return False
 
     def get_match_perm_flip(self):
         # We need to establise a permutation order and set of flips that will

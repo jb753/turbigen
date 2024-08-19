@@ -62,9 +62,8 @@ def _write_blade(f, bld, nspan, nchord):
         1, 2, 3, 0
     )
 
-    # Join into an 'o-grid', dropping a point at LE to avoid repeats
     xrt = np.concatenate((xrt_ul[0, :, :-1, :], np.flip(xrt_ul[1], axis=1)), axis=1)
-    assert np.allclose(xrt[:,0,:],xrt[:,-1,:])
+    assert np.allclose(xrt[:, 0, :], xrt[:, -1, :])
 
     # Convert to Cartesian
     y = xrt[1] * np.cos(xrt[2])
