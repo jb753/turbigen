@@ -21,8 +21,8 @@ class BaseSolver:
     soft_start: bool = False
     """Run a robust initial guess solution first, then restart."""
 
-    _ntask: int = 1  # Number of tasks for parallel executeion
-    _nnode: int = 1  # Number of nodes for parallel executeion
+    ntask: int = 1  # Number of tasks for parallel executeion
+    nnode: int = 1  # Number of nodes for parallel executeion
     _name: str = "base"
 
     def _robust(self):
@@ -33,7 +33,7 @@ class BaseSolver:
         """Validate the input data"""
         if not os.path.isdir(self.workdir):
             raise Exception(f"Working directory {self.workdir} does not exist")
-        if self._ntask < 1:
+        if self.ntask < 1:
             raise Exception(f"ntask={self._ntask} should be > 0")
-        if self._nnode < 1:
+        if self.nnode < 1:
             raise Exception(f"nnode={self._nnode} should be > 0")

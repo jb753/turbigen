@@ -57,13 +57,13 @@ class Config(BaseSolver):
     nstep_ts3: int = 0
     """Number of steps for a Turbostream 3 initial guess"""
 
-    spf_probe = []
+    spf_probe: list = None
     """List of span fractions to place probes."""
 
-    point_probe = []
+    point_probe: list = None
     """Specify point probes."""
 
-    logical_probe = []
+    logical_probe: list = None
     """Specify logical probes."""
 
     tables_path: str = ""
@@ -108,14 +108,14 @@ class Config(BaseSolver):
     interpolation_update: int = 1  # 1 to freeze interpolating plane posn
 
     def _robust(self):
-        """Laminar,"""
+        """Explicit with a slow CFL ramp."""
         conf = copy(self)
-        conf.viscous_model = 1
         conf.implicit_scheme = 0
         conf.cfl = 3.5
-        conf.cfl_ramp_nstep = 2000
         conf.cfl_ramp_st = 0.1
-        conf.nstep = 2000
+        conf.nstep = 5000
+        conf.cfl_ramp_nstep = conf.nstep
+        conf.nstep_avg = 50
         return conf
 
     @property
@@ -581,7 +581,7 @@ def run(grid, ts4_conf, machine):
 
     _write_ofp(ts4_conf.config_path, ofp)
 
-    ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir).robust()
+    ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir)._robust()
 
     # Get number of GPUs from environment var
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))
