@@ -912,12 +912,21 @@ class Grid:
     def run(self, settings, machine):
         """Run a solver on the grid, prescribing some settings."""
 
-        # Dynamically import the solver and run
-
+        # Obtain a solver configuration object of the correct type
         settings_copy = settings.copy()
         solver_type = settings_copy.pop("type")
         solver = importlib.import_module(f".{solver_type}", package="turbigen.solvers")
-        return solver.run(self, settings_copy, machine)
+        solver_conf = solver.Config(**settings_copy)
+
+        # If soft start then run the robust config first
+        if solver_conf.soft_start:
+            logger.info("Soft start...")
+            solver_conf_robust = solver_conf._robust()
+            solver.run(self, solver_conf_robust, machine)
+            self.update_outlet()
+            logger.info("Accurate solution...")
+
+        solver.run(self, solver_conf, machine)
 
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""

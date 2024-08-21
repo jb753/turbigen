@@ -1,7 +1,10 @@
 """Functions to write, run, and read for the Turbostream 3 solver."""
 
 import numpy as np
+from copy import copy
 from timeit import default_timer as timer
+from dataclasses import dataclass
+from pathlib import Path
 import turbigen.grid
 import turbigen.solvers.ts3
 import h5py
@@ -19,40 +22,39 @@ from turbigen.solvers.base import BaseSolver
 logger = turbigen.util.make_logger()
 
 
-class TS4Config(BaseSolver):
+@dataclass
+class Config(BaseSolver):
     """Settings with default values for the TS4 solver."""
 
-    _name = "TS4"
+    _name = "ts4"
+    environment_script: Path = Path(
+        "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
+    )
 
-    cfl = 25.0
+    cfl: float = 25.0
     """Courant--Friedrichs--Lewy number, reduce for more stability."""
 
-    cfl_ramp_nstep = 500
+    cfl_ramp_nstep: int = 500
     """Ramp the CFL number up over the first `cfl_ramp_nstep` steps."""
 
-    cfl_ramp_st = 1.0
+    cfl_ramp_st: int = 1.0
     """Starting value for CFL ramp."""
 
-    custom_pipeline = ""
+    custom_pipeline: str = ""
     """Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run
     using pvpython and take two command-line arguments like `pvpython
     custom_pipeline.py input_ts3.hdf5 input_ts4`"""
 
-    environment_script = (
-        "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
-    )
-    """Setup environment shell script to be sourced before running."""
-
-    implicit_scheme = 1
+    implicit_scheme: int = 1
     """Whether to use implicit time-marching scheme."""
 
-    nstep = 5000
+    nstep: int = 5000
     """Number of time steps for the calculation."""
 
-    nstep_avg = 1000
+    nstep_avg: int = 1000
     """Number of time steps to average over."""
 
-    nstep_ts3 = 0
+    nstep_ts3: int = 0
     """Number of steps for a Turbostream 3 initial guess"""
 
     spf_probe = []
@@ -64,45 +66,57 @@ class TS4Config(BaseSolver):
     logical_probe = []
     """Specify logical probes."""
 
-    tables_path = ""
+    tables_path: str = ""
     """Path to gas tables for real working fluids."""
 
-    body_force_template = ""
+    body_force_template: str = ""
     """Path to a body_force.ofp definition file template."""
 
     body_force_params = {}
     """Parameters to be added to body force template."""
 
-    viscous_model = 2
+    viscous_model: int = 2
     """Turbulence model, 0 for inviscid, 1 for laminar, 2 for Spalart-Allmaras."""
 
-    outlet_tag = "Outlet"
+    outlet_tag: str = "Outlet"
     """Identifier string for the outlet patch."""
 
-    monitor_script = ""
+    monitor_script: str = ""
     """Path to a monitoring script, given the workdir as an argument."""
 
-    area_avg_pout = True
+    area_avg_pout: bool = True
 
-    pout_fac_ramp_nstep = 0
+    pout_fac_ramp_nstep: int = 0
 
-    inlet_relax_fac = 0.5
-    nstep_save_start_probe_1d = 0
-    nstep_save_probe_1d = 100
-    nstep_save_start_probe_2d = 0
-    nstep_save_probe_2d = 100
-    cfl_turb_fac = 0.5
+    inlet_relax_fac: float = 0.5
+    nstep_save_start_probe_1d: int = 0
+    nstep_save_probe_1d: int = 100
+    nstep_save_start_probe_2d: int = 0
+    nstep_save_probe_2d: int = 100
+    cfl_turb_fac: float = 0.5
 
-    plot_conv = True
-    precon = 0
-    precon_fac_ramp_nstep = 100
-    precon_fac_ramp_st = 0.1
-    precon_fac_ramp_en = 1.0
-    precon_sigma_pgr = 3.0
+    plot_conv: bool = True
 
-    halo_implementation = 1
+    precon: int = 0
+    precon_fac_ramp_nstep: int = 100
+    precon_fac_ramp_st: float = 0.1
+    precon_fac_ramp_en: float = 1.0
+    precon_sigma_pgr: float = 3.0
 
-    interpolation_update = 1  # 1 to freeze interpolating plane posn
+    halo_implementation: int = 1
+
+    interpolation_update: int = 1  # 1 to freeze interpolating plane posn
+
+    def _robust(self):
+        """Laminar,"""
+        conf = copy(self)
+        conf.viscous_model = 1
+        conf.implicit_scheme = 0
+        conf.cfl = 3.5
+        conf.cfl_ramp_nstep = 2000
+        conf.cfl_ramp_st = 0.1
+        conf.nstep = 2000
+        return conf
 
     @property
     def config_path(self):
@@ -505,9 +519,8 @@ probe_list.append(p)
         f.writelines(pstr)
 
 
-def run(grid, settings, machine):
+def run(grid, ts4_conf, machine):
     """Write, run, and read TS4 results for a grid object, specifying some settings."""
-    ts4_conf = TS4Config(**settings)
 
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
     output_file_path = os.path.join(ts4_conf.workdir, "output_ts4.hdf5")
@@ -518,7 +531,7 @@ def run(grid, settings, machine):
             logger.info("Skipping running, loading previous solution.")
             _read_flow(grid, output_file_path, output_avg_file_path)
             # Write out for debugging
-            ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir)
+            ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir)
             turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
         else:
             logger.info("Skipping running, keeping initial guess.")
@@ -568,7 +581,7 @@ def run(grid, settings, machine):
 
     _write_ofp(ts4_conf.config_path, ofp)
 
-    ts3_conf = turbigen.solvers.ts3.TS3Config(workdir=ts4_conf.workdir).robust()
+    ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir).robust()
 
     # Get number of GPUs from environment var
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))

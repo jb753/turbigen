@@ -54,4 +54,5 @@ solver:
   nstep: 5000
   nstep_avg: 1000
   rtol_mdot: 0.02
+  soft_start: true
   # ...
