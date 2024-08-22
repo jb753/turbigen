@@ -1,6 +1,7 @@
 """Functions to write, run, and read for the Turbostream 3 solver."""
 
 from time import sleep
+from dataclasses import dataclass
 from timeit import default_timer as timer
 import shutil
 import h5py
@@ -9,6 +10,7 @@ import turbigen.grid
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
+from pathlib import Path
 import signal
 import sys
 import re
@@ -22,82 +24,84 @@ import turbigen.util
 logger = turbigen.util.make_logger()
 
 
-class TS3Config(BaseSolver):
-    _name = "TS3"
+@dataclass
+class Config(BaseSolver):
 
-    atol_eta = 0.005
-    """Absolute tolerance on drift in isentropic efficiency."""
-
-    cfl = 0.4
-    """Courant--Friedrichs--Lewy number, reduce for more stability."""
-
-    dampin = 25.0
-    """Negative feedback factor, reduce for more stability."""
-
-    environment_script = (
+    # Override base attributes
+    _name = "ts3"
+    environment_script: Path = Path(
         "/usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100"
     )
-    """Setup environment shell script to be sourced before running."""
 
-    facsecin = 0.005
+    atol_eta: float = 0.005
+    """Absolute tolerance on drift in isentropic efficiency."""
+
+    cfl: float = 0.4
+    """Courant--Friedrichs--Lewy number, reduce for more stability."""
+
+    dampin: float = 25.0
+    """Negative feedback factor, reduce for more stability."""
+
+    facsecin: float = 0.005
     """Fourth-order smoothing feedback factor, increase for more stability."""
 
-    fmgrid = 0.2
+    fmgrid: float = 0.2
     """Multigrid factor, reduce for more stability."""
 
-    ilos = 2
-    """Turbulence model, 1 for mixing-length, 2 for Spalart-Allmaras."""
+    ilos: int = 2
+    """Viscous model, 0 for inviscid, 1 for mixing-length, 2 for Spalart-Allmaras."""
 
-    Lref_xllim = "pitch"
+    Lref_xllim: str = "pitch"
     """Mixing length characteristic dimension, "pitch" or "span"."""
 
-    nchange = 2000
+    nchange: int = 2000
     """At start of simulation, ramp smoothing and damping over this many time steps."""
 
-    nstep = 10000
+    nstep: int = 10000
     """Number of time steps."""
 
-    nstep_avg = 5000
+    nstep_avg: int = 5000
     """Average over the last `nstep_avg` steps of the calculation."""
 
-    rfmix = 0.0
-    """Mixing plane relaxation factor, reduce for more stability."""
+    rfmix: float = 0.0
+    """Mixing plane relaxation factor."""
 
-    rtol_mdot = 0.01
+    rtol_mdot: float = 0.01
     """Relative tolerance on mass flow conservation error and drift."""
 
-    sfin = 0.5
+    sfin: float = 0.5
     """Proportion of second-order smoothing, increase for more stability."""
 
-    tvr = 10.0
+    tvr: float = 10.0
     """Initial guess of turbulent viscosity ratio."""
 
-    xllim = 0.03
+    xllim: float = 0.03
     """Mixing length limit as a fraction of characteristic dimension."""
 
-    ipout = 3
-    convert_sliding = False
-    smooth_scale_precon_option = 0
-    smooth_scale_dts_option = 0
-    rfin = 0.5
-    precon = 0
-    nstep_soft = 0
-    dts = 0
-    nstep_cycle = 72
-    nstep_inner = 200
-    ncycle = 0
-    frequency = 0.0
-    fac_sa_step = 1.0
-    nstep_save_probe = 0
-    nstep_save_start_probe = 0
-    xllim_free = 0.1
-    free_turb = 0.05
+    rfin: float = 0.5
+    """Inlet relaxation factor, reduce for low-Mach flows."""
 
-    adaptive_smoothing = 1
+    nstep_soft: int = 0
+    """Number of steps for soft start precursor simulation."""
 
-    sa_helicity_option = 0
-    sa_ch1 = 0.71
-    sa_ch2 = 0.6
+    sa_helicity_option: int = 0
+    """Spalart--Allmaras turbulence model helicity correction."""
+
+    ipout: int = 3
+    convert_sliding: bool = False
+    precon: int = 0
+    dts: int = 0
+    nstep_cycle: int = 72
+    nstep_inner: int = 200
+    ncycle: int = 0
+    frequency: float = 0.0
+    nstep_save_probe: int = 0
+    nstep_save_start_probe: int = 0
+    xllim_free: float = 0.1
+    free_turb: float = 0.05
+
+    sa_ch1: float = 0.71
+    sa_ch2: float = 0.6
 
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
@@ -157,15 +161,9 @@ class TS3Config(BaseSolver):
 
         return bv
 
-    def check(self):
-        # """Raise an error if this config will not work."""
-        if not os.path.isdir(self.workdir):
-            raise Exception(f"Working directory {self.workdir} does not exist")
-        if not os.path.isfile(self.environment_script):
-            raise Exception(f"Env script {self.environment_script} does not exist")
+    def _robust(self):
+        """Increase damping and smoothing, lower CFL, and use mixing-length model."""
 
-    def robust(self):
-        # """Derive a new config based on this instance with improved robustness."""
         c = copy(self)
         c.ilos = 1
         c.dampin = 3.0
@@ -178,17 +176,8 @@ class TS3Config(BaseSolver):
         c.dts = 0
         if c.nstep_soft:
             c.nstep = c.nstep_soft
+
         return c
-
-
-def _get_time_vector(ts3_config):
-    freq = ts3_config.frequency
-    nstep_cycle = ts3_config.nstep_cycle
-    nt = nstep_cycle * ts3_config.ncycle
-    it = np.arange(nt)
-    dt = 1.0 / freq / nstep_cycle
-    t = it * dt
-    return t
 
 
 # Block attributes that must be present
@@ -362,18 +351,14 @@ DEFAULT_BV = {
     "jtrans": 0,
     "jtrans_i1_en": 0,
     "jtrans_i1_frac": 0.0,
-    "jtrans_i1_frac": 0.0,
     "jtrans_i1_st": 0,
     "jtrans_i2_en": 0,
-    "jtrans_i2_frac": 0.0,
     "jtrans_i2_frac": 0.0,
     "jtrans_i2_st": 0,
     "jtrans_k1_en": 0,
     "jtrans_k1_frac": 0.0,
-    "jtrans_k1_frac": 0.0,
     "jtrans_k1_st": 0,
     "jtrans_k2_en": 0,
-    "jtrans_k2_frac": 0.0,
     "jtrans_k2_frac": 0.0,
     "jtrans_k2_st": 0,
     "ktrans": 0,
@@ -690,7 +675,7 @@ def _get_wall_rpms(block):
     return dict(zip(keys, vals))
 
 
-def _write_hdf5(grid, ts3_config):
+def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
     """Using a given configuration, write grid object to an hdf5."""
 
     # Store old internal energy datum
@@ -706,7 +691,7 @@ def _write_hdf5(grid, ts3_config):
     for irow, row_block in enumerate(grid.row_blocks):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
-    input_file_path = os.path.join(ts3_config.workdir, "input.hdf5")
+    input_file_path = os.path.join(ts3_config.workdir, fname)
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet
@@ -794,44 +779,6 @@ def _write_hdf5(grid, ts3_config):
 
             # Patch properties
             for name, val in _patch_properties(patch).items():
-                # Make boundary conditions unsteady if needed
-                if isinstance(patch, turbigen.grid.InletPatch):
-                    if force_type := patch.force_type:
-                        t = _get_time_vector(ts3_config)
-                        nt = len(t)
-                        F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
-                        ).reshape(1, 1, 1, nt)
-                        ga = patch.state.gamma
-
-                        if force_type == "isentropic":
-                            Po_Poav = F
-                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
-                        elif force_type == "entropic":
-                            Po_Poav = np.ones_like(F)
-                            To_Toav = F
-                        else:
-                            raise Exception(f"Unknown inlet forcing type {force_type}")
-
-                        val = np.expand_dims(val, 3)
-                        if name == "pstag":
-                            val = val * Po_Poav
-                        elif name == "tstag":
-                            val = val * To_Toav
-                        else:
-                            val = np.tile(val, (1, 1, 1, nt))
-
-                        pa["nt"] = nt
-
-                if isinstance(patch, turbigen.grid.OutletPatch):
-                    if patch.force:
-                        t = _get_time_vector(ts3_config)
-                        F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
-                        ).reshape(1, 1, 1, -1)
-                        val = np.expand_dims(val, 3) * F
-                        pa["nt"] = len(t)
-
                 _write_property(patch_group, name, "_pp", val, flat=True)
 
             patch_group.attrs.update(pa)
@@ -1076,11 +1023,15 @@ def _run(grid, ts3_config):
     _read_hdf5(grid, ts3_config)
 
 
-def run(grid, settings, machine):
-    """Write, run, and read TS3 results for a grid object, specifying some settings."""
+def run(grid, ts3_conf, machine):
+    """Write, run, and read TS3 results for a grid object, specifying some settings.
 
-    # Apply settings to the default configuration
-    ts3_conf = TS3Config(**settings)
+    Parameters
+    ----------
+    grid
+    ts3_conf
+    machine
+    """
 
     # Check that the user is a member of the turbostream group
     try:
@@ -1135,17 +1086,17 @@ def run(grid, settings, machine):
         _read_hdf5(grid, ts3_conf)
         return
 
-    # Do a robust calculation and update the outlet throttle pressure
-    if ts3_conf.soft_start:
-        logger.info("Soft start...")
-        ts3_conf_robust = ts3_conf.robust()
-        _run(grid, ts3_conf_robust)
-        log_path = os.path.join(ts3_conf.workdir, "log.txt")
-        log_new_path = os.path.join(ts3_conf.workdir, "log_soft.txt")
-        shutil.copy(log_path, log_new_path)
-        grid.update_outlet()
-        logger.info("Accurate solution...")
-
+    # # Do a robust calculation and update the outlet throttle pressure
+    # if ts3_conf.soft_start:
+    #     logger.info("Soft start...")
+    #     ts3_conf_robust = ts3_conf.robust()
+    #     _run(grid, ts3_conf_robust)
+    #     log_path = os.path.join(ts3_conf.workdir, "log.txt")
+    #     log_new_path = os.path.join(ts3_conf.workdir, "log_soft.txt")
+    #     shutil.copy(log_path, log_new_path)
+    #     grid.update_outlet()
+    #     logger.info("Accurate solution...")
+    #
     _run(grid, ts3_conf)
 
     # Produce a warning if the outlet is choked

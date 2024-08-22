@@ -44,7 +44,8 @@ class OHMeshConfig(BaseConfig):
     refine_factor = 0
     """Divide each edge into 2**(refine_factor) sub-edges."""
 
-    fix_h_blocks = True
+    fix_h_inlet = True
+    fix_h_outlet = True
 
     wake_control = False
     wake_deviation = 0.0
@@ -105,7 +106,8 @@ class OHMeshConfig(BaseConfig):
         return {
             "verbose": True,
             "is_cascade": False,
-            "fix_h_blocks": self.fix_h_blocks,
+            "fix_h_inlet": self.fix_h_inlet,
+            "fix_h_outlet": self.fix_h_outlet,
             "nrow": nrow,
             "inlet_bulb": self.inlet_bulb,
             "nx_up": self.ni_inlet,

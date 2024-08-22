@@ -46,6 +46,7 @@ solver:
   type: ts4
   nstep_avg: 200
   nstep: 1000
+  soft_start: true
 
 mesh:
   type: h

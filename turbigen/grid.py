@@ -607,6 +607,7 @@ class Grid:
         for b in self:
             if b.label == label:
                 return b
+        raise KeyError(f'label "{label}" not found in grid')
 
     def find_patches(self, cls):
         patches = []
@@ -665,6 +666,8 @@ class Grid:
                         if P1 is P2:  # or p1.match or p2.match:
                             continue
                         elif P1.check_match(P2):
+                            # Now verify that reference frame angular
+                            # velocity is the same on each side
                             break
                     except Exception as e:
                         logger.info("Error checking match:")
@@ -909,12 +912,21 @@ class Grid:
     def run(self, settings, machine):
         """Run a solver on the grid, prescribing some settings."""
 
-        # Dynamically import the solver and run
-
+        # Obtain a solver configuration object of the correct type
         settings_copy = settings.copy()
         solver_type = settings_copy.pop("type")
         solver = importlib.import_module(f".{solver_type}", package="turbigen.solvers")
-        return solver.run(self, settings_copy, machine)
+        solver_conf = solver.Config(**settings_copy)
+
+        # If soft start then run the robust config first
+        if solver_conf.soft_start:
+            logger.info("Soft start...")
+            solver_conf_robust = solver_conf._robust()
+            solver.run(self, solver_conf_robust, machine)
+            self.update_outlet()
+            logger.info("Accurate solution...")
+
+        solver.run(self, solver_conf, machine)
 
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""
@@ -1322,7 +1334,16 @@ class PeriodicPatch(Patch):
     cartesian = False
 
     def check_match(self, other, rtol=1e-4):
-        return _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
+        is_match = _get_patch_connectivity(self, other, corners_only=False, rtol=rtol)
+        if is_match:
+            Omega = [P.block.Omega.mean() for P in [self, other]]
+            if not np.isnan(Omega).any() and not np.isclose(*Omega):
+                raise Exception(
+                    f"Reference frame angular velocites {Omega} does not match across {self} and {other}"
+                )
+            return True
+        else:
+            return False
 
     def get_match_perm_flip(self):
         # We need to establise a permutation order and set of flips that will
@@ -1701,6 +1722,8 @@ def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="x
                 elif c.e == m2d.Edge.nj:
                     p = PeriodicPatch(i=(c.st, c.en), j=-1)
                 patches.append(p)
+        # Always need to be periodic in the extruded k direction
+        patches.extend([PeriodicPatch(k=0), PeriodicPatch(k=-1)])
         blocks_out.append(
             PerfectBlock.from_coordinates(b_in.extrude(zv), Nb, patches, label=l_in)
         )

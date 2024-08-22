@@ -63,7 +63,13 @@ def _make_argparser():
     parser.add_argument(
         "-J",
         "--no-job",
-        help="disable submission of cluster job",
+        help="disable submission of cluster job (when run on login node)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-j",
+        "--job",
+        help="enable submission of cluster job (when run on compute node)",
         action="store_true",
     )
     parser.add_argument(
@@ -196,7 +202,7 @@ def main():
     # Remove job config if we are on a compute node or cannot find sbatch
     if conf.job and not conf.hypercube:
         hostname = socket.gethostname()
-        if hostname.startswith("gpu"):
+        if hostname.startswith("gpu") and not args.job:
             logger.info(
                 f"Running on compute node {hostname}, declining to submit job to queue."
             )
@@ -221,3 +227,7 @@ def main():
 
     if not success:
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

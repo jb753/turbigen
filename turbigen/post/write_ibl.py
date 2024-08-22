@@ -55,20 +55,38 @@ def _write_curve(f, xyz):
 def _write_blade(f, bld, nspan, nchord):
 
     # Span fractions to write at, linearly spaced
-    spf = np.linspace(-0.05, 1.05, nspan)
+    spf = np.linspace(-0.01, 1.01, nspan)
 
     # Get pressure and suction sides
     xrt_ul = np.stack([bld.evaluate_section(spfi, nchord) for spfi in spf]).transpose(
         1, 2, 3, 0
     )
 
-    # Join into an 'o-grid', dropping a point at LE to avoid repeats
-    xrt = np.concatenate((xrt_ul[0, :, 1:, :], np.flip(xrt_ul[1], axis=1)), axis=1)
+    # Join pressure and suction sides into an o-grid
+    # Repeat the LE at both ends but drop one of the TE points
+    xrt = np.concatenate((xrt_ul[0, :, :-1, :], np.flip(xrt_ul[1], axis=1)), axis=1)
+
+    # Check that the curve is closed
+    assert np.allclose(xrt[:, 0, :], xrt[:, -1, :])
 
     # Convert to Cartesian
     y = xrt[1] * np.cos(xrt[2])
     z = xrt[1] * np.sin(xrt[2])
     xyz = np.stack((xrt[0], y, z))
+
+    # Fit a plane through central section to get a normal vector
+    nj = xyz.shape[2]
+    vec_norm = turbigen.util.fit_plane(xyz[:, :, nj // 2])
+    basis1, basis2 = turbigen.util.basis_from_normal(vec_norm)
+
+    # Project the points onto the plane basis
+    projected = turbigen.util.project_onto_plane(xyz, basis1, basis2)
+
+    # Verify that the signed area is same for all sections
+    area = np.array(
+        [turbigen.util.shoelace_formula(projected[..., j]) for j in range(nj)]
+    )
+    assert not np.diff(np.sign(area)).any()
 
     # Write 2D surface to file
     _write_surf(f, xyz)

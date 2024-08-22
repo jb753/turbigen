@@ -1222,26 +1222,30 @@ def interp1d_linear_extrap(x, y, axis=0):
         spline = scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
 
         # determine the slope at the left edge
-        leftx = spline.x[0]
+        leftx = np.atleast_1d(spline.x[0])
         lefty = spline(leftx)
-        leftslope = spline(leftx, nu=1).reshape(1, -1)
+        leftslope = spline(leftx, nu=1)
 
         # add a new breakpoint just to the left and use the
         # known slope to construct the PPoly coefficients.
         leftxnext = np.nextafter(leftx, leftx - 1)
-        leftynext = (lefty + leftslope * (leftxnext - leftx)).reshape(1, -1)
+        leftynext = lefty + leftslope * (leftxnext - leftx)
         Z = np.zeros_like(leftslope)
-        leftcoeffs = np.array([Z, Z, leftslope, leftynext])
-        spline.extend(leftcoeffs, np.r_[leftxnext])
+        leftcoeffs = np.expand_dims(
+            np.concatenate([Z, Z, leftslope, leftynext], axis=0), 1
+        )
+        spline.extend(leftcoeffs, leftxnext)
 
         # repeat with additional knots to the right
-        rightx = spline.x[-1]
+        rightx = np.atleast_1d(spline.x[-1])
         righty = spline(rightx)
-        rightslope = spline(rightx, nu=1).reshape(1, -1)
+        rightslope = spline(rightx, nu=1)
         rightxnext = np.nextafter(rightx, rightx + 1)
-        rightynext = (righty + rightslope * (rightxnext - rightx)).reshape(1, -1)
-        rightcoeffs = np.array([Z, Z, rightslope, rightynext])
-        spline.extend(rightcoeffs, np.r_[rightxnext])
+        rightynext = righty + rightslope * (rightxnext - rightx)
+        rightcoeffs = np.expand_dims(
+            np.concatenate([Z, Z, rightslope, rightynext]), axis=1
+        )
+        spline.extend(rightcoeffs, rightxnext)
 
     return spline
 
@@ -1275,3 +1279,58 @@ class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
         self.__dict__ = self
+
+
+def fit_plane(xyz):
+    """Find the normal vector of a flat surface fitted to the input points"""
+
+    # Center the curve around the origin
+    xyz = xyz - np.mean(xyz, axis=1, keepdims=True)
+
+    # Compute the covariance matrix of the centered points
+    covariance_matrix = np.cov(xyz)
+
+    # Compute the eigenvalues and eigenvectors
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance_matrix)
+
+    # The normal vector is the eigenvector corresponding to the smallest eigenvalue
+    normal_vector = eigenvectors[:, np.argmin(eigenvalues)]
+
+    return normal_vector
+
+
+def basis_from_normal(normal):
+
+    # Find two vectors orthogonal to the normal to form a basis for the plane
+    if np.allclose(normal, np.array([1, 0, 0])) or np.allclose(
+        normal, np.array([-1, 0, 0])
+    ):
+        basis1 = np.array([0, 1, 0])
+    else:
+        basis1 = np.cross(normal, np.array([1, 0, 0]))
+        basis1 /= np.linalg.norm(basis1)
+
+    basis2 = np.cross(normal, basis1)
+
+    return basis1, basis2
+
+
+def project_onto_plane(points, basis1, basis2):
+
+    # Center the curve around the origin
+    xyz_mean = np.mean(points, axis=1, keepdims=True)
+    points = points - xyz_mean
+
+    # Dot product over the first axis
+    def dot(a, b):
+        return np.einsum("i...,i...", a, b)
+
+    # Project the points onto the plane and express in the plane's basis
+    projected_points = np.stack((dot(points, basis1), dot(points, basis2)))
+
+    return projected_points
+
+
+def shoelace_formula(xy):
+    x, y = xy
+    return 0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
