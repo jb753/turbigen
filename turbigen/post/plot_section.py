@@ -43,6 +43,10 @@ def post(
 
         logger.info(f"Plotting section row={irow} at spf={spfrow}")
 
+        # Store section coordinates
+        sect_grid = []
+        sect_compare = []
+
         fig, ax = plt.subplots()
 
         # Loop over span fractions
@@ -103,6 +107,8 @@ def post(
                 # ax.plot(*yz, "-", label=f"spf={spf}")
 
             xoff = K_offset * (spf - 0.5) * np.ptp(x2)
+            # ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
+            sect_grid.append((x1, x2 + xoff))
 
             if compare:
                 if compare_dat := compare[irow]:
@@ -112,22 +118,6 @@ def post(
                         x2c = xrrt[2]
                     elif coord_sys == "yz":
                         tc = -xrrt[2] / xrrt[1]
-
-                        # Snap the theta
-                        # Current section
-                        # tmed_cut = np.mean([tc.min(), tc.max()])
-                        # tmed_dat = np.mean([surf.t.min(), surf.t.max()])
-                        # # Snap the radii
-
-                        # rmax = surf.r.max()
-                        # dr = rmax - rmin
-                        # xrrt[1] -= np.min(xrrt[1])
-                        # xrrt[1] *= dr / np.ptp(xrrt[1])
-                        # xrrt[1] += rmin
-
-                        # Offset the angle
-                        # tc += np.radians(t_offset)
-                        # tc += (tmed_dat - tmed_cut)
 
                         x1c = xrrt[1] * np.sin(tc)
                         x2c = xrrt[1] * np.cos(tc)
@@ -141,30 +131,33 @@ def post(
                     else:
                         pass
 
-                    # ax.plot(x1c, x2c + xoff, "x", color="k", ms=2)
-                    ax.plot(x1c, x2c + xoff, "x", color=f"C{ispf}", ms=2)
+                    # Shuffle and only select 100 points
+                    ishuf = list(range(len(x1c)))
+                    np.random.shuffle(ishuf)
+                    ishuf = ishuf[:1000]
+                    x1c = x1c[ishuf]
+                    x2c = x2c[ishuf]
 
-            ax.plot(x1, x2 + xoff, "-", label=f"spf={spf}")
+                sect_compare.append((x1c, x2c + xoff))
 
-            if coord_sys == "yz":
-                N = 50
-                rln = surf.r.min() * np.ones((N,))
-                tln = -np.linspace(surf.t.min(), surf.t.max(), N)
-                yln = rln * np.sin(tln)
-                zln = rln * np.cos(tln)
-                ax.plot(yln, zln, "k--")
+            # if coord_sys == "yz":
+            #     N = 50
+            #     rln = surf.r.min() * np.ones((N,))
+            #     tln = -np.linspace(surf.t.min(), surf.t.max(), N)
+            #     yln = rln * np.sin(tln)
+            #     zln = rln * np.cos(tln)
+            #     ax.plot(yln, zln, "k--")
 
-            # dt = surf.pitch * 0.2
-            # ax.set_ylim(tstag - dt, tstag + dt)
-            # ax.set_xlim(mstag - dt, mstag + dt)
-
-            # ax.plot(mpLE, xrtLE[2], "bx")
-
-            # ax.plot(mpcam, xrtcam[2], "m-")
+        # Now plot the compare sections first
+        if compare:
+            for ispf in range(len(spfrow)):
+                ax.plot(*sect_compare[ispf], "kx", ms=2)  # , color=f"C{ispf}", ms=2)
+        for ispf, spf in enumerate(spfrow):
+            ax.plot(*sect_grid[ispf], "-", color=f"C{ispf}")
 
         ax.legend()
         ax.set_aspect("equal", adjustable="box")
-        # ax.axis("off")
+        ax.axis("off")
 
         plotname = os.path.join(postdir, f"section_row_{irow}.pdf")
         plt.tight_layout(pad=0)
