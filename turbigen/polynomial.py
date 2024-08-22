@@ -380,7 +380,7 @@ class DesignSpace:
         extrapolate=True,
         fac_extrap=None,
         show_timing=False,
-        shuffle=True
+        shuffle=True,
     ):
         # Shuffle the designs
         if shuffle:
@@ -420,15 +420,10 @@ class DesignSpace:
         """Get fit coefficients for predictor of a variable by name."""
         # Look in cache, otherwise make a new fit
         if v not in self._polys:
-            if self.show_timing:
-                start = timer()
             y = self._get_y_train(v)
             ifit = np.logical_not(np.isnan(y))
             c = np.linalg.lstsq(self._A[ifit, :], y[ifit], rcond=None)[0]
             self._polys[v] = c
-            if self.show_timing:
-                stop = timer()
-                logger.info(f"Fitted {v} to {len(y)} points in {start-stop}")
         return self._polys[v]
 
     def _fit_eval(self, xi, v, der=None):
@@ -556,6 +551,7 @@ class DesignSpace:
         ifront = np.array(ifront).astype(int)
 
         return [self._train[i] for i in ifront]
+
 
 def _case(mean_line_type, mls, Nk, k, o, varname, independent):
     mtest, mtrain = turbigen.util.subsample_cases(mls, k, Nk)

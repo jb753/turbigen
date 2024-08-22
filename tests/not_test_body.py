@@ -221,27 +221,29 @@ for b in g:
 
 settings = {
     "i_loss": 0,
-    "n_step": 20000,
-    "n_step_avg": 2000,
+    "n_step": 40000,
+    "n_step_avg": 10000,
     "n_step_log": 100,
+    "nstep_damp": -1,
+    "i_scheme": 0,
+    "CFL": 0.4,
     "plot_conv": True,
 }
 turbigen.solvers.embsolve.run(g, settings)
 
-# jplot = 5
+jplot = 5
 
-# fig, ax = plt.subplots()
-# C = g['omesh'][:,jplot,0]
-# ax.plot(C.x, C.P)
-# plt.show()
+fig, ax = plt.subplots()
+C = g['omesh'][:,jplot,0]
+ax.plot(C.x, C.P)
 
 
-# fig, ax = plt.subplots()
-# levP = np.linspace(P1*0.8, Po1, 17)
-# for b in g:
-#     C = b[:,jplot,:]
-#     ax.contourf(C.x, C.rt, C.P, levP)
-# ax.axis('equal')
+fig, ax = plt.subplots()
+levP = np.linspace(P1*0.8, Po1, 17)
+for b in g:
+    C = b[:,jplot,:]
+    ax.contourf(C.x, C.rt, C.P, levP)
+ax.axis('equal')
 
 # fig, ax = plt.subplots()
 # levw = np.linspace(0., 0.1*pitch, 17)
@@ -251,5 +253,6 @@ turbigen.solvers.embsolve.run(g, settings)
 # for c in c_all:
 #     c.plot(ax)
 # ax.axis('equal')
-# plt.show()
+
+plt.show()
 

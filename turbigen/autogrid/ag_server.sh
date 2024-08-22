@@ -150,7 +150,7 @@ do
             fi
         else
             touch failed
-            echo "$WORKER---$(date -Iminutes): $SCR failed."
+            echo "$WORKER --- $(date -Iminutes): $SCR failed."
             cd ..
         fi
 
