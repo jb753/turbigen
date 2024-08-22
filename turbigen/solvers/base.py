@@ -1,41 +1,39 @@
 """Define the basic interface that all solvers must conform to."""
+from dataclasses import dataclass
+from pathlib import Path
+import os
 
 
+@dataclass
 class BaseSolver:
-    skip = False
+    """Settings and methods common to all solvers."""
+
+    workdir: Path
+    """Working directory to run the simulation in."""
+
+    environment_script: Path
+    """Setup environment shell script to be sourced before running."""
+
+    skip: bool = False
     """False to run the CFD as normal, True to write out initial guess and read
     back in, or use a previous solution if available."""
 
-    workdir = ""
-    """Working directory to run the simulation in."""
-
-    soft_start = False
+    soft_start: bool = False
     """Run a robust initial guess solution first, then restart."""
 
-    # Below non-user-facing attributes do not have docstrings, only comments
+    ntask: int = 1  # Number of tasks for parallel executeion
+    nnode: int = 1  # Number of nodes for parallel executeion
+    _name: str = "base"
 
-    ntask = 1  # Number of tasks for parallel executeion
-    nnode = 1  # Number of nodes for parallel executeion
+    def _robust(self):
+        """Create a copy of the config with more robust settings."""
+        raise NotImplementedError()
 
-    _name = "base"
-
-    def __setattr__(self, key, value):
-        """Validate attribute assignment."""
-        # Should not be able to define new attributes
-        if key not in dir(self):
-            raise TypeError(f"Invalid {self._name} configuration variable '{key}'")
-        #
-        # Type must match existing value
-        elif not isinstance(value, type(getattr(self, key))):
-            raise TypeError(
-                f"Invalid type={type(value)} "
-                f"for {self._name} configuration variable {key}={value}, "
-                f"should be {type(getattr(self,key))}"
-            )
-        else:
-            super().__setattr__(key, value)
-
-    def __init__(self, **kwargs):
-        """Override default parameters using keyword args."""
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+    def __post_init__(self):
+        """Validate the input data"""
+        if not os.path.isdir(self.workdir):
+            raise Exception(f"Working directory {self.workdir} does not exist")
+        if self.ntask < 1:
+            raise Exception(f"ntask={self._ntask} should be > 0")
+        if self.nnode < 1:
+            raise Exception(f"nnode={self._nnode} should be > 0")
