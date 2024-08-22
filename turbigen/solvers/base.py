@@ -1,18 +1,10 @@
 """Define the basic interface that all solvers must conform to."""
 from dataclasses import dataclass
-from pathlib import Path
-import os
 
 
 @dataclass
 class BaseSolver:
     """Settings and methods common to all solvers."""
-
-    workdir: Path
-    """Working directory to run the simulation in."""
-
-    environment_script: Path
-    """Setup environment shell script to be sourced before running."""
 
     skip: bool = False
     """False to run the CFD as normal, True to write out initial guess and read
@@ -31,8 +23,6 @@ class BaseSolver:
 
     def __post_init__(self):
         """Validate the input data"""
-        if not os.path.isdir(self.workdir):
-            raise Exception(f"Working directory {self.workdir} does not exist")
         if self.ntask < 1:
             raise Exception(f"ntask={self._ntask} should be > 0")
         if self.nnode < 1:

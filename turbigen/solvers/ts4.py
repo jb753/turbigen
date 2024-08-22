@@ -27,9 +27,14 @@ class Config(BaseSolver):
     """Settings with default values for the TS4 solver."""
 
     _name = "ts4"
+
+    workdir: Path
+    """Working directory to run the simulation in."""
+
     environment_script: Path = Path(
         "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
     )
+    """Setup environment shell script to be sourced before running."""
 
     cfl: float = 25.0
     """Courant--Friedrichs--Lewy number, reduce for more stability."""

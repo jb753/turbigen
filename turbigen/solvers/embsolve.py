@@ -3,6 +3,7 @@ import turbigen.util
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.grid
+from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
 
 # from turbigen.embsolve import embsolve
@@ -25,65 +26,64 @@ except ImportError:
     pass
 
 
-class NativeConfig(BaseSolver):
+@dataclass
+class Config(BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
 
-    smooth4 = 0.01
+    smooth4: float = 0.01
     """Fourth-order smoothing factor."""
 
-    smooth2_adapt = 1.0
+    smooth2_adapt: float = 1.0
     """Second-order smoothing factor, adaptive on pressure."""
 
-    smooth2_const = 0.0
+    smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    CFL = 0.7
+    CFL: float = 0.7
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
     speed and cell size. Reduced values are more stable but slower to
     converge."""
 
-    n_step = 5000
+    n_step: int = 5000
     """Number of time steps to run for."""
 
-    n_step_dt = 10
+    n_step_dt: int = 10
     """Number of time steps between updates of the local time step."""
 
-    n_step_log = 100
+    n_step_log: int = 100
     """Number of time steps between log prints."""
 
-    n_step_avg = 1
+    n_step_avg: int = 1
     """Number of time steps to average over."""
 
-    nloss = 5
+    n_loss: int = 5
     """Number of time steps between viscous force updates."""
 
-    conv_lim = 1e-9
-
-    damping_factor = 25.0
-    """Negative feedback to damp down high residuals. Lower values are more stable."""
-
-    nstep_damp = 500
+    nstep_damp: int = 500
     """Number of steps to apply damping."""
 
-    xllim_pitch = 0.03
+    damping_factor: float = 25.0
+    """Negative feedback to damp down high residuals. Lower values are more stable."""
 
-    i_scheme = 1
+    xllim_pitch: float = 0.03
 
-    i_loss = 1
+    i_scheme: int = 1
 
-    i_exit = 1
-    i_inlet = 1
-    K_exit = 0.9
-    K_inlet = 0.3
+    i_loss: int = 1
 
-    plot_conv = False
+    i_exit: int = 1
+    i_inlet: int = 1
+    K_exit: float = 0.9
+    K_inlet: float = 0.3
 
-    tauw_lam_mult = 1.0
-    tauw_turb_mult = 1.0
+    plot_conv: bool = False
 
-    rf_periodic = 1.0
+    tauw_lam_mult: float = 1.0
+    tauw_turb_mult: float = 1.0
+
+    rf_periodic: float = 1.0
 
 
 def get_dw(block):
@@ -1118,7 +1118,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 # If this is a viscous calculation
                 # Update the viscous forces every nloss time steps
                 # Not right at the start of the calculation for stability
-                if not np.mod(istep, conf.nloss) and istep > 100 and conf.i_loss > 0:
+                if not np.mod(istep, conf.n_loss) and istep > 100 and conf.i_loss > 0:
                     # Evaluate the components of viscous stress tensor
                     sb.set_viscous_stress()
 
@@ -1272,8 +1272,10 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         comm.send(blocks, dest=0)
 
 
-def run(grid, settings={}, machine=None):
-    conf = NativeConfig(**settings)
+def run(grid, conf, machine=None):
+
+    if isinstance(conf, dict):
+        conf = Config(**conf)
 
     logger.info("Intialising native solver...")
 

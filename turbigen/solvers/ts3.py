@@ -29,9 +29,14 @@ class Config(BaseSolver):
 
     # Override base attributes
     _name = "ts3"
+
+    workdir: Path
+    """Working directory to run the simulation in."""
+
     environment_script: Path = Path(
         "/usr/local/software/turbostream/ts3610_a100/bashrc_module_ts3610_a100"
     )
+    """Setup environment shell script to be sourced before running."""
 
     atol_eta: float = 0.005
     """Absolute tolerance on drift in isentropic efficiency."""

@@ -204,6 +204,7 @@ settings = {
     "i_loss": 0,
     # 'plot_conv': True,
 }
+conf = turbigen.solvers.embsolve.Config(**settings)
 
 
 def plot_nozzle(g, F):
@@ -321,7 +322,7 @@ def test_condi(dirn, plot=False):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -342,7 +343,7 @@ def test_uniform(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -364,7 +365,7 @@ def test_Ma(Ma):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -384,7 +385,7 @@ def test_skew(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -405,7 +406,7 @@ def test_radius(Alpha):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     _, Ys, Cho = post_nozzle(g, F)
 
@@ -459,8 +460,8 @@ def not_test_exit(Alpha):
         "n_step_log": 100,
         "i_loss": 0,
     }
-
-    turbigen.solvers.embsolve.run(g, settings)
+    conf = turbigen.solvers.embsolve.Config(**settings)
+    turbigen.solvers.embsolve.run(g, conf)
 
     # fig, ax = plt.subplots()
     # b = g[-1]
