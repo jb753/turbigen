@@ -30,7 +30,7 @@ class Config(BaseSolver):
     # Override base attributes
     _name = "ts3"
 
-    workdir: Path
+    workdir: Path = None
     """Working directory to run the simulation in."""
 
     environment_script: Path = Path(

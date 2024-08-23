@@ -153,7 +153,7 @@ def post(
             for ispf in range(len(spfrow)):
                 ax.plot(*sect_compare[ispf], "kx", ms=2)  # , color=f"C{ispf}", ms=2)
         for ispf, spf in enumerate(spfrow):
-            ax.plot(*sect_grid[ispf], "-", color=f"C{ispf}")
+            ax.plot(*sect_grid[ispf], "-", color=f"C{ispf}", label=f"spf={spf}")
 
         ax.legend()
         ax.set_aspect("equal", adjustable="box")

@@ -28,7 +28,7 @@ class Config(BaseSolver):
 
     _name = "ts4"
 
-    workdir: Path
+    workdir: Path = None
     """Working directory to run the simulation in."""
 
     environment_script: Path = Path(
