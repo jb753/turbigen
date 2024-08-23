@@ -18,7 +18,7 @@ Turbostream 3
 Turbostream 3 is a multi-block structured, GPU-accelerated Reynolds-averaged
 Navier--Stokes code developed by :cite:`Brandvik2011`.
 
-.. autoclass:: turbigen.solvers.ts3.TS3Config
+.. autoclass:: turbigen.solvers.ts3.Config
    :members:
 
 Turbostream 4
@@ -27,5 +27,5 @@ Turbostream 4
 Turbostream 4 is an unstructured, GPU-accelerated Reynolds-averaged
 Navier--Stokes code.
 
-.. autoclass:: turbigen.solvers.ts4.TS4Config
+.. autoclass:: turbigen.solvers.ts4.Config
    :members:
