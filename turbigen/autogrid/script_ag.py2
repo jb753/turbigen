@@ -194,7 +194,7 @@ print "Modifying the resolution..."
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
-    row(n1).set_row_flow_path_number(int(conf["nr"]))
+    row(n1).set_row_flow_path_number(int(conf["nr"][n]))
     row(n1).set_flow_path_control_cst_cells_number(conf["const_cells_pc"])
     row(n1).set_flow_path_control_hub_clustering(conf["dr_hub"])
     row(n1).set_flow_path_control_shroud_clustering(conf["dr_cas"])
@@ -214,34 +214,31 @@ a5_generate_flow_paths()
 
 set_active_control_layer_index(int(conf["spf_ref"]*100))
 # Copy the tip-gap distribution everywhere
-row(1).outlet().copy_right_meridional_distribution()
+if conf["match_mixing"]:
+    row(1).outlet().copy_right_meridional_distribution()
+
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
-
-    # The default settings leave rather high ER
-    # But if we increase ER then the mesh quality reduces
-    # Leave disabled for now
-    # row(n1).blade(iib).set_b2b_default_topology_expansion_ratio_in_bnd_layer(conf["ER_boundary_layer"])
-    # row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer(int(conf["n_boundary_layer"]))
-    # row(n1).blade(1).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(int(conf["n_boundary_layer_gap"]))
 
     # Small number of streamwise points in H blocks
     z = z_cst_line("Z_%d_in" % n1)
     z.streamwise_number_of_points(int(conf["nx_mix"]))
-    z.paste_left_meridional_distribution()
-    z.paste_right_meridional_distribution()
+    if conf["match_mixing"]:
+        z.paste_left_meridional_distribution()
+        z.paste_right_meridional_distribution()
 
     z = z_cst_line("Z_%d_out" % n1)
     z.streamwise_number_of_points(int(conf["nx_mix"]))
-    z.paste_left_meridional_distribution()
-    z.paste_right_meridional_distribution()
+    if conf["match_mixing"]:
+        z.paste_left_meridional_distribution()
+        z.paste_right_meridional_distribution()
 
 
-    row(n1).outlet().paste_left_meridional_distribution()
-    row(n1).outlet().paste_right_meridional_distribution()
-
-    row(n1).inlet().paste_left_meridional_distribution()
-    row(n1).inlet().paste_right_meridional_distribution()
+    if conf["match_mixing"]:
+        row(n1).outlet().paste_left_meridional_distribution()
+        row(n1).outlet().paste_right_meridional_distribution()
+        row(n1).inlet().paste_left_meridional_distribution()
+        row(n1).inlet().paste_right_meridional_distribution()
 
     # Autogrid sometimes forgets we have asked for matching periodicity
     # Reset that here for main and splitter blades

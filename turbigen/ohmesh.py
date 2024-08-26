@@ -15,8 +15,8 @@ class OHMeshConfig(BaseConfig):
     spf_ref = 0.5
     """Set blade-to-blade mesh parameters based on geometry at this span fraction."""
 
-    dspf_mid = 0.03
-    """Spanwise grid spacing at midspan, as a fraction of span."""
+    nj = []
+    """Number of spanwise grid points."""
 
     remote_host = ""
     """Remote host on which AutoGrid server is running."""
@@ -49,6 +49,8 @@ class OHMeshConfig(BaseConfig):
 
     wake_control = False
     wake_deviation = 0.0
+
+    match_mixing = False
 
     skewness_control = 0
     orthogonality_control = 0.5
@@ -92,10 +94,15 @@ class OHMeshConfig(BaseConfig):
             setattr(self, k, v)
 
     def to_autogrid_dict(self, chi_ref, dhub, dcas, dsurf, splitter):
-        nj = int(1.0 / self.dspf_mid * 2.0)
-        stagger_topo = _get_stagger_topology(chi_ref)
 
+        stagger_topo = _get_stagger_topology(chi_ref)
         nrow = len(stagger_topo)
+
+        if not self.nj:
+            nj = [81 for _ in range(self.nrow)]
+        else:
+            nj = self.nj
+
 
         if self.via_host == "":
             via = None
@@ -106,6 +113,7 @@ class OHMeshConfig(BaseConfig):
         return {
             "verbose": True,
             "is_cascade": False,
+            "match_mixing": self.match_mixing,
             "fix_h_inlet": self.fix_h_inlet,
             "fix_h_outlet": self.fix_h_outlet,
             "nrow": nrow,
