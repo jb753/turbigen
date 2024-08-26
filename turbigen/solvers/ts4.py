@@ -62,6 +62,9 @@ class Config(BaseSolver):
     nstep_ts3: int = 0
     """Number of steps for a Turbostream 3 initial guess"""
 
+    nstep_soft: int = 5000
+    """Number of time steps for soft start."""
+
     spf_probe: list = None
     """List of span fractions to place probes."""
 
@@ -118,7 +121,7 @@ class Config(BaseSolver):
         conf.implicit_scheme = 0
         conf.cfl = 3.5
         conf.cfl_ramp_st = 0.1
-        conf.nstep = 5000
+        conf.nstep = self.nstep_soft
         conf.cfl_ramp_nstep = conf.nstep
         conf.nstep_avg = 50
         return conf

@@ -44,8 +44,8 @@ class OHMeshConfig(BaseConfig):
     refine_factor = 0
     """Divide each edge into 2**(refine_factor) sub-edges."""
 
-    fix_h_inlet = True
-    fix_h_outlet = True
+    fix_h_inlet = False
+    fix_h_outlet = False
 
     wake_control = False
     wake_deviation = 0.0
@@ -99,7 +99,7 @@ class OHMeshConfig(BaseConfig):
         nrow = len(stagger_topo)
 
         if not self.nj:
-            nj = [81 for _ in range(self.nrow)]
+            nj = [81 for _ in range(nrow)]
         else:
             nj = self.nj
 
