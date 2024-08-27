@@ -1013,12 +1013,13 @@ class Grid:
                     surfs.append([cut_now])
         else:
             for row_block in self.row_blocks:
+
                 # Preallocate list for this row
                 surfs.append([])
 
                 # Determine full span nj as the modal nj in this row
                 nj_vals, nj_counts = np.unique(
-                    [b.shape[1] for b in self], return_counts=True
+                    [b.shape[1] for b in row_block], return_counts=True
                 )
                 nj = nj_vals[np.argmax(nj_counts)]
 

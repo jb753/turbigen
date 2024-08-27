@@ -63,6 +63,8 @@ class OHMeshConfig(BaseConfig):
     round_TE = True
 
     nj_tip = 25
+    nk_gap = 9
+
     frac_inlet = 0.9
     frac_outlet = 0.15
     relax_outlet = 1
@@ -153,6 +155,7 @@ class OHMeshConfig(BaseConfig):
             "R_fillet_hub": self.R_fillet_hub,
             "R_fillet_shd": self.R_fillet_shd,
             "nk_fillet": self.nk_fillet,
+            "nk_gap": self.nk_gap,
             "nj_fillet_hub": self.nj_fillet_hub,
             "nj_fillet_shd": self.nj_fillet_shd,
             "is_butterfly": self.is_butterfly,

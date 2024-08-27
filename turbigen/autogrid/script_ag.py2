@@ -141,7 +141,8 @@ for n in range(nrow):
     nsmooth_multigrid = int(conf["nsmooth_multigrid"])
     row(n1).set_row_full_multigrid_optimization_steps(nsmooth_multigrid)
     row(n1).set_row_optimization_steps(nsmooth)
-    row(n1).set_row_optimization_steps_in_gap(nsmooth)
+    row(n1).set_row_bnd_optimization_steps(nsmooth//2)
+    row(n1).set_row_optimization_steps_in_gap(2*nsmooth)
     row(n1).set_row_optimization_skewness_control(int(conf["skewness_control"]))
     row(n1).set_row_optimization_orthogonality_control(float(conf["orthogonality_control"]))
 
@@ -208,6 +209,7 @@ for n in range(nrow):
         if row(n1).blade(iib).get_shroud_gap():
             row(n1).blade(iib).shroud_gap().set_clustering(conf["dr_cas"])
             row(n1).blade(iib).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
+            row(n1).blade(iib).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(conf["nk_gap"])
 
 select_all()
 a5_generate_flow_paths()
