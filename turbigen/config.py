@@ -219,7 +219,9 @@ class Config:
 
     def _check_annulus(self):
         """Validate annulus data"""
+        logger.debug(f'Loading annulus {self.annulus.get("type")}')
         Annulus = util.load_annulus(self.annulus.get("type", "Smooth"))
+        logger.debug("Getting signature...")
         sig = signature(Annulus)
         for k in self.annulus:
             if k not in sig.parameters and k not in ["type", "debug"]:
