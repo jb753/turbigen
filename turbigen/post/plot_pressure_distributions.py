@@ -3,13 +3,23 @@
 import numpy as np
 import os
 import turbigen.util
+import matplotlib.ticker as ticker
 import matplotlib.pyplot as plt
 
 logger = turbigen.util.make_logger()
 
 
 def post(
-    grid, machine, meanline, postdir, row_spf, write_raw=False, use_rot=False, lim=None
+    grid,
+    machine,
+    meanline,
+    postdir,
+    row_spf,
+    write_raw=False,
+    use_rot=False,
+    lim=None,
+    fix_stag=False,
+    note=None,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -66,8 +76,8 @@ def post(
         # Get all blades in this row
         surfs = grid.cut_blade_surfs()[irow]
 
-        fig, ax = plt.subplots()
-        ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
+        fig, ax = plt.subplots(layout="constrained")
+        ax.set_xlabel(r"Normalised Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
         ax.set_xlim((0.0, 1.0))
 
         # Loop over span fractions
@@ -100,6 +110,9 @@ def post(
                     zeta_max = np.abs(zeta_stag).max(axis=0, keepdims=True)
                 zeta_norm = zeta_stag / zeta_max
 
+                if fix_stag:
+                    Cp -= Cp.max()
+
                 if isurf == 0:
                     ax.plot(
                         np.abs(zeta_norm),
@@ -115,15 +128,29 @@ def post(
 
                 if lim:
                     ax.set_ylim(lim)
+                    Ntick = 4
+                    dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
+                    ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"
                 raw_data[key] = np.stack((zeta_stag, Cp))
 
+        if note:
+            axlim = ax.axis()
+            ax.annotate(
+                note,
+                xytext=(-5, -5),
+                xy=(axlim[1], axlim[3]),
+                ha="right",
+                va="top",
+                textcoords="offset points",
+                arrowprops=None,
+            )
+
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         ax.legend()
         ax.grid(False)
-        plt.tight_layout()
         plt.savefig(plotname)
         plt.close()
 

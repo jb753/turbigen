@@ -10,6 +10,54 @@ import warnings
 logger = turbigen.util.make_logger()
 
 
+def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
+
+    eps = 1e-4 * np.diff(lev).mean()
+    # v = np.clip(v, lev[0]+eps, lev[-1]-eps)
+    v = np.clip(v, lev[0] + eps, None)
+
+    fig, ax = plt.subplots(layout="constrained")
+
+    # It seems that we have to pass triangles as a kwarg to tricontour,
+    # not positional, but this results in a UserWarning that contour
+    # does not take it as a kwarg. So catch and hide this warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cm = ax.tricontourf(
+            c1,
+            c2,
+            v,
+            lev,
+            triangles=triangles,
+            cmap="cubehelix",
+            linestyles="none",
+            extend="max",
+        )
+
+    cm.set_edgecolor("face")
+    hc = plt.colorbar(cm, label=lab)
+    # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
+
+    # Remove box, grey backgroud for hub/casing/blades
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_facecolor(np.ones((3,)) * 0.7)
+    ax.set_xticks(())
+    ax.set_yticks(())
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_xlim(rtlim)
+
+    # Hub and casing labels
+    c2lim = np.array([c2.min(), c2.max()])
+    dc2 = np.ptp(c2lim) * 0.07
+    ax.text(rtlim.mean(), c2lim[0] - dc2, "Hub", ha="center", va="center")
+    ax.text(rtlim.mean(), c2lim[1] + dc2, "Casing", ha="center", va="center")
+    ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
+
+    return fig, ax
+
+
 def post(
     grid,
     machine,
@@ -177,52 +225,14 @@ def post(
                 v = np.tile(v, (3,))
 
             lev = turbigen.util.clipped_levels(v, dv, thresh=0.01)
-
             if lim:
                 if lim[iv]:
                     lev = np.arange(*lim[iv], dv)
 
-            v = np.clip(v, lev[0], lev[-1])
-
-            fig, ax = plt.subplots()
-            # It seems that we have to pass triangles as a kwarg to tricontour,
-            # not positional, but this results in a UserWarning that contour
-            # does not take it as a kwarg. So catch and hide this warning.
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                cm = ax.tricontourf(
-                    c1,
-                    c2,
-                    v,
-                    lev,
-                    triangles=triangles,
-                    cmap="cubehelix",
-                    linestyles="none",
-                )
-
-            cm.set_edgecolor("face")
-
-            hc = plt.colorbar(cm, label=lab)
-            hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
+            rtlim = (np.array([-0.5, 0.5]) + theta_offset) * rt_pitch
+            fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim)
             if title:
                 ax.set_title(title)
-
-            plt.tight_layout(pad=0.1)
-
-            ax.axis("equal")
-            ax.axis("off")
-
-            if coord_sys == "rtx":
-                rtlim = (np.array([-0.5, 0.5]) + theta_offset) * rt_pitch
-                xlim = np.array([c1.min(), c1.max()])
-
-                # Hub and casing labels
-                dr = np.ptp(xlim) * 0.07
-                ax.text(rtlim.mean(), xlim[0] - dr, "Hub", ha="center", va="center")
-                ax.text(rtlim.mean(), xlim[1] + dr, "Casing", ha="center", va="center")
-
-                ax.set_xlim(rtlim)
-                ax.set_xlim(xlim)
 
             figname = os.path.join(postdir, f"traverse_{vname}_{i}.pdf")
             plt.savefig(figname)
