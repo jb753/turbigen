@@ -1227,33 +1227,6 @@ def iter_mean_line(conf, vars_cfd, pdict):
 def run(conf):
     basedir = conf.workdir
 
-    if conf.hypercube:
-        basedir = conf.workdir
-        conf.database["conf_path"] = os.path.join(basedir, "config_db.yaml")
-        conf.database["mean_line_path"] = os.path.join(basedir, "mean_line_db.yaml")
-        conf.workdir = None
-
-        if not conf.job:
-            raise ConfigError("Need job submission configured to run a hypercube.")
-
-        if conf.hypercube.get("N"):
-            logger.iter("Running a hypercube...")
-            cs = conf.sample_hypercube()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            slurm.submit_array(cs, basedir, Nrunmax)
-
-        if conf.hypercube.get("Nedge"):
-            logger.iter("Running hypercube edges...")
-            ce = conf.sample_hyperfaces()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            slurm.submit_array(ce, basedir, Nrunmax)
-
-        return True
-
-    if conf.job:
-        slurm.submit(conf)
-        return True
-
     topt_start = timer()
 
     # If specified use database to fill in values

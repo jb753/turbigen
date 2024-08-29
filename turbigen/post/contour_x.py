@@ -29,7 +29,7 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
             v,
             lev,
             triangles=triangles,
-            cmap="cubehelix_r",
+            cmap="cubehelix",
             linestyles="none",
             extend="max",
         )
@@ -46,14 +46,14 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    ax.set_xlim(rtlim)
+    # ax.set_xlim(rtlim)
 
     # Hub and casing labels
     c2lim = np.array([c2.min(), c2.max()])
     dc2 = np.ptp(c2lim) * 0.07
     ax.text(rtlim.mean(), c2lim[0] - dc2, "Hub", ha="center", va="center")
     ax.text(rtlim.mean(), c2lim[1] + dc2, "Shroud", ha="center", va="center")
-    ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
+    # ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
 
     return fig, ax
 
@@ -63,7 +63,7 @@ def post(
     machine,
     meanline,
     postdir,
-    r_cut=[],
+    x_cut=[],
     lim=None,
     var=(),
     step=None,
@@ -72,14 +72,14 @@ def post(
     theta_offset=0.3,
     Npass=1,
 ):
-    """contour_r(r_cut=[], var=(), lim=None, step=None, title=None, irow_ref=0)
+    """contour_x(x_cut=[], var=(), lim=None, step=None, title=None, irow_ref=0)
     Plot flow-field contours over a traverse cut at constant radius.
     """
 
-    logger.info("Contouring constant r planes...")
+    logger.info("Contouring constant x planes...")
 
     # Loop over stations
-    for i in range(len(r_cut)):
+    for i in range(len(x_cut)):
         # Extract reference pressures
         Po1 = meanline.Po_rel[::2]
         P1 = meanline.P[::2]
@@ -93,7 +93,7 @@ def post(
         T2 = meanline.T[1::2]
 
         # Get meridional coordinates of the cut planes
-        xrc = np.array([[-1.0, 1.0], [r_cut[i], r_cut[i]]])
+        xrc = np.array([[x_cut[i], x_cut[i]], [0.1, 1.0]])
 
         # Take the cut
         C = grid.unstructured_cut_marching(xrc)
@@ -104,24 +104,27 @@ def post(
         # Replicate +/- a pitch
         pitch = Cu.pitch
         rt_pitch = pitch * Cu.r.mean()
-        assert np.ptp(Cu.r) / r_cut[i] < 1e-6
         xrt = Cu.xrt[:, iunique]
         tref = 0.5 * (xrt[2].min() + xrt[2].max())
         xrt[2] -= tref
         xrt[0] *= -1.0
-        xrtp = xrt.copy()
-        xrtp[2] += pitch
-        xrtm = xrt.copy()
-        xrtm[2] -= pitch
-        xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
-        c1 = xrt[1] * xrt[2]
-        c2 = xrt[0]
-        trim = triangles.copy()
-        tri = trim.copy()
-        tri += Npts
-        trip = tri.copy()
-        trip += Npts
-        triangles = np.concatenate((trim, tri, trip))
+
+        # xrtp = xrt.copy()
+        # xrtp[2] += pitch
+        # xrtm = xrt.copy()
+        # xrtm[2] -= pitch
+        # xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
+
+        c1 = xrt[1] * np.sin(xrt[2])
+        c2 = xrt[1] * np.cos(xrt[2])
+
+        # trim = triangles.copy()
+        # tri = trim.copy()
+        # tri += Npts
+        # trip = tri.copy()
+        # trip += Npts
+        # triangles = np.concatenate((trim, tri, trip))
+        # triangles = tri
 
         ii = int(irow_ref)
 
@@ -205,11 +208,15 @@ def post(
                 if lim[iv]:
                     lev = np.arange(*lim[iv], dv)
 
+            print(c1.shape)
+            print(c2.shape)
+            print(v.shape)
+            print(triangles.shape)
             rtlim = (np.array([-Npass / 2.0, Npass / 2.0]) + theta_offset) * rt_pitch
             fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim)
             if title:
                 ax.set_title(title, pad=18.0)
 
-            figname = os.path.join(postdir, f"rcontour_{vname}_{i}.pdf")
+            figname = os.path.join(postdir, f"xcontour_{vname}_{i}.pdf")
             plt.savefig(figname)
             plt.close()
