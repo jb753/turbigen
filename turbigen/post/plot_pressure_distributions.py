@@ -20,7 +20,7 @@ def post(
     lim=None,
     fix_stag=False,
     note=None,
-    show_DF=False,
+    show_DF=None,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -127,23 +127,27 @@ def post(
                         np.abs(zeta_norm), Cp, color=f"C{ispf}", linestyle=lnst[isurf]
                     )
 
-                if show_DF[ispf]:
-                    Cpmin = Cp.min()
-                    Cpmax = Cp.max()
-                    iDF = np.argmin(Cp)
-                    CpTE = 0.5 * (Cp[-1] + Cp[0]).item()
-                    DCpmin = Cpmin - Cpmax
-                    DCpTE = CpTE - Cpmax
-                    DF = 1.0 - np.sqrt(DCpTE / DCpmin)
-                    ax.plot(
-                        np.abs(zeta_norm)[iDF], Cp[iDF], color=f"C{ispf}", marker="o"
-                    )
-                    ax.annotate(
-                        r"$\mathit{DF}=" + f"{DF:.2f}" + "$",
-                        xy=(np.abs(zeta_norm)[iDF], Cp[iDF]),
-                        xytext=(0.0, 10.0),
-                        textcoords="offset points",
-                    )
+                if show_DF:
+                    if show_DF[ispf]:
+                        Cpmin = Cp.min()
+                        Cpmax = Cp.max()
+                        iDF = np.argmin(Cp)
+                        CpTE = 0.5 * (Cp[-1] + Cp[0]).item()
+                        DCpmin = Cpmin - Cpmax
+                        DCpTE = CpTE - Cpmax
+                        DF = 1.0 - np.sqrt(DCpTE / DCpmin)
+                        ax.plot(
+                            np.abs(zeta_norm)[iDF],
+                            Cp[iDF],
+                            color=f"C{ispf}",
+                            marker="o",
+                        )
+                        ax.annotate(
+                            r"$\mathit{DF}=" + f"{DF:.2f}" + "$",
+                            xy=(np.abs(zeta_norm)[iDF], Cp[iDF]),
+                            xytext=(0.0, 10.0),
+                            textcoords="offset points",
+                        )
 
                 if lim:
                     ax.set_ylim(lim)
