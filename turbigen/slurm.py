@@ -163,8 +163,7 @@ turbigen {yaml_path} &> {log_path}
 
     jid = _parse_jid(sbatch_out)
     os.chdir(orig_workdir)
-    if verbose:
-        logger.info(f"Submitted SLURM jobid={jid} in {workdir}")
+    logger.iter(f"Submitted SLURM jobid={jid} in {workdir}")
 
     return jid
 

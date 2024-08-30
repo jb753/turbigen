@@ -4,17 +4,20 @@ import os
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import warnings
 
 logger = turbigen.util.make_logger()
 
 
-def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
+def make_contour(c1, c2, v, triangles, lev, lab, rtlim, flip):
 
     eps = 1e-4 * np.diff(lev).mean()
     # v = np.clip(v, lev[0]+eps, lev[-1]-eps)
     v = np.clip(v, lev[0] + eps, None)
+
+    cmap = "cubehelix"
+    if not flip:
+        cmap += "_r"
 
     fig, ax = plt.subplots(layout="constrained")
 
@@ -29,13 +32,13 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
             v,
             lev,
             triangles=triangles,
-            cmap="cubehelix",
+            cmap=cmap,
             linestyles="none",
             extend="max",
         )
 
     cm.set_edgecolor("face")
-    hc = plt.colorbar(cm, label=lab)
+    plt.colorbar(cm, label=lab)
     # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
 
     # Remove box, grey backgroud for hub/casing/blades
@@ -52,7 +55,7 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
     c2lim = np.array([c2.min(), c2.max()])
     dc2 = np.ptp(c2lim) * 0.07
     ax.text(rtlim.mean(), c2lim[0] - dc2, "Hub", ha="center", va="center")
-    ax.text(rtlim.mean(), c2lim[1] + dc2, "Casing", ha="center", va="center")
+    ax.text(rtlim.mean(), c2lim[1] + dc2, "Shroud", ha="center", va="center")
     ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
 
     return fig, ax
@@ -63,47 +66,23 @@ def post(
     machine,
     meanline,
     postdir,
-    mnorm=[],
-    coord_sys="yz",
+    r_cut=[],
     lim=None,
     var=(),
     step=None,
-    theta_offset=0.0,
     title=None,
+    irow_ref=0,
+    theta_offset=0.3,
+    Npass=1,
 ):
-    """contour_traverse(norm=[], coord_sys="yz", var=(), lim=None, step=None, theta_offset=0.0, title=None)
-    Plot flow-field contours over a traverse cut at constant streamwise position.
-
-    This is useful, for example, to give an indication of the distribution of loss downstream of blade rows.
-
-    Parameters
-    ----------
-    mnorm_cut: list
-        Normalised meridional coordinates at which to take the cuts. The coordinate is defined 0 at the inlet plane,
-        1 at the first row LE, 2 at the first row TE, 3 at the second row LE, and so on. For example, to cut
-        just upstream and downstream of the first row, use [0.95, 2.05]
-    coord_sys: str
-        Which coordinate system to plot in. `yz` for axials or `rtx` for radials.
-    var: list of str
-        Variable names to plot. Select from `Yp, Ys, Cho, Vm`.
-    lim: list of (2,) list
-        Upper and lower contour limits for each plot variable, omit to set automatically.
-    step: list of float
-        Contour steps for each plot variable, omit to set automatically.
-    theta_offset: float
-        Angular offset of the plot as a fraction of pitch. Use to line up wakes in different simulations.
-    title: str
-        String to add as a plot title, omit for no title.
-
+    """contour_r(r_cut=[], var=(), lim=None, step=None, title=None, irow_ref=0)
+    Plot flow-field contours over a traverse cut at constant radius.
     """
 
-    logger.info("Contouring traverse planes...")
-
-    if not mnorm:
-        logger.info("No cut locations specified.")
+    logger.info("Contouring constant r planes...")
 
     # Loop over stations
-    for i, ti in enumerate(mnorm):
+    for i in range(len(r_cut)):
         # Extract reference pressures
         Po1 = meanline.Po_rel[::2]
         P1 = meanline.P[::2]
@@ -117,48 +96,39 @@ def post(
         T2 = meanline.T[1::2]
 
         # Get meridional coordinates of the cut planes
-        xrc = machine.ann.get_cut_plane(ti)[0]
+        xrc = np.array([[-1.0, 1.0], [r_cut[i], r_cut[i]]])
 
         # Take the cut
         C = grid.unstructured_cut_marching(xrc)
-
         _, triangles, iunique = C.get_triangulation()
         Npts = len(iunique)
-
         Cu = C.to_unstructured()
 
-        # Choose coordinate system
-        if coord_sys == "yz":
-            c1 = Cu.y[iunique]
-            c2 = Cu.z[iunique]
-        elif coord_sys == "rtx":
-            pitch = Cu.pitch
-            rt_pitch = pitch * Cu.r.mean()
-            xrt = Cu.xrt[:, iunique]
-            tref = 0.5 * (xrt[2].min() + xrt[2].max())
-            xrt[2] -= tref
-            xrt[0] *= -1.0
-            # Repeat by +- a pitch
-            xrtp = xrt.copy()
-            xrtp[2] += pitch
-            xrtm = xrt.copy()
-            xrtm[2] -= pitch
-            xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
-            c1 = xrt[1] * xrt[2]
-            c2 = xrt[0]
+        # Replicate +/- a pitch
+        pitch = Cu.pitch
+        rt_pitch = pitch * Cu.r.mean()
+        assert np.ptp(Cu.r) / r_cut[i] < 1e-6
+        xrt = Cu.xrt[:, iunique]
+        tref = 0.5 * (xrt[2].min() + xrt[2].max())
+        xrt[2] -= tref
+        xrt[0] *= -1.0
+        xrtp = xrt.copy()
+        xrtp[2] += pitch
+        xrtm = xrt.copy()
+        xrtm[2] -= pitch
+        xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
+        c1 = xrt[1] * xrt[2]
+        c2 = xrt[0]
+        trim = triangles.copy()
+        tri = trim.copy()
+        tri += Npts
+        trip = tri.copy()
+        trip += Npts
+        triangles = np.concatenate((trim, tri, trip))
 
-            trim = triangles.copy()
-            tri = trim.copy()
-            tri += Npts
-            trip = tri.copy()
-            trip += Npts
-            triangles = np.concatenate((trim, tri, trip))
+        ii = int(irow_ref)
 
-        else:
-            raise Exception(f"Unrecognised coordinate system {coord_sys}")
-
-        ii = int(ti / 2 - 1)
-
+        flip = False
         for iv, vname in enumerate(var):
             if vname == "Yp":
                 dv = 0.1
@@ -183,6 +153,11 @@ def post(
                 P = Cu.P_rot[iunique]
                 v = (P - Po1) / (Po1 - P1)
                 lab = "Reduced Static Pressure, $C^*_p$"
+
+            elif vname == "x":
+                dv = 0.001
+                v = Cu.x[iunique]
+                lab = "Axial Coordinate"
 
             elif vname == "Ys":
                 dv = 0.1
@@ -214,6 +189,14 @@ def post(
                     lab = r"Meridional Velocity, $V_m/U$"
                 dv = 0.05
                 v = Cu.Vm[iunique] / Vref
+                flip = True
+
+            elif vname == "Vt":
+                Vref = U[ii]
+                lab = r"Circumferential Velocity, $V_\theta/U$"
+                dv = 0.05
+                v = Cu.Vt[iunique] / Vref
+                flip = True
 
             else:
                 raise Exception(f"Unrecognised plot variable {vname}")
@@ -221,19 +204,18 @@ def post(
             if step:
                 dv = step[iv]
 
-            if coord_sys == "rtx":
-                v = np.tile(v, (3,))
+            v = np.tile(v, (3,))
 
             lev = turbigen.util.clipped_levels(v, dv, thresh=0.01)
             if lim:
                 if lim[iv]:
                     lev = np.arange(*lim[iv], dv)
 
-            rtlim = (np.array([-0.5, 0.5]) + theta_offset) * rt_pitch
-            fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim)
+            rtlim = (np.array([-Npass / 2.0, Npass / 2.0]) + theta_offset) * rt_pitch
+            fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim, flip)
             if title:
-                ax.set_title(title)
+                ax.set_title(title, pad=18.0)
 
-            figname = os.path.join(postdir, f"traverse_{vname}_{i}.pdf")
+            figname = os.path.join(postdir, f"rcontour_{vname}_{i}.pdf")
             plt.savefig(figname)
             plt.close()
