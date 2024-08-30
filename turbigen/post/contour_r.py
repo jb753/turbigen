@@ -4,17 +4,20 @@ import os
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import warnings
 
 logger = turbigen.util.make_logger()
 
 
-def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
+def make_contour(c1, c2, v, triangles, lev, lab, rtlim, flip):
 
     eps = 1e-4 * np.diff(lev).mean()
     # v = np.clip(v, lev[0]+eps, lev[-1]-eps)
     v = np.clip(v, lev[0] + eps, None)
+
+    cmap = "cubehelix"
+    if not flip:
+        cmap += "_r"
 
     fig, ax = plt.subplots(layout="constrained")
 
@@ -29,13 +32,13 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
             v,
             lev,
             triangles=triangles,
-            cmap="cubehelix_r",
+            cmap=cmap,
             linestyles="none",
             extend="max",
         )
 
     cm.set_edgecolor("face")
-    hc = plt.colorbar(cm, label=lab)
+    plt.colorbar(cm, label=lab)
     # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
 
     # Remove box, grey backgroud for hub/casing/blades
@@ -125,6 +128,7 @@ def post(
 
         ii = int(irow_ref)
 
+        flip = False
         for iv, vname in enumerate(var):
             if vname == "Yp":
                 dv = 0.1
@@ -185,12 +189,14 @@ def post(
                     lab = r"Meridional Velocity, $V_m/U$"
                 dv = 0.05
                 v = Cu.Vm[iunique] / Vref
+                flip = True
 
             elif vname == "Vt":
                 Vref = U[ii]
                 lab = r"Circumferential Velocity, $V_\theta/U$"
                 dv = 0.05
                 v = Cu.Vt[iunique] / Vref
+                flip = True
 
             else:
                 raise Exception(f"Unrecognised plot variable {vname}")
@@ -206,7 +212,7 @@ def post(
                     lev = np.arange(*lim[iv], dv)
 
             rtlim = (np.array([-Npass / 2.0, Npass / 2.0]) + theta_offset) * rt_pitch
-            fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim)
+            fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim, flip)
             if title:
                 ax.set_title(title, pad=18.0)
 

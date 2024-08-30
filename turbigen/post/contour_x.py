@@ -4,7 +4,6 @@ import os
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import warnings
 
 logger = turbigen.util.make_logger()
@@ -35,7 +34,7 @@ def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
         )
 
     cm.set_edgecolor("face")
-    hc = plt.colorbar(cm, label=lab)
+    plt.colorbar(cm, label=lab)
     # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
 
     # Remove box, grey backgroud for hub/casing/blades
@@ -98,7 +97,7 @@ def post(
         # Take the cut
         C = grid.unstructured_cut_marching(xrc)
         _, triangles, iunique = C.get_triangulation()
-        Npts = len(iunique)
+        # Npts = len(iunique)
         Cu = C.to_unstructured()
 
         # Replicate +/- a pitch
@@ -208,10 +207,6 @@ def post(
                 if lim[iv]:
                     lev = np.arange(*lim[iv], dv)
 
-            print(c1.shape)
-            print(c2.shape)
-            print(v.shape)
-            print(triangles.shape)
             rtlim = (np.array([-Npass / 2.0, Npass / 2.0]) + theta_offset) * rt_pitch
             fig, ax = make_contour(c1, c2, v, triangles, lev, lab, rtlim)
             if title:
