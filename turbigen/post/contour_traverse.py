@@ -4,58 +4,10 @@ import os
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-import warnings
+
+from turbigen.util import make_contour
 
 logger = turbigen.util.make_logger()
-
-
-def make_contour(c1, c2, v, triangles, lev, lab, rtlim):
-
-    eps = 1e-4 * np.diff(lev).mean()
-    # v = np.clip(v, lev[0]+eps, lev[-1]-eps)
-    v = np.clip(v, lev[0] + eps, None)
-
-    fig, ax = plt.subplots(layout="constrained")
-
-    # It seems that we have to pass triangles as a kwarg to tricontour,
-    # not positional, but this results in a UserWarning that contour
-    # does not take it as a kwarg. So catch and hide this warning.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        cm = ax.tricontourf(
-            c1,
-            c2,
-            v,
-            lev,
-            triangles=triangles,
-            cmap="cubehelix",
-            linestyles="none",
-            extend="max",
-        )
-
-    cm.set_edgecolor("face")
-    hc = plt.colorbar(cm, label=lab)
-    # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
-
-    # Remove box, grey backgroud for hub/casing/blades
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_facecolor(np.ones((3,)) * 0.7)
-    ax.set_xticks(())
-    ax.set_yticks(())
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.set_xlim(rtlim)
-
-    # Hub and casing labels
-    c2lim = np.array([c2.min(), c2.max()])
-    dc2 = np.ptp(c2lim) * 0.07
-    ax.text(rtlim.mean(), c2lim[0] - dc2, "Hub", ha="center", va="center")
-    ax.text(rtlim.mean(), c2lim[1] + dc2, "Casing", ha="center", va="center")
-    ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
-
-    return fig, ax
 
 
 def post(
@@ -70,6 +22,7 @@ def post(
     step=None,
     theta_offset=0.0,
     title=None,
+    N_passage=1,
 ):
     """contour_traverse(norm=[], coord_sys="yz", var=(), lim=None, step=None, theta_offset=0.0, title=None)
     Plot flow-field contours over a traverse cut at constant streamwise position.
@@ -120,42 +73,8 @@ def post(
         xrc = machine.ann.get_cut_plane(ti)[0]
 
         # Take the cut
-        C = grid.unstructured_cut_marching(xrc)
-
-        _, triangles, iunique = C.get_triangulation()
-        Npts = len(iunique)
-
-        Cu = C.to_unstructured()
-
-        # Choose coordinate system
-        if coord_sys == "yz":
-            c1 = Cu.y[iunique]
-            c2 = Cu.z[iunique]
-        elif coord_sys == "rtx":
-            pitch = Cu.pitch
-            rt_pitch = pitch * Cu.r.mean()
-            xrt = Cu.xrt[:, iunique]
-            tref = 0.5 * (xrt[2].min() + xrt[2].max())
-            xrt[2] -= tref
-            xrt[0] *= -1.0
-            # Repeat by +- a pitch
-            xrtp = xrt.copy()
-            xrtp[2] += pitch
-            xrtm = xrt.copy()
-            xrtm[2] -= pitch
-            xrt = np.concatenate((xrtm, xrt, xrtp), axis=-1)
-            c1 = xrt[1] * xrt[2]
-            c2 = xrt[0]
-
-            trim = triangles.copy()
-            tri = trim.copy()
-            tri += Npts
-            trip = tri.copy()
-            trip += Npts
-            triangles = np.concatenate((trim, tri, trip))
-
-        else:
-            raise Exception(f"Unrecognised coordinate system {coord_sys}")
+        C = grid.unstructured_cut_marching(xrc).repeat_pitchwise(N_passage)
+        Ct, triangles = C.get_triangulation()
 
         ii = int(ti / 2 - 1)
 

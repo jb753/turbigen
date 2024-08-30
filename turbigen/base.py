@@ -6,6 +6,14 @@ import turbigen.average
 logger = util.make_logger()
 
 
+def concatenate(sd, axis=0):
+    """Join a sequence of StructuredData along an axis."""
+    out = sd[0].empty()
+    out._data = np.concatenate([sdi._data for sdi in sd], axis=axis + 1)
+    out._metadata = sd[0]._metadata
+    return out
+
+
 class dependent_property:
     """Decorator which returns a cached value if instance data unchanged."""
 
@@ -79,13 +87,6 @@ class StructuredData:
     def stack(cls, sd, axis=0):
         out = cls()
         out._data = np.stack([sdi._data for sdi in sd], axis=axis + 1)
-        out._metadata = sd[0]._metadata
-        return out
-
-    @classmethod
-    def concatenate(cls, sd, axis=0):
-        out = cls()
-        out._data = np.concatenate([sdi._data for sdi in sd], axis=axis + 1)
         out._metadata = sd[0]._metadata
         return out
 
@@ -900,25 +901,49 @@ class Kinematics:
         return 0.5 * np.cross(qAC, qAB).transpose(1, 0)
 
     def get_triangulation(self):
-        """Generate a matplotlib-compatible triangulation in r-t plane."""
-        if not self.shape[1] == 3:
+        """Generate a matplotlib-compatible triangulation for an unstructured cut."""
+
+        # Check we have a triangulated shape (ntri, 3)
+        try:
+            ntri, ndim = self.shape
+            assert ndim == 3
+        except Exception:
             raise Exception("This is not a triangulated cut.")
 
-        ntri, _ = self.shape
-        points, iunique, triangles = np.unique(
-            # np.stack((self.x, self.r, self.t)).reshape(2,-1)
-            self.xrt.reshape(3, -1),
+        # Reshape to a 1D array
+        C = self.to_unstructured()
+
+        # Because we store all three vertices for every triangle, many vertices are repeated
+        # Matplotlib prefers without repeats
+        # So find the 1D indices of unique coordiates only
+        _, iunique, triangles = np.unique(
+            C.xrt,
             axis=1,
             return_index=True,
             return_inverse=True,
         )
+
+        # Only keep unique points
+        C = C[(iunique,)]
+
+        # The triangles are indices into the 1D unique data that
+        # reconstruct the original (ntri, 3) data
         triangles = triangles.reshape(-1, 3)
 
-        return points, triangles, iunique
+        return C, triangles
 
-    #
-    # Velocities
-    #
+    def repeat_pitchwise(self, N, axis=0):
+        """Replicate the data in pitchwise direction."""
+
+        # Make a list of copies of this cut with different theta
+        C_all = []
+        for i in range(N):
+            Ci = self.copy()
+            Ci.t += self.pitch * N
+            C_all.append(Ci)
+
+        # Join the copies together
+        return concatenate(C_all, axis=axis)
 
     @dependent_property
     def U(self):
@@ -1061,6 +1086,10 @@ class Composites:
     def ho(self):
         # We can directly use static enthalpy and velocity
         return self.h + 0.5 * self.V**2.0
+
+    @property
+    def halfVsq(self):
+        return 0.5 * self.V**2.0
 
     @property
     def Po_rel(self):
@@ -1867,6 +1896,11 @@ class MeanLine:
     @workdir.setter
     def workdir(self, workdir):
         self._set_metadata_by_key("workdir", workdir)
+
+    def get_row(self, irow):
+        ist = irow * 2
+        ien = ist + 2
+        return self[ist:ien]
 
 
 class BaseConfig:

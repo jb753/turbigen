@@ -48,9 +48,11 @@ post_process:
     row_spf: [[0.2, 0.5,],]
   plot_nose:
     row_spf: [[0.2,],]
-  contour_traverse:
-    mnorm: [2.1]
-    var: [Ys,]
+  contour:
+    coord: spf
+    value: .5
+    variable: Ys
+    N_passage: 3
   plot_camber:
     row_spf: [[0.5,],]
   plot_thickness:

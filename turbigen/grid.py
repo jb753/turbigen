@@ -5,6 +5,7 @@ from turbigen import util
 from turbigen import mesh2d as m2d
 import turbigen.yaml
 import turbigen.fluid
+import turbigen.base
 import turbigen.flowfield
 import turbigen.marching_cubes
 import importlib
@@ -931,10 +932,12 @@ class Grid:
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""
 
+        # Loop over blocks
         triangles = []
         last_block = None
         for block in self:
-            # Evaluate signed distance for all points
+
+            # Evaluate signed distance for all points in the block
             dist = turbigen.util.signed_distance(xr_cut, block.xr)
 
             # Get triangles for this block
@@ -945,10 +948,10 @@ class Grid:
                 triangles.append(triangles_block)
                 last_block = block
 
+        # Join all blocks into one array
         if triangles:
             triangles = np.concatenate(triangles).transpose(2, 0, 1)
 
-            # Now make into a 2D state
             out = last_block.empty(shape=triangles.shape[1:])
             out._data[:] = triangles
 
@@ -1007,7 +1010,7 @@ class Grid:
                 if sides is None:
                     surfs.append(None)
                 else:
-                    cut_now = sides[0].concatenate(
+                    cut_now = turbigen.base.concatenate(
                         (sides[0].flip(axis=0), sides[1][1:, ...]), axis=0
                     )
                     surfs.append([cut_now])
@@ -1047,7 +1050,7 @@ class Grid:
             bnow = block.meridional_slice(xr)
             if bnow:
                 bcut.append(bnow.squeeze())
-        return bcut
+        return turbigen.base.concatenate(bcut)
 
     def cut_span(self, spf):
         # Find j index nearest to requested span fraction

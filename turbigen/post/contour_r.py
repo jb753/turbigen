@@ -4,61 +4,10 @@ import os
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
-import warnings
+
+from turbigen.util import make_contour
 
 logger = turbigen.util.make_logger()
-
-
-def make_contour(c1, c2, v, triangles, lev, lab, rtlim, flip):
-
-    eps = 1e-4 * np.diff(lev).mean()
-    # v = np.clip(v, lev[0]+eps, lev[-1]-eps)
-    v = np.clip(v, lev[0] + eps, None)
-
-    cmap = "cubehelix"
-    if not flip:
-        cmap += "_r"
-
-    fig, ax = plt.subplots(layout="constrained")
-
-    # It seems that we have to pass triangles as a kwarg to tricontour,
-    # not positional, but this results in a UserWarning that contour
-    # does not take it as a kwarg. So catch and hide this warning.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        cm = ax.tricontourf(
-            c1,
-            c2,
-            v,
-            lev,
-            triangles=triangles,
-            cmap=cmap,
-            linestyles="none",
-            extend="max",
-        )
-
-    cm.set_edgecolor("face")
-    plt.colorbar(cm, label=lab)
-    # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 2))
-
-    # Remove box, grey backgroud for hub/casing/blades
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_facecolor(np.ones((3,)) * 0.7)
-    ax.set_xticks(())
-    ax.set_yticks(())
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.set_xlim(rtlim)
-
-    # Hub and casing labels
-    c2lim = np.array([c2.min(), c2.max()])
-    dc2 = np.ptp(c2lim) * 0.07
-    ax.text(rtlim.mean(), c2lim[0] - dc2, "Hub", ha="center", va="center")
-    ax.text(rtlim.mean(), c2lim[1] + dc2, "Shroud", ha="center", va="center")
-    ax.set_ylim(c2lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
-
-    return fig, ax
 
 
 def post(

@@ -484,9 +484,9 @@ def run_single(conf, gguess=None):
                                 )
                                 q0 = res.x
 
-                            eval_fit_err(
-                                q0, trees[isect], spf_fit[isect], bld_now, isect, True
-                            )
+                            # eval_fit_err(
+                            #     q0, trees[isect], spf_fit[isect], bld_now, isect, True
+                            # )
 
                     # Convert the tanChi camber parameters to recamber
                     Chi = np.degrees(np.arctan(bld_now.q_camber[:, :2]))
