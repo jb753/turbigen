@@ -8,6 +8,8 @@ from turbigen.solvers.base import BaseSolver
 
 # from turbigen.embsolve import embsolve
 
+from pathlib import Path
+
 from turbigen.solvers.embsolvec import *
 
 from timeit import default_timer as timer
@@ -31,6 +33,8 @@ class Config(BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
+
+    workdir: Path = None
 
     smooth4: float = 0.01
     """Fourth-order smoothing factor."""
