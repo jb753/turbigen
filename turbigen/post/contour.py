@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 from enum import Enum
 import warnings
 
-from turbigen.util import make_contour
-
 logger = turbigen.util.make_logger()
 
 
@@ -41,6 +39,7 @@ def post(
     irow_ref=None,
     cmap="cubehelix",
     extend="max",
+    show_mesh=False,
 ):
     """contour(coord, var=(), lim=None, step=None, theta_offset=0.0, title=None)
     Plot flow-field contours over a planar cut.
@@ -94,7 +93,6 @@ def post(
     if coord_mode == CoordMode.SPF:
         xrc = machine.ann.get_span_curve(value, n=101)
         C = grid.cut_span_unstructured(xrc)
-        print(C.shape)
     else:
         # Get an xr curve describing the cut plane.
         if coord_mode == CoordMode.X:
@@ -108,7 +106,7 @@ def post(
         C = grid.unstructured_cut_marching(xrc)
 
     # Matplotlib style triangulate, repeat if needed
-    C_tri, triangles = C.repeat_pitchwise(N_passage).get_triangulation()
+    C_tri, triangles = C.repeat_pitchwise(N_passage).get_mpl_triangulation()
 
     # Centre theta on zero
     C_tri.t -= 0.5 * (C_tri.t.max() + C_tri.t.max())
@@ -139,7 +137,9 @@ def post(
         if coord_mode == CoordMode.M:
             irow_ref = int(value / 2 - 1)
         else:
-            raise Exception("Need to set irow_ref if plotting at constant x or r.")
+            raise Exception(
+                "Need to set irow_ref if plotting at constant x, r, or span."
+            )
 
     # Choose if this is compressor or turbine
     row = meanline.get_row(irow_ref)
@@ -229,6 +229,9 @@ def post(
 
     if title:
         ax.set_title(title)
+
+    if show_mesh:
+        ax.triplot(c1, c2, triangles, "k-", lw=0.2)
 
     figname = os.path.join(postdir, f"contour_{coord}_{value:.3}.pdf")
     plt.savefig(figname)

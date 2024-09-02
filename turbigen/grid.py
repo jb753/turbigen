@@ -1049,7 +1049,7 @@ class Grid:
         for block in self:
             bnow = block.meridional_slice(xr)
             if bnow:
-                bcut.append(bnow.squeeze())
+                bcut.append(bnow.squeeze().triangulate())
         return turbigen.base.concatenate(bcut)
 
     def cut_span(self, spf):

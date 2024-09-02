@@ -46,12 +46,15 @@ post_process:
     irow_surf: [0,]
   plot_pressure_distributions:
     row_spf: [[0.2, 0.5,],]
-  plot_nose:
-    row_spf: [[0.2,],]
+  # plot_nose:
+  #   row_spf: [[0.2,],]
   contour:
     coord: spf
     value: .5
+    irow_ref: 0
+    show_mesh: true
     variable: Ys
+    # cmap: cubehelix_r
     N_passage: 3
   plot_camber:
     row_spf: [[0.5,],]

@@ -120,6 +120,48 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
+    def triangulate(self):
+        """Convert to a triangulated unstructured cut."""
+        # Only work on 2D cuts
+        assert self.ndim == 2
+        #
+        # Every structured quad becomes two triangles:
+        #
+        # i,j+1 +----+ i+1, j+1
+        #       |A / |
+        #       | / B|
+        #   i,j +----+ i+1, j
+        #
+        # Determine new shape
+        ni, nj = self.shape
+        ntri = (ni - 1) * (nj - 1) * 2
+        # Preallocate output data
+        out = self.empty(shape=(ntri, 3))
+        # Loop over quads
+        ktri = 0
+        for i in range(ni - 1):
+            for j in range(nj - 1):
+                data_tri_A = np.stack(
+                    (
+                        self._data[:, i, j],
+                        self._data[:, i, j + 1],
+                        self._data[:, i + 1, j + 1],
+                    ),
+                    axis=-1,
+                )
+                data_tri_B = np.stack(
+                    (
+                        self._data[:, i, j],
+                        self._data[:, i + 1, j + 1],
+                        self._data[:, i + 1, j],
+                    ),
+                    axis=-1,
+                )
+                out._data[:, ktri, :] = data_tri_A
+                out._data[:, ktri + 1, :] = data_tri_B
+                ktri += 2
+        return out
+
     def __getitem__(self, key):
         # Special case for scalar indices
         if np.shape(key) == ():
@@ -900,7 +942,7 @@ class Kinematics:
 
         return 0.5 * np.cross(qAC, qAB).transpose(1, 0)
 
-    def get_triangulation(self):
+    def get_mpl_triangulation(self):
         """Generate a matplotlib-compatible triangulation for an unstructured cut."""
 
         # Check we have a triangulated shape (ntri, 3)
