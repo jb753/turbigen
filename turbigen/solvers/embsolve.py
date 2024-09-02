@@ -1281,6 +1281,10 @@ def run(grid, conf, machine=None):
     if isinstance(conf, dict):
         conf = Config(**conf)
 
+    if conf.skip:
+        logger.info("Skipping, doing nothing.")
+        return
+
     logger.info("Intialising native solver...")
 
     nodes = np.sum([b.size for b in grid])

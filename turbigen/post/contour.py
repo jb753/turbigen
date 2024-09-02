@@ -21,6 +21,7 @@ class PlotVars(Enum):
     VT = "Vt"
     VM = "Vm"
     YS = "Ys"
+    CP = "Cp"
 
 
 def post(
@@ -164,6 +165,17 @@ def post(
     elif plot_var == PlotVars.VT:
         v = C_tri.Vm / row.U[1]
         label = r"Circumferential Velocity, $V_\theta/U$"
+
+    elif plot_var == PlotVars.CP:
+        Po1 = row.Po_rel[0]
+        Po2 = row.Po_rel[1]
+        P1 = row.P[0]
+        P2 = row.P[1]
+        if is_compressor:
+            v = (C_tri.P - Po1) / (Po1 - P1)
+        else:
+            v = (C_tri.P - Po1) / (Po2 - P2)
+        label = r"Static Pressure, $C_p$"
 
     else:
         raise Exception("Should not reach here.")

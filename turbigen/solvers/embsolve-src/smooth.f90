@@ -229,6 +229,7 @@ subroutine smooth( &
         abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
         /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
 
+
     ! Calculate nodal smoothing factors for each direction
 
     ! 2nd-order
@@ -244,8 +245,16 @@ subroutine smooth( &
     end where
 
     ! Apply the scale factors for cell side length
-    sf2n = sf2n * L
-    sf4n = sf4n * L
+    ! sf2n = sf2n * L
+    ! sf4n = sf4n * L
+
+    ! Reset the 4th to 2nd smoothed values on boundaries
+    xs4(1,:,:,:,:) = xs2(1,:,:,:,:)
+    xs4(ni,:,:,:,:) = xs2(ni,:,:,:,:)
+    xs4(:,1,:,:,:) = xs2(:,1,:,:,:)
+    xs4(:,nj,:,:,:) = xs2(:,nj,:,:,:)
+    xs4(:,:,1,:,:) = xs2(:,:,1,:,:)
+    xs4(:,:,nk,:,:) = xs2(:,:,nk,:,:)
 
     ! Loop over properties
     do ip=1,np
