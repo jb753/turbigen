@@ -14,9 +14,10 @@ contains
     include 'smooth.f90'
     include 'viscous.f90'
     include 'fluxes.f90'
+    include 'multigrid.f90'
 
     ! Using the current flow field, calculate changes to conserved
-    ! variables that advance the solution in time. Specifically,
+    ! variables that advance each cell in time. Specifically,
     ! 1) Evaluate fluxes of conserved quantities across each face
     ! 2) Sum fluxes into each cell
     ! 3) Add on body forces and source terms (defined per unit vol)
@@ -33,8 +34,9 @@ contains
         r, ri, rj, rk, &                      ! Node and face-centered radii
         dAi, dAj, dAk, vol, dt, &             ! Cell areas, volumes, time step
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
-        resid, &                              ! Residual out
-        ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
+        ijk_mg, fmgrid, &                              ! Multigrid indexing
+        resid, &                              ! Cell residual out
+        ni, nj, nk, niwall, njwall, nkwall, nmg &  ! Numbers of points dummy args
         )
 
         ! Number of conserved variables nv = 5
@@ -63,16 +65,19 @@ contains
         real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
         real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
         real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-        real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
-        real*4, intent (in)  :: dt(ni-1, nj-1, nk-1)
+        real*4, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
+        real*4, intent (in)  :: dt(ni-1, nj-1, nk-1, nmg)
 
         ! Wall locations
         integer*2, intent (in) :: ijk_iwall(3, niwall)
         integer*2, intent (in) :: ijk_jwall(3, njwall)
         integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
-        ! Residual out
-        real*4, intent (inout) :: resid(ni, nj, nk, 5)
+        ! Multigrid indices
+        integer*2, intent (in) :: ijk_mg(3, ni-1, nj-1, nk-1, nmg-1)
+
+        ! Cell residual out
+        real*4, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
 
         ! Numbers of points dummy args
         integer, intent (in)  :: ni
@@ -81,6 +86,8 @@ contains
         integer, intent (in)  :: niwall
         integer, intent (in)  :: njwall
         integer, intent (in)  :: nkwall
+        integer, intent (in)  :: nmg
+        real*4, intent (in)  :: fmgrid
 
         ! End of argument declarations
         ! Begin working variables
@@ -99,7 +106,6 @@ contains
         ! Net fluxes for each cell
         real*4 :: fsum(ni-1, nj-1, nk-1, 5)
         ! Cell-centered residual
-        real*4 :: residc(ni-1, nj-1, nk-1, 5)
 
         integer :: iv
 
@@ -120,54 +126,67 @@ contains
         Vt = Vxrt(:, :, :, 3)
         S = (rho*Vt*Vt + P)/r
         call node_to_cell(S, Sc, ni, nj, nk, 1)
+        Sc = Sc * vol(:,:,:,1)
 
         ! Sum fluxes to get the net flux into each cell
         call sum_fluxes( &
             fluxi, fluxj, fluxk, &  ! Fluxes on the faces
-            dAi, dAj, dAk, vol, &   ! Cell geometry
-            fsum, &                 ! Net flux per unit volume out
+            dAi, dAj, dAk, &        ! Cell geometry
+            fsum, &                 ! Net flux
             ni, nj, nk, 5 &         ! Numbers of points for dummy args
         )
 
         ! Add on source term to the radial momentum eqn
         fsum(:,:,:,3) = fsum(:,:,:,3) + Sc
 
-        ! Add on body forces per unit volume
+        ! Add on body forces
         fsum = fsum + fb
 
-        ! Integrate all equations forward in time
-        do iv = 1, 5
-            residc(:,:,:,iv)  = fsum( :,:,:,iv) * dt
-        end do
+        ! fsum now contains the sum of fluxes for all cells
+        call multigrid_integrate(fsum, resid, ijk_mg, dt, vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
 
-        ! Distribute change to nodes
-        call cell_to_node(residc, resid, ni, nj, nk, 5)
+
+        ! ! Integrate all equations forward in time
+        ! do iv = 1, 5
+        !     resid(:,:,:,iv)  = fsum( :,:,:,iv) * dt(:,:,:,1)/vol(:,:,:,1)
+        ! end do
 
     end subroutine
 
     subroutine step(cons, R1, R2, istep, ischeme, ni, nj, nk)
 
         real*4, intent (inout)  :: cons(ni, nj, nk, 5)
-        real*4, intent (inout) :: R1(ni, nj, nk, 5)
-        real*4, intent (inout) :: R2(ni, nj, nk, 5)
+        real*4, intent (inout) :: R1(ni-1, nj-1, nk-1, 5)
+        real*4, intent (inout) :: R2(ni-1, nj-1, nk-1, 5)
         integer, intent (in) :: istep
         integer, intent (in) :: ischeme
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
 
+        real*4 :: Rcell(ni-1, nj-1, nk-1, 5)
+        real*4 :: Rnode(ni, nj, nk, 5)
+
         if (istep.eq.0) then
-            cons = cons + R1
+            ! At the start, we have no previous time level available
+            ! So just apply the one residual we have
+            Rcell = R1
             R2 = R1
         else
+            ! Otherwise, combine current and previous time level
+            ! According to the selected time marching scheme
             if (ischeme.eq.0) then
-                cons = cons + 2e0*R1 - R2
+                Rcell = 2e0*R1 - R2
                 R2 = R1
             else
-                cons = cons + 2e0*R1 - 1.65e0*R2
+                Rcell = 2e0*R1 - 1.65e0*R2
                 R2 = R1 - 0.65e0*R2
             end if
         end if
+
+        ! Distribute cell residual to nodes and add on
+        call cell_to_node(Rcell, Rnode, ni, nj, nk, 5)
+        cons = cons + Rnode
 
     end subroutine
 

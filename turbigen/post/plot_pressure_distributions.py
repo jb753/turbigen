@@ -21,6 +21,7 @@ def post(
     fix_stag=False,
     note=None,
     show_DF=None,
+    compare=None,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -107,9 +108,11 @@ def post(
                 # Extract surface distance and normalise
                 zeta_stag = snow.zeta_stag
                 # Calculate maximum zeta only on main blade
-                if isurf == 0:
-                    zeta_max = np.abs(zeta_stag).max(axis=0, keepdims=True)
-                zeta_norm = zeta_stag / zeta_max
+                zeta_max = zeta_stag.max(axis=0)
+                zeta_min = np.abs(zeta_stag.min(axis=0))
+                zeta_norm = zeta_stag.copy()
+                zeta_norm[zeta_norm < 0.0] /= zeta_min
+                zeta_norm[zeta_norm > 0.0] /= zeta_max
 
                 if fix_stag:
                     Cp -= Cp.max()
@@ -170,6 +173,18 @@ def post(
                 textcoords="offset points",
                 arrowprops=None,
             )
+
+        if compare:
+            compare_dat = np.load(compare)
+
+            zeta_stag, Cp = compare_dat[key]
+            zeta_max = zeta_stag.max(axis=0)
+            zeta_min = np.abs(zeta_stag.min(axis=0))
+            zeta_norm = zeta_stag.copy()
+            zeta_norm[zeta_norm < 0.0] /= zeta_min
+            zeta_norm[zeta_norm > 0.0] /= zeta_max
+
+            ax.plot(np.abs(zeta_norm), Cp, "k-")
 
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         ax.legend()

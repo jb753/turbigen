@@ -22,7 +22,8 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
 
     call node_to_face( x, xi, xj, xk, ni, nj, nk, 3 )
 
-    call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, divx, ni, nj, nk, 1)
+    call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, divx, ni, nj, nk, 1)
+    divx = -divx/vol
 
 end subroutine
 
@@ -78,7 +79,8 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
         call node_to_face( xv, xi, xj, xk, ni, nj, nk, 3 )
 
         ! Apply Gauss' theorem to get volume-averaged spatial derivative
-        call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, -vol, gradx(:,:,:,ii), ni, nj, nk, 1)
+        call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, gradx(:,:,:,ii), ni, nj, nk, 1)
+        gradx(:,:,:,ii) = - gradx(:,:,:,ii) / vol
 
         ! Special case the theta direction
         if (ii.eq.2) then

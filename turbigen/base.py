@@ -981,11 +981,13 @@ class Kinematics:
         C_all = []
         for i in range(N):
             Ci = self.copy()
-            Ci.t += self.pitch * N
+            Ci.t += self.pitch * i
             C_all.append(Ci)
 
         # Join the copies together
-        return concatenate(C_all, axis=axis)
+        C_all = concatenate(C_all, axis=axis)
+
+        return C_all
 
     @dependent_property
     def U(self):

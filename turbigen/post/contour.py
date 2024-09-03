@@ -107,7 +107,8 @@ def post(
         C = grid.unstructured_cut_marching(xrc)
 
     # Matplotlib style triangulate, repeat if needed
-    C_tri, triangles = C.repeat_pitchwise(N_passage).get_mpl_triangulation()
+    C = C.repeat_pitchwise(N_passage)
+    C_tri, triangles = C.get_mpl_triangulation()
 
     # Centre theta on zero
     C_tri.t -= 0.5 * (C_tri.t.max() + C_tri.t.max())
@@ -122,7 +123,7 @@ def post(
         c1, c2 = C_tri.rt, C_tri.r
     elif coord_mode == CoordMode.SPF:
         # Now generate a mapping from xr to meridional distance
-        xr_ref = machine.ann.get_span_curve(value, n=1999)
+        xr_ref = machine.ann.get_span_curve(value, n=4999)
         mp_from_xr = machine.ann.get_mp_from_xr(xr_ref)
         c1 = mp_from_xr(C_tri.xr)
         c2 = C_tri.t
@@ -243,8 +244,9 @@ def post(
         ax.set_title(title)
 
     if show_mesh:
-        ax.triplot(c1, c2, triangles, "k-", lw=0.2)
+        ax.triplot(c1, c2, triangles, "k-", lw=0.1)
 
     figname = os.path.join(postdir, f"contour_{coord}_{value:.3}.pdf")
     plt.savefig(figname)
+    plt.show()
     plt.close()

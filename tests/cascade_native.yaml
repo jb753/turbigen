@@ -24,7 +24,7 @@ mean_line:
 
 # Annulus shape using meridional aspect ratios
 annulus:
-  AR_gap: [0.8, 0.9]  # Span to inlet/exit boundary distance
+  AR_gap: [5.0, 5.5]  # Span to inlet/exit boundary distance
   AR_chord: 1.6  # Span to chord
 
 # Blade shapes
@@ -65,7 +65,7 @@ solver:
   n_step_log: 100
   nstep_damp: -1
   plot_conv: true
-  # smooth2_adapt: 2.0
+  smooth2_adapt: 5.0
   # i_loss: 1
   CFL: 0.4
   i_scheme: 0
@@ -76,8 +76,7 @@ post_process:
     value: 0.5
     variable: Cp
     irow_ref: 0
-  plot_nose:
-    row_spf: [[0.6,],]
+    N_passage: 2
   plot_section:
     row_spf: [[0.2,0.5,0.8],]
     coord_sys: xrt

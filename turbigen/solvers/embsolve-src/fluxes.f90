@@ -73,6 +73,7 @@ subroutine set_fluxes( &
     integer :: id
     integer :: ip
 
+    ! Extract the quantities we will need to get fluxes
     rho = cons(:,:,:,1)
     Vx = Vxrt(:,:,:,1)
     Vr = Vxrt(:,:,:,2)
@@ -84,7 +85,7 @@ subroutine set_fluxes( &
     ! Calculate face-centered pressure
     call node_to_face( P, Pi, Pj, Pk, ni, nj, nk, 1)
 
-    ! Evaluate the mass flux at face centers, store in rhoV
+    ! Evaluate the mass flux at face centers
     call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
 
     ! Now evaluate the nodal fluxes per unit mass of other quantities
@@ -96,7 +97,7 @@ subroutine set_fluxes( &
     ! Distribute to the faces
     call node_to_face( fmass, fmassi, fmassj, fmassk, ni, nj, nk, 4)
 
-    ! Mass fluxes first
+    ! Mass fluxes through ijk faces first
     fluxi(:, :, :, :, 1) = rhoVi
     fluxj(:, :, :, :, 1) = rhoVj
     fluxk(:, :, :, :, 1) = rhoVk
@@ -148,7 +149,7 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
 end subroutine
 
 
-subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, Fsum, ni, nj, nk, np)
 
     implicit none
 
@@ -162,7 +163,6 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
     real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
     real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
     real*4, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
     real*4, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
@@ -180,12 +180,12 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, Fsum, ni, nj, nk, np)
         fisum = sum(dAi*fi(:,:,:,:,ip),4)
         fjsum = sum(dAj*fj(:,:,:,:,ip),4)
         fksum = sum(dAk*fk(:,:,:,:,ip),4)
-        ! Net flux per unit volume
+        ! Net flux
         fsum(:, :, :, ip) = (&
             fisum(1:ni-1,:,:) - fisum(2:ni,:,:) & ! i faces
             + fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:) & ! j faces
             + fksum(:,:,1:nk-1) - fksum(:,:,2:nk) & ! k faces
-        )/vol
+        )
     end do
 
 end subroutine

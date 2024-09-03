@@ -63,6 +63,8 @@ class HMeshConfig(BaseConfig):
 
     skew_max = 30.0
 
+    slip_annulus = False
+
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         # """Evaluate a spanwise grid vector given hub and casing spacings."""
         if tip:
@@ -478,6 +480,13 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         # Spanwise grid
         tip_ref = np.max(mac.tip)
         span_frac = mesh_config.spanwise_grid(dspf_hub, dspf_casing, tip_ref)
+
+        if mesh_config.slip_annulus:
+            dspf = mesh_config.dspf_mid
+            span_frac = clusterfunc.symmetric.free(
+                dspf / 2.0, dspf, mesh_config.ER_span
+            )
+
         nj = len(span_frac)
 
         # Streamwise grid
@@ -820,6 +829,11 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
                 xrt_now, mac.Nb[irow].astype(int), patches
             )
         )
+
+    if mesh_config.slip_annulus:
+        for b in blocks:
+            b.add_patch(turbigen.grid.InviscidPatch(j=0))
+            b.add_patch(turbigen.grid.InviscidPatch(j=-1))
 
     g = turbigen.grid.Grid(blocks)
 

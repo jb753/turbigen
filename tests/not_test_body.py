@@ -188,7 +188,7 @@ cp = 1005.
 ga = 1.4
 mu = 1.84e-5
 Tu0 = 300.
-Alpha1 = 0.
+Alpha1 = 5.
 Beta = 0.
 Ma1 = 0.5
 
@@ -220,13 +220,14 @@ for b in g:
     b.set_Tu0(Tu0)
 
 settings = {
-    "i_loss": 0,
-    "n_step": 40000,
-    "n_step_avg": 10000,
+    "i_loss": 1,
+    "n_step": 10000,
+    "n_step_avg": 1000,
     "n_step_log": 100,
     "nstep_damp": -1,
-    "i_scheme": 0,
-    "CFL": 0.4,
+    # "i_scheme": 1,
+    # "smooth4": 0.01,
+    # "CFL": 0.4,
     "plot_conv": True,
 }
 turbigen.solvers.embsolve.run(g, settings)
@@ -236,6 +237,8 @@ jplot = 5
 fig, ax = plt.subplots()
 C = g['omesh'][:,jplot,0]
 ax.plot(C.x, C.P)
+ts3_dat = np.loadtxt('body_ts3.dat')
+ax.plot(*ts3_dat,'k--')
 
 
 fig, ax = plt.subplots()

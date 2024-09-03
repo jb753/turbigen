@@ -62,6 +62,9 @@ class Config(BaseSolver):
     n_step_avg: int = 1
     """Number of time steps to average over."""
 
+    n_step_ramp: int = 250
+    """Number of time steps to ramp smoothing and damping."""
+
     n_loss: int = 5
     """Number of time steps between viscous force updates."""
 
@@ -70,6 +73,8 @@ class Config(BaseSolver):
 
     damping_factor: float = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
+
+    fmgrid: float = 0.0
 
     xllim_pitch: float = 0.03
 
@@ -88,6 +93,8 @@ class Config(BaseSolver):
     tauw_turb_mult: float = 1.0
 
     rf_periodic: float = 1.0
+
+    multigrid: tuple = ()
 
 
 def get_dw(block):
@@ -168,25 +175,32 @@ class SolverBlock:
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
         self.dAk = to_fort(block.dAk_new)
-        self.vol = to_fort(block.vol_new)
-        self.dlmin = to_fort(block.dlmin)
+        self.vol = get_multigrid_volumes(block.vol, conf.multigrid)
+        self.dlmin = get_multigrid_lengths(block, conf.multigrid)
+        self.dt = self.dlmin * 0.0
+
         self.Vxrt = to_fort(block.Vxrt)
         self.Omega = block.Omega.mean().astype(typ)
         xllim = (
             block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
         )
-        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
-        xlength = (0.41 * xlength) ** 2.0
-        self.xlength = to_fort(np.zeros_like(block.vol))
-        embsolve.node_to_cell(xlength, self.xlength)
-
-        self.dU1 = self.cons.copy(order="F").astype(typ) * np.nan
-        self.dU2 = self.cons.copy(order="F").astype(typ) * np.nan
 
         self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.dU1 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.dU2 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+
+        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
+        xlength = (0.41 * xlength) ** 2.0
+        self.xlength = to_fort(np.zeros((ni - 1, nj - 1, nk - 1)))
+        embsolve.node_to_cell(xlength, self.xlength)
+
+        # Get indices for multigrid
+        self.ijk_multigrid = (
+            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid) + 1
+        )
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -605,36 +619,18 @@ class SolverBlock:
                 self.ho.ravel(order="F")[ind] = state.h + halfVsq_new
 
     def set_timestep(self, CFL, relax=0.0):
-        Vx = self.cons[..., 1] / self.cons[..., 0]
-        Vr = self.cons[..., 2] / self.cons[..., 0]
-        Vt = self.cons[..., 3] / self.cons[..., 0] / self.r
-        V = np.sqrt(Vx**2 + Vr**2 + Vt**2)
+        embsolve.set_timesteps(
+            self.dt,
+            self.vol,
+            self.state.a,
+            self.Vxrt,
+            self.dlmin,
+            self.ijk_multigrid,
+            CFL,
+            relax,
+        )
 
-        a = self.state.a
-
-        ni, nj, nk = self.r.shape
-
-        Va_node = np.asfortranarray(np.stack((V, a), axis=-1)).astype(typ)
-        Va_cell = np.empty((ni - 1, nj - 1, nk - 1, 2), order="F", dtype=typ)
-        embsolve.node_to_cell(Va_node, Va_cell)
-        Vref = Va_cell[..., 0]
-        aref = Va_cell[..., 1]
-        dt_new = CFL * self.dlmin / (aref + Vref)
-        if relax:
-            self.dt = relax * dt_new + (1.0 - relax) * self.dt
-        else:
-            self.dt = dt_new
-
-        # # Reduce at boundaries
-        # fac = 0.5
-        # self.dt[0,:,:] *= fac
-        # self.dt[-1,:,:] *= fac
-        # # self.dt[:,0,:] *= fac
-        # # self.dt[:,-1,:] *= fac
-        # # self.dt[:,:,0] *= fac
-        # # self.dt[:,:,-1] *= fac
-
-    def residual(self):
+    def residual(self, fmgrid):
         embsolve.residual(
             self.cons,
             self.Vxrt,
@@ -650,6 +646,8 @@ class SolverBlock:
             self.vol,
             self.dt,
             *self.ijk_wall_face,
+            self.ijk_multigrid,
+            fmgrid,
             self.dU1,
         )
 
@@ -675,13 +673,16 @@ class SolverBlock:
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
 
+    # def multigrid(self, fmgrid):
+    #     embsolve.multigrid(self.dU1, self.ijk_multigrid, fmgrid)
+
     def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,
             self.mu,
             self.xlength,
             *self.tau,
-            self.vol,
+            self.vol[..., 0],
             self.dAi,
             self.dAj,
             self.dAk,
@@ -694,7 +695,6 @@ class SolverBlock:
             self.fb,
             self.cons,
             *self.tau,
-            self.vol,
             self.dAi,
             self.dAj,
             self.dAk,
@@ -707,29 +707,6 @@ class SolverBlock:
             self.conf.tauw_lam_mult,
             self.conf.tauw_turb_mult,
         )
-
-    def set_wall_function(self):
-        ni, nj, nk, _ = self.cons.shape
-        for dirn, (dw, ijk, dA) in enumerate(
-            zip(self.dw_face, self.ijk_wall_face_slip, self.dA_face)
-        ):
-            nwall = ijk.shape[1]
-            if nwall:
-                embsolve.wall_function(
-                    self.fb,
-                    ijk,
-                    dirn + 1,
-                    self.cons,
-                    self.r,
-                    self.vol,
-                    dw,
-                    dA,
-                    self.mu,
-                    ni,
-                    nj,
-                    nk,
-                    nwall,
-                )
 
 
 def trim_i(ijk):
@@ -1015,7 +992,7 @@ def exchange_tau(blocks, bid_local, periodics):
             # Chose ijk face direction for away patch
             tau2 = b2.tau[nxd - 1]
 
-            embsolve.average_by_ijk(tau1, tau2, ijkf, nxijkf)
+            embsolve.average_by_ijk(tau1, tau2, ijkf, nxijkf, 1.0)
 
         # Otherwise, communication is needed
         else:
@@ -1092,16 +1069,23 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
+    # Initialise a conservative time step
     for iblock in range(nblock):
-        blocks[iblock].set_timestep(conf.CFL)
+        blocks[iblock].set_timestep(conf.CFL * 0.5)
 
     try:
         # Start the main time stepping loop
         for istep in range(conf.n_step):
+
+            # Ramping factors
+            damping_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0])
+            smoothing_ramp = np.interp(istep, [0, conf.n_step_ramp], [2.0, 1.0])
+            cfl_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0]))
+
             # Exchange conserved variables across periodic patches
             exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
 
-            # Calculate residual for all blocks
+            # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
                 sb = blocks[iblock]
 
@@ -1112,8 +1096,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     sb.cons_avg += sb.cons / float(conf.n_step_avg)
 
                 # Update time steps using local Mach
+                # With a relaxation factor so they do not change too rapidly
                 if not np.mod(istep, conf.n_step_dt):
-                    sb.set_timestep(conf.CFL, relax=0.25)
+                    sb.set_timestep(conf.CFL * cfl_ramp, relax=0.25)
 
                 # Apply boundary conditions
                 sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
@@ -1132,23 +1117,26 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     # Convert the viscous stress into body force by summing fluxes
                     sb.set_viscous_force()
 
-                # Calculate nodal changes
-                sb.residual()
+                # Using the updated flow field, sum fluxes for each cell
+                # and store the residual
+                sb.residual(conf.fmgrid * damping_ramp)
 
             for iblock in range(nblock):
                 sb = blocks[iblock]
 
-                # Apply damping if requested
+                # Apply damping to cell residuals if requested
                 if conf.damping_factor and (
                     istep < conf.nstep_damp or conf.nstep_damp < 0
                 ):
-                    sb.damp(conf.damping_factor)
+                    sb.damp(conf.damping_factor * damping_ramp)
 
                 # Take a time step
                 sb.step(istep, conf.i_scheme)
 
                 # Stabilise the solution by smoothing
-                sb.smooth(sf2, sf4, sf2min)
+                sb.smooth(
+                    sf2 * smoothing_ramp, sf4 * smoothing_ramp, sf2min * smoothing_ramp
+                )
 
             # Record residuals
             iilog = np.mod(istep - 1, conf.n_step_log)
@@ -1405,3 +1393,175 @@ def run(grid, conf, machine=None):
         ax.set_ylabel(r"Mass Conservation Error $\varepsilon \dot{m}/\%$")
         plt.tight_layout()
         plt.show()
+
+
+def get_multigrid_indices(shape, nb):
+    """For a block of a given shape and a set of multigrid levels,
+    evaluate the indices of every fine mesh point into each of the
+    coarse grid levels.
+
+    Returns
+    -------
+    ijkmg: array (nlevels, ni, nj, nk, 3)"""
+
+    # Preallocate output array
+    ni, nj, nk = shape
+    nlev = len(nb)
+    ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
+
+    # Loop over multigrid levels
+    for ilev in range(nlev):
+
+        # Number of cells along each side of this
+        # multigrid level is product of all previous
+        nbi = np.prod(nb[: ilev + 1])
+
+        # Loop over all points in the block
+        for i in range(ni):
+            for j in range(nj):
+                for k in range(nk):
+
+                    # Integer divide to find the multigrid block index
+                    ijkmg[:, i, j, k, ilev] = (
+                        i // nbi,
+                        j // nbi,
+                        k // nbi,
+                    )
+
+    assert (ijkmg >= 0).all()
+    return ijkmg
+
+
+def get_multigrid_volumes(vol, nb):
+
+    # Preallocate output array
+    ijkmg = get_multigrid_indices(vol.shape, nb)
+    nlev = len(nb)
+    volmg = np.asfortranarray(np.zeros(vol.shape + (nlev + 1,), dtype=typ))
+    ni, nj, nk = vol.shape
+
+    # Finest grid level is trivial
+    volmg[..., 0] = vol
+
+    # Loop over multigrid levels
+    for ilev in range(nlev):
+
+        # Number of cells along each side of this
+        # multigrid level is product of all previous
+        nbi = np.prod(nb[: ilev + 1])
+
+        # Loop over all points in the block
+        for i in range(ni):
+            for j in range(nj):
+                for k in range(nk):
+
+                    # Get the coarse block index for this fine point
+                    ib, jb, kb = ijkmg[:, i, j, k, ilev]
+
+                    # Accumulate fine volume onto the coarse volume
+                    volmg[ib, jb, kb, ilev + 1] += vol[i, j, k]
+
+    assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
+
+    return volmg
+
+
+def arange_including_end(ni, di):
+    ii = np.arange(0, ni, di)
+    if not (ii[-1] == (ni - 1)):
+        ii = np.append(ii, ni - 1)
+    assert ii[-1] == (ni - 1)
+    assert np.allclose(np.diff(ii[:-1]), di)
+    return ii
+
+
+def get_multigrid_lengths(block, nb):
+
+    # Preallocate output array
+    ni, nj, nk = block.shape
+    ijkmg = get_multigrid_indices((ni - 1, nj - 1, nk - 1), nb)
+    nlev = len(nb)
+
+    dlmg = np.asfortranarray(
+        np.zeros(
+            (
+                ni - 1,
+                nj - 1,
+                nk - 1,
+                nlev + 1,
+            ),
+            dtype=typ,
+        )
+    )
+
+    nimg = np.max(ijkmg[0, ...], axis=(0, 1, 2)) + 1
+    njmg = np.max(ijkmg[1, ...], axis=(0, 1, 2)) + 1
+    nkmg = np.max(ijkmg[2, ...], axis=(0, 1, 2)) + 1
+
+    # Finest grid level is trivial
+    dlmg[..., 0] = block.dlmin
+
+    # Loop over multigrid levels
+    for ilev in range(nlev):
+
+        # Number of cells along each side of this
+        # multigrid level is product of all previous
+        nbi = np.prod(nb[: ilev + 1])
+
+        # Assemble a list of ijk with correct step size
+        iimg = arange_including_end(ni, nbi)
+        jjmg = arange_including_end(nj, nbi)
+        kkmg = arange_including_end(nk, nbi)
+        data_lev = np.full((block.nprop, len(iimg), len(jjmg), len(kkmg)), np.nan)
+
+        # Loop over coarse cells
+        for i, img in enumerate(iimg):
+            for j, jmg in enumerate(jjmg):
+                for k, kmg in enumerate(kkmg):
+                    data_lev[:, i, j, k] = block._data[:, img, jmg, kmg]
+        blk_lev = block.empty()
+        blk_lev._data = data_lev
+        assert blk_lev.dlmin.shape == (nimg[ilev], njmg[ilev], nkmg[ilev])
+        dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin
+
+    return dlmg
+
+
+def get_multigrid_timestep(dlmin, vol, Vxrt, a, CFL, relax, ijkmg, dt_old):
+
+    # Get a+V cell-centered
+    ni, nj, nk, _ = Vxrt.shape
+    V = np.sqrt(np.sum(Vxrt**2, axis=-1))
+    Vref_node = np.asfortranarray(V + a).astype(typ)
+    Vref_cell = np.empty((ni - 1, nj - 1, nk - 1), order="F", dtype=typ)
+    embsolve.node_to_cell(Vref_node, Vref_cell)
+
+    # Preallocate
+    Vrefmg = np.ones(dlmin.shape, order="F", dtype=typ) * np.nan
+    nlev = ijkmg.shape[-1]
+
+    # Trivial first level
+    Vrefmg[..., 0] = Vref_cell
+
+    # Loop over multigrid levels
+    for ilev in range(nlev):
+        # Loop over all points in the block
+        for i in range(ni - 1):
+            for j in range(nj - 1):
+                for k in range(nk - 1):
+
+                    # Get the coarse block index for this fine point
+                    ib, jb, kb = ijkmg[:, i, j, k, ilev]
+
+                    # Accumulate fine Vref onto coarse
+                    vol_fac = vol[i, j, k, 0] / vol[ib, jb, kb, ilev]
+                    Vrefmg[ib, jb, kb, ilev] += Vref_cell[i, j, k] * vol_fac
+
+    # Now calculate time steps
+    dt_new = CFL * dlmin / Vrefmg
+
+    # Relax
+    if relax:
+        return relax * dt_new + (1.0 - relax) * dt_old
+    else:
+        return dt_new

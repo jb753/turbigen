@@ -117,7 +117,7 @@ subroutine shear_stress(cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk,
 end subroutine
 
 subroutine viscous_force( &
-        fvisc, cons, taui, tauj, tauk, vol, dAi, dAj, dAk, r, ri, rj, rk, &
+        fvisc, cons, taui, tauj, tauk, dAi, dAj, dAk, r, ri, rj, rk, &
         ijk_iwall, ijk_jwall, ijk_kwall, &
         dw_iwall, dw_jwall, dw_kwall, &
         dA_iwall, dA_jwall, dA_kwall, &
@@ -132,7 +132,6 @@ subroutine viscous_force( &
     real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
     real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
 
-    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
     real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
     real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
     real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
@@ -190,17 +189,17 @@ subroutine viscous_force( &
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
 
     ! Get the net viscous force on each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, vol, fvisc_new, ni, nj, nk, 5)
+    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
 
     ! ! Add on wall cell forces due to stress from wall function
     call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, r, vol, dw_iwall, dA_iwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, niwall &
+        fvisc_new, ijk_iwall, 1, cons, r, dw_iwall, dA_iwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, niwall &
     )
     call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, r, vol, dw_jwall, dA_jwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, njwall &
+        fvisc_new, ijk_jwall, 2, cons, r, dw_jwall, dA_jwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, njwall &
     )
     call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, r, vol, dw_kwall, dA_kwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, nkwall &
+        fvisc_new, ijk_kwall, 3, cons, r, dw_kwall, dA_kwall, mu, tauw_lam_mult, tauw_turb_mult, ni, nj, nk, nkwall &
     )
 
     ! Apply relaxation
@@ -252,7 +251,7 @@ end subroutine
 
 ! Add on cell forces due to wall functions
 subroutine wall_function(f, ijk, dirn, cons, &
-        r, vol, dw, dA, mu, &
+        r, dw, dA, mu, &
         tauw_lam_mult, tauw_turb_mult, &
         ni, nj, nk, nwall)
 
@@ -266,7 +265,6 @@ subroutine wall_function(f, ijk, dirn, cons, &
     integer, intent(in) :: dirn
     real*4, intent (in) :: cons(ni, nj, nk, 5)
     real*4, intent (in) :: r(ni, nj, nk)
-    real*4, intent (in) :: vol(ni-1,nj-1,nk-1)
 
     real*4, intent (in) :: dw(nwall)
     real*4, intent (in) :: dA(nwall)
@@ -448,7 +446,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
 
             ! multiply by face area magnitude
             ! direction is opposite to cell velocity
-            vec = -Vxrtw*dA(iwall)/vol(ic, jc, kc)
+            vec = -Vxrtw*dA(iwall)
             if (Vw.gt.0e0) then
                 vec = vec/Vw
             else
