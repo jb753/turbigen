@@ -595,20 +595,60 @@ class Kinematics:
         return np.diff(self.xyz, axis=3)
 
     @dependent_property
+    def dlmin_new(self):
+
+        # Get face area magnitudes
+        dAi = turbigen.util.vecnorm(self.dAi_new)
+        dAj = turbigen.util.vecnorm(self.dAj_new)
+        dAk = turbigen.util.vecnorm(self.dAk_new)
+
+        # For each volume, take the minimum of the bounding length
+        # scales for every coordinate direction
+        vol = self.vol_new
+        dli = np.minimum(vol / dAi[1:, :, :], vol / dAi[:-1, :, :])
+        dlj = np.minimum(vol / dAj[:, 1:, :], vol / dAj[:, :-1, :])
+        dlk = np.minimum(vol / dAk[:, :, 1:], vol / dAk[:, :, :-1])
+
+        # Now take minimum of all directions
+        dlmin = np.minimum(dli, dlj)
+        dlmin = np.minimum(dlmin, dlk)
+
+        return dlmin
+
+    @dependent_property
     def dlmin(self):
         # Shortest side length
+
+        # Vectors along all cell edges
         dli = turbigen.util.vecnorm(self.dli)
         dlj = turbigen.util.vecnorm(self.dlj)
         dlk = turbigen.util.vecnorm(self.dlk)
-        dli = 0.25 * (
-            dli[:, :-1, :-1] + dli[:, :-1, 1:] + dli[:, 1:, :-1] + dli[:, :-1, :-1]
+
+        # Shortest side length on i-faces
+        dli = np.min(
+            np.stack(
+                (dli[:, :-1, :-1], dli[:, :-1, 1:], dli[:, 1:, :-1], dli[:, :-1, :-1])
+            ),
+            axis=0,
         )
-        dlj = 0.25 * (
-            dlj[:-1, :, :-1] + dlj[:-1, :, 1:] + dlj[1:, :, :-1] + dlj[:-1, :, :-1]
+
+        # Shortest side length on j-faces
+        dlj = np.min(
+            np.stack(
+                (dlj[:-1, :, :-1], dlj[:-1, :, 1:], dlj[1:, :, :-1], dlj[:-1, :, :-1])
+            ),
+            axis=0,
         )
-        dlk = 0.25 * (
-            dlk[:-1, :-1, :] + dlk[:-1, 1:, :] + dlk[1:, :-1, :] + dlk[:-1, :-1, :]
+
+        # Shortest side length on k-faces
+        dlk = np.min(
+            np.stack(
+                (dlk[:-1, :-1, :], dlk[:-1, 1:, :], dlk[1:, :-1, :], dlk[:-1, :-1, :])
+            ),
+            axis=0,
         )
+
+        # Shortest side length for each volume
         dlmin = np.minimum(dli, dlj)
         dlmin = np.minimum(dlmin, dlk)
         return dlmin

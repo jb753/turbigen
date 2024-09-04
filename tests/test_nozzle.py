@@ -63,7 +63,7 @@ def make_nozzle(
     # Numbers of grid points
     nj = 17
     nk = 17
-    ni = int(nj * L_h)
+    ni = int(nj * L_h-3)
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
@@ -98,7 +98,7 @@ def make_nozzle(
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni // nblock * iblock for iblock in range(nblock)]
     ienb = [ni // nblock * (iblock + 1) + 1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -198,17 +198,17 @@ def make_nozzle(
 
 
 settings = {
-    "n_step": 5000,
+    "n_step": 10000,
     "n_step_avg": 10,
     "n_step_log": 100,
     "i_loss": 0,
-    "i_scheme": 0,
-    "CFL": 0.4,
+    "i_scheme": 1,
+    "CFL": 0.7,
     "i_exit": 1,
     "i_inlet": 1,
     "K_inlet": 0.4,
     "fmgrid": 0.2,
-    'plot_conv': False,
+    'plot_conv': True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
 
@@ -486,7 +486,7 @@ def not_test_exit(Alpha):
 if __name__ == "__main__":
     pass
 
-    test_condi('r')
+    # test_condi('r')
 
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
@@ -496,7 +496,7 @@ if __name__ == "__main__":
     # test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
-    # test_uniform(-30.)
+    test_uniform(30.)
 
     # print('testing uniform, skewed grid')
     # test_skew(-30.)
@@ -505,4 +505,5 @@ if __name__ == "__main__":
     # test_radius(30.)
 
     # print('testing con-di nozzles')
+    # print(Alpha, g[0].dlmin[0,0,0], g[0].vol[0,0,0], g[)
     # test_condi('t')

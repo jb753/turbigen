@@ -174,7 +174,7 @@ class SolverBlock:
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
         self.dAk = to_fort(block.dAk_new)
-        self.vol = get_multigrid_volumes(block.vol, conf.multigrid)
+        self.vol = get_multigrid_volumes(block.vol_new, conf.multigrid)
         self.dlmin = get_multigrid_lengths(block, conf.multigrid)
         self.dt = self.dlmin * 0.0
 
@@ -1494,7 +1494,7 @@ def get_multigrid_lengths(block, nb):
     nkmg = np.max(ijkmg[2, ...], axis=(0, 1, 2)) + 1
 
     # Finest grid level is trivial
-    dlmg[..., 0] = block.dlmin
+    dlmg[..., 0] = block.dlmin_new
 
     # Loop over multigrid levels
     for ilev in range(nlev):
@@ -1517,7 +1517,7 @@ def get_multigrid_lengths(block, nb):
         blk_lev = block.empty()
         blk_lev._data = data_lev
         assert blk_lev.dlmin.shape == (nimg[ilev], njmg[ilev], nkmg[ilev])
-        dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin
+        dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin_new
 
     return dlmg
 

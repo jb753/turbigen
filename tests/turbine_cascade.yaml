@@ -51,22 +51,20 @@ blades:
 # CFD solver
 solver:
   type: embsolve  # Which solver
-  n_step: 1000
-  n_step_avg: 100
-  # n_step: 5000
-  # n_step_avg: 500
+  n_step: 2500
+  n_step_avg: 500
   n_step_log: 100
   nstep_damp: -1
-  fmgrid: 0.0
-  multigrid: [2,]
+  fmgrid: 0.4
+  # multigrid: [2,]
   # damping_factor: 10.
   plot_conv: true
-  # smooth4: 0.005
+  smooth4: 0.005
   # smooth2_const: 0.002
-  smooth2_adapt: 1.0
+  smooth2_adapt: 0.5
   # i_loss: 1
-  CFL: 0.4
-  i_scheme: 0
+  CFL: 0.7
+  i_scheme: 1
 
 post_process:
   contour:
