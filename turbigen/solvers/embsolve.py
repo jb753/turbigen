@@ -45,7 +45,7 @@ class Config(BaseSolver):
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    CFL: float = 0.7
+    CFL: float = 0.4
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
     speed and cell size. Reduced values are more stable but slower to
     converge."""
@@ -74,18 +74,16 @@ class Config(BaseSolver):
     damping_factor: float = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
-    fmgrid: float = 0.0
-
     xllim_pitch: float = 0.03
 
-    i_scheme: int = 1
+    i_scheme: int = 0
 
     i_loss: int = 1
 
     i_exit: int = 1
     i_inlet: int = 1
     K_exit: float = 0.9
-    K_inlet: float = 0.3
+    K_inlet: float = 0.4
 
     plot_conv: bool = False
 
@@ -94,7 +92,8 @@ class Config(BaseSolver):
 
     rf_periodic: float = 1.0
 
-    multigrid: tuple = ()
+    fmgrid: float = 0.2
+    multigrid: tuple = (2, 2, 2)
 
 
 def get_dw(block):
@@ -303,7 +302,7 @@ class SolverBlock:
         L = L / Ls * 3.0
 
         # Now distribute to nodes
-        self.L = to_fort(np.empty((3, ni, nj, nk)))
+        self.L = to_fort(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
         # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
 
@@ -1081,6 +1080,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             damping_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0])
             smoothing_ramp = np.interp(istep, [0, conf.n_step_ramp], [2.0, 1.0])
             cfl_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0]))
+            fmgrid_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0]))
 
             # Exchange conserved variables across periodic patches
             exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
@@ -1119,7 +1119,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
                 # Using the updated flow field, sum fluxes for each cell
                 # and store the residual
-                sb.residual(conf.fmgrid * damping_ramp)
+                sb.residual(conf.fmgrid * fmgrid_ramp)
 
             for iblock in range(nblock):
                 sb = blocks[iblock]
@@ -1445,11 +1445,6 @@ def get_multigrid_volumes(vol, nb):
 
     # Loop over multigrid levels
     for ilev in range(nlev):
-
-        # Number of cells along each side of this
-        # multigrid level is product of all previous
-        nbi = np.prod(nb[: ilev + 1])
-
         # Loop over all points in the block
         for i in range(ni):
             for j in range(nj):

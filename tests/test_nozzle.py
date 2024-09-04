@@ -202,7 +202,13 @@ settings = {
     "n_step_avg": 10,
     "n_step_log": 100,
     "i_loss": 0,
-    # 'plot_conv': True,
+    "i_scheme": 0,
+    "CFL": 0.4,
+    "i_exit": 1,
+    "i_inlet": 1,
+    "K_inlet": 0.4,
+    "fmgrid": 0.2,
+    'plot_conv': False,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
 
@@ -478,16 +484,19 @@ def not_test_exit(Alpha):
 
 
 if __name__ == "__main__":
+    pass
+
+    test_condi('r')
 
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
     # test_exit(0.)
 
     # print('testing uniform, vary Ma')
-    test_Ma(0.6)
+    # test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
-    # test_uniform(0.)
+    # test_uniform(-30.)
 
     # print('testing uniform, skewed grid')
     # test_skew(-30.)

@@ -51,14 +51,14 @@ blades:
 # CFD solver
 solver:
   type: embsolve  # Which solver
-  n_step: 10000
-  n_step_avg: 1000
+  n_step: 1000
+  n_step_avg: 100
   # n_step: 5000
   # n_step_avg: 500
   n_step_log: 100
   nstep_damp: -1
   fmgrid: 0.0
-  multigrid: [4,]
+  multigrid: [2,]
   # damping_factor: 10.
   plot_conv: true
   # smooth4: 0.005
@@ -75,7 +75,7 @@ post_process:
     variable: Cp
     irow_ref: 0
     N_passage: 2
-    show_mesh: true
+    # show_mesh: true
   plot_thickness:
     row_spf: [[0.5,]]
   plot_section:
@@ -84,4 +84,4 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
-    compare: tests/pdist_ts3.npz
+    # compare: tests/pdist_ts3.npz

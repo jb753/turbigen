@@ -246,12 +246,8 @@ subroutine smooth( &
     end where
 
     ! Apply the scale factors for cell side length
-    ! sf2n = sf2n * L
-    ! sf4n = sf4n * L
-
-    ! Apply the scale factors for cell side length
-    ! sf2n = sf2n * L
-    ! sf4n = sf4n * L
+    sf2n = sf2n * L
+    sf4n = sf4n * L
 
     ! Double smoothing on boundaries
 

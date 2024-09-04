@@ -98,7 +98,7 @@ subroutine multigrid_integrate( &
                     ! Add on residual from coarse block
                     do ip = 1, 5
                         dU(i, j, k, ip) = dU(i, j, k, ip) + &
-                            fmgrid &
+                            fmgrid/(2**(ilev-1)) &
                             * fsum_mg(ilev, ib, jb, kb, ip) &
                             * dt(ib, jb, kb, ilev+1) &
                             / vol(ib, jb, kb, ilev+1)
