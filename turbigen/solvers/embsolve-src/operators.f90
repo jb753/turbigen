@@ -10,7 +10,7 @@ subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
     real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*4, intent (out)  :: divx(ni-1, nj-1, nk-1)
+    real*4, intent (inout)  :: divx(ni-1, nj-1, nk-1)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -44,7 +44,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
     real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*4, intent (out)  :: gradx(ni-1, nj-1, nk-1, 3)
+    real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj

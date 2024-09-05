@@ -197,7 +197,7 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
-    "plot_conv": True,
+    "plot_conv": False,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
 

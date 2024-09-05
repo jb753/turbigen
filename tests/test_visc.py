@@ -19,7 +19,7 @@ settings = {
     "n_step": 25000,
     "n_step_avg": 1000,
     "n_step_log": 100,
-    "plot_conv": True,
+    "plot_conv": False,
     "xllim_pitch": 0.0,
     "smooth4": 0.001,
     "smooth2_adapt": 0.5,
@@ -406,18 +406,22 @@ def test_plate_turb():
 
     g = make_plate(mu=0.5e-4)
 
-    settings = {
-        "n_step": 10000,
-        # 'n_step': 5000,
-        "n_step_avg": 1,
-        "n_step_log": 100,
-        "xllim_pitch": 10000.0,
-        "plot_conv": True,
-        "i_scheme": 0,
-        "CFL": 0.4,
-        "fmgrid": 0.,
-    }
-    turbigen.solvers.embsolve.run(g, settings)
+    # settings = {
+    #     "n_step": 10000,
+    #     # 'n_step': 5000,
+    #     "n_step_avg": 1,
+    #     "n_step_log": 100,
+    #     "xllim_pitch": 10000.0,
+    #     "plot_conv": True,
+    #     "i_scheme": 0,
+    #     "CFL": 0.4,
+    #     "fmgrid": 0.,
+    # }
+
+    conf = turbigen.solvers.embsolve.Config(**settings)
+    conf.xllim_pitch = 10000.0
+    # conf.n_step = 5000
+    turbigen.solvers.embsolve.run(g, conf)
 
     # Extract skin friction
     b = g[0]
@@ -701,7 +705,8 @@ def test_poiseuille():
 
 
 if __name__ == "__main__":
+    pass
 
     # test_plate_turb()
     # test_plate_lam()
-    test_poiseuille()
+    # test_poiseuille()
