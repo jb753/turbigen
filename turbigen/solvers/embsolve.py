@@ -689,6 +689,7 @@ class SolverBlock:
     # def multigrid(self, fmgrid):
     #     embsolve.multigrid(self.dU1, self.ijk_multigrid, fmgrid)
 
+    @profile
     def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,

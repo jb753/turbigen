@@ -49,7 +49,7 @@ subroutine shear_stress(&
     real*4 :: roc(ni-1, nj-1, nk-1)
     real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
     ! real*4 :: gradT(ni-1, nj-1, nk-1, 3)
-    real*4 :: divV(ni-1, nj-1, nk-1)
+    ! real*4 :: divV(ni-1, nj-1, nk-1)
     real*4 :: vort(ni-1, nj-1, nk-1, 3)
     real*4 :: vort_mag(ni-1, nj-1, nk-1)
     real*4 :: mu_turb(ni-1, nj-1, nk-1)
@@ -70,29 +70,25 @@ subroutine shear_stress(&
     rfvisc = 0.2e0
 
 
-    ! ! Evaluate velocities
-    ! do i = 1,3
-    !     V(:,:,:, i) = cons(:,:,:,i+1)/cons(:,:,:,1)
-    ! end do
-    ! V(:,:,:,3) = V(:,:,:,3)/r
-
     ! Cell-centered vars
     call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
 
 
+    !$omp parallel
     ! Calculate grad V
     do i = 1,3
         call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     end do
+    !$omp end parallel
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Temperature gradients
     ! call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     ! Calculate divergence of V
-    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
-    divV = divV*2e0/3e0
+    ! call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    ! divV = divV*2e0/3e0
 
     ! Thermal conductivity
 
@@ -100,13 +96,13 @@ subroutine shear_stress(&
     ! divV and gradV are cell-centered
 
     ! tau_xx = 2*dVx_dx - 2/3*divV
-    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
+    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) !- divV
 
     ! tau_rr = 2*dVr_dr - 2/3*divV
-    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
+    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) !- divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc !- divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
