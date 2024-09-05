@@ -11,6 +11,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
 
     real*4, intent (in)  :: xn(ni, nj, nk, np)
 
+    ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
     real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
     real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
@@ -51,7 +52,9 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*4, intent (inout)  :: xn(ni, nj, nk, np)
+    real*4, intent (in)  :: xn(ni, nj, nk, np)
+
+    ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
 
     ! Cell values are the average of all eight hex vertices
@@ -78,7 +81,9 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
 
-    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (in)  :: xc(ni-1, nj-1, nk-1, np)
+
+    ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xn(ni, nj, nk, np)
 
     ! Interior nodes take 1/8 from each adjacent cell
@@ -237,7 +242,9 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     integer, intent (in)  :: np
-    real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
+    real*4, intent (in)  :: xc(ni-1, nj-1, nk-1, np)
+
+    ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xi(ni, nj-1, nk-1, np)
     real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
     real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)

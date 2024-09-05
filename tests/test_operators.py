@@ -104,8 +104,7 @@ def test_div():
     rn = np.asfortranarray(b.r.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni - 1, nj - 1, nk - 1)
-    rc = np.empty(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(rn, rc)
+    rc = embsolve.node_to_cell(rn)[...,0]
 
     print("Checking divergence of test fields...")
     print(
@@ -118,7 +117,7 @@ def test_div():
     x[..., 0] = 0.0
     x[..., 1] = 0.0
     x[..., 2] = 0.0
-    embsolve.div(x, divx, vol, dAi, dAj, dAk)
+    divx = embsolve.div(x, vol, dAi, dAj, dAk)
     err = np.abs(divx)
     print(f"div(0)=0 error={err.max():.2e}")
     assert (err < rtol).all()
@@ -126,7 +125,7 @@ def test_div():
     x[..., 0] = 0.0
     x[..., 1] = 1.0
     x[..., 2] = 0.0
-    embsolve.div(x, divx, vol, dAi, dAj, dAk)
+    divx = embsolve.div(x, vol, dAi, dAj, dAk)
     err = np.abs(divx * rc - 1)
     print(f"div(er)=1/r error={err.max():.2e}")
     assert (err < rtol).all()
@@ -134,7 +133,7 @@ def test_div():
     x[..., 0] = 2.0 * b.x
     x[..., 1] = 0.0
     x[..., 2] = 0.0
-    embsolve.div(x, divx, vol, dAi, dAj, dAk)
+    divx = embsolve.div(x, vol, dAi, dAj, dAk)
     err = np.abs(divx / 2.0 - 1.0)
     print(f"div(2x ex)=2 error={err.max():.2e}")
     assert (err < rtol).all()
@@ -142,7 +141,7 @@ def test_div():
     x[..., 0] = 0.0
     x[..., 1] = 0.0
     x[..., 2] = -b.t
-    embsolve.div(x, divx, vol, dAi, dAj, dAk)
+    divx = embsolve.div(x, vol, dAi, dAj, dAk)
     err = np.abs(divx / (-1.0 / rc) - 1.0)
     print(f"div(-t et)=-1/r error={err.max():.2e}")
     assert (err < rtol).all()
@@ -150,7 +149,7 @@ def test_div():
     x[..., 0] = 0.0
     x[..., 1] = 3.0 * b.r
     x[..., 2] = 0.0
-    embsolve.div(x, divx, vol, dAi, dAj, dAk)
+    divx = embsolve.div(x, vol, dAi, dAj, dAk)
     err = np.abs(divx / 6.0 - 1.0)
     print(f"div(3r er)=6. error={err.max():.2e}")
     assert (err < rtol).all()
@@ -180,17 +179,14 @@ def test_grad():
     xn = np.asfortranarray(b.x.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni - 1, nj - 1, nk - 1)
-    rc = np.empty(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(rn, rc)
-    tc = np.empty(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(tn, tc)
-    xc = np.empty(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(xn, xc)
+    rc = embsolve.node_to_cell(rn)[...,0]
+    tc = embsolve.node_to_cell(tn)[...,0]
+    xc = embsolve.node_to_cell(xn)[...,0]
 
     rtol = 2e-4
 
     q = np.asfortranarray(np.ones_like(b.r)).astype(typ)
-    embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
+    gradq = embsolve.grad(q, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[..., 0])
     err_r = np.abs(gradq[..., 1])
     err_t = np.abs(gradq[..., 2])
@@ -203,7 +199,7 @@ def test_grad():
     assert (err_t < rtol).all()
 
     q = np.asfortranarray(b.x).astype(typ)
-    embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
+    gradq = embsolve.grad(q, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[..., 0] - 1.0)
     err_r = np.abs(gradq[..., 1])
     err_t = np.abs(gradq[..., 2])
@@ -216,7 +212,7 @@ def test_grad():
     assert (err_t < rtol).all()
 
     q = np.asfortranarray(-2.0 * b.r).astype(typ)
-    embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
+    gradq = embsolve.grad(q, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[..., 0])
     err_r = np.abs(gradq[..., 1] / -2.0 - 1.0)
     err_t = np.abs(gradq[..., 2])
@@ -229,7 +225,7 @@ def test_grad():
     assert (err_t < rtol).all()
 
     q = np.asfortranarray(b.r**2).astype(typ)
-    embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
+    gradq = embsolve.grad(q, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[..., 0])
     err_r = np.abs(gradq[..., 1] / (2 * rc) - 1.0)
     err_t = np.abs(gradq[..., 2])
@@ -242,7 +238,7 @@ def test_grad():
     assert (err_t < rtol).all()
 
     q = np.asfortranarray(b.t).astype(typ)
-    embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
+    gradq = embsolve.grad(q, vol, dAi, dAj, dAk, rn, rc)
     err_x = np.abs(gradq[..., 0])
     err_r = np.abs(gradq[..., 1])
     err_t = np.abs(gradq[..., 2] / (1.0 / rc) - 1.0)

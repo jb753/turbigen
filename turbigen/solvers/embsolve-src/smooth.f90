@@ -49,7 +49,6 @@ subroutine smooth( &
     real*4 :: sftn(ni, nj, nk)
     integer :: ip
 
-
     ! 2nd-order smoothed values for each direcion
 
     ! i interior

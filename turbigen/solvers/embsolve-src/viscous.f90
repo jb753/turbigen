@@ -1,26 +1,26 @@
 ! Routines for adding viscous effects
 
 subroutine shear_stress(&
-    cons, mu, xlength, taui, tauj, tauk, vol, dAi, dAj, dAk, &
+    cons, V, mu, xlength, vol, dAi, dAj, dAk, &
     r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, dw_iwall, dw_jwall, dw_kwall, &
     dA_iwall, dA_jwall, dA_kwall, fvisc, ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
 
-    real*4, intent (inout)  :: cons(ni, nj, nk, 5)
+    real*4, intent (in)  :: cons(ni, nj, nk, 5)
 
-    real*4, intent (inout)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (inout)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (inout)  :: dAk(ni-1, nj-1, nk, 3)
-    real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: xlength(ni-1, nj-1, nk-1)
-    real*4, intent (inout)  :: r(ni, nj, nk)
-    real*4, intent (inout)  :: rc(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: xlength(ni-1, nj-1, nk-1)
+    real*4, intent (in)  :: r(ni, nj, nk)
+    real*4, intent (in)  :: rc(ni-1, nj-1, nk-1)
     real*4, intent (in)  :: ri(ni, nj-1, nk-1)
     real*4, intent (in)  :: rj(ni-1, nj, nk-1)
     real*4, intent (in)  :: rk(ni-1, nj-1, nk)
 
-    real*4, intent (inout)  :: mu
+    real*4, intent (in)  :: mu
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -30,9 +30,9 @@ subroutine shear_stress(&
     integer, intent (in)  :: nkwall
 
     real*4 :: tauc(ni-1, nj-1, nk-1, 6)
-    real*4, intent (inout) :: taui(ni, nj-1, nk-1, 6)
-    real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
-    real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
+    real*4 :: taui(ni, nj-1, nk-1, 6)
+    real*4 :: tauj(ni-1, nj, nk-1, 6)
+    real*4 :: tauk(ni-1, nj-1, nk, 6)
 
     real*4, intent (in) :: dw_iwall(niwall)
     real*4, intent (in) :: dw_jwall(njwall)
@@ -43,7 +43,7 @@ subroutine shear_stress(&
     real*4, intent (in) :: dA_kwall(nkwall)
     real*4 :: visc_lim
 
-    real*4 :: V(ni, nj, nk, 3)
+    real*4, intent (in) :: V(ni, nj, nk, 3)
     ! real*4 :: T(ni, nj, nk)
     real*4 :: Vc(ni-1, nj-1, nk-1, 3)
     real*4 :: roc(ni-1, nj-1, nk-1)
@@ -70,15 +70,16 @@ subroutine shear_stress(&
     rfvisc = 0.2e0
 
 
-    ! Evaluate velocities
-    do i = 1,3
-        V(:,:,:, i) = cons(:,:,:,i+1)/cons(:,:,:,1)
-    end do
-    V(:,:,:,3) = V(:,:,:,3)/r
+    ! ! Evaluate velocities
+    ! do i = 1,3
+    !     V(:,:,:, i) = cons(:,:,:,i+1)/cons(:,:,:,1)
+    ! end do
+    ! V(:,:,:,3) = V(:,:,:,3)/r
 
     ! Cell-centered vars
     call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
+
 
     ! Calculate grad V
     do i = 1,3
@@ -172,96 +173,6 @@ subroutine shear_stress(&
     ! Apply relaxation
     fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
 
-end subroutine
-
-subroutine viscous_force( &
-        fvisc, cons, taui, tauj, tauk, dAi, dAj, dAk, r, ri, rj, rk, &
-        ijk_iwall, ijk_jwall, ijk_kwall, &
-        dw_iwall, dw_jwall, dw_kwall, &
-        dA_iwall, dA_jwall, dA_kwall, &
-        mu, tauw_lam_mult, tauw_turb_mult, &
-        ni, nj, nk, niwall, njwall, nkwall)
-
-    implicit none
-
-    real*4, intent (inout)  :: fvisc(ni-1, nj-1, nk-1, 5)
-
-    real*4, intent (inout) :: taui(ni, nj-1, nk-1, 6)
-    real*4, intent (inout) :: tauj(ni-1, nj, nk-1, 6)
-    real*4, intent (inout) :: tauk(ni-1, nj-1, nk, 6)
-
-    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-
-    real*4, intent (in)  :: r(ni, nj, nk)
-    real*4, intent (in)  :: ri(ni, nj-1, nk-1)
-    real*4, intent (in)  :: rj(ni-1, nj, nk-1)
-    real*4, intent (in)  :: rk(ni-1, nj-1, nk)
-
-    real*4, intent (in) :: cons(ni, nj, nk, 5)
-
-    integer, intent (in)  :: ni
-    integer, intent (in)  :: nj
-    integer, intent (in)  :: nk
-    integer, intent (in)  :: niwall
-    integer, intent (in)  :: njwall
-    integer, intent (in)  :: nkwall
-
-    real*4, intent (in) :: mu
-
-    ! Wall locations
-    integer*2, intent (in) :: ijk_iwall(3, niwall)
-    integer*2, intent (in) :: ijk_jwall(3, njwall)
-    integer*2, intent (in) :: ijk_kwall(3, nkwall)
-
-    real*4, intent (in) :: dw_iwall(niwall)
-    real*4, intent (in) :: dw_jwall(njwall)
-    real*4, intent (in) :: dw_kwall(nkwall)
-
-    real*4, intent (in) :: dA_iwall(niwall)
-    real*4, intent (in) :: dA_jwall(njwall)
-    real*4, intent (in) :: dA_kwall(nkwall)
-
-    real*4, intent (inout) :: tauw_lam_mult
-    real*4, intent (inout) :: tauw_turb_mult
-
-    real*4 :: fi(ni, nj-1, nk-1, 3, 5)
-    real*4 :: fj(ni-1, nj, nk-1, 3, 5)
-    real*4 :: fk(ni-1, nj-1, nk, 3, 5)
-
-    real*4 :: fvisc_new(ni-1, nj-1, nk-1, 5)
-
-    real*4 :: rfvisc
-    rfvisc = 0.2e0
-
-    ! No shear stress at wall
-    ! We add back using wall functions later
-    call zero_wall_stress(taui, ijk_iwall, ni, nj-1, nk-1, niwall)
-    call zero_wall_stress(tauj, ijk_jwall, ni-1, nj, nk-1, njwall)
-    call zero_wall_stress(tauk, ijk_kwall, ni-1, nj-1, nk, nkwall)
-
-    ! Assemble the viscous fluxes from the stress tensor components
-    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
-    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
-    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
-
-    ! Get the net viscous force on each cell
-    call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
-
-    ! ! Add on wall cell forces due to stress from wall function
-    call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
-    )
-
-    ! Apply relaxation
-    fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
 
 end subroutine
 

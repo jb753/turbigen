@@ -12,15 +12,18 @@ from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
 import pytest
 
+# With quasi-2D periodic grids, and no halo cells,
+# a little bit of 2nd order smoothing is needed to 
+# prevent instability
 settings = {
-    "n_step": 30000,
-    "n_step_avg": 1,
+    "n_step": 25000,
+    "n_step_avg": 1000,
     "n_step_log": 100,
-    "plot_conv": False,
+    "plot_conv": True,
     "xllim_pitch": 0.0,
-    "smooth4": 0.0005,
+    "smooth4": 0.001,
     "smooth2_adapt": 0.5,
-    "smooth2_const": 0.001,
+    "smooth2_const": 0.002,
 }
 
 def make_plate(mu, Tu0=300.0):
@@ -66,7 +69,7 @@ def make_plate(mu, Tu0=300.0):
 
     # Circumferential grid points
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
-    nk = 5
+    nk = 9
     pitch = dmax1 * (nk - 1) * AR_pitch
     Nb = int(2.0 * np.pi * rm / pitch)
     dt = 2.0 * np.pi / float(Nb)
@@ -81,7 +84,9 @@ def make_plate(mu, Tu0=300.0):
     ile = len(xup)
     xdn = turbigen.clusterfunc.single.free(di1, di, ERi, 0.0, L)
     xv = np.concatenate((xup, xdn[1:]))
-    ni = len(xv)
+    # ni = int(np.round((len(xv)-1)/8)*8 +1)
+    ni = int(np.round((len(xv)-1)/8)*8 +1)
+    xv = xv[:ni]
 
     # ni = int((L+h)/di)
     # xv = np.linspace(-h, L, ni)
@@ -407,7 +412,7 @@ def test_plate_turb():
         "n_step_avg": 1,
         "n_step_log": 100,
         "xllim_pitch": 10000.0,
-        "plot_conv": True
+        "plot_conv": True,
         "i_scheme": 0,
         "CFL": 0.4,
         "fmgrid": 0.,
@@ -636,13 +641,8 @@ def test_poiseuille():
     # ax.axis('equal')
     # plt.show()
 
-    settings2 = settings.copy()
-    settings2["smooth2_const"] = 0.0
-    settings2["smooth4"] = 0.001
-    settings2["plot_conv"] = False
-
     np.set_printoptions(precision=2)
-    turbigen.solvers.embsolve.run(g, settings2)
+    turbigen.solvers.embsolve.run(g, settings)
 
     b = g[0]
     C = b[:, b.nj // 2, b.nk // 2]
@@ -700,31 +700,8 @@ def test_poiseuille():
     assert np.abs(err).mean() < 0.05
 
 
-def not_test_blasius():
-
-    ni = 51
-    nj = 37
-
-    xr = np.loadtxt("tests/blasius_grid.dat").reshape(2, nj, ni).transpose((0, 2, 1))
-    print(xr.shape)
-
-    Minf = 0.1
-    Pinf_imp = 6.0
-    Tinf_imp = 700.0
-    mu_imp = 6.5044372e-04
-
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    ax.plot(xr[0], xr[1], "k.-")
-    ax.plot(xr[0].T, xr[1].T, "k.-")
-    ax.axis("equal")
-    plt.show()
-    quit()
-
-
 if __name__ == "__main__":
 
-    test_plate_turb()
+    # test_plate_turb()
     # test_plate_lam()
-    # test_poiseuille()
+    test_poiseuille()

@@ -692,9 +692,9 @@ class SolverBlock:
     def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,
+            self.Vxrt,
             self.mu,
             self.xlength,
-            *self.tau,
             self.vol[..., 0],
             self.dAi,
             self.dAj,
