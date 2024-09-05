@@ -400,20 +400,17 @@ def test_plate_turb():
     # turbigen.solvers.ts3.run(g, set_ts3, None)
 
     g = make_plate(mu=0.5e-4)
+
     settings = {
         "n_step": 10000,
         # 'n_step': 5000,
         "n_step_avg": 1,
         "n_step_log": 100,
-        "plot_conv": False,
         "xllim_pitch": 10000.0,
-        # "smooth4": 0.005,
-        # "smooth2_adapt": 0.5,
-        "fmgrid": 0.0,
-        "CFL": 0.3,
-        "i_scheme": 0,
-        # "K_inlet": 0.3,
         "plot_conv": True
+        "i_scheme": 0,
+        "CFL": 0.4,
+        "fmgrid": 0.,
     }
     turbigen.solvers.embsolve.run(g, settings)
 
