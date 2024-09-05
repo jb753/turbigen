@@ -49,6 +49,7 @@ subroutine smooth( &
     real*4 :: sftn(ni, nj, nk)
     integer :: ip
 
+
     ! 2nd-order smoothed values for each direcion
 
     ! i interior
@@ -249,8 +250,6 @@ subroutine smooth( &
     sf2n = sf2n * L
     sf4n = sf4n * L
 
-    ! Double smoothing on boundaries
-
     ! Loop over properties
     do ip=1,np
 
@@ -266,5 +265,6 @@ subroutine smooth( &
         x(:,:,:,ip) = (1e0-sftn)*x(:,:,:,ip)  + sfx2 + sfx4
 
     end do
+
 
 end subroutine

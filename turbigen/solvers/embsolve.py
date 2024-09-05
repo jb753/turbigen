@@ -45,7 +45,7 @@ class Config(BaseSolver):
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    CFL: float = 0.4
+    CFL: float = 0.65
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
     speed and cell size. Reduced values are more stable but slower to
     converge."""
@@ -76,14 +76,14 @@ class Config(BaseSolver):
 
     xllim_pitch: float = 0.03
 
-    i_scheme: int = 0
+    i_scheme: int = 1
 
     i_loss: int = 1
 
     i_exit: int = 1
     i_inlet: int = 1
     K_exit: float = 0.9
-    K_inlet: float = 0.4
+    K_inlet: float = 0.7
 
     plot_conv: bool = False
 
@@ -426,6 +426,7 @@ class SolverBlock:
                 Vr = rhoVr / rho
                 Vt = rhorVt / rho / r
                 Vm = np.sqrt(Vx**2 + Vr**2)
+                V = np.sqrt(Vx**2 + Vr**2 + Vt**2)
 
                 # Update the inlet state object using soln P and rho
                 # so we can read off other thermodynamic properties
@@ -438,6 +439,11 @@ class SolverBlock:
                 dhdP = state.dhdP_rho
                 rhoa = rho * a
                 asq = a * a
+
+                # Scaling of changes based on patch Mach
+                # Reduce K_inlet at high Mach
+                Ma_ref = np.mean(V / a)
+                scale_Ma = np.interp(Ma_ref, [0.3, 1.0], [1.0, 0.5])
 
                 # Calculate the inlet residuals
 
@@ -452,6 +458,7 @@ class SolverBlock:
                         axis=-1,
                     )
                     * -K_inlet
+                    * scale_Ma
                 )[..., None]
 
                 # Jacobian
@@ -629,11 +636,12 @@ class SolverBlock:
             relax,
         )
 
-    def residual(self, fmgrid):
+    def residual(self, fmgrid, damp, ischeme, sf2, sf4, sf2min):
         embsolve.residual(
             self.cons,
             self.Vxrt,
-            self.P - self.Pref,  # Only pressure differences matter
+            self.P,  # Only pressure differences matter
+            self.Pref,
             self.ho,
             self.fb,
             self.Omega,
@@ -647,7 +655,14 @@ class SolverBlock:
             *self.ijk_wall_face,
             self.ijk_multigrid,
             fmgrid,
+            damp,
+            sf2,
+            sf4,
+            sf2min,
+            self.L,
             self.dU1,
+            self.dU2,
+            ischeme,
         )
 
     def step(self, istep, ischeme):
@@ -655,7 +670,6 @@ class SolverBlock:
             self.cons,
             self.dU1,
             self.dU2,
-            istep,
             ischeme,
         )
 
@@ -687,6 +701,11 @@ class SolverBlock:
             self.dAk,
             self.r,
             self.rc,
+            *self.rf,
+            *self.ijk_wall_face_slip,
+            *self.dw_face,
+            *self.dA_face,
+            self.fb,
         )
 
     def set_viscous_force(self):
@@ -1040,6 +1059,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf2 = conf.smooth2_adapt * conf.CFL / CFL_ref
     sf4 = conf.smooth4 * conf.CFL / CFL_ref
     sf2min = conf.smooth2_const * conf.CFL / CFL_ref
+    K_inlet = conf.K_inlet * conf.CFL / CFL_ref
+    K_exit = conf.K_exit  # * conf.CFL / CFL_ref
     rfin = 0.1
 
     # Only keep relevent periodics
@@ -1101,8 +1122,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     sb.set_timestep(conf.CFL * cfl_ramp, relax=0.25)
 
                 # Apply boundary conditions
-                sb.set_inlets(rfin, conf.i_inlet, conf.K_inlet)
-                sb.set_outlets(conf.i_exit, conf.K_exit)
+                sb.set_inlets(rfin, conf.i_inlet, K_inlet)
+                sb.set_outlets(conf.i_exit, K_exit)
 
                 # If this is a viscous calculation
                 # Update the viscous forces every nloss time steps
@@ -1114,28 +1135,24 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     # Average the stresses on periodic faces
                     # exchange_tau(blocks, bid_local, periodics)
 
-                    # Convert the viscous stress into body force by summing fluxes
-                    sb.set_viscous_force()
-
                 # Using the updated flow field, sum fluxes for each cell
                 # and store the residual
-                sb.residual(conf.fmgrid * fmgrid_ramp)
-
-            for iblock in range(nblock):
-                sb = blocks[iblock]
-
                 # Apply damping to cell residuals if requested
                 if conf.damping_factor and (
                     istep < conf.nstep_damp or conf.nstep_damp < 0
                 ):
-                    sb.damp(conf.damping_factor * damping_ramp)
+                    damp = conf.damping_factor * damping_ramp
+                else:
+                    damp = 0.0
 
-                # Take a time step
-                sb.step(istep, conf.i_scheme)
-
-                # Stabilise the solution by smoothing
-                sb.smooth(
-                    sf2 * smoothing_ramp, sf4 * smoothing_ramp, sf2min * smoothing_ramp
+                i_scheme = -1 if not istep else conf.i_scheme
+                sb.residual(
+                    conf.fmgrid * fmgrid_ramp,
+                    damp,
+                    i_scheme,
+                    sf2 * smoothing_ramp,
+                    sf4 * smoothing_ramp,
+                    sf2min * smoothing_ramp,
                 )
 
             # Record residuals

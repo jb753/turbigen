@@ -29,13 +29,17 @@ contains
     !       d(cons) = resid * dt / vol = (flux_net/vol + source) * dt
     !
     subroutine residual(&
-        cons, Vxrt, P, ho, fb, &              ! Flow properties and body force
+        cons, Vxrt, P, Pref, ho, fb, &              ! Flow properties and body force
         Omega, &                              ! Reference frame angular velocity
         r, ri, rj, rk, &                      ! Node and face-centered radii
         dAi, dAj, dAk, vol, dt, &             ! Cell areas, volumes, time step
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
-        ijk_mg, fmgrid, &                              ! Multigrid indexing
+        ijk_mg, fmgrid, &                     ! Multigrid indexing and factor
+        fdamp, &                              ! Damping factor
+        sf2, sf4, sf2min, L, &                              ! Damping factor
         resid, &                              ! Cell residual out
+        resid_last, &                          ! Previous residual out
+        ischeme, &
         ni, nj, nk, niwall, njwall, nkwall, nmg &  ! Numbers of points dummy args
         )
 
@@ -45,7 +49,7 @@ contains
 
         ! Flow properties and body force
         ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
-        real*4, intent (in) :: cons(ni, nj, nk, 5)
+        real*4, intent (inout) :: cons(ni, nj, nk, 5)
         real*4, intent (in) :: Vxrt(ni, nj, nk, 3)
         real*4, intent (in) :: P   (ni, nj, nk)
         real*4, intent (in) :: ho  (ni, nj, nk)
@@ -54,6 +58,7 @@ contains
 
         ! Reference frame angular velocity
         real*4, intent (in)  :: Omega
+        real*4, intent (in)  :: Pref
 
         ! Radii at nodes and face centers
         real*4, intent(in) :: r( ni, nj, nk)
@@ -78,6 +83,12 @@ contains
 
         ! Cell residual out
         real*4, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
+        real*4, intent (inout) :: resid_last(ni-1, nj-1, nk-1, 5)
+
+        real*4, intent(in) :: L( ni, nj, nk, 3)
+        real*4, intent(in) :: sf2
+        real*4, intent(in) :: sf4
+        real*4, intent(in) :: sf2min
 
         ! Numbers of points dummy args
         integer, intent (in)  :: ni
@@ -87,7 +98,11 @@ contains
         integer, intent (in)  :: njwall
         integer, intent (in)  :: nkwall
         integer, intent (in)  :: nmg
+
+        ! Scalar settings
+        integer, intent (in)  :: ischeme
         real*4, intent (in)  :: fmgrid
+        real*4, intent (in)  :: fdamp
 
         ! End of argument declarations
         ! Begin working variables
@@ -107,13 +122,18 @@ contains
         real*4 :: fsum(ni-1, nj-1, nk-1, 5)
         ! Cell-centered residual
 
+        real*4 :: Pm (ni, nj, nk)
+
         integer :: iv
+
 
         ! End of working variable declarations
 
+        Pm = P - Pref
+
         ! Calculate the convective fluxes
         call set_fluxes( &
-            cons, Vxrt, P, ho, &              ! Flow properties and body force
+            cons, Vxrt, Pm, ho, &              ! Flow properties and body force
             Omega, &                              ! Reference frame angular velocity
             r, ri, rj, rk, &                      ! Node and face-centered radii
             ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
@@ -124,7 +144,7 @@ contains
         ! Evaluate source term at nodes, average to cell center
         rho = cons(:, :, :, 1)
         Vt = Vxrt(:, :, :, 3)
-        S = (rho*Vt*Vt + P)/r
+        S = (rho*Vt*Vt + Pm)/r
         call node_to_cell(S, Sc, ni, nj, nk, 1)
         Sc = Sc * vol(:,:,:,1)
 
@@ -145,20 +165,23 @@ contains
         ! fsum now contains the sum of fluxes for all cells
         call multigrid_integrate(fsum, resid, ijk_mg, dt, vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
 
+        ! Damp out the cell changes
+        if (fdamp.gt.0) then
+            call damp(resid, fdamp, ni-1, nj-1, nk-1)
+        end if
 
-        ! ! Integrate all equations forward in time
-        ! do iv = 1, 5
-        !     resid(:,:,:,iv)  = fsum( :,:,:,iv) * dt(:,:,:,1)/vol(:,:,:,1)
-        ! end do
+        ! Time march and distribute to nodes
+        call step(cons, resid, resid_last, ischeme, ni, nj, nk)
+
+        call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
 
     end subroutine
 
-    subroutine step(cons, R1, R2, istep, ischeme, ni, nj, nk)
+    subroutine step(cons, R1, R2, ischeme, ni, nj, nk)
 
         real*4, intent (inout)  :: cons(ni, nj, nk, 5)
         real*4, intent (inout) :: R1(ni-1, nj-1, nk-1, 5)
         real*4, intent (inout) :: R2(ni-1, nj-1, nk-1, 5)
-        integer, intent (in) :: istep
         integer, intent (in) :: ischeme
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
@@ -167,21 +190,19 @@ contains
         real*4 :: Rcell(ni-1, nj-1, nk-1, 5)
         real*4 :: Rnode(ni, nj, nk, 5)
 
-        if (istep.eq.0) then
+        if (ischeme.eq.-1) then
             ! At the start, we have no previous time level available
             ! So just apply the one residual we have
             Rcell = R1
             R2 = R1
-        else
-            ! Otherwise, combine current and previous time level
-            ! According to the selected time marching scheme
-            if (ischeme.eq.0) then
-                Rcell = 2e0*R1 - R2
-                R2 = R1
-            else
-                Rcell = 2e0*R1 - 1.65e0*R2
-                R2 = R1 - 0.65e0*R2
-            end if
+        else if (ischeme.eq.0) then
+        ! Otherwise, combine current and previous time level
+        ! According to the selected time marching scheme
+            Rcell = 2e0*R1 - R2
+            R2 = R1
+        else if (ischeme.eq.1) then
+            Rcell = 2e0*R1 - 1.65e0*R2
+            R2 = R1 - 0.65e0*R2
         end if
 
         ! Distribute cell residual to nodes and add on

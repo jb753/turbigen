@@ -51,8 +51,8 @@ blades:
 # CFD solver
 solver:
   type: embsolve  # Which solver
-  n_step: 2500
-  n_step_avg: 500
+  n_step: 500
+  n_step_avg: 50
   n_step_log: 100
   nstep_damp: -1
   fmgrid: 0.4

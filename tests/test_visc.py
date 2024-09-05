@@ -23,21 +23,6 @@ settings = {
     "smooth2_const": 0.001,
 }
 
-# Check our MPI rank
-try:
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-    # Jump to solver slave process if not first rank
-    if rank > 0:
-        turbigen.solvers.embsolve.run_slave()
-        sys.exit(0)
-except ImportError:
-    pass
-
-
 def make_plate(mu, Tu0=300.0):
     """Generate the grid."""
 
@@ -416,18 +401,19 @@ def test_plate_turb():
 
     g = make_plate(mu=0.5e-4)
     settings = {
-        "n_step": 20000,
+        "n_step": 10000,
         # 'n_step': 5000,
         "n_step_avg": 1,
         "n_step_log": 100,
         "plot_conv": False,
         "xllim_pitch": 10000.0,
-        "smooth4": 0.005,
-        "smooth2_adapt": 0.5,
-        # "fmgrid": 0.0,
-        # "CFL": 0.7,
-        # "i_scheme": 1,
-        # "smooth2_const": 0.002,
+        # "smooth4": 0.005,
+        # "smooth2_adapt": 0.5,
+        "fmgrid": 0.0,
+        "CFL": 0.3,
+        "i_scheme": 0,
+        # "K_inlet": 0.3,
+        "plot_conv": True
     }
     turbigen.solvers.embsolve.run(g, settings)
 
