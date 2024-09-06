@@ -51,6 +51,9 @@ subroutine smooth( &
 
     ! 2nd-order smoothed values for each direcion
 
+    !$omp parallel
+
+    !$omp workshare
     ! i interior
     xs2(2:ni-1, :, :, :, 1) = ( &
         x(1:ni-2, :, :, :) + x(3:ni, :, :, :) &
@@ -229,11 +232,12 @@ subroutine smooth( &
     nu(:, :, nk, 3) = &
         abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
         /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
-
+    !$omp end workshare
 
     ! Calculate nodal smoothing factors for each direction
 
     ! 2nd-order
+    !$omp workshare
     sf2n = sf2*nu
     where (sf2n.lt.sf2min)
         sf2n = sf2min
@@ -244,14 +248,18 @@ subroutine smooth( &
     where (sf4n.lt.0e0)
         sf4n = 0e0
     end where
+    !$omp end workshare
 
     ! Apply the scale factors for cell side length
+    !$omp workshare
     sf2n = sf2n * L
     sf4n = sf4n * L
+    !$omp end workshare
 
     ! Loop over properties
     do ip=1,np
 
+        !$omp workshare
         ! Products of local smoothing factors and flow property
         ! Summed over all grid directions
         sfx2 = sum(sf2n*xs2(:,:,:,ip,:),4)
@@ -262,8 +270,11 @@ subroutine smooth( &
 
         ! Do the smoothing
         x(:,:,:,ip) = (1e0-sftn)*x(:,:,:,ip)  + sfx2 + sfx4
+        !$omp end workshare
 
     end do
+    !$omp end parallel
+
 
 
 end subroutine

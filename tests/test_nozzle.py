@@ -278,7 +278,7 @@ def plot_nozzle(g, F):
     ax.set_title("P")
     # ax.set_ylim((0,1))
 
-    plt.show()
+    # plt.show()
 
 
 def post_nozzle(g, F):
@@ -351,13 +351,8 @@ def test_uniform(Alpha):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    plot_nozzle(g,F)
 
     rtol = 2.5e-4
-
-    fig, ax = plt.subplots()
-    ax.plot(F.x[1:],Ys)
-    plt.show()
 
     assert (np.abs(err_Ma) < rtol).all()
     assert (np.abs(Ys) < rtol).all()
@@ -396,7 +391,6 @@ def test_skew(Alpha):
 
     turbigen.solvers.embsolve.run(g, conf)
 
-    # plot_nozzle(g,F)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 

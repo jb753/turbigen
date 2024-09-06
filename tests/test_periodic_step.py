@@ -66,12 +66,13 @@ def test_periodic():
     g.check_coordinates()
     g.match_patches()
 
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
     C = block[:,0, :]
-    ax.plot(C.x, C.rt, 'k-')
-    ax.plot(C.x.T, C.rt.T, 'k-')
-    plt.show()
+
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.plot(C.x, C.rt, 'k-')
+    # ax.plot(C.x.T, C.rt.T, 'k-')
+    # plt.show()
 
     # Boundary conditions
     cp = 1005.

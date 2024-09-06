@@ -70,17 +70,17 @@ subroutine shear_stress(&
     rfvisc = 0.2e0
 
 
+    !$omp parallel
     ! Cell-centered vars
     call node_to_cell(V, Vc, ni, nj, nk, 3)
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
+    !$omp end parallel
 
 
-    !$omp parallel
     ! Calculate grad V
     do i = 1,3
         call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     end do
-    !$omp end parallel
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Temperature gradients
@@ -94,6 +94,8 @@ subroutine shear_stress(&
 
     ! tau contains the six unique terms in the tensor
     ! divV and gradV are cell-centered
+    !$omp parallel
+    !$omp workshare
 
     ! tau_xx = 2*dVx_dx - 2/3*divV
     tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) !- divV
@@ -119,6 +121,7 @@ subroutine shear_stress(&
     vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
     vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
+
     vort_mag = sqrt(sum(vort*vort,4))
 
     ! Set turbulent viscosity using mixing length
@@ -129,10 +132,13 @@ subroutine shear_stress(&
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where
+    !$omp end workshare
 
     ! Get shear stress for a Newtonian fluid
     do i = 1,6
+        !$omp workshare
         tauc(:,:,:,i) = -tauc(:,:,:,i) *( mu + mu_turb)
+        !$omp end workshare
     end do
 
     ! Now distribute cell values to faces
@@ -151,6 +157,7 @@ subroutine shear_stress(&
     call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
     call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
+    !$omp end parallel
 
     ! Get the net viscous force on each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
@@ -167,8 +174,9 @@ subroutine shear_stress(&
     )
 
     ! Apply relaxation
+    !$omp parallel workshare
     fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
-
+    !$omp end parallel workshare
 
 end subroutine
 
@@ -190,6 +198,7 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
     ! 5 tau_xt
     ! 6 tau_rt
 
+    !$omp workshare
     ! mass
     f(:, :, :, :, 1) = 0e0
 
@@ -210,6 +219,7 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
 
     ! energy
     f(:, :, :, :, 5) = 0e0
+    !$omp end workshare
 
 end subroutine
 
@@ -462,6 +472,7 @@ subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall)
     if (nwall > 0) then
 
         ! Loop over all points
+        !$omp do private(i,j,k)
         do iwall = 1,nwall
 
             ! Extract indices
@@ -470,13 +481,12 @@ subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall)
             k = ijk(3, iwall)
 
             ! Skip dummy points
-            if (i.lt.0) then
-                cycle
+            if (i.gt.0) then
+                tau(i, j, k, :) = 0e0
             end if
 
-            tau(i, j, k, :) = 0e0
-
         end do
+        !$omp end do
 
     end if
 

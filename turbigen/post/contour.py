@@ -248,5 +248,5 @@ def post(
 
     figname = os.path.join(postdir, f"contour_{coord}_{value:.3}.pdf")
     plt.savefig(figname)
-    plt.show()
+    # plt.show()
     plt.close()

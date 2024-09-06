@@ -33,7 +33,7 @@ subroutine multigrid_integrate( &
     real*4, intent (in) :: dt(ni, nj, nk, nlev+1)
 
     ! Working variables
-    real*4 :: fsum_mg(nlev, ni, nj, nk, np)
+    real*4 :: fsum_mg(ni, nj, nk, np, nlev)
     integer :: i
     integer :: j
     integer :: k
@@ -52,13 +52,16 @@ subroutine multigrid_integrate( &
     ! indices to extract the summed coarse block change for each fine
     ! point and add on multiplied by the safety factor fmgrid.
 
+    !$omp parallel
+
     ! Loop over multigrid levels
     do ilev = 1,nlev
 
         ! Loop over fine cells in the block
-        do i = 1,ni
+        !$omp do private(j, i, ib, jb, kb)
+        do k = 1,nk
             do j = 1,nj
-                do k = 1,nk
+                do i = 1,ni
 
                     ! Pull out the indices of the coarse
                     ! block that corresponds to current fine point
@@ -67,27 +70,32 @@ subroutine multigrid_integrate( &
                     kb = ijkmg(3, i, j, k, ilev)
 
                     ! Accumulate sum from this fine cell
-                    fsum_mg(ilev, ib, jb, kb, :) = &
-                        fsum_mg(ilev, ib, jb, kb, :) + fsum(i, j, k, :)
+                    fsum_mg(ib, jb, kb, :, ilev) = &
+                        fsum_mg(ib, jb, kb, :, ilev) + fsum(i, j, k, :)
 
                 end do
             end do
         end do
+        !$omp end do
     end do
 
     ! Intialise residual to fine value
     dU = 0e0
     do ip = 1, 5
+        !$omp workshare
         dU(:,:,:,ip)  = fsum( :,:,:,ip) * dt(:,:,:,1)/vol(:,:,:,1)
+        !$omp end workshare
     end do
+
 
     ! Loop over multigrid levels
     do ilev = 1,nlev
 
         ! Loop over fine points in the block
-        do i = 1,ni
+        !$omp do private(j, i, ib, jb, kb)
+        do k = 1,nk
             do j = 1,nj
-                do k = 1,nk
+                do i = 1,ni
 
                     ! Pull out the indices of the coarse
                     ! block that corresponds to current fine point
@@ -99,7 +107,7 @@ subroutine multigrid_integrate( &
                     do ip = 1, 5
                         dU(i, j, k, ip) = dU(i, j, k, ip) + &
                             fmgrid/(2**(ilev-1)) &
-                            * fsum_mg(ilev, ib, jb, kb, ip) &
+                            * fsum_mg(ib, jb, kb, ip, ilev) &
                             * dt(ib, jb, kb, ilev+1) &
                             / vol(ib, jb, kb, ilev+1)
                     end do
@@ -107,8 +115,10 @@ subroutine multigrid_integrate( &
                 end do
             end do
         end do
+        !$omp end do
 
     end do
+    !$omp end parallel
 
 end subroutine
 

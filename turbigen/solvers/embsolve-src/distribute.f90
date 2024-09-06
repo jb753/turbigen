@@ -16,6 +16,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
     real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
     real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
 
+    !$omp workshare
     ! Values on i-faces are average over four bounding vertices
     xi = (&
         xn(:, 1:nj-1, 1:nk-1, :) & ! j, k
@@ -39,6 +40,7 @@ subroutine node_to_face(xn, xi, xj, xk, ni, nj, nk, np)
         + xn(1:ni-1, 2:nj,   :, :) & ! i, j+1
         + xn(2:ni,   2:nj,   :, :) & ! i+1, j+1
     )/4e0
+    !$omp end workshare
 
 end subroutine
 
@@ -57,6 +59,7 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
     ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xc(ni-1, nj-1, nk-1, np)
 
+    !$omp workshare
     ! Cell values are the average of all eight hex vertices
     xc = (&
         xn(1:ni-1, 1:nj-1, 1:nk-1, :) & ! i,j,k
@@ -68,6 +71,7 @@ subroutine node_to_cell(xn, xc, ni, nj, nk, np)
         + xn(2:ni,   2:nj,   2:nk,   :) & ! i+1,j+1,k+1
         + xn(1:ni-1, 2:nj,   2:nk,   :) & ! i,j+1,k+1
     )/8e0
+    !$omp end workshare
 
 
 end subroutine
@@ -86,6 +90,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
     ! Note: seems to go faster if the outputs are 'inout'
     real*4, intent (inout)  :: xn(ni, nj, nk, np)
 
+    !$omp workshare
     ! Interior nodes take 1/8 from each adjacent cell
     xn(2:ni-1, 2:nj-1, 2:nk-1, :) = (&
         xc(1:ni-2, 1:nj-2, 1:nk-2, :) & ! i,j,k
@@ -221,6 +226,7 @@ subroutine cell_to_node(xc, xn, ni, nj, nk, np)
         xc(1:ni-2, nj-1, nk-1, :) &
         + xc(2:ni-1, nj-1, nk-1, :) &
     )/2e0
+    !$omp end workshare
 
     ! Corners take entirety from nearest cell
     xn(1,  1,  1, :) = xc(1,    1,    1, :)
@@ -249,6 +255,7 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
     real*4, intent (inout)  :: xj(ni-1, nj, nk-1, np)
     real*4, intent (inout)  :: xk(ni-1, nj-1, nk, np)
 
+    !$omp workshare
     ! interior i-faces are average of i and i+1
     xi(2:ni-1, :, :, :) = ( &
         xc(1:ni-2, :, :, :) &
@@ -278,5 +285,6 @@ subroutine cell_to_face(xc, xi, xj, xk, ni, nj, nk, np)
     ! k start and end
     xk(:, :, 1, :) = xc(:, :, 1, :)
     xk(:, :, nk, :) = xc(:, :, nk-1, :)
+    !$omp end workshare
 
 end subroutine

@@ -12,12 +12,22 @@ from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
 import pytest
 
+# # Check our MPI rank
+# from mpi4py import MPI
+# comm = MPI.COMM_WORLD
+# rank = comm.Get_rank()
+# # Jump to solver slave process if not first rank
+# if rank > 0:
+#     from turbigen.solvers import embsolve
+#     embsolve.run_slave()
+#     sys.exit(0)
+
 # With quasi-2D periodic grids, and no halo cells,
 # a little bit of 2nd order smoothing is needed to 
 # prevent instability
 settings = {
-    "n_step": 500,
-    "n_step_avg": 100,
+    "n_step": 25000,
+    "n_step_avg": 1000,
     "n_step_log": 100,
     "plot_conv": False,
     "xllim_pitch": 0.0,
@@ -501,7 +511,7 @@ def test_plate_turb():
     fig, ax = plt.subplots()
 
     err = (Cd / Cdts3[1] - 1.0)[xx > 0.25]
-    # assert np.abs(err).mean() < 0.05
+    assert np.abs(err).mean() < 0.05
 
     print("TS rel drag error")
     print("mean", np.abs(err).mean())
@@ -522,6 +532,7 @@ def test_plate_turb():
     plt.tight_layout(pad=0.1)
     # plt.show()
     plt.savefig('tests/turb_cd.pdf')
+    plt.close()
 
 
 def test_plate_lam():
@@ -573,10 +584,11 @@ def test_plate_lam():
     ax.legend()
     plt.tight_layout(pad=0.1)
     plt.savefig("tests/blasius_cf.pdf")
+    plt.close()
 
     # Get error
     err = (cf[x > 0.0] - cf_corr)[xx > 0.25]
-    # assert np.abs(err).mean() < 1e-4
+    assert np.abs(err).mean() < 1e-4
 
     print("Blasius cf error")
     print("mean", np.abs(err).mean())
@@ -631,6 +643,7 @@ def test_plate_lam():
     ax.legend()
     plt.tight_layout(pad=0.1)
     plt.savefig("tests/blasius_cd.pdf")
+    plt.close()
     # plt.show()
 
 
@@ -655,18 +668,18 @@ def test_poiseuille():
     Po1 = C.Po[0]
     P1 = C.P[0]
 
-    fig, ax = plt.subplots()
-    for b in g:
-        C = b[:, b.nj // 2, b.nk // 2]
-        dPdx = np.gradient(C.P, C.x)
-        mu = F.mu
-        Cp = (C.P - P1) / (Po1 - P1)
-        ax.plot(C.x, Cp, "-x")
+    # fig, ax = plt.subplots()
+    # for b in g:
+    #     C = b[:, b.nj // 2, b.nk // 2]
+    dPdx = np.gradient(C.P, C.x)
+    mu = F.mu
+    #     Cp = (C.P - P1) / (Po1 - P1)
+    #     ax.plot(C.x, Cp, "-x")
 
-    fig, ax = plt.subplots()
-    for b in g:
-        C = b[:, b.nj // 2, b.nk // 2]
-        ax.plot(C.x, C.Vx, "-x")
+    # fig, ax = plt.subplots()
+    # for b in g:
+    #     C = b[:, b.nj // 2, b.nk // 2]
+    #     ax.plot(C.x, C.Vx, "-x")
 
     iplot = int(b.ni * 0.9)
 
@@ -678,18 +691,18 @@ def test_poiseuille():
     soln = -K * rnorm * (1.0 - rnorm)
     err = (C.Vx - soln) / soln.max()
 
-    fig, ax = plt.subplots()
-    ax.plot(C.Vx, rnorm, "-x")
-    ax.plot(soln, rnorm, "-x")
-    ax.set_title("r")
-    plt.show()
+    # fig, ax = plt.subplots()
+    # ax.plot(C.Vx, rnorm, "-x")
+    # ax.plot(soln, rnorm, "-x")
+    # ax.set_title("r")
+    # plt.show()
 
-    fig, ax = plt.subplots()
+    # fig, ax = plt.subplots()
     b = g[0]
     C = b[-1, :, :]
-    ax.plot(C.z, C.y, "-")
-    ax.plot(C.z.T, C.y.T, "-")
-    ax.axis("equal")
+    # ax.plot(C.z, C.y, "-")
+    # ax.plot(C.z.T, C.y.T, "-")
+    # ax.axis("equal")
 
     Cm, A, _ = C.mix_out()
     mdot = Cm.rho * Cm.Vm * A
