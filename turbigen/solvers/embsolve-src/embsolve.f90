@@ -124,8 +124,6 @@ contains
 
         real*4 :: Pm (ni, nj, nk)
 
-        integer :: iv
-
 
         ! End of working variable declarations
 

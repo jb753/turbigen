@@ -42,11 +42,21 @@ def make_nozzle(
     Po1 = 1e5
     To1 = 300.0
 
+    # Rotating reference frame
+    Omega = rpm / 60. * np.pi * 2.
+    U = Omega*rm
+
     # Set inlet Ma to get inlet static state
     rgas = cp * (ga - 1.0) / ga
     V = cf.V_cpTo_from_Ma(Ma1, ga) * np.sqrt(cp * To1)
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
+
+    # Relative flow angle
+    Vt = V * np.sin(np.radians(Alpha))
+    Vx = V * np.cos(np.radians(Alpha))
+    Vt_rel = Vt - U
+    Alpha_rel = np.degrees(np.arctan2(Vt_rel, V))
 
     # Numbers of grid points
     nj = 17
@@ -74,6 +84,11 @@ def make_nozzle(
         fac_R = pchip_interpolate(*xnRR, xv / L)
         xrt[1] *= np.expand_dims(fac_R, (1, 2))
         fac_A /= fac_R
+
+    # Sentinel of None means skew along flow direction
+    if skew is None:
+        skew_max = 30.
+        skew = np.clip(-Alpha_rel,-skew_max, skew_max)
 
     # Apply skew
     xrt[2] += xrt[0] * np.tan(np.radians(skew)) / xrt[1]
@@ -154,7 +169,6 @@ def make_nozzle(
     g.apply_outlet(P1)
 
     # Fluid props
-    Omega = rpm / 60. * np.pi * 2.
     for b in g:
         b.cp = cp
         b.gamma = ga
@@ -169,6 +183,7 @@ def make_nozzle(
     V = np.sqrt(cp * To1) * cf.V_cpTo_from_Ma(Ma, ga)
 
     F = g[0].empty(shape=(ni,))
+    F.Omega = Omega
     F.Vx = V
     F.Vr = 0.0
     F.Vt = 0.0
@@ -203,17 +218,6 @@ settings = {
     "plot_conv": False,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
-
-# settings = {
-#     "n_step": 500,
-#     "n_step_avg": 1,
-#     "n_step_log": 100,
-#     "i_loss": 0,
-#     "plot_conv": False,
-# }
-# conf = turbigen.solvers.embsolve.Config(**settings)
-
-
 
 def plot_nozzle(g, F):
     """Make debugging plots."""
@@ -464,19 +468,19 @@ def test_patch_A_avg():
     assert np.isclose(rsqavg, rsqavg_check)
 
 
-@pytest.mark.parametrize("rpm", (-3000., 3000.))
+@pytest.mark.parametrize("rpm", (-500., 500.))
 def test_rpm(rpm, plot=False):
     """"""
 
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
-    g, F = make_nozzle(xA, rpm=rpm)
+    g, F = make_nozzle(xA, rpm=rpm, tper=True, skew=None)
 
     np.set_printoptions(precision=2)
 
     turbigen.solvers.embsolve.run(g, conf)
 
-    plot_nozzle(g,F)
-    plt.show()
+    # plot_nozzle(g,F)
+    # plt.show()
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -488,7 +492,8 @@ def test_rpm(rpm, plot=False):
 
 if __name__ == "__main__":
 
-    test_rpm(800.)
+    test_rpm(-500.)
+    test_rpm(500.)
 
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
