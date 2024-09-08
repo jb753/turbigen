@@ -2,7 +2,7 @@
 
 subroutine shear_stress(&
     cons, V, mu, xlength, vol, dAi, dAj, dAk, &
-    r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, dw_iwall, dw_jwall, dw_kwall, &
+    Omega, r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, dw_iwall, dw_jwall, dw_kwall, &
     dA_iwall, dA_jwall, dA_kwall, fvisc, ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
@@ -21,6 +21,7 @@ subroutine shear_stress(&
     real*4, intent (in)  :: rk(ni-1, nj-1, nk)
 
     real*4, intent (in)  :: mu
+    real*4, intent (in)  :: Omega
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -49,7 +50,7 @@ subroutine shear_stress(&
     real*4 :: roc(ni-1, nj-1, nk-1)
     real*4 :: gradV(ni-1, nj-1, nk-1, 3, 3)
     ! real*4 :: gradT(ni-1, nj-1, nk-1, 3)
-    ! real*4 :: divV(ni-1, nj-1, nk-1)
+    real*4 :: divV(ni-1, nj-1, nk-1)
     real*4 :: vort(ni-1, nj-1, nk-1, 3)
     real*4 :: vort_mag(ni-1, nj-1, nk-1)
     real*4 :: mu_turb(ni-1, nj-1, nk-1)
@@ -87,8 +88,8 @@ subroutine shear_stress(&
     ! call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     ! Calculate divergence of V
-    ! call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
-    ! divV = divV*2e0/3e0
+    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    divV = divV*2e0/3e0
 
     ! Thermal conductivity
 
@@ -98,13 +99,13 @@ subroutine shear_stress(&
     !$omp workshare
 
     ! tau_xx = 2*dVx_dx - 2/3*divV
-    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) !- divV
+    tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
 
     ! tau_rr = 2*dVr_dr - 2/3*divV
-    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) !- divV
+    tauc(:,:,:,2) = 2e0*gradV(:,:,:,2,2) - divV
 
     ! tau_tt = 2*(dVt_dt/r + Vr/r) - 2/3*divV
-    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc !- divV
+    tauc(:,:,:,3) = 2e0*(gradV(:,:,:,3,3)+ Vc(:,:,:,2))/rc - divV
 
     ! tau_xr = tau_rx = dVx_dr + dVr_dx
     tauc(:,:,:,4) = gradV(:,:,:,2,1) + gradV(:,:,:,1,2)
@@ -164,13 +165,13 @@ subroutine shear_stress(&
 
     ! ! Add on wall cell forces due to stress from wall function
     call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+        fvisc_new, ijk_iwall, 1, cons, Omega, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
     )
     call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+        fvisc_new, ijk_jwall, 2, cons, Omega, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
     )
     call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+        fvisc_new, ijk_kwall, 3, cons, Omega, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
     )
 
     ! Apply relaxation
@@ -226,7 +227,7 @@ end subroutine
 
 ! Add on cell forces due to wall functions
 subroutine wall_function(f, ijk, dirn, cons, &
-        r, dw, dA, mu, &
+        Omega, r, dw, dA, mu, &
         ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni
@@ -243,6 +244,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
     real*4, intent (in) :: dw(nwall)
     real*4, intent (in) :: dA(nwall)
     real*4, intent (in) :: mu
+    real*4, intent (in) :: Omega
 
 
     real*4 :: rw
@@ -385,6 +387,9 @@ subroutine wall_function(f, ijk, dirn, cons, &
             row = roVxrtw(1)
             Vxrtw = roVxrtw(2:4)/row
 
+            ! Put velocity in relative frame
+            Vxrtw(3) = Vxrtw(3) - rw*Omega
+
             ! Form the cell Reynolds
             Vw = sqrt(sum(Vxrtw*Vxrtw, 1))
             Rew = row * Vw * dw(iwall)/mu
@@ -442,6 +447,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
             f(ic, jc, kc, 2) = f(ic, jc, kc, 2) + vec(1)*tauw
             f(ic, jc, kc, 3) = f(ic, jc, kc, 3) + vec(2)*tauw
             f(ic, jc, kc, 4) = f(ic, jc, kc, 4) + rc*vec(3)*tauw
+            f(ic, jc, kc, 5) = f(ic, jc, kc, 5) + Omega*rc*vec(3)*tauw
 
         end do
     end if

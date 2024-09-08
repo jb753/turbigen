@@ -212,6 +212,7 @@ def post(
         )
 
     ax.axis("equal")
+    ax.axis("off")
 
     # Make the colorbar
     cm.set_edgecolor("face")

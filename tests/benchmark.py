@@ -316,7 +316,7 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    conf = turbigen.solvers.embsolve.Config(n_step=20000, n_step_avg=100, nstep_damp=-1)
+    conf = turbigen.solvers.embsolve.Config(n_step=20000, n_step_avg=100, nstep_damp=-1,plot_conv=True)
     tstart = timer()
     turbigen.solvers.embsolve.run(g, conf)
     tend = timer()

@@ -1,0 +1,79 @@
+
+# A 2D compressor cascade with prescribed flow angles
+
+# All files relating to the case are held in a working directory
+workdir: runs/compressor_cascade
+
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  gamma: 1.4
+
+mean_line:
+  type: compressor_cascade
+  span1: 0.01
+  Alpha1: 50.
+  DH: 0.8
+  Ma1: 0.6
+  AVDR: 1.05
+  Ys: 0.01
+  htr: 0.99
+  rpm: 0.
+
+# Annulus shape using meridional aspect ratios
+annulus:
+  AR_gap: [0.5, 0.5]  # Span to inlet/exit boundary distance
+  AR_chord: 2.0  # Span to chord
+
+# Blade shapes
+blades:
+  # List of rows
+  - DFL: 0.4  # Set number of blades using Lieblein
+    Re_surf: 4e5
+    sections:
+      # List of sections for this row
+      - spf: 0.5  # Span fraction
+        # Vector of thickness parameters
+        q_thick: [0.02, 0.05, 0.2, 0.0, 0.0, 0.05]
+        # Vector of camber parameters
+        qstar_camber: [6., -20., 2.0, 0.5, 0.0]
+    # - ...
+  # - ...
+
+# Computational mesh generation
+mesh:
+  type: h  # Mesh topology
+  dm_LE: 0.001
+  ni_TE: 9
+  dm_TE: 0.05
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Double grid spacing in each direction
+
+# CFD solver
+solver:
+  type: embsolve
+  i_loss: 0
+  i_exit: 0
+  i_inlet: 0
+  n_step: 2000
+  n_step_avg: 200
+  plot_conv: true
+
+#operating_point:
+ # mdot_pid: [0.3, 0.05, 0.0] #[0.5, 0.1, 0.0]
+
+post_process:
+  plot_pressure_distributions:
+    row_spf: [[0.5,],]
+  contour:
+    coord: m
+    value: 2.05
+    variable: Ys
+    N_passage: 2
+  contour:
+    coord: spf
+    value: .5
+    variable: Ys
+    irow_ref: 0
+    N_passage: 2

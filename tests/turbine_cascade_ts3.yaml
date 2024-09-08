@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_cascade_embsolve
+workdir: runs/turbine_cascade_ts3
 
 inlet:
   Po: 1e5
@@ -29,7 +29,6 @@ mesh:
   ni_TE: 9
   dm_TE: 0.03
   yplus: 30.0  # Non-dimensional wall distance
-  resolution_factor: 0.5  # Double grid spacing in each direction
   slip_annulus: true
 
 # Blade shapes
@@ -50,13 +49,10 @@ blades:
 
 # CFD solver
 solver:
-  type: embsolve 
-  CFL: 0.7
-  n_step: 10000
-  n_step_avg: 1000
-  n_step_log: 100
-  nstep_damp: -1
-  plot_conv: true
+  type: ts3
+  nstep: 50000
+  nstep_avg: 1000
+  ilos: 1
 
 post_process:
   contour:

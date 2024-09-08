@@ -24,8 +24,13 @@ typ = np.float32
 
 try:
     from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
 except ImportError:
-    pass
+    size = 1
+    rank = 0
+    comm = None
 
 
 @dataclass
@@ -171,6 +176,7 @@ class SolverBlock:
         self.rc = to_fort(np.zeros_like(block.vol))
         embsolve.node_to_cell(self.r, self.rc)
 
+
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
         self.dAk = to_fort(block.dAk_new)
@@ -185,6 +191,8 @@ class SolverBlock:
         )
 
         self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
+
+        self.U = self.Omega * self.r
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
@@ -700,6 +708,7 @@ class SolverBlock:
             self.dAi,
             self.dAj,
             self.dAk,
+            self.Omega,
             self.r,
             self.rc,
             *self.rf,
@@ -924,8 +933,6 @@ def get_outlet_data(patch):
 
 
 def send_slave(block_split, procids, periodics):
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size()
 
     for iproc in range(1, size):
         comm.send(block_split[iproc], dest=iproc)
@@ -939,8 +946,6 @@ def send_slave(block_split, procids, periodics):
 
 
 def exchange_cons(blocks, bid_local, periodics, rf):
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
 
     # Update periodic boundaries
     for patch in periodics:
@@ -990,7 +995,6 @@ def exchange_cons(blocks, bid_local, periodics, rf):
 
 
 def exchange_tau(blocks, bid_local, periodics):
-    comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
     # Update periodic boundaries
@@ -1038,9 +1042,6 @@ def exchange_tau(blocks, bid_local, periodics):
 
 # @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
 
     if blocks is None:
         blocks = comm.recv()
@@ -1299,9 +1300,6 @@ def run(grid, conf, machine=None):
     for ib, b in enumerate(blocks):
         b.bid = ib
 
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size()
-
     logger.info(f"Patitioning onto {size} processors...")
     procids = grid.partition(size)
     periodics = get_periodics(grid, procids)
@@ -1314,8 +1312,9 @@ def run(grid, conf, machine=None):
             if iproc == procids[ib]:
                 block_split[-1].append(b)
 
-    logger.info("Sending data to processors...")
-    send_slave(block_split, procids, periodics)
+    if comm:
+        logger.info("Sending data to processors...")
+        send_slave(block_split, procids, periodics)
 
     logger.info("Starting the main time-stepping loop...")
     block_split[0], dUlog, merrlog, Yslog = run_slave(block_split[0], periodics, nodes)
@@ -1400,17 +1399,19 @@ def run(grid, conf, machine=None):
         ax.semilogy(dUlog)
         ax.set_ylim(bottom=omin)
         plt.tight_layout()
+        plt.savefig('conv.pdf')
+        plt.close()
 
-        fig, ax = plt.subplots()
-        ax.plot(Yslog)
-        ax.set_ylabel("Entropy Loss Coefficient, $Y_s$")
-        plt.tight_layout()
+        # fig, ax = plt.subplots()
+        # ax.plot(Yslog)
+        # ax.set_ylabel("Entropy Loss Coefficient, $Y_s$")
+        # plt.tight_layout()
 
-        fig, ax = plt.subplots()
-        ax.plot(merrlog)
-        ax.set_ylabel(r"Mass Conservation Error $\varepsilon \dot{m}/\%$")
-        plt.tight_layout()
-        plt.show()
+        # fig, ax = plt.subplots()
+        # ax.plot(merrlog)
+        # ax.set_ylabel(r"Mass Conservation Error $\varepsilon \dot{m}/\%$")
+        # plt.tight_layout()
+        # plt.show()
 
 
 def get_multigrid_indices(shape, nb):

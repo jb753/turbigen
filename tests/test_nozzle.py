@@ -23,6 +23,7 @@ def make_nozzle(
     Alpha=0.0,
     tper=False,
     Ma1=0.3,
+    rpm=0.
 ):
     """Generate the grid."""
 
@@ -153,11 +154,12 @@ def make_nozzle(
     g.apply_outlet(P1)
 
     # Fluid props
+    Omega = rpm / 60. * np.pi * 2.
     for b in g:
         b.cp = cp
         b.gamma = ga
         b.mu = mu
-        b.Omega = 0.0
+        b.Omega = Omega
 
     # Evaulate 1D analytical
     Q1 = cf.mcpTo_APo_from_Ma(Ma1, ga)
@@ -197,9 +199,20 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
+    "nstep_damp": -1,
     "plot_conv": False,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
+
+# settings = {
+#     "n_step": 500,
+#     "n_step_avg": 1,
+#     "n_step_log": 100,
+#     "i_loss": 0,
+#     "plot_conv": False,
+# }
+# conf = turbigen.solvers.embsolve.Config(**settings)
+
 
 
 def plot_nozzle(g, F):
@@ -330,11 +343,11 @@ def test_condi(dirn, plot=False):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    # rtol_Ma = 5e-2
-    # assert (np.abs(err_Ma) < rtol_Ma).all()
-    # rtol_sh = 5e-3
-    # assert (np.abs(Ys) < rtol_sh).all()
-    # assert (np.abs(Cho) < rtol_sh).all()
+    rtol_Ma = 5e-2
+    assert (np.abs(err_Ma) < rtol_Ma).all()
+    rtol_sh = 5e-3
+    assert (np.abs(Ys) < rtol_sh).all()
+    assert (np.abs(Cho) < rtol_sh).all()
 
 
 @pytest.mark.parametrize("Alpha", (-30.0, 0.0, 30.0))
@@ -451,9 +464,31 @@ def test_patch_A_avg():
     assert np.isclose(rsqavg, rsqavg_check)
 
 
+@pytest.mark.parametrize("rpm", (-3000., 3000.))
+def test_rpm(rpm, plot=False):
+    """"""
+
+    xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
+    g, F = make_nozzle(xA, rpm=rpm)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, conf)
+
+    plot_nozzle(g,F)
+    plt.show()
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    rtol_Ma = 5e-2
+    assert (np.abs(err_Ma) < rtol_Ma).all()
+    rtol_sh = 5e-3
+    assert (np.abs(Ys) < rtol_sh).all()
+    assert (np.abs(Cho) < rtol_sh).all()
+
 if __name__ == "__main__":
 
-    # test_condi('r')
+    test_rpm(800.)
 
     # print('testing exit, aligned grid')
     # test_patch_A_avg()
@@ -463,7 +498,7 @@ if __name__ == "__main__":
     # test_Ma(0.9)
 
     # print('testing uniform, aligned grid')
-    test_uniform(-30.)
+    # test_uniform(-30.)
 
     # print('testing uniform, skewed grid')
     # test_skew(-0.)
