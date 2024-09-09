@@ -65,11 +65,6 @@ subroutine set_fluxes( &
     real*4 :: rhoVk(ni-1, nj-1, nk, 3)
 
     ! Misc
-    real*4 :: rVt( ni, nj, nk)
-    real*4 :: rho(ni, nj, nk)
-    real*4 :: Vx(ni, nj, nk)
-    real*4 :: Vr(ni, nj, nk)
-    real*4 :: Vt(ni, nj, nk)
     integer :: id
     integer :: ip
 

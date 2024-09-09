@@ -16,6 +16,18 @@ test:
   - make compile
   - pytest
 
+bench:
+  stage: test
+  script:
+  - python -V
+  - apt update && apt install -y gfortran libopenmpi-dev
+  - pip install -U pip
+  - pip install -e ".[test]"
+  - pip install -e ".[embsolve]"
+  - make compile
+  - ./tests/run_bench.sh
+  - cat tests/bench.dat
+
 docs:
   script:
   - python -V

@@ -197,3 +197,88 @@ subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk
     dt = relax * dt_new + (1e0 - relax)*dt
 
 end subroutine
+
+
+subroutine multigrid_indices( &
+        ijkmg, &  ! Multigrid block indices
+        nb, &     ! Multigrid block sizes
+        ni, nj, nk, nlev &  ! Array sizes
+    )
+
+    integer*2, intent (in)  :: ni
+    integer*2, intent (in)  :: nj
+    integer*2, intent (in)  :: nk
+    integer*2, intent (in)  :: nlev
+    integer*2, intent (inout) :: ijkmg(3, ni, nj, nk, nlev)
+    integer*2, intent (inout) :: nb(nlev)
+
+    integer*2 :: i
+    integer*2 :: j
+    integer*2 :: k
+    integer*2 :: ilev
+    integer*2 :: nbi
+
+    do ilev = 1,nlev
+
+        ! Number of cells along each side of this
+        ! multigrid level is product of all previous
+        nbi = product(nb(1:ilev))
+
+        do i = 1,ni
+            do j = 1,nj
+                do k = 1,nk
+                    ijkmg(1, i, j, k, ilev) = (i-1) / nbi
+                    ijkmg(2, i, j, k, ilev) = (j-1) / nbi
+                    ijkmg(3, i, j, k, ilev) = (k-1) / nbi 
+                end do
+            end do
+        end do
+    end do
+
+end subroutine
+
+
+
+subroutine multigrid_volumes( &
+        volmg, &  ! Multigrid block indices
+        vol, &    ! Fine volumes
+        ijkmg, &  ! Multigrid block indices
+        ni, nj, nk, nlev &  ! Array sizes
+    )
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: nlev
+    real*4, intent (inout) :: vol(ni, nj, nk)
+    real*4, intent (inout) :: volmg(ni, nj, nk, nlev+1)
+    integer*2, intent (inout) :: ijkmg(3, ni, nj, nk, nlev)
+
+    integer :: i
+    integer :: j
+    integer :: k
+    integer :: ib
+    integer :: jb
+    integer :: kb
+    integer :: ilev
+
+    ! Finest grid level is trivial
+    volmg(:,:,:,1) = vol
+
+    do ilev = 1,nlev
+        do i = 1,ni
+            do j = 1,nj
+                do k = 1,nk
+                    ! Get the coarse block index for this fine point
+                    ib = ijkmg(1, i, j, k, ilev)
+                    jb = ijkmg(2, i, j, k, ilev)
+                    kb = ijkmg(3, i, j, k, ilev)
+
+                    ! Accumulate fine volume onto the coarse volume
+                    volmg(ib, jb, kb, ilev + 1) = volmg(ib, jb, kb, ilev + 1) + vol(i, j, k)
+                end do
+            end do
+        end do
+    end do
+
+end subroutine

@@ -24,6 +24,7 @@ typ = np.float32
 
 try:
     from mpi4py import MPI
+
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank = comm.Get_rank()
@@ -73,6 +74,9 @@ class Config(BaseSolver):
     n_loss: int = 5
     """Number of time steps between viscous force updates."""
 
+    n_exch: int = 1
+    """Number of time steps between periodci updates."""
+
     nstep_damp: int = 500
     """Number of steps to apply damping."""
 
@@ -95,8 +99,6 @@ class Config(BaseSolver):
 
     tauw_lam_mult: float = 1.0
     tauw_turb_mult: float = 1.0
-
-    rf_periodic: float = 1.0
 
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
@@ -177,13 +179,9 @@ class SolverBlock:
         self.rc = to_fort(np.zeros_like(block.vol))
         embsolve.node_to_cell(self.r, self.rc)
 
-
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
         self.dAk = to_fort(block.dAk_new)
-        self.vol = get_multigrid_volumes(block.vol_new, conf.multigrid)
-        self.dlmin = get_multigrid_lengths(block, conf.multigrid)
-        self.dt = self.dlmin * 0.0
 
         self.Vxrt = to_fort(block.Vxrt)
         self.Omega = block.Omega.mean().astype(typ)
@@ -207,8 +205,11 @@ class SolverBlock:
 
         # Get indices for multigrid
         self.ijk_multigrid = (
-            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid) + 1
+            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid)+1
         )
+        self.vol = get_multigrid_volumes(to_fort(block.vol_new), self.ijk_multigrid)
+        self.dlmin = get_multigrid_lengths(block, conf.multigrid)
+        self.dt = self.dlmin * 0.0
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -645,7 +646,7 @@ class SolverBlock:
             relax,
         )
 
-    def residual(self, fmgrid, damp, ischeme, sf2, sf4, sf2min):
+    def residual(self, fmgrid, damp, ischeme, sf2=0, sf4=0, sf2min=0):
         embsolve.residual(
             self.cons,
             self.Vxrt,
@@ -698,7 +699,6 @@ class SolverBlock:
     # def multigrid(self, fmgrid):
     #     embsolve.multigrid(self.dU1, self.ijk_multigrid, fmgrid)
 
-    # @profile
     def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,
@@ -946,7 +946,7 @@ def send_slave(block_split, procids, periodics):
     comm.Barrier()
 
 
-def exchange_cons(blocks, bid_local, periodics, rf):
+def exchange_cons(blocks, bid_local, periodics):
 
     # Update periodic boundaries
     for patch in periodics:
@@ -961,15 +961,7 @@ def exchange_cons(blocks, bid_local, periodics, rf):
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
 
-            # # print(ijk.shape)
-            # # quit()
-            # for ipt in range(ijk.shape[0]):
-            #     i1, j1, k1 = ijk[:,ipt]-1
-            #     i2, j2, k2 = nxijk[:,ipt]-1
-            #     assert np.isclose(b1.r[i1, j1, k1], b2.r[i2, j2, k2])
-            #     assert np.isclose(b1.x[i1, j1, k1], b2.x[i2, j2, k2])
-
-            embsolve.average_by_ijk(v1, v2, ijk, nxijk, rf)
+            embsolve.average_by_ijk(v1, v2, ijk, nxijk)
 
         # Otherwise, communication is needed
         else:
@@ -991,8 +983,7 @@ def exchange_cons(blocks, bid_local, periodics, rf):
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
-            vnew = vavg * rf + vs * (1.0 - rf)
-            embsolve.set_by_ijk(v1, vnew, ijk)
+            embsolve.set_by_ijk(v1, vavg, ijk)
 
 
 def exchange_tau(blocks, bid_local, periodics):
@@ -1041,7 +1032,6 @@ def exchange_tau(blocks, bid_local, periodics):
             embsolve.set_by_ijk(tau1, vavg, ijkf)
 
 
-# @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     if blocks is None:
@@ -1085,7 +1075,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     nblock = len(blocks)
 
-    tstart = timer()
 
     dUnow = np.empty((conf.n_step_log, nblock, 5))
 
@@ -1097,6 +1086,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         blocks[iblock].set_timestep(conf.CFL * 0.5)
 
     try:
+        tstart = timer()
+        tfirst = tstart + 0.
+
         # Start the main time stepping loop
         for istep in range(conf.n_step):
 
@@ -1107,7 +1099,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             fmgrid_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0]))
 
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
+            exchange_cons(blocks, bid_local, periodics)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1130,12 +1122,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
                 # If this is a viscous calculation
                 # Update the viscous forces every nloss time steps
-                if not np.mod(istep, conf.n_loss) > 100 and conf.i_loss > 0:
-                    # Evaluate the components of viscous stress tensor
+                if not np.mod(istep, conf.n_loss) and conf.i_loss > 0:
                     sb.set_viscous_stress()
-
-                    # Average the stresses on periodic faces
-                    # exchange_tau(blocks, bid_local, periodics)
 
                 # Using the updated flow field, sum fluxes for each cell
                 # and store the residual
@@ -1145,7 +1133,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 ):
                     damp = conf.damping_factor * damping_ramp
                 else:
-                    damp = 0.0
+                    damp = 1e6
 
                 i_scheme = -1 if not istep else conf.i_scheme
                 sb.residual(
@@ -1273,13 +1261,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     dUlognow = np.stack(dUall).mean(axis=1)
                     dUlog.append(dUlognow)
 
+        tlast = timer()
+
     except KeyboardInterrupt:
+        tlast = timer()
         for iblock in range(nblock):
             sb = blocks[iblock]
             sb.cons_avg = sb.cons
 
     if master_flag:
-        return blocks, dUlog, merrlog, Yslog
+        tpnps = (tlast - tfirst) / nodes / conf.n_step
+        logger.info(f"Elapsed time {tlast-tfirst:.2f}s")
+        logger.info(f"Average tpnps={tpnps:.3e}")
+        return blocks, dUlog, merrlog, Yslog, tpnps
     else:
         comm.send(blocks, dest=0)
 
@@ -1293,7 +1287,8 @@ def run(grid, conf, machine=None):
         logger.info("Skipping, doing nothing.")
         return
 
-    logger.info("Intialising native solver...")
+    logger.info("Initialising native solver...")
+    t1 = timer()
 
     nodes = np.sum([b.size for b in grid])
 
@@ -1313,15 +1308,25 @@ def run(grid, conf, machine=None):
             if iproc == procids[ib]:
                 block_split[-1].append(b)
 
+    t2 = timer()
+    logger.info(f"Elapsed time {t2-t1:.2f}s")
+
     if comm:
         logger.info("Sending data to processors...")
+        tst = timer()
         send_slave(block_split, procids, periodics)
+        ten = timer()
+        logger.info(f"Elapsed time {ten-tst:.2f}s")
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog, merrlog, Yslog = run_slave(block_split[0], periodics, nodes)
+    block_split[0], dUlog, merrlog, Yslog, tpnps = run_slave(block_split[0], periodics, nodes)
 
+    logger.info("Recieving data from processors...")
+    tst = timer()
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
+    ten = timer()
+    logger.info(f"Elapsed time {ten-tst:.2f}s")
 
     blocks_out = []
     for bsi in block_split:
@@ -1372,7 +1377,10 @@ def run(grid, conf, machine=None):
     # plt.show()
 
     if not mdot_out == 0.0:
-        logger.info(f"Mass flow error: {(mdot_in/mdot_out-1.)*100.:.1f}%")
+        merr = mdot_in/mdot_out-1.
+        logger.info(f"Mass flow error: {merr*100.:.1f}%")
+    else:
+        merr = -1.
 
     if conf.plot_conv:
         dUlog = np.concatenate(dUlog, axis=0)
@@ -1400,7 +1408,7 @@ def run(grid, conf, machine=None):
         ax.semilogy(dUlog)
         ax.set_ylim(bottom=omin)
         plt.tight_layout()
-        plt.savefig('conv.pdf')
+        plt.savefig("conv.pdf")
         plt.close()
 
         # fig, ax = plt.subplots()
@@ -1413,6 +1421,7 @@ def run(grid, conf, machine=None):
         # ax.set_ylabel(r"Mass Conservation Error $\varepsilon \dot{m}/\%$")
         # plt.tight_layout()
         # plt.show()
+    return tpnps, merr
 
 
 def get_multigrid_indices(shape, nb):
@@ -1428,53 +1437,17 @@ def get_multigrid_indices(shape, nb):
     ni, nj, nk = shape
     nlev = len(nb)
     ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
-
-    # Loop over multigrid levels
-    for ilev in range(nlev):
-
-        # Number of cells along each side of this
-        # multigrid level is product of all previous
-        nbi = np.prod(nb[: ilev + 1])
-
-        # Loop over all points in the block
-        for i in range(ni):
-            for j in range(nj):
-                for k in range(nk):
-
-                    # Integer divide to find the multigrid block index
-                    ijkmg[:, i, j, k, ilev] = (
-                        i // nbi,
-                        j // nbi,
-                        k // nbi,
-                    )
-
+    nbf = np.asfortranarray(nb, dtype=np.int16)
+    embsolve.multigrid_indices(ijkmg, nbf)
     assert (ijkmg >= 0).all()
     return ijkmg
 
 
-def get_multigrid_volumes(vol, nb):
+def get_multigrid_volumes(vol, ijkmg):
 
-    # Preallocate output array
-    ijkmg = get_multigrid_indices(vol.shape, nb)
-    nlev = len(nb)
+    nlev = ijkmg.shape[-1]
     volmg = np.asfortranarray(np.zeros(vol.shape + (nlev + 1,), dtype=typ))
-    ni, nj, nk = vol.shape
-
-    # Finest grid level is trivial
-    volmg[..., 0] = vol
-
-    # Loop over multigrid levels
-    for ilev in range(nlev):
-        # Loop over all points in the block
-        for i in range(ni):
-            for j in range(nj):
-                for k in range(nk):
-
-                    # Get the coarse block index for this fine point
-                    ib, jb, kb = ijkmg[:, i, j, k, ilev]
-
-                    # Accumulate fine volume onto the coarse volume
-                    volmg[ib, jb, kb, ilev + 1] += vol[i, j, k]
+    embsolve.multigrid_volumes(volmg, vol, ijkmg)
 
     assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
 

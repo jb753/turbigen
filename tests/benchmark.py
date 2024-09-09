@@ -62,10 +62,7 @@ def make_nozzle(
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
 
-    # Numbers of grid points
-    # nj = 17
-    # nk = 17
-    # ni = int(nj * L_h-3)
+    # ~10^6 grid points
     ni = 169
     nj = 81
     nk = 73
@@ -160,11 +157,12 @@ def make_nozzle(
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
     So1.set_P_T(Po1, To1)
     g.apply_inlet(So1, Alpha, Beta)
-    g.calculate_wall_distance()
+    # g.calculate_wall_distance()
     g.apply_outlet(P1)
 
     # Fluid props
     for b in g:
+        b.w = 0.
         b.cp = cp
         b.gamma = ga
         b.mu = mu
@@ -316,11 +314,8 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    conf = turbigen.solvers.embsolve.Config(n_step=500, n_step_avg=100, nstep_damp=-1,plot_conv=True)
-    tstart = timer()
-    turbigen.solvers.embsolve.run(g, conf)
-    tend = timer()
-    return tend - tstart
+    conf = turbigen.solvers.embsolve.Config(n_step=500, n_step_log=50, n_step_ramp=0, n_step_avg=100, nstep_damp=-1,print_conv=False,plot_conv=False)
+    return turbigen.solvers.embsolve.run(g, conf)
 
 def run_ts3(g):
     conf = turbigen.solvers.ts3.Config(nstep=20000, nstep_avg=100, workdir='ts3', ilos=1)
@@ -331,18 +326,16 @@ def run_ts3(g):
 
 if __name__ == "__main__":
 
-    # We are going to loop over different numbers of processors for the same
-    # grid size
-    # nproc = np.array([1, 2, 4, 8, 16, 32])
-    # times = np.empty_like(nproc)
-    # for i in range(len(nproc)):
-
     # g, _ = make_nozzle(1, xA)
     # ts3_time = run_ts3(g)
-    # print(ts3_time)
     # quit()
+    # Turbostream cost
+    # £ factor * tpnps * cfl factor
+    cost_ts3 = 55. * 4e-9 * 0.7/0.4
+    time_ts3 = 4e-9  * 0.7/0.4
 
     g, _ = make_nozzle(size, xA)
-    out = (size, run_embsolve(g)/60.)
-    with open('results.dat','a') as f:
-        f.write(', '.join([str(s) for s in out]) + '\n')
+    tpnps, err = run_embsolve(g)
+    cost = tpnps*size
+    with open('tests/bench.dat','a') as f:
+        f.write(f'{size}, {err}, {tpnps}, {cost}, {cost/cost_ts3}, {tpnps/time_ts3}\n')

@@ -38,7 +38,7 @@ compile ::
 
 
 compile-intel ::
-	python -m numpy.f2py -m embsolvec --fcompiler=intelem --opt='-O3 -xHost -align array64byte -fast -xCORE-AVX512 -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 
+	python -m numpy.f2py -m embsolvec --fcompiler=intelem --opt='-O3 -xHost -align array64byte -fast -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90 
 	mv embsolve*.so turbigen/solvers
 
 

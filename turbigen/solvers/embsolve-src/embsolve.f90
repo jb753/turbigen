@@ -124,8 +124,6 @@ contains
 
         real*4 :: Pm (ni, nj, nk)
 
-        integer :: iv
-
 
         ! End of working variable declarations
 
@@ -171,13 +169,12 @@ contains
         call multigrid_integrate(fsum, resid, ijk_mg, dt, vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
 
         ! Damp out the cell changes
-        if (fdamp.gt.0) then
-            call damp(resid, fdamp, ni-1, nj-1, nk-1)
-        end if
+        call damp(resid, fdamp, ni-1, nj-1, nk-1)
 
         ! Time march and distribute to nodes
         call step(cons, resid, resid_last, ischeme, ni, nj, nk)
 
+        ! Stabilise with smoothing
         call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
 
     end subroutine
