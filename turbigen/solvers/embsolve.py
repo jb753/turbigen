@@ -24,6 +24,7 @@ typ = np.float32
 
 try:
     from mpi4py import MPI
+
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank = comm.Get_rank()
@@ -94,8 +95,6 @@ class Config(BaseSolver):
 
     tauw_lam_mult: float = 1.0
     tauw_turb_mult: float = 1.0
-
-    rf_periodic: float = 1.0
 
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
@@ -175,7 +174,6 @@ class SolverBlock:
 
         self.rc = to_fort(np.zeros_like(block.vol))
         embsolve.node_to_cell(self.r, self.rc)
-
 
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
@@ -697,7 +695,6 @@ class SolverBlock:
     # def multigrid(self, fmgrid):
     #     embsolve.multigrid(self.dU1, self.ijk_multigrid, fmgrid)
 
-    # @profile
     def set_viscous_stress(self):
         embsolve.shear_stress(
             self.cons,
@@ -945,7 +942,7 @@ def send_slave(block_split, procids, periodics):
     comm.Barrier()
 
 
-def exchange_cons(blocks, bid_local, periodics, rf):
+def exchange_cons(blocks, bid_local, periodics):
 
     # Update periodic boundaries
     for patch in periodics:
@@ -960,15 +957,7 @@ def exchange_cons(blocks, bid_local, periodics, rf):
             b2 = blocks[bid_local[nxbid]]
             v2 = b2.cons
 
-            # # print(ijk.shape)
-            # # quit()
-            # for ipt in range(ijk.shape[0]):
-            #     i1, j1, k1 = ijk[:,ipt]-1
-            #     i2, j2, k2 = nxijk[:,ipt]-1
-            #     assert np.isclose(b1.r[i1, j1, k1], b2.r[i2, j2, k2])
-            #     assert np.isclose(b1.x[i1, j1, k1], b2.x[i2, j2, k2])
-
-            embsolve.average_by_ijk(v1, v2, ijk, nxijk, rf)
+            embsolve.average_by_ijk(v1, v2, ijk, nxijk)
 
         # Otherwise, communication is needed
         else:
@@ -990,8 +979,7 @@ def exchange_cons(blocks, bid_local, periodics, rf):
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
-            vnew = vavg * rf + vs * (1.0 - rf)
-            embsolve.set_by_ijk(v1, vnew, ijk)
+            embsolve.set_by_ijk(v1, vavg, ijk)
 
 
 def exchange_tau(blocks, bid_local, periodics):
@@ -1040,7 +1028,6 @@ def exchange_tau(blocks, bid_local, periodics):
             embsolve.set_by_ijk(tau1, vavg, ijkf)
 
 
-# @profile
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     if blocks is None:
@@ -1106,7 +1093,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             fmgrid_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0]))
 
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics, conf.rf_periodic)
+            if not np.mod(istep, 2):
+                exchange_cons(blocks, bid_local, periodics)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1399,7 +1387,7 @@ def run(grid, conf, machine=None):
         ax.semilogy(dUlog)
         ax.set_ylim(bottom=omin)
         plt.tight_layout()
-        plt.savefig('conv.pdf')
+        plt.savefig("conv.pdf")
         plt.close()
 
         # fig, ax = plt.subplots()

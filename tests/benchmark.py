@@ -62,13 +62,14 @@ def make_nozzle(
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
 
-    # Numbers of grid points
-    # nj = 17
-    # nk = 17
-    # ni = int(nj * L_h-3)
+    # ~10^6 grid points
     ni = 169
     nj = 81
     nk = 73
+
+    # ni = 129
+    # nj = 73
+    # nk = 65
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
@@ -316,7 +317,7 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    conf = turbigen.solvers.embsolve.Config(n_step=20000, n_step_avg=100, nstep_damp=-1,plot_conv=True)
+    conf = turbigen.solvers.embsolve.Config(n_step=500, n_step_ramp=0, n_step_avg=100, nstep_damp=-1,plot_conv=True)
     tstart = timer()
     turbigen.solvers.embsolve.run(g, conf)
     tend = timer()
@@ -342,7 +343,6 @@ if __name__ == "__main__":
     # print(ts3_time)
     # quit()
 
+    size=8
     g, _ = make_nozzle(size, xA)
-    out = (size, run_embsolve(g)/60.)
-    with open('results.dat','a') as f:
-        f.write(', '.join([str(s) for s in out]) + '\n')
+    run_embsolve(g)
