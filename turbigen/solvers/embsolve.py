@@ -91,6 +91,7 @@ class Config(BaseSolver):
     K_inlet: float = 0.7
 
     plot_conv: bool = False
+    print_conv: bool = True
 
     tauw_lam_mult: float = 1.0
     tauw_turb_mult: float = 1.0
@@ -1129,8 +1130,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
                 # If this is a viscous calculation
                 # Update the viscous forces every nloss time steps
-                # Not right at the start of the calculation for stability
-                if not np.mod(istep, conf.n_loss) and istep > 100 and conf.i_loss > 0:
+                if not np.mod(istep, conf.n_loss) > 100 and conf.i_loss > 0:
                     # Evaluate the components of viscous stress tensor
                     sb.set_viscous_stress()
 
@@ -1256,18 +1256,19 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                     tpnps = (ten - tstart) / nodes / conf.n_step_log
                     tstart = ten
 
-                    logger.info(f"{istep}: tpnps={tpnps:.3e}")
-                    logger.info(
-                        "  Mass in, out, err = "
-                        f"{mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%"
-                    )
-                    logger.info(f"   Ys = {Ys:.3e}")
-                    for ib, dU in enumerate(dUall.mean(axis=0)):
+                    if conf.print_conv:
+                        logger.info(f"{istep}: tpnps={tpnps:.3e}")
                         logger.info(
-                            f"  block {ib}: "
-                            f"{dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} "
-                            f"{dU[3]:.2e} {dU[4]:.2e}"
+                            "  Mass in, out, err = "
+                            f"{mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%"
                         )
+                        logger.info(f"   Ys = {Ys:.3e}")
+                        for ib, dU in enumerate(dUall.mean(axis=0)):
+                            logger.info(
+                                f"  block {ib}: "
+                                f"{dU[0]:.2e} {dU[1]:.2e} {dU[2]:.2e} "
+                                f"{dU[3]:.2e} {dU[4]:.2e}"
+                            )
 
                     dUlognow = np.stack(dUall).mean(axis=1)
                     dUlog.append(dUlognow)
