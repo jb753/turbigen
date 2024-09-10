@@ -25,7 +25,7 @@ bench:
   - pip install -e ".[test]"
   - pip install -e ".[embsolve]"
   - make compile
-  - ./tests/run_bench.sh
+  - bash ./tests/run_bench.sh
   - cat tests/bench.dat
 
 docs:
