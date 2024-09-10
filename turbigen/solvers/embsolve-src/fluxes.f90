@@ -70,7 +70,7 @@ subroutine set_fluxes( &
 
     ! Extract the quantities we will need to get fluxes
     rhoV = cons(:, :, :, 2:4)
-    rhoV(:, :, :, 3) = rhoV(:, :, :, 3)/r
+    rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
 
     !$omp parallel
 
@@ -79,6 +79,13 @@ subroutine set_fluxes( &
 
     ! Evaluate the mass flux at face centers
     call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
+
+    ! zero mass fluxes on the wall
+    !$omp sections
+    call zero_wall_fluxes(rhoVi, ijk_iwall, ni, nj-1, nk-1, 3, niwall)
+    call zero_wall_fluxes(rhoVj, ijk_jwall, ni-1, nj, nk-1, 3, njwall)
+    call zero_wall_fluxes(rhoVk, ijk_kwall, ni-1, nj-1, nk, 3, nkwall)
+    !$omp end sections
 
     !$omp workshare
     ! Mass fluxes through ijk faces
@@ -106,13 +113,6 @@ subroutine set_fluxes( &
             !$omp end workshare
         end do
     end do
-
-    ! ! zero convective fluxes on the wall
-    !$omp sections
-    call zero_wall_fluxes(fluxi, ijk_iwall, ni, nj-1, nk-1, 3, 5, niwall)
-    call zero_wall_fluxes(fluxj, ijk_jwall, ni-1, nj, nk-1, 3, 5, njwall)
-    call zero_wall_fluxes(fluxk, ijk_kwall, ni-1, nj-1, nk, 3, 5, nkwall)
-    !$omp end sections
 
     ! Add pressure fluxes
     call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
@@ -196,16 +196,15 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, Fsum, ni, nj, nk, np)
 end subroutine
 
 
-subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nv, nc, npt)
+subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nc, npt)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
-    integer, intent (in)  :: nv
     integer, intent (in)  :: nc
     integer, intent (in)  :: npt
 
-    real*4, intent (inout) :: x(ni, nj, nk, nv, nc)
+    real*4, intent (inout) :: x(ni, nj, nk, nc)
     integer*2, intent (in) :: ijk(3, npt)
 
     integer :: ipt
@@ -215,7 +214,7 @@ subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nv, nc, npt)
         ! Loop over all points
         do ipt = 1,npt
             ! Set to zero
-            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :, :) = 0e0
+            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :) = 0e0
         end do
     end if
 
