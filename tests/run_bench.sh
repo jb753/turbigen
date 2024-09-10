@@ -1,7 +1,11 @@
 #!/bin/bash
 
-module purge
-module load rhel8/default-icl &> /dev/null
+
+if [[ $(hostname) =~ cpu ]]; then 
+    echo "On HPC, loading modules"
+    module purge
+    module load rhel8/default-icl &> /dev/null
+fi
 
 
 unset I_MPI_PMI_LIBRARY

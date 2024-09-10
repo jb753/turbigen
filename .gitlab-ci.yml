@@ -24,10 +24,9 @@ bench:
   - pip install -U pip
   - pip install -e ".[test]"
   - pip install -e ".[embsolve]"
-  - make compile
-  # - chmod a+x ./tests/run_bench.sh
-  # - bash ./tests/run_bench.sh
-  # - cat tests/bench.dat
+  # - make compile
+  - ./tests/run_bench.sh
+  - cat tests/bench.dat
 
 docs:
   script:
