@@ -19,5 +19,5 @@ make compile
 rm -f tests/bench.dat
 
 for size in 8 4 2 1 ; do
-    mpirun -np $size python tests/benchmark.py
+    mpirun --allow-run-as-root -np $size python tests/benchmark.py
 done
