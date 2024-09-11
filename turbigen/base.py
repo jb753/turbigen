@@ -766,6 +766,10 @@ class Kinematics:
         return turbigen.util.node_to_face3(self.r)
 
     @dependent_property
+    def r_cell(self):
+        return turbigen.util.node_to_cell(self.r)
+
+    @dependent_property
     def t_face(self):
         return turbigen.util.node_to_face3(self.t)
 

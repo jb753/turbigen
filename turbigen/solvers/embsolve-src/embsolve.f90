@@ -30,7 +30,7 @@ contains
     !
     subroutine residual(&
         cons, Vxrt, P, Pref, ho, fb, &              ! Flow properties and body force
-        Omega, &                              ! Reference frame angular velocity
+        U, Ui, Uj, Uk, &                              ! Reference frame angular velocity
         r, ri, rj, rk, &                      ! Node and face-centered radii
         dAi, dAj, dAk, vol, dt, &             ! Cell areas, volumes, time step
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
@@ -57,8 +57,12 @@ contains
         real*4, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
 
         ! Reference frame angular velocity
-        real*4, intent (in)  :: Omega
         real*4, intent (in)  :: Pref
+
+        real*4, intent(in) :: U( ni, nj, nk)
+        real*4, intent(in) :: Ui( ni, nj-1, nk-1)
+        real*4, intent(in) :: Uj( ni-1, nj, nk-1)
+        real*4, intent(in) :: Uk( ni-1, nj-1, nk)
 
         ! Radii at nodes and face centers
         real*4, intent(in) :: r( ni, nj, nk)
@@ -132,7 +136,7 @@ contains
         ! Calculate the convective fluxes
         call set_fluxes( &
             cons, Vxrt, Pm, ho, &              ! Flow properties and body force
-            Omega, &                              ! Reference frame angular velocity
+            U, Ui, Uj, Uk, &                      ! Reference frame angular velocity
             r, ri, rj, rk, &                      ! Node and face-centered radii
             ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
             fluxi, fluxj, fluxk, &                ! Fluxes out

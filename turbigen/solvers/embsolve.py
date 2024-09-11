@@ -157,7 +157,7 @@ class SolverBlock:
         self.conf = conf
         self.Nb = block.Nb
 
-        self.mu = block.mu
+        self.mu = typ(block.mu)
 
         self.ho = to_fort(block.ho)
         self.P = to_fort(block.P)
@@ -176,8 +176,8 @@ class SolverBlock:
         self.t = to_fort(block.t)
         self.rf = [to_fort(r) for r in block.r_face]
 
-        self.rc = to_fort(np.zeros_like(block.vol))
-        embsolve.node_to_cell(self.r, self.rc)
+        self.rc = to_fort(block.r_cell)
+        # embsolve.node_to_cell(self.r, self.rc)
 
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
@@ -191,7 +191,9 @@ class SolverBlock:
 
         self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
 
-        self.U = self.Omega * self.r
+        Omega = block.Omega.mean()
+        self.U = to_fort(Omega * block.r)
+        self.Uf = [to_fort(Omega*r) for r in block.r_face]
 
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
@@ -654,7 +656,8 @@ class SolverBlock:
             self.Pref,
             self.ho,
             self.fb,
-            self.Omega,
+            self.U,
+            *self.Uf,
             self.r,
             *self.rf,
             self.dAi,

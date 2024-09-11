@@ -2,7 +2,7 @@
 
 subroutine set_fluxes( &
     cons, Vxrt, P, ho, &                  ! Flow properties
-    Omega, &                              ! Reference frame angular velocity
+    U, Ui, Uj, Uk, &                              ! Reference frame angular velocity
     r, ri, rj, rk, &                      ! Node and face-centered radii
     ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
     fluxi, fluxj, fluxk, &                ! Fluxes out
@@ -17,7 +17,10 @@ subroutine set_fluxes( &
     real, intent (in) :: ho  (ni, nj, nk)
 
     ! Reference frame angular velocity
-    real, intent (in)  :: Omega
+    real, intent (in) :: U(ni, nj, nk)
+    real, intent(in) :: Ui( ni, nj-1, nk-1)
+    real, intent(in) :: Uj( ni-1, nj, nk-1)
+    real, intent(in) :: Uk( ni-1, nj-1, nk)
 
     ! Radii at nodes and face centers
     real, intent(in) :: r( ni, nj, nk)
@@ -70,7 +73,7 @@ subroutine set_fluxes( &
 
     ! Extract the quantities we will need to get fluxes
     rhoV = cons(:, :, :, 2:4)
-    rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
+    rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - U)
 
     !$omp parallel
 
@@ -103,26 +106,80 @@ subroutine set_fluxes( &
     ! Distribute to the faces
     call node_to_face( fmass, fmassi, fmassj, fmassk, ni, nj, nk, 4)
 
-    ! Now multiply fmass and rhoV for fluxes of other quantites
-    do ip = 1,4
-        do id = 1,3
-            !$omp workshare
-            fluxi(:, :, :, id, ip+1) = rhoVi(:, :, :, id) * fmassi(:, :, :, ip)
-            fluxj(:, :, :, id, ip+1) = rhoVj(:, :, :, id) * fmassj(:, :, :, ip)
-            fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
-            !$omp end workshare
-        end do
-    end do
+    ! We now multiply mass fluxes and fluxes per unit mass
+    ! Do not loop so we can add pressure fluxes at same time to reduce rounding
 
-    ! Add pressure fluxes
-    call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
-    call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)
-    call add_pressure_fluxes(fluxk, Pk, rk, Omega, ni-1, nj-1, nk)
-    !$omp end parallel
+    ! x-mom, x-dirn
+    fluxi(:,:,:,1,2) = rhoVi(:, :, :, 1) * fmassi(:, :, :, 1) + Pi
+    fluxj(:,:,:,1,2) = rhoVj(:, :, :, 1) * fmassj(:, :, :, 1) + Pj
+    fluxk(:,:,:,1,2) = rhoVk(:, :, :, 1) * fmassk(:, :, :, 1) + Pk
+    ! x-mom, r-dirn
+    fluxi(:,:,:,2,2) = rhoVi(:, :, :, 2) * fmassi(:, :, :, 1)
+    fluxj(:,:,:,2,2) = rhoVj(:, :, :, 2) * fmassj(:, :, :, 1)
+    fluxk(:,:,:,2,2) = rhoVk(:, :, :, 2) * fmassk(:, :, :, 1)
+    ! x-mom, t-dirn
+    fluxi(:,:,:,3,2) = rhoVi(:, :, :, 3) * fmassi(:, :, :, 1)
+    fluxj(:,:,:,3,2) = rhoVj(:, :, :, 3) * fmassj(:, :, :, 1)
+    fluxk(:,:,:,3,2) = rhoVk(:, :, :, 3) * fmassk(:, :, :, 1)
+
+    ! r-mom, x-dirn
+    fluxi(:,:,:,1,3) = rhoVi(:, :, :, 1) * fmassi(:, :, :, 2)
+    fluxj(:,:,:,1,3) = rhoVj(:, :, :, 1) * fmassj(:, :, :, 2)
+    fluxk(:,:,:,1,3) = rhoVk(:, :, :, 1) * fmassk(:, :, :, 2)
+    ! r-mom, r-dirn
+    fluxi(:,:,:,2,3) = rhoVi(:, :, :, 2) * fmassi(:, :, :, 2) + Pi
+    fluxj(:,:,:,2,3) = rhoVj(:, :, :, 2) * fmassj(:, :, :, 2) + Pj
+    fluxk(:,:,:,2,3) = rhoVk(:, :, :, 2) * fmassk(:, :, :, 2) + Pk
+    ! r-mom, t-dirn
+    fluxi(:,:,:,3,3) = rhoVi(:, :, :, 3) * fmassi(:, :, :, 2)
+    fluxj(:,:,:,3,3) = rhoVj(:, :, :, 3) * fmassj(:, :, :, 2)
+    fluxk(:,:,:,3,3) = rhoVk(:, :, :, 3) * fmassk(:, :, :, 2)
+
+    ! rt-mom, x-dirn
+    fluxi(:,:,:,1,4) = rhoVi(:, :, :, 1) * fmassi(:, :, :, 3)
+    fluxj(:,:,:,1,4) = rhoVj(:, :, :, 1) * fmassj(:, :, :, 3)
+    fluxk(:,:,:,1,4) = rhoVk(:, :, :, 1) * fmassk(:, :, :, 3)
+    ! rt-mom, r-dirn
+    fluxi(:,:,:,2,4) = rhoVi(:, :, :, 2) * fmassi(:, :, :, 3)
+    fluxj(:,:,:,2,4) = rhoVj(:, :, :, 2) * fmassj(:, :, :, 3)
+    fluxk(:,:,:,2,4) = rhoVk(:, :, :, 2) * fmassk(:, :, :, 3)
+    ! rt-mom, t-dirn
+    fluxi(:,:,:,3,4) = rhoVi(:, :, :, 3) * fmassi(:, :, :, 3) + ri*Pi
+    fluxj(:,:,:,3,4) = rhoVj(:, :, :, 3) * fmassj(:, :, :, 3) + rj*Pj
+    fluxk(:,:,:,3,4) = rhoVk(:, :, :, 3) * fmassk(:, :, :, 3) + rk*Pk
+
+    ! energy, x-dirn
+    fluxi(:,:,:,1,5) = rhoVi(:, :, :, 1) * fmassi(:, :, :, 4)
+    fluxj(:,:,:,1,5) = rhoVj(:, :, :, 1) * fmassj(:, :, :, 4)
+    fluxk(:,:,:,1,5) = rhoVk(:, :, :, 1) * fmassk(:, :, :, 4)
+    ! energy, r-dirn
+    fluxi(:,:,:,2,5) = rhoVi(:, :, :, 2) * fmassi(:, :, :, 4)
+    fluxj(:,:,:,2,5) = rhoVj(:, :, :, 2) * fmassj(:, :, :, 4)
+    fluxk(:,:,:,2,5) = rhoVk(:, :, :, 2) * fmassk(:, :, :, 4)
+    ! energy, t-dirn
+    fluxi(:,:,:,3,5) = rhoVi(:, :, :, 3) * fmassi(:, :, :, 4) + Ui*Pi
+    fluxj(:,:,:,3,5) = rhoVj(:, :, :, 3) * fmassj(:, :, :, 4) + Uj*Pj
+    fluxk(:,:,:,3,5) = rhoVk(:, :, :, 3) * fmassk(:, :, :, 4) + Uk*Pk
+
+    !! Now multiply fmass and rhoV for fluxes of other quantites
+    !do ip = 1,4
+    !    do id = 1,3
+    !        !$omp workshare
+    !        fluxi(:, :, :, id, ip+1) = rhoVi(:, :, :, id) * fmassi(:, :, :, ip)
+    !        fluxj(:, :, :, id, ip+1) = rhoVj(:, :, :, id) * fmassj(:, :, :, ip)
+    !        fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
+    !        !$omp end workshare
+    !    end do
+    !end do
+    !! Add pressure fluxes
+    !call add_pressure_fluxes(fluxi, Pi, ri, Ui, ni, nj-1, nk-1)
+    !call add_pressure_fluxes(fluxj, Pj, rj, Uj, ni-1, nj, nk-1)
+    !call add_pressure_fluxes(fluxk, Pk, rk, Uk, ni-1, nj-1, nk)
+    !!$omp end parallel
 
 end subroutine
 
-subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
+subroutine add_pressure_fluxes(flux, P, r, U, ni, nj, nk)
 
     implicit none
 
@@ -130,7 +187,7 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     real, intent (in)  :: r(ni, nj, nk)
-    real, intent (in)  :: Omega
+    real, intent (in)  :: U(ni, nj, nk)
     real, intent (out) :: flux(ni, nj, nk, 3, 5)
     real, intent (in)  :: P(ni, nj, nk)
 
@@ -143,7 +200,7 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
     ! rt-mom in t-dirn
     flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
     ! ho in t-dirn
-    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + Omega*r*P
+    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + U*P
     !$omp end workshare
 
 
