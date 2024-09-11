@@ -1,4 +1,3 @@
-
 # A 2D compressor cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
@@ -59,13 +58,8 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
   contour:
-    coord: m
-    value: 2.05
-    variable: Ys
-    N_passage: 2
-  contour:
     coord: spf
     value: .5
-    variable: Ys
+    variable: Cp
     irow_ref: 0
     N_passage: 2
