@@ -31,6 +31,11 @@ blades:
         q_thick: [0.015, 0.06, 0.2, 0.0, 0.02, 0.05]
         qstar_camber: [0., 10., 1.0, 1.0, 0.0]
 
+# mesh:
+#   type: h  # Mesh topology
+#   yplus: 30.0  # Non-dimensional wall distance
+#   resolution_factor: 0.5  # Coarsen the mesh
+
 mesh:
   type: oh  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
@@ -40,12 +45,14 @@ mesh:
 
 solver:
   type: embsolve  # Use Turbostream 3
-  n_step: 2000
-  n_step_avg: 100
+  n_step: 6000
+  n_step_avg: 1
   nstep_damp: -1
   n_step_ramp: 1000
   plot_conv: true
-  # i_scheme: 0
+  # smooth4: 0.02
+  fmgrid: 0.
+  # i_loss: 0
   # CFL: 0.3
   # soft_start: true
   # nstep_soft: 5000

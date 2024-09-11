@@ -20,7 +20,7 @@ logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
 
-typ = np.float32
+typ = np.float64
 
 try:
     from mpi4py import MPI
@@ -28,6 +28,7 @@ try:
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank = comm.Get_rank()
+    mpi_typ = MPI.REAL8
 except ImportError:
     size = 1
     rank = 0
@@ -313,6 +314,7 @@ class SolverBlock:
         # Now distribute to nodes
         self.L = to_fort(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
+        # Disable scaling
         # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
 
         # print('at ni//2, nj//2, k=0')
@@ -978,12 +980,12 @@ def exchange_cons(blocks, bid_local, periodics):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
             # Otherwise, recieve first
             else:
-                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
@@ -1024,12 +1026,12 @@ def exchange_tau(blocks, bid_local, periodics):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
             # Otherwise, recieve first
             else:
-                comm.Recv([nxv, count, MPI.REAL4], source=nxprocid, tag=pid)
-                comm.Send([vs, count, MPI.REAL4], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)

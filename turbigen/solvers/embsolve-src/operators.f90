@@ -3,22 +3,22 @@
 subroutine div(x, divx, vol, dAi, dAj, dAk, ni, nj, nk)
     ! Divergence at cell center by summing fluxes
 
-    real*4, intent (in)  :: x(ni, nj, nk, 3)
+    real*8, intent (in)  :: x(ni, nj, nk, 3)
 
-    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*4, intent (inout)  :: divx(ni-1, nj-1, nk-1)
+    real*8, intent (inout)  :: divx(ni-1, nj-1, nk-1)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
 
-    real*4 :: xi(ni, nj-1, nk-1, 3)
-    real*4 :: xj(ni-1, nj, nk-1, 3)
-    real*4 :: xk(ni-1, nj-1, nk, 3)
+    real*8 :: xi(ni, nj-1, nk-1, 3)
+    real*8 :: xj(ni-1, nj, nk-1, 3)
+    real*8 :: xk(ni-1, nj-1, nk, 3)
 
     call node_to_face( x, xi, xj, xk, ni, nj, nk, 3 )
 
@@ -37,30 +37,30 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     ! by volume gives, by Gauss' Theorem, the volume-averaged
     ! dphi/dx. Repeat for the three coordinate directions.
 
-    real*4, intent (in)  :: x(ni, nj, nk)
+    real*8, intent (in)  :: x(ni, nj, nk)
 
-    real*4, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-    real*4, intent (in)  :: vol(ni-1, nj-1, nk-1)
+    real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real*8, intent (in)  :: vol(ni-1, nj-1, nk-1)
 
-    real*4, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
+    real*8, intent (inout)  :: gradx(ni-1, nj-1, nk-1, 3)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     integer :: ii
 
-    real*4 :: xi(ni, nj-1, nk-1, 3)
-    real*4 :: xj(ni-1, nj, nk-1, 3)
-    real*4 :: xk(ni-1, nj-1, nk, 3)
-    real*4 :: xv(ni, nj, nk, 3)
+    real*8 :: xi(ni, nj-1, nk-1, 3)
+    real*8 :: xj(ni-1, nj, nk-1, 3)
+    real*8 :: xk(ni-1, nj-1, nk, 3)
+    real*8 :: xv(ni, nj, nk, 3)
 
-    real*4, intent (in)  :: r(ni, nj, nk)
-    real*4, intent (in) :: rc(ni-1, nj-1, nk-1)
+    real*8, intent (in)  :: r(ni, nj, nk)
+    real*8, intent (in) :: rc(ni-1, nj-1, nk-1)
 
     ! Initialise vector to hold scalar in each direction
-    xv = 0e0
+    xv = 0d0
 
     ! Loop over coordinate directions
     do ii = 1,3
@@ -100,7 +100,7 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
         ! Reset the storage vector to zero
         !$omp workshare
-        xv(:,:,:,ii) = 0e0
+        xv(:,:,:,ii) = 0d0
         !$omp end workshare
         !$omp end parallel
 

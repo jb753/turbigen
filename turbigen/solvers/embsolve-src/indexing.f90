@@ -10,8 +10,8 @@ subroutine get_by_ijk(x, xu, ijk, ni, nj, nk, nv, npt)
     integer, intent (in)  :: nv
     integer, intent (in)  :: npt
 
-    real*4, intent (inout) :: x(ni, nj, nk, nv)
-    real*4, intent (out) :: xu(npt*nv)
+    real*8, intent (inout) :: x(ni, nj, nk, nv)
+    real*8, intent (out) :: xu(npt*nv)
     integer*2, intent (in) :: ijk(3, npt)
 
     integer :: ipt
@@ -54,13 +54,13 @@ subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt,
     integer, intent (in)  :: nk2
     integer, intent (in) :: nv
 
-    real*4, intent (inout) :: x1(ni1, nj1, nk1, nv)
-    real*4, intent (inout) :: x2(ni2, nj2, nk2, nv)
+    real*8, intent (inout) :: x1(ni1, nj1, nk1, nv)
+    real*8, intent (inout) :: x2(ni2, nj2, nk2, nv)
     integer*2, intent (in) :: ijk1(3, npt)
     integer*2, intent (in) :: ijk2(3, npt)
 
     integer :: ipt
-    real*4 :: avg(nv)
+    real*8 :: avg(nv)
 
 
     integer :: i1
@@ -85,7 +85,7 @@ subroutine average_by_ijk(x1, x2, ijk1, ijk2, ni1, nj1, nk1, ni2, nj2, nk2, npt,
             k2 = ijk2(3, ipt)
 
             ! Get average
-            avg = 0.5e0*(x1(i1, j1, k1, :) + x2(i2, j2, k2, :))
+            avg = 0.5d0*(x1(i1, j1, k1, :) + x2(i2, j2, k2, :))
             x1(i1, j1, k1, :) = avg
             x2(i2, j2, k2, :) = avg
 
@@ -103,8 +103,8 @@ subroutine set_by_ijk(x, xu, ijk, ni, nj, nk, nv, npt, nb)
     integer, intent (in)  :: nb
     integer, intent (in)  :: npt
 
-    real*4, intent (inout) :: x(ni, nj, nk, nv)
-    real*4, intent (inout) :: xu(nb)
+    real*8, intent (inout) :: x(ni, nj, nk, nv)
+    real*8, intent (inout) :: xu(nb)
     integer*2, intent (inout) :: ijk(3, npt)
 
     integer :: ipt
