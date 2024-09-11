@@ -513,6 +513,50 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             u = interpn(ijkv_other, other.u, ijk)
             self.set_rho_u(rho, u)
 
+    def subsample(self, factor):
+        """Scale the number of grid points along each edge, keeping connectivity.
+
+        In general, without whole-face to whole-face connectivity, we cannot just
+        downsample each block seperately because the periodic patches will not line
+        up. So we find the critical points at patch start and ends and keep these
+        the same, and apply the same coarsening between those critical points."""
+
+        # Assemble critical values of i, j, k
+        ic = [0, self.ni-1]
+        jc = [0, self.nj-1]
+        kc = [0, self.nk-1]
+        ijkc = [ic, jc, kc]
+        nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
+        for p in self.patches:
+            ijk_lim = p.ijk_limits
+            ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+            for m in range(3):
+                ijkc[m] += ijk_lim[m].tolist()
+        ijkc = [np.unique(c) for c in ijkc]
+
+        # Now resample keeping the critical indices
+        ijk_new = [
+            util.resample_critical_indices(nii, ijkci, factor)
+            for nii, ijkci in zip(self.shape, ijkc)
+        ]
+        nijk_new = tuple([len(xx) for xx in ijk_new])
+
+        # Convert old patch start/end for indices into new block
+        for p in self.patches:
+            for m in range(3):
+                p.ijk_limits[m,:] = np.argwhere(np.isin(ijk_new[m], p.ijk_limits[m,:])).squeeze()
+
+        # Extract these points from the block
+        data_out = np.empty((self.nprop,) + nijk_new)
+        mask = np.zeros((3,) + self.shape, dtype=bool)
+        mask[0,ijk_new[0],:,:] = True
+        mask[1,:,ijk_new[1],:] = True
+        mask[2, :,:,ijk_new[2]] = True
+        mask = np.repeat(mask.all(axis=0)[None,:], self.nprop, axis=0)
+        self._data = self._data[mask].reshape((self.nprop,) + nijk_new)
+        self._dependent_property_cache.clear()
+
+
     def refine(self, k):
         """Make a finer mesh by halving each edge k times."""
 

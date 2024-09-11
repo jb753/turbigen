@@ -92,6 +92,8 @@ class Config(BaseSolver):
     sa_helicity_option: int = 0
     """Spalart--Allmaras turbulence model helicity correction."""
 
+    check_conv: bool = True
+
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -177,6 +179,7 @@ class Config(BaseSolver):
         c.cfl = 0.3
         c.fmgrid = 0.0
         c.soft_start = False
+        c.check_conv = False
         c.precon = 0
         c.dts = 0
         if c.nstep_soft:
@@ -1091,24 +1094,14 @@ def run(grid, ts3_conf, machine):
         _read_hdf5(grid, ts3_conf)
         return
 
-    # # Do a robust calculation and update the outlet throttle pressure
-    # if ts3_conf.soft_start:
-    #     logger.info("Soft start...")
-    #     ts3_conf_robust = ts3_conf.robust()
-    #     _run(grid, ts3_conf_robust)
-    #     log_path = os.path.join(ts3_conf.workdir, "log.txt")
-    #     log_new_path = os.path.join(ts3_conf.workdir, "log_soft.txt")
-    #     shutil.copy(log_path, log_new_path)
-    #     grid.update_outlet()
-    #     logger.info("Accurate solution...")
-    #
     _run(grid, ts3_conf)
 
     # Produce a warning if the outlet is choked
     grid.check_outlet_choke()
 
     # Raise errors if the solution did not converge
-    _check_conv(ts3_conf)
+    if ts3_conf.check_conv:
+        _check_conv(ts3_conf)
 
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")

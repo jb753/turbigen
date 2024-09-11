@@ -184,6 +184,23 @@ def angles_to_velocities(V, Alpha, Beta):
 
     return Vx, Vr, Vt
 
+def resample_critical_indices(ni, ic, f):
+
+    # Spans between each critical index
+    dic = np.diff(ic)
+
+    # Assemble segments between each critical point
+    segs = []
+    nseg = len(dic)
+    for iseg in range(nseg):
+        niseg = int(np.round(dic[iseg]*f).item()+1)
+        segs.append(np.round(np.linspace(ic[iseg], ic[iseg+1], niseg)).astype(int))
+
+    i = np.unique(np.concatenate(segs))
+    assert np.all(np.isin(ic, i))
+    return i
+
+
 
 def resample(x, f, mult=None):
     """Multiply number of points in x by f, keeping relative spacings."""

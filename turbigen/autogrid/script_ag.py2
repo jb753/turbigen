@@ -83,7 +83,12 @@ for n in range(nrow):
     else:
         row(n1).blade(1).set_blend_treatment_at_trailing_edge(0)
         row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
-    row(n1).set_coarse_grid_level(2)
+    if conf["ncell_target"]:
+        print 'setting target ncell' 
+        row(n1).set_coarse_grid_level(4, int(conf["ncell_target"]))
+    else:
+        print 'setting default ncell'
+        row(n1).set_coarse_grid_level(2)
     row(n1).set_streamwise_weight(1.,conf["blade_streamwise_weight"],1.)
     row(n1).set_upstream_block_relaxation(1)
     row(n1).set_downstream_block_relaxation(conf["relax_outlet"])
@@ -195,8 +200,9 @@ print "Modifying the resolution..."
 for n in range(nrow):
     n1 = n+1  # Autogrid uses 1-based indexing
 
-    row(n1).set_row_flow_path_number(int(conf["nr"][n]))
-    row(n1).set_flow_path_control_cst_cells_number(conf["const_cells_pc"])
+    if not conf["ncell_target"]:
+        row(n1).set_row_flow_path_number(int(conf["nr"][n]))
+        row(n1).set_flow_path_control_cst_cells_number(conf["const_cells_pc"])
     row(n1).set_flow_path_control_hub_clustering(conf["dr_hub"])
     row(n1).set_flow_path_control_shroud_clustering(conf["dr_cas"])
 

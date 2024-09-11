@@ -78,6 +78,15 @@ def post(
         # Get all blades in this row
         surfs = grid.cut_blade_surfs()[irow]
 
+        # Meridional curves for target span fractions
+        ist = irow * 2 + 1
+        ien = ist + 1
+        m = np.linspace(ist, ien, 101)
+        spfrow = np.array(spfrow)
+        xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spfrow.reshape(1, -1)).reshape(
+            2, -1, len(spfrow)
+        )
+
         fig, ax = plt.subplots(layout="constrained")
         ax.set_xlabel(r"Normalised Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
         ax.set_xlim((0.0, 1.0))
@@ -85,11 +94,13 @@ def post(
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
             # Find the j-index corresponding to current span fraction on main blade
-            jspf = np.argmin(np.abs(surfs[0].spf[1, :, 0] - spf))
+            # jspf = np.argmin(np.abs(surfs[0].spf[1, :, 0] - spf))
 
             # Loop over main/splitter
             for isurf, surf in enumerate(surfs):
-                snow = surf[:, jspf, :]
+                # snow = surf[:, jspf, :]
+
+                snow = surf.meridional_slice(xr_spf[:, :, ispf])
 
                 # Extract pressure and non-dimensionalise
                 if use_rot:

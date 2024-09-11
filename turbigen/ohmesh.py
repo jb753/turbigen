@@ -41,8 +41,7 @@ class OHMeshConfig(BaseConfig):
     ni_outlet = 65
     """Number of streamwise points in outlet."""
 
-    refine_factor = 0
-    """Divide each edge into 2**(refine_factor) sub-edges."""
+    resolution_factor = 0.5
 
     fix_h_inlet = False
     fix_h_outlet = False
@@ -75,6 +74,8 @@ class OHMeshConfig(BaseConfig):
     nj_fillet_shd = 17
     is_butterfly = False
     nk_fillet = 9
+
+    ncell_target = 0.
 
     inlet_bulb = ""
 
@@ -122,6 +123,7 @@ class OHMeshConfig(BaseConfig):
             "inlet_bulb": self.inlet_bulb,
             "nx_up": self.ni_inlet,
             "nx_dn": self.ni_outlet,
+            "ncell_target": self.ncell_target,
             "nx_mix": 9,
             "dr_hub": dhub,
             "dr_cas": dcas,
@@ -237,8 +239,9 @@ def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, Omega, skip=Fal
 
     g = turbigen.autogrid.reader.read(g_path, bcs_path)
 
-    if rf := mesh_config.refine_factor:
+    if rf := mesh_config.resolution_factor:
         for b in g:
-            b.refine(rf)
+            b.subsample(rf)
+        g.match_patches()
 
     return g

@@ -1,0 +1,83 @@
+# A completed config for the tutorial
+workdir: runs/compressor_emb
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5  # Stagnation pressure [Pa]
+  To: 300.  # Stagnation temperature [K]
+  cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
+  mu: 1.8e-5  # Working fluid dynamic viscosity [kg/m/s]
+  gamma: 1.4  # Working fluid ratio of specific heats [-]
+
+# Mean-line design
+mean_line:
+  type: axial_compressor_rotor
+  PR: 1.1
+  mdot: 5.
+  phi: 0.6
+  psi: 0.4
+  etatt: 0.94
+  htr1: 0.8
+
+annulus:
+  AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+  AR_chord: 2.  # Span to chord
+  nozzle_ratio: 0.9
+
+blades:
+  - DFL: 0.45  # Set number of blades using Lieblein
+    sections:  # One blade section at midheight
+      - spf: 0.5
+        q_thick: [0.015, 0.06, 0.2, 0.0, 0.02, 0.05]
+        qstar_camber: [0., 10., 1.0, 1.0, 0.0]
+
+mesh:
+  type: oh  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  remote_host: gp-111
+  via_host: login-q-3
+  resolution_factor: 0.5  # Coarsen the mesh
+
+solver:
+  type: embsolve  # Use Turbostream 3
+  n_step: 10000
+  n_step_avg: 1
+  nstep_damp: -1
+  n_step_ramp: 2000
+  plot_conv: true
+  i_scheme: 0
+  CFL: 0.4
+  # soft_start: true
+  # nstep_soft: 5000
+
+operating_point:
+  # mdot_pid: [0.5, 0.1, 0.0]
+  PR_ts: 1.0
+
+# iterate:
+#   max_iter: 20
+#   mean_line:
+#     match_tolerance:
+#       etatt: 0.01
+#     relaxation_factor: 1.0
+#   deviation:
+#     clip: 5.0
+#     relaxation_factor: 1.0
+#     tolerance: 1.0
+#   incidence:
+#     clip: 2.0
+#     relaxation_factor: 0.4
+#     tolerance: 2.0
+#     rtol_mdot: 0.1
+
+
+post_process:
+  contour:
+    coord: spf
+    value: .51
+    variable: Cp
+    N_passage: 2
+  plot_pressure_distributions:
+    row_spf: [[0.5,],]
+    write_raw: true
+    # compare: tests/pdist_ts3.npz

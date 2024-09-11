@@ -37,7 +37,7 @@ def post(
     theta_offset=0.0,
     title=None,
     N_passage=1,
-    irow_ref=None,
+    irow_ref=0,
     cmap="cubehelix",
     extend="max",
     show_mesh=False,
@@ -138,7 +138,7 @@ def post(
     if irow_ref is None:
         if coord_mode == CoordMode.M:
             irow_ref = int(value / 2 - 1)
-        else:
+        elif machine.Nrow>1:
             raise Exception(
                 "Need to set irow_ref if plotting at constant x, r, or span."
             )
@@ -215,7 +215,7 @@ def post(
     ax.axis("off")
 
     # Make the colorbar
-    cm.set_edgecolor("face")
+    # cm.set_edgecolor("face")
     plt.colorbar(cm, label=label)
 
     # Show hub and casing for r=const cuts
