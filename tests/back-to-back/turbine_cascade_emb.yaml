@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_cascade_ts3
+workdir: runs/turbine_cascade_emb_2
 
 inlet:
   Po: 1e5
@@ -29,45 +29,38 @@ mesh:
   ni_TE: 9
   dm_TE: 0.03
   yplus: 30.0  # Non-dimensional wall distance
-  slip_annulus: true
+  resolution_factor: 0.5  # Non-dimensional wall distance
+  # slip_annulus: true
 
 # Blade shapes
 blades:
-  # List of rows
-  - Co: 0.7  # Set number of blades using circulation coeff
+  - Co: 0.7
     Re_surf: 4e5
     sections:
-      # List of sections for this row
-      - spf: 0.5  # Span fraction
-        # Vector of thickness parameters
+      - spf: 0.5
         q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
-        # Vector of camber parameters
         qstar_camber: [10., -2., 1.0, 1.0, 0.0]
-    # - ...
-  # - ...
 
 
 # CFD solver
 solver:
-  type: ts3
-  nstep: 50000
-  nstep_avg: 1000
-  ilos: 1
+  type: embsolve
+  n_step: 10000
+  n_step_avg: 2000
+  nstep_damp: -1
+  plot_conv: true
+  smooth2_adapt: 2.0
+  smooth4: 0.02
 
 post_process:
   contour:
-    coord: spf
-    value: 0.5
-    variable: Cp
-    irow_ref: 0
+    coord: m
+    value: 2.05
+    variable: Ys
     N_passage: 2
-    # show_mesh: true
-  plot_thickness:
-    row_spf: [[0.5,]]
-  plot_section:
-    row_spf: [[0.2,0.5,0.8],]
-    coord_sys: xrt
+    step: 0.05
+    lim: [0., 0.50]
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
-    # compare: tests/pdist_ts3.npz
+    compare: tests/pdist_ts3.npz

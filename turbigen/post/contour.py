@@ -189,9 +189,9 @@ def post(
     else:
         levels = turbigen.util.clipped_levels(v, step, thresh=0.01)
 
-    # eps = 0e-4 * np.diff(lev).mean()
-    # v = np.clip(v, lev[-1]+eps, lev[-1]-eps)
-    # # v = np.clip(v, lev[-1] + eps, None)
+    eps = 1e-4 * np.diff(levels).mean()
+    v = np.clip(v, levels[0]+eps, levels[-1]-eps)
+    # v = np.clip(v, lev[-1] + eps, None)
 
     fig, ax = plt.subplots(layout="constrained")
 
