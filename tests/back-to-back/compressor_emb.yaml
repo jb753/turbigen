@@ -41,12 +41,12 @@ mesh:
 solver:
   type: embsolve  # Use Turbostream 3
   n_step: 2000
-  n_step_avg: 1
+  n_step_avg: 100
   nstep_damp: -1
   n_step_ramp: 1000
   plot_conv: true
   # i_scheme: 0
-  # CFL: 0.4
+  # CFL: 0.3
   # soft_start: true
   # nstep_soft: 5000
 

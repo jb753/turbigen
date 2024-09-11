@@ -3,8 +3,7 @@ subroutine multigrid_integrate( &
         fsum, &  ! Cell net fluxes
         dU, &    ! Residuals
         ijkmg, &  ! Multigrid block indices
-        dt, &  ! Multigrid block indices
-        vol, &  ! Multigrid block indices
+        dt_vol, &  ! Multigrid block indices
         fmgrid, &  ! Scaling factor on multigrid time step
         ni, nj, nk, np, nlev &  ! Array sizes
     )
@@ -29,8 +28,7 @@ subroutine multigrid_integrate( &
     integer*2, intent (in) :: ijkmg(3, ni, nj, nk, nlev)
 
     ! Multigrid vol and timesteps
-    real*4, intent (in) :: vol(ni, nj, nk, nlev+1)
-    real*4, intent (in) :: dt(ni, nj, nk, nlev+1)
+    real*4, intent (in) :: dt_vol(ni, nj, nk, nlev+1)
 
     ! Working variables
     real*4 :: fsum_mg(ni, nj, nk, np, nlev)
@@ -83,7 +81,7 @@ subroutine multigrid_integrate( &
     dU = 0e0
     do ip = 1, 5
         !$omp workshare
-        dU(:,:,:,ip)  = fsum( :,:,:,ip) * dt(:,:,:,1)/vol(:,:,:,1)
+        dU(:,:,:,ip)  = fsum( :,:,:,ip) * dt_vol(:,:,:,1)
         !$omp end workshare
     end do
 
@@ -108,9 +106,9 @@ subroutine multigrid_integrate( &
                         dU(i, j, k, ip) = dU(i, j, k, ip) + &
                             fmgrid/(2**(ilev-1)) &
                             * fsum_mg(ib, jb, kb, ip, ilev) &
-                            * dt(ib, jb, kb, ilev+1) &
-                            / vol(ib, jb, kb, ilev+1)
+                            * dt_vol(ib, jb, kb, ilev+1)
                     end do
+
 
                 end do
             end do
@@ -120,10 +118,13 @@ subroutine multigrid_integrate( &
     end do
     !$omp end parallel
 
+    ! halve energy eqn time step
+    dU(:,:,:,5) = dU(:,:,:,5)/2e0
+
 end subroutine
 
 
-subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk, nlev )
+subroutine set_timesteps( dt_vol, vol, a, Vxrt, U, dlmin, ijkmg, CFL, ni, nj, nk, nlev )
 
     ! Array sizes
     integer, intent (in)  :: ni
@@ -133,16 +134,17 @@ subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk
 
     ! Multigrid cell volumes and timesteps
     real*4, intent (inout)  :: vol(ni-1, nj-1, nk-1, nlev+1)
-    real*4, intent (inout)  :: dt(ni-1, nj-1, nk-1, nlev+1)
+    real*4, intent (inout)  :: dt_vol(ni-1, nj-1, nk-1, nlev+1)
     real*4, intent (inout)  :: dlmin(ni-1, nj-1, nk-1, nlev+1)
 
     ! Fine nodal velocities
     real*4, intent (inout)  :: Vxrt(ni, nj, nk, 3)
+    real*4, intent (inout)  :: U(ni, nj, nk)
     real*4, intent (inout)  :: a(ni, nj, nk)
 
     ! Courant number
     real*4, intent (in) :: CFL
-    real*4, intent (in) :: relax
+    real*4, parameter :: relax = 0.1
 
     ! Multigrid indices
     integer*2, intent (in) :: ijkmg(3, ni-1, nj-1, nk-1, nlev)
@@ -153,6 +155,7 @@ subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk
     real*4 :: Vref_mg(ni-1, nj-1, nk-1, nlev+1)
     real*4 :: dt_new(ni-1, nj-1, nk-1, nlev+1)
     real*4 :: vol_fac
+    real*4 :: Vxrt_rel(ni, nj, nk, 3)
     integer :: i
     integer :: j
     integer :: k
@@ -161,8 +164,14 @@ subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk
     integer :: kb
     integer :: ilev
 
+    ! Calculate relative velocity at nodes
+    ! We base time step on relative velocity magnitude because
+    ! the control volumes can be rotating in theta direction
+    Vxrt_rel = Vxrt
+    Vxrt_rel(:,:,:,3) = Vxrt_rel(:,:,:,3)-U 
+
     ! Get cell velocity magnitude plus speed of sound
-    Vref_node = sqrt(sum(Vxrt*Vxrt,4)) + a
+    Vref_node = sqrt(sum(Vxrt_rel*Vxrt_rel,4)) + a
     call node_to_cell(Vref_node, Vref_cell, ni, nj, nk, 1)
 
     ! Trivial fine grid level
@@ -193,8 +202,8 @@ subroutine set_timesteps( dt, vol, a, Vxrt, dlmin, ijkmg, CFL, relax, ni, nj, nk
     end do
 
     ! Now eval time step
-    dt_new = CFL * dlmin / Vref_mg
-    dt = relax * dt_new + (1e0 - relax)*dt
+    dt_new = CFL * dlmin / Vref_mg / vol
+    dt_vol = relax * dt_new + (1e0 - relax)*dt_vol
 
 end subroutine
 

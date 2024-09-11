@@ -32,7 +32,7 @@ contains
         cons, Vxrt, P, Pref, ho, fb, &              ! Flow properties and body force
         U, Ui, Uj, Uk, &                              ! Reference frame angular velocity
         r, ri, rj, rk, &                      ! Node and face-centered radii
-        dAi, dAj, dAk, vol, dt, &             ! Cell areas, volumes, time step
+        dAi, dAj, dAk, vol, dt_vol, &             ! Cell areas, volumes, time step
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
         ijk_mg, fmgrid, &                     ! Multigrid indexing and factor
         fdamp, &                              ! Damping factor
@@ -75,7 +75,7 @@ contains
         real*4, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
         real*4, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
         real*4, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
-        real*4, intent (in)  :: dt(ni-1, nj-1, nk-1, nmg)
+        real*4, intent (in)  :: dt_vol(ni-1, nj-1, nk-1, nmg)
 
         ! Wall locations
         integer*2, intent (in) :: ijk_iwall(3, niwall)
@@ -170,7 +170,7 @@ contains
         !$omp end parallel workshare
 
         ! fsum now contains the sum of fluxes for all cells
-        call multigrid_integrate(fsum, resid, ijk_mg, dt, vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
+        call multigrid_integrate(fsum, resid, ijk_mg, dt_vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
 
         ! Damp out the cell changes
         call damp(resid, fdamp, ni-1, nj-1, nk-1)

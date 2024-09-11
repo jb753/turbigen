@@ -74,9 +74,6 @@ class Config(BaseSolver):
     n_loss: int = 5
     """Number of time steps between viscous force updates."""
 
-    n_exch: int = 1
-    """Number of time steps between periodci updates."""
-
     nstep_damp: int = 500
     """Number of steps to apply damping."""
 
@@ -211,7 +208,7 @@ class SolverBlock:
         )
         self.vol = get_multigrid_volumes(to_fort(block.vol_new), self.ijk_multigrid)
         self.dlmin = get_multigrid_lengths(block, conf.multigrid)
-        self.dt = self.dlmin * 0.0
+        self.dt_vol = self.dlmin * 0.0
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
@@ -638,14 +635,14 @@ class SolverBlock:
 
     def set_timestep(self, CFL, relax=0.0):
         embsolve.set_timesteps(
-            self.dt,
+            self.dt_vol,
             self.vol,
             self.state.a,
             self.Vxrt,
+            self.U,
             self.dlmin,
             self.ijk_multigrid,
             CFL,
-            relax,
         )
 
     def residual(self, fmgrid, damp, ischeme, sf2=0, sf4=0, sf2min=0):
@@ -664,7 +661,7 @@ class SolverBlock:
             self.dAj,
             self.dAk,
             self.vol,
-            self.dt,
+            self.dt_vol,
             *self.ijk_wall_face,
             self.ijk_multigrid,
             fmgrid,
@@ -690,6 +687,10 @@ class SolverBlock:
         embsolve.secondary(self.r, self.cons, self.Vxrt, self.halfVsq, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
+        # if (self.ho<0.).any():
+        #     raise Exception('ho is -ve')
+        #     # self.ho[self.ho<0.] = 0.
+            # print('ho is -ve')
         self.P[:] = self.state.P
         self.T[:] = self.state.T
 
@@ -1117,7 +1118,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
                 # Update time steps using local Mach
                 # With a relaxation factor so they do not change too rapidly
                 if not np.mod(istep, conf.n_step_dt):
-                    sb.set_timestep(conf.CFL * cfl_ramp, relax=0.25)
+                    sb.set_timestep(conf.CFL * cfl_ramp)
 
                 # Apply boundary conditions
                 sb.set_inlets(rfin, conf.i_inlet, K_inlet)
@@ -1294,6 +1295,21 @@ def run(grid, conf, machine=None):
     t1 = timer()
 
     nodes = np.sum([b.size for b in grid])
+
+    # # Set an internal energy datum
+    # # # Find an internal energy datum that ensures ho is always +ve
+    # # ho_min = np.min([b.ho.min() for b in grid])
+    # # # print(ho_min)
+    # # ho_max = np.min([b.ho.max() for b in grid])
+    # # cp_mean = np.mean([np.mean(b.cp) for b in grid])
+    # # SF = 0.1
+    # DT = -10.
+    # for b in grid:
+    #     b.set_Tu0(b.Tu0 + DT)
+    # # ho_min = np.min([b.ho.min() for b in grid])
+    # # # print(ho_min)
+    # # # quit()
+
 
     blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):
@@ -1518,41 +1534,3 @@ def get_multigrid_lengths(block, nb):
     return dlmg
 
 
-def get_multigrid_timestep(dlmin, vol, Vxrt, a, CFL, relax, ijkmg, dt_old):
-
-    # Get a+V cell-centered
-    ni, nj, nk, _ = Vxrt.shape
-    V = np.sqrt(np.sum(Vxrt**2, axis=-1))
-    Vref_node = np.asfortranarray(V + a).astype(typ)
-    Vref_cell = np.empty((ni - 1, nj - 1, nk - 1), order="F", dtype=typ)
-    embsolve.node_to_cell(Vref_node, Vref_cell)
-
-    # Preallocate
-    Vrefmg = np.ones(dlmin.shape, order="F", dtype=typ) * np.nan
-    nlev = ijkmg.shape[-1]
-
-    # Trivial first level
-    Vrefmg[..., 0] = Vref_cell
-
-    # Loop over multigrid levels
-    for ilev in range(nlev):
-        # Loop over all points in the block
-        for i in range(ni - 1):
-            for j in range(nj - 1):
-                for k in range(nk - 1):
-
-                    # Get the coarse block index for this fine point
-                    ib, jb, kb = ijkmg[:, i, j, k, ilev]
-
-                    # Accumulate fine Vref onto coarse
-                    vol_fac = vol[i, j, k, 0] / vol[ib, jb, kb, ilev]
-                    Vrefmg[ib, jb, kb, ilev] += Vref_cell[i, j, k] * vol_fac
-
-    # Now calculate time steps
-    dt_new = CFL * dlmin / Vrefmg
-
-    # Relax
-    if relax:
-        return relax * dt_new + (1.0 - relax) * dt_old
-    else:
-        return dt_new
