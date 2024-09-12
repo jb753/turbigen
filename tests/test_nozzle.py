@@ -6,6 +6,7 @@ import turbigen.grid
 import turbigen.util
 import numpy as np
 from timeit import default_timer as timer
+from copy import copy
 import sys
 from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
@@ -101,7 +102,7 @@ def make_nozzle(
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni // nblock * iblock for iblock in range(nblock)]
     ienb = [ni // nblock * (iblock + 1) + 1 for iblock in range(nblock)]
     ienb[-1] = ni
@@ -210,11 +211,11 @@ def make_nozzle(
 
 
 settings = {
-    "n_step": 4000,
+    "n_step": 5000,
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
-    "nstep_damp": -1,
+    # "nstep_damp": -1,
     "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
@@ -283,6 +284,20 @@ def plot_nozzle(g, F):
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
+        cs = f"C{ib}"
+        C = b[:, b.nj // 2, b.nk // 2]
+        ax.plot(C.x / L, C.Alpha_rel, color=cs)
+    ax.set_title("Alpha_rel")
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f"C{ib}"
+        C = b[:, b.nj // 2, b.nk // 2]
+        ax.plot(C.x / L, (C.ho-C.ho[0])/F[0].V**2, color=cs)
+    ax.set_title("Ho")
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
         C = b[:, :, b.nk // 2]
         ax.contourf(C.x / L, C.r / L, C.s)
     ax.set_title("ent")
@@ -333,7 +348,7 @@ def post_nozzle(g, F):
 
 
 @pytest.mark.parametrize("dirn", ("r", "t"))
-def test_condi(dirn, plot=False):
+def test_condi(dirn):
     """Run subsonic con-di nozzles."""
 
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
@@ -344,6 +359,7 @@ def test_condi(dirn, plot=False):
     turbigen.solvers.embsolve.run(g, conf)
 
     # plot_nozzle(g,F)
+    # plt.show()
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -468,7 +484,7 @@ def test_patch_A_avg():
     assert np.isclose(rsqavg, rsqavg_check)
 
 
-@pytest.mark.parametrize("rpm", (-500., 500.))
+@pytest.mark.parametrize("rpm", (-100., 100.))
 def test_rpm(rpm, plot=False):
     """"""
 
@@ -477,7 +493,10 @@ def test_rpm(rpm, plot=False):
 
     np.set_printoptions(precision=2)
 
-    turbigen.solvers.embsolve.run(g, conf)
+    conf2 = copy(conf)
+    conf2.nstep_damp = -1
+
+    turbigen.solvers.embsolve.run(g, conf2)
 
     # plot_nozzle(g,F)
     # plt.show()
@@ -492,7 +511,8 @@ def test_rpm(rpm, plot=False):
 
 if __name__ == "__main__":
 
-    test_rpm(-500.)
+    # test_condi('t')
+    test_rpm(100.)
     # test_rpm(500.)
 
     # print('testing exit, aligned grid')

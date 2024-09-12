@@ -167,7 +167,9 @@ def test_smooth_cubic():
     embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.1, sf2min=0.0)
     err_abs = np.abs(fs - f)
     err_rel = err_abs / f.mean()
-    assert np.allclose(f, fs)
+    # Note because we revert to 2nd-order at boundaries the edges
+    # will be wrong - exclude from comparison
+    assert np.allclose(f[2:-2,2:-2,2:-2,0], fs[2:-2,2:-2,2:-2,0])
 
     # Check that the shock sensor works
     fs = np.asfortranarray(f.copy())

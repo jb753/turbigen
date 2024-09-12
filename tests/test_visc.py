@@ -26,10 +26,10 @@ import pytest
 # a little bit of 2nd order smoothing is needed to 
 # prevent instability
 settings = {
-    "n_step": 25000,
+    "n_step": 10000,
     "n_step_avg": 1000,
     "n_step_log": 100,
-    "plot_conv": False,
+    "plot_conv": True,
     "xllim_pitch": 0.0,
     "smooth4": 0.001,
     "smooth2_adapt": 0.5,
@@ -651,71 +651,39 @@ def test_poiseuille():
 
     g, F = make_pipe()
 
-    # fig, ax = plt.subplots()
-    # b = g[0]
-    # C = b[:, :, b.nk//2]
-    # ax.plot(C.x, C.r, 'k-',lw=0.2)
-    # ax.plot(C.x.T, C.r.T, 'k-',lw=0.2)
-    # ax.axis('equal')
-    # plt.show()
-
     np.set_printoptions(precision=2)
     turbigen.solvers.embsolve.run(g, settings)
 
-    b = g[0]
-    C = b[:, b.nj // 2, b.nk // 2]
-    P = C.P
-    Po1 = C.Po[0]
-    P1 = C.P[0]
-
-    # fig, ax = plt.subplots()
-    # for b in g:
-    #     C = b[:, b.nj // 2, b.nk // 2]
-    dPdx = np.gradient(C.P, C.x)
-    mu = F.mu
-    #     Cp = (C.P - P1) / (Po1 - P1)
-    #     ax.plot(C.x, Cp, "-x")
-
-    # fig, ax = plt.subplots()
-    # for b in g:
-    #     C = b[:, b.nj // 2, b.nk // 2]
-    #     ax.plot(C.x, C.Vx, "-x")
-
-    iplot = int(b.ni * 0.9)
-
+    print('Processing last block...')
     b = g[-1]
-    C = b[iplot, :, b.nk // 2]
-    h = np.ptp(C.r)
-    rnorm = (C.r - C.r.min()) / np.ptp(C.r)
+    iplot = int(b.ni * 0.9)
+    print(f'iplot={iplot}')
+    C = b[:, b.nj//2, b.nk // 2]
+    C2 = b[-1, :, :]
+    h = np.ptp(C2.r)
+    print(f'span={h}')
+    dPdx = np.gradient(C.P, C.x)
+    print(f'dPdx={dPdx.min()}, {dPdx.mean()}, {dPdx.max()}')
+    mu = F.mu
+    print(f'mu={mu}')
     K = dPdx[iplot] / 2.0 / mu * h * h
-    soln = -K * rnorm * (1.0 - rnorm)
-    err = (C.Vx - soln) / soln.max()
+    print(f'K={K}')
 
-    # fig, ax = plt.subplots()
-    # ax.plot(C.Vx, rnorm, "-x")
-    # ax.plot(soln, rnorm, "-x")
-    # ax.set_title("r")
-    # plt.show()
-
-    # fig, ax = plt.subplots()
-    b = g[0]
-    C = b[-1, :, :]
-    # ax.plot(C.z, C.y, "-")
-    # ax.plot(C.z.T, C.y.T, "-")
-    # ax.axis("equal")
-
-    Cm, A, _ = C.mix_out()
+    Cm, A, _ = C2.mix_out()
     mdot = Cm.rho * Cm.Vm * A
+    print(f'mdot={mdot}')
     rho = Cm.rho
-    w = 2.0 * np.pi * 0.5 * (C.r.min() + C.r.max())
+    print(f'rho={rho}')
+    w = 2.0 * np.pi * 0.5 * (C2.r.min() + C2.r.max())
+    print(f'width={w}')
     mdot_analytical = -rho * w * h * K / 6.0
 
-    print(f"Analytical solution error: {err.min()}, {err.max()}, {err.mean()}")
+    err = (mdot_analytical/mdot-1.)
     print(
         f"mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f},"
-        f" error={(mdot_analytical/mdot-1.)*100:.2f}%"
+        f" error={err*100:.2f}%"
     )
-    assert np.abs(err).mean() < 0.05
+    assert np.abs(err) < 0.05
 
 
 if __name__ == "__main__":

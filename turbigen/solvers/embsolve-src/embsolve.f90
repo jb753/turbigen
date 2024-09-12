@@ -49,33 +49,33 @@ contains
 
         ! Flow properties and body force
         ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
-        real*8, intent (inout) :: cons(ni, nj, nk, 5)
-        real*8, intent (in) :: Vxrt(ni, nj, nk, 3)
-        real*8, intent (in) :: P   (ni, nj, nk)
-        real*8, intent (in) :: ho  (ni, nj, nk)
+        real, intent (inout) :: cons(ni, nj, nk, 5)
+        real, intent (in) :: Vxrt(ni, nj, nk, 3)
+        real, intent (in) :: P   (ni, nj, nk)
+        real, intent (in) :: ho  (ni, nj, nk)
         ! Cell body force per unit volume (and potential mass/energy sources)
-        real*8, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
+        real, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
 
         ! Reference frame angular velocity
-        real*8, intent (in)  :: Pref
+        real, intent (in)  :: Pref
 
-        real*8, intent(in) :: U( ni, nj, nk)
-        real*8, intent(in) :: Ui( ni, nj-1, nk-1)
-        real*8, intent(in) :: Uj( ni-1, nj, nk-1)
-        real*8, intent(in) :: Uk( ni-1, nj-1, nk)
+        real, intent(in) :: U( ni, nj, nk)
+        real, intent(in) :: Ui( ni, nj-1, nk-1)
+        real, intent(in) :: Uj( ni-1, nj, nk-1)
+        real, intent(in) :: Uk( ni-1, nj-1, nk)
 
         ! Radii at nodes and face centers
-        real*8, intent(in) :: r( ni, nj, nk)
-        real*8, intent(in) :: ri( ni, nj-1, nk-1)
-        real*8, intent(in) :: rj( ni-1, nj, nk-1)
-        real*8, intent(in) :: rk( ni-1, nj-1, nk)
+        real, intent(in) :: r( ni, nj, nk)
+        real, intent(in) :: ri( ni, nj-1, nk-1)
+        real, intent(in) :: rj( ni-1, nj, nk-1)
+        real, intent(in) :: rk( ni-1, nj-1, nk)
 
         ! Cell areas, volumes, time steps
-        real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-        real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-        real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-        real*8, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
-        real*8, intent (in)  :: dt_vol(ni-1, nj-1, nk-1, nmg)
+        real, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+        real, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+        real, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+        real, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
+        real, intent (in)  :: dt_vol(ni-1, nj-1, nk-1, nmg)
 
         ! Wall locations
         integer*2, intent (in) :: ijk_iwall(3, niwall)
@@ -86,13 +86,13 @@ contains
         integer*2, intent (in) :: ijk_mg(3, ni-1, nj-1, nk-1, nmg-1)
 
         ! Cell residual out
-        real*8, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
-        real*8, intent (inout) :: resid_last(ni-1, nj-1, nk-1, 5)
+        real, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
+        real, intent (inout) :: resid_last(ni-1, nj-1, nk-1, 5)
 
-        real*8, intent(in) :: L( ni, nj, nk, 3)
-        real*8, intent(in) :: sf2
-        real*8, intent(in) :: sf4
-        real*8, intent(in) :: sf2min
+        real, intent(in) :: L( ni, nj, nk, 3)
+        real, intent(in) :: sf2
+        real, intent(in) :: sf4
+        real, intent(in) :: sf2min
 
         ! Numbers of points dummy args
         integer, intent (in)  :: ni
@@ -105,28 +105,28 @@ contains
 
         ! Scalar settings
         integer, intent (in)  :: ischeme
-        real*8, intent (in)  :: fmgrid
-        real*8, intent (in)  :: fdamp
+        real, intent (in)  :: fmgrid
+        real, intent (in)  :: fdamp
 
         ! End of argument declarations
         ! Begin working variables
 
         ! Fluxes on cell faces for each dirn and eqn
-        real*8 :: fluxi(ni, nj-1, nk-1, 3, 5)
-        real*8 :: fluxj(ni-1, nj, nk-1, 3, 5)
-        real*8 :: fluxk(ni-1, nj-1, nk, 3, 5)
+        real :: fluxi(ni, nj-1, nk-1, 3, 5)
+        real :: fluxj(ni-1, nj, nk-1, 3, 5)
+        real :: fluxk(ni-1, nj-1, nk, 3, 5)
 
         ! For the centrifugal source term
-        real*8 :: S(ni, nj, nk)
-        real*8 :: Sc(ni-1, nj-1, nk-1)
-        real*8 :: rho(ni, nj, nk)
-        real*8 :: Vt(ni, nj, nk)
+        real :: S(ni, nj, nk)
+        real :: Sc(ni-1, nj-1, nk-1)
+        real :: rho(ni, nj, nk)
+        real :: Vt(ni, nj, nk)
 
         ! Net fluxes for each cell
-        real*8 :: fsum(ni-1, nj-1, nk-1, 5)
+        real :: fsum(ni-1, nj-1, nk-1, 5)
         ! Cell-centered residual
 
-        real*8 :: Pm (ni, nj, nk)
+        real :: Pm (ni, nj, nk)
 
 
         ! End of working variable declarations
@@ -185,16 +185,16 @@ contains
 
     subroutine step(cons, R1, R2, ischeme, ni, nj, nk)
 
-        real*8, intent (inout)  :: cons(ni, nj, nk, 5)
-        real*8, intent (inout) :: R1(ni-1, nj-1, nk-1, 5)
-        real*8, intent (inout) :: R2(ni-1, nj-1, nk-1, 5)
+        real, intent (inout)  :: cons(ni, nj, nk, 5)
+        real, intent (inout) :: R1(ni-1, nj-1, nk-1, 5)
+        real, intent (inout) :: R2(ni-1, nj-1, nk-1, 5)
         integer, intent (in) :: ischeme
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
 
-        real*8 :: Rcell(ni-1, nj-1, nk-1, 5)
-        real*8 :: Rnode(ni, nj, nk, 5)
+        real :: Rcell(ni-1, nj-1, nk-1, 5)
+        real :: Rnode(ni, nj, nk, 5)
 
         !$omp parallel
         if (ischeme.eq.-1) then
@@ -206,13 +206,13 @@ contains
         ! Otherwise, combine current and previous time level
         ! According to the selected time marching scheme
             !$omp workshare
-            Rcell = 2d0*R1 - R2
+            Rcell = 2e0*R1 - R2
             R2 = R1
             !$omp end workshare
         else if (ischeme.eq.1) then
             !$omp workshare
-            Rcell = 2d0*R1 - 1.65d0*R2
-            R2 = R1 - 0.65d0*R2
+            Rcell = 2e0*R1 - 1.65e0*R2
+            R2 = R1 - 0.65e0*R2
             !$omp end workshare
         end if
 
@@ -233,11 +233,11 @@ contains
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
 
-        real*8, intent (inout)  :: cons(ni, nj, nk, 5)
-        real*8, intent (inout)  :: Vxrt(ni, nj, nk, 3)
-        real*8, intent (inout)  :: halfVsq(ni, nj, nk)
-        real*8, intent (inout)  :: u(ni, nj, nk)
-        real*8, intent (inout)  :: r(ni, nj, nk)
+        real, intent (inout)  :: cons(ni, nj, nk, 5)
+        real, intent (inout)  :: Vxrt(ni, nj, nk, 3)
+        real, intent (inout)  :: halfVsq(ni, nj, nk)
+        real, intent (inout)  :: u(ni, nj, nk)
+        real, intent (inout)  :: r(ni, nj, nk)
 
         integer :: ic
 
@@ -245,7 +245,7 @@ contains
             Vxrt(:,:,:, ic) = cons(:,:,:,ic+1)/cons(:,:,:,1)
         end do
         Vxrt(:,:,:,3) = Vxrt(:,:,:,3)/r
-        halfVsq = 0.5d0*sum(Vxrt*Vxrt, 4)
+        halfVsq = 0.5e0*sum(Vxrt*Vxrt, 4)
 
         u = cons(:,:,:,5)/cons(:,:,:,1) - halfVsq
 
@@ -262,24 +262,24 @@ contains
 
         integer :: ip
 
-        real*8, intent (inout) :: R(ni-1, nj-1, nk-1, 5)
-        real*8, intent (in) :: fdamp
-        real*8 :: R_abs(ni-1, nj-1, nk-1, 5)
-        real*8 :: R_avg(5)
+        real, intent (inout) :: R(ni-1, nj-1, nk-1, 5)
+        real, intent (in) :: fdamp
+        real :: R_abs(ni-1, nj-1, nk-1, 5)
+        real :: R_avg(5)
 
         ! Calculate absolute and average values over all cells
         R_abs = abs(R)
-        R_avg = sum(sum(sum(R_abs,1),1),1)/dble((ni-1)*(nj-1)*(nk-1))
+        R_avg = sum(sum(sum(R_abs,1),1),1)/real((ni-1)*(nj-1)*(nk-1))
 
         ! Apply damping to all cons Ruals
         where (R_avg.eq.0)
-            R_avg = 1d-9
+            R_avg = 1e-9
         end where
         !$omp parallel
         do ip = 1, 5
             !$omp workshare
             R(:,:,:,ip) = R(:,:,:,ip) &
-                / (1d0 + R_abs(:,:,:,ip)/R_avg(ip)/fdamp)
+                / (1e0 + R_abs(:,:,:,ip)/R_avg(ip)/fdamp)
             !$omp end workshare
         end do
         !$omp end parallel

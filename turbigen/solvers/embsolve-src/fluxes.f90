@@ -11,22 +11,22 @@ subroutine set_fluxes( &
 
     ! Flow properties and body force
     ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
-    real*8, intent (in) :: cons(ni, nj, nk, 5)
-    real*8, intent (in) :: Vxrt(ni, nj, nk, 3)
-    real*8, intent (in) :: P   (ni, nj, nk)
-    real*8, intent (in) :: ho  (ni, nj, nk)
+    real, intent (in) :: cons(ni, nj, nk, 5)
+    real, intent (in) :: Vxrt(ni, nj, nk, 3)
+    real, intent (in) :: P   (ni, nj, nk)
+    real, intent (in) :: ho  (ni, nj, nk)
 
     ! Reference frame angular velocity
-    real*8, intent (in) :: U(ni, nj, nk)
-    real*8, intent(in) :: Ui( ni, nj-1, nk-1)
-    real*8, intent(in) :: Uj( ni-1, nj, nk-1)
-    real*8, intent(in) :: Uk( ni-1, nj-1, nk)
+    real, intent (in) :: U(ni, nj, nk)
+    real, intent(in) :: Ui( ni, nj-1, nk-1)
+    real, intent(in) :: Uj( ni-1, nj, nk-1)
+    real, intent(in) :: Uk( ni-1, nj-1, nk)
 
     ! Radii at nodes and face centers
-    real*8, intent(in) :: r( ni, nj, nk)
-    real*8, intent(in) :: ri( ni, nj-1, nk-1)
-    real*8, intent(in) :: rj( ni-1, nj, nk-1)
-    real*8, intent(in) :: rk( ni-1, nj-1, nk)
+    real, intent(in) :: r( ni, nj, nk)
+    real, intent(in) :: ri( ni, nj-1, nk-1)
+    real, intent(in) :: rj( ni-1, nj, nk-1)
+    real, intent(in) :: rk( ni-1, nj-1, nk)
 
     ! Wall locations
     integer*2, intent (in) :: ijk_iwall(3, niwall)
@@ -34,9 +34,9 @@ subroutine set_fluxes( &
     integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
     ! Fluxes out
-    real*8, intent (inout) :: fluxi(ni, nj-1, nk-1, 3, 5)
-    real*8, intent (inout) :: fluxj(ni-1, nj, nk-1, 3, 5)
-    real*8, intent (inout) :: fluxk(ni-1, nj-1, nk, 3, 5)
+    real, intent (inout) :: fluxi(ni, nj-1, nk-1, 3, 5)
+    real, intent (inout) :: fluxj(ni-1, nj, nk-1, 3, 5)
+    real, intent (inout) :: fluxk(ni-1, nj-1, nk, 3, 5)
 
     ! Numbers of points dummy args
     integer, intent (in)  :: ni
@@ -51,21 +51,21 @@ subroutine set_fluxes( &
     ! Declare working variables
 
     ! Face pressures
-    real*8 :: Pi( ni, nj-1, nk-1)
-    real*8 :: Pj( ni-1, nj, nk-1)
-    real*8 :: Pk( ni-1, nj-1, nk)
+    real :: Pi( ni, nj-1, nk-1)
+    real :: Pj( ni-1, nj, nk-1)
+    real :: Pk( ni-1, nj-1, nk)
 
     ! Fluxes per unit mass
-    real*8 :: fmass( ni, nj, nk, 4)
-    real*8 :: fmassi( ni, nj-1, nk-1, 4)
-    real*8 :: fmassj( ni-1, nj, nk-1, 4)
-    real*8 :: fmassk( ni-1, nj-1, nk, 4)
+    real :: fmass( ni, nj, nk, 4)
+    real :: fmassi( ni, nj-1, nk-1, 4)
+    real :: fmassj( ni-1, nj, nk-1, 4)
+    real :: fmassk( ni-1, nj-1, nk, 4)
 
     ! Mass fluxes
-    real*8 :: rhoV(ni, nj, nk, 3)
-    real*8 :: rhoVi(ni, nj-1, nk-1, 3)
-    real*8 :: rhoVj(ni-1, nj, nk-1, 3)
-    real*8 :: rhoVk(ni-1, nj-1, nk, 3)
+    real :: rhoV(ni, nj, nk, 3)
+    real :: rhoVi(ni, nj-1, nk-1, 3)
+    real :: rhoVj(ni-1, nj, nk-1, 3)
+    real :: rhoVk(ni-1, nj-1, nk, 3)
 
     ! Misc
     integer :: id
@@ -131,10 +131,10 @@ subroutine add_pressure_fluxes(flux, P, r, U, ni, nj, nk)
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
-    real*8, intent (in)  :: r(ni, nj, nk)
-    real*8, intent (in)  :: U(ni, nj, nk)
-    real*8, intent (out) :: flux(ni, nj, nk, 3, 5)
-    real*8, intent (in)  :: P(ni, nj, nk)
+    real, intent (in)  :: r(ni, nj, nk)
+    real, intent (in)  :: U(ni, nj, nk)
+    real, intent (out) :: flux(ni, nj, nk, 3, 5)
+    real, intent (in)  :: P(ni, nj, nk)
 
     !$omp workshare
     ! pressure fluxes
@@ -163,21 +163,21 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, Fsum, ni, nj, nk, np)
 
     integer :: ip
 
-    real*8, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real*8, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real*8, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
+    real, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
+    real, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
+    real, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
 
-    real*8, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
-    real*8, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
-    real*8, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
+    real, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
+    real, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
+    real, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
 
-    real*8 :: fisum(ni, nj-1, nk-1)
-    real*8 :: fjsum(ni-1, nj, nk-1)
-    real*8 :: fksum(ni-1, nj-1, nk)
+    real :: fisum(ni, nj-1, nk-1)
+    real :: fjsum(ni-1, nj, nk-1)
+    real :: fksum(ni-1, nj-1, nk)
 
-    real*8, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
+    real, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
 
-    fsum = 0d0
+    fsum = 0e0
     !$omp parallel
     do ip = 1, np
         !$omp workshare
@@ -206,7 +206,7 @@ subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nc, npt)
     integer, intent (in)  :: nc
     integer, intent (in)  :: npt
 
-    real*8, intent (inout) :: x(ni, nj, nk, nc)
+    real, intent (inout) :: x(ni, nj, nk, nc)
     integer*2, intent (in) :: ijk(3, npt)
 
     integer :: ipt
@@ -216,7 +216,7 @@ subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nc, npt)
         ! Loop over all points
         do ipt = 1,npt
             ! Set to zero
-            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :) = 0d0
+            x(ijk(1,ipt) , ijk(2,ipt), ijk(3,ipt), :) = 0e0
         end do
     end if
 

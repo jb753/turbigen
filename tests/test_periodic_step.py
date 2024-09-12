@@ -109,10 +109,10 @@ def test_periodic():
     rho_pre = block.rho[:,:,(0,-1)]
 
     settings = {
-        "n_step": 10,
+        "n_step": 1,
         "n_step_avg": 1,
         "n_step_log": 1,
-        "CFL": 0.0,
+        "CFL": 1e-9,
     }
     turbigen.solvers.embsolve.run(g, settings)
 

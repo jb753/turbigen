@@ -20,7 +20,6 @@ logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
 
-typ = np.float64
 
 try:
     from mpi4py import MPI
@@ -28,11 +27,14 @@ try:
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank = comm.Get_rank()
-    mpi_typ = MPI.REAL8
+    mpi_single = MPI.REAL4
+    mpi_double = MPI.REAL8
 except ImportError:
     size = 1
     rank = 0
     comm = None
+    mpi_single = None
+    mpi_double = None
 
 
 @dataclass
@@ -83,6 +85,8 @@ class Config(BaseSolver):
 
     xllim_pitch: float = 0.03
 
+    precision: int = 1
+
     i_scheme: int = 1
 
     i_loss: int = 1
@@ -102,7 +106,7 @@ class Config(BaseSolver):
     multigrid: tuple = (2, 2, 2)
 
 
-def get_dw(block):
+def get_dw(block, typ):
     # Cell height in each of i,j,k dirns
     dli = turbigen.util.vecnorm(block.dli)
     dlj = turbigen.util.vecnorm(block.dlj)
@@ -135,7 +139,7 @@ def get_dw(block):
     return dwi, dwj, dwk
 
 
-def to_fort(x):
+def to_fort_type(x, typ):
     if x.ndim > 3:
         x2 = np.moveaxis(x, 0, -1)
     else:
@@ -149,13 +153,24 @@ class SolverBlock:
     def __init__(self, block, conf):
         """Initialise from a standard Block object."""
 
+        # Select precision
+        if conf.precision == 1:
+            self.typ = np.float32
+            self.mpi_typ = mpi_single
+        else:
+            self.typ = np.float64
+            self.mpi_typ = mpi_double
+
+        def to_fort(x):
+            return to_fort_type(x, self.typ)
+
         # Primaries
         self.cons = to_fort(block.conserved)
 
         self.conf = conf
         self.Nb = block.Nb
 
-        self.mu = typ(block.mu)
+        self.mu = self.typ(block.mu)
 
         self.ho = to_fort(block.ho)
         self.P = to_fort(block.P)
@@ -165,7 +180,7 @@ class SolverBlock:
         self.u = to_fort(block.u)
         self.T = to_fort(block.T)
 
-        self.dw = get_dw(block)
+        self.dw = get_dw(block, self.typ)
         self.pitch = block.pitch
 
         # Geometry
@@ -182,7 +197,7 @@ class SolverBlock:
         self.dAk = to_fort(block.dAk_new)
 
         self.Vxrt = to_fort(block.Vxrt)
-        self.Omega = block.Omega.mean().astype(typ)
+        self.Omega = block.Omega.mean().astype(self.typ).item()
         xllim = (
             block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
         )
@@ -191,24 +206,26 @@ class SolverBlock:
 
         Omega = block.Omega.mean()
         self.U = to_fort(Omega * block.r)
-        self.Uf = [to_fort(Omega*r) for r in block.r_face]
+        self.Uf = [to_fort(Omega * r) for r in block.r_face]
 
         ni, nj, nk = block.shape
-        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
-        self.dU1 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
-        self.dU2 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
+        self.dU1 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
+        self.dU2 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
 
-        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
+        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(self.typ)
         xlength = (0.41 * xlength) ** 2.0
         self.xlength = to_fort(np.zeros((ni - 1, nj - 1, nk - 1)))
         embsolve.node_to_cell(xlength, self.xlength)
 
         # Get indices for multigrid
         self.ijk_multigrid = (
-            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid)+1
+            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid) + 1
         )
-        self.vol = get_multigrid_volumes(to_fort(block.vol_new), self.ijk_multigrid)
-        self.dlmin = get_multigrid_lengths(block, conf.multigrid)
+        self.vol = get_multigrid_volumes(
+            to_fort(block.vol_new), self.ijk_multigrid, self.typ
+        )
+        self.dlmin = get_multigrid_lengths(block, conf.multigrid, self.typ)
         self.dt_vol = self.dlmin * 0.0
 
         # Get wall indices
@@ -330,25 +347,29 @@ class SolverBlock:
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.inlets = [get_inlet_data(patch) for patch in block.inlet_patches]
+        self.inlets = [get_inlet_data(patch, self.typ) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
-                shape=block.shape, order="F", typ=typ
+                shape=block.shape, order="F", typ=self.typ
             )
-            self.state.gamma = typ(block.gamma)
-            self.state.cp = typ(block.cp)
-            self.state.mu = typ(block.mu)
+            self.state.gamma = self.typ(block.gamma)
+            self.state.cp = self.typ(block.cp)
+            self.state.mu = self.typ(block.mu)
             self.state.set_rho_u(block.rho, block.u)
 
             self.state_inlets = [
-                turbigen.fluid.PerfectState(shape=inlet[0].shape, order="F", typ=typ)
+                turbigen.fluid.PerfectState(
+                    shape=inlet[0].shape, order="F", typ=self.typ
+                )
                 for inlet in self.inlets
             ]
 
             self.state_outlets = [
-                turbigen.fluid.PerfectState(shape=outlet[0].shape, order="F", typ=typ)
+                turbigen.fluid.PerfectState(
+                    shape=outlet[0].shape, order="F", typ=self.typ
+                )
                 for outlet in self.outlets
             ]
 
@@ -368,6 +389,8 @@ class SolverBlock:
             rho_out = block.rho.ravel(order="F")[outlet[0]]
             u_out = block.u.ravel(order="F")[outlet[0]]
             state_outlet.set_rho_u(rho_out, u_out)
+
+        del to_fort
 
     def set_inlets(self, rfin, i_inlet, K_inlet):
         """Set cons variables on inlets by relaxing density changes."""
@@ -692,7 +715,7 @@ class SolverBlock:
         # if (self.ho<0.).any():
         #     raise Exception('ho is -ve')
         #     # self.ho[self.ho<0.] = 0.
-            # print('ho is -ve')
+        # print('ho is -ve')
         self.P[:] = self.state.P
         self.T[:] = self.state.T
 
@@ -900,7 +923,7 @@ def get_periodics(g, procids):
     return periodics
 
 
-def get_inlet_data(patch):
+def get_inlet_data(patch, typ):
     _, di, dj, dk = np.shape(patch.get_indices())
 
     wA = patch.get_A_avg_weights(order="F")
@@ -914,7 +937,7 @@ def get_inlet_data(patch):
         patch.state.rho,
         patch.state.h,
         patch.state.s,
-        to_fort(patch.get_cut().r.reshape(-1)),
+        to_fort_type(patch.get_cut().r.reshape(-1), typ),
         wA,
     )
 
@@ -980,12 +1003,12 @@ def exchange_cons(blocks, bid_local, periodics):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, self.mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, self.mpi_typ], source=nxprocid, tag=pid)
             # Otherwise, recieve first
             else:
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, self.mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, self.mpi_typ], dest=nxprocid, tag=pid)
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
@@ -1081,7 +1104,6 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     nblock = len(blocks)
 
-
     dUnow = np.empty((conf.n_step_log, nblock, 5))
 
     # Now integrate forward
@@ -1093,7 +1115,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
 
     try:
         tstart = timer()
-        tfirst = tstart + 0.
+        tfirst = tstart + 0.0
 
         # Start the main time stepping loop
         for istep in range(conf.n_step):
@@ -1101,8 +1123,8 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             # Ramping factors
             damping_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0])
             smoothing_ramp = np.interp(istep, [0, conf.n_step_ramp], [2.0, 1.0])
-            cfl_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0]))
-            fmgrid_ramp = typ(np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0]))
+            cfl_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0])
+            fmgrid_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0])
 
             # Exchange conserved variables across periodic patches
             exchange_cons(blocks, bid_local, periodics)
@@ -1312,7 +1334,6 @@ def run(grid, conf, machine=None):
     # # # print(ho_min)
     # # # quit()
 
-
     blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):
         b.bid = ib
@@ -1340,7 +1361,9 @@ def run(grid, conf, machine=None):
         logger.info(f"Elapsed time {ten-tst:.2f}s")
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog, merrlog, Yslog, tpnps = run_slave(block_split[0], periodics, nodes)
+    block_split[0], dUlog, merrlog, Yslog, tpnps = run_slave(
+        block_split[0], periodics, nodes
+    )
 
     logger.info("Recieving data from processors...")
     tst = timer()
@@ -1398,10 +1421,10 @@ def run(grid, conf, machine=None):
     # plt.show()
 
     if not mdot_out == 0.0:
-        merr = mdot_in/mdot_out-1.
+        merr = mdot_in / mdot_out - 1.0
         logger.info(f"Mass flow error: {merr*100.:.1f}%")
     else:
-        merr = -1.
+        merr = -1.0
 
     if conf.plot_conv:
         dUlog = np.concatenate(dUlog, axis=0)
@@ -1464,7 +1487,7 @@ def get_multigrid_indices(shape, nb):
     return ijkmg
 
 
-def get_multigrid_volumes(vol, ijkmg):
+def get_multigrid_volumes(vol, ijkmg, typ):
 
     nlev = ijkmg.shape[-1]
     volmg = np.asfortranarray(np.zeros(vol.shape + (nlev + 1,), dtype=typ))
@@ -1484,7 +1507,7 @@ def arange_including_end(ni, di):
     return ii
 
 
-def get_multigrid_lengths(block, nb):
+def get_multigrid_lengths(block, nb, typ):
 
     # Preallocate output array
     ni, nj, nk = block.shape
@@ -1534,5 +1557,3 @@ def get_multigrid_lengths(block, nb):
         dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin_new
 
     return dlmg
-
-
