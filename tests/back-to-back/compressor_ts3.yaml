@@ -78,4 +78,5 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
+    lim: [-2.5, 0.]
     # compare: tests/pdist_ts3.npz

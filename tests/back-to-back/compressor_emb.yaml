@@ -31,11 +31,6 @@ blades:
         q_thick: [0.015, 0.06, 0.2, 0.0, 0.02, 0.05]
         qstar_camber: [0., 10., 1.0, 1.0, 0.0]
 
-# mesh:
-#   type: h  # Mesh topology
-#   yplus: 30.0  # Non-dimensional wall distance
-#   resolution_factor: 0.5  # Coarsen the mesh
-
 mesh:
   type: oh  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
@@ -45,17 +40,11 @@ mesh:
 
 solver:
   type: embsolve  # Use Turbostream 3
-  n_step: 6000
-  n_step_avg: 1
+  n_step: 20000
+  n_step_avg: 1000
   nstep_damp: -1
   n_step_ramp: 1000
   plot_conv: true
-  # smooth4: 0.02
-  fmgrid: 0.
-  # i_loss: 0
-  # CFL: 0.3
-  # soft_start: true
-  # nstep_soft: 5000
 
 operating_point:
   # mdot_pid: [0.5, 0.1, 0.0]
@@ -87,4 +76,5 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
+    lim: [-2.5, 0.]
     # compare: tests/pdist_ts3.npz
