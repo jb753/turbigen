@@ -26,7 +26,7 @@ import pytest
 # a little bit of 2nd order smoothing is needed to 
 # prevent instability
 settings = {
-    "n_step": 10000,
+    "n_step": 16000,
     "n_step_avg": 1000,
     "n_step_log": 100,
     "plot_conv": True,
