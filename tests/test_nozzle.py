@@ -219,7 +219,7 @@ settings = {
     "n_step": 5000,
     "n_step_avg": 500,
     "n_step_log": 100,
-    "i_loss": 1,
+    "i_loss": 0,
     "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
@@ -384,8 +384,8 @@ def test_Tu0(Tu0):
 
     turbigen.solvers.embsolve.run(g, conf)
 
-    plot_nozzle(g,F)
-    plt.show()
+    # plot_nozzle(g,F)
+    # plt.show()
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 

@@ -10,7 +10,7 @@ from scipy.optimize import newton
 
 MU = 1.8e-4
 
-Tu0 = turbigen.flowfield.PerfectFlowField.Tu0
+Tu0 = turbigen.flowfield.PerfectFlowField._Tu0_default
 
 
 def test_grid():
