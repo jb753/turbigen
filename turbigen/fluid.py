@@ -157,9 +157,9 @@ class PerfectState(StructuredData):
     )
 
     # Arbitrary reference properties for entropy datum
-    Ps0 = 1e5
-    Ts0 = 300.0
-    Tu0 = 300.0
+    _Ps0_default = 1e5
+    _Ts0_default = 300.0
+    _Tu0_default = 300.0
 
     def __eq__(self, other):
         if other is None:
@@ -206,6 +206,36 @@ class PerfectState(StructuredData):
         S.cp, S.gamma, S.mu = cp, gamma, mu
         S.Pr = Pr
         return S
+
+    @property
+    def Tu0(self):
+        if not "Tu0" in self._metadata:
+            self._set_metadata_by_key("Tu0", self._Tu0_default)
+        return self._get_metadata_by_key("Tu0")
+
+    @Tu0.setter
+    def Tu0(self, Tu0):
+        self._set_metadata_by_key("Tu0", Tu0)
+
+    @property
+    def Ps0(self):
+        if not "Ps0" in self._metadata:
+            self._set_metadata_by_key("Ps0", self._Ps0_default)
+        return self._get_metadata_by_key("Ps0")
+
+    @Ps0.setter
+    def Ps0(self, Ps0):
+        self._set_metadata_by_key("Ps0", Ps0)
+
+    @property
+    def Ts0(self):
+        if not "Ts0" in self._metadata:
+            self._set_metadata_by_key("Ts0", self._Ts0_default)
+        return self._get_metadata_by_key("Ts0")
+
+    @Ts0.setter
+    def Ts0(self, Ts0):
+        self._set_metadata_by_key("Ts0", Ts0)
 
     @property
     def cp(self):
@@ -304,7 +334,7 @@ class PerfectState(StructuredData):
     @dependent_property
     def dhdP_rho(self):
         ga = self.gamma
-        return ga / (ga - 1.0) * self.rho
+        return ga / (ga - 1.0) / self.rho
 
     @dependent_property
     def dhdrho_P(self):

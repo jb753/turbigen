@@ -374,13 +374,29 @@ def test_perfect():
     assert np.isclose(S2s.T, S1.T * (S2.P / S1.P) ** gae)
 
 
+def test_Tu0():
+    """Check that perfect gas Tu0 datum changes are transparent."""
+
+    cp = 1105.0
+    ga = 1.3
+    T1 = 400.
+    P1 = 1e5
+
+    S1 = fluid.PerfectState.from_properties(cp, ga, mu=1.8e-5)
+    S1.set_P_T(T1, P1)
+    S1c = S1.copy()
+    for Tu0 in [0., 100., 300., 500.]:
+        S1c.set_Tu0(Tu0)
+        assert np.isclose(S1.T, S1c.T)
+        assert np.isclose(S1.P, S1c.P)
+
 def test_perfect_deriv():
     """Check that perfect gas derivatives are correct by finite difference"""
 
     cp = 1105.0
     ga = 1.3
-    rho1 = 1.0
-    P1 = 1e5
+    rho1 = 2.0
+    P1 = 2e5
     delta = np.linspace(0.8, 1.2)
     Pv = delta * P1
     rhov = delta * rho1
@@ -402,3 +418,6 @@ def test_perfect_deriv():
     dhdP = np.gradient(S1.h, Pv)
     assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
+
+if __name__=='__main__':
+    test_Tu0()

@@ -1,7 +1,7 @@
 ! Routines for adding viscous effects
 
 subroutine shear_stress(&
-    cons, V, mu, xlength, vol, dAi, dAj, dAk, &
+    cons, V, T, mu, cp, Pr_turb, xlength, vol, dAi, dAj, dAk, &
     Omega, r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, dw_iwall, dw_jwall, dw_kwall, &
     dA_iwall, dA_jwall, dA_kwall, fvisc, ni, nj, nk, niwall, njwall, nkwall)
 
@@ -21,7 +21,9 @@ subroutine shear_stress(&
     real, intent (in)  :: rk(ni-1, nj-1, nk)
 
     real, intent (in)  :: mu
+    real, intent (in)  :: Pr_turb
     real, intent (in)  :: Omega
+    real, intent (in)  :: cp
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
@@ -45,15 +47,19 @@ subroutine shear_stress(&
     real :: visc_lim
 
     real, intent (in) :: V(ni, nj, nk, 3)
-    ! real :: T(ni, nj, nk)
+    real :: T(ni, nj, nk)
     real :: Vc(ni-1, nj-1, nk-1, 3)
     real :: roc(ni-1, nj-1, nk-1)
     real :: gradV(ni-1, nj-1, nk-1, 3, 3)
-    ! real :: gradT(ni-1, nj-1, nk-1, 3)
+    real :: gradT(ni-1, nj-1, nk-1, 3)
     real :: divV(ni-1, nj-1, nk-1)
     real :: vort(ni-1, nj-1, nk-1, 3)
     real :: vort_mag(ni-1, nj-1, nk-1)
     real :: mu_turb(ni-1, nj-1, nk-1)
+
+    real :: Vi(ni, nj-1, nk-1, 3)
+    real :: Vj(ni-1, nj, nk-1, 3)
+    real :: Vk(ni-1, nj-1, nk, 3)
 
     integer*2, intent (in) :: ijk_iwall(3, niwall)
     integer*2, intent (in) :: ijk_jwall(3, njwall)
@@ -68,7 +74,15 @@ subroutine shear_stress(&
     real :: fk(ni-1, nj-1, nk, 3, 5)
 
     real :: rfvisc
+    real :: rfvisc1
+    real :: k(ni-1, nj-1, nk-1)
+    real :: qc(ni-1, nj-1, nk-1, 3)
+    real :: qi(ni, nj-1, nk-1, 3)
+    real :: qj(ni-1, nj, nk-1, 3)
+    real :: qk(ni-1, nj-1, nk, 3)
+
     rfvisc = 0.2e0
+    rfvisc1 = 1e0-rfvisc
 
 
     !$omp parallel
@@ -77,6 +91,7 @@ subroutine shear_stress(&
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
     !$omp end parallel
 
+    call node_to_face(V, Vi, Vj, Vk, ni, nj, nk, 3)
 
     ! Calculate grad V
     do i = 1,3
@@ -85,13 +100,11 @@ subroutine shear_stress(&
     ! gradV is indexed (..., which dirn, which velocity)
 
     ! Temperature gradients
-    ! call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
+    call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     ! Calculate divergence of V
     call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
     divV = divV*2e0/3e0
-
-    ! Thermal conductivity
 
     ! tau contains the six unique terms in the tensor
     ! divV and gradV are cell-centered
@@ -112,13 +125,11 @@ subroutine shear_stress(&
 
     ! tau_xt = tau_tx = dVx_dt/r + dVt_dx
     tauc(:,:,:,5) = gradV(:,:,:,3,1)/rc + gradV(:,:,:,1,3)
-    ! tauc(:,:,:,5) = tauc(:,:,:,5)/2e0
 
     ! tau_rt = tau_tr = dVr_dt/r + dVt_dr - Vt/r
     tauc(:,:,:,6) = gradV(:,:,:,3,2)/rc + gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
 
     ! Calculate vorticity
-    vort = 0e0
     vort(:,:,:,1) = gradV(:,:,:, 3, 2) - gradV(:,:,:,2,3) - Vc(:,:,:,3)/rc
     vort(:,:,:,2) = gradV(:,:,:, 1, 3) - gradV(:,:,:,3,1)
     vort(:,:,:,3) = gradV(:,:,:, 2, 1) - gradV(:,:,:,1,2)
@@ -135,29 +146,43 @@ subroutine shear_stress(&
     end where
     !$omp end workshare
 
+    ! Thermal conductivity
+    k = (mu + mu_turb) * cp / Pr_turb
+
+    ! Cell heat flux
+    do i = 1,3
+        qc(:,:,:,i) = -k * gradT(:,:,:,i)
+    end do
+
     ! Get shear stress for a Newtonian fluid
     do i = 1,6
         !$omp workshare
-        tauc(:,:,:,i) = -tauc(:,:,:,i) *( mu + mu_turb)
+        tauc(:,:,:,i) = -tauc(:,:,:,i) * (mu + mu_turb)
         !$omp end workshare
     end do
 
     ! Now distribute cell values to faces
     call cell_to_face(tauc, taui, tauj, tauk, ni, nj, nk, 6)
+    call cell_to_face(qc, qi, qj, qk, ni, nj, nk, 3)
 
     ! At this point, we could average across periodic patches
     ! to make the shear stress continous
 
     ! No shear stress at wall
     ! We add back using wall functions later
-    call zero_wall_stress(taui, ijk_iwall, ni, nj-1, nk-1, niwall)
-    call zero_wall_stress(tauj, ijk_jwall, ni-1, nj, nk-1, njwall)
-    call zero_wall_stress(tauk, ijk_kwall, ni-1, nj-1, nk, nkwall)
+    call zero_wall_stress(taui, ijk_iwall, ni, nj-1, nk-1, niwall, 6)
+    call zero_wall_stress(tauj, ijk_jwall, ni-1, nj, nk-1, njwall, 6)
+    call zero_wall_stress(tauk, ijk_kwall, ni-1, nj-1, nk, nkwall, 6)
+
+    ! No heat flow through walls
+    call zero_wall_stress(qi, ijk_iwall, ni, nj-1, nk-1, niwall, 3)
+    call zero_wall_stress(qj, ijk_jwall, ni-1, nj, nk-1, njwall, 3)
+    call zero_wall_stress(qk, ijk_kwall, ni-1, nj-1, nk, nkwall, 3)
 
     ! Assemble the viscous fluxes from the stress tensor components
-    call viscous_flux(fi, taui, ri, ni, nj-1, nk-1)
-    call viscous_flux(fj, tauj, rj, ni-1, nj, nk-1)
-    call viscous_flux(fk, tauk, rk, ni-1, nj-1, nk)
+    call viscous_flux(fi, taui, qi, Vi, ri, ni, nj-1, nk-1)
+    call viscous_flux(fj, tauj, qj, Vj, rj, ni-1, nj, nk-1)
+    call viscous_flux(fk, tauk, qk, Vk, rk, ni-1, nj-1, nk)
     !$omp end parallel
 
     ! Get the net viscous force on each cell
@@ -176,18 +201,21 @@ subroutine shear_stress(&
 
     ! Apply relaxation
     !$omp parallel workshare
-    fvisc = rfvisc*fvisc_new + (1e0-rfvisc)*fvisc
+    fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
     !$omp end parallel workshare
 
 end subroutine
 
-subroutine viscous_flux(f, tau, r, ni, nj, nk)
+subroutine viscous_flux(f, tau, q, V, r, ni, nj, nk)
 
     implicit none
     real, intent (in) :: tau(ni, nj, nk, 6)
+    real, intent (in) :: q(ni, nj, nk, 3)
     real, intent (out) :: f(ni, nj, nk, 3, 5)
     real, intent (in) :: r(ni, nj, nk)
+    real, intent (in) :: V(ni, nj, nk,3)
 
+    real :: wvisc(ni, nj, nk, 3)
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
@@ -218,8 +246,23 @@ subroutine viscous_flux(f, tau, r, ni, nj, nk)
     f(:, :, :, 2, 4) = tau(:, :, :, 6) * r  ! tau_tr
     f(:, :, :, 3, 4) = tau(:, :, :, 3) * r  ! tau_tt
 
-    ! energy
-    f(:, :, :, :, 5) = 0e0
+    ! Tensor dot for shear work fluxes
+    ! x-direction: V dot tau_?x = Vx*tau_xx + Vr*tau_rx + Vt*tau_tx
+    wvisc(:,:,:,1) = &
+        V(:,:,:,1)*tau(:,:,:,1) + V(:,:,:,2)*tau(:,:,:,4) + V(:,:,:,3)*tau(:,:,:,5)
+    ! r-direction: V dot tau_?r = Vx*tau_xr + Vr*tau_rr + Vt*tau_tr
+    wvisc(:,:,:,2) = &
+        V(:,:,:,1)*tau(:,:,:,4) + V(:,:,:,2)*tau(:,:,:,2) + V(:,:,:,3)*tau(:,:,:,6)
+    ! t-direction: V dot tau_?t = Vx*tau_xt + Vr*tau_rt + Vt*tau_tt
+    wvisc(:,:,:,3) = &
+        V(:,:,:,1)*tau(:,:,:,5) + V(:,:,:,2)*tau(:,:,:,6) + V(:,:,:,3)*tau(:,:,:,3)
+
+    ! energy fluxes are heat fluxes plus shear work fluxes
+    f(:, :, :, 1, 5) = q(:,:,:,1) + wvisc(:,:,:,1)
+    f(:, :, :, 2, 5) = q(:,:,:,2) + wvisc(:,:,:,2)
+    f(:, :, :, 3, 5) = q(:,:,:,3) + wvisc(:,:,:,3)
+    ! f(:, :, :, :, 5) = 0e0
+
     !$omp end workshare
 
 end subroutine
@@ -457,17 +500,18 @@ subroutine wall_function(f, ijk, dirn, cons, &
 end subroutine
 
 
-subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall)
+subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall, nd)
 
     integer, intent (in)  :: ni
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     integer, intent (in)  :: nwall
+    integer, intent (in)  :: nd
 
     ! Warning: depending on which direction faces we are setting,
     ! tau will have smaller dimension, e.g.
     !   taui(ni, nj-1, nk-1, 6)
-    real, intent (inout) :: tau(ni, nj, nk, 6)
+    real, intent (inout) :: tau(ni, nj, nk, nd)
     integer*2, intent (in) :: ijk(3, nwall)
 
     integer :: i

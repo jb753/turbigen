@@ -83,6 +83,9 @@ class Config(BaseSolver):
     damping_factor: float = 25.0
     """Negative feedback to damp down high residuals. Lower values are more stable."""
 
+    Pr_turb: float = 1.0
+    """Turbulent Prandtl number."""
+
     xllim_pitch: float = 0.03
 
     precision: int = 1
@@ -171,6 +174,8 @@ class SolverBlock:
         self.Nb = block.Nb
 
         self.mu = self.typ(block.mu)
+        self.cp = self.typ(block.cp)
+        self.Pr_turb = self.typ(conf.Pr_turb)
 
         self.ho = to_fort(block.ho)
         self.P = to_fort(block.P)
@@ -358,6 +363,7 @@ class SolverBlock:
             self.state.cp = self.typ(block.cp)
             self.state.mu = self.typ(block.mu)
             self.state.set_rho_u(block.rho, block.u)
+            self.state.set_Tu0(block.Tu0)
 
             self.state_inlets = [
                 turbigen.fluid.PerfectState(
@@ -712,10 +718,6 @@ class SolverBlock:
         embsolve.secondary(self.r, self.cons, self.Vxrt, self.halfVsq, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
-        # if (self.ho<0.).any():
-        #     raise Exception('ho is -ve')
-        #     # self.ho[self.ho<0.] = 0.
-        # print('ho is -ve')
         self.P[:] = self.state.P
         self.T[:] = self.state.T
 
@@ -732,7 +734,10 @@ class SolverBlock:
         embsolve.shear_stress(
             self.cons,
             self.Vxrt,
+            self.T,
             self.mu,
+            self.cp,
+            self.Pr_turb,
             self.xlength,
             self.vol[..., 0],
             self.dAi,
@@ -1037,7 +1042,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
     sf2min = conf.smooth2_const * conf.CFL / CFL_ref
     K_inlet = conf.K_inlet * conf.CFL / CFL_ref
     K_exit = conf.K_exit  # * conf.CFL / CFL_ref
-    rfin = 0.1
+    rfin = 0.2
 
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
@@ -1071,6 +1076,9 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
         tstart = timer()
         tfirst = tstart + 0.0
 
+        typ = blocks[0].typ
+        mpi_typ = blocks[0].mpi_typ
+
         # Start the main time stepping loop
         for istep in range(conf.n_step):
 
@@ -1081,7 +1089,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             fmgrid_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0])
 
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics, sb[0].typ, sb[0].mpi_typ)
+            exchange_cons(blocks, bid_local, periodics, typ, mpi_typ)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1273,20 +1281,6 @@ def run(grid, conf, machine=None):
     t1 = timer()
 
     nodes = np.sum([b.size for b in grid])
-
-    # # Set an internal energy datum
-    # # # Find an internal energy datum that ensures ho is always +ve
-    # # ho_min = np.min([b.ho.min() for b in grid])
-    # # # print(ho_min)
-    # # ho_max = np.min([b.ho.max() for b in grid])
-    # # cp_mean = np.mean([np.mean(b.cp) for b in grid])
-    # # SF = 0.1
-    # DT = -10.
-    # for b in grid:
-    #     b.set_Tu0(b.Tu0 + DT)
-    # # ho_min = np.min([b.ho.min() for b in grid])
-    # # # print(ho_min)
-    # # # quit()
 
     blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):

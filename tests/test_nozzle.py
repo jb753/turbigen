@@ -24,7 +24,9 @@ def make_nozzle(
     Alpha=0.0,
     tper=False,
     Ma1=0.3,
-    rpm=0.
+    rpm=0.,
+    Tu0=300.,
+    To1=300.,
 ):
     """Generate the grid."""
 
@@ -41,7 +43,7 @@ def make_nozzle(
     mu = 1.8e-5
     Beta = 0.0
     Po1 = 1e5
-    To1 = 300.0
+    To1 = To1
 
     # Rotating reference frame
     Omega = rpm / 60. * np.pi * 2.
@@ -164,6 +166,7 @@ def make_nozzle(
 
     # Boundary conditions
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
+    So1.set_Tu0(Tu0)
     So1.set_P_T(Po1, To1)
     g.apply_inlet(So1, Alpha, Beta)
     g.calculate_wall_distance()
@@ -175,6 +178,7 @@ def make_nozzle(
         b.gamma = ga
         b.mu = mu
         b.Omega = Omega
+        b.set_Tu0(Tu0)
 
     # Evaulate 1D analytical
     Q1 = cf.mcpTo_APo_from_Ma(Ma1, ga)
@@ -192,6 +196,7 @@ def make_nozzle(
     F.x = xv
     F.r = rm
     F.t = 0.0
+    F.set_Tu0(Tu0)
 
     Ve = np.expand_dims(V,(1,2))
     Te = np.expand_dims(T,(1,2))
@@ -214,8 +219,7 @@ settings = {
     "n_step": 5000,
     "n_step_avg": 500,
     "n_step_log": 100,
-    "i_loss": 0,
-    # "nstep_damp": -1,
+    "i_loss": 1,
     "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
@@ -369,6 +373,28 @@ def test_condi(dirn):
     assert (np.abs(Ys) < rtol_sh).all()
     assert (np.abs(Cho) < rtol_sh).all()
 
+@pytest.mark.parametrize("Tu0", (0.,150.0, 300.0))
+def test_Tu0(Tu0):
+    """Check that the internal energy datum makes no difference."""
+
+    xA = np.array([[0.0, 0.01, 0.99, 1.0], [1.0, 1.0, 1.0, 1.0]])
+    g, F = make_nozzle(xA, Tu0=Tu0)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, conf)
+
+    plot_nozzle(g,F)
+    plt.show()
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    rtol = 2.5e-4
+
+    assert (np.abs(err_Ma) < rtol).all()
+    assert (np.abs(Ys) < rtol).all()
+    assert (np.abs(Cho) < rtol).all()
+
 
 @pytest.mark.parametrize("Alpha", (-30.0, 0.0, 30.0))
 def test_uniform(Alpha):
@@ -509,10 +535,35 @@ def test_rpm(rpm, plot=False):
     assert (np.abs(Ys) < rtol_sh).all()
     assert (np.abs(Cho) < rtol_sh).all()
 
+@pytest.mark.parametrize("To1", (200.0, 300.0, 400.0))
+def test_To1(To1):
+    """Run the most basic parallel annulus, grid aligned with flow."""
+
+    xA = np.array([[0.0, 0.01, 0.99, 1.0], [1.0, 1.0, 1.0, 1.0]])
+
+    g, F = make_nozzle(xA, To1=To1)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, conf)
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    # plot_nozzle(g,F)
+    # plt.show()
+
+
+    rtol = 2.5e-4
+
+    assert (np.abs(err_Ma) < rtol).all()
+    assert (np.abs(Ys) < rtol).all()
+    assert (np.abs(Cho) < rtol).all()
+
 if __name__ == "__main__":
 
     # test_condi('t')
-    test_rpm(100.)
+    test_To1(400.)
+    # test_Tu0(300.)
     # test_rpm(500.)
 
     # print('testing exit, aligned grid')

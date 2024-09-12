@@ -690,5 +690,5 @@ if __name__ == "__main__":
     pass
 
     # test_plate_turb()
-    test_plate_lam()
-    # test_poiseuille()
+    # test_plate_lam()
+    test_poiseuille()
