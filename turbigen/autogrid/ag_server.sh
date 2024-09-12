@@ -41,7 +41,7 @@ pop_first_line() {
             tail -n +2 "$queue_file" > "$temp_file"
 
             # Move the temporary file back to the queue file
-            mv "$temp_file" "$queue_file"
+            mv -f "$temp_file" "$queue_file"
 
         fi
 
@@ -59,6 +59,7 @@ push_first_line() {
 
     # Ensure the queue file exists; create it if it doesn't
     [ -f "$queue_file" ] || touch "$queue_file"
+    chmod a+rw "$queue_file"
 
     # Use flock to ensure exclusive access to the queue file
     {
@@ -71,7 +72,7 @@ push_first_line() {
         cat "$queue_file" >> "$temp_file"
 
         # Move the temporary file back to the queue file
-        mv "$temp_file" "$queue_file"
+        mv -f "$temp_file" "$queue_file"
 
     } 200<"$queue_file"
 }
@@ -103,6 +104,7 @@ echo "$WORKER --- Starting, queue file $WAT_FILE, $DEL_STR"
 
 # Make sure the queue file exists
 touch "$WAT_FILE"
+chmod a+rw "$WAT_FILE"
 
 # Loop forever
 while :

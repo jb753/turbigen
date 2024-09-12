@@ -209,15 +209,15 @@ def not_test_heat_flux():
     C2m, _, _ = C2.mix_out()
     print(C1m.To, C2m.To)
 
-    # fig, ax = plt.subplots()
-    # ax.axis('equal')
-    # b = g[0]
-    # C = b[:,:,b.nk//2]
-    # cm = ax.contourf(C.x, C.r, C.To)
-    # plt.colorbar(cm)
-    # plt.show()
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    b = g[0]
+    C = b[:,:,b.nk//2]
+    cm = ax.contourf(C.x, C.r, C.To)
+    plt.colorbar(cm)
+    plt.show()
 
 
 if __name__ == "__main__":
-    test_heat_flux()
+    not_test_heat_flux()
 
