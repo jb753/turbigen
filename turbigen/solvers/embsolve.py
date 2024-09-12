@@ -975,7 +975,7 @@ def send_slave(block_split, procids, periodics):
     comm.Barrier()
 
 
-def exchange_cons(blocks, bid_local, periodics):
+def exchange_cons(blocks, bid_local, periodics, typ, mpi_typ):
 
     # Update periodic boundaries
     for patch in periodics:
@@ -1003,62 +1003,16 @@ def exchange_cons(blocks, bid_local, periodics):
 
             # If our rank is lower than next rank, send first
             if rank < nxprocid:
-                comm.Send([vs, count, self.mpi_typ], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, self.mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
             # Otherwise, recieve first
             else:
-                comm.Recv([nxv, count, self.mpi_typ], source=nxprocid, tag=pid)
-                comm.Send([vs, count, self.mpi_typ], dest=nxprocid, tag=pid)
+                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
 
             # Take average over both sides
             vavg = 0.5 * (vs + nxv)
             embsolve.set_by_ijk(v1, vavg, ijk)
-
-
-def exchange_tau(blocks, bid_local, periodics):
-    rank = comm.Get_rank()
-
-    # Update periodic boundaries
-    for patch in periodics:
-        pid, bid, procid, ijk, ijkf, d, nxbid, nxprocid, nxijk, nxijkf, nxd = patch
-
-        # Extract home block
-        b1 = blocks[bid_local[bid]]
-
-        # Chose ijk face direction for home patch
-        tau1 = b1.tau[d - 1]
-
-        # Just set the periodic if on same rank
-        if nxprocid == rank:
-            # Extract away block
-            b2 = blocks[bid_local[nxbid]]
-
-            # Chose ijk face direction for away patch
-            tau2 = b2.tau[nxd - 1]
-
-            embsolve.average_by_ijk(tau1, tau2, ijkf, nxijkf, 1.0)
-
-        # Otherwise, communication is needed
-        else:
-            # Assemble data to send
-            vs = embsolve.get_by_ijk(tau1, ijkf)
-            count = len(vs)
-
-            # Preallocate a buffer to recieve
-            nxv = np.empty_like(vs, dtype=typ)
-
-            # If our rank is lower than next rank, send first
-            if rank < nxprocid:
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-            # Otherwise, recieve first
-            else:
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-
-            # Take average over both sides
-            vavg = 0.5 * (vs + nxv)
-            embsolve.set_by_ijk(tau1, vavg, ijkf)
 
 
 def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
@@ -1127,7 +1081,7 @@ def run_slave(blocks=None, periodics_all=None, nodes=None, conf=None):
             fmgrid_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0])
 
             # Exchange conserved variables across periodic patches
-            exchange_cons(blocks, bid_local, periodics)
+            exchange_cons(blocks, bid_local, periodics, sb[0].typ, sb[0].mpi_typ)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
