@@ -1446,6 +1446,30 @@ class Composites:
         return xrt_stag
 
     @dependent_property
+    def fluxes(self):
+        return np.stack(
+            (
+                self.rhoVx,
+                self.rhoVx * self.Vx + self.P,
+                self.rhoVx * self.Vr,
+                self.rhoVx * self.Vt,
+                self.rhoVx * self.ho,
+            )
+        )
+
+    @dependent_property
+    def bcond(self):
+        return np.stack(
+            (
+                self.ho,
+                self.s,
+                self.tanAlpha,
+                self.tanBeta,
+                self.P,
+            )
+        )
+
+    @dependent_property
     def drhoe_drho_P(self):
         return self.e + self.rho * self.dudrho_P
 
@@ -1502,7 +1526,6 @@ class Composites:
         Cinv: (npts, 5, 5) array
 
         """
-
         return np.linalg.inv(self.primitive_to_conserved())
 
     def primitive_to_chic(self):
@@ -1524,16 +1547,139 @@ class Composites:
 
         Z = np.zeros(self.shape)
         one = np.ones(self.shape)
+        rhoa = self.rho * self.a
         B = np.stack(
             (
                 (Z, Z, Z, Z, -self.a**2),  # d/rho
-                (Z, self.Vx, self.Vr, self.rVt, self.drhoe_drho_P),  # d/drho
-                (Z, self.rho, Z, Z, self.rhoVx),  # d/dVx
-                (Z, Z, self.rho, Z, self.rhoVr),  # d/dVr
-                (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
+                (rhoa, -rhoa, Z, Z, Z),  # d/dVx
+                (Z, Z, rhoa, Z, Z),  # d/dVr
+                (Z, Z, Z, rhoa, Z),  # d/dVt
+                (one, one, Z, Z, one),  # d/dP
             )
         ).T
-        return C
+        return B
+
+    def chic_to_primitive(self):
+        """Get a matrix at every node that converts linear pertubations in
+        characteristic variables
+        [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
+        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+        to perturbations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+
+        Returns
+        -------
+        Binv: (npts, 5, 5) array
+        """
+        return np.linalg.inv(self.primitive_to_chic())
+
+    def primitive_to_flux(self):
+        """Get a matrix at every node that converts linear pertubations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+        to perturbations in
+        flux variables
+        [rhoVx, rhoVx^2+P, rhoVxVr, rhoVxrVt, rhoVx*ho].
+
+        Returns
+        -------
+        A: (npts, 5, 5) array
+
+        """
+
+        if not self.ndim == 1:
+            raise Exception(f"Need a flattened flow to do this")
+
+        Z = np.zeros(self.shape)
+        one = np.ones(self.shape)
+        VxVr = self.Vx * self.Vr
+        VxrVt = self.Vx * self.rVt
+        VxVx = self.Vx**2
+        dE_drho = self.Vx * self.ho + self.rhoVx * self.dhdrho_P
+        dE_dVx = self.rho * self.ho + self.rhoVx * self.Vx
+        A = np.stack(
+            (
+                (self.Vx, VxVx, VxVr, VxrVt, dE_drho),  # d/rho
+                (self.rho, 2 * self.rhoVx, self.rhoVr, self.rhorVt, dE_dVx),  # d/dVx
+                (Z, Z, self.rhoVx, Z, self.rhoVx * self.Vr),  # d/dVr
+                (Z, Z, Z, self.rhoVx * self.r, self.rhoVx * self.Vt),  # d/dVt
+                (Z, one, Z, Z, self.rhoVx * self.dhdP_rho),  # d/dP
+            )
+        ).T
+        return A
+
+    def flux_to_primitive(self):
+        """Get a matrix at every node that converts linear pertubations in
+        flux variables
+        [rhoVx, rhoVx^2+P, rhoVxVr, rhoVxrVt, rhoVx*ho].
+        to perturbations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+
+        Returns
+        -------
+        Ainv: (npts, 5, 5) array
+        """
+        return np.linalg.inv(self.primitive_to_flux())
+
+    def primitive_to_bcond(self):
+        """Get a matrix at every node that converts linear pertubations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+        to perturbations in
+        boundary condition variables
+        [ho, s, tanAlpha, tanBeta, P].
+
+        Returns
+        -------
+        Y: (npts, 5, 5) array
+
+        """
+
+        if not self.ndim == 1:
+            raise Exception(f"Need a flattened flow to do this")
+
+        Z = np.zeros(self.shape)
+        one = np.ones(self.shape)
+
+        dtanAl_dVx = -self.tanAlpha * self.Vx / self.Vm**2
+        dtanAl_dVr = -self.tanAlpha * self.Vr / self.Vm**2
+        dtanAl_dVt = 1.0 / self.Vm
+
+        dtanBe_dVx = -self.Vr / self.Vx**2
+        dtanBe_dVr = 1.0 / self.Vx
+
+        Y = np.stack(
+            (
+                (self.dhdrho_P, self.dsdrho_P, Z, Z, Z),  # d/rho
+                (self.Vx, Z, dtanAl_dVx, dtanBe_dVx, Z),  # d/dVx
+                (self.Vr, Z, dtanAl_dVr, dtanBe_dVr, Z),  # d/dVr
+                (self.Vt, Z, dtanAl_dVt, Z, Z),  # d/dVt
+                (self.dhdP_rho, self.dsdP_rho, Z, Z, one),  # d/dP
+            )
+        ).T
+        return Y
+
+    def bcond_to_primitive(self):
+        """Get a matrix at every node that converts linear pertubations in
+        boundary condition variables
+        [ho, s, tanAlpha, tanBeta, P].
+        to perturbations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+
+        Returns
+        -------
+        Yinv: (npts, 5, 5) array
+
+        """
+
+        return np.linalg.inv(self.primitive_to_bcond())
+
+    def resolve_meridional(self, psi):
+        """Replace axial and radial components by resolving at angle to axial dirn."""
+        cospsi = util.cosd(psi)
+        sinpsi = util.sind(psi)
+        Vn = self.Vx * cospsi + self.Vr * sinpsi
+        Vs = -self.Vx * sinpsi + self.Vr * cospsi
+        self.Vx = Vn
+        self.Vr = Vs
 
 
 class MeanLine:

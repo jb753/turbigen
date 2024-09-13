@@ -425,6 +425,7 @@ def test_perfect_deriv():
 
 def test_matrices():
 
+    # Set up two flow fields with a small perturbation between them
     F = flowfield.PerfectFlowField(shape=(1,))
     F.cp = 1105.0
     F.gamma = 1.3
@@ -435,13 +436,45 @@ def test_matrices():
     F2 = F.copy()
     dprim = F.prim*1e-3
     F2.set_prim(F.prim+dprim)
+
+    tol = 1e-2
+
+    # Check conserved
     dcons = F2.conserved - F.conserved
     C = F.primitive_to_conserved()
     Cinv = F.conserved_to_primitive()
-    assert np.allclose(dcons, C@dprim,rtol=1e-2)
-    assert np.allclose(dprim, Cinv@dcons,rtol=1e-2)
+    assert np.allclose(dcons, C@dprim,rtol=tol)
+    assert np.allclose(dprim, Cinv@dcons,rtol=tol)
 
-    # print(C)
+    # Manually calculate chic vector
+    dp = F2.P-F.P
+    dVx = F2.Vx-F.Vx
+    dVr = F2.Vr-F.Vr
+    dVt = F2.Vt-F.Vt
+    drho = F2.rho-F.rho
+    a = 0.5*(F2.a+F.a)
+    rho = 0.5*(F2.rho+F.rho)
+    dchic = [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a**2)*drho]
+
+    # Check chic
+    B = F.primitive_to_chic()
+    Binv = F.chic_to_primitive()
+    assert np.allclose(dchic, B@dprim, rtol=tol)
+    assert np.allclose(dprim, Binv@dchic, rtol=tol)
+
+    # Check fluxes
+    dflux = F2.fluxes - F.fluxes
+    A = F.primitive_to_flux()
+    Ainv = F.flux_to_primitive()
+    assert np.allclose(dflux, A@dprim, rtol=tol)
+    assert np.allclose(dprim, Ainv@dflux, rtol=tol)
+
+    # Check bcond
+    dbcond = F2.bcond - F.bcond
+    Y = F.primitive_to_bcond()
+    Yinv = F.bcond_to_primitive()
+    assert np.allclose(dbcond, Y@dprim, rtol=tol)
+    assert np.allclose(dprim, Yinv@dbcond, rtol=tol)
 
 if __name__=='__main__':
     np.set_printoptions(precision=2)
