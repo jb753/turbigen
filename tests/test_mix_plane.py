@@ -89,8 +89,8 @@ def make_grid(
             turbigen.grid.InletPatch(i=0),
             turbigen.grid.MixingPatch(i=-1),
             # turbigen.grid.PeriodicPatch(i=-1),
-            turbigen.grid.InviscidPatch(k=0),
-            turbigen.grid.InviscidPatch(k=-1),
+            turbigen.grid.PeriodicPatch(k=0),
+            turbigen.grid.PeriodicPatch(k=-1),
             turbigen.grid.InviscidPatch(j=0),
             turbigen.grid.InviscidPatch(j=-1),
         ],
@@ -98,8 +98,8 @@ def make_grid(
             turbigen.grid.MixingPatch(i=0),
             # turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.OutletPatch(i=-1),
-            turbigen.grid.InviscidPatch(k=0),
-            turbigen.grid.InviscidPatch(k=-1),
+            turbigen.grid.PeriodicPatch(k=0),
+            turbigen.grid.PeriodicPatch(k=-1),
             turbigen.grid.InviscidPatch(j=0),
             turbigen.grid.InviscidPatch(j=-1),
         ],
@@ -150,9 +150,9 @@ settings = {
     "n_step_avg": 1,
     "n_step_log": 100,
     "nstep_damp": -1,
-    # "damping_factor": 3.,
-    # "fmgrid": 0.,
-    # "CFL": 0.,
+    "damping_factor": 3.,
+    "fmgrid": 0.,
+    "CFL": 0.1,
     "i_loss": 0,
     # "plot_conv": True,
 }
@@ -183,6 +183,7 @@ def test_mix_plane():
 
     fig, ax = plt.subplots()
     lev_To= np.linspace(290., 310, 11)
+    ax.set_title('To')
     for b in g:
         C = b[:,b.nj//2,:]
         ax.contourf(C.x, C.rt, C.To, lev_To)
@@ -193,11 +194,6 @@ def test_mix_plane():
         C = b[:,b.nj//2,:]
         cm = ax.contourf(C.x, C.rt, C.Vx, lev_Vx)
     plt.colorbar(cm)
-
-    fig, ax = plt.subplots()
-    for b in g:
-        C = b[:,b.nj//2,:]
-        cm = ax.contourf(C.x, C.rt, C.w)
 
     fig, ax = plt.subplots()
     ax.axis('equal')
@@ -234,4 +230,3 @@ def test_mix_plane():
 if __name__ == "__main__":
     # test_CFL_0()
     test_mix_plane()
-Vx

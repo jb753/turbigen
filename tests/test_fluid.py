@@ -1,6 +1,6 @@
 """Tests for thermodynamic properties of working fluids."""
 
-from turbigen import fluid
+from turbigen import fluid, flowfield
 import numpy as np
 import pytest
 
@@ -423,5 +423,26 @@ def test_perfect_deriv():
     assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
 
+def test_matrices():
+
+    F = flowfield.PerfectFlowField(shape=(1,))
+    F.cp = 1105.0
+    F.gamma = 1.3
+    F.mu = 1.8e-5
+    F.xrt = np.ones((3,1))
+    F.Vxrt = [[100.],[200.],[50.]]
+    F.set_P_T(1e5, 300.)
+    F2 = F.copy()
+    dprim = F.prim*1e-3
+    F2.set_prim(F.prim+dprim)
+    dcons = F2.conserved - F.conserved
+    C = F.primitive_to_conserved()
+    Cinv = F.conserved_to_primitive()
+    assert np.allclose(dcons, C@dprim,rtol=1e-2)
+    assert np.allclose(dprim, Cinv@dcons,rtol=1e-2)
+
+    # print(C)
+
 if __name__=='__main__':
-    test_Tu0()
+    np.set_printoptions(precision=2)
+    test_matrices()

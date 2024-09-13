@@ -1445,6 +1445,96 @@ class Composites:
             xrt_stag[:, j] = self.xrt[:, self.i_stag[j], j]
         return xrt_stag
 
+    @dependent_property
+    def drhoe_drho_P(self):
+        return self.e + self.rho * self.dudrho_P
+
+    @dependent_property
+    def drhoe_dP_rho(self):
+        return self.rho * self.dudP_rho
+
+    @dependent_property
+    def prim(self):
+        return np.stack((self.rho, self.Vx, self.Vr, self.Vt, self.P))
+
+    def set_prim(self, prim):
+        rho, *Vxrt, P = prim
+        self.set_P_rho(P, rho)
+        self.Vxrt = Vxrt
+        return self
+
+    def primitive_to_conserved(self):
+        """Get a matrix at every node that converts linear pertubations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+        to perturbations in
+        conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
+
+        Returns
+        -------
+        C: (npts, 5, 5) array
+
+        """
+
+        if not self.ndim == 1:
+            raise Exception(f"Need a flattened flow to do this")
+
+        Z = np.zeros(self.shape)
+        one = np.ones(self.shape)
+        C = np.stack(
+            (
+                (one, self.Vx, self.Vr, self.rVt, self.drhoe_drho_P),  # d/drho
+                (Z, self.rho, Z, Z, self.rhoVx),  # d/dVx
+                (Z, Z, self.rho, Z, self.rhoVr),  # d/dVr
+                (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
+                (Z, Z, Z, Z, self.drhoe_dP_rho),  # d/dP
+            )
+        ).T
+        return C
+
+    def conserved_to_primitive(self):
+        """Get a matrix at every node that converts linear pertubations in
+        conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
+        to perturbations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+
+        Returns
+        -------
+        Cinv: (npts, 5, 5) array
+
+        """
+
+        return np.linalg.inv(self.primitive_to_conserved())
+
+    def primitive_to_chic(self):
+        """Get a matrix at every node that converts linear pertubations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+        to perturbations in
+        characteristic variables
+        [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
+        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+
+        Returns
+        -------
+        B: (npts, 5, 5) array
+
+        """
+
+        if not self.ndim == 1:
+            raise Exception(f"Need a flattened flow to do this")
+
+        Z = np.zeros(self.shape)
+        one = np.ones(self.shape)
+        B = np.stack(
+            (
+                (Z, Z, Z, Z, -self.a**2),  # d/rho
+                (Z, self.Vx, self.Vr, self.rVt, self.drhoe_drho_P),  # d/drho
+                (Z, self.rho, Z, Z, self.rhoVx),  # d/dVx
+                (Z, Z, self.rho, Z, self.rhoVr),  # d/dVr
+                (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
+            )
+        ).T
+        return C
+
 
 class MeanLine:
     """Encapsulate flow and geometry on a nomial mean streamsurface."""

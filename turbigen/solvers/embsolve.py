@@ -354,6 +354,7 @@ class SolverBlock:
 
         self.inlets = [get_inlet_data(patch, self.typ) for patch in block.inlet_patches]
         self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
+        self.outlets2 = [OutletPlane(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
@@ -604,6 +605,8 @@ class SolverBlock:
 
                 # Extract the cons vars from solution
                 rho = self.cons[..., 0].ravel(order="F")[ind]
+                print(rho.base is self.cons)
+                quit()
                 rhoVx = self.cons[..., 1].ravel(order="F")[ind]
                 rhoVr = self.cons[..., 2].ravel(order="F")[ind]
                 rhorVt = self.cons[..., 3].ravel(order="F")[ind]
@@ -1077,6 +1080,9 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 
         #     plt.show()
 
+        assert not np.isnan(prim1).any()
+        assert not np.isnan(prim2).any()
+
         # Form the side-averaged flow conditions
         rho, u, Vs, Vt, Vn, _, _ = prim = 0.5*(prim1+prim2)
 
@@ -1100,7 +1106,6 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         a = state.a
         e = state.e
 
-        assert not np.isnan(prim).any()
 
         # Convert flux changes into primative changes
         # Matrix A from Holmes (2008) eqn. (A1)
@@ -1172,7 +1177,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         Qdn = TCBinv @ Ddn @ BAinv
 
         # Flux differences with relaxation
-        K_mix = 0.4
+        K_mix = 0.1
         DF = ((flux1 - flux2).T)[...,None]
         DF *= -K_mix
         err = flux1
@@ -1223,7 +1228,6 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Now apply to each side
         mix1.perturb_conserved(blk1, dU1)
         mix2.perturb_conserved(blk2, dU2)
-
 
 def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
 
@@ -1344,13 +1348,16 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             # Exchange conserved variables across periodic patches
             exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ)
 
+            for iblock in range(nblock):
+                sb = blocks[iblock]
+                sb.set_secondary()
+
             # Exchange conserved variables across periodic patches
             exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
                 sb = blocks[iblock]
-
                 sb.set_secondary()
 
                 # Accumulate average
@@ -1766,6 +1773,13 @@ def get_multigrid_lengths(block, nb, typ):
 
     return dlmg
 
+class OutletPlane():
+    def __init__(self, patch):
+
+        self.slice = patch.get_slice()
+        self.state = patch.block[self.slice].copy()
+
+    def
 class MixingPlane():
 
     def __init__(self, patch, bid, procid):
@@ -1792,7 +1806,6 @@ class MixingPlane():
         self.r = Ct.r[:,0]
 
         self.nspan = Ct.shape[0]
-        print(self.nspan)
 
         # Get normal vectors pointing into the domain
         C1 = patch.get_cut(offset=1)
@@ -1814,6 +1827,13 @@ class MixingPlane():
 
         self.pitch = Ct.pitch+0.
         self.dt = np.diff(Ct.t, axis=1)
+
+        # Store initial guess of pitchwise-uniform boundary condition vars
+        self.ho = Ct.ho.mean(axis=-1)
+        self.s = Ct.s.mean(axis=-1)
+        self.Alpha = Ct.Alpha.mean(axis=-1)
+        self.Beta = Ct.Beta.mean(axis=-1)
+        self.P = Ct.P.mean(axis=-1)
 
     def get_primative(self, block):
         """Extract the primative variables on mixing patch.
@@ -1843,10 +1863,6 @@ class MixingPlane():
         primative = self.get_primative(block)
         rho, u, Vx, Vr, Vt, P, ho = primative
 
-        # Check flow direction using normal vectors
-        Vxr = np.stack((Vx, Vr)).mean(axis=-1)
-        dirn = np.sign(np.einsum("i...,i...", Vxr, self.normal))
-
         # Resolve velocity spanwise and normal to interface
         Vn = Vx*self.cospsi + Vr*self.sinpsi
         Vs = -Vx*self.sinpsi + Vr*self.cospsi
@@ -1854,7 +1870,7 @@ class MixingPlane():
         # Overwrite resolved velocities into primative
         # Warning using the Holmes velocity componend ordering
         Vx[:] = Vs
-        Vr[:] = -Vt.copy()
+        Vr[:] = Vt.copy()
         Vt[:] = Vn
 
         # Form the nodal fluxes of conserved quantities
@@ -1863,14 +1879,14 @@ class MixingPlane():
             (
                 rhoVn,
                 rhoVn*Vs,
-                rhoVn*-Vt,
+                rhoVn*Vt,
                 rhoVn*Vn+P,
                 rhoVn*ho,
             )
         )
 
         # Average fluxes across the pitch
-        # Cannot use numpy trapz because the x vector 
+        # Cannot use numpy trapz because the x vector
         # is different for every spanwise location
         fluxes_avg = self.pitchwise_average(fluxes)
 
@@ -1883,5 +1899,4 @@ class MixingPlane():
 
 
 
-
-
+def primative_to_conserved(flow):
