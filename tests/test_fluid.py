@@ -409,15 +409,19 @@ def test_perfect_deriv():
     S1.set_P_rho(P1, rhov)
     dsdrho = np.gradient(S1.s, rhov)
     dhdrho = np.gradient(S1.h, rhov)
+    dudrho = np.gradient(S1.u, rhov)
     assert np.allclose(S1.dsdrho_P[1:-1], dsdrho[1:-1], rtol=rtol)
     assert np.allclose(S1.dhdrho_P[1:-1], dhdrho[1:-1], rtol=rtol)
+    assert np.allclose(S1.dudrho_P[1:-1], dudrho[1:-1], rtol=rtol)
 
     # by P first at constant rho
     S1.set_P_rho(Pv, rho1)
     dsdP = np.gradient(S1.s, Pv)
     dhdP = np.gradient(S1.h, Pv)
+    dudP = np.gradient(S1.u, Pv)
     assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
+    assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
 
 if __name__=='__main__':
     test_Tu0()

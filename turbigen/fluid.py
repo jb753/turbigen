@@ -340,6 +340,14 @@ class PerfectState(StructuredData):
     def dhdrho_P(self):
         return -self.cp * self.T / self.rho
 
+    @dependent_property
+    def dudrho_P(self):
+        return -self.P / self.rho**2 / (self.gamma - 1.0)
+
+    @dependent_property
+    def dudP_rho(self):
+        return 1.0 / self.rho / (self.gamma - 1.0)
+
     def set_Tu0(self, Tu0):
         # Set the temperature for internal energy datum u(Tu0) = 0
         P = self.P.copy()

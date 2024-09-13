@@ -463,6 +463,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return self.find_patches(RotatingPatch)
 
     @property
+    def mixing_patches(self):
+        return self.find_patches(MixingPatch)
+
+    @property
     def inlet_patches(self):
         return self.find_patches(InletPatch)
 
@@ -522,9 +526,9 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         the same, and apply the same coarsening between those critical points."""
 
         # Assemble critical values of i, j, k
-        ic = [0, self.ni-1]
-        jc = [0, self.nj-1]
-        kc = [0, self.nk-1]
+        ic = [0, self.ni - 1]
+        jc = [0, self.nj - 1]
+        kc = [0, self.nk - 1]
         ijkc = [ic, jc, kc]
         nijk = np.tile(np.reshape(self.shape, (3, 1)), (1, 2))
         for p in self.patches:
@@ -544,18 +548,19 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Convert old patch start/end for indices into new block
         for p in self.patches:
             for m in range(3):
-                p.ijk_limits[m,:] = np.argwhere(np.isin(ijk_new[m], p.ijk_limits[m,:])).squeeze()
+                p.ijk_limits[m, :] = np.argwhere(
+                    np.isin(ijk_new[m], p.ijk_limits[m, :])
+                ).squeeze()
 
         # Extract these points from the block
         data_out = np.empty((self.nprop,) + nijk_new)
         mask = np.zeros((3,) + self.shape, dtype=bool)
-        mask[0,ijk_new[0],:,:] = True
-        mask[1,:,ijk_new[1],:] = True
-        mask[2, :,:,ijk_new[2]] = True
-        mask = np.repeat(mask.all(axis=0)[None,:], self.nprop, axis=0)
+        mask[0, ijk_new[0], :, :] = True
+        mask[1, :, ijk_new[1], :] = True
+        mask[2, :, :, ijk_new[2]] = True
+        mask = np.repeat(mask.all(axis=0)[None, :], self.nprop, axis=0)
         self._data = self._data[mask].reshape((self.nprop,) + nijk_new)
         self._dependent_property_cache.clear()
-
 
     def refine(self, k):
         """Make a finer mesh by halving each edge k times."""

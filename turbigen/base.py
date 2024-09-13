@@ -1131,7 +1131,11 @@ class Composites:
 
     @dependent_property
     def rhoe(self):
-        return self.rho * (self.u + 0.5 * self.V**2.0)
+        return self.rho * self.e
+
+    @dependent_property
+    def e(self):
+        return self.u + 0.5 * self.V**2.0
 
     @dependent_property
     def Ma(self):

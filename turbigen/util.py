@@ -9,6 +9,7 @@ import importlib
 import scipy.interpolate
 from matplotlib import pyplot as plt
 
+from scipy.linalg.lapack import dgesv
 from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata
@@ -184,6 +185,7 @@ def angles_to_velocities(V, Alpha, Beta):
 
     return Vx, Vr, Vt
 
+
 def resample_critical_indices(ni, ic, f):
 
     # Spans between each critical index
@@ -193,13 +195,12 @@ def resample_critical_indices(ni, ic, f):
     segs = []
     nseg = len(dic)
     for iseg in range(nseg):
-        niseg = int(np.round(dic[iseg]*f).item()+1)
-        segs.append(np.round(np.linspace(ic[iseg], ic[iseg+1], niseg)).astype(int))
+        niseg = int(np.round(dic[iseg] * f).item() + 1)
+        segs.append(np.round(np.linspace(ic[iseg], ic[iseg + 1], niseg)).astype(int))
 
     i = np.unique(np.concatenate(segs))
     assert np.all(np.isin(ic, i))
     return i
-
 
 
 def resample(x, f, mult=None):
@@ -1131,6 +1132,16 @@ def angle_curve(xr):
     """Angle of slope of a curve."""
     dxr = np.diff(xr, 1)
     return np.degrees(np.arctan2(dxr[1], dxr[0]))
+
+
+def angle_curve_node(xr):
+    """Angle of slope of a curve."""
+    angle_cell = angle_curve(xr)
+    angle_node = np.zeros((xr.shape[1],))
+    angle_node[1:-1] = 0.5 * (angle_cell[1:] + angle_cell[:-1])
+    angle_node[0] = angle_cell[0]
+    angle_node[-1] = angle_cell[-1]
+    return angle_node
 
 
 def interpolate_block(xr_hub, xr_cas, spf):
