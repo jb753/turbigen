@@ -50,7 +50,7 @@ def make_grid(
 
 
     # Relative flow angle
-    Alpha = 20.
+    Alpha = 0.
     Vt = V * np.sin(np.radians(Alpha))
     Vx = V * np.cos(np.radians(Alpha))
     Vt_rel = Vt - U
@@ -88,6 +88,7 @@ def make_grid(
         [
             turbigen.grid.InletPatch(i=0),
             turbigen.grid.MixingPatch(i=-1),
+            # turbigen.grid.PeriodicPatch(i=-1),
             turbigen.grid.InviscidPatch(k=0),
             turbigen.grid.InviscidPatch(k=-1),
             turbigen.grid.InviscidPatch(j=0),
@@ -95,6 +96,7 @@ def make_grid(
         ],
         [
             turbigen.grid.MixingPatch(i=0),
+            # turbigen.grid.PeriodicPatch(i=0),
             turbigen.grid.OutletPatch(i=-1),
             turbigen.grid.InviscidPatch(k=0),
             turbigen.grid.InviscidPatch(k=-1),
@@ -127,15 +129,13 @@ def make_grid(
         b.gamma = ga
         b.mu = mu
 
-    g[0].Omega = 0.
-    g[1].Omega = 0.#Omega
-
     # Initial guess
     for ib, b in enumerate(g):
         b.Vx = Vx
-        b.Vr = Vx*0.01
+        b.Vr = 0.#Vx*0.01
         b.Vt = Vt
         b.set_P_T(P1, T1)
+        b.Omega = 0.
     g[1].Vx += Vx*0.01
     g[1].Vr += Vx*0.01
     g[1].Vt += Vx*0.01
@@ -146,14 +146,14 @@ def make_grid(
 
 
 settings = {
-    "n_step": 4000,
+    "n_step": 2000,
     "n_step_avg": 1,
     "n_step_log": 100,
     "nstep_damp": -1,
-    "damping_factor": 3.,
-    "fmgrid": 0.,
-    # "CFL": 0.1,
-    # "i_scheme": 0,
+    # "damping_factor": 3.,
+    # "fmgrid": 0.,
+    # "CFL": 0.,
+    "i_loss": 0,
     # "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
@@ -181,12 +181,46 @@ def test_mix_plane():
     np.set_printoptions(precision=2)
     turbigen.solvers.embsolve.run(g, conf)
 
-    # Check To conservation
-    C1 = g[0][0,:,:]
-    C2 = g[0][-1,:,:]
-    C1m, A, _ = C1.mix_out()
-    C2m, _, _ = C2.mix_out()
-    print(C1m.To, C2m.To)
+    fig, ax = plt.subplots()
+    lev_To= np.linspace(290., 310, 11)
+    for b in g:
+        C = b[:,b.nj//2,:]
+        ax.contourf(C.x, C.rt, C.To, lev_To)
+
+    fig, ax = plt.subplots()
+    lev_Vx= np.linspace(97., 99., 11)
+    for b in g:
+        C = b[:,b.nj//2,:]
+        cm = ax.contourf(C.x, C.rt, C.Vx, lev_Vx)
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    for b in g:
+        C = b[:,b.nj//2,:]
+        cm = ax.contourf(C.x, C.rt, C.w)
+
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    C = g[0][-1,:,:]
+    cm = ax.contourf(C.y, C.z, C.Vx/C.Vx.mean())
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    C = g[0][-1,:,:]
+    cm = ax.contourf(C.y, C.z, C.To/C.To.mean())
+    plt.colorbar(cm)
+
+
+
+    plt.show()
+
+    # # Check To conservation
+    # C1 = g[0][0,:,:]
+    # C2 = g[0][-1,:,:]
+    # C1m, A, _ = C1.mix_out()
+    # C2m, _, _ = C2.mix_out()
+    # print(C1m.To, C2m.To)
 
     # fig, ax = plt.subplots()
     # ax.axis('equal')
@@ -200,4 +234,4 @@ def test_mix_plane():
 if __name__ == "__main__":
     # test_CFL_0()
     test_mix_plane()
-
+Vx

@@ -1046,36 +1046,36 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
             vavg = 0.5 * (vs + nxv)
             embsolve.set_by_ijk(v1, vavg, ijk)
 
-        # # We now have the pitchwise-averaged conditions on both sides
-        if plot:
-            rho1, _, Vs1, Vt1, Vn1, _, _ = prim1
-            rho2, _, Vs2, Vt2, Vn2, _, _ = prim2
-            import matplotlib.pyplot as plt
-            fig, ax = plt.subplots(1,3,layout='constrained')
-            ax[0].set_ylim([0,200])
-            ax[1].set_ylim([0,200])
-            ax[2].set_ylim([0,200])
-            ax[0].plot(Vn1, '-x')
-            ax[0].plot(Vn2, '-x')
-            ax[1].plot(Vs1, '-x')
-            ax[1].plot(Vs2, '-x')
-            ax[2].plot(Vt1, '-x')
-            ax[2].plot(Vt2, '-x')
-            ax[0].set_title('Vn')
-            ax[1].set_title('Vs')
-            ax[2].set_title('Vt')
+        # # # We now have the pitchwise-averaged conditions on both sides
+        # if plot:
+        #     rho1, _, Vs1, Vt1, Vn1, _, _ = prim1
+        #     rho2, _, Vs2, Vt2, Vn2, _, _ = prim2
+        #     import matplotlib.pyplot as plt
+        #     fig, ax = plt.subplots(1,3,layout='constrained')
+        #     ax[0].set_ylim([0,200])
+        #     ax[1].set_ylim([0,200])
+        #     ax[2].set_ylim([0,200])
+        #     ax[0].plot(Vn1, '-x')
+        #     ax[0].plot(Vn2, '-x')
+        #     ax[1].plot(Vs1, '-x')
+        #     ax[1].plot(Vs2, '-x')
+        #     ax[2].plot(Vt1, '-x')
+        #     ax[2].plot(Vt2, '-x')
+        #     ax[0].set_title('Vn')
+        #     ax[1].set_title('Vs')
+        #     ax[2].set_title('Vt')
 
 
-            fig, ax = plt.subplots(1,5,layout='constrained')
-            titles = ['rho', 'rhoVx', 'rhoVr', 'rhorVt', 'rhoe']
-            for i in range(5):
-                flux_mean = np.mean(0.5*(flux1+flux2),axis=-1)
-                ax[i].plot(flux1[i]/flux_mean[i], '-x')
-                ax[i].plot(flux2[i]/flux_mean[i], '-x')
-                ax[i].set_title(titles[i])
-                ax[i].set_ylim([0.9, 1.1])
+        #     fig, ax = plt.subplots(1,5,layout='constrained')
+        #     titles = ['rho', 'rhoVx', 'rhoVr', 'rhorVt', 'rhoe']
+        #     for i in range(5):
+        #         flux_mean = np.mean(0.5*(flux1+flux2),axis=-1)
+        #         ax[i].plot(flux1[i]/flux_mean[i], '-x')
+        #         ax[i].plot(flux2[i]/flux_mean[i], '-x')
+        #         ax[i].set_title(titles[i])
+        #         ax[i].set_ylim([0.9, 1.1])
 
-            plt.show()
+        #     plt.show()
 
         # Form the side-averaged flow conditions
         rho, u, Vs, Vt, Vn, _, _ = prim = 0.5*(prim1+prim2)
@@ -1099,6 +1099,8 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         dudrho = state.dudrho_P
         a = state.a
         e = state.e
+
+        assert not np.isnan(prim).any()
 
         # Convert flux changes into primative changes
         # Matrix A from Holmes (2008) eqn. (A1)
@@ -1170,21 +1172,20 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         Qdn = TCBinv @ Ddn @ BAinv
 
         # Flux differences with relaxation
-        K_mix = 0.1
+        K_mix = 0.4
         DF = ((flux1 - flux2).T)[...,None]
         DF *= -K_mix
         err = flux1
-        print(flux_ref)
         jplot = mix1.nspan//2
-        err = flux1[:jplot]-flux2[:,jplot]
+        err = flux1[:,jplot]-flux2[:,jplot]
         err[0] /= flux1[0,jplot]
         flux_ref = np.max(np.abs(flux1[1:4,jplot]))
         err[1:4] /= flux_ref
         err[4] /= flux1[4,jplot]
-        print(f'Error: {err:.3f}')
+        if plot:
+            logger.info(f'Mixing plane err: {err}')
 
         # Say we have only a mass-flow error
-
 
         # Now calculate changes in conserved variables on each side
         dU_up = (Qup @ DF).squeeze()
@@ -1197,7 +1198,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         dU_dn = dU_dn[:,(0, 3, 1, 2, 4)]
         dU_up[:,3] *= mix1.r
         dU_dn[:,3] *= mix1.r
-        dU_up, dU_dn = dU_dn, dU_up
+        # dU_up, dU_dn = dU_dn, dU_up
 
         # Use the sign of Vs to select which of 1 and 2 are up/downstream
         ind1 = Vs > 0.
@@ -1344,7 +1345,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ)
 
             # Exchange conserved variables across periodic patches
-            exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, 0)
+            exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1791,6 +1792,7 @@ class MixingPlane():
         self.r = Ct.r[:,0]
 
         self.nspan = Ct.shape[0]
+        print(self.nspan)
 
         # Get normal vectors pointing into the domain
         C1 = patch.get_cut(offset=1)
