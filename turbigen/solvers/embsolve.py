@@ -1016,12 +1016,12 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         blk1 = blocks[bid_local[mix1.bid]]
 
         # Get pitchwise-avgeraged conditions on this side
-        flux1, prim1, dirn1 = mix1.get_averages(blk1)
+        flux1, prim1 = mix1.get_averages(blk1)
 
         # Other side same rank
         if mix2.procid == rank:
             blk2 = blocks[bid_local[mix2.bid]]
-            flux2, prim2, dirn2 = mix2.get_averages(blk2)
+            flux2, prim2 = mix2.get_averages(blk2)
 
         # Otherwise, communication is needed
         else:
@@ -1084,7 +1084,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         state.set_rho_u(rho, u)
 
         # Limit the minimum mach number
-        Ma_min = 0.01
+        Ma_min = 0.1
         Vn_min = Ma_min * state.a.mean()
         Vn[np.abs(Vn)<Vn_min] = Vn_min
 
@@ -1161,7 +1161,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
                 (Z, sinpsi, Z, cospsi, Z),
                 (Z, Z, Z, Z, one),
             )
-        ),-1,0)
+        ),-1,0).transpose(0,2,1)
 
         # Assemble the overall transformations
         TCBinv = T @ C @ Binv
@@ -1170,13 +1170,18 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         Qdn = TCBinv @ Ddn @ BAinv
 
         # Flux differences with relaxation
-        K_mix = 0.2
+        K_mix = 0.1
         DF = ((flux1 - flux2).T)[...,None]
         DF *= -K_mix
         err = flux1
-        # print(f'Upstream side: {flux1[:,0]}')
-        # print(f'Downstream side: {flux2[:,0]}')
-        print(f'Error: {flux1[:,0]/flux2[:,0]-1.}')
+        print(flux_ref)
+        jplot = mix1.nspan//2
+        err = flux1[:jplot]-flux2[:,jplot]
+        err[0] /= flux1[0,jplot]
+        flux_ref = np.max(np.abs(flux1[1:4,jplot]))
+        err[1:4] /= flux_ref
+        err[4] /= flux1[4,jplot]
+        print(f'Error: {err:.3f}')
 
         # Say we have only a mass-flow error
 
@@ -1192,26 +1197,21 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         dU_dn = dU_dn[:,(0, 3, 1, 2, 4)]
         dU_up[:,3] *= mix1.r
         dU_dn[:,3] *= mix1.r
+        dU_up, dU_dn = dU_dn, dU_up
 
-        # Check the directions are oppostite at every grid point
-        assert (dirn1+dirn2 == 0.).all()
-        # dirn is positive if flow is into the domain through that side of the
-        # mixing plane
-        in1 = dirn1>0.
-        out1 = dirn1<=0.
-        in2 = dirn2>0.
-        out2 = dirn2<=0.
+        # Use the sign of Vs to select which of 1 and 2 are up/downstream
+        ind1 = Vs > 0.
 
         # Preallocate nodal changes for each side
         dU1 = np.full_like(dU_up, np.nan)
         dU2 = np.full_like(dU_up, np.nan)
 
         # Use the downstream-propagating chics where flow is into the domain
-        dU1[in1,:] = dU_dn[in1,:]
-        dU1[out1,:] = dU_up[out1,:]
-        dU2[in2,:] = dU_dn[in2,:]
-        dU2[out2,:] = dU_up[out2,:]
-        # dU2 *= -1.
+        dU1[ind1,:] = dU_dn[ind1,:]
+        dU1[~ind1,:] = dU_up[~ind1,:]
+        dU2[ind1,:] = dU_up[ind1,:]
+        dU2[~ind1,:] = dU_dn[~ind1,:]
+        dU2 *= -1.
 
         assert not np.isnan(dU1).any()
         assert not np.isnan(dU2).any()
@@ -1852,7 +1852,7 @@ class MixingPlane():
         # Overwrite resolved velocities into primative
         # Warning using the Holmes velocity componend ordering
         Vx[:] = Vs
-        Vr[:] = Vt.copy()
+        Vr[:] = -Vt.copy()
         Vt[:] = Vn
 
         # Form the nodal fluxes of conserved quantities
@@ -1861,7 +1861,7 @@ class MixingPlane():
             (
                 rhoVn,
                 rhoVn*Vs,
-                rhoVn*Vt,
+                rhoVn*-Vt,
                 rhoVn*Vn+P,
                 rhoVn*ho,
             )
@@ -1877,7 +1877,7 @@ class MixingPlane():
 
         # We now have all the information that
         # needs to be exchanged with other side of mixing plane
-        return fluxes_avg, primative_avg, dirn
+        return fluxes_avg, primative_avg
 
 
 

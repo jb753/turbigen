@@ -59,8 +59,8 @@ def make_grid(
     # Numbers of grid points
     AR_pitch = 1.
     AR_merid = 2.
-    nj = 33
-    nk = 17
+    nj = 33+ 8
+    nk = 33
     ni = int(nj * L_h/ AR_merid)
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
@@ -128,12 +128,12 @@ def make_grid(
         b.mu = mu
 
     g[0].Omega = 0.
-    g[1].Omega = Omega
+    g[1].Omega = 0.#Omega
 
     # Initial guess
     for ib, b in enumerate(g):
         b.Vx = Vx
-        b.Vr = 0.0
+        b.Vr = Vx*0.01
         b.Vt = Vt
         b.set_P_T(P1, T1)
     g[1].Vx += Vx*0.01
@@ -146,31 +146,47 @@ def make_grid(
 
 
 settings = {
-    "n_step": 5000,
+    "n_step": 4000,
     "n_step_avg": 1,
     "n_step_log": 100,
     "nstep_damp": -1,
-    # "CFL": 0.0,
+    "damping_factor": 3.,
+    "fmgrid": 0.,
+    # "CFL": 0.1,
     # "i_scheme": 0,
     # "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
 
+def test_CFL_0():
+    """Without any update from the interior, mixing plane should be stable."""
+
+    settings = {
+        "n_step": 2000,
+        "n_step_avg": 1,
+        "n_step_log": 100,
+        "nstep_damp": -1,
+        "CFL": 0.0,
+    }
+    g = make_grid()
+    conf = turbigen.solvers.embsolve.Config(**settings)
+    np.set_printoptions(precision=2)
+    turbigen.solvers.embsolve.run(g, conf)
+
+
 def test_mix_plane():
     """"""
 
     g = make_grid()
-
     np.set_printoptions(precision=2)
-
     turbigen.solvers.embsolve.run(g, conf)
 
-    # # Check To conservation
-    # C1 = g[0][0,:,:]
-    # C2 = g[0][-1,:,:]
-    # C1m, A, _ = C1.mix_out()
-    # C2m, _, _ = C2.mix_out()
-    # print(C1m.To, C2m.To)
+    # Check To conservation
+    C1 = g[0][0,:,:]
+    C2 = g[0][-1,:,:]
+    C1m, A, _ = C1.mix_out()
+    C2m, _, _ = C2.mix_out()
+    print(C1m.To, C2m.To)
 
     # fig, ax = plt.subplots()
     # ax.axis('equal')
@@ -182,5 +198,6 @@ def test_mix_plane():
 
 
 if __name__ == "__main__":
+    # test_CFL_0()
     test_mix_plane()
 
