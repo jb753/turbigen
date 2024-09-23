@@ -222,6 +222,15 @@ settings = {
     "i_loss": 0,
     "plot_conv": True,
 }
+
+settings = {
+    "n_step": 1000,
+    "n_step_avg": 1,
+    "n_step_log": 1,
+    "i_loss": 0,
+    "CFL": 0.,
+}
+
 conf = turbigen.solvers.embsolve.Config(**settings)
 
 def plot_nozzle(g, F):
@@ -549,8 +558,8 @@ def test_To1(To1):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    # plot_nozzle(g,F)
-    # plt.show()
+    plot_nozzle(g,F)
+    plt.show()
 
 
     rtol = 2.5e-4

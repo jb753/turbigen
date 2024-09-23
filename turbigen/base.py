@@ -1599,7 +1599,7 @@ class Composites:
         A = np.stack(
             (
                 (self.Vx, VxVx, VxVr, VxrVt, dE_drho),  # d/rho
-                (self.rho, 2 * self.rhoVx, self.rhoVr, self.rhorVt, dE_dVx),  # d/dVx
+                (self.rho, 2.0 * self.rhoVx, self.rhoVr, self.rhorVt, dE_dVx),  # d/dVx
                 (Z, Z, self.rhoVx, Z, self.rhoVx * self.Vr),  # d/dVr
                 (Z, Z, Z, self.rhoVx * self.r, self.rhoVx * self.Vt),  # d/dVt
                 (Z, one, Z, Z, self.rhoVx * self.dhdP_rho),  # d/dP
@@ -1671,6 +1671,38 @@ class Composites:
         """
 
         return np.linalg.inv(self.primitive_to_bcond())
+
+    def bcond_to_conserved(self, chics):
+
+        # bcond to primitive
+        Yinv = self.bcond_to_primitive()
+
+        # primitive to chic
+        B = self.primitive_to_chic()
+
+        # Selectors for direction of chics
+        # [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
+        # [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+        ni = B.shape[0]
+        if chics == "all":
+            D = np.tile(np.eye(5), (ni, 1, 1))
+        elif chics == "up":
+            D = np.tile(np.diag([1.0, 0.0, 0.0, 0.0, 0.0]), (ni, 1, 1))
+        elif chics == "dn":
+            D = np.tile(np.diag([0.0, 1.0, 1.0, 1.0, 1.0]), (ni, 1, 1))
+
+        # chic to primitive
+        Binv = self.chic_to_primitive()
+
+        # primitive to conserved
+        C = self.primitive_to_conserved()
+
+        # Assemble the complete transformations
+        CBinv = C @ Binv
+        BYinv = B @ Yinv
+        Q = CBinv @ D @ BYinv
+
+        return Q
 
     def resolve_meridional(self, psi):
         """Replace axial and radial components by resolving at angle to axial dirn."""

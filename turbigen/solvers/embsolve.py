@@ -1,5 +1,7 @@
 import numpy as np
 import turbigen.util
+
+util = turbigen.util
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.grid
@@ -352,9 +354,12 @@ class SolverBlock:
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.inlets = [get_inlet_data(patch, self.typ) for patch in block.inlet_patches]
-        self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
-        self.outlets2 = [OutletPlane(patch) for patch in block.outlet_patches]
+        self.bconds = [
+            BoundaryCondition(patch, conf.K_inlet, conf.K_exit)
+            for patch in block.inlet_patches + block.outlet_patches
+        ]
+        # self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
+        # self.outlets2 = [OutletPlane(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
@@ -366,36 +371,36 @@ class SolverBlock:
             self.state.set_rho_u(block.rho, block.u)
             self.state.set_Tu0(block.Tu0)
 
-            self.state_inlets = [
-                turbigen.fluid.PerfectState(
-                    shape=inlet[0].shape, order="F", typ=self.typ
-                )
-                for inlet in self.inlets
-            ]
+            # self.state_inlets = [
+            #     turbigen.fluid.PerfectState(
+            #         shape=inlet[0].shape, order="F", typ=self.typ
+            #     )
+            #     for inlet in self.inlets
+            # ]
 
-            self.state_outlets = [
-                turbigen.fluid.PerfectState(
-                    shape=outlet[0].shape, order="F", typ=self.typ
-                )
-                for outlet in self.outlets
-            ]
+            # self.state_outlets = [
+            #     turbigen.fluid.PerfectState(
+            #         shape=outlet[0].shape, order="F", typ=self.typ
+            #     )
+            #     for outlet in self.outlets
+            # ]
 
         else:
             raise NotImplementedError()
 
-        # Preallocate stored inlet density
-        for inlet, state_inlet in zip(self.inlets, self.state_inlets):
-            state_inlet._metadata = block._metadata
-            rho_inlet = block.rho.ravel(order="F")[inlet[0]]
-            u_inlet = block.u.ravel(order="F")[inlet[0]]
-            state_inlet.set_rho_u(rho_inlet, u_inlet)
+        # # Preallocate stored inlet density
+        # for inlet, state_inlet in zip(self.inlets, self.state_inlets):
+        #     state_inlet._metadata = block._metadata
+        #     rho_inlet = block.rho.ravel(order="F")[inlet[0]]
+        #     u_inlet = block.u.ravel(order="F")[inlet[0]]
+        #     state_inlet.set_rho_u(rho_inlet, u_inlet)
 
-        # Initialise  outlet states
-        for outlet, state_outlet in zip(self.outlets, self.state_outlets):
-            state_outlet._metadata = block._metadata
-            rho_out = block.rho.ravel(order="F")[outlet[0]]
-            u_out = block.u.ravel(order="F")[outlet[0]]
-            state_outlet.set_rho_u(rho_out, u_out)
+        # # Initialise  outlet states
+        # for outlet, state_outlet in zip(self.outlets, self.state_outlets):
+        #     state_outlet._metadata = block._metadata
+        #     rho_out = block.rho.ravel(order="F")[outlet[0]]
+        #     u_out = block.u.ravel(order="F")[outlet[0]]
+        #     state_outlet.set_rho_u(rho_out, u_out)
 
         del to_fort
 
@@ -605,8 +610,6 @@ class SolverBlock:
 
                 # Extract the cons vars from solution
                 rho = self.cons[..., 0].ravel(order="F")[ind]
-                print(rho.base is self.cons)
-                quit()
                 rhoVx = self.cons[..., 1].ravel(order="F")[ind]
                 rhoVr = self.cons[..., 2].ravel(order="F")[ind]
                 rhorVt = self.cons[..., 3].ravel(order="F")[ind]
@@ -898,9 +901,10 @@ def get_periodic_data(patch):
 
     return bid, ijk, ijkf, d, nxbid, nxijk, nxijkf, nxd
 
+
 def get_mixers(grid, procids):
-    mixers=[]
-    seen=[]
+    mixers = []
+    seen = []
     for patch in grid.mixing_patches:
         if patch in seen:
             continue
@@ -909,7 +913,7 @@ def get_mixers(grid, procids):
             seen.append(patch.match)
         bid = patch.block.grid.index(patch.block)
         nxbid = patch.match.block.grid.index(patch.match.block)
-        procid =  procids[bid]
+        procid = procids[bid]
         nxprocid = procids[nxbid]
         mix_now = (
             MixingPlane(patch, bid, procid),
@@ -1011,6 +1015,7 @@ def send_slave(block_split, procids, periodics, mixers):
 
     comm.Barrier()
 
+
 def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 
     # Update periodic boundaries
@@ -1068,7 +1073,6 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         #     ax[1].set_title('Vs')
         #     ax[2].set_title('Vt')
 
-
         #     fig, ax = plt.subplots(1,5,layout='constrained')
         #     titles = ['rho', 'rhoVx', 'rhoVr', 'rhorVt', 'rhoe']
         #     for i in range(5):
@@ -1084,7 +1088,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         assert not np.isnan(prim2).any()
 
         # Form the side-averaged flow conditions
-        rho, u, Vs, Vt, Vn, _, _ = prim = 0.5*(prim1+prim2)
+        rho, u, Vs, Vt, Vn, _, _ = prim = 0.5 * (prim1 + prim2)
 
         # Update the thermodynamic state
         state.set_rho_u(rho, u)
@@ -1092,7 +1096,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Limit the minimum mach number
         Ma_min = 0.1
         Vn_min = Ma_min * state.a.mean()
-        Vn[np.abs(Vn)<Vn_min] = Vn_min
+        Vn[np.abs(Vn) < Vn_min] = Vn_min
 
         # Update the interface velocities
         state.Vxrt = [Vs, Vt, Vn]
@@ -1106,69 +1110,90 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         a = state.a
         e = state.e
 
-
         # Convert flux changes into primative changes
         # Matrix A from Holmes (2008) eqn. (A1)
-        rhoVn = rho*Vn
+        rhoVn = rho * Vn
         Z = np.zeros_like(rho)
         one = np.ones_like(rho)
-        A = np.moveaxis(np.stack(
-            (
-                (Vn                , Z       , Z       , rho              , Z         ),
-                (Vn*Vs             , rhoVn   , Z       , rho*Vs           , Z         ),
-                (Vn*Vt             , Z       , rhoVn   , rho*Vt           , Z         ),
-                (Vn**2             , Z       , Z       , 2.*rhoVn         , one       ),
-                (Vn*ho+rhoVn*dhdrho, rhoVn*Vs, rhoVn*Vt, rho*ho + rhoVn*Vn, rhoVn*dhdP),
-            )
-        ),-1,0)
+        A = np.moveaxis(
+            np.stack(
+                (
+                    (Vn, Z, Z, rho, Z),
+                    (Vn * Vs, rhoVn, Z, rho * Vs, Z),
+                    (Vn * Vt, Z, rhoVn, rho * Vt, Z),
+                    (Vn**2, Z, Z, 2.0 * rhoVn, one),
+                    (
+                        Vn * ho + rhoVn * dhdrho,
+                        rhoVn * Vs,
+                        rhoVn * Vt,
+                        rho * ho + rhoVn * Vn,
+                        rhoVn * dhdP,
+                    ),
+                )
+            ),
+            -1,
+            0,
+        )
         Ainv = np.linalg.inv(A)
 
         # Convert primative changes to characteristic changes
         # Matrix B from Holmes (2008) eqn. (A3-4)
-        asqi = 1./a**2
+        asqi = 1.0 / a**2
         asq = a**2
-        rhoa = rho*a
-        rhoai = 1./rho/a
-        B = np.moveaxis(np.stack(
-            (
-                (-asq, Z, Z, Z, one),
-                (Z, rhoa, Z, Z, Z),
-                (Z, Z, rhoa, Z, Z),
-                (Z, Z, Z, rhoa, one),
-                (Z, Z, Z, -rhoa, one),
-            )
-        ),-1,0)
+        rhoa = rho * a
+        rhoai = 1.0 / rho / a
+        B = np.moveaxis(
+            np.stack(
+                (
+                    (-asq, Z, Z, Z, one),
+                    (Z, rhoa, Z, Z, Z),
+                    (Z, Z, rhoa, Z, Z),
+                    (Z, Z, Z, rhoa, one),
+                    (Z, Z, Z, -rhoa, one),
+                )
+            ),
+            -1,
+            0,
+        )
         Binv = np.linalg.inv(B)
 
         # Convert primative to conserved perturbations
         # Matrix C from Holmes (2008) eqn. (A5-6)
-        C = np.moveaxis(np.stack(
-            (
-                (one, Z, Z, Z ,Z),
-                (Vs, rho, Z, Z ,Z),
-                (Vt, Z, rho, Z ,Z),
-                (Vn, Z, Z, rho ,Z),
-                (e + rho*dudrho , rho*Vs, rho*Vt, rho*Vn ,rho*dudP),
-            )
-        ),-1,0)
+        C = np.moveaxis(
+            np.stack(
+                (
+                    (one, Z, Z, Z, Z),
+                    (Vs, rho, Z, Z, Z),
+                    (Vt, Z, rho, Z, Z),
+                    (Vn, Z, Z, rho, Z),
+                    (e + rho * dudrho, rho * Vs, rho * Vt, rho * Vn, rho * dudP),
+                )
+            ),
+            -1,
+            0,
+        )
         Cinv = np.linalg.inv(C)
 
         # Select which characteristics to keep
-        Dup = np.diag([0,0,0,1,0])[None,...]
-        Ddn = np.diag([1,1,1,0,1])[None,...]
+        Dup = np.diag([0, 0, 0, 1, 0])[None, ...]
+        Ddn = np.diag([1, 1, 1, 0, 1])[None, ...]
 
         # Resolve to rtx
         cospsi = mix1.cospsi.squeeze()
         sinpsi = mix1.sinpsi.squeeze()
-        T = np.moveaxis(np.stack(
-            (
-                (one, Z, Z, Z, Z),
-                (Z, cospsi, Z, -sinpsi, Z),
-                (Z, Z, one, Z, Z),
-                (Z, sinpsi, Z, cospsi, Z),
-                (Z, Z, Z, Z, one),
-            )
-        ),-1,0).transpose(0,2,1)
+        T = np.moveaxis(
+            np.stack(
+                (
+                    (one, Z, Z, Z, Z),
+                    (Z, cospsi, Z, -sinpsi, Z),
+                    (Z, Z, one, Z, Z),
+                    (Z, sinpsi, Z, cospsi, Z),
+                    (Z, Z, Z, Z, one),
+                )
+            ),
+            -1,
+            0,
+        ).transpose(0, 2, 1)
 
         # Assemble the overall transformations
         TCBinv = T @ C @ Binv
@@ -1178,17 +1203,17 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 
         # Flux differences with relaxation
         K_mix = 0.1
-        DF = ((flux1 - flux2).T)[...,None]
+        DF = ((flux1 - flux2).T)[..., None]
         DF *= -K_mix
         err = flux1
-        jplot = mix1.nspan//2
-        err = flux1[:,jplot]-flux2[:,jplot]
-        err[0] /= flux1[0,jplot]
-        flux_ref = np.max(np.abs(flux1[1:4,jplot]))
+        jplot = mix1.nspan // 2
+        err = flux1[:, jplot] - flux2[:, jplot]
+        err[0] /= flux1[0, jplot]
+        flux_ref = np.max(np.abs(flux1[1:4, jplot]))
         err[1:4] /= flux_ref
-        err[4] /= flux1[4,jplot]
+        err[4] /= flux1[4, jplot]
         if plot:
-            logger.info(f'Mixing plane err: {err}')
+            logger.info(f"Mixing plane err: {err}")
 
         # Say we have only a mass-flow error
 
@@ -1199,25 +1224,25 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Holmes uses conseved vars [rho, rhoVr, rhoVt, rhoVx, rhoE]
         # We use conseved vars [rho, rhoVx, rhoVr, rhorVt, rhoE]
         # And left-handed coordinate system
-        dU_up = dU_up[:,(0, 3, 1, 2, 4)]
-        dU_dn = dU_dn[:,(0, 3, 1, 2, 4)]
-        dU_up[:,3] *= mix1.r
-        dU_dn[:,3] *= mix1.r
+        dU_up = dU_up[:, (0, 3, 1, 2, 4)]
+        dU_dn = dU_dn[:, (0, 3, 1, 2, 4)]
+        dU_up[:, 3] *= mix1.r
+        dU_dn[:, 3] *= mix1.r
         # dU_up, dU_dn = dU_dn, dU_up
 
         # Use the sign of Vs to select which of 1 and 2 are up/downstream
-        ind1 = Vs > 0.
+        ind1 = Vs > 0.0
 
         # Preallocate nodal changes for each side
         dU1 = np.full_like(dU_up, np.nan)
         dU2 = np.full_like(dU_up, np.nan)
 
         # Use the downstream-propagating chics where flow is into the domain
-        dU1[ind1,:] = dU_dn[ind1,:]
-        dU1[~ind1,:] = dU_up[~ind1,:]
-        dU2[ind1,:] = dU_up[ind1,:]
-        dU2[~ind1,:] = dU_dn[~ind1,:]
-        dU2 *= -1.
+        dU1[ind1, :] = dU_dn[ind1, :]
+        dU1[~ind1, :] = dU_up[~ind1, :]
+        dU2[ind1, :] = dU_up[ind1, :]
+        dU2[~ind1, :] = dU_dn[~ind1, :]
+        dU2 *= -1.0
 
         assert not np.isnan(dU1).any()
         assert not np.isnan(dU2).any()
@@ -1228,6 +1253,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Now apply to each side
         mix1.perturb_conserved(blk1, dU1)
         mix2.perturb_conserved(blk2, dU2)
+
 
 def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
 
@@ -1310,7 +1336,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
     # Rearrange mixers so that foreign is always second
     for mix1, mix2, _ in mixers:
         # Swap around if needed
-        if mix2.procid == rank and not mix1.procid==rank:
+        if mix2.procid == rank and not mix1.procid == rank:
             mix2, mix1 = mix1, mix2
 
     bids = [b.bid for b in blocks]
@@ -1336,6 +1362,9 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
         typ = blocks[0].typ
         mpi_typ = blocks[0].mpi_typ
 
+        for iblock in range(nblock):
+            blocks[iblock].set_secondary()
+
         # Start the main time stepping loop
         for istep in range(conf.n_step):
 
@@ -1348,12 +1377,8 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             # Exchange conserved variables across periodic patches
             exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ)
 
-            for iblock in range(nblock):
-                sb = blocks[iblock]
-                sb.set_secondary()
-
             # Exchange conserved variables across periodic patches
-            exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
+            # exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1370,8 +1395,10 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                     sb.set_timestep(conf.CFL * cfl_ramp)
 
                 # Apply boundary conditions
-                sb.set_inlets(rfin, conf.i_inlet, K_inlet)
-                sb.set_outlets(conf.i_exit, K_exit)
+                for bc in sb.bconds:
+                    bc.apply(sb)
+                # sb.set_inlets(rfin, conf.i_inlet, K_inlet)
+                # sb.set_outlets(conf.i_exit, K_exit)
 
                 # If this is a viscous calculation
                 # Update the viscous forces every nloss time steps
@@ -1406,67 +1433,10 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
 
             # Intermittently print convergence
             if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
-                # Inlet mass-avg props
-                mdot1 = 0.0
-                s1 = 0.0
-                ho1 = 0.0
-                h1 = 0.0
-                A1 = 0.0
-                for sb in blocks:
-                    for patch in sb.inlets:
-                        ind, _, _, _, _, _, _, _, _, wA = patch
-                        rhoVxrt = np.stack(
-                            (
-                                sb.cons[:, :, :, 1].ravel(order="F")[ind],
-                                sb.cons[:, :, :, 2].ravel(order="F")[ind],
-                                sb.cons[:, :, :, 3].ravel(order="F")[ind],
-                            )
-                        )
-                        s = sb.state.s.ravel(order="F")[ind]
-                        h = sb.state.h.ravel(order="F")[ind]
-                        ho = sb.ho.ravel(order="F")[ind]
-                        mdotnow = (wA * rhoVxrt).sum()
-                        mdot1 += mdotnow * sb.Nb
-                        s1 += (wA * rhoVxrt * s).sum()
-                        ho1 += (wA * rhoVxrt * ho).sum()
-                        h1 += (wA * h).sum()
-                        A1 += wA.sum()
-
-                # Outlet mass-avg props
-                mdot2 = 0.0
-                s2 = 0.0
-                ho2 = 0.0
-                h2 = 0.0
-                A2 = 0.0
-                T2 = 0.0
-                for sb in blocks:
-                    for patch, state in zip(sb.outlets, sb.state_outlets):
-                        ind, _, wA, _, _ = patch
-                        rhoVxrt = np.stack(
-                            (
-                                sb.cons[:, :, :, 1].ravel(order="F")[ind],
-                                sb.cons[:, :, :, 2].ravel(order="F")[ind],
-                                sb.cons[:, :, :, 3].ravel(order="F")[ind],
-                            )
-                        )
-                        s = state.s
-                        ho = sb.ho.ravel(order="F")[ind]
-                        T = state.T
-                        h = state.h
-                        mdotnow = (wA * rhoVxrt).sum()
-                        mdot2 += mdotnow * sb.Nb
-                        s2 += (wA * rhoVxrt * s).sum()
-                        ho2 += (wA * rhoVxrt * ho).sum()
-                        T2 += (wA * T).sum()
-                        h2 += (wA * h).sum()
-                        A2 += wA.sum()
-
-                mhs = np.array([mdot1, ho1, s1, mdot2, ho2, s2, h1, h2, A1, A2, T2])
 
                 # Send residuals to master proc
                 if rank:
                     comm.send(dUnow, dest=0)
-                    comm.send(mhs, dest=0)
 
                 else:
                     dUall = [
@@ -1474,24 +1444,8 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                     ]
                     for iproc in range(1, size):
                         dUall.append(comm.recv(source=iproc))
-                        mhs += comm.recv(source=iproc)
 
                     dUall = np.concatenate(dUall, axis=1)
-
-                    with np.errstate(divide="ignore", invalid="ignore"):
-
-                        # Mass weight all inlet/exits
-                        mhs[1:3] /= mhs[0]
-                        mhs[4:6] /= mhs[3]
-                        merr = (mhs[3] / mhs[0] - 1.0) * 100.0
-                        merrlog.append(merr)
-
-                        # Area weight static enthalpy
-                        mhs[6] /= mhs[8]
-                        mhs[7] /= mhs[9]
-                        mhs[10] /= mhs[9]
-                        Ys = mhs[10] * (mhs[5] - mhs[2]) / (mhs[4] - mhs[7])
-                    Yslog.append(Ys)
 
                     ten = timer()
                     tpnps = (ten - tstart) / nodes / conf.n_step_log
@@ -1499,11 +1453,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
 
                     if conf.print_conv:
                         logger.info(f"{istep}: tpnps={tpnps:.3e}")
-                        logger.info(
-                            "  Mass in, out, err = "
-                            f"{mhs[0]:.1e} / {mhs[3]:.1e} / {merr:.1f}%"
-                        )
-                        logger.info(f"   Ys = {Ys:.3e}")
                         for ib, dU in enumerate(dUall.mean(axis=0)):
                             logger.info(
                                 f"  block {ib}: "
@@ -1553,7 +1502,6 @@ def run(grid, conf, machine=None):
     # procids is a list of length nblocks, of which processor is alocated to each block
     procids = grid.partition(size)
     periodics = get_periodics(grid, procids)
-    print(procids)
 
     mixers = get_mixers(grid, procids)
 
@@ -1773,15 +1721,145 @@ def get_multigrid_lengths(block, nb, typ):
 
     return dlmg
 
-class OutletPlane():
-    def __init__(self, patch):
 
+class BoundaryCondition:
+    """Store FlowField for a domain boundary, force to a target using chics."""
+
+    def __init__(self, patch, K_inlet, K_outlet):
+        """Set up the boundary condition using a patch object."""
+
+        # Save under-relaxation factors
+        self.K_inlet = K_inlet
+        self.K_outlet = K_outlet
+
+        # Store slicing data for this patch so we can exchange
+        # information with the block on which the patch resides
         self.slice = patch.get_slice()
+
+        # Preallocate a working fluid object for all nodes on patch
         self.state = patch.block[self.slice].copy()
+        self.shape = self.state.shape
 
-    def
-class MixingPlane():
+        # Preallocate an array for target boundary condition vars
+        # [ho, s, tanAlpha, tanBeta, P].
+        self.bcond_target = np.full((5,) + self.shape, np.nan)
 
+        # Set up the target flow on this patch (inlet, outlet, or mixing)
+        if isinstance(patch, turbigen.grid.InletPatch):
+
+            self.kind = "inlet"
+
+            # Inlet: uniform ho, s, angles from the
+            # patch stagnation state
+            self.bcond_target[0] = patch.state.h
+            self.bcond_target[1] = patch.state.s
+            self.bcond_target[2] = util.tand(patch.Alpha)
+            self.bcond_target[3] = util.tand(patch.Beta)
+
+        elif isinstance(patch, turbigen.grid.OutletPatch):
+
+            self.kind = "outlet"
+
+            # Outlet: uniform P
+            self.bcond_target[4] = patch.Pout
+
+    def apply(self, block):
+        """Get flow from block, drive to targets, then put back."""
+        self.pull(block)
+        self.force()
+        self.push(block)
+
+    def pull(self, block):
+        """Update stored state using solution from parent block."""
+
+        # Extract the variables we need at all nodes on patch
+        rho = block.cons[self.slice][..., 0]
+        u = block.u[self.slice]
+        self.state.set_rho_u(rho, u)
+
+        # Note that the solver blocks use Fortran axis order
+        # So that Vx = Vxrt[...,0] is contiguous
+        # This is opposite to the C axis order used within state objects
+        # So we have to move the velocity component axis to first posn
+        self.state.Vxrt = np.moveaxis(block.Vxrt[self.slice], -1, 0)
+
+    def push(self, block):
+        """Send stored state back to the parent block."""
+
+        # Set the conserved variables
+        # Note we put variable axis last to comply with Fortran
+        block.cons[self.slice][..., 0] = self.state.rho
+        block.cons[self.slice][..., 1] = self.state.rhoVx
+        block.cons[self.slice][..., 2] = self.state.rhoVr
+        block.cons[self.slice][..., 3] = self.state.rhorVt
+        block.cons[self.slice][..., 4] = self.state.rhoe
+
+        # Assuming that the secondary vars for interior grid points
+        # have already been calculated, we must update them on this
+        # boundary too
+        block.u[self.slice] = self.state.u
+        block.P[self.slice] = self.state.P
+        block.T[self.slice] = self.state.T
+        block.ho[self.slice] = self.state.ho
+        # Note we put variable axis last to comply with Fortran
+        block.Vxrt[self.slice] = np.moveaxis(self.state.Vxrt, 0, -1)
+
+    def force(self):
+        """Apply characteristic perturbations to drive flow towards targets."""
+
+        # Operate on a flattened view of the patch
+        state = self.state.to_unstructured()
+        bcond_target = self.bcond_target.reshape(5, -1)
+
+        # Preallocate boundary condition change vector in correct shape
+        # for the later matmul with Q [npts, 5, 1]
+        print(self.kind)
+        print("target bcond", bcond_target[:, 0])
+        print("current bcond", state.bcond[:, 0])
+        dbcond = (bcond_target - state.bcond).T[..., None]
+        print("err bcond", dbcond[0, :, :].squeeze())
+
+        # On an outlet we want to move P but keep other bcond vars same
+        dbcond_outlet = dbcond.copy()
+        dbcond_outlet[:, :4, :] = 0.0
+
+        # On an inlet we want to match ho, s, Alpha, Beta but no change in P
+        dbcond_inlet = dbcond.copy()
+        dbcond_inlet[:, 4, :] = 0.0
+
+        # Get matrices to convert dbcond to conserved changes
+        # Limit the minimum velocities for the transformation matrix
+        Ma_min = 0.01
+        V_min = state.a.mean() * Ma_min
+        state.Vxrt[np.abs(state.Vxrt) < V_min] = V_min
+
+        Qup = state.bcond_to_conserved(chics="up")
+        Qdn = state.bcond_to_conserved(chics="dn")
+
+        # Get conserved perturbations on inlet using downstream-running chics
+        # Get conserved perturbations on outlet using upstream-running chics
+        dcons_inlet = 0.1 * self.K_inlet * (Qdn @ dbcond_inlet).squeeze().T
+        dcons_outlet = 0.1 * self.K_outlet * (Qup @ dbcond_outlet).squeeze().T
+
+        # Assemble the actual conserved changes
+        # This routine makes no assumptions about which nodes are inlet or outlet
+        # to cope with reversed flow over mixing plane. So Select which kind of
+        # boundary condition by looking for NaN in static P target array
+        ind_inlet = np.isnan(bcond_target[4])
+        dcons = np.full_like(dcons_inlet, np.nan)
+        dcons[:, ind_inlet] = dcons_inlet[:, ind_inlet]
+        dcons[:, ~ind_inlet] = dcons_outlet[:, ~ind_inlet]
+
+        # Every node should be either an inlet or an outlet
+        print("dcons", np.sum(ind_inlet), dcons[:, 0])
+        assert not np.isnan(dcons).any()
+
+        # Assign new conserved back to the stored state
+        cons_new = (state.conserved + dcons).reshape((5,) + self.shape)
+        self.state.set_conserved(cons_new)
+
+
+class MixingPlane:
     def __init__(self, patch, bid, procid):
 
         self.bid = bid
@@ -1796,14 +1874,14 @@ class MixingPlane():
         # first axis is spanwise, second axis is pitchwise
         C = patch.get_cut()
         xrt = C.xrt
-        ax_theta = np.argmax([np.ptp(C.t,axis=n).mean() for n in range(3)]).item()
-        ax_stream = np.argmax(np.array(C.shape)==1).item()
+        ax_theta = np.argmax([np.ptp(C.t, axis=n).mean() for n in range(3)]).item()
+        ax_stream = np.argmax(np.array(C.shape) == 1).item()
         ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
         self.order = (ax_stream, ax_span, ax_theta)
         Ct = C.copy()
         Ct.transpose(self.order)
         Ct = Ct.squeeze()
-        self.r = Ct.r[:,0]
+        self.r = Ct.r[:, 0]
 
         self.nspan = Ct.shape[0]
 
@@ -1812,20 +1890,20 @@ class MixingPlane():
         C1.transpose(self.order)
         C1 = C1.squeeze()
         dxr = C1.xr - Ct.xr
-        self.normal = np.mean(dxr / turbigen.util.vecnorm(dxr),axis=-1)
+        self.normal = np.mean(dxr / turbigen.util.vecnorm(dxr), axis=-1)
 
         # Check that theta gridlines are at constant x and r
         Lref = np.maximum(np.ptp(Ct.x), np.ptp(Ct.r))
         rtol = 1e-3
-        assert (np.ptp(Ct.x, axis=1)/Lref < rtol).all()
-        assert (np.ptp(Ct.r, axis=1)/Lref < rtol).all()
+        assert (np.ptp(Ct.x, axis=1) / Lref < rtol).all()
+        assert (np.ptp(Ct.r, axis=1) / Lref < rtol).all()
 
         # Work out nodal interface angle
-        self.psi = turbigen.util.angle_curve_node(Ct[:,0].xr) - 90.
-        self.cospsi = turbigen.util.cosd(self.psi)[:,None]
-        self.sinpsi = turbigen.util.sind(self.psi)[:,None]
+        self.psi = turbigen.util.angle_curve_node(Ct[:, 0].xr) - 90.0
+        self.cospsi = turbigen.util.cosd(self.psi)[:, None]
+        self.sinpsi = turbigen.util.sind(self.psi)[:, None]
 
-        self.pitch = Ct.pitch+0.
+        self.pitch = Ct.pitch + 0.0
         self.dt = np.diff(Ct.t, axis=1)
 
         # Store initial guess of pitchwise-uniform boundary condition vars
@@ -1838,23 +1916,22 @@ class MixingPlane():
     def get_primative(self, block):
         """Extract the primative variables on mixing patch.
         Always comes out indexed [variable, spanwise, pitchwise]"""
-        rho = block.cons[self.slice][...,0].transpose(self.order).squeeze()
+        rho = block.cons[self.slice][..., 0].transpose(self.order).squeeze()
         u = block.u[self.slice].transpose(self.order).squeeze()
         P = block.P[self.slice].transpose(self.order).squeeze()
         ho = block.ho[self.slice].transpose(self.order).squeeze()
-        Vxrt = block.Vxrt[self.slice].transpose((3,)+ self.order).squeeze()
+        Vxrt = block.Vxrt[self.slice].transpose((3,) + self.order).squeeze()
         return np.stack((rho, u, *Vxrt, P, ho))
 
     def pitchwise_average(self, y):
         # Along the final axis
-        return 0.5*np.sum((y[...,1:]+y[...,:-1])*self.dt, axis=-1)/self.pitch
+        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
     def perturb_conserved(self, block, dU):
         """Extract the primative variables on mixing patch.
         Always comes out indexed [variable, spanwise, pitchwise]"""
         cons = block.cons[self.slice].transpose(self.order + (3,))
-        cons += dU[None,:,None,:]
-
+        cons += dU[None, :, None, :]
 
     def get_averages(self, block):
         """Extract fluxes to be conserved across the mixing plane."""
@@ -1864,8 +1941,8 @@ class MixingPlane():
         rho, u, Vx, Vr, Vt, P, ho = primative
 
         # Resolve velocity spanwise and normal to interface
-        Vn = Vx*self.cospsi + Vr*self.sinpsi
-        Vs = -Vx*self.sinpsi + Vr*self.cospsi
+        Vn = Vx * self.cospsi + Vr * self.sinpsi
+        Vs = -Vx * self.sinpsi + Vr * self.cospsi
 
         # Overwrite resolved velocities into primative
         # Warning using the Holmes velocity componend ordering
@@ -1874,14 +1951,14 @@ class MixingPlane():
         Vt[:] = Vn
 
         # Form the nodal fluxes of conserved quantities
-        rhoVn = rho*Vn
+        rhoVn = rho * Vn
         fluxes = np.stack(
             (
                 rhoVn,
-                rhoVn*Vs,
-                rhoVn*Vt,
-                rhoVn*Vn+P,
-                rhoVn*ho,
+                rhoVn * Vs,
+                rhoVn * Vt,
+                rhoVn * Vn + P,
+                rhoVn * ho,
             )
         )
 
@@ -1896,7 +1973,3 @@ class MixingPlane():
         # We now have all the information that
         # needs to be exchanged with other side of mixing plane
         return fluxes_avg, primative_avg
-
-
-
-def primative_to_conserved(flow):

@@ -434,48 +434,71 @@ def test_matrices():
     F.Vxrt = [[100.],[200.],[50.]]
     F.set_P_T(1e5, 300.)
     F2 = F.copy()
-    dprim = F.prim*1e-3
-    F2.set_prim(F.prim+dprim)
 
+    mag = 1e-4
     tol = 1e-2
+    perturbations = [
+        [1., 0., 0., 0., 0.],
+        [0., 1., 0., 0., 0.],
+        [0., 0., 1., 0., 0.],
+        [0., 0., 0., 0., 1.],
+        [1., 1., 1., 1., 1.],
+        [-1., -1., -1., -1., -1.],
+        [-0.7, 0.9, -0.7, 0.8, 1.],
+        [-1.2, 3.5, -.7, 4.1, 2.2],
+    ]
 
-    # Check conserved
-    dcons = F2.conserved - F.conserved
-    C = F.primitive_to_conserved()
-    Cinv = F.conserved_to_primitive()
-    assert np.allclose(dcons, C@dprim,rtol=tol)
-    assert np.allclose(dprim, Cinv@dcons,rtol=tol)
+    for fac_prim in perturbations:
 
-    # Manually calculate chic vector
-    dp = F2.P-F.P
-    dVx = F2.Vx-F.Vx
-    dVr = F2.Vr-F.Vr
-    dVt = F2.Vt-F.Vt
-    drho = F2.rho-F.rho
-    a = 0.5*(F2.a+F.a)
-    rho = 0.5*(F2.rho+F.rho)
-    dchic = [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a**2)*drho]
+        dprim = F.prim*np.array(fac_prim)[...,None]*mag
+        F2.set_prim(F.prim+dprim)
 
-    # Check chic
-    B = F.primitive_to_chic()
-    Binv = F.chic_to_primitive()
-    assert np.allclose(dchic, B@dprim, rtol=tol)
-    assert np.allclose(dprim, Binv@dchic, rtol=tol)
+        # Check conserved
+        dcons = F2.conserved - F.conserved
+        C = F.primitive_to_conserved()
+        Cinv = F.conserved_to_primitive()
+        assert np.allclose(dcons, C@dprim,rtol=tol)
 
-    # Check fluxes
-    dflux = F2.fluxes - F.fluxes
-    A = F.primitive_to_flux()
-    Ainv = F.flux_to_primitive()
-    assert np.allclose(dflux, A@dprim, rtol=tol)
-    assert np.allclose(dprim, Ainv@dflux, rtol=tol)
+        # Manually calculate chic vector
+        dp = F2.P-F.P
+        dVx = F2.Vx-F.Vx
+        dVr = F2.Vr-F.Vr
+        dVt = F2.Vt-F.Vt
+        drho = F2.rho-F.rho
+        a = 0.5*(F2.a+F.a)
+        rho = 0.5*(F2.rho+F.rho)
+        dchic = [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a**2)*drho]
 
-    # Check bcond
-    dbcond = F2.bcond - F.bcond
-    Y = F.primitive_to_bcond()
-    Yinv = F.bcond_to_primitive()
-    assert np.allclose(dbcond, Y@dprim, rtol=tol)
-    assert np.allclose(dprim, Yinv@dbcond, rtol=tol)
+        # Check chic
+        B = F.primitive_to_chic()
+        Binv = F.chic_to_primitive()
+        assert np.allclose(dchic, B@dprim, rtol=tol)
+
+        # Check fluxes
+        dflux = F2.fluxes - F.fluxes
+        A = F.primitive_to_flux()
+        Ainv = F.flux_to_primitive()
+        assert np.allclose(dflux, A@dprim, rtol=tol)
+
+        # Check bcond
+        dbcond = F2.bcond - F.bcond
+        Y = F.primitive_to_bcond()
+        Yinv = F.bcond_to_primitive()
+        assert np.allclose(dbcond, Y@dprim, rtol=tol)
+
+        # Check inverses if no zeros in dprim
+        if not (dprim.squeeze()==0.).any():
+            assert np.allclose(dprim, Yinv@dbcond, rtol=tol)
+            assert np.allclose(dprim, Ainv@dflux, rtol=tol)
+            assert np.allclose(dprim, Binv@dchic, rtol=tol)
+            assert np.allclose(dprim, Cinv@dcons,rtol=tol)
+
+        # Check full transformation
+        Q = F.bcond_to_conserved(chics='all')
+        dcons_Q = Q @ dbcond
+        if not (dcons.squeeze()==0.).any():
+            assert np.allclose(dcons, dcons_Q, rtol=tol)
 
 if __name__=='__main__':
-    np.set_printoptions(precision=2)
+    # np.set_printoptions(precision=2)
     test_matrices()
