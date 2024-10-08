@@ -5,17 +5,15 @@ import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.util
 import numpy as np
-from timeit import default_timer as timer
 from copy import copy
-import sys
 from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
 import pytest
 
+
 def make_nozzle(
     xnAR,
     L_h=4.0,
-    AR_merid=2.0,
     AR_pitch=1.0,
     skew=0.0,
     htr=0.99,
@@ -24,9 +22,9 @@ def make_nozzle(
     Alpha=0.0,
     tper=False,
     Ma1=0.3,
-    rpm=0.,
-    Tu0=300.,
-    To1=300.,
+    rpm=0.0,
+    Tu0=300.0,
+    To1=300.0,
 ):
     """Generate the grid."""
 
@@ -46,25 +44,23 @@ def make_nozzle(
     To1 = To1
 
     # Rotating reference frame
-    Omega = rpm / 60. * np.pi * 2.
-    U = Omega*rm
+    Omega = rpm / 60.0 * np.pi * 2.0
+    U = Omega * rm
 
     # Set inlet Ma to get inlet static state
-    rgas = cp * (ga - 1.0) / ga
     V = cf.V_cpTo_from_Ma(Ma1, ga) * np.sqrt(cp * To1)
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
 
     # Relative flow angle
     Vt = V * np.sin(np.radians(Alpha))
-    Vx = V * np.cos(np.radians(Alpha))
     Vt_rel = Vt - U
     Alpha_rel = np.degrees(np.arctan2(Vt_rel, V))
 
     # Numbers of grid points
     nj = 17
     nk = 17
-    ni = int(nj * L_h-3)
+    ni = int(nj * L_h - 3)
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
@@ -83,15 +79,15 @@ def make_nozzle(
     fac_A = pchip_interpolate(*xnAR, xv / L)
 
     # Add on radius change
-    if not xnRR is None:
+    if xnRR is not None:
         fac_R = pchip_interpolate(*xnRR, xv / L)
         xrt[1] *= np.expand_dims(fac_R, (1, 2))
         fac_A /= fac_R
 
     # Sentinel of None means skew along flow direction
     if skew is None:
-        skew_max = 30.
-        skew = np.clip(-Alpha_rel,-skew_max, skew_max)
+        skew_max = 30.0
+        skew = np.clip(-Alpha_rel, -skew_max, skew_max)
 
     # Apply skew
     xrt[2] += xrt[0] * np.tan(np.radians(skew)) / xrt[1]
@@ -110,7 +106,6 @@ def make_nozzle(
     ienb[-1] = ni
 
     for iblock in range(nblock):
-
         # Special case for only one block
         if nblock == 1:
             patches = [
@@ -198,17 +193,16 @@ def make_nozzle(
     F.t = 0.0
     F.set_Tu0(Tu0)
 
-    Ve = np.expand_dims(V,(1,2))
-    Te = np.expand_dims(T,(1,2))
-    Pe = np.expand_dims(P,(1,2))
+    Ve = np.expand_dims(V, (1, 2))
+    Te = np.expand_dims(T, (1, 2))
+    Pe = np.expand_dims(P, (1, 2))
 
     # Initial guess
     for ib, b in enumerate(g):
-        b.Vx = Ve[istb[ib]:ienb[ib]]
+        b.Vx = Ve[istb[ib] : ienb[ib]]
         b.Vr = 0.0
-        b.Vt = Ve[istb[ib]:ienb[ib]] * np.tan(np.radians(Alpha))
-        b.set_P_T(Pe[istb[ib]:ienb[ib]], Te[istb[ib]:ienb[ib]])
-
+        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha))
+        b.set_P_T(Pe[istb[ib] : ienb[ib]], Te[istb[ib] : ienb[ib]])
 
     g.match_patches()
 
@@ -221,22 +215,45 @@ settings = {
     "n_step_log": 100,
     "i_loss": 0,
     "plot_conv": True,
+    # "CFL": 0.0,
 }
 
 settings = {
-    "n_step": 1000,
+    "n_step": 300,
     "n_step_avg": 1,
     "n_step_log": 1,
     "i_loss": 0,
-    "CFL": 0.,
+    # "CFL": 0.01,
+    "plot_conv": True,
 }
 
 conf = turbigen.solvers.embsolve.Config(**settings)
+
 
 def plot_nozzle(g, F):
     """Make debugging plots."""
 
     L = np.ptp(F.x)
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[0, :, b.nk // 2]
+    ax.plot(C.r, C.s)
+    plt.show()
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[0, :, b.nk // 2]
+    ax.plot(C.r, C.P)
+    plt.show()
+
+    fig, ax = plt.subplots()
+    b = g[0]
+    C = b[0, :, b.nk // 2]
+    ax.plot(C.r, C.Vx)
+    ax.plot(C.r, C.Vr)
+    ax.plot(C.r, C.Vt)
+    plt.show()
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
@@ -306,7 +323,7 @@ def plot_nozzle(g, F):
     for ib, b in enumerate(g):
         cs = f"C{ib}"
         C = b[:, b.nj // 2, b.nk // 2]
-        ax.plot(C.x / L, (C.ho-C.ho[0])/F[0].V**2, color=cs)
+        ax.plot(C.x / L, (C.ho - C.ho[0]) / F[0].V ** 2, color=cs)
     ax.set_title("Ho")
 
     fig, ax = plt.subplots()
@@ -382,7 +399,8 @@ def test_condi(dirn):
     assert (np.abs(Ys) < rtol_sh).all()
     assert (np.abs(Cho) < rtol_sh).all()
 
-@pytest.mark.parametrize("Tu0", (0.,150.0, 300.0))
+
+@pytest.mark.parametrize("Tu0", (0.0, 150.0, 300.0))
 def test_Tu0(Tu0):
     """Check that the internal energy datum makes no difference."""
 
@@ -418,7 +436,6 @@ def test_uniform(Alpha):
     turbigen.solvers.embsolve.run(g, conf)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
-
 
     rtol = 2.5e-4
 
@@ -458,7 +475,6 @@ def test_skew(Alpha):
     np.set_printoptions(precision=2)
 
     turbigen.solvers.embsolve.run(g, conf)
-
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -519,7 +535,7 @@ def test_patch_A_avg():
     assert np.isclose(rsqavg, rsqavg_check)
 
 
-@pytest.mark.parametrize("rpm", (-100., 100.))
+@pytest.mark.parametrize("rpm", (-100.0, 100.0))
 def test_rpm(rpm, plot=False):
     """"""
 
@@ -544,6 +560,7 @@ def test_rpm(rpm, plot=False):
     assert (np.abs(Ys) < rtol_sh).all()
     assert (np.abs(Cho) < rtol_sh).all()
 
+
 @pytest.mark.parametrize("To1", (200.0, 300.0, 400.0))
 def test_To1(To1):
     """Run the most basic parallel annulus, grid aligned with flow."""
@@ -558,9 +575,8 @@ def test_To1(To1):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    plot_nozzle(g,F)
+    plot_nozzle(g, F)
     plt.show()
-
 
     rtol = 2.5e-4
 
@@ -568,10 +584,10 @@ def test_To1(To1):
     assert (np.abs(Ys) < rtol).all()
     assert (np.abs(Cho) < rtol).all()
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     # test_condi('t')
-    test_To1(400.)
+    test_To1(400.0)
     # test_Tu0(300.)
     # test_rpm(500.)
 

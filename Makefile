@@ -6,9 +6,7 @@ MAKEFLAGS += --no-builtin-rules
 SHELL := /bin/bash
 
 install ::
-	pip install -e .
-	pip install -e .[docs]
-	pip install -e .[test]
+	pip install -e .[docs,test,emb]
 	pip install pre-commit build bump-my-version
 	pre-commit install
 
@@ -33,7 +31,7 @@ compile-openmp ::
 	mv embsolve*.so turbigen/solvers
 
 compile ::
-	python -m numpy.f2py -m embsolvec --opt='-O3  -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90
+	python -m numpy.f2py -m embsolvec  --opt='-O3  -ffast-math -fmax-errors=1' -c turbigen/solvers/embsolve-src/*.f90
 	mv embsolve*.so turbigen/solvers
 
 compile-double ::

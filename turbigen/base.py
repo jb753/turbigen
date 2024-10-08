@@ -596,7 +596,6 @@ class Kinematics:
 
     @dependent_property
     def dlmin_new(self):
-
         # Get face area magnitudes
         dAi = turbigen.util.vecnorm(self.dAi_new)
         dAj = turbigen.util.vecnorm(self.dAj_new)
@@ -1550,7 +1549,7 @@ class Composites:
         rhoa = self.rho * self.a
         B = np.stack(
             (
-                (Z, Z, Z, Z, -self.a**2),  # d/rho
+                (Z, Z, Z, Z, -(self.a**2)),  # d/rho
                 (rhoa, -rhoa, Z, Z, Z),  # d/dVx
                 (Z, Z, rhoa, Z, Z),  # d/dVr
                 (Z, Z, Z, rhoa, Z),  # d/dVt
@@ -1673,7 +1672,6 @@ class Composites:
         return np.linalg.inv(self.primitive_to_bcond())
 
     def bcond_to_conserved(self, chics):
-
         # bcond to primitive
         Yinv = self.bcond_to_primitive()
 
@@ -1687,9 +1685,9 @@ class Composites:
         if chics == "all":
             D = np.tile(np.eye(5), (ni, 1, 1))
         elif chics == "up":
-            D = np.tile(np.diag([1.0, 0.0, 0.0, 0.0, 0.0]), (ni, 1, 1))
+            D = np.tile(np.diag([-1.0, 0.0, 0.0, 0.0, 0.0]), (ni, 1, 1))
         elif chics == "dn":
-            D = np.tile(np.diag([0.0, 1.0, 1.0, 1.0, 1.0]), (ni, 1, 1))
+            D = np.tile(np.diag([0.0, -1.0, 1.0, 1.0, 1.0]), (ni, 1, 1))
 
         # chic to primitive
         Binv = self.chic_to_primitive()

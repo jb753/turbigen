@@ -1,23 +1,21 @@
 import numpy as np
+
 import turbigen.util
 
-util = turbigen.util
-import turbigen.fluid
-import turbigen.flowfield
-import turbigen.grid
+import logging
 from dataclasses import dataclass
-from turbigen.solvers.base import BaseSolver
 
 # from turbigen.embsolve import embsolve
-
 from pathlib import Path
-
-from turbigen.solvers.embsolvec import *
-
 from timeit import default_timer as timer
 
-import logging
+import turbigen.flowfield
+import turbigen.fluid
+import turbigen.grid
+from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.embsolvec import embsolve
 
+util = turbigen.util
 logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
@@ -117,29 +115,19 @@ def get_dw(block, typ):
     dlj = turbigen.util.vecnorm(block.dlj)
     dlk = turbigen.util.vecnorm(block.dlk)
 
-    def node_to_face2(x):
-        return np.stack(
-            (
-                x[:-1, :-1],
-                x[1:, 1:],
-                x[:-1, 1:],
-                x[1:, :-1],
-            )
-        ).mean(axis=0)
-
     ni, nj, nk = block.shape
 
     dwi = np.asfortranarray(np.zeros((ni, nj - 1, nk - 1), dtype=typ))
-    dwi[0, :, :] = node_to_face2(dli[0, :, :])
-    dwi[-1, :, :] = node_to_face2(dli[-1, :, :])
+    dwi[0, :, :] = util.node_to_face2(dli[0, :, :])
+    dwi[-1, :, :] = util.node_to_face2(dli[-1, :, :])
 
     dwj = np.asfortranarray(np.zeros((ni - 1, nj, nk - 1), dtype=typ))
-    dwj[:, 0, :] = node_to_face2(dlj[:, 0, :])
-    dwj[:, -1, :] = node_to_face2(dlj[:, -1, :])
+    dwj[:, 0, :] = util.node_to_face2(dlj[:, 0, :])
+    dwj[:, -1, :] = util.node_to_face2(dlj[:, -1, :])
 
     dwk = np.asfortranarray(np.zeros((ni - 1, nj - 1, nk), dtype=typ))
-    dwk[:, :, 0] = node_to_face2(dlk[:, :, 0])
-    dwk[:, :, -1] = node_to_face2(dlk[:, :, -1])
+    dwk[:, :, 0] = util.node_to_face2(dlk[:, :, 0])
+    dwk[:, :, -1] = util.node_to_face2(dlk[:, :, -1])
 
     return dwi, dwj, dwk
 
@@ -355,11 +343,8 @@ class SolverBlock:
         ]
 
         self.bconds = [
-            BoundaryCondition(patch, conf.K_inlet, conf.K_exit)
-            for patch in block.inlet_patches + block.outlet_patches
+            Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
         ]
-        # self.outlets = [get_outlet_data(patch) for patch in block.outlet_patches]
-        # self.outlets2 = [OutletPlane(patch) for patch in block.outlet_patches]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
@@ -459,7 +444,6 @@ class SolverBlock:
                 self.P.ravel(order="F")[ind] = P
 
             else:
-
                 # Extract properties from soln
                 rho = self.cons[..., 0].ravel(order="F")[ind]
                 rhoVx = self.cons[..., 1].ravel(order="F")[ind]
@@ -999,7 +983,6 @@ def get_outlet_data(patch):
 
 
 def send_slave(block_split, procids, periodics, mixers):
-
     for iproc in range(1, size):
         comm.send(block_split[iproc], dest=iproc)
 
@@ -1017,10 +1000,8 @@ def send_slave(block_split, procids, periodics, mixers):
 
 
 def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
-
     # Update periodic boundaries
     for mix1, mix2, state in mixers:
-
         blk1 = blocks[bid_local[mix1.bid]]
 
         # Get pitchwise-avgeraged conditions on this side
@@ -1256,7 +1237,6 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 
 
 def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
-
     # Update periodic boundaries
     for patch in periodics:
         pid, bid, procid, ijk, _, _, nxbid, nxprocid, nxijk, _, _ = patch
@@ -1296,7 +1276,6 @@ def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
 
 
 def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=None):
-
     if blocks is None:
         blocks = comm.recv()
         comm.Barrier()
@@ -1367,7 +1346,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
 
         # Start the main time stepping loop
         for istep in range(conf.n_step):
-
             # Ramping factors
             damping_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.5, 1.0])
             smoothing_ramp = np.interp(istep, [0, conf.n_step_ramp], [2.0, 1.0])
@@ -1433,7 +1411,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
 
             # Intermittently print convergence
             if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
-
                 # Send residuals to master proc
                 if rank:
                     comm.send(dUnow, dest=0)
@@ -1481,7 +1458,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
 
 
 def run(grid, conf, machine=None):
-
     if isinstance(conf, dict):
         conf = Config(**conf)
 
@@ -1651,7 +1627,6 @@ def get_multigrid_indices(shape, nb):
 
 
 def get_multigrid_volumes(vol, ijkmg, typ):
-
     nlev = ijkmg.shape[-1]
     volmg = np.asfortranarray(np.zeros(vol.shape + (nlev + 1,), dtype=typ))
     embsolve.multigrid_volumes(volmg, vol, ijkmg)
@@ -1671,7 +1646,6 @@ def arange_including_end(ni, di):
 
 
 def get_multigrid_lengths(block, nb, typ):
-
     # Preallocate output array
     ni, nj, nk = block.shape
     ijkmg = get_multigrid_indices((ni - 1, nj - 1, nk - 1), nb)
@@ -1698,7 +1672,6 @@ def get_multigrid_lengths(block, nb, typ):
 
     # Loop over multigrid levels
     for ilev in range(nlev):
-
         # Number of cells along each side of this
         # multigrid level is product of all previous
         nbi = np.prod(nb[: ilev + 1])
@@ -1722,52 +1695,111 @@ def get_multigrid_lengths(block, nb, typ):
     return dlmg
 
 
-class BoundaryCondition:
-    """Store FlowField for a domain boundary, force to a target using chics."""
+class Boundary:
+    """Store FlowField on a block boundary, force to target."""
 
-    def __init__(self, patch, K_inlet, K_outlet):
+    def __init__(self, patch):
         """Set up the boundary condition using a patch object."""
-
-        # Save under-relaxation factors
-        self.K_inlet = K_inlet
-        self.K_outlet = K_outlet
 
         # Store slicing data for this patch so we can exchange
         # information with the block on which the patch resides
         self.slice = patch.get_slice()
 
+        # Cut out flowfield from the block
+        C = patch.block[self.slice]
+
         # Preallocate a working fluid object for all nodes on patch
-        self.state = patch.block[self.slice].copy()
+        self.state = C.copy()
         self.shape = self.state.shape
 
-        # Preallocate an array for target boundary condition vars
-        # [ho, s, tanAlpha, tanBeta, P].
+        # Store face area
+        if patch.cdir == 0:
+            self.dA = C.dAi.squeeze()
+        elif patch.cdir == 1:
+            self.dA = C.dAk.squeeze()
+        elif patch.cdir == 2:
+            self.dA = C.dAj.squeeze()
+        self.dA = util.vecnorm(self.dA)
+
+        # Target values of the boundary condition vars
         self.bcond_target = np.full((5,) + self.shape, np.nan)
 
-        # Set up the target flow on this patch (inlet, outlet, or mixing)
         if isinstance(patch, turbigen.grid.InletPatch):
-
-            self.kind = "inlet"
-
-            # Inlet: uniform ho, s, angles from the
-            # patch stagnation state
+            # Inlet: uniform ho, s, angles from the patch stagnation state
             self.bcond_target[0] = patch.state.h
             self.bcond_target[1] = patch.state.s
             self.bcond_target[2] = util.tand(patch.Alpha)
             self.bcond_target[3] = util.tand(patch.Beta)
 
         elif isinstance(patch, turbigen.grid.OutletPatch):
-
-            self.kind = "outlet"
-
             # Outlet: uniform P
             self.bcond_target[4] = patch.Pout
 
-    def apply(self, block):
-        """Get flow from block, drive to targets, then put back."""
-        self.pull(block)
-        self.force()
-        self.push(block)
+    def clip_velocities(self):
+        # Limit the minimum velocities to avoid singular transformation matrices
+        Ma_min = 0.1
+        V_min = self.state.a.mean() * Ma_min
+        ind_clip = np.abs(self.state.Vxrt) < V_min
+        self.state.Vxrt[ind_clip] = V_min * np.sign(self.state.Vxrt[ind_clip])
+
+    @property
+    def is_inlet(self):
+        bcond_target = self.bcond_target.reshape(5, -1)
+        return np.isnan(bcond_target[4])
+
+    @property
+    def is_outlet(self):
+        return np.logical_not(self.is_inlet)
+
+    def get_dbcond(self):
+        # Operate nodewise on flattend views
+        bcond_target = self.bcond_target.reshape(5, -1)
+        state = self.state.to_unstructured()
+
+        # Preallocate boundary condition change vector in correct shape
+        # for the later matmul with Q [npts, 5, 1]
+        # Sign such that if we *add* to current state we drive towards target
+        dbcond = (bcond_target - state.bcond).T[..., None]
+
+        # dbcond will have some nans in because don't control all five on
+        # variables on every patch. Select if inlet or outlet using undefined P static
+
+        # Zero the static pressure correction on inlets
+        dbcond[self.is_inlet, 4, :] = 0.0
+        # dbcond[self.is_inlet, :, :] = 0.0
+
+        # Only correct static pressure on outlets
+        dbcond[self.is_outlet, :4, :] = 0.0
+        # For some reason, we need to flip sign on outlets
+        # dbcond[self.is_outlet, 4, :] *= -1.0
+
+        return dbcond
+
+    def print_err(self):
+        dbcond = self.get_dbcond()
+        if self.is_inlet.all():
+            print("Inlet:", dbcond[:, :4, 0].mean(axis=0))
+        if self.is_outlet.all():
+            print("Outlet:", dbcond[:, 4, 0].mean(axis=0))
+
+    def get_Q(self):
+        state = self.state.to_unstructured()
+
+        if self.is_inlet.all():
+            return state.bcond_to_conserved(chics="dn")
+        elif self.is_outlet.all():
+            return state.bcond_to_conserved(chics="up")
+
+        # Get matrices that transform to conserved selecting either up or down-running chics
+        Qdn = state.bcond_to_conserved(chics="dn")
+        Qup = state.bcond_to_conserved(chics="up")
+
+        # Select if inlet or outlet using undefined P static
+        Q = np.empty_like(Qdn)
+        Q[self.is_inlet] = Qdn[self.is_inlet]
+        Q[self.is_outlet] = Qup[self.is_outlet]
+
+        return Qdn
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1804,64 +1836,56 @@ class BoundaryCondition:
         # Note we put variable axis last to comply with Fortran
         block.Vxrt[self.slice] = np.moveaxis(self.state.Vxrt, 0, -1)
 
-    def force(self):
-        """Apply characteristic perturbations to drive flow towards targets."""
+    def apply(self, block):
+        self.pull(block)
+        self.force_to_target()
+        self.push(block)
+        self.print_err()
+
+    def force_to_target(self, relax=0.5):
+        """Drive the flow towards prescribed values using characteristic perturbations."""
 
         # Operate on a flattened view of the patch
         state = self.state.to_unstructured()
-        bcond_target = self.bcond_target.reshape(5, -1)
 
-        # Preallocate boundary condition change vector in correct shape
-        # for the later matmul with Q [npts, 5, 1]
-        print(self.kind)
-        print("target bcond", bcond_target[:, 0])
-        print("current bcond", state.bcond[:, 0])
-        dbcond = (bcond_target - state.bcond).T[..., None]
-        print("err bcond", dbcond[0, :, :].squeeze())
+        # We can end up with singular transformations if velocities zero
+        self.clip_velocities()
 
-        # On an outlet we want to move P but keep other bcond vars same
-        dbcond_outlet = dbcond.copy()
-        dbcond_outlet[:, :4, :] = 0.0
-
-        # On an inlet we want to match ho, s, Alpha, Beta but no change in P
-        dbcond_inlet = dbcond.copy()
-        dbcond_inlet[:, 4, :] = 0.0
+        # Evaluate desired changes to boundary condition vars
+        dbcond = self.get_dbcond()
 
         # Get matrices to convert dbcond to conserved changes
-        # Limit the minimum velocities for the transformation matrix
-        Ma_min = 0.01
-        V_min = state.a.mean() * Ma_min
-        state.Vxrt[np.abs(state.Vxrt) < V_min] = V_min
-
-        Qup = state.bcond_to_conserved(chics="up")
-        Qdn = state.bcond_to_conserved(chics="dn")
+        Q = self.get_Q()
 
         # Get conserved perturbations on inlet using downstream-running chics
-        # Get conserved perturbations on outlet using upstream-running chics
-        dcons_inlet = 0.1 * self.K_inlet * (Qdn @ dbcond_inlet).squeeze().T
-        dcons_outlet = 0.1 * self.K_outlet * (Qup @ dbcond_outlet).squeeze().T
+        dcons = (Q @ dbcond).squeeze().T
 
-        # Assemble the actual conserved changes
-        # This routine makes no assumptions about which nodes are inlet or outlet
-        # to cope with reversed flow over mixing plane. So Select which kind of
-        # boundary condition by looking for NaN in static P target array
-        ind_inlet = np.isnan(bcond_target[4])
-        dcons = np.full_like(dcons_inlet, np.nan)
-        dcons[:, ind_inlet] = dcons_inlet[:, ind_inlet]
-        dcons[:, ~ind_inlet] = dcons_outlet[:, ~ind_inlet]
-
-        # Every node should be either an inlet or an outlet
-        print("dcons", np.sum(ind_inlet), dcons[:, 0])
-        assert not np.isnan(dcons).any()
+        # Relax the changes for stability
+        dcons *= relax
 
         # Assign new conserved back to the stored state
         cons_new = (state.conserved + dcons).reshape((5,) + self.shape)
         self.state.set_conserved(cons_new)
 
+    def integrate(self):
+        rhoVx = self.state.rhoVx.squeeze()
+        Po = self.state.Po.squeeze()
+        To = self.state.To.squeeze()
+        P = self.state.P.squeeze()
+        rhoVx_face = util.node_to_face2(rhoVx)
+        To_face = util.node_to_face2(To)
+        Po_face = util.node_to_face2(Po)
+        P_face = util.node_to_face2(P)
+        A = self.dA.sum()
+        mdot = (rhoVx_face * self.dA).sum()
+        Po_avg = (Po_face * self.dA).sum() / A
+        To_avg = (To_face * self.dA).sum() / A
+        P_avg = (P_face * self.dA).sum() / A
+        return mdot, Po_avg, To_avg, P_avg
+
 
 class MixingPlane:
     def __init__(self, patch, bid, procid):
-
         self.bid = bid
         self.procid = procid
 

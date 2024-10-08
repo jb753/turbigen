@@ -1,4 +1,5 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
+
 import warnings
 
 # from . import compflow as cf
@@ -187,7 +188,6 @@ def angles_to_velocities(V, Alpha, Beta):
 
 
 def resample_critical_indices(ni, ic, f):
-
     # Spans between each critical index
     dic = np.diff(ic)
 
@@ -1197,7 +1197,6 @@ def arg_largest_negative(x):
 
 
 def unwrap_xr(xr):
-
     # Get an unstructured list of xr coords
     xru = xr.reshape(2, -1)
 
@@ -1243,13 +1242,11 @@ def interp1d_linear_extrap(x, y, axis=0):
             return np.take(y.copy(), 0, axis=axis)
 
     elif N == 2:
-
         spline = scipy.interpolate.interp1d(
             x, y, fill_value="extrapolate", axis=axis, kind="linear"
         )
 
     else:
-
         spline = scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
 
         # determine the slope at the left edge
@@ -1282,7 +1279,6 @@ def interp1d_linear_extrap(x, y, axis=0):
 
 
 def intersect_indices(x, y, tol):
-
     # Ensure the input matrices have the correct shape
     assert x.shape[0] == 2 and y.shape[0] == 2, "Both matrices must have 2 rows."
 
@@ -1292,7 +1288,6 @@ def intersect_indices(x, y, tol):
 
     # Iterate over each column in matrix y
     for j in range(y.shape[1]):
-
         # Find the column in x that matches the current column in y
         match = np.where((np.isclose(x, y[:, j : j + 1], atol=tol)).all(axis=0))[0]
         if len(match) > 0:
@@ -1331,7 +1326,6 @@ def fit_plane(xyz):
 
 
 def basis_from_normal(normal):
-
     # Find two vectors orthogonal to the normal to form a basis for the plane
     if np.allclose(normal, np.array([1, 0, 0])) or np.allclose(
         normal, np.array([-1, 0, 0])
@@ -1347,7 +1341,6 @@ def basis_from_normal(normal):
 
 
 def project_onto_plane(points, basis1, basis2):
-
     # Center the curve around the origin
     xyz_mean = np.mean(points, axis=1, keepdims=True)
     points = points - xyz_mean
@@ -1368,7 +1361,6 @@ def shoelace_formula(xy):
 
 
 def make_contour(c0, c2, v, triangles, lev, lab, rtlim, flip):
-
     eps = 0e-4 * np.diff(lev).mean()
     # v = np.clip(v, lev[-1]+eps, lev[-1]-eps)
     v = np.clip(v, lev[-1] + eps, None)
@@ -1417,3 +1409,14 @@ def make_contour(c0, c2, v, triangles, lev, lab, rtlim, flip):
     ax.set_ylim(c1lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
 
     return fig, ax
+
+
+def node_to_face2(x):
+    return np.stack(
+        (
+            x[:-1, :-1],
+            x[1:, 1:],
+            x[:-1, 1:],
+            x[1:, :-1],
+        )
+    ).mean(axis=0)
