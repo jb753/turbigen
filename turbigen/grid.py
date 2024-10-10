@@ -2,7 +2,6 @@
 
 import numpy as np
 from turbigen import util
-from turbigen import mesh2d as m2d
 import turbigen.yaml
 import turbigen.fluid
 import turbigen.base
@@ -12,6 +11,7 @@ import importlib
 from scipy.spatial import KDTree
 from scipy.interpolate import interpn
 from enum import IntEnum
+
 
 logger = util.make_logger()
 
@@ -1786,45 +1786,31 @@ def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="x
     return g
 
 
-def from_mesh2d_xrt(blocks_in, conn, dmax, pitch):
+def from_jmesh(blocks, conn_face):
     """Extrude a set of 2D blocks and patch them toghether."""
 
-    labels = [b.label for b in blocks_in]
-
-    # Flattend the connections list
-    conn = sum(conn, ())
-
-    # Extrude in radial dirn
-    nk = 9
-    htr = 0.95
-    Dr = (nk - 1) * dmax
-    # Calculate rough rm for non-integer Nb
-    rm = Dr / 2.0 / (1 - htr) * (1 + htr)
-    Nb = np.round(2.0 * np.pi * rm / pitch).astype(int)
-    # Now use rounded Nb to get new rm
-    rm = float(Nb) * pitch / 2 / np.pi
-    rv = np.linspace(rm - Dr / 2.0, rm + Dr / 2.0, nk)
+    from jmesh.primitives import EdgeKind
 
     blocks_out = []
-    for b_in, l_in in zip(blocks_in, labels):
+    for b, cf in zip(blocks, conn_face):
         patches = []
-        for c in conn:
-            if c.b is b_in:
-                if c.e == m2d.Edge.i0:
-                    p = PeriodicPatch(i=0, k=(c.st, c.en))
-                elif c.e == m2d.Edge.ni:
-                    p = PeriodicPatch(i=-1, k=(c.st, c.en))
-                elif c.e == m2d.Edge.j0:
-                    p = PeriodicPatch(i=(c.st, c.en), k=0)
-                elif c.e == m2d.Edge.nj:
-                    p = PeriodicPatch(i=(c.st, c.en), k=-1)
-                patches.append(p)
-        xrrt = b_in.extrude(rv)[
-            (0, 2, 1),
-        ].transpose(0, 1, 3, 2)
-        xrt = np.stack((xrrt[0], xrrt[1], xrrt[2] / rm))
-        blocks_out.append(PerfectBlock.from_coordinates(xrt, Nb, patches, label=l_in))
+        for c in cf:
+            if c.e == EdgeKind.i0:
+                p = PeriodicPatch(i=0, j=(c.st, c.en))
+            elif c.e == EdgeKind.ni:
+                p = PeriodicPatch(i=-1, j=(c.st, c.en))
+            elif c.e == EdgeKind.j0:
+                p = PeriodicPatch(i=(c.st, c.en), j=0)
+            elif c.e == EdgeKind.nj:
+                p = PeriodicPatch(i=(c.st, c.en), j=-1)
+            patches.append(p)
+
+        Nb = np.round(2.*np.pi/np.ptp(b[0,0,:].t)).astype(int)
+
+        blocks_out.append(PerfectBlock.from_coordinates(b.xrt, Nb, patches, label=b.label))
 
     g = Grid(blocks_out)
+    g.check_coordinates()
     g.match_patches()
+
     return g
