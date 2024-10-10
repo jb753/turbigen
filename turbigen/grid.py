@@ -923,6 +923,14 @@ class Grid:
                 0
             ].reshape(block.shape)
 
+    def apply_guess_uniform(self, F):
+        for b in self:
+            b._metadata.update(F._metadata)
+            b.Vx = F.Vx
+            b.Vr = F.Vr
+            b.Vt = F.Vt
+            b.set_P_T(F.P, F.T)
+
     def apply_guess_meridional(self, Fg):
         """Apply meridional guess from a mean-line object."""
 
