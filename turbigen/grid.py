@@ -166,6 +166,14 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
+    def apply_guess_uniform(self, F):
+        self._metadata.update(F._metadata)
+        self.Vx = F.Vx
+        self.Vr = F.Vr
+        self.Vt = F.Vt
+        self.Omega = F.Omega
+        self.set_P_T(F.P, F.T)
+
     def trim(self, i=None, j=None, k=None):
         """Extract a subset of this block in-place, correct patch indices."""
 
@@ -925,11 +933,7 @@ class Grid:
 
     def apply_guess_uniform(self, F):
         for b in self:
-            b._metadata.update(F._metadata)
-            b.Vx = F.Vx
-            b.Vr = F.Vr
-            b.Vt = F.Vt
-            b.set_P_T(F.P, F.T)
+            b.apply_guess_uniform(F)
 
     def apply_guess_meridional(self, Fg):
         """Apply meridional guess from a mean-line object."""
