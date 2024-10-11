@@ -1798,10 +1798,16 @@ def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="x
     return g
 
 
-def from_jmesh(blocks, conn_face):
+def from_jmesh(blocks, conn_face, state):
     """Extrude a set of 2D blocks and patch them toghether."""
 
     from jmesh.primitives import EdgeKind
+
+    # Use the reference state to choose fluid model
+    if isinstance(state, turbigen.fluid.PerfectState):
+        Block = PerfectBlock
+    elif isinstance(state, turbigen.fluid.RealState):
+        Block = RealBlock
 
     blocks_out = []
     for b, cf in zip(blocks, conn_face):
@@ -1819,7 +1825,9 @@ def from_jmesh(blocks, conn_face):
 
         Nb = np.round(2.*np.pi/np.ptp(b[0,0,:].t)).astype(int)
 
-        blocks_out.append(PerfectBlock.from_coordinates(b.xrt, Nb, patches, label=b.label))
+        bnow = Block.from_coordinates(b.xrt, Nb, patches, label=b.label)
+        bnow._metadata.update(state._metadata)
+        blocks_out.append(bnow)
 
     g = Grid(blocks_out)
     g.check_coordinates()
