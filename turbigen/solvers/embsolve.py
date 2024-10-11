@@ -183,9 +183,7 @@ class SolverBlock:
         self.r = to_fort(block.r)
         self.t = to_fort(block.t)
         self.rf = [to_fort(r) for r in block.r_face]
-
         self.rc = to_fort(block.r_cell)
-        # embsolve.node_to_cell(self.r, self.rc)
 
         self.dAi = to_fort(block.dAi_new)
         self.dAj = to_fort(block.dAj_new)
@@ -203,10 +201,11 @@ class SolverBlock:
         self.U = to_fort(Omega * block.r)
         self.Uf = [to_fort(Omega * r) for r in block.r_face]
 
+        # Residual storage
         ni, nj, nk = block.shape
         self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
-        self.dU1 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
-        self.dU2 = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
+        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=self.typ)
+        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=self.typ)
 
         xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(self.typ)
         xlength = (0.41 * xlength) ** 2.0
@@ -342,8 +341,8 @@ class SolverBlock:
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.bconds = [
-            Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
+        self.bconds = [InletBoundary(patch) for patch in block.inlet_patches] + [
+            OutletBoundary(patch) for patch in block.outlet_patches
         ]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
@@ -667,7 +666,7 @@ class SolverBlock:
             CFL,
         )
 
-    def residual(self, fmgrid, damp, ischeme, sf2=0, sf4=0, sf2min=0):
+    def residual(self, fmgrid, damp, ischeme):
         embsolve.residual(
             self.cons,
             self.Vxrt,
@@ -688,20 +687,16 @@ class SolverBlock:
             self.ijk_multigrid,
             fmgrid,
             damp,
-            sf2,
-            sf4,
-            sf2min,
-            self.L,
-            self.dU1,
-            self.dU2,
+            self.dUc,
+            self.dUn,
             ischeme,
         )
 
     def step(self, istep, ischeme):
         embsolve.step(
             self.cons,
-            self.dU1,
-            self.dU2,
+            self.dUc,
+            self.dUn,
             ischeme,
         )
 
@@ -1355,26 +1350,24 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             # Exchange conserved variables across periodic patches
             exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ)
 
-            # Exchange conserved variables across periodic patches
+            # Exchange fluxes across mixing patches
             # exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
                 sb = blocks[iblock]
+
+                # Update pressure, ho, velocities
                 sb.set_secondary()
 
-                # Accumulate average
+                # Accumulate time average
                 if istep >= istep_avg:
                     sb.cons_avg += sb.cons / float(conf.n_step_avg)
 
-                # Update time steps using local Mach
-                # With a relaxation factor so they do not change too rapidly
+                # Update time steps using current local Mach
                 if not np.mod(istep, conf.n_step_dt):
                     sb.set_timestep(conf.CFL * cfl_ramp)
 
-                # Apply boundary conditions
-                for bc in sb.bconds:
-                    bc.apply(sb)
                 # sb.set_inlets(rfin, conf.i_inlet, K_inlet)
                 # sb.set_outlets(conf.i_exit, K_exit)
 
@@ -1383,9 +1376,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                 if not np.mod(istep, conf.n_loss) and conf.i_loss > 0:
                     sb.set_viscous_stress()
 
-                # Using the updated flow field, sum fluxes for each cell
-                # and store the residual
-                # Apply damping to cell residuals if requested
+                # Damping factor for this time step
                 if conf.damping_factor and (
                     istep < conf.nstep_damp or conf.nstep_damp < 0
                 ):
@@ -1393,20 +1384,28 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                 else:
                     damp = 1e6
 
+                # Sum fluxes for each cell and distribute to the nodes
                 i_scheme = -1 if not istep else conf.i_scheme
                 sb.residual(
                     conf.fmgrid * fmgrid_ramp,
                     damp,
                     i_scheme,
-                    sf2 * smoothing_ramp,
-                    sf4 * smoothing_ramp,
-                    sf2min * smoothing_ramp,
+                )
+
+                # Apply boundary conditions
+                for bc in sb.bconds:
+                    bc.apply(sb)
+
+                sb.cons += sb.dUn
+
+                sb.smooth(
+                    sf2 * smoothing_ramp, sf4 * smoothing_ramp, sf2min * smoothing_ramp
                 )
 
             # Record residuals
             iilog = np.mod(istep - 1, conf.n_step_log)
             dUnow[iilog] = np.stack(
-                [np.abs(b.dU1.mean(axis=(0, 1, 2))) for b in blocks]
+                [np.abs(b.dUc[..., 0].mean(axis=(0, 1, 2))) for b in blocks]
             )
 
             # Intermittently print convergence
@@ -1531,33 +1530,6 @@ def run(grid, conf, machine=None):
     for patch in grid.outlet_patches:
         Cm, A, _ = patch.get_cut().mix_out()
         mdot_out += Cm.rho * Cm.Vm * A
-
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].dU1[:,:,1,0])
-    # ax.plot(grid[0].x[:,:,1], grid[0].r[:,:,1],'k-',lw=0.2)
-    # ax.plot(grid[0].x[:,:,1].T, grid[0].r[:,:,1].T,'k-',lw=0.2)
-    # ax.axis('equal')
-    # fig, ax = plt.subplots()
-    # b = grid[0]
-    # ax.contourf(b.y[b.ni//2,:,:], b.z[b.ni//2,:,:],blocks_out[0].dU1[b.ni//2,:,:,0])
-    # ax.plot(b.y[b.ni//2,:,:], b.z[b.ni//2,:,:],'k-',lw=0.2)
-    # ax.plot(b.y[b.ni//2,:,:].T, b.z[b.ni//2,:,:].T,'k-',lw=0.2)
-    # ax.axis('equal')
-    # plt.show()
-
-    # fig, ax = plt.subplots()
-    # # ax.contourf(grid[0].x[:,:,1], grid[0].r[:,:,1],blocks_out[0].nu[:,:,1,0])
-    # # ax.axis('equal')
-    # x = grid[0].x[:, 0, 1]
-    # nu = blocks_out[0].nu[:, 0, 1, 0]
-    # k2 = 1.0
-    # eps4 = 0.005
-    # sf2 = k2 * nu
-    # sf4 = np.maximum(0.0, eps4 - sf2)
-    # ax.plot(x, sf2)
-    # ax.plot(x, sf4)
-    # plt.show()
 
     if not mdot_out == 0.0:
         merr = mdot_in / mdot_out - 1.0
@@ -1721,19 +1693,7 @@ class Boundary:
             self.dA = C.dAj.squeeze()
         self.dA = util.vecnorm(self.dA)
 
-        # Target values of the boundary condition vars
-        self.bcond_target = np.full((5,) + self.shape, np.nan)
-
-        if isinstance(patch, turbigen.grid.InletPatch):
-            # Inlet: uniform ho, s, angles from the patch stagnation state
-            self.bcond_target[0] = patch.state.h
-            self.bcond_target[1] = patch.state.s
-            self.bcond_target[2] = util.tand(patch.Alpha)
-            self.bcond_target[3] = util.tand(patch.Beta)
-
-        elif isinstance(patch, turbigen.grid.OutletPatch):
-            # Outlet: uniform P
-            self.bcond_target[4] = patch.Pout
+        self.dUn = np.empty((5,) + self.shape)
 
     def clip_velocities(self):
         # Limit the minimum velocities to avoid singular transformation matrices
@@ -1741,65 +1701,6 @@ class Boundary:
         V_min = self.state.a.mean() * Ma_min
         ind_clip = np.abs(self.state.Vxrt) < V_min
         self.state.Vxrt[ind_clip] = V_min * np.sign(self.state.Vxrt[ind_clip])
-
-    @property
-    def is_inlet(self):
-        bcond_target = self.bcond_target.reshape(5, -1)
-        return np.isnan(bcond_target[4])
-
-    @property
-    def is_outlet(self):
-        return np.logical_not(self.is_inlet)
-
-    def get_dbcond(self):
-        # Operate nodewise on flattend views
-        bcond_target = self.bcond_target.reshape(5, -1)
-        state = self.state.to_unstructured()
-
-        # Preallocate boundary condition change vector in correct shape
-        # for the later matmul with Q [npts, 5, 1]
-        # Sign such that if we *add* to current state we drive towards target
-        dbcond = (bcond_target - state.bcond).T[..., None]
-
-        # dbcond will have some nans in because don't control all five on
-        # variables on every patch. Select if inlet or outlet using undefined P static
-
-        # Zero the static pressure correction on inlets
-        dbcond[self.is_inlet, 4, :] = 0.0
-        # dbcond[self.is_inlet, :, :] = 0.0
-
-        # Only correct static pressure on outlets
-        dbcond[self.is_outlet, :4, :] = 0.0
-        # For some reason, we need to flip sign on outlets
-        # dbcond[self.is_outlet, 4, :] *= -1.0
-
-        return dbcond
-
-    def print_err(self):
-        dbcond = self.get_dbcond()
-        if self.is_inlet.all():
-            print("Inlet:", dbcond[:, :4, 0].mean(axis=0))
-        if self.is_outlet.all():
-            print("Outlet:", dbcond[:, 4, 0].mean(axis=0))
-
-    def get_Q(self):
-        state = self.state.to_unstructured()
-
-        if self.is_inlet.all():
-            return state.bcond_to_conserved(chics="dn")
-        elif self.is_outlet.all():
-            return state.bcond_to_conserved(chics="up")
-
-        # Get matrices that transform to conserved selecting either up or down-running chics
-        Qdn = state.bcond_to_conserved(chics="dn")
-        Qup = state.bcond_to_conserved(chics="up")
-
-        # Select if inlet or outlet using undefined P static
-        Q = np.empty_like(Qdn)
-        Q[self.is_inlet] = Qdn[self.is_inlet]
-        Q[self.is_outlet] = Qup[self.is_outlet]
-
-        return Qdn
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1815,57 +1716,35 @@ class Boundary:
         # So we have to move the velocity component axis to first posn
         self.state.Vxrt = np.moveaxis(block.Vxrt[self.slice], -1, 0)
 
+        self.dUn = np.moveaxis(block.dUn[self.slice], -1, 0)
+
     def push(self, block):
         """Send stored state back to the parent block."""
 
-        # Set the conserved variables
-        # Note we put variable axis last to comply with Fortran
-        block.cons[self.slice][..., 0] = self.state.rho
-        block.cons[self.slice][..., 1] = self.state.rhoVx
-        block.cons[self.slice][..., 2] = self.state.rhoVr
-        block.cons[self.slice][..., 3] = self.state.rhorVt
-        block.cons[self.slice][..., 4] = self.state.rhoe
+        # # Set the conserved variables
+        # # Note we put variable axis last to comply with Fortran
+        # block.cons[self.slice][..., 0] = self.state.rho
+        # block.cons[self.slice][..., 1] = self.state.rhoVx
+        # block.cons[self.slice][..., 2] = self.state.rhoVr
+        # block.cons[self.slice][..., 3] = self.state.rhorVt
+        # block.cons[self.slice][..., 4] = self.state.rhoe
 
-        # Assuming that the secondary vars for interior grid points
-        # have already been calculated, we must update them on this
-        # boundary too
-        block.u[self.slice] = self.state.u
-        block.P[self.slice] = self.state.P
-        block.T[self.slice] = self.state.T
-        block.ho[self.slice] = self.state.ho
-        # Note we put variable axis last to comply with Fortran
-        block.Vxrt[self.slice] = np.moveaxis(self.state.Vxrt, 0, -1)
+        # # Assuming that the secondary vars for interior grid points
+        # # have already been calculated, we must update them on this
+        # # boundary too
+        # block.u[self.slice] = self.state.u
+        # block.P[self.slice] = self.state.P
+        # block.T[self.slice] = self.state.T
+        # block.ho[self.slice] = self.state.ho
+        # # Note we put variable axis last to comply with Fortran
+        # block.Vxrt[self.slice] = np.moveaxis(self.state.Vxrt, 0, -1)
+
+        block.dUn[self.slice] = np.moveaxis(self.dUn, 0, -1)
 
     def apply(self, block):
         self.pull(block)
-        self.force_to_target()
+        self.force()
         self.push(block)
-        self.print_err()
-
-    def force_to_target(self, relax=0.5):
-        """Drive the flow towards prescribed values using characteristic perturbations."""
-
-        # Operate on a flattened view of the patch
-        state = self.state.to_unstructured()
-
-        # We can end up with singular transformations if velocities zero
-        self.clip_velocities()
-
-        # Evaluate desired changes to boundary condition vars
-        dbcond = self.get_dbcond()
-
-        # Get matrices to convert dbcond to conserved changes
-        Q = self.get_Q()
-
-        # Get conserved perturbations on inlet using downstream-running chics
-        dcons = (Q @ dbcond).squeeze().T
-
-        # Relax the changes for stability
-        dcons *= relax
-
-        # Assign new conserved back to the stored state
-        cons_new = (state.conserved + dcons).reshape((5,) + self.shape)
-        self.state.set_conserved(cons_new)
 
     def integrate(self):
         rhoVx = self.state.rhoVx.squeeze()
@@ -1882,6 +1761,80 @@ class Boundary:
         To_avg = (To_face * self.dA).sum() / A
         P_avg = (P_face * self.dA).sum() / A
         return mdot, Po_avg, To_avg, P_avg
+
+
+class OutletBoundary(Boundary):
+    def __init__(self, patch):
+        super().__init__(patch)
+
+        self.P_target = patch.Pout
+
+    def force(self):
+
+        # Operate on flattened view of the patch
+        state = self.state.to_unstructured()
+
+        # Take the nodal conserved variables from time-step and
+        # strip off the exterior chics we do not need
+        # i.e. for an outlet, we keep the 4 downstream-runners
+        dUn = self.dUn.reshape(5, -1).T[..., None]
+        D = np.diag([0, 1, 1, 1, 1]).reshape(1, 5, 5)
+        dchic_interior = D @ state.conserved_to_chic() @ dUn
+
+        # Now we supply the upstream-running chic from exterior
+        dP = self.P_target - state.P
+        relax = 0.5
+        dchic_exterior = state.outlet_to_chic(dP) * relax
+
+        # Sum all chics and convert to conserved chandes
+        dchic = dchic_interior + dchic_exterior
+        dcons = state.chic_to_conserved() @ dchic
+        self.dUn[:] = dcons.squeeze().T.reshape((5,) + self.shape)
+
+
+class InletBoundary(Boundary):
+    def __init__(self, patch):
+        super().__init__(patch)
+
+        tanAl = turbigen.util.tand(patch.Alpha)
+        tanBe = turbigen.util.tand(patch.Beta)
+        self.var_target = np.array(
+            [patch.state.h, patch.state.s, tanAl, tanBe]
+        ).reshape(1, 4, 1)
+
+    def force(self):
+        return
+
+        # Operate on flattened view of the patch
+        state = self.state.to_unstructured()
+
+        # Operate on flattened view of the patch
+        state = self.state.to_unstructured()
+
+        # Take the nodal conserved variables from time-step and
+        # strip off the exterior chics we do not need
+        # i.e. for an inlet, we keep the 1 upstream-runner
+        dUn = self.dUn.reshape(5, -1).T[..., None]
+        D = np.diag([1, 0, 0, 0, 0]).reshape(1, 5, 5)
+        dchic_interior = D @ state.conserved_to_chic() @ dUn
+
+        # Now we supply the upstream-running chic from exterior
+        # Evaluate required changes to inlet conditions
+        var_now = np.stack(
+            (state.ho, state.s, state.tanAlpha, state.tanBeta), axis=-1
+        ).reshape(-1, 4, 1)
+        dinlet = self.var_target - var_now
+
+        # TODO convert dinlet to dchic_exterior here
+
+        # dP = self.P_target - state.P
+        # relax = 0.5
+        # dchic_exterior = state.outlet_to_chic(dP) * relax
+
+        # Sum all chics and convert to conserved chandes
+        dchic = dchic_interior + dchic_exterior
+        dcons = state.chic_to_conserved() @ dchic
+        self.dUn[:] = dcons.squeeze().T.reshape((5,) + self.shape)
 
 
 class MixingPlane:

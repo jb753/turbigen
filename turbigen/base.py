@@ -1486,6 +1486,55 @@ class Composites:
         self.Vxrt = Vxrt
         return self
 
+    def outlet_to_chic(self, dP):
+        """Upstream chic forcing for given dP.
+        The characteristics are
+        c = [dP-rho*a*dVx, dP+rho*a*dVx, rho*a*dVr, rho*a*dVt, dP - (a^2)*drho].
+        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+
+        This function calculates conserved variable changes to create a given
+        static pressure change while keeping all downstream-running chics zero.
+        """
+
+        dP = np.ones_like(self.rho) * dP
+        dVx = -dP / self.rho / self.a  # from c2=0
+        Z = np.zeros_like(self.rho)
+        c1 = dP - self.rho * self.a * dVx
+        dchic = np.stack((c1, Z, Z, Z, Z), axis=-1).reshape(-1, 5, 1)
+
+        return dchic
+
+    def inlet_to_chic(self, dinlet):
+        """Downstream chic forcing to match inlet conditions.
+        The characteristics are
+        c = [dP-rho*a*dVx, dP+rho*a*dVx, rho*a*dVr, rho*a*dVt, dP - (a^2)*drho].
+        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+
+        The inlet controlled variables are
+        [ho, s, tanAl, tanBeta]
+
+        This function calculates conserved variable changes to create a given
+        inlet vector change while keeping the upstream-running chic zero.
+        """
+
+        # Convert downstream-running chics to prim changes
+        # Omit first column corresponding to upstream-running chic
+        chic_to_prim = self.chic_to_primitive()[:, :, 1:]
+
+        # Convert primitive to inlet changes
+        # Omit last row corresponding to static pressure
+        prim_to_inlet = self.primitive_to_bcond()[:, :-1, :]
+
+        # Apply the complete transformation
+        chic_to_inlet = prim_to_inlet @ chic_to_prim
+        inlet_to_chic = np.linalg.inv(chic_to_inlet)
+        dchic = inlet_to_chic @ dinlet
+
+        # Add a zero upstream-running chic
+        dchic = np.concatenate((np.zeros((self.size, 1, 1)), dchic), axis=1)
+
+        return dchic
+
     def primitive_to_conserved(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -1618,6 +1667,14 @@ class Composites:
         Ainv: (npts, 5, 5) array
         """
         return np.linalg.inv(self.primitive_to_flux())
+
+    def conserved_to_chic(self):
+        return self.primitive_to_chic() @ self.conserved_to_primitive()
+
+    def chic_to_conserved(self):
+        return self.primitive_to_conserved() @ self.chic_to_primitive()
+
+        return self.primitive_to_chic() @ self.conserved_to_primitive()
 
     def primitive_to_bcond(self):
         """Get a matrix at every node that converts linear pertubations in

@@ -25,6 +25,7 @@ def make_nozzle(
     rpm=0.0,
     Tu0=300.0,
     To1=300.0,
+    dP=0.0,
 ):
     """Generate the grid."""
 
@@ -200,9 +201,9 @@ def make_nozzle(
     # Initial guess
     for ib, b in enumerate(g):
         b.Vx = Ve[istb[ib] : ienb[ib]]
-        b.Vr = 0.0
-        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha))
-        b.set_P_T(Pe[istb[ib] : ienb[ib]], Te[istb[ib] : ienb[ib]])
+        b.Vr = V[0]*0.1
+        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha)) + V[0]*0.1
+        b.set_P_T(Pe[istb[ib] : ienb[ib]]+dP, Te[istb[ib] : ienb[ib]]+1.)
 
     g.match_patches()
 
@@ -214,17 +215,17 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
-    "plot_conv": True,
+    "plot_conv": False,
     # "CFL": 0.0,
 }
 
 settings = {
-    "n_step": 300,
+    "n_step": 1000,
     "n_step_avg": 1,
     "n_step_log": 1,
     "i_loss": 0,
-    # "CFL": 0.01,
-    "plot_conv": True,
+    "plot_conv": False,
+    "CFL": 0.0,
 }
 
 conf = turbigen.solvers.embsolve.Config(**settings)
@@ -234,50 +235,6 @@ def plot_nozzle(g, F):
     """Make debugging plots."""
 
     L = np.ptp(F.x)
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[0, :, b.nk // 2]
-    ax.plot(C.r, C.s)
-    plt.show()
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[0, :, b.nk // 2]
-    ax.plot(C.r, C.P)
-    plt.show()
-
-    fig, ax = plt.subplots()
-    b = g[0]
-    C = b[0, :, b.nk // 2]
-    ax.plot(C.r, C.Vx)
-    ax.plot(C.r, C.Vr)
-    ax.plot(C.r, C.Vt)
-    plt.show()
-
-    fig, ax = plt.subplots()
-    for ib, b in enumerate(g):
-        cs = f"C{ib}"
-        C = b[:, :, b.nk // 2]
-        ax.plot(C.x[:, b.nj // 2] / L, C.r[:, 0] / L, color=cs)
-        ax.plot(C.x[:, b.nj // 2] / L, C.r[:, -1] / L, color=cs)
-        ax.plot(C.x / L, C.r / L, "k-", lw=0.1)
-        ax.plot(C.x.T / L, C.r.T / L, "k-", lw=0.1)
-    ax.axis("equal")
-    ax.set_ylabel("r")
-    ax.set_xlabel("x")
-
-    fig, ax = plt.subplots()
-    for ib, b in enumerate(g):
-        cs = f"C{ib}"
-        C = b[:, b.nj // 2, :]
-        ax.plot(C.x[:, 0] / L, C.rt[:, 0] / L, color=cs)
-        ax.plot(C.x[:, -1] / L, C.rt[:, -1] / L, color=cs)
-        ax.plot(C.x / L, C.rt / L, "k-", lw=0.1)
-        ax.plot(C.x.T / L, C.rt.T / L, "k-", lw=0.1)
-    ax.axis("equal")
-    ax.set_ylabel("rt")
-    ax.set_xlabel("x")
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
@@ -292,9 +249,9 @@ def plot_nozzle(g, F):
     for ib, b in enumerate(g):
         cs = f"C{ib}"
         C = b[:, b.nj // 2, b.nk // 2]
-        ax.plot(C.x / L, C.P / F.Po, color=cs)
-    ax.plot(F.x / L, F.P / F.Po, "k-")
-    ax.set_title("P")
+        ax.plot(C.x / L, C.P / F.P[-1], color=cs)
+    ax.plot(F.x / L, F.P / F.P[-1], "k-")
+    ax.set_title("P/nom P exit")
     # ax.set_ylim(bottom=0.)
 
     fig, ax = plt.subplots()
@@ -323,8 +280,22 @@ def plot_nozzle(g, F):
     for ib, b in enumerate(g):
         cs = f"C{ib}"
         C = b[:, b.nj // 2, b.nk // 2]
-        ax.plot(C.x / L, (C.ho - C.ho[0]) / F[0].V ** 2, color=cs)
-    ax.set_title("Ho")
+        ax.plot(C.x / L, C.Beta, color=cs)
+    ax.set_title("Beta")
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f"C{ib}"
+        C = b[:, b.nj // 2, b.nk // 2]
+        ax.plot(C.x / L, (C.ho - F.ho[0]) / F[0].V ** 2, color=cs)
+    ax.set_title("(Ho - ho_nom)/(V_nom**2)")
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        cs = f"C{ib}"
+        C = b[:, b.nj // 2, b.nk // 2]
+        ax.plot(C.x / L, (C.s - F.s[0]) / F.rgas, color=cs)
+    ax.set_title("(s - s_nom)/Rgas")
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
@@ -332,6 +303,14 @@ def plot_nozzle(g, F):
         ax.contourf(C.x / L, C.r / L, C.s)
     ax.set_title("ent")
     # ax.set_ylim((0,1))
+
+    fig, ax = plt.subplots()
+    for ib, b in enumerate(g):
+        C = b[:, :, b.nk // 2]
+        ax.contourf(C.x / L, C.r / L, C.ho)
+    ax.set_title("ho")
+    # ax.set_ylim((0,1))
+
 
     fig, ax = plt.subplots()
     for ib, b in enumerate(g):
@@ -584,10 +563,31 @@ def test_To1(To1):
     assert (np.abs(Ys) < rtol).all()
     assert (np.abs(Cho) < rtol).all()
 
+def test_offset(dP):
+    """Set an initial guess with different static pressure."""
+
+    xA = np.array([[0.0, 0.01, 0.99, 1.0], [1.0, 1.0, 1.0, 1.0]])
+
+    g, F = make_nozzle(xA, dP=dP)
+
+    np.set_printoptions(precision=2)
+
+    turbigen.solvers.embsolve.run(g, conf)
+
+    err_Ma, Ys, Cho = post_nozzle(g, F)
+
+    plot_nozzle(g, F)
+    plt.show()
+
+    rtol = 2.5e-4
+
+    assert (np.abs(err_Ma) < rtol).all()
+    assert (np.abs(Ys) < rtol).all()
+    assert (np.abs(Cho) < rtol).all()
 
 if __name__ == "__main__":
     # test_condi('t')
-    test_To1(400.0)
+    test_offset(1000.0)
     # test_Tu0(300.)
     # test_rpm(500.)
 

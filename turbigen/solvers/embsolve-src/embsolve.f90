@@ -36,9 +36,8 @@ contains
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
         ijk_mg, fmgrid, &                     ! Multigrid indexing and factor
         fdamp, &                              ! Damping factor
-        sf2, sf4, sf2min, L, &                              ! Damping factor
-        resid, &                              ! Cell residual out
-        resid_last, &                          ! Previous residual out
+        resid_cell, &                              ! Cell residual out
+        resid_node, &                          ! Previous residual out
         ischeme, &
         ni, nj, nk, niwall, njwall, nkwall, nmg &  ! Numbers of points dummy args
         )
@@ -86,13 +85,8 @@ contains
         integer*2, intent (in) :: ijk_mg(3, ni-1, nj-1, nk-1, nmg-1)
 
         ! Cell residual out
-        real, intent (inout) :: resid(ni-1, nj-1, nk-1, 5)
-        real, intent (inout) :: resid_last(ni-1, nj-1, nk-1, 5)
-
-        real, intent(in) :: L( ni, nj, nk, 3)
-        real, intent(in) :: sf2
-        real, intent(in) :: sf4
-        real, intent(in) :: sf2min
+        real, intent (inout) :: resid_cell(ni-1, nj-1, nk-1, 5, 2)
+        real, intent (inout) :: resid_node(ni, nj, nk, 5)
 
         ! Numbers of points dummy args
         integer, intent (in)  :: ni
@@ -124,7 +118,6 @@ contains
 
         ! Net fluxes for each cell
         real :: fsum(ni-1, nj-1, nk-1, 5)
-        ! Cell-centered residual
 
         real :: Pm (ni, nj, nk)
 
@@ -170,57 +163,53 @@ contains
         !$omp end parallel workshare
 
         ! fsum now contains the sum of fluxes for all cells
-        call multigrid_integrate(fsum, resid, ijk_mg, dt_vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
+        call multigrid_integrate(fsum, resid_cell(:,:,:,:,1), ijk_mg, dt_vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
 
         ! Damp out the cell changes
-        call damp(resid, fdamp, ni-1, nj-1, nk-1)
+        call damp(resid_cell(:,:,:,:,1), fdamp, ni-1, nj-1, nk-1)
 
         ! Time march and distribute to nodes
-        call step(cons, resid, resid_last, ischeme, ni, nj, nk)
+        call step(cons, resid_cell, resid_node, ischeme, ni, nj, nk)
 
-        ! Stabilise with smoothing
-        call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
+        ! ! Stabilise with smoothing
+        ! call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
 
     end subroutine
 
-    subroutine step(cons, R1, R2, ischeme, ni, nj, nk)
+    subroutine step(R, Rnode, ischeme, ni, nj, nk)
 
-        real, intent (inout)  :: cons(ni, nj, nk, 5)
-        real, intent (inout) :: R1(ni-1, nj-1, nk-1, 5)
-        real, intent (inout) :: R2(ni-1, nj-1, nk-1, 5)
+        real, intent (inout) :: R(ni-1, nj-1, nk-1, 5, 2)
         integer, intent (in) :: ischeme
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
 
         real :: Rcell(ni-1, nj-1, nk-1, 5)
-        real :: Rnode(ni, nj, nk, 5)
+        real, intent (inout) :: Rnode(ni, nj, nk, 5)
 
         !$omp parallel
         if (ischeme.eq.-1) then
             ! At the start, we have no previous time level available
             ! So just apply the one residual we have
-            Rcell = R1
-            R2 = R1
+            Rcell = R(:,:,:,:,1)
+            ! Save the residual for next iteration
+            R(:,:,:,:,2) = R(:,:,:,:,1)
         else if (ischeme.eq.0) then
         ! Otherwise, combine current and previous time level
         ! According to the selected time marching scheme
             !$omp workshare
-            Rcell = 2e0*R1 - R2
-            R2 = R1
+            Rcell = 2e0*R(:,:,:,:,1) - R(:,:,:,:,2)
+            R(:,:,:,:,2) = R(:,:,:,:,1)
             !$omp end workshare
         else if (ischeme.eq.1) then
             !$omp workshare
-            Rcell = 2e0*R1 - 1.65e0*R2
-            R2 = R1 - 0.65e0*R2
+            Rcell = 2e0*R(:,:,:,:,1) - 1.65e0*R(:,:,:,:,2)
+            R(:,:,:,:,2) = R(:,:,:,:,1) - 0.65e0*R(:,:,:,:,2)
             !$omp end workshare
         end if
 
         ! Distribute cell residual to nodes and add on
         call cell_to_node(Rcell, Rnode, ni, nj, nk, 5)
-        !$omp workshare
-        cons = cons + Rnode
-        !$omp end workshare
         !$omp end parallel
 
     end subroutine
