@@ -166,13 +166,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def apply_guess_uniform(self, F):
-        self._metadata.update(F._metadata)
-        self.Vx = F.Vx
-        self.Vr = F.Vr
-        self.Vt = F.Vt
-        self.Omega = F.Omega
-        self.set_P_T(F.P, F.T)
+    def apply_guess_uniform(self, Vxrt, P, T, Omega=0.):
+        self.Vx = Vxrt[0]
+        self.Vr = Vxrt[1]
+        self.Vt = Vxrt[2]
+        self.Omega = Omega
+        self.set_P_T(P, T)
 
     def trim(self, i=None, j=None, k=None):
         """Extract a subset of this block in-place, correct patch indices."""
