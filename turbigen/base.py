@@ -1486,55 +1486,11 @@ class Composites:
         self.Vxrt = Vxrt
         return self
 
-    def outlet_to_chic(self, dP):
-        """Upstream chic forcing for given dP.
-        The characteristics are
-        c = [dP-rho*a*dVx, dP+rho*a*dVx, rho*a*dVr, rho*a*dVt, dP - (a^2)*drho].
-        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
+    @dependent_property
+    def conserved_to_chic(self):
+        return self.conserved_to_primitive @ self.primitive_to_chic
 
-        This function calculates conserved variable changes to create a given
-        static pressure change while keeping all downstream-running chics zero.
-        """
-
-        dP = np.ones_like(self.rho) * dP
-        dVx = -dP / self.rho / self.a  # from c2=0
-        Z = np.zeros_like(self.rho)
-        c1 = dP - self.rho * self.a * dVx
-        dchic = np.stack((c1, Z, Z, Z, Z), axis=-1).reshape(-1, 5, 1)
-
-        return dchic
-
-    def inlet_to_chic(self, dinlet):
-        """Downstream chic forcing to match inlet conditions.
-        The characteristics are
-        c = [dP-rho*a*dVx, dP+rho*a*dVx, rho*a*dVr, rho*a*dVt, dP - (a^2)*drho].
-        [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
-
-        The inlet controlled variables are
-        [ho, s, tanAl, tanBeta]
-
-        This function calculates conserved variable changes to create a given
-        inlet vector change while keeping the upstream-running chic zero.
-        """
-
-        # Convert downstream-running chics to prim changes
-        # Omit first column corresponding to upstream-running chic
-        chic_to_prim = self.chic_to_primitive()[:, :, 1:]
-
-        # Convert primitive to inlet changes
-        # Omit last row corresponding to static pressure
-        prim_to_inlet = self.primitive_to_bcond()[:, :-1, :]
-
-        # Apply the complete transformation
-        chic_to_inlet = prim_to_inlet @ chic_to_prim
-        inlet_to_chic = np.linalg.inv(chic_to_inlet)
-        dchic = inlet_to_chic @ dinlet
-
-        # Add a zero upstream-running chic
-        dchic = np.concatenate((np.zeros((self.size, 1, 1)), dchic), axis=1)
-
-        return dchic
-
+    @dependent_property
     def primitive_to_conserved(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -1547,9 +1503,6 @@ class Composites:
 
         """
 
-        if not self.ndim == 1:
-            raise Exception(f"Need a flattened flow to do this")
-
         Z = np.zeros(self.shape)
         one = np.ones(self.shape)
         C = np.stack(
@@ -1560,9 +1513,11 @@ class Composites:
                 (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
                 (Z, Z, Z, Z, self.drhoe_dP_rho),  # d/dP
             )
-        ).T
+        )
+        C = np.moveaxis(C, (0, 1), (-1, -2))
         return C
 
+    @dependent_property
     def conserved_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
@@ -1574,8 +1529,9 @@ class Composites:
         Cinv: (npts, 5, 5) array
 
         """
-        return np.linalg.inv(self.primitive_to_conserved())
+        return np.linalg.inv(self.primitive_to_conserved)
 
+    @dependent_property
     def primitive_to_chic(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -1590,9 +1546,6 @@ class Composites:
 
         """
 
-        if not self.ndim == 1:
-            raise Exception(f"Need a flattened flow to do this")
-
         Z = np.zeros(self.shape)
         one = np.ones(self.shape)
         rhoa = self.rho * self.a
@@ -1604,9 +1557,15 @@ class Composites:
                 (Z, Z, Z, rhoa, Z),  # d/dVt
                 (one, one, Z, Z, one),  # d/dP
             )
-        ).T
+        )
+        B = np.moveaxis(B, (0, 1), (-1, -2))
         return B
 
+    @dependent_property
+    def chic_to_conserved(self):
+        return self.primitive_to_conserved @ self.chic_to_primitive
+
+    @dependent_property
     def chic_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         characteristic variables
@@ -1619,8 +1578,9 @@ class Composites:
         -------
         Binv: (npts, 5, 5) array
         """
-        return np.linalg.inv(self.primitive_to_chic())
+        return np.linalg.inv(self.primitive_to_chic)
 
+    @dependent_property
     def primitive_to_flux(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -1633,9 +1593,6 @@ class Composites:
         A: (npts, 5, 5) array
 
         """
-
-        if not self.ndim == 1:
-            raise Exception(f"Need a flattened flow to do this")
 
         Z = np.zeros(self.shape)
         one = np.ones(self.shape)
@@ -1652,9 +1609,11 @@ class Composites:
                 (Z, Z, Z, self.rhoVx * self.r, self.rhoVx * self.Vt),  # d/dVt
                 (Z, one, Z, Z, self.rhoVx * self.dhdP_rho),  # d/dP
             )
-        ).T
+        )
+        A = np.moveaxis(A, (0, 1), (-1, -2))
         return A
 
+    @dependent_property
     def flux_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         flux variables
@@ -1666,16 +1625,9 @@ class Composites:
         -------
         Ainv: (npts, 5, 5) array
         """
-        return np.linalg.inv(self.primitive_to_flux())
+        return np.linalg.inv(self.primitive_to_flux)
 
-    def conserved_to_chic(self):
-        return self.primitive_to_chic() @ self.conserved_to_primitive()
-
-    def chic_to_conserved(self):
-        return self.primitive_to_conserved() @ self.chic_to_primitive()
-
-        return self.primitive_to_chic() @ self.conserved_to_primitive()
-
+    @dependent_property
     def primitive_to_bcond(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -1688,9 +1640,6 @@ class Composites:
         Y: (npts, 5, 5) array
 
         """
-
-        if not self.ndim == 1:
-            raise Exception(f"Need a flattened flow to do this")
 
         Z = np.zeros(self.shape)
         one = np.ones(self.shape)
@@ -1710,9 +1659,11 @@ class Composites:
                 (self.Vt, Z, dtanAl_dVt, Z, Z),  # d/dVt
                 (self.dhdP_rho, self.dsdP_rho, Z, Z, one),  # d/dP
             )
-        ).T
+        )
+        Y = np.moveaxis(Y, (0, 1), (-1, -2))
         return Y
 
+    @dependent_property
     def bcond_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         boundary condition variables
@@ -1726,38 +1677,7 @@ class Composites:
 
         """
 
-        return np.linalg.inv(self.primitive_to_bcond())
-
-    def bcond_to_conserved(self, chics):
-        # bcond to primitive
-        Yinv = self.bcond_to_primitive()
-
-        # primitive to chic
-        B = self.primitive_to_chic()
-
-        # Selectors for direction of chics
-        # [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
-        # [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
-        ni = B.shape[0]
-        if chics == "all":
-            D = np.tile(np.eye(5), (ni, 1, 1))
-        elif chics == "up":
-            D = np.tile(np.diag([-1.0, 0.0, 0.0, 0.0, 0.0]), (ni, 1, 1))
-        elif chics == "dn":
-            D = np.tile(np.diag([0.0, -1.0, 1.0, 1.0, 1.0]), (ni, 1, 1))
-
-        # chic to primitive
-        Binv = self.chic_to_primitive()
-
-        # primitive to conserved
-        C = self.primitive_to_conserved()
-
-        # Assemble the complete transformations
-        CBinv = C @ Binv
-        BYinv = B @ Yinv
-        Q = CBinv @ D @ BYinv
-
-        return Q
+        return np.linalg.inv(self.primitive_to_bcond)
 
     def resolve_meridional(self, psi):
         """Replace axial and radial components by resolving at angle to axial dirn."""

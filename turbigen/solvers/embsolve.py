@@ -20,7 +20,6 @@ logger = turbigen.util.make_logger()
 
 logger.setLevel(level=logging.INFO)
 
-
 try:
     from mpi4py import MPI
 
@@ -341,8 +340,8 @@ class SolverBlock:
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.bconds = [InletBoundary(patch) for patch in block.inlet_patches] + [
-            OutletBoundary(patch) for patch in block.outlet_patches
+        self.bconds = [
+            Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
         ]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
@@ -1683,6 +1682,11 @@ class Boundary:
         # Preallocate a working fluid object for all nodes on patch
         self.state = C.copy()
         self.shape = self.state.shape
+        self.size = self.state.size
+
+        # Preallocate nodal conserved variable changes
+        # We apply boundary conditions by intercepting them
+        self.dUn = np.empty(self.shape + (5,))
 
         # Store face area
         if patch.cdir == 0:
@@ -1693,14 +1697,35 @@ class Boundary:
             self.dA = C.dAj.squeeze()
         self.dA = util.vecnorm(self.dA)
 
-        self.dUn = np.empty((5,) + self.shape)
+        # Initialise indicator for inlet or outlet
+        # Nodewise to allow for reversed flow across mixing plane
+        self.inlet_target = np.full(self.shape + (4, 1), np.nan)
+        self.P_target = np.full(self.shape, np.nan)
+
+        if isinstance(patch, turbigen.grid.InletPatch):
+            self.is_inlet = np.ones(self.shape, dtype=bool)
+
+            # Set up target flow
+            tanAl = turbigen.util.tand(patch.Alpha)
+            tanBe = turbigen.util.tand(patch.Beta)
+            self.inlet_target[..., :, 0] = [patch.state.h, patch.state.s, tanAl, tanBe]
+
+        elif isinstance(patch, turbigen.grid.OutletPatch):
+            self.is_inlet = np.zeros(self.shape, dtype=bool)
+
+            # Set up target flow
+            self.P_target[:] = np.full(self.shape, patch.Pout)
+
+    @property
+    def is_outlet(self):
+        return np.logical_not(self.is_inlet)
 
     def clip_velocities(self):
-        # Limit the minimum velocities to avoid singular transformation matrices
-        Ma_min = 0.1
+        """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
+        Ma_min = 0.05
         V_min = self.state.a.mean() * Ma_min
-        ind_clip = np.abs(self.state.Vxrt) < V_min
-        self.state.Vxrt[ind_clip] = V_min * np.sign(self.state.Vxrt[ind_clip])
+        ind_clip = np.abs(self.state.Vx) < V_min
+        self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1711,42 +1736,87 @@ class Boundary:
         self.state.set_rho_u(rho, u)
 
         # Note that the solver blocks use Fortran axis order
-        # So that Vx = Vxrt[...,0] is contiguous
+        # So that e.g. Vx = Vxrt[...,0] is contiguous
         # This is opposite to the C axis order used within state objects
-        # So we have to move the velocity component axis to first posn
-        self.state.Vxrt = np.moveaxis(block.Vxrt[self.slice], -1, 0)
+        # So we have to move the component axis to first posn
 
-        self.dUn = np.moveaxis(block.dUn[self.slice], -1, 0)
+        # Velocities
+        self.state.Vxrt[:] = np.moveaxis(block.Vxrt[self.slice], -1, 0)
+
+        # Nodal residuals
+        self.dUn[:] = block.dUn[self.slice]
 
     def push(self, block):
-        """Send stored state back to the parent block."""
-
-        # # Set the conserved variables
-        # # Note we put variable axis last to comply with Fortran
-        # block.cons[self.slice][..., 0] = self.state.rho
-        # block.cons[self.slice][..., 1] = self.state.rhoVx
-        # block.cons[self.slice][..., 2] = self.state.rhoVr
-        # block.cons[self.slice][..., 3] = self.state.rhorVt
-        # block.cons[self.slice][..., 4] = self.state.rhoe
-
-        # # Assuming that the secondary vars for interior grid points
-        # # have already been calculated, we must update them on this
-        # # boundary too
-        # block.u[self.slice] = self.state.u
-        # block.P[self.slice] = self.state.P
-        # block.T[self.slice] = self.state.T
-        # block.ho[self.slice] = self.state.ho
-        # # Note we put variable axis last to comply with Fortran
-        # block.Vxrt[self.slice] = np.moveaxis(self.state.Vxrt, 0, -1)
-
-        block.dUn[self.slice] = np.moveaxis(self.dUn, 0, -1)
+        """Send modified residuals back to the parent block."""
+        # Noting that we have to swap from C to Fortran ordering
+        block.dUn[self.slice] = self.dUn
 
     def apply(self, block):
         self.pull(block)
-        self.force()
+        dchic = self.interior_chics() + self.exterior_chics()
+        dcons = self.state.chic_to_conserved @ dchic
+        self.dUn[:] = dcons[..., 0]
         self.push(block)
 
+    def interior_chics(self):
+        """Get chics propagating out of domain from interior nodal changes."""
+
+        # Form a diagonal selector matrices for upstream or downstream chics
+        Dup = np.diag([0, 1, 1, 1, 1])
+        Ddn = np.diag([1, 0, 0, 0, 0])
+
+        # Interior chics are upstream-running at inlet, downstream-running at outlet
+        D = np.empty(self.shape + (5, 5))
+        D[self.is_inlet] = Dup
+        D[self.is_outlet] = Ddn
+
+        # Matrix transform conserved changes to chics, with selector
+        dc = D @ self.state.conserved_to_chic @ self.dUn[..., None]
+
+        return dc
+
+    def exterior_chics(self):
+        # Preallocate
+        dc = np.zeros(self.shape + (5, 1))
+
+        #
+        # On outlet, use static pressure to set upstream-running wave
+        #
+        dP = self.P_target - self.state.P
+        rho = self.state.rho
+        a = self.state.a
+        dVx = -dP / rho / a  # from c2=0
+        c1 = dP - rho * a * dVx
+        dc[self.is_outlet][:, 0, 0] = c1[self.is_outlet]
+
+        #
+        # On inlet, use ho, s, Al, Be to set downstream-running chics
+        #
+
+        # Convert downstream-running chics to prim changes
+        # Omit first column corresponding to upstream-running chic
+        chic_to_prim = self.state.chic_to_primitive[..., :, 1:]
+
+        # Convert primitive to inlet changes
+        # Omit last row corresponding to static pressure
+        prim_to_inlet = self.state.primitive_to_bcond[..., :-1, :]
+
+        # Complete transformation matrix
+        chic_to_inlet = prim_to_inlet @ chic_to_prim
+        inlet_to_chic = np.linalg.inv(chic_to_inlet)
+
+        # Evaluate bcond error
+        inlet_now = np.stack(
+            (self.state.ho, self.state.s, self.state.tanAlpha, self.state.tanBeta),
+            axis=-1,
+        )[..., None]
+        dinlet = self.inlet_target - inlet_now
+        dc[self.is_inlet][:, 1:, :] = (inlet_to_chic @ dinlet)[self.is_inlet]
+
+        return dc
+
     def integrate(self):
+        """Get mass flow and mass-averaged boundary conditions."""
         rhoVx = self.state.rhoVx.squeeze()
         Po = self.state.Po.squeeze()
         To = self.state.To.squeeze()
@@ -1757,84 +1827,10 @@ class Boundary:
         P_face = util.node_to_face2(P)
         A = self.dA.sum()
         mdot = (rhoVx_face * self.dA).sum()
-        Po_avg = (Po_face * self.dA).sum() / A
-        To_avg = (To_face * self.dA).sum() / A
+        Po_avg = (rhoVx_face * Po_face * self.dA).sum() / mdot
+        To_avg = (rhoVx_face * To_face * self.dA).sum() / mdot
         P_avg = (P_face * self.dA).sum() / A
         return mdot, Po_avg, To_avg, P_avg
-
-
-class OutletBoundary(Boundary):
-    def __init__(self, patch):
-        super().__init__(patch)
-
-        self.P_target = patch.Pout
-
-    def force(self):
-
-        # Operate on flattened view of the patch
-        state = self.state.to_unstructured()
-
-        # Take the nodal conserved variables from time-step and
-        # strip off the exterior chics we do not need
-        # i.e. for an outlet, we keep the 4 downstream-runners
-        dUn = self.dUn.reshape(5, -1).T[..., None]
-        D = np.diag([0, 1, 1, 1, 1]).reshape(1, 5, 5)
-        dchic_interior = D @ state.conserved_to_chic() @ dUn
-
-        # Now we supply the upstream-running chic from exterior
-        dP = self.P_target - state.P
-        relax = 0.5
-        dchic_exterior = state.outlet_to_chic(dP) * relax
-
-        # Sum all chics and convert to conserved chandes
-        dchic = dchic_interior + dchic_exterior
-        dcons = state.chic_to_conserved() @ dchic
-        self.dUn[:] = dcons.squeeze().T.reshape((5,) + self.shape)
-
-
-class InletBoundary(Boundary):
-    def __init__(self, patch):
-        super().__init__(patch)
-
-        tanAl = turbigen.util.tand(patch.Alpha)
-        tanBe = turbigen.util.tand(patch.Beta)
-        self.var_target = np.array(
-            [patch.state.h, patch.state.s, tanAl, tanBe]
-        ).reshape(1, 4, 1)
-
-    def force(self):
-        return
-
-        # Operate on flattened view of the patch
-        state = self.state.to_unstructured()
-
-        # Operate on flattened view of the patch
-        state = self.state.to_unstructured()
-
-        # Take the nodal conserved variables from time-step and
-        # strip off the exterior chics we do not need
-        # i.e. for an inlet, we keep the 1 upstream-runner
-        dUn = self.dUn.reshape(5, -1).T[..., None]
-        D = np.diag([1, 0, 0, 0, 0]).reshape(1, 5, 5)
-        dchic_interior = D @ state.conserved_to_chic() @ dUn
-
-        # Now we supply the upstream-running chic from exterior
-        # Evaluate required changes to inlet conditions
-        var_now = np.stack(
-            (state.ho, state.s, state.tanAlpha, state.tanBeta), axis=-1
-        ).reshape(-1, 4, 1)
-        dinlet = self.var_target - var_now
-
-        # TODO convert dinlet to dchic_exterior here
-
-        # dP = self.P_target - state.P
-        # relax = 0.5
-        # dchic_exterior = state.outlet_to_chic(dP) * relax
-
-        # Sum all chics and convert to conserved chandes
-        dchic = dchic_interior + dchic_exterior
-        dcons = state.chic_to_conserved() @ dchic
-        self.dUn[:] = dcons.squeeze().T.reshape((5,) + self.shape)
 
 
 class MixingPlane:
