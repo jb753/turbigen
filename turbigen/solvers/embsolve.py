@@ -1,4 +1,5 @@
 import numpy as np
+from copy import copy
 
 import turbigen.util
 
@@ -147,14 +148,14 @@ class SolverBlock:
 
         # Select precision
         if conf.precision == 1:
-            self.typ = np.float32
-            self.mpi_typ = mpi_single
+            typ = np.float32
+            mpi_typ = mpi_single
         else:
-            self.typ = np.float64
-            self.mpi_typ = mpi_double
+            typ = np.float64
+            mpi_typ = mpi_double
 
         def to_fort(x):
-            return to_fort_type(x, self.typ)
+            return to_fort_type(x, typ)
 
         # Primaries
         self.cons = to_fort(block.conserved)
@@ -162,9 +163,9 @@ class SolverBlock:
         self.conf = conf
         self.Nb = block.Nb
 
-        self.mu = self.typ(block.mu)
-        self.cp = self.typ(block.cp)
-        self.Pr_turb = self.typ(conf.Pr_turb)
+        self.mu = typ(block.mu)
+        self.cp = typ(block.cp)
+        self.Pr_turb = typ(conf.Pr_turb)
 
         self.ho = to_fort(block.ho)
         self.P = to_fort(block.P)
@@ -174,7 +175,7 @@ class SolverBlock:
         self.u = to_fort(block.u)
         self.T = to_fort(block.T)
 
-        self.dw = get_dw(block, self.typ)
+        self.dw = get_dw(block, typ)
         self.pitch = block.pitch
 
         # Geometry
@@ -189,7 +190,7 @@ class SolverBlock:
         self.dAk = to_fort(block.dAk_new)
 
         self.Vxrt = to_fort(block.Vxrt)
-        self.Omega = block.Omega.mean().astype(self.typ).item()
+        self.Omega = block.Omega.mean().astype(typ).item()
         xllim = (
             block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
         )
@@ -202,11 +203,11 @@ class SolverBlock:
 
         # Residual storage
         ni, nj, nk = block.shape
-        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=self.typ)
-        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=self.typ)
-        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=self.typ)
+        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=typ)
+        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=typ)
 
-        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(self.typ)
+        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
         xlength = (0.41 * xlength) ** 2.0
         self.xlength = to_fort(np.zeros((ni - 1, nj - 1, nk - 1)))
         embsolve.node_to_cell(xlength, self.xlength)
@@ -216,9 +217,9 @@ class SolverBlock:
             get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid) + 1
         )
         self.vol = get_multigrid_volumes(
-            to_fort(block.vol_new), self.ijk_multigrid, self.typ
+            to_fort(block.vol_new), self.ijk_multigrid, typ
         )
-        self.dlmin = get_multigrid_lengths(block, conf.multigrid, self.typ)
+        self.dlmin = get_multigrid_lengths(block, conf.multigrid, typ)
         self.dt_vol = self.dlmin * 0.0
 
         # Get wall indices
@@ -346,27 +347,13 @@ class SolverBlock:
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
-                shape=block.shape, order="F", typ=self.typ
+                shape=block.shape, order="F", typ=typ
             )
-            self.state.gamma = self.typ(block.gamma)
-            self.state.cp = self.typ(block.cp)
-            self.state.mu = self.typ(block.mu)
+            self.state.gamma = typ(block.gamma)
+            self.state.cp = typ(block.cp)
+            self.state.mu = typ(block.mu)
             self.state.set_rho_u(block.rho, block.u)
             self.state.set_Tu0(block.Tu0)
-
-            # self.state_inlets = [
-            #     turbigen.fluid.PerfectState(
-            #         shape=inlet[0].shape, order="F", typ=self.typ
-            #     )
-            #     for inlet in self.inlets
-            # ]
-
-            # self.state_outlets = [
-            #     turbigen.fluid.PerfectState(
-            #         shape=outlet[0].shape, order="F", typ=self.typ
-            #     )
-            #     for outlet in self.outlets
-            # ]
 
         else:
             raise NotImplementedError()
@@ -811,73 +798,96 @@ def face_indices(ijk):
         ijk = trim_i(ijk)
         ijk = trim_j(ijk)
 
-    return ijk
+    return np.asfortranarray(ijk).reshape(3, -1).astype(np.int16)
 
 
-def get_periodic_data(patch):
-    match = patch.match
-    perm, flip = match.get_match_perm_flip()
+class Periodic:
+    """Encapsulate information needed for peridoc boundary."""
 
-    ijk = patch.get_indices()
-    nxijk = match.get_indices(perm, flip)
+    def __init__(self, patch, pid, procids, typ):
+        match = patch.match
+        perm, flip = match.get_match_perm_flip()
 
-    ijkf = face_indices(ijk).reshape(3, -1)
-    nxijkf = face_indices(nxijk).reshape(3, -1)
+        self.pid = pid
+        self.bid = patch.block.grid.index(patch.block)
+        self.nxbid = match.block.grid.index(match.block)
 
-    bid = patch.block.grid.index(patch.block)
-    nxbid = match.block.grid.index(match.block)
-
-    d = ijk.shape.index(1)
-    nxd = nxijk.shape.index(1)
-
-    ijk = ijk.reshape(3, -1)
-    nxijk = nxijk.reshape(3, -1)
-
-    # Check the coords match
-    b1 = patch.block
-    b2 = patch.match.block
-
-    Npts = ijk.shape[-1]
-    for n in range(Npts):
-        ijknow = tuple(ijk[:, n])
-        nxijknow = tuple(nxijk[:, n])
-
-        assert np.isclose(
-            b1.x[ijknow],
-            b2.x[nxijknow],
+        self.ijk = ijk = np.asfortranarray(patch.get_indices().reshape(3, -1)).astype(
+            np.int16
         )
-        assert np.isclose(
-            b1.r[ijknow],
-            b2.r[nxijknow],
+        self.nxijk = nxijk = np.asfortranarray(
+            match.get_indices(perm, flip).reshape(3, -1)
+        ).astype(np.int16)
+
+        # Check the coords match
+        b1 = patch.block
+        b2 = patch.match.block
+
+        Npts = ijk.shape[-1]
+        for n in range(Npts):
+            ijknow = tuple(ijk[:, n])
+            nxijknow = tuple(nxijk[:, n])
+
+            assert np.isclose(
+                b1.x[ijknow],
+                b2.x[nxijknow],
+            )
+            assert np.isclose(
+                b1.r[ijknow],
+                b2.r[nxijknow],
+            )
+
+            t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
+            t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
+            assert np.allclose(t1, t2)
+
+        # Check we have the correct number of points
+        npt = patch.get_cut().to_unstructured().shape[0]
+        assert ijk.shape[1] == npt
+        assert nxijk.shape[1] == npt
+        self.N = npt * 5
+
+        # Check the indices are in correct range
+        assert ijk.min() >= 0
+        assert ijk[0].max() < b1.ni
+        assert ijk[1].max() < b1.nj
+        assert ijk[2].max() < b1.nk
+
+        assert nxijk.min() >= 0
+        assert nxijk[0].max() < b2.ni
+        assert nxijk[1].max() < b2.nj
+        assert nxijk[2].max() < b2.nk
+
+        # Add one for 1-based Fortran indices
+        self.ijk += 1
+        self.nxijk += 1
+
+        # Store required data
+        # pid, bid, _, ijk, _, _, nxbid, nxprocid, nxijk, _, _ = patch
+        self.procid = procids[self.bid]
+        self.nxprocid = procids[self.nxbid]
+
+        self.buffer = np.empty((self.N), order="F").astype(typ)
+        self.nxbuffer = np.empty((self.N), order="F").astype(typ)
+
+    def reversed(self):
+        p = copy(self)
+        p.bid, p.nxbid = p.nxbid, p.bid
+        p.procid, p.nxprocid = p.nxprocid, p.procid
+        p.ijk, p.nxijk = p.nxijk, p.ijk
+        return p
+
+    def setup_communication(self, comm, mpi_typ):
+        self.Send = comm.Send_init(
+            buf=[self.buffer, self.N, mpi_typ],
+            dest=self.nxprocid,
+            tag=self.pid,
         )
-
-        t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
-        t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
-        assert np.allclose(t1, t2)
-
-    # Check we have the correct number of points
-    npt = patch.get_cut().to_unstructured().shape[0]
-    assert ijk.shape[1] == npt
-    assert nxijk.shape[1] == npt
-
-    # Check the indices are in correct range
-    assert ijk.min() >= 0
-    assert ijk[0].max() < b1.ni
-    assert ijk[1].max() < b1.nj
-    assert ijk[2].max() < b1.nk
-
-    assert nxijk.min() >= 0
-    assert nxijk[0].max() < b2.ni
-    assert nxijk[1].max() < b2.nj
-    assert nxijk[2].max() < b2.nk
-
-    # For Fortran
-    ijk = np.asfortranarray(ijk + 1).astype(np.int16)
-    nxijk = np.asfortranarray(nxijk + 1).astype(np.int16)
-    ijkf = np.asfortranarray(ijkf + 1).astype(np.int16)
-    nxijkf = np.asfortranarray(nxijkf + 1).astype(np.int16)
-
-    return bid, ijk, ijkf, d, nxbid, nxijk, nxijkf, nxd
+        self.Recv = comm.Recv_init(
+            buf=[self.nxbuffer, self.N, mpi_typ],
+            source=self.nxprocid,
+            tag=self.pid,
+        )
 
 
 def get_mixers(grid, procids):
@@ -904,7 +914,7 @@ def get_mixers(grid, procids):
     return mixers
 
 
-def get_periodics(g, procids):
+def get_periodics(g, procids, typ):
     periodics = []
     seen = []
     pid = 0
@@ -916,22 +926,7 @@ def get_periodics(g, procids):
             seen.append(patch)
             seen.append(patch.match)
 
-        bid, ind, indf, d, nxbid, nxind, nxindf, nxd = get_periodic_data(patch)
-        periodics.append(
-            (
-                pid,
-                bid,
-                procids[bid],
-                ind,
-                indf,
-                d,
-                nxbid,
-                procids[nxbid],
-                nxind,
-                nxindf,
-                nxd,
-            )
-        )
+        periodics.append(Periodic(patch, pid, procids, typ))
         pid += 1
 
     return periodics
@@ -1232,41 +1227,35 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 
 def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
     # Update periodic boundaries
+
+    # Loop to populate home buffer and send away buffer
     for patch in periodics:
-        pid, bid, procid, ijk, _, _, nxbid, nxprocid, nxijk, _, _ = patch
+        # Load flow field into our buffer
+        b1 = blocks[bid_local[patch.bid]].cons
+        patch.buffer[:] = embsolve.get_by_ijk(b1, patch.ijk)
 
-        b1 = blocks[bid_local[bid]]
-
-        v1 = b1.cons
-
-        # Just set the periodic if on same rank
-        if nxprocid == rank:
-            b2 = blocks[bid_local[nxbid]]
-            v2 = b2.cons
-
-            embsolve.average_by_ijk(v1, v2, ijk, nxijk)
+        # Can directly set away buffer if same rank
+        if patch.nxprocid == rank:
+            b2 = blocks[bid_local[patch.nxbid]].cons
+            patch.nxbuffer[:] = embsolve.get_by_ijk(b2, patch.nxijk)
 
         # Otherwise, communication is needed
         else:
-            # Assemble data to send
-            vs = embsolve.get_by_ijk(v1, ijk)
-            count = len(vs)
+            patch.Send.Start()
 
-            # Preallocate a buffer to recieve
-            nxv = np.empty_like(vs, dtype=typ)
+    # Recieve into away buffers
+    for patch in periodics:
+        if not patch.nxprocid == rank:
+            patch.Recv.Start()
 
-            # If our rank is lower than next rank, send first
-            if rank < nxprocid:
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-            # Otherwise, recieve first
-            else:
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-
-            # Take average over both sides
-            vavg = 0.5 * (vs + nxv)
-            embsolve.set_by_ijk(v1, vavg, ijk)
+    # Once the communication completes, take average of home
+    # and away buffers and assign back to grid
+    for patch in periodics:
+        if not patch.nxprocid == rank:
+            b1 = blocks[bid_local[patch.bid]].cons
+            patch.Recv.Wait()
+            bavg = 0.5 * (patch.buffer + patch.nxbuffer)
+            embsolve.set_by_ijk(b1, bavg, patch.ijk)
 
 
 def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=None):
@@ -1294,17 +1283,26 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
     K_exit = conf.K_exit  # * conf.CFL / CFL_ref
     rfin = 0.2
 
+    if blocks[0].conf.precision == 1:
+        typ = np.float32
+        mpi_typ = mpi_single
+    else:
+        typ = np.float64
+        mpi_typ = mpi_double
+
     # Only keep relevent periodics
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
-        pid, bid, procid, ind, indf, d, nxbid, nxprocid, nxind, nxindf, nxd = patch
-        if procid == rank:
+        # pid, bid, procid, ind, indf, d, nxbid, nxprocid, nxind, nxindf, nxd = patch
+        if patch.procid == rank:
             periodics.append(patch)
-        elif nxprocid == rank:
-            periodics.append(
-                (pid, nxbid, nxprocid, nxind, nxindf, nxd, bid, procid, ind, indf, d)
-            )
+        elif patch.nxprocid == rank:
+            periodics.append(patch.reversed())
+
+    # Setup MPI communication on periodics
+    for patch in periodics:
+        patch.setup_communication(comm, mpi_typ)
 
     # Rearrange mixers so that foreign is always second
     for mix1, mix2, _ in mixers:
@@ -1331,9 +1329,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
     try:
         tstart = timer()
         tfirst = tstart + 0.0
-
-        typ = blocks[0].typ
-        mpi_typ = blocks[0].mpi_typ
 
         for iblock in range(nblock):
             blocks[iblock].set_secondary()
@@ -1467,6 +1462,12 @@ def run(grid, conf, machine=None):
 
     nodes = np.sum([b.size for b in grid])
 
+    # Select precision
+    if conf.precision == 1:
+        typ = np.float32
+    else:
+        typ = np.float64
+
     blocks = [SolverBlock(b, conf) for b in grid]
     for ib, b in enumerate(blocks):
         b.bid = ib
@@ -1474,7 +1475,7 @@ def run(grid, conf, machine=None):
     logger.info(f"Patitioning onto {size} processors...")
     # procids is a list of length nblocks, of which processor is alocated to each block
     procids = grid.partition(size)
-    periodics = get_periodics(grid, procids)
+    periodics = get_periodics(grid, procids, typ)
 
     mixers = get_mixers(grid, procids)
 
