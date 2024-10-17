@@ -169,7 +169,7 @@ contains
         call damp(resid_cell(:,:,:,:,1), fdamp, ni-1, nj-1, nk-1)
 
         ! Time march and distribute to nodes
-        call step(cons, resid_cell, resid_node, ischeme, ni, nj, nk)
+        call step(resid_cell, resid_node, ischeme, ni, nj, nk)
 
         ! ! Stabilise with smoothing
         ! call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
