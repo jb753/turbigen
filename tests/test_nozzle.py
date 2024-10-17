@@ -201,9 +201,9 @@ def make_nozzle(
     # Initial guess
     for ib, b in enumerate(g):
         b.Vx = Ve[istb[ib] : ienb[ib]]
-        b.Vr = V[0]*0.1
-        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha)) + V[0]*0.1
-        b.set_P_T(Pe[istb[ib] : ienb[ib]]+dP, Te[istb[ib] : ienb[ib]]+1.)
+        b.Vr = 0.0
+        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha))
+        b.set_P_T(Pe[istb[ib] : ienb[ib]] + dP, Te[istb[ib] : ienb[ib]])
 
     g.match_patches()
 
@@ -219,15 +219,15 @@ settings = {
     # "CFL": 0.0,
 }
 
-settings = {
-    "n_step": 1000,
-    "n_step_avg": 1,
-    "n_step_log": 1,
-    "i_loss": 0,
-    "plot_conv": False,
-    "CFL": 0.0,
-}
-
+# settings = {
+#     "n_step": 1000,
+#     "n_step_avg": 1,
+#     "n_step_log": 1,
+#     "i_loss": 0,
+#     "plot_conv": False,
+#     # "CFL": 0.0,
+# }
+#
 conf = turbigen.solvers.embsolve.Config(**settings)
 
 
@@ -311,12 +311,12 @@ def plot_nozzle(g, F):
     ax.set_title("ho")
     # ax.set_ylim((0,1))
 
-
     fig, ax = plt.subplots()
-    for ib, b in enumerate(g):
-        C = b[:, :, b.nk // 2]
-        ax.contourf(C.x / L, C.r / L, C.P)
-    ax.set_title("P")
+    b = g[-1]
+    C = b[-1, :, :]
+    ax.contourf(C.y, C.z, C.P)
+    print(C.Vx.min(), C.Vx.max())
+    ax.set_title("Pexit")
     # ax.set_ylim((0,1))
 
     # plt.show()
@@ -554,8 +554,8 @@ def test_To1(To1):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    plot_nozzle(g, F)
-    plt.show()
+    # plot_nozzle(g, F)
+    # plt.show()
 
     rtol = 2.5e-4
 
@@ -563,6 +563,8 @@ def test_To1(To1):
     assert (np.abs(Ys) < rtol).all()
     assert (np.abs(Cho) < rtol).all()
 
+
+@pytest.mark.parametrize("dP", (-1000.0, 1000.0))
 def test_offset(dP):
     """Set an initial guess with different static pressure."""
 
@@ -576,8 +578,8 @@ def test_offset(dP):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    plot_nozzle(g, F)
-    plt.show()
+    # plot_nozzle(g, F)
+    # plt.show()
 
     rtol = 2.5e-4
 
@@ -585,9 +587,10 @@ def test_offset(dP):
     assert (np.abs(Ys) < rtol).all()
     assert (np.abs(Cho) < rtol).all()
 
+
 if __name__ == "__main__":
     # test_condi('t')
-    test_offset(1000.0)
+    # test_offset(0.0)
     # test_Tu0(300.)
     # test_rpm(500.)
 
@@ -610,3 +613,4 @@ if __name__ == "__main__":
     # print('testing con-di nozzles')
     # print(Alpha, g[0].dlmin[0,0,0], g[0].vol[0,0,0], g[)
     # test_condi('t')
+    pass

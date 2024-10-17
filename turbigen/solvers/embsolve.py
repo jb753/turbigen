@@ -1009,25 +1009,25 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Otherwise, communication is needed
         else:
             raise NotImplementedError()
-            # Assemble data to send
-            vs = embsolve.get_by_ijk(v1, ijk)
-            count = len(vs)
-
-            # Preallocate a buffer to recieve
-            nxv = np.empty_like(vs, dtype=typ)
-
-            # If our rank is lower than next rank, send first
-            if rank < nxprocid:
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-            # Otherwise, recieve first
-            else:
-                comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-                comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-
-            # Take average over both sides
-            vavg = 0.5 * (vs + nxv)
-            embsolve.set_by_ijk(v1, vavg, ijk)
+            # # Assemble data to send
+            # vs = embsolve.get_by_ijk(v1, ijk)
+            # count = len(vs)
+            #
+            # # Preallocate a buffer to recieve
+            # nxv = np.empty_like(vs, dtype=typ)
+            #
+            # # If our rank is lower than next rank, send first
+            # if rank < nxprocid:
+            #     comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+            #     comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+            # # Otherwise, recieve first
+            # else:
+            #     comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
+            #     comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
+            #
+            # # Take average over both sides
+            # vavg = 0.5 * (vs + nxv)
+            # embsolve.set_by_ijk(v1, vavg, ijk)
 
         # # # We now have the pitchwise-averaged conditions on both sides
         # if plot:
@@ -1390,7 +1390,6 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                     damp,
                     i_scheme,
                 )
-
                 # Apply boundary conditions
                 for bc in sb.bconds:
                     bc.apply(sb)
@@ -1724,8 +1723,8 @@ class Boundary:
         """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
         Ma_min = 0.05
         V_min = self.state.a.mean() * Ma_min
-        ind_clip = np.abs(self.state.Vx) < V_min
-        self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
+        ind_clip = np.abs(self.state.Vxrt) < V_min
+        self.state.Vxrt[ind_clip] = V_min * np.sign(self.state.Vxrt[ind_clip])
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1741,7 +1740,7 @@ class Boundary:
         # So we have to move the component axis to first posn
 
         # Velocities
-        self.state.Vxrt[:] = np.moveaxis(block.Vxrt[self.slice], -1, 0)
+        self.state.Vxrt = np.moveaxis(block.Vxrt[self.slice], -1, 0)
 
         # Nodal residuals
         self.dUn[:] = block.dUn[self.slice]
@@ -1753,7 +1752,12 @@ class Boundary:
 
     def apply(self, block):
         self.pull(block)
-        dchic = self.interior_chics() + self.exterior_chics()
+        assert self.is_inlet.all() or self.is_outlet.all()
+        dchic_ext = self.exterior_chics()
+        dchic_int = self.interior_chics()
+        if self.is_outlet.all():
+            dchic_int *= 1.0
+        dchic = dchic_ext + dchic_int
         dcons = self.state.chic_to_conserved @ dchic
         self.dUn[:] = dcons[..., 0]
         self.push(block)
@@ -1762,8 +1766,8 @@ class Boundary:
         """Get chics propagating out of domain from interior nodal changes."""
 
         # Form a diagonal selector matrices for upstream or downstream chics
-        Dup = np.diag([0, 1, 1, 1, 1])
-        Ddn = np.diag([1, 0, 0, 0, 0])
+        Ddn = np.diag([0, 1, 1, 1, 1])
+        Dup = np.diag([1, 0, 0, 0, 0])
 
         # Interior chics are upstream-running at inlet, downstream-running at outlet
         D = np.empty(self.shape + (5, 5))
@@ -1787,7 +1791,7 @@ class Boundary:
         a = self.state.a
         dVx = -dP / rho / a  # from c2=0
         c1 = dP - rho * a * dVx
-        dc[self.is_outlet][:, 0, 0] = c1[self.is_outlet]
+        dc[self.is_outlet, 0, 0] = c1[self.is_outlet]
 
         #
         # On inlet, use ho, s, Al, Be to set downstream-running chics
@@ -1811,7 +1815,15 @@ class Boundary:
             axis=-1,
         )[..., None]
         dinlet = self.inlet_target - inlet_now
-        dc[self.is_inlet][:, 1:, :] = (inlet_to_chic @ dinlet)[self.is_inlet]
+
+        # Convert to chics
+        dc_inlet = (inlet_to_chic @ dinlet)[self.is_inlet]
+
+        # Insert into the preallocated chic array
+        dc[self.is_inlet, 1:, :] = dc_inlet
+
+        # Under-relax
+        dc *= 0.5
 
         return dc
 

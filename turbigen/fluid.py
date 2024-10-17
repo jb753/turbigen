@@ -209,7 +209,7 @@ class PerfectState(StructuredData):
 
     @property
     def Tu0(self):
-        if not "Tu0" in self._metadata:
+        if "Tu0" not in self._metadata:
             self._set_metadata_by_key("Tu0", self._Tu0_default)
         return self._get_metadata_by_key("Tu0")
 
@@ -219,7 +219,7 @@ class PerfectState(StructuredData):
 
     @property
     def Ps0(self):
-        if not "Ps0" in self._metadata:
+        if "Ps0" not in self._metadata:
             self._set_metadata_by_key("Ps0", self._Ps0_default)
         return self._get_metadata_by_key("Ps0")
 
@@ -229,7 +229,7 @@ class PerfectState(StructuredData):
 
     @property
     def Ts0(self):
-        if not "Ts0" in self._metadata:
+        if "Ts0" not in self._metadata:
             self._set_metadata_by_key("Ts0", self._Ts0_default)
         return self._get_metadata_by_key("Ts0")
 
@@ -779,7 +779,7 @@ class RealState(StructuredData):
 
 
 def _check_positive_finite_scalar(x):
-    if not np.shape(x) in ((), (1,)):
+    if np.shape(x) not in ((), (1,)):
         raise ValueError(f"{x} is not scalar")
 
     if not (x > 0.0 and np.isfinite(x)):

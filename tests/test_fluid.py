@@ -468,8 +468,8 @@ def test_matrices():
         a = 0.5 * (F2.a + F.a)
         rho = 0.5 * (F2.rho + F.rho)
         dchic = [
-            dp + rho * a * dVx,
             dp - rho * a * dVx,
+            dp + rho * a * dVx,
             rho * a * dVr,
             rho * a * dVt,
             dp - (a**2) * drho,
@@ -499,66 +499,80 @@ def test_matrices():
             assert np.allclose(dprim, Binv @ dchic, rtol=tol)
             assert np.allclose(dprim, Cinv @ dcons, rtol=tol)
 
+            # Check chic to conserved
+            Xinv = F.conserved_to_chic
+            assert np.allclose(dchic, Xinv @ dcons, rtol=tol)
 
-def not_test_bcond_perturb():
-    # Set up two flow fields with a small perturbation between them
-    F = flowfield.PerfectFlowField(shape=(1,))
-    F.cp = 1105.0
-    F.gamma = 1.3
-    F.mu = 1.8e-5
-    F.xrt = np.ones((3, 1))
-    F.Vxrt = [[100.0], [200.0], [50.0]]
+        # Check chic to conserved
+        X = F.chic_to_conserved
+        assert np.allclose(dcons, X @ dchic, rtol=tol)
+
+
+def test_chic_waves():
+    """Set up a flow field with travelling waves and check chics recovered."""
+
+    cp = 1005.0
+    ga = 1.4
+    mu = 1.84e-5
+    Vx = 100.0
+    L = 1.0
+    f = 500.0
+
+    # Set up coordinates
+    ni = 50
+    nt = 100
+    xv = np.linspace(0.0, L, ni)
+    xrt = np.stack((xv, np.ones_like(xv), np.zeros_like(xv)))
+    omega = 2 * np.pi * f
+    t = np.linspace(0.0, 1 / f, nt, endpoint=False)[None, :]
+    dt = np.diff(t)[0]
+    x = xv[:, None]
+
+    # Mean flow field first
+    F = flowfield.PerfectFlowField(shape=(ni, nt))
+    F.cp = cp
+    F.gamma = ga
+    F.mu = mu
+    F.xrt = xrt[..., None]
+    F.Vx = Vx
+    F.Vr = 0.0
+    F.Vt = 0.0
     F.set_P_T(1e5, 300.0)
-    F2 = F.copy()
 
-    # Assemble a vector of bcond variable perturbations
-    mag = 1e-3
-    V = F.V.item()
-    dho = V**2
-    ds = V**2 / F.T.item()
-    dtanAlpha = util.tand(45)
-    dtanBeta = util.tand(45)
-    dP = (F.rho * F.V**2).item()
-    dbcond_all = np.array([dho, ds, dtanAlpha, dtanBeta, dP]) * mag
+    # Prescribe pressure wave
+    Aup = 1e-3
+    Adn = 2.2e-3
+    a0 = F.a
+    rho0 = F.rho
+    dPdn = Adn * np.exp(1j * omega * (t - x / a0))
+    dPup = Aup * np.exp(1j * omega * (t + x / a0))
+    dP = np.real(dPdn + dPup)
 
-    # Evaluate some matrices we will need
-    C = F.primitive_to_conserved()
-    Cinv = F.conserved_to_primitive()
-    B = F.primitive_to_chic()
-    Binv = F.chic_to_primitive()
-    Yinv = F.bcond_to_primitive()
-    Dup = np.diag([1, 0, 0, 0, 0])
-    Ddn = np.diag([0, 1, 1, 1, 1])
+    # Momentum for velocity
+    # du/dt = -1/rho dp/dx
+    dV = np.real(dPdn - dPup) / rho0 / a0
 
-    Q_all = C @ Yinv
-    Q_up = C @ Binv @ Dup @ B @ Yinv
-    Q_dn = C @ Binv @ Ddn @ B @ Yinv
-    # bcond_to_conserved = np.diag([1.,0.,0.,0,0.]) @ F.primitive_to_conserved() @ F.bcond_to_primitive()
+    # Apply to the flowfield
+    F.set_P_s(F.P + dP, F.s)
+    F.Vx = F.Vx + dV
 
-    rtol = 1e-3
-    # for Q in [Q_all, Q_up, Q_dn]:
+    # Get changes over a time step
+    dU = np.moveaxis(np.diff(F.conserved, axis=-1), 0, -1)[..., None]
 
-    Q = Q_dn
-    np.set_printoptions(precision=3)
+    # Convert to chics
+    dchic = F.conserved_to_chic[:, :-1, :, :] @ dU
 
-    # Check that we can perturb each one independently of others
-    for k in range(5):
-        Z = np.zeros((5,))
-        Z[k] = 1.0
-        dbcond_k = dbcond_all * Z
-        dcons = (Q @ dbcond_k).squeeze()
-        cons_new = (F.conserved.squeeze() + dcons).reshape(-1)
-        F2.set_conserved(cons_new)
+    # The zero-to-peak amplitudes should match the ratio of up to down waves
+    # Neglecting any scaling factors
+    Amp_x = np.mean(np.ptp(dchic, axis=0)[:, :2, 0], axis=0)
+    Amp_t = np.mean(np.ptp(dchic, axis=1)[:, :2, 0], axis=0)
 
-        dbcond_actual = (F2.bcond - F.bcond).squeeze()
-        err_rel = (dbcond_actual - dbcond_k) / dbcond_all
-        print(dbcond_k)
-        print(dbcond_actual)
-        assert (np.abs(err_rel) < rtol).all()
+    assert np.isclose(Amp_x[0] / Amp_x[1], Aup / Adn)
+    assert np.isclose(Amp_t[0] / Amp_t[1], Aup / Adn)
 
-    quit()
+    return
 
 
 if __name__ == "__main__":
     # np.set_printoptions(precision=2)
-    test_bcond_perturb()
+    test_chic_waves()

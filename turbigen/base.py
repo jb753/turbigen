@@ -1488,7 +1488,7 @@ class Composites:
 
     @dependent_property
     def conserved_to_chic(self):
-        return self.conserved_to_primitive @ self.primitive_to_chic
+        return self.primitive_to_chic @ self.conserved_to_primitive
 
     @dependent_property
     def primitive_to_conserved(self):
@@ -1537,7 +1537,7 @@ class Composites:
         primitive variables [rho, Vx, Vr, Vt, P]
         to perturbations in
         characteristic variables
-        [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
+        [dp-rho*a*dVx, dp+rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
         [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
 
         Returns
@@ -1552,7 +1552,7 @@ class Composites:
         B = np.stack(
             (
                 (Z, Z, Z, Z, -(self.a**2)),  # d/rho
-                (rhoa, -rhoa, Z, Z, Z),  # d/dVx
+                (-rhoa, rhoa, Z, Z, Z),  # d/dVx
                 (Z, Z, rhoa, Z, Z),  # d/dVr
                 (Z, Z, Z, rhoa, Z),  # d/dVt
                 (one, one, Z, Z, one),  # d/dP
@@ -1569,7 +1569,7 @@ class Composites:
     def chic_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         characteristic variables
-        [dp+rho*a*dVx, dp-rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
+        [dp-rho*a*dVx, dp+rho*a*dVx, rho*a*dVr, rho*a*dVt, dp - (a^2)*drho].
         [upstream acoustic, downstream acoustic, r-mom, t-mom, entropy wave]
         to perturbations in
         primitive variables [rho, Vx, Vr, Vt, P]
