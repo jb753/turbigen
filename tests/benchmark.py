@@ -15,16 +15,20 @@ import matplotlib.pyplot as plt
 try:
     # Check our MPI rank
     from mpi4py import MPI
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     # Jump to solver slave process if not first rank
     if rank > 0:
         from turbigen.solvers import embsolve
+
         embsolve.run_slave()
         sys.exit(0)
-except ImportError:
+except ImportError as e:
+    print(e)
     pass
+
 
 def make_nozzle(
     nblock,
@@ -104,7 +108,6 @@ def make_nozzle(
     ienb[-1] = ni
 
     for iblock in range(nblock):
-
         # Special case for only one block
         if nblock == 1:
             patches = [
@@ -162,7 +165,7 @@ def make_nozzle(
 
     # Fluid props
     for b in g:
-        b.w = 0.
+        b.w = 0.0
         b.cp = cp
         b.gamma = ga
         b.mu = mu
@@ -184,21 +187,21 @@ def make_nozzle(
     F.r = rm
     F.t = 0.0
 
-    Ve = np.expand_dims(V,(1,2))
-    Te = np.expand_dims(T,(1,2))
-    Pe = np.expand_dims(P,(1,2))
+    Ve = np.expand_dims(V, (1, 2))
+    Te = np.expand_dims(T, (1, 2))
+    Pe = np.expand_dims(P, (1, 2))
 
     # Initial guess
     for ib, b in enumerate(g):
-        b.Vx = Ve[istb[ib]:ienb[ib]]
+        b.Vx = Ve[istb[ib] : ienb[ib]]
         b.Vr = 0.0
-        b.Vt = Ve[istb[ib]:ienb[ib]] * np.tan(np.radians(Alpha))
-        b.set_P_T(Pe[istb[ib]:ienb[ib]], Te[istb[ib]:ienb[ib]])
-
+        b.Vt = Ve[istb[ib] : ienb[ib]] * np.tan(np.radians(Alpha))
+        b.set_P_T(Pe[istb[ib] : ienb[ib]], Te[istb[ib] : ienb[ib]])
 
     g.match_patches()
 
     return g, F
+
 
 xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
@@ -314,28 +317,39 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    conf = turbigen.solvers.embsolve.Config(n_step=500, n_step_log=50, n_step_ramp=0, n_step_avg=100, nstep_damp=-1,print_conv=False,plot_conv=False)
+    conf = turbigen.solvers.embsolve.Config(
+        n_step=500,
+        n_step_log=50,
+        n_step_ramp=0,
+        n_step_avg=100,
+        nstep_damp=-1,
+        print_conv=False,
+        plot_conv=False,
+    )
     return turbigen.solvers.embsolve.run(g, conf)
 
+
 def run_ts3(g):
-    conf = turbigen.solvers.ts3.Config(nstep=20000, nstep_avg=100, workdir='ts3', ilos=1)
+    conf = turbigen.solvers.ts3.Config(
+        nstep=20000, nstep_avg=100, workdir="ts3", ilos=1
+    )
     tstart = timer()
     turbigen.solvers.ts3.run(g, conf, None)
     tend = timer()
     return tend - tstart
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     # g, _ = make_nozzle(1, xA)
     # ts3_time = run_ts3(g)
     # quit()
     # Turbostream cost
     # £ factor * tpnps * cfl factor
-    cost_ts3 = 55. * 4e-9 * 0.7/0.4
-    time_ts3 = 4e-9  * 0.7/0.4
+    cost_ts3 = 55.0 * 4e-9 * 0.7 / 0.4
+    time_ts3 = 4e-9 * 0.7 / 0.4
 
     g, _ = make_nozzle(size, xA)
     tpnps, err = run_embsolve(g)
-    cost = tpnps*size
-    with open('tests/bench.dat','a') as f:
-        f.write(f'{size}, {err}, {tpnps}, {cost}, {cost/cost_ts3}, {tpnps/time_ts3}\n')
+    cost = tpnps * size
+    with open("tests/bench.dat", "a") as f:
+        f.write(f"{size}, {err}, {tpnps}, {cost}, {cost/cost_ts3}, {tpnps/time_ts3}\n")

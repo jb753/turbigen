@@ -863,7 +863,6 @@ class Periodic:
         self.nxijk += 1
 
         # Store required data
-        # pid, bid, _, ijk, _, _, nxbid, nxprocid, nxijk, _, _ = patch
         self.procid = procids[self.bid]
         self.nxprocid = procids[self.nxbid]
 
@@ -1225,7 +1224,7 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         mix2.perturb_conserved(blk2, dU2)
 
 
-def exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ):
+def exchange_periodic(blocks, bid_local, periodics):
     # Update periodic boundaries
 
     # Loop to populate home buffer and send away buffer
@@ -1342,7 +1341,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             fmgrid_ramp = np.interp(istep, [0, conf.n_step_ramp], [0.0, 1.0])
 
             # Exchange conserved variables across periodic patches
-            exchange_periodic(blocks, bid_local, periodics, typ, mpi_typ)
+            exchange_periodic(blocks, bid_local, periodics)
 
             # Exchange fluxes across mixing patches
             # exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
