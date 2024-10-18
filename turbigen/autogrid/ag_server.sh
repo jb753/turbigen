@@ -43,6 +43,9 @@ pop_first_line() {
             # Move the temporary file back to the queue file
             mv -f "$temp_file" "$queue_file"
 
+            # Restore access permissions to all users
+            chmod a+rw "$queue_file"
+
         fi
 
     } 200<"$queue_file"
@@ -73,6 +76,9 @@ push_first_line() {
 
         # Move the temporary file back to the queue file
         mv -f "$temp_file" "$queue_file"
+
+        # Restore access permissions to all users
+        chmod a+rw "$queue_file"
 
     } 200<"$queue_file"
 }

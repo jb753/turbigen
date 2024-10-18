@@ -345,6 +345,14 @@ class SolverBlock:
             Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
         ]
 
+        self.mixers = []
+        seen = []
+        for patch in block.mixing_patches:
+            if patch not in seen:
+                mixer = [Boundary(patch), Boundary(patch.match)]
+                self.bconds += mixer
+                self.mixers.append(mixer)
+
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
                 shape=block.shape, order="F", typ=typ
@@ -802,7 +810,7 @@ def face_indices(ijk):
 
 
 class Periodic:
-    """Encapsulate information needed for peridoc boundary."""
+    """Encapsulate information needed for periodic boundary."""
 
     def __init__(self, patch, pid, procids, typ):
         match = patch.match
@@ -909,7 +917,6 @@ def get_mixers(grid, procids):
         # We also need a state object to hold the side-averaged flow conditions
         state = patch.block.empty((mix_now[0].nspan,))
         mixers.append(mix_now + (state,))
-
     return mixers
 
 
@@ -989,7 +996,7 @@ def send_slave(block_split, procids, periodics, mixers):
 
 def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
     # Update periodic boundaries
-    for mix1, mix2, state in mixers:
+    for mix1, mix2 in mixers:
         blk1 = blocks[bid_local[mix1.bid]]
 
         # Get pitchwise-avgeraged conditions on this side
@@ -1003,59 +1010,8 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
         # Otherwise, communication is needed
         else:
             raise NotImplementedError()
-            # # Assemble data to send
-            # vs = embsolve.get_by_ijk(v1, ijk)
-            # count = len(vs)
-            #
-            # # Preallocate a buffer to recieve
-            # nxv = np.empty_like(vs, dtype=typ)
-            #
-            # # If our rank is lower than next rank, send first
-            # if rank < nxprocid:
-            #     comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-            #     comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-            # # Otherwise, recieve first
-            # else:
-            #     comm.Recv([nxv, count, mpi_typ], source=nxprocid, tag=pid)
-            #     comm.Send([vs, count, mpi_typ], dest=nxprocid, tag=pid)
-            #
-            # # Take average over both sides
-            # vavg = 0.5 * (vs + nxv)
-            # embsolve.set_by_ijk(v1, vavg, ijk)
-
-        # # # We now have the pitchwise-averaged conditions on both sides
-        # if plot:
-        #     rho1, _, Vs1, Vt1, Vn1, _, _ = prim1
-        #     rho2, _, Vs2, Vt2, Vn2, _, _ = prim2
-        #     import matplotlib.pyplot as plt
-        #     fig, ax = plt.subplots(1,3,layout='constrained')
-        #     ax[0].set_ylim([0,200])
-        #     ax[1].set_ylim([0,200])
-        #     ax[2].set_ylim([0,200])
-        #     ax[0].plot(Vn1, '-x')
-        #     ax[0].plot(Vn2, '-x')
-        #     ax[1].plot(Vs1, '-x')
-        #     ax[1].plot(Vs2, '-x')
-        #     ax[2].plot(Vt1, '-x')
-        #     ax[2].plot(Vt2, '-x')
-        #     ax[0].set_title('Vn')
-        #     ax[1].set_title('Vs')
-        #     ax[2].set_title('Vt')
-
-        #     fig, ax = plt.subplots(1,5,layout='constrained')
-        #     titles = ['rho', 'rhoVx', 'rhoVr', 'rhorVt', 'rhoe']
-        #     for i in range(5):
-        #         flux_mean = np.mean(0.5*(flux1+flux2),axis=-1)
-        #         ax[i].plot(flux1[i]/flux_mean[i], '-x')
-        #         ax[i].plot(flux2[i]/flux_mean[i], '-x')
-        #         ax[i].set_title(titles[i])
-        #         ax[i].set_ylim([0.9, 1.1])
-
-        #     plt.show()
-
-        assert not np.isnan(prim1).any()
-        assert not np.isnan(prim2).any()
-
+        print("beans")
+        quit()
         # Form the side-averaged flow conditions
         rho, u, Vs, Vt, Vn, _, _ = prim = 0.5 * (prim1 + prim2)
 
@@ -1227,6 +1183,11 @@ def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
 def exchange_periodic(blocks, bid_local, periodics):
     # Update periodic boundaries
 
+    # Prepare to recieve into away buffers
+    for patch in periodics:
+        if not patch.nxprocid == rank:
+            patch.Recv.Start()
+
     # Loop to populate home buffer and send away buffer
     for patch in periodics:
         # Load flow field into our buffer
@@ -1242,19 +1203,22 @@ def exchange_periodic(blocks, bid_local, periodics):
         else:
             patch.Send.Start()
 
-    # Recieve into away buffers
-    for patch in periodics:
-        if not patch.nxprocid == rank:
-            patch.Recv.Start()
-
     # Once the communication completes, take average of home
     # and away buffers and assign back to grid
     for patch in periodics:
+        # Wait for communication if needed
         if not patch.nxprocid == rank:
-            b1 = blocks[bid_local[patch.bid]].cons
             patch.Recv.Wait()
-            bavg = 0.5 * (patch.buffer + patch.nxbuffer)
-            embsolve.set_by_ijk(b1, bavg, patch.ijk)
+
+        # Take average and assign to home block
+        bavg = 0.5 * (patch.buffer + patch.nxbuffer)
+        b1 = blocks[bid_local[patch.bid]].cons
+        embsolve.set_by_ijk(b1, bavg, patch.ijk)
+
+        # If we are on same proc, then we have to set other side as well
+        if patch.nxprocid == rank:
+            b2 = blocks[bid_local[patch.nxbid]].cons
+            embsolve.set_by_ijk(b2, bavg, patch.nxijk)
 
 
 def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=None):
@@ -1344,7 +1308,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             exchange_periodic(blocks, bid_local, periodics)
 
             # Exchange fluxes across mixing patches
-            # exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, not np.mod(istep, conf.n_step_log))
+            # exchange_mixing(blocks, bid_local, mixers)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1696,24 +1660,67 @@ class Boundary:
             self.dA = C.dAj.squeeze()
         self.dA = util.vecnorm(self.dA)
 
-        # Initialise indicator for inlet or outlet
-        # Nodewise to allow for reversed flow across mixing plane
+        # Determine a permutation order such that
+        # first axis is spanwise, second axis is pitchwise
+        ax_theta = np.argmax([np.ptp(C.t, axis=n).mean() for n in range(3)]).item()
+        ax_stream = np.argmax(np.array(C.shape) == 1).item()
+        ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
+        self.order = (ax_stream, ax_span, ax_theta)
+
+        # Preallocate a pitchwise-averaged state
+        self.nspan = self.shape[ax_span]
+        self.state_avg = self.state.empty((self.nspan,))
+
+        # Get normal vectors pointing into the domain
+        C0 = C.copy().transpose(self.order).squeeze()
+        C1 = patch.get_cut(offset=1).transpose(self.order).squeeze()
+        dxr = C1.xr - C0.xr
+        self.normal = np.mean(dxr / turbigen.util.vecnorm(dxr), axis=-1)
+
+        # Angular pitch and cell widths for integration
+        self.pitch = C0.pitch + 0.0
+        self.dt = np.diff(C0.t, axis=1)
+
+        # Check that theta gridlines are at constant x and r
+        Lref = np.maximum(np.ptp(C0.x), np.ptp(C0.r))
+        rtol = 1e-3
+        assert (np.ptp(C0.x, axis=1) / Lref < rtol).all()
+        assert (np.ptp(C0.r, axis=1) / Lref < rtol).all()
+
+        # Preallocate boundary targets
         self.inlet_target = np.full(self.shape + (4, 1), np.nan)
         self.P_target = np.full(self.shape, np.nan)
 
+        # Initialise indicator for inlet or outlet
+        # and set the target boundary condition vars
+        # Nodewise to allow for reversed flow across mixing plane
         if isinstance(patch, turbigen.grid.InletPatch):
             self.is_inlet = np.ones(self.shape, dtype=bool)
-
-            # Set up target flow
             tanAl = turbigen.util.tand(patch.Alpha)
             tanBe = turbigen.util.tand(patch.Beta)
             self.inlet_target[..., :, 0] = [patch.state.h, patch.state.s, tanAl, tanBe]
 
         elif isinstance(patch, turbigen.grid.OutletPatch):
             self.is_inlet = np.zeros(self.shape, dtype=bool)
-
-            # Set up target flow
             self.P_target[:] = np.full(self.shape, patch.Pout)
+
+        elif isinstance(patch, turbigen.grid.turbigen.grid.MixingPatch):
+            # As an initial guess, we need to decide if the mixing plane
+            # is on the upsteram or downstream side
+            # Do this by dotting meridional velocity vector with grid normal
+            Vxr = self.pitchwise_average(C.Vxr).squeeze()
+            Vxr /= turbigen.util.vecnorm(Vxr)
+            dirn = np.einsum("i...,i...", Vxr, self.normal)
+            dirn_avg = np.mean(np.sign(dirn))
+
+            # Velocity vector is pointing into interior => an inlet
+            if dirn_avg > 0.0:
+                self.is_inlet = np.ones(self.shape, dtype=bool)
+                self.inlet_target[..., :, 0] = np.moveaxis(self.state.bcond[:4], 0, -1)
+            # Velocity vector is pointing away from interior => an outlet
+            else:
+                self.is_inlet = np.zeros(self.shape, dtype=bool)
+                self.P_target[:] = self.state.P
 
     @property
     def is_outlet(self):
@@ -1827,6 +1834,16 @@ class Boundary:
 
         return dc
 
+    def pitchwise_average(self, y):
+        # Perform trapezoidal integration at every spanwise location
+        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
+
+    def get_averages(self):
+        return (
+            self.pitchwise_average(self.state.fluxes),
+            self.pitchwise_average(self.state.prim),
+        )
+
     def integrate(self):
         """Get mass flow and mass-averaged boundary conditions."""
         rhoVx = self.state.rhoVx.squeeze()
@@ -1863,18 +1880,15 @@ class MixingPlane:
         ax_stream = np.argmax(np.array(C.shape) == 1).item()
         ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
         self.order = (ax_stream, ax_span, ax_theta)
-        Ct = C.copy()
-        Ct.transpose(self.order)
-        Ct = Ct.squeeze()
-        self.r = Ct.r[:, 0]
 
-        self.nspan = Ct.shape[0]
+        # Preallocate a state to hold a pitchwise-averaged state
+        self.nspan = C.shape[ax_span]
 
         # Get normal vectors pointing into the domain
         C1 = patch.get_cut(offset=1)
         C1.transpose(self.order)
         C1 = C1.squeeze()
-        dxr = C1.xr - Ct.xr
+        dxr = C1.xr - C0.xr
         self.normal = np.mean(dxr / turbigen.util.vecnorm(dxr), axis=-1)
 
         # Check that theta gridlines are at constant x and r

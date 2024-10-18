@@ -183,7 +183,14 @@ def test_CFL():
     turbigen.solvers.embsolve.run(g, conf)
 
 
+def not_test_mixer():
+    g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
+
+    conf = turbigen.solvers.embsolve.Config(n_step=2, n_step_avg=1, CFL=0.0)
+    turbigen.solvers.embsolve.run(g, conf)
+
+
 if __name__ == "__main__":
     # test_inlet_CFL_0()
-    test_outlet_CFL_0()
+    test_mixer()
     # test_CFL()

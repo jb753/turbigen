@@ -458,6 +458,10 @@ class Kinematics:
         return np.stack((self.Vx, self.Vr, self.Vt_rel))
 
     @dependent_property
+    def Vxr(self):
+        return np.stack((self.Vx, self.Vr))
+
+    @dependent_property
     def Vi_rel(self):
         """Velocity in grid i-direction."""
 
@@ -1451,7 +1455,7 @@ class Composites:
                 self.rhoVx,
                 self.rhoVx * self.Vx + self.P,
                 self.rhoVx * self.Vr,
-                self.rhoVx * self.Vt,
+                self.rhoVx * self.rVt,
                 self.rhoVx * self.ho,
             )
         )

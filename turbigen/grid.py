@@ -106,6 +106,8 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
             patch.ijk_limits = patch.ijk_limits[order, :]
 
+        return self
+
     @property
     def w(self):
         return self._get_data_by_key("w")
@@ -166,7 +168,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def nk(self):
         return self.shape[2]
 
-    def apply_guess_uniform(self, Vxrt, P, T, Omega=0.):
+    def apply_guess_uniform(self, Vxrt, P, T, Omega=0.0):
         self.Vx = Vxrt[0]
         self.Vr = Vxrt[1]
         self.Vt = Vxrt[2]
@@ -244,7 +246,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # The plan is to loop over all patches, and increment a
         # wall indicator for all nodes on each not-wall patch
         for patch in self.patches:
-
             # Skip if this patch *is* a wall
             if ignore_slip:
                 if not type(patch) in NOT_SLIPWALL_PATCHES:
@@ -996,7 +997,6 @@ class Grid:
         triangles = []
         last_block = None
         for block in self:
-
             # Evaluate signed distance for all points in the block
             dist = turbigen.util.signed_distance(xr_cut, block.xr)
 
@@ -1076,7 +1076,6 @@ class Grid:
                     surfs.append([cut_now])
         else:
             for row_block in self.row_blocks:
-
                 # Preallocate list for this row
                 surfs.append([])
 
@@ -1747,7 +1746,6 @@ def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="x
     conn = sum(conn, ())
 
     if mode == "xr":
-
         # Extrude in theta direction
 
         # Get mean radius
@@ -1763,7 +1761,6 @@ def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="x
         zv = np.linspace(-Dt, Dt, nk)
 
     elif mode == "xrt":
-
         # Extrude in radial dirn
         nk = 9
         htr = 0.99
@@ -1822,7 +1819,7 @@ def from_jmesh(blocks, conn_face, state):
                 p = PeriodicPatch(i=(c.st, c.en), j=-1)
             patches.append(p)
 
-        Nb = np.round(2.*np.pi/np.ptp(b[0,0,:].t)).astype(int)
+        Nb = np.round(2.0 * np.pi / np.ptp(b[0, 0, :].t)).astype(int)
 
         bnow = Block.from_coordinates(b.xrt, Nb, patches, label=b.label)
         bnow._metadata.update(state._metadata)
