@@ -1570,6 +1570,10 @@ class Composites:
         return self.primitive_to_conserved @ self.chic_to_primitive
 
     @dependent_property
+    def chic_to_bcond(self):
+        return self.primitive_to_bcond @ self.chic_to_primitive
+
+    @dependent_property
     def chic_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         characteristic variables
@@ -1616,6 +1620,10 @@ class Composites:
         )
         A = np.moveaxis(A, (0, 1), (-1, -2))
         return A
+
+    @dependent_property
+    def flux_to_chic(self):
+        return self.primitive_to_chic @ self.flux_to_primitive
 
     @dependent_property
     def flux_to_primitive(self):

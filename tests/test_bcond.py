@@ -111,7 +111,7 @@ def make_grid(use_inlet, use_outlet, use_mixing):
     # Boundary conditions
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
     So1.set_P_T(Po1, To1)
-    g.apply_inlet(So1, Alpha, Beta)
+    g.apply_inlet(So1, Alpha, 0.0)
     g.calculate_wall_distance()
     g.apply_outlet(P1)
 
@@ -183,14 +183,37 @@ def test_CFL():
     turbigen.solvers.embsolve.run(g, conf)
 
 
-def not_test_mixer():
+def test_mixer():
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    conf = turbigen.solvers.embsolve.Config(n_step=2, n_step_avg=1, CFL=0.0)
+    conf = turbigen.solvers.embsolve.Config(n_step=4000, n_step_log=100, n_step_avg=500)
+    np.set_printoptions(precision=4)
     turbigen.solvers.embsolve.run(g, conf)
+
+    fluxes = []
+    for patch in g.mixing_patches:
+        C = patch.get_cut().mix_out()[0]
+        fluxes.append(C.fluxes)
+    fluxes = np.stack(fluxes)
+    flux_avg = np.mean(fluxes, axis=0)
+    flux_ref = np.array(
+        [flux_avg[0], flux_avg[1], flux_avg[1], C.r * flux_avg[1], flux_avg[-1]]
+    )
+    err = np.diff(fluxes, axis=0) / flux_ref
+    rtol = 1e-6
+    assert (np.abs(err) < rtol).all()
+
+    # fig, ax = plt.subplots()
+    # for b in g:
+    #     C = b[:, b.nj // 2, :]
+    #     ax.plot(C.x, C.rt, "k-", lw=0.5)
+    #     ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
+    # plt.show()
+    #
+    #
 
 
 if __name__ == "__main__":
     # test_inlet_CFL_0()
-    test_mixer()
+    # not_test_mixer()
     # test_CFL()

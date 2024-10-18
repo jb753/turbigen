@@ -345,14 +345,14 @@ class SolverBlock:
             Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
         ]
 
-        self.mixers = []
-        seen = []
-        for patch in block.mixing_patches:
-            if patch not in seen:
-                mixer = [Boundary(patch), Boundary(patch.match)]
-                self.bconds += mixer
-                self.mixers.append(mixer)
-
+        # self.mixers = []
+        # seen = []
+        # for patch in block.mixing_patches:
+        #     if patch not in seen:
+        #         mixer = [Boundary(patch), Boundary(patch.match)]
+        #         self.bconds += mixer
+        #         self.mixers.append(mixer)
+        #
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
                 shape=block.shape, order="F", typ=typ
@@ -885,6 +885,8 @@ class Periodic:
         return p
 
     def setup_communication(self, comm, mpi_typ):
+        if self.procid == self.nxprocid:
+            return
         self.Send = comm.Send_init(
             buf=[self.buffer, self.N, mpi_typ],
             dest=self.nxprocid,
@@ -897,26 +899,103 @@ class Periodic:
         )
 
 
-def get_mixers(grid, procids):
+class Mixer:
+    """Encapsulate information needed for mixing boundary."""
+
+    def __init__(self, patch, pid, procids, typ):
+        match = patch.match
+
+        # Store ids for communication
+        self.pid = pid
+        self.bid = patch.block.grid.index(patch.block)
+        self.nxbid = match.block.grid.index(match.block)
+        self.procid = procids[self.bid]
+        self.nxprocid = procids[self.nxbid]
+
+        # Determine a common radial grid vector
+        C = patch.get_cut()
+        self.spf = C.spf[0, :, 0]
+
+        # Buffers for communication
+        self.N = len(self.spf) * 5 * 2
+        self.buffer = np.full((self.N,), np.nan).astype(typ)
+        self.nxbuffer = np.full((self.N,), np.nan).astype(typ)
+
+        # Boundary condition object
+        self.bcond = Boundary(patch)
+        self.normal = self.bcond.normal[:, 0, :, :].mean(axis=-1)
+
+        # Common averaged state
+        self.state_avg = self.bcond.state.empty(shape=(len(self.spf),))
+        self.state_avg.xrt = C.xrt[:, 0, :, 0]
+
+    @property
+    def is_outlet(self):
+        return np.logical_not(self.is_inlet)
+
+    def fill_buffer(self):
+        self.buffer[:] = self.bcond.get_averages().reshape(-1)
+
+    def unpack_buffers(self):
+        buffer = self.buffer.reshape(2, 5, -1)
+        nxbuffer = self.nxbuffer.reshape(2, 5, -1)
+
+        dflux = buffer[0] - nxbuffer[0]
+        flux_avg = 0.5 * (buffer[0] + nxbuffer[0])
+        # err = dflux / flux_avg
+        # print("err_rel", err.mean(axis=-1))
+        cons_avg = 0.5 * (buffer[1] + nxbuffer[1])
+
+        return -dflux, flux_avg, cons_avg
+
+    def set_direction(self):
+        """Use current common meridional velocity and grid normals to determine flow direction."""
+        Vxr = self.state_avg.Vxr
+        Vxr /= turbigen.util.vecnorm(Vxr)
+        self.is_inlet = np.sign(np.einsum("i...,i...", Vxr, self.normal)) > 0.0
+        self.bcond.is_inlet[0, :, 0] = self.is_inlet
+
+    def chic_selector(self):
+        # Form a diagonal selector matrices for upstream or downstream chics
+        Ddn = np.diag([0, 1, 1, 1, 1])
+        Dup = np.diag([1, 0, 0, 0, 0])
+
+        # Chics from exteror are downstream-running on inlet
+        D = np.empty(self.state_avg.shape + (5, 5))
+        D[self.is_inlet] = Ddn
+        D[~self.is_inlet] = Dup
+
+        return D
+
+    def setup_communication(self, comm, mpi_typ):
+        self.Send = comm.Send_init(
+            buf=[self.buffer, self.N, mpi_typ],
+            dest=self.nxprocid,
+            tag=self.pid,
+        )
+        self.Recv = comm.Recv_init(
+            buf=[self.nxbuffer, self.N, mpi_typ],
+            source=self.nxprocid,
+            tag=self.nxpid,
+        )
+
+
+def get_mixers(grid, procids, typ):
     mixers = []
     seen = []
+    pid = 0
     for patch in grid.mixing_patches:
         if patch in seen:
             continue
         else:
             seen.append(patch)
             seen.append(patch.match)
-        bid = patch.block.grid.index(patch.block)
-        nxbid = patch.match.block.grid.index(patch.match.block)
-        procid = procids[bid]
-        nxprocid = procids[nxbid]
-        mix_now = (
-            MixingPlane(patch, bid, procid),
-            MixingPlane(patch.match, nxbid, nxprocid),
-        )
-        # We also need a state object to hold the side-averaged flow conditions
-        state = patch.block.empty((mix_now[0].nspan,))
-        mixers.append(mix_now + (state,))
+        mixers.append(Mixer(patch, pid, procids, typ))
+        pid += 1
+        mixers.append(Mixer(patch.match, pid, procids, typ))
+        pid += 1
+        mixers[-2].nxpid = mixers[-1].pid
+        mixers[-1].nxpid = mixers[-2].pid
     return mixers
 
 
@@ -994,190 +1073,59 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
-def exchange_mixing(blocks, bid_local, mixers, typ, mpi_typ, plot=False):
-    # Update periodic boundaries
-    for mix1, mix2 in mixers:
-        blk1 = blocks[bid_local[mix1.bid]]
+def exchange_mixing(blocks, bid_local, mixers, log):
+    # Prepare to recieve into away buffers
+    for mixer in mixers:
+        mixer.Recv.Start()
 
-        # Get pitchwise-avgeraged conditions on this side
-        flux1, prim1 = mix1.get_averages(blk1)
+    # Populate the home buffer with pitchwise-averaged
+    # fluxes and conserved vars and send away
+    for mixer in mixers:
+        b1 = blocks[bid_local[mixer.bid]]
+        mixer.bcond.pull(b1)
+        mixer.fill_buffer()
+        mixer.Send.Start()
 
-        # Other side same rank
-        if mix2.procid == rank:
-            blk2 = blocks[bid_local[mix2.bid]]
-            flux2, prim2 = mix2.get_averages(blk2)
+    # We now use populated buffers to get flux differences and
+    # side-averaged mean flow
+    for mixer in mixers:
+        # Wait for communication before unpacking the buffers form each side
+        mixer.Recv.Wait()
 
-        # Otherwise, communication is needed
-        else:
-            raise NotImplementedError()
-        print("beans")
-        quit()
-        # Form the side-averaged flow conditions
-        rho, u, Vs, Vt, Vn, _, _ = prim = 0.5 * (prim1 + prim2)
+        dflux, flux_avg, cons_avg = mixer.unpack_buffers()
 
-        # Update the thermodynamic state
-        state.set_rho_u(rho, u)
+        # Form the side-averaged flow conditions and update shared thermodynamic state
+        mixer.state_avg.set_conserved(cons_avg)
 
-        # Limit the minimum mach number
-        Ma_min = 0.1
-        Vn_min = Ma_min * state.a.mean()
-        Vn[np.abs(Vn) < Vn_min] = Vn_min
+        # Linearised transform flux changes to chics
+        dflux = np.moveaxis(dflux, 0, -1)[..., None]
+        dchic = mixer.state_avg.flux_to_chic @ dflux
 
-        # Update the interface velocities
-        state.Vxrt = [Vs, Vt, Vn]
+        # Determine flow directions
+        mixer.set_direction()
 
-        # Read off properties we will need
-        ho = state.ho
-        dhdrho = state.dhdrho_P
-        dhdP = state.dhdP_rho
-        dudP = state.dudP_rho
-        dudrho = state.dudrho_P
-        a = state.a
-        e = state.e
+        # Select only exterior chics
+        D = mixer.chic_selector()
 
-        # Convert flux changes into primative changes
-        # Matrix A from Holmes (2008) eqn. (A1)
-        rhoVn = rho * Vn
-        Z = np.zeros_like(rho)
-        one = np.ones_like(rho)
-        A = np.moveaxis(
-            np.stack(
-                (
-                    (Vn, Z, Z, rho, Z),
-                    (Vn * Vs, rhoVn, Z, rho * Vs, Z),
-                    (Vn * Vt, Z, rhoVn, rho * Vt, Z),
-                    (Vn**2, Z, Z, 2.0 * rhoVn, one),
-                    (
-                        Vn * ho + rhoVn * dhdrho,
-                        rhoVn * Vs,
-                        rhoVn * Vt,
-                        rho * ho + rhoVn * Vn,
-                        rhoVn * dhdP,
-                    ),
-                )
-            ),
-            -1,
-            0,
-        )
-        Ainv = np.linalg.inv(A)
+        # Transform to changes in boundary conditions
+        dbcond = (mixer.state_avg.chic_to_bcond @ D @ dchic).squeeze()
+        nk = mixer.bcond.shape[-1]
+        dbcond = np.tile(np.expand_dims(dbcond, (0, 2, 4)), (1, 1, nk, 1, 1))
 
-        # Convert primative changes to characteristic changes
-        # Matrix B from Holmes (2008) eqn. (A3-4)
-        asqi = 1.0 / a**2
-        asq = a**2
-        rhoa = rho * a
-        rhoai = 1.0 / rho / a
-        B = np.moveaxis(
-            np.stack(
-                (
-                    (-asq, Z, Z, Z, one),
-                    (Z, rhoa, Z, Z, Z),
-                    (Z, Z, rhoa, Z, Z),
-                    (Z, Z, Z, rhoa, one),
-                    (Z, Z, Z, -rhoa, one),
-                )
-            ),
-            -1,
-            0,
-        )
-        Binv = np.linalg.inv(B)
+        # Under-relax
+        dbcond *= 0.1
 
-        # Convert primative to conserved perturbations
-        # Matrix C from Holmes (2008) eqn. (A5-6)
-        C = np.moveaxis(
-            np.stack(
-                (
-                    (one, Z, Z, Z, Z),
-                    (Vs, rho, Z, Z, Z),
-                    (Vt, Z, rho, Z, Z),
-                    (Vn, Z, Z, rho, Z),
-                    (e + rho * dudrho, rho * Vs, rho * Vt, rho * Vn, rho * dudP),
-                )
-            ),
-            -1,
-            0,
-        )
-        Cinv = np.linalg.inv(C)
+        # Change the boundary conditions
+        if mixer.is_inlet.any():
+            is_inlet = mixer.bcond.is_inlet
+            mixer.bcond.inlet_target[is_inlet, :, 0] += dbcond[is_inlet, :4, 0]
+            if log:
+                err = np.abs(dflux.squeeze().T / flux_avg)[0]
+                print(f"Mixer mdot err={err.max():3f}")
 
-        # Select which characteristics to keep
-        Dup = np.diag([0, 0, 0, 1, 0])[None, ...]
-        Ddn = np.diag([1, 1, 1, 0, 1])[None, ...]
-
-        # Resolve to rtx
-        cospsi = mix1.cospsi.squeeze()
-        sinpsi = mix1.sinpsi.squeeze()
-        T = np.moveaxis(
-            np.stack(
-                (
-                    (one, Z, Z, Z, Z),
-                    (Z, cospsi, Z, -sinpsi, Z),
-                    (Z, Z, one, Z, Z),
-                    (Z, sinpsi, Z, cospsi, Z),
-                    (Z, Z, Z, Z, one),
-                )
-            ),
-            -1,
-            0,
-        ).transpose(0, 2, 1)
-
-        # Assemble the overall transformations
-        TCBinv = T @ C @ Binv
-        BAinv = B @ Ainv
-        Qup = TCBinv @ Dup @ BAinv
-        Qdn = TCBinv @ Ddn @ BAinv
-
-        # Flux differences with relaxation
-        K_mix = 0.1
-        DF = ((flux1 - flux2).T)[..., None]
-        DF *= -K_mix
-        err = flux1
-        jplot = mix1.nspan // 2
-        err = flux1[:, jplot] - flux2[:, jplot]
-        err[0] /= flux1[0, jplot]
-        flux_ref = np.max(np.abs(flux1[1:4, jplot]))
-        err[1:4] /= flux_ref
-        err[4] /= flux1[4, jplot]
-        if plot:
-            logger.info(f"Mixing plane err: {err}")
-
-        # Say we have only a mass-flow error
-
-        # Now calculate changes in conserved variables on each side
-        dU_up = (Qup @ DF).squeeze()
-        dU_dn = (Qdn @ DF).squeeze()
-
-        # Holmes uses conseved vars [rho, rhoVr, rhoVt, rhoVx, rhoE]
-        # We use conseved vars [rho, rhoVx, rhoVr, rhorVt, rhoE]
-        # And left-handed coordinate system
-        dU_up = dU_up[:, (0, 3, 1, 2, 4)]
-        dU_dn = dU_dn[:, (0, 3, 1, 2, 4)]
-        dU_up[:, 3] *= mix1.r
-        dU_dn[:, 3] *= mix1.r
-        # dU_up, dU_dn = dU_dn, dU_up
-
-        # Use the sign of Vs to select which of 1 and 2 are up/downstream
-        ind1 = Vs > 0.0
-
-        # Preallocate nodal changes for each side
-        dU1 = np.full_like(dU_up, np.nan)
-        dU2 = np.full_like(dU_up, np.nan)
-
-        # Use the downstream-propagating chics where flow is into the domain
-        dU1[ind1, :] = dU_dn[ind1, :]
-        dU1[~ind1, :] = dU_up[~ind1, :]
-        dU2[ind1, :] = dU_up[ind1, :]
-        dU2[~ind1, :] = dU_dn[~ind1, :]
-        dU2 *= -1.0
-
-        assert not np.isnan(dU1).any()
-        assert not np.isnan(dU2).any()
-
-        # print('dU1 upstream side', dU1[0,:])
-        # print('dU2 downstream side', dU2[0,:])
-
-        # Now apply to each side
-        mix1.perturb_conserved(blk1, dU1)
-        mix2.perturb_conserved(blk2, dU2)
+        if mixer.is_outlet.any():
+            is_outlet = mixer.bcond.is_outlet
+            mixer.bcond.P_target[is_outlet] += dbcond[is_outlet, -1, 0]
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1221,7 +1169,7 @@ def exchange_periodic(blocks, bid_local, periodics):
             embsolve.set_by_ijk(b2, bavg, patch.nxijk)
 
 
-def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=None):
+def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
     if blocks is None:
         blocks = comm.recv()
         comm.Barrier()
@@ -1257,26 +1205,28 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
     # And rearrange the periodics so that foreign procid is always nx
     periodics = []
     for patch in periodics_all:
-        # pid, bid, procid, ind, indf, d, nxbid, nxprocid, nxind, nxindf, nxd = patch
         if patch.procid == rank:
             periodics.append(patch)
         elif patch.nxprocid == rank:
             periodics.append(patch.reversed())
+    mixers = []
+    for patch in mixers_all:
+        if patch.procid == rank:
+            mixers.append(patch)
+        elif patch.nxprocid == rank:
+            mixers.append(patch.reversed())
 
-    # Setup MPI communication on periodics
-    for patch in periodics:
+    # Setup MPI communication
+    for patch in periodics + mixers:
         patch.setup_communication(comm, mpi_typ)
-
-    # Rearrange mixers so that foreign is always second
-    for mix1, mix2, _ in mixers:
-        # Swap around if needed
-        if mix2.procid == rank and not mix1.procid == rank:
-            mix2, mix1 = mix1, mix2
 
     bids = [b.bid for b in blocks]
 
     # Lookup of local bid from global bid
     bid_local = {bid: ibid for ibid, bid in enumerate(bids)}
+
+    for mixer in mixers:
+        blocks[bid_local[mixer.bid]].bconds.append(mixer.bcond)
 
     nblock = len(blocks)
 
@@ -1308,7 +1258,9 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
             exchange_periodic(blocks, bid_local, periodics)
 
             # Exchange fluxes across mixing patches
-            # exchange_mixing(blocks, bid_local, mixers)
+            exchange_mixing(
+                blocks, bid_local, mixers, not np.mod(istep, conf.n_step_log)
+            )
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1348,6 +1300,7 @@ def run_slave(blocks=None, periodics_all=None, mixers=None, nodes=None, conf=Non
                     damp,
                     i_scheme,
                 )
+
                 # Apply boundary conditions
                 for bc in sb.bconds:
                     bc.apply(sb)
@@ -1439,8 +1392,7 @@ def run(grid, conf, machine=None):
     # procids is a list of length nblocks, of which processor is alocated to each block
     procids = grid.partition(size)
     periodics = get_periodics(grid, procids, typ)
-
-    mixers = get_mixers(grid, procids)
+    mixers = get_mixers(grid, procids, typ)
 
     # Split into lists for each procid
     block_split = []
@@ -1667,64 +1619,63 @@ class Boundary:
         ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
         self.order = (ax_stream, ax_span, ax_theta)
 
-        # Preallocate a pitchwise-averaged state
-        self.nspan = self.shape[ax_span]
-        self.state_avg = self.state.empty((self.nspan,))
-
         # Get normal vectors pointing into the domain
-        C0 = C.copy().transpose(self.order).squeeze()
-        C1 = patch.get_cut(offset=1).transpose(self.order).squeeze()
+        C0 = C.copy().transpose(self.order)
+        C1 = patch.get_cut(offset=1).transpose(self.order)
         dxr = C1.xr - C0.xr
-        self.normal = np.mean(dxr / turbigen.util.vecnorm(dxr), axis=-1)
+        self.normal = dxr / turbigen.util.vecnorm(dxr)
 
         # Angular pitch and cell widths for integration
         self.pitch = C0.pitch + 0.0
-        self.dt = np.diff(C0.t, axis=1)
+        self.dt = np.diff(C0.t.squeeze(), axis=1)
 
         # Check that theta gridlines are at constant x and r
         Lref = np.maximum(np.ptp(C0.x), np.ptp(C0.r))
         rtol = 1e-3
-        assert (np.ptp(C0.x, axis=1) / Lref < rtol).all()
-        assert (np.ptp(C0.r, axis=1) / Lref < rtol).all()
+        assert (np.ptp(C0.squeeze().x, axis=1) / Lref < rtol).all()
+        assert (np.ptp(C0.squeeze().r, axis=1) / Lref < rtol).all()
 
         # Preallocate boundary targets
+        self.is_inlet = np.ones(self.shape, dtype=bool)
         self.inlet_target = np.full(self.shape + (4, 1), np.nan)
         self.P_target = np.full(self.shape, np.nan)
 
         # Initialise indicator for inlet or outlet
-        # and set the target boundary condition vars
         # Nodewise to allow for reversed flow across mixing plane
+        self.set_inlet()
+
+        # Set the target boundary condition vars
         if isinstance(patch, turbigen.grid.InletPatch):
-            self.is_inlet = np.ones(self.shape, dtype=bool)
-            tanAl = turbigen.util.tand(patch.Alpha)
-            tanBe = turbigen.util.tand(patch.Beta)
-            self.inlet_target[..., :, 0] = [patch.state.h, patch.state.s, tanAl, tanBe]
+            assert self.is_inlet.all()
+            self.inlet_target[self.is_inlet, :, 0] = np.array(
+                [
+                    patch.state.h,
+                    patch.state.s,
+                    turbigen.util.tand(patch.Alpha),
+                    turbigen.util.tand(patch.Beta),
+                ]
+            )
 
         elif isinstance(patch, turbigen.grid.OutletPatch):
-            self.is_inlet = np.zeros(self.shape, dtype=bool)
-            self.P_target[:] = np.full(self.shape, patch.Pout)
+            assert not self.is_inlet.any()
+            self.P_target[self.is_outlet] = patch.Pout
 
         elif isinstance(patch, turbigen.grid.turbigen.grid.MixingPatch):
-            # As an initial guess, we need to decide if the mixing plane
-            # is on the upsteram or downstream side
-            # Do this by dotting meridional velocity vector with grid normal
-            Vxr = self.pitchwise_average(C.Vxr).squeeze()
-            Vxr /= turbigen.util.vecnorm(Vxr)
-            dirn = np.einsum("i...,i...", Vxr, self.normal)
-            dirn_avg = np.mean(np.sign(dirn))
-
-            # Velocity vector is pointing into interior => an inlet
-            if dirn_avg > 0.0:
-                self.is_inlet = np.ones(self.shape, dtype=bool)
-                self.inlet_target[..., :, 0] = np.moveaxis(self.state.bcond[:4], 0, -1)
-            # Velocity vector is pointing away from interior => an outlet
-            else:
-                self.is_inlet = np.zeros(self.shape, dtype=bool)
-                self.P_target[:] = self.state.P
+            self.inlet_target[..., 0, 0] = self.state.ho
+            self.inlet_target[..., 1, 0] = self.state.s
+            self.inlet_target[..., 2, 0] = self.state.tanAlpha
+            self.inlet_target[..., 3, 0] = self.state.tanBeta
+            self.P_target[:] = self.state.P
 
     @property
     def is_outlet(self):
         return np.logical_not(self.is_inlet)
+
+    def set_inlet(self):
+        """Use current meridional velocity and grid normal to determine flow direction."""
+        Vxr = self.state.Vxr
+        Vxr /= turbigen.util.vecnorm(Vxr)
+        self.is_inlet[:] = np.sign(np.einsum("i...,i...", Vxr, self.normal)) > 0.0
 
     def clip_velocities(self):
         """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
@@ -1830,7 +1781,7 @@ class Boundary:
         dc[self.is_inlet, 1:, :] = dc_inlet
 
         # Under-relax
-        dc *= 0.5
+        dc *= 0.4
 
         return dc
 
@@ -1839,9 +1790,11 @@ class Boundary:
         return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
     def get_averages(self):
-        return (
-            self.pitchwise_average(self.state.fluxes),
-            self.pitchwise_average(self.state.prim),
+        return np.stack(
+            (
+                self.pitchwise_average(self.state.fluxes),
+                self.pitchwise_average(self.state.conserved),
+            )
         )
 
     def integrate(self):
