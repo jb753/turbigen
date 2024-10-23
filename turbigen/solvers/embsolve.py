@@ -1175,7 +1175,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
         comm.Barrier()
         periodics_all = comm.recv()
         comm.Barrier()
-        mixers = comm.recv()
+        mixers_all = comm.recv()
         comm.Barrier()
         master_flag = False
     else:
@@ -1677,12 +1677,11 @@ class Boundary:
         Vxr /= turbigen.util.vecnorm(Vxr)
         self.is_inlet[:] = np.sign(np.einsum("i...,i...", Vxr, self.normal)) > 0.0
 
-    def clip_velocities(self):
+    def clip_velocities(self, Ma_min=0.01):
         """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        Ma_min = 0.05
         V_min = self.state.a.mean() * Ma_min
-        ind_clip = np.abs(self.state.Vxrt) < V_min
-        self.state.Vxrt[ind_clip] = V_min * np.sign(self.state.Vxrt[ind_clip])
+        ind_clip = np.abs(self.state.Vx) < V_min
+        self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1710,7 +1709,7 @@ class Boundary:
 
     def apply(self, block):
         self.pull(block)
-        assert self.is_inlet.all() or self.is_outlet.all()
+        self.clip_velocities()
         dchic_ext = self.exterior_chics()
         dchic_int = self.interior_chics()
         if self.is_outlet.all():
@@ -1781,7 +1780,7 @@ class Boundary:
         dc[self.is_inlet, 1:, :] = dc_inlet
 
         # Under-relax
-        dc *= 0.4
+        dc *= 0.5
 
         return dc
 

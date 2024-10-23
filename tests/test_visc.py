@@ -23,7 +23,7 @@ import pytest
 #     sys.exit(0)
 
 # With quasi-2D periodic grids, and no halo cells,
-# a little bit of 2nd order smoothing is needed to 
+# a little bit of 2nd order smoothing is needed to
 # prevent instability
 settings = {
     "n_step": 16000,
@@ -35,6 +35,7 @@ settings = {
     "smooth2_adapt": 0.5,
     "smooth2_const": 0.002,
 }
+
 
 def make_plate(mu, Tu0=300.0):
     """Generate the grid."""
@@ -95,7 +96,7 @@ def make_plate(mu, Tu0=300.0):
     xdn = turbigen.clusterfunc.single.free(di1, di, ERi, 0.0, L)
     xv = np.concatenate((xup, xdn[1:]))
     # ni = int(np.round((len(xv)-1)/8)*8 +1)
-    ni = int(np.round((len(xv)-1)/8)*8 +1)
+    ni = int(np.round((len(xv) - 1) / 8) * 8 + 1)
     xv = xv[:ni]
 
     # ni = int((L+h)/di)
@@ -130,7 +131,6 @@ def make_plate(mu, Tu0=300.0):
         raise Exception("Blocks too small")
 
     for iblock in range(nblock):
-
         # Special case for only one block
         if nblock == 1:
             patches = [
@@ -235,7 +235,6 @@ def make_pipe():
     V = cf.V_cpTo_from_Ma(Ma1, ga) * np.sqrt(cp * To1)
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
-    rho1 = P1 / rgas / T1
 
     dw = 0.002
     dmax = 0.04
@@ -245,7 +244,7 @@ def make_pipe():
 
     # Numbers of grid points
     nj = len(cluv)
-    nk = 5
+    nk = 9
     ni = int(L / ddmax / AR_merid)
     print(ni, nj, nk)
 
@@ -268,13 +267,12 @@ def make_pipe():
 
     # Split into blocks
     blocks = []
-    nblock = 4
+    nblock = 1
     istb = [ni // nblock * iblock for iblock in range(nblock)]
     ienb = [ni // nblock * (iblock + 1) + 1 for iblock in range(nblock)]
     ienb[-1] = ni
 
     for iblock in range(nblock):
-
         # Special case for only one block
         if nblock == 1:
             patches = [
@@ -287,8 +285,6 @@ def make_pipe():
             patches = [
                 turbigen.grid.InletPatch(i=0),
                 turbigen.grid.PeriodicPatch(i=-1),
-                # turbigen.grid.PeriodicPatch(k=0),
-                # turbigen.grid.PeriodicPatch(k=-1),
             ]
 
         # Last block has outlet
@@ -296,8 +292,6 @@ def make_pipe():
             patches = [
                 turbigen.grid.PeriodicPatch(i=0),
                 turbigen.grid.OutletPatch(i=-1),
-                # turbigen.grid.PeriodicPatch(k=0),
-                # turbigen.grid.PeriodicPatch(k=-1),
             ]
 
         # Middle blocks are both periodic
@@ -305,8 +299,6 @@ def make_pipe():
             patches = [
                 turbigen.grid.PeriodicPatch(i=0),
                 turbigen.grid.PeriodicPatch(i=-1),
-                # turbigen.grid.PeriodicPatch(k=0),
-                # turbigen.grid.PeriodicPatch(k=-1),
             ]
 
         patches.extend(
@@ -531,7 +523,7 @@ def test_plate_turb():
     ax.legend()
     plt.tight_layout(pad=0.1)
     # plt.show()
-    plt.savefig('tests/turb_cd.pdf')
+    plt.savefig("tests/turb_cd.pdf")
     plt.close()
 
 
@@ -648,37 +640,49 @@ def test_plate_lam():
 
 
 def test_poiseuille():
-
     g, F = make_pipe()
 
     np.set_printoptions(precision=2)
+    # settings["n_step"] = 2160
+    # settings["n_step_avg"] = 1
+    # settings["nstep_damp"] = -1
+    # settings["fmgrid"] = 0.4
+
     turbigen.solvers.embsolve.run(g, settings)
 
-    print('Processing last block...')
+    # fig, ax = plt.subplots()
+    # b = g[0]
+    # C = b[0, :, b.nk // 2]
+    # ax.axis("equal")
+    # ax.plot(C.r, C.Vx)
+    # plt.show()
+    #
+
+    print("Processing last block...")
     b = g[-1]
     iplot = int(b.ni * 0.9)
-    print(f'iplot={iplot}')
-    C = b[:, b.nj//2, b.nk // 2]
+    print(f"iplot={iplot}")
+    C = b[:, b.nj // 2, b.nk // 2]
     C2 = b[-1, :, :]
     h = np.ptp(C2.r)
-    print(f'span={h}')
+    print(f"span={h}")
     dPdx = np.gradient(C.P, C.x)
-    print(f'dPdx={dPdx.min()}, {dPdx.mean()}, {dPdx.max()}')
+    print(f"dPdx={dPdx.min()}, {dPdx.mean()}, {dPdx.max()}")
     mu = F.mu
-    print(f'mu={mu}')
+    print(f"mu={mu}")
     K = dPdx[iplot] / 2.0 / mu * h * h
-    print(f'K={K}')
+    print(f"K={K}")
 
     Cm, A, _ = C2.mix_out()
     mdot = Cm.rho * Cm.Vm * A
-    print(f'mdot={mdot}')
+    print(f"mdot={mdot}")
     rho = Cm.rho
-    print(f'rho={rho}')
+    print(f"rho={rho}")
     w = 2.0 * np.pi * 0.5 * (C2.r.min() + C2.r.max())
-    print(f'width={w}')
+    print(f"width={w}")
     mdot_analytical = -rho * w * h * K / 6.0
 
-    err = (mdot_analytical/mdot-1.)
+    err = mdot_analytical / mdot - 1.0
     print(
         f"mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f},"
         f" error={err*100:.2f}%"
@@ -687,8 +691,6 @@ def test_poiseuille():
 
 
 if __name__ == "__main__":
-    pass
-
     # test_plate_turb()
     # test_plate_lam()
     test_poiseuille()
