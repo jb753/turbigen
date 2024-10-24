@@ -187,7 +187,7 @@ def test_mixer():
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
     conf = turbigen.solvers.embsolve.Config(
-        nstep_damp=-1, n_step=2000, n_step_log=100, n_step_avg=500
+        nstep_damp=-1, n_step=4000, n_step_log=100, n_step_avg=500
     )
     np.set_printoptions(precision=4)
     turbigen.solvers.embsolve.run(g, conf)
