@@ -1533,7 +1533,27 @@ class Composites:
         Cinv: (npts, 5, 5) array
 
         """
-        return np.linalg.inv(self.primitive_to_conserved)
+        Z = np.zeros(self.shape)
+        one = np.ones(self.shape)
+        Cinv = np.stack(
+            (
+                (one, Z, Z, Z, Z),
+                (-self.Vx, one, Z, Z, Z),
+                (-self.Vr, Z, one, Z, Z),
+                (-self.Vt, Z, Z, one, Z),
+                (
+                    (self.V**2 - self.drhoe_drho_P),
+                    -self.Vx,
+                    -self.Vr,
+                    -self.Vt,
+                    one,
+                ),
+            )
+        )
+        Cinv[1:4] /= self.rho
+        Cinv[-1] /= self.drhoe_dP_rho
+        Cinv = np.moveaxis(Cinv, (0, 1), (-2, -1))
+        return Cinv
 
     @dependent_property
     def primitive_to_chic(self):
@@ -1586,7 +1606,28 @@ class Composites:
         -------
         Binv: (npts, 5, 5) array
         """
-        return np.linalg.inv(self.primitive_to_chic)
+        zero = np.zeros(self.shape)
+        one = np.ones(self.shape)
+        half = one / 2.0
+        asq_recip = 1.0 / self.a**2
+        rhoa_recip = 1.0 / self.rho / self.a
+        Binv = np.stack(
+            (
+                (
+                    asq_recip / 2.0,
+                    asq_recip / 2.0,
+                    zero,
+                    zero,
+                    -asq_recip,
+                ),
+                (-rhoa_recip / 2.0, rhoa_recip / 2, zero, zero, zero),
+                (zero, zero, rhoa_recip, zero, zero),
+                (zero, zero, zero, rhoa_recip, zero),
+                (half, half, zero, zero, zero),
+            )
+        )
+        Binv = np.moveaxis(Binv, (0, 1), (-2, -1))
+        return Binv
 
     @dependent_property
     def primitive_to_flux(self):

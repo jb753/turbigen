@@ -1,3 +1,4 @@
+# from mpi4py import profile
 import numpy as np
 from copy import copy
 
@@ -996,6 +997,9 @@ def get_mixers(grid, procids, typ):
         pid += 1
         mixers[-2].nxpid = mixers[-1].pid
         mixers[-1].nxpid = mixers[-2].pid
+        if mixers[0].procid == mixers[1].procid:
+            mixers[0].nxbuffer = mixers[1].buffer
+            mixers[1].nxbuffer = mixers[0].buffer
     return mixers
 
 
@@ -1073,10 +1077,12 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
+@profile
 def exchange_mixing(blocks, bid_local, mixers, log):
     # Prepare to recieve into away buffers
     for mixer in mixers:
-        mixer.Recv.Start()
+        if not mixer.nxprocid == rank:
+            mixer.Recv.Start()
 
     # Populate the home buffer with pitchwise-averaged
     # fluxes and conserved vars and send away
@@ -1084,13 +1090,15 @@ def exchange_mixing(blocks, bid_local, mixers, log):
         b1 = blocks[bid_local[mixer.bid]]
         mixer.bcond.pull(b1)
         mixer.fill_buffer()
-        mixer.Send.Start()
+        if not mixer.nxprocid == rank:
+            mixer.Send.Start()
 
     # We now use populated buffers to get flux differences and
     # side-averaged mean flow
     for mixer in mixers:
         # Wait for communication before unpacking the buffers form each side
-        mixer.Recv.Wait()
+        if not mixer.nxprocid == rank:
+            mixer.Recv.Wait()
 
         dflux, flux_avg, cons_avg = mixer.unpack_buffers()
 
@@ -1169,6 +1177,7 @@ def exchange_periodic(blocks, bid_local, periodics):
             embsolve.set_by_ijk(b2, bavg, patch.nxijk)
 
 
+@profile
 def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
     if blocks is None:
         blocks = comm.recv()
@@ -1707,6 +1716,7 @@ class Boundary:
         # Noting that we have to swap from C to Fortran ordering
         block.dUn[self.slice] = self.dUn
 
+    @profile
     def apply(self, block):
         self.pull(block)
         self.clip_velocities()
@@ -1719,6 +1729,7 @@ class Boundary:
         self.dUn[:] = dcons[..., 0]
         self.push(block)
 
+    @profile
     def interior_chics(self):
         """Get chics propagating out of domain from interior nodal changes."""
 
@@ -1736,6 +1747,7 @@ class Boundary:
 
         return dc
 
+    @profile
     def exterior_chics(self):
         # Preallocate
         dc = np.zeros(self.shape + (5, 1))
