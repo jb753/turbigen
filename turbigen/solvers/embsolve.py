@@ -1,4 +1,3 @@
-# from mpi4py import profile
 import numpy as np
 from copy import copy
 
@@ -1077,7 +1076,6 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
-@profile
 def exchange_mixing(blocks, bid_local, mixers, log):
     # Prepare to recieve into away buffers
     for mixer in mixers:
@@ -1177,7 +1175,6 @@ def exchange_periodic(blocks, bid_local, periodics):
             embsolve.set_by_ijk(b2, bavg, patch.nxijk)
 
 
-@profile
 def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
     if blocks is None:
         blocks = comm.recv()
@@ -1716,10 +1713,9 @@ class Boundary:
         # Noting that we have to swap from C to Fortran ordering
         block.dUn[self.slice] = self.dUn
 
-    @profile
     def apply(self, block):
         self.pull(block)
-        self.clip_velocities()
+        # self.clip_velocities()
         dchic_ext = self.exterior_chics()
         dchic_int = self.interior_chics()
         if self.is_outlet.all():
@@ -1729,7 +1725,6 @@ class Boundary:
         self.dUn[:] = dcons[..., 0]
         self.push(block)
 
-    @profile
     def interior_chics(self):
         """Get chics propagating out of domain from interior nodal changes."""
 
@@ -1747,7 +1742,6 @@ class Boundary:
 
         return dc
 
-    @profile
     def exterior_chics(self):
         # Preallocate
         dc = np.zeros(self.shape + (5, 1))

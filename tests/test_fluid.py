@@ -399,10 +399,17 @@ def test_perfect_deriv():
     rho1 = 2.0
     P1 = 2e5
     delta = np.linspace(0.8, 1.2)
+    N = len(delta)
     Pv = delta * P1
     rhov = delta * rho1
 
-    S1 = fluid.PerfectState.from_properties(cp, ga, mu=1.8e-5, shape=delta.shape)
+    S1 = flowfield.PerfectFlowField(shape=delta.shape)
+    S1.mu = 1.84e-5
+    S1.cp = cp
+    S1.gamma = ga
+    S1.Vxrt = np.ones((3, N)) * 100.0
+    S1.Vr = 0.0
+    S1.xrt = np.ones((3, N))
 
     rtol = 1e-3
 
@@ -411,32 +418,28 @@ def test_perfect_deriv():
     dsdrho = np.gradient(S1.s, rhov)
     dhdrho = np.gradient(S1.h, rhov)
     dudrho = np.gradient(S1.u, rhov)
+    drhoe_drho = np.gradient(S1.rhoe, rhov)
     assert np.allclose(S1.dsdrho_P[1:-1], dsdrho[1:-1], rtol=rtol)
     assert np.allclose(S1.dhdrho_P[1:-1], dhdrho[1:-1], rtol=rtol)
     assert np.allclose(S1.dudrho_P[1:-1], dudrho[1:-1], rtol=rtol)
+    assert np.allclose(S1.drhoe_drho_P[1:-1], drhoe_drho[1:-1], rtol=rtol)
 
     # by P first at constant rho
     S1.set_P_rho(Pv, rho1)
     dsdP = np.gradient(S1.s, Pv)
     dhdP = np.gradient(S1.h, Pv)
     dudP = np.gradient(S1.u, Pv)
+    drhoe_dP = np.gradient(S1.rhoe, Pv)
     assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
+    assert np.allclose(S1.drhoe_dP_rho[1:-1], drhoe_dP[1:-1], rtol=rtol)
 
 
 def test_matrices():
     # Set up two flow fields with a small perturbation between them
-    F = flowfield.PerfectFlowField(shape=(1,))
-    F.cp = 1105.0
-    F.gamma = 1.3
-    F.mu = 1.8e-5
-    F.xrt = np.ones((3, 1))
-    F.Vxrt = [[100.0], [200.0], [50.0]]
-    F.set_P_T(1e5, 300.0)
-    F2 = F.copy()
 
-    mag = 1e-4
+    mag = 1e-5
     tol = 1e-2
     perturbations = [
         [1.0, 0.0, 0.0, 0.0, 0.0],
@@ -449,6 +452,15 @@ def test_matrices():
         [-1.2, 3.5, -0.7, 4.1, 2.2],
     ]
 
+    F = flowfield.PerfectFlowField(shape=(1,))
+    F.cp = 1105.0
+    F.gamma = 1.3
+    F.mu = 1.8e-5
+    F.xrt = 2 * np.ones((3, 1))
+    F.Vxrt = [[[100.0], [80.0], [50.0]]]
+    F.set_P_T(1.2e5, 295.0)
+    F2 = F.copy()
+
     for fac_prim in perturbations:
         dprim = F.prim * np.array(fac_prim)[..., None] * mag
         F2.set_prim(F.prim + dprim)
@@ -458,6 +470,7 @@ def test_matrices():
         C = F.primitive_to_conserved
         Cinv = F.conserved_to_primitive
         assert np.allclose(dcons, C @ dprim, rtol=tol)
+        assert np.allclose(np.diag((Cinv @ C).squeeze()), 1.0, rtol=1e-6)
 
         # Manually calculate chic vector
         dp = F2.P - F.P
@@ -478,19 +491,28 @@ def test_matrices():
         # Check prim to chic
         B = F.primitive_to_chic
         Binv = F.chic_to_primitive
+        assert np.allclose(np.diag((Binv @ B).squeeze()), 1.0, rtol=1e-6)
         assert np.allclose(dchic, B @ dprim, rtol=tol)
 
         # Check prim to fluxes
         dflux = F2.fluxes - F.fluxes
         A = F.primitive_to_flux
         Ainv = F.flux_to_primitive
+        assert np.allclose(np.diag((Ainv @ A).squeeze()), 1.0, rtol=1e-6)
         assert np.allclose(dflux, A @ dprim, rtol=tol)
 
         # Check prim to bcond
         dbcond = F2.bcond - F.bcond
         Y = F.primitive_to_bcond
         Yinv = F.bcond_to_primitive
+        assert np.allclose(np.diag((Yinv @ Y).squeeze()), 1.0, rtol=1e-6)
         assert np.allclose(dbcond, Y @ dprim, rtol=tol)
+
+        # Check chic to conserved
+        X = F.chic_to_conserved
+        Xinv = F.conserved_to_chic
+        assert np.allclose(np.diag((Xinv @ X).squeeze()), 1.0, rtol=1e-6)
+        assert np.allclose(dcons, X @ dchic, rtol=tol)
 
         # Check inverses if no zeros in dprim
         if not (dprim.squeeze() == 0.0).any():
@@ -500,12 +522,9 @@ def test_matrices():
             assert np.allclose(dprim, Cinv @ dcons, rtol=tol)
 
             # Check chic to conserved
-            Xinv = F.conserved_to_chic
             assert np.allclose(dchic, Xinv @ dcons, rtol=tol)
 
-        # Check chic to conserved
-        X = F.chic_to_conserved
-        assert np.allclose(dcons, X @ dchic, rtol=tol)
+    print("ok")
 
 
 def test_chic_waves():
@@ -575,4 +594,4 @@ def test_chic_waves():
 
 if __name__ == "__main__":
     # np.set_printoptions(precision=2)
-    test_chic_waves()
+    test_matrices()

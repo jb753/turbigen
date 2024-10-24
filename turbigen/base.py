@@ -1540,12 +1540,12 @@ class Composites:
                 (one, Z, Z, Z, Z),
                 (-self.Vx, one, Z, Z, Z),
                 (-self.Vr, Z, one, Z, Z),
-                (-self.Vt, Z, Z, one, Z),
+                (-self.Vt, Z, Z, one / self.r, Z),
                 (
                     (self.V**2 - self.drhoe_drho_P),
                     -self.Vx,
                     -self.Vr,
-                    -self.Vt,
+                    -self.Vt / self.r,
                     one,
                 ),
             )
