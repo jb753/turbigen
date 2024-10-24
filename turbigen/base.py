@@ -1667,6 +1667,10 @@ class Composites:
         return self.primitive_to_chic @ self.flux_to_primitive
 
     @dependent_property
+    def bcond_to_cons(self):
+        return self.primitive_to_conserved @ self.bcond_to_primitive
+
+    @dependent_property
     def flux_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         flux variables
@@ -1729,7 +1733,6 @@ class Composites:
         Yinv: (npts, 5, 5) array
 
         """
-
         return np.linalg.inv(self.primitive_to_bcond)
 
     def resolve_meridional(self, psi):

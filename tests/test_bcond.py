@@ -219,4 +219,3 @@ if __name__ == "__main__":
     # test_inlet_CFL_0()
     test_mixer()
     # test_CFL()
-    pass

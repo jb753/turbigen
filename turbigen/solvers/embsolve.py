@@ -341,18 +341,18 @@ class SolverBlock:
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.bconds = [
-            Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
-        ]
+        self.bconds = []
+        self.bconds += [InletBoundary(patch) for patch in block.inlet_patches]
+        self.bconds += [OutletBoundary(patch) for patch in block.outlet_patches]
+        self.bconds[-1].pull(self)
+        print(self.bconds[-1].interior_chics().shape)
+        print(self.bconds[-1].exterior_chics().shape)
+        self.bconds[-1].push(self)
+        quit()
 
-        # self.mixers = []
-        # seen = []
-        # for patch in block.mixing_patches:
-        #     if patch not in seen:
-        #         mixer = [Boundary(patch), Boundary(patch.match)]
-        #         self.bconds += mixer
-        #         self.mixers.append(mixer)
-        #
+        # Boundary(patch) for patch in block.inlet_patches + block.outlet_patches
+        # ]
+
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
                 shape=block.shape, order="F", typ=typ
@@ -979,6 +979,45 @@ class Mixer:
             tag=self.nxpid,
         )
 
+    def apply(self):
+        dflux, flux_avg, cons_avg = self.unpack_buffers()
+
+        # Form the side-averaged flow conditions and update shared thermodynamic state
+        self.state_avg.set_conserved(cons_avg)
+
+        # Linearised transform flux changes to chics
+        dflux = np.moveaxis(dflux, 0, -1)[..., None]
+        dchic = self.state_avg.flux_to_chic @ dflux
+
+        # Determine flow directions
+        self.set_direction()
+
+        # Select only exterior chics
+        D = self.chic_selector()
+
+        # Transform to pitch-avg conserved changes
+        dcons_avg = (self.state_avg.chic_to_conserved @ D @ dchic).squeeze()[
+            None, :, None, :
+        ]
+
+        # We also need to enforce pitchwise-uniform ho and s
+        # Calculate perturbations to drive towards uniformity
+        ho_avg = self.bcond.pitchwise_average(self.bcond.state.ho)[..., None]
+        s_avg = self.bcond.pitchwise_average(self.bcond.state.s)[..., None]
+        dho = ho_avg - self.bcond.state.ho
+        ds = s_avg - self.bcond.state.s
+
+        # Assemble a change in bcond vector
+        # Convert to conserved
+        Z = np.zeros_like(dho)
+        dbcond = np.stack((dho, ds, Z, Z, Z), axis=-1)[..., None]
+        dcons_local = (self.bcond.state.bcond_to_cons @ dbcond)[..., 0]
+
+        # Sum and Under-relax
+        dcons = (dcons_avg + dcons_local) * 0.1
+
+        self.bcond.dUn
+
 
 def get_mixers(grid, procids, typ):
     mixers = []
@@ -1098,40 +1137,32 @@ def exchange_mixing(blocks, bid_local, mixers, log):
         if not mixer.nxprocid == rank:
             mixer.Recv.Wait()
 
-        dflux, flux_avg, cons_avg = mixer.unpack_buffers()
+        mixer.apply()
 
-        # Form the side-averaged flow conditions and update shared thermodynamic state
-        mixer.state_avg.set_conserved(cons_avg)
+        # Send the conserved changes
+        b1 = blocks[bid_local[mixer.bid]]
+        mixer.bcond.push(b1)
 
-        # Linearised transform flux changes to chics
-        dflux = np.moveaxis(dflux, 0, -1)[..., None]
-        dchic = mixer.state_avg.flux_to_chic @ dflux
-
-        # Determine flow directions
-        mixer.set_direction()
-
-        # Select only exterior chics
-        D = mixer.chic_selector()
-
-        # Transform to changes in boundary conditions
-        dbcond = (mixer.state_avg.chic_to_bcond @ D @ dchic).squeeze()
-        nk = mixer.bcond.shape[-1]
-        dbcond = np.tile(np.expand_dims(dbcond, (0, 2, 4)), (1, 1, nk, 1, 1))
-
-        # Under-relax
-        dbcond *= 0.1
-
-        # Change the boundary conditions
-        if mixer.is_inlet.any():
-            is_inlet = mixer.bcond.is_inlet
-            mixer.bcond.inlet_target[is_inlet, :, 0] += dbcond[is_inlet, :4, 0]
-            if log:
-                err = np.abs(dflux.squeeze().T / flux_avg)[0]
-                print(f"Mixer mdot err={err.max():3f}")
-
-        if mixer.is_outlet.any():
-            is_outlet = mixer.bcond.is_outlet
-            mixer.bcond.P_target[is_outlet] += dbcond[is_outlet, -1, 0]
+        # # Transform to changes in boundary conditions
+        # dbcond = (mixer.state_avg.chic_to_bcond @ D @ dchic).squeeze()
+        # nk = mixer.bcond.shape[-1]
+        # dbcond = np.tile(np.expand_dims(dbcond, (0, 2, 4)), (1, 1, nk, 1, 1))
+        #
+        # # Under-relax
+        # dbcond *= 0.1
+        #
+        # # Change the boundary conditions
+        # if mixer.is_inlet.any():
+        #     is_inlet = mixer.bcond.is_inlet
+        #     mixer.bcond.inlet_target[is_inlet, :, 0] += dbcond[is_inlet, :4, 0]
+        #     if log:
+        #         err = np.abs(dflux.squeeze().T / flux_avg)[0]
+        #         print(f"Mixer mdot err={err.max():3f}")
+        #
+        # if mixer.is_outlet.any():
+        #     is_outlet = mixer.bcond.is_outlet
+        #     mixer.bcond.P_target[is_outlet] += dbcond[is_outlet, -1, 0]
+        #
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1230,9 +1261,6 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
     # Lookup of local bid from global bid
     bid_local = {bid: ibid for ibid, bid in enumerate(bids)}
-
-    for mixer in mixers:
-        blocks[bid_local[mixer.bid]].bconds.append(mixer.bcond)
 
     nblock = len(blocks)
 
@@ -1588,7 +1616,7 @@ def get_multigrid_lengths(block, nb, typ):
 
 
 class Boundary:
-    """Store FlowField on a block boundary, force to target."""
+    """Store flow field on a boundary condition."""
 
     def __init__(self, patch):
         """Set up the boundary condition using a patch object."""
@@ -1624,6 +1652,8 @@ class Boundary:
         ax_stream = np.argmax(np.array(C.shape) == 1).item()
         ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
         self.order = (ax_stream, ax_span, ax_theta)
+        if not self.order == (0, 1, 2):
+            raise Exception("Boundary conditions must be on const-i faces.")
 
         # Get normal vectors pointing into the domain
         C0 = C.copy().transpose(self.order)
@@ -1641,54 +1671,56 @@ class Boundary:
         assert (np.ptp(C0.squeeze().x, axis=1) / Lref < rtol).all()
         assert (np.ptp(C0.squeeze().r, axis=1) / Lref < rtol).all()
 
-        # Preallocate boundary targets
-        self.is_inlet = np.ones(self.shape, dtype=bool)
-        self.inlet_target = np.full(self.shape + (4, 1), np.nan)
-        self.P_target = np.full(self.shape, np.nan)
-
+        # # Preallocate boundary targets
+        # self.is_inlet = np.ones(self.shape, dtype=bool)
+        # self.inlet_target = np.full(self.shape + (4, 1), np.nan)
+        # self.P_target = np.full(self.shape, np.nan)
+        #
         # Initialise indicator for inlet or outlet
         # Nodewise to allow for reversed flow across mixing plane
-        self.set_inlet()
+        # self.set_inlet()
 
-        # Set the target boundary condition vars
-        if isinstance(patch, turbigen.grid.InletPatch):
-            assert self.is_inlet.all()
-            self.inlet_target[self.is_inlet, :, 0] = np.array(
-                [
-                    patch.state.h,
-                    patch.state.s,
-                    turbigen.util.tand(patch.Alpha),
-                    turbigen.util.tand(patch.Beta),
-                ]
-            )
+        # # # # Set the target boundary condition vars
+        # # # if isinstance(patch, turbigen.grid.InletPatch):
+        # # #     assert self.is_inlet.all()
+        # # #     self.inlet_target[self.is_inlet, :, 0] = np.array(
+        # # #         [
+        # # #             patch.state.h,
+        # # #             patch.state.s,
+        # # #             turbigen.util.tand(patch.Alpha),
+        # # #             turbigen.util.tand(patch.Beta),
+        # # #         ]
+        # # #     )
+        # # #
+        # # elif isinstance(patch, turbigen.grid.OutletPatch):
+        # #     assert not self.is_inlet.any()
+        # #     self.P_target[self.is_outlet] = patch.Pout
+        # #
+        # elif isinstance(patch, turbigen.grid.turbigen.grid.MixingPatch):
+        #     pass
+        #
+        # self.inlet_target[..., 0, 0] = self.state.ho
+        # self.inlet_target[..., 1, 0] = self.state.s
+        # self.inlet_target[..., 2, 0] = self.state.tanAlpha
+        # self.inlet_target[..., 3, 0] = self.state.tanBeta
+        # self.P_target[:] = self.state.P
+        #
+        #
+        #
+        #
 
-        elif isinstance(patch, turbigen.grid.OutletPatch):
-            assert not self.is_inlet.any()
-            self.P_target[self.is_outlet] = patch.Pout
-
-        elif isinstance(patch, turbigen.grid.turbigen.grid.MixingPatch):
-            self.inlet_target[..., 0, 0] = self.state.ho
-            self.inlet_target[..., 1, 0] = self.state.s
-            self.inlet_target[..., 2, 0] = self.state.tanAlpha
-            self.inlet_target[..., 3, 0] = self.state.tanBeta
-            self.P_target[:] = self.state.P
-
-    @property
-    def is_outlet(self):
-        return np.logical_not(self.is_inlet)
-
-    def set_inlet(self):
-        """Use current meridional velocity and grid normal to determine flow direction."""
-        Vxr = self.state.Vxr
-        Vxr /= turbigen.util.vecnorm(Vxr)
-        self.is_inlet[:] = np.sign(np.einsum("i...,i...", Vxr, self.normal)) > 0.0
-
-    def clip_velocities(self, Ma_min=0.01):
-        """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        V_min = self.state.a.mean() * Ma_min
-        ind_clip = np.abs(self.state.Vx) < V_min
-        self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
-
+    # def set_inlet(self):
+    #     """Use current meridional velocity and grid normal to determine flow direction."""
+    #     Vxr = self.state.Vxr
+    #     Vxr /= turbigen.util.vecnorm(Vxr)
+    #     self.is_inlet[:] = np.sign(np.einsum("i...,i...", Vxr, self.normal)) > 0.0
+    #
+    # def clip_velocities(self, Ma_min=0.01):
+    #     """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
+    #     V_min = self.state.a.mean() * Ma_min
+    #     ind_clip = np.abs(self.state.Vx) < V_min
+    #     self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
+    #
     def pull(self, block):
         """Update stored state using solution from parent block."""
 
@@ -1701,16 +1733,14 @@ class Boundary:
         # So that e.g. Vx = Vxrt[...,0] is contiguous
         # This is opposite to the C axis order used within state objects
         # So we have to move the component axis to first posn
-
-        # Velocities
         self.state.Vxrt = np.moveaxis(block.Vxrt[self.slice], -1, 0)
 
         # Nodal residuals
+        # We keep always in Fortran order, no moveaxis here
         self.dUn[:] = block.dUn[self.slice]
 
     def push(self, block):
         """Send modified residuals back to the parent block."""
-        # Noting that we have to swap from C to Fortran ordering
         block.dUn[self.slice] = self.dUn
 
     def apply(self, block):
@@ -1725,99 +1755,172 @@ class Boundary:
         self.dUn[:] = dcons[..., 0]
         self.push(block)
 
+    def interior_selector(self):
+        """Dummy selector for all chics on a general boundary."""
+        return np.tile(np.eye(5), self.shape + (1, 1))
+
     def interior_chics(self):
         """Get chics propagating out of domain from interior nodal changes."""
-
-        # Form a diagonal selector matrices for upstream or downstream chics
-        Ddn = np.diag([0, 1, 1, 1, 1])
-        Dup = np.diag([1, 0, 0, 0, 0])
-
-        # Interior chics are upstream-running at inlet, downstream-running at outlet
-        D = np.empty(self.shape + (5, 5))
-        D[self.is_inlet] = Dup
-        D[self.is_outlet] = Ddn
-
-        # Matrix transform conserved changes to chics, with selector
-        dc = D @ self.state.conserved_to_chic @ self.dUn[..., None]
-
-        return dc
-
-    def exterior_chics(self):
-        # Preallocate
-        dc = np.zeros(self.shape + (5, 1))
-
-        #
-        # On outlet, use static pressure to set upstream-running wave
-        #
-        dP = self.P_target - self.state.P
-        rho = self.state.rho
-        a = self.state.a
-        dVx = -dP / rho / a  # from c2=0
-        c1 = dP - rho * a * dVx
-        dc[self.is_outlet, 0, 0] = c1[self.is_outlet]
-
-        #
-        # On inlet, use ho, s, Al, Be to set downstream-running chics
-        #
-
-        # Convert downstream-running chics to prim changes
-        # Omit first column corresponding to upstream-running chic
-        chic_to_prim = self.state.chic_to_primitive[..., :, 1:]
-
-        # Convert primitive to inlet changes
-        # Omit last row corresponding to static pressure
-        prim_to_inlet = self.state.primitive_to_bcond[..., :-1, :]
-
-        # Complete transformation matrix
-        chic_to_inlet = prim_to_inlet @ chic_to_prim
-        inlet_to_chic = np.linalg.inv(chic_to_inlet)
-
-        # Evaluate bcond error
-        inlet_now = np.stack(
-            (self.state.ho, self.state.s, self.state.tanAlpha, self.state.tanBeta),
-            axis=-1,
-        )[..., None]
-        dinlet = self.inlet_target - inlet_now
-
-        # Convert to chics
-        dc_inlet = (inlet_to_chic @ dinlet)[self.is_inlet]
-
-        # Insert into the preallocated chic array
-        dc[self.is_inlet, 1:, :] = dc_inlet
-
-        # Under-relax
-        dc *= 0.5
-
-        return dc
-
-    def pitchwise_average(self, y):
-        # Perform trapezoidal integration at every spanwise location
-        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
-
-    def get_averages(self):
-        return np.stack(
-            (
-                self.pitchwise_average(self.state.fluxes),
-                self.pitchwise_average(self.state.conserved),
-            )
+        # Matrix transform conserved changes to chics, with interior selector
+        return (
+            self.interior_selector()
+            @ self.state.conserved_to_chic
+            @ self.dUn[..., None]
         )
 
-    def integrate(self):
-        """Get mass flow and mass-averaged boundary conditions."""
-        rhoVx = self.state.rhoVx.squeeze()
-        Po = self.state.Po.squeeze()
-        To = self.state.To.squeeze()
-        P = self.state.P.squeeze()
-        rhoVx_face = util.node_to_face2(rhoVx)
-        To_face = util.node_to_face2(To)
-        Po_face = util.node_to_face2(Po)
-        P_face = util.node_to_face2(P)
-        A = self.dA.sum()
-        mdot = (rhoVx_face * self.dA).sum()
-        Po_avg = (rhoVx_face * Po_face * self.dA).sum() / mdot
-        To_avg = (rhoVx_face * To_face * self.dA).sum() / mdot
-        P_avg = (P_face * self.dA).sum() / A
-        return mdot, Po_avg, To_avg, P_avg
+    # def exterior_chics(self):
+    #     # Preallocate
+    #     dc = np.zeros(self.shape + (5, 1))
+    #
+    #     #
+    #     # On outlet, use static pressure to set upstream-running wave
+    #     #
+    #     dP = self.P_target - self.state.P
+    #     rho = self.state.rho
+    #     a = self.state.a
+    #     dVx = -dP / rho / a  # from c2=0
+    #     c1 = dP - rho * a * dVx
+    #     dc[self.is_outlet, 0, 0] = c1[self.is_outlet]
+    #
+    #     #
+    #     # On inlet, use ho, s, Al, Be to set downstream-running chics
+    #     #
+    #
+    #     # Convert downstream-running chics to prim changes
+    #     # Omit first column corresponding to upstream-running chic
+    #     chic_to_prim = self.state.chic_to_primitive[..., :, 1:]
+    #
+    #     # Convert primitive to inlet changes
+    #     # Omit last row corresponding to static pressure
+    #     prim_to_inlet = self.state.primitive_to_bcond[..., :-1, :]
+    #
+    #     # Complete transformation matrix
+    #     chic_to_inlet = prim_to_inlet @ chic_to_prim
+    #     inlet_to_chic = np.linalg.inv(chic_to_inlet)
+    #
+    #     # Evaluate bcond error
+    #     inlet_now = np.stack(
+    #         (self.state.ho, self.state.s, self.state.tanAlpha, self.state.tanBeta),
+    #         axis=-1,
+    #     )[..., None]
+    #     dinlet = self.inlet_target - inlet_now
+    #
+    #     # Convert to chics
+    #     dc_inlet = (inlet_to_chic @ dinlet)[self.is_inlet]
+    #
+    #     # Insert into the preallocated chic array
+    #     dc[self.is_inlet, 1:, :] = dc_inlet
+    #
+    #     # Under-relax
+    #     dc *= 0.5
+    #
+    #     return dc
+
+    # def pitchwise_average(self, y):
+    #     # Perform trapezoidal integration at every spanwise location
+    #     return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
+    #
+    # def get_averages(self):
+    #     return np.stack(
+    #         (
+    #             self.pitchwise_average(self.state.fluxes),
+    #             self.pitchwise_average(self.state.conserved),
+    #         )
+    #     )
+    #
+    # def integrate(self):
+    #     """Get mass flow and mass-averaged boundary conditions."""
+    #     rhoVx = self.state.rhoVx.squeeze()
+    #     Po = self.state.Po.squeeze()
+    #     To = self.state.To.squeeze()
+    #     P = self.state.P.squeeze()
+    #     rhoVx_face = util.node_to_face2(rhoVx)
+    #     To_face = util.node_to_face2(To)
+    #     Po_face = util.node_to_face2(Po)
+    #     P_face = util.node_to_face2(P)
+    #     A = self.dA.sum()
+    #     mdot = (rhoVx_face * self.dA).sum()
+    #     Po_avg = (rhoVx_face * Po_face * self.dA).sum() / mdot
+    #     To_avg = (rhoVx_face * To_face * self.dA).sum() / mdot
+    #     P_avg = (P_face * self.dA).sum() / A
+    #     return mdot, Po_avg, To_avg, P_avg
+    #
+    #
+
+
+class OutletBoundary(Boundary):
+    def __init__(self, patch):
+        # Set up the common features of all boundaries
+        super().__init__(patch)
+
+        # Store the target static pressure
+        self.P_target = patch.Pout
+
+    def interior_selector(self):
+        """Diagonal matrix to extract downstream-propagating chics (outwards thro outlet)."""
+        return np.tile(np.diag([0, 1, 1, 1, 1]), self.shape + (1, 1))
+
+    def exterior_chics(self):
+        """Use static pressure target to set upstream-running wave."""
+
+        dP = self.P_target - self.state.P
+        dVx = -dP / self.rho / self.a  # from c2=0
+        dc1 = dP - self.rho * self.a * dVx  # definition of c1
+        dc = np.zeros(self.shape + (5, 1))
+        dc[..., 0, 0] = dc1
+        return dc
+
+
+class InletBoundary(Boundary):
+    def __init__(self, patch):
+        # Set up the common features of all boundaries
+        super().__init__(patch)
+
+        # Store the target ho, s, flow angles
+        self.bcond_target = np.array(
+            [
+                patch.state.h,
+                patch.state.s,
+                turbigen.util.tand(patch.Alpha),
+                turbigen.util.tand(patch.Beta),
+            ]
+        )
+
+    def interior_selector(self):
+        """Diagonal matrix to extract upstream-propagating (outwards thro outlet) chic."""
+        return np.tile(np.diag([1, 0, 0, 0, 0]), self.shape + (1, 1))
+
+    def exterior_chics(self):
+        """Use target inlet conditions to set downstream-propagating waves."""
+
+    #     #
+    #     # On inlet, use ho, s, Al, Be to set downstream-running chics
+    #     #
+    #
+    #     # Convert downstream-running chics to prim changes
+    #     # Omit first column corresponding to upstream-running chic
+    #     chic_to_prim = self.state.chic_to_primitive[..., :, 1:]
+    #
+    #     # Convert primitive to inlet changes
+    #     # Omit last row corresponding to static pressure
+    #     prim_to_inlet = self.state.primitive_to_bcond[..., :-1, :]
+    #
+    #     # Complete transformation matrix
+    #     chic_to_inlet = prim_to_inlet @ chic_to_prim
+    #     inlet_to_chic = np.linalg.inv(chic_to_inlet)
+    #
+    #     # Evaluate bcond error
+    #     inlet_now = np.stack(
+    #         (self.state.ho, self.state.s, self.state.tanAlpha, self.state.tanBeta),
+    #         axis=-1,
+    #     )[..., None]
+    #     dinlet = self.inlet_target - inlet_now
+    #
+    #     # Convert to chics
+    #     dc_inlet = (inlet_to_chic @ dinlet)[self.is_inlet]
+    #
+    #     # Insert into the preallocated chic array
+    #     dc[self.is_inlet, 1:, :] = dc_inlet
 
 
 class MixingPlane:
