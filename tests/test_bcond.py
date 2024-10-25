@@ -189,7 +189,7 @@ def test_mixer():
     conf = turbigen.solvers.embsolve.Config(
         nstep_damp=-1, n_step=4000, n_step_log=100, n_step_avg=500
     )
-    np.set_printoptions(precision=4)
+    np.set_printoptions(precision=3)
     turbigen.solvers.embsolve.run(g, conf)
 
     fluxes = []
@@ -202,17 +202,9 @@ def test_mixer():
         [flux_avg[0], flux_avg[1], flux_avg[1], C.r * flux_avg[1], flux_avg[-1]]
     )
     err = np.diff(fluxes, axis=0) / flux_ref
+    print(err)
     rtol = 1e-6
     assert (np.abs(err) < rtol).all()
-
-    # fig, ax = plt.subplots()
-    # for b in g:
-    #     C = b[:, b.nj // 2, :]
-    #     ax.plot(C.x, C.rt, "k-", lw=0.5)
-    #     ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
-    # plt.show()
-    #
-    #
 
 
 if __name__ == "__main__":

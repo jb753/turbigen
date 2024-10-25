@@ -1744,6 +1744,19 @@ class Composites:
         self.Vx = Vn
         self.Vr = Vs
 
+    @dependent_property
+    def inlet_to_chic(self):
+        # Convert downstream-running chics to primitive changes
+        # Omit first column corresponding to upstream-running chic
+        chic_to_prim = self.chic_to_primitive[..., :, 1:]
+
+        # Convert primitive to inlet bcond changes
+        # Omit last row corresponding to static pressure
+        prim_to_inlet = self.primitive_to_bcond[..., :-1, :]
+
+        # Reversed transform from inlet to chic
+        return np.linalg.inv(prim_to_inlet @ chic_to_prim)
+
 
 class MeanLine:
     """Encapsulate flow and geometry on a nomial mean streamsurface."""
