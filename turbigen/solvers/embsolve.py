@@ -96,14 +96,14 @@ class Config(BaseSolver):
 
     i_exit: int = 1
     i_inlet: int = 1
-    K_exit: float = 0.9
-    K_inlet: float = 0.7
+
+    K_exit: float = 0.5
+    K_inlet: float = 0.5
+    K_mix: float = 0.1
+    sf_mix: float = 0.1
 
     plot_conv: bool = False
     print_conv: bool = True
-
-    tauw_lam_mult: float = 1.0
-    tauw_turb_mult: float = 1.0
 
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
@@ -330,8 +330,12 @@ class SolverBlock:
         ]
 
         self.bconds = []
-        self.bconds += [InletBoundary(patch) for patch in block.inlet_patches]
-        self.bconds += [OutletBoundary(patch) for patch in block.outlet_patches]
+        self.bconds += [
+            InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
+        ]
+        self.bconds += [
+            OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches
+        ]
 
         if isinstance(block, turbigen.grid.PerfectBlock):
             self.state = turbigen.fluid.PerfectState(
@@ -521,7 +525,7 @@ class Periodic:
         )
 
 
-def get_mixers(grid, procids, typ):
+def get_mixers(grid, procids, typ, K_mix, sf_mix):
     mixers = []
     seen = []
     pid = 0
@@ -531,9 +535,9 @@ def get_mixers(grid, procids, typ):
         else:
             seen.append(patch)
             seen.append(patch.match)
-        mixers.append(MixingBoundary(patch, pid, procids, typ))
+        mixers.append(MixingBoundary(patch, pid, procids, typ, K_mix, sf_mix))
         pid += 1
-        mixers.append(MixingBoundary(patch.match, pid, procids, typ))
+        mixers.append(MixingBoundary(patch.match, pid, procids, typ, K_mix, sf_mix))
         pid += 1
         mixers[-2].nxpid = mixers[-1].pid
         mixers[-1].nxpid = mixers[-2].pid
@@ -863,7 +867,7 @@ def run(grid, conf, machine=None):
     # procids is a list of length nblocks, of which processor is alocated to each block
     procids = grid.partition(size)
     periodics = get_periodics(grid, procids, typ)
-    mixers = get_mixers(grid, procids, typ)
+    mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
 
     # Split into lists for each procid
     block_split = []
@@ -1055,7 +1059,7 @@ def get_multigrid_lengths(block, nb, typ):
 class Boundary:
     """Store flow field on a boundary condition."""
 
-    def __init__(self, patch):
+    def __init__(self, patch, K):
         """Set up the boundary condition using a patch object."""
 
         # Store slicing data for this patch so we can exchange
@@ -1108,11 +1112,7 @@ class Boundary:
         assert (np.ptp(C0.squeeze().x, axis=1) / Lref < rtol).all()
         assert (np.ptp(C0.squeeze().r, axis=1) / Lref < rtol).all()
 
-    # def clip_velocities(self, Ma_min=0.01):
-    #     """Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-    #     V_min = self.state.a.mean() * Ma_min
-    #     ind_clip = np.abs(self.state.Vx) < V_min
-    #     self.state.Vx[ind_clip] = V_min * np.sign(self.state.Vx[ind_clip])
+        self.K = K
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1146,7 +1146,7 @@ class Boundary:
         dchic_outwards = self.outward_chics()
 
         # Set inwards-running chics using prescribed boundary conditions
-        dchic_inwards = self.inward_chics() * 0.5
+        dchic_inwards = self.inward_chics() * self.K
 
         # Transform to conserved variable changes
         dcons = self.state.chic_to_conserved @ (dchic_outwards + dchic_inwards)
@@ -1173,9 +1173,9 @@ class Boundary:
 
 
 class OutletBoundary(Boundary):
-    def __init__(self, patch):
+    def __init__(self, patch, K):
         # Set up the common features of all boundaries
-        super().__init__(patch)
+        super().__init__(patch, K)
 
         # Store the target static pressure
         self.P_target = patch.Pout
@@ -1196,9 +1196,9 @@ class OutletBoundary(Boundary):
 
 
 class InletBoundary(Boundary):
-    def __init__(self, patch):
+    def __init__(self, patch, K):
         # Set up the common features of all boundaries
-        super().__init__(patch)
+        super().__init__(patch, K)
 
         # Store the target ho, s, flow angles
         bcond_target = np.array(
@@ -1236,10 +1236,10 @@ class InletBoundary(Boundary):
 
 
 class MixingBoundary(Boundary):
-    def __init__(self, patch, pid, procids, typ):
+    def __init__(self, patch, pid, procids, typ, K_mix, sf_mix):
         """Define the mixing boundary with patch and communication info."""
         # Set up the common features of all boundaries
-        super().__init__(patch)
+        super().__init__(patch, K_mix)
 
         # Store ids for communication
         match = patch.match
@@ -1267,9 +1267,13 @@ class MixingBoundary(Boundary):
 
         # Preallocate pitch-avg flux changes
         self.dflux_avg = np.zeros((1, len(self.spf), 1, 5, 1))
+        self.dflux_last = np.zeros((1, len(self.spf), 1, 5, 1))
 
         # Set direction
         self.is_inlet = np.ones_like(self.spf, dtype=bool)
+
+        # Store smoothing factors
+        self.sf_mix = sf_mix
 
     @property
     def is_outlet(self):
@@ -1306,9 +1310,15 @@ class MixingBoundary(Boundary):
         dflux = (buffer[0] - nxbuffer[0]) / 2.0
         cons_avg = 0.5 * (buffer[1] + nxbuffer[1])
 
-        # Store the results
+        # Store the averaged state and flux error
         self.state_avg.set_conserved(cons_avg)
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
+
+        # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
+        Ma_min = 0.1
+        V_min = self.state_avg.a.mean() * Ma_min
+        ind_clip = np.abs(self.state_avg.Vx) < V_min
+        self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
 
     def set_direction(self):
         """Use current avg velocity and normals to get flow direction."""
@@ -1321,7 +1331,8 @@ class MixingBoundary(Boundary):
     def outward_chics(self):
         """Get chics propagating out of domain using local flow dirn."""
         # Transform conserved changes to chics
-        dchic = self.state.conserved_to_chic @ self.dUn[..., None]
+        conserved_to_chic = np.expand_dims(self.state_avg.conserved_to_chic, (0, 2))
+        dchic = conserved_to_chic @ self.dUn[..., None]
         # Where the pitch-avg flow is into the domain
         # zero the downstream-running chics
         dchic[:, self.is_inlet, :, 1:, 0] = 0.0
@@ -1338,7 +1349,7 @@ class MixingBoundary(Boundary):
         dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
 
         # Relax
-        dchic *= 0.5
+        dchic *= self.K
 
         # Discard the outwards-running chics
         # Where the pitch-avg flow is into the domain like an inlet
@@ -1348,29 +1359,36 @@ class MixingBoundary(Boundary):
         # zero the downstream-running chic
         dchic[:, self.is_outlet, :, 1:, 0] = 0.0
 
-        # Second, we need to enforce uniform ho and s on inlet
+        # Second, we need to suppress non-uniform ho, s, Beta on inlet
+        # Just a little bit of characteristic smoothing
+        # Don't need to touch Alpha because periodic in circumferential dirn
         if self.is_inlet.any():
             # Calculate perturbations to drive towards uniformity
             ho_avg = self.pitchwise_average(self.state.ho)[..., None]
             s_avg = self.pitchwise_average(self.state.s)[..., None]
+            tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
             dho = ho_avg - self.state.ho
             ds = s_avg - self.state.s
+            dtanBe = tanBe_avg - self.state.tanBeta
 
             # Assemble a change in inlet bcond vector
             # Do not alter flow angles
             # Cannot control static P because set by upstream-running chic
             Z = np.zeros_like(dho)
-            dinlet_local = np.stack((dho, ds, Z, Z), axis=-1)[..., None]
+            dinlet_local = np.stack((dho, ds, Z, dtanBe), axis=-1)[..., None]
 
             # Convert to downstream-propagating chics
-            dchic_local = self.state.inlet_to_chic @ dinlet_local
+            inlet_to_chic = np.expand_dims(self.state_avg.inlet_to_chic, (0, 2))
+            dchic_local = inlet_to_chic @ dinlet_local
 
             # Prepend a zero for upstream-running wave
             dc1 = np.zeros(self.shape + (1, 1))
             dchic_local = np.concatenate((dc1, dchic_local), axis=3)
 
             # We only apply local changes where flow is into domain
-            dchic[:, self.is_inlet, ...] += dchic_local[:, self.is_inlet, ...]
+            dchic[:, self.is_inlet, ...] += (
+                self.sf_mix * dchic_local[:, self.is_inlet, ...]
+            )
 
         return dchic
 
@@ -1395,8 +1413,9 @@ class MixingBoundary(Boundary):
         dchic_inwards = self.inward_chics()
 
         # Transform to conserved variable changes
-        dcons = self.state.chic_to_conserved @ (dchic_outwards + dchic_inwards)
+        chic_to_conserved = np.expand_dims(self.state_avg.chic_to_conserved, (0, 2))
+        dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Send the nodal changes back to the block
-        self.dUn[:] = dcons[..., 0]
+        self.dUn[:] = dcons[..., 0] * 0.2
         self.push(block)

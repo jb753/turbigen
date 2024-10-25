@@ -138,7 +138,7 @@ def post(
     if irow_ref is None:
         if coord_mode == CoordMode.M:
             irow_ref = int(value / 2 - 1)
-        elif machine.Nrow>1:
+        elif machine.Nrow > 1:
             raise Exception(
                 "Need to set irow_ref if plotting at constant x, r, or span."
             )
@@ -151,7 +151,6 @@ def post(
 
     # Entropy loss coefficient
     if plot_var == PlotVars.YS:
-
         if is_compressor:
             v = row.T[1] * (C_tri.s - row.s[0]) / row.halfVsq[0]
         else:
@@ -190,7 +189,7 @@ def post(
         levels = turbigen.util.clipped_levels(v, step, thresh=0.01)
 
     eps = 1e-4 * np.diff(levels).mean()
-    v = np.clip(v, levels[0]+eps, levels[-1]-eps)
+    v = np.clip(v, levels[0] + eps, levels[-1] - eps)
     # v = np.clip(v, lev[-1] + eps, None)
 
     fig, ax = plt.subplots(layout="constrained")
@@ -222,7 +221,6 @@ def post(
     # These are easy to trim at constant theta either side
     # TODO make it so we can do this for yz cuts as well
     if coord_mode == CoordMode.R:
-
         xlim = np.array([-0.5, 0.5]) * N_passage * C_tri.pitch * C_tri.r.mean()
         ax.set_xlim(*xlim)
 
@@ -247,7 +245,7 @@ def post(
     if show_mesh:
         ax.triplot(c1, c2, triangles, "k-", lw=0.1)
 
-    figname = os.path.join(postdir, f"contour_{coord}_{value:.3}.pdf")
+    figname = os.path.join(postdir, f"contour_{variable}_{coord}_{value:.3}.pdf")
     plt.savefig(figname)
     # plt.show()
     plt.close()

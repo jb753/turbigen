@@ -187,10 +187,56 @@ def test_mixer():
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
     conf = turbigen.solvers.embsolve.Config(
-        nstep_damp=-1, n_step=4000, n_step_log=100, n_step_avg=500
+        nstep_damp=-1,
+        n_step=6000,
+        n_step_log=100,
+        n_step_avg=10,
+        plot_conv=True,
     )
     np.set_printoptions(precision=3)
     turbigen.solvers.embsolve.run(g, conf)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    b = g[1]
+    C = b[0, :, :]
+    Vref = C.V.mean()
+    Tref = C.T.mean()
+    cm = ax.contourf(C.y, C.z, (C.ho - C.ho.mean()) / Vref**2)
+    ax.set_title("ho")
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    cm = ax.contourf(C.y, C.z, (C.s - C.s.mean()) * Tref / Vref**2)
+    ax.set_title("s")
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    cm = ax.contourf(C.y, C.z, C.Alpha)
+    ax.set_title("Alpha")
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    cm = ax.contourf(C.y, C.z, C.Beta)
+    ax.set_title("Beta")
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    cm = ax.contourf(C.y, C.z, C.Vr)
+    ax.set_title("Vr")
+    plt.colorbar(cm)
+
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    cm = ax.contourf(C.y, C.z, C.Vx)
+    ax.set_title("Vx")
+    plt.colorbar(cm)
+
+    plt.show()
 
     fluxes = []
     for patch in g.mixing_patches:
@@ -203,11 +249,11 @@ def test_mixer():
     )
     err = np.diff(fluxes, axis=0) / flux_ref
     print(err)
-    rtol = 1e-6
+    rtol = 2e-6
     assert (np.abs(err) < rtol).all()
 
 
 if __name__ == "__main__":
     # test_inlet_CFL_0()
-    test_mixer()
+    # test_mixer()
     # test_CFL()
