@@ -19,7 +19,6 @@ from turbigen import (
     grid,
     util,
     geometry,
-    slurm,
     hmesh,
     ohmesh,
 )
