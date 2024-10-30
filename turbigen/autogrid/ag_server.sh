@@ -147,6 +147,7 @@ do
 
         if [ $(find . -name "*.g") ]; then
             echo "$WORKER --- $(date -Iminutes): $SCR completed."
+            chmod a+rw mesh.{g,bcs}
             touch finished
             cd ..
             sleep 20
