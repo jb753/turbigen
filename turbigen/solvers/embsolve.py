@@ -99,7 +99,7 @@ class Config(BaseSolver):
 
     K_exit: float = 0.5
     K_inlet: float = 0.5
-    K_mix: float = 0.1
+    K_mix: float = 0.5
     sf_mix: float = 0.1
 
     plot_conv: bool = False
