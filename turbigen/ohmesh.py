@@ -27,7 +27,7 @@ class OHMeshConfig(BaseConfig):
     via_host = ""
     """Jump host for SSH connection to the AutoGrid server."""
 
-    queue_path = "~/.ag_queue.txt"
+    remote_workdir = ""
     """File on remote host to append our queued meshing jobs."""
 
     workdir = ""
@@ -75,7 +75,7 @@ class OHMeshConfig(BaseConfig):
     is_butterfly = False
     nk_fillet = 9
 
-    ncell_target = 0.
+    ncell_target = 0.0
 
     inlet_bulb = ""
 
@@ -105,7 +105,6 @@ class OHMeshConfig(BaseConfig):
             nj = [81 for _ in range(nrow)]
         else:
             nj = self.nj
-
 
         if self.via_host == "":
             via = None
@@ -143,7 +142,7 @@ class OHMeshConfig(BaseConfig):
             "spf_ref": self.spf_ref,
             "remote": self.remote_host,
             "via": via,
-            "queue_file": self.queue_path,
+            "remote_workdir": self.remote_workdir,
             "nsmooth": self.nsmooth,
             "nsmooth_multigrid": self.nsmooth_multigrid,
             "orthogonality_control": self.orthogonality_control,

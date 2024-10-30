@@ -11,25 +11,21 @@ def _make_argparser():
     parser = argparse.ArgumentParser(
         description=(
             "This AutoGrid server automates mesh generation during a "
-            "turbigen run on a remote machine. It monitors a QUEUE_FILE "
-            "for temporary directories to process, which are created "
+            "turbigen run on a remote machine. It monitors a queue file "
+            "inside a WORKDIR for temporary directories to process, which "
+            "are created "
             "and queued by the remote machine. The server uses AutoGrid "
             "batch scripts to create a computational mesh and touches an "
             "extra file to notify the remote machine of sucess. If the "
             "delete flag is specified, it then removes the tempory dir."
         ),
-        usage="%(prog)s [--delete] [--workers=1] QUEUE_FILE",
+        usage="%(prog)s [--delete] [--workers=1] WORKDIR",
         add_help="False",
     )
 
     parser.add_argument(
-        "QUEUE_FILE",
-        help=(
-            "filename of the queue of directories, "
-            "if omitted default $HOME/.ag_queue.txt"
-        ),
-        nargs="?",
-        default="$HOME/.ag_queue.txt",
+        "WORKDIR",
+        help=("path to working directory storing queue and completed meshes. "),
     )
 
     parser.add_argument(
@@ -56,8 +52,9 @@ def main():
 
     # Add args
     args = _make_argparser().parse_args()
+    queue_file = os.path.join(args.WORKDIR, "queue.txt")
     cmd_str = [script_name,] + [
-        os.path.expandvars(args.QUEUE_FILE),
+        os.path.expandvars(queue_file),
     ]
 
     if args.delete:
