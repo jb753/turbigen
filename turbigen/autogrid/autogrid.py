@@ -365,7 +365,13 @@ STDERR: {eout.stderr.decode(sys.getfilesystemencoding()).strip()}"""
 
 
 def _run_remote(
-    geomturbo, confjson, gbcs_output_dir, queuefile, remote, via=None, verbose=False
+    geomturbo,
+    confjson,
+    gbcs_output_dir,
+    remote_workdir,
+    remote,
+    via=None,
+    verbose=False,
 ):
     """Copy a geomturbo file to remote and run autogrid on it."""
 
@@ -375,7 +381,9 @@ def _run_remote(
 
     # Make tmp dir on remote
     logger.debug("Making temp dir on remote ")
-    tmpdir = _execute_on_remote("mktemp -p ~/tmp/ -d", remote, via).splitlines()[0]
+    tmpdir = _execute_on_remote(
+        f"mktemp -p {remote_workdir} -d", remote, via
+    ).splitlines()[0]
     logger.debug(tmpdir)
 
     logger.debug("Copying meshing config to remote... ")
@@ -395,6 +403,7 @@ def _run_remote(
     sleep(0.5)
 
     # Run the shell script
+    queuefile = os.path.join(remote_workdir, "queue.txt")
     logger.debug(f"Adding job to queue file {remote}:{queuefile} and waiting... ")
     try:
         _execute_on_remote(
@@ -558,7 +567,7 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
 
     # Execute the meshing process on remote machine
     success = _run_remote(
-        geomturbo_path, conf_path, tmp_dir, conf["queue_file"], remote, via, verbose
+        geomturbo_path, conf_path, tmp_dir, conf["remote_workdir"], remote, via, verbose
     )
     if not success:
         return False
