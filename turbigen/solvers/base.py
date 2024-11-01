@@ -1,8 +1,8 @@
 """Define the basic interface that all solvers must conform to."""
-from dataclasses import dataclass
+import dataclasses
 
 
-@dataclass
+@dataclasses.dataclass
 class BaseSolver:
     """Settings and methods common to all solvers."""
 
@@ -27,3 +27,7 @@ class BaseSolver:
             raise Exception(f"ntask={self._ntask} should be > 0")
         if self.nnode < 1:
             raise Exception(f"nnode={self._nnode} should be > 0")
+
+    def replace(self, **kwargs):
+        return dataclasses.replace(self, **kwargs)
+

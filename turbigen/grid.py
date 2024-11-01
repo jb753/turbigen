@@ -1,6 +1,7 @@
 """A general multiblock structured grid class."""
 
 import numpy as np
+import os
 from turbigen import util
 import turbigen.yaml
 import turbigen.fluid
@@ -1312,6 +1313,10 @@ class Patch:
         if perm is not None:
             ijk = np.stack([np.flip(ijkn, axis=flip).transpose(perm) for ijkn in ijk])
         return ijk
+
+    @property
+    def shape(self):
+        return self.get_indices().shape[1:]
 
     def get_flat_indices(self, order="C", perm=None, flip=None):
         # Return indices of all points on patch into self.block.ravel

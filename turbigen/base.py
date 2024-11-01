@@ -13,6 +13,14 @@ def concatenate(sd, axis=0):
     out._metadata = sd[0]._metadata
     return out
 
+def stack(sd, axis=0):
+    """Join a sequence of StructuredData along a new axis."""
+    out = sd[0].empty()
+    ax = axis if axis < 0 else axis + 1
+    out._data = np.stack([sdi._data for sdi in sd], axis=ax)
+    out._metadata = sd[0]._metadata
+    return out
+
 
 class dependent_property:
     """Decorator which returns a cached value if instance data unchanged."""
@@ -1344,7 +1352,7 @@ class Composites:
         u = rhoe / rho - 0.5 * self.V**2
         self.set_rho_u(rho, u)
 
-    def area_average(self):
+    def area_average(self, var):
         dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
         conserved = np.moveaxis(self.conserved, -1, 1)

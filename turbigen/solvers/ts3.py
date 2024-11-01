@@ -4,6 +4,7 @@ from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
 import shutil
+from glob import glob
 import h5py
 import numpy as np
 import turbigen.grid
@@ -18,6 +19,7 @@ import grp
 import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver
+from turbigen.base import stack
 
 import turbigen.util
 
@@ -91,6 +93,8 @@ class Config(BaseSolver):
 
     sa_helicity_option: int = 0
     """Spalart--Allmaras turbulence model helicity correction."""
+
+    smooth_scale_dts_option: int = 0
 
     check_conv: bool = True
 
@@ -787,6 +791,45 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
             # Patch properties
             for name, val in _patch_properties(patch).items():
+                # Make boundary conditions unsteady if needed
+                if isinstance(patch, turbigen.grid.InletPatch):
+                    if force := patch.force:
+
+                        t = _get_time_vector(ts3_config)
+                        nt = len(t)
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, nt)
+                        ga = patch.state.gamma
+
+                        if force == "isentropic":
+                            Po_Poav = F
+                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
+                        elif force == "entropic":
+                            Po_Poav = np.ones_like(F)
+                            To_Toav = F
+                        else:
+                            raise Exception(f"Unknown inlet forcing type {force_type}")
+
+                        val = np.expand_dims(val, 3)
+                        if name == "pstag":
+                            val = val * Po_Poav
+                        elif name == "tstag":
+                            val = val * To_Toav
+                        else:
+                            val = np.tile(val, (1, 1, 1, nt))
+
+                        pa["nt"] = nt
+
+                if isinstance(patch, turbigen.grid.OutletPatch):
+                    if patch.force:
+                        t = _get_time_vector(ts3_config)
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, -1)
+                        val = np.expand_dims(val, 3) * F
+                        pa["nt"] = len(t)
+
                 _write_property(patch_group, name, "_pp", val, flat=True)
 
             patch_group.attrs.update(pa)
@@ -872,6 +915,11 @@ Are you on a HPC compute node?"""
             f" input.hdf5 output {npernode} > log.txt"
         )
 
+    # Remove old probe data
+    probe_dat = glob('output_probe_*.dat')
+    for fname in probe_dat:
+        os.remove(fname)
+
     # Start the Turbostream process
     with subprocess.Popen(
         cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
@@ -920,6 +968,13 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             os.remove(f)
         except FileNotFoundError:
             pass
+
+    # Remove empty hdf5 probes (we don't use them)
+    probe_hdf5 = glob('output_probe_*.hdf5')
+    for fname in probe_hdf5:
+        os.remove(fname)
+
+
 
     os.chdir(old_workdir)
 
@@ -1052,6 +1107,10 @@ def run(grid, ts3_conf, machine):
     except KeyError:
         if not ts3_conf.skip:
             raise Exception("Cannot locate turbostream - are you on the HPC?") from None
+
+    # Make workdir if needed
+    if not os.path.exists(ts3_conf.workdir):
+        os.makedirs(ts3_conf.workdir)
 
     input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
     output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")
@@ -1272,8 +1331,12 @@ class TS3Log:
         err = drift[self.nstep >= self._nstep_save_start]
         return err[np.argmax(np.abs(err))]
 
+def read_probe_dat_dir(dname, S, shape):
+    fnames = glob(os.path.join(dname,'*.dat'))
+    return stack([read_probe_dat(f, S, shape) for f in fnames], axis=-1)
 
-def _read_probe_dat(fname, S, shape=()):
+def read_probe_dat(fname, S, shape=()):
+    print(f'Reading {fname}')
     Npts = int(np.loadtxt(fname, max_rows=1))
     x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
 
@@ -1293,6 +1356,7 @@ def _read_probe_dat(fname, S, shape=()):
     Fshape = x.shape
 
     F = turbigen.flowfield.PerfectFlowField(Fshape)
+    F.Tu0 = 0.0
     F.cp = S.cp
     F.gamma = S.gamma
     F.mu = S.mu
@@ -1304,6 +1368,7 @@ def _read_probe_dat(fname, S, shape=()):
     u = roe / ro - 0.5 * F.V**2.0
 
     F.set_rho_u(ro, u)
+    F.set_Tu0(S.Tu0)
 
     return F
 
@@ -1319,3 +1384,14 @@ def _check_nan(fname):
                 except Exception:
                     return -1
     return 0
+
+
+def _get_time_vector(ts3_config):
+    freq = ts3_config.frequency
+    nstep_cycle = ts3_config.nstep_cycle
+    nt = nstep_cycle * ts3_config.ncycle
+    it = np.arange(nt)
+    dt = 1.0 / freq / nstep_cycle
+    t = it * dt
+    return t
+
