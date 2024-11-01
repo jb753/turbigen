@@ -34,3 +34,5 @@ tests/*.log
 matplotlibrc
 *.lprof
 /build/
+*.prof
+tests/bench.dat

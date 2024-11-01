@@ -1,0 +1,64 @@
+workdir: runs/turbine_stage_emb
+
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  gamma: 1.4
+
+mean_line:
+  type: axial_turbine
+  htr: 0.9
+  Omega: 314.
+  Alpha1: 0.
+  phi: 0.6
+  psi: 1.6
+  Lam: 0.5
+  Ma2: 0.6
+  eta: 0.9
+
+annulus:
+  AR_gap: [1.0, 4.0, 1.2]
+  AR_chord: [2.0, 2.0]
+
+mesh:
+  type: h
+  yplus: 30.0
+  dm_LE: 0.001
+  ni_TE: 9
+  dm_TE: 0.03
+  resolution_factor: 0.5
+
+blades:
+  - Nb: 80
+    Re_surf: 4e6
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.04, 0.15]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+  - Nb: 80
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.04, 0.15]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+    # tip: 0.01 # Rotor tip gap
+
+# CFD solver
+solver:
+  type: embsolve
+  n_step: 5000
+  n_step_avg: 500
+  nstep_damp: -1
+  CFL: 0.6
+  plot_conv: true
+
+post_process:
+  plot_annulus:
+  contour:
+    coord: spf
+    value: 0.5
+    variable: Cp
+    N_passage: 2
+    # show_mesh: true
+  plot_pressure_distributions:
+    row_spf: [[0.5], [0.5]]
