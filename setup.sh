@@ -4,9 +4,7 @@
 # Set up the Linux environment ready to run turbigen
 
 # If we are running on the Cambridge HPC then prepare modules
-if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-" ]]; then
-
-  echo 'beans'
+# if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-" ]]; then
   # # Load modules
   # . /etc/profile.d/modules.sh
   # module purge
@@ -18,8 +16,7 @@ if [[ "$(hostname)" =~ "login-" ]] || [[ "$(hostname)" =~ "gpu-" ]]; then
   # else
   #   module load rhel8/default-amp
   # fi
-
-fi
+# fi
 # (otherwise, running locally, will have to rely on system python)
 
 # Make a python virtualenv
@@ -43,6 +40,6 @@ else
   python3 -m pip install --upgrade pip
   # Installl this directory as an editabe package
   python3 -m pip install -e "$TURBIGEN_ROOT"
-  # Fix the hardcode path in shebang on installed scripts
+  # Fix the hardcoded path in shebang on installed scripts
   sed -i '1s/.*python$/#!\/usr\/bin\/env python/' "$ENV_DIR"/bin/*
 fi

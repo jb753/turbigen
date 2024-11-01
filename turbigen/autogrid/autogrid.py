@@ -527,17 +527,18 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
             raise Exception("Cannot connect to via host %s" % via) from None
 
     # Check the ssh-agent worker is running on via
-    try:
-        logger.debug("Checking for ssh-agent on via host...")
-        pid = _execute_on_remote(r"""ps aux | grep $(whoami) |  tr -s ' ' | cut -d' ' -f11 | grep ssh-agent""", via, None, ntry=0).strip()
-        if not pid:
-            raise Exception
-    except Exception:
-
+    logger.debug("Checking for ssh-agent on via host...")
+    pid = _execute_on_remote(r"""ps aux | grep $(whoami) |  tr -s ' ' | cut -d' ' -f2,11 | grep ssh-agent | cut -d' ' -f1""", via, None, ntry=0).strip()
+    if not pid:
         raise Exception(f"""ssh-agent is not running on via_host {via}
 You need to start the ssh-agent, enter your password to unlock the keys,
 and load the details into the current terminal by running:
 ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}""") from None
+    if not pid == os.environ.get('SSH_AGENT_PID'):
+        raise Exception(f"""ssh-agent is running on via_host {via}
+but we do not have the details in current shell. Fix by running:
+source get_ssh_agent.sh {via}""") from None
+
 
     # Check we can connect to the AG box
     try:

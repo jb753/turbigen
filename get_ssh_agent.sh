@@ -1,9 +1,11 @@
 #!/bin/bash
 # Set env vars for ssh agent, picking up an existing one if already running
 
+TURBIGEN_ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+SCRIPTPATH="$TURBIGEN_ROOT/get_ssh_agent.sh"
 if [ -n "$1" ]; then
     # If a host is specified then run on that host
-    `ssh -o BatchMode=yes "$1" "$HOME/bin/get_ssh_agent.sh"`
+    `ssh -o BatchMode=yes "$1" "$SCRIPTPATH"`
 else
 
     # If AGENT PID is unset, check that process is still running
