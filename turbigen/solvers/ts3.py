@@ -1333,7 +1333,7 @@ class TS3Log:
 
 def read_probe_dat_dir(dname, S, shape):
     fnames = glob(os.path.join(dname,'*.dat'))
-    return stack([read_probe_dat(f, S, shape) for f in fnames], axis=-1)
+    return [read_probe_dat(f, S, shape) for f in fnames]
 
 def read_probe_dat(fname, S, shape=()):
     print(f'Reading {fname}')

@@ -795,7 +795,7 @@ class Kinematics:
     @dependent_property
     def dAi_new(self):
         # Vector area for i=const faces, Gauss' theorem method
-        if not self.ndim == 3:
+        if self.ndim < 3:
             raise Exception("Face area is only defined for 3D grids")
 
         # Define four vertices ABCD
@@ -806,7 +806,10 @@ class Kinematics:
         #    A      D
         #      j>
         #
-        v = self.xrrt
+        if self.ndim > 3:
+            v = self.xrrt[:,:,:,:,0]  # Discard any time dimension
+        else:
+            v = self.xrrt
         A = v[:, :, :-1, :-1]
         B = v[:, :, :-1, 1:]
         C = v[:, :, 1:, 1:]
@@ -1352,7 +1355,24 @@ class Composites:
         u = rhoe / rho - 0.5 * self.V**2
         self.set_rho_u(rho, u)
 
-    def area_average(self, var):
+    def Ai_average(self):
+
+        dA = np.expand_dims(util.vecnorm(self.dAi_new),0)
+        if self.ndim > 3:
+            dA = np.expand_dims(dA, -1)
+            conserved = np.moveaxis(util.node_to_face(np.moveaxis(self.conserved,-1,0)),0,-1)
+            xrt = np.moveaxis(util.node_to_face(np.moveaxis(self.xrt,-1,0)),0,-1)
+        else:
+            conserved = util.node_to_face(self.conserved)
+            xrt = util.node_to_face(self.xrt)
+        conserved_avg = np.sum(conserved*dA, axis=(1,2,3))/np.sum(dA)
+        xrt_avg = np.sum(xrt*dA, axis=(1,2,3))/np.sum(dA)
+        out = self.empty(shape=conserved_avg.shape[1:])
+        out.xrt = xrt_avg
+        out.set_conserved(conserved_avg)
+        return out
+
+    def area_average(self):
         dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
         A = np.sum(dA)
         conserved = np.moveaxis(self.conserved, -1, 1)

@@ -1525,7 +1525,7 @@ class MixingPatch(Patch):
 class InletPatch(Patch):
     state = None
     rfin = 0.5
-    force_type = None
+    force = False
     amplitude = 0.0
     phase = 0.0
     rho_store = None
