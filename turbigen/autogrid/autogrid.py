@@ -22,13 +22,6 @@ logger = turbigen.util.make_logger()
 # For best reliability, use a ControlMaster in ssh config to reuse connection
 REMOTE = "gp-111"  # Destination host where AutoGrid is running
 
-# # Set via based on hostname (if we are on HPC or not)
-# hostname = socket.gethostname()
-# if hostname.startswith(("login-", "gpu-")):
-#     VIA = "login-e-4"
-# else:
-#     VIA = None
-
 SSH_ENV_VARS = ["SSH_AUTH_SOCK", "SSH_AGENT_PID"]
 # Get the named vars for ssh agent setup from execution environment and format
 # as a string to prepend commands with
@@ -301,7 +294,7 @@ def _write_geomturbo(
 
 def _add_via(s, via):
     """Add a jump host to a command."""
-    return 'ssh -q %s "%s %s"' % (via, SSH_ENV_STR, s)
+    return "ssh -q %s '%s %s'" % (via, SSH_ENV_STR, s)
 
 
 def _scp_to_remote(to_path, from_path, remote, via=None):
@@ -332,14 +325,14 @@ def _scp_from_remote(to_path, from_path, remote, via=None):
 
 def _execute_on_remote(cmd, remote, via, ntry=3):
     """Run a shell command on remote and return the output."""
-    cmd_str = "ssh -q %s '%s'" % (
+    cmd_str = 'ssh -o BatchMode=yes -q %s "%s"' % (
         remote,
         cmd,
     )
     if via:
         cmd_str = _add_via(cmd_str, via)
 
-    for itry in range(ntry):
+    for itry in range(max(1,ntry)):
         try:
             out = subprocess.check_output(
                 cmd_str, shell=True, stderr=subprocess.PIPE
@@ -349,9 +342,10 @@ def _execute_on_remote(cmd, remote, via, ntry=3):
         except subprocess.CalledProcessError as e:
             success = False
             eout = e
-            delay = (itry + 1) * 10
-            logger.info(f"Running remote command failed, retrying after {delay}s")
-            sleep(delay)
+            if ntry:
+                delay = (itry + 1) * 5
+                logger.info(f"Running remote command failed, retrying after {delay}s")
+                sleep(delay)
 
     if not success:
         raise Exception(
@@ -492,22 +486,6 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
     assert hub.shape[1] == 2
     assert cas.shape[1] == 2
 
-    # Check for SSH Agent
-    hostname = socket.gethostname()
-    if (
-        not conf.get("via")
-        and ("SSH_AGENT_PID" not in os.environ)
-        and (hostname.startswith("gpu-q") or hostname.startswith("login-q"))
-    ):
-        raise Exception(
-            """Cannot run AutoGrid without SSH agent. Unlock your SSH keys and """
-            + """save the password in the agent for this session by running:
-
-    eval $(ssh-agent) && ssh-add
-
-    """
-        )
-
     # Write the conf and geomturbo to a temporary directory
     base_tmp = output_dir
     if not os.path.isdir(base_tmp):
@@ -535,10 +513,7 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
         geomturbo_path, ps, ss, hub, cas, [], nblade, tip, rpm, ps_split, ss_split
     )
 
-    if "via" in conf:
-        via = conf["via"]
-    else:
-        via = None
+    via = conf.get("via", None)
     remote = conf["remote"]
     if not remote:
         raise Exception("No `remote_host` for AutoGrid meshing specified in config.")
@@ -547,16 +522,33 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
     if via:
         try:
             logger.debug(f"Test connection to via host {via}...")
-            _execute_on_remote("hostname", via, None)
-        except subprocess.CalledProcessError:
+            _execute_on_remote("hostname", via, None, ntry=0)
+        except Exception:
             raise Exception("Cannot connect to via host %s" % via) from None
+
+    # Check the ssh-agent worker is running on via
+    try:
+        logger.debug("Checking for ssh-agent on via host...")
+        pid = _execute_on_remote(r"""ps aux | grep $(whoami) |  tr -s ' ' | cut -d' ' -f11 | grep ssh-agent""", via, None, ntry=0).strip()
+        if not pid:
+            raise Exception
+    except Exception:
+
+        raise Exception(f"""ssh-agent is not running on via_host {via}
+You need to start the ssh-agent, enter your password to unlock the keys,
+and load the details into the current terminal by running:
+ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}""") from None
 
     # Check we can connect to the AG box
     try:
         logger.debug(f"Test connection to remote host {remote}...")
-        _execute_on_remote("hostname", remote, via)
-    except subprocess.CalledProcessError as e:
-        raise Exception("Cannot connect to remote host %s" % remote) from e
+        _execute_on_remote("hostname", remote, via, ntry=0)
+    except Exception as e:
+        raise Exception(f"""Cannot connect to remote host {remote}
+You may need to start the ssh-agent, enter your password to unlock the keys,
+and load the details into the current terminal by running:
+ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}""") from None
+
 
     # Check the AG worker is running on remote
     try:
