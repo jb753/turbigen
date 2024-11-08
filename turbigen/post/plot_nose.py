@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf, fac_Rle=1.0):
+def post(grid, machine, meanline, _, postdir, row_spf, fac_Rle=1.0):
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
         if not spfrow:

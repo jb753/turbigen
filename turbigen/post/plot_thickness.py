@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, row_spf):
+def post(grid, machine, meanline, _, postdir, row_spf):
     # Meridional locations to plot at
     m = turbigen.util.cluster_cosine(501)
 

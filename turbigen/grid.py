@@ -989,7 +989,7 @@ class Grid:
             self.update_outlet()
             logger.info("Accurate solution...")
 
-        solver.run(self, solver_conf, machine)
+        return solver.run(self, solver_conf, machine)
 
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""

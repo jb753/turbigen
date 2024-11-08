@@ -11,7 +11,6 @@ from scipy.spatial import KDTree
 
 import turbigen.annulus
 import turbigen.average
-import turbigen.post_process
 import turbigen.flowfield
 import turbigen.yaml
 from turbigen import (
@@ -173,16 +172,6 @@ def run_single(conf, gguess=None):
     Annulus = util.load_annulus(annulus_type)
     annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
-    if annulus_debug:
-        logger.iter("Annulus debugging requested...")
-        post_func = util.load_post("plot_annulus").post
-        post_conf = conf.post_process.get("plot_annulus")
-        if post_conf is None:
-            post_conf = {}
-        mac_ann = geometry.Machine(ann, [], [], [], [])
-        post_func(None, mac_ann, None, workdir, **post_conf)
-        logger.iter(f"Wrote annulus plot to {workdir}")
-        sys.exit(0)
 
     conf.annulus["type"] = annulus_type
     logger.info(ann)
@@ -870,7 +859,7 @@ def run_single(conf, gguess=None):
 
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')
-            gi.run(conf.solver, mac)
+            convergence = gi.run(conf.solver, mac)
             conf.solver.pop("workdir")
         else:
             logger.info("No solver specified, continuing with initial guess...")
@@ -894,7 +883,7 @@ def run_single(conf, gguess=None):
         if conf.solver:
             if conf.solver.get("type"):
                 logger.info(f'Running solver {conf.solver["type"]}...')
-                g.run(conf.solver, mac)
+                convergence = g.run(conf.solver, mac)
                 conf.solver.pop("workdir")
         else:
             logger.info("No solver specified, continuing with initial guess...")
@@ -938,7 +927,7 @@ def run_single(conf, gguess=None):
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}
-        post_func(g, mac, ml_out, postdir, **post_conf)
+        post_func(g, mac, ml_out, convergence, postdir, **post_conf)
 
     # Save some 3D geometry into the meanline for later design space fitting
     ml_out.Co = conf.blades.get("Co")

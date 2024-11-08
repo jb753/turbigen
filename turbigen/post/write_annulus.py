@@ -7,7 +7,7 @@ import numpy as np
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, spf, nstream=201):
+def post(grid, machine, meanline, _, postdir, spf, nstream=201):
     """write_annulus(spf)
 
     Write x--r curves at specified span fractions.

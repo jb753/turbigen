@@ -1,0 +1,79 @@
+"""Save plots of convergence history."""
+
+import os
+import turbigen.util
+import matplotlib.pyplot as plt
+import numpy as np
+
+logger = turbigen.util.make_logger()
+
+
+def post(
+    _,
+    machine,
+    meanline,
+    conv,
+    postdir,
+    write_raw=False,
+):
+    """plot_convergence(write_raw=False)
+    Save plots of convergence history of the calculation.
+
+    Parameters
+    ----------
+    write_raw: bool
+        Save data to a csv file.
+    """  # noqa:E501
+
+    # Choose type of machine
+    if meanline.P[-1] > meanline.P[0]:
+        # Is compressor, reference to inlet velocity
+        Vref = meanline.V_rel[0]
+    else:
+        # Is turbine, reference to exit velocity
+        Vref = meanline.V_rel[-1]
+    dhref = 0.5*Vref**2
+
+    # Get non-dimensionals
+    Texit = meanline.T[-1]
+    state = conv.state
+    Ys = (state.s[1]-state.s[0])*Texit/dhref
+    CWx = (state.h[1]-state.h[0])/dhref
+
+    # Normalise work and loss as percent
+    # changes with respect to final value
+    dYs = (Ys/Ys[-1] - 1.)*100.
+    if meanline.U.any():
+        dCWx = (CWx/CWx[-1] - 1.)*100.
+    else:
+        dCWx = CWx*100.
+    ylim = [-10.,10.]
+    ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
+
+    # Do the plotting
+    fig, ax = plt.subplots(1,3, layout="constrained")
+    ax[0].plot(conv.istep,np.log10(conv.resid))
+    ax[0].set_title('log(Residual)')
+    ax[1].plot(conv.istep, dCWx)
+    ax[1].set_title('dWork/percent')
+    ax[1].set_ylim(ylim)
+    ax[1].set_yticks(ytick)
+    ax[2].plot(conv.istep, dYs)
+    ax[2].set_ylim(ylim)
+    ax[2].set_yticks(ytick)
+    ax[2].set_title('dLoss/percent')
+
+    for axi in ax:
+        axi.set_xlabel('nstep')
+        axi.set_xticks(())
+        distep = conv.istep[1]-conv.istep[0]
+        axi.set_xlim(conv.istep[0], conv.istep[-1]+distep)
+        axi.axvline(conv.istep_avg, color='k', linestyle='--')
+
+    # Write out
+    pltname = os.path.join(postdir, "convergence.pdf")
+    plt.savefig(pltname)
+
+    if write_raw:
+        rawname = os.path.join(postdir, "convergence_raw")
+        np.savetxt(convergence.raw_data())

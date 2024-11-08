@@ -48,6 +48,9 @@ solver:
   nstep: 1000
   soft_start: true
 
+post_process:
+  plot_convergence:
+
 mesh:
   type: h
   yplus: 30.

@@ -1,5 +1,6 @@
 """Define the basic interface that all solvers must conform to."""
 import dataclasses
+import numpy as np
 
 
 @dataclasses.dataclass
@@ -30,4 +31,46 @@ class BaseSolver:
 
     def replace(self, **kwargs):
         return dataclasses.replace(self, **kwargs)
+
+class ConvergenceHistory:
+
+    def __init__(self, istep, mdot, ho, Po, resid, state, istep_avg):
+        """Store simulation convergence history.
+
+        Parameters
+        ----------
+        istep: (nlog,) array
+        mdot: (2, nlog) array
+            Inlet and outlet mass flow rates.
+        ho: (2, nlog) array
+            Inlet and outlet stagnation enthalpies.
+        Po: (2, nlog) array
+            Inlet and outlet stagnation pressures.
+        resid: (nlog,), array
+            Iteration residuals for all time steps.
+        state: object
+            Working fluid object to calculate thermodynamic properties.
+
+        """
+
+        self.istep = istep
+        self.istep_avg = istep_avg
+        self.nlog = len(istep)
+        self.mdot = mdot
+        self.resid = resid
+        self.state = state.empty((2,self.nlog))
+        self.state.set_P_h(Po, ho)
+
+    def raw_data(self):
+        return np.column_stack(
+            (
+                self.istep,
+                *self.mdot,
+                self.resid
+                *self.state.h
+                *self.state.P
+            )
+        )
+
+
 

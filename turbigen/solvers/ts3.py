@@ -1,5 +1,3 @@
-"""Functions to write, run, and read for the Turbostream 3 solver."""
-
 from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
@@ -18,7 +16,7 @@ import re
 import grp
 import getpass
 from copy import copy
-from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 from turbigen.base import stack
 
 import turbigen.util
@@ -95,8 +93,6 @@ class Config(BaseSolver):
     """Spalart--Allmaras turbulence model helicity correction."""
 
     smooth_scale_dts_option: int = 0
-
-    check_conv: bool = True
 
     ipout: int = 3
     convert_sliding: bool = False
@@ -183,7 +179,6 @@ class Config(BaseSolver):
         c.cfl = 0.3
         c.fmgrid = 0.0
         c.soft_start = False
-        c.check_conv = False
         c.precon = 0
         c.dts = 0
         if c.nstep_soft:
@@ -1158,14 +1153,18 @@ def run(grid, ts3_conf, machine):
     # Produce a warning if the outlet is choked
     grid.check_outlet_choke()
 
-    # Raise errors if the solution did not converge
-    if ts3_conf.check_conv:
-        _check_conv(ts3_conf)
-
+    # Parse the log file
+    log_path = os.path.join(ts3_conf.workdir, "log.txt")
+    state_log = grid.inlet_patches[0].state.copy()
+    state_log.set_Tu0(0.0)
+    istep_save_start = ts3_conf.application_variables(0.,0.,0.)["nstep_save_start"]
+    return ConvergenceHistory(*parse_log(log_path), state_log, istep_save_start)
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
+re_cp = re.compile(r"cp\s*:\s*(\d*\.\d*)$")
 re_dts = re.compile(r"dts\s*:\s*(\d*)$")
 re_ncycle = re.compile(r"ncycle\s*:\s*(\d*)$")
+re_davg = re.compile(r"TOTAL DAVG \s*(\d*\.\d*)E([+-]\d*)")
 re_nstep_cycle = re.compile(r"nstep_cycle\s*:\s*(\d*)$")
 re_nstep_save_start = re.compile(r"nstep_save_start\s*:\s*(\d*)$")
 re_mdot = re.compile(r"^INLET FLOW =\s*(-?\d*\.\d*)\s*OUTLET FLOW =\s*(-?\d*\.\d*)$")
@@ -1179,123 +1178,146 @@ re_eta = re.compile(r"EFFICIENCY\s*=\s*(-?\d*.\d*)$")
 re_nan = re.compile(r".*NAN.*")
 re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
 
+def parse_log(fname):
+    """Read residuals and boundary properties from log file.
 
-class TS3Log:
-    def __init__(self, fname):
-        """Read in TS3 log data from a file."""
+    Parameters
+    ----------
+    fname: string
+        File name of a Turbostream 3 log.
 
-        logger.debug(f"Opening log file {fname}...")
+    Returns
+    -------
+    istep: (nlog) array
+    mdot: (2, nlog) array
+    ho: (2, nlog) array
+    Po: (2, nlog) array
+    resid: (nlog) array
 
-        # Loop over lines in the file
-        with open(fname, "r") as f:
-            # First, look for number of steps
-            for line in f:
-                match = re_nstep.search(line)
-                if match:
-                    nstep = int(match.group(1))
-                    break
 
-            # Second, look for number of steps
-            for line in f:
-                match = re_dts.search(line)
-                if match:
-                    dts = int(match.group(1))
-                    # ncycle = int(re_ncycle.search(f.readline()).group(1))
-                    # f.readline()
-                    # nstep_cycle = int(re_nstep_cycle.search(f.readline()).group(1))
-                    break
+    """
 
-            # Third, look for averaging steps
-            for line in f:
-                match = re_nstep_save_start.search(line)
-                if match:
-                    nstep_save_start = int(match.group(1))
-                    break
+    logger.debug(f"Opening log file {fname}...")
 
-            step_now = 0
+    # Loop over lines in the file
+    with open(fname, "r") as f:
 
-            # Preallocate
-            self._step_fac = 1 if dts else 50
-            self._nlog = nlog = nstep // self._step_fac
-            self._eta = np.zeros(nlog) * np.nan
-            self._mdot = np.zeros((2, nlog)) * np.nan
-            self._Po = np.zeros((2, nlog)) * np.nan
-            self._To = np.zeros((2, nlog)) * np.nan
-            self._nstep = nstep
-            self._nstep_save_start = nstep_save_start
+        # Look for cp
+        for line in f:
+            match = re_cp.search(line)
+            if match:
+                cp = float(match.group(1))
+                break
 
-            for ilog in range(nlog):
-                logger.debug(f"* Parsing nstep={self.nstep[ilog]}")
+        # Look for number of steps
+        for line in f:
+            match = re_nstep.search(line)
+            if match:
+                nstep = int(match.group(1))
+                break
 
-                try:
-                    if not dts:
-                        # Loop over lines until we find mdot
-                        logger.debug("Finding mass flow rate...")
+        # Look for number of steps
+        for line in f:
+            match = re_dts.search(line)
+            if match:
+                dts = int(match.group(1))
+                break
 
-                        for line in f:
-                            if mdot_match := re_mdot.search(line):
-                                logger.debug(f'Found: "{line.strip()}"')
-                                self._mdot[:, ilog] = [
-                                    float(m) for m in mdot_match.group(1, 2)
-                                ]
+        # Look for averaging steps
+        for line in f:
+            match = re_nstep_save_start.search(line)
+            if match:
+                nstep_save_start = int(match.group(1))
+                break
+
+
+        # Preallocate
+        step_now = 0
+        dn = 1 if dts else 50
+        nlog = nstep // dn
+        istep = np.arange(nlog)*dn
+        mdot = np.empty((2, nlog))
+        Po = np.empty((2, nlog))
+        To = np.empty((2, nlog))
+        resid = np.empty((nlog,))
+
+        for ilog in range(nlog):
+            logger.debug(f"* Parsing istep={istep[ilog]}")
+
+            # Look for residual
+            if ilog > 0:
+                for line in f:
+                    if (davg_match:=re_davg.search(line)):
+                        logger.debug(f'Found: "{line.strip()}"')
+                        sig = float(davg_match.group(1))
+                        expon = int(davg_match.group(2))
+                        resid[ilog] = sig*10**(expon)
+                        break
+            else:
+                resid[ilog] = np.nan
+
+            try:
+                if not dts:
+                    # Loop over lines until we find mdot
+                    logger.debug("Finding mass flow rate...")
+
+                    for line in f:
+                        if mdot_match := re_mdot.search(line):
+                            logger.debug(f'Found: "{line.strip()}"')
+                            mdot[:, ilog] = [
+                                float(m) for m in mdot_match.group(1, 2)
+                            ]
+                            break
+
+                else:
+                    for line in f:
+                        if re_nstep.search(line):
+                            logger.debug(f'Found: "{line.strip()}"')
+                            break
+
+                # Skip flow ratio
+                _ = f.readline()
+
+                # Stagnation pressures
+                ln = f.readline()
+                logger.debug(f'Reading Po from "{ln.strip()}"')
+                match_Po = re_Po.search(ln)
+                Po[:, ilog] = [float(m) for m in match_Po.group(1, 2)]
+
+                # Stagnation temperatures
+                ln = f.readline()
+                logger.debug(f'Reading To from "{ln.strip()}"')
+                match_To = re_To.search(ln)
+                To[:, ilog] = [float(m) for m in match_To.group(1, 2)]
+
+                # Skip power and effy
+                _ = f.readline()
+                _ = f.readline()
+                _ = f.readline()
+
+                # Next step number
+                if ilog < nlog - 1:
+                    logger.debug("Finding next step No...")
+                    step_next = None
+                    for line in f:
+                        if step_match := re_current_step.search(line):
+                            step_next = int(step_match.group(1))
+                            if step_next > step_now:
+                                logger.debug(f" Found next istep={step_next}")
+                                step_now = step_next
                                 break
+                            else:
+                                continue
+                    if not step_next == istep[ilog + 1]:
+                        raise Exception(
+                            f"Log step mismatch at {step_now}, {step_next}"
+                        )
 
-                    else:
-                        for line in f:
-                            if re_nstep.search(line):
-                                logger.debug(f'Found: "{line.strip()}"')
-                                break
+            except AttributeError:
+                logger.debug("Failed to parse, breaking")
+                break
 
-                    # Skip flow ratio
-                    _ = f.readline()
-
-                    # Stagnation pressures
-                    ln = f.readline()
-                    logger.debug(f'Reading Po from "{ln.strip()}"')
-                    match_Po = re_Po.search(ln)
-                    self._Po[:, ilog] = [float(m) for m in match_Po.group(1, 2)]
-
-                    # Stagnation temperatures
-                    ln = f.readline()
-                    logger.debug(f'Reading To from "{ln.strip()}"')
-                    match_To = re_To.search(ln)
-                    self._To[:, ilog] = [float(m) for m in match_To.group(1, 2)]
-
-                    # Skip power
-                    _ = f.readline()
-                    _ = f.readline()
-
-                    # Efficiency
-                    ln = f.readline()
-                    logger.debug(f'Reading effy from "{ln.strip()}"')
-                    match_eta = re_eta.search(ln)
-                    self._eta[ilog] = float(match_eta.group(1))
-
-                    # Next step number
-                    if ilog < nlog - 1:
-                        logger.debug("Finding next step No...")
-                        step_next = None
-                        for line in f:
-                            if step_match := re_current_step.search(line):
-                                step_next = int(step_match.group(1))
-                                if step_next > step_now:
-                                    logger.debug(f" Found next nstep={step_next}")
-                                    step_now = step_next
-                                    break
-                                else:
-                                    continue
-                        if not step_next == self.nstep[ilog + 1]:
-                            raise Exception(
-                                f"Log step mismatch at {step_now}, {step_next}"
-                            )
-
-                except AttributeError:
-                    logger.debug("Failed to parse, breaking")
-                    break
-
-        TR = self._To[1] / self._To[0]
-        if np.abs(TR[-1] - 1.0) < 0.001:
-            self._eta = self._Po[1] / self._Po[0] - 1.0
+    return istep, mdot, To*cp, Po, resid
 
     @property
     def nstep(self):

@@ -17,7 +17,7 @@ from time import sleep
 import turbigen.util
 import json
 import re
-from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
 logger = turbigen.util.make_logger()
 
@@ -89,8 +89,6 @@ class Config(BaseSolver):
     outlet_tag: str = "Outlet"
     """Identifier string for the outlet patch."""
 
-    monitor_script: str = ""
-    """Path to a monitoring script, given the workdir as an argument."""
 
     area_avg_pout: bool = True
 
@@ -102,8 +100,6 @@ class Config(BaseSolver):
     nstep_save_start_probe_2d: int = 0
     nstep_save_probe_2d: int = 100
     cfl_turb_fac: float = 0.5
-
-    plot_conv: bool = True
 
     precon: int = 0
     precon_fac_ramp_nstep: int = 100
@@ -158,7 +154,7 @@ re_nan = re.compile(r"^detected NAN$", flags=re.MULTILINE)
 re_current_step = re.compile(r"^RK LOOP NO:\s*(\d*)$", flags=re.MULTILINE)
 
 
-def _read_convergence(fname, nstep):
+def parse_log(fname, nstep, Nb):
     """Parse a log file to get convergence history."""
 
     # Preallocate
@@ -178,7 +174,15 @@ def _read_convergence(fname, nstep):
                 outlet[istep, :] = [float(x) for x in line.split()[1:]]
                 istep += 1
 
-    return resid, inlet, outlet
+    # Multiply by Nb to get mass flow for entire annulus
+    inlet[:, 0] *= Nb[0]
+    outlet[:, 0] *= Nb[1]
+
+    # Extract the separate variables
+    istep = np.arange(nstep)
+    mdot, ho, Po = np.stack((inlet, outlet)).transpose(2, 0, 1)
+
+    return istep, mdot, ho, Po, resid
 
 
 def _check_nan(fname):
@@ -700,11 +704,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     )
     sleep(1)
 
-    # Start monitoring script
-    if ts4_conf.monitor_script:
-        monitor_cmd = f"python {ts4_conf.monitor_script} {ts4_conf.workdir}"
-        monitor_proc = subprocess.Popen(monitor_cmd, shell=True)
-
     try:
         subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
 
@@ -717,35 +716,9 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 """
         ) from None
 
-    if ts4_conf.monitor_script:
-        monitor_proc.kill()
-
     log_path = os.path.join(ts4_conf.workdir, "log_ts4.txt")
     if istep_nan := _check_nan(log_path):
         raise Exception(f"TS4 diverged at step {istep_nan}")
-    else:
-        # Check convergence
-        istep = np.linspace(0, ts4_conf.nstep - 1, ts4_conf.nstep)
-        resid, inlet, outlet = _read_convergence(log_path, ts4_conf.nstep)
-
-        # Multiply by numbers of blades
-        Nb = [b[0].Nb for b in grid.row_blocks]
-        inlet[:, :2] *= Nb[0]
-        outlet[:, :2] *= Nb[-1]
-
-        mdot = np.stack((inlet[:, 0], outlet[:, 0]))
-        err = mdot[0] / np.maximum(mdot[1], 1e-9) - 1.0
-
-        if ts4_conf.plot_conv:
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots(1, 2)
-            ax[0].plot(istep, np.log10(resid))
-            ax[1].plot(istep, err)
-            ax[1].set_ylim([-0.05, 0.05])
-            plt.tight_layout()
-            plt.savefig(os.path.join(ts4_conf.workdir, "conv.pdf"))
-            plt.close()
 
     # output_file_path = os.path.join(ts4_conf.workdir, "output_ts4.hdf5")
     _read_flow(grid, output_file_path, output_avg_file_path)
@@ -755,3 +728,9 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 
     # Write out the ts4 flowfield to ts3 for debugging
     turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
+
+    # Check convergence
+    Nb = [grid.inlet_patches[0].block.Nb, grid.outlet_patches[0].block.Nb]
+    state_log = grid.inlet_patches[0].state.copy()
+    state_log.set_Tu0(0.)
+    return ConvergenceHistory(*parse_log(log_path, ts4_conf.nstep, Nb), state_log, ofp['istep_avg_start'])

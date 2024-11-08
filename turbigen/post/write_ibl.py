@@ -97,7 +97,7 @@ def _write_blade(f, bld, nspan, nchord):
     _write_curve(f, xyz[:, nchord - 1, :])
 
 
-def post(grid, machine, meanline, postdir, nspan=22, nchord=100):
+def post(grid, machine, meanline, _, postdir, nspan=22, nchord=100):
     """write_ibl()
 
     Write machine surface geometry to an ibl file.
