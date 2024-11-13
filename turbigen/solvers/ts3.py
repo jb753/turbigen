@@ -890,7 +890,10 @@ def _execute(ts3_config):
     if not os.path.exists(ts3_config.environment_script):
         raise Exception(
             f"""Could not locate TS3 env script {ts3_config.environment_script}
-Are you on a HPC compute node?"""
+Are you on a HPC compute node gpu-q-* (not a login node)?
+If you have recently been added to the turbostream user group, log out
+and then back in to refresh your access permissions.
+"""
         )
 
     # Open a subshell, source the environment and run the solver
@@ -911,7 +914,7 @@ Are you on a HPC compute node?"""
         )
 
     # Remove old probe data
-    probe_dat = glob('output_probe_*.dat')
+    probe_dat = glob("output_probe_*.dat")
     for fname in probe_dat:
         os.remove(fname)
 
@@ -965,11 +968,9 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             pass
 
     # Remove empty hdf5 probes (we don't use them)
-    probe_hdf5 = glob('output_probe_*.hdf5')
+    probe_hdf5 = glob("output_probe_*.hdf5")
     for fname in probe_hdf5:
         os.remove(fname)
-
-
 
     os.chdir(old_workdir)
 
@@ -1157,8 +1158,9 @@ def run(grid, ts3_conf, machine):
     log_path = os.path.join(ts3_conf.workdir, "log.txt")
     state_log = grid.inlet_patches[0].state.copy()
     state_log.set_Tu0(0.0)
-    istep_save_start = ts3_conf.application_variables(0.,0.,0.)["nstep_save_start"]
+    istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
     return ConvergenceHistory(*parse_log(log_path), state_log, istep_save_start)
+
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
 re_cp = re.compile(r"cp\s*:\s*(\d*\.\d*)$")
@@ -1177,6 +1179,7 @@ re_To = re.compile(
 re_eta = re.compile(r"EFFICIENCY\s*=\s*(-?\d*.\d*)$")
 re_nan = re.compile(r".*NAN.*")
 re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
+
 
 def parse_log(fname):
     """Read residuals and boundary properties from log file.
@@ -1230,12 +1233,11 @@ def parse_log(fname):
                 nstep_save_start = int(match.group(1))
                 break
 
-
         # Preallocate
         step_now = 0
         dn = 1 if dts else 50
         nlog = nstep // dn
-        istep = np.arange(nlog)*dn
+        istep = np.arange(nlog) * dn
         mdot = np.empty((2, nlog))
         Po = np.empty((2, nlog))
         To = np.empty((2, nlog))
@@ -1247,11 +1249,11 @@ def parse_log(fname):
             # Look for residual
             if ilog > 0:
                 for line in f:
-                    if (davg_match:=re_davg.search(line)):
+                    if davg_match := re_davg.search(line):
                         logger.debug(f'Found: "{line.strip()}"')
                         sig = float(davg_match.group(1))
                         expon = int(davg_match.group(2))
-                        resid[ilog] = sig*10**(expon)
+                        resid[ilog] = sig * 10 ** (expon)
                         break
             else:
                 resid[ilog] = np.nan
@@ -1264,9 +1266,7 @@ def parse_log(fname):
                     for line in f:
                         if mdot_match := re_mdot.search(line):
                             logger.debug(f'Found: "{line.strip()}"')
-                            mdot[:, ilog] = [
-                                float(m) for m in mdot_match.group(1, 2)
-                            ]
+                            mdot[:, ilog] = [float(m) for m in mdot_match.group(1, 2)]
                             break
 
                 else:
@@ -1309,15 +1309,13 @@ def parse_log(fname):
                             else:
                                 continue
                     if not step_next == istep[ilog + 1]:
-                        raise Exception(
-                            f"Log step mismatch at {step_now}, {step_next}"
-                        )
+                        raise Exception(f"Log step mismatch at {step_now}, {step_next}")
 
             except AttributeError:
                 logger.debug("Failed to parse, breaking")
                 break
 
-    return istep, mdot, To*cp, Po, resid
+    return istep, mdot, To * cp, Po, resid
 
     @property
     def nstep(self):
@@ -1353,12 +1351,14 @@ def parse_log(fname):
         err = drift[self.nstep >= self._nstep_save_start]
         return err[np.argmax(np.abs(err))]
 
+
 def read_probe_dat_dir(dname, S, shape):
-    fnames = glob(os.path.join(dname,'*.dat'))
+    fnames = glob(os.path.join(dname, "*.dat"))
     return [read_probe_dat(f, S, shape) for f in fnames]
 
+
 def read_probe_dat(fname, S, shape=()):
-    print(f'Reading {fname}')
+    print(f"Reading {fname}")
     Npts = int(np.loadtxt(fname, max_rows=1))
     x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
 
@@ -1416,4 +1416,3 @@ def _get_time_vector(ts3_config):
     dt = 1.0 / freq / nstep_cycle
     t = it * dt
     return t
-
