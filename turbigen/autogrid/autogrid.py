@@ -533,11 +533,11 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
         raise Exception(f"""ssh-agent is not running on via_host {via}
 You need to start the ssh-agent, enter your password to unlock the keys,
 and load the details into the current terminal by running:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}""") from None
+ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source turbigen/get_ssh_agent.sh {via}""") from None
     if not pid == os.environ.get('SSH_AGENT_PID'):
         raise Exception(f"""ssh-agent is running on via_host {via}
 but we do not have the details in current shell. Fix by running:
-source get_ssh_agent.sh {via}""") from None
+source turbigen/get_ssh_agent.sh {via}""") from None
 
 
     # Check we can connect to the AG box
@@ -548,7 +548,7 @@ source get_ssh_agent.sh {via}""") from None
         raise Exception(f"""Cannot connect to remote host {remote}
 You may need to start the ssh-agent, enter your password to unlock the keys,
 and load the details into the current terminal by running:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}""") from None
+ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source turbigen/get_ssh_agent.sh {via}""") from None
 
 
     # Check the AG worker is running on remote

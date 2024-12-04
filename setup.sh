@@ -20,7 +20,7 @@
 # (otherwise, running locally, will have to rely on system python)
 
 # Make a python virtualenv
-TURBIGEN_ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+TURBIGEN_ROOT=$( realpath $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd ))
 export PATH="$TURBIGEN_ROOT:$PATH"
 ENV_DIR="$TURBIGEN_ROOT/venv"
 ENV_BIN="$ENV_DIR"/bin/activate

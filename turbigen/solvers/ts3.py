@@ -92,6 +92,10 @@ class Config(BaseSolver):
     sa_helicity_option: int = 0
     """Spalart--Allmaras turbulence model helicity correction."""
 
+    laminar: bool = False
+    """Enable laminar boundary layers on all walls."""
+
+    fac_st0: float = 1.
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -133,7 +137,7 @@ class Config(BaseSolver):
 
         return av
 
-    def block_variables(self, block, rref):
+    def block_variables(self, block, rref, laminar):
         # """Make a dictionary of block variables, with defaults overriden as needed."""
         bv = DEFAULT_BV.copy()
         for k in bv:
@@ -163,6 +167,23 @@ class Config(BaseSolver):
         else:
             raise Exception(f"Unrecognised Lref_xllim={self.Lref_xllim}")
         bv.update(_get_wall_rpms(block))
+
+        if laminar:
+            # Set laminar from i=0 to i=ni on every block
+            ni1 = block.ni - 1
+            bv["itrans"] = -1
+            bv["itrans_j1_st"] = 0
+            bv["itrans_j1_en"] = ni1
+            bv["itrans_j2_st"] = 0
+            bv["itrans_j2_en"] = ni1
+            bv["itrans_k1_st"] = 0
+            bv["itrans_k1_en"] = ni1
+            bv["itrans_k2_st"] = 0
+            bv["itrans_k2_en"] = ni1
+            bv["itrans_j1_frac"] = 0.1
+            bv["itrans_j2_frac"] = 0.1
+            bv["itrans_k1_frac"] = 0.1
+            bv["itrans_k2_frac"] = 0.1
 
         return bv
 
@@ -323,7 +344,7 @@ DEFAULT_AV = {
     "wall_law": 0,
     "write_egen": 0,
     "write_force": 0,
-    "write_tdamp": 0,
+    "write_tdamp": 1,
     "write_yplus": 1,
 }
 
@@ -697,6 +718,8 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
     input_file_path = os.path.join(ts3_config.workdir, fname)
+    if not os.path.exists(ts3_config.workdir):
+        raise Exception(f'Working directory {ts3_config.workdir} does not exist.')
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet
@@ -735,7 +758,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             rref_block = rref[grid.row_index(block)]
         else:
             rref_block = np.nan
-        for name, val in ts3_config.block_variables(block, rref_block).items():
+        for name, val in ts3_config.block_variables(block, rref_block,ts3_config.laminar).items():
             _write_variable(block_group, name, "_bv", val)
 
         # Block properties
