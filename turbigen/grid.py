@@ -1841,7 +1841,6 @@ def write_plot3d(g, fname):
     """Save a multi-block structured grid to plot3d format."""
 
     with open(fname, "w") as f:
-
         # Number of blocks
         nb = len(g)
         f.write(f"{nb}\n")
@@ -1856,5 +1855,5 @@ def write_plot3d(g, fname):
             xyz = np.flip(b.xyz, axis=-1)
             # Save this array in the correct order
             np.savetxt(
-                f, xyz.transpose(0, 3, 2, 1).reshape(-1), newline=" ", fmt="%.12"
+                f, xyz.transpose(0, 3, 2, 1).reshape(-1), newline=" ", fmt="%.12f"
             )

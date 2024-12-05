@@ -29,6 +29,7 @@ def post(
         logger.info(f"Plotting convergence...")
     else:
         logger.info(f"No simulation log returned, skipping convergence plot.")
+        return
 
     # Choose type of machine
     if meanline.P[-1] > meanline.P[0]:
