@@ -1775,3 +1775,25 @@ def from_mesh2d_xrt(blocks_in, conn, dmax, pitch):
     g = Grid(blocks_out)
     g.match_patches()
     return g
+
+
+def write_plot3d(g, fname):
+    """Save a multi-block structured grid to plot3d format."""
+
+    with open(fname, "w") as f:
+        # Number of blocks
+        nb = len(g)
+        f.write(f"{nb}\n")
+
+        # Size of all blocks
+        for b in g:
+            f.write(f"{b.ni} {b.nj} {b.nk}\n")
+
+        # Now write block coords
+        for b in g:
+            # Flip k so that volumes have correct sign in Pointwise
+            xyz = np.flip(b.xyz, axis=-1)
+            # Save this array in the correct order
+            np.savetxt(
+                f, xyz.transpose(0, 3, 2, 1).reshape(-1), newline=" ", fmt="%.12f"
+            )
