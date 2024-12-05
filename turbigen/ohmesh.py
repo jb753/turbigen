@@ -63,6 +63,7 @@ class OHMeshConfig(BaseConfig):
 
     nj_tip = 25
     nk_gap = 9
+    const_cells_frac = 0.45
 
     frac_inlet = 0.9
     frac_outlet = 0.15
@@ -130,7 +131,7 @@ class OHMeshConfig(BaseConfig):
             "round_TE": self.round_TE,
             "drt_row": dsurf.tolist(),
             "stagger": stagger_topo,
-            "const_cells_pc": 45.0,
+            "const_cells_pc": self.const_cells_frac * 100.0,
             "nr_tip_gap": self.nj_tip,
             "relax_outlet": self.relax_outlet,
             "ER_boundary_layer": 1.1,
