@@ -891,8 +891,6 @@ def run_single(conf, gguess=None):
 
         gguess = g
 
-    grid.write_plot3d(gguess, "test.p3d")
-
     if cut_offset is not None:
         conf.solver["cut_offset"] = cut_offset
 
