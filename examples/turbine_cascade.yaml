@@ -47,27 +47,25 @@ mesh:
   yplus: 30.0  # Non-dimensional wall distance
   resolution_factor: 0.5  # Double grid spacing in each direction
 
-## CFD solver
-#solver:
-#  type: ts3  # Which solver
-#  # Solver-specific configuration settings
-#  nstep: 10000
-#  nstep_avg: 1000
-#  rtol_mdot: 0.02
-#  # ...
-#  #
-  
 # CFD solver
 solver:
-  type: ts4  # Which solver
-  nstep: 2000
-  nstep_avg: 200
-  # rtol_mdot: 0.02
-  # # ...
-  #
+  type: ts3  # Which solver
+  nstep: 5000
+  nstep_avg: 1000
+  rtol_mdot: 0.02
+  
+## CFD solver
+#solver:
+#  type: ts4  # Which solver
+#  nstep: 2000
+#  nstep_avg: 200
+#  # rtol_mdot: 0.02
+#  # # ...
+#  #
   
   
   
 post_process:
   plot_convergence:
+    rtol_loss: 0.04
 

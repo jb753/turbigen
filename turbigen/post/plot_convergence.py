@@ -15,6 +15,7 @@ def post(
     conv,
     postdir,
     write_raw=False,
+    rtol_loss=0.01,
 ):
     """plot_convergence(write_raw=False)
     Save plots of convergence history of the calculation.
@@ -52,9 +53,14 @@ def post(
     if meanline.U.any():
         dCWx = (CWx / CWx[-1] - 1.0) * 100.0
     else:
+        # Fall back to absolute in a cascade
         dCWx = CWx * 100.0
     ylim = [-10.0, 10.0]
     ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
+
+    nlog = len(dYs)
+    dYs_reversed = np.flip(dYs)
+    istep_conv = np.flip(conv.istep)[np.argmax(np.abs(dYs_reversed)>rtol_loss*100.)]
 
     # Do the plotting
     fig, ax = plt.subplots(1, 3, layout="constrained")
@@ -64,17 +70,42 @@ def post(
     ax[1].set_title("dWork/percent")
     ax[1].set_ylim(ylim)
     ax[1].set_yticks(ytick)
-    ax[2].plot(conv.istep, dYs)
+    ax[2].plot(conv.istep, dYs, '-')
     ax[2].set_ylim(ylim)
     ax[2].set_yticks(ytick)
     ax[2].set_title("dLoss/percent")
+
+    ax[0].annotate(
+        f'istep_conv={istep_conv}',
+        xy=(1., 1.),
+        xytext=(-5., -5.),
+        xycoords='axes fraction',
+        textcoords='offset points',
+        ha='right',
+        va='top',
+        backgroundcolor='w',
+        color='C1',
+    )
+    ax[0].annotate(
+        f'istep_avg={conv.istep_avg}',
+        xy=(1., 1.),
+        xytext=(-5., -25.),
+        xycoords='axes fraction',
+        textcoords='offset points',
+        ha='right',
+        va='top',
+        backgroundcolor='w',
+        color='C2',
+    )
+
 
     for axi in ax:
         axi.set_xlabel("nstep")
         axi.set_xticks(())
         distep = conv.istep[1] - conv.istep[0]
         axi.set_xlim(conv.istep[0], conv.istep[-1] + distep)
-        axi.axvline(conv.istep_avg, color="k", linestyle="--")
+        axi.axvline(conv.istep_avg, color="C2", linestyle="--")
+        axi.axvline(istep_conv, color="C1", linestyle=":")
 
     # Write out
     pltname = os.path.join(postdir, "convergence.pdf")
