@@ -833,6 +833,7 @@ def run_single(conf, gguess=None):
         for b in g:
             b.w[:] = 0.0
 
+    convergence = None
     if conf.solver:
         conf.solver["workdir"] = solve_workdir = os.path.join(workdir, "solve")
         if not os.path.exists(solve_workdir):

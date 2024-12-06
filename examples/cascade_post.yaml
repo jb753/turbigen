@@ -34,6 +34,7 @@ blades:
 mesh:
   type: h
   yplus: 30.0
+  resolution_factor: 0.5
 
 
 post_process:

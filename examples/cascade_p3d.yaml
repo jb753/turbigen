@@ -1,0 +1,40 @@
+# Annotated minimal example configuration to run a turbine cascade
+#
+
+# All files relating to the case are held in a working directory
+workdir: runs/cascade_p3d
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  mu: 1.8e-5
+  gamma: 1.4
+
+mean_line:
+  type: turbine_cascade
+  span: [0.1, 0.12]
+  Alpha: [40., -65.]
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+
+annulus:
+  AR_gap: [0.8, 0.9]
+  AR_chord: 1.6
+
+blades:
+  - Co: 0.7
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+solver:
+  type: plot3d
