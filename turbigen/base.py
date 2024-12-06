@@ -104,8 +104,10 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
-    def transpose(self, order):
+    def transpose(self, order=None):
         out = self.__class__()
+        if order is None:
+            order = tuple(reversed(range(self.ndim)))
         order1 = [
             0,
         ] + [o + 1 for o in order]

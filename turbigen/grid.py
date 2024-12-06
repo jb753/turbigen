@@ -693,6 +693,10 @@ class Grid:
         return self.find_patches(PorousPatch)
 
     @property
+    def probe_patches(self):
+        return self.find_patches(ProbePatch)
+
+    @property
     def periodic_patches(self):
         return self.find_patches(PeriodicPatch)
 

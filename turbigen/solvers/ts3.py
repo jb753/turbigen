@@ -94,6 +94,8 @@ class Config(BaseSolver):
 
     smooth_scale_dts_option: int = 0
 
+    show_yplus: bool = False
+
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -1035,6 +1037,13 @@ def _read_hdf5(grid, ts3_config):
 
         # Set turbulent viscosity
         block.mu_turb = trans_dyn_vis
+
+        # Print yplus if requested
+        if ts3_config.show_yplus:
+            yplus = _unflip(block_group["yplus_bp"])
+            # Remove not-wall nodes
+            yplus = yplus[yplus>0.]
+            print(f'Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}')
 
     f.close()
     fi.close()
