@@ -582,7 +582,7 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
-def exchange_mixing(blocks, bid_local, mixers, log):
+def exchange_mixing(blocks, bid_local, mixers):
     # Prepare to recieve into away buffers
     for mixer in mixers:
         if not mixer.nxprocid == rank:
@@ -605,7 +605,7 @@ def exchange_mixing(blocks, bid_local, mixers, log):
             mixer.Recv.Wait()
 
         b1 = blocks[bid_local[mixer.bid]]
-        mixer.apply(b1, log)
+        mixer.apply(b1)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -773,9 +773,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
                     bc.apply(sb)
 
             # Exchange fluxes across mixing patches
-            exchange_mixing(
-                blocks, bid_local, mixers, not np.mod(istep, conf.n_step_log)
-            )
+            exchange_mixing(blocks, bid_local, mixers)
 
             for iblock in range(nblock):
                 sb = blocks[iblock]
@@ -922,6 +920,7 @@ def run(grid, conf, machine=None):
 
     if not mdot_out == 0.0:
         merr = mdot_in / mdot_out - 1.0
+        logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
         logger.info(f"Mass flow error: {merr*100.:.1f}%")
     else:
         merr = -1.0
@@ -1078,15 +1077,6 @@ class Boundary:
         # We apply boundary conditions by intercepting them
         self.dUn = np.empty(self.shape + (5,))
 
-        # Store face area
-        if patch.cdir == 0:
-            self.dA = C.dAi.squeeze()
-        elif patch.cdir == 1:
-            self.dA = C.dAk.squeeze()
-        elif patch.cdir == 2:
-            self.dA = C.dAj.squeeze()
-        self.dA = util.vecnorm(self.dA)
-
         # Determine a permutation order such that
         # first axis is spanwise, second axis is pitchwise
         ax_theta = np.argmax([np.ptp(C.t, axis=n).mean() for n in range(3)]).item()
@@ -1095,6 +1085,28 @@ class Boundary:
         self.order = (ax_stream, ax_span, ax_theta)
         if not self.order == (0, 1, 2):
             raise Exception("Boundary conditions must be on const-i faces.")
+
+        self.Nb = C.Nb
+
+        # Store weights for area integral
+        # Preallocate zeros
+        self.wA = np.zeros((3,) + self.shape)
+        # Distribute face areas to nodes
+        self.wA[:, :, :-1, :-1] += C.dAi
+        self.wA[:, :, 1:, :-1] += C.dAi
+        self.wA[:, :, :-1, 1:] += C.dAi
+        self.wA[:, :, 1:, 1:] += C.dAi
+        # # Scale down edges by 2
+        # self.wA[:, :, 0, :] /= 2.
+        # self.wA[:, :, -1, :] /= 2.
+        # self.wA[:, :, :, 0] /= 2.
+        # self.wA[:, :, :, -1] /= 2.
+        # # Scale down interior by 4
+        self.wA /= 4.0
+        self.wAabs = turbigen.util.vecnorm(self.wA)
+        self.A = turbigen.util.vecnorm(C.dAi.squeeze()).sum()
+        # assert np.isclose(self.wA.sum(), self.A)
+        assert np.isclose(self.wAabs.sum(), self.A)
 
         # Get normal vectors pointing into the domain
         C0 = C.copy().transpose(self.order)
@@ -1113,6 +1125,15 @@ class Boundary:
         assert (np.ptp(C0.squeeze().r, axis=1) / Lref < rtol).all()
 
         self.K = K
+
+    def integrate_flows(self):
+        flux_mass = self.state.flux_mass * self.Nb
+        s = self.state.s
+        ho = self.state.ho
+        mdot = np.sum(self.wA * flux_mass).astype(float)
+        hodot = np.sum(self.wA * flux_mass * ho).astype(float)
+        Sdot = np.sum(self.wA * flux_mass * s).astype(float)
+        return mdot, hodot, Sdot
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1187,7 +1208,10 @@ class OutletBoundary(Boundary):
     def inward_chics(self):
         """Use static pressure target to set upstream-running wave."""
 
-        dP = self.P_target - self.state.P
+        # Force to uniform at target pressure
+        # dP = self.P_target - self.state.P
+        P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
+        dP = self.P_target - P_Aavg
         dVx = -dP / self.state.rho / self.state.a  # from c2=0
         dc1 = dP - self.state.rho * self.state.a * dVx  # definition of c1
         dc = np.zeros(self.shape + (5, 1))
@@ -1392,17 +1416,8 @@ class MixingBoundary(Boundary):
 
         return dchic
 
-    def apply(self, block, log):
+    def apply(self, block):
         self.unpack_buffers()
-
-        if log:
-            dflux_avg = self.dflux_avg.mean(axis=(0, 1, 2, 4))
-            if dflux_avg.mean() > 0.0:
-                flux_avg = self.state_avg.fluxes.mean(axis=-1)
-                flux_ref = flux_avg.copy()
-                flux_ref[2] = flux_ref[1]
-                flux_ref[3] = self.state_avg.r.mean() * flux_ref[1]
-                print(dflux_avg / flux_ref)
 
         self.set_direction()
 

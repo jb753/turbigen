@@ -590,7 +590,7 @@ def test_offset(dP):
 
 if __name__ == "__main__":
     # test_condi('t')
-    # test_offset(0.0)
+    test_offset(0.0)
     # test_Tu0(300.)
     # test_rpm(500.)
 
