@@ -32,8 +32,8 @@ class BaseSolver:
     def replace(self, **kwargs):
         return dataclasses.replace(self, **kwargs)
 
-class ConvergenceHistory:
 
+class ConvergenceHistory:
     def __init__(self, istep, mdot, ho, Po, resid, state, istep_avg):
         """Store simulation convergence history.
 
@@ -58,19 +58,10 @@ class ConvergenceHistory:
         self.nlog = len(istep)
         self.mdot = mdot
         self.resid = resid
-        self.state = state.empty((2,self.nlog))
+        self.state = state.empty((2, self.nlog))
         self.state.set_P_h(Po, ho)
 
     def raw_data(self):
         return np.column_stack(
-            (
-                self.istep,
-                *self.mdot,
-                self.resid
-                *self.state.h
-                *self.state.P
-            )
+            (self.istep, *self.mdot, self.resid * self.state.h * self.state.P)
         )
-
-
-

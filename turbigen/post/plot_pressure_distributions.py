@@ -84,9 +84,9 @@ def post(
         ien = ist + 1
         m = np.linspace(ist, ien, 101)
         spfrow = np.array(spfrow)
-        xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spfrow.reshape(1, -1)).reshape(
-            2, -1, len(spfrow)
-        )
+        xr_spf = machine.ann.evaluate_xr(
+            m.reshape(-1, 1), spfrow.reshape(1, -1)
+        ).reshape(2, -1, len(spfrow))
 
         fig, ax = plt.subplots(layout="constrained")
         ax.set_xlabel(r"Normalised Surface Distance, $\zeta/\zeta_\mathrm{TE}$")

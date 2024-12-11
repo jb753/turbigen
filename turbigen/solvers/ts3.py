@@ -696,7 +696,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
         p.state.set_Tu0(0.0)
 
     # Determine reference radii for mixing length limit
-    rref = np.empty((grid.nrow,))
+    rref = np.zeros((grid.nrow,))
     for irow, row_block in enumerate(grid.row_blocks):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
@@ -1043,8 +1043,8 @@ def _read_hdf5(grid, ts3_config):
         if ts3_config.show_yplus:
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
-            yplus = yplus[yplus>0.]
-            print(f'Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}')
+            yplus = yplus[yplus > 0.0]
+            print(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
 
     f.close()
     fi.close()
@@ -1247,10 +1247,10 @@ def parse_log(fname):
         dn = 1 if dts else 50
         nlog = nstep // dn
         istep = np.arange(nlog) * dn
-        mdot = np.empty((2, nlog))
-        Po = np.empty((2, nlog))
-        To = np.empty((2, nlog))
-        resid = np.empty((nlog,))
+        mdot = np.zeros((2, nlog))
+        Po = np.zeros((2, nlog))
+        To = np.zeros((2, nlog))
+        resid = np.zeros((nlog,))
 
         for ilog in range(nlog):
             logger.debug(f"* Parsing istep={istep[ilog]}")

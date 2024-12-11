@@ -531,8 +531,8 @@ class RealState(StructuredData):
                 raise Exception(
                     f"Broadcasted input shape {b.shape} is wrong, expected {self.shape}"
                 )
-            rho = np.empty(b.shape)
-            u = np.empty(b.shape)
+            rho = np.zeros(b.shape)
+            u = np.zeros(b.shape)
             for i, (xk, yk) in enumerate(b):
                 self._as.update(inputs, xk, yk)
                 rho.flat[i] = self._as.rhomass()
@@ -548,7 +548,7 @@ class RealState(StructuredData):
             z = prop_func()
         # Vector state, must loop
         else:
-            z = np.empty(self.shape)
+            z = np.zeros(self.shape)
             for i, (rhok, uk) in enumerate(zip(self.rho.flat, self.u.flat)):
                 self._as.update(CoolProp.DmassUmass_INPUTS, rhok, uk)
                 z.flat[i] = prop_func()
@@ -562,7 +562,7 @@ class RealState(StructuredData):
             z = prop_func()
         # Vector state, must loop
         else:
-            z = np.empty(self.shape)
+            z = np.zeros(self.shape)
             for i, Pk in enumerate(self.P.flat):
                 self._as.update(CoolProp.PQ_INPUTS, Pk, chi)
                 z.flat[i] = prop_func()
@@ -655,8 +655,8 @@ class RealState(StructuredData):
             # TODO use slicing capabilities of the class here
             # # Broadcast Mach number
             # b = np.broadcast(self.h, self.P, Ma)
-            # h = np.empty(b.shape)
-            # P = np.empty(b.shape)
+            # h = np.zeros(b.shape)
+            # P = np.zeros(b.shape)
             # for i, (hk, Pk, Mak) in enumerate(b):
             #     Sk_stag = self.copy().set_P_h(Pk, hk)
             #     Sk_stat = _solve_scalar(Sk_stag, Mak)

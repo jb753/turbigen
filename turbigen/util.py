@@ -707,9 +707,9 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
         # Loop over span fractions
         # Unstructure cut through current surface along the
         # target span fraction curves
-        xrt_stag = np.empty((3, nspf))
-        xrt_nose = np.empty((3, nspf))
-        xrt_cent = np.empty((3, nspf))
+        xrt_stag = np.zeros((3, nspf))
+        xrt_nose = np.zeros((3, nspf))
+        xrt_cent = np.zeros((3, nspf))
         for k in range(len(spf)):
             # Cut at this span fraction
             C = surf[..., None].meridional_slice(xr_spf[:, :, k])
@@ -1114,7 +1114,7 @@ def interpolate_curve_2d(xr, sq, axis):
     """Interpolate along a curve at given length fractions."""
     s = cum_arc_length(xr, axis=axis)
     s /= s[(-1,), :]
-    xrq = np.empty((2, len(sq), xr.shape[2]))
+    xrq = np.zeros((2, len(sq), xr.shape[2]))
     for k in range(xr.shape[2]):
         xrq[:, :, k] = scipy.interpolate.interp1d(s[:, k], xr[:, :, k], axis=axis)(sq)
     return xrq

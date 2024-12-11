@@ -27,9 +27,9 @@ def post(
     """  # noqa:E501
 
     if conv:
-        logger.info(f"Plotting convergence...")
+        logger.info("Plotting convergence...")
     else:
-        logger.info(f"No simulation log returned, skipping convergence plot.")
+        logger.info("No simulation log returned, skipping convergence plot.")
         return
 
     # Choose type of machine
@@ -58,46 +58,46 @@ def post(
     ylim = [-10.0, 10.0]
     ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
 
-    nlog = len(dYs)
     dYs_reversed = np.flip(dYs)
-    istep_conv = np.flip(conv.istep)[np.argmax(np.abs(dYs_reversed)>rtol_loss*100.)]
+    istep_conv = np.flip(conv.istep)[
+        np.argmax(np.abs(dYs_reversed) > rtol_loss * 100.0)
+    ]
 
     # Do the plotting
-    fig, ax = plt.subplots(1, 3, layout="constrained")
+    _, ax = plt.subplots(1, 3, layout="constrained")
     ax[0].plot(conv.istep, np.log10(conv.resid))
     ax[0].set_title("log(Residual)")
     ax[1].plot(conv.istep, dCWx)
     ax[1].set_title("dWork/percent")
     ax[1].set_ylim(ylim)
     ax[1].set_yticks(ytick)
-    ax[2].plot(conv.istep, dYs, '-')
+    ax[2].plot(conv.istep, dYs, "-")
     ax[2].set_ylim(ylim)
     ax[2].set_yticks(ytick)
     ax[2].set_title("dLoss/percent")
 
     ax[0].annotate(
-        f'istep_conv={istep_conv}',
-        xy=(1., 1.),
-        xytext=(-5., -5.),
-        xycoords='axes fraction',
-        textcoords='offset points',
-        ha='right',
-        va='top',
-        backgroundcolor='w',
-        color='C1',
+        f"istep_conv={istep_conv}",
+        xy=(1.0, 1.0),
+        xytext=(-5.0, -5.0),
+        xycoords="axes fraction",
+        textcoords="offset points",
+        ha="right",
+        va="top",
+        backgroundcolor="w",
+        color="C1",
     )
     ax[0].annotate(
-        f'istep_avg={conv.istep_avg}',
-        xy=(1., 1.),
-        xytext=(-5., -25.),
-        xycoords='axes fraction',
-        textcoords='offset points',
-        ha='right',
-        va='top',
-        backgroundcolor='w',
-        color='C2',
+        f"istep_avg={conv.istep_avg}",
+        xy=(1.0, 1.0),
+        xytext=(-5.0, -25.0),
+        xycoords="axes fraction",
+        textcoords="offset points",
+        ha="right",
+        va="top",
+        backgroundcolor="w",
+        color="C2",
     )
-
 
     for axi in ax:
         axi.set_xlabel("nstep")
@@ -113,4 +113,4 @@ def post(
 
     if write_raw:
         rawname = os.path.join(postdir, "convergence_raw")
-        np.savetxt(convergence.raw_data())
+        np.savetxt(rawname, conv.raw_data())

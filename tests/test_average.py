@@ -499,13 +499,13 @@ def test_mixing():
     P2 = Po2 / cf.Po_P_from_Ma(M2, ga)
     T1 = To1 / cf.To_T_from_Ma(M1, ga)
     T2 = To2 / cf.To_T_from_Ma(M2, ga)
-    P = np.empty_like(x)
+    P = np.zeros_like(x)
     P[t <= 0.0] = P1
     P[t > 0.0] = P2
-    T = np.empty_like(x)
+    T = np.zeros_like(x)
     T[t <= 0.0] = T1
     T[t > 0.0] = T2
-    Vx = np.empty_like(x)
+    Vx = np.zeros_like(x)
     Vx[t <= 0.0] = V1
     Vx[t > 0.0] = V2
     Vr = np.zeros_like(Vx)

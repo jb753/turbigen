@@ -13,6 +13,7 @@ def concatenate(sd, axis=0):
     out._metadata = sd[0]._metadata
     return out
 
+
 def stack(sd, axis=0):
     """Join a sequence of StructuredData along a new axis."""
     out = sd[0].empty()
@@ -251,7 +252,7 @@ class StructuredData:
         # Make an empty object by calling constructor with no args
         out = self.__class__()
         # Insert empty data and current metadata
-        out._data = np.empty((self.nprop,) + shape)
+        out._data = np.zeros((self.nprop,) + shape)
         out._metadata = self._metadata
         return out
 
@@ -809,7 +810,7 @@ class Kinematics:
         #      j>
         #
         if self.ndim > 3:
-            v = self.xrrt[:,:,:,:,0]  # Discard any time dimension
+            v = self.xrrt[:, :, :, :, 0]  # Discard any time dimension
         else:
             v = self.xrrt
         A = v[:, :, :-1, :-1]
@@ -1324,7 +1325,7 @@ class Composites:
         # Preallocate
         data = self._data
         nv, ni, nj, nk = self._data.shape
-        data_cut = np.empty(
+        data_cut = np.zeros(
             (
                 nv,
                 ni,
@@ -1359,16 +1360,18 @@ class Composites:
 
     def Ai_average(self):
 
-        dA = np.expand_dims(util.vecnorm(self.dAi_new),0)
+        dA = np.expand_dims(util.vecnorm(self.dAi_new), 0)
         if self.ndim > 3:
             dA = np.expand_dims(dA, -1)
-            conserved = np.moveaxis(util.node_to_face(np.moveaxis(self.conserved,-1,0)),0,-1)
-            xrt = np.moveaxis(util.node_to_face(np.moveaxis(self.xrt,-1,0)),0,-1)
+            conserved = np.moveaxis(
+                util.node_to_face(np.moveaxis(self.conserved, -1, 0)), 0, -1
+            )
+            xrt = np.moveaxis(util.node_to_face(np.moveaxis(self.xrt, -1, 0)), 0, -1)
         else:
             conserved = util.node_to_face(self.conserved)
             xrt = util.node_to_face(self.xrt)
-        conserved_avg = np.sum(conserved*dA, axis=(1,2,3))/np.sum(dA)
-        xrt_avg = np.sum(xrt*dA, axis=(1,2,3))/np.sum(dA)
+        conserved_avg = np.sum(conserved * dA, axis=(1, 2, 3)) / np.sum(dA)
+        xrt_avg = np.sum(xrt * dA, axis=(1, 2, 3)) / np.sum(dA)
         out = self.empty(shape=conserved_avg.shape[1:])
         out.xrt = xrt_avg
         out.set_conserved(conserved_avg)
@@ -1395,7 +1398,7 @@ class Composites:
 
         nj = self.shape[1]
         cuts = []
-        spf = np.empty(nj - 1)
+        spf = np.zeros(nj - 1)
         for j in range(nj - 1):
             spf[j] = self.spf[:, j : j + 2, :].mean()
             cut_now = self[:, j : j + 2, :]

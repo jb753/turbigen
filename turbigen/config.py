@@ -386,9 +386,9 @@ class Config:
         npts = len(database)
         nx = len(independent)
         ny = len(dependent)
-        x = np.empty((npts, nx))
-        y = np.empty((npts, ny))
-        qstar_camber = [np.empty((npts, nsecti, nq)) for nsecti in nsect]
+        x = np.zeros((npts, nx))
+        y = np.zeros((npts, ny))
+        qstar_camber = [np.zeros((npts, nsecti, nq)) for nsecti in nsect]
         for i, c in enumerate(database):
             for j, v in enumerate(independent):
                 if v in (
@@ -413,7 +413,7 @@ class Config:
         npts_lim = np.minimum(npts, npts_max)
 
         # Assemble query points
-        xq = np.empty((1, nx))
+        xq = np.zeros((1, nx))
         if verbose:
             logger.iter("Independent variables:")
         for j, v in enumerate(independent):

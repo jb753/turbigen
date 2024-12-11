@@ -190,10 +190,10 @@ class MeridionalLine:
         Dx = util.cell_to_node(np.diff(self.x))
 
         # Preallocate
-        drdt = np.empty_like(self.x)
-        dxdt = np.empty_like(self.x)
-        d2rdt2 = np.empty_like(self.x)
-        d2xdt2 = np.empty_like(self.x)
+        drdt = np.zeros_like(self.x)
+        dxdt = np.zeros_like(self.x)
+        d2rdt2 = np.zeros_like(self.x)
+        d2xdt2 = np.zeros_like(self.x)
 
         # To accomodate very shallow or steep curves, we will use the
         # parametric slope and curvature either for x or r depending on the

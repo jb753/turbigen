@@ -86,7 +86,7 @@ class Smooth:
         self.nozzle_ratio = nozzle_ratio
 
         # Assemble vectors of all ARs and spans
-        AR = np.empty(self.nrow * 2 + 1)
+        AR = np.zeros(self.nrow * 2 + 1)
         AR[::2] = self.AR_gap
         AR[1::2] = self.AR_chord
         span_avg = 0.5 * (self.span[1:] + self.span[:-1])
@@ -109,7 +109,7 @@ class Smooth:
         xmid -= xmid[1]  # Place x origin at first row LE
 
         # Extended r coords
-        rmid = np.empty((self.nrow + 1) * 2)
+        rmid = np.zeros((self.nrow + 1) * 2)
 
         # Fill in known radii
         rmid[1:-1] = self.rmid
@@ -265,7 +265,7 @@ class Smooth:
     def chords(self, spf):
         """ "Meridional chords of gaps and rows at a specified span fraction."""
 
-        chords = np.empty(self.npts - 1)
+        chords = np.zeros(self.npts - 1)
         for i in range(self.npts - 1):
             mhub = np.linspace(
                 *self.hub.mctrl[

@@ -576,7 +576,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
         assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
 
-        pitch_frac_clust = np.empty((ni, nj, nk))
+        pitch_frac_clust = np.zeros((ni, nj, nk))
 
         # Get skew angles
         if unbladed[irow]:

@@ -304,8 +304,8 @@ class Taylor:
         x1 = self.s_tmax
 
         # Fit front cubic
-        A = np.empty((4, 4))
-        b = np.empty((4, 1))
+        A = np.zeros((4, 4))
+        b = np.zeros((4, 1))
 
         # LE radius
         A[0] = [0.0, 0.0, 0.0, 1.0]
@@ -356,7 +356,7 @@ class Taylor:
         s = np.array(s)
 
         coeff_front, coeff_rear = self._coeff
-        tau = np.empty_like(s)
+        tau = np.zeros_like(s)
         tau[s <= self.s_tmax] = np.polyval(coeff_front, s[s <= self.s_tmax])
         tau[s > self.s_tmax] = np.polyval(coeff_rear, s[s > self.s_tmax])
         return tau
@@ -416,8 +416,8 @@ class Impeller:
 
         # Trailing edge blend
 
-        b = np.empty((4, 1))
-        A = np.empty((4, 4))
+        b = np.zeros((4, 1))
+        A = np.zeros((4, 4))
 
         # t(1) = tTE
         A[0] = [1.0, 1.0, 1.0, 1.0]
@@ -603,8 +603,8 @@ class CircularLE:
         x1 = self.m_max
 
         # Fit the quartic
-        A = np.empty((5, 5))
-        b = np.empty((5, 1))
+        A = np.zeros((5, 5))
+        b = np.zeros((5, 1))
 
         # Value of max thickness
         # f(xm) = tm

@@ -174,7 +174,7 @@ def make_grid(
         b.Vx = Vx
         b.Vr = 0.0
         b.Vt = Vt
-        T1 = np.empty(b.shape)
+        T1 = np.zeros(b.shape)
         T1[:,:jmid,:] = T1a
         T1[:,jmid:,:] = T1b
         b.set_P_T(P1, T1)

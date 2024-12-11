@@ -164,8 +164,8 @@ class Brind:
 
         # TODO - could probably get an analytical solution instead of numerical
         # matrix inversion
-        A = np.empty((5, 5))
-        b = np.empty((5, 1))
+        A = np.zeros((5, 5))
+        b = np.zeros((5, 1))
 
         # y-intercept at 1
         A[0] = [0.0, 0.0, 0.0, 0.0, 1.0]
@@ -239,8 +239,8 @@ class Taylor:
 
         # TODO - could probably get an analytical solution instead of numerical
         # matrix inversion
-        A = np.empty((5, 5))
-        b = np.empty((5, 1))
+        A = np.zeros((5, 5))
+        b = np.zeros((5, 1))
 
         # y-intercept at 1
         A[0] = [0.0, 0.0, 0.0, 0.0, 1.0]

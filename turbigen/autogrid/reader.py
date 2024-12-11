@@ -20,8 +20,8 @@ def read(g_file, bcs_file, Lref=1.0):
     nb = int(f.readline().split()[-1])
 
     # Loop over blocks
-    nijk = np.empty((nb, 3), dtype=int)
-    nblade = np.empty((nb,), dtype=int)
+    nijk = np.zeros((nb, 3), dtype=int)
+    nblade = np.zeros((nb,), dtype=int)
     patches = []
     for ib in range(nb):
         f.readline()  # Skip the block label

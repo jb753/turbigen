@@ -195,7 +195,7 @@ def _get_points(fluid_name, grid_type, xy):
 
     # Preallocate
     npts = xy.shape[0]
-    table = np.empty(
+    table = np.zeros(
         (
             npts,
             ntable_now,
@@ -276,7 +276,7 @@ def _get_tables(fluid_name, grids, Nworker=32):
 
     # Preallocate main table
     nj, ni = list(grids.values())[0][0].shape
-    tables = np.empty((NTABLE, nj, ni))
+    tables = np.zeros((NTABLE, nj, ni))
 
     # Loop over grids
     for grid_type, grid in grids.items():

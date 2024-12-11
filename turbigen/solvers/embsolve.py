@@ -500,8 +500,8 @@ class Periodic:
         self.procid = procids[self.bid]
         self.nxprocid = procids[self.nxbid]
 
-        self.buffer = np.empty((self.N), order="F").astype(typ)
-        self.nxbuffer = np.empty((self.N), order="F").astype(typ)
+        self.buffer = np.zeros((self.N), order="F").astype(typ)
+        self.nxbuffer = np.zeros((self.N), order="F").astype(typ)
 
     def reversed(self):
         p = copy(self)
@@ -705,7 +705,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
     nblock = len(blocks)
 
-    dUnow = np.empty((conf.n_step_log, nblock, 5))
+    dUnow = np.zeros((conf.n_step_log, nblock, 5))
 
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
@@ -1075,7 +1075,7 @@ class Boundary:
 
         # Preallocate nodal conserved variable changes
         # We apply boundary conditions by intercepting them
-        self.dUn = np.empty(self.shape + (5,))
+        self.dUn = np.zeros(self.shape + (5,))
 
         # Determine a permutation order such that
         # first axis is spanwise, second axis is pitchwise

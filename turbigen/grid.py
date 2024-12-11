@@ -562,7 +562,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 ).squeeze()
 
         # Extract these points from the block
-        data_out = np.empty((self.nprop,) + nijk_new)
+        data_out = np.zeros((self.nprop,) + nijk_new)
         mask = np.zeros((3,) + self.shape, dtype=bool)
         mask[0, ijk_new[0], :, :] = True
         mask[1, :, ijk_new[1], :] = True
@@ -1254,7 +1254,7 @@ class Patch:
 
         # ijk limits are INCLUSIVE
         # because we cannot use an integer to range slice including last element
-        self.ijk_limits = np.empty((3, 2), dtype=int)
+        self.ijk_limits = np.zeros((3, 2), dtype=int)
         for n, ind in enumerate([i, j, k]):
             if ind is None:
                 self.ijk_limits[n] = (0, -1)
@@ -1420,8 +1420,8 @@ class PeriodicPatch(Patch):
     def get_match_perm_flip(self):
         # We need to establise a permutation order and set of flips that will
         # transform the other coordinates to our indexing
-        perm = np.empty(3, dtype=int)
-        flip = np.empty(3, dtype=int)
+        perm = np.zeros(3, dtype=int)
+        flip = np.zeros(3, dtype=int)
 
         ijkdir_match = self.match.ijkdir
         ijkdir = self.ijkdir
@@ -1722,7 +1722,7 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                 dxref = np.ptp(xrt_next[0])
                 drref = np.ptp(xrt_next[1])
                 Lref = np.max((dxref, drref))
-                err_rel = np.empty_like(err)
+                err_rel = np.zeros_like(err)
                 err_rel[0] = err[0, :] / Lref
                 err_rel[1] = err[1, :] / Lref
                 err_rel[2] = err[2, :] / pitch[0]

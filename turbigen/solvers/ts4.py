@@ -89,7 +89,6 @@ class Config(BaseSolver):
     outlet_tag: str = "Outlet"
     """Identifier string for the outlet patch."""
 
-
     area_avg_pout: bool = True
 
     pout_fac_ramp_nstep: int = 0
@@ -732,5 +731,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     # Check convergence
     Nb = [grid.inlet_patches[0].block.Nb, grid.outlet_patches[0].block.Nb]
     state_log = grid.inlet_patches[0].state.copy()
-    state_log.set_Tu0(0.)
-    return ConvergenceHistory(*parse_log(log_path, ts4_conf.nstep, Nb), state_log, ofp['istep_avg_start'])
+    state_log.set_Tu0(0.0)
+    return ConvergenceHistory(
+        *parse_log(log_path, ts4_conf.nstep, Nb), state_log, ofp["istep_avg_start"]
+    )

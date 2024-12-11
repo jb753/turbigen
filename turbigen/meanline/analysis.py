@@ -106,7 +106,7 @@ def forward(So1, rh, rt, rpm, mdot, Alpha_rel, Beta):
 
     # Preallocate thermodynamic states and velocity vectors
     S = So1.empty(shape=(N,))
-    Vxrt = np.empty((3, N))
+    Vxrt = np.zeros((3, N))
 
     # Find the inlet static state first
     Sin, Vxrt[:, 0] = _solve_static(So1, mdot, A[0], Alpha[0], Beta[0])

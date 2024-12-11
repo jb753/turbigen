@@ -84,7 +84,7 @@ for n in range(nrow):
         row(n1).blade(1).set_blend_treatment_at_trailing_edge(0)
         row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
     if conf["ncell_target"]:
-        print 'setting target ncell' 
+        print 'setting target ncell'
         row(n1).set_coarse_grid_level(4, int(conf["ncell_target"]))
     else:
         print 'setting default ncell'

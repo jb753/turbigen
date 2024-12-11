@@ -104,7 +104,7 @@ def test_div():
     rn = np.asfortranarray(b.r.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni - 1, nj - 1, nk - 1)
-    rc = np.empty(shape_cell, order="F", dtype=typ)
+    rc = np.zeros(shape_cell, order="F", dtype=typ)
     embsolve.node_to_cell(rn, rc)
 
     print("Checking divergence of test fields...")
@@ -180,11 +180,11 @@ def test_grad():
     xn = np.asfortranarray(b.x.astype(typ))
     ni, nj, nk = rn.shape
     shape_cell = (ni - 1, nj - 1, nk - 1)
-    rc = np.empty(shape_cell, order="F", dtype=typ)
+    rc = np.zeros(shape_cell, order="F", dtype=typ)
     embsolve.node_to_cell(rn, rc)
-    tc = np.empty(shape_cell, order="F", dtype=typ)
+    tc = np.zeros(shape_cell, order="F", dtype=typ)
     embsolve.node_to_cell(tn, tc)
-    xc = np.empty(shape_cell, order="F", dtype=typ)
+    xc = np.zeros(shape_cell, order="F", dtype=typ)
     embsolve.node_to_cell(xn, xc)
 
     rtol = 2e-4
