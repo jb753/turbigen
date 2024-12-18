@@ -136,6 +136,7 @@ def main():
 
             # Jump to solver slave process if not first rank
             if rank > 0:
+
                 from turbigen.solvers import embsolve
 
                 embsolve.run_slave()

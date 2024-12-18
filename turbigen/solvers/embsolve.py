@@ -36,6 +36,12 @@ except ImportError:
     mpi_single = None
     mpi_double = None
 
+def get_memory_usage():
+
+    with open('/proc/self/status') as f:
+        mem = f.read().split('VmRSS:')[1].split('\n')[0][:-3].strip()
+
+    return float(mem)/1000.
 
 @dataclass
 class Config(BaseSolver):
@@ -109,167 +115,75 @@ class Config(BaseSolver):
     multigrid: tuple = (2, 2, 2)
 
 
-def get_dw(block, typ):
-    # Cell height in each of i,j,k dirns
-    dli = turbigen.util.vecnorm(block.dli)
-    dlj = turbigen.util.vecnorm(block.dlj)
-    dlk = turbigen.util.vecnorm(block.dlk)
-
-    ni, nj, nk = block.shape
-
-    dwi = np.asfortranarray(np.zeros((ni, nj - 1, nk - 1), dtype=typ))
-    dwi[0, :, :] = util.node_to_face2(dli[0, :, :])
-    dwi[-1, :, :] = util.node_to_face2(dli[-1, :, :])
-
-    dwj = np.asfortranarray(np.zeros((ni - 1, nj, nk - 1), dtype=typ))
-    dwj[:, 0, :] = util.node_to_face2(dlj[:, 0, :])
-    dwj[:, -1, :] = util.node_to_face2(dlj[:, -1, :])
-
-    dwk = np.asfortranarray(np.zeros((ni - 1, nj - 1, nk), dtype=typ))
-    dwk[:, :, 0] = util.node_to_face2(dlk[:, :, 0])
-    dwk[:, :, -1] = util.node_to_face2(dlk[:, :, -1])
-
-    return dwi, dwj, dwk
-
-
-def to_fort_type(x, typ):
-    if x.ndim > 3:
-        x2 = np.moveaxis(x, 0, -1)
-    else:
-        x2 = x
-    return np.asfortranarray(x2).astype(typ)
-
-
 class SolverBlock:
     """Hold just the data we need for a CFD solution."""
 
     def __init__(self, block, conf):
         """Initialise from a standard Block object."""
 
-        # Select precision
-        if conf.precision == 1:
-            typ = np.float32
-            mpi_typ = mpi_single
-        else:
-            typ = np.float64
-            mpi_typ = mpi_double
 
+        # Config settings
+        self.conf = conf
+        self.shape = tuple(block.shape)
+
+        # Data types
+        typ = self.get_data_type()
         def to_fort(x):
             return to_fort_type(x, typ)
 
+        # Block-level scalars
+        self.Omega = self.cast_scalar(block.Omega.mean())
+
         # Primaries
-        self.cons = to_fort(block.conserved)
-
-        self.conf = conf
-        self.Nb = block.Nb
-
-        self.mu = typ(block.mu)
-        self.cp = typ(block.cp)
-        self.Pr_turb = typ(conf.Pr_turb)
-
-        self.ho = to_fort(block.ho)
-        self.P = to_fort(block.P)
-        self.Pref = to_fort(self.P.mean())
-
-        self.halfVsq = to_fort(0.5 * block.V**2)
-        self.u = to_fort(block.u)
-        self.T = to_fort(block.T)
-
-        self.dw = get_dw(block, typ)
-        self.pitch = block.pitch
+        self.cons = self.cast_array(block.conserved)
 
         # Geometry
-        self.x = to_fort(block.x)
-        self.r = to_fort(block.r)
-        self.t = to_fort(block.t)
-        self.rf = [to_fort(r) for r in block.r_face]
-        self.rc = to_fort(block.r_cell)
+        self.r = self.cast_array(block.r)
+        self.dAi = self.cast_array(block.dAi)
+        self.dAj = self.cast_array(block.dAj)
+        self.dAk = self.cast_array(block.dAk)
 
-        self.dAi = to_fort(block.dAi_new)
-        self.dAj = to_fort(block.dAj_new)
-        self.dAk = to_fort(block.dAk_new)
+        # Multigrid setup
+        # Note all stored indices are 1-indexed for Fortran
+        self.ijk_multigrid = self.get_multigrid_indices()
+        self.vol = self.get_multigrid_volumes(block.vol)
+        self.dlmin = self.get_multigrid_lengths(block)
 
-        self.Vxrt = to_fort(block.Vxrt)
-        self.Omega = block.Omega.mean().astype(typ).item()
-        xllim = (
-            block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
-        )
-
-        self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
-
-        Omega = block.Omega.mean()
-        self.U = to_fort(Omega * block.r)
-        self.Uf = [to_fort(Omega * r) for r in block.r_face]
-
-        # Residual storage
-        ni, nj, nk = block.shape
-        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
-        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=typ)
-        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=typ)
-
-        xlength = np.asfortranarray(np.clip(block.w, 0.0, xllim)).astype(typ)
-        xlength = (0.41 * xlength) ** 2.0
-        self.xlength = to_fort(np.zeros((ni - 1, nj - 1, nk - 1)))
-        embsolve.node_to_cell(xlength, self.xlength)
-
-        # Get indices for multigrid
-        self.ijk_multigrid = (
-            get_multigrid_indices((ni - 1, nj - 1, nk - 1), conf.multigrid) + 1
-        )
-        self.vol = get_multigrid_volumes(
-            to_fort(block.vol_new), self.ijk_multigrid, typ
-        )
-        self.dlmin = get_multigrid_lengths(block, conf.multigrid, typ)
-        self.dt_vol = self.dlmin * 0.0
+        # Mixing length
+        self.xlength = self.get_xlength(block)
 
         # Get wall indices
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
-        # Note 1-indexed for Fortran
-        *self.ijk_wall_face, self.ijk_wall_node = [
-            np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
-            for wall in block.get_wall()
-        ]
-
-        # Get indices for wall functions
-        *self.ijk_wall_face_slip, _ = [
-            np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
-            for wall in block.get_wall(ignore_slip=True)
-        ]
-
-        # Get indices to first node off the wall
-        iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face_slip]
-        iwall1[0, iwall1[0, :] == ni] -= 1
-        jwall1[1, jwall1[1, :] == nj] -= 1
-        kwall1[2, kwall1[2, :] == nk] -= 1
+        # Including slip walls for enforcing no-flow condition
+        *self.ijk_wall_face, self.ijk_wall_node = self.get_wall_indices(
+                block, ignore_slip=False
+        )
+        # Excluding slip walls for wall functions
+        *self.ijk_wall_face_slip, _ = self.get_wall_indices(block, ignore_slip=True)
 
         # Get wall cell size
-        self.dw_face = [
-            embsolve.get_by_ijk(to_fort(dl), ijk)
-            for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
-        ]
+        self.dw_face = self.get_wall_cell_size(block)
 
-        # Get wall area magnitudes
-        dAijk = [
-            np.sqrt((self.dAi**2).sum(axis=-1)),
-            np.sqrt((self.dAj**2).sum(axis=-1)),
-            np.sqrt((self.dAk**2).sum(axis=-1)),
-        ]
+        # Store boundary conditions
+        self.bconds = (
+                [ InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches ]
+                + [
+            OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches
+        ])
 
-        self.dA_face = [
-            embsolve.get_by_ijk(dA, ijk)
-            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
-        ]
-
-        # Put dummy values in zero-length ijk
-        for n in range(3):
-            ijk = self.ijk_wall_face_slip[n]
-            if ijk.shape[-1] == 0:
-                ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
-                self.ijk_wall_face_slip[n] = ijkdum
-                self.dw_face[n] = to_fort(np.ones((1,)))
-                self.dA_face[n] = to_fort(np.ones((1,)))
-
-        # Get nodal smoothing scaling factors
+        # Initialise the state object for this block
+        # With the correct data type
+        if isinstance(block, turbigen.grid.PerfectBlock):
+            state = self.state = turbigen.fluid.PerfectState(
+                shape=block.shape, order="F", typ=typ
+            )
+            state.gamma = typ(block.gamma)
+            state.cp = typ(block.cp)
+            state.mu = typ(block.mu)
+            state.set_rho_u(block.rho, block.u)
+            state.set_Tu0(block.Tu0)
+        else:
+            raise NotImplementedError()
 
         # Wall length scales at nodes
         dli = turbigen.util.vecnorm(block.dli)
@@ -303,8 +217,8 @@ class SolverBlock:
         ).mean(axis=0)
 
         # Smoothing scale factors in each volume
-        Lref = block.vol_new ** (1 / 3)
-        L = to_fort(
+        Lref = block.vol** (1 / 3)
+        L = self.cast_array(
             np.stack(
                 (
                     dli / Lref,
@@ -318,39 +232,211 @@ class SolverBlock:
         L = L / Ls * 3.0
 
         # Now distribute to nodes
-        self.L = to_fort(np.ones((3, ni, nj, nk)))
+        ni, nj, nk = self.shape
+        self.L = self.cast_array(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
         # Disable scaling
         # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
 
+        #
+        # Don't need block after this
+        #
+
+        # Can initialise these from the state object after data transfer
+        self.mu = self.cast_scalar(state.mu)
+        self.cp = self.cast_scalar(state.cp)
+        self.Pr_turb = self.cast_scalar(self.conf.Pr_turb)
+
+
+        # Preallocate later
+        self.ho = self.preallocate()
+        self.P = self.preallocate()
+        self.Pref = self.cast_scalar(state.P.mean())
+        self.halfVsq = self.preallocate()
+        self.u = self.preallocate()
+        self.T = self.preallocate()
+        self.Vxrt = self.preallocate(self.shape + (3,))
+        print('beans')
+        quit()
+
+        # Intialise from geometry after data transfer
+        self.rf = [to_fort(r) for r in block.r_face]
+        self.rc = to_fort(block.r_cell)
+        Omega = block.Omega.mean()
+        self.U = to_fort(Omega * block.r)
+        self.Uf = [to_fort(Omega * r) for r in block.r_face]
+
+        # Preallocate later
+        self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
+        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
+        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=typ)
+        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=typ)
+        self.dt_vol = self.dlmin * 0.0
         self.tau = [
             to_fort(np.zeros((6, ni, nj - 1, nk - 1))),
             to_fort(np.zeros((6, ni - 1, nj, nk - 1))),
             to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
         ]
 
-        self.bconds = []
-        self.bconds += [
-            InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
-        ]
-        self.bconds += [
-            OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches
+
+        # Get wall area magnitudes
+        dAijk = [
+            np.sqrt((self.dAi**2).sum(axis=-1)),
+            np.sqrt((self.dAj**2).sum(axis=-1)),
+            np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
 
-        if isinstance(block, turbigen.grid.PerfectBlock):
-            self.state = turbigen.fluid.PerfectState(
-                shape=block.shape, order="F", typ=typ
-            )
-            self.state.gamma = typ(block.gamma)
-            self.state.cp = typ(block.cp)
-            self.state.mu = typ(block.mu)
-            self.state.set_rho_u(block.rho, block.u)
-            self.state.set_Tu0(block.Tu0)
+        self.dA_face = [
+            embsolve.get_by_ijk(dA, ijk)
+            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
+        ]
 
-        else:
-            raise NotImplementedError()
+        # Put dummy values in zero-length ijk
+        for n in range(3):
+            ijk = self.ijk_wall_face_slip[n]
+            if ijk.shape[-1] == 0:
+                ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
+                self.ijk_wall_face_slip[n] = ijkdum
+                self.dw_face[n] = to_fort(np.ones((1,)))
+                self.dA_face[n] = to_fort(np.ones((1,)))
+
+        # Get nodal smoothing scaling factors
 
         del to_fort
+
+
+    def get_data_type(self):
+        """Return configured single or double numeric data type."""
+        if self.conf.precision == 1:
+            typ = np.float32
+        else:
+            typ = np.float64
+        return typ
+
+    def get_mpi_data_type(self):
+        """Return configured single or double numeric data type for MPI."""
+        if self.conf.precision == 1:
+            typ = mpi_single
+        else:
+            typ = mpi_double
+        return typ
+
+    def cast_scalar(self, x):
+        """Convert a scalar value to block data type."""
+        return self.get_data_type()(util.asscalar(x))
+
+    def cast_array(self, x):
+        """Convert an array to Fortran type of correct precision, moving axis for 4D."""
+        if x.ndim > 3:
+            x2 = np.moveaxis(x, 0, -1)
+        else:
+            x2 = x
+        return np.asfortranarray(x2).astype(self.get_data_type())
+
+    def preallocate(self, shape=None):
+        if shape is None:
+            shape = self.shape
+        return np.asfortranarray(np.zeros(shape, dtype=self.get_data_type()))
+
+
+    def get_multigrid_indices(self):
+        """For a block of a given shape and a set of multigrid levels,
+        evaluate the indices of every fine mesh point into each of the
+        coarse grid levels.
+
+        Returns
+        -------
+        ijkmg: array (nlevels, ni, nj, nk, 3)"""
+
+        ni, nj, nk = self.shape
+        shape = (ni - 1, nj - 1, nk - 1)
+        nb = self.conf.multigrid
+        # Preallocate output array
+        ni, nj, nk = shape
+        nlev = len(nb)
+        ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
+        nbf = np.asfortranarray(nb, dtype=np.int16)
+        embsolve.multigrid_indices(ijkmg, nbf)
+        assert (ijkmg >= 0).all()
+        return ijkmg + 1
+
+    def get_multigrid_volumes(self, vol):
+        nlev = self.ijk_multigrid.shape[-1]
+        vol = self.cast_array(vol)
+        volmg = self.preallocate(vol.shape + (nlev + 1,))
+        embsolve.multigrid_volumes(volmg, vol, self.ijk_multigrid)
+        assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
+        return volmg
+
+    def get_multigrid_lengths(self, block):
+
+        nb = self.conf.multigrid
+
+        # Preallocate output array
+        ni, nj, nk = block.shape
+        ijkmg = self.ijk_multigrid - 1
+        nlev = len(nb)
+
+        dlmg = self.preallocate( ( ni - 1, nj - 1, nk - 1, nlev + 1,))
+
+        nimg = np.max(ijkmg[0, ...], axis=(0, 1, 2)) + 1
+        njmg = np.max(ijkmg[1, ...], axis=(0, 1, 2)) + 1
+        nkmg = np.max(ijkmg[2, ...], axis=(0, 1, 2)) + 1
+
+        # Finest grid level is trivial
+        dlmg[..., 0] = block.dlmin
+
+        # Loop over multigrid levels
+        for ilev in range(nlev):
+            # Number of cells along each side of this
+            # multigrid level is product of all previous
+            nbi = np.prod(nb[: ilev + 1])
+
+            # Assemble a list of ijk with correct step size
+            iimg = arange_including_end(ni, nbi)
+            jjmg = arange_including_end(nj, nbi)
+            kkmg = arange_including_end(nk, nbi)
+            data_lev = np.full((block.nprop, len(iimg), len(jjmg), len(kkmg)), np.nan)
+
+            # Loop over coarse cells
+            for i, img in enumerate(iimg):
+                for j, jmg in enumerate(jjmg):
+                    for k, kmg in enumerate(kkmg):
+                        data_lev[:, i, j, k] = block._data[:, img, jmg, kmg]
+            blk_lev = block.empty()
+            blk_lev._data = data_lev
+            assert blk_lev.dlmin.shape == (nimg[ilev], njmg[ilev], nkmg[ilev])
+            dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin
+
+        return dlmg
+
+    def get_xlength(self, block):
+        # Mixing length
+        xllim = (
+            block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
+        )
+        xlength = self.cast_array(np.clip(block.w, 0.0, xllim))
+        xlength = (0.41 * xlength) ** 2.0
+        ni, nj, nk = self.shape
+        self.xlength = self.preallocate((ni - 1, nj - 1, nk - 1))
+        embsolve.node_to_cell(xlength, self.xlength)
+
+    def get_wall_indices(self, block, ignore_slip):
+        return [
+                np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
+            for wall in block.get_wall(ignore_slip)
+        ]
+
+    def get_wall_cell_size(self, block):
+        ni, nj, nk = self.shape
+        iwall1, jwall1, kwall1 = [ijk + 0 for ijk in self.ijk_wall_face_slip]
+        iwall1[0, iwall1[0, :] == ni] -= 1
+        jwall1[1, jwall1[1, :] == nj] -= 1
+        kwall1[2, kwall1[2, :] == nk] -= 1
+        return [
+            embsolve.get_by_ijk(self.cast_array(dl), ijk)
+            for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
+        ]
 
     def set_timestep(self, CFL, relax=0.0):
         embsolve.set_timesteps(
@@ -399,6 +485,7 @@ class SolverBlock:
         )
 
     def set_secondary(self):
+        """Calculate velocity components and update thermodynamic state."""
         embsolve.secondary(self.r, self.cons, self.Vxrt, self.halfVsq, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
         self.ho[:] = self.state.h + self.halfVsq
@@ -710,6 +797,8 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
+    logger.info(f'Memory usage on rank {rank}: {get_memory_usage():.0f}MB')
+
     # Initialise a conservative time step
     for iblock in range(nblock):
         blocks[iblock].set_timestep(conf.CFL * 0.5)
@@ -967,34 +1056,6 @@ def run(grid, conf, machine=None):
     return tpnps, merr
 
 
-def get_multigrid_indices(shape, nb):
-    """For a block of a given shape and a set of multigrid levels,
-    evaluate the indices of every fine mesh point into each of the
-    coarse grid levels.
-
-    Returns
-    -------
-    ijkmg: array (nlevels, ni, nj, nk, 3)"""
-
-    # Preallocate output array
-    ni, nj, nk = shape
-    nlev = len(nb)
-    ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
-    nbf = np.asfortranarray(nb, dtype=np.int16)
-    embsolve.multigrid_indices(ijkmg, nbf)
-    assert (ijkmg >= 0).all()
-    return ijkmg
-
-
-def get_multigrid_volumes(vol, ijkmg, typ):
-    nlev = ijkmg.shape[-1]
-    volmg = np.asfortranarray(np.zeros(vol.shape + (nlev + 1,), dtype=typ))
-    embsolve.multigrid_volumes(volmg, vol, ijkmg)
-
-    assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
-
-    return volmg
-
 
 def arange_including_end(ni, di):
     ii = np.arange(0, ni, di)
@@ -1004,55 +1065,6 @@ def arange_including_end(ni, di):
     assert np.allclose(np.diff(ii[:-1]), di)
     return ii
 
-
-def get_multigrid_lengths(block, nb, typ):
-    # Preallocate output array
-    ni, nj, nk = block.shape
-    ijkmg = get_multigrid_indices((ni - 1, nj - 1, nk - 1), nb)
-    nlev = len(nb)
-
-    dlmg = np.asfortranarray(
-        np.zeros(
-            (
-                ni - 1,
-                nj - 1,
-                nk - 1,
-                nlev + 1,
-            ),
-            dtype=typ,
-        )
-    )
-
-    nimg = np.max(ijkmg[0, ...], axis=(0, 1, 2)) + 1
-    njmg = np.max(ijkmg[1, ...], axis=(0, 1, 2)) + 1
-    nkmg = np.max(ijkmg[2, ...], axis=(0, 1, 2)) + 1
-
-    # Finest grid level is trivial
-    dlmg[..., 0] = block.dlmin_new
-
-    # Loop over multigrid levels
-    for ilev in range(nlev):
-        # Number of cells along each side of this
-        # multigrid level is product of all previous
-        nbi = np.prod(nb[: ilev + 1])
-
-        # Assemble a list of ijk with correct step size
-        iimg = arange_including_end(ni, nbi)
-        jjmg = arange_including_end(nj, nbi)
-        kkmg = arange_including_end(nk, nbi)
-        data_lev = np.full((block.nprop, len(iimg), len(jjmg), len(kkmg)), np.nan)
-
-        # Loop over coarse cells
-        for i, img in enumerate(iimg):
-            for j, jmg in enumerate(jjmg):
-                for k, kmg in enumerate(kkmg):
-                    data_lev[:, i, j, k] = block._data[:, img, jmg, kmg]
-        blk_lev = block.empty()
-        blk_lev._data = data_lev
-        assert blk_lev.dlmin.shape == (nimg[ilev], njmg[ilev], nkmg[ilev])
-        dlmg[: nimg[ilev], : njmg[ilev], : nkmg[ilev], ilev + 1] = blk_lev.dlmin_new
-
-    return dlmg
 
 
 class Boundary:

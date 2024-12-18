@@ -1420,3 +1420,9 @@ def node_to_face2(x):
             x[1:, :-1],
         )
     ).mean(axis=0)
+
+def asscalar(x):
+    try:
+        return x.item()
+    except:
+        raise NotImplementedError()

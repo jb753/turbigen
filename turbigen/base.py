@@ -397,74 +397,6 @@ class Kinematics:
         return self.r * np.cos(self.t)
 
     @dependent_property
-    def vol(self):
-        if not self.ndim == 3:
-            raise Exception("Cell volume is only defined for 3D grids")
-
-        # Put coord components on last dimension for numpy cross
-        v = np.moveaxis(self.xyz, 0, -1)
-
-        # Extract vertices A to H
-        A = v[:-1, 1:, :-1, :]  # i j+1 k
-        B = v[1:, 1:, :-1, :]  # i+1 j+1 k
-        C = v[1:, 1:, 1:, :]  # i+1 j+1 k+1
-        D = v[:-1, 1:, 1:, :]  # i j+1 k+1
-        E = v[:-1, :-1, :-1, :]  # i j k
-        F = v[1:, :-1, :-1, :]  # i+1 j k
-        G = v[1:, :-1, 1:, :]  # i+1 j k+1
-        H = v[:-1, :-1, 1:, :]  # i j k+1
-
-        # Evaluate side vectors
-        GA = A - G
-        DB = B - D
-        AC = C - A
-        BE = E - B
-        AF = F - A
-        ED = D - E
-        AH = H - A
-        GB = B - G
-        GC = C - G
-        FC = C - F
-        GE = E - G
-        GF = F - G
-        HF = F - H
-        GD = D - G
-        GH = H - G
-        CH = H - C
-
-        # For brevity
-        def dot(a, b):
-            # Dot product of [ni,nj,nk,3] along last axis
-            return np.sum(a * b, axis=-1)
-
-        cross = np.cross
-
-        # Evaluate volume terms
-        # Eqn. (14) Davies and Salmond (1985)
-        V1 = dot(GA, cross(DB, AC) + cross(BE, AF) + cross(ED, AH))
-        V2 = dot(GB, cross(DB, AC) + cross(GC, FC))
-        V3 = dot(GE, cross(BE, AF) + cross(GF, HF))
-        V4 = dot(GD, cross(ED, AH) + cross(GH, CH))
-        vol = (V1 + V2 + V3 + V4) / 12.0
-
-        return vol
-
-        # dli = np.moveaxis(self.dli[:, :, :-1, :-1], 0, -1)
-        # dlj = np.moveaxis(self.dlj[:, :-1, :, :-1], 0, -1)
-        # dlk = np.moveaxis(self.dlk[:, :-1, :-1, :], 0, -1)
-        # return np.sum(dlk * np.cross(dli, dlj),axis=-1)
-
-        # # Numpy cross function assumes that the components are in last axis
-        # xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
-
-        # # Vectors for cell sides
-        # qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
-        # qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
-        # qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
-
-        # return np.sum(qk * np.cross(qi, qj), axis=-1)
-
-    @dependent_property
     def Vxrt_rel(self):
         return np.stack((self.Vx, self.Vr, self.Vt_rel))
 
@@ -610,15 +542,15 @@ class Kinematics:
         return np.diff(self.xyz, axis=3)
 
     @dependent_property
-    def dlmin_new(self):
+    def dlmin(self):
         # Get face area magnitudes
-        dAi = turbigen.util.vecnorm(self.dAi_new)
-        dAj = turbigen.util.vecnorm(self.dAj_new)
-        dAk = turbigen.util.vecnorm(self.dAk_new)
+        dAi = turbigen.util.vecnorm(self.dAi)
+        dAj = turbigen.util.vecnorm(self.dAj)
+        dAk = turbigen.util.vecnorm(self.dAk)
 
         # For each volume, take the minimum of the bounding length
         # scales for every coordinate direction
-        vol = self.vol_new
+        vol = self.vol
         dli = np.minimum(vol / dAi[1:, :, :], vol / dAi[:-1, :, :])
         dlj = np.minimum(vol / dAj[:, 1:, :], vol / dAj[:, :-1, :])
         dlk = np.minimum(vol / dAk[:, :, 1:], vol / dAk[:, :, :-1])
@@ -628,152 +560,6 @@ class Kinematics:
         dlmin = np.minimum(dlmin, dlk)
 
         return dlmin
-
-    @dependent_property
-    def dlmin(self):
-        # Shortest side length
-
-        # Vectors along all cell edges
-        dli = turbigen.util.vecnorm(self.dli)
-        dlj = turbigen.util.vecnorm(self.dlj)
-        dlk = turbigen.util.vecnorm(self.dlk)
-
-        # Shortest side length on i-faces
-        dli = np.min(
-            np.stack(
-                (dli[:, :-1, :-1], dli[:, :-1, 1:], dli[:, 1:, :-1], dli[:, :-1, :-1])
-            ),
-            axis=0,
-        )
-
-        # Shortest side length on j-faces
-        dlj = np.min(
-            np.stack(
-                (dlj[:-1, :, :-1], dlj[:-1, :, 1:], dlj[1:, :, :-1], dlj[:-1, :, :-1])
-            ),
-            axis=0,
-        )
-
-        # Shortest side length on k-faces
-        dlk = np.min(
-            np.stack(
-                (dlk[:-1, :-1, :], dlk[:-1, 1:, :], dlk[1:, :-1, :], dlk[:-1, :-1, :])
-            ),
-            axis=0,
-        )
-
-        # Shortest side length for each volume
-        dlmin = np.minimum(dli, dlj)
-        dlmin = np.minimum(dlmin, dlk)
-        return dlmin
-
-    @dependent_property
-    def dAi(self):
-        # Vector area for i=const faces
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # # Numpy cross function assumes that the components are in last axis
-        # dlif = np.moveaxis(self.dlif, 0, -1)
-        # dlib = np.moveaxis(self.dlib, 0, -1)
-        # dAi = -np.moveaxis(np.cross(dlif, dlib), -1, 0) * 0.5
-
-        # Define the four vertices OBAC
-        #    B      A
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    O      C
-        #      j>
-
-        O = self.xrt[:, :, :-1, :-1]
-        A = self.xrt[:, :, 1:, 1:]
-        B = self.xrt[:, :, :-1, 1:]
-        C = self.xrt[:, :, 1:, :-1]
-
-        # Form three vectors AO, BO, CO
-        AO = A - O
-        AO[2] *= A[1]  # Theta reference radius at A
-        BO = B - O
-        BO[2] *= B[1]  # Theta reference radius at B
-        CO = C - O
-        CO[2] *= C[1]  # Theta reference radius at C
-
-        return 0.5 * np.cross(AO, BO - CO, axis=0)
-
-    @dependent_property
-    def dAj(self):
-        # Vector area for i=const faces
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # # Numpy cross function assumes that the components are in last axis
-        # dljf = np.moveaxis(self.dljf, 0, -1)
-        # dljb = np.moveaxis(self.dljb, 0, -1)
-        # dAj = np.moveaxis(np.cross(dljf, dljb), -1, 0) * 0.5
-
-        # Define the four vertices OBAC
-        #    B      A
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    O      C
-        #      i>
-
-        O = self.xrt[:, :-1, :, :-1]
-        A = self.xrt[:, 1:, :, 1:]
-        B = self.xrt[:, :-1, :, 1:]
-        C = self.xrt[:, 1:, :, :-1]
-
-        # Form three vectors AO, BO, CO
-        AO = A - O
-        AO[2] *= A[1]  # Theta reference radius at A
-        BO = B - O
-        BO[2] *= B[1]  # Theta reference radius at B
-        CO = C - O
-        CO[2] *= C[1]  # Theta reference radius at C
-
-        return -0.5 * np.cross(AO, BO - CO, axis=0)
-
-    @dependent_property
-    def dAk(self):
-        # Vector area for i=const faces
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define the four vertices OBAC
-        #    B      A
-        #     *----*
-        #  ^  |    |
-        #  j  *----*
-        #    O      C
-        #      i>
-
-        xyz = self.xyz
-        O = xyz[:, :-1, :-1, :]
-        A = xyz[:, 1:, 1:, :]
-        B = xyz[:, :-1, 1:, :]
-        C = xyz[:, 1:, :-1, :]
-
-        # O = self.xrt[:, :-1, :-1, :]
-        # A = self.xrt[:, 1:, 1:, :]
-        # B = self.xrt[:, :-1, 1:, :]
-        # C = self.xrt[:, 1:, :-1, :]
-
-        # Form three vectors AO, BO, CO
-        AO = A - O
-        BC = B - C
-        dAk = -0.5 * np.cross(AO, BC, axis=0)
-
-        # convert to polar
-        _, _, tk = self.t_face
-        cost = np.cos(tk)
-        sint = np.sin(tk)
-        dAkx, dAky, dAkz = dAk
-        dAkr = -dAky * sint - dAkz * cost
-        dAkt = dAky * cost - dAkz * sint
-
-        return np.stack((dAkx, dAkr, dAkt))
 
     @dependent_property
     def r_face(self):
@@ -796,7 +582,7 @@ class Kinematics:
         return turbigen.util.node_to_face3(self.x)
 
     @dependent_property
-    def dAi_new(self):
+    def dAi(self):
         # Vector area for i=const faces, Gauss' theorem method
         if self.ndim < 3:
             raise Exception("Face area is only defined for 3D grids")
@@ -821,31 +607,7 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
-    def dAi_cr(self):
-        # Vector area for i=const faces, Gauss' theorem method
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      j>
-        #
-        v = self.xyz
-        A = v[:, :, :-1, :-1]
-        B = v[:, :, :-1, 1:]
-        C = v[:, :, 1:, 1:]
-        D = v[:, :, 1:, :-1]
-
-        dA = util.dA_Gauss(A, B, C, D)
-        t = self.t_face[0]
-        return util.cart_to_pol(dA, t)
-
-    @dependent_property
-    def dAj_new(self):
+    def dAj(self):
         # Vector area for j=const faces, Gauss' theorem method
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
@@ -867,31 +629,7 @@ class Kinematics:
         return -util.dA_Gauss(A, B, C, D)
 
     @dependent_property
-    def dAj_cr(self):
-        # Vector area for j=const faces, Gauss' theorem method
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      i>
-        #
-        v = self.xyz
-        A = v[:, :-1, :, :-1]
-        B = v[:, :-1, :, 1:]
-        C = v[:, 1:, :, 1:]
-        D = v[:, 1:, :, :-1]
-
-        dA = util.dA_Gauss(A, B, C, D)
-        t = self.t_face[1]
-        return util.cart_to_pol(dA, t)
-
-    @dependent_property
-    def dAk_new(self):
+    def dAk(self):
         # Vector area for k=const faces, Gauss' theorem method
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
@@ -913,31 +651,7 @@ class Kinematics:
         return util.dA_Gauss(A, B, C, D)
 
     @dependent_property
-    def dAk_cr(self):
-        # Vector area for k=const faces, Gauss' theorem method
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      i>
-        #
-        v = self.xyz
-        A = v[:, :-1, :-1, :]
-        B = v[:, :-1, 1:, :]
-        C = v[:, 1:, 1:, :]
-        D = v[:, 1:, :-1, :]
-
-        dA = util.dA_Gauss(A, B, C, D)
-        t = self.t_face[2]
-        return util.cart_to_pol(dA, t)
-
-    @dependent_property
-    def vol_new(self):
+    def vol(self):
         # Volume
         if not self.ndim == 3:
             raise Exception("Face area is only defined for 3D grids")
@@ -949,9 +663,9 @@ class Kinematics:
         Fi = np.stack((xi, ri / 2.0, rti))
         Fj = np.stack((xj, rj / 2.0, rtj))
         Fk = np.stack((xk, rk / 2.0, rtk))
-        dAi = self.dAi_new
-        dAj = self.dAj_new
-        dAk = self.dAk_new
+        dAi = self.dAi
+        dAj = self.dAj
+        dAk = self.dAk
 
         # Volume by Gauss' theorem
         Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
@@ -1360,7 +1074,7 @@ class Composites:
 
     def Ai_average(self):
 
-        dA = np.expand_dims(util.vecnorm(self.dAi_new), 0)
+        dA = np.expand_dims(util.vecnorm(self.dAi), 0)
         if self.ndim > 3:
             dA = np.expand_dims(dA, -1)
             conserved = np.moveaxis(
