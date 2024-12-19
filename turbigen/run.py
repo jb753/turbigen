@@ -151,6 +151,14 @@ def run_single(conf, gguess=None):
                 f" {v}={conf.mean_line[v]}"
             )
 
+    # Warn for very high flow angles
+    if np.abs(ml.Alpha_rel).max() > 85.0:
+        logger.warning(
+            """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+        )
+
     # Make a working directory
     workdir = conf.workdir
     if not os.path.exists(workdir):
