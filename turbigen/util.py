@@ -1421,8 +1421,12 @@ def node_to_face2(x):
         )
     ).mean(axis=0)
 
+
 def asscalar(x):
-    try:
+    if isinstance(x, np.ndarray):
         return x.item()
-    except:
+    elif isinstance(x, (np.float32, np.float64, float)):
+        return x
+    else:
+        print(type(x))
         raise NotImplementedError()

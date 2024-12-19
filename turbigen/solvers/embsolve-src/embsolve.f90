@@ -29,8 +29,8 @@ contains
     !       d(cons) = resid * dt / vol = (flux_net/vol + source) * dt
     !
     subroutine residual(&
-        cons, Vxrt, P, Pref, ho, fb, &              ! Flow properties and body force
-        U, Ui, Uj, Uk, &                              ! Reference frame angular velocity
+        cons, Vxrt, P, Pref, h, fb, &              ! Flow properties and body force
+        Omega, &                              ! Reference frame angular velocity
         r, ri, rj, rk, &                      ! Node and face-centered radii
         dAi, dAj, dAk, vol, dt_vol, &             ! Cell areas, volumes, time step
         ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
@@ -51,17 +51,13 @@ contains
         real, intent (inout) :: cons(ni, nj, nk, 5)
         real, intent (in) :: Vxrt(ni, nj, nk, 3)
         real, intent (in) :: P   (ni, nj, nk)
-        real, intent (in) :: ho  (ni, nj, nk)
+        real, intent (in) :: h  (ni, nj, nk)
         ! Cell body force per unit volume (and potential mass/energy sources)
         real, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
 
         ! Reference frame angular velocity
         real, intent (in)  :: Pref
-
-        real, intent(in) :: U( ni, nj, nk)
-        real, intent(in) :: Ui( ni, nj-1, nk-1)
-        real, intent(in) :: Uj( ni-1, nj, nk-1)
-        real, intent(in) :: Uk( ni-1, nj-1, nk)
+        real, intent (in)  :: Omega
 
         ! Radii at nodes and face centers
         real, intent(in) :: r( ni, nj, nk)
@@ -120,6 +116,9 @@ contains
         real :: fsum(ni-1, nj-1, nk-1, 5)
 
         real :: Pm (ni, nj, nk)
+        real :: ho (ni, nj, nk)
+
+        ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
 
 
         ! End of working variable declarations
@@ -129,7 +128,7 @@ contains
         ! Calculate the convective fluxes
         call set_fluxes( &
             cons, Vxrt, Pm, ho, &              ! Flow properties and body force
-            U, Ui, Uj, Uk, &                      ! Reference frame angular velocity
+            Omega, &                      ! Reference frame angular velocity
             r, ri, rj, rk, &                      ! Node and face-centered radii
             ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
             fluxi, fluxj, fluxk, &                ! Fluxes out
@@ -214,7 +213,7 @@ contains
 
     end subroutine
 
-    subroutine secondary(r, cons, Vxrt, halfVsq, u, ni, nj, nk)
+    subroutine secondary(r, cons, Vxrt, u, ni, nj, nk)
 
         implicit none
 
@@ -224,7 +223,7 @@ contains
 
         real, intent (inout)  :: cons(ni, nj, nk, 5)
         real, intent (inout)  :: Vxrt(ni, nj, nk, 3)
-        real, intent (inout)  :: halfVsq(ni, nj, nk)
+        real :: halfVsq(ni, nj, nk)
         real, intent (inout)  :: u(ni, nj, nk)
         real, intent (inout)  :: r(ni, nj, nk)
 

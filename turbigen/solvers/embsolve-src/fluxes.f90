@@ -2,7 +2,7 @@
 
 subroutine set_fluxes( &
     cons, Vxrt, P, ho, &                  ! Flow properties
-    U, Ui, Uj, Uk, &                              ! Reference frame angular velocity
+    Omega, &                              ! Reference frame angular velocity
     r, ri, rj, rk, &                      ! Node and face-centered radii
     ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
     fluxi, fluxj, fluxk, &                ! Fluxes out
@@ -17,10 +17,12 @@ subroutine set_fluxes( &
     real, intent (in) :: ho  (ni, nj, nk)
 
     ! Reference frame angular velocity
-    real, intent (in) :: U(ni, nj, nk)
-    real, intent(in) :: Ui( ni, nj-1, nk-1)
-    real, intent(in) :: Uj( ni-1, nj, nk-1)
-    real, intent(in) :: Uk( ni-1, nj-1, nk)
+    real, intent (in) :: Omega
+
+    ! real, intent (in) :: U(ni, nj, nk)
+    ! real, intent(in) :: Ui( ni, nj-1, nk-1)
+    ! real, intent(in) :: Uj( ni-1, nj, nk-1)
+    ! real, intent(in) :: Uk( ni-1, nj-1, nk)
 
     ! Radii at nodes and face centers
     real, intent(in) :: r( ni, nj, nk)
@@ -73,7 +75,7 @@ subroutine set_fluxes( &
 
     ! Extract the quantities we will need to get fluxes
     rhoV = cons(:, :, :, 2:4)
-    rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - U)
+    rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
 
     !$omp parallel
 
@@ -117,14 +119,14 @@ subroutine set_fluxes( &
         end do
     end do
     ! Add pressure fluxes
-    call add_pressure_fluxes(fluxi, Pi, ri, Ui, ni, nj-1, nk-1)
-    call add_pressure_fluxes(fluxj, Pj, rj, Uj, ni-1, nj, nk-1)
-    call add_pressure_fluxes(fluxk, Pk, rk, Uk, ni-1, nj-1, nk)
+    call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
+    call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)
+    call add_pressure_fluxes(fluxk, Pk, rk, Omega, ni-1, nj-1, nk)
     !$omp end parallel
 
 end subroutine
 
-subroutine add_pressure_fluxes(flux, P, r, U, ni, nj, nk)
+subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
 
     implicit none
 
@@ -132,7 +134,7 @@ subroutine add_pressure_fluxes(flux, P, r, U, ni, nj, nk)
     integer, intent (in)  :: nj
     integer, intent (in)  :: nk
     real, intent (in)  :: r(ni, nj, nk)
-    real, intent (in)  :: U(ni, nj, nk)
+    real, intent (in)  :: Omega
     real, intent (out) :: flux(ni, nj, nk, 3, 5)
     real, intent (in)  :: P(ni, nj, nk)
 
@@ -145,7 +147,7 @@ subroutine add_pressure_fluxes(flux, P, r, U, ni, nj, nk)
     ! rt-mom in t-dirn
     flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
     ! ho in t-dirn
-    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + U*P
+    flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + r*Omega*P
     !$omp end workshare
 
 

@@ -36,12 +36,14 @@ except ImportError:
     mpi_single = None
     mpi_double = None
 
+
 def get_memory_usage():
 
-    with open('/proc/self/status') as f:
-        mem = f.read().split('VmRSS:')[1].split('\n')[0][:-3].strip()
+    with open("/proc/self/status") as f:
+        mem = f.read().split("VmRSS:")[1].split("\n")[0][:-3].strip()
 
-    return float(mem)/1000.
+    return float(mem) / 1000.0
+
 
 @dataclass
 class Config(BaseSolver):
@@ -121,18 +123,20 @@ class SolverBlock:
     def __init__(self, block, conf):
         """Initialise from a standard Block object."""
 
-
         # Config settings
         self.conf = conf
         self.shape = tuple(block.shape)
+        self.shape_cell = tuple([i - 1 for i in block.shape])
 
         # Data types
         typ = self.get_data_type()
+
         def to_fort(x):
             return to_fort_type(x, typ)
 
         # Block-level scalars
-        self.Omega = self.cast_scalar(block.Omega.mean())
+        Omega = block.Omega.mean()
+        self.Omega = self.cast_scalar(Omega)
 
         # Primaries
         self.cons = self.cast_array(block.conserved)
@@ -156,7 +160,7 @@ class SolverBlock:
         # These are ijk (3, n) for each of ifaces, jfaces, kfaces, nodes
         # Including slip walls for enforcing no-flow condition
         *self.ijk_wall_face, self.ijk_wall_node = self.get_wall_indices(
-                block, ignore_slip=False
+            block, ignore_slip=False
         )
         # Excluding slip walls for wall functions
         *self.ijk_wall_face_slip, _ = self.get_wall_indices(block, ignore_slip=True)
@@ -165,11 +169,9 @@ class SolverBlock:
         self.dw_face = self.get_wall_cell_size(block)
 
         # Store boundary conditions
-        self.bconds = (
-                [ InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches ]
-                + [
-            OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches
-        ])
+        self.bconds = [
+            InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
+        ] + [OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches]
 
         # Initialise the state object for this block
         # With the correct data type
@@ -217,7 +219,7 @@ class SolverBlock:
         ).mean(axis=0)
 
         # Smoothing scale factors in each volume
-        Lref = block.vol** (1 / 3)
+        Lref = block.vol ** (1 / 3)
         L = self.cast_array(
             np.stack(
                 (
@@ -238,72 +240,43 @@ class SolverBlock:
         # Disable scaling
         # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
 
+        self.rf = [self.cast_array(r) for r in block.r_face]
+        self.rc = self.cast_array(block.r_cell)
+
         #
         # Don't need block after this
         #
 
+    def setup_temporary(self):
+
         # Can initialise these from the state object after data transfer
-        self.mu = self.cast_scalar(state.mu)
-        self.cp = self.cast_scalar(state.cp)
+        self.mu = self.cast_scalar(self.state.mu)
+        self.cp = self.cast_scalar(self.state.cp)
         self.Pr_turb = self.cast_scalar(self.conf.Pr_turb)
-
-
-        # Preallocate later
-        self.ho = self.preallocate()
-        self.P = self.preallocate()
-        self.Pref = self.cast_scalar(state.P.mean())
-        self.halfVsq = self.preallocate()
-        self.u = self.preallocate()
-        self.T = self.preallocate()
-        self.Vxrt = self.preallocate(self.shape + (3,))
-        print('beans')
-        quit()
+        self.Pref = self.cast_scalar(self.state.P.mean())
 
         # Intialise from geometry after data transfer
-        self.rf = [to_fort(r) for r in block.r_face]
-        self.rc = to_fort(block.r_cell)
-        Omega = block.Omega.mean()
-        self.U = to_fort(Omega * block.r)
-        self.Uf = [to_fort(Omega * r) for r in block.r_face]
+        self.dA_wall_face = self.get_wall_area_magnitude()
+        self.set_dummy_ijk()
 
-        # Preallocate later
-        self.cons_avg = self.cons.copy(order="F").astype(np.double) * 0.0
-        self.fb = np.zeros((ni - 1, nj - 1, nk - 1, 5), order="F", dtype=typ)
-        self.dUc = np.zeros((ni - 1, nj - 1, nk - 1, 5, 2), order="F", dtype=typ)
-        self.dUn = np.zeros((ni, nj, nk, 5), order="F", dtype=typ)
+        # Preallocate
+        self.u = self.preallocate()
+        self.Vxrt = self.preallocate(self.shape + (3,))
+        self.cons_avg = self.preallocate(self.shape + (5,))
+        self.fb = self.preallocate(self.shape_cell + (5,))
+        self.dUc = self.preallocate(self.shape_cell + (5, 2))
+        self.dUn = self.preallocate(self.shape + (5,))
         self.dt_vol = self.dlmin * 0.0
-        self.tau = [
-            to_fort(np.zeros((6, ni, nj - 1, nk - 1))),
-            to_fort(np.zeros((6, ni - 1, nj, nk - 1))),
-            to_fort(np.zeros((6, ni - 1, nj - 1, nk))),
-        ]
 
-
-        # Get wall area magnitudes
-        dAijk = [
-            np.sqrt((self.dAi**2).sum(axis=-1)),
-            np.sqrt((self.dAj**2).sum(axis=-1)),
-            np.sqrt((self.dAk**2).sum(axis=-1)),
-        ]
-
-        self.dA_face = [
-            embsolve.get_by_ijk(dA, ijk)
-            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
-        ]
-
-        # Put dummy values in zero-length ijk
+    def set_dummy_ijk(self):
+        """Where the lists of wall faces have zero length, set sentinel values."""
         for n in range(3):
             ijk = self.ijk_wall_face_slip[n]
             if ijk.shape[-1] == 0:
                 ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
                 self.ijk_wall_face_slip[n] = ijkdum
-                self.dw_face[n] = to_fort(np.ones((1,)))
-                self.dA_face[n] = to_fort(np.ones((1,)))
-
-        # Get nodal smoothing scaling factors
-
-        del to_fort
-
+                self.dw_face[n] = self.cast_array(np.ones((1,)))
+                self.dA_face[n] = self.cast_array(np.ones((1,)))
 
     def get_data_type(self):
         """Return configured single or double numeric data type."""
@@ -337,7 +310,6 @@ class SolverBlock:
         if shape is None:
             shape = self.shape
         return np.asfortranarray(np.zeros(shape, dtype=self.get_data_type()))
-
 
     def get_multigrid_indices(self):
         """For a block of a given shape and a set of multigrid levels,
@@ -377,7 +349,14 @@ class SolverBlock:
         ijkmg = self.ijk_multigrid - 1
         nlev = len(nb)
 
-        dlmg = self.preallocate( ( ni - 1, nj - 1, nk - 1, nlev + 1,))
+        dlmg = self.preallocate(
+            (
+                ni - 1,
+                nj - 1,
+                nk - 1,
+                nlev + 1,
+            )
+        )
 
         nimg = np.max(ijkmg[0, ...], axis=(0, 1, 2)) + 1
         njmg = np.max(ijkmg[1, ...], axis=(0, 1, 2)) + 1
@@ -411,19 +390,22 @@ class SolverBlock:
         return dlmg
 
     def get_xlength(self, block):
-        # Mixing length
+        # Mixing length limit
         xllim = (
             block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
         )
+        # Nodal xlength
         xlength = self.cast_array(np.clip(block.w, 0.0, xllim))
+        # Times von Karman and squared
         xlength = (0.41 * xlength) ** 2.0
-        ni, nj, nk = self.shape
-        self.xlength = self.preallocate((ni - 1, nj - 1, nk - 1))
-        embsolve.node_to_cell(xlength, self.xlength)
+        # Distribute to cellss
+        xlength_cell = self.preallocate(self.shape_cell)
+        embsolve.node_to_cell(xlength, xlength_cell)
+        return xlength_cell
 
     def get_wall_indices(self, block, ignore_slip):
         return [
-                np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
+            np.asfortranarray(np.argwhere(wall).T + 1).astype(np.int16)
             for wall in block.get_wall(ignore_slip)
         ]
 
@@ -438,13 +420,24 @@ class SolverBlock:
             for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
 
+    def get_wall_area_magnitude(self):
+        dAijk = [
+            np.sqrt((self.dAi**2).sum(axis=-1)),
+            np.sqrt((self.dAj**2).sum(axis=-1)),
+            np.sqrt((self.dAk**2).sum(axis=-1)),
+        ]
+        self.dA_face = [
+            embsolve.get_by_ijk(dA, ijk)
+            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
+        ]
+
     def set_timestep(self, CFL, relax=0.0):
         embsolve.set_timesteps(
             self.dt_vol,
             self.vol,
             self.state.a,
             self.Vxrt,
-            self.U,
+            self.Omega * self.r,
             self.dlmin,
             self.ijk_multigrid,
             CFL,
@@ -454,12 +447,11 @@ class SolverBlock:
         embsolve.residual(
             self.cons,
             self.Vxrt,
-            self.P,  # Only pressure differences matter
+            self.state.P,
             self.Pref,
-            self.ho,
+            self.state.h,
             self.fb,
-            self.U,
-            *self.Uf,
+            self.Omega,
             self.r,
             *self.rf,
             self.dAi,
@@ -486,40 +478,51 @@ class SolverBlock:
 
     def set_secondary(self):
         """Calculate velocity components and update thermodynamic state."""
-        embsolve.secondary(self.r, self.cons, self.Vxrt, self.halfVsq, self.u)
+        embsolve.secondary(self.r, self.cons, self.Vxrt, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
-        self.ho[:] = self.state.h + self.halfVsq
-        self.P[:] = self.state.P
-        self.T[:] = self.state.T
 
     def smooth(self, sf2, sf4, sf2min):
-        embsolve.smooth(self.cons, self.P, self.L, sf4, sf2, sf2min)
+        embsolve.smooth(self.cons, self.state.P, self.L, sf4, sf2, sf2min)
 
     def damp(self, fdamp):
         embsolve.damp(self.dU1, fdamp)
 
     def set_viscous_stress(self):
-        embsolve.shear_stress(
-            self.cons,
-            self.Vxrt,
-            self.T,
-            self.mu,
-            self.cp,
-            self.Pr_turb,
-            self.xlength,
-            self.vol[..., 0],
-            self.dAi,
-            self.dAj,
-            self.dAk,
-            self.Omega,
-            self.r,
-            self.rc,
-            *self.rf,
-            *self.ijk_wall_face_slip,
-            *self.dw_face,
-            *self.dA_face,
-            self.fb,
-        )
+
+        # Assemble args in a dictionary and send as keywords
+        # so we don't need to be careful with order
+        # note keys must be all lower case
+        kwargs = {
+            "cons": self.cons,
+            "v": self.Vxrt,
+            "t": self.state.T,
+            "mu": self.mu,
+            "cp": self.cp,
+            "pr_turb": self.Pr_turb,
+            "xlength": self.xlength,
+            "vol": self.vol[..., 0],  # Only fine grid volumes
+            "dai": self.dAi,
+            "daj": self.dAj,
+            "dak": self.dAk,
+            "omega": self.Omega,
+            "r": self.r,
+            "rc": self.rc,
+            "ri": self.rf[0],
+            "rj": self.rf[1],
+            "rk": self.rf[2],
+            "ijk_iwall": self.ijk_wall_face_slip[0],
+            "ijk_jwall": self.ijk_wall_face_slip[1],
+            "ijk_kwall": self.ijk_wall_face_slip[2],
+            "dw_iwall": self.dw_face[0],
+            "dw_jwall": self.dw_face[1],
+            "dw_kwall": self.dw_face[2],
+            "da_iwall": self.dA_face[0],
+            "da_jwall": self.dA_face[1],
+            "da_kwall": self.dA_face[2],
+            "fvisc": self.fb,
+        }
+
+        embsolve.shear_stress(**kwargs)
 
 
 class Periodic:
@@ -797,7 +800,15 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
-    logger.info(f'Memory usage on rank {rank}: {get_memory_usage():.0f}MB')
+    logger.info(f"Memory usage on rank {rank}: {get_memory_usage():.0f}MB")
+
+    # Allocate working vars
+    for iblock in range(nblock):
+        blocks[iblock].setup_temporary()
+
+    logger.info(
+        f"After allocation Memory usage on rank {rank}: {get_memory_usage():.0f}MB"
+    )
 
     # Initialise a conservative time step
     for iblock in range(nblock):
@@ -928,6 +939,11 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
 
 def run(grid, conf, machine=None):
+
+    logger.info(
+        f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
+    )
+
     if isinstance(conf, dict):
         conf = Config(**conf)
 
@@ -1056,7 +1072,6 @@ def run(grid, conf, machine=None):
     return tpnps, merr
 
 
-
 def arange_including_end(ni, di):
     ii = np.arange(0, ni, di)
     if not (ii[-1] == (ni - 1)):
@@ -1064,7 +1079,6 @@ def arange_including_end(ni, di):
     assert ii[-1] == (ni - 1)
     assert np.allclose(np.diff(ii[:-1]), di)
     return ii
-
 
 
 class Boundary:
