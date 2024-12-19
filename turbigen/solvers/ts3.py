@@ -108,6 +108,7 @@ class Config(BaseSolver):
     nstep_save_start_probe: int = 0
     xllim_free: float = 0.1
     free_turb: float = 0.05
+    turbvis_lim: float = 3000.
 
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
