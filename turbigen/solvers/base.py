@@ -40,8 +40,8 @@ class ConvergenceHistory:
         Parameters
         ----------
         istep: (nlog,) array
-        mdot: (2, nlog) array
-            Inlet and outlet mass flow rates.
+        mdot: (2 + nmix, nlog) array
+            Inlet and outlet mass flow rates, plus any mixing planes.
         ho: (2, nlog) array
             Inlet and outlet stagnation enthalpies.
         Po: (2, nlog) array

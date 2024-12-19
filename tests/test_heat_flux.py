@@ -189,7 +189,6 @@ settings = {
     "n_step_avg": 500,
     "nstep_damp": -1,
     "xllim_pitch": 10.0,
-    "plot_conv": True,
 }
 conf = turbigen.solvers.embsolve.Config(**settings)
 

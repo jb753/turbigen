@@ -18,7 +18,6 @@ from turbigen import (
     grid,
     util,
     geometry,
-    slurm,
     hmesh,
     ohmesh,
 )
@@ -178,7 +177,6 @@ and will cause problems with meshing and solving for the flow field."""
     annulus_type = conf.annulus.pop("type", "Smooth")
     logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
-    annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
 
     conf.annulus["type"] = annulus_type

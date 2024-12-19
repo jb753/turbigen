@@ -24,5 +24,5 @@ def post(grid, machine, meanline, _, postdir, spf, nstream=201):
     mlim = (0.0, machine.ann.npts - 1)
     m = np.linspace(*mlim, nstream)
     xr = np.stack([machine.ann.evaluate_xr(m, spfi) for spfi in spf])
-    fname = os.path.join(postdir, f"annulus_xr")
+    fname = os.path.join(postdir, "annulus_xr")
     np.savez(fname, xr=xr)

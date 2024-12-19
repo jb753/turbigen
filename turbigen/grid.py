@@ -1,7 +1,6 @@
 """A general multiblock structured grid class."""
 
 import numpy as np
-import os
 from turbigen import util
 import turbigen.yaml
 import turbigen.fluid
@@ -562,7 +561,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 ).squeeze()
 
         # Extract these points from the block
-        data_out = np.zeros((self.nprop,) + nijk_new)
         mask = np.zeros((3,) + self.shape, dtype=bool)
         mask[0, ijk_new[0], :, :] = True
         mask[1, :, ijk_new[1], :] = True
@@ -1743,64 +1741,6 @@ def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
                     return True
 
     return False
-
-
-def from_mesh2d(blocks_in, conn, dmax, Nb=None, pitch=None, labels=None, mode="xr"):
-    """Extrude a set of 2D blocks and patch them toghether."""
-
-    if labels is None:
-        labels = [b.label for b in blocks_in]
-
-    # Flattend the connections list
-    conn = sum(conn, ())
-
-    if mode == "xr":
-        # Extrude in theta direction
-
-        # Get mean radius
-        rmin = np.min([b.y.min() for b in blocks_in])
-        rmax = np.max([b.y.max() for b in blocks_in])
-        rmean = 0.5 * (rmin + rmax)
-
-        # Theta semi-interval
-        Dt = np.pi / Nb
-        # Required number of points
-        nk = np.round(2.0 * Dt * rmean / dmax).astype(int)
-        # Theta vector
-        zv = np.linspace(-Dt, Dt, nk)
-
-    elif mode == "xrt":
-        # Extrude in radial dirn
-        nk = 9
-        htr = 0.99
-        Dr = (nk - 1) * dmax
-        rm = Dr / 2.0 / (1 - htr) * (1 + htr)
-        Nb = np.round(2.0 * np.pi * rm / pitch).astype(int)
-        zv = np.linspace(rm - Dr / 2.0, rm + Dr / 2.0, nk)
-
-    blocks_out = []
-    for b_in, l_in in zip(blocks_in, labels):
-        patches = []
-        for c in conn:
-            if c.b is b_in:
-                if c.e == m2d.Edge.i0:
-                    p = PeriodicPatch(i=0, j=(c.st, c.en))
-                elif c.e == m2d.Edge.ni:
-                    p = PeriodicPatch(i=-1, j=(c.st, c.en))
-                elif c.e == m2d.Edge.j0:
-                    p = PeriodicPatch(i=(c.st, c.en), j=0)
-                elif c.e == m2d.Edge.nj:
-                    p = PeriodicPatch(i=(c.st, c.en), j=-1)
-                patches.append(p)
-        # Always need to be periodic in the extruded k direction
-        patches.extend([PeriodicPatch(k=0), PeriodicPatch(k=-1)])
-        blocks_out.append(
-            PerfectBlock.from_coordinates(b_in.extrude(zv), Nb, patches, label=l_in)
-        )
-
-    g = Grid(blocks_out)
-    # g.match_patches()
-    return g
 
 
 def from_jmesh(blocks, conn_face, state):

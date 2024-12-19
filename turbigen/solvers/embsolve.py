@@ -110,7 +110,6 @@ class Config(BaseSolver):
     K_mix: float = 0.5
     sf_mix: float = 0.1
 
-    plot_conv: bool = False
     print_conv: bool = True
 
     fmgrid: float = 0.2
@@ -753,15 +752,10 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     sf2 = conf.smooth2_adapt * conf.CFL / CFL_ref
     sf4 = conf.smooth4 * conf.CFL / CFL_ref
     sf2min = conf.smooth2_const * conf.CFL / CFL_ref
-    K_inlet = conf.K_inlet * conf.CFL / CFL_ref
-    K_exit = conf.K_exit  # * conf.CFL / CFL_ref
-    rfin = 0.2
 
     if blocks[0].conf.precision == 1:
-        typ = np.float32
         mpi_typ = mpi_single
     else:
-        typ = np.float64
         mpi_typ = mpi_double
 
     # Only keep relevent periodics
@@ -1023,45 +1017,6 @@ def run(grid, conf, machine=None):
     else:
         merr = -1.0
 
-    if conf.plot_conv:
-        dUlog = np.concatenate(dUlog, axis=0)
-        r_ref = np.mean(blocks_out[0].r)
-        dUlog[:, 3] /= r_ref
-        ii = tuple(range(conf.n_step_log))
-        drho_ref = dUlog[ii, 0].max()
-        drhoVx_ref = dUlog[ii, 1].max()
-        drhoVr_ref = dUlog[ii, 2].max()
-        drhoVt_ref = dUlog[ii, 3].max()
-        drhoV_ref = np.max((drhoVx_ref, drhoVr_ref, drhoVt_ref))
-        drhoe_ref = dUlog[ii, 4].max()
-
-        dUlog[:, 0] /= drho_ref
-        dUlog[:, 1:4] /= drhoV_ref
-        dUlog[:, 4] /= drhoe_ref
-
-        dUlog = turbigen.util.moving_average(dUlog, conf.n_step_log)
-
-        import matplotlib.pyplot as plt
-
-        omin = dUlog[conf.n_step_log :, :].min()
-
-        fig, ax = plt.subplots()
-        ax.semilogy(dUlog)
-        ax.set_ylim(bottom=omin)
-        plt.tight_layout()
-        plt.savefig("conv.pdf")
-        plt.close()
-
-        # fig, ax = plt.subplots()
-        # ax.plot(Yslog)
-        # ax.set_ylabel("Entropy Loss Coefficient, $Y_s$")
-        # plt.tight_layout()
-
-        # fig, ax = plt.subplots()
-        # ax.plot(merrlog)
-        # ax.set_ylabel(r"Mass Conservation Error $\varepsilon \dot{m}/\%$")
-        # plt.tight_layout()
-        # plt.show()
     return tpnps, merr
 
 

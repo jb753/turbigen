@@ -215,7 +215,6 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
-    "plot_conv": False,
     # "CFL": 0.0,
 }
 
@@ -224,7 +223,6 @@ settings = {
 #     "n_step_avg": 1,
 #     "n_step_log": 1,
 #     "i_loss": 0,
-#     "plot_conv": False,
 #     # "CFL": 0.0,
 # }
 #

@@ -1,4 +1,3 @@
-import numpy as np
 import turbigen.util
 import turbigen.grid
 import os

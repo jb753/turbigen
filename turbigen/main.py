@@ -149,9 +149,7 @@ def main():
     # Check that we have a workdir before making a config object
     # This is because we might want to edit the input file before loading proper
     if not (workdir := d.get("workdir")):
-        raise turbigen.exceptions.ConfigError(
-            f"No working directory specified in {args.CONFIG_YAML}"
-        )
+        raise Exception(f"No working directory specified in {args.CONFIG_YAML}")
 
     # Automatically number workdir if it contains placeholder
     if "*" in workdir:
@@ -202,7 +200,7 @@ def main():
     if conf.hypercube:
 
         if not conf.job:
-            raise ConfigError("Need job submission configured to run a hypercube.")
+            raise Exception("Need job submission configured to run a hypercube.")
 
         basedir = conf.workdir
         conf.database["conf_path"] = os.path.join(basedir, "config_db.yaml")

@@ -5,7 +5,6 @@ import json
 from multiprocessing import Pool
 from itertools import repeat
 import numpy as np
-from timeit import default_timer as timer
 from scipy.spatial import Delaunay
 import turbigen.util
 import turbigen.flowfield

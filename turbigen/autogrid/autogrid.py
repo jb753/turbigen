@@ -10,7 +10,6 @@ import subprocess
 import glob
 import json
 import shutil
-import socket
 import numpy as np
 from tempfile import mkdtemp
 from time import sleep
@@ -552,7 +551,7 @@ source get_ssh_agent.sh {via}"""
     try:
         logger.debug(f"Test connection to remote host {remote}...")
         _execute_on_remote("hostname", remote, via, ntry=0)
-    except Exception as e:
+    except Exception:
         raise Exception(
             f"""Cannot connect to remote host {remote}
 You may need to start the ssh-agent, enter your password to unlock the keys,

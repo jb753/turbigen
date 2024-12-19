@@ -17,7 +17,6 @@ import grp
 import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
-from turbigen.base import stack
 
 import turbigen.util
 
@@ -806,7 +805,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                             Po_Poav = np.ones_like(F)
                             To_Toav = F
                         else:
-                            raise Exception(f"Unknown inlet forcing type {force_type}")
+                            raise Exception(f"Unknown inlet forcing type {force}")
 
                         val = np.expand_dims(val, 3)
                         if name == "pstag":
@@ -1044,43 +1043,10 @@ def _read_hdf5(grid, ts3_config):
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
-            print(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
 
     f.close()
     fi.close()
-
-
-def _check_conv(ts3_config):
-    """Parse the TS3 log and raise exceptions in case of problems."""
-
-    log = TS3Log(os.path.join(ts3_config.workdir, "log.txt"))
-
-    logger.info(f"Checking convergence over last {ts3_config.nstep_avg} steps...")
-
-    # if np.isnan(log.eta_drift).any():
-    #     raise ConvergenceError("TS3 log has NAN efficiency.")
-
-    if np.abs(log.mdot_drift) > ts3_config.rtol_mdot:
-        raise ConvergenceError(
-            f"mdot drift {log.mdot_drift*100.:.1f}% > rtol {ts3_config.rtol_mdot*100}%"
-        )
-
-    if np.abs(log.mdot_err) > ts3_config.rtol_mdot:
-        raise ConvergenceError(
-            f"mdot conservation error {log.mdot_err*100.:.1f}% >"
-            f" rtol {ts3_config.rtol_mdot*100}%"
-        )
-
-    if np.abs(log.eta_drift) > ts3_config.atol_eta:
-        raise ConvergenceError(
-            f"eta drift {log.eta_drift*100.:.1f}% > atol {ts3_config.atol_eta*100}%"
-        )
-
-    logger.info(
-        f"mdot drift = {log.mdot_drift*100.:.1f}%, "
-        f"mdot error = {log.mdot_err*100.:.1f}%, "
-        f"eta_drift = {log.eta_drift*100.:.1f}%"
-    )
 
 
 def _run(grid, ts3_config):
@@ -1239,7 +1205,7 @@ def parse_log(fname):
         for line in f:
             match = re_nstep_save_start.search(line)
             if match:
-                nstep_save_start = int(match.group(1))
+                # nstep_save_start = int(match.group(1))
                 break
 
         # Preallocate
@@ -1367,7 +1333,7 @@ def read_probe_dat_dir(dname, S, shape):
 
 
 def read_probe_dat(fname, S, shape=()):
-    print(f"Reading {fname}")
+    logger.info(f"Reading {fname}")
     Npts = int(np.loadtxt(fname, max_rows=1))
     x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
 

@@ -324,7 +324,6 @@ def run_embsolve(g):
         n_step_avg=100,
         nstep_damp=-1,
         print_conv=False,
-        plot_conv=False,
     )
     return turbigen.solvers.embsolve.run(g, conf)
 

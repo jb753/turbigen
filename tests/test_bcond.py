@@ -191,7 +191,6 @@ def test_mixer():
         n_step=6000,
         n_step_log=100,
         n_step_avg=1000,
-        plot_conv=True,
     )
     np.set_printoptions(precision=3)
     turbigen.solvers.embsolve.run(g, conf)

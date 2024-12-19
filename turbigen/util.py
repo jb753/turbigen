@@ -1,16 +1,11 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
 
-import warnings
-
-# from . import compflow as cf
 import numpy as np
 import os
 import sys
 import importlib
 import scipy.interpolate
-from matplotlib import pyplot as plt
 
-from scipy.linalg.lapack import dgesv
 from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata
@@ -1360,57 +1355,6 @@ def shoelace_formula(xy):
     return 0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
 
 
-def make_contour(c0, c2, v, triangles, lev, lab, rtlim, flip):
-    eps = 0e-4 * np.diff(lev).mean()
-    # v = np.clip(v, lev[-1]+eps, lev[-1]-eps)
-    v = np.clip(v, lev[-1] + eps, None)
-
-    cmap = "cubehelix"
-    if not flip:
-        cmap += "_r"
-
-    fig, ax = plt.subplots(layout="constrained")
-
-    # It seems that we have to pass triangles as a kwarg to tricontour,
-    # not positional, but this results in a UserWarning that contour
-    # does not take it as a kwarg. So catch and hide this warning.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        cm = ax.tricontourf(
-            c0,
-            c1,
-            v,
-            lev,
-            triangles=triangles,
-            cmap=cmap,
-            linestyles="none",
-            extend="max",
-        )
-
-    cm.set_edgecolor("face")
-    plt.colorbar(cm, label=lab)
-    # hc.ax.yaxis.set_major_locator(ticker.MultipleLocator(dv * 1))
-
-    # Remove box, grey backgroud for hub/casing/blades
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_facecolor(np.ones((2,)) * 0.7)
-    ax.set_xticks(())
-    ax.set_yticks(())
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.set_xlim(rtlim)
-
-    # Hub and casing labels
-    c1lim = np.array([c2.min(), c2.max()])
-    dc1 = np.ptp(c2lim) * 0.07
-    ax.text(rtlim.mean(), c1lim[0] - dc2, "Hub", ha="center", va="center")
-    ax.text(rtlim.mean(), c1lim[1] + dc2, "Shroud", ha="center", va="center")
-    ax.set_ylim(c1lim[0] - 2 * dc2, c2lim[1] + 2 * dc2)
-
-    return fig, ax
-
-
 def node_to_face2(x):
     return np.stack(
         (
@@ -1428,5 +1372,4 @@ def asscalar(x):
     elif isinstance(x, (np.float32, np.float64, float)):
         return x
     else:
-        print(type(x))
         raise NotImplementedError()
