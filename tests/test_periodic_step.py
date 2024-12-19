@@ -143,7 +143,7 @@ def test_periodic():
     # ax.plot(Cnk_step.x, Cnk_step.rho, 'C3', '-')
     # ax.plot(Cnk_step.x.squeeze(), Cnk_step.rho[ile], 'kx')
     # ax.plot(Cnk_step.x[ite], Cnk_step.rho[ite], 'rx')
-    plt.show()
+    # plt.show()
 
 
 if __name__ == "__main__":

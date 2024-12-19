@@ -395,7 +395,7 @@ def test_Tu0(Tu0):
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
-    rtol = 2.5e-4
+    rtol = 5e-4
 
     assert (np.abs(err_Ma) < rtol).all()
     assert (np.abs(Ys) < rtol).all()

@@ -128,12 +128,6 @@ class SolverBlock:
         self.shape = tuple(block.shape)
         self.shape_cell = tuple([i - 1 for i in block.shape])
 
-        # Data types
-        typ = self.get_data_type()
-
-        def to_fort(x):
-            return to_fort_type(x, typ)
-
         # Block-level scalars
         Omega = block.Omega.mean()
         self.Omega = self.cast_scalar(Omega)
@@ -177,11 +171,11 @@ class SolverBlock:
         # With the correct data type
         if isinstance(block, turbigen.grid.PerfectBlock):
             state = self.state = turbigen.fluid.PerfectState(
-                shape=block.shape, order="F", typ=typ
+                shape=block.shape, order="F", typ=self.get_data_type()
             )
-            state.gamma = typ(block.gamma)
-            state.cp = typ(block.cp)
-            state.mu = typ(block.mu)
+            state.gamma = self.cast_scalar(block.gamma)
+            state.cp = self.cast_scalar(block.cp)
+            state.mu = self.cast_scalar(block.mu)
             state.set_rho_u(block.rho, block.u)
             state.set_Tu0(block.Tu0)
         else:
@@ -521,7 +515,6 @@ class SolverBlock:
             "da_kwall": self.dA_face[2],
             "fvisc": self.fb,
         }
-
         embsolve.shear_stress(**kwargs)
 
 

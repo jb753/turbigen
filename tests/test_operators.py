@@ -96,10 +96,10 @@ def test_div():
     x = np.asfortranarray(np.ones((ni, nj, nk, 3)).astype(typ))
 
     divx = np.asfortranarray(np.ones_like(b.vol).astype(typ))
-    dAi = np.asfortranarray(np.moveaxis(b.dAi_new, 0, -1).astype(typ))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj_new, 0, -1).astype(typ))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk_new, 0, -1).astype(typ))
-    vol = np.asfortranarray(b.vol_new.astype(typ))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi, 0, -1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj, 0, -1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk, 0, -1).astype(typ))
+    vol = np.asfortranarray(b.vol.astype(typ))
 
     rn = np.asfortranarray(b.r.astype(typ))
     ni, nj, nk = rn.shape
@@ -170,10 +170,10 @@ def test_grad():
     print("Checking grad of test fields...")
 
     gradq = np.asfortranarray(np.ones((ni - 1, nj - 1, nk - 1, 3)).astype(typ)) * np.nan
-    dAi = np.asfortranarray(np.moveaxis(b.dAi_new, 0, -1).astype(typ))
-    dAj = np.asfortranarray(np.moveaxis(b.dAj_new, 0, -1).astype(typ))
-    dAk = np.asfortranarray(np.moveaxis(b.dAk_new, 0, -1).astype(typ))
-    vol = np.asfortranarray(b.vol_new.astype(typ))
+    dAi = np.asfortranarray(np.moveaxis(b.dAi, 0, -1).astype(typ))
+    dAj = np.asfortranarray(np.moveaxis(b.dAj, 0, -1).astype(typ))
+    dAk = np.asfortranarray(np.moveaxis(b.dAk, 0, -1).astype(typ))
+    vol = np.asfortranarray(b.vol.astype(typ))
 
     rn = np.asfortranarray(b.r.astype(typ))
     tn = np.asfortranarray(b.t.astype(typ))

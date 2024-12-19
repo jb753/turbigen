@@ -74,9 +74,9 @@ def test_box():
     # Check the areas have correct magnitude and direction
     A = (2 * L) ** 2
     rtol_A = 1e-7
-    err_x = dot(b.dAi_new, ex).sum(axis=(1, 2)) / A - 1.0
-    err_z = dot(b.dAj_new, ez).sum(axis=(0, 2)) / A - 1.0
-    err_y = dot(b.dAk_new, ey).sum(axis=(0, 1)) / A - 1.0
+    err_x = dot(b.dAi, ex).sum(axis=(1, 2)) / A - 1.0
+    err_z = dot(b.dAj, ez).sum(axis=(0, 2)) / A - 1.0
+    err_y = dot(b.dAk, ey).sum(axis=(0, 1)) / A - 1.0
     print(
         f"Area errors Ax={err_x.max():.2e}, Ay={err_y.max():.2e}, Az={err_z.max():.2e}"
     )
@@ -86,7 +86,7 @@ def test_box():
 
     # Check the total volume
     vol = (2 * L) ** 3
-    err = vol / np.sum(b.vol_new) - 1.0
+    err = vol / np.sum(b.vol) - 1.0
     rtol_vol = 1e-7
     print(f"Volume error = {err:.2e}")
     assert np.abs(err) < rtol_vol
@@ -137,7 +137,7 @@ def test_cylinder():
     b = g[0]
 
     rtol_A = 1e-9
-    dAi = np.sum(b.dAi_new, axis=(2, 3))
+    dAi = np.sum(b.dAi, axis=(2, 3))
     err_x = dAi[0] / Ax - 1.0
     err_r = dAi[1] / Ax
     err_t = dAi[2] / Ax
@@ -149,7 +149,7 @@ def test_cylinder():
     assert (err_r < rtol_A).all()
     assert (err_t < rtol_A).all()
 
-    dAj = np.sum(b.dAj_new, axis=(1, 3))
+    dAj = np.sum(b.dAj, axis=(1, 3))
     err_x = dAj[0] / Ar1
     err_r = np.array([dAj[1, 0] / Ar1 - 1.0, dAj[1, -1] / Ar2 - 1.0])
     err_t = dAj[2] / Ar1
@@ -161,7 +161,7 @@ def test_cylinder():
     assert (err_r < rtol_A).all()
     assert (err_t < rtol_A).all()
 
-    dAk = np.sum(b.dAk_new, axis=(1, 2))
+    dAk = np.sum(b.dAk, axis=(1, 2))
     err_x = dAk[0] / At
     err_r = dAk[1] / At
     err_t = dAk[2] / At - 1.0
@@ -174,7 +174,7 @@ def test_cylinder():
     assert (err_t < rtol_A).all()
 
     # Check the total volume
-    err = vol / np.sum(b.vol_new) - 1.0
+    err = vol / np.sum(b.vol) - 1.0
     rtol_vol = 1e-12
     print(f"Volume error = {err:.2e}")
     assert np.abs(err) < rtol_vol
