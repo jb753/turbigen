@@ -112,7 +112,7 @@ def get_stl_data(section, close_tip):
     return data
 
 
-def post(grid, machine, meanline, postdir):
+def post(grid, machine, meanline, _, postdir):
     """write_stl()
 
     Write machine surface geometry to stl files.

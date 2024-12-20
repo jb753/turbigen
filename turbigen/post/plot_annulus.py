@@ -12,6 +12,7 @@ def post(
     _,
     machine,
     meanline,
+    __,
     postdir,
     mnorm_traverse=[],
     show_axis=False,

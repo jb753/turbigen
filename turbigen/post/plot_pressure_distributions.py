@@ -13,6 +13,7 @@ def post(
     grid,
     machine,
     meanline,
+    _,
     postdir,
     row_spf,
     write_raw=False,
@@ -21,6 +22,7 @@ def post(
     fix_stag=False,
     note=None,
     show_DF=None,
+    compare=None,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -77,6 +79,15 @@ def post(
         # Get all blades in this row
         surfs = grid.cut_blade_surfs()[irow]
 
+        # Meridional curves for target span fractions
+        ist = irow * 2 + 1
+        ien = ist + 1
+        m = np.linspace(ist, ien, 101)
+        spfrow = np.array(spfrow)
+        xr_spf = machine.ann.evaluate_xr(
+            m.reshape(-1, 1), spfrow.reshape(1, -1)
+        ).reshape(2, -1, len(spfrow))
+
         fig, ax = plt.subplots(layout="constrained")
         ax.set_xlabel(r"Normalised Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
         ax.set_xlim((0.0, 1.0))
@@ -84,11 +95,13 @@ def post(
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
             # Find the j-index corresponding to current span fraction on main blade
-            jspf = np.argmin(np.abs(surfs[0].spf[1, :, 0] - spf))
+            # jspf = np.argmin(np.abs(surfs[0].spf[1, :, 0] - spf))
 
             # Loop over main/splitter
             for isurf, surf in enumerate(surfs):
-                snow = surf[:, jspf, :]
+                # snow = surf[:, jspf, :]
+
+                snow = surf.meridional_slice(xr_spf[:, :, ispf])
 
                 # Extract pressure and non-dimensionalise
                 if use_rot:
@@ -107,9 +120,11 @@ def post(
                 # Extract surface distance and normalise
                 zeta_stag = snow.zeta_stag
                 # Calculate maximum zeta only on main blade
-                if isurf == 0:
-                    zeta_max = np.abs(zeta_stag).max(axis=0, keepdims=True)
-                zeta_norm = zeta_stag / zeta_max
+                zeta_max = zeta_stag.max(axis=0)
+                zeta_min = np.abs(zeta_stag.min(axis=0))
+                zeta_norm = zeta_stag.copy()
+                zeta_norm[zeta_norm < 0.0] /= zeta_min
+                zeta_norm[zeta_norm > 0.0] /= zeta_max
 
                 if fix_stag:
                     Cp -= Cp.max()
@@ -170,6 +185,18 @@ def post(
                 textcoords="offset points",
                 arrowprops=None,
             )
+
+        if compare:
+            compare_dat = np.load(compare)
+
+            zeta_stag, Cp = compare_dat[key]
+            zeta_max = zeta_stag.max(axis=0)
+            zeta_min = np.abs(zeta_stag.min(axis=0))
+            zeta_norm = zeta_stag.copy()
+            zeta_norm[zeta_norm < 0.0] /= zeta_min
+            zeta_norm[zeta_norm > 0.0] /= zeta_max
+
+            ax.plot(np.abs(zeta_norm), Cp, "k-")
 
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         ax.legend()

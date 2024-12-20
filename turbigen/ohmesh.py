@@ -58,6 +58,7 @@ class OHMeshConfig(BaseConfig):
 
     untwist_outlet = False
     untwist_inlet = False
+    untwist_inlet_extent = 0.5
 
     round_TE = True
 
@@ -67,6 +68,7 @@ class OHMeshConfig(BaseConfig):
     frac_inlet = 0.9
     frac_outlet = 0.15
     relax_outlet = 1
+    relax_inlet = 1
 
     R_fillet_hub = 0.0
     R_fillet_shd = 0.0
@@ -124,6 +126,7 @@ class OHMeshConfig(BaseConfig):
             "stagger": stagger_topo,
             "const_cells_pc": self.const_cells_frac*100.,
             "nr_tip_gap": self.nj_tip,
+            "relax_inlet": self.relax_inlet,
             "relax_outlet": self.relax_outlet,
             "ER_boundary_layer": 1.1,
             "ER_blade_surf": 1.2,
@@ -143,6 +146,7 @@ class OHMeshConfig(BaseConfig):
             "wake_deviation": self.wake_deviation,
             "untwist_outlet": self.untwist_outlet,
             "untwist_inlet": self.untwist_inlet,
+            "untwist_inlet_extent": int(self.untwist_inlet_extent*100),
             "splitter": splitter,
             "span_interp": self.span_interpolation,
             "blade_streamwise_weight": self.blade_streamwise_weight,

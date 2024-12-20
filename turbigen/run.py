@@ -11,7 +11,6 @@ from scipy.spatial import KDTree
 
 import turbigen.annulus
 import turbigen.average
-import turbigen.post_process
 import turbigen.flowfield
 import turbigen.yaml
 from turbigen import (
@@ -150,6 +149,14 @@ def run_single(conf, gguess=None):
                 f"Meanline inverted {v}={params_inv[v]} not same as forward value"
                 f" {v}={conf.mean_line[v]}"
             )
+
+    # Warn for very high flow angles
+    if np.abs(ml.Alpha_rel).max() > 85.0:
+        logger.warning(
+            """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+        )
 
     # Make a working directory
     workdir = conf.workdir
@@ -843,6 +850,7 @@ def run_single(conf, gguess=None):
         for b in g:
             b.w[:] = 0.0
 
+    convergence = None
     if conf.solver:
         conf.solver["workdir"] = solve_workdir = os.path.join(workdir, "solve")
         if not os.path.exists(solve_workdir):
@@ -869,7 +877,7 @@ def run_single(conf, gguess=None):
 
         if conf.solver:
             logger.info(f'Running solver {conf.solver["type"]} on installed...')
-            gi.run(conf.solver, mac)
+            convergence = gi.run(conf.solver, mac)
             conf.solver.pop("workdir")
         else:
             logger.info("No solver specified, continuing with initial guess...")
@@ -893,7 +901,7 @@ def run_single(conf, gguess=None):
         if conf.solver:
             if conf.solver.get("type"):
                 logger.info(f'Running solver {conf.solver["type"]}...')
-                g.run(conf.solver, mac)
+                convergence = g.run(conf.solver, mac)
                 conf.solver.pop("workdir")
         else:
             logger.info("No solver specified, continuing with initial guess...")
@@ -937,7 +945,7 @@ def run_single(conf, gguess=None):
         post_func = util.load_post(post_name).post
         if post_conf is None:
             post_conf = {}
-        post_func(g, mac, ml_out, postdir, **post_conf)
+        post_func(g, mac, ml_out, convergence, postdir, **post_conf)
 
     # Save some 3D geometry into the meanline for later design space fitting
     ml_out.Co = conf.blades.get("Co")

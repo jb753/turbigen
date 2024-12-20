@@ -1314,6 +1314,10 @@ def basis_from_normal(normal):
 
     return basis1, basis2
 
+def dot(a, b):
+# Dot product over the first axis
+    return np.einsum("i...,i...", a, b)
+
 
 def project_onto_plane(points, basis1, basis2):
 

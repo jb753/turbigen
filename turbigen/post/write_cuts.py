@@ -6,7 +6,7 @@ import turbigen.util
 logger = turbigen.util.make_logger()
 
 
-def post(grid, machine, meanline, postdir, mnorm_traverse=(), irow_surf=()):
+def post(grid, machine, meanline, _, postdir, mnorm_traverse=(), irow_surf=()):
     """write_cuts(mnorm_traverse=[] irow_surf=[])
 
     Write 2D cuts of the CFD solution to npz files for external processing.

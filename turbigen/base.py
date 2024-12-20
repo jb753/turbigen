@@ -2,9 +2,17 @@ import numpy as np
 from turbigen import util
 import turbigen.yaml
 import turbigen.average
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 
 logger = util.make_logger()
 
+
+def concatenate(sd, axis=0):
+    """Join a sequence of StructuredData along an axis."""
+    out = sd[0].empty()
+    out._data = np.concatenate([sdi._data for sdi in sd], axis=axis + 1)
+    out._metadata = sd[0]._metadata
+    return out
 
 class dependent_property:
     """Decorator which returns a cached value if instance data unchanged."""
@@ -916,9 +924,80 @@ class Kinematics:
 
         return points, triangles, iunique
 
-    #
-    # Velocities
-    #
+    def interpolate_to_structured(self, npitch=99, nspan=101):
+        """Given an unstructured cut interpolate to a regular grid.
+
+        Note must be a straight line in x-r plane."""
+
+        # TODO - at the moment we just use a brute force interpolation
+        # but the *correct* way to do this is to:
+        # Define a set of xr points along the cut line
+        # Examine each triangle to see if it encloses the xr point
+        # Interpolate within each triangle appropriately
+
+
+        # unstructured shape (ntri, 3, nvar)
+
+        # Repeat and centre on theta=0
+        C = self.repeat_pitchwise(3)
+        tmid = 0.5*(C.t.max()+C.t.min())
+        C.t -= tmid
+
+        # Set up new coordinates
+        xr0 = np.reshape((np.min(self.x), np.min(self.r)),(2,1,1))
+        xr1 = np.reshape((np.max(self.x), np.max(self.r)),(2,1,1))
+        eps = 1e-3
+        clu = (turbigen.util.cluster_cosine(nspan).reshape(1,-1,1)+eps)/(1.+eps)*(1.-eps)
+        xr = clu*xr0 + (1.-clu)*xr1
+        pitch = self.pitch
+        t = -np.linspace(-pitch/2., pitch/2, npitch).reshape(1,-1)
+        xrt = np.stack(np.broadcast_arrays(*xr,t), axis=0)
+
+        # Initialise a new cut
+        Cs = C.empty(shape=(1,) + xrt.shape[1:])
+        xrt1 = np.expand_dims(xrt,1)
+        Cs.xrt = xrt1
+
+        # Interpolate the data
+        Cf = C.to_unstructured()
+
+        if np.ptp(Cf.x)>np.ptp(Cf.r):
+            xi = np.stack((Cf.x, Cf.t), axis=-1)
+            xo =  np.stack((Cs.x, Cs.t), axis=-1)
+        else:
+            xi = np.stack((Cf.r, Cf.t), axis=-1)
+            xo =  np.stack((Cs.r, Cs.t), axis=-1)
+
+        yi = Cf._data.T
+        ind_t = np.abs(xi[:,1])<=pitch*0.6
+        xi = xi[ind_t]
+        yi = yi[ind_t]
+
+        interp = LinearNDInterpolator(xi, yi)
+        yo = np.moveaxis(interp(xo), -1, 0)
+        ind_nan = np.isnan(yo)
+        if ind_nan.any():
+            raise Exception()
+        Cs._data[:] = yo
+
+        assert np.allclose(Cs.xrt, xrt1)
+
+        return Cs
+
+    def repeat_pitchwise(self, N, axis=0):
+        """Replicate the data in pitchwise direction."""
+
+        # Make a list of copies of this cut with different theta
+        C_all = []
+        for i in range(N):
+            Ci = self.copy()
+            Ci.t += self.pitch * i
+            C_all.append(Ci)
+
+        # Join the copies together
+        C_all = concatenate(C_all, axis=axis)
+
+        return C_all
 
     @dependent_property
     def U(self):
@@ -939,6 +1018,10 @@ class Kinematics:
     @dependent_property
     def V_rel(self):
         return np.sqrt(self.Vm**2.0 + self.Vt_rel**2.0)
+
+    @dependent_property
+    def halfVsq(self):
+        return 0.5*self.V**2
 
     #
     # Angles
@@ -1244,7 +1327,7 @@ class Composites:
         spf = np.empty(nj - 1)
         for j in range(nj - 1):
             spf[j] = self.spf[:, j : j + 2, :].mean()
-            cut_now = self[:, j : j + 2, :]
+            cut_now = self[:, j : j + 2, :].squeeze()
             try:
                 cuts.append(cut_now.mix_out()[0])
             except Exception:
@@ -1365,6 +1448,12 @@ class MeanLine:
             F.Nb = Nb
 
         return F
+
+    def get_row(self, irow):
+        ist = irow * 2
+        ien = ist + 2
+        return self[ist:ien]
+
 
     def interpolate_guess(self, ann):
         # Get coordinates along mean-line
