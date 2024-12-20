@@ -57,6 +57,7 @@ class OHMeshConfig(BaseConfig):
     blade_streamwise_weight = 3.0
 
     untwist_outlet = False
+    untwist_inlet = False
 
     round_TE = True
 
@@ -141,6 +142,7 @@ class OHMeshConfig(BaseConfig):
             "wake_control": self.wake_control,
             "wake_deviation": self.wake_deviation,
             "untwist_outlet": self.untwist_outlet,
+            "untwist_inlet": self.untwist_inlet,
             "splitter": splitter,
             "span_interp": self.span_interpolation,
             "blade_streamwise_weight": self.blade_streamwise_weight,
