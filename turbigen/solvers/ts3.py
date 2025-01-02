@@ -1,9 +1,8 @@
-"""Functions to write, run, and read for the Turbostream 3 solver."""
-
 from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
 import shutil
+from glob import glob
 import h5py
 import numpy as np
 import turbigen.grid
@@ -17,7 +16,7 @@ import re
 import grp
 import getpass
 from copy import copy
-from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
 import turbigen.util
 
@@ -92,10 +91,13 @@ class Config(BaseSolver):
     sa_helicity_option: int = 0
     """Spalart--Allmaras turbulence model helicity correction."""
 
+    smooth_scale_dts_option: int = 0
+
+    show_yplus: bool = False
     laminar: bool = False
     """Enable laminar boundary layers on all walls."""
 
-    fac_st0: float = 1.
+    fac_st0: float = 1.0
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -108,7 +110,7 @@ class Config(BaseSolver):
     nstep_save_start_probe: int = 0
     xllim_free: float = 0.1
     free_turb: float = 0.05
-    turbvis_lim: float = 3000.
+    turbvis_lim: float = 3000.0
 
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
@@ -345,7 +347,7 @@ DEFAULT_AV = {
     "wall_law": 0,
     "write_egen": 0,
     "write_force": 0,
-    "write_tdamp": 1,
+    "write_tdamp": 0,
     "write_yplus": 1,
 }
 
@@ -720,7 +722,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
     input_file_path = os.path.join(ts3_config.workdir, fname)
     if not os.path.exists(ts3_config.workdir):
-        raise Exception(f'Working directory {ts3_config.workdir} does not exist.')
+        raise Exception(f"Working directory {ts3_config.workdir} does not exist.")
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet
@@ -759,7 +761,9 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             rref_block = rref[grid.row_index(block)]
         else:
             rref_block = np.nan
-        for name, val in ts3_config.block_variables(block, rref_block,ts3_config.laminar).items():
+        for name, val in ts3_config.block_variables(
+            block, rref_block, ts3_config.laminar
+        ).items():
             _write_variable(block_group, name, "_bv", val)
 
         # Block properties
@@ -808,6 +812,45 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
             # Patch properties
             for name, val in _patch_properties(patch).items():
+                # Make boundary conditions unsteady if needed
+                if isinstance(patch, turbigen.grid.InletPatch):
+                    if force := patch.force:
+
+                        t = _get_time_vector(ts3_config)
+                        nt = len(t)
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, nt)
+                        ga = patch.state.gamma
+
+                        if force == "isentropic":
+                            Po_Poav = F
+                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
+                        elif force == "entropic":
+                            Po_Poav = np.ones_like(F)
+                            To_Toav = F
+                        else:
+                            raise Exception(f"Unknown inlet forcing type {force}")
+
+                        val = np.expand_dims(val, 3)
+                        if name == "pstag":
+                            val = val * Po_Poav
+                        elif name == "tstag":
+                            val = val * To_Toav
+                        else:
+                            val = np.tile(val, (1, 1, 1, nt))
+
+                        pa["nt"] = nt
+
+                if isinstance(patch, turbigen.grid.OutletPatch):
+                    if patch.force:
+                        t = _get_time_vector(ts3_config)
+                        F = 1.0 + patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                        ).reshape(1, 1, 1, -1)
+                        val = np.expand_dims(val, 3) * F
+                        pa["nt"] = len(t)
+
                 _write_property(patch_group, name, "_pp", val, flat=True)
 
             patch_group.attrs.update(pa)
@@ -873,7 +916,10 @@ def _execute(ts3_config):
     if not os.path.exists(ts3_config.environment_script):
         raise Exception(
             f"""Could not locate TS3 env script {ts3_config.environment_script}
-Are you on a HPC compute node?"""
+Are you on a HPC compute node gpu-q-* (not a login node)?
+If you have recently been added to the turbostream user group, log out
+and then back in to refresh your access permissions.
+"""
         )
 
     # Open a subshell, source the environment and run the solver
@@ -892,6 +938,11 @@ Are you on a HPC compute node?"""
             f" mpirun -npernode {npernode} -np {ngpu} turbostream"
             f" input.hdf5 output {npernode} > log.txt"
         )
+
+    # Remove old probe data
+    probe_dat = glob("output_probe_*.dat")
+    for fname in probe_dat:
+        os.remove(fname)
 
     # Start the Turbostream process
     with subprocess.Popen(
@@ -941,6 +992,11 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             os.remove(f)
         except FileNotFoundError:
             pass
+
+    # Remove empty hdf5 probes (we don't use them)
+    probe_hdf5 = glob("output_probe_*.hdf5")
+    for fname in probe_hdf5:
+        os.remove(fname)
 
     os.chdir(old_workdir)
 
@@ -1007,41 +1063,15 @@ def _read_hdf5(grid, ts3_config):
         # Set turbulent viscosity
         block.mu_turb = trans_dyn_vis
 
+        # Print yplus if requested
+        if ts3_config.show_yplus:
+            yplus = _unflip(block_group["yplus_bp"])
+            # Remove not-wall nodes
+            yplus = yplus[yplus > 0.0]
+            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+
     f.close()
     fi.close()
-
-
-def _check_conv(ts3_config):
-    """Parse the TS3 log and raise exceptions in case of problems."""
-
-    log = TS3Log(os.path.join(ts3_config.workdir, "log.txt"))
-
-    logger.info(f"Checking convergence over last {ts3_config.nstep_avg} steps...")
-
-    # if np.isnan(log.eta_drift).any():
-    #     raise ConvergenceError("TS3 log has NAN efficiency.")
-
-    if np.abs(log.mdot_drift) > ts3_config.rtol_mdot:
-        raise ConvergenceError(
-            f"mdot drift {log.mdot_drift*100.:.1f}% > rtol {ts3_config.rtol_mdot*100}%"
-        )
-
-    if np.abs(log.mdot_err) > ts3_config.rtol_mdot:
-        raise ConvergenceError(
-            f"mdot conservation error {log.mdot_err*100.:.1f}% >"
-            f" rtol {ts3_config.rtol_mdot*100}%"
-        )
-
-    if np.abs(log.eta_drift) > ts3_config.atol_eta:
-        raise ConvergenceError(
-            f"eta drift {log.eta_drift*100.:.1f}% > atol {ts3_config.atol_eta*100}%"
-        )
-
-    logger.info(
-        f"mdot drift = {log.mdot_drift*100.:.1f}%, "
-        f"mdot error = {log.mdot_err*100.:.1f}%, "
-        f"eta_drift = {log.eta_drift*100.:.1f}%"
-    )
 
 
 def _run(grid, ts3_config):
@@ -1073,6 +1103,10 @@ def run(grid, ts3_conf, machine):
     except KeyError:
         if not ts3_conf.skip:
             raise Exception("Cannot locate turbostream - are you on the HPC?") from None
+
+    # Make workdir if needed
+    if not os.path.exists(ts3_conf.workdir):
+        os.makedirs(ts3_conf.workdir)
 
     input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
     output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")
@@ -1115,29 +1149,24 @@ def run(grid, ts3_conf, machine):
         _read_hdf5(grid, ts3_conf)
         return
 
-    # # Do a robust calculation and update the outlet throttle pressure
-    # if ts3_conf.soft_start:
-    #     logger.info("Soft start...")
-    #     ts3_conf_robust = ts3_conf.robust()
-    #     _run(grid, ts3_conf_robust)
-    #     log_path = os.path.join(ts3_conf.workdir, "log.txt")
-    #     log_new_path = os.path.join(ts3_conf.workdir, "log_soft.txt")
-    #     shutil.copy(log_path, log_new_path)
-    #     grid.update_outlet()
-    #     logger.info("Accurate solution...")
-    #
     _run(grid, ts3_conf)
 
     # Produce a warning if the outlet is choked
     grid.check_outlet_choke()
 
-    # Raise errors if the solution did not converge
-    _check_conv(ts3_conf)
+    # Parse the log file
+    log_path = os.path.join(ts3_conf.workdir, "log.txt")
+    state_log = grid.inlet_patches[0].state.copy()
+    state_log.set_Tu0(0.0)
+    istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
+    return ConvergenceHistory(*parse_log(log_path), state_log, istep_save_start)
 
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
+re_cp = re.compile(r"cp\s*:\s*(\d*\.\d*)$")
 re_dts = re.compile(r"dts\s*:\s*(\d*)$")
 re_ncycle = re.compile(r"ncycle\s*:\s*(\d*)$")
+re_davg = re.compile(r"TOTAL DAVG \s*(\d*\.\d*)E([+-]\d*)")
 re_nstep_cycle = re.compile(r"nstep_cycle\s*:\s*(\d*)$")
 re_nstep_save_start = re.compile(r"nstep_save_start\s*:\s*(\d*)$")
 re_mdot = re.compile(r"^INLET FLOW =\s*(-?\d*\.\d*)\s*OUTLET FLOW =\s*(-?\d*\.\d*)$")
@@ -1152,122 +1181,141 @@ re_nan = re.compile(r".*NAN.*")
 re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
 
 
-class TS3Log:
-    def __init__(self, fname):
-        """Read in TS3 log data from a file."""
+def parse_log(fname):
+    """Read residuals and boundary properties from log file.
 
-        logger.debug(f"Opening log file {fname}...")
+    Parameters
+    ----------
+    fname: string
+        File name of a Turbostream 3 log.
 
-        # Loop over lines in the file
-        with open(fname, "r") as f:
-            # First, look for number of steps
-            for line in f:
-                match = re_nstep.search(line)
-                if match:
-                    nstep = int(match.group(1))
-                    break
+    Returns
+    -------
+    istep: (nlog) array
+    mdot: (2, nlog) array
+    ho: (2, nlog) array
+    Po: (2, nlog) array
+    resid: (nlog) array
 
-            # Second, look for number of steps
-            for line in f:
-                match = re_dts.search(line)
-                if match:
-                    dts = int(match.group(1))
-                    # ncycle = int(re_ncycle.search(f.readline()).group(1))
-                    # f.readline()
-                    # nstep_cycle = int(re_nstep_cycle.search(f.readline()).group(1))
-                    break
 
-            # Third, look for averaging steps
-            for line in f:
-                match = re_nstep_save_start.search(line)
-                if match:
-                    nstep_save_start = int(match.group(1))
-                    break
+    """
 
-            step_now = 0
+    logger.debug(f"Opening log file {fname}...")
 
-            # Preallocate
-            self._step_fac = 1 if dts else 50
-            self._nlog = nlog = nstep // self._step_fac
-            self._eta = np.zeros(nlog) * np.nan
-            self._mdot = np.zeros((2, nlog)) * np.nan
-            self._Po = np.zeros((2, nlog)) * np.nan
-            self._To = np.zeros((2, nlog)) * np.nan
-            self._nstep = nstep
-            self._nstep_save_start = nstep_save_start
+    # Loop over lines in the file
+    with open(fname, "r") as f:
 
-            for ilog in range(nlog):
-                logger.debug(f"* Parsing nstep={self.nstep[ilog]}")
+        # Look for cp
+        for line in f:
+            match = re_cp.search(line)
+            if match:
+                cp = float(match.group(1))
+                break
 
-                try:
-                    if not dts:
-                        # Loop over lines until we find mdot
-                        logger.debug("Finding mass flow rate...")
+        # Look for number of steps
+        for line in f:
+            match = re_nstep.search(line)
+            if match:
+                nstep = int(match.group(1))
+                break
 
-                        for line in f:
-                            if mdot_match := re_mdot.search(line):
-                                logger.debug(f'Found: "{line.strip()}"')
-                                self._mdot[:, ilog] = [
-                                    float(m) for m in mdot_match.group(1, 2)
-                                ]
+        # Look for number of steps
+        for line in f:
+            match = re_dts.search(line)
+            if match:
+                dts = int(match.group(1))
+                break
+
+        # Look for averaging steps
+        for line in f:
+            match = re_nstep_save_start.search(line)
+            if match:
+                # nstep_save_start = int(match.group(1))
+                break
+
+        # Preallocate
+        step_now = 0
+        dn = 1 if dts else 50
+        nlog = nstep // dn
+        istep = np.arange(nlog) * dn
+        mdot = np.zeros((2, nlog))
+        Po = np.zeros((2, nlog))
+        To = np.zeros((2, nlog))
+        resid = np.zeros((nlog,))
+
+        for ilog in range(nlog):
+            logger.debug(f"* Parsing istep={istep[ilog]}")
+
+            # Look for residual
+            if ilog > 0:
+                for line in f:
+                    if davg_match := re_davg.search(line):
+                        logger.debug(f'Found: "{line.strip()}"')
+                        sig = float(davg_match.group(1))
+                        expon = int(davg_match.group(2))
+                        resid[ilog] = sig * 10 ** (expon)
+                        break
+            else:
+                resid[ilog] = np.nan
+
+            try:
+                if not dts:
+                    # Loop over lines until we find mdot
+                    logger.debug("Finding mass flow rate...")
+
+                    for line in f:
+                        if mdot_match := re_mdot.search(line):
+                            logger.debug(f'Found: "{line.strip()}"')
+                            mdot[:, ilog] = [float(m) for m in mdot_match.group(1, 2)]
+                            break
+
+                else:
+                    for line in f:
+                        if re_nstep.search(line):
+                            logger.debug(f'Found: "{line.strip()}"')
+                            break
+
+                # Skip flow ratio
+                _ = f.readline()
+
+                # Stagnation pressures
+                ln = f.readline()
+                logger.debug(f'Reading Po from "{ln.strip()}"')
+                match_Po = re_Po.search(ln)
+                Po[:, ilog] = [float(m) for m in match_Po.group(1, 2)]
+
+                # Stagnation temperatures
+                ln = f.readline()
+                logger.debug(f'Reading To from "{ln.strip()}"')
+                match_To = re_To.search(ln)
+                To[:, ilog] = [float(m) for m in match_To.group(1, 2)]
+
+                # Skip power and effy
+                _ = f.readline()
+                _ = f.readline()
+                _ = f.readline()
+
+                # Next step number
+                if ilog < nlog - 1:
+                    logger.debug("Finding next step No...")
+                    step_next = None
+                    for line in f:
+                        if step_match := re_current_step.search(line):
+                            step_next = int(step_match.group(1))
+                            if step_next > step_now:
+                                logger.debug(f" Found next istep={step_next}")
+                                step_now = step_next
                                 break
+                            else:
+                                continue
+                    if not step_next == istep[ilog + 1]:
+                        raise Exception(f"Log step mismatch at {step_now}, {step_next}")
 
-                    else:
-                        for line in f:
-                            if re_nstep.search(line):
-                                logger.debug(f'Found: "{line.strip()}"')
-                                break
+            except AttributeError:
+                logger.debug("Failed to parse, breaking")
+                break
 
-                    # Skip flow ratio
-                    _ = f.readline()
-
-                    # Stagnation pressures
-                    ln = f.readline()
-                    logger.debug(f'Reading Po from "{ln.strip()}"')
-                    match_Po = re_Po.search(ln)
-                    self._Po[:, ilog] = [float(m) for m in match_Po.group(1, 2)]
-
-                    # Stagnation temperatures
-                    ln = f.readline()
-                    logger.debug(f'Reading To from "{ln.strip()}"')
-                    match_To = re_To.search(ln)
-                    self._To[:, ilog] = [float(m) for m in match_To.group(1, 2)]
-
-                    # Skip power
-                    _ = f.readline()
-                    _ = f.readline()
-
-                    # Efficiency
-                    ln = f.readline()
-                    logger.debug(f'Reading effy from "{ln.strip()}"')
-                    match_eta = re_eta.search(ln)
-                    self._eta[ilog] = float(match_eta.group(1))
-
-                    # Next step number
-                    if ilog < nlog - 1:
-                        logger.debug("Finding next step No...")
-                        step_next = None
-                        for line in f:
-                            if step_match := re_current_step.search(line):
-                                step_next = int(step_match.group(1))
-                                if step_next > step_now:
-                                    logger.debug(f" Found next nstep={step_next}")
-                                    step_now = step_next
-                                    break
-                                else:
-                                    continue
-                        if not step_next == self.nstep[ilog + 1]:
-                            raise Exception(
-                                f"Log step mismatch at {step_now}, {step_next}"
-                            )
-
-                except AttributeError:
-                    logger.debug("Failed to parse, breaking")
-                    break
-
-        TR = self._To[1] / self._To[0]
-        if np.abs(TR[-1] - 1.0) < 0.001:
-            self._eta = self._Po[1] / self._Po[0] - 1.0
+    return istep, mdot, To * cp, Po, resid
 
     @property
     def nstep(self):
@@ -1304,7 +1352,13 @@ class TS3Log:
         return err[np.argmax(np.abs(err))]
 
 
-def _read_probe_dat(fname, S, shape=()):
+def read_probe_dat_dir(dname, S, shape):
+    fnames = glob(os.path.join(dname, "*.dat"))
+    return [read_probe_dat(f, S, shape) for f in fnames]
+
+
+def read_probe_dat(fname, S, shape=()):
+    logger.info(f"Reading {fname}")
     Npts = int(np.loadtxt(fname, max_rows=1))
     x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
 
@@ -1324,6 +1378,7 @@ def _read_probe_dat(fname, S, shape=()):
     Fshape = x.shape
 
     F = turbigen.flowfield.PerfectFlowField(Fshape)
+    F.Tu0 = 0.0
     F.cp = S.cp
     F.gamma = S.gamma
     F.mu = S.mu
@@ -1335,6 +1390,7 @@ def _read_probe_dat(fname, S, shape=()):
     u = roe / ro - 0.5 * F.V**2.0
 
     F.set_rho_u(ro, u)
+    F.set_Tu0(S.Tu0)
 
     return F
 
@@ -1350,3 +1406,13 @@ def _check_nan(fname):
                 except Exception:
                     return -1
     return 0
+
+
+def _get_time_vector(ts3_config):
+    freq = ts3_config.frequency
+    nstep_cycle = ts3_config.nstep_cycle
+    nt = nstep_cycle * ts3_config.ncycle
+    it = np.arange(nt)
+    dt = 1.0 / freq / nstep_cycle
+    t = it * dt
+    return t
