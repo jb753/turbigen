@@ -72,6 +72,7 @@ def post(
     # Choose if this is compressor or turbine
     row = meanline.get_row(irow_ref)
     is_compressor = np.diff(row.P) > 0.0
+    print(f'is_compressor={is_compressor}')
 
     # Now non-dimensionalise the variable we want
 
@@ -79,11 +80,13 @@ def post(
     if plot_var == PlotVars.YS:
         s = mass_avg(Csc.s)
         if is_compressor:
-            v = row.T[1] * (s - row.s[0]) / row.halfVsq[0]
+            v = row.T[1] * (s - row.s[0]) / row.halfVsq_rel[0]
         else:
-            v = row.T[1] * (s - row.s[0]) / row.halfVsq[1]
+            v = row.T[1] * (s - row.s[0]) / row.halfVsq_rel[1]
 
         label = "Entropy Loss Coefficient, $Y_s$"
+        Ys_mean = np.ptp(row.s)*row.T[1]/row.halfVsq_rel[0]
+        print(f'Mean Ys={Ys_mean}')
 
     elif plot_var == PlotVars.VM:
         v = C.Vm / row.U[1]

@@ -926,15 +926,16 @@ class Grid:
             self.update_outlet()
             logger.info("Accurate solution...")
 
-        solver.run(self, solver_conf, machine)
+        return solver.run(self, solver_conf, machine)
 
     def unstructured_cut_marching(self, xr_cut):
         """Take an unstructured cut using marching cubes."""
 
+        # Loop over blocks
         triangles = []
         last_block = None
         for block in self:
-            # Evaluate signed distance for all points
+            # Evaluate signed distance for all points in the block
             dist = turbigen.util.signed_distance(xr_cut, block.xr)
 
             # Get triangles for this block
@@ -1457,7 +1458,7 @@ class MixingPatch(Patch):
 class InletPatch(Patch):
     state = None
     rfin = 0.5
-    force_type = None
+    force = False
     amplitude = 0.0
     phase = 0.0
     rho_store = None
