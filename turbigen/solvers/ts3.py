@@ -94,7 +94,10 @@ class Config(BaseSolver):
     smooth_scale_dts_option: int = 0
 
     show_yplus: bool = False
+    laminar: bool = False
+    """Enable laminar boundary layers on all walls."""
 
+    fac_st0: float = 1.0
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -107,6 +110,7 @@ class Config(BaseSolver):
     nstep_save_start_probe: int = 0
     xllim_free: float = 0.1
     free_turb: float = 0.05
+    turbvis_lim: float = 3000.0
 
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
@@ -136,7 +140,7 @@ class Config(BaseSolver):
 
         return av
 
-    def block_variables(self, block, rref):
+    def block_variables(self, block, rref, laminar):
         # """Make a dictionary of block variables, with defaults overriden as needed."""
         bv = DEFAULT_BV.copy()
         for k in bv:
@@ -166,6 +170,23 @@ class Config(BaseSolver):
         else:
             raise Exception(f"Unrecognised Lref_xllim={self.Lref_xllim}")
         bv.update(_get_wall_rpms(block))
+
+        if laminar:
+            # Set laminar from i=0 to i=ni on every block
+            ni1 = block.ni - 1
+            bv["itrans"] = -1
+            bv["itrans_j1_st"] = 0
+            bv["itrans_j1_en"] = ni1
+            bv["itrans_j2_st"] = 0
+            bv["itrans_j2_en"] = ni1
+            bv["itrans_k1_st"] = 0
+            bv["itrans_k1_en"] = ni1
+            bv["itrans_k2_st"] = 0
+            bv["itrans_k2_en"] = ni1
+            bv["itrans_j1_frac"] = 0.1
+            bv["itrans_j2_frac"] = 0.1
+            bv["itrans_k1_frac"] = 0.1
+            bv["itrans_k2_frac"] = 0.1
 
         return bv
 
@@ -695,11 +716,13 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
         p.state.set_Tu0(0.0)
 
     # Determine reference radii for mixing length limit
-    rref = np.zeros((grid.nrow,))
+    rref = np.empty((grid.nrow,))
     for irow, row_block in enumerate(grid.row_blocks):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
     input_file_path = os.path.join(ts3_config.workdir, fname)
+    if not os.path.exists(ts3_config.workdir):
+        raise Exception(f"Working directory {ts3_config.workdir} does not exist.")
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet
@@ -738,7 +761,9 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             rref_block = rref[grid.row_index(block)]
         else:
             rref_block = np.nan
-        for name, val in ts3_config.block_variables(block, rref_block).items():
+        for name, val in ts3_config.block_variables(
+            block, rref_block, ts3_config.laminar
+        ).items():
             _write_variable(block_group, name, "_bv", val)
 
         # Block properties
