@@ -54,7 +54,7 @@ def read_yaml(fname):
     """Read a dictionary from file."""
 
     # Patch YAML loader to get scientific notation correct
-    loader = UniqueKeyLoader
+    loader = yaml.SafeLoader
     loader.add_implicit_resolver(
         "tag:yaml.org,2002:float",
         re.compile(
