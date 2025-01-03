@@ -1,5 +1,6 @@
 venv
 tags
+venv/
 dist
 doc/runs/
 tags*
