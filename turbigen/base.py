@@ -852,6 +852,10 @@ class Kinematics:
     def halfVsq(self):
         return 0.5 * self.V**2
 
+    @dependent_property
+    def halfVsq_rel(self):
+        return 0.5 * self.V_rel**2
+
     #
     # Angles
     #
