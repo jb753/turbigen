@@ -209,9 +209,7 @@ class StructuredData:
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
         if self._order == "C":
-            return self._data[
-                ind,
-            ]
+            return self._data[ind,]
         else:
             return self._data[..., ind]
 
@@ -387,6 +385,10 @@ class Kinematics:
     @dependent_property
     def yz(self):
         return np.stack((self.y, self.z))
+
+    @dependent_property
+    def xy(self):
+        return np.stack((self.x, self.y))
 
     @dependent_property
     def y(self):
@@ -1073,7 +1075,6 @@ class Composites:
         self.set_rho_u(rho, u)
 
     def Ai_average(self):
-
         dA = np.expand_dims(util.vecnorm(self.dAi), 0)
         if self.ndim > 3:
             dA = np.expand_dims(dA, -1)

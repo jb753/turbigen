@@ -81,7 +81,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Make empty object of correct shape
         block = cls(shape=xrt.shape[1:])
         block.xrt = xrt
-        block._metadata = {"Nb": Nb, "patches": patches}
+        block._metadata = {"Nb": Nb, "patches": list(patches)}
         for p in patches:
             p.block = block
             # Check the limit indices are valid
@@ -395,37 +395,20 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return dlif, dljf, dlkf
 
     def check_coordinates(self):
-        """Raise an error if coordinates are invalid."""
+        """Raise exception if coordinates are invalid."""
 
         # No negative radii
-        assert (self.r >= 0.0).all()
+        if not (self.r >= 0.0).all():
+            raise Exception("Negative radii")
 
         # Finite coordinates
-        try:
-            assert np.isfinite(self.xrt).all()
-        except AssertionError:
-            logger.iter(
-                np.nanmean(self.xrt[0]),
-                np.nanmin(self.xrt[0]),
-                np.nanmax(self.xrt[0].max),
-                np.sum(np.isnan(self.xrt[0])),
-            )
-            logger.iter(
-                np.nanmean(self.xrt[1]),
-                np.nanmin(self.xrt[1]),
-                np.nanmax(self.xrt[1].max),
-                np.sum(np.isnan(self.xrt[1])),
-            )
-            logger.iter(
-                np.nanmean(self.xrt[2]),
-                np.nanmin(self.xrt[2]),
-                np.nanmax(self.xrt[2].max),
-                np.sum(np.isnan(self.xrt[2])),
-            )
+        if not np.isfinite(self.xrt).all():
             raise Exception("Coordinates not finite")
 
         # No negative cells
-        assert (self.vol > 0.0).all()
+        if nneg := np.sum(self.vol > 0.0):
+            percent_neg = (nneg / np.size(self.vol)) * 100.0
+            raise Exception(f"{percent_neg:.3f}% negative volumes in {self}")
 
     def check_wall_distance(self):
         """Raise an error if wall distance is invalid."""
@@ -674,6 +657,37 @@ class Grid:
                     patches.append(patch)
         return patches
 
+    def block_by_point(self, xrt):
+        """Get the block containing a point."""
+
+        # Loop over blocks
+        for b in self:
+            # Skip blocks where this point is outside the box
+            xrt_max = b.xrt.max(axis=(1, 2, 3))
+            xrt_min = b.xrt.min(axis=(1, 2, 3))
+
+            if np.logical_and(xrt >= xrt_min, xrt <= xrt_max).all():
+                return b
+
+    def blocks_by_box(self, xrt_box):
+        """Get blocks inside a bouding box."""
+        xrt_box = np.reshape(xrt_box, (3, 2))
+
+        # Loop over blocks
+        blocks = []
+        for b in self:
+            xmin = (b.x >= xrt_box[0, 0]).all()
+            xmax = (b.x <= xrt_box[0, -1]).all()
+            ymin = (b.r >= xrt_box[1, 0]).all()
+            ymax = (b.r <= xrt_box[1, -1]).all()
+            zmin = (b.t >= xrt_box[2, 0]).all()
+            zmax = (b.t <= xrt_box[2, -1]).all()
+
+            if all((xmin, xmax, ymin, ymax, zmin, zmax)):
+                blocks.append(b)
+
+        return blocks
+
     @property
     def inlet_patches(self):
         return self.find_patches(InletPatch)
@@ -706,7 +720,7 @@ class Grid:
     def nonmatch_patches(self):
         return self.find_patches(NonMatchPatch)
 
-    def match_patches(self):
+    def match_patches(self, raise_fail=True):
         """Connect all pairs of patches that should match together."""
 
         # Periodics first, then mixing
@@ -719,8 +733,9 @@ class Grid:
             for P in patches:
                 P.match = None
 
-            if not np.mod(len(patches), 2) == 0:
+            if raise_fail and not np.mod(len(patches), 2) == 0:
                 raise Exception(f"Wrong number of {type(patches[0])} to match")
+
             for P1 in patches:
                 for P2 in patches:
                     try:
@@ -736,7 +751,7 @@ class Grid:
                         logger.info(P2)
                         raise e
             for P in patches:
-                if P.match is None:
+                if P.match is None and raise_fail:
                     raise Exception(
                         "Could not match patch "
                         f"bid={self._blocks.index(P.block)} "
@@ -793,11 +808,16 @@ class Grid:
         raise Exception(f"Could not locate {block} in the row lists")
 
     def check_coordinates(self):
+        passed = True
         for ib, b in enumerate(self):
             try:
                 b.check_coordinates()
-            except AssertionError:
-                raise Exception(f"Coordinate check failed in block {ib} {b}") from None
+            except Exception as e:
+                print(f"Block {ib}")
+                print(e)
+                passed = False
+        if not passed:
+            raise Exception("Coordinate check failed.")
 
     def apply_periodic(self):
         """For each pair of periodic patches, set average of conserved quantities."""
@@ -930,9 +950,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.to_unstructured().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.to_unstructured().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1777,6 +1798,61 @@ def from_jmesh(blocks, conn_face, state):
     g = Grid(blocks_out)
     g.check_coordinates()
     g.match_patches()
+
+    return g
+
+
+def from_xyz(xyz, state, Nb, roffset, labels):
+    """Generate a grid object from Cartesian coordinates with face-to-face patching.
+
+    To greatly simplify block connectivity, all periodic boundaries occupy
+    entire face and matching subsets of faces is disallowed. This means we can
+    start by adding periodic patches on all six faces of every block, match
+    them automatically, and then delete mismatched ones.
+
+    Parameters
+    ----------
+    xyz: list of array (3, ni, nj, nk)
+        Cartesian coordinates for each block.
+    state: State
+        Reference thermodynamic state to set fluid model.
+    Nb: int
+        Number of blades, setting the circumferential period.
+    roffset: float
+        Raidus at y=0.
+    labels: list of str
+
+    """
+
+    # Use the reference state to choose fluid model
+    if isinstance(state, turbigen.fluid.PerfectState):
+        Block = PerfectBlock
+    elif isinstance(state, turbigen.fluid.RealState):
+        Block = RealBlock
+
+    # Initialise the blocks
+    blocks = []
+    for xyzi, labi in zip(xyz, labels):
+        xrt = xyzi.copy()
+        xrt[1] += roffset
+        xrt[2] *= roffset
+
+        # Periodic patches on all faces
+        patches = (
+            PeriodicPatch(i=0),
+            PeriodicPatch(i=-1),
+            PeriodicPatch(j=0),
+            PeriodicPatch(j=-1),
+            PeriodicPatch(k=0),
+            PeriodicPatch(k=-1),
+        )
+
+        block = Block.from_coordinates(np.flip(xrt, axis=-1), Nb, patches, label=labi)
+        block._metadata.update(state._metadata)
+        blocks.append(block)
+
+    # Initialise the grid
+    g = Grid(blocks)
 
     return g
 
