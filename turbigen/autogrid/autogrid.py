@@ -544,7 +544,12 @@ ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}"""
         raise Exception(
             f"""ssh-agent is running on via_host {via}
 but we do not have the details in current shell. Fix by running:
-source get_ssh_agent.sh {via}"""
+source get_ssh_agent.sh {via}
+If the problem persists, then it is possible that the already
+running ssh-agent process is stuck somehow. So kill it and restart
+by running:
+ssh -t {via} 'pkill ssh-agent && eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}
+"""
         ) from None
 
     # Check we can connect to the AG box

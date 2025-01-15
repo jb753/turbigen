@@ -112,7 +112,7 @@ def post(
     C_tri, triangles = C.get_mpl_triangulation()
 
     # Centre theta on zero
-    C_tri.t -= 0.5 * (C_tri.t.max() + C_tri.t.max())
+    C_tri.t -= 0.5 * (C_tri.t.min() + C_tri.t.max())
 
     # Add on offset
     C_tri.t += theta_offset * C_tri.pitch
@@ -121,7 +121,7 @@ def post(
     if coord_mode == CoordMode.X:
         c1, c2 = C_tri.yz
     elif coord_mode == CoordMode.R:
-        c1, c2 = C_tri.rt, C_tri.r
+        c1, c2 = C_tri.rt, C_tri.x
     elif coord_mode == CoordMode.SPF:
         # Now generate a mapping from xr to meridional distance
         xr_ref = machine.ann.get_span_curve(value, n=4999)
@@ -227,7 +227,7 @@ def post(
 
         # Remove box, grey backgroud for hub/casing/blades
         ax.set_aspect("equal", adjustable="box")
-        ax.set_facecolor(np.ones((2,)) * 0.7)
+        ax.set_facecolor(np.ones((3,)) * 0.7)
         ax.set_xticks(())
         ax.set_yticks(())
         for spine in ax.spines.values():
