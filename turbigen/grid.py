@@ -406,7 +406,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             raise Exception("Coordinates not finite")
 
         # No negative cells
-        if nneg := np.sum(self.vol > 0.0):
+        if (nneg := np.sum(self.vol > 0.0)):
             percent_neg = (nneg / np.size(self.vol)) * 100.0
             raise Exception(f"{percent_neg:.3f}% negative volumes in {self}")
 
@@ -580,6 +580,13 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             patch.ijk_limits[~pos] = ((patch.ijk_limits[~pos] + 1) * 2**k) - 1
 
         self.Omega = Omega
+
+    def nearest_index(self, xrt):
+        """Get the indices of closest point in a block to a query point."""
+        xrrt = np.copy(xrt)
+        xrrt[2] *= xrrt[1]
+        dist = np.sum((self.xrrt - np.reshape(xrrt,(3,1,1,1)))**2,axis=0)
+        return np.unravel_index( np.argmin(dist), self.shape)
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
@@ -912,6 +919,32 @@ class Grid:
                         f"Warning: outlet Mam={Cm.Mam:.3f} is choked; this can affect"
                         " mass flow continuity."
                     )
+
+    def get_nodes(self):
+        """Unstructured coordinates of all points on walls."""
+
+        # Loop over blocks
+        xrrt_block = []
+        for block in self:
+            # Assemble unstructured wall coordinates for this block
+            xrtb = block.xrt.reshape(3, -1)
+
+            # Replicate by +/- a pitch
+            pitch = 2.0 * np.pi / float(block.Nb)
+            dxrt = np.zeros_like(xrtb)
+            dxrt[2] = pitch
+            xrtw_rep = np.concatenate((xrtb - dxrt, xrtb, xrtb + dxrt), axis=1)
+
+            # Convert to rt
+            xrrtb = xrtb_rep + 0.0
+            xrrtb[2] *= xrrtb[1]
+
+            xrrt_block.append(xrrtb)
+
+        # Join all blocks together
+        xrrt = np.concatenate(xrrt_block, axis=1)
+
+        return xrrt
 
     def get_wall_nodes(self):
         """Unstructured coordinates of all points on walls."""
@@ -1552,6 +1585,7 @@ class InletPatch(Patch):
     amplitude = 0.0
     phase = 0.0
     rho_store = None
+    harmonics = (1,)
 
 
 class InviscidPatch(Patch):
@@ -1847,7 +1881,8 @@ def from_xyz(xyz, state, Nb, roffset, labels):
             PeriodicPatch(k=-1),
         )
 
-        block = Block.from_coordinates(np.flip(xrt, axis=-1), Nb, patches, label=labi)
+        # block = Block.from_coordinates(np.flip(xrt, axis=-1), Nb, patches, label=labi)
+        block = Block.from_coordinates(xrt, Nb, patches, label=labi)
         block._metadata.update(state._metadata)
         blocks.append(block)
 
