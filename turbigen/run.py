@@ -167,6 +167,10 @@ and will cause problems with meshing and solving for the flow field."""
     logger.debug(f"Writing {config_yaml_path}...")
     conf.write(config_yaml_path)
 
+    postdir = os.path.join(workdir, "post")
+    if not os.path.exists(postdir):
+        os.makedirs(postdir, exist_ok=True)
+
     if not conf.annulus:
         raise ConfigError("No annulus configuration; quitting.")
 
@@ -379,7 +383,6 @@ and will cause problems with meshing and solving for the flow field."""
                             )
 
                             def eval_fit_err(q, tree, spf, bldi, isect, plot):
-
                                 bldi.set_pvec(q, isect)
 
                                 # Get fitted surface coords
@@ -654,6 +657,13 @@ and will cause problems with meshing and solving for the flow field."""
 
     mac = geometry.Machine(ann, bld, Nb, tips, splitter)
 
+    if annulus_debug:
+        logger.iter("Annulus debugging requested...")
+        from turbigen.post import plot_annulus
+
+        plot_annulus.post(None, mac, None, None, postdir)
+        sys.exit(0)
+
     # At this point, we have the geometry and mean-line set up
     # We can now generate the mesh
     if not conf.mesh:
@@ -926,10 +936,6 @@ and will cause problems with meshing and solving for the flow field."""
 
     ml_out = turbigen.flowfield.make_mean_line_from_flowfield(Amix, Call)
 
-    postdir = os.path.join(workdir, "post")
-    if not os.path.exists(postdir):
-        os.makedirs(postdir, exist_ok=True)
-
     for post_name, post_conf in conf.post_process.items():
         logger.debug(f"Running post function {post_name}")
         post_func = util.load_post(post_name).post
@@ -969,7 +975,6 @@ and will cause problems with meshing and solving for the flow field."""
 
     inc_converged = True
     if inc_conf := conf.iterate.get("incidence"):
-
         # Extract configuration parameters
         rf_inc = inc_conf.get("relaxation_factor", 0.2)
         rtol_mdot_inc = inc_conf.get("rtol_mdot", 0.05)
@@ -984,7 +989,6 @@ and will cause problems with meshing and solving for the flow field."""
         # Preallocate for a new step in the incidence history
         inc_history_new = []
         for irow, row in enumerate(conf.sections):
-
             logger.debug(f"CORRECTING INCIDENCE, row {irow}")
             if row:
                 chi = turbigen.util.incidence_unstructured(g, mac, ml, irow, row["spf"])
@@ -1006,7 +1010,6 @@ and will cause problems with meshing and solving for the flow field."""
                 # Overwrite incidence change if we can see from history
                 # that the target is bracketed
                 if inc_history and False:
-
                     # Get history so far
                     inc_old = np.array(inc_history[irow])
 
@@ -1023,7 +1026,6 @@ and will cause problems with meshing and solving for the flow field."""
 
                     # Loop over sections
                     for j in range(nsect):
-
                         # Get most recent -ve
                         for k in range(nrecent):
                             inc_k = inc_all[-1 - k, :, j]
@@ -1040,7 +1042,6 @@ and will cause problems with meshing and solving for the flow field."""
 
                         # If we found a bracket, then use it to set recamber
                         if not np.isnan(inc_bracket[:, :, j]).any():
-
                             # print(f"sect j={j} is bracketed")
                             # print(inc_bracket[:, :, j])
 

@@ -395,20 +395,37 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return dlif, dljf, dlkf
 
     def check_coordinates(self):
-        """Raise exception if coordinates are invalid."""
+        """Raise an error if coordinates are invalid."""
 
         # No negative radii
-        if not (self.r >= 0.0).all():
-            raise Exception("Negative radii")
+        assert (self.r >= 0.0).all()
 
         # Finite coordinates
-        if not np.isfinite(self.xrt).all():
+        try:
+            assert np.isfinite(self.xrt).all()
+        except AssertionError:
+            logger.iter(
+                np.nanmean(self.xrt[0]),
+                np.nanmin(self.xrt[0]),
+                np.nanmax(self.xrt[0].max),
+                np.sum(np.isnan(self.xrt[0])),
+            )
+            logger.iter(
+                np.nanmean(self.xrt[1]),
+                np.nanmin(self.xrt[1]),
+                np.nanmax(self.xrt[1].max),
+                np.sum(np.isnan(self.xrt[1])),
+            )
+            logger.iter(
+                np.nanmean(self.xrt[2]),
+                np.nanmin(self.xrt[2]),
+                np.nanmax(self.xrt[2].max),
+                np.sum(np.isnan(self.xrt[2])),
+            )
             raise Exception("Coordinates not finite")
 
         # No negative cells
-        if nneg := np.sum(self.vol > 0.0):
-            percent_neg = (nneg / np.size(self.vol)) * 100.0
-            raise Exception(f"{percent_neg:.3f}% negative volumes in {self}")
+        assert (self.vol_approx > 0.0).all()
 
     def check_wall_distance(self):
         """Raise an error if wall distance is invalid."""
@@ -950,10 +967,9 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(
-                block.to_unstructured().xrrt.T,
-                workers=-1,
-            )[0].reshape(block.shape)
+            block.w = kdtree.query(block.to_unstructured().xrrt.T, workers=-1,)[
+                0
+            ].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
