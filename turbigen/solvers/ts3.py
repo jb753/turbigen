@@ -818,9 +818,12 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
                         t = _get_time_vector(ts3_config)
                         nt = len(t)
-                        F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
-                        ).reshape(1, 1, 1, nt)
+                        F = np.ones((1, 1, 1, nt))
+                        for n in patch.harmonics:
+                            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
+                            F += patch.amplitude * np.sin(
+                            2.0 * np.pi * ts3_config.frequency * n *t + phase
+                        )
                         ga = patch.state.gamma
 
                         if force == "isentropic":
@@ -846,7 +849,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                     if patch.force:
                         t = _get_time_vector(ts3_config)
                         F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                            2.0 * np.pi * ts3_config.frequency * t
                         ).reshape(1, 1, 1, -1)
                         val = np.expand_dims(val, 3) * F
                         pa["nt"] = len(t)
@@ -1068,7 +1071,8 @@ def _read_hdf5(grid, ts3_config):
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
-            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            # logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            print(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
 
     f.close()
     fi.close()
