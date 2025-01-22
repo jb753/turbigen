@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 from timeit import default_timer as timer
+import warnings
 
 import numpy as np
 from scipy.optimize import minimize
@@ -22,6 +23,8 @@ from turbigen import (
     ohmesh,
 )
 from turbigen.exceptions import ConfigError
+
+warnings.simplefilter("error", RuntimeWarning)
 
 logger = util.make_logger()
 
