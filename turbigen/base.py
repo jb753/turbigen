@@ -210,7 +210,9 @@ class StructuredData:
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
         if self._order == "C":
-            return self._data[ind,]
+            return self._data[
+                ind,
+            ]
         else:
             return self._data[..., ind]
 
@@ -677,6 +679,21 @@ class Kinematics:
         vol = Fisum + Fjsum + Fksum
 
         return vol / 3.0
+
+    @property
+    def vol_approx(self):
+        if not self.ndim == 3:
+            raise Exception("Cell volume is only defined for 3D grids")
+
+        # Numpy cross function assumes that the components are in last axis
+        xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
+
+        # Vectors for cell sides
+        qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
+        qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
+        qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+
+        return np.sum(qk * np.cross(qi, qj), axis=-1)
 
     @dependent_property
     def flux_all(self):

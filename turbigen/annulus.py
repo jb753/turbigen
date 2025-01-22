@@ -219,6 +219,7 @@ class Smooth:
                     pass
 
         if smooth:
+            # for k in range(1, 3):
             for k in range(1, self.npts - 2):
                 _solve_k(k)
 
