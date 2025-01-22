@@ -330,7 +330,7 @@ def inverse(ml):
         "Alpha2_rel": ml.Alpha_rel[1],
         "DH_rotor": ml.V_rel[1] / ml.V_rel[0],
         "DH_diff": ml.V[-1] / ml.V[1],
-        "loss_split": (s_nomix[1] - -s_nomix[0]) / (s_nomix[-1] - s_nomix[0]),
+        "loss_split": (s_nomix[1] - s_nomix[0]) / (s_nomix[-1] - s_nomix[0]),
         "RR": ml.rrms[1] / ml.rrms[0],
         "DR": ml.rho[1] / ml.rho[0],
         "VmR": ml.Vm[1] / ml.Vm[0],

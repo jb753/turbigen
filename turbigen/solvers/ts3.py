@@ -92,6 +92,7 @@ class Config(BaseSolver):
     """Spalart--Allmaras turbulence model helicity correction."""
 
     smooth_scale_dts_option: int = 0
+    smooth_scale_directional_option: int = 0
 
     show_yplus: bool = False
     laminar: bool = False
@@ -1130,7 +1131,6 @@ def run(grid, ts3_conf, machine):
     # Final check of the mesh
     grid.match_patches()
     for block in grid:
-        # block.check_coordinates()
         block.check_wall_distance()
 
     # Load balancing
