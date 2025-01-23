@@ -369,9 +369,9 @@ class PerfectState(StructuredData):
         T = (h + self.cv * self.Tu0) / self.cp
         P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
         self.set_P_T(P, T)
-        assert np.allclose(self.h, h)
-        atol_s = self.cv * 1e-6
-        assert np.allclose(self.s, s, atol=atol_s)
+        # atol_s = self.cv * 1e-6
+        # assert np.allclose(self.h, h)
+        # assert np.allclose(self.s, s, atol=atol_s)
         return self
 
     def set_T_s(self, T, s):

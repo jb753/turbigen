@@ -1005,6 +1005,7 @@ def run(grid, conf, machine=None):
         ),
         np.nan,
     )
+    nnow = conf.n_step
     for b in blocks_out:
         for bc in b.bconds:
             mhos_now = np.array(bc.convergence_log).T
