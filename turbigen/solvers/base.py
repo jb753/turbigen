@@ -1,4 +1,5 @@
 """Define the basic interface that all solvers must conform to."""
+
 import dataclasses
 import numpy as np
 

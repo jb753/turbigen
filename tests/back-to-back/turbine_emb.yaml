@@ -48,9 +48,9 @@ solver:
   n_step: 10000
   n_step_avg: 2000
   nstep_damp: -1
-  plot_conv: true
 
 post_process:
+  plot_convergence:
   contour:
     coord: m
     value: 2.05
