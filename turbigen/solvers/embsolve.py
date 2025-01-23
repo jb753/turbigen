@@ -874,7 +874,11 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
             )
 
             # Intermittently print convergence
-            if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
+            if (
+                (not np.mod(istep, conf.n_step_log))
+                and (istep > 0)
+                or (istep == conf.n_step - 1)
+            ):
                 # Send residuals to master proc
                 if rank:
                     comm.send(dUnow, dest=0)
@@ -916,7 +920,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
         tpnps = (tlast - tfirst) / nodes / conf.n_step
         logger.info(f"Elapsed time {tlast-tfirst:.2f}s")
         logger.info(f"Average tpnps={tpnps:.3e}")
-        return blocks, mixers, tpnps
+        return blocks, mixers, tpnps, dUlog
     else:
         comm.send(blocks, dest=0)
         comm.send(mixers, dest=0)
@@ -974,7 +978,7 @@ def run(grid, conf, machine=None):
         logger.info(f"Elapsed time {ten-tst:.2f}s")
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], mixers_out, tpnps = run_slave(
+    block_split[0], mixers_out, tpnps, dUlog = run_slave(
         block_split[0], periodics, mixers, nodes
     )
 
@@ -1010,22 +1014,13 @@ def run(grid, conf, machine=None):
             elif isinstance(bc, OutletBoundary):
                 mhos[1, :, :nnow] = mhos_now
 
-    mdot_conv = mhos[:, 0]
-    ho_conv = mhos[:, 1]
-    s_conv = mhos[:, 2]
-    Po_conv = np.full_like(ho_conv, blocks_out[0].Pref)
     istep = np.arange(conf.n_step)
-    resid = np.ones_like(istep)
-    conv = ConvergenceHistory(
-        istep,
-        mdot_conv,
-        ho_conv,
-        Po_conv,
-        resid,
-        blocks_out[0].state,
-        conf.n_step - conf.n_step_avg,
-    )
-    conv.state.set_h_s(ho_conv, s_conv)
+    istep_avg = conf.n_step - conf.n_step_avg
+    resid = np.concatenate(dUlog, axis=0)[:, 0]
+    state_conv = blocks_out[0].state.empty(shape=(2, nnow))
+    state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+    conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+    conv.tpnps = tpnps
 
     for b, sb in zip(grid, blocks_out):
         cons_avg = np.moveaxis(sb.cons_avg, -1, 0)

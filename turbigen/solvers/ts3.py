@@ -25,7 +25,6 @@ logger = turbigen.util.make_logger()
 
 @dataclass
 class Config(BaseSolver):
-
     # Override base attributes
     _name = "ts3"
 
@@ -819,15 +818,14 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
                     if force := patch.force:
-
                         t = _get_time_vector(ts3_config)
                         nt = len(t)
                         F = np.ones((1, 1, 1, nt))
                         for n in patch.harmonics:
                             phase = np.pi * n**2 / 2.5338  # For minimum crest factor
                             F += patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * n *t + phase
-                        )
+                                2.0 * np.pi * ts3_config.frequency * n * t + phase
+                            )
                         ga = patch.state.gamma
 
                         if force == "isentropic":
@@ -1167,10 +1165,13 @@ def run(grid, ts3_conf, machine):
     grid.check_outlet_choke()
 
     # Parse the log file
-    state_log = grid.inlet_patches[0].state.copy()
-    state_log.set_Tu0(0.0)
     istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
-    return ConvergenceHistory(*parse_log(log_path), state_log, istep_save_start)
+
+    istep, mdot, ho, Po, resid = parse_log(log_path)
+    state_log = grid.inlet_patches[0].state.empty(shape=mdot.shape)
+    state_log.set_Tu0(0.0)
+    state_log.set_P_h(ho, Po)
+    return ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
 
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
@@ -1215,7 +1216,6 @@ def parse_log(fname):
 
     # Loop over lines in the file
     with open(fname, "r") as f:
-
         # Look for cp
         for line in f:
             match = re_cp.search(line)
