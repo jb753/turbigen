@@ -1885,7 +1885,7 @@ def from_xyz(xyz, state, Nb, roffset, labels):
     for xyzi, labi in zip(xyz, labels):
         xrt = xyzi.copy()
         xrt[1] += roffset
-        xrt[2] *= roffset
+        xrt[2] /= roffset
 
         # Periodic patches on all faces
         patches = (

@@ -92,6 +92,7 @@ class Config(BaseSolver):
     """Spalart--Allmaras turbulence model helicity correction."""
 
     smooth_scale_dts_option: int = 0
+    smooth_scale_directional_option: int = 0
 
     show_yplus: bool = False
     laminar: bool = False
@@ -137,6 +138,8 @@ class Config(BaseSolver):
         nstep_save_start = av["nstep_save_start"]
         if nstep_save_start >= nstep and nstep > 0 and not av["dts"]:
             raise Exception(f"nstep_save_start={nstep_save_start} is > nstep={nstep}")
+        if nstep_save_start < 0:
+            raise Exception(f"nstep_save_start={nstep_save_start} is < 0")
 
         return av
 
@@ -205,6 +208,7 @@ class Config(BaseSolver):
         c.dts = 0
         if c.nstep_soft:
             c.nstep = c.nstep_soft
+        c.nstep_avg = 100
 
         return c
 
@@ -1130,7 +1134,6 @@ def run(grid, ts3_conf, machine):
     # Final check of the mesh
     grid.match_patches()
     for block in grid:
-        # block.check_coordinates()
         block.check_wall_distance()
 
     # Load balancing
@@ -1153,13 +1156,17 @@ def run(grid, ts3_conf, machine):
         _read_hdf5(grid, ts3_conf)
         return
 
+    # Keep old log file if it exists (e.g. after a soft start)
+    log_path = os.path.join(ts3_conf.workdir, "log.txt")
+    if os.path.exists(log_path):
+        os.rename(log_path, log_path.replace("log.txt", "log_old.txt"))
+
     _run(grid, ts3_conf)
 
     # Produce a warning if the outlet is choked
     grid.check_outlet_choke()
 
     # Parse the log file
-    log_path = os.path.join(ts3_conf.workdir, "log.txt")
     state_log = grid.inlet_patches[0].state.copy()
     state_log.set_Tu0(0.0)
     istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
@@ -1228,13 +1235,6 @@ def parse_log(fname):
             match = re_dts.search(line)
             if match:
                 dts = int(match.group(1))
-                break
-
-        # Look for averaging steps
-        for line in f:
-            match = re_nstep_save_start.search(line)
-            if match:
-                # nstep_save_start = int(match.group(1))
                 break
 
         # Preallocate
@@ -1401,7 +1401,7 @@ def read_probe_dat(fname, S, shape=()):
 
 def _check_nan(fname):
     """Return step number of divergence from TS3 log, or zero if no NANs found."""
-    NBYTES = 1024
+    NBYTES = 2048
     with open(fname, "r") as f:
         while chunk := f.read(NBYTES):
             if re_nan.match(chunk):
