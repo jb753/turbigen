@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_cascade_emb_2
+workdir: runs/turbine_cascade
 
 inlet:
   Po: 1e5
