@@ -1,0 +1,71 @@
+---
+annulus:
+  AR_chord: 2.0
+  AR_gap:
+  - 0.5
+  - 0.5
+  debug: false
+blades:
+- Co: 0.7
+  Re_surf: 400000.0
+  sections:
+  - q_thick:
+    - 0.05
+    - 0.12
+    - 0.3
+    - 0.0
+    - 0.0
+    - 0.18
+    qstar_camber:
+    - 10.0
+    - -2.0
+    - 1.0
+    - 1.0
+    - 0.0
+    spf: 0.5
+inlet:
+  Po: 100000.0
+  To: 300.0
+  cp: 1005.0
+  gamma: 1.4
+mean_line:
+  Alpha:
+  - 40.0
+  - -65.0
+  Ma2: 0.6
+  Yh: 0.029
+  htr: 0.99
+  span:
+  - 0.01
+  - 0.011
+  type: turbine_cascade
+mesh:
+  dm_LE: 0.001
+  dm_TE: 0.03
+  ni_TE: 9
+  resolution_factor: 0.5
+  type: h
+  yplus: 30.0
+post_process:
+  contour:
+    N_passage: 2
+    coord: m
+    lim:
+    - 0.0
+    - 0.5
+    step: 0.05
+    value: 2.05
+    variable: Ys
+  plot_convergence: null
+  plot_pressure_distributions:
+    compare: tests/back-to-back/turbine/pdist_ts3.npz
+    row_spf:
+    - - 0.5
+    write_raw: true
+solver:
+  n_step: 5000
+  n_step_avg: 1000
+  nstep_damp: -1
+  type: embsolve
+workdir: /home/jb753/python/turbigen-dev/tests/back-to-back/turbine/run
+...

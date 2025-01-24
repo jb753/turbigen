@@ -160,6 +160,7 @@ def inverse(ml):
         # Turbine
         href = ml.h[1]
     Yh_out = (ml.h[1] - S2s.h) / (horef - href)
+    Ys = ml.T[1] * (ml.s[1] - ml.s[0]) / (horef - href)
 
     out = {
         "So1": ml.stagnation[0],
@@ -167,6 +168,7 @@ def inverse(ml):
         "Alpha": ml.Alpha,
         "Ma2": ml.Ma[1],
         "Yh": Yh_out,
+        "Ys": Ys,
         "htr": ml.htr[0],
         "RR": ml.RR[0],
         "Beta": ml.Beta.tolist(),

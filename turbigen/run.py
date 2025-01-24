@@ -161,6 +161,17 @@ This suggests a physically-consistent but suboptimal mean-line design
 and will cause problems with meshing and solving for the flow field."""
         )
 
+    # Warn for wobbly annulus
+    is_radial = np.abs(ml.Beta).max() > 10.0
+    is_multirow = conf.nrow>2
+    if is_radial and is_multirow:
+        if np.diff(np.sign(np.diff(ml.rrms))).any():
+            logger.warning(
+                """WARNING: Radii do not vary monotonically.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+        )
+
     # Make a working directory
     workdir = conf.workdir
     if not os.path.exists(workdir):
@@ -185,6 +196,7 @@ and will cause problems with meshing and solving for the flow field."""
     annulus_debug = conf.annulus.pop("debug", False)
     logger.info("Designing annulus...")
     Annulus = util.load_annulus(annulus_type)
+    annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
 
     conf.annulus["type"] = annulus_type

@@ -1,0 +1,63 @@
+TURBIGEN v1.10.1
+Starting at 2025-01-24T14:48:05
+Working directory: /home/jb753/python/turbigen-dev/tests/back-to-back/turbine/run
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a turbine_cascade mean line...
+MeanLine(
+    Po=[1.     0.9927] bar,
+    To=[300. 300.] K,
+    Ma=[0.311 0.6  ],
+    Vx=[81.9 85.1],
+    Vr=[0. 0.],
+    Vt=[  68.7 -182.4],
+    Vt_rel=[  68.7 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[5.66 5.66] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Annulus(
+    xmid=[-3.7231e-14  5.2500e-03],
+    rmid=[0.995 0.995],
+    span=[0.01  0.011]
+    )
+Re_surf/10^5=[4.]
+Nblade=[1263], s_cm=[0.94], tip=[0.]
+Generating an H-mesh...
+Error encountered, quitting...
+Traceback (most recent call last):
+  File "/home/jb753/.pyenv/versions/turbigen-dev/bin/turbigen", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/main.py", line 259, in main
+    success = turbigen.run.run(conf)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/run.py", line 1350, in run
+    ml_out, _, gguess = run_single(conf)
+                        ^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/run.py", line 730, in run_single
+    g = hmesh.make_grid(mac, hmesh_config, dhub, dcas, drow, unbladed)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/hmesh.py", line 688, in make_grid
+    xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/geometry.py", line 717, in evaluate_section
+    chord = util.arc_length(self.streamsurface(0.5, mcam))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/annulus.py", line 329, in func
+    return spf * self.cas.xr(mc) + (1.0 - spf) * self.hub.xr(mh)
+                 ^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/geometry.py", line 283, in xr
+    return self._xr(self._pt(np.atleast_1d(m)))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/geometry.py", line 246, in _xr
+    xr = np.stack((self._px(t), self._pr(t)))
+                                ^^^^^^^^^^^
+  File "/home/jb753/.pyenv/versions/3.11.4/envs/turbigen-dev/lib/python3.11/site-packages/scipy/interpolate/_interpolate.py", line 1014, in __call__
+    self._evaluate(x, nu, extrapolate, out)
+  File "/home/jb753/.pyenv/versions/3.11.4/envs/turbigen-dev/lib/python3.11/site-packages/scipy/interpolate/_interpolate.py", line 1576, in _evaluate
+    _ppoly.evaluate_bernstein(
+KeyboardInterrupt

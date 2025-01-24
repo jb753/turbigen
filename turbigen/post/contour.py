@@ -247,6 +247,9 @@ def post(
         ax.triplot(c1, c2, triangles, "k-", lw=0.1)
 
     figname = os.path.join(postdir, f"contour_{variable}_{coord}_{value:.3}.pdf")
+    rawname = os.path.join(postdir, f"contour_{variable}_{coord}_{value:.3}.npz")
+    np.savez_compressed(rawname, c1=c1, c2=c2, v=v, triangles=triangles)
+
     plt.savefig(figname)
     # plt.show()
     plt.close()

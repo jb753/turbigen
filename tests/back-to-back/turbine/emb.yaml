@@ -1,8 +1,8 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_cascade
-
+workdir: tests/back-to-back/turbine/emb
+ 
 inlet:
   Po: 1e5
   To: 300.
@@ -60,4 +60,4 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
-    compare: tests/pdist_ts3.npz
+    compare: tests/back-to-back/turbine/ts3/post/pressure_distributions_raw.npz

@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_ts3
+workdir: runs/turbine_cascade_ts3
 
 inlet:
   Po: 1e5
@@ -45,8 +45,8 @@ blades:
 # CFD solver
 solver:
   type: ts3
-  nstep: 8000
-  nstep_avg: 1600
+  nstep: 20000
+  nstep_avg: 2000
   ilos: 1
   xllim_free: 0.
   free_turb: 0.
@@ -63,3 +63,4 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
+    compare: tests/pdist_ts3.npz
