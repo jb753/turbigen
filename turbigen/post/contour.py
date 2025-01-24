@@ -216,7 +216,7 @@ def post(
 
     # Make the colorbar
     # cm.set_edgecolor("face")
-    plt.colorbar(cm, label=label)
+    plt.colorbar(cm, label=label, shrink=0.8)
 
     # Show hub and casing for r=const cuts
     # These are easy to trim at constant theta either side

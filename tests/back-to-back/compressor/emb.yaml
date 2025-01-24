@@ -45,7 +45,6 @@ solver:
   n_step_ramp: 1000
 
 operating_point:
-  # mdot_pid: [0.5, 0.1, 0.0]
   PR_ts: 1.0
 
 # iterate:

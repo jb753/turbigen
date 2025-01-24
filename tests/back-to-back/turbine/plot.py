@@ -2,11 +2,12 @@ import matplotlib.pyplot as plt
 import turbigen.yaml
 import numpy as np
 import warnings
-import matplotlib.gridspec as gridspec
 
 fig = plt.figure()
 labs = ["TS3", "EMB"]
 lev = np.arange(0.0, 0.45, 0.05)
+
+# Relative cost is about x5 lower with EMB. Does not stress the GPU much on  a coarse grid
 
 # Manually define positions for the axes and colorbar
 b = 0.3
