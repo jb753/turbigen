@@ -712,7 +712,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
     # Store old internal energy datum
     # Then set to zero as assumed by TS
-    Tu0_old = grid[0].Tu0
+    Tu0_old = grid[0].Tu0 + 0.
     for b in grid:
         b.set_Tu0(0.0)
     for p in grid.inlet_patches:
@@ -1167,11 +1167,16 @@ def run(grid, ts3_conf, machine):
     # Parse the log file
     istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
 
-    istep, mdot, ho, Po, resid = parse_log(log_path)
-    state_log = grid.inlet_patches[0].state.empty(shape=mdot.shape)
-    state_log.set_Tu0(0.0)
-    state_log.set_P_h(ho, Po)
-    return ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+    try:
+        istep, mdot, ho, Po, resid = parse_log(log_path)
+        state_log = grid.inlet_patches[0].state.copy().empty(shape=mdot.shape)
+        state_log.set_Tu0(0.0)
+        state_log.set_P_h(ho, Po)
+        conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+    except Exception:
+        conv = None
+
+    return conv
 
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
