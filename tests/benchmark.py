@@ -325,7 +325,8 @@ def run_embsolve(g):
         nstep_damp=-1,
         print_conv=False,
     )
-    return turbigen.solvers.embsolve.run(g, conf)
+    conv = turbigen.solvers.embsolve.run(g, conf)
+    return conv.tpnps, conv.err_mdot[-1]
 
 
 def run_ts3(g):

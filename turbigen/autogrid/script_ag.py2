@@ -90,7 +90,7 @@ for n in range(nrow):
         print 'setting default ncell'
         row(n1).set_coarse_grid_level(2)
     row(n1).set_streamwise_weight(1.,conf["blade_streamwise_weight"],1.)
-    row(n1).set_upstream_block_relaxation(1)
+    row(n1).set_upstream_block_relaxation(conf["relax_inlet"])
     row(n1).set_downstream_block_relaxation(conf["relax_outlet"])
 
     # How many blades to configure
@@ -268,6 +268,9 @@ if conf["untwist_outlet"]:
     row(nrow).set_untwist_downstream_block(int(1))
     row(nrow).set_untwist_downstream_block_stream_location(50)
 
+if conf["untwist_inlet"]:
+    row(1).set_untwist_upstream_block(int(1))
+    row(1).set_untwist_upstream_block_stream_location(conf["untwist_inlet_extent"])
 
 # Set number of points in inlet/exit ducts
 z_cst_line("Z_1_in").streamwise_number_of_points(int(conf["nx_up"]))
@@ -310,7 +313,7 @@ for n in range(nrow):
             f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_hub"]))
             f.set_butterfly_topology(is_butterfly)
             f.set_butterfly_radial_number_of_points(nkf)
-            f.set_minimum_angle(25)
+            f.set_minimum_angle(30)
             f.set_create_geometry(0)
         if Rfs:
             f = row(n1).blade(iib).shroud_fillet()
@@ -319,7 +322,7 @@ for n in range(nrow):
             f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_shd"]))
             f.set_butterfly_topology(is_butterfly)
             f.set_butterfly_radial_number_of_points(nkf)
-            f.set_minimum_angle(25)
+            f.set_minimum_angle(30)
             f.set_create_geometry(0)
 
 

@@ -25,7 +25,6 @@ logger = turbigen.util.make_logger()
 
 @dataclass
 class Config(BaseSolver):
-
     # Override base attributes
     _name = "ts3"
 
@@ -92,9 +91,13 @@ class Config(BaseSolver):
     """Spalart--Allmaras turbulence model helicity correction."""
 
     smooth_scale_dts_option: int = 0
+    smooth_scale_directional_option: int = 0
 
     show_yplus: bool = False
+    laminar: bool = False
+    """Enable laminar boundary layers on all walls."""
 
+    fac_st0: float = 1.0
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -107,6 +110,7 @@ class Config(BaseSolver):
     nstep_save_start_probe: int = 0
     xllim_free: float = 0.1
     free_turb: float = 0.05
+    turbvis_lim: float = 3000.0
 
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
@@ -133,10 +137,12 @@ class Config(BaseSolver):
         nstep_save_start = av["nstep_save_start"]
         if nstep_save_start >= nstep and nstep > 0 and not av["dts"]:
             raise Exception(f"nstep_save_start={nstep_save_start} is > nstep={nstep}")
+        if nstep_save_start < 0:
+            raise Exception(f"nstep_save_start={nstep_save_start} is < 0")
 
         return av
 
-    def block_variables(self, block, rref):
+    def block_variables(self, block, rref, laminar):
         # """Make a dictionary of block variables, with defaults overriden as needed."""
         bv = DEFAULT_BV.copy()
         for k in bv:
@@ -167,6 +173,23 @@ class Config(BaseSolver):
             raise Exception(f"Unrecognised Lref_xllim={self.Lref_xllim}")
         bv.update(_get_wall_rpms(block))
 
+        if laminar:
+            # Set laminar from i=0 to i=ni on every block
+            ni1 = block.ni - 1
+            bv["itrans"] = -1
+            bv["itrans_j1_st"] = 0
+            bv["itrans_j1_en"] = ni1
+            bv["itrans_j2_st"] = 0
+            bv["itrans_j2_en"] = ni1
+            bv["itrans_k1_st"] = 0
+            bv["itrans_k1_en"] = ni1
+            bv["itrans_k2_st"] = 0
+            bv["itrans_k2_en"] = ni1
+            bv["itrans_j1_frac"] = 0.1
+            bv["itrans_j2_frac"] = 0.1
+            bv["itrans_k1_frac"] = 0.1
+            bv["itrans_k2_frac"] = 0.1
+
         return bv
 
     def _robust(self):
@@ -184,6 +207,7 @@ class Config(BaseSolver):
         c.dts = 0
         if c.nstep_soft:
             c.nstep = c.nstep_soft
+        c.nstep_avg = 100
 
         return c
 
@@ -695,11 +719,13 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
         p.state.set_Tu0(0.0)
 
     # Determine reference radii for mixing length limit
-    rref = np.zeros((grid.nrow,))
+    rref = np.empty((grid.nrow,))
     for irow, row_block in enumerate(grid.row_blocks):
         rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
 
     input_file_path = os.path.join(ts3_config.workdir, fname)
+    if not os.path.exists(ts3_config.workdir):
+        raise Exception(f"Working directory {ts3_config.workdir} does not exist.")
     f = h5py.File(input_file_path, "w")
 
     # Get gas properties from the inlet
@@ -738,7 +764,9 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             rref_block = rref[grid.row_index(block)]
         else:
             rref_block = np.nan
-        for name, val in ts3_config.block_variables(block, rref_block).items():
+        for name, val in ts3_config.block_variables(
+            block, rref_block, ts3_config.laminar
+        ).items():
             _write_variable(block_group, name, "_bv", val)
 
         # Block properties
@@ -790,12 +818,14 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
                     if force := patch.force:
-
                         t = _get_time_vector(ts3_config)
                         nt = len(t)
-                        F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
-                        ).reshape(1, 1, 1, nt)
+                        F = np.ones((1, 1, 1, nt))
+                        for n in patch.harmonics:
+                            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
+                            F += patch.amplitude * np.sin(
+                                2.0 * np.pi * ts3_config.frequency * n * t + phase
+                            )
                         ga = patch.state.gamma
 
                         if force == "isentropic":
@@ -821,7 +851,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                     if patch.force:
                         t = _get_time_vector(ts3_config)
                         F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t + patch.phase
+                            2.0 * np.pi * ts3_config.frequency * t
                         ).reshape(1, 1, 1, -1)
                         val = np.expand_dims(val, 3) * F
                         pa["nt"] = len(t)
@@ -1043,7 +1073,8 @@ def _read_hdf5(grid, ts3_config):
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
-            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            # logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            print(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
 
     f.close()
     fi.close()
@@ -1101,7 +1132,6 @@ def run(grid, ts3_conf, machine):
     # Final check of the mesh
     grid.match_patches()
     for block in grid:
-        # block.check_coordinates()
         block.check_wall_distance()
 
     # Load balancing
@@ -1124,17 +1154,24 @@ def run(grid, ts3_conf, machine):
         _read_hdf5(grid, ts3_conf)
         return
 
+    # Keep old log file if it exists (e.g. after a soft start)
+    log_path = os.path.join(ts3_conf.workdir, "log.txt")
+    if os.path.exists(log_path):
+        os.rename(log_path, log_path.replace("log.txt", "log_old.txt"))
+
     _run(grid, ts3_conf)
 
     # Produce a warning if the outlet is choked
     grid.check_outlet_choke()
 
     # Parse the log file
-    log_path = os.path.join(ts3_conf.workdir, "log.txt")
-    state_log = grid.inlet_patches[0].state.copy()
-    state_log.set_Tu0(0.0)
     istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
-    return ConvergenceHistory(*parse_log(log_path), state_log, istep_save_start)
+
+    istep, mdot, ho, Po, resid = parse_log(log_path)
+    state_log = grid.inlet_patches[0].state.empty(shape=mdot.shape)
+    state_log.set_Tu0(0.0)
+    state_log.set_P_h(ho, Po)
+    return ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
 
 
 re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
@@ -1179,7 +1216,6 @@ def parse_log(fname):
 
     # Loop over lines in the file
     with open(fname, "r") as f:
-
         # Look for cp
         for line in f:
             match = re_cp.search(line)
@@ -1199,13 +1235,6 @@ def parse_log(fname):
             match = re_dts.search(line)
             if match:
                 dts = int(match.group(1))
-                break
-
-        # Look for averaging steps
-        for line in f:
-            match = re_nstep_save_start.search(line)
-            if match:
-                # nstep_save_start = int(match.group(1))
                 break
 
         # Preallocate
@@ -1372,7 +1401,7 @@ def read_probe_dat(fname, S, shape=()):
 
 def _check_nan(fname):
     """Return step number of divergence from TS3 log, or zero if no NANs found."""
-    NBYTES = 1024
+    NBYTES = 2048
     with open(fname, "r") as f:
         while chunk := f.read(NBYTES):
             if re_nan.match(chunk):

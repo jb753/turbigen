@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_cascade_emb_2
+workdir: runs/turbine_cascade
 
 inlet:
   Po: 1e5
@@ -41,16 +41,15 @@ blades:
         q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
         qstar_camber: [10., -2., 1.0, 1.0, 0.0]
 
-
 # CFD solver
 solver:
   type: embsolve
-  n_step: 10000
-  n_step_avg: 2000
+  n_step: 5000
+  n_step_avg: 1000
   nstep_damp: -1
-  plot_conv: true
 
 post_process:
+  plot_convergence:
   contour:
     coord: m
     value: 2.05

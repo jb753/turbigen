@@ -1,9 +1,6 @@
 """Verify implementatio of emb solver boundary conditions."""
 
-import matplotlib.pyplot as plt
 import numpy as np
-
-from copy import copy
 
 import turbigen.compflow_native as cf
 import turbigen.fluid
@@ -235,7 +232,7 @@ def test_mixer():
     # ax.set_title("Vx")
     # plt.colorbar(cm)
 
-#     plt.show()
+    #     plt.show()
 
     fluxes = []
     for patch in g.mixing_patches:

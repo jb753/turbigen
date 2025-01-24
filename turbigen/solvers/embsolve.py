@@ -13,7 +13,7 @@ from timeit import default_timer as timer
 import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
-from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 from turbigen.solvers.embsolvec import embsolve
 
 util = turbigen.util
@@ -38,7 +38,6 @@ except ImportError:
 
 
 def get_memory_usage():
-
     with open("/proc/self/status") as f:
         mem = f.read().split("VmRSS:")[1].split("\n")[0][:-3].strip()
 
@@ -241,7 +240,6 @@ class SolverBlock:
         #
 
     def setup_temporary(self):
-
         # Can initialise these from the state object after data transfer
         self.mu = self.cast_scalar(self.state.mu)
         self.cp = self.cast_scalar(self.state.cp)
@@ -334,7 +332,6 @@ class SolverBlock:
         return volmg
 
     def get_multigrid_lengths(self, block):
-
         nb = self.conf.multigrid
 
         # Preallocate output array
@@ -481,7 +478,6 @@ class SolverBlock:
         embsolve.damp(self.dU1, fdamp)
 
     def set_viscous_stress(self):
-
         # Assemble args in a dictionary and send as keywords
         # so we don't need to be careful with order
         # note keys must be all lower case
@@ -878,7 +874,11 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
             )
 
             # Intermittently print convergence
-            if (not np.mod(istep, conf.n_step_log)) and (istep > 0):
+            if (
+                (not np.mod(istep, conf.n_step_log))
+                and (istep > 0)
+                or (istep == conf.n_step - 1)
+            ):
                 # Send residuals to master proc
                 if rank:
                     comm.send(dUnow, dest=0)
@@ -920,13 +920,13 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
         tpnps = (tlast - tfirst) / nodes / conf.n_step
         logger.info(f"Elapsed time {tlast-tfirst:.2f}s")
         logger.info(f"Average tpnps={tpnps:.3e}")
-        return blocks, dUlog, merrlog, Yslog, tpnps
+        return blocks, mixers, tpnps, dUlog
     else:
         comm.send(blocks, dest=0)
+        comm.send(mixers, dest=0)
 
 
 def run(grid, conf, machine=None):
-
     logger.info(
         f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
     )
@@ -978,7 +978,7 @@ def run(grid, conf, machine=None):
         logger.info(f"Elapsed time {ten-tst:.2f}s")
 
     logger.info("Starting the main time-stepping loop...")
-    block_split[0], dUlog, merrlog, Yslog, tpnps = run_slave(
+    block_split[0], mixers_out, tpnps, dUlog = run_slave(
         block_split[0], periodics, mixers, nodes
     )
 
@@ -995,6 +995,33 @@ def run(grid, conf, machine=None):
 
     isort = np.argsort([b.bid for b in blocks_out])
     blocks_out = [blocks_out[i] for i in isort]
+
+    # Assemble a convergence history
+    mhos = np.full(
+        (
+            2,
+            3,
+            conf.n_step,
+        ),
+        np.nan,
+    )
+    nnow = conf.n_step
+    for b in blocks_out:
+        for bc in b.bconds:
+            mhos_now = np.array(bc.convergence_log).T
+            nnow = mhos_now.shape[-1]
+            if isinstance(bc, InletBoundary):
+                mhos[0, :, :nnow] = mhos_now
+            elif isinstance(bc, OutletBoundary):
+                mhos[1, :, :nnow] = mhos_now
+
+    istep = np.arange(conf.n_step)
+    istep_avg = conf.n_step - conf.n_step_avg
+    resid = np.concatenate(dUlog, axis=0)[:, 0]
+    state_conv = blocks_out[0].state.empty(shape=(2, nnow))
+    state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+    conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+    conv.tpnps = tpnps
 
     for b, sb in zip(grid, blocks_out):
         cons_avg = np.moveaxis(sb.cons_avg, -1, 0)
@@ -1017,7 +1044,7 @@ def run(grid, conf, machine=None):
     else:
         merr = -1.0
 
-    return tpnps, merr
+    return conv  # , tpnps, merr
 
 
 def arange_including_end(ni, di):
@@ -1070,16 +1097,9 @@ class Boundary:
         self.wA[:, :, 1:, :-1] += C.dAi
         self.wA[:, :, :-1, 1:] += C.dAi
         self.wA[:, :, 1:, 1:] += C.dAi
-        # # Scale down edges by 2
-        # self.wA[:, :, 0, :] /= 2.
-        # self.wA[:, :, -1, :] /= 2.
-        # self.wA[:, :, :, 0] /= 2.
-        # self.wA[:, :, :, -1] /= 2.
-        # # Scale down interior by 4
         self.wA /= 4.0
         self.wAabs = turbigen.util.vecnorm(self.wA)
         self.A = turbigen.util.vecnorm(C.dAi.squeeze()).sum()
-        # assert np.isclose(self.wA.sum(), self.A)
         assert np.isclose(self.wAabs.sum(), self.A)
 
         # Get normal vectors pointing into the domain
@@ -1098,16 +1118,21 @@ class Boundary:
         assert (np.ptp(C0.squeeze().x, axis=1) / Lref < rtol).all()
         assert (np.ptp(C0.squeeze().r, axis=1) / Lref < rtol).all()
 
+        # Store relaxation factor
         self.K = K
 
-    def integrate_flows(self):
+        # Initialise lists for convergence recording
+        self.convergence_log = []
+
+    def record_flows(self):
+        """Append mass flow and mass-averaged ho and s to convergence log."""
         flux_mass = self.state.flux_mass * self.Nb
         s = self.state.s
         ho = self.state.ho
         mdot = np.sum(self.wA * flux_mass).astype(float)
-        hodot = np.sum(self.wA * flux_mass * ho).astype(float)
-        Sdot = np.sum(self.wA * flux_mass * s).astype(float)
-        return mdot, hodot, Sdot
+        hodot = np.sum(self.wA * flux_mass * ho).astype(float) / mdot
+        sdot = np.sum(self.wA * flux_mass * s).astype(float) / mdot
+        self.convergence_log.append((mdot, hodot, sdot))
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1136,6 +1161,9 @@ class Boundary:
 
         # Get flow field from block
         self.pull(block)
+
+        # Record in convergence history
+        self.record_flows()
 
         # Take outwards-running chics from interior
         dchic_outwards = self.outward_chics()
