@@ -5,6 +5,24 @@ stages:
 - test
 - deploy
 
+bench:
+  stage: test
+  artifacts:
+    paths:
+      - plots/*
+  script:
+  - python -V
+  - apt update && apt install -y gfortran libopenmpi-dev
+  - pip install -U pip
+  - pip install -e ".[test]"
+  - pip install -e ".[emb]"
+  - ./tests/run_bench.sh
+  - cat tests/bench.dat
+  - turbigen tests/back-to-back/turbine/emb.yaml
+  - mkdir plots
+  - python tests/back-to-back/turbine/plot.py
+
+
 test:
   stage: test
   script:
@@ -15,17 +33,6 @@ test:
   - pip install -e ".[emb]"
   - make compile
   - pytest
-
-bench:
-  stage: test
-  script:
-  - python -V
-  - apt update && apt install -y gfortran libopenmpi-dev
-  - pip install -U pip
-  - pip install -e ".[test]"
-  - pip install -e ".[emb]"
-  - ./tests/run_bench.sh
-  - cat tests/bench.dat
 
 docs:
   script:

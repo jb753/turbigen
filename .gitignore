@@ -1,4 +1,5 @@
 venv
+tests/back-to-back/*/emb
 tags
 venv/
 dist
