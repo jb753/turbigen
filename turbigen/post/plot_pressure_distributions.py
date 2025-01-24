@@ -55,9 +55,11 @@ def post(
         raise Exception(f"row_spf should be of length nrow={nrow}, got {len(row_spf)}")
 
     # Loop over rows
+    nsectplt = 0
     for irow, spfrow in enumerate(row_spf):
         if not spfrow:
             continue
+        nsectplt += 1
 
         logger.info(f"Plotting pressure distributions, row {irow} at spf={spfrow}")
 
@@ -199,7 +201,8 @@ def post(
             ax.plot(np.abs(zeta_norm), Cp, "k-")
 
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
-        ax.legend()
+        if nsectplt > 1:
+            ax.legend()
         ax.grid(False)
         plt.savefig(plotname)
         plt.close()
