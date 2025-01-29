@@ -17,6 +17,7 @@ import grp
 import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
+import time
 
 import turbigen.util
 
@@ -1069,7 +1070,7 @@ def _read_hdf5(grid, ts3_config):
         block.mu_turb = trans_dyn_vis
 
         # Print yplus if requested
-        if ts3_config.show_yplus:
+        if ts3_config.show_yplus and not ts3_config.skip:
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
@@ -1361,19 +1362,107 @@ def parse_log(fname):
         return err[np.argmax(np.abs(err))]
 
 
-def read_probe_dat_dir(dname, S, shape):
+def read_probe_dat_dir(dname):
+    """Load all probe text files in a directory into one big array.
+
+    This function will write out an npz into the directory containing the data
+    for faster processing on subsequent runs. If the npz exists already but is
+    older than any of the dat files, it will be overwritten; otherwise it will
+    be loaded.
+
+    Parameters
+    ----------
+    dname: string
+        Directory name containing Turbostream 3 probe dat files.
+
+    Returns
+    -------
+    data: (8, nprobe,  nstep) array
+        First axis is x, r, rt, ro, rovx, rovr, rorvt, roe.
+        Second axis is which probe.
+        Third axis are time steps.
+
+    """
+
+    # Check for npz file and modification time
+    npz_fname = os.path.join(dname, "probe_data.npz")
+    if os.path.exists(npz_fname):
+        npz_mtime = os.path.getmtime(npz_fname)
+    else:
+        npz_mtime = 0
+
+    # Get all dat files and their modification times
     fnames = glob(os.path.join(dname, "*.dat"))
-    return [read_probe_dat(f, S, shape) for f in fnames]
+    dat_mtimes = [os.path.getmtime(f) for f in fnames]
+    if not fnames:
+        max_dat_mtime = 0
+    else:
+        max_dat_mtime = max(dat_mtimes)
+
+    # Load the npz if it exists and is newer than all dat files
+    if os.path.exists(npz_fname) and npz_mtime > max_dat_mtime:
+        print(f"Loading probe data from {npz_fname}")
+        with np.load(npz_fname) as d:
+            data = d["data"]
+    # Otherwise load the dat files
+    else:
+        print(f"Loading probe data from {dname}")
+        # Load each dat and trim to the same length
+        data_all = [read_probe_dat(f) for f in fnames]
+        nstep = min([d.shape[1] for d in data_all])
+        data = np.stack([d[:, :nstep] for d in data_all], axis=1)
+        np.savez(npz_fname, data=data)
+
+    # If the probes are more than 48 hours old, then the calculation has
+    # finished and we can delete the raw dat files
+    if (time.time() - max_dat_mtime) > 48 * 3600:
+        for fname in fnames:
+            print(f"Removing {fname}")
+            # os.remove(fname)
+
+    return data
+
+def read_probe_dat(fname):
+    """Load a probe text file into a big array.
+
+    Note that this returns flattened arrays, i.e. the shape of the probe patch
+    is lost
+
+    Parameters
+    ----------
+    fname: string
+        File name of a Turbostream 3 probe dat file.
+
+    Returns:
+    --------
+    data: (8, nstep) array
+        Columns are x, r, rt, ro, rovx, rovr, rorvt, roe.
+        Rows are time steps.
+
+    """
+    return np.loadtxt(fname, skiprows=1).T
 
 
-def read_probe_dat(fname, S, shape=()):
-    logger.info(f"Reading {fname}")
-    Npts = int(np.loadtxt(fname, max_rows=1))
-    x, r, rt, ro, rovx, rovr, rorvt, roe = np.loadtxt(fname, skiprows=1).T
+def read_probe_flow(dname, S, shape=()):
+    """Load all probes from a directory into a flowfield object.
 
-    nt = len(x) // Npts
+    Parameters
+    ----------
+    dname: string
+        Directory name containing Turbostream 3 probe dat files.
+    S:
+        Reference flowfield object.
+    shape: tuple
+        Shape of the flowfield to be returned. Defaults to a point probe.
 
-    Fshape = shape + (nt,)
+    """
+
+    # Get the raw data and split into conserved variables
+    x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname)
+    nprobe = x.shape[1] 
+
+    # Reshape if requested
+    Fshape = (nprobe,) + shape + (-1,)
     if shape:
         x = x.reshape(Fshape, order="F")
         r = r.reshape(Fshape, order="F")
@@ -1383,9 +1472,9 @@ def read_probe_dat(fname, S, shape=()):
         rovr = rovr.reshape(Fshape, order="F")
         rorvt = rorvt.reshape(Fshape, order="F")
         roe = roe.reshape(Fshape, order="F")
-
     Fshape = x.shape
 
+    # Make a perfect flowfield object
     F = turbigen.flowfield.PerfectFlowField(Fshape)
     F.Tu0 = 0.0
     F.cp = S.cp
@@ -1393,11 +1482,12 @@ def read_probe_dat(fname, S, shape=()):
     F.mu = S.mu
     F.Omega = 0.0
 
+    # Insert the coordinates and velocities
     F.xrt = np.stack((x, r, rt / r))
     F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro
 
+    # Insert the thermodynamic state
     u = roe / ro - 0.5 * F.V**2.0
-
     F.set_rho_u(ro, u)
     F.set_Tu0(S.Tu0)
 
