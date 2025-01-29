@@ -1,4 +1,4 @@
-workdir: runs/compressor_cascade
+workdir: tests/back-to-back/compressor/ts3
 
 # Perfect gas inlet state
 inlet:
@@ -38,32 +38,15 @@ mesh:
   resolution_factor: 0.5  # Coarsen the mesh
 
 solver:
-  type: embsolve
-  n_step: 5000
-  n_step_avg: 1000
-  nstep_damp: -1
-  n_step_ramp: 1000
+  type: ts3
+  nstep: 20000
+  nstep_avg: 2000
+  ilos: 1
+  xllim_free: 0.
+  free_turb: 0.
 
 operating_point:
-  # mdot_pid: [0.5, 0.1, 0.0]
   PR_ts: 1.0
-
-# iterate:
-#   max_iter: 20
-#   mean_line:
-#     match_tolerance:
-#       etatt: 0.01
-#     relaxation_factor: 1.0
-#   deviation:
-#     clip: 5.0
-#     relaxation_factor: 1.0
-#     tolerance: 1.0
-#   incidence:
-#     clip: 2.0
-#     relaxation_factor: 0.4
-#     tolerance: 2.0
-#     rtol_mdot: 0.1
-
 
 post_process:
   plot_convergence:

@@ -1,0 +1,136 @@
+TURBIGEN v1.9.1
+Starting at 2025-01-24T16:29:47
+Working directory: /rds/project/rds-7OSWtyyYICQ/jb753/turbigen-dev/tests/back-to-back/compressor/ts3
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a axial_compressor_rotor mean line...
+MeanLine(
+    Po=[1.  1.1] bar,
+    To=[300.     308.8103] K,
+    Ma=[0.259 0.307],
+    Vx=[89.3 89.3],
+    Vr=[0. 0.],
+    Vt=[ 0.  59.5],
+    Vt_rel=[-148.8  -89.3],
+    Al=[ 0.   33.69],
+    Al_rel=[-59.04 -45.  ],
+    rpm=[7471. 7471.],
+    mdot=[5. 5.] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Annulus(
+    xmid=[2.3276e-10 2.0464e-02],
+    rmid=[0.189  0.1891],
+    span=[0.042  0.0398]
+    )
+Re_surf/10^5=[3.4]
+Nblade=[34], s_cm=[1.71], tip=[0.]
+Generating OH-mesh...
+Making a new mesh.
+Error encountered, quitting...
+Traceback (most recent call last):
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/turbigen-dev/bin/turbigen", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/main.py", line 259, in main
+    success = turbigen.run.run(conf)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/run.py", line 1350, in run
+    ml_out, _, gguess = run_single(conf)
+                        ^^^^^^^^^^^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/run.py", line 741, in run_single
+    g = ohmesh.make_grid(mac, ohmesh_config, dhub, dcas, drow, unbladed, Omega)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/ohmesh.py", line 234, in make_grid
+    success = turbigen.autogrid.autogrid.make_mesh(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/autogrid/autogrid.py", line 579, in make_mesh
+    success = _run_remote(
+              ^^^^^^^^^^^^
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/autogrid/autogrid.py", line 402, in _run_remote
+    _execute_on_remote(
+  File "/rds/project/gp10006/rds-gp10006-pullan-mhi/jb753/turbigen-dev/turbigen/autogrid/autogrid.py", line 336, in _execute_on_remote
+    out = subprocess.check_output(
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/3.11.9/lib/python3.11/subprocess.py", line 466, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/3.11.9/lib/python3.11/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/3.11.9/lib/python3.11/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/3.11.9/lib/python3.11/subprocess.py", line 2115, in _communicate
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/rds/rds-gp10006-pullan-mhi/jb753/pyenv/versions/3.11.9/lib/python3.11/selectors.py", line 415, in select
+    fd_event_list = self._selector.poll(timeout)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+TURBIGEN v1.9.1
+Starting at 2025-01-24T16:30:50
+Working directory: /rds/project/rds-7OSWtyyYICQ/jb753/turbigen-dev/tests/back-to-back/compressor/ts3
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a axial_compressor_rotor mean line...
+MeanLine(
+    Po=[1.  1.1] bar,
+    To=[300.     308.8103] K,
+    Ma=[0.259 0.307],
+    Vx=[89.3 89.3],
+    Vr=[0. 0.],
+    Vt=[ 0.  59.5],
+    Vt_rel=[-148.8  -89.3],
+    Al=[ 0.   33.69],
+    Al_rel=[-59.04 -45.  ],
+    rpm=[7471. 7471.],
+    mdot=[5. 5.] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Annulus(
+    xmid=[2.3276e-10 2.0464e-02],
+    rmid=[0.189  0.1891],
+    span=[0.042  0.0398]
+    )
+Re_surf/10^5=[3.4]
+Nblade=[34], s_cm=[1.71], tip=[0.]
+Generating OH-mesh...
+Making a new mesh.
+Mesh Npts/10^6=0.36
+Applying boundary conditions...
+Running off-design: setting total-static pressure ratio PR_ts=1.0
+Setting intial guess...
+Calculating wall distance...
+Running solver ts3...
+Using 1 GPUs on 1 nodes, 1 per node.
+Post-processing...
+Contouring...
+Plotting convergence...
+Plotting pressure distributions, row 0 at spf=[0.5]
+Mixed-out CFD result:
+MeanLine(
+    Po=[0.999  1.0868] bar,
+    To=[300.2009 307.9633] K,
+    Ma=[0.268 0.308],
+    Vx=[92.3 92.8],
+    Vr=[1.9 0.2],
+    Vt=[ 1.4 53.7],
+    Vt_rel=[-147.4  -95.1],
+    Al=[ 0.84 30.07],
+    Al_rel=[-57.94 -45.69],
+    rpm=[7471. 7471.],
+    mdot=[5.15 5.15] kg/s
+    )
+Design variable Nom    CFD    
+------------------------------
+PR              1.1000 1.0879 
+etatt           0.9400 0.9422 
+htr1            0.8000 0.8000 
+mdot            5.0000 5.1515 
+phi             0.6000 0.6205 
+psi             0.4000 0.3524 
+eta_tt=0.942, eta_ts=0.207
+Elapsed time 4.41 min.

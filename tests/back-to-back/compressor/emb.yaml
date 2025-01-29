@@ -1,5 +1,4 @@
-# A completed config for the tutorial
-workdir: runs/compressor_ts3
+workdir: runs/compressor_cascade
 
 # Perfect gas inlet state
 inlet:
@@ -35,21 +34,17 @@ mesh:
   type: oh  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
   remote_host: gp-111
-  via_host: login-q-3
+  remote_workdir: /mnt/data/jb753/meshing/
   resolution_factor: 0.5  # Coarsen the mesh
 
 solver:
-  type: ts3  # Use Turbostream 3
-  nstep: 25000
-  nstep_avg: 5000
-  soft_start: true
-  nstep_soft: 5000
-  ilos: 1
-  free_turb: 0.
-  xllim_free: 0.
+  type: embsolve
+  n_step: 5000
+  n_step_avg: 1000
+  nstep_damp: -1
+  n_step_ramp: 1000
 
 operating_point:
-  # mdot_pid: [0.5, 0.1, 0.0]
   PR_ts: 1.0
 
 # iterate:
@@ -70,6 +65,7 @@ operating_point:
 
 
 post_process:
+  plot_convergence:
   contour:
     coord: spf
     value: .51
