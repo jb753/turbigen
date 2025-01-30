@@ -80,14 +80,19 @@ subroutine shear_stress(&
     real :: qi(ni, nj-1, nk-1, 3)
     real :: qj(ni-1, nj, nk-1, 3)
     real :: qk(ni-1, nj-1, nk, 3)
+    real :: Vrel(ni, nj, nk, 3)
 
     rfvisc = 0.2e0
     rfvisc1 = 1e0-rfvisc
 
 
+    ! Relative velocity
+    Vrel = V
+    Vrel(:,:,:,3) = Vrel(:,:,:,3)-Omega*r
+
     !$omp parallel
     ! Cell-centered vars
-    call node_to_cell(V, Vc, ni, nj, nk, 3)
+    call node_to_cell(Vrel, Vc, ni, nj, nk, 3)
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
     !$omp end parallel
 
@@ -95,7 +100,7 @@ subroutine shear_stress(&
 
     ! Calculate grad V
     do i = 1,3
-        call grad(V(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
+        call grad(Vrel(:,:,:,i), gradV(:,:,:,:,i), vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     end do
     ! gradV is indexed (..., which dirn, which velocity)
 
@@ -103,7 +108,7 @@ subroutine shear_stress(&
     call grad(T, gradT, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
 
     ! Calculate divergence of V
-    call div(V, divV, vol, dAi, dAj, dAk, ni, nj, nk)
+    call div(Vrel, divV, vol, dAi, dAj, dAk, ni, nj, nk)
     divV = divV*2e0/3e0
 
     ! tau contains the six unique terms in the tensor
@@ -261,7 +266,6 @@ subroutine viscous_flux(f, tau, q, V, r, ni, nj, nk)
     f(:, :, :, 1, 5) = q(:,:,:,1) + wvisc(:,:,:,1)
     f(:, :, :, 2, 5) = q(:,:,:,2) + wvisc(:,:,:,2)
     f(:, :, :, 3, 5) = q(:,:,:,3) + wvisc(:,:,:,3)
-    ! f(:, :, :, :, 5) = 0e0
 
     !$omp end workshare
 

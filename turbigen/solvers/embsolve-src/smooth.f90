@@ -47,6 +47,7 @@ subroutine smooth( &
     real :: sf2n(ni, nj, nk, 3)
     real :: sf4n(ni, nj, nk, 3)
     real :: sftn(ni, nj, nk)
+    real :: fac_edge = 2e0
     integer :: ip
 
     ! 2nd-order smoothed values for each direcion
@@ -256,6 +257,14 @@ subroutine smooth( &
     sf4n = sf4n * L
     !$omp end workshare
 
+    !! Increase smoothing on boundaries
+    !sf4n(1,:,:,:) = fac_edge * sf4n(1,:,:,:)
+    !sf4n(ni,:,:,:) = fac_edge * sf4n(ni,:,:,:)
+    !sf4n(:, 1,:,:) = fac_edge * sf4n(:, 1,:,:)
+    !sf4n(:, nj,:,:) = fac_edge * sf4n(:, nj,:,:)
+    !sf4n(:,:,  1,:) = fac_edge * sf4n(:,:,  1,:)
+    !sf4n(:,:,  nk,:) = fac_edge * sf4n(:,:,  nk,:)
+    !
     ! Loop over properties
     do ip=1,np
 

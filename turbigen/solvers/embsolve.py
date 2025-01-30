@@ -224,13 +224,14 @@ class SolverBlock:
         )
         Ls = L.sum(axis=-1, keepdims=True)
         L = L / Ls * 3.0
+        # assert np.allclose(L.sum(axis=-1), 1.0)
 
         # Now distribute to nodes
         ni, nj, nk = self.shape
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
         # Disable scaling
-        # self.L = to_fort(np.ones((3, ni, nj, nk))/3.)
+        # self.L = self.cast_array(np.ones((3, ni, nj, nk)) / 3.0)
 
         self.rf = [self.cast_array(r) for r in block.r_face]
         self.rc = self.cast_array(block.r_cell)

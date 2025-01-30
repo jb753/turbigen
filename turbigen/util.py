@@ -1016,6 +1016,16 @@ def cart_to_pol(dA, t):
     return np.stack((dAx, dAr, dAt))
 
 
+def moving_average_1d(arr, window_size):
+    if window_size < 1:
+        raise ValueError("Window size must be at least 1")
+    if window_size % 2 == 0:
+        raise ValueError("Window size must be odd to preserve shape")
+
+    kernel = np.ones(window_size) / window_size
+    return np.convolve(arr, kernel, mode="same")
+
+
 def moving_average(x, n):
     xa = x.copy()
     N = x.shape[1]

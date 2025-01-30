@@ -1,4 +1,4 @@
-workdir: runs/compressor_cascade
+workdir: tests/back-to-back/compressor/emb/0014
 
 # Perfect gas inlet state
 inlet:
@@ -37,35 +37,24 @@ mesh:
   remote_workdir: /mnt/data/jb753/meshing/
   resolution_factor: 0.5  # Coarsen the mesh
 
+# mesh:
+#   type: h  # Mesh topology
+#   yplus: 30.0  # Non-dimensional wall distance
+#   resolution_factor: 0.5  # Coarsen the mesh
+#
 solver:
   type: embsolve
-  n_step: 5000
+  n_step: 4000
   n_step_avg: 1000
-  nstep_damp: -1
-  n_step_ramp: 1000
+  n_step_ramp: 500
+  i_loss: 0
 
 operating_point:
   PR_ts: 1.0
 
-# iterate:
-#   max_iter: 20
-#   mean_line:
-#     match_tolerance:
-#       etatt: 0.01
-#     relaxation_factor: 1.0
-#   deviation:
-#     clip: 5.0
-#     relaxation_factor: 1.0
-#     tolerance: 1.0
-#   incidence:
-#     clip: 2.0
-#     relaxation_factor: 0.4
-#     tolerance: 2.0
-#     rtol_mdot: 0.1
-
-
 post_process:
   plot_convergence:
+    dn_smooth: 49
   contour:
     coord: spf
     value: .51
@@ -75,4 +64,4 @@ post_process:
     row_spf: [[0.5,],]
     write_raw: true
     lim: [-2.5, 0.]
-    # compare: tests/pdist_ts3.npz
+    compare: tests/back-to-back/compressor/ts3/post/pressure_distributions_raw.npz
