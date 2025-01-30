@@ -58,6 +58,8 @@ def post(
     nsectplt = 0
     for irow, spfrow in enumerate(row_spf):
         if not spfrow:
+            print(spfrow)
+            print("skipping")
             continue
         nsectplt += 1
 
@@ -174,6 +176,7 @@ def post(
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"
+                print(key)
                 raw_data[key] = np.stack((zeta_stag, Cp))
 
         if note:

@@ -1161,7 +1161,7 @@ class Grid:
                 # Loop over blocks and find o-meshes
                 for b in row_block:
                     if (
-                        np.allclose(b[0, :, :].xrt, b[-1, :, :].xrt)
+                        np.allclose(b[0, :, 0].xrt, b[-1, :, 0].xrt)
                         and b.shape[1] == nj
                     ):
                         surfs[-1].append(b[:, :, None, 0])
@@ -1290,7 +1290,7 @@ class Grid:
                 ncell_part[procids[ib]] += b.size
             logger.info(
                 "Load-balanced cells per GPU/10^6: "
-                f"{np.array2string(ncell_part/1e6,precision=2)}"
+                f"{np.array2string(ncell_part / 1e6, precision=2)}"
             )
             assert (ncell_part > 0.0).all()
 

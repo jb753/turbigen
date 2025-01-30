@@ -1,8 +1,8 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: runs/turbine_ts3
-
+workdir: tests/back-to-back/turbine_oh/emb/0001
+ 
 inlet:
   Po: 1e5
   To: 300.
@@ -24,13 +24,11 @@ annulus:
 
 # Computational mesh generation
 mesh:
-  type: h  # Mesh topology
-  dm_LE: 0.001
-  ni_TE: 9
-  dm_TE: 0.03
+  type: oh  # Mesh topology
   yplus: 30.0  # Non-dimensional wall distance
-  resolution_factor: 0.5  # Non-dimensional wall distance
-  # slip_annulus: true
+  # resolution_factor: 0.5  # Non-dimensional wall distance
+  remote_host: gp-111
+  remote_workdir: /mnt/data/jb753/meshing/
 
 # Blade shapes
 blades:
@@ -41,25 +39,30 @@ blades:
         q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
         qstar_camber: [10., -2., 1.0, 1.0, 0.0]
 
-
 # CFD solver
 solver:
-  type: ts3
-  nstep: 8000
-  nstep_avg: 1600
-  ilos: 1
-  xllim_free: 0.
-  free_turb: 0.
+  type: embsolve
+  # n_step: 6000
+  # n_step_avg: 1500
+  n_step: 20000
+  n_step_avg: 5000
+  nstep_damp: -1
 
 post_process:
   plot_convergence:
+  # contour:
+  #   coord: m
+  #   value: 2.05
+  #   variable: Ys
+  #   N_passage: 2
+  #   step: 0.05
+  #   lim: [0., 0.50]
   contour:
-    coord: m
-    value: 2.05
-    variable: Ys
+    coord: spf
+    value: .51
+    variable: Cp
     N_passage: 2
-    step: 0.05
-    lim: [0., 0.50]
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
+    compare: tests/back-to-back/turbine/ts3/post/pressure_distributions_raw.npz

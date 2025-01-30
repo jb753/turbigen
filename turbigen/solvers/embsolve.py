@@ -210,28 +210,31 @@ class SolverBlock:
             )
         ).mean(axis=0)
 
-        # Smoothing scale factors in each volume
-        Lref = block.vol ** (1 / 3)
-        L = self.cast_array(
-            np.stack(
-                (
-                    dli / Lref,
-                    dlj / Lref,
-                    dlk / Lref,
-                ),
-                axis=0,
-            )
-        )
-        Ls = L.sum(axis=-1, keepdims=True)
-        L = L / Ls * 3.0
-        # assert np.allclose(L.sum(axis=-1), 1.0)
-
+        # # Smoothing scale factors in each volume
+        # L = self.cast_array(
+        #     np.stack(
+        #         (
+        #             dli,
+        #             dlj,
+        #             dlk,
+        #         ),
+        #         axis=0,
+        #     )
+        # )
+        # print(Ls[0, 0, 0], L[0, 0, 0, :])
+        # Ls = L.sum(axis=-1, keepdims=True)
+        # L = L / Ls * 3.0
+        # print(Ls[0, 0, 0], L[0, 0, 0, :])
+        # print(L.sum(axis=-1)[0, 0, 0])
+        # # quit()
+        # # assert np.allclose(L.sum(axis=-1), 1.0)
+        #
         # Now distribute to nodes
         ni, nj, nk = self.shape
-        self.L = self.cast_array(np.ones((3, ni, nj, nk)))
-        embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
+        # self.L = self.cast_array(np.ones((3, ni, nj, nk)))
+        # embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
         # Disable scaling
-        # self.L = self.cast_array(np.ones((3, ni, nj, nk)) / 3.0)
+        self.L = self.cast_array(np.ones((3, ni, nj, nk)))
 
         self.rf = [self.cast_array(r) for r in block.r_face]
         self.rc = self.cast_array(block.r_cell)
@@ -919,7 +922,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
     if master_flag:
         tpnps = (tlast - tfirst) / nodes / conf.n_step
-        logger.info(f"Elapsed time {tlast-tfirst:.2f}s")
+        logger.info(f"Elapsed time {tlast - tfirst:.2f}s")
         logger.info(f"Average tpnps={tpnps:.3e}")
         return blocks, mixers, tpnps, dUlog
     else:
@@ -969,14 +972,14 @@ def run(grid, conf, machine=None):
                 block_split[-1].append(b)
 
     t2 = timer()
-    logger.info(f"Elapsed time {t2-t1:.2f}s")
+    logger.info(f"Elapsed time {t2 - t1:.2f}s")
 
     if comm:
         logger.info("Sending data to processors...")
         tst = timer()
         send_slave(block_split, procids, periodics, mixers)
         ten = timer()
-        logger.info(f"Elapsed time {ten-tst:.2f}s")
+        logger.info(f"Elapsed time {ten - tst:.2f}s")
 
     logger.info("Starting the main time-stepping loop...")
     block_split[0], mixers_out, tpnps, dUlog = run_slave(
@@ -988,7 +991,7 @@ def run(grid, conf, machine=None):
     for iproc in range(1, size):
         block_split[iproc] = comm.recv(source=iproc)
     ten = timer()
-    logger.info(f"Elapsed time {ten-tst:.2f}s")
+    logger.info(f"Elapsed time {ten - tst:.2f}s")
 
     blocks_out = []
     for bsi in block_split:
@@ -1041,7 +1044,7 @@ def run(grid, conf, machine=None):
     if not mdot_out == 0.0:
         merr = mdot_in / mdot_out - 1.0
         logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
-        logger.info(f"Mass flow error: {merr*100.:.1f}%")
+        logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
     else:
         merr = -1.0
 

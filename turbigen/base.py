@@ -1778,6 +1778,8 @@ class MeanLine:
         logger.iter(f"rhub: {self.rhub}")
         logger.iter(f"rtip: {self.rtip}")
         logger.iter(f"A: {self.A}")
+        logger.iter(f"span: {self.span}")
+        logger.iter(f"I: {self.I}")
         logger.iter(f"To: {self.To}")
         logger.iter(f"T: {self.T}")
         logger.iter(f"Po: {self.Po}")
@@ -2028,7 +2030,7 @@ class MeanLine:
         logger.debug(f"V1={V1}, V2={V2}, DVt={DVt}")
         if np.any((DFL + V2 / V1 - 1.0) < 0.0):
             raise Exception(
-                f"V2/V1={V2/V1} is too low for this DFL={DFL}, need DFL + V2/V1 > 1"
+                f"V2/V1={V2 / V1} is too low for this DFL={DFL}, need DFL + V2/V1 > 1"
             )
         s_c = 2.0 * V1 / DVt * (DFL + V2 / V1 - 1.0)
         logger.debug(f"s_c={s_c}")
@@ -2152,7 +2154,7 @@ class BaseConfig:
             self._name
             + "Config("
             + ", ".join(
-                [f"{v}={getattr(self,v)}" for v in dir(self) if not v.startswith("_")]
+                [f"{v}={getattr(self, v)}" for v in dir(self) if not v.startswith("_")]
             )
             + ")"
         )

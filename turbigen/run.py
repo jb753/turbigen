@@ -163,14 +163,14 @@ and will cause problems with meshing and solving for the flow field."""
 
     # Warn for wobbly annulus
     is_radial = np.abs(ml.Beta).max() > 10.0
-    is_multirow = conf.nrow>2
+    is_multirow = conf.nrow > 2
     if is_radial and is_multirow:
         if np.diff(np.sign(np.diff(ml.rrms))).any():
             logger.warning(
                 """WARNING: Radii do not vary monotonically.
 This suggests a physically-consistent but suboptimal mean-line design
 and will cause problems with meshing and solving for the flow field."""
-        )
+            )
 
     # Make a working directory
     workdir = conf.workdir
@@ -533,16 +533,16 @@ and will cause problems with meshing and solving for the flow field."""
                     cam_main = bld[-1]._get_cam_thick(spf_sect)[0]
                     chi_main = cam_main.chi(mlim_sect)
                     logger.debug(f"Section {isect}, main blade angles {chi_main}")
-                    logger.debug(f'main q_camber {row_now["q_camber"][isect]}')
+                    logger.debug(f"main q_camber {row_now['q_camber'][isect]}")
                     logger.debug(
-                        f'main q_camber deg {util.atand(row_now["q_camber"][isect])}'
+                        f"main q_camber deg {util.atand(row_now['q_camber'][isect])}"
                     )
 
                     # Fill in tanChi for the splitter after recamber
                     splitter_now["q_camber"][isect][:2] = util.tand(
                         chi_main + splitter_now["q_camber"][isect][:2]
                     )
-                    logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
+                    logger.debug(f"splitter q_camber {splitter_now['q_camber'][isect]}")
                     logger.debug(
                         "splitter q_camber deg "
                         f"{util.atand(splitter_now['q_camber'][isect])}"
@@ -891,7 +891,7 @@ and will cause problems with meshing and solving for the flow field."""
                 gi.update_outlet()
 
         if conf.solver:
-            logger.info(f'Running solver {conf.solver["type"]} on installed...')
+            logger.info(f"Running solver {conf.solver['type']} on installed...")
             convergence = gi.run(conf.solver, mac)
             conf.solver.pop("workdir")
         else:
@@ -915,7 +915,7 @@ and will cause problems with meshing and solving for the flow field."""
 
         if conf.solver:
             if conf.solver.get("type"):
-                logger.info(f'Running solver {conf.solver["type"]}...')
+                logger.info(f"Running solver {conf.solver['type']}...")
                 convergence = g.run(conf.solver, mac)
                 conf.solver.pop("workdir")
         else:
