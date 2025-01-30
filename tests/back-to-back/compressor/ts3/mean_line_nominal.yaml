@@ -1,0 +1,48 @@
+---
+class: PerfectMeanLine
+data:
+- - .nan
+  - .nan
+- - 0.19017240217401846
+  - 0.19017240217401846
+- - 0.04988081097829134
+  - 0.04731409673425212
+- - 89.2688496144725
+  - 89.2688496144725
+- - 0.0
+  - 0.0
+- - 0.0
+  - 59.51256640964833
+- - 1.1228883095843147
+  - 1.1838032084750867
+- - -2846.045539818337
+  - 2213.5909754142303
+- - 782.350195524046
+  - 782.350195524046
+- - 34.0
+  - 34.0
+data_rows:
+- x
+- r
+- A
+- Vx
+- Vr
+- Vt
+- rho
+- u
+- Omega
+- Nb
+metadata:
+  Co: null
+  Lsurf:
+  - 0.031772428471463776
+  Pr: 0.72
+  Ps0: 100000.0
+  Ts0: 300.0
+  Tu0: 300.0
+  cp: 1005.0
+  gamma: 1.4
+  mean_line_type: axial_compressor_rotor
+  mu: 1.8e-05
+  workdir: /rds/project/rds-7OSWtyyYICQ/jb753/turbigen-dev/tests/back-to-back/compressor/ts3
+...

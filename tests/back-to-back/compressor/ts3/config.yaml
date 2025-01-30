@@ -1,0 +1,70 @@
+---
+annulus:
+  AR_chord: 2.0
+  AR_gap:
+  - 1.0
+  - 1.0
+  debug: false
+  nozzle_ratio: 0.9
+blades:
+- DFL: 0.45
+  sections:
+  - q_thick:
+    - 0.015
+    - 0.06
+    - 0.2
+    - 0.0
+    - 0.02
+    - 0.05
+    qstar_camber:
+    - 0.0
+    - 10.0
+    - 1.0
+    - 1.0
+    - 0.0
+    spf: 0.5
+inlet:
+  Po: 100000.0
+  To: 300.0
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-05
+mean_line:
+  PR: 1.1
+  etatt: 0.94
+  htr1: 0.8
+  mdot: 5.0
+  phi: 0.6
+  psi: 0.4
+  type: axial_compressor_rotor
+mesh:
+  remote_host: gp-111
+  remote_workdir: /mnt/data/jb753/meshing/
+  resolution_factor: 0.5
+  type: oh
+  yplus: 30.0
+operating_point:
+  PR_ts: 1.0
+post_process:
+  contour:
+    N_passage: 2
+    coord: spf
+    value: 0.51
+    variable: Cp
+  plot_convergence: null
+  plot_pressure_distributions:
+    lim:
+    - -2.5
+    - 0.0
+    row_spf:
+    - - 0.5
+    write_raw: true
+solver:
+  free_turb: 0.0
+  ilos: 1
+  nstep: 20000
+  nstep_avg: 2000
+  type: ts3
+  xllim_free: 0.0
+workdir: /rds/project/rds-7OSWtyyYICQ/jb753/turbigen-dev/tests/back-to-back/compressor/ts3
+...
