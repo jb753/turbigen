@@ -56,7 +56,7 @@ def log_line(d, fields):
                     dout = f"{d[v]:<{w}d}"[:w] + " "
                 elif isinstance(d[v], str):
                     dout = f"{d[v]:<{w}}"[:w] + " "
-                elif isinstance(d[v], list):
+                elif isinstance(d[v], (list, tuple)):
                     dout = f"{d[v]}"[:w] + " "
                 elif isinstance(d[v], np.ndarray):
                     dout = f"{d[v]}"[:w] + " "

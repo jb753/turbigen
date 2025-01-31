@@ -19,9 +19,9 @@ mean_line:
   zeta: [1.0, 1.0]
   htr2: 0.9
 
-# annulus:
-#   AR_gap: [0.6, 2., 0.7]
-#   AR_chord: [1.6, 1.6]
+annulus:
+  AR_gap: [0.6, 2., 0.7]
+  AR_chord: [1.6, 1.6]
 
 blades:
   - Co: 0.7
