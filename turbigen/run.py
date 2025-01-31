@@ -181,6 +181,12 @@ and will cause problems with meshing and solving for the flow field."""
     logger.debug(f"Writing {config_yaml_path}...")
     conf.write(config_yaml_path)
 
+    # Backup the source files for later reproduction
+    times.append(timer())
+    util.save_source_tar_gz(os.path.join(workdir, "src.tar.gz"))
+    times.append(timer())
+    logger.debug(f"Source backup took {np.diff(times)[-1]:.1f}s")
+
     postdir = os.path.join(workdir, "post")
     if not os.path.exists(postdir):
         os.makedirs(postdir, exist_ok=True)

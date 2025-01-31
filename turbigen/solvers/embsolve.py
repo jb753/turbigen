@@ -210,29 +210,29 @@ class SolverBlock:
             )
         ).mean(axis=0)
 
-        # # Smoothing scale factors in each volume
-        # L = self.cast_array(
-        #     np.stack(
-        #         (
-        #             dli,
-        #             dlj,
-        #             dlk,
-        #         ),
-        #         axis=0,
-        #     )
-        # )
-        # print(Ls[0, 0, 0], L[0, 0, 0, :])
-        # Ls = L.sum(axis=-1, keepdims=True)
-        # L = L / Ls * 3.0
-        # print(Ls[0, 0, 0], L[0, 0, 0, :])
-        # print(L.sum(axis=-1)[0, 0, 0])
-        # # quit()
-        # # assert np.allclose(L.sum(axis=-1), 1.0)
-        #
-        # Now distribute to nodes
+        # Get length scales along each side of the cell
+        L = self.cast_array(
+            np.stack(
+                (
+                    dli,
+                    dlj,
+                    dlk,
+                ),
+                axis=0,
+            )
+        )
+        # Normalise to sum to 3.0
+        # In an isotropic grid all elements should be 1.0
+        L /= L.sum(axis=-1, keepdims=True) / 3.0
+
+        # Clip to a maximum reduction in smoothing and re-normalise
+        L = np.clip(L, 0.0, None)
+        L /= L.sum(axis=-1, keepdims=True) / 3.0
+
+        # Now distribute cell length scales to nodes
         ni, nj, nk = self.shape
-        # self.L = self.cast_array(np.ones((3, ni, nj, nk)))
-        # embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
+        self.L = self.cast_array(np.ones((3, ni, nj, nk)))
+        embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
         # Disable scaling
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
 

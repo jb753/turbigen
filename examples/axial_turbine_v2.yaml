@@ -12,16 +12,16 @@ mean_line:
   Alpha1: 0.
   phi2: 0.6
   mdot: 500.
-  PR_tt: 1.6
-  Ma2: 0.6
-  DMa3_rel: 0.2
+  psi: 2.0
+  Ma2: 0.7
+  DMa3_rel: 0.1
   Ys: [0, 0]
   zeta: [1.0, 1.0]
   htr2: 0.9
 
-annulus:
-  AR_gap: [0.6, 2., 0.7]
-  AR_chord: [1.6, 1.6]
+# annulus:
+#   AR_gap: [0.6, 2., 0.7]
+#   AR_chord: [1.6, 1.6]
 
 blades:
   - Co: 0.7
@@ -42,11 +42,11 @@ blades:
         qstar_camber: [0.,0., 1.0, 1.0, 0.0]
     tip: 0.01  # Rotor tip gap
 
-solver:
-  type: ts3
-  nstep_avg: 1000
-  nstep: 5000
-
+# solver:
+#   type: ts3
+#   nstep_avg: 1000
+#   nstep: 5000
+#
 mesh:
   type: h
   yplus: 30.
