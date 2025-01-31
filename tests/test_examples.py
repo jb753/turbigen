@@ -20,6 +20,8 @@ logger.setLevel(level=logging.INFO)
 
 @pytest.mark.parametrize("conf_yaml", example_confs)
 def test_example(conf_yaml, usegpu):
+    if conf_yaml.startswith('include'):
+        return
     print("*********************")
     print(f"Running example: {conf_yaml}")
     print("*********************")

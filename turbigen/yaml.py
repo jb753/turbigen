@@ -2,6 +2,7 @@
 
 import yaml
 import gzip
+import os
 import re
 import numpy as np
 
@@ -67,6 +68,17 @@ def read_yaml(fname):
     # Read the YAML
     with open(fname, "r") as f:
         config = yaml.load(f, Loader=loader)
+
+    # Look for top-level include key
+    for fname_inc in config.pop("include", []):
+        # If fname does not exist, use as a relative path
+        if not os.path.exists(fname_inc):
+            fname_inc = os.path.join(os.path.dirname(fname), fname_inc)
+
+        # Read the included file
+        with open(fname_inc, "r") as f:
+            inc_config = yaml.load(f, Loader=loader)
+        config.update(inc_config)
 
     return config
 

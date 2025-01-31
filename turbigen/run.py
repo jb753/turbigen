@@ -240,6 +240,10 @@ and will cause problems with meshing and solving for the flow field."""
                 raise Exception(
                     f"Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}"
                 )
+            if np.any(np.abs(Chi) > 80.0):
+                logger.warning(
+                    f"WARNING: High blade angles may cause meshing problems: Row {irow} Chi={Chi}"
+                )
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
             row["q_camber"] = q_camber
@@ -641,6 +645,12 @@ and will cause problems with meshing and solving for the flow field."""
 
     s = 2.0 * np.pi * row_rmid[ind_out] / Nb[ind_out]
     s_cm = s / ann.chords(0.5)[1:-1:2][ind_out]
+    s_cm_min = 0.2
+    s_cm_max = 4.0
+    if np.any(s_cm < s_cm_min):
+        logger.warning("WARNING: narrow blade spacings may cause problems with meshing")
+    if np.any(s_cm > s_cm_max):
+        logger.warning("WARNING: large blade spacings may cause problems with meshing")
     s_cm_str = np.array2string(s_cm, precision=2)
 
     # Offset splitters to mid-pitch

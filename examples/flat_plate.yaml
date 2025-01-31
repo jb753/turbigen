@@ -17,7 +17,7 @@ mean_line:
   rt: [1.05, 1.05]  # Tip radii [m]
   rpm: [0., 0.]  # Shaft speed [rpm]
   mdot: 6.  # Mass flow rate [kg/s] only for flow intial guess
-  Alpha_rel: [50., 50.]  # Yaw angles [deg]
+  Alpha_rel: [70., 70.]  # Yaw angles [deg]
   Beta: [0., 0.]  # Pitch angles [deg]
 
 annulus:

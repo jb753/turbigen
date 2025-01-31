@@ -649,7 +649,6 @@ class Blade:
             thick = self._Thick(self.q_thick[0])
             cam = self._Cam(self.q_camber[0])
         else:
-
             # # Interpolate the parameters
             # qthick = scipy.interpolate.interp1d(
             #     self.spf,
