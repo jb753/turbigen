@@ -1956,7 +1956,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
             x, y, z = xyzi.copy()
             y += roffset
             r = np.sqrt(y ** 2 + z ** 2)
-            t = np.arctan2(y, z)
+            t = -np.arctan2(y, z) + np.pi/2
             xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces
