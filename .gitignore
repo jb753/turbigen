@@ -33,7 +33,6 @@ log.txt
 tests/run*/
 slurm-*.out
 tests/*.log
-matplotlibrc
 *.lprof
 /build/
 *.prof

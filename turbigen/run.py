@@ -56,7 +56,7 @@ def log_line(d, fields):
                     dout = f"{d[v]:<{w}d}"[:w] + " "
                 elif isinstance(d[v], str):
                     dout = f"{d[v]:<{w}}"[:w] + " "
-                elif isinstance(d[v], list):
+                elif isinstance(d[v], (list, tuple)):
                     dout = f"{d[v]}"[:w] + " "
                 elif isinstance(d[v], np.ndarray):
                     dout = f"{d[v]}"[:w] + " "
@@ -163,14 +163,14 @@ and will cause problems with meshing and solving for the flow field."""
 
     # Warn for wobbly annulus
     is_radial = np.abs(ml.Beta).max() > 10.0
-    is_multirow = conf.nrow>2
+    is_multirow = conf.nrow > 2
     if is_radial and is_multirow:
         if np.diff(np.sign(np.diff(ml.rrms))).any():
             logger.warning(
                 """WARNING: Radii do not vary monotonically.
 This suggests a physically-consistent but suboptimal mean-line design
 and will cause problems with meshing and solving for the flow field."""
-        )
+            )
 
     # Make a working directory
     workdir = conf.workdir
@@ -180,6 +180,12 @@ and will cause problems with meshing and solving for the flow field."""
     config_yaml_path = os.path.join(workdir, "config.yaml")
     logger.debug(f"Writing {config_yaml_path}...")
     conf.write(config_yaml_path)
+
+    # Backup the source files for later reproduction
+    times.append(timer())
+    util.save_source_tar_gz(os.path.join(workdir, "src.tar.gz"))
+    times.append(timer())
+    logger.debug(f"Source backup took {np.diff(times)[-1]:.1f}s")
 
     postdir = os.path.join(workdir, "post")
     if not os.path.exists(postdir):
@@ -233,6 +239,10 @@ and will cause problems with meshing and solving for the flow field."""
             if np.any(np.abs(Chi) > 90.0):
                 raise Exception(
                     f"Cannot set a blade angle over 90 degrees! Row {irow} Chi={Chi}"
+                )
+            if np.any(np.abs(Chi) > 80.0):
+                logger.warning(
+                    f"WARNING: High blade angles may cause meshing problems: Row {irow} Chi={Chi}"
                 )
             q_camber = qstar_camber
             q_camber[:, :2] = util.tand(Chi)
@@ -533,16 +543,16 @@ and will cause problems with meshing and solving for the flow field."""
                     cam_main = bld[-1]._get_cam_thick(spf_sect)[0]
                     chi_main = cam_main.chi(mlim_sect)
                     logger.debug(f"Section {isect}, main blade angles {chi_main}")
-                    logger.debug(f'main q_camber {row_now["q_camber"][isect]}')
+                    logger.debug(f"main q_camber {row_now['q_camber'][isect]}")
                     logger.debug(
-                        f'main q_camber deg {util.atand(row_now["q_camber"][isect])}'
+                        f"main q_camber deg {util.atand(row_now['q_camber'][isect])}"
                     )
 
                     # Fill in tanChi for the splitter after recamber
                     splitter_now["q_camber"][isect][:2] = util.tand(
                         chi_main + splitter_now["q_camber"][isect][:2]
                     )
-                    logger.debug(f'splitter q_camber {splitter_now["q_camber"][isect]}')
+                    logger.debug(f"splitter q_camber {splitter_now['q_camber'][isect]}")
                     logger.debug(
                         "splitter q_camber deg "
                         f"{util.atand(splitter_now['q_camber'][isect])}"
@@ -635,6 +645,12 @@ and will cause problems with meshing and solving for the flow field."""
 
     s = 2.0 * np.pi * row_rmid[ind_out] / Nb[ind_out]
     s_cm = s / ann.chords(0.5)[1:-1:2][ind_out]
+    s_cm_min = 0.2
+    s_cm_max = 4.0
+    if np.any(s_cm < s_cm_min):
+        logger.warning("WARNING: narrow blade spacings may cause problems with meshing")
+    if np.any(s_cm > s_cm_max):
+        logger.warning("WARNING: large blade spacings may cause problems with meshing")
     s_cm_str = np.array2string(s_cm, precision=2)
 
     # Offset splitters to mid-pitch
@@ -891,7 +907,7 @@ and will cause problems with meshing and solving for the flow field."""
                 gi.update_outlet()
 
         if conf.solver:
-            logger.info(f'Running solver {conf.solver["type"]} on installed...')
+            logger.info(f"Running solver {conf.solver['type']} on installed...")
             convergence = gi.run(conf.solver, mac)
             conf.solver.pop("workdir")
         else:
@@ -915,7 +931,7 @@ and will cause problems with meshing and solving for the flow field."""
 
         if conf.solver:
             if conf.solver.get("type"):
-                logger.info(f'Running solver {conf.solver["type"]}...')
+                logger.info(f"Running solver {conf.solver['type']}...")
                 convergence = g.run(conf.solver, mac)
                 conf.solver.pop("workdir")
         else:

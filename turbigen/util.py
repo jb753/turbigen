@@ -2,6 +2,7 @@
 
 import numpy as np
 import os
+import tarfile
 import sys
 import importlib
 import scipy.interpolate
@@ -1016,6 +1017,16 @@ def cart_to_pol(dA, t):
     return np.stack((dAx, dAr, dAt))
 
 
+def moving_average_1d(arr, window_size):
+    if window_size < 1:
+        raise ValueError("Window size must be at least 1")
+    if window_size % 2 == 0:
+        raise ValueError("Window size must be odd to preserve shape")
+
+    kernel = np.ones(window_size) / window_size
+    return np.convolve(arr, kernel, mode="same")
+
+
 def moving_average(x, n):
     xa = x.copy()
     N = x.shape[1]
@@ -1378,3 +1389,21 @@ def asscalar(x):
         return x
     else:
         raise NotImplementedError()
+
+
+def save_source_tar_gz(output_filename):
+    """Creates a tar.gz archive containing all Python source files"""
+
+    # Set directory to the package location
+    directory = os.path.dirname(os.path.abspath(__file__))
+
+    logger.info(f"Saving source code backup to {output_filename}")
+    with tarfile.open(output_filename, "w:gz") as tar:
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if file.endswith(".py") or file.endswith(
+                    ".toml"
+                ):  # Only include Python source files
+                    file_path = os.path.join(root, file)
+                    logger.debug(f"{file_path}")
+                    tar.add(file_path, arcname=os.path.relpath(file_path, directory))

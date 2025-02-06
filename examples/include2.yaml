@@ -1,0 +1,4 @@
+mesh:
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Double grid spacing in each direction
