@@ -77,11 +77,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         np.savez_compressed(fname, **d)
 
     @classmethod
-    def from_coordinates(cls, xrt, Nb, patches=(), label=None):
+    def from_coordinates(cls, xrt, Nb, patches=(), label=None, Omega=0.0):
         # Make empty object of correct shape
         block = cls(shape=xrt.shape[1:])
         block.xrt = xrt
         block._metadata = {"Nb": Nb, "patches": list(patches)}
+        block.Omega = Omega
         for p in patches:
             p.block = block
             # Check the limit indices are valid
@@ -1466,6 +1467,9 @@ class Patch:
             f" k={self.ijk_limits[2]}, label={self.label}, block={self.block})"
         )
 
+    def is_point(self):
+        return (np.ptp(self.ijk_limits, axis=1) == 0).all()
+
 
 class PeriodicPatch(Patch):
     """Node-to-node matching periodicity."""
@@ -1602,6 +1606,57 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
     harmonics = (1,)
+
+
+    def get_unsteady_multipliers(self, freq, nstep_cycle, ncycle):
+        """Given time discretisation, generate unsteady bcond factors.
+
+        Parameters
+        ----------
+        freq : float
+            Fundamental frequency of the unsteady forcing.
+        nstep_cycle : int
+            Number of time steps per fundamental period.
+        ncycle : int
+            Number of fundamental periods to simulate.
+
+        Returns
+        -------
+        fac_ho: (nt,) array
+            Factor multiplying mean inlet stagnation enthalpy at each time step.
+        fac_Po: (nt,) array
+            Factor multiplying mean inlet stagnation pressure at each time step.
+
+        """
+
+        # Lay out a time vector
+        nt = nstep_cycle * ncycle
+        it = np.arange(nt)
+        dt = 1.0 / freq / nstep_cycle
+        t = it * dt
+
+        # Start with a steady unity factor
+        fac = np.ones((nt,))
+
+        # Add on perturbations for each harmonic
+        for n in self.harmonics:
+            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
+            fac += self.amplitude * np.sin(
+                2.0 * np.pi * freq* n * t + phase + self.phase
+            )
+
+        # Choose the forcing type
+        if self.force == "isentropic":
+            ga = self.state.gamma
+            fac_Po = fac
+            fac_ho = fac_Po ** ((ga - 1.0) / ga)
+        elif self.force == "entropic":
+            fac_Po = np.ones_like(fac)
+            fac_ho = fac
+        else:
+            raise Exception(f"Unknown inlet forcing type {self.force}")
+
+        return fac_ho, fac_Po
 
 
 class InviscidPatch(Patch):
@@ -1852,7 +1907,7 @@ def from_jmesh(blocks, conn_face, state):
     return g
 
 
-def from_xyz(xyz, state, Nb, roffset, labels):
+def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
     """Generate a grid object from Cartesian coordinates with face-to-face patching.
 
     To greatly simplify block connectivity, all periodic boundaries occupy
@@ -1871,6 +1926,15 @@ def from_xyz(xyz, state, Nb, roffset, labels):
     roffset: float
         Raidus at y=0.
     labels: list of str
+    sector: bool
+        If True, the mesh is distorted such that a rectangle in the y-z plane
+        becomes a sector in the final grid, i.e. rectangle in the r-rt plane.
+        Constant z lines correspond to constant theta lines in the final grid.
+        If False, the angular coordinates are set to give the true geometry.
+        To retain periodic boundaries in the z direction, the sector method must
+        be used, but this will distort the geometry. If there is no periodicity
+        in the z-direction, then the sector method is not required.
+        
 
     """
 
@@ -1883,9 +1947,17 @@ def from_xyz(xyz, state, Nb, roffset, labels):
     # Initialise the blocks
     blocks = []
     for xyzi, labi in zip(xyz, labels):
-        xrt = xyzi.copy()
-        xrt[1] += roffset
-        xrt[2] /= roffset
+
+        if sector:
+            xrt = xyzi.copy()
+            xrt[1] += roffset
+            xrt[2] /= roffset
+        else:
+            x, y, z = xyzi.copy()
+            y += roffset
+            r = np.sqrt(y ** 2 + z ** 2)
+            t = np.arctan2(y, z)
+            xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces
         patches = (

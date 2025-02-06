@@ -818,7 +818,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             for name, val in _patch_properties(patch).items():
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
-                    if force := patch.force:
+                    if force := patch.force and ts3_config.dts:
                         t = _get_time_vector(ts3_config)
                         nt = len(t)
                         F = np.ones((1, 1, 1, nt))
@@ -849,7 +849,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                         pa["nt"] = nt
 
                 if isinstance(patch, turbigen.grid.OutletPatch):
-                    if patch.force:
+                    if patch.force and ts3_config.dts:
                         t = _get_time_vector(ts3_config)
                         F = 1.0 + patch.amplitude * np.sin(
                             2.0 * np.pi * ts3_config.frequency * t
