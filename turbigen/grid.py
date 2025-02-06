@@ -1090,7 +1090,7 @@ class Grid:
 
             return out
 
-    def cut_blade_sides(self):
+    def cut_blade_sides(self, offset=0):
         """Nested list of pressure/suction side cuts in each row."""
 
         # Assuming a H-mesh
@@ -1116,8 +1116,8 @@ class Grid:
                 continue
 
             # Get both sides
-            Ck0 = self[i][ile : (ite + 1), :, None, 0].copy()
-            Cnk = self[i][ile : (ite + 1), :, None, -1].copy()
+            Ck0 = self[i][ile : (ite + 1), :, None, 0 + offset].copy()
+            Cnk = self[i][ile : (ite + 1), :, None, -1 - offset].copy()
             C = [Ck0, Cnk]
 
             # Find the side at highest theta
@@ -1132,13 +1132,13 @@ class Grid:
     def is_hmesh(self):
         return len(self) == len(self.row_blocks)
 
-    def cut_blade_surfs(self):
+    def cut_blade_surfs(self, offset=0):
         """O-mesh style cuts for the blades in each row."""
 
         surfs = []
 
         if self.is_hmesh:
-            row_sides = self.cut_blade_sides()
+            row_sides = self.cut_blade_sides(offset)
             for sides in row_sides:
                 if sides is None:
                     surfs.append(None)
@@ -1164,7 +1164,7 @@ class Grid:
                         np.allclose(b[0, :, 0].xrt, b[-1, :, 0].xrt)
                         and b.shape[1] == nj
                     ):
-                        surfs[-1].append(b[:, :, None, 0])
+                        surfs[-1].append(b[:, :, None, offset])
 
         return surfs
 

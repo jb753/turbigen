@@ -11,7 +11,7 @@ logger = util.make_logger()
 
 def forward(
     So1,
-    psi,
+    PR_tt,
     phi2,
     zeta,
     Ma2,
@@ -36,11 +36,9 @@ def forward(
 
     """
 
-    # Can we change to controlling Ma2_rel?
-
     # Verify input scalars
     util.check_scalar(
-        psi=psi,
+        PR_tt=PR_tt,
         phi2=phi2,
         Ma2=Ma2,
         DMa3_rel=DMa3_rel,
@@ -58,19 +56,24 @@ def forward(
     # Ys = To1*(s-s1)/(0.5*a01^2)
     s = np.concatenate(((0.0,), (Ys[0],), Ys)) * dhead_ref / Tref + So1.s
 
+    # Use pressure ratio to get exit stagnation state
+    So3 = So1.copy().set_P_s(So1.P * PR_tt, s)
+
+    # Can use enthalpy and entropy to fix all stagnation states
+    ho = np.array([So1.h, So1.h, So1.h, So3.h])
+    So = So1.empty(shape=(4,)).set_h_s(ho, s)
+
     # Define rotor Mach as offset from stator Mach
     Ma3_rel = DMa3_rel + Ma2
 
-    # Guess a blade speed
+    # Euler work equation to get U
     U = So1.a * 0.5
 
     # Preallocate and loop
-    So = So1.empty(shape=(4,)).set_h_s(So1.h, s)
     S = So.copy()
     MAXITER = 100
     RTOL = 1e-6
     for i in range(MAXITER):
-
         # Axial velocities
         Vx2 = U * phi2
         Vx = np.array([zeta[0], 1.0, 1.0, zeta[1]]) * Vx2
