@@ -106,7 +106,13 @@ class Config(BaseSolver):
     precon_fac_ramp_en: float = 1.0
     precon_sigma_pgr: float = 3.0
 
+    if_dts: int = 0
+    frequency: float = 0.0
+    ncycle: int = 0
+    nstep_cycle: int = 72
+
     halo_implementation: int = 1
+    ncycle_avg: int = 1
 
     interpolation_update: int = 1  # 1 to freeze interpolating plane posn
 
@@ -145,6 +151,13 @@ class Config(BaseSolver):
 
         if v["precon"]:
             v["precon_fac_ramp"] = 1
+
+        # Disable ramping in unsteady runs
+        if self.if_dts:
+            v["cfl_ramp"] = 0
+            dnstep_avg = self.ncycle_avg*self.nstep_cycle
+            nstep_tot = self.ncycle*self.nstep_cycle
+            v["istep_avg_start"] = nstep_tot - dnstep_avg
 
         return v
 
@@ -298,6 +311,11 @@ DEFAULT_CONFIG = {
     "pout_fac_ramp_st": 0.8,
     "pout_fac_ramp_en": 1.0,
     "use_gpu_direct": 1,
+    "if_dts": 0,
+    "ncycle": 0,
+    "nstep_cycle": 0,
+    "frequency": 0.,
+    "nstep_save": 1e9,
 }
 
 
@@ -592,12 +610,71 @@ def run(grid, ts4_conf, machine):
 
     _write_ofp(ts4_conf.config_path, ofp)
 
-    ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir)._robust()
+    # Check inlet patches for forcing
+    for patch in grid.inlet_patches:
+        if patch.force:
+
+            # Evaluate the forcing function for the current time discretisation 
+            fac_Po, fac_ho = patch.get_unsteady_multipliers(
+                    ts4_conf.frequency,
+                    ts4_conf.nstep_cycle,
+                    ts4_conf.ncycle,
+            )
+
+            # Save to a numpy file
+            np.savez(
+                os.path.join(ts4_conf.workdir, "forcing.npz"),
+                fac_Po=fac_Po,
+                fac_ho=fac_ho,
+            )
+
+            # Write out a forcing file
+            bcond_path = os.path.join(ts4_conf.workdir, "bcond_unsteady_config.ofp")
+            with open(bcond_path, "w") as f:
+                f.write( """
+import numpy
+
+hstag_ramp = {}
+pstag_ramp = {}
+pstat_ramp = {}
+
+data = numpy.load("forcing.npz")
+
+# inlet
+hstag_ramp[0] = data["fac_ho"]
+pstag_ramp[0] = data["fac_Po"]
+print("Forcing applied to inlet")
+
+""")
+            logger.info("Wrote out unsteady boundary conditions.")
+
+    ts3_conf = turbigen.solvers.ts3.Config(dts=0,workdir=ts4_conf.workdir)._robust()
 
     # Get number of GPUs from environment var
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))
     nnode = int(os.environ.get("SLURM_NNODES", 1))
     npernode = ngpu // nnode
+
+    # Write point probes
+    if ts4_conf.point_probe:
+        # Loop over a list of probes
+        for pp_conf in ts4_conf.point_probe:
+            xyz = np.array(pp_conf["xyz"]).T
+            idomain = int(pp_conf["domain"])
+            # Get dimensions of input data
+            assert xyz.ndim == 2
+            assert xyz.shape[0] == 3
+            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
+    else:
+    # Check for point probes in the grid
+        iprb = 0
+        for patch in grid.probe_patches:
+            if patch.is_point:
+                xyz = patch.get_cut().xyz.squeeze()
+                idomain = 0
+                label = f"probe_{iprb}"
+                _write_point_probe(ts4_conf, xyz, idomain, label)
+                iprb += 1
 
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
@@ -673,18 +750,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         for spf in ts4_conf.spf_probe:
             _write_xr_probe(machine, ts4_conf, spf)
 
-    # Write point probes
-    if ts4_conf.point_probe:
-        # Loop over a list of probes
-        for pp_conf in ts4_conf.point_probe:
-            xyz = np.array(pp_conf["xyz"]).T
-            idomain = int(pp_conf["domain"])
-
-            # Get dimensions of input data
-            assert xyz.ndim == 2
-            assert xyz.shape[0] == 3
-
-            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
 
     # Write logical probes
     if ts4_conf.logical_probe:
@@ -728,10 +793,17 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
     # Write out the ts4 flowfield to ts3 for debugging
     turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
 
-    # Check convergence
+    # Parse convergence history
     Nb = [grid.inlet_patches[0].block.Nb, grid.outlet_patches[0].block.Nb]
-    state_log = grid.inlet_patches[0].state.copy()
+    istep, mdot, ho, Po, resid = parse_log(log_path, ts4_conf.nstep, Nb)
+
+    # State to hold inlet and outlet flow properties
+    state_log = grid.inlet_patches[0].state.empty(shape=mdot.shape)
     state_log.set_Tu0(0.0)
-    return ConvergenceHistory(
-        *parse_log(log_path, ts4_conf.nstep, Nb), state_log, ofp["istep_avg_start"]
-    )
+    state_log.set_P_h(ho, Po)
+    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
+    conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+
+    return conv
+
+
