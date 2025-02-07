@@ -204,14 +204,15 @@ and will cause problems with meshing and solving for the flow field."""
     Annulus = util.load_annulus(annulus_type)
     annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
+    ann.get_interfaces()
 
     conf.annulus["type"] = annulus_type
     logger.info(ann)
     times.append(timer())
     logger.debug(f"Annulus design took {np.diff(times)[-1]:.1f}s")
 
-    cut_offset = conf.solver.pop("cut_offset", None)
-    xr_cut = ann.get_cut_planes(cut_offset)
+    cut_offset = conf.solver.pop("cut_offset", 0.02)
+    xr_cut = ann.get_offset_planes(cut_offset)
 
     # Include deviations angles with respect to free vortex in camber
     # parameters to make q_camber

@@ -41,7 +41,7 @@ blades:
     sections:
       - spf: 0.5
         q_thick: [0.03, 0.08, 0.3, 0., 0.00, 0.18]
-        qstar_camber: [10., -2., 1.0, 1.0, 0.0]
+        qstar_camber: [-10., 2., 1.0, 1.0, 0.0]
 
 # CFD solver
 solver:

@@ -1,4 +1,5 @@
 """Velocity-cubed estimate of surface dissipation."""
+
 import numpy as np
 
 import turbigen.grid
@@ -41,7 +42,7 @@ def post(
     sin = Cin.s
 
     # Get the final station cut plane
-    xr_cut = machine.ann.get_cut_planes(None)[-1]
+    xr_cut = machine.ann.get_offset_planes(offset=0)[-1]
 
     # dist = turbigen.util.signed_distance(xr_cut, block.xr)
 

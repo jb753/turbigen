@@ -124,8 +124,7 @@ def post(
         c1, c2 = C_tri.rt, C_tri.x
     elif coord_mode == CoordMode.SPF:
         # Now generate a mapping from xr to meridional distance
-        xr_ref = machine.ann.get_span_curve(value, n=4999)
-        mp_from_xr = machine.ann.get_mp_from_xr(xr_ref)
+        mp_from_xr = machine.ann.get_mp_from_xr(value)
         c1 = mp_from_xr(C_tri.xr)
         c2 = C_tri.t
     elif coord_mode == CoordMode.M:
