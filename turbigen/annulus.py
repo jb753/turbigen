@@ -4,7 +4,7 @@ The purpose of these objects is to evaluate x/r coordinates over a turbomachine
 annulus as a function of spanwise and streamwise location.
 
 To make a new annulus, subclass the BaseAnnulus and implement:
-    - __init__(self, rmid, span, Beta, [... choice of design variables ...])
+    - __init__(self, rmid, span, Beta, [... your choice of design variables])
     - evaluate_xr(m, spf)
     - nrow
 
@@ -25,7 +25,7 @@ class BaseAnnulus(ABC):
     """Base class defining the interface for an annulus."""
 
     @abstractmethod
-    def evaluate_xr(self, m, spf):
+    def evaluate_xr(self, m, spf) -> np.ndarray:
         """Get meridional coordinates within the annulus.
 
         The input non-dimensional coordinates must be broadcastable
@@ -479,8 +479,8 @@ class Smooth(BaseAnnulus):
     def nrow(self):
         return self.rmid.size // 2
 
-    def evaluate_xr(self, t, spf):
-        tb, spfb = np.broadcast_arrays(t, spf)
+    def evaluate_xr(self, m, spf):
+        tb, spfb = np.broadcast_arrays(m, spf)
 
         # t is a vector that describes grid spacings where each unit interval
         # corresponds to a gap or blade
