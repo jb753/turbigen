@@ -61,9 +61,10 @@ class Config(BaseSolver):
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    min_smooth_ratio: float = 1.0
+    smooth_ratio_min: float = 0.1
     """Largest reduction in smoothing on a non-isotropic grid. Unity disables
-    directional scaling."""
+    directional scaling, lower values clip the local smoothing factor to be
+    sf_local >= sf * smooth_ratio_min."""
 
     CFL: float = 0.65
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -230,7 +231,7 @@ class SolverBlock:
         L /= L.sum(axis=-1, keepdims=True) / 3.0
 
         # Clip to a maximum reduction in smoothing and re-normalise
-        L = np.clip(L, conf.min_smooth_ratio, None)
+        L = np.clip(L, conf.smooth_ratio_min, None)
         L /= L.sum(axis=-1, keepdims=True) / 3.0
 
         # Now distribute cell length scales to nodes
