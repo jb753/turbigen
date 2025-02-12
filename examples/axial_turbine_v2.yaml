@@ -20,8 +20,9 @@ mean_line:
   rrms: 1.0
 
 annulus:
-  AR_gap: [0.6, 2., 0.7]
-  AR_chord: [1.6, 1.6]
+  type: FixedAxialChord
+  cx_gap: [0.2, 0.05, 0.2]
+  cx_row: [0.1, 0.1]
 
 blades:
   - Co: 0.7
@@ -51,3 +52,6 @@ mesh:
   type: h
   yplus: 30.
   resolution_factor: 0.5
+
+post_process:
+  plot_annulus:

@@ -400,7 +400,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
 
     # Spanwise grid vector
     # From hub/casing spacings and ER
-    span_ref = mac.ann.span[0]
+    span_ref = mac.ann.get_span(1)
     dspf_hub = dhub / span_ref
     dspf_casing = dhub / span_ref
 
@@ -446,7 +446,7 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
         drt_norm = dsurf[:, irow].min() / pitch_rtheta_max
 
         # Row aspect ratios
-        span_row = np.mean(mac.ann.span[irow * 2 : (irow * 2 + 2)])
+        span_row = np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
         AR_row = span_row / chord_mid[1]
 
         # Nominal pitch fractions first

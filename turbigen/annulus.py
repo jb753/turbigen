@@ -47,13 +47,13 @@ class BaseAnnulus(ABC):
             shape of mnorm and spf.
 
         """
-        pass
+        raise NotImplementedError
 
     @property
     @abstractmethod
     def nrow(self) -> int:
         """Number of blade rows in this annulus."""
-        pass
+        raise NotImplementedError
 
     @property
     def nseg(self) -> int:
@@ -176,6 +176,23 @@ class BaseAnnulus(ABC):
         m = np.linspace(0.0, self.mmax, self.nseg * npts + 1)
         return self.get_cut_plane(m).transpose(2, 0, 1)
 
+    def get_span(self, m):
+        """Span of the annulus at a given meridional position.
+
+        Parameters
+        ----------
+        m : (n,) array
+            Normalised meridional positions to evaluate the span.
+
+        Returns
+        -------
+        span : (n,) array
+            Span of the annulus at the given meridional position.
+
+        """
+        xr_span = self.get_cut_plane(m).transpose(1, 2, 0)
+        return util.arc_length(xr_span)
+
     def get_span_curve(self, spf, n=201, mlim=None):
         """Meridional xr curve along a given span fraction.
 
@@ -269,6 +286,109 @@ class BaseAnnulus(ABC):
             return mpu.reshape(xr.shape[1:])
 
         return mp_from_xr
+
+
+class FixedAxialChord(BaseAnnulus):
+    def __init__(
+        self,
+        rmid,
+        span,
+        Beta,
+        cx_row,
+        cx_gap,
+        nozzle_ratio=1.0,
+    ):
+        """Define annulus line by specifying dimensional axial chords.
+
+        Places the origin of the x-coordinate system at the first row LE.
+
+        Parameters
+        ----------
+        rmid : (nrow*2) array
+            Mid-span radii at inlet and exit of all rows.
+        span : (nrow*2) array
+            Annulus span perpendicular to pitch angle at all stations.
+        Beta : (nrow*2) array
+            Pitch angles at all stations [deg].
+        cx_row : (nrow) array
+            Axial chord lengths of each blade row [m].
+        cx_gap : (nrow+1) array
+            Axial chord lengths of each gap between rows [m].
+            cx_gap[0] is the distance to inlet boundary,
+            cx_gap[-1] is the distance to outlet boundary,
+        """
+
+        # Check input data
+        npt = len(rmid)
+        nrow = npt // 2
+        ngap = nrow + 1
+        util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
+        util.check_vector((ngap,), cx_gap=cx_gap)
+        util.check_vector((nrow,), cx_row=cx_row)
+
+        self.span = span
+
+        # Assemble vector of all cx
+        cx = np.zeros(nrow * 2 + 1)
+        cx[::2] = cx_gap
+        cx[1::2] = cx_row
+
+        # Integrate x
+        xmid = util.cumsum0(cx)
+        xmid -= xmid[1]  # Place x origin at first row LE
+
+        # Extend r coords for inlet and exit ducts at constant Beta
+        rmid = np.r_[0.0, rmid, 0.0]
+        sinBeta = np.sin(np.radians(Beta))
+        rmid[0] = rmid[1] - cx[0] * sinBeta[0]
+        rmid[-1] = rmid[-2] + cx[-1] * sinBeta[-1]
+
+        # The extensions have same span and pitch angle as first/last point
+        span = np.pad(span, 1, "edge")
+        Beta = np.pad(Beta, 1, "edge")
+
+        # Adjust to nozzle exit area
+        radius_ratio = rmid[-2] / rmid[-1]
+        span[-1] *= nozzle_ratio * radius_ratio
+
+        # We now have coordinates of the mid-span line
+        # So make the hub and casing lines
+        sinBeta = np.sin(np.radians(Beta))
+        cosBeta = np.cos(np.radians(Beta))
+        xhub = xmid + 0.5 * span * sinBeta
+        xcas = xmid - 0.5 * span * sinBeta
+        rhub = rmid - 0.5 * span * cosBeta
+        rcas = rmid + 0.5 * span * cosBeta
+
+        # Make hub and casing line splines
+        self._hub = MeridionalLine(xhub, rhub, Beta).smooth()
+        self._cas = MeridionalLine(xcas, rcas, Beta).smooth()
+
+    @property
+    def nrow(self):
+        return self._hub.N // 2 - 1
+
+    def evaluate_xr(self, m, spf):
+        tb, spfb = np.broadcast_arrays(m, spf)
+
+        # t is a vector that describes grid spacings where each unit interval
+        # corresponds to a gap or blade
+        # We need to map to meridional distance fractions
+        npts = self.nseg + 1
+        tctrl = np.linspace(0, npts - 1, npts)
+        mhub = np.interp(tb, tctrl, self._hub.mctrl)
+        mcas = np.interp(tb, tctrl, self._cas.mctrl)
+
+        # Evaluate hub and casing coordinates
+        xr_hub = self._hub.xr(mhub)
+        xr_cas = self._cas.xr(mcas)
+
+        # Finally evaluate the meridional grid
+        spf1 = np.expand_dims(np.stack((1.0 - spfb, spfb)), 1)
+        xr_hc = np.stack((xr_hub, xr_cas))
+        xr = np.sum(spf1 * xr_hc, axis=0)
+
+        return xr
 
 
 class Smooth(BaseAnnulus):
@@ -500,3 +620,14 @@ class Smooth(BaseAnnulus):
         xr = np.sum(spf1 * xr_hc, axis=0)
 
         return xr
+
+
+def load_annulus(annulus_type):
+    """Get annulus class by string, including any custom classes."""
+    available_annulus_types = {a.__name__: a for a in BaseAnnulus.__subclasses__()}
+    if annulus_type not in available_annulus_types:
+        raise ValueError(
+            f"Unknown annulus type: {annulus_type}, should be one of {available_annulus_types.keys()}"
+        )
+    else:
+        return available_annulus_types[annulus_type]

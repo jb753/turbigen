@@ -197,11 +197,11 @@ and will cause problems with meshing and solving for the flow field."""
     # Feed annulus arguments to the geometry function
     times.append(timer())
     logger.debug("Checking annulus config...")
-    conf._check_annulus()
+    # conf._check_annulus()
     annulus_type = conf.annulus.pop("type", "Smooth")
     annulus_debug = conf.annulus.pop("debug", False)
     logger.info("Designing annulus...")
-    Annulus = util.load_annulus(annulus_type)
+    Annulus = turbigen.annulus.load_annulus(annulus_type)
     annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
     ann.get_interfaces()
