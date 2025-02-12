@@ -2,6 +2,7 @@ import numpy as np
 from copy import copy
 
 import turbigen.util
+import os
 
 import logging
 from dataclasses import dataclass
@@ -941,8 +942,16 @@ def run(grid, conf, machine=None):
     if isinstance(conf, dict):
         conf = Config(**conf)
 
+    soln_path = os.path.join(conf.workdir, f"soln.npz")
     if conf.skip:
-        logger.info("Skipping, doing nothing.")
+        if os.path.exists(soln_path):
+            logger.info("Skipping, loading existing solution.")
+            dat = np.load(soln_path)
+            cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
+            for b, c in zip(grid, cons):
+                b.set_conserved(c)
+        else:
+            logger.info("Skipping, no saved solution fount, doing nothing.")
         return
 
     logger.info("Initialising native solver...")
@@ -1002,6 +1011,19 @@ def run(grid, conf, machine=None):
 
     isort = np.argsort([b.bid for b in blocks_out])
     blocks_out = [blocks_out[i] for i in isort]
+
+    # Write the conserved vars to an npz
+    if conf.workdir:
+        os.makedirs(conf.workdir, exist_ok=True)
+        logger.info(f"Writing output to {soln_path}")
+        dat_out = {
+            f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
+            for ib, b in enumerate(blocks_out)
+        }
+        np.savez(
+            soln_path,
+            **dat_out,
+        )
 
     # Assemble a convergence history
     mhos = np.full(

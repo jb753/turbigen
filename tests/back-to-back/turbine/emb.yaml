@@ -44,8 +44,8 @@ blades:
 # CFD solver
 solver:
   type: embsolve
-  n_step: 5000
-  n_step_avg: 1000
+  n_step: 500
+  n_step_avg: 100
   nstep_damp: -1
 
 post_process:
