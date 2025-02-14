@@ -94,6 +94,10 @@ vtk_grid = reader.read(input_hdf5_full, True)
 vtk_grid = select_by_string(vtk_grid, "Inlet")
 vtk_grid = set_group(vtk_grid, 0)
 
+# Find the inlet and set to group 0
+vtk_grid = select_by_string(vtk_grid, "Outlet")
+vtk_grid = set_group(vtk_grid, 1)
+
 # Write TS4
 g = ts.process.pre.vtk_adaptor.create_ts_grid(vtk_grid)
 g.write_hdf5(f"{output_stem_full}.hdf5")

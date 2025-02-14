@@ -696,7 +696,9 @@ class RealState(StructuredData):
 
     @dependent_property
     def rgas(self):
-        return self._lookup_property(self._as.cvmass)
+        Rgas_molar = self._lookup_property(self._as.gas_constant)
+        M_molar = self._lookup_property(self._as.molar_mass)
+        return Rgas_molar / M_molar
 
     @dependent_property
     def mu(self):
