@@ -320,6 +320,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
     real :: cf
     real :: tauw
     real :: rc
+    real :: Rew_lim = 127.53373025e0
 
     ! real :: yplus
     ! real :: vtau
@@ -443,7 +444,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
             ! lnRew = alog(Rew)
             lnRew = log(Rew)
             ! if (Rew.lt.125e0) then
-            if (Rew.lt.127.53373025e0) then
+            if (Rew.lt.Rew_lim) then
                 ! Note: the TS user manual is off by factor of 2
                 ! The below is correct and as in MULTALL
                 cf = 2e0/Rew

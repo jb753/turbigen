@@ -14,6 +14,7 @@ import turbigen.annulus
 import turbigen.average
 import turbigen.flowfield
 import turbigen.yaml
+import turbigen.nblade
 from turbigen import (
     fluid,
     grid,
@@ -197,21 +198,22 @@ and will cause problems with meshing and solving for the flow field."""
     # Feed annulus arguments to the geometry function
     times.append(timer())
     logger.debug("Checking annulus config...")
-    conf._check_annulus()
+    # conf._check_annulus()
     annulus_type = conf.annulus.pop("type", "Smooth")
     annulus_debug = conf.annulus.pop("debug", False)
     logger.info("Designing annulus...")
-    Annulus = util.load_annulus(annulus_type)
+    Annulus = turbigen.annulus.load_annulus(annulus_type)
     annulus_debug = conf.annulus.pop("debug", False)
     ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
+    ann.get_interfaces()
 
     conf.annulus["type"] = annulus_type
     logger.info(ann)
     times.append(timer())
     logger.debug(f"Annulus design took {np.diff(times)[-1]:.1f}s")
 
-    cut_offset = conf.solver.pop("cut_offset", None)
-    xr_cut = ann.get_cut_planes(cut_offset)
+    cut_offset = conf.solver.pop("cut_offset", 0.02)
+    xr_cut = ann.get_offset_planes(cut_offset)
 
     # Include deviations angles with respect to free vortex in camber
     # parameters to make q_camber
@@ -1148,6 +1150,28 @@ and will cause problems with meshing and solving for the flow field."""
                 pdict["Dev"] = np.atleast_1d(dev)[0]
                 pdict["DDev"] = np.atleast_1d(ddev)[0]
 
+    DF_converged = True
+    if DF_conf := conf.iterate.get("DF"):
+        DF_conf = turbigen.nblade.DiffusionFactorConfig(**DF_conf)
+        for irow, DF_target in DF_conf.target.items():
+            # Calculate the diffusion factor from CFD
+            DF_actual = turbigen.nblade.get_diffusion_factor(g, mac, ml, irow, DF_conf)
+
+            # Calculate Nblade adjustment
+            dNb_rel = -DF_conf.dNb_dDF * (1.0 - DF_actual / DF_target)
+            logger.iter(
+                f"DF_actual={DF_actual:.3g}, DF_target={DF_target:.3g}, dNb_rel={dNb_rel:.3g}"
+            )
+            pdict["DF"] = DF_actual
+            pdict["DNb"] = dNb_rel
+
+            # Adjust nblade
+            if "Nb" in conf.blades:
+                conf.blades["Nb"][irow] += int(dNb_rel * ml.Nb[irow])
+            elif "Co" in conf.blades:
+                conf.blades["Co"][irow] /= 1.0 + dNb_rel
+            DF_converged = False
+
     # Update qstar post-optimisation
     for irow, row in enumerate(conf.sections):
         if row:
@@ -1155,7 +1179,7 @@ and will cause problems with meshing and solving for the flow field."""
             row["qstar_camber"] = qstar_save[irow].tolist()
 
     opt_converged = (
-        dev_converged and inc_converged and mean_line_converged
+        dev_converged and inc_converged and mean_line_converged and DF_converged
     ) or conf.solver.get("skip")
 
     if conf.iterate:
@@ -1283,9 +1307,13 @@ def run(conf):
         log_line("-", log_fields)
 
         # Apply the nstep scaling factor
+        if not "nstep" in conf.solver:
+            nstep_key = "n_step"
+        else:
+            nstep_key = "nstep"
         fac_nstep_initial = conf.iterate.get("fac_nstep_initial", 1.0)
-        nstep_old = conf.solver["nstep"]
-        conf.solver["nstep"] = int(fac_nstep_initial * nstep_old)
+        nstep_old = conf.solver[nstep_key]
+        conf.solver[nstep_key] = int(fac_nstep_initial * nstep_old)
 
         for i in range(max_iter):
             iterdir = os.path.join(basedir, "%04d" % i)
@@ -1298,7 +1326,7 @@ def run(conf):
             ml_out, opt_converged, gguess = run_single(conf, gguess)
 
             # Reset nstep
-            conf.solver["nstep"] = nstep_old
+            conf.solver[nstep_key] = nstep_old
 
             # Check for stopit to interrupt iterations
             stopit_path = os.path.join(basedir, "stopit")

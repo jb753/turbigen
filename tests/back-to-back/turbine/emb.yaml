@@ -41,6 +41,11 @@ blades:
         q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
         qstar_camber: [10., -2., 1.0, 1.0, 0.0]
 
+iterate:
+  DF:
+    target:
+      0: 0.2
+
 # CFD solver
 solver:
   type: embsolve
@@ -60,4 +65,5 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
+    show_DF: [true,]
     compare: tests/back-to-back/turbine/ts3/post/pressure_distributions_raw.npz

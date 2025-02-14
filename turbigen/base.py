@@ -1642,9 +1642,9 @@ class MeanLine:
         return self[ist:ien]
 
     def interpolate_guess(self, ann):
-        # Get coordinates along mean-line
+        # Get meridional coordinates along mean-line
         npts = 100
-        sg = np.linspace(0.0, ann._mctl[-1], npts)
+        sg = np.linspace(0.0, ann.mmax, npts)
         xg, rg = ann.evaluate_xr(sg, 0.5)
 
         # Get variations in thermodynamic state at inlet,exit and row boundaries
@@ -1656,11 +1656,12 @@ class MeanLine:
         Vt_mid = np.pad(self.Vt, 1, "edge")
 
         # Interpolate flow properties linearly along mean-line
-        rog = np.interp(sg, ann._mctl, ro_mid)
-        ug = np.interp(sg, ann._mctl, u_mid)
-        Vxg = np.interp(sg, ann._mctl, Vx_mid)
-        Vrg = np.interp(sg, ann._mctl, Vr_mid)
-        Vtg = np.interp(sg, ann._mctl, Vt_mid)
+        sq = np.linspace(0.0, ann.mmax, ann.nseg + 1)
+        rog = np.interp(sg, sq, ro_mid)
+        ug = np.interp(sg, sq, u_mid)
+        Vxg = np.interp(sg, sq, Vx_mid)
+        Vrg = np.interp(sg, sq, Vr_mid)
+        Vtg = np.interp(sg, sq, Vt_mid)
 
         Fg = self.empty(shape=(npts,)).set_rho_u(rog, ug)
         Fg.xr = np.stack((xg, rg))

@@ -3,19 +3,10 @@ r"""Classes to calculate meridional coordinates of an axisymmetric annulus.
 The purpose of these objects is to evaluate x/r coordinates over a turbomachine
 annulus as a function of spanwise and streamwise location.
 
-The streamwise coordinate is a normalised meridional distance :math:`m` defined
-such that:
-    - :math:`m=0` at the machine inlet;
-    - :math:`m=1` at the first row LE;
-    - :math:`m=2` at the first row TE;
-    - ...
-    - :math:`m=2N_\mathrm{row}-1` at the last row LE;
-    - :math:`m=2N_\mathrm{row}` at the last row TE;
-    - :math:`m=2N_\mathrm{row}+1` at the machine outlet;
-
-Between each of these points, :math:`m` varies linearly with arc length along
-the streamsurface; every non-dimensional unit interval corresponds to, in
-general, a different dimensional arc length.
+To make a new annulus, subclass the BaseAnnulus and implement:
+    - __init__(self, rmid, span, Beta, [... your choice of design variables])
+    - evaluate_xr(m, spf)
+    - nrow
 
 """
 
@@ -23,13 +14,384 @@ from turbigen import util
 from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar
 import scipy.interpolate
+from abc import ABC, abstractmethod
 
 import numpy as np
 
 logger = util.make_logger()
 
 
-class Smooth:
+class BaseAnnulus(ABC):
+    """Base class defining the interface for an annulus."""
+
+    @abstractmethod
+    def evaluate_xr(self, m, spf) -> np.ndarray:
+        """Get meridional coordinates within the annulus.
+
+        The input non-dimensional coordinates must be broadcastable
+        to the same shape.
+
+        Parameters
+        ----------
+        m: array_like
+            Normalised meridional distance, where 0 is the inlet,
+            1 is the first row LE, 2 is the first row TE, etc.
+        spf : array_like
+            Span fraction, where 0 is the hub and 1 is the casing.
+
+        Returns
+        -------
+        xr : array_like (2, ...)
+            Meridional coordinates of the requested points in the annulus.
+            First axis is x or r coordinates, remaining axes are broadcasted
+            shape of mnorm and spf.
+
+        """
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def nrow(self) -> int:
+        """Number of blade rows in this annulus."""
+        raise NotImplementedError
+
+    @property
+    def nseg(self) -> int:
+        """Number of segments in this annulus, 2*nrow + 1."""
+        return 2 * self.nrow + 1
+
+    @property
+    def mmax(self):
+        """Maximum value of normalised meridional coordinate."""
+        return float(self.nseg)
+
+    def chords(self, spf):
+        """Meridional chords of rows and row gaps.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction at which to evaluate the chords.
+            0 is the hub, 1 is the casing.
+
+        Returns
+        -------
+        cm: (nseg-1) array
+            Meridional chord lengths of all segments.
+
+        """
+
+        # Preallocate chords
+        nchord = self.nseg
+        chords = np.zeros(nchord)
+
+        # Loop over all chords
+        for i in range(nchord):
+            # Evaluate meridional coordinates and integrate arc length
+            mq = np.linspace(i, i + 1, 100)
+            chords[i] = util.arc_length(self.evaluate_xr(mq, spf))
+
+        return chords
+
+    def get_interfaces(self):
+        """Meridional coordinates of row interfaces.
+
+        Returns
+        -------
+        xr_interfaces : array_like (nrow-1, 2, 2)
+            Meridional coordinates of the interfaces between blade rows.
+            First axis is row index, second axis is x/r, third axis is
+            the hub or casing.
+
+        """
+        mq = np.arange(2.5, (self.nrow + 1.5), 2.0).reshape(-1, 1)
+        return self.get_cut_plane(mq)
+
+    def get_cut_plane(self, m):
+        """Coordinates on the hub and casing at a constant meridional posistion.
+
+        Parameters
+        ----------
+        m: (n,) array
+            Normalised meridional positions to evaluate the cut planes.
+
+        Returns
+        -------
+        xr_cut : array_like (n, 2, 2)
+            Meridional coordinates of the cut planes.
+            Axes are: cut index, x/r,  hub/cas.
+
+        """
+        spf = np.reshape([0.0, 1.0], (1, -1))
+        mq = np.reshape(m, (-1, 1))
+        return self.evaluate_xr(mq, spf).transpose(1, 0, 2)
+
+    def get_offset_planes(self, offset):
+        """Meridional cut lines offset a distance up/downstream of each row.
+
+        Parameters
+        ----------
+        offset : array_like
+            Offset of the cut planes upstream from the LE and downstream
+            from the TE of each row. Defaults to 2% meridional chord.
+
+        Returns
+        -------
+        xr_cut : array_like (2*nrow, 2, 2)
+            Meridional coordinates of the cut planes. Axes are: row, x/r, hub/cas.
+        """
+
+        # Separate out row and gap chords, repeat for LE/TE cuts
+        chords = self.chords(0.5)
+        chords_blade = np.repeat(chords[1::2], 2)
+        chords_gap = chords[::2]
+        chords_gap = np.concatenate(
+            [[chords_gap[0]], np.repeat(chords_gap[1:-1], 2), [chords_gap[-1]]]
+        )
+
+        # Convert the offset specified as a fraction of blade chord
+        # to a fraction of gap chord
+        offsets = offset * np.ones((self.nrow * 2,))
+        offsets[::2] *= -1.0
+        offsets *= chords_blade / chords_gap
+
+        # Calculate query meridional coordinates
+        mq = np.arange(1.0, self.nseg) + offsets
+        return self.get_cut_plane(mq)
+
+    def get_coords(self, npts=50):
+        """Sample the coordinates of hub and casing lines in AutoGrid format.
+
+        Parameters
+        ----------
+        npts : int
+            Number of sampled points per blade and gap.
+
+        Returns
+        -------
+        xr: (2, nrow*npts, 2)
+            Coordinates of the annulus lines. Axes are: hub/cas, streamwise, x/r.
+
+        """
+        m = np.linspace(0.0, self.mmax, self.nseg * npts + 1)
+        return self.get_cut_plane(m).transpose(2, 0, 1)
+
+    def get_span(self, m):
+        """Span of the annulus at a given meridional position.
+
+        Parameters
+        ----------
+        m : (n,) array
+            Normalised meridional positions to evaluate the span.
+
+        Returns
+        -------
+        span : (n,) array
+            Span of the annulus at the given meridional position.
+
+        """
+        xr_span = self.get_cut_plane(m).transpose(1, 2, 0)
+        return util.arc_length(xr_span)
+
+    def get_span_curve(self, spf, n=201, mlim=None):
+        """Meridional xr curve along a given span fraction.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction at which to evaluate the curve.
+            0 is the hub, 1 is the casing.
+        n : int
+            Number of streamwise points to evaluate.
+        mlim : tuple
+            Normalised meridional limits to evaluate the curve.
+            Defaults to the entire annulus.
+
+        Returns
+        -------
+        xr : array_like (2, n)
+            Meridional coordinates of the curve. Axes are: x/r, streamwise.
+
+        """
+        util.check_scalar(spf=spf)
+        if mlim is None:
+            mlim = (0.0, self.mmax)
+        m_ref = np.linspace(*mlim, n)
+        return self.evaluate_xr(m_ref, spf).squeeze()
+
+    def xr_row(self, irow):
+        """Make a meridional interpolator restricted to one blade row.
+
+        Parameters
+        ----------
+        irow : int
+            Index of the blade row to evaluate.
+
+        Returns
+        -------
+        xr_row : callable
+            Function to evaluate meridional coordinates inside the blade row
+            Has signature xr_row(spf, m) where
+                - m=0 is the row LE, m=1 is the row TE;
+                - spf=0 is the hub, spf=1 is the casing.
+
+        """
+
+        mst = 2 * irow + 1
+
+        def func(spf, m):
+            return self.evaluate_xr(mst + m, spf)
+
+        return func
+
+    def get_mp_from_xr(self, spf, n=4999, mlim=None):
+        """Return a function to find 1D unwrapped distance from a 2D xr point.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction at which to evaluate the curve.
+            0 is the hub, 1 is the casing.
+        n : int
+            Number of streamwise points to evaluate.
+        mlim : tuple
+            Normalised meridional limits to evaluate the curve.
+            Defaults to the entire annulus.
+
+        Returns
+        -------
+        mp_from_xr : callable
+            Function to evaluate the unwrapped meridional distance from a
+            2D point in the meridional plane. Has signature mp_from_xr(xr)
+            where xr is a (2,n) array of x/r coordinates.
+
+        """
+        # We want to plot along a general meridional surface
+        # So brute force a mapping from x/r to meridional distance
+
+        xr_ref = self.get_span_curve(spf, n, mlim)
+
+        # Calculate normalised meridional distance (angles are angles)
+        dxr = np.diff(xr_ref, n=1, axis=1)
+        dm = np.sqrt(np.sum(dxr**2.0, axis=0))
+        rc = 0.5 * (xr_ref[1, 1:] + xr_ref[1, :-1])
+        mp_ref = util.cumsum0(dm / rc)
+        assert (np.diff(mp_ref) > 0.0).all()
+
+        func = scipy.interpolate.NearestNDInterpolator(xr_ref.T, mp_ref)
+
+        def mp_from_xr(xr):
+            xru = xr.reshape(2, -1)
+            mpu = func(xru.T)  # % - mp_stack
+            return mpu.reshape(xr.shape[1:])
+
+        return mp_from_xr
+
+
+class FixedAxialChord(BaseAnnulus):
+    def __init__(
+        self,
+        rmid,
+        span,
+        Beta,
+        cx_row,
+        cx_gap,
+        nozzle_ratio=1.0,
+    ):
+        """Define annulus line by specifying dimensional axial chords.
+
+        Places the origin of the x-coordinate system at the first row LE.
+
+        Parameters
+        ----------
+        rmid : (nrow*2) array
+            Mid-span radii at inlet and exit of all rows.
+        span : (nrow*2) array
+            Annulus span perpendicular to pitch angle at all stations.
+        Beta : (nrow*2) array
+            Pitch angles at all stations [deg].
+        cx_row : (nrow) array
+            Axial chord lengths of each blade row [m].
+        cx_gap : (nrow+1) array
+            Axial chord lengths of each gap between rows [m].
+            cx_gap[0] is the distance to inlet boundary,
+            cx_gap[-1] is the distance to outlet boundary,
+        """
+
+        # Check input data
+        npt = len(rmid)
+        nrow = npt // 2
+        ngap = nrow + 1
+        util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
+        util.check_vector((ngap,), cx_gap=cx_gap)
+        util.check_vector((nrow,), cx_row=cx_row)
+
+        self.span = span
+
+        # Assemble vector of all cx
+        cx = np.zeros(nrow * 2 + 1)
+        cx[::2] = cx_gap
+        cx[1::2] = cx_row
+
+        # Integrate x
+        xmid = util.cumsum0(cx)
+        xmid -= xmid[1]  # Place x origin at first row LE
+
+        # Extend r coords for inlet and exit ducts at constant Beta
+        rmid = np.r_[0.0, rmid, 0.0]
+        sinBeta = np.sin(np.radians(Beta))
+        rmid[0] = rmid[1] - cx[0] * sinBeta[0]
+        rmid[-1] = rmid[-2] + cx[-1] * sinBeta[-1]
+
+        # The extensions have same span and pitch angle as first/last point
+        span = np.pad(span, 1, "edge")
+        Beta = np.pad(Beta, 1, "edge")
+
+        # Adjust to nozzle exit area
+        radius_ratio = rmid[-2] / rmid[-1]
+        span[-1] *= nozzle_ratio * radius_ratio
+
+        # We now have coordinates of the mid-span line
+        # So make the hub and casing lines
+        sinBeta = np.sin(np.radians(Beta))
+        cosBeta = np.cos(np.radians(Beta))
+        xhub = xmid + 0.5 * span * sinBeta
+        xcas = xmid - 0.5 * span * sinBeta
+        rhub = rmid - 0.5 * span * cosBeta
+        rcas = rmid + 0.5 * span * cosBeta
+
+        # Make hub and casing line splines
+        self._hub = MeridionalLine(xhub, rhub, Beta).smooth()
+        self._cas = MeridionalLine(xcas, rcas, Beta).smooth()
+
+    @property
+    def nrow(self):
+        return self._hub.N // 2 - 1
+
+    def evaluate_xr(self, m, spf):
+        tb, spfb = np.broadcast_arrays(m, spf)
+
+        # t is a vector that describes grid spacings where each unit interval
+        # corresponds to a gap or blade
+        # We need to map to meridional distance fractions
+        npts = self.nseg + 1
+        tctrl = np.linspace(0, npts - 1, npts)
+        mhub = np.interp(tb, tctrl, self._hub.mctrl)
+        mcas = np.interp(tb, tctrl, self._cas.mctrl)
+
+        # Evaluate hub and casing coordinates
+        xr_hub = self._hub.xr(mhub)
+        xr_cas = self._cas.xr(mcas)
+
+        # Finally evaluate the meridional grid
+        spf1 = np.expand_dims(np.stack((1.0 - spfb, spfb)), 1)
+        xr_hc = np.stack((xr_hub, xr_cas))
+        xr = np.sum(spf1 * xr_hc, axis=0)
+
+        return xr
+
+
+class Smooth(BaseAnnulus):
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
     def __init__(
@@ -97,9 +459,8 @@ class Smooth:
         AR_guess[AR < 0.0] = 0.4
         Ds = span_avg / AR_guess
         cosBeta_avg = np.cos(np.radians(0.5 * (self.Beta[1:] + self.Beta[:-1])))
-        cosBeta_avg = np.append(
-            np.insert(cosBeta_avg, 0, self.cosBeta[0]), self.cosBeta[-1]
-        )
+        cosBeta = np.cos(np.radians(self.Beta))
+        cosBeta_avg = np.append(np.insert(cosBeta_avg, 0, cosBeta[0]), cosBeta[-1])
         Dx = cosBeta_avg * Ds
         Dx[cosBeta_avg < 1e-3] = 0.0
         Ds[AR < 0.0] = -1.0
@@ -115,8 +476,9 @@ class Smooth:
         rmid[1:-1] = self.rmid
 
         # Inlet/exit ducts
-        rmid[0] = rmid[1] - Ds[0] * self.sinBeta[0]
-        rmid[-1] = rmid[-2] + Ds[-1] * self.sinBeta[-1]
+        sinBeta = np.sin(np.radians(Beta))
+        rmid[0] = rmid[1] - Ds[0] * sinBeta[0]
+        rmid[-1] = rmid[-2] + Ds[-1] * sinBeta[-1]
 
         # We now have an initial guess of axial coordinates
         # So make the hub and casing lines
@@ -220,7 +582,7 @@ class Smooth:
 
         if smooth:
             # for k in range(1, 3):
-            for k in range(1, self.npts - 2):
+            for k in range(1, self.nseg - 1):
                 _solve_k(k)
 
         # err_out_abs = self.chords(0.5) - Ds
@@ -233,110 +595,18 @@ class Smooth:
         if not rcout_offset:
             assert all(self.hub._is_straight() == self.cas._is_straight())
 
-    def __str__(self):
-        xr_mid = self.xr_mid(self.mctrl[1:-1])
-        xstr = np.array2string(xr_mid[0], precision=4)
-        rstr = np.array2string(xr_mid[1], precision=4)
-        sstr = np.array2string(self.span, precision=4)
-        return f"""Annulus(
-    xmid={xstr},
-    rmid={rstr},
-    span={sstr}
-    )"""
-
-    @classmethod
-    def from_fit(cls, Beta, xr_hub, xr_cas, AR_gap, nozzle_ratio=1.0):
-        xr_hub = np.array(xr_hub)
-        xr_cas = np.array(xr_cas)
-
-        rmid = 0.5 * (xr_hub[1, (0, -1)] + xr_cas[1, (0, -1)])
-        xmid = 0.5 * (xr_hub[0, (0, -1)] + xr_cas[0, (0, -1)])
-        span = np.sqrt(np.sum((xr_hub[:, (0, -1)] - xr_cas[:, (0, -1)]) ** 2.0, axis=0))
-        AR_chord = np.nan
-        return cls(rmid, span, Beta, AR_chord, AR_gap, nozzle_ratio, xmid)
-
-    @property
-    def mctrl(self):
-        return 0.5 * (self.hub.mctrl + self.cas.mctrl)
-
-    @property
-    def _mctl(self):
-        return np.linspace(0, self.npts - 1, self.npts)
-
-    def chords(self, spf):
-        """ "Meridional chords of gaps and rows at a specified span fraction."""
-
-        chords = np.zeros(self.npts - 1)
-        for i in range(self.npts - 1):
-            mhub = np.linspace(
-                *self.hub.mctrl[
-                    (i, i + 1),
-                ]
-            )
-            mcas = np.linspace(
-                *self.cas.mctrl[
-                    (i, i + 1),
-                ]
-            )
-            chords[i] = util.arc_length(
-                spf * self.cas.xr(mcas) + (1.0 - spf) * self.hub.xr(mhub)
-            )
-        return chords
-
     @property
     def nrow(self):
         return self.rmid.size // 2
 
-    @property
-    def npts(self):
-        return self.hub.N
-
-    @property
-    def cosBeta(self):
-        return np.cos(np.radians(self.Beta))
-
-    @property
-    def sinBeta(self):
-        return np.sin(np.radians(self.Beta))
-
-    @property
-    def rhub(self):
-        return self.rmid - 0.5 * self.span * self.cosBeta
-
-    @property
-    def rcas(self):
-        return self.rmid + 0.5 * self.span * self.cosBeta
-
-    def xr_mid(self, m):
-        """Get coordinates on midspan streamsurface."""
-        return 0.5 * self.cas.xr(m) + 0.5 * self.hub.xr(m)
-
-    def xr_row(self, irow):
-        """Return a streamsurface for a blade row."""
-
-        # We need to map a fraction of meridional distance to mctrl on hub and casing
-        ictrl = 1 + irow * 2
-        mch = self.hub.mctrl[
-            (ictrl, ictrl + 1),
-        ]
-        mcc = self.cas.mctrl[
-            (ictrl, ictrl + 1),
-        ]
-
-        def func(spf, s):
-            mh = s * mch[1] + (1.0 - s) * mch[0]
-            mc = s * mcc[1] + (1.0 - s) * mcc[0]
-            return spf * self.cas.xr(mc) + (1.0 - spf) * self.hub.xr(mh)
-
-        return func
-
-    def evaluate_xr(self, t, spf):
-        tb, spfb = np.broadcast_arrays(t, spf)
+    def evaluate_xr(self, m, spf):
+        tb, spfb = np.broadcast_arrays(m, spf)
 
         # t is a vector that describes grid spacings where each unit interval
         # corresponds to a gap or blade
         # We need to map to meridional distance fractions
-        tctrl = np.linspace(0, self.npts - 1, self.npts)
+        npts = self.nseg + 1
+        tctrl = np.linspace(0, npts - 1, npts)
         mhub = np.interp(tb, tctrl, self.hub.mctrl)
         mcas = np.interp(tb, tctrl, self.cas.mctrl)
 
@@ -351,68 +621,13 @@ class Smooth:
 
         return xr
 
-    def get_coords(self, nseg=50):
-        """Sample the coordinates of hub and casing lines in AutoGrid style."""
-        N = self.hub.N
-        s = np.linspace(0.0, 1.0, N * nseg + 1)
-        return np.stack((self.hub.xr(s), self.cas.xr(s))).transpose(0, 2, 1)
 
-    def get_interfaces(self):
-        """Meridional coordinates of row interfaces."""
-        t = np.arange(2.5, (self.nrow + 1.5), 2.0)
-        xr_hub = self.hub._xr(t)
-        xr_cas = self.cas._xr(t)
-        return np.stack((xr_hub, xr_cas)).transpose(2, 0, 1)
-
-    def get_cut_planes(self, offset):
-        """For each row, return (x,r) points on hub casing offset chords up/downstream.
-
-        Returns axes: [x or r, row, hub or cas]"""
-
-        if offset is None:
-            offset = 0.02 * np.ones((self.nrow * 2,))
-            offset[::2] *= -1.0
-
-        t = np.arange(0.0, self.nrow * 2.0) + 1.0
-        chords_blades = np.repeat(self.chords(0.5)[1::2], 2)
-        chords_gaps = self.chords(0.5)[0::2]
-        chords_gaps = np.concatenate(
-            [[chords_gaps[0]], np.repeat(chords_gaps[1:-1], 2), [chords_gaps[-1]]]
+def load_annulus(annulus_type):
+    """Get annulus class by string, including any custom classes."""
+    available_annulus_types = {a.__name__: a for a in BaseAnnulus.__subclasses__()}
+    if annulus_type not in available_annulus_types:
+        raise ValueError(
+            f"Unknown annulus type: {annulus_type}, should be one of {available_annulus_types.keys()}"
         )
-        # t += np.tile((-offset, offset), (self.nrow,)) * chords_blades / chords_gaps
-        t += offset * chords_blades / chords_gaps
-
-        spf = np.reshape([0.0, 1.0], (1, -1))
-        return self.evaluate_xr(t.reshape(-1, 1), spf).transpose(1, 0, 2)
-
-    def get_cut_plane(self, t):
-        """(x,r) points on hub and casing at given normalise merdional coord."""
-        spf = np.reshape([0.0, 1.0], (1, -1))
-        xrc = self.evaluate_xr(t, spf).transpose(1, 0, 2)
-        return xrc
-
-    def get_span_curve(self, spf, n=201, mlim=None):
-        """Meridional xr curve along a given span fraction."""
-        if mlim is None:
-            mlim = (0.0, self.npts - 1)
-        m_ref = np.linspace(*mlim, n)
-        return self.evaluate_xr(m_ref, spf).squeeze()
-
-    def get_mp_from_xr(self, xr_ref):
-        # We want to plot along a general meridional surface
-        # So brute force a mapping from x/r to meridional distance
-
-        # Calculate normalised meridional distance (angles are angles)
-        dxr = np.diff(xr_ref, n=1, axis=1)
-        dm = np.sqrt(np.sum(dxr**2.0, axis=0))
-        rc = 0.5 * (xr_ref[1, 1:] + xr_ref[1, :-1])
-        mp_ref = util.cumsum0(dm / rc)
-        assert (np.diff(mp_ref) > 0.0).all()
-
-        def mp_from_xr(xr):
-            func = scipy.interpolate.NearestNDInterpolator(xr_ref.T, mp_ref)
-            xru = xr.reshape(2, -1)
-            mpu = func(xru.T)  # % - mp_stack
-            return mpu.reshape(xr.shape[1:])
-
-        return mp_from_xr
+    else:
+        return available_annulus_types[annulus_type]

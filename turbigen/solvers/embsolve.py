@@ -2,6 +2,7 @@ import numpy as np
 from copy import copy
 
 import turbigen.util
+import os
 
 import logging
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from turbigen.solvers.embsolvec import embsolve
 util = turbigen.util
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.INFO)
+# logger.setLevel(level=logging.INFO)
 
 try:
     from mpi4py import MPI
@@ -60,6 +61,11 @@ class Config(BaseSolver):
 
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
+
+    smooth_ratio_min: float = 0.1
+    """Largest reduction in smoothing on a non-isotropic grid. Unity disables
+    directional scaling, lower values clip the local smoothing factor to be
+    sf_local >= sf * smooth_ratio_min."""
 
     CFL: float = 0.65
     """Courant--Friedrichs--Lewy number, time step normalised by local wave
@@ -226,15 +232,13 @@ class SolverBlock:
         L /= L.sum(axis=-1, keepdims=True) / 3.0
 
         # Clip to a maximum reduction in smoothing and re-normalise
-        L = np.clip(L, 0.0, None)
+        L = np.clip(L, conf.smooth_ratio_min, None)
         L /= L.sum(axis=-1, keepdims=True) / 3.0
 
         # Now distribute cell length scales to nodes
         ni, nj, nk = self.shape
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
-        # Disable scaling
-        self.L = self.cast_array(np.ones((3, ni, nj, nk)))
 
         self.rf = [self.cast_array(r) for r in block.r_face]
         self.rc = self.cast_array(block.r_cell)
@@ -938,8 +942,16 @@ def run(grid, conf, machine=None):
     if isinstance(conf, dict):
         conf = Config(**conf)
 
+    soln_path = os.path.join(conf.workdir, f"soln.npz")
     if conf.skip:
-        logger.info("Skipping, doing nothing.")
+        if os.path.exists(soln_path):
+            logger.info("Skipping, loading existing solution.")
+            dat = np.load(soln_path)
+            cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
+            for b, c in zip(grid, cons):
+                b.set_conserved(c)
+        else:
+            logger.info("Skipping, no saved solution fount, doing nothing.")
         return
 
     logger.info("Initialising native solver...")
@@ -999,6 +1011,19 @@ def run(grid, conf, machine=None):
 
     isort = np.argsort([b.bid for b in blocks_out])
     blocks_out = [blocks_out[i] for i in isort]
+
+    # Write the conserved vars to an npz
+    if conf.workdir:
+        os.makedirs(conf.workdir, exist_ok=True)
+        logger.info(f"Writing output to {soln_path}")
+        dat_out = {
+            f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
+            for ib, b in enumerate(blocks_out)
+        }
+        np.savez(
+            soln_path,
+            **dat_out,
+        )
 
     # Assemble a convergence history
     mhos = np.full(

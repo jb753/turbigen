@@ -16,12 +16,11 @@ def post(
     postdir,
     mnorm_traverse=[],
     show_axis=False,
-    show_control_points=True,
     show_blades=True,
     write_raw=False,
     compare=False,
 ):
-    """plot_annulus(mnorm_cut=[], show_axis=False, show_control_points=True, show_blades=True, write_raw=False, compare=None)
+    """plot_annulus(mnorm_cut=[], show_axis=False, show_blades=True, write_raw=False, compare=None)
     Plot a meridional x-r view of the annulus lines of the turbomachine.
 
     Parameters
@@ -30,8 +29,6 @@ def post(
         Show cut planes at the given normalised meridional coordinates.
     show_axis: bool
         Add a dot-dash centreline at zero radius to show the axis of the machine.
-    show_control_points: bool
-        Show the control points at the inlet and exit of each row defining the shape.
     show_blades: bool
         Hatch bladed areas in the plot.
     write_raw: bool
@@ -41,8 +38,6 @@ def post(
 
     """  # noqa:E501
     logger.info("Plotting annulus lines")
-
-    m = np.linspace(0.0, 1.0, 100)
 
     fig, ax = plt.subplots()
     ax.axis("off")
@@ -57,7 +52,6 @@ def post(
         spf = np.linspace(0.0, 1.0, Npts)
         mE = np.array([0.0, 1.0])
         for irow in range(machine.Nrow):
-
             # Plot LE and TE lines
             xrt_LE = np.full((3, Npts), np.nan)
             xrt_TE = np.full((3, Npts), np.nan)
@@ -73,16 +67,11 @@ def post(
         xrc = ann.get_cut_plane(tcut)[0]
         ax.plot(*xrc, "-", color="C0")
 
-    xr_hub = ann.hub.xr(m)
-    xr_cas = ann.cas.xr(m)
+    xr_hub, xr_cas = ann.get_coords().transpose(0, 2, 1)
     ax.plot(*xr_hub, "k-")
     ax.plot(*xr_cas, "k-")
-    if show_control_points:
-        ax.plot(*ann.hub.xr(ann.hub.mctrl), "ro", fillstyle="none", ms=10)
-        ax.plot(*ann.cas.xr(ann.cas.mctrl), "ro", fillstyle="none", ms=10)
-    x = ann.hub.xr((0.0, 1.0))[0]
     if show_axis:
-        ax.plot(x, np.zeros_like(x), "k-.")
+        ax.plot(xr_hub[0, (0, -1)], np.zeros((2,)), "k-.")
 
     if compare:
         if compare_dat := compare[irow]:

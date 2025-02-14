@@ -23,6 +23,7 @@ def post(
     note=None,
     show_DF=None,
     compare=None,
+    offset=0,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -81,7 +82,7 @@ def post(
             ]
 
         # Get all blades in this row
-        surfs = grid.cut_blade_surfs()[irow]
+        surfs = grid.cut_blade_surfs(offset)[irow]
 
         # Meridional curves for target span fractions
         ist = irow * 2 + 1
@@ -176,7 +177,6 @@ def post(
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"
-                print(key)
                 raw_data[key] = np.stack((zeta_stag, Cp))
 
         if note:

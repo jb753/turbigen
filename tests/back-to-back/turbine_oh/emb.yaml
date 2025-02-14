@@ -12,7 +12,7 @@ inlet:
 mean_line:
   type: turbine_cascade
   span: [0.01, 0.011]
-  Alpha: [40., -65.0]
+  Alpha: [-40., 65.0]
   Ma2: 0.6
   Yh: 0.029
   htr: 0.99
@@ -32,7 +32,7 @@ mesh:
   remote_host: gp-111
   remote_workdir: /mnt/data/jb753/meshing/
   ni_outlet: 97
-  nj: [161,]
+  blade_streamwise_weight: 5.0
 
 # Blade shapes
 blades:
@@ -40,8 +40,8 @@ blades:
     Re_surf: 4e5
     sections:
       - spf: 0.5
-        q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
-        qstar_camber: [10., -2., 1.0, 1.0, 0.0]
+        q_thick: [0.03, 0.08, 0.3, 0., 0.00, 0.18]
+        qstar_camber: [-10., 2., 1.0, 1.0, 0.0]
 
 # CFD solver
 solver:
@@ -49,6 +49,8 @@ solver:
   n_step: 5000
   n_step_avg: 1000
   nstep_damp: -1
+  # CFL: 0.4
+  # smooth4: 0.02
 
 post_process:
   plot_convergence:
@@ -64,7 +66,9 @@ post_process:
     value: .51
     variable: Cp
     N_passage: 2
+    show_mesh: true
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
     compare: tests/back-to-back/turbine/ts3/post/pressure_distributions_raw.npz
+    offset: 0

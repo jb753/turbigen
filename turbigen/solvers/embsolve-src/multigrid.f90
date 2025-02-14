@@ -118,9 +118,6 @@ subroutine multigrid_integrate( &
     end do
     !$omp end parallel
 
-    ! ! halve energy eqn time step
-    ! dU(:,:,:,5) = dU(:,:,:,5)/2e0
-
 end subroutine
 
 
