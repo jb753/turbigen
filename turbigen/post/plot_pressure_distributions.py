@@ -177,7 +177,6 @@ def post(
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"
-                print(key)
                 raw_data[key] = np.stack((zeta_stag, Cp))
 
         if note:

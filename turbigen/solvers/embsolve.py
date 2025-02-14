@@ -20,7 +20,7 @@ from turbigen.solvers.embsolvec import embsolve
 util = turbigen.util
 logger = turbigen.util.make_logger()
 
-logger.setLevel(level=logging.INFO)
+# logger.setLevel(level=logging.INFO)
 
 try:
     from mpi4py import MPI
