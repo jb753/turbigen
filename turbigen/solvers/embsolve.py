@@ -942,17 +942,18 @@ def run(grid, conf, machine=None):
     if isinstance(conf, dict):
         conf = Config(**conf)
 
-    soln_path = os.path.join(conf.workdir, f"soln.npz")
-    if conf.skip:
-        if os.path.exists(soln_path):
-            logger.info("Skipping, loading existing solution.")
-            dat = np.load(soln_path)
-            cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
-            for b, c in zip(grid, cons):
-                b.set_conserved(c)
-        else:
-            logger.info("Skipping, no saved solution fount, doing nothing.")
-        return
+    if conf.workdir:
+        soln_path = os.path.join(conf.workdir, "soln.npz")
+        if conf.skip:
+            if os.path.exists(soln_path):
+                logger.info("Skipping, loading existing solution.")
+                dat = np.load(soln_path)
+                cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
+                for b, c in zip(grid, cons):
+                    b.set_conserved(c)
+            else:
+                logger.info("Skipping, no saved solution fount, doing nothing.")
+            return
 
     logger.info("Initialising native solver...")
     t1 = timer()
