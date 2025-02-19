@@ -20,3 +20,4 @@ grid.alpha : 0.15
 grid.color : (0.15,0.15,0.15)
 grid.linewidth : 1.5
 figure.dpi : 200
+axes.prop_cycle: cycler(color=['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown',]) + cycler(marker=['x', 'o', '+', '^', '*', 's']) + cycler(linestyle=['-', '--', '-', '--', '-', '--'])

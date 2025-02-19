@@ -713,7 +713,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
     # Store old internal energy datum
     # Then set to zero as assumed by TS
-    Tu0_old = grid[0].Tu0 + 0.
+    Tu0_old = grid[0].Tu0 + 0.0
     for b in grid:
         b.set_Tu0(0.0)
     for p in grid.inlet_patches:
@@ -879,9 +879,9 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             nxblk = f[f"block{nxbid}/"]
             nxpid = pch.attrs["nxpid"]
             logger.debug(
-                f'ip={ip}, kind={pch.attrs["kind"]}, '
+                f"ip={ip}, kind={pch.attrs['kind']}, "
                 f"bid={bid}, pid={pid}, "
-                f'nxbid={nxbid}, nxpid={nxpid}, nxnp={nxblk.attrs["np"]}'
+                f"nxbid={nxbid}, nxpid={nxpid}, nxnp={nxblk.attrs['np']}"
             )
             ni = blk.attrs["ni"]
             nj = blk.attrs["nj"]
@@ -1074,8 +1074,7 @@ def _read_hdf5(grid, ts3_config):
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
-            # logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
-            print(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
+            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
 
     f.close()
     fi.close()
@@ -1333,9 +1332,9 @@ def parse_log(fname):
 
     def __str__(self):
         return (
-            f"TS3Log(mdot_drift={self.mdot_drift*100.:.2f}%,"
-            f"mdot_err={self.mdot_err*100:.2f}%,"
-            f"eta_drift={self.eta_drift*100:.2f}℅"
+            f"TS3Log(mdot_drift={self.mdot_drift * 100.0:.2f}%,"
+            f"mdot_err={self.mdot_err * 100:.2f}%,"
+            f"eta_drift={self.eta_drift * 100:.2f}℅"
         )
 
     @property
@@ -1401,12 +1400,12 @@ def read_probe_dat_dir(dname):
 
     # Load the npz if it exists and is newer than all dat files
     if os.path.exists(npz_fname) and npz_mtime > max_dat_mtime:
-        print(f"Loading probe data from {npz_fname}")
+        logger.info(f"Loading probe data from {npz_fname}")
         with np.load(npz_fname) as d:
             data = d["data"]
     # Otherwise load the dat files
     else:
-        print(f"Loading probe data from {dname}")
+        logger.info(f"Loading probe data from {dname}")
         # Load each dat and trim to the same length
         data_all = [read_probe_dat(f) for f in fnames]
         nstep = min([d.shape[1] for d in data_all])
@@ -1417,10 +1416,11 @@ def read_probe_dat_dir(dname):
     # finished and we can delete the raw dat files
     if (time.time() - max_dat_mtime) > 48 * 3600:
         for fname in fnames:
-            print(f"Removing {fname}")
+            logger.info(f"Removing {fname}")
             os.remove(fname)
 
     return data
+
 
 def read_probe_dat(fname):
     """Load a probe text file into a big array.
@@ -1459,7 +1459,7 @@ def read_probe_flow(dname, S, shape=()):
 
     # Get the raw data and split into conserved variables
     x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname)
-    nprobe = x.shape[1] 
+    nprobe = x.shape[1]
 
     # Reshape if requested
     Fshape = (nprobe,) + shape + (-1,)

@@ -60,10 +60,7 @@ def post(
     ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
 
     if dn_smooth:
-        print(conv.resid.min(), conv.resid.max())
         conv.resid = turbigen.util.moving_average_1d(conv.resid, dn_smooth)
-        print(conv.resid[0], conv.resid[-1])
-        print(conv.resid.min(), conv.resid.max())
         dCWx = turbigen.util.moving_average_1d(dCWx, dn_smooth)
         dYs = turbigen.util.moving_average_1d(dYs, dn_smooth)
 

@@ -41,7 +41,7 @@ class OHMeshConfig(BaseConfig):
     ni_outlet = 65
     """Number of streamwise points in outlet."""
 
-    resolution_factor = 1.
+    resolution_factor = 1.0
 
     fix_h_inlet = False
     fix_h_outlet = False

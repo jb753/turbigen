@@ -65,5 +65,4 @@ post_process:
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true
-    show_DF: [true,]
     compare: tests/back-to-back/turbine/ts3/post/pressure_distributions_raw.npz

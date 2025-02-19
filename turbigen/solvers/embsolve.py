@@ -4,7 +4,6 @@ from copy import copy
 import turbigen.util
 import os
 
-import logging
 from dataclasses import dataclass
 
 # from turbigen.embsolve import embsolve
@@ -20,7 +19,6 @@ from turbigen.solvers.embsolvec import embsolve
 util = turbigen.util
 logger = turbigen.util.make_logger()
 
-# logger.setLevel(level=logging.INFO)
 
 try:
     from mpi4py import MPI
@@ -747,8 +745,6 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     else:
         master_flag = True
         dUlog = []
-        Yslog = []
-        merrlog = []
 
     # Calculate smoothing and inlet relaxation scaled by CFL
     CFL_ref = 0.7

@@ -59,8 +59,6 @@ def post(
     nsectplt = 0
     for irow, spfrow in enumerate(row_spf):
         if not spfrow:
-            print(spfrow)
-            print("skipping")
             continue
         nsectplt += 1
 

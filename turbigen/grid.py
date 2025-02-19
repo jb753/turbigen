@@ -269,10 +269,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             jst, jen = ijk_lim[1]
             kst, ken = ijk_lim[2]
 
-            # print(patch)
-            # print(self.shape)
-            # print(ijk_lim)
-
             # # Increment the not wall indicator on the const-dirn
             # iwall[ist:ien, jst : jen, kst : ken] += 1
             # jwall[ist:ien, jst : jen, kst : ken] += 1
@@ -838,8 +834,8 @@ class Grid:
             try:
                 b.check_coordinates()
             except Exception as e:
-                print(f"Block {ib}")
-                print(e)
+                logger.iter(f"Block {ib}")
+                logger.iter(e)
                 passed = False
         if not passed:
             raise Exception("Coordinate check failed.")
@@ -937,32 +933,6 @@ class Grid:
                         f"Warning: outlet Mam={Cm.Mam:.3f} is choked; this can affect"
                         " mass flow continuity."
                     )
-
-    def get_nodes(self):
-        """Unstructured coordinates of all points on walls."""
-
-        # Loop over blocks
-        xrrt_block = []
-        for block in self:
-            # Assemble unstructured wall coordinates for this block
-            xrtb = block.xrt.reshape(3, -1)
-
-            # Replicate by +/- a pitch
-            pitch = 2.0 * np.pi / float(block.Nb)
-            dxrt = np.zeros_like(xrtb)
-            dxrt[2] = pitch
-            xrtw_rep = np.concatenate((xrtb - dxrt, xrtb, xrtb + dxrt), axis=1)
-
-            # Convert to rt
-            xrrtb = xrtb_rep + 0.0
-            xrrtb[2] *= xrrtb[1]
-
-            xrrt_block.append(xrrtb)
-
-        # Join all blocks together
-        xrrt = np.concatenate(xrrt_block, axis=1)
-
-        return xrrt
 
     def get_wall_nodes(self):
         """Unstructured coordinates of all points on walls."""
@@ -1607,7 +1577,6 @@ class InletPatch(Patch):
     rho_store = None
     harmonics = (1,)
 
-
     def get_unsteady_multipliers(self, freq, nstep_cycle, ncycle):
         """Given time discretisation, generate unsteady bcond factors.
 
@@ -1642,7 +1611,7 @@ class InletPatch(Patch):
         for n in self.harmonics:
             phase = np.pi * n**2 / 2.5338  # For minimum crest factor
             fac += self.amplitude * np.sin(
-                2.0 * np.pi * freq* n * t + phase + self.phase
+                2.0 * np.pi * freq * n * t + phase + self.phase
             )
 
         # Choose the forcing type
@@ -1934,7 +1903,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
         To retain periodic boundaries in the z direction, the sector method must
         be used, but this will distort the geometry. If there is no periodicity
         in the z-direction, then the sector method is not required.
-        
+
 
     """
 
@@ -1947,7 +1916,6 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
     # Initialise the blocks
     blocks = []
     for xyzi, labi in zip(xyz, labels):
-
         if sector:
             xrt = xyzi.copy()
             xrt[1] += roffset
@@ -1955,8 +1923,8 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
         else:
             x, y, z = xyzi.copy()
             y += roffset
-            r = np.sqrt(y ** 2 + z ** 2)
-            t = -np.arctan2(y, z) + np.pi/2
+            r = np.sqrt(y**2 + z**2)
+            t = -np.arctan2(y, z) + np.pi / 2
             xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces

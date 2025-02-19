@@ -1,7 +1,7 @@
 # A 2D turbine cascade with prescribed flow angles
 
 # All files relating to the case are held in a working directory
-workdir: tests/back-to-back/turbine_oh/emb/*
+workdir: tests/back-to-back/turbine_oh/emb/0081
  
 inlet:
   Po: 1e5
@@ -15,7 +15,7 @@ mean_line:
   Alpha: [-40., 65.0]
   Ma2: 0.6
   Yh: 0.029
-  htr: 0.99
+  htr: 0.9
 
 # Annulus shape using meridional aspect ratios
 annulus:

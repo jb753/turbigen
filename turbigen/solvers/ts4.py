@@ -156,8 +156,8 @@ class Config(BaseSolver):
         # Disable ramping in unsteady runs
         if self.if_dts:
             v["cfl_ramp"] = 0
-            dnstep_avg = self.ncycle_avg*self.nstep_cycle
-            nstep_tot = self.ncycle*self.nstep_cycle
+            dnstep_avg = self.ncycle_avg * self.nstep_cycle
+            nstep_tot = self.ncycle * self.nstep_cycle
             v["istep_avg_start"] = nstep_tot - dnstep_avg
 
         return v
@@ -315,7 +315,7 @@ DEFAULT_CONFIG = {
     "if_dts": 0,
     "ncycle": 0,
     "nstep_cycle": 0,
-    "frequency": 0.,
+    "frequency": 0.0,
     "nstep_save": 1e9,
 }
 
@@ -339,7 +339,7 @@ def _read_flow(grid, fname, fname_avg):
     fa.close()
 
     end = timer()
-    logger.debug(f"Read flow in {end-start} s")
+    logger.debug(f"Read flow in {end - start} s")
 
     # Divide out density
     vx = rovx / ro
@@ -458,6 +458,7 @@ probe_list = []
 """
         )
 
+
 def _check_probes(ts4_conf):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
     with open(probe_ofp, "r") as f:
@@ -469,10 +470,9 @@ def _check_probes(ts4_conf):
     except Exception as e:
         raise Exception("Error in probes file!") from e
 
+
 def _write_point_probe(ts4_conf, xyzp, dom, label):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
-
-    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
 
     with open(probe_ofp, "a") as f:
         # Initialise probe list
@@ -544,7 +544,7 @@ p.kind = "xr"
 p.s1 = {xr[0].tolist()}
 p.s2 = {xr[1].tolist()}
 p.idomain = {irow}
-p.fname_root = "xr_probe_row_{irow}_spf_{str(spf).replace('.','')}"
+p.fname_root = "xr_probe_row_{irow}_spf_{str(spf).replace(".", "")}"
 p.write_2d = True
 p.nstep_save_start_1d = {istep_save_start}
 p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
@@ -624,12 +624,11 @@ def run(grid, ts4_conf, machine):
     # Check inlet patches for forcing
     for patch in grid.inlet_patches:
         if patch.force:
-
-            # Evaluate the forcing function for the current time discretisation 
+            # Evaluate the forcing function for the current time discretisation
             fac_Po, fac_ho = patch.get_unsteady_multipliers(
-                    ts4_conf.frequency,
-                    ts4_conf.nstep_cycle,
-                    ts4_conf.ncycle,
+                ts4_conf.frequency,
+                ts4_conf.nstep_cycle,
+                ts4_conf.ncycle,
             )
 
             # Save to a numpy file
@@ -642,7 +641,8 @@ def run(grid, ts4_conf, machine):
             # Write out a forcing file
             bcond_path = os.path.join(ts4_conf.workdir, "bcond_unsteady_config.ofp")
             with open(bcond_path, "w") as f:
-                f.write( """
+                f.write(
+                    """
 import numpy
 
 hstag_ramp = {}
@@ -654,16 +654,15 @@ data = numpy.load("forcing.npz")
 # inlet
 hstag_ramp[0] = data["fac_ho"]
 pstag_ramp[0] = data["fac_Po"]
-print(hstag_ramp[0].shape)
-print(pstag_ramp[0].shape)
 
 # outlet
 pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
 
-""")
+"""
+                )
             logger.info("Wrote out unsteady boundary conditions.")
 
-    ts3_conf = turbigen.solvers.ts3.Config(dts=0,workdir=ts4_conf.workdir)._robust()
+    ts3_conf = turbigen.solvers.ts3.Config(dts=0, workdir=ts4_conf.workdir)._robust()
 
     # Get number of GPUs from environment var
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))
@@ -750,7 +749,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             assert xyz.shape[0] == 3
             _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
     else:
-    # Check for point probes in the grid
+        # Check for point probes in the grid
         xyzp = []
         idomain = 0
         label = "grid"
@@ -758,7 +757,9 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
             if patch.is_point:
                 xyzp.append(patch.get_cut().xyz.squeeze())
         xyz = np.stack(xyzp).T
-        xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
+        xyz = xyz[
+            (0, 2, 1),
+        ]  # Swap y and z for TS4 coord system
         _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write span fraction probes
@@ -822,7 +823,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         state_log.set_P_h(ho, Po)
         istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
         conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
-    except:
+    except Exception:
         conv = None
 
     return conv
@@ -833,7 +834,6 @@ def read_probe_flow(fname, state):
 
     # Read the unstructured data from TS4 hdf5
     with h5py.File(fname, "r") as f:
-
         # Get a sorted list of time steps
         steps = [int(i) for i in f["x"].keys()]
         steps.sort()

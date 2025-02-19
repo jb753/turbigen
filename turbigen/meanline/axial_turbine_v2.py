@@ -64,7 +64,6 @@ def forward(
     ho3 = So3.h
     ho1 = So1.h
     ho = np.array([ho1, ho1, ho1, ho3])
-    Dho = ho - ho1
     So = So1.empty(shape=(4,)).set_h_s(ho, s)
 
     # Rotor Mach is defined by an offset to stator Mach

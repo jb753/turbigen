@@ -13,6 +13,7 @@ if not len(sys.argv) == 3:
     print("Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM")
     exit(1)
 
+
 def select_by_string(vtk_grid, string):
 
     obj_name_key = vtk.vtkCompositeDataSet.NAME()
@@ -37,15 +38,15 @@ def select_by_string(vtk_grid, string):
         obj_name = meta.Get(obj_name_key)
         if string in obj_name:
             found_indices.append(flat_index)
-            print(f'Selected {obj_name} at index {flat_index}')
+            print(f"Selected {obj_name} at index {flat_index}")
 
         iter.GoToNextItem()
-
 
     # Filter the grid using found ids
     vtk_grid = ts.process.pre.extract.filter(vtk_grid, found_indices, False)
 
     return vtk_grid
+
 
 def set_group(vtk_grid, group_id):
 
@@ -53,23 +54,20 @@ def set_group(vtk_grid, group_id):
     for bcell in ts.process.pre.vtk_util.get_selected_bcells(vtk_grid):
 
         # Copy the bcell and add the group array
-        obj_copy = ts.process.pre.vtk_util.copy_bcell(bcell.obj, copy_arrays=False) 
+        obj_copy = ts.process.pre.vtk_util.copy_bcell(bcell.obj, copy_arrays=False)
         ncell = obj_copy.GetNumberOfCells()
         group_array = numpy.zeros(ncell, ts.util.format.np_int) + group_id
         obj_copy.CellData.append(group_array, "group")
 
         # Update grid with the copied bcell
         ts.process.pre.vtk_util.update_bcell(
-            vtk_grid,
-            bcell.domain,
-            bcell.id,
-            bcell.bcond_kind,
-            obj_copy
+            vtk_grid, bcell.domain, bcell.id, bcell.bcond_kind, obj_copy
         )
 
-        print(f'Set group={group_id}')
+        print(f"Set group={group_id}")
 
     return vtk_grid
+
 
 # Make all paths absolute
 input_hdf5, output_stem = sys.argv[1:3]

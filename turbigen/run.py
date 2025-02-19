@@ -1307,7 +1307,7 @@ def run(conf):
         log_line("-", log_fields)
 
         # Apply the nstep scaling factor
-        if not "nstep" in conf.solver:
+        if "nstep" not in conf.solver:
             nstep_key = "n_step"
         else:
             nstep_key = "nstep"

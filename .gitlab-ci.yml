@@ -12,7 +12,7 @@ bench:
       - plots/*
   script:
   - python -V
-  - apt update && apt install -y gfortran libopenmpi-dev
+  - apt update && apt install -y gfortran libopenmpi-dev font-freefont
   - pip install -U pip
   - pip install -e ".[test]"
   - pip install -e ".[emb]"
@@ -27,7 +27,7 @@ test:
   stage: test
   script:
   - python -V
-  - apt update && apt install -y gfortran libopenmpi-dev
+  - apt update && apt install -y gfortran libopenmpi-dev font-freefont
   - pip install -U pip
   - pip install -e ".[test]"
   - pip install -e ".[emb]"
@@ -37,7 +37,7 @@ test:
 docs:
   script:
   - python -V
-  - apt update && apt install -y gfortran libopenmpi-dev
+  - apt update && apt install -y gfortran libopenmpi-dev font-freefont
   - pip install -U pip
   - pip install -e ".[docs]"
   - make doc
