@@ -15,6 +15,7 @@ import subprocess
 from scipy.spatial import KDTree
 from time import sleep
 import turbigen.util
+import turbigen.flowfield
 import json
 import re
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
@@ -457,6 +458,16 @@ probe_list = []
 """
         )
 
+def _check_probes(ts4_conf):
+    probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
+    with open(probe_ofp, "r") as f:
+        probe_str = f.read()
+
+    # Check syntax
+    try:
+        compile(probe_str, "dummy.py", "exec")
+    except Exception as e:
+        raise Exception("Error in probes file!") from e
 
 def _write_point_probe(ts4_conf, xyzp, dom, label):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
@@ -476,10 +487,10 @@ p.idomain = {dom}
 p.absolute_frame = True
 p.fname_root = "point_probe_{label}"
 p.write_2d = True
-p.nstep_save_start_1d = {istep_save_start}
+p.nstep_save_start_1d = {ts4_conf.nstep_save_start_probe_1d}
 p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
-p.nstep_save_start_2d = {istep_save_start}
-p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
+p.nstep_save_start_2d = {ts4_conf.nstep_save_start_probe_1d}
+p.nstep_save_2d = {ts4_conf.nstep_save_probe_1d}
 p.time_average = False  # Must be False in a steady calc?
 probe_list.append(p)
 
@@ -643,7 +654,11 @@ data = numpy.load("forcing.npz")
 # inlet
 hstag_ramp[0] = data["fac_ho"]
 pstag_ramp[0] = data["fac_Po"]
-print("Forcing applied to inlet")
+print(hstag_ramp[0].shape)
+print(pstag_ramp[0].shape)
+
+# outlet
+pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
 
 """)
             logger.info("Wrote out unsteady boundary conditions.")
@@ -654,27 +669,6 @@ print("Forcing applied to inlet")
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))
     nnode = int(os.environ.get("SLURM_NNODES", 1))
     npernode = ngpu // nnode
-
-    # Write point probes
-    if ts4_conf.point_probe:
-        # Loop over a list of probes
-        for pp_conf in ts4_conf.point_probe:
-            xyz = np.array(pp_conf["xyz"]).T
-            idomain = int(pp_conf["domain"])
-            # Get dimensions of input data
-            assert xyz.ndim == 2
-            assert xyz.shape[0] == 3
-            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
-    else:
-    # Check for point probes in the grid
-        iprb = 0
-        for patch in grid.probe_patches:
-            if patch.is_point:
-                xyz = patch.get_cut().xyz.squeeze()
-                idomain = 0
-                label = f"probe_{iprb}"
-                _write_point_probe(ts4_conf, xyz, idomain, label)
-                iprb += 1
 
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
@@ -742,20 +736,44 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         _write_wall_distance(grid, input_file_path)
 
     # Write probe config file
-    if ts4_conf.spf_probe or ts4_conf.point_probe:
-        _write_probes_ofp(ts4_conf)
+    # if ts4_conf.spf_probe or ts4_conf.point_probe:
+    _write_probes_ofp(ts4_conf)
+
+    # Write point probes
+    if ts4_conf.point_probe:
+        # Loop over a list of probes
+        for pp_conf in ts4_conf.point_probe:
+            xyz = np.array(pp_conf["xyz"]).T
+            idomain = int(pp_conf["domain"])
+            # Get dimensions of input data
+            assert xyz.ndim == 2
+            assert xyz.shape[0] == 3
+            _write_point_probe(ts4_conf, xyz, idomain, pp_conf["label"])
+    else:
+    # Check for point probes in the grid
+        xyzp = []
+        idomain = 0
+        label = "grid"
+        for patch in grid.probe_patches:
+            if patch.is_point:
+                xyzp.append(patch.get_cut().xyz.squeeze())
+        xyz = np.stack(xyzp).T
+        xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
+        _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write span fraction probes
     if ts4_conf.spf_probe:
         for spf in ts4_conf.spf_probe:
             _write_xr_probe(machine, ts4_conf, spf)
 
-
     # Write logical probes
     if ts4_conf.logical_probe:
         # Loop over a list of probes
         for pp_conf in ts4_conf.logical_probe:
             _write_logical_probe(ts4_conf, **pp_conf)
+
+    logger.info("Checking probes...")
+    _check_probes(ts4_conf)
 
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
     logger.info("Running TS4...")
@@ -795,15 +813,68 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 
     # Parse convergence history
     Nb = [grid.inlet_patches[0].block.Nb, grid.outlet_patches[0].block.Nb]
-    istep, mdot, ho, Po, resid = parse_log(log_path, ts4_conf.nstep, Nb)
+    try:
+        istep, mdot, ho, Po, resid = parse_log(log_path, ts4_conf.nstep, Nb)
 
-    # State to hold inlet and outlet flow properties
-    state_log = grid.inlet_patches[0].state.empty(shape=mdot.shape)
-    state_log.set_Tu0(0.0)
-    state_log.set_P_h(ho, Po)
-    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
-    conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+        # State to hold inlet and outlet flow properties
+        state_log = grid.inlet_patches[0].state.copy().empty(shape=mdot.shape)
+        state_log.set_Tu0(0.0)
+        state_log.set_P_h(ho, Po)
+        istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
+        conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+    except:
+        conv = None
 
     return conv
 
 
+def read_probe_flow(fname, state):
+    """Load unsteady flow field data from TS4 point probes."""
+
+    # Read the unstructured data from TS4 hdf5
+    with h5py.File(fname, "r") as f:
+
+        # Get a sorted list of time steps
+        steps = [int(i) for i in f["x"].keys()]
+        steps.sort()
+
+        # Function to pull out data for each property
+        def _f(p):
+            return np.array([f[p][str(i)] for i in steps])
+
+        x = _f("x")
+        y = _f("y")
+        z = _f("z")
+        ro = _f("ro")
+        e = _f("roe") / ro
+        Vx = _f("rovx") / ro
+        Vy = _f("rovy") / ro
+        Vz = _f("rovz") / ro
+
+    # Convert to polars
+    r = np.sqrt(y**2.0 + z**2.0)
+    t = np.arctan2(-z, y)
+    Vt = -(Vy * np.sin(t) + Vz * np.cos(t))
+    Vr = Vy * np.cos(t) - Vz * np.sin(t)
+
+    # Assemble vector components
+    xrt = np.stack((x, r, t))
+    Vxrt = np.stack((Vx, Vr, Vt))
+    Vsq = np.sum(Vxrt**2, axis=0)
+
+    # Internal energy
+    u = e - 0.5 * Vsq
+
+    # Make flow field data structure
+    Omega = np.zeros_like(r)
+    F = turbigen.flowfield.PerfectFlowField(Omega.shape)
+    F.Tu0 = 0.0
+    F.xrt = xrt
+    F.Vxrt = Vxrt
+    F.cp = state.cp
+    F.gamma = state.gamma
+    F.mu = state.mu
+    F.set_rho_u(ro, u)
+    F = F.transpose()
+
+    return F

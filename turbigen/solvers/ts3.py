@@ -1418,7 +1418,7 @@ def read_probe_dat_dir(dname):
     if (time.time() - max_dat_mtime) > 48 * 3600:
         for fname in fnames:
             print(f"Removing {fname}")
-            # os.remove(fname)
+            os.remove(fname)
 
     return data
 
