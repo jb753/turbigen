@@ -139,6 +139,7 @@ def post(
                         label=f"spf={spf}",
                         color=f"C{ispf}",
                         linestyle=lnst[isurf],
+                        marker="",
                     )
                 else:
                     ax.plot(

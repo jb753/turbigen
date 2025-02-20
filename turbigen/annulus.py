@@ -364,6 +364,12 @@ class FixedAxialChord(BaseAnnulus):
         self._hub = MeridionalLine(xhub, rhub, Beta).smooth()
         self._cas = MeridionalLine(xcas, rcas, Beta).smooth()
 
+    def __repr__(self):
+        cm = self.chords(0.5)[1::2]
+        mq = np.arange(1.5, self.nrow + 1.5)
+        span = self.get_span(mq)
+        return f"FixedAxialChord(nrow={self.nrow}, AR={span / cm})"
+
     @property
     def nrow(self):
         return self._hub.N // 2 - 1

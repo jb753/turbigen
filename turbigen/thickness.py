@@ -243,7 +243,7 @@ class Taylor:
         # Ignore singularities at leading and trailing edges
         ii = np.abs(x - 0.5) < (0.5 - eps)
         s = np.ones(x.shape) * np.nan
-        if np.isnan(self.t_te):
+        if self.t_te < 0.0:
             s[ii] = t[ii] / np.sqrt(x[ii]) / np.sqrt(1.0 - x[ii])
         else:
             s[ii] = (t[ii] - x[ii] * self.t_te / 2.0) / np.sqrt(x[ii]) / (1.0 - x[ii])
@@ -251,7 +251,7 @@ class Taylor:
 
     def _from_shape(self, x, s):
         """Transform shape space to real coordinates."""
-        if np.isnan(self.t_te):
+        if self.t_te < 0.0:
             return np.sqrt(x) * np.sqrt(1.0 - x) * s
         else:
             return np.sqrt(x) * (1.0 - x) * s + x * self.t_te / 2.0
@@ -267,7 +267,7 @@ class Taylor:
         # Evaluate control points
         sle = np.sqrt(2.0 * self.R_LE)
         t_te = self.t_te
-        if np.isnan(t_te):
+        if t_te < 0.0:
             t_te = 0.0
             smax = self.t_max / np.sqrt(self.s_tmax) / np.sqrt(1.0 - self.s_tmax)
             dsmax = (

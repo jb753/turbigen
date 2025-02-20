@@ -65,6 +65,8 @@ class HMeshConfig(BaseConfig):
 
     slip_annulus = False
 
+    dm_cusp = 0.0
+
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         # """Evaluate a spanwise grid vector given hub and casing spacings."""
         if tip:
@@ -685,25 +687,32 @@ def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
                 assert (pitch_frac_clust <= 1.0).all()
 
             for j in range(nj):
-                xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j])
+                nchord = 5000
+                m = util.cluster_cosine(nchord)
+                xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j], m=m)
 
                 assert np.all(xrt_u[2] >= xrt_l[2])
 
-                xrt_u_rep = xrt_u.copy()
-                xrt_u_rep[-1] += 2.0 * np.pi / 20.0
-                xrt_l_rep = xrt_l.copy()
-                xrt_l_rep[-1] += 2.0 * np.pi / 20.0
+                if dmcusp := mesh_config.dm_cusp:
+                    cosTheta = np.cos(np.radians(Theta))
+                    ncusp = nchord - np.where(m > 1.0 - cosTheta[1] * dmcusp)[0][0]
+                    # Blend upper and lower surfaces to meet at TE
+                    # over the last ncusp points
+                    fcusp = np.linspace(0.0, 1.0, ncusp)
+                    if Theta[1] > 30.0:
+                        xrt_avg = xrt_l
+                    elif Theta[1] < -30.0:
+                        xrt_avg = xrt_u
+                    else:
+                        xrt_avg = 0.5 * (xrt_u + xrt_l)
+                    xrt_u[:, -ncusp:] = (
+                        fcusp * xrt_avg[:, -ncusp:] + (1.0 - fcusp) * xrt_u[:, -ncusp:]
+                    )
+                    xrt_l[:, -ncusp:] = (
+                        fcusp * xrt_avg[:, -ncusp:] + (1.0 - fcusp) * xrt_l[:, -ncusp:]
+                    )
 
-                xrrt_u_rep = xrt_u_rep.copy()
-                xrrt_u_rep[-1] *= xrrt_u_rep[1]
-                xrrt_l_rep = xrt_l_rep.copy()
-                xrrt_l_rep[-1] *= xrrt_l_rep[1]
-
-                xrrt_u = xrt_u.copy()
-                xrrt_u[-1] *= xrrt_u[1]
-                xrrt_l = xrt_l.copy()
-                xrrt_l[-1] *= xrrt_l[1]
-
+                #
                 # Get tte of current section and warp the streamwise grid
                 # vector to locate trailing edge exactly
                 mlim_now = mac.bld[irow]._get_mlim(span_frac[j])

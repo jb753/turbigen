@@ -192,13 +192,17 @@ def inverse(ml):
     dhead_ref = 0.5 * ml.ao[0] ** 2
     Ys = (
         (
-            ml.s[
-                (1, 3),
-            ]
-            - ml.s[0]
+            (
+                ml.s[
+                    (1, 3),
+                ]
+                - ml.s[0]
+            )
+            * Tref
+            / dhead_ref
         )
-        * Tref
-        / dhead_ref
+        .astype(float)
+        .tolist()
     )
 
     # Calculate axial velocity ratios

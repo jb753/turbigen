@@ -1,4 +1,4 @@
-workdir: runs/axial_turbine
+workdir: runs/axial_turbine_*
 
 inlet:
   Po: 16.0e5
@@ -21,37 +21,47 @@ mean_line:
 
 annulus:
   type: FixedAxialChord
-  cx_gap: [0.2, 0.05, 0.2]
+  cx_gap: [0.1, 0.05, 0.1]
   cx_row: [0.1, 0.1]
 
 blades:
   - Co: 0.7
-    Re_surf: 4.0e6 # Change viscosity to match
+    Re_surf: 1.0e6 # Change viscosity to match
     mstack: 0.5
     sections:
-      - spf: 0.1
-        q_thick: [0.05, 0.12, 0.3, 0.2, 0.04, 0.15]
-        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
-      - spf: 0.8
-        q_thick: [0.05, 0.12, 0.3, 0.2, 0.04, 0.15]
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0.2, 0.02, 0.10]
         qstar_camber: [0.,0., 1.0, 1.0, 0.0]
   - Co: 0.7
     mstack: 0.5
     sections:
       - spf: 0.5
-        q_thick: [0.05, 0.12, 0.35, 0.1, 0.04, 0.15]
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.02, 0.10]
         qstar_camber: [0.,0., 1.0, 1.0, 0.0]
-    tip: 0.01  # Rotor tip gap
+    # tip: 0.01  # Rotor tip gap
 
 solver:
-  type: ts3
-  nstep_avg: 1000
-  nstep: 5000
+  type: embsolve
+  n_step: 10000
+  n_step_avg: 2000
+  nstep_damp: -1
+  smooth_ratio_min: 1.
 
 mesh:
   type: h
-  yplus: 30.
+  yplus: 15.0
   resolution_factor: 0.5
+  dm_TE: 0.05
+  dm_cusp: 0.05
 
 post_process:
+  plot_convergence:
+  contour:
+    coord: spf
+    value: .5
+    variable: Cp
+    N_passage: 2
+    show_mesh: true
   plot_annulus:
+  plot_pressure_distributions:
+    row_spf: [[0.5,],[0.5,]]

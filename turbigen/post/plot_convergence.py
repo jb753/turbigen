@@ -71,13 +71,13 @@ def post(
 
     # Do the plotting
     _, ax = plt.subplots(1, 3, layout="constrained")
-    ax[0].plot(conv.istep, np.log10(conv.resid))
+    ax[0].plot(conv.istep, np.log10(conv.resid), marker="")
     ax[0].set_title("log(Residual)")
-    ax[1].plot(conv.istep, dCWx)
+    ax[1].plot(conv.istep, dCWx, marker="")
     ax[1].set_title("dWork/percent")
     ax[1].set_ylim(ylim)
     ax[1].set_yticks(ytick)
-    ax[2].plot(conv.istep, dYs, "-")
+    ax[2].plot(conv.istep, dYs, marker="")
     ax[2].set_ylim(ylim)
     ax[2].set_yticks(ytick)
     ax[2].set_title("dLoss/percent")

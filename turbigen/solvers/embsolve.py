@@ -898,10 +898,16 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
                     ten = timer()
                     tpnps = (ten - tstart) / nodes / conf.n_step_log
+                    remaining = (ten - tfirst) / (istep + 1) * (conf.n_step - istep - 1)
                     tstart = ten
+                    # Print remaining time as minutes and seconds
+                    remaining_minutes = int(remaining // 60)
+                    remaining_seconds = int(remaining % 60)
 
                     if conf.print_conv:
-                        logger.info(f"{istep}: tpnps={tpnps:.3e}")
+                        logger.info(
+                            f"{istep}: tpnps={tpnps:.3e}, remaining={remaining_minutes}m{remaining_seconds}s"
+                        )
                         for ib, dU in enumerate(dUall.mean(axis=0)):
                             logger.info(
                                 f"  block {ib}: "
