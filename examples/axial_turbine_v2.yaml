@@ -42,17 +42,20 @@ blades:
 
 solver:
   type: embsolve
-  n_step: 10000
-  n_step_avg: 2000
+  n_step: 9300
+  n_step_avg: 1
   nstep_damp: -1
+  damping_factor: 10.
   smooth_ratio_min: 1.
+  n_loss: 2
 
 mesh:
   type: h
   yplus: 15.0
   resolution_factor: 0.5
-  dm_TE: 0.05
-  dm_cusp: 0.05
+  # dm_TE: 0.05
+  # ni_TE: 17
+  # dm_cusp: 0.05
 
 post_process:
   plot_convergence:
