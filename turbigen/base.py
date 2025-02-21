@@ -1951,10 +1951,14 @@ class MeanLine:
     def eta_tt(self):
         hos = self.copy().set_P_s(self.Po, self.s[0]).h
         ho = self.ho
-        eta_tt = (hos[-1] - ho[0]) / (ho[-1] - ho[0])
-        if eta_tt > 1.0:
-            eta_tt = 1.0 / eta_tt
-        return eta_tt
+        Dho = ho[-1] - ho[0]
+        Dhos = hos[-1] - hos[0]
+        if Dho == 0.0:
+            return 1.0
+        elif Dhos > Dho:
+            return Dho / Dhos
+        else:
+            return Dhos / Dho
 
     @dependent_property
     def eta_ts(self):
