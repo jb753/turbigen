@@ -21,7 +21,7 @@ mean_line:
 
 annulus:
   type: FixedAxialChord
-  cx_gap: [0.1, 0.05, 0.1]
+  cx_gap: [0.1, 0.1, 0.1]
   cx_row: [0.1, 0.1]
 
 blades:
@@ -30,32 +30,29 @@ blades:
     mstack: 0.5
     sections:
       - spf: 0.5
-        q_thick: [0.05, 0.12, 0.3, 0.2, 0.02, 0.10]
+        q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.10]
         qstar_camber: [0.,0., 1.0, 1.0, 0.0]
   - Co: 0.7
     mstack: 0.5
     sections:
       - spf: 0.5
-        q_thick: [0.05, 0.12, 0.35, 0.1, 0.02, 0.10]
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.0, 0.10]
         qstar_camber: [0.,0., 1.0, 1.0, 0.0]
     # tip: 0.01  # Rotor tip gap
 
 solver:
   type: embsolve
-  n_step: 9300
+  n_step: 10000
   n_step_avg: 1
   nstep_damp: -1
-  damping_factor: 10.
   smooth_ratio_min: 1.
-  n_loss: 2
 
 mesh:
   type: h
-  yplus: 15.0
+  yplus: 30.
   resolution_factor: 0.5
-  # dm_TE: 0.05
-  # ni_TE: 17
-  # dm_cusp: 0.05
+  dm_TE: 0.05
+  ni_TE: 5
 
 post_process:
   plot_convergence:
@@ -64,7 +61,6 @@ post_process:
     value: .5
     variable: Cp
     N_passage: 2
-    show_mesh: true
   plot_annulus:
   plot_pressure_distributions:
     row_spf: [[0.5,],[0.5,]]

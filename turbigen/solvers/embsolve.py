@@ -1243,9 +1243,9 @@ class OutletBoundary(Boundary):
         """Use static pressure target to set upstream-running wave."""
 
         # Force to uniform at target pressure
-        # dP = self.P_target - self.state.P
-        P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
-        dP = self.P_target - P_Aavg
+        dP = self.P_target - self.state.P
+        # P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
+        # dP = self.P_target - P_Aavg
         dVx = -dP / self.state.rho / self.state.a  # from c2=0
         dc1 = dP - self.state.rho * self.state.a * dVx  # definition of c1
         dc = np.zeros(self.shape + (5, 1))
