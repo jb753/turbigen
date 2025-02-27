@@ -108,7 +108,7 @@ class Config(BaseSolver):
     K_exit: float = 0.5
     K_inlet: float = 0.5
     K_mix: float = 0.5
-    sf_mix: float = 0.01
+    sf_mix: float = 0.02
 
     print_conv: bool = True
 

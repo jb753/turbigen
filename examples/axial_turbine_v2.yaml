@@ -57,17 +57,6 @@ mesh:
 
 post_process:
   plot_convergence:
-  # contour:
-    # coord: spf
-    # value: .95
-    # variable: Cho
-    # N_passage: 2
-    # show_mesh: true
-  contour:
-    coord: m
-    value: 2.501
-    variable: Cho
-    N_passage: 2
   plot_annulus:
   find_extrema:
   plot_pressure_distributions:
