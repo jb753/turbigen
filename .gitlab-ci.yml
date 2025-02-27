@@ -24,6 +24,9 @@ bench:
 
 profile:
   stage: test
+  artifacts:
+    paths:
+      - profile.txt
   script:
   - python -V
   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf

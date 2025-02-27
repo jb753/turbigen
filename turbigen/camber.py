@@ -2,76 +2,119 @@
 
 The purpose of these objects is to evaluate camber lines in streamsurface
 coordinates a function of chordwise position.
+
+To make a new camber line, subclass the BaseCamber and implement:
+    - chi_hat(m)
+
 """
 
 import numpy as np
 from scipy.optimize import minimize
+from abc import ABC, abstractmethod
 
 
-class Brind:
-    """Use a quartic polynomial for camber angle tangent."""
+def _fit_quartic_camber(slope_le, slope_te, kappa):
+    """Get the polynomial coefficients for a quartic camber line.
 
-    DEFAULT_PVEC = np.array([0.0, 0.0, 1.0, 1.0, 0.0])
+    We set the slope at the leading edge, trailing edge, and curvature at the
+    mid-chord position.
 
-    eps = 1e-3
-    qbound = ((-5.0, 5.0), (-5.0, 5.0), (0.0, 10.0), (0.0, 10.0), (-5.0, 5.0))
+    """
+
+    A = np.zeros((5, 5))
+    b = np.zeros((5, 1))
+
+    # y-intercept at 1
+    A[0] = [0.0, 0.0, 0.0, 0.0, 1.0]
+    b[0] = 0.0
+
+    # x-intercept at 0
+    A[1] = [1.0, 1.0, 1.0, 1.0, 1.0]
+    b[1] = 1.0
+
+    # Curvature parameter
+    A[2] = [3.0, 3.0, 2.0, 0.0, 0.0]
+    b[2] = kappa
+
+    # LE gradient
+    A[3] = [0.0, 0.0, 0.0, 1.0, 0.0]
+    b[3] = slope_le
+
+    # TE gradient
+    A[4] = [4.0, 3.0, 2.0, 1.0, 0.0]
+    b[4] = slope_te
+
+    # Solve for polynomial coeffs
+    return np.linalg.solve(A, b).reshape(-1)
+
+
+class BaseCamber(ABC):
+    """Define the interface for a camber line."""
 
     def __init__(self, q_camber):
-        # Store input parameter vector
-        self.q_camber = np.reshape(q_camber, 5)
-
-        # Cache for polynomial coefficients
-        self._coeff_cache = {}
-        self._use_cache = True
-
-    def __hash__(self):
-        """Hash based on tuple of the geometry parameters."""
-        return hash(tuple(self.q_camber))
-
-    @classmethod
-    def from_fit(cls, m, y):
-        r"""Initialise by fitting camber line to some coordinates.
+        """Initialise camber line with parameter vector.
 
         Parameters
         ----------
-        m: (N,) array
-            Normalised meridional distance, :math:`m`.
-
-        y: (N,) array
-            Normalised tangential coordinate, :math:`y`.
+        q_camber: array
+          Parameter vector for camber line.
+          q_camber[0] = tan chi_LE
+          q_camber[1] = tan chi_TE
+          q_camber[2:] = choice of camber line parameters
 
         """
+        self.q_camber = np.reshape(q_camber, -1)
 
-        # Put input origin at LE
-        m -= m[0]
-        y -= y[0]
+    def __hash__(self):
+        return hash(tuple(self.q_camber))
 
-        # Scale to unit meridional distance
-        y /= np.ptp(m)
-        m /= np.ptp(m)
+    @property
+    def tanchi_LE(self):
+        """Camber angle tangent at leading edge."""
+        return self.q_camber[0]
 
-        # Fit quadratics to robustly estimate end gradients
-        delta = 0.15
-        coeff_le = np.polyfit(m[m < delta], y[m < delta], 2)
-        coeff_te = np.polyfit(m[m > 1.0 - delta], y[m > 1.0 - delta], 2)
-        tanchi = np.array(
-            [
-                np.polyval(np.polyder(coeff_le), 0.0),
-                np.polyval(np.polyder(coeff_te), 1.0),
-            ]
-        )
+    @property
+    def tanchi_TE(self):
+        """Camber angle tangent at trailing edge."""
+        return self.q_camber[1]
 
-        # Initial guess for parameter vector
-        p0 = cls.DEFAULT_PVEC + 0.0
-        p0[:2] = tanchi
+    @property
+    def chi_LE(self):
+        """Camber angle at leading edge."""
+        return np.degrees(self.tanchi_LE)
 
-        def _iter(p):
-            cam_now = cls(p)
-            y_fit = cam_now.y(m)
-            return np.sum((y_fit - y) ** 2.0)
+    @property
+    def chi_TE(self):
+        """Camber angle at trailing edge."""
+        return np.degrees(self.tanchi_TE)
 
-        popt = minimize(_iter, p0).x
-        return cls(popt)
+    @property
+    def Dchi(self):
+        """Camber angle change."""
+        return self.chi_TE - self.chi_LE
+
+    @property
+    def Dtanchi(self):
+        """Camber angle tangend change."""
+        return self.tanchi_TE - self.tanchi_LE
+
+    @abstractmethod
+    def chi_hat(self, m) -> np.ndarray:
+        """Normalised camber as function of meridional distance.
+
+        Parameters
+        ----------
+        m: (n,) array
+            Meridional chord fractions to evaluate camber line at.
+
+        Returns
+        -------
+        chi_hat: (n,) array
+            Normalised camber at requested meridional positions.
+            chi_hat(m=0) = 0, chi_hat(m=1) = 1.
+
+        """
+        raise NotImplementedError
 
     def chi(self, m):
         r"""Camber angle as function of normalised meridional distance.
@@ -80,192 +123,65 @@ class Brind:
 
         Parameters
         ----------
-        m: array
-            Meridional chord fractions to evaluate camber line at, :math:`m\,`.
+        m: (n,) array
+            Meridional chord fractions to evaluate camber line at.
 
         Returns
         -------
-        chi: array
-            Camber angle at requested meridional positions, :math:`\chi/^\circ\,`.
+        chi: (n,) array
+            Camber angle at requested meridional positions [deg].
         """
-        return np.degrees(np.arctan(self.dydm(m)))
+        return np.degrees(np.arctan(self.tanchi_LE + self.chi_hat(m) * self.Dtanchi))
 
     def dydm(self, m):
-        r"""Camber line slope as function of normalised meridional distance.
+        """Camber line slope as function of normalised meridional distance.
 
         Note that camber line slope is the tangent of camber angle.
 
         Parameters
         ----------
-        m: array
-            Meridional chord fractions to evaluate camber line at, :math:`m\,`.
+        m: (n,) array
+            Meridional chord fractions to evaluate camber line at.
 
         Returns
         -------
-        dydm: array
-            Camber line slope at requested meridional positions, :math:`y'\,`.
-
+        dydm: (n,) array
+            Camber line slope at requested meridional positions.
         """
-        return self.q_camber[0] + np.polyval(self._coeff, m) * self._Dtanchi
-
-    def d2ydm2(self, m):
-        r"""Camber line curvature as function of normalised meridional distance.
-
-        Parameters
-        ----------
-        m: array
-            Meridional chord fractions to evaluate camber line at, :math:`m\,`.
-
-        Returns
-        -------
-        d2ydm2: array
-            Camber line curvature at requested meridional positions, :math:`y''\,`.
-
-        """
-        return np.polyval(np.polyder(self._coeff), m) * self._Dtanchi
-
-    def y(self, m):
-        r"""Circumferential camber coordinate at meridional locations.
-
-        The leading edge is assumed to be located at the origin.
-
-        Parameters
-        ----------
-        m: array
-            Meridional chord fractions to evaluate camber line at, :math:`m\,`.
-
-        Returns
-        -------
-        y: array
-            Tangential camber line coordinate at requested positions, :math:`y\,`.
-
-        """
-        return (
-            self.q_camber[0] * m
-            + np.polyval(np.polyint(self._coeff, 1), m) * self._Dtanchi
-        )
-
-    def chi_hat(self, m):
-        """Non-dimensional camber line as function of normalised meridional distance."""
-        return np.polyval(self._coeff, m)
-
-    @property
-    def _Dtanchi(self):
-        r"""Camber angle tangent change."""
-        return np.diff(self.q_camber[:2]).item()
-
-    @property
-    def _coeff(self):
-        r"""Coefficients for quartic thickness distribution."""
-
-        # Skip if we have already fitted polynomials for current params
-        if self._use_cache and (hash(self) in self._coeff_cache):
-            return self._coeff_cache[hash(self)]
-
-        # TODO - could probably get an analytical solution instead of numerical
-        # matrix inversion
-        A = np.zeros((5, 5))
-        b = np.zeros((5, 1))
-
-        # y-intercept at 1
-        A[0] = [0.0, 0.0, 0.0, 0.0, 1.0]
-        b[0] = 0.0
-
-        # x-intercept at 0
-        A[1] = [1.0, 1.0, 1.0, 1.0, 1.0]
-        b[1] = 1.0
-
-        # Unpack parameters
-        slope_le, slope_te, kappa = self.q_camber[2:]
-
-        # Curvature parameter
-        A[2] = [3.0, 3.0, 2.0, 0.0, 0.0]
-        b[2] = kappa
-
-        # LE gradient
-        A[3] = [0.0, 0.0, 0.0, 1.0, 0.0]
-        b[3] = slope_le
-
-        # TE gradient
-        A[4] = [4.0, 3.0, 2.0, 1.0, 0.0]
-        b[4] = slope_te
-
-        # Solve for polynomial coeffs
-        coeff = np.linalg.solve(A, b).reshape(-1)
-
-        # Store in cache if using
-        if self._use_cache:
-            self._coeff_cache[hash(self)] = coeff
-
-        return coeff
-
-
-class Taylor:
-    """Use a quartic polynomial for camber angle."""
-
-    DEFAULT_PVEC = np.array([0.0, 0.0, 1.0, 1.0, 0.0])
-
-    def __init__(self, q_camber):
-        # Store input parameter vector
-        self.q_camber = np.reshape(q_camber, 5)
-
-        # Fit the quartic coefficients
-        self._coeff = self._fit_coeff()
-
-    def chi(self, m):
-        return self.chi_in + self.chi_hat(m) * self.Dchi
-
-    def chi_hat(self, m):
-        return np.polyval(self._coeff, m)
-
-    def dydm(self, m):
         return np.tan(np.radians(self.chi(m)))
 
-    @property
-    def chi_in(self):
-        return np.degrees(np.arctan(self.q_camber[0]))
 
-    @property
-    def chi_out(self):
-        return np.degrees(np.arctan(self.q_camber[1]))
+class Quartic(BaseCamber):
+    """Use a quartic polynomial to set normalised camber."""
 
-    @property
-    def Dchi(self):
-        r"""Camber angle tangent change."""
-        return np.diff(np.degrees(np.arctan(self.q_camber[:2]))).item()
+    def chi_hat(self, m):
+        return np.polyval(_fit_quartic_camber(*self.q_camber[2:]), m)
 
-    def _fit_coeff(self):
-        r"""Coefficients for quartic thickness distribution."""
 
-        # TODO - could probably get an analytical solution instead of numerical
-        # matrix inversion
-        A = np.zeros((5, 5))
-        b = np.zeros((5, 1))
+class Taylor(BaseCamber):
+    """Use a quartic polynomial to set camber angle."""
 
-        # y-intercept at 1
-        A[0] = [0.0, 0.0, 0.0, 0.0, 1.0]
-        b[0] = 0.0
+    def chi_hat(self, m):
+        chi = np.polyval(_fit_quartic_camber(*self.q_camber[2:]), m)
+        tanchi = np.tan(np.radians(chi))
+        return (tanchi - self.tanchi_LE) / self.Dtanchi
 
-        # x-intercept at 0
-        A[1] = [1.0, 1.0, 1.0, 1.0, 1.0]
-        b[1] = 1.0
 
-        # Unpack parameters
-        slope_le, slope_te, kappa = self.q_camber[2:]
+class Quadratic(BaseCamber):
+    """Use a quadratic polynomial to set camber angle."""
 
-        # Curvature parameter
-        A[2] = [3.0, 3.0, 1.0, 0.0, 0.0]
-        b[2] = kappa
+    def chi_hat(self, m):
+        a = self.q_camber[2]  # Aft-loading factor
+        m = np.array(m)
+        return m * (a * m + (1 - a))
 
-        # LE gradient
-        A[3] = [0.0, 0.0, 0.0, 1.0, 0.0]
-        b[3] = slope_le
 
-        # TE gradient
-        A[4] = [4.0, 3.0, 2.0, 1.0, 0.0]
-        b[4] = slope_te
-
-        # Solve for polynomial coeffs
-        coeff = np.linalg.solve(A, b).reshape(-1)
-
-        return coeff
+def load_camber(camber_type):
+    """Get camber class by string, including any custom classes."""
+    available_types = {a.__name__: a for a in BaseCamber.__subclasses__()}
+    if camber_type not in available_types:
+        raise ValueError(
+            f"Unknown camber type: {camber_type}, should be one of {available_types.keys()}"
+        )
+    else:
+        return available_types[camber_type]

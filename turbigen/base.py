@@ -241,11 +241,13 @@ class StructuredData:
         self._read_only = False
         return self
 
-    def copy(self):
+    def copy(self, dtype=None):
         # Make an empty object by calling constructor with no args
         out = self.__class__()
         # Insert copies of current data and metadata
         out._data = self._data.copy()
+        if dtype:
+            out._data = out._data.astype(dtype)
         out._metadata = self._metadata.copy()
         return out
 

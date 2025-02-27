@@ -73,6 +73,9 @@ class Config(BaseSolver):
     n_step: int = 5000
     """Number of time steps to run for."""
 
+    n_step_mix: int = 5
+    """Number of time steps between mixing plane updates."""
+
     n_step_dt: int = 10
     """Number of time steps between updates of the local time step."""
 
@@ -85,7 +88,7 @@ class Config(BaseSolver):
     n_step_ramp: int = 250
     """Number of time steps to ramp smoothing and damping."""
 
-    n_loss: int = 5
+    n_loss: int = 10
     """Number of time steps between viscous force updates."""
 
     nstep_damp: int = 500
@@ -663,7 +666,7 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
-def exchange_mixing(blocks, bid_local, mixers):
+def exchange_mixing(mixers):
     # Prepare to recieve into away buffers
     for mixer in mixers:
         if not mixer.nxprocid == rank:
@@ -672,8 +675,6 @@ def exchange_mixing(blocks, bid_local, mixers):
     # Populate the home buffer with pitchwise-averaged
     # fluxes and conserved vars and send away
     for mixer in mixers:
-        b1 = blocks[bid_local[mixer.bid]]
-        mixer.pull(b1)
         mixer.fill_buffer()
         if not mixer.nxprocid == rank:
             mixer.Send.Start()
@@ -685,8 +686,8 @@ def exchange_mixing(blocks, bid_local, mixers):
         if not mixer.nxprocid == rank:
             mixer.Recv.Wait()
 
-        b1 = blocks[bid_local[mixer.bid]]
-        mixer.apply(b1)
+        mixer.unpack_buffers()
+        mixer.set_direction()
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -856,8 +857,15 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
                 for bc in sb.bconds:
                     bc.apply(sb)
 
+            # Apply mixers
+            for mixer in mixers:
+                b1 = blocks[bid_local[mixer.bid]]
+                mixer.pull(b1)
+                mixer.apply(b1)
+
             # Exchange fluxes across mixing patches
-            exchange_mixing(blocks, bid_local, mixers)
+            if not np.mod(istep, conf.n_step_mix):
+                exchange_mixing(mixers)
 
             for iblock in range(nblock):
                 sb = blocks[iblock]
@@ -1367,10 +1375,6 @@ class MixingBoundary(Boundary):
         dflux = (buffer[0] - nxbuffer[0]) / 2.0
         cons_avg = 0.5 * (buffer[1] + nxbuffer[1])
 
-        # Relax changes in conserved variables
-        rf = 0.5
-        cons_avg = rf * cons_avg + (1.0 - rf) * self.state_avg.conserved
-
         # Store the averaged state and flux error
         self.state_avg.set_conserved(cons_avg)
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
@@ -1454,10 +1458,6 @@ class MixingBoundary(Boundary):
         return dchic
 
     def apply(self, block):
-        self.unpack_buffers()
-
-        self.set_direction()
-
         # Take outwards-running chics from interior
         dchic_outwards = self.outward_chics()
 

@@ -637,9 +637,9 @@ class Blade:
     @property
     def _Cam(self):
         if self.camber_type:
-            Cam = getattr(turbigen.camber, self.camber_type)
+            Cam = turbigen.camber.load_camber(self.camber_type)
         else:
-            Cam = turbigen.camber.Brind
+            Cam = turbigen.camber.Quartic
         return Cam
 
     def _get_cam_thick(self, spf):
