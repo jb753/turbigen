@@ -22,6 +22,7 @@ class PlotVars(Enum):
     VM = "Vm"
     YS = "Ys"
     CP = "Cp"
+    CHO = "Cho"
 
 
 def post(
@@ -148,23 +149,28 @@ def post(
     is_compressor = np.diff(row.P) > 0.0
 
     # Now non-dimensionalise the variable we want
+    Uref = meanline.U.max()
 
     # Entropy loss coefficient
     if plot_var == PlotVars.YS:
         if is_compressor:
-            v = row.T[1] * (C_tri.s - row.s[0]) / row.halfVsq[0]
+            v = row.T[1] * (C_tri.s - row.s[0]) / row.halfVsq_rel[0]
         else:
-            v = row.T[1] * (C_tri.s - row.s[0]) / row.halfVsq[1]
+            v = row.T[1] * (C_tri.s - row.s[0]) / row.halfVsq_rel[1]
 
         label = "Entropy Loss Coefficient, $Y_s$"
 
     elif plot_var == PlotVars.VM:
-        v = C_tri.Vm / row.U[1]
+        v = C_tri.Vm / Uref
         label = r"Meridional Velocity, $V_m/U$"
 
     elif plot_var == PlotVars.VT:
-        v = C_tri.Vm / row.U[1]
+        v = C_tri.Vm / Uref
         label = r"Circumferential Velocity, $V_\theta/U$"
+
+    elif plot_var == PlotVars.CHO:
+        v = (C_tri.ho - row.ho[0]) / Uref**2
+        label = r"Stagnation Enthalpy, $C_{h_0}$"
 
     elif plot_var == PlotVars.CP:
         Po1 = row.Po_rel[0]
@@ -186,7 +192,8 @@ def post(
     if lim:
         levels = np.arange(*lim, step)
     else:
-        levels = turbigen.util.clipped_levels(v, step, thresh=0.01)
+        # levels = turbigen.util.clipped_levels(v, step, thresh=0.01)
+        levels = np.linspace(v.min(), v.max(), 20)
 
     eps = 1e-4 * np.diff(levels).mean()
     v = np.clip(v, levels[0] + eps, levels[-1] - eps)

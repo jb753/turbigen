@@ -1,4 +1,4 @@
-workdir: runs/axial_turbine_*
+workdir: runs/*
 
 inlet:
   Po: 16.0e5
@@ -21,7 +21,7 @@ mean_line:
 
 annulus:
   type: FixedAxialChord
-  cx_gap: [0.1, 0.1, 0.1]
+  cx_gap: [0.1, 0.06, 0.1]
   cx_row: [0.1, 0.1]
 
 blades:
@@ -51,16 +51,24 @@ mesh:
   type: h
   yplus: 30.
   resolution_factor: 0.5
-  dm_TE: 0.05
+  dm_TE: 0.03
   ni_TE: 5
+  ER_stream: 1.15
 
 post_process:
   plot_convergence:
+  # contour:
+    # coord: spf
+    # value: .95
+    # variable: Cho
+    # N_passage: 2
+    # show_mesh: true
   contour:
-    coord: spf
-    value: .5
-    variable: Cp
+    coord: m
+    value: 2.501
+    variable: Cho
     N_passage: 2
   plot_annulus:
+  find_extrema:
   plot_pressure_distributions:
     row_spf: [[0.5,],[0.5,]]

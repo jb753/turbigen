@@ -105,13 +105,10 @@ class Config(BaseSolver):
 
     i_loss: int = 1
 
-    i_exit: int = 1
-    i_inlet: int = 1
-
     K_exit: float = 0.5
     K_inlet: float = 0.5
     K_mix: float = 0.5
-    sf_mix: float = 0.1
+    sf_mix: float = 0.01
 
     print_conv: bool = True
 
@@ -1322,6 +1319,8 @@ class MixingBoundary(Boundary):
         # Common pitch-averaged state
         self.state_avg = self.state.empty(shape=(len(self.spf),))
         self.state_avg.xrt = C.xrt[:, 0, :, 0]
+        cons_avg = self.pitchwise_average(self.state.conserved)
+        self.state_avg.set_conserved(cons_avg.squeeze())
 
         # Preallocate pitch-avg flux changes
         self.dflux_avg = np.zeros((1, len(self.spf), 1, 5, 1))
@@ -1368,12 +1367,16 @@ class MixingBoundary(Boundary):
         dflux = (buffer[0] - nxbuffer[0]) / 2.0
         cons_avg = 0.5 * (buffer[1] + nxbuffer[1])
 
+        # Relax changes in conserved variables
+        rf = 0.5
+        cons_avg = rf * cons_avg + (1.0 - rf) * self.state_avg.conserved
+
         # Store the averaged state and flux error
         self.state_avg.set_conserved(cons_avg)
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
 
         # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        Ma_min = 0.1
+        Ma_min = 0.01
         V_min = self.state_avg.a.mean() * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
         self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
