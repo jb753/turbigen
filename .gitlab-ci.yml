@@ -22,21 +22,20 @@ bench:
   - mkdir plots
   - python tests/back-to-back/turbine/plot.py
 
-# profile:
-#   stage: test
-#   script:
-#   - python -V
-#   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
-#   - pip install -U pip
-#   - pip install line_profiler
-#   - pip install -e ".[test]"
-#   - pip install -e ".[emb]"
-#   - make compile
-#   - sed -i '/def run_slave(/i @profile' turbigen/solvers/embsolve.py
-#   - kernprof -lv turbigen tests/back-to-back/turbine/emb.yaml
-#
-#
-#
+profile:
+  stage: test
+  script:
+  - python -V
+  - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
+  - pip install -U pip
+  - pip install line_profiler
+  - pip install -e ".[test]"
+  - pip install -e ".[emb]"
+  - make compile
+  - ./scripts/profile.sh
+
+
+
 test:
   stage: test
   script:

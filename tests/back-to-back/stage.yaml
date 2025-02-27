@@ -1,0 +1,63 @@
+workdir: runs/*
+
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  mu: # Blank to set viscosity by Re_surf
+  gamma: 1.33
+
+mean_line:
+  type: axial_turbine_v2
+  Alpha1: 0.
+  phi2: 0.6
+  mdot: 500.
+  PR_tt: 1.4
+  Ma2: 0.6
+  DMa3_rel: 0.0
+  Ys: [0, 0]
+  zeta: [1.0, 1.0]
+  rrms: 1.0
+
+annulus:
+  type: FixedAxialChord
+  cx_gap: [0.1, 0.06, 0.1]
+  cx_row: [0.1, 0.1]
+
+blades:
+  - Co: 0.7
+    Re_surf: 1.0e6 # Change viscosity to match
+    mstack: 0.5
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.10]
+        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
+  - Co: 0.7
+    mstack: 0.5
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.0, 0.10]
+        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
+    # tip: 0.01  # Rotor tip gap
+
+solver:
+  type: embsolve
+  n_step: 2000
+  n_step_avg: 1
+  nstep_damp: -1
+  smooth_ratio_min: 1.
+
+mesh:
+  type: h
+  yplus: 30.
+  resolution_factor: 0.5
+  dm_TE: 0.03
+  ni_TE: 5
+  ER_stream: 1.15
+
+post_process:
+  plot_convergence:
+  plot_annulus:
+  find_extrema:
+  plot_pressure_distributions:
+    row_spf: [[0.5,],[0.5,]]
