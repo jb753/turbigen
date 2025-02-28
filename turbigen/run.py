@@ -636,7 +636,6 @@ and will cause problems with meshing and solving for the flow field."""
         elif "DFL" in conf.blades and (DFL := conf.blades["DFL"][irow]):
             logger.debug("Setting Nb using Lieblein")
             s_c = ml.set_Lieblein_DF(DFL)[irow]
-            logger.debug(f"s_c={s_c}")
             cx = ann.chords(0.5)[1:-1:2][ind_out][irow]
             s = s_c * cx
             Nb[irow] = np.round(2.0 * np.pi * row_rmid[irow] / s)

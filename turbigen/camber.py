@@ -9,7 +9,6 @@ To make a new camber line, subclass the BaseCamber and implement:
 """
 
 import numpy as np
-from scipy.optimize import minimize
 from abc import ABC, abstractmethod
 
 

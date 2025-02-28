@@ -5,12 +5,13 @@ import subprocess
 import turbigen.util
 import turbigen.yaml
 import turbigen.slurm
-import turbigen.run
+import turbigen.run2
 import socket
 import shutil
 import sys
 import os
 import turbigen.config
+import turbigen.config2
 import datetime
 import argparse
 
@@ -136,7 +137,6 @@ def main():
 
             # Jump to solver slave process if not first rank
             if rank > 0:
-
                 from turbigen.solvers import embsolve
 
                 embsolve.run_slave()
@@ -171,7 +171,37 @@ def main():
         subprocess.run([f"{editor}", f"{working_config}"])
 
     # Now read into a configuration object proper
-    conf = turbigen.config.Config.read(working_config)
+    conf = turbigen.yaml.read_yaml(working_config)
+    conf = turbigen.config2.TurbigenConfig(**conf)
+
+    # Set up logging to file
+    if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    log_path = conf.workdir / "log_turbigen.txt"
+    logger.setLevel(level=log_level)
+    fh = logging.FileHandler(log_path)
+    fh.setLevel(log_level)
+    logger.addHandler(fh)
+
+    # Print banner
+    logger.iter(f"TURBIGEN v{turbigen.__version__}")
+    logger.iter(
+        f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
+    )
+    logger.iter(f"Working directory: {workdir}")
+
+    # Backup the source files for later reproduction
+    turbigen.util.save_source_tar_gz(conf.workdir / "src.tar.gz")
+
+    # Run the config
+    success = turbigen.run2.run(conf)
+
+    if not success:
+        sys.exit(1)
+
+    quit()
 
     # Apply command-line overrides to the config
     if args.no_iteration:
@@ -198,7 +228,6 @@ def main():
 
     # Hypercubes are always jobs
     if conf.hypercube:
-
         if not conf.job:
             raise Exception("Need job submission configured to run a hypercube.")
 
@@ -222,7 +251,6 @@ def main():
         success = True
 
     else:
-
         # Determine whether to try to run job or not
         hostname = socket.gethostname()
         job_flag = True

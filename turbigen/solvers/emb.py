@@ -13,7 +13,7 @@ from timeit import default_timer as timer
 import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
-from turbigen.solvers.base import BaseSolver, ConvergenceHistory
+from turbigen.solver import BaseSolver, ConvergenceHistory
 from turbigen.solvers.embsolvec import embsolve
 
 util = turbigen.util
@@ -44,7 +44,7 @@ def get_memory_usage():
 
 
 @dataclass
-class Config(BaseSolver):
+class Emb(turbigen.solver.BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
@@ -117,6 +117,157 @@ class Config(BaseSolver):
 
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
+
+    def robust(self):
+        """Create a copy of the config with more robust settings."""
+        return self.replace(
+            damping_factor=10.0,
+            smooth2=1.0,
+            smooth4_adapt=0.02,
+            fmgrid=0.0,
+        )
+
+    def run(self, grid, conf, machine):
+        logger.info(
+            f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
+        )
+
+        del machine
+        conf = self
+
+        if conf.workdir:
+            soln_path = os.path.join(conf.workdir, "soln.npz")
+            if conf.skip:
+                if os.path.exists(soln_path):
+                    logger.info("Skipping, loading existing solution.")
+                    dat = np.load(soln_path)
+                    cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
+                    for b, c in zip(grid, cons):
+                        b.set_conserved(c)
+                else:
+                    logger.info("Skipping, no saved solution fount, doing nothing.")
+                return
+
+        logger.info("Initialising native solver...")
+        t1 = timer()
+
+        nodes = np.sum([b.size for b in grid])
+
+        # Select precision
+        if conf.precision == 1:
+            typ = np.float32
+        else:
+            typ = np.float64
+
+        blocks = [SolverBlock(b, conf) for b in grid]
+        for ib, b in enumerate(blocks):
+            b.bid = ib
+
+        logger.info(f"Patitioning onto {size} processors...")
+        # procids is a list of length nblocks, of which processor is alocated to each block
+        procids = grid.partition(size)
+        periodics = get_periodics(grid, procids, typ)
+        mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
+
+        # Split into lists for each procid
+        block_split = []
+        for iproc in range(size):
+            block_split.append([])
+            for ib, b in enumerate(blocks):
+                if iproc == procids[ib]:
+                    block_split[-1].append(b)
+
+        t2 = timer()
+        logger.info(f"Elapsed time {t2 - t1:.2f}s")
+
+        if comm:
+            logger.info("Sending data to processors...")
+            tst = timer()
+            send_slave(block_split, procids, periodics, mixers)
+            ten = timer()
+            logger.info(f"Elapsed time {ten - tst:.2f}s")
+
+        logger.info("Starting the main time-stepping loop...")
+        block_split[0], mixers_out, tpnps, dUlog = run_slave(
+            block_split[0], periodics, mixers, nodes
+        )
+
+        logger.info("Recieving data from processors...")
+        tst = timer()
+        for iproc in range(1, size):
+            block_split[iproc] = comm.recv(source=iproc)
+        ten = timer()
+        logger.info(f"Elapsed time {ten - tst:.2f}s")
+
+        blocks_out = []
+        for bsi in block_split:
+            blocks_out.extend(bsi)
+
+        isort = np.argsort([b.bid for b in blocks_out])
+        blocks_out = [blocks_out[i] for i in isort]
+
+        # Write the conserved vars to an npz
+        if conf.workdir:
+            os.makedirs(conf.workdir, exist_ok=True)
+            logger.info(f"Writing output to {soln_path}")
+            dat_out = {
+                f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
+                for ib, b in enumerate(blocks_out)
+            }
+            np.savez(
+                soln_path,
+                **dat_out,
+            )
+
+        # Assemble a convergence history
+        mhos = np.full(
+            (
+                2,
+                3,
+                conf.n_step,
+            ),
+            np.nan,
+        )
+        nnow = conf.n_step
+        for b in blocks_out:
+            for bc in b.bconds:
+                mhos_now = np.array(bc.convergence_log).T
+                nnow = mhos_now.shape[-1]
+                if isinstance(bc, InletBoundary):
+                    mhos[0, :, :nnow] = mhos_now
+                elif isinstance(bc, OutletBoundary):
+                    mhos[1, :, :nnow] = mhos_now
+
+        istep = np.arange(conf.n_step)
+        istep_avg = conf.n_step - conf.n_step_avg
+        resid = np.concatenate(dUlog, axis=0)[:, 0]
+        state_conv = blocks_out[0].state.empty(shape=(2, nnow))
+        state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+        conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+        conv.tpnps = tpnps
+
+        for b, sb in zip(grid, blocks_out):
+            cons_avg = np.moveaxis(sb.cons_avg, -1, 0)
+            b.set_conserved(cons_avg)
+
+        mdot_in = 0.0
+        for patch in grid.inlet_patches:
+            Cm, A, _ = patch.get_cut().mix_out()
+            mdot_in += Cm.rho * Cm.Vm * A
+
+        mdot_out = 0.0
+        for patch in grid.outlet_patches:
+            Cm, A, _ = patch.get_cut().mix_out()
+            mdot_out += Cm.rho * Cm.Vm * A
+
+        if not mdot_out == 0.0:
+            merr = mdot_in / mdot_out - 1.0
+            logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
+            logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
+        else:
+            merr = -1.0
+
+        return conv  # , tpnps, merr
 
 
 class SolverBlock:
@@ -939,149 +1090,6 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     else:
         comm.send(blocks, dest=0)
         comm.send(mixers, dest=0)
-
-
-def run(grid, conf, machine=None):
-    logger.info(
-        f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
-    )
-
-    if isinstance(conf, dict):
-        conf = Config(**conf)
-
-    if conf.workdir:
-        soln_path = os.path.join(conf.workdir, "soln.npz")
-        if conf.skip:
-            if os.path.exists(soln_path):
-                logger.info("Skipping, loading existing solution.")
-                dat = np.load(soln_path)
-                cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
-                for b, c in zip(grid, cons):
-                    b.set_conserved(c)
-            else:
-                logger.info("Skipping, no saved solution fount, doing nothing.")
-            return
-
-    logger.info("Initialising native solver...")
-    t1 = timer()
-
-    nodes = np.sum([b.size for b in grid])
-
-    # Select precision
-    if conf.precision == 1:
-        typ = np.float32
-    else:
-        typ = np.float64
-
-    blocks = [SolverBlock(b, conf) for b in grid]
-    for ib, b in enumerate(blocks):
-        b.bid = ib
-
-    logger.info(f"Patitioning onto {size} processors...")
-    # procids is a list of length nblocks, of which processor is alocated to each block
-    procids = grid.partition(size)
-    periodics = get_periodics(grid, procids, typ)
-    mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
-
-    # Split into lists for each procid
-    block_split = []
-    for iproc in range(size):
-        block_split.append([])
-        for ib, b in enumerate(blocks):
-            if iproc == procids[ib]:
-                block_split[-1].append(b)
-
-    t2 = timer()
-    logger.info(f"Elapsed time {t2 - t1:.2f}s")
-
-    if comm:
-        logger.info("Sending data to processors...")
-        tst = timer()
-        send_slave(block_split, procids, periodics, mixers)
-        ten = timer()
-        logger.info(f"Elapsed time {ten - tst:.2f}s")
-
-    logger.info("Starting the main time-stepping loop...")
-    block_split[0], mixers_out, tpnps, dUlog = run_slave(
-        block_split[0], periodics, mixers, nodes
-    )
-
-    logger.info("Recieving data from processors...")
-    tst = timer()
-    for iproc in range(1, size):
-        block_split[iproc] = comm.recv(source=iproc)
-    ten = timer()
-    logger.info(f"Elapsed time {ten - tst:.2f}s")
-
-    blocks_out = []
-    for bsi in block_split:
-        blocks_out.extend(bsi)
-
-    isort = np.argsort([b.bid for b in blocks_out])
-    blocks_out = [blocks_out[i] for i in isort]
-
-    # Write the conserved vars to an npz
-    if conf.workdir:
-        os.makedirs(conf.workdir, exist_ok=True)
-        logger.info(f"Writing output to {soln_path}")
-        dat_out = {
-            f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
-            for ib, b in enumerate(blocks_out)
-        }
-        np.savez(
-            soln_path,
-            **dat_out,
-        )
-
-    # Assemble a convergence history
-    mhos = np.full(
-        (
-            2,
-            3,
-            conf.n_step,
-        ),
-        np.nan,
-    )
-    nnow = conf.n_step
-    for b in blocks_out:
-        for bc in b.bconds:
-            mhos_now = np.array(bc.convergence_log).T
-            nnow = mhos_now.shape[-1]
-            if isinstance(bc, InletBoundary):
-                mhos[0, :, :nnow] = mhos_now
-            elif isinstance(bc, OutletBoundary):
-                mhos[1, :, :nnow] = mhos_now
-
-    istep = np.arange(conf.n_step)
-    istep_avg = conf.n_step - conf.n_step_avg
-    resid = np.concatenate(dUlog, axis=0)[:, 0]
-    state_conv = blocks_out[0].state.empty(shape=(2, nnow))
-    state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
-    conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
-    conv.tpnps = tpnps
-
-    for b, sb in zip(grid, blocks_out):
-        cons_avg = np.moveaxis(sb.cons_avg, -1, 0)
-        b.set_conserved(cons_avg)
-
-    mdot_in = 0.0
-    for patch in grid.inlet_patches:
-        Cm, A, _ = patch.get_cut().mix_out()
-        mdot_in += Cm.rho * Cm.Vm * A
-
-    mdot_out = 0.0
-    for patch in grid.outlet_patches:
-        Cm, A, _ = patch.get_cut().mix_out()
-        mdot_out += Cm.rho * Cm.Vm * A
-
-    if not mdot_out == 0.0:
-        merr = mdot_in / mdot_out - 1.0
-        logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
-        logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
-    else:
-        merr = -1.0
-
-    return conv  # , tpnps, merr
 
 
 def arange_including_end(ni, di):

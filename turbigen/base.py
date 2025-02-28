@@ -1724,10 +1724,30 @@ class MeanLine:
     def ARflow(self):
         return self.Aflow[1:] / self.Aflow[:-1]
 
+    def warn(self):
+        """Print a warning if there are any suspicious values."""
+
+        # Warn for very high flow angles
+        if np.abs(self.Alpha_rel).max() > 85.0:
+            logger.warning(
+                """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+            )
+
+        # Warn for wobbly annulus
+        is_radial = np.abs(self.Beta).max() > 10.0
+        is_multirow = len(self.x) > 2
+        if is_radial and is_multirow:
+            if np.diff(np.sign(np.diff(self.rrms))).any():
+                logger.warning(
+                    """WARNING: Radii do not vary monotonically.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+                )
+
     def check(self):
         # """Assert that conserved quantities are in fact conserved"""
-
-        logger.info("Checking mean-line conservation...")
 
         check_failed = False
 
