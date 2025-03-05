@@ -1,6 +1,7 @@
 """Entry point for running turbigen from the shell."""
 
 import logging
+import numpy as np
 import subprocess
 import turbigen.util
 import turbigen.yaml
@@ -195,8 +196,17 @@ def main():
     # Backup the source files for later reproduction
     turbigen.util.save_source_tar_gz(conf.workdir / "src.tar.gz")
 
+    np.set_printoptions(precision=3, suppress=True)
+
     # Run the config
-    success = turbigen.run2.run(conf)
+    print(conf.to_dict()["grid"])
+    success = conf.design_and_run()
+    print(conf.grid)
+    conf.save("test2.yaml")
+    conf2 = turbigen.config2.TurbigenConfig(
+        **turbigen.yaml.read_yaml(conf.workdir / "test2.yaml")
+    )
+    print(conf2.grid)
 
     if not success:
         sys.exit(1)

@@ -97,10 +97,6 @@ class Taylor(BaseThickness):
     def _coeff(self):
         """Coefficients for piecewise polynomials in shape space."""
 
-        # Skip if we have already fitted polynomials for current params
-        if self._use_cache and (hash(self) in self._coeff_cache):
-            return self._coeff_cache[hash(self)]
-
         # Evaluate control points
         sle = np.sqrt(2.0 * self.R_LE)
         t_te = self.t_te
@@ -195,7 +191,7 @@ class Taylor(BaseThickness):
         tau[s > self.s_tmax] = np.polyval(coeff_rear, s[s > self.s_tmax])
         return tau
 
-    def t(self, m):
+    def thick(self, m):
         r"""Thickness as function of normalised meridional distance.
 
         Parameters

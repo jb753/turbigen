@@ -1422,7 +1422,7 @@ def get_subclass_by_name(cls, name):
     for subclass in cls.__subclasses__():
         # Check if the subclass name matches the input name
         subname = camel_to_snake(subclass.__name__)
-        if subname == name:
+        if subname == name or subname.replace("_", "") == name:
             return subclass
 
     # If no subclass matches the input name, raise an error
@@ -1517,3 +1517,16 @@ class BaseDesigner(ABC):
     @abstractmethod
     def forward(*args, **kwargs):
         raise NotImplementedError
+
+
+def xrt_to_xrrt(xrt):
+    x, r, t = xrt
+    return np.stack((x, r, r * t))
+
+
+def format_sf(x, sig=3):
+    return f"{x:.{sig}g}"
+
+
+def format_array(x, precision=3):
+    return "[" + ", ".join(format_sf(xi, precision) for xi in x) + "]"

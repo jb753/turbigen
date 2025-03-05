@@ -127,7 +127,7 @@ class Emb(turbigen.solver.BaseSolver):
             fmgrid=0.0,
         )
 
-    def run(self, grid, conf, machine):
+    def run(self, grid, machine):
         logger.info(
             f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )

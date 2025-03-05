@@ -2,6 +2,7 @@
 
 import dataclasses
 from abc import ABC, abstractmethod
+import numpy as np
 
 
 class BladeNumberConfig(ABC):
@@ -25,6 +26,33 @@ class Nb(BladeNumberConfig):
         del mean_line, blade
         """Return the fixed number of blades."""
         return self.Nb
+
+
+@dataclasses.dataclass
+class Co(BladeNumberConfig):
+    """Use non-dimensional circulation to set number of blades."""
+
+    Co: float
+    """Circulation coefficient [--]."""
+
+    spf: float = 0.5
+    """Span fraction to take surface length from."""
+
+    def get_blade_number(self, mean_line, blade):
+        # Surface length of blade from geometry
+        ell = blade.surface_length(self.spf)
+
+        # Pitch to surface length ratio from mean line
+        s_ell = mean_line.s_ell(self.Co)
+        s = s_ell * ell
+
+        # Take reference radius to be mean of LE and TE rrms
+        rref = np.mean(mean_line.rrms)
+
+        # Number of blades
+        Nb = np.round(2.0 * np.pi * rref / s)
+
+        return Nb
 
 
 # @dataclasses.dataclass

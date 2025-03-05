@@ -5,45 +5,6 @@ import dataclasses
 import numpy as np
 
 
-@dataclasses.dataclass
-class BaseSolver(ABC):
-    """Base class for flow solvers."""
-
-    skip: bool = False
-    """False to run the CFD as normal, True to write out initial guess and read
-    back in, or use a previous solution if available."""
-
-    soft_start: bool = False
-    """Run a robust initial guess solution first, then restart."""
-
-    def replace(self, **kwargs):
-        return dataclasses.replace(self, **kwargs)
-
-    @abstractmethod
-    def robust(self):
-        """Create a copy of the config with more robust settings."""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def run(self, grid, machine):
-        """Run the solver on the given grid and machine geometry.
-
-        Parameters
-        ----------
-        grid:
-            Grid object.
-        machine:
-            Machine geometry object.
-
-        Returns
-        -------
-        conv: ConvergenceHistory
-            The time-marching convergence history of the flow solution.
-
-        """
-        raise NotImplementedError
-
-
 class ConvergenceHistory:
     def __init__(self, istep, istep_avg, resid, mdot, state):
         """Store simulation convergence history.
@@ -75,3 +36,45 @@ class ConvergenceHistory:
     @property
     def err_mdot(self):
         return self.mdot[1] / self.mdot[0] - 1.0
+
+
+@dataclasses.dataclass
+class BaseSolver(ABC):
+    """Base class for flow solvers."""
+
+    skip: bool = False
+    """False to run the CFD as normal, True to write out initial guess and read
+    back in, or use a previous solution if available."""
+
+    soft_start: bool = False
+    """Run a robust initial guess solution first, then restart."""
+
+    convergence: ConvergenceHistory = None
+    """Storage for convergence history."""
+
+    def replace(self, **kwargs):
+        return dataclasses.replace(self, **kwargs)
+
+    @abstractmethod
+    def robust(self):
+        """Create a copy of the config with more robust settings."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def run(self, grid, machine):
+        """Run the solver on the given grid and machine geometry.
+
+        Parameters
+        ----------
+        grid:
+            Grid object.
+        machine:
+            Machine geometry object.
+
+        Returns
+        -------
+        conv: ConvergenceHistory
+            The time-marching convergence history of the flow solution.
+
+        """
+        raise NotImplementedError

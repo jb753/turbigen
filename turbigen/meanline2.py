@@ -11,6 +11,8 @@ class MeanLineDesigner(util.BaseDesigner):
 
     _supplied_design_vars = "So1"
 
+    nominal: None
+
     rtol: float = 0.05
     atol: float = 0.01
 
@@ -26,9 +28,9 @@ class MeanLineDesigner(util.BaseDesigner):
         """Calculate design variables from mean line flow field."""
         raise NotImplementedError
 
-    def get_mean_line(self, So1):
+    def setup_mean_line(self, So1):
         """Calculate the nominal mean line flow field from stored design variables."""
-        return turbigen.flowfield.make_mean_line(
+        self.nominal = turbigen.flowfield.make_mean_line(
             *self.forward(So1=So1, **self.design_vars)
         )
 

@@ -64,12 +64,13 @@ class H(turbigen.mesh.Mesher):
 
     yplus: float = np.nan
 
-    def make_grid(self, mac, dhub, dcas, dsurf, unbladed):
+    def make_grid(self, workdir, mac, dhub, dcas, dsurf):
         """Generate a Grid object for a machine geometry."""
 
         logger.info("Generating an H-mesh...")
 
         mesh_config = self
+        unbladed = [False for _ in range(mac.Nrow)]
 
         if dsurf.shape[0] == 1:
             dsurf = np.tile(dsurf, (2, 1))
@@ -186,7 +187,7 @@ class H(turbigen.mesh.Mesher):
             elif mesh_config.dm_TE:
                 tte = 1.0 - mesh_config.dm_TE
             else:
-                xrt_u, xrt_l = mac.bld[irow].evaluate_section(0.5)
+                xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(0.5)
                 mlim_now = np.array((0, 1))
                 tq = np.linspace(0.8, 1.0, 500)
                 _, _, tte = _theta_limits(tq, xrt_u, xrt_l, mlim_now)
@@ -234,10 +235,7 @@ class H(turbigen.mesh.Mesher):
                 -1, 1
             ) * spfr + stream_frac_hub.reshape(-1, 1) * (1.0 - spfr)
             for j in range(nj):
-                if unbladed[irow]:
-                    mlim_now = (0, 1)
-                else:
-                    mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
+                mlim_now = (0, 1)
                 stream_frac_span[:, j] = np.interp(
                     stream_frac_span[:, j],
                     [-1, 0, 1, 2],
@@ -262,7 +260,7 @@ class H(turbigen.mesh.Mesher):
             if unbladed[irow]:
                 pass
             else:
-                Theta = mac.bld[irow].get_chi(0.5)
+                Theta = mac.bld[irow][0].get_chi(0.5)
 
             # Loop over spans and get the angular limits from blade section
             if unbladed[irow]:
@@ -367,7 +365,7 @@ class H(turbigen.mesh.Mesher):
                 for j in range(nj):
                     nchord = 5000
                     m = util.cluster_cosine(nchord)
-                    xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j], m=m)
+                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
 
                     assert np.all(xrt_u[2] >= xrt_l[2])
 
@@ -395,7 +393,7 @@ class H(turbigen.mesh.Mesher):
                     #
                     # Get tte of current section and warp the streamwise grid
                     # vector to locate trailing edge exactly
-                    mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
+                    mlim_now = (0, 1)
 
                     stream_frac_now = stream_frac_span[:, j]
                     xr[..., j] = mac.ann.evaluate_xr(

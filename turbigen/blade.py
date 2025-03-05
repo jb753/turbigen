@@ -7,6 +7,8 @@ import turbigen.camber
 import turbigen.thickness
 import turbigen.thickness
 
+logger = turbigen.util.make_logger()
+
 
 @dataclasses.dataclass
 class BladeDesigner:
@@ -32,6 +34,12 @@ class BladeDesigner:
 
     vortex_expon: float = -1.0
     """Spanwise swirl distribution, Vt ~ r**vortex_expon."""
+
+    theta_offset: float = 0.0
+    """Rotate the blade through this angle."""
+
+    mstack: float = 0.5
+    """Stack the blades at this normalised meridional distance."""
 
     def __post_init__(self):
         # self.number = util.init_subclass_by_signature(
@@ -82,6 +90,132 @@ class BladeDesigner:
         On exit from this function, q_camber[:2] are the local tanchi values.
 
         """
+        # Calculate the local flow angles
+        Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+        # Add the recamber angles to get the local angle
+        chi = Alpha_rel + self.q_camber[:, :2]
+        if np.any(np.abs(chi) > 90.0):
+            raise Exception(f"Cannot set a blade angle over 90 degrees! chi={chi}")
+        if np.any(np.abs(chi) > 80.0):
+            logger.warning(
+                f"WARNING: High blade angles may cause meshing problems: chi={chi}"
+            )
+        # Take the tangent and store in the class
+        self.q_camber[:, :2] = util.tand(chi)
+
+    def get_chi(self, spf):
+        """Interpolate metal angles at a given span fraction."""
+        cam, _ = self._get_camber_thickness(spf)
+        return cam.chi((0.0, 1.0))
 
     def undo_recamber(self, mean_line):
         """Convert the stored tanchi back to recamber angles."""
+        Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+        # Subtract the local flow angles to get the recamber angles
+        # After taking the arctangent
+        self.q_camber[:, :2] = util.atand(self.q_camber[:, :2]) - Alpha_rel
+
+    def set_streamsurface(self, streamsurface):
+        self.streamsurface = streamsurface
+
+    @property
+    def nsect(self):
+        return len(self.spf)
+
+    def _get_camber_thickness(self, spf):
+        # Create thickness and camber lines
+        if len(self.spf) == 1:
+            # Constant values
+            thick = self.thick_type(self.q_thick[0])
+            cam = self.camber_type(self.q_camber[0])
+        else:
+            # Interpolate the parameters
+            qcam = util.interp1d_linear_extrap(self.spf, self.q_camber)
+            qthick = util.interp1d_linear_extrap(self.spf, self.q_thick)
+
+            thick = self.thick_type(qthick(spf).reshape(-1))
+            cam = self.camber_type(qcam(spf).reshape(-1))
+
+        return cam, thick
+
+    def evaluate_section(self, spf, nchord=10000, m=None):
+        """Coordinates of upper and lower surfaces at one span fraction."""
+
+        cam, thick = self._get_camber_thickness(spf)
+
+        # Evaluate midspan meridional chord
+        if m is None:
+            m = util.cluster_cosine(nchord)
+
+        # Get coordinates of the streamsurface to put this section on
+        dydm = cam.dydm(m)
+        chi = np.arctan(dydm)
+        tau = thick.thick(m)
+
+        # Calculate offsets for perpendicular thickness in b2b plane
+        Dm = -tau * np.sin(chi)
+        Dy = tau * np.cos(chi)
+
+        # Meridional positions for upper and lower surfaces
+        mu = m + Dm
+        ml = m - Dm
+
+        # We need to convert the camber line meridional positions into LE/TE
+        # meridional positions.
+        mcam_LE = np.min((mu.min(), ml.min()))
+        mcam_TE = np.max((mu.max(), ml.max()))
+        mcam_ptp = mcam_TE - mcam_LE
+        mu_LTE = (mu - mcam_LE) / mcam_ptp
+        ml_LTE = (ml - mcam_LE) / mcam_ptp
+        mcam = (m - mcam_LE) / mcam_ptp
+        chord_full = util.arc_length(self.streamsurface(0.5, mcam))
+
+        # now remap to mlim
+        mlim = np.array([0.0, 1.0])
+        mu_LTE = mlim[0] + np.ptp(mlim) * mu_LTE
+        ml_LTE = mlim[0] + np.ptp(mlim) * ml_LTE
+        mcam = mlim[0] + np.ptp(mlim) * mcam
+        chord = util.arc_length(self.streamsurface(0.5, mcam))
+
+        # Find coordinates on stream surface of upper/lower/camber points
+        xru = self.streamsurface(spf, mu_LTE)
+        xrl = self.streamsurface(spf, ml_LTE)
+        xr = self.streamsurface(spf, mcam)
+
+        # Project camber angle onto streamsurface
+        theta = util.cumtrapz0(dydm / xr[1], mcam * chord_full)
+
+        # Stack so that camber theta=0 at the stacking point
+        theta -= self.mstack
+
+        # Add on the whole blade angular offset
+        theta += self.theta_offset
+        # theta += util.interp1d_linear_extrap(self.spf, self.dtheta)(spf)
+
+        # Change in theta if r were constant
+        dtu = Dy * chord / xr[1]
+        dtl = -Dy * chord / xr[1]
+
+        # Change in rtheta at the average radius between camber and surf
+        drtu = dtu * 0.5 * (xr[1] + xru[1])
+        drtl = dtl * 0.5 * (xr[1] + xrl[1])
+
+        xrrtu = np.stack((*xru, theta * xru[1] + drtu))
+        xrrtl = np.stack((*xrl, theta * xrl[1] + drtl))
+
+        xrtu = xrrtu + 0.0
+        xrtu[2] /= xrtu[1]
+
+        xrtl = xrrtl + 0.0
+        xrtl[2] /= xrtl[1]
+
+        return xrtu, xrtl
+
+    def surface_length(self, spf):
+        """Suction surface length."""
+        xrtu, xrtl = self.evaluate_section(spf)
+        xrrtu = np.stack((*xrtu[:2],) + (xrtu[1] * xrtu[2],))
+        xrrtl = np.stack((*xrtl[:2],) + (xrtl[1] * xrtl[2],))
+        Lu = util.arc_length(xrrtu)
+        Ll = util.arc_length(xrrtl)
+        return np.maximum(Lu, Ll)

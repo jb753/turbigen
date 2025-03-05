@@ -56,3 +56,10 @@ def run(conf):
     times.append(timer())
     annulus = conf.annulus.get_annulus(mean_line_nominal)
     times.append(timer())
+
+    # Blade design
+    logger.info("Designing blades...")
+    for irow, row in enumerate(conf.blades):
+        for blade in row:
+            blade.apply_recamber(mean_line_nominal)
+            blade.set_streamsurface(annulus.xr_row(irow))

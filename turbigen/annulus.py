@@ -69,10 +69,9 @@ class AnnulusDesigner(util.BaseDesigner):
         """
         raise NotImplementedError
 
-    def get_annulus(self, mean_line):
+    def setup_annulus(self, mean_line):
         """Setup the annulus using coordinates from a mean line."""
         self.forward(mean_line.rmid, mean_line.span, mean_line.Beta, **self.design_vars)
-        return self
 
     @property
     @abstractmethod
