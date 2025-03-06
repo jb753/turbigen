@@ -37,6 +37,16 @@ class ConvergenceHistory:
     def err_mdot(self):
         return self.mdot[1] / self.mdot[0] - 1.0
 
+    def to_dict(self):
+        return {
+            "istep": self.istep.tolist(),
+            "istep_avg": self.istep_avg,
+            "mdot": self.mdot.tolist(),
+            "resid": self.resid.tolist(),
+            "rho": self.state.rho.tolist(),
+            "u": self.state.u.tolist(),
+        }
+
 
 @dataclasses.dataclass
 class BaseSolver(ABC):
@@ -61,6 +71,11 @@ class BaseSolver(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def restart(self):
+        """Create a copy of the config with settings to restart from converged soln."""
+        raise NotImplementedError()
+
+    @abstractmethod
     def run(self, grid, machine):
         """Run the solver on the given grid and machine geometry.
 
@@ -78,3 +93,31 @@ class BaseSolver(ABC):
 
         """
         raise NotImplementedError
+
+    def setup_convergence(self, state):
+        """Convert convergence history to an object, if needed."""
+        if isinstance(self.convergence, dict):
+            nstep = len(self.convergence["istep"])
+            state = state.copy().empty(
+                (
+                    2,
+                    nstep,
+                )
+            )
+            rho = self.convergence.pop("rho")
+            u = self.convergence.pop("u")
+            state.set_rho_u(rho, u)
+            self.convergence = ConvergenceHistory(**self.convergence, state=state)
+            self.convergence.istep = np.array(self.convergence.istep)
+            self.convergence.mdot = np.array(self.convergence.mdot)
+            self.convergence.resid = np.array(self.convergence.resid)
+
+    def to_dict(self):
+        # Built in dataclasses.asdict() gets us most of way
+        d = dataclasses.asdict(self)
+
+        # Convert the convergence history to a dictionary
+        if self.convergence is not None:
+            d["convergence"] = self.convergence.to_dict()
+
+        return d

@@ -143,6 +143,7 @@ class TurbigenConfig:
         data["mesh"]["type"] = util.camel_to_snake(self.mesh.__class__.__name__)
 
         # Restore the solver type
+        data["solver"] = self.solver.to_dict()
         data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
 
         # If no acutal meanline, remove it
@@ -217,17 +218,18 @@ class TurbigenConfig:
         self.solver = Solver(**self.solver)
 
         # Convert iterator dicts to Config objects
-        iters = []
-        for k, v in self.iterate.items():
-            # Find a subclass for this iterator
-            cls = util.get_subclass_by_name(turbigen.iterators.IteratorConfig, k)
-            if v:
-                # Pass the dictionary to the subclass
-                iters.append(cls(**v))
-            # Null content implies all defaults
-            else:
-                iters.append(cls())
-        self.iterate = iters
+        if self.iterate:
+            iters = []
+            for k, v in self.iterate.items():
+                # Find a subclass for this iterator
+                cls = util.get_subclass_by_name(turbigen.iterators.IteratorConfig, k)
+                if v:
+                    # Pass the dictionary to the subclass
+                    iters.append(cls(**v))
+                # Null content implies all defaults
+                else:
+                    iters.append(cls())
+            self.iterate = iters
 
         # Check the iterators
         for iterator in self.iterate:
@@ -370,8 +372,18 @@ class TurbigenConfig:
             # Apply recamber, set meridional locations for
             # main and splitters
             for blade in row:
-                blade.apply_recamber(self.mean_line.nominal)
+                # blade.apply_recamber(self.mean_line.nominal)
                 blade.set_streamsurface(self.annulus.xr_row(irow))
+
+        # Choose whether the blocks are real or perfect
+        So1 = self.inlet.get_inlet()
+        g = self.grid
+        if isinstance(So1, turbigen.fluid.PerfectState):
+            self.grid = turbigen.grid.Grid([b.to_perfect() for b in g])
+        elif isinstance(So1, turbigen.fluid.RealState):
+            self.grid = turbigen.grid.Grid([b.to_real() for b in g])
+        else:
+            raise Exception("Unrecognised inlet state type")
 
     def get_machine(self):
         return turbigen.geometry.Machine(
@@ -406,25 +418,17 @@ class TurbigenConfig:
         self.grid.apply_outlet(self.mean_line.nominal.P[-1])
 
     def apply_guess(self):
-        # Choose whether the blocks are real or perfect
-        So1 = self.inlet.get_inlet()
-        g = self.grid
-        if isinstance(So1, turbigen.fluid.PerfectState):
-            self.grid = turbigen.grid.Grid([b.to_perfect() for b in g])
-        elif isinstance(So1, turbigen.fluid.RealState):
-            self.grid = turbigen.grid.Grid([b.to_real() for b in g])
-        else:
-            raise Exception("Unrecognised inlet state type")
-
-        # Apply crude guess from mean_line
-        self.grid.apply_guess_meridional(
-            self.mean_line.nominal.interpolate_guess(self.annulus)
-        )
-
         # Apply 3D guess if available
         if self.guess:
-            g.apply_guess_3d(self.guess)
-            g.update_outlet()
+            logger.info("Applying 3D guess...")
+            self.grid.apply_guess_3d(self.guess)
+            self.grid.update_outlet()
+        else:
+            # Apply crude guess from mean_line
+            logger.info("Applying 2D guess...")
+            self.grid.apply_guess_meridional(
+                self.mean_line.nominal.interpolate_guess(self.annulus)
+            )
 
     def run_solver(self):
         self.solver.run(self.grid, self.get_machine)
@@ -574,17 +578,23 @@ class TurbigenConfig:
         self.get_mean_line_nominal()
         self.get_geometry()
         self.apply_recamber()
-        if self.Re_surf:
-            self.set_mu_from_Re_surf()
-        Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
-        logger.info(f"Re_surf={util.format_array(Re_surf)}")
-        self.setup_mesh()
-        self.undo_recamber()
-        self.apply_bconds()
-        self.apply_guess()
         if not self.skip:
+            if self.Re_surf:
+                self.set_mu_from_Re_surf()
+            Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
+            logger.info(f"Re_surf={util.format_array(Re_surf)}")
+            # If we already have a grid, use it as the guess
+            if self.grid:
+                self.guess = self.grid
+                self.solver = self.solver.restart()
+            self.setup_mesh()  # Overwrite self.grid with a new mesh
+            self.apply_bconds()
+            self.apply_guess()
             self.run_solver()
+        else:
+            self.solver.setup_convergence(self.mean_line.nominal)
         self.get_mean_line_actual()
+        self.undo_recamber()
         self.post_process_all()
 
     def step_iterate(self):
