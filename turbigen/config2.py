@@ -5,8 +5,11 @@ import numpy as np
 import pickle
 from pathlib import Path
 import turbigen.fluid
+import turbigen.flowfield
 import turbigen.meanline2
 import turbigen.solver
+import turbigen.iterators
+import turbigen.average
 import turbigen.grid
 import turbigen.geometry
 import turbigen.yaml
@@ -54,8 +57,28 @@ class TurbigenConfig:
     solver: turbigen.solver.BaseSolver
     """Settings for flow solution."""
 
+    iterate: List[turbigen.iterators.IteratorConfig] = dataclasses.field(
+        default_factory=list
+    )
+
+    max_iter: int = 20
+    """Maximum number of iterations to perform."""
+
+    """Settings for blade number selection."""
     grid: turbigen.grid.Grid = None
     guess: turbigen.grid.Grid = None
+
+    skip: bool = False
+
+    cut_offset: float = 0.02
+    """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
+
+    mean_line_actual: dict = dataclasses.field(default_factory=dict)
+
+    post_process: dict = dataclasses.field(default_factory=dict)
+
+    Re_surf: float = None
+    """Set viscosity using a Reynolds number."""
 
     @property
     def nrow(self):
@@ -81,11 +104,12 @@ class TurbigenConfig:
             else:
                 # Otherwise, save the grid to a separate pickle
                 # and replace the grid with the filename
-                fname = self.workdir / f"{k}.pkl"
-                pickle.dump(val, fname.open("wb"))
-                data[k] = str(fname)
+                fname_pkl = self.workdir / f"{k}.pkl"
+                pickle.dump(val, fname_pkl.open("wb"))
+                data[k] = str(fname_pkl)
 
         conf_fname = self.workdir / fname
+        logger.info(f"Saving configuration to {conf_fname}")
         turbigen.yaml.write_yaml(data, conf_fname)
 
         return conf_fname
@@ -120,6 +144,21 @@ class TurbigenConfig:
 
         # Restore the solver type
         data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
+
+        # If no acutal meanline, remove it
+        if not self.mean_line_actual:
+            del data["mean_line_actual"]
+
+        # If no iterators, remove it
+        if not self.iterate:
+            del data["iterate"]
+        # Otherwise, convert the iterators to a dictionary
+        else:
+            iters = {}
+            for iiter, iter in enumerate(self.iterate):
+                k = util.camel_to_snake(iter.__class__.__name__)
+                iters[k] = data["iterate"][iiter]
+            data["iterate"] = iters
 
         return data
 
@@ -177,9 +216,28 @@ class TurbigenConfig:
         Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
         self.solver = Solver(**self.solver)
 
-        # If a filename is present in the grid key, load and unpickle it
-        if self.grid:
-            self.grid = pickle.load((self.workdir / self._grid_fname).open("rb"))
+        # Convert iterator dicts to Config objects
+        iters = []
+        for k, v in self.iterate.items():
+            # Find a subclass for this iterator
+            cls = util.get_subclass_by_name(turbigen.iterators.IteratorConfig, k)
+            if v:
+                # Pass the dictionary to the subclass
+                iters.append(cls(**v))
+            # Null content implies all defaults
+            else:
+                iters.append(cls())
+        self.iterate = iters
+
+        # Check the iterators
+        for iterator in self.iterate:
+            iterator.check(self)
+
+        # If grid or guess is a filename, load and unpickle it
+        for k in ["grid", "guess"]:
+            val = getattr(self, k)
+            if isinstance(val, str):
+                setattr(self, k, pickle.load((self.workdir / f"{k}.pkl").open("rb")))
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
@@ -213,10 +271,8 @@ class TurbigenConfig:
         # Blade design
         logger.info("Designing blades...")
         for irow, row in enumerate(self.blades):
-            # Apply recamber, set meridional locations for
-            # main and splitters
+            # Set meridional locations
             for blade in row:
-                blade.apply_recamber(self.mean_line.nominal)
                 blade.set_streamsurface(self.annulus.xr_row(irow))
 
         self.check_pitch_chord()
@@ -257,13 +313,23 @@ class TurbigenConfig:
         )
         return Href * np.array([b[0].tip for b in self.blades])
 
-    def get_Re_surf(self):
-        # Find wall distances for each row
-        ell = np.array(
+    def apply_recamber(self):
+        # Apply recamber to the blades
+        for row in self.blades:
+            for blade in row:
+                blade.apply_recamber(self.mean_line.nominal)
+
+    def undo_recamber(self):
+        # Undo recamber to the blades
+        for row in self.blades:
+            for blade in row:
+                blade.undo_recamber(self.mean_line.nominal)
+
+    def get_ell(self):
+        """Find suction surface lengths for each row."""
+        return np.array(
             [self.blades[irow][0].surface_length(0.5) for irow in range(self.nrow)]
         )
-        Re_surf = ell / self.mean_line.nominal.L_visc
-        logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
     def setup_mesh(self):
         logger.info("Making mesh...")
@@ -298,6 +364,14 @@ class TurbigenConfig:
         #
         self.grid.check_coordinates()
         self.grid.calculate_wall_distance()
+
+        # Reset camber
+        for irow, row in enumerate(self.blades):
+            # Apply recamber, set meridional locations for
+            # main and splitters
+            for blade in row:
+                blade.apply_recamber(self.mean_line.nominal)
+                blade.set_streamsurface(self.annulus.xr_row(irow))
 
     def get_machine(self):
         return turbigen.geometry.Machine(
@@ -347,29 +421,203 @@ class TurbigenConfig:
             self.mean_line.nominal.interpolate_guess(self.annulus)
         )
 
+        # Apply 3D guess if available
         if self.guess:
             g.apply_guess_3d(self.guess)
+            g.update_outlet()
 
     def run_solver(self):
         self.solver.run(self.grid, self.get_machine)
+
+    def get_mean_line_actual(self):
+        """Extract the actual mean-line flow field by mixing out CFD result."""
+
+        # Find meridional coordinates of the cut planes
+        xr_cut = self.annulus.get_offset_planes(self.cut_offset)
+
+        # Take the cuts, form a list of [(Cmix, Amix, Dsmix)]
+        cuts = [
+            turbigen.average.mix_out_unstructured(
+                self.grid.unstructured_cut_marching(xri)
+            )
+            for xri in xr_cut
+        ]
+
+        # Unpack the list
+        Cmix, Amix, Dsmix = zip(*cuts)
+
+        # Stack the cuts to form a mean-line flow field
+        Call = turbigen.base.stack(Cmix)
+
+        # Copy Omega and Nb from nominal
+        Call.Omega = self.mean_line.nominal.Omega
+        Call.Nb = self.mean_line.nominal.Nb
+
+        # Assemble the meanline flowfield
+        self.mean_line.actual = turbigen.flowfield.make_mean_line_from_flowfield(
+            Amix, Call, Dsmix
+        )
+
+        # Back-calculate the design variables
+        self.mean_line_actual = self.mean_line.backward(self.mean_line.actual)
+
+    def calculate_design_var_errors(self):
+        """Calculate differences between nominal and actual design variables."""
+
+        # Absolute error (dict comprehension)
+        err = {
+            k: v - self.mean_line_actual[k]
+            for k, v in self.mean_line.design_vars.items()
+        }
+
+        # Relative error (dict comprehension, checking for zero nominal values)
+        rel_err = {
+            k: (v - self.mean_line_actual[k]) / v * 100.0 if np.all(v) else np.nan
+            for k, v in self.mean_line.design_vars.items()
+        }
+
+        # Make very small values zero
+        eps = 1e-6
+        for k, v in err.items():
+            if np.isscalar(v):
+                if np.abs(v) < eps:
+                    err[k] = 0.0
+            else:
+                err[k] = np.where(np.abs(v) < eps, 0.0, v)
+
+        for k, v in rel_err.items():
+            if np.isscalar(v):
+                if np.abs(v) < eps:
+                    rel_err[k] = 0.0
+            else:
+                rel_err[k] = np.where(np.abs(v) < eps, 0.0, v)
+
+        return err, rel_err
+
+    def format_design_vars_table(self):
+        """Format nominal and actual design variables for printing."""
+
+        # Initialise with header row
+        table = [["Variable", "Nominal", "Actual", "Err_abs", "Err_rel/%"]]
+
+        # Add rows for each design variable
+        err, rel_err = self.calculate_design_var_errors()
+        for k, v in self.mean_line.design_vars.items():
+            # Make very small values zero
+            if np.isscalar(v):
+                table.append(
+                    [
+                        k,
+                        f"{v:.3g}",
+                        f"{self.mean_line_actual[k]:.3g}",
+                        f"{err[k]:.3g}",
+                        f"{rel_err[k]:.3g}",
+                    ]
+                )
+            else:
+                # Each element of v is a row in the table
+                for i, vi in enumerate(v):
+                    table.append(
+                        [
+                            f"{k}[{i}]",
+                            f"{vi:.3g}",
+                            f"{self.mean_line_actual[k][i]:.3g}",
+                            f"{err[k][i]:.2g}",
+                            f"{rel_err[k][i]:.2g}",
+                        ]
+                    )
+
+        # Find column widths
+        ncol = len(table[0])
+        widths = np.array([max(len(str(row[i])) for row in table) for i in range(ncol)])
+
+        # Add padding
+        table_pad = [
+            "  ".join(f"{row[i]:>{widths[i]}}" for i in range(ncol)) for row in table
+        ]
+
+        # Add continuous separator after header
+        table_pad.insert(1, "-" * (sum(widths + 2) - 2))
+
+        # Add efficiency row
+        table_pad.append(
+            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt / 100.0:.1f}, eta_ts={self.mean_line.actual.eta_ts / 100:.1f}"
+        )
+
+        # Join the lines
+        table_pad = "\n".join(table_pad)
+
+        return table_pad
+
+    def set_mu_from_Re_surf(self):
+        ell = self.get_ell()
+        ml = self.mean_line.nominal
+        mu = (ml.rho_ref * ml.V_ref * ell)[0] / self.Re_surf
+        self.inlet.mu = mu
+        self.mean_line.nominal.mu = mu
 
     def design_and_run(self):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
             1. Get inlet state;
-            2. Design the meanline;
+            2. Design the nominal meanline;
             3. Design the annulus;
             4. Design the blades;
             5. Generate the mesh;
-            6. Run the flow solver;
+            6. Run the CFD solver;
+            7. Extract the actual meanline from CFD;
+            8. Calculate the actual design variables.
 
         """
 
         self.get_mean_line_nominal()
         self.get_geometry()
-        self.get_Re_surf()
+        self.apply_recamber()
+        if self.Re_surf:
+            self.set_mu_from_Re_surf()
+        Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
+        logger.info(f"Re_surf={util.format_array(Re_surf)}")
         self.setup_mesh()
+        self.undo_recamber()
         self.apply_bconds()
         self.apply_guess()
-        self.run_solver()
+        if not self.skip:
+            self.run_solver()
+        self.get_mean_line_actual()
+        self.post_process_all()
+
+    def step_iterate(self):
+        """Apply all iterators to the configuration."""
+
+        log_data = {}
+        converged = True
+
+        for iterator in self.iterate:
+            # Perform the update
+            conv_now, log_data_now = iterator.update(self)
+
+            # Update the overall convergence flag and log data
+            converged &= conv_now
+            log_data.update(log_data_now)
+
+        return converged, log_data
+
+    def post_process_all(self):
+        postdir = self.workdir / "post"
+        if not postdir.exists():
+            postdir.mkdir()
+
+        for post_name, post_conf in self.post_process.items():
+            logger.info(f"Running post function {post_name}")
+            post_func = util.load_post(post_name).post
+            if post_conf is None:
+                post_conf = {}
+            post_func(
+                self.grid,
+                self.get_machine(),
+                self.mean_line.actual,
+                self.solver.convergence,
+                postdir,
+                **post_conf,
+            )

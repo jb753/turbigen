@@ -14,6 +14,11 @@ class BladeNumberConfig(ABC):
     def to_dict(self):
         return dataclasses.asdict(self)
 
+    @abstractmethod
+    def adjust(self, dNb_rel):
+        """Adjust the blade number by a relative amount."""
+        raise NotImplementedError
+
 
 @dataclasses.dataclass
 class Nb(BladeNumberConfig):
@@ -26,6 +31,10 @@ class Nb(BladeNumberConfig):
         del mean_line, blade
         """Return the fixed number of blades."""
         return self.Nb
+
+    def adjust(self, dNb_rel):
+        """Adjust the blade number by a relative amount."""
+        self.Nb += int(dNb_rel * self.Nb)
 
 
 @dataclasses.dataclass
@@ -54,6 +63,10 @@ class Co(BladeNumberConfig):
 
         return Nb
 
+    def adjust(self, dNb_rel):
+        """Adjust the blade number by a relative amount."""
+        self.Co /= 1.0 + dNb_rel
+
 
 # @dataclasses.dataclass
 # class DiffusionFactorConfig:
@@ -68,24 +81,3 @@ class Co(BladeNumberConfig):
 #     dNb_dDF: float = 0.5
 #     """Factor to scale diffusion factor change to relative change in blade number."""
 #
-# def get_diffusion_factor(
-#     grid,
-#     machine,
-#     meanline,
-#     irow,
-#     conf,
-# ):
-#     """Calculate diffusion factor for a blade in the machine."""
-#
-#     zeta_norm, Cp = turbigen.util_post.get_pressure_distribution(
-#         grid, machine, meanline, irow, conf.spf
-#     )
-#
-#     # Calculate diffusion factor
-#     Cpmin = Cp.min()
-#     Cpmax = Cp.max()
-#     CpTE = 0.5 * (Cp[-1] + Cp[0]).item()
-#     DCpmin = Cpmin - Cpmax
-#     DCpTE = CpTE - Cpmax
-#     DF = 1.0 - np.sqrt(DCpTE / DCpmin)
-#     return DF

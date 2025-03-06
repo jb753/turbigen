@@ -700,7 +700,7 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
         surf = surfj.squeeze()
 
         # Get the current blade object
-        bldnow = machine.split[irow] if jbld else machine.bld[irow]
+        bldnow = machine.bld[irow][jbld]
 
         # Loop over span fractions
         # Unstructure cut through current surface along the

@@ -19,7 +19,7 @@ def make_mean_line(rrms, A, Omega, Vxrt, S):
     return ml_class.from_states(rrms, A, Omega, Vxrt, S)
 
 
-def make_mean_line_from_flowfield(A, F):
+def make_mean_line_from_flowfield(A, F, Ds_mix=0.0):
     """Assemble a perfect or real mean-line data structure from input states."""
     if isinstance(F, PerfectFlowField):
         ml_class = PerfectMeanLine
@@ -28,6 +28,7 @@ def make_mean_line_from_flowfield(A, F):
     else:
         raise Exception(f"Unknown fluid class {type(F)}")
     ml = ml_class.from_states(F.r, A, F.Omega, F.Vxrt, F, F.Nb)
+    ml.Ds_mix = Ds_mix
     ml._metadata.pop("patches")
     ml._metadata.pop("Nb")
     return ml
@@ -107,7 +108,7 @@ def mean_line_from_dict(d):
     elif d["class"] == "RealMeanLine":
         return RealMeanLine.from_dict(d)
     else:
-        raise Exception(f'Unrecognised mean line class {d["class"]}')
+        raise Exception(f"Unrecognised mean line class {d['class']}")
 
 
 def read_mean_line_database(database_file):

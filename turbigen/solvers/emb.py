@@ -267,7 +267,7 @@ class Emb(turbigen.solver.BaseSolver):
         else:
             merr = -1.0
 
-        return conv  # , tpnps, merr
+        self.convergence = conv  # , tpnps, merr
 
 
 class SolverBlock:

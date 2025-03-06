@@ -12,6 +12,7 @@ class MeanLineDesigner(util.BaseDesigner):
     _supplied_design_vars = "So1"
 
     nominal: None
+    actual: None
 
     rtol: float = 0.05
     atol: float = 0.01

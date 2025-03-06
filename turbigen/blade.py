@@ -108,6 +108,31 @@ class BladeDesigner:
         cam, _ = self._get_camber_thickness(spf)
         return cam.chi((0.0, 1.0))
 
+    def get_nose(self, spf):
+        """Get the nose of the aerofoil leading edge."""
+
+        # Make a meridional grid vector for just the le
+        m = util.cluster_cosine(500)
+        xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
+        xrtcam = np.mean(xrtul, axis=0)
+        xrtLE = xrtcam[:, 0].squeeze()
+
+        return xrtLE
+
+    def get_LE_cent(self, spf, fac_Rle=1.0):
+        """Get the centre of the leading edge."""
+
+        # Make a meridional grid vector for just the le
+        cam, thick = self._get_camber_thickness(spf)
+        Rle = thick.R_LE / fac_Rle
+        m = util.cluster_cosine(500)
+        xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
+        xrtul = xrtul[:, :, m < 2.0 * Rle]
+        xrtcam = np.mean(xrtul, axis=0)
+        xrtLE = xrtcam[:, np.argmax(m > Rle)]
+
+        return xrtLE
+
     def undo_recamber(self, mean_line):
         """Convert the stored tanchi back to recamber angles."""
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
