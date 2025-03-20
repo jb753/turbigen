@@ -5,7 +5,7 @@ import numpy as np
 import turbigen.compflow_native as cf
 import turbigen.fluid
 import turbigen.grid
-import turbigen.solvers.embsolve
+import turbigen.solvers.emb as embsolve
 import turbigen.util
 
 
@@ -135,17 +135,13 @@ def make_grid(use_inlet, use_outlet, use_mixing):
     return g
 
 
-conf = turbigen.solvers.embsolve.Config(n_step=100, n_step_avg=1)
-
-
 def test_outlet_CFL_0():
     """Without any update from the interior, outlet should force correct values."""
 
     g = make_grid(use_inlet=False, use_outlet=True, use_mixing=False)
     outlet_patch = g.outlet_patches[0]
 
-    conf = turbigen.solvers.embsolve.Config(n_step=1000, n_step_avg=1, CFL=0.0)
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
 
     C = outlet_patch.get_cut()
     assert np.isclose(C.P.mean(), outlet_patch.Pout)
@@ -156,8 +152,7 @@ def test_inlet_CFL_0():
 
     g = make_grid(use_inlet=True, use_outlet=False, use_mixing=False)
 
-    conf = turbigen.solvers.embsolve.Config(n_step=1000, n_step_avg=1, CFL=0.0)
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
 
     patch = g.inlet_patches[0]
     C = patch.get_cut()
@@ -173,66 +168,22 @@ def test_inlet_CFL_0():
 def test_CFL():
     """Does it nan immediately with non-zero CFL?"""
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=False)
-    conf = turbigen.solvers.embsolve.Config(
+    embsolve.Emb(
         n_step=2,
         n_step_avg=1,
-    )
-    turbigen.solvers.embsolve.run(g, conf)
+    ).run(g)
 
 
 def test_mixer():
+    """Does the mixing plane conserve pitchwise-integrated flows?"""
+
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    conf = turbigen.solvers.embsolve.Config(
-        # nstep_damp=-1,
+    embsolve.Emb(
         n_step=6000,
         n_step_log=100,
         n_step_avg=1000,
-    )
-    np.set_printoptions(precision=3)
-    turbigen.solvers.embsolve.run(g, conf)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # b = g[1]
-    # C = b[0, :, :]
-    # Vref = C.V.mean()
-    # Tref = C.T.mean()
-    # cm = ax.contourf(C.y, C.z, (C.ho - C.ho.mean()) / Vref**2)
-    # ax.set_title("ho")
-    # plt.colorbar(cm)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # cm = ax.contourf(C.y, C.z, (C.s - C.s.mean()) * Tref / Vref**2)
-    # ax.set_title("s")
-    # plt.colorbar(cm)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # cm = ax.contourf(C.y, C.z, C.Alpha)
-    # ax.set_title("Alpha")
-    # plt.colorbar(cm)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # cm = ax.contourf(C.y, C.z, C.Beta)
-    # ax.set_title("Beta")
-    # plt.colorbar(cm)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # cm = ax.contourf(C.y, C.z, C.Vr)
-    # ax.set_title("Vr")
-    # plt.colorbar(cm)
-
-    # fig, ax = plt.subplots()
-    # ax.axis("equal")
-    # cm = ax.contourf(C.y, C.z, C.Vx)
-    # ax.set_title("Vx")
-    # plt.colorbar(cm)
-
-    #     plt.show()
+    ).run(g)
 
     fluxes = []
     for patch in g.mixing_patches:
@@ -244,13 +195,13 @@ def test_mixer():
         [flux_avg[0], flux_avg[1], flux_avg[1], C.r * flux_avg[1], flux_avg[-1]]
     )
     err = np.diff(fluxes, axis=0) / flux_ref
-    print(err)
     rtol = 2e-6
     assert (np.abs(err) < rtol).all()
 
 
 if __name__ == "__main__":
     pass
+    # test_outlet_CFL_0()
     # test_inlet_CFL_0()
-    test_mixer()
+    # test_mixer()
     # test_CFL()

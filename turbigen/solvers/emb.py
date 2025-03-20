@@ -6,14 +6,13 @@ import os
 
 from dataclasses import dataclass
 
-# from turbigen.embsolve import embsolve
 from pathlib import Path
 from timeit import default_timer as timer
 
 import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
-from turbigen.solver import BaseSolver, ConvergenceHistory
+from turbigen.solver import ConvergenceHistory
 from turbigen.solvers.embsolvec import embsolve
 
 util = turbigen.util
@@ -133,7 +132,7 @@ class Emb(turbigen.solver.BaseSolver):
             n_step_ramp=0,
         )
 
-    def run(self, grid, machine):
+    def run(self, grid, machine=None):
         logger.info(
             f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )
