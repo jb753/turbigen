@@ -17,7 +17,7 @@ mean_line:
   htr: 0.99
 
 annulus:
-  AR_gap: [0.5, 0.5]
+  AR_gap: [1.0, 1.0]
   AR_chord: 2.0
 
 mesh:
@@ -39,8 +39,8 @@ nblade:
 
 solver:
   type: emb
-  n_step: 5000
-  n_step_avg: 1000
+  n_step: 500
+  n_step_avg: 100
   nstep_damp: -1
 
 iterate:
@@ -49,22 +49,22 @@ iterate:
       Yh: 0.01
   deviation:
   incidence:
-  diffusion_factor:
-    target:
-      0: 0.3
-  xpeak:
-    target:
-      0: 0.6
+  # diffusion_factor:
+    # target:
+      # 0: 0.3
+  # xpeak:
+    # target:
+      # 0: 0.6
 
 post_process:
   plot_convergence:
   contour:
-    coord: m
-    value: 2.05
-    variable: Ys
+    coord: spf
+    value: .5
+    variable: Cp
     N_passage: 2
     step: 0.05
-    lim: [0., 0.50]
+    lim: [-1.6, 0.]
   plot_pressure_distributions:
     row_spf: [[0.5,],]
     write_raw: true

@@ -219,10 +219,12 @@ def main():
         for iiter in range(conf.max_iter):
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
+
+            # Ensure that the iteration directory is empty
+            # Do not want to pick up old meshes etc.
             if conf.workdir.exists():
                 shutil.rmtree(conf.workdir)
-            else:
-                conf.workdir.mkdir(parents=True)
+            conf.workdir.mkdir(parents=True)
 
             # Design and run the configuration
             tic = timer()
@@ -251,29 +253,6 @@ def main():
         sys.exit(1)
 
     quit()
-
-    # Apply command-line overrides to the config
-    if args.no_iteration:
-        conf.iterate = {}
-
-    if args.no_solve:
-        if conf.solver:
-            conf.solver["skip"] = True
-
-    conf.wdist &= not args.no_wdist
-    conf.mean_line["debug"] = args.meanline_debug
-    conf.annulus["debug"] = args.annulus_debug
-
-    # Choose log level
-    # sys.tracebacklimit = 1000 if args.verbose else 1
-    if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
-        log_level = logging.DEBUG
-    elif conf.iterate:
-        log_level = logging.ITER
-    else:
-        log_level = logging.INFO
-
-    logger.setLevel(level=log_level)
 
     # Hypercubes are always jobs
     if conf.hypercube:

@@ -110,7 +110,12 @@ class TurbigenConfig:
 
         conf_fname = self.workdir / fname
         logger.info(f"Saving configuration to {conf_fname}")
-        turbigen.yaml.write_yaml(data, conf_fname)
+        try:
+            turbigen.yaml.write_yaml(data, conf_fname)
+        except Exception as e:
+            logger.error(f"Failed to save configuration to {conf_fname}")
+            print(data)
+            quit()
 
         return conf_fname
 
@@ -317,15 +322,15 @@ class TurbigenConfig:
 
     def apply_recamber(self):
         # Apply recamber to the blades
-        for row in self.blades:
+        for irow, row in enumerate(self.blades):
             for blade in row:
-                blade.apply_recamber(self.mean_line.nominal)
+                blade.apply_recamber(self.mean_line.nominal.get_row(irow))
 
     def undo_recamber(self):
         # Undo recamber to the blades
-        for row in self.blades:
+        for irow, row in enumerate(self.blades):
             for blade in row:
-                blade.undo_recamber(self.mean_line.nominal)
+                blade.undo_recamber(self.mean_line.nominal.get_row(irow))
 
     def get_ell(self):
         """Find suction surface lengths for each row."""
@@ -377,11 +382,10 @@ class TurbigenConfig:
 
         # Choose whether the blocks are real or perfect
         So1 = self.inlet.get_inlet()
-        g = self.grid
         if isinstance(So1, turbigen.fluid.PerfectState):
-            self.grid = turbigen.grid.Grid([b.to_perfect() for b in g])
+            self.grid = turbigen.grid.Grid([b.to_perfect() for b in self.grid])
         elif isinstance(So1, turbigen.fluid.RealState):
-            self.grid = turbigen.grid.Grid([b.to_real() for b in g])
+            self.grid = turbigen.grid.Grid([b.to_real() for b in self.grid])
         else:
             raise Exception("Unrecognised inlet state type")
 
@@ -422,15 +426,18 @@ class TurbigenConfig:
         if self.guess:
             logger.info("Applying 3D guess...")
             self.grid.apply_guess_3d(self.guess)
-            self.grid.update_outlet()
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
             self.grid.apply_guess_meridional(
                 self.mean_line.nominal.interpolate_guess(self.annulus)
             )
+        self.grid.update_outlet()
 
     def run_solver(self):
+        if self.solver.soft_start:
+            logger.info("Soft start...")
+            self.solver.robust().run(self.grid, self.get_machine)
         self.solver.run(self.grid, self.get_machine)
 
     def get_mean_line_actual(self):
@@ -475,10 +482,11 @@ class TurbigenConfig:
         }
 
         # Relative error (dict comprehension, checking for zero nominal values)
-        rel_err = {
-            k: (v - self.mean_line_actual[k]) / v * 100.0 if np.all(v) else np.nan
-            for k, v in self.mean_line.design_vars.items()
-        }
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rel_err = {
+                k: (v - self.mean_line_actual[k]) / v * 100.0
+                for k, v in self.mean_line.design_vars.items()
+            }
 
         # Make very small values zero
         eps = 1e-6
@@ -506,6 +514,7 @@ class TurbigenConfig:
 
         # Add rows for each design variable
         err, rel_err = self.calculate_design_var_errors()
+
         for k, v in self.mean_line.design_vars.items():
             # Make very small values zero
             if np.isscalar(v):
@@ -575,24 +584,48 @@ class TurbigenConfig:
 
         """
 
+        # Prepare the geometry
         self.get_mean_line_nominal()
         self.get_geometry()
         self.apply_recamber()
-        if not self.skip:
-            if self.Re_surf:
-                self.set_mu_from_Re_surf()
-            Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
-            logger.info(f"Re_surf={util.format_array(Re_surf)}")
+
+        # Handle restarts
+        if self.grid:
             # If we already have a grid, use it as the guess
-            if self.grid:
-                self.guess = self.grid
-                self.solver = self.solver.restart()
+            self.guess = self.grid
+            # Change CFD settings to resume the simulation
+            self.solver = self.solver.restart()
+
+        # Set viscosity from Reynolds number if given
+        if self.Re_surf:
+            self.set_mu_from_Re_surf()
+        Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
+        logger.info(f"Re_surf={util.format_array(Re_surf)}")
+
+        # We are now ready to generate mesh and run CFD
+        # There are three cases to consider
+        # (1) Skipping from guess: just use existing mesh and solution
+        # (2) Skipping from cold: mesh but do not run the CFD solver
+        # (3) Normal operation: mesh and run the CFD solver
+
+        # Generate mesh in cases (2) and (3)
+        if not (self.skip and self.grid):
+            logger.info("Generating mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
-            self.apply_bconds()
             self.apply_guess()
+            self.apply_bconds()
+        else:
+            logger.info("Skipping and already have a guess, not generating mesh...")
+
+        # In case (3), run the CFD solver
+        if not self.skip:
             self.run_solver()
+        # Case (1), load convergence history
+        # A no-op in Case (2)
         else:
             self.solver.setup_convergence(self.mean_line.nominal)
+
+        # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()
         self.undo_recamber()
         self.post_process_all()
@@ -617,6 +650,7 @@ class TurbigenConfig:
         postdir = self.workdir / "post"
         if not postdir.exists():
             postdir.mkdir()
+        logger.info(f"Post directory {postdir} {postdir.exists()}")
 
         for post_name, post_conf in self.post_process.items():
             logger.info(f"Running post function {post_name}")

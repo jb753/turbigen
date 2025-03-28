@@ -1,4 +1,4 @@
-workdir: runs/*
+orkdir: runs/*
 
 inlet:
   Po: 16.0e5
