@@ -1,4 +1,4 @@
-from turbigen.solvers.embsolve import embsolve
+from turbigen.solvers.emb import embsolve
 import numpy as np
 import turbigen.grid
 
@@ -108,7 +108,6 @@ def test_smooth_const():
 
     for sf2 in (0.1, 0.2):
         for sf4 in (0.1, 0.2):
-
             X = np.ones((10, 15, 20, 1), order="F", dtype=typ)
             L, P2, P4 = get_L_P(X)
 
@@ -169,7 +168,7 @@ def test_smooth_cubic():
     err_rel = err_abs / f.mean()
     # Note because we revert to 2nd-order at boundaries the edges
     # will be wrong - exclude from comparison
-    assert np.allclose(f[2:-2,2:-2,2:-2,0], fs[2:-2,2:-2,2:-2,0])
+    assert np.allclose(f[2:-2, 2:-2, 2:-2, 0], fs[2:-2, 2:-2, 2:-2, 0])
 
     # Check that the shock sensor works
     fs = np.asfortranarray(f.copy())

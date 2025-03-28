@@ -2,12 +2,12 @@ import numpy as np
 import turbigen.autogrid
 import os
 import turbigen.util
-from turbigen.base import BaseConfig
+import turbigen.mesh
 
 logger = turbigen.util.make_logger()
 
 
-class OHMeshConfig(BaseConfig):
+class OH(turbigen.mesh.Mesher):
     """Contains all configuration options with default values."""
 
     _name = "OH mesh"
@@ -91,7 +91,7 @@ class OHMeshConfig(BaseConfig):
         elif not isinstance(value, type(getattr(self, key))):
             raise TypeError(
                 f"Invalid type for OH-mesh configuration variable {key}={value},"
-                f" should be {type(getattr(self,key))}"
+                f" should be {type(getattr(self, key))}"
             )
         else:
             super().__setattr__(key, value)
@@ -103,7 +103,6 @@ class OHMeshConfig(BaseConfig):
             setattr(self, k, v)
 
     def to_autogrid_dict(self, chi_ref, dhub, dcas, dsurf, splitter):
-
         stagger_topo = _get_stagger_topology(chi_ref)
         nrow = len(stagger_topo)
 
@@ -171,6 +170,69 @@ class OHMeshConfig(BaseConfig):
             "is_butterfly": self.is_butterfly,
         }
 
+    def make_grid(self, workdir, machine, dhub, dcas, dsurf):
+        logger.info("Generating OH-mesh...")
+
+        dsurf = np.mean(dsurf, axis=0)
+        mesh_config = self
+
+        # File paths
+        if workdir == "":
+            raise Exception("workdir for OH meshing not set")
+        output_stem = os.path.join(os.path.abspath(workdir), "mesh")
+
+        if (mesh_config.gbcs_path == "reuse") or (
+            os.path.exists(os.path.join(output_stem + ".g"))
+        ):
+            logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
+
+        elif mesh_config.gbcs_path == "":
+            chi_ref = []
+            is_unbladed = []
+            for bld in machine.bld:
+                chi_ref.append(bld[0].get_chi(mesh_config.spf_ref))
+                is_unbladed.append(0)
+                # else:
+                #     chi_ref.append(np.zeros((2,)))
+                #     is_unbladed.append(1)
+            chi_ref = np.concatenate(chi_ref)
+
+            logger.info("Making a new mesh.")
+            splitter = []
+            if machine.split:
+                for irow, splt in enumerate(machine.split):
+                    if splt:
+                        splitter.append(irow)
+            else:
+                splitter = []
+            ag_config = mesh_config.to_autogrid_dict(
+                chi_ref, dhub, dcas, dsurf, splitter
+            )
+            ag_config["Nb"] = machine.Nb.tolist()
+            ag_config["tip"] = machine.tip.tolist()
+            success = turbigen.autogrid.autogrid.make_mesh(
+                output_stem, *machine.get_coords(), Omega, ag_config
+            )
+
+            if not success:
+                raise Exception("Meshing failed.")
+
+        else:
+            output_stem = os.path.abspath(mesh_config.gbcs_path)
+            logger.info(f"Loading {output_stem}." + r"{g,bcs}")
+
+        bcs_path = output_stem + ".bcs"
+        g_path = output_stem + ".g"
+
+        g = turbigen.autogrid.reader.read(g_path, bcs_path)
+
+        if rf := mesh_config.resolution_factor:
+            for b in g:
+                b.subsample(rf)
+            g.match_patches()
+
+        return g
+
 
 def _get_stagger_topology(Al):
     nAl = len(Al)
@@ -190,66 +252,3 @@ def _get_stagger_topology(Al):
         .tolist()
         for irow in range(Nrow)
     ]
-
-
-def make_grid(machine, mesh_config, dhub, dcas, dsurf, unbladed, Omega, skip=False):
-    logger.info("Generating OH-mesh...")
-
-    dsurf = np.mean(dsurf, axis=0)
-
-    # File paths
-    workdir = mesh_config.workdir
-    if workdir == "":
-        raise Exception("workdir for OH meshing not set")
-    output_stem = os.path.join(os.path.abspath(workdir), "mesh")
-
-    if (mesh_config.gbcs_path == "reuse") or (
-        os.path.exists(os.path.join(output_stem + ".g"))
-    ):
-        logger.info(f"Reusing existing {output_stem}." + r"{g,bcs}")
-
-    elif mesh_config.gbcs_path == "":
-        chi_ref = []
-        is_unbladed = []
-        for bld in machine.bld:
-            if bld:
-                chi_ref.append(bld.get_chi(mesh_config.spf_ref))
-                is_unbladed.append(0)
-            # else:
-            #     chi_ref.append(np.zeros((2,)))
-            #     is_unbladed.append(1)
-        chi_ref = np.concatenate(chi_ref)
-
-        logger.info("Making a new mesh.")
-        splitter = []
-        if machine.split:
-            for irow, splt in enumerate(machine.split):
-                if splt:
-                    splitter.append(irow)
-        else:
-            splitter = []
-        ag_config = mesh_config.to_autogrid_dict(chi_ref, dhub, dcas, dsurf, splitter)
-        ag_config["Nb"] = machine.Nb.tolist()
-        ag_config["tip"] = machine.tip.tolist()
-        success = turbigen.autogrid.autogrid.make_mesh(
-            output_stem, *machine.get_coords(), Omega, ag_config
-        )
-
-        if not success:
-            raise Exception("Meshing failed.")
-
-    else:
-        output_stem = os.path.abspath(mesh_config.gbcs_path)
-        logger.info(f"Loading {output_stem}." + r"{g,bcs}")
-
-    bcs_path = output_stem + ".bcs"
-    g_path = output_stem + ".g"
-
-    g = turbigen.autogrid.reader.read(g_path, bcs_path)
-
-    if rf := mesh_config.resolution_factor:
-        for b in g:
-            b.subsample(rf)
-        g.match_patches()
-
-    return g

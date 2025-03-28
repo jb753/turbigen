@@ -32,36 +32,3 @@ class BaseSolver:
 
     def replace(self, **kwargs):
         return dataclasses.replace(self, **kwargs)
-
-
-class ConvergenceHistory:
-    def __init__(self, istep, istep_avg, resid, mdot, state):
-        """Store simulation convergence history.
-
-        Parameters
-        ----------
-        istep: (nlog,) array
-            Indices of the logged time steps.
-        resid: (nlog,), array
-            Iteration residuals for logged time steps.
-        mdot: (2, nlog) array
-            Inlet and outlet mass flow rates for all time steps.
-        state: Fluid size (nlog,)
-            Working fluid object to logg thermodynamic properties.
-
-        """
-        self.istep = istep
-        self.istep_avg = istep_avg
-        self.nlog = len(istep)
-        self.mdot = mdot
-        self.resid = resid
-        self.state = state
-
-    def raw_data(self):
-        return np.column_stack(
-            (self.istep, *self.mdot, self.resid, self.state.rho, self.state.u)
-        )
-
-    @property
-    def err_mdot(self):
-        return self.mdot[1] / self.mdot[0] - 1.0

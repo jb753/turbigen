@@ -241,11 +241,13 @@ class StructuredData:
         self._read_only = False
         return self
 
-    def copy(self):
+    def copy(self, dtype=None):
         # Make an empty object by calling constructor with no args
         out = self.__class__()
         # Insert copies of current data and metadata
         out._data = self._data.copy()
+        if dtype:
+            out._data = out._data.astype(dtype)
         out._metadata = self._metadata.copy()
         return out
 
@@ -1735,10 +1737,30 @@ class MeanLine:
     def ARflow(self):
         return self.Aflow[1:] / self.Aflow[:-1]
 
+    def warn(self):
+        """Print a warning if there are any suspicious values."""
+
+        # Warn for very high flow angles
+        if np.abs(self.Alpha_rel).max() > 85.0:
+            logger.warning(
+                """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+            )
+
+        # Warn for wobbly annulus
+        is_radial = np.abs(self.Beta).max() > 10.0
+        is_multirow = len(self.x) > 2
+        if is_radial and is_multirow:
+            if np.diff(np.sign(np.diff(self.rrms))).any():
+                logger.warning(
+                    """WARNING: Radii do not vary monotonically.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+                )
+
     def check(self):
         # """Assert that conserved quantities are in fact conserved"""
-
-        logger.info("Checking mean-line conservation...")
 
         check_failed = False
 

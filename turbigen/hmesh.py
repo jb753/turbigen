@@ -4,68 +4,529 @@ import turbigen.grid
 import turbigen.geometry
 from turbigen.base import BaseConfig
 from turbigen import clusterfunc
+import turbigen.mesh
+import dataclasses
 
 logger = util.make_logger()
 
 
-class HMeshConfig(BaseConfig):
-    """Contains all configuration options with default values."""
+@dataclasses.dataclass
+class H(turbigen.mesh.Mesher):
+    """Generate a mesh using H topology for each row."""
 
-    _name = "H mesh"
+    recluster: bool = False
 
-    recluster = False
-
-    ER_stream = 1.2
+    ER_stream: float = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
 
-    AR_stream = 2.0
+    AR_stream: float = 2.0
     """Aspect ratio in blade-to-blade plane of cells at outlet boundary."""
 
-    AR_passage = 1.6
+    AR_passage: float = 1.6
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
-    AR_merid = 1.0
+    AR_merid: float = 1.0
     """Aspect ratio of mid-chord cells in meridional plane."""
 
-    AR_merid_unbladed = 2.0
+    AR_merid_unbladed: float = 2.0
     """Aspect ratio of mid-chord cells in meridional plane."""
 
-    ER_span = 1.2
+    ER_span: float = 1.2
     """Expansion ratio of spanwise grid away from hub and casing."""
 
-    dm_LE = 0.002
+    dm_LE: float = 0.002
     """Streamwise grid spacing at LE, normalised by meridional chord."""
 
-    ni_TE = 9
+    ni_TE: int = 9
     """Number of streamwise points across trailing edge."""
 
-    dm_TE = 0.0
+    dm_TE: float = 0.0
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
-    dspf_mid = 0.03
+    dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
 
-    ER_pitch = 1.2
+    ER_pitch: float = 1.2
     """Expansion ratio away from aerofoil surfaces."""
 
-    nchord_relax = 1.0
+    nchord_relax: float = 1.0
     """Number of meridional chords over which pitchwise clustering is relaxed."""
 
-    resolution_factor = 1.0
+    resolution_factor: float = 1.0
     """Multiply the number of points in each direction, keeping relative spacings."""
 
-    rtol_smooth = 0.0
-    """Tolerance on smoothing convergence."""
+    skew_max: float = 30.0
 
-    maxiter_smooth = 0
-    """Number of smoothing iterations, zero to disable smoothing."""
+    slip_annulus: bool = False
 
-    skew_max = 30.0
+    dm_cusp: float = 0.0
 
-    slip_annulus = False
+    yplus: float = np.nan
 
-    dm_cusp = 0.0
+    def make_grid(self, workdir, mac, dhub, dcas, dsurf):
+        """Generate a Grid object for a machine geometry."""
+
+        logger.info("Generating an H-mesh...")
+
+        mesh_config = self
+        unbladed = [False for _ in range(mac.Nrow)]
+
+        if dsurf.shape[0] == 1:
+            dsurf = np.tile(dsurf, (2, 1))
+
+        # Spanwise grid vector
+        # From hub/casing spacings and ER
+        span_ref = mac.ann.get_span(1)
+        dspf_hub = dhub / span_ref
+        dspf_casing = dcas / span_ref
+
+        blocks = []
+
+        # Loop over rows
+        nrow = mac.Nrow
+        assert dsurf.shape == (2, nrow)
+        theta_lim = None
+        for irow in range(nrow):
+            logger.debug(f"irow={irow}")
+
+            # Angular pitch
+            pitch_theta = 2.0 * np.pi / float(mac.Nb[irow])
+
+            # Evaluate xr over a uniform grid
+            mrow = np.linspace(2.0 * irow + 1.0, 2.0 * irow + 2)
+            xr_hub = mac.ann.evaluate_xr(mrow, 0.0)
+            xr_cas = mac.ann.evaluate_xr(mrow, 1.0)
+            xr_mid = mac.ann.evaluate_xr(mrow, 0.5)
+
+            # Meridional chord lengths at midspan of gaps and aerofoils
+            ist = 2 * irow
+            ien = ist + 3
+            chord_hub = mac.ann.chords(0.0)[ist:ien]
+            chord_mid = mac.ann.chords(0.5)[ist:ien]
+            chord_cas = mac.ann.chords(1.0)[ist:ien]
+
+            # Circumferential pitches
+            pitch_rtheta_hub = pitch_theta * xr_hub[1]
+            pitch_rtheta_cas = pitch_theta * xr_cas[1]
+
+            # Pitch to chord ratios at hub, mid tip
+            pitch_chord_hub = pitch_rtheta_hub / chord_hub[1]
+            pitch_chord_cas = pitch_rtheta_cas / chord_cas[1]
+
+            pitch_chord_ref = pitch_theta * xr_mid[1].mean() / chord_mid
+
+            pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
+            pitch_rtheta_max = np.maximum(
+                pitch_rtheta_hub.max(), pitch_rtheta_cas.max()
+            )
+
+            # Normalised wall distance
+            drt_norm = dsurf[:, irow].min() / pitch_rtheta_max
+
+            # Row aspect ratios
+            span_row = np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
+            AR_row = span_row / chord_mid[1]
+
+            # Nominal pitch fractions first
+            if unbladed[irow]:
+                if irow == 0:
+                    nk_not_resampled = 33
+                    pitch_frac_nom = np.linspace(0.0, 1.0, nk_not_resampled)
+                else:
+                    pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
+                        AR_row, pitch_chord_ref[1]
+                    )
+            else:
+                safety_fac = 1.01
+                pitch_frac_nom = mesh_config.pitchwise_grid(
+                    drt_norm, pitch_chord_max * safety_fac, AR_row
+                )
+                logger.debug(
+                    f"Nominal pitchwise grid: {drt_norm}, {pitch_chord_max}, {AR_row}"
+                )
+                logger.debug("Checking we can recluster")
+                pitch_frac_not_resampled = mesh_config.pitchwise_grid(
+                    drt_norm, pitch_chord_max * safety_fac, AR_row, resample=False
+                )
+                mesh_config.pitchwise_grid_fixed_npts(
+                    drt_norm, pitch_chord_max, AR_row, len(pitch_frac_not_resampled)
+                )
+                nk_not_resampled = len(pitch_frac_not_resampled)
+            nk = len(pitch_frac_nom)
+            logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
+
+            # Spanwise grid
+            tip_ref = np.max(mac.tip)
+            span_frac = mesh_config.spanwise_grid(dspf_hub, dspf_casing, tip_ref)
+
+            if mesh_config.slip_annulus:
+                dspf = mesh_config.dspf_mid
+                span_frac = clusterfunc.symmetric.free(
+                    dspf / 2.0, dspf, mesh_config.ER_span
+                )
+
+            nj = len(span_frac)
+
+            # Streamwise grid
+            # From LE/TE/bcond spacings and ER
+            # Choose how long to make the inlet/exit
+            if nrow == 1:
+                L = (1.0, 1.0)
+            elif irow == 0:
+                L = (1.0, 0.5)
+            elif irow == (nrow - 1):
+                L = (0.5, 1.0)
+            else:
+                L = (0.5, 0.5)
+
+            # Generate initial streamwise grid vector at midspan
+            # This fixes number of points and roughly distributes points
+            if unbladed[irow]:
+                tte = None
+            elif mesh_config.dm_TE:
+                tte = 1.0 - mesh_config.dm_TE
+            else:
+                xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(0.5)
+                mlim_now = np.array((0, 1))
+                tq = np.linspace(0.8, 1.0, 500)
+                _, _, tte = _theta_limits(tq, xrt_u, xrt_l, mlim_now)
+
+            # Streamwise grid
+            stream_frac, ile, ite = mesh_config.streamwise_grid(
+                pitch_chord_ref,
+                nk_not_resampled,
+                L,
+                AR_row,
+                tte,
+                unbladed_row=unbladed[irow],
+            )
+
+            # # Apply some warping to the hub and casing stream fractions
+            # mov = mesh_config.warp_stream
+            # delta_hub = np.interp(
+            #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, mov, 0.0]
+            # )
+            # delta_cas = np.interp(
+            #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, -mov, 0.0]
+            # )
+
+            stream_frac_hub = stream_frac  # + delta_hub
+            stream_frac_cas = stream_frac  # + delta_cas
+
+            # import matplotlib.pyplot as plt
+            # fig, ax = plt.subplots()
+            # ax.plot(stream_frac)
+            # ax.plot(stream_frac_hub)
+            # ax.plot(stream_frac_cas)
+            # plt.savefig('beans.pdf')
+            # quit()
+
+            ni = len(stream_frac)
+
+            # No repeated grid points
+            assert len(np.unique(stream_frac)) == ni
+
+            # Grid points should monotonically increase
+            assert (np.diff(stream_frac) > 0.0).all()
+
+            spfr = span_frac.reshape(1, -1)
+            stream_frac_span = stream_frac_cas.reshape(
+                -1, 1
+            ) * spfr + stream_frac_hub.reshape(-1, 1) * (1.0 - spfr)
+            for j in range(nj):
+                mlim_now = (0, 1)
+                stream_frac_span[:, j] = np.interp(
+                    stream_frac_span[:, j],
+                    [-1, 0, 1, 2],
+                    [-1, mlim_now[0], mlim_now[1], 2],
+                )
+
+            xr = mac.ann.evaluate_xr(stream_frac_span + ist + 1.0, spfr)
+
+            # Relax the pitchwise clustering away from LE and TE
+            if unbladed[irow]:
+                relax = 1.0
+            else:
+                relax = mesh_config.pitchwise_relaxation(
+                    stream_frac, pitch_chord_ref
+                ).reshape(-1, 1, 1)
+            uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
+            assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
+
+            pitch_frac_clust = np.zeros((ni, nj, nk))
+
+            # Get skew angles
+            if unbladed[irow]:
+                pass
+            else:
+                Theta = mac.bld[irow][0].get_chi(0.5)
+
+            # Loop over spans and get the angular limits from blade section
+            if unbladed[irow]:
+                if theta_lim is not None:
+                    theta_lim_old = theta_lim.copy()
+                else:
+                    theta_lim_old = np.zeros((2, ni, nj))
+                    Nb = mac.Nb[irow]
+                    dtheta = 2.0 * np.pi / float(Nb)
+                    theta_lim_old[0] = -dtheta / 2.0
+                    theta_lim_old[1] = +dtheta / 2.0
+                    Theta = np.zeros((2,))
+                    # raise Exception(
+                    #     "No theta limits from previous row to set unbladed row pitch"
+                    # )
+                theta_lim = np.zeros((2, ni, nj))
+
+                # Get skew angle from previous blade row
+                Theta_unbladed = Theta[-1]
+                if not np.isfinite(Theta_unbladed):
+                    raise Exception(f"Theta unbladed {Theta_unbladed}")
+                Theta_max = 30.0
+                Theta_now = np.clip(Theta_unbladed, -Theta_max, Theta_max)
+                tanTheta = np.tan(np.radians(Theta_now))
+
+                # Skew the mesh upstream of LE and downstream of TE
+                ind_up = stream_frac < 0.0
+                ind_dn = stream_frac > 1.0
+                ind_mid = np.logical_and(stream_frac >= 0.0, stream_frac <= 1.0)
+
+                for j in range(nj):
+                    for i in range(ni):
+                        pitch_frac_clust[i, j, :] = pitch_frac_nom
+
+                    if np.isfinite(tlimold_now := theta_lim_old[0, -1, j]):
+                        theta_lim[:, :, j] += tlimold_now
+
+                    dtheta_skew = np.zeros_like(stream_frac)
+                    chord_fac = np.ones_like(stream_frac)
+                    chord_fac[ind_up] *= chord_mid[0]
+                    chord_fac[ind_mid] *= chord_mid[1]
+                    chord_fac[ind_dn] *= chord_mid[2]
+
+                    # # Retrieve exit angle from previous blade row
+                    # try:
+                    dtheta_skew = tanTheta * util.cumtrapz0(
+                        chord_fac / xr[1, :, j], stream_frac
+                    )
+                    if not np.isfinite(dtheta_skew).all():
+                        raise Exception("dtheta_skew not finite")
+                    theta_lim[:, :, j] += dtheta_skew
+
+                # except:
+                #     pass
+
+            else:
+                theta_lim = np.zeros((2, ni, nj))
+
+                if not mesh_config.recluster:
+                    pitch_frac_clust = np.tile(
+                        pitch_frac_nom.reshape(1, 1, -1), (ni, nj, 1)
+                    )
+                else:
+                    for j in range(nj):
+                        for i in range(ni):
+                            rt_pitch_now = xr[1, i, j] * pitch_theta
+                            # Determine position along blade
+                            mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
+                            mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
+                            mfrac = np.array([1.0 - mclip, mclip])
+                            drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
+
+                            try:
+                                pitch_frac_clust[
+                                    i, j, :
+                                ] = mesh_config.pitchwise_grid_fixed_npts(
+                                    drt_norm_now,
+                                    pitch_chord_ref[1],
+                                    AR_row,
+                                    nk_not_resampled,
+                                )
+                            except ValueError:
+                                raise Exception(
+                                    f"Failed to recluster: {drt_norm_now},"
+                                    f" {pitch_chord_ref[1]}, {AR_row}"
+                                )
+
+                    assert np.isfinite(pitch_frac_clust).all()
+
+                    # Smooth the pitch fraction in i and j directions
+                    for _ in range(5):
+                        pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
+                            pitch_frac_clust[:-2, 1:-1, :]
+                            + pitch_frac_clust[2:, 1:-1, :]
+                            + pitch_frac_clust[1:-1, :-2, :]
+                            + pitch_frac_clust[1:-1, 2:, :]
+                        )
+
+                    assert (pitch_frac_clust >= 0.0).all()
+                    assert (pitch_frac_clust <= 1.0).all()
+
+                for j in range(nj):
+                    nchord = 5000
+                    m = util.cluster_cosine(nchord)
+                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
+
+                    assert np.all(xrt_u[2] >= xrt_l[2])
+
+                    if dmcusp := mesh_config.dm_cusp:
+                        cosTheta = np.cos(np.radians(Theta))
+                        ncusp = nchord - np.where(m > 1.0 - cosTheta[1] * dmcusp)[0][0]
+                        # Blend upper and lower surfaces to meet at TE
+                        # over the last ncusp points
+                        fcusp = np.linspace(0.0, 1.0, ncusp)
+                        if Theta[1] > 30.0:
+                            xrt_avg = xrt_l
+                        elif Theta[1] < -30.0:
+                            xrt_avg = xrt_u
+                        else:
+                            xrt_avg = 0.5 * (xrt_u + xrt_l)
+                        xrt_u[:, -ncusp:] = (
+                            fcusp * xrt_avg[:, -ncusp:]
+                            + (1.0 - fcusp) * xrt_u[:, -ncusp:]
+                        )
+                        xrt_l[:, -ncusp:] = (
+                            fcusp * xrt_avg[:, -ncusp:]
+                            + (1.0 - fcusp) * xrt_l[:, -ncusp:]
+                        )
+
+                    #
+                    # Get tte of current section and warp the streamwise grid
+                    # vector to locate trailing edge exactly
+                    mlim_now = (0, 1)
+
+                    stream_frac_now = stream_frac_span[:, j]
+                    xr[..., j] = mac.ann.evaluate_xr(
+                        stream_frac_now + ist + 1.0, span_frac[j]
+                    )
+
+                    theta_lim[..., j] = _theta_limits(
+                        stream_frac_now,
+                        xrt_u,
+                        xrt_l,
+                        mlim_now,
+                        Theta,
+                        chord_mid[
+                            (0, -1),
+                        ],
+                        Theta_max=mesh_config.skew_max,
+                    )[:2]
+
+            assert np.isfinite(xr).all()
+            assert np.isfinite(pitch_frac_clust).all()
+            assert np.isfinite(theta_lim).all()
+
+            # pitch_frac_relax = (1.0 - relax) * pitch_frac + relax * uniform
+            assert np.isfinite(relax).all()
+            assert np.isfinite(uniform).all()
+            pitch_frac_relax = (1.0 - relax) * pitch_frac_clust + relax * uniform
+            assert np.isfinite(pitch_frac_relax).all()
+            assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
+
+            # Pinch the tip
+            if mac.tip[irow] and not unbladed[irow]:
+                theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
+                tau = mac.tip[irow]
+                pinch_frac = np.interp(
+                    span_frac, [1.0 - 1.5 * tau, 1.0 - 0.6 * tau, 1.0], [0.0, 1.0, 1.0]
+                ).reshape(1, 1, -1)
+                theta_lim = pinch_frac * theta_mid + (1.0 - pinch_frac) * theta_lim
+                njtip = np.sum(pinch_frac == 1.0)
+            else:
+                njtip = 0
+
+            # Convert all matrices to 3d
+            xr3 = np.tile(np.expand_dims(xr, 3), (1, 1, 1, nk))  # Add pitchwise index
+            pfr3 = np.expand_dims(pitch_frac_relax, 0)  # Add coord index
+            theta_lim3 = np.expand_dims(theta_lim, 3)  # Add pitchwise index
+            assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
+
+            # Evaluate the angular coordinates and assemble
+            theta = np.flip(
+                pfr3
+                * theta_lim3[
+                    (0,),
+                ]
+                + (1.0 - pfr3)
+                * (
+                    theta_lim3[
+                        (1,),
+                    ]
+                    + pitch_theta
+                ),
+                axis=-1,
+            )
+
+            assert np.isfinite(pitch_theta)
+            assert np.isfinite(theta).all()
+
+            if unbladed[irow]:
+                assert np.allclose(
+                    theta[0, :, :, -1] - theta[0, :, :, 0], pitch_theta, rtol=1e-4
+                )
+            else:
+                assert np.allclose(
+                    theta[0, : (ile + 1), :, -1] - theta[0, : (ile + 1), :, 0],
+                    pitch_theta,
+                    rtol=1e-4,
+                )
+                assert np.allclose(
+                    theta[0, ite:, :, -1] - theta[0, ite:, :, 0], pitch_theta, rtol=1e-4
+                )
+
+            xrt_now = np.concatenate([xr3, theta], axis=0)
+
+            # Make periodic patches
+            if unbladed[irow]:
+                patches = [
+                    turbigen.grid.PeriodicPatch(i=(0, -1), k=0, label="per_k0"),
+                    turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
+                ]
+            else:
+                patches = [
+                    turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
+                    turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
+                    turbigen.grid.PeriodicPatch(i=(ite, -1), k=0),
+                    turbigen.grid.PeriodicPatch(i=(ite, -1), k=-1),
+                ]
+
+            # Inlet or mixing
+            if irow == 0:
+                patches.append(turbigen.grid.InletPatch(i=0))
+            else:
+                patches.append(turbigen.grid.MixingPatch(i=0))
+
+            # Outlet or mixing
+            if irow == (nrow - 1):
+                patches.append(turbigen.grid.OutletPatch(i=-1))
+            else:
+                patches.append(turbigen.grid.MixingPatch(i=-1))
+
+            # Tip gap
+            if njtip:
+                patches.extend(
+                    [
+                        turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=0),
+                        turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=-1),
+                    ]
+                )
+
+            blocks.append(
+                turbigen.grid.BaseBlock.from_coordinates(
+                    xrt_now, mac.Nb[irow].astype(int), patches
+                )
+            )
+
+        if mesh_config.slip_annulus:
+            for b in blocks:
+                b.add_patch(turbigen.grid.InviscidPatch(j=0))
+                b.add_patch(turbigen.grid.InviscidPatch(j=-1))
+
+        g = turbigen.grid.Grid(blocks)
+
+        g.match_patches()
+
+        return g
 
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         # """Evaluate a spanwise grid vector given hub and casing spacings."""
@@ -390,462 +851,3 @@ def _theta_limits(
     theta_l += dtheta_skew
 
     return theta_u, theta_l, tte
-
-
-def make_grid(mac, mesh_config, dhub, dcas, dsurf, unbladed):
-    """Generate a Grid object for a machine geometry."""
-
-    logger.info("Generating an H-mesh...")
-
-    if dsurf.shape[0] == 1:
-        dsurf = np.tile(dsurf, (2, 1))
-
-    # Spanwise grid vector
-    # From hub/casing spacings and ER
-    span_ref = mac.ann.get_span(1)
-    dspf_hub = dhub / span_ref
-    dspf_casing = dhub / span_ref
-
-    blocks = []
-
-    # Loop over rows
-    nrow = mac.Nrow
-    assert dsurf.shape == (2, nrow)
-    theta_lim = None
-    for irow in range(nrow):
-        logger.debug(f"irow={irow}")
-
-        # Angular pitch
-        pitch_theta = 2.0 * np.pi / float(mac.Nb[irow])
-
-        # Evaluate xr over a uniform grid
-        mrow = np.linspace(2.0 * irow + 1.0, 2.0 * irow + 2)
-        xr_hub = mac.ann.evaluate_xr(mrow, 0.0)
-        xr_cas = mac.ann.evaluate_xr(mrow, 1.0)
-        xr_mid = mac.ann.evaluate_xr(mrow, 0.5)
-
-        # Meridional chord lengths at midspan of gaps and aerofoils
-        ist = 2 * irow
-        ien = ist + 3
-        chord_hub = mac.ann.chords(0.0)[ist:ien]
-        chord_mid = mac.ann.chords(0.5)[ist:ien]
-        chord_cas = mac.ann.chords(1.0)[ist:ien]
-
-        # Circumferential pitches
-        pitch_rtheta_hub = pitch_theta * xr_hub[1]
-        pitch_rtheta_cas = pitch_theta * xr_cas[1]
-
-        # Pitch to chord ratios at hub, mid tip
-        pitch_chord_hub = pitch_rtheta_hub / chord_hub[1]
-        pitch_chord_cas = pitch_rtheta_cas / chord_cas[1]
-
-        pitch_chord_ref = pitch_theta * xr_mid[1].mean() / chord_mid
-
-        pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
-        pitch_rtheta_max = np.maximum(pitch_rtheta_hub.max(), pitch_rtheta_cas.max())
-
-        # Normalised wall distance
-        drt_norm = dsurf[:, irow].min() / pitch_rtheta_max
-
-        # Row aspect ratios
-        span_row = np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
-        AR_row = span_row / chord_mid[1]
-
-        # Nominal pitch fractions first
-        if unbladed[irow]:
-            if irow == 0:
-                nk_not_resampled = 33
-                pitch_frac_nom = np.linspace(0.0, 1.0, nk_not_resampled)
-            else:
-                pitch_frac_nom = mesh_config.pitchwise_grid_unbladed(
-                    AR_row, pitch_chord_ref[1]
-                )
-        else:
-            safety_fac = 1.01
-            pitch_frac_nom = mesh_config.pitchwise_grid(
-                drt_norm, pitch_chord_max * safety_fac, AR_row
-            )
-            logger.debug(
-                f"Nominal pitchwise grid: {drt_norm}, {pitch_chord_max}, {AR_row}"
-            )
-            logger.debug("Checking we can recluster")
-            pitch_frac_not_resampled = mesh_config.pitchwise_grid(
-                drt_norm, pitch_chord_max * safety_fac, AR_row, resample=False
-            )
-            mesh_config.pitchwise_grid_fixed_npts(
-                drt_norm, pitch_chord_max, AR_row, len(pitch_frac_not_resampled)
-            )
-            nk_not_resampled = len(pitch_frac_not_resampled)
-        nk = len(pitch_frac_nom)
-        logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
-
-        # Spanwise grid
-        tip_ref = np.max(mac.tip)
-        span_frac = mesh_config.spanwise_grid(dspf_hub, dspf_casing, tip_ref)
-
-        if mesh_config.slip_annulus:
-            dspf = mesh_config.dspf_mid
-            span_frac = clusterfunc.symmetric.free(
-                dspf / 2.0, dspf, mesh_config.ER_span
-            )
-
-        nj = len(span_frac)
-
-        # Streamwise grid
-        # From LE/TE/bcond spacings and ER
-        # Choose how long to make the inlet/exit
-        if nrow == 1:
-            L = (1.0, 1.0)
-        elif irow == 0:
-            L = (1.0, 0.5)
-        elif irow == (nrow - 1):
-            L = (0.5, 1.0)
-        else:
-            L = (0.5, 0.5)
-
-        # Generate initial streamwise grid vector at midspan
-        # This fixes number of points and roughly distributes points
-        if unbladed[irow]:
-            tte = None
-        elif mesh_config.dm_TE:
-            tte = 1.0 - mesh_config.dm_TE
-        else:
-            xrt_u, xrt_l = mac.bld[irow].evaluate_section(0.5)
-            mlim_now = np.array((0, 1))
-            tq = np.linspace(0.8, 1.0, 500)
-            _, _, tte = _theta_limits(tq, xrt_u, xrt_l, mlim_now)
-
-        # Streamwise grid
-        stream_frac, ile, ite = mesh_config.streamwise_grid(
-            pitch_chord_ref,
-            nk_not_resampled,
-            L,
-            AR_row,
-            tte,
-            unbladed_row=unbladed[irow],
-        )
-
-        # # Apply some warping to the hub and casing stream fractions
-        # mov = mesh_config.warp_stream
-        # delta_hub = np.interp(
-        #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, mov, 0.0]
-        # )
-        # delta_cas = np.interp(
-        #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, -mov, 0.0]
-        # )
-
-        stream_frac_hub = stream_frac  # + delta_hub
-        stream_frac_cas = stream_frac  # + delta_cas
-
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # ax.plot(stream_frac)
-        # ax.plot(stream_frac_hub)
-        # ax.plot(stream_frac_cas)
-        # plt.savefig('beans.pdf')
-        # quit()
-
-        ni = len(stream_frac)
-
-        # No repeated grid points
-        assert len(np.unique(stream_frac)) == ni
-
-        # Grid points should monotonically increase
-        assert (np.diff(stream_frac) > 0.0).all()
-
-        spfr = span_frac.reshape(1, -1)
-        stream_frac_span = stream_frac_cas.reshape(
-            -1, 1
-        ) * spfr + stream_frac_hub.reshape(-1, 1) * (1.0 - spfr)
-        for j in range(nj):
-            if unbladed[irow]:
-                mlim_now = (0, 1)
-            else:
-                mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
-            stream_frac_span[:, j] = np.interp(
-                stream_frac_span[:, j], [-1, 0, 1, 2], [-1, mlim_now[0], mlim_now[1], 2]
-            )
-
-        xr = mac.ann.evaluate_xr(stream_frac_span + ist + 1.0, spfr)
-
-        # Relax the pitchwise clustering away from LE and TE
-        if unbladed[irow]:
-            relax = 1.0
-        else:
-            relax = mesh_config.pitchwise_relaxation(
-                stream_frac, pitch_chord_ref
-            ).reshape(-1, 1, 1)
-        uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
-        assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
-
-        pitch_frac_clust = np.zeros((ni, nj, nk))
-
-        # Get skew angles
-        if unbladed[irow]:
-            pass
-        else:
-            Theta = mac.bld[irow].get_chi(0.5)
-
-        # Loop over spans and get the angular limits from blade section
-        if unbladed[irow]:
-            if theta_lim is not None:
-                theta_lim_old = theta_lim.copy()
-            else:
-                theta_lim_old = np.zeros((2, ni, nj))
-                Nb = mac.Nb[irow]
-                dtheta = 2.0 * np.pi / float(Nb)
-                theta_lim_old[0] = -dtheta / 2.0
-                theta_lim_old[1] = +dtheta / 2.0
-                Theta = np.zeros((2,))
-                # raise Exception(
-                #     "No theta limits from previous row to set unbladed row pitch"
-                # )
-            theta_lim = np.zeros((2, ni, nj))
-
-            # Get skew angle from previous blade row
-            Theta_unbladed = Theta[-1]
-            if not np.isfinite(Theta_unbladed):
-                raise Exception(f"Theta unbladed {Theta_unbladed}")
-            Theta_max = 30.0
-            Theta_now = np.clip(Theta_unbladed, -Theta_max, Theta_max)
-            tanTheta = np.tan(np.radians(Theta_now))
-
-            # Skew the mesh upstream of LE and downstream of TE
-            ind_up = stream_frac < 0.0
-            ind_dn = stream_frac > 1.0
-            ind_mid = np.logical_and(stream_frac >= 0.0, stream_frac <= 1.0)
-
-            for j in range(nj):
-                for i in range(ni):
-                    pitch_frac_clust[i, j, :] = pitch_frac_nom
-
-                if np.isfinite(tlimold_now := theta_lim_old[0, -1, j]):
-                    theta_lim[:, :, j] += tlimold_now
-
-                dtheta_skew = np.zeros_like(stream_frac)
-                chord_fac = np.ones_like(stream_frac)
-                chord_fac[ind_up] *= chord_mid[0]
-                chord_fac[ind_mid] *= chord_mid[1]
-                chord_fac[ind_dn] *= chord_mid[2]
-
-                # # Retrieve exit angle from previous blade row
-                # try:
-                dtheta_skew = tanTheta * util.cumtrapz0(
-                    chord_fac / xr[1, :, j], stream_frac
-                )
-                if not np.isfinite(dtheta_skew).all():
-                    raise Exception("dtheta_skew not finite")
-                theta_lim[:, :, j] += dtheta_skew
-
-            # except:
-            #     pass
-
-        else:
-            theta_lim = np.zeros((2, ni, nj))
-
-            if not mesh_config.recluster:
-                pitch_frac_clust = np.tile(
-                    pitch_frac_nom.reshape(1, 1, -1), (ni, nj, 1)
-                )
-            else:
-                for j in range(nj):
-                    for i in range(ni):
-                        rt_pitch_now = xr[1, i, j] * pitch_theta
-                        # Determine position along blade
-                        mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
-                        mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
-                        mfrac = np.array([1.0 - mclip, mclip])
-                        drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
-
-                        try:
-                            pitch_frac_clust[
-                                i, j, :
-                            ] = mesh_config.pitchwise_grid_fixed_npts(
-                                drt_norm_now,
-                                pitch_chord_ref[1],
-                                AR_row,
-                                nk_not_resampled,
-                            )
-                        except ValueError:
-                            raise Exception(
-                                f"Failed to recluster: {drt_norm_now},"
-                                f" {pitch_chord_ref[1]}, {AR_row}"
-                            )
-
-                assert np.isfinite(pitch_frac_clust).all()
-
-                # Smooth the pitch fraction in i and j directions
-                for _ in range(5):
-                    pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
-                        pitch_frac_clust[:-2, 1:-1, :]
-                        + pitch_frac_clust[2:, 1:-1, :]
-                        + pitch_frac_clust[1:-1, :-2, :]
-                        + pitch_frac_clust[1:-1, 2:, :]
-                    )
-
-                assert (pitch_frac_clust >= 0.0).all()
-                assert (pitch_frac_clust <= 1.0).all()
-
-            for j in range(nj):
-                nchord = 5000
-                m = util.cluster_cosine(nchord)
-                xrt_u, xrt_l = mac.bld[irow].evaluate_section(span_frac[j], m=m)
-
-                assert np.all(xrt_u[2] >= xrt_l[2])
-
-                if dmcusp := mesh_config.dm_cusp:
-                    cosTheta = np.cos(np.radians(Theta))
-                    ncusp = nchord - np.where(m > 1.0 - cosTheta[1] * dmcusp)[0][0]
-                    # Blend upper and lower surfaces to meet at TE
-                    # over the last ncusp points
-                    fcusp = np.linspace(0.0, 1.0, ncusp)
-                    if Theta[1] > 30.0:
-                        xrt_avg = xrt_l
-                    elif Theta[1] < -30.0:
-                        xrt_avg = xrt_u
-                    else:
-                        xrt_avg = 0.5 * (xrt_u + xrt_l)
-                    xrt_u[:, -ncusp:] = (
-                        fcusp * xrt_avg[:, -ncusp:] + (1.0 - fcusp) * xrt_u[:, -ncusp:]
-                    )
-                    xrt_l[:, -ncusp:] = (
-                        fcusp * xrt_avg[:, -ncusp:] + (1.0 - fcusp) * xrt_l[:, -ncusp:]
-                    )
-
-                #
-                # Get tte of current section and warp the streamwise grid
-                # vector to locate trailing edge exactly
-                mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
-
-                stream_frac_now = stream_frac_span[:, j]
-                xr[..., j] = mac.ann.evaluate_xr(
-                    stream_frac_now + ist + 1.0, span_frac[j]
-                )
-
-                theta_lim[..., j] = _theta_limits(
-                    stream_frac_now,
-                    xrt_u,
-                    xrt_l,
-                    mlim_now,
-                    Theta,
-                    chord_mid[
-                        (0, -1),
-                    ],
-                    Theta_max=mesh_config.skew_max,
-                )[:2]
-
-        assert np.isfinite(xr).all()
-        assert np.isfinite(pitch_frac_clust).all()
-        assert np.isfinite(theta_lim).all()
-
-        # pitch_frac_relax = (1.0 - relax) * pitch_frac + relax * uniform
-        assert np.isfinite(relax).all()
-        assert np.isfinite(uniform).all()
-        pitch_frac_relax = (1.0 - relax) * pitch_frac_clust + relax * uniform
-        assert np.isfinite(pitch_frac_relax).all()
-        assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
-
-        # Pinch the tip
-        if mac.tip[irow] and not unbladed[irow]:
-            theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
-            tau = mac.tip[irow]
-            pinch_frac = np.interp(
-                span_frac, [1.0 - 1.5 * tau, 1.0 - 0.6 * tau, 1.0], [0.0, 1.0, 1.0]
-            ).reshape(1, 1, -1)
-            theta_lim = pinch_frac * theta_mid + (1.0 - pinch_frac) * theta_lim
-            njtip = np.sum(pinch_frac == 1.0)
-        else:
-            njtip = 0
-
-        # Convert all matrices to 3d
-        xr3 = np.tile(np.expand_dims(xr, 3), (1, 1, 1, nk))  # Add pitchwise index
-        pfr3 = np.expand_dims(pitch_frac_relax, 0)  # Add coord index
-        theta_lim3 = np.expand_dims(theta_lim, 3)  # Add pitchwise index
-        assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
-
-        # Evaluate the angular coordinates and assemble
-        theta = np.flip(
-            pfr3
-            * theta_lim3[
-                (0,),
-            ]
-            + (1.0 - pfr3)
-            * (
-                theta_lim3[
-                    (1,),
-                ]
-                + pitch_theta
-            ),
-            axis=-1,
-        )
-
-        assert np.isfinite(pitch_theta)
-        assert np.isfinite(theta).all()
-
-        if unbladed[irow]:
-            assert np.allclose(
-                theta[0, :, :, -1] - theta[0, :, :, 0], pitch_theta, rtol=1e-4
-            )
-        else:
-            assert np.allclose(
-                theta[0, : (ile + 1), :, -1] - theta[0, : (ile + 1), :, 0],
-                pitch_theta,
-                rtol=1e-4,
-            )
-            assert np.allclose(
-                theta[0, ite:, :, -1] - theta[0, ite:, :, 0], pitch_theta, rtol=1e-4
-            )
-
-        xrt_now = np.concatenate([xr3, theta], axis=0)
-
-        # Make periodic patches
-        if unbladed[irow]:
-            patches = [
-                turbigen.grid.PeriodicPatch(i=(0, -1), k=0, label="per_k0"),
-                turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
-            ]
-        else:
-            patches = [
-                turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
-                turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
-                turbigen.grid.PeriodicPatch(i=(ite, -1), k=0),
-                turbigen.grid.PeriodicPatch(i=(ite, -1), k=-1),
-            ]
-
-        # Inlet or mixing
-        if irow == 0:
-            patches.append(turbigen.grid.InletPatch(i=0))
-        else:
-            patches.append(turbigen.grid.MixingPatch(i=0))
-
-        # Outlet or mixing
-        if irow == (nrow - 1):
-            patches.append(turbigen.grid.OutletPatch(i=-1))
-        else:
-            patches.append(turbigen.grid.MixingPatch(i=-1))
-
-        # Tip gap
-        if njtip:
-            patches.extend(
-                [
-                    turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=0),
-                    turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=-1),
-                ]
-            )
-
-        blocks.append(
-            turbigen.grid.BaseBlock.from_coordinates(
-                xrt_now, mac.Nb[irow].astype(int), patches
-            )
-        )
-
-    if mesh_config.slip_annulus:
-        for b in blocks:
-            b.add_patch(turbigen.grid.InviscidPatch(j=0))
-            b.add_patch(turbigen.grid.InviscidPatch(j=-1))
-
-    g = turbigen.grid.Grid(blocks)
-
-    g.match_patches()
-
-    return g

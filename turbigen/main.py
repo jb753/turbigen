@@ -1,20 +1,23 @@
 """Entry point for running turbigen from the shell."""
 
 import logging
+import numpy as np
 import subprocess
-import turbigen.util
+from turbigen import util
 import turbigen.yaml
+from timeit import default_timer as timer
 import turbigen.slurm
-import turbigen.run
+import turbigen.run2
 import socket
 import shutil
 import sys
 import os
 import turbigen.config
+import turbigen.config2
 import datetime
 import argparse
 
-logger = turbigen.util.make_logger()
+logger = util.make_logger()
 
 
 # Record all exceptions in the logger
@@ -136,7 +139,6 @@ def main():
 
             # Jump to solver slave process if not first rank
             if rank > 0:
-
                 from turbigen.solvers import embsolve
 
                 embsolve.run_slave()
@@ -153,7 +155,7 @@ def main():
 
     # Automatically number workdir if it contains placeholder
     if "*" in workdir:
-        d["workdir"] = workdir = turbigen.util.next_numbered_dir(workdir)
+        d["workdir"] = workdir = util.next_numbered_dir(workdir)
 
     workdir = os.path.abspath(workdir)
 
@@ -171,7 +173,84 @@ def main():
         subprocess.run([f"{editor}", f"{working_config}"])
 
     # Now read into a configuration object proper
-    conf = turbigen.config.Config.read(working_config)
+    conf = turbigen.yaml.read_yaml(working_config)
+    conf = turbigen.config2.TurbigenConfig(**conf)
+
+    # Apply command-line overrides to the config
+    if args.no_iteration:
+        conf.iterate = []
+    if args.no_solve:
+        conf.skip = True
+
+    # Set up logging to file
+    if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
+        log_level = logging.DEBUG
+    else:
+        if conf.iterate:
+            log_level = logging.ITER
+        else:
+            log_level = logging.INFO
+
+    log_path = conf.workdir / "log_turbigen.txt"
+    logger.setLevel(level=log_level)
+    fh = logging.FileHandler(log_path)
+    fh.setLevel(log_level)
+    logger.addHandler(fh)
+
+    # Print banner
+    logger.iter(f"TURBIGEN v{turbigen.__version__}")
+    logger.iter(
+        f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
+    )
+    logger.iter(f"Working directory: {workdir}")
+
+    # Backup the source files for later reproduction
+    util.save_source_tar_gz(conf.workdir / "src.tar.gz")
+
+    # Iterate if requested
+    if not conf.iterate:
+        conf.design_and_run()
+        # Write back the config with actual meanline and grid
+        conf.save()
+        converged = True
+    else:
+        logger.iter(f"Iterating for max {conf.max_iter} iterations...")
+        basedir = conf.workdir
+        for iiter in range(conf.max_iter):
+            # Set a numbered iteration workdir
+            conf.workdir = basedir / f"{iiter:03d}"
+            if conf.workdir.exists():
+                shutil.rmtree(conf.workdir)
+            else:
+                conf.workdir.mkdir(parents=True)
+
+            # Design and run the configuration
+            tic = timer()
+            conf.design_and_run()
+
+            # Write back the config with actual meanline and grid
+            conf.save()
+
+            # Update the config
+            converged, log_data = conf.step_iterate()
+            toc = timer()
+
+            # Insert timing data into log
+            elapsed = toc - tic
+            log_data = dict(Min=elapsed / 60.0, **log_data)
+
+            logger.iter(format_iter_log(log_data, header=not np.mod(iiter, 5)))
+
+            # Disable soft start after first iteration
+            conf.solver.soft_start = False
+
+        logger.iter(f"Finished iterating, converged={converged}.")
+    logger.iter(conf.format_design_vars_table())
+
+    if not converged:
+        sys.exit(1)
+
+    quit()
 
     # Apply command-line overrides to the config
     if args.no_iteration:
@@ -198,7 +277,6 @@ def main():
 
     # Hypercubes are always jobs
     if conf.hypercube:
-
         if not conf.job:
             raise Exception("Need job submission configured to run a hypercube.")
 
@@ -222,7 +300,6 @@ def main():
         success = True
 
     else:
-
         # Determine whether to try to run job or not
         hostname = socket.gethostname()
         job_flag = True
@@ -260,6 +337,33 @@ def main():
 
     if not success:
         sys.exit(1)
+
+
+def format_iter_log(log_data, header=False):
+    """Format the log data in a tabular format for printing.
+
+    Parameters
+    ----------
+    log_data : dict
+        Dictionary of log data, keys are the column headers, values are the data.
+    """
+
+    # Find column widths from headers, with a minimum width
+    col_widths = [max(len(k), 5) for k in log_data.keys()]
+
+    # Format header row
+    header_str = " ".join(f"{k:>{w}}" for k, w in zip(log_data.keys(), col_widths))
+
+    # Format data rows
+    value_strs = [f"{util.asscalar(v):.3g}"[:5] for v in log_data.values()]
+    value_strs = " ".join([f"{v:>{w}}" for v, w in zip(value_strs, col_widths)])
+
+    if header:
+        out_str = header_str + "\n" + "-" * len(header_str) + "\n" + value_strs
+    else:
+        out_str = value_strs
+
+    return out_str
 
 
 if __name__ == "__main__":

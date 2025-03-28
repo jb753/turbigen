@@ -168,11 +168,12 @@ def post(
                             textcoords="offset points",
                         )
 
-                if lim:
-                    ax.set_ylim(lim)
-                    Ntick = 4
-                    dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
-                    ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
+                if not lim:
+                    lim = ax.get_ylim()
+                ax.set_ylim(lim)
+                Ntick = 4
+                dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
+                ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"

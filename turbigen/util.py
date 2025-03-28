@@ -1,7 +1,9 @@
 """Miscellaneous utility functions that don't fit anywhere else."""
 
+from abc import ABC, abstractmethod
 import numpy as np
 import os
+import inspect
 import tarfile
 import sys
 import importlib
@@ -698,7 +700,7 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
         surf = surfj.squeeze()
 
         # Get the current blade object
-        bldnow = machine.split[irow] if jbld else machine.bld[irow]
+        bldnow = machine.bld[irow][jbld]
 
         # Loop over span fractions
         # Unstructure cut through current surface along the
@@ -1407,3 +1409,124 @@ def save_source_tar_gz(output_filename):
                     file_path = os.path.join(root, file)
                     logger.debug(f"{file_path}")
                     tar.add(file_path, arcname=os.path.relpath(file_path, directory))
+
+
+def camel_to_snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def get_subclass_by_name(cls, name):
+    """Match a subclass by name."""
+
+    # Loop over all subclasses of the abstract base class
+    for subclass in cls.__subclasses__():
+        # Check if the subclass name matches the input name
+        subname = camel_to_snake(subclass.__name__)
+        if subname == name or subname.replace("_", "") == name:
+            return subclass
+
+    # If no subclass matches the input name, raise an error
+    # and list the available subclasses
+    error_message = f"No subclass of {cls.__name__} matche the input name {name}.\n"
+    error_message += "Available subclasses are:"
+    for subclass in cls.__subclasses__():
+        error_message += f"\n{camel_to_snake(subclass.__name__)}"
+    raise ValueError(error_message)
+
+
+def init_subclass_by_signature(cls, kwargs):
+    """Automatically select a subclass by matching a signature."""
+
+    # Loop over all subclasses of the abstract base class
+    for subclass in cls.__subclasses__():
+        # Check if the subclass signature matches the input arguments
+        try:
+            return subclass(**kwargs)
+        except TypeError:
+            continue
+
+    # If no subclass matches the input arguments, raise an error
+    # and list the available subclasses and their signatures
+    error_message = f"No subclass of {cls.__name__} matches the input arguments.\n"
+    error_message += "Available subclasses are:"
+    for subclass in cls.__subclasses__():
+        error_message += (
+            f"\n{subclass.__name__}({inspect.signature(subclass.__init__)})"
+        )
+
+    raise ValueError(error_message)
+
+
+class BaseDesigner(ABC):
+    """A general class for storing and serialising design varaiables."""
+
+    _supplied_design_vars = ()
+
+    def __init__(self, design_vars):
+        """Initialise by saving the design variables dict."""
+        self.design_vars = design_vars
+        self.check_design_vars()
+        # Make any vector design variables into arrays
+        for var in self.design_vars:
+            if isinstance(self.design_vars[var], (tuple, list)):
+                self.design_vars[var] = np.array(self.design_vars[var])
+
+    def to_dict(self):
+        """Convert the designer to a dictionary."""
+        dvars = {
+            k: v.tolist() if isinstance(v, np.ndarray) else v
+            for k, v in self.design_vars.items()
+        }
+        return {
+            "type": camel_to_snake(self.__class__.__name__),
+            **dvars,
+        }
+
+    def check_design_vars(self):
+        """Verify that the input design variables match the forward signature.
+
+        We do it this way so the user only has to touch the forward and backward
+        methods to implement a new designer. Instead of a new init
+        method or defining their design variables as dataclass attributes."""
+
+        # Get the signature of the forward method
+        forward_sig = inspect.signature(self.forward)
+
+        # Check for any design variables that are not in the forward signature
+        valid_vars = [
+            v
+            for v in list(forward_sig.parameters.keys())
+            if v not in self._supplied_design_vars
+        ]
+        for var in self.design_vars:
+            if var not in valid_vars:
+                raise ValueError(
+                    f"Design variable '{var}' invalid, expected one of {valid_vars}"
+                )
+
+        # Check for any forward method parameters that are not in the design variables
+        func_params = list(forward_sig.parameters.values())
+        for param in func_params:
+            # Ignore the design variable that is the inlet stagnation state
+            if str(param) in self._supplied_design_vars:
+                continue
+            if str(param) not in self.design_vars and param.default is param.empty:
+                raise ValueError(f"Required design variable '{param}' not supplied.")
+
+    @staticmethod
+    @abstractmethod
+    def forward(*args, **kwargs):
+        raise NotImplementedError
+
+
+def xrt_to_xrrt(xrt):
+    x, r, t = xrt
+    return np.stack((x, r, r * t))
+
+
+def format_sf(x, sig=3):
+    return f"{x:.{sig}g}"
+
+
+def format_array(x, precision=3):
+    return "[" + ", ".join(format_sf(xi, precision) for xi in x) + "]"

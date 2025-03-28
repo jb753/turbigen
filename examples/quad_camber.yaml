@@ -1,0 +1,67 @@
+# A 2D turbine cascade with prescribed flow angles
+
+# All files relating to the case are held in a working directory
+workdir: runs/*
+
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  gamma: 1.4
+
+mean_line:
+  type: turbine_cascade
+  span: [0.01, 0.011]
+  Alpha: [40., -65.0]
+  Ma2: 0.6
+  Yh: 0.029
+  htr: 0.99
+
+# Annulus shape using meridional aspect ratios
+annulus:
+  AR_gap: [0.5, 0.5]  # Span to inlet/exit boundary distance
+  AR_chord: 2.0  # Span to chord
+
+# Computational mesh generation
+mesh:
+  type: h  # Mesh topology
+  dm_LE: 0.001
+  ni_TE: 9
+  dm_TE: 0.03
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Non-dimensional wall distance
+  # slip_annulus: true
+
+# Blade shapes
+blades:
+  - Co: 0.7
+    Re_surf: 4e5
+    camber_type: Quadratic
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
+        qstar_camber: [10., -2., 0.0]
+
+iterate:
+  xpeak:
+    target:
+      0: 0.5
+  DF:
+    target:
+      0: 0.3
+
+solver:
+  type: embsolve
+  n_step: 4000
+  n_step_avg: 1000
+  nstep_damp: -1
+
+post_process:
+  plot_convergence:
+  contour:
+    coord: spf
+    value: 0.5
+    variable: Cp
+    N_passage: 2
+  plot_pressure_distributions:
+    row_spf: [[0.5,],]

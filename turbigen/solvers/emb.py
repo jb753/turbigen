@@ -6,14 +6,13 @@ import os
 
 from dataclasses import dataclass
 
-# from turbigen.embsolve import embsolve
 from pathlib import Path
 from timeit import default_timer as timer
 
 import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
-from turbigen.solvers.base import BaseSolver, ConvergenceHistory
+from turbigen.solver import ConvergenceHistory
 from turbigen.solvers.embsolvec import embsolve
 
 util = turbigen.util
@@ -44,7 +43,7 @@ def get_memory_usage():
 
 
 @dataclass
-class Config(BaseSolver):
+class Emb(turbigen.solver.BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
@@ -73,6 +72,9 @@ class Config(BaseSolver):
     n_step: int = 5000
     """Number of time steps to run for."""
 
+    n_step_mix: int = 5
+    """Number of time steps between mixing plane updates."""
+
     n_step_dt: int = 10
     """Number of time steps between updates of the local time step."""
 
@@ -85,7 +87,7 @@ class Config(BaseSolver):
     n_step_ramp: int = 250
     """Number of time steps to ramp smoothing and damping."""
 
-    n_loss: int = 5
+    n_loss: int = 10
     """Number of time steps between viscous force updates."""
 
     nstep_damp: int = 500
@@ -105,18 +107,172 @@ class Config(BaseSolver):
 
     i_loss: int = 1
 
-    i_exit: int = 1
-    i_inlet: int = 1
-
     K_exit: float = 0.5
     K_inlet: float = 0.5
     K_mix: float = 0.5
-    sf_mix: float = 0.1
+    sf_mix: float = 0.02
 
     print_conv: bool = True
 
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
+
+    def robust(self):
+        """Create a copy of the config with more robust settings."""
+        return self.replace(
+            damping_factor=10.0,
+            smooth2=1.0,
+            smooth4_adapt=0.02,
+            fmgrid=0.0,
+        )
+
+    def restart(self):
+        """Create a copy of the config with more robust settings."""
+        return self.replace(
+            n_step_ramp=0,
+        )
+
+    def run(self, grid, machine=None):
+        logger.info(
+            f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
+        )
+
+        del machine
+        conf = self
+
+        if conf.workdir:
+            soln_path = os.path.join(conf.workdir, "soln.npz")
+            if conf.skip:
+                if os.path.exists(soln_path):
+                    logger.info("Skipping, loading existing solution.")
+                    dat = np.load(soln_path)
+                    cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
+                    for b, c in zip(grid, cons):
+                        b.set_conserved(c)
+                else:
+                    logger.info("Skipping, no saved solution fount, doing nothing.")
+                return
+
+        logger.info("Initialising native solver...")
+        t1 = timer()
+
+        nodes = np.sum([b.size for b in grid])
+
+        # Select precision
+        if conf.precision == 1:
+            typ = np.float32
+        else:
+            typ = np.float64
+
+        blocks = [SolverBlock(b, conf) for b in grid]
+        for ib, b in enumerate(blocks):
+            b.bid = ib
+
+        logger.info(f"Patitioning onto {size} processors...")
+        # procids is a list of length nblocks, of which processor is alocated to each block
+        procids = grid.partition(size)
+        periodics = get_periodics(grid, procids, typ)
+        mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
+
+        # Split into lists for each procid
+        block_split = []
+        for iproc in range(size):
+            block_split.append([])
+            for ib, b in enumerate(blocks):
+                if iproc == procids[ib]:
+                    block_split[-1].append(b)
+
+        t2 = timer()
+        logger.info(f"Elapsed time {t2 - t1:.2f}s")
+
+        if comm:
+            logger.info("Sending data to processors...")
+            tst = timer()
+            send_slave(block_split, procids, periodics, mixers)
+            ten = timer()
+            logger.info(f"Elapsed time {ten - tst:.2f}s")
+
+        logger.info("Starting the main time-stepping loop...")
+        block_split[0], mixers_out, tpnps, dUlog = run_slave(
+            block_split[0], periodics, mixers, nodes
+        )
+
+        logger.info("Recieving data from processors...")
+        tst = timer()
+        for iproc in range(1, size):
+            block_split[iproc] = comm.recv(source=iproc)
+        ten = timer()
+        logger.info(f"Elapsed time {ten - tst:.2f}s")
+
+        blocks_out = []
+        for bsi in block_split:
+            blocks_out.extend(bsi)
+
+        isort = np.argsort([b.bid for b in blocks_out])
+        blocks_out = [blocks_out[i] for i in isort]
+
+        # Write the conserved vars to an npz
+        if conf.workdir:
+            os.makedirs(conf.workdir, exist_ok=True)
+            logger.info(f"Writing output to {soln_path}")
+            dat_out = {
+                f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
+                for ib, b in enumerate(blocks_out)
+            }
+            np.savez(
+                soln_path,
+                **dat_out,
+            )
+
+        # Assemble a convergence history
+        mhos = np.full(
+            (
+                2,
+                3,
+                conf.n_step,
+            ),
+            np.nan,
+        )
+        nnow = conf.n_step
+        for b in blocks_out:
+            for bc in b.bconds:
+                mhos_now = np.array(bc.convergence_log).T
+                nnow = mhos_now.shape[-1]
+                if isinstance(bc, InletBoundary):
+                    mhos[0, :, :nnow] = mhos_now
+                elif isinstance(bc, OutletBoundary):
+                    mhos[1, :, :nnow] = mhos_now
+
+        istep = np.arange(conf.n_step)
+        istep_avg = conf.n_step - conf.n_step_avg
+        resid = np.concatenate(dUlog, axis=0)[:, 0]
+        state_conv = blocks_out[0].state.empty(shape=(2, nnow))
+        state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+        conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+        conv.tpnps = tpnps
+
+        for b, sb in zip(grid, blocks_out):
+            cons_avg = np.moveaxis(sb.cons_avg, -1, 0)
+            b.set_conserved(cons_avg)
+
+        mdot_in = 0.0
+        for patch in grid.inlet_patches:
+            Cm, A, _ = patch.get_cut().mix_out()
+            mdot_in += Cm.rho * Cm.Vm * A
+
+        mdot_out = 0.0
+        for patch in grid.outlet_patches:
+            Cm, A, _ = patch.get_cut().mix_out()
+            mdot_out += Cm.rho * Cm.Vm * A
+
+        if not mdot_out == 0.0:
+            merr = mdot_in / mdot_out - 1.0
+            logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
+            logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
+        else:
+            merr = -1.0
+
+        self.convergence = conv  # , tpnps, merr
 
 
 class SolverBlock:
@@ -666,7 +822,7 @@ def send_slave(block_split, procids, periodics, mixers):
     comm.Barrier()
 
 
-def exchange_mixing(blocks, bid_local, mixers):
+def exchange_mixing(mixers):
     # Prepare to recieve into away buffers
     for mixer in mixers:
         if not mixer.nxprocid == rank:
@@ -675,8 +831,6 @@ def exchange_mixing(blocks, bid_local, mixers):
     # Populate the home buffer with pitchwise-averaged
     # fluxes and conserved vars and send away
     for mixer in mixers:
-        b1 = blocks[bid_local[mixer.bid]]
-        mixer.pull(b1)
         mixer.fill_buffer()
         if not mixer.nxprocid == rank:
             mixer.Send.Start()
@@ -688,8 +842,8 @@ def exchange_mixing(blocks, bid_local, mixers):
         if not mixer.nxprocid == rank:
             mixer.Recv.Wait()
 
-        b1 = blocks[bid_local[mixer.bid]]
-        mixer.apply(b1)
+        mixer.unpack_buffers()
+        mixer.set_direction()
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -859,8 +1013,15 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
                 for bc in sb.bconds:
                     bc.apply(sb)
 
+            # Apply mixers
+            for mixer in mixers:
+                b1 = blocks[bid_local[mixer.bid]]
+                mixer.pull(b1)
+                mixer.apply(b1)
+
             # Exchange fluxes across mixing patches
-            exchange_mixing(blocks, bid_local, mixers)
+            if not np.mod(istep, conf.n_step_mix):
+                exchange_mixing(mixers)
 
             for iblock in range(nblock):
                 sb = blocks[iblock]
@@ -934,149 +1095,6 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     else:
         comm.send(blocks, dest=0)
         comm.send(mixers, dest=0)
-
-
-def run(grid, conf, machine=None):
-    logger.info(
-        f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
-    )
-
-    if isinstance(conf, dict):
-        conf = Config(**conf)
-
-    if conf.workdir:
-        soln_path = os.path.join(conf.workdir, "soln.npz")
-        if conf.skip:
-            if os.path.exists(soln_path):
-                logger.info("Skipping, loading existing solution.")
-                dat = np.load(soln_path)
-                cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
-                for b, c in zip(grid, cons):
-                    b.set_conserved(c)
-            else:
-                logger.info("Skipping, no saved solution fount, doing nothing.")
-            return
-
-    logger.info("Initialising native solver...")
-    t1 = timer()
-
-    nodes = np.sum([b.size for b in grid])
-
-    # Select precision
-    if conf.precision == 1:
-        typ = np.float32
-    else:
-        typ = np.float64
-
-    blocks = [SolverBlock(b, conf) for b in grid]
-    for ib, b in enumerate(blocks):
-        b.bid = ib
-
-    logger.info(f"Patitioning onto {size} processors...")
-    # procids is a list of length nblocks, of which processor is alocated to each block
-    procids = grid.partition(size)
-    periodics = get_periodics(grid, procids, typ)
-    mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
-
-    # Split into lists for each procid
-    block_split = []
-    for iproc in range(size):
-        block_split.append([])
-        for ib, b in enumerate(blocks):
-            if iproc == procids[ib]:
-                block_split[-1].append(b)
-
-    t2 = timer()
-    logger.info(f"Elapsed time {t2 - t1:.2f}s")
-
-    if comm:
-        logger.info("Sending data to processors...")
-        tst = timer()
-        send_slave(block_split, procids, periodics, mixers)
-        ten = timer()
-        logger.info(f"Elapsed time {ten - tst:.2f}s")
-
-    logger.info("Starting the main time-stepping loop...")
-    block_split[0], mixers_out, tpnps, dUlog = run_slave(
-        block_split[0], periodics, mixers, nodes
-    )
-
-    logger.info("Recieving data from processors...")
-    tst = timer()
-    for iproc in range(1, size):
-        block_split[iproc] = comm.recv(source=iproc)
-    ten = timer()
-    logger.info(f"Elapsed time {ten - tst:.2f}s")
-
-    blocks_out = []
-    for bsi in block_split:
-        blocks_out.extend(bsi)
-
-    isort = np.argsort([b.bid for b in blocks_out])
-    blocks_out = [blocks_out[i] for i in isort]
-
-    # Write the conserved vars to an npz
-    if conf.workdir:
-        os.makedirs(conf.workdir, exist_ok=True)
-        logger.info(f"Writing output to {soln_path}")
-        dat_out = {
-            f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
-            for ib, b in enumerate(blocks_out)
-        }
-        np.savez(
-            soln_path,
-            **dat_out,
-        )
-
-    # Assemble a convergence history
-    mhos = np.full(
-        (
-            2,
-            3,
-            conf.n_step,
-        ),
-        np.nan,
-    )
-    nnow = conf.n_step
-    for b in blocks_out:
-        for bc in b.bconds:
-            mhos_now = np.array(bc.convergence_log).T
-            nnow = mhos_now.shape[-1]
-            if isinstance(bc, InletBoundary):
-                mhos[0, :, :nnow] = mhos_now
-            elif isinstance(bc, OutletBoundary):
-                mhos[1, :, :nnow] = mhos_now
-
-    istep = np.arange(conf.n_step)
-    istep_avg = conf.n_step - conf.n_step_avg
-    resid = np.concatenate(dUlog, axis=0)[:, 0]
-    state_conv = blocks_out[0].state.empty(shape=(2, nnow))
-    state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
-    conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
-    conv.tpnps = tpnps
-
-    for b, sb in zip(grid, blocks_out):
-        cons_avg = np.moveaxis(sb.cons_avg, -1, 0)
-        b.set_conserved(cons_avg)
-
-    mdot_in = 0.0
-    for patch in grid.inlet_patches:
-        Cm, A, _ = patch.get_cut().mix_out()
-        mdot_in += Cm.rho * Cm.Vm * A
-
-    mdot_out = 0.0
-    for patch in grid.outlet_patches:
-        Cm, A, _ = patch.get_cut().mix_out()
-        mdot_out += Cm.rho * Cm.Vm * A
-
-    if not mdot_out == 0.0:
-        merr = mdot_in / mdot_out - 1.0
-        logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
-        logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
-    else:
-        merr = -1.0
-
-    return conv  # , tpnps, merr
 
 
 def arange_including_end(ni, di):
@@ -1322,6 +1340,8 @@ class MixingBoundary(Boundary):
         # Common pitch-averaged state
         self.state_avg = self.state.empty(shape=(len(self.spf),))
         self.state_avg.xrt = C.xrt[:, 0, :, 0]
+        cons_avg = self.pitchwise_average(self.state.conserved)
+        self.state_avg.set_conserved(cons_avg.squeeze())
 
         # Preallocate pitch-avg flux changes
         self.dflux_avg = np.zeros((1, len(self.spf), 1, 5, 1))
@@ -1373,7 +1393,7 @@ class MixingBoundary(Boundary):
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
 
         # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        Ma_min = 0.1
+        Ma_min = 0.01
         V_min = self.state_avg.a.mean() * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
         self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
@@ -1451,10 +1471,6 @@ class MixingBoundary(Boundary):
         return dchic
 
     def apply(self, block):
-        self.unpack_buffers()
-
-        self.set_direction()
-
         # Take outwards-running chics from interior
         dchic_outwards = self.outward_chics()
 

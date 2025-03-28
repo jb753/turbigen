@@ -13,12 +13,14 @@ from scipy.spatial import KDTree
 import turbigen.annulus
 import turbigen.average
 import turbigen.flowfield
+import turbigen.iterators
 import turbigen.yaml
 import turbigen.nblade
 from turbigen import (
     fluid,
     grid,
     util,
+    util_post,
     geometry,
     hmesh,
     ohmesh,
@@ -634,7 +636,6 @@ and will cause problems with meshing and solving for the flow field."""
         elif "DFL" in conf.blades and (DFL := conf.blades["DFL"][irow]):
             logger.debug("Setting Nb using Lieblein")
             s_c = ml.set_Lieblein_DF(DFL)[irow]
-            logger.debug(f"s_c={s_c}")
             cx = ann.chords(0.5)[1:-1:2][ind_out][irow]
             s = s_c * cx
             Nb[irow] = np.round(2.0 * np.pi * row_rmid[irow] / s)
@@ -1172,6 +1173,36 @@ and will cause problems with meshing and solving for the flow field."""
                 conf.blades["Co"][irow] /= 1.0 + dNb_rel
             DF_converged = False
 
+    xpeak_converged = True
+    if xpeak_conf := conf.iterate.get("xpeak"):
+        xpeak_conf = turbigen.iterators.PeakSuctionConfig(**xpeak_conf)
+
+        # Loop over rows
+        for irow, xpeak_target in xpeak_conf.target.items():
+            logger.iter(f"Optimising peak suction for row {irow}...")
+            # Get the pressure distribution
+            zeta_norm, Cp = util_post.get_pressure_distribution(
+                g,
+                mac,
+                ml,
+                irow,
+                xpeak_conf.spf,
+            )
+
+            # Get peak suction location
+            xpeak = np.abs(zeta_norm[Cp.argmin()].item())
+
+            # Calclulate change in camber line parameter
+            dqcamber = xpeak_conf.K * (xpeak_target - xpeak)
+
+            # Apply change to camber line
+            qstar_save[irow][:, 2] += dqcamber
+
+            logger.iter(
+                f"xpeak_actual={xpeak:.3f}, xpeak_target={xpeak_target:.3f}, dqcamber={dqcamber:.3f}"
+            )
+            xpeak_converged = False
+
     # Update qstar post-optimisation
     for irow, row in enumerate(conf.sections):
         if row:
@@ -1179,7 +1210,11 @@ and will cause problems with meshing and solving for the flow field."""
             row["qstar_camber"] = qstar_save[irow].tolist()
 
     opt_converged = (
-        dev_converged and inc_converged and mean_line_converged and DF_converged
+        dev_converged
+        and inc_converged
+        and mean_line_converged
+        and DF_converged
+        and xpeak_converged
     ) or conf.solver.get("skip")
 
     if conf.iterate:

@@ -56,7 +56,7 @@ def post(
     else:
         # Fall back to absolute in a cascade
         dCWx = CWx * 100.0
-    ylim = [-10.0, 10.0]
+    ylim = np.array([-10.0, 10.0])
     ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
 
     if dn_smooth:
@@ -78,7 +78,7 @@ def post(
     ax[1].set_ylim(ylim)
     ax[1].set_yticks(ytick)
     ax[2].plot(conv.istep, dYs, marker="")
-    ax[2].set_ylim(ylim)
+    ax[2].set_ylim(2 * ylim)
     ax[2].set_yticks(ytick)
     ax[2].set_title("dLoss/percent")
 

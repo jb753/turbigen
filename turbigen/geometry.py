@@ -637,9 +637,9 @@ class Blade:
     @property
     def _Cam(self):
         if self.camber_type:
-            Cam = getattr(turbigen.camber, self.camber_type)
+            Cam = turbigen.camber.__dict__[self.camber_type]
         else:
-            Cam = turbigen.camber.Brind
+            Cam = turbigen.camber.Quartic
         return Cam
 
     def _get_cam_thick(self, spf):
@@ -864,9 +864,7 @@ class Blade:
 
     def get_chi(self, spf):
         """Interpolate metal angles at a given span fraction."""
-
         cam, _ = self._get_cam_thick(spf)
-
         return cam.chi((0.0, 1.0))
 
 

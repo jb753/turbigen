@@ -85,3 +85,27 @@ def get_pressure_distribution(
         Cp = (P - Po1) / (Po1 - P2)
 
     return zeta_norm, Cp
+
+
+def get_diffusion_factor(
+    grid,
+    machine,
+    meanline,
+    irow,
+    spf,
+):
+    """Calculate diffusion factor for a blade in the machine."""
+
+    zeta_norm, Cp = get_pressure_distribution(grid, machine, meanline, irow, spf)
+
+    # Calculate diffusion factor
+    Cpmin = Cp.min()
+    Cpmax = Cp.max()
+    CpTE = 0.5 * (Cp[-1] + Cp[0]).item()
+    DCpmin = Cpmin - Cpmax
+    DCpTE = CpTE - Cpmax
+    DF = 1.0 - np.sqrt(DCpTE / DCpmin)
+
+    xpeak = np.abs(zeta_norm[Cp.argmin()].item())
+
+    return xpeak, DF

@@ -1,10 +1,16 @@
 """Functions for reading and writing YAML files."""
 
 import yaml
+from pathlib import Path
 import gzip
 import os
 import re
 import numpy as np
+
+
+# Allow dumping of Path to yaml
+def represent_path(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data))
 
 
 # Allow dumping of numpy float64 to yaml

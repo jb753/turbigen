@@ -1,6 +1,6 @@
 """Viscous test cases."""
 
-import turbigen.solvers.embsolve
+import turbigen.solvers.emb as embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -11,16 +11,6 @@ import sys
 from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
 import pytest
-
-# # Check our MPI rank
-# from mpi4py import MPI
-# comm = MPI.COMM_WORLD
-# rank = comm.Get_rank()
-# # Jump to solver slave process if not first rank
-# if rank > 0:
-#     from turbigen.solvers import embsolve
-#     embsolve.run_slave()
-#     sys.exit(0)
 
 # With quasi-2D periodic grids, and no halo cells,
 # a little bit of 2nd order smoothing is needed to
@@ -407,21 +397,9 @@ def test_plate_turb():
 
     g = make_plate(mu=0.5e-4)
 
-    # settings = {
-    #     "n_step": 10000,
-    #     # 'n_step': 5000,
-    #     "n_step_avg": 1,
-    #     "n_step_log": 100,
-    #     "xllim_pitch": 10000.0,
-    #     "i_scheme": 0,
-    #     "CFL": 0.4,
-    #     "fmgrid": 0.,
-    # }
-
-    conf = turbigen.solvers.embsolve.Config(**settings)
-    conf.xllim_pitch = 10000.0
-    # conf.n_step = 5000
-    turbigen.solvers.embsolve.run(g, conf)
+    solver = embsolve.Emb(**settings)
+    solver.xllim_pitch = 1e5
+    solver.run(g)
 
     # Extract skin friction
     b = g[0]
@@ -534,7 +512,8 @@ def test_plate_lam():
     # turbigen.solvers.ts3.run(g, set_ts3, None)
 
     g = make_plate(mu=8e-4)
-    turbigen.solvers.embsolve.run(g, settings)
+
+    embsolve.Emb(**settings).run(g)
 
     # Extract skin friction
     b = g[0]
@@ -550,16 +529,19 @@ def test_plate_lam():
 
     cf = tauw / (0.5 * rhoinf * Vinf * Vinf)
     x = Cjm.x
+    Lref = x[-1] * 0.8
 
     # xcf_ts3 = np.savetxt('tests/xcf_yp5_ts3.csv', np.stack((x,cf)))
 
     # Setup figure
     fig, ax = plt.subplots()
-    ax.set_ylim((0.0, 0.006))
+    ax.set_ylim((0.0, 6))
 
     # Plot skin friction
     xcf_ts3 = np.loadtxt("tests/xcf_yp5_ts3.csv")
-    ax.plot(x, cf, "-", label="embsolve")
+    xcf_ts3[1] /= 1e-3
+    xcf_ts3[0] /= Lref
+    ax.plot(x / Lref, cf / 1e-3, "-", label="EMB")
     ax.plot(*xcf_ts3, "-", label="TS3")
 
     # Plot correlation
@@ -567,13 +549,15 @@ def test_plate_lam():
     xx = x[x > 0.0]
     Rex = rhoinf[x > 0.0] * Vinf[x > 0.0] * (xx - x0) / mu
     cf_corr = 0.644 / np.sqrt(Rex)
-    ax.plot(xx, cf_corr, "k--", label="Blasius")
+    ax.plot(xx / Lref, cf_corr * 1e3, "k--", label="Blasius")
+    ax.set_xlim([0.0, 1.0])
 
-    ax.set_ylabel("Skin Friction Coefficient, $C_f$")
+    ax.set_ylabel(r"Skin Friction Coefficient, $C_f\,/10^{-3}$")
     ax.set_xlabel("Streamwise Distance, $x/L$")
+    ax.set_yticks(np.arange(0, 8, 2))
     ax.legend()
     plt.tight_layout(pad=0.1)
-    plt.savefig("tests/blasius_cf.pdf")
+    plt.savefig("plots/blasius_cf.pdf")
     plt.close()
 
     # Get error
@@ -640,21 +624,7 @@ def test_plate_lam():
 def test_poiseuille():
     g, F = make_pipe()
 
-    np.set_printoptions(precision=2)
-    # settings["n_step"] = 2160
-    # settings["n_step_avg"] = 1
-    # settings["nstep_damp"] = -1
-    # settings["fmgrid"] = 0.4
-
-    turbigen.solvers.embsolve.run(g, settings)
-
-    # fig, ax = plt.subplots()
-    # b = g[0]
-    # C = b[0, :, b.nk // 2]
-    # ax.axis("equal")
-    # ax.plot(C.r, C.Vx)
-    # plt.show()
-    #
+    embsolve.Emb(**settings).run(g)
 
     print("Processing last block...")
     b = g[-1]
@@ -671,6 +641,29 @@ def test_poiseuille():
     K = dPdx[iplot] / 2.0 / mu * h * h
     print(f"K={K}")
 
+    fig, ax = plt.subplots(layout="constrained")
+    b = g[-1]
+    C = b[-1, :, b.nk // 2]
+    r = C.r
+    h = np.ptp(r)
+    rn = (r - r.min()) / h
+    denom = -dPdx[iplot] * h * h / 2.0 / mu
+    Vn = C.Vx / denom
+    Vn_analytical = (1.0 - rn) * rn
+    ax.plot(Vn, rn, "-", label="EMB")
+    ax.plot(Vn_analytical, rn, "--", label="Poiseuille")
+    ax.set_xlabel(
+        r"Velocity, $\left. V \middle/ \left( \frac{-h^2}{2\mu}\frac{\mathrm{d} p}{\mathrm{d} x}\right)\right.$"
+    )
+    ax.set_ylim([0.0, 1.0])
+    ax.set_xlim([0.0, 0.3])
+    ax.set_ylabel(r"Channel Height, $y/h$")
+    ax.set_xticks(np.arange(0, 0.4, 0.1))
+    # ax.set_yticks([0, 0.5, 1.0])
+    ax.legend()
+    plt.savefig("plots/poiseuille.pdf")
+    # plt.show()
+
     Cm, A, _ = C2.mix_out()
     mdot = Cm.rho * Cm.Vm * A
     print(f"mdot={mdot}")
@@ -682,10 +675,9 @@ def test_poiseuille():
 
     err = mdot_analytical / mdot - 1.0
     print(
-        f"mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f},"
-        f" error={err*100:.2f}%"
+        f"mdot acutal={mdot:.2f}, theory={mdot_analytical:.2f}, error={err * 100:.2f}%"
     )
-    assert np.abs(err) < 0.05
+    assert np.abs(err) < 0.01
 
 
 if __name__ == "__main__":

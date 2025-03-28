@@ -1,6 +1,6 @@
 """Run a quasi-1D nozzle in the native solver."""
 
-import turbigen.solvers.embsolve
+import turbigen.solvers.emb as embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.util
@@ -215,18 +215,7 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
-    # "CFL": 0.0,
 }
-
-# settings = {
-#     "n_step": 1000,
-#     "n_step_avg": 1,
-#     "n_step_log": 1,
-#     "i_loss": 0,
-#     # "CFL": 0.0,
-# }
-#
-conf = turbigen.solvers.embsolve.Config(**settings)
 
 
 def plot_nozzle(g, F):
@@ -361,12 +350,10 @@ def test_condi(dirn):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, dirn=dirn)
 
-    np.set_printoptions(precision=2)
+    embsolve.Emb(**settings).run(g)
 
-    turbigen.solvers.embsolve.run(g, conf)
-
-    # plot_nozzle(g,F)
-    # plt.show()
+    plot_nozzle(g, F)
+    plt.show()
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -384,9 +371,7 @@ def test_Tu0(Tu0):
     xA = np.array([[0.0, 0.01, 0.99, 1.0], [1.0, 1.0, 1.0, 1.0]])
     g, F = make_nozzle(xA, Tu0=Tu0)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     # plot_nozzle(g,F)
     # plt.show()
@@ -408,9 +393,7 @@ def test_uniform(Alpha):
 
     g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -429,9 +412,7 @@ def test_Ma(Ma):
 
     g, F = make_nozzle(xA, Ma1=Ma)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -449,9 +430,7 @@ def test_skew(Alpha):
 
     g, F = make_nozzle(xA, skew=Alpha, tper=True)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -470,9 +449,7 @@ def test_radius(Alpha):
 
     g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=Alpha, tper=True)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     _, Ys, Cho = post_nozzle(g, F)
 
@@ -513,18 +490,11 @@ def test_patch_A_avg():
 
 
 @pytest.mark.parametrize("rpm", (-100.0, 100.0))
-def test_rpm(rpm, plot=False):
-    """"""
-
+def test_rpm(rpm):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, rpm=rpm, tper=True, skew=None)
 
-    np.set_printoptions(precision=2)
-
-    conf2 = copy(conf)
-    conf2.nstep_damp = -1
-
-    turbigen.solvers.embsolve.run(g, conf2)
+    embsolve.Emb(nstep_damp=-1, **settings).run(g)
 
     # plot_nozzle(g,F)
     # plt.show()
@@ -546,9 +516,7 @@ def test_To1(To1):
 
     g, F = make_nozzle(xA, To1=To1)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -570,9 +538,7 @@ def test_offset(dP):
 
     g, F = make_nozzle(xA, dP=dP)
 
-    np.set_printoptions(precision=2)
-
-    turbigen.solvers.embsolve.run(g, conf)
+    embsolve.Emb(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -587,28 +553,5 @@ def test_offset(dP):
 
 
 if __name__ == "__main__":
-    # test_condi('t')
-    test_offset(0.0)
-    # test_Tu0(300.)
-    # test_rpm(500.)
-
-    # print('testing exit, aligned grid')
-    # test_patch_A_avg()
-    # test_exit(0.)
-
-    # print('testing uniform, vary Ma')
-    # test_Ma(0.9)
-
-    # print('testing uniform, aligned grid')
-    # test_uniform(-30.)
-
-    # print('testing uniform, skewed grid')
-    # test_skew(-0.)
-
-    # print('testing radius change, aligned grid')
-    # test_radius(30.)
-
-    # print('testing con-di nozzles')
-    # print(Alpha, g[0].dlmin[0,0,0], g[0].vol[0,0,0], g[)
-    # test_condi('t')
+    test_condi("r")
     pass

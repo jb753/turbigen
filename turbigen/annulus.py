@@ -21,8 +21,28 @@ import numpy as np
 logger = util.make_logger()
 
 
-class BaseAnnulus(ABC):
+class AnnulusDesigner(util.BaseDesigner):
     """Base class defining the interface for an annulus."""
+
+    _supplied_design_vars = ("rmid", "span", "Beta")
+
+    @abstractmethod
+    def forward(self, rmid, span, Beta, *args, **kwargs):
+        """Set the coordinates of the mean line of the annulus.
+
+        Do whatever is necessary to set up the annulus geometry, such as
+        calculating the hub and casing lines.
+
+        Parameters
+        ----------
+        rmid : (nrow*2) array
+            Mid-span radii at inlet and exit of all rows.
+        span : (nrow*2) array
+            Annulus span perpendicular to pitch angle at all stations.
+        Beta : (nrow*2) array
+            Pitch angles at all stations [deg].
+        """
+        raise NotImplementedError
 
     @abstractmethod
     def evaluate_xr(self, m, spf) -> np.ndarray:
@@ -48,6 +68,10 @@ class BaseAnnulus(ABC):
 
         """
         raise NotImplementedError
+
+    def setup_annulus(self, mean_line):
+        """Setup the annulus using coordinates from a mean line."""
+        self.forward(mean_line.rmid, mean_line.span, mean_line.Beta, **self.design_vars)
 
     @property
     @abstractmethod
@@ -288,43 +312,22 @@ class BaseAnnulus(ABC):
         return mp_from_xr
 
 
-class FixedAxialChord(BaseAnnulus):
-    def __init__(
+class FixedAxialChord(AnnulusDesigner):
+    def forward(
         self,
         rmid,
         span,
         Beta,
         cx_row,
         cx_gap,
-        nozzle_ratio=1.0,
     ):
-        """Define annulus line by specifying dimensional axial chords.
-
-        Places the origin of the x-coordinate system at the first row LE.
-
-        Parameters
-        ----------
-        rmid : (nrow*2) array
-            Mid-span radii at inlet and exit of all rows.
-        span : (nrow*2) array
-            Annulus span perpendicular to pitch angle at all stations.
-        Beta : (nrow*2) array
-            Pitch angles at all stations [deg].
-        cx_row : (nrow) array
-            Axial chord lengths of each blade row [m].
-        cx_gap : (nrow+1) array
-            Axial chord lengths of each gap between rows [m].
-            cx_gap[0] is the distance to inlet boundary,
-            cx_gap[-1] is the distance to outlet boundary,
-        """
-
         # Check input data
         npt = len(rmid)
         nrow = npt // 2
         ngap = nrow + 1
         util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
-        util.check_vector((ngap,), cx_gap=cx_gap)
         util.check_vector((nrow,), cx_row=cx_row)
+        util.check_vector((ngap,), cx_gap=cx_gap)
 
         self.span = span
 
@@ -365,10 +368,13 @@ class FixedAxialChord(BaseAnnulus):
         self._cas = MeridionalLine(xcas, rcas, Beta).smooth()
 
     def __repr__(self):
-        cm = self.chords(0.5)[1::2]
-        mq = np.arange(1.5, self.nrow + 1.5)
-        span = self.get_span(mq)
-        return f"FixedAxialChord(nrow={self.nrow}, AR={span / cm})"
+        try:
+            cm = self.chords(0.5)[1::2]
+            mq = np.arange(1.5, self.nrow + 1.5)
+            span = self.get_span(mq)
+            return f"FixedAxialChord(nrow={self.nrow}, AR={span / cm})"
+        except Exception:
+            return f"FixedAxialChord()"
 
     @property
     def nrow(self):
@@ -397,10 +403,10 @@ class FixedAxialChord(BaseAnnulus):
         return xr
 
 
-class Smooth(BaseAnnulus):
+class Smooth(AnnulusDesigner):
     """Annlus defines the entire meridional geometry of the turbomachine."""
 
-    def __init__(
+    def forward(
         self,
         rmid,
         span,
@@ -628,12 +634,14 @@ class Smooth(BaseAnnulus):
         return xr
 
 
-def load_annulus(annulus_type):
-    """Get annulus class by string, including any custom classes."""
-    available_annulus_types = {a.__name__: a for a in BaseAnnulus.__subclasses__()}
-    if annulus_type not in available_annulus_types:
-        raise ValueError(
-            f"Unknown annulus type: {annulus_type}, should be one of {available_annulus_types.keys()}"
-        )
-    else:
-        return available_annulus_types[annulus_type]
+#
+#
+# def load_annulus(annulus_type):
+#     """Get annulus class by string, including any custom classes."""
+#     available_annulus_types = {a.__name__: a for a in BaseAnnulus.__subclasses__()}
+#     if annulus_type not in available_annulus_types:
+#         raise ValueError(
+#             f"Unknown annulus type: {annulus_type}, should be one of {available_annulus_types.keys()}"
+#         )
+#     else:
+#         return available_annulus_types[annulus_type]
