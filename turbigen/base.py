@@ -798,7 +798,7 @@ class Kinematics:
         )
         xr = clu * xr0 + (1.0 - clu) * xr1
         pitch = self.pitch
-        t = -np.linspace(-pitch / 2.0, pitch / 2, npitch).reshape(1, -1)
+        t = -np.linspace(-pitch / 2.0, pitch / 2.0, npitch).reshape(1, -1)
         xrt = np.stack(np.broadcast_arrays(*xr, t), axis=0)
 
         # Initialise a new cut
@@ -809,6 +809,10 @@ class Kinematics:
         # Interpolate the data
         Cf = C.to_unstructured()
 
+        print(f"Theta pitch={pitch}")
+        print(f"Unstr theta lim = {np.max(Cf.t), np.min(Cf.t)}")
+        print(f"Struct theta lim = {np.max(Cs.t), np.min(Cs.t)}")
+
         if np.ptp(Cf.x) > np.ptp(Cf.r):
             xi = np.stack((Cf.x, Cf.t), axis=-1)
             xo = np.stack((Cs.x, Cs.t), axis=-1)
@@ -817,10 +821,19 @@ class Kinematics:
             xo = np.stack((Cs.r, Cs.t), axis=-1)
 
         yi = Cf._data.T
-        ind_t = np.abs(xi[:, 1]) <= pitch * 0.6
-        xi = xi[ind_t]
-        yi = yi[ind_t]
 
+        # ind_t = np.abs(xi[:, 1]) <= pitch * 0.6
+        # xi = xi[ind_t]
+        # yi = yi[ind_t]
+
+        # fig, ax = plt.subplots()
+        # ax.plot(xi[:, 0], xi[:, 1], "rx")
+        # ax.plot(xo[0, :, :, 0], xo[0, :, :, 1], "b-")
+        # ax.plot(xo[0, :, :, 0].T, xo[0, :, :, 1].T, "b-")
+        # ax.axis("equal")
+        # plt.show()
+        # quit()
+        #
         interp = LinearNDInterpolator(xi, yi)
         yo = np.moveaxis(interp(xo), -1, 0)
         ind_nan = np.isnan(yo)

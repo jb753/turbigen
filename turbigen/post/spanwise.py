@@ -45,6 +45,7 @@ def post(
 
     # Take an unstructured cut at given meridional position
     xrc = machine.ann.get_cut_plane(merid)[0]
+    logger.info(f"merid={merid}, cut plane={xrc}")
     Cs = grid.unstructured_cut_marching(xrc).interpolate_to_structured()
 
     Csc = Cs.empty(shape=(Cs.ni, Cs.nj - 1, Cs.nk - 1))
@@ -88,7 +89,8 @@ def post(
         logger.info(f"Mean Ys={Ys_mean}")
 
     elif plot_var == PlotVars.VM:
-        v = mass_avg(Csc.Vm) / row.U[1]
+        if U := meanline.U.max():
+            v = mass_avg(Csc.Vm) / U
         label = r"Meridional Velocity, $V_m/U$"
 
     elif plot_var == PlotVars.VT:

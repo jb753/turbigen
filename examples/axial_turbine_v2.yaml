@@ -1,4 +1,4 @@
-workdir: runs/axial_turbine_*
+workdir: runs/axial_turbine_0003
 
 inlet:
   Po: 16.0e5
@@ -21,7 +21,7 @@ mean_line:
 
 annulus:
   type: FixedAxialChord
-  cx_gap: [0.1, 0.1, 0.1]
+  cx_gap: [0.1, 0.065, 0.1]
   cx_row: [0.1, 0.1]
 
 blades:
@@ -56,6 +56,9 @@ mesh:
 
 post_process:
   plot_convergence:
+  spanwise:
+    merid: 2.49
+    variable: Vm
   contour:
     coord: spf
     value: .5
