@@ -120,10 +120,12 @@ class Emb(turbigen.solver.BaseSolver):
     def robust(self):
         """Create a copy of the config with more robust settings."""
         return self.replace(
-            damping_factor=10.0,
-            smooth2=1.0,
-            smooth4_adapt=0.02,
+            damping_factor=3.0,
+            smooth2_adapt=1.0,
+            smooth4=0.02,
             fmgrid=0.0,
+            CFL=0.4,
+            i_scheme=0,
         )
 
     def restart(self):

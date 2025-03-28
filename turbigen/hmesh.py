@@ -72,8 +72,7 @@ class H(turbigen.mesh.Mesher):
         mesh_config = self
         unbladed = [False for _ in range(mac.Nrow)]
 
-        if dsurf.shape[0] == 1:
-            dsurf = np.tile(dsurf, (2, 1))
+        dsurf = np.tile(dsurf, (2, 1))
 
         # Spanwise grid vector
         # From hub/casing spacings and ER

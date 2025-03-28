@@ -183,10 +183,10 @@ class DiffusionFactor(IteratorConfig):
 
 @dataclasses.dataclass
 class Incidence(IteratorConfig):
-    relaxation_factor: float = 0.2
+    relaxation_factor: float = 0.1
     """Multiplier on changes to metal angle."""
 
-    tolerance: float = 5.0
+    tolerance: float = 10.0
     """Permissible error on local incidence angle [deg]."""
 
     target: float = 0.0
@@ -245,7 +245,7 @@ class Incidence(IteratorConfig):
 class MeanLine(IteratorConfig):
     """Settings for mean-line iteration."""
 
-    relaxation_factor: float = 0.5
+    relaxation_factor: float = 0.8
     """Factor controlling size of changes."""
 
     tolerance: dict = dataclasses.field(default_factory=lambda: ({}))
@@ -301,8 +301,14 @@ class MeanLine(IteratorConfig):
             config.mean_line.design_vars[vname] = var_new
 
             # Log the data
-            log_data[vname] = var_cfd  # Value
-            log_data["D" + vname] = dvar  # Change
+            if (nv := len(var_nom)) > 1:
+                for iv in range(nv):
+                    kiv = f"{vname}[{iv}]"
+                    log_data[kiv] = var_cfd[iv]
+                    log_data["D" + kiv] = dvar[iv]  # Change
+            else:
+                log_data[vname] = var_cfd  # Value
+                log_data["D" + vname] = dvar  # Change
 
         return converged, log_data
 

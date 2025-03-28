@@ -46,23 +46,23 @@ def post(
     ann = machine.ann
     bld = machine.bld
 
-    if show_blades:
-        grey = np.ones((3,)) * 0.4
-        Npts = 100
-        spf = np.linspace(0.0, 1.0, Npts)
-        mE = np.array([0.0, 1.0])
-        for irow in range(machine.Nrow):
-            # Plot LE and TE lines
-            xrt_LE = np.full((3, Npts), np.nan)
-            xrt_TE = np.full((3, Npts), np.nan)
-            if bld[irow]:
-                for jspf in range(Npts):
-                    xrt_LE[:, jspf], xrt_TE[:, jspf] = (
-                        bld[irow].evaluate_section(spf[jspf], m=mE)[0].T
-                    )
-                ax.plot(*xrt_LE[:2], "-", color=grey)
-                ax.plot(*xrt_TE[:2], "-", color=grey)
-
+    # if show_blades:
+    #     grey = np.ones((3,)) * 0.4
+    #     Npts = 100
+    #     spf = np.linspace(0.0, 1.0, Npts)
+    #     mE = np.array([0.0, 1.0])
+    #     for irow in range(machine.Nrow):
+    #         # Plot LE and TE lines
+    #         xrt_LE = np.full((3, Npts), np.nan)
+    #         xrt_TE = np.full((3, Npts), np.nan)
+    #         if bld[irow]:
+    #             for jspf in range(Npts):
+    #                 xrt_LE[:, jspf], xrt_TE[:, jspf] = (
+    #                     bld[irow].evaluate_section(spf[jspf], m=mE)[0].T
+    #                 )
+    #             ax.plot(*xrt_LE[:2], "-", color=grey)
+    #             ax.plot(*xrt_TE[:2], "-", color=grey)
+    #
     for tcut in mnorm_traverse:
         xrc = ann.get_cut_plane(tcut)[0]
         ax.plot(*xrc, "-", color="C0")

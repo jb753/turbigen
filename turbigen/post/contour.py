@@ -2,6 +2,7 @@
 
 import os
 import turbigen.util
+import turbigen.base
 import numpy as np
 import matplotlib.pyplot as plt
 from enum import Enum
@@ -95,7 +96,14 @@ def post(
 
     if coord_mode == CoordMode.SPF:
         xrc = machine.ann.get_span_curve(value, n=101)
-        C = grid.cut_span_unstructured(xrc)
+
+        # Cut and repeat each row separately
+        Crow = grid.cut_span_unstructured(xrc)
+        Crow = [Ci.repeat_pitchwise(N_passage) for Ci in Crow]
+
+        # Combine the rows
+        C = turbigen.base.concatenate(Crow)
+
     else:
         # Get an xr curve describing the cut plane.
         if coord_mode == CoordMode.X:
@@ -108,8 +116,9 @@ def post(
             raise Exception("Should not reach here")
         C = grid.unstructured_cut_marching(xrc)
 
+        C = C.repeat_pitchwise(N_passage)
+
     # Matplotlib style triangulate, repeat if needed
-    C = C.repeat_pitchwise(N_passage)
     C_tri, triangles = C.get_mpl_triangulation()
 
     # Centre theta on zero
@@ -217,11 +226,21 @@ def post(
             extend=extend,
         )
 
-    ax.axis("equal")
+    ax.set_aspect("equal")  # Ensures equal scaling
     ax.axis("off")
 
+    # Set x-limits tightly around data
+    x = c1
+    y = c2
+    ax.set_xlim(x.min(), x.max())
+
+    # Adjust y-limits based on the new equal aspect ratio
+    ylim_range = (x.max() - x.min()) / ax.get_data_ratio()  # Calculate new y-range
+    y_mid = (y.max() + y.min()) / 2  # Midpoint of y-data
+    ax.set_ylim(y_mid - ylim_range / 2, y_mid + ylim_range / 2)  # Adjust y-limits
+
     # Make the colorbar
-    # cm.set_edgecolor("face")
+    cm.set_edgecolor("face")
     plt.colorbar(cm, label=label, shrink=0.8)
 
     # Show hub and casing for r=const cuts

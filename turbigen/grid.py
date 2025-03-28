@@ -1149,11 +1149,13 @@ class Grid:
 
     def cut_span_unstructured(self, xr):
         bcut = []
-        for block in self:
-            bnow = block.meridional_slice(xr)
-            if bnow:
-                bcut.append(bnow.squeeze().triangulate())
-        return turbigen.base.concatenate(bcut)
+        for row in self.row_blocks:
+            brow = []
+            for block in row:
+                if bnow := block.meridional_slice(xr):
+                    brow.append(bnow.squeeze().triangulate())
+            bcut.append(turbigen.base.concatenate(brow))
+        return bcut
 
     def cut_span(self, spf):
         # Find j index nearest to requested span fraction
