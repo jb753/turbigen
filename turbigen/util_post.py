@@ -99,13 +99,15 @@ def get_diffusion_factor(
     zeta_norm, Cp = get_pressure_distribution(grid, machine, meanline, irow, spf)
 
     # Calculate diffusion factor
-    Cpmin = Cp.min()
-    Cpmax = Cp.max()
-    CpTE = 0.5 * (Cp[-1] + Cp[0]).item()
-    DCpmin = Cpmin - Cpmax
-    DCpTE = CpTE - Cpmax
-    DF = 1.0 - np.sqrt(DCpTE / DCpmin)
+    # DF = (Vmax - V2)/V2 for turbines
+    # Curtis et al. (1997) Eqn. (2)
+    Cp_peak = Cp.min()
+    Cp_stag = Cp.max()
+    Cp_TE = 0.5 * (Cp[-1] + Cp[0]).item()
+    DF = np.sqrt((Cp_TE - Cp_peak) / (Cp_stag - Cp_TE))
 
+    # Peak suction location at minimum pressure coeff
+    # Absolute value for if surf coord on SS is -ve
     xpeak = np.abs(zeta_norm[Cp.argmin()].item())
 
     return xpeak, DF

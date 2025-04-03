@@ -301,12 +301,13 @@ class MeanLine(IteratorConfig):
             config.mean_line.design_vars[vname] = var_new
 
             # Log the data
-            if (nv := len(var_nom)) > 1:
+            try:
+                nv = len(var_nom)
                 for iv in range(nv):
                     kiv = f"{vname}[{iv}]"
                     log_data[kiv] = var_cfd[iv]
                     log_data["D" + kiv] = dvar[iv]  # Change
-            else:
+            except TypeError:
                 log_data[vname] = var_cfd  # Value
                 log_data["D" + vname] = dvar  # Change
 
