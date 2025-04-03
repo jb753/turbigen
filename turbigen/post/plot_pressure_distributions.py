@@ -24,6 +24,7 @@ def post(
     show_DF=None,
     compare=None,
     offset=0,
+    target=None,
 ):
     """plot_pressure_distributions(row_spf, write_raw=False, use_rot=False, lim=None)
     Plot static pressure on blade surface as a function of chordwise distance.
@@ -129,6 +130,11 @@ def post(
                 zeta_norm[zeta_norm < 0.0] /= zeta_min
                 zeta_norm[zeta_norm > 0.0] /= zeta_max
 
+                Cp_TE = 0.5 * (Cp[-1] + Cp[0]).item()
+                # Cp /= Cp_TE
+                # # p *= -1.0
+                # Cp = np.sqrt(Cp)
+
                 if fix_stag:
                     Cp -= Cp.max()
 
@@ -171,13 +177,22 @@ def post(
                 if not lim:
                     lim = ax.get_ylim()
                 ax.set_ylim(lim)
-                Ntick = 4
+                Ntick = 8
                 dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
                 ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
 
                 # Store the raw data
                 key = f"row_{irow}_spf_{spf}_blade_{isurf}"
                 raw_data[key] = np.stack((zeta_stag, Cp))
+
+            if target:
+                xpeak_target, DF_target = target
+                Cp_stag = Cp.max()
+                Cp_TE = 0.5 * (Cp[-1] + Cp[0]).item()
+                print(Cp_stag, Cp_TE)
+                Cp_target = Cp_TE - (Cp_stag - Cp_TE) * DF_target**2
+                print(DF_target)
+                ax.plot(xpeak_target, Cp_target, "r*")
 
         if note:
             axlim = ax.axis()
@@ -202,6 +217,8 @@ def post(
             zeta_norm[zeta_norm > 0.0] /= zeta_max
 
             ax.plot(np.abs(zeta_norm), Cp, "k-")
+
+        ax.grid("on")
 
         plotname = os.path.join(postdir, f"pressure_distribution_row_{irow}.pdf")
         if nsectplt > 1:
