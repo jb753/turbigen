@@ -885,9 +885,10 @@ class Machine:
         sections = []
         for b in self.bld:
             if b:
-                sections.append(b.get_coords(flip_theta=flip_theta))
+                sections.append(b[0].get_coords(flip_theta=flip_theta))
             else:
                 sections.append([None, None])
+
         annulus = self.ann.get_coords()
         zcst = self.ann.get_interfaces()
         if self.split:

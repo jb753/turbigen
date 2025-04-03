@@ -64,7 +64,7 @@ class H(turbigen.mesh.Mesher):
 
     yplus: float = np.nan
 
-    def make_grid(self, workdir, mac, dhub, dcas, dsurf):
+    def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
         logger.info("Generating an H-mesh...")

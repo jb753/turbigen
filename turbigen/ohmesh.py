@@ -53,9 +53,9 @@ class OH(turbigen.mesh.Mesher):
 
     skewness_control = 0
     orthogonality_control = 0.5
-    nsmooth = 500
+    nsmooth = 100
     nsmooth_multigrid = 100
-    blade_streamwise_weight = 3.0
+    blade_streamwise_weight = 2.0
 
     untwist_outlet = False
     untwist_inlet = False
@@ -170,10 +170,10 @@ class OH(turbigen.mesh.Mesher):
             "is_butterfly": self.is_butterfly,
         }
 
-    def make_grid(self, workdir, machine, dhub, dcas, dsurf):
+    def make_grid(self, workdir, machine, dhub, dcas, dsurf, Omega):
         logger.info("Generating OH-mesh...")
 
-        dsurf = np.mean(dsurf, axis=0)
+        # dsurf = np.mean(dsurf, axis=0)
         mesh_config = self
 
         # File paths

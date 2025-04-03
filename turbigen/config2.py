@@ -356,7 +356,10 @@ class TurbigenConfig:
         dhub = dcas = np.mean(dsurf)
 
         mesh_dir = self.workdir / self.mesh.meshdir
-        self.grid = self.mesh.make_grid(mesh_dir, self.get_machine(), dhub, dcas, dsurf)
+        Omega = self.mean_line.nominal.Omega[::2]
+        self.grid = self.mesh.make_grid(
+            mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
+        )
 
         logger.info(f"ncell/1e6={self.grid.ncell / 1e6:.1f}")
 

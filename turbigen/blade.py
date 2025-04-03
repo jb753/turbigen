@@ -244,3 +244,34 @@ class BladeDesigner:
         Lu = util.arc_length(xrrtu)
         Ll = util.arc_length(xrrtl)
         return np.maximum(Lu, Ll)
+
+    def get_coords(self, nspf=20, nchord=100, flip_theta=False):
+        """3-D coordinates for this blade row in AutoGrid-style format.
+
+        Parameters
+        ----------
+        nspf : int
+            Number of sections in radial direction.
+        nchord : int
+            Number of chordwise points along each surface.
+
+        Returns
+        -------
+        xrt : (2, nspf, nchord, 3) array
+            Axial, radial, angular coordinates for this blade. `xrt[0]` is the
+            upper surface, with highest theta, `xrt[1]` the lower surface.
+
+        """
+
+        eps = 1e-4
+        xrt = np.stack(
+            [
+                self.evaluate_section(spf, nchord)
+                for spf in np.linspace(-eps, 1.0 + eps, nspf)
+            ]
+        ).transpose(1, 0, 3, 2)
+
+        if flip_theta:
+            xrt[:, :, :, 2] *= -1.0
+
+        return xrt

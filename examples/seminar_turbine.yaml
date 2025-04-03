@@ -1,4 +1,4 @@
-workdir: runs/seminar_turbine_*
+workdir: runs/seminar_turbine_0013
 
 inlet:
   Po: 16.0e5
@@ -37,24 +37,31 @@ annulus:
 #   type: fixed_axial_chord
 #   cx_gap: [0.1, 0.06, 0.1]
 #   cx_row: [0.1, 0.1]
-#
+
+# mesh:
+#   type: h
+#   dm_LE: 0.001
+#   ni_TE: 9
+#   dm_TE: 0.02
+#   yplus: 30.0
+#   resolution_factor: 0.5
+
 mesh:
-  type: h
-  dm_LE: 0.001
-  ni_TE: 9
-  dm_TE: 0.02
+  type: oh
   yplus: 30.0
   resolution_factor: 0.5
+  remote_host: localhost
+  remote_workdir: /mnt/data/jb753/meshing
 
 # Blade shapes
 blades:
     - spf: 0.5
       q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
-      q_camber: [0., 4., 1.0, 1.0, 0.0]
+      q_camber: [0., 4., 1.0, 1.0, 0.02]
     - spf: 0.5
       q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
-      q_camber: [0., 2., 1.0, 1.0, 0.0]
-      tip: 0.01
+      q_camber: [0., 2., 1.0, 1.0, 0.02]
+      # tip: 0.01
 
 nblade:
   - Co: 0.7
@@ -62,7 +69,7 @@ nblade:
 
 solver:
   type: emb
-  n_step: 5000
+  n_step: 10000
   n_step_avg: 1000
   n_step_ramp: 1000
   nstep_damp: -1
