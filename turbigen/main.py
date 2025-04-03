@@ -226,8 +226,15 @@ def main():
                 shutil.rmtree(conf.workdir)
             conf.workdir.mkdir(parents=True)
 
-            # Design and run the configuration
+            # If we already have a solution, don't need to
+            # run CFD again on first iteration
             tic = timer()
+            if conf.grid and iiter == 0:
+                conf.skip = True
+            elif iiter > 0:
+                conf.skip = False
+
+            # Design and run the configuration
             conf.design_and_run()
 
             # Write back the config with actual meanline and grid
@@ -245,6 +252,9 @@ def main():
 
             # Disable soft start after first iteration
             conf.solver.soft_start = False
+
+            if converged:
+                break
 
         logger.iter(f"Finished iterating, converged={converged}.")
     logger.iter(conf.format_design_vars_table())

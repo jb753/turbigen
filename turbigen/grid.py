@@ -640,6 +640,9 @@ class Grid:
                     raise StopIteration
                 return self.g[self.i]
 
+            def __iter__(self):
+                return self
+
         return GridIter(self)
 
     def __len__(self):
@@ -971,9 +974,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.to_unstructured().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.to_unstructured().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:

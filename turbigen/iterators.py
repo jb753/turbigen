@@ -66,65 +66,11 @@ class Deviation(IteratorConfig):
 
 
 @dataclasses.dataclass
-class Xpeak(IteratorConfig):
-    target: dict = dataclasses.field(default_factory=lambda: ({}))
-    """Mapping of row index to target xpeak."""
-
-    K: float = 2.0
-    """Factor to scale xpeak error to loading change."""
-
-    spf: float = 0.5
-    """Span fraction at which to calculate xpeak."""
-
-    tolerance: float = 0.01
-    """Absolute tolerance on suction peak location."""
-
-    clip: float = 0.05
-    """Largest change in loading per iteration."""
-
-    def check(self, config):
-        """Ensure that the iterator is correctly configured."""
-        pass
-
-    def update(self, config):
-        # Initialise convergence flag
-        converged = True
-        log_data = {}
-
-        # Loop over the rows we want to match
-        for irow, x_target in self.target.items():
-            # Calculate the diffusion factor from CFD
-            x_actual, _ = util_post.get_diffusion_factor(
-                config.grid,
-                config.get_machine(),
-                config.mean_line.actual,
-                irow,
-                self.spf,
-            )
-
-            # Calculate loading
-            xerr = x_target - x_actual
-            dqcamber = np.clip(self.K * xerr, -self.clip, self.clip)
-
-            # Apply change to camber line
-            config.blades[irow][0].q_camber[:, 2] += dqcamber
-
-            log_data[f"Dxp[{irow}]"] = xerr
-            log_data[f"Daft[{irow}]"] = dqcamber
-
-            # Check for convergence
-            if np.abs(xerr) > self.tolerance:
-                converged = False
-
-        return converged, log_data
-
-
-@dataclasses.dataclass
 class DiffusionFactor(IteratorConfig):
     target: dict = dataclasses.field(default_factory=lambda: ({}))
     """Mapping of row index to target diffusion factor."""
 
-    K: float = 2.0
+    K: float = 0.25
     """Factor to scale DF error to relative Nb change."""
 
     spf: float = 0.5
@@ -156,13 +102,16 @@ class DiffusionFactor(IteratorConfig):
         # Loop over the rows we want to match
         for irow, DF_target in self.target.items():
             # Calculate the diffusion factor from CFD
-            _, DF_actual = util_post.get_diffusion_factor(
+            _, Mas = util_post.get_isen_mach(
                 config.grid,
                 config.get_machine(),
                 config.mean_line.actual,
                 irow,
                 self.spf,
             )
+            Mas_TE = 0.5 * (Mas[0] + Mas[-1]).item()
+            Masf = Mas / Mas_TE
+            DF_actual = Masf.max() - 1.0
 
             # Calculate Nblade adjustment
             dNb_rel = np.clip(
@@ -312,17 +261,3 @@ class MeanLine(IteratorConfig):
                 log_data["D" + vname] = dvar  # Change
 
         return converged, log_data
-
-
-@dataclasses.dataclass
-class PeakSuctionConfig:
-    """Settings for peak suction iteration."""
-
-    spf: float = 0.5
-    """Span fraction at which to calculate peak suction location."""
-
-    target: dict = dataclasses.field(default_factory=lambda: ({}))
-    """Mapping of row index to target peak suction location."""
-
-    K: float = 2.0
-    """Factor to scale xpeak error to qcamber[2] change."""

@@ -16,7 +16,8 @@ import re
 import grp
 import getpass
 from copy import copy
-from turbigen.solvers.base import BaseSolver, ConvergenceHistory
+from turbigen.solver import ConvergenceHistory
+from turbigen.solvers.base import BaseSolver
 import time
 
 import turbigen.util

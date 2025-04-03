@@ -16,14 +16,14 @@ def post(grid, machine, meanline, _, postdir, row_spf):
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
         # Set up axes
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(layout="constrained")
         ax.set_xlabel(r"Meridional Distance, $m/c_m$")
         ax.set_ylabel(r"Normalised Metal Angle, $\hat{\chi}$")
         ax.set_xlim((0.0, 1.0))
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-            cam, _ = machine.bld[irow]._get_cam_thick(spf)
+            cam, _ = machine.bld[irow][0]._get_camber_thickness(spf)
 
             if isinstance(cam, turbigen.camber.Taylor):
                 chi_str = (
@@ -38,17 +38,16 @@ def post(grid, machine, meanline, _, postdir, row_spf):
                     r"{\tan\chi_\mathrm{out} - \tan\chi_\mathrm{in}}$"
                 )
 
-            title_str = (
-                (r"$\chi_\mathrm{in}=%.1f^\circ$, " % cam.chi(0.0))
-                + (r"$\chi_\mathrm{out}=%.1f^\circ$, " % cam.chi(1.0))
-                + (r"$\hat{\chi}'(0)=%.2f$, " % cam.q_camber[2])
-                + (r"$\hat{\chi}'(1)=%.2f$, " % cam.q_camber[3])
-                + (r"$\hat{\chi}''(0.5)=%.2f$" % cam.q_camber[4])
-            )
-
-            ax.set_title(title_str, pad=10)
+            # title_str = (
+            #     (r"$\chi_\mathrm{in}=%.1f^\circ$, " % cam.chi(0.0))
+            #     + (r"$\chi_\mathrm{out}=%.1f^\circ$, " % cam.chi(1.0))
+            #     + (r"$\hat{\chi}'(0)=%.2f$, " % cam.q_camber[2])
+            #     + (r"$\hat{\chi}'(1)=%.2f$, " % cam.q_camber[3])
+            #     + (r"$\hat{\chi}''(0.5)=%.2f$" % cam.q_camber[4])
+            # )
+            #
+            # ax.set_title(title_str, pad=10)
             ax.text(0.025, 0.95, chi_str, va="top")
-            plt.tight_layout()
 
             col = f"C{ispf}"
             ax.plot(m, cam.chi_hat(m), "-", color=col, label=f"spf={spf}")

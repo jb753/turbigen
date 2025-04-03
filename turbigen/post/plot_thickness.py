@@ -22,7 +22,7 @@ def post(grid, machine, meanline, _, postdir, row_spf):
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
-            _, thick = machine.bld[irow]._get_cam_thick(spf)
+            _, thick = machine.bld[irow][0]._get_camber_thickness(spf)
 
             # title_str = (
             #     (r"$R_\mathrm{LE}=%.2f$, " % thick.q_thick[0])
@@ -37,20 +37,14 @@ def post(grid, machine, meanline, _, postdir, row_spf):
             plt.tight_layout()
 
             col = f"C{ispf}"
-            ax.plot(m, thick.t(m), "-", color=col, label="Real space, $t/c_m$")
-            try:
-                ax.plot(
-                    m, thick.tau(m), "--", color=col, label=r"Shape space, $\tau/c_m$"
-                )
-            except AttributeError:
-                pass
+            ax.plot(m, thick.thick(m), "-", color=col)
 
-            ax.legend()
+            # ax.legend()
             # mctrl = (0.0, thick.s_tmax, 1.0)
             # ax.plot(mctrl, thick.tau(mctrl), "o", color=col, ms=10)
             ax.set_ylim(bottom=0)
 
         plotname = os.path.join(postdir, f"thickness_row_{irow}.pdf")
-        ax.legend()
+        # ax.legend()
         plt.savefig(plotname)
         plt.close()

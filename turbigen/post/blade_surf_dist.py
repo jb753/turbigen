@@ -11,23 +11,34 @@ logger = turbigen.util.make_logger()
 
 def get_var(C, ml, vname):
     # Isentropic from inlet entropy to local static
-    Cs = C.copy().set_P_s(C.P_rot, ml.s[0])
+    Cs = C.copy().set_P_s(C.P, ml.s[0])
     hs = Cs.h
     ho = C.ho
+    # Ensure ho > hs
+    dh = ho - hs
+    hs += np.min(dh)
     Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
-    Vs_TE = 0.5 * (Vs[0] + Vs[-1]).item()
-    Vs_peak = Vs.max()
     Mas = Vs / C.a
+
+    Vs_TE = 0.5 * (Vs[0] + Vs[-1]).item()
+    Mas_TE = 0.5 * (Mas[0] + Mas[-1]).item()
 
     if vname == "Mas":
         y = Mas
         ylabel = "Isentropic Mach Number, $\mathit{Ma}_s$"
+        ylim = {}
+
+    elif vname == "Masf":
+        y = Mas / Mas_TE
+        ylabel = r"Isentropic Mach, $\mathit{Ma}_s/\mathit{Ma}_{s,\mathrm{TE}}$"
+        ylim = {"bottom": 0.0}
 
     elif vname == "Vs":
         y = Vs / Vs_TE
         ylabel = "Isentropic Velocity, $V_s/V_{s,\mathrm{TE}}$"
+        ylim = {}
 
-    return y, ylabel
+    return y, ylabel, ylim
 
 
 def post(
@@ -40,6 +51,7 @@ def post(
     var="Cp",
     lim=None,
     offset=0,
+    target=None,
 ):
     lnst = ["-", "--"]
 
@@ -71,8 +83,11 @@ def post(
         ).reshape(2, -1, len(spfrow))
 
         fig, ax = plt.subplots(layout="constrained")
-        ax.set_xlabel(r"Normalised Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
+        ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
         ax.set_xlim((0.0, 1.0))
+        ax.set_ylim((0.0, 1.6))
+        ax.set_xticks((0.0, 0.5, 1.0))
+        ax.set_yticks(np.arange(0.0, 2.0, 0.4))
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
@@ -84,10 +99,12 @@ def post(
                 # Take the cut
                 C = surf.meridional_slice(xr_spf[:, :, ispf])
 
-                y, ylabel = get_var(C, meanline.get_row(irow), var)
+                y, ylabel, ylim = get_var(C, meanline.get_row(irow), var)
 
                 # Extract pressure and non-dimensionalise
                 ax.set_ylabel(ylabel)
+                # if ylim:
+                # ax.set_ylim(**ylim)
 
                 # Extract surface distance and normalise
                 zeta_stag = C.zeta_stag
@@ -98,12 +115,17 @@ def post(
                 zeta_norm[zeta_norm < 0.0] /= zeta_min
                 zeta_norm[zeta_norm > 0.0] /= zeta_max
 
+                if len(spfrow) > 1:
+                    col = f"C{ispf}"
+                else:
+                    col = "k"
+
                 if isurf == 0:
                     ax.plot(
                         np.abs(zeta_norm),
                         y,
                         label=f"spf={spf}",
-                        color=f"C{ispf}",
+                        color=col,
                         linestyle=lnst[isurf],
                         marker="",
                     )
@@ -115,14 +137,17 @@ def post(
                 if not lim:
                     lim = ax.get_ylim()
                 ax.set_ylim(lim)
-                Ntick = 8
-                dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
-                ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
+
+                # Ntick = 8
+                # dtick = np.round(np.ptp(lim) / (Ntick - 1), decimals=1)
+                # ax.yaxis.set_major_locator(ticker.MultipleLocator(dtick))
+
+        if target:
+            ax.plot(*target, "ko", label="Target", markersize=6)
 
         plotname = os.path.join(postdir, f"blade_surf_{var}_{irow}.pdf")
-        print(plotname)
         if nsectplt > 1:
             ax.legend()
-        ax.grid(True)
+        ax.grid(False)
         plt.savefig(plotname)
         plt.close()

@@ -4,6 +4,7 @@
 # font.family : 'Computer Modern Roman'
 backend: tkagg
 figure.figsize : 7., 4.0
+# figure.figsize : 5.0, 4.0
 axes.linewidth : 1.5
 lines.linewidth : 2
 lines.markeredgewidth : 1.5

@@ -1,4 +1,4 @@
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.emb
 import turbigen.solvers.ts3
 import turbigen.compflow_native as cf
 import turbigen.grid
@@ -19,6 +19,8 @@ try:
     size = comm.Get_size()
     # Jump to solver slave process if not first rank
     if rank > 0:
+        from turbigen.solvers import embsolve
+
         embsolve.run_slave()
         sys.exit(0)
 except ImportError as e:
@@ -62,10 +64,15 @@ def make_nozzle(
     P1 = Po1 / cf.Po_P_from_Ma(Ma1, ga)
     T1 = To1 / cf.To_T_from_Ma(Ma1, ga)
 
+    # # ~10^6 grid points
+    # ni = 169
+    # nj = 81
+    # nk = 73
+    #
     # ~10^6 grid points
-    ni = 169
-    nj = 81
-    nk = 73
+    ni = 81
+    nj = 41
+    nk = 33
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
@@ -313,7 +320,7 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    solver = embsolve.Emb(
+    conf = turbigen.solvers.embsolve.Config(
         n_step=500,
         n_step_log=50,
         n_step_ramp=0,
@@ -321,9 +328,7 @@ def run_embsolve(g):
         nstep_damp=-1,
         print_conv=False,
     )
-    solver.run(g)
-    conv = solver.convergence
-
+    conv = turbigen.solvers.embsolve.run(g, conf)
     return conv.tpnps, conv.err_mdot[-1]
 
 
@@ -349,7 +354,7 @@ if __name__ == "__main__":
     g, _ = make_nozzle(size, xA)
     tpnps, err = run_embsolve(g)
     cost = tpnps * size
-    with open("plots/bench.dat", "a") as f:
+    with open("tests/bench.dat", "a") as f:
         f.write(
             f"{size}, {err}, {tpnps}, {cost}, {cost / cost_ts3}, {tpnps / time_ts3}\n"
         )

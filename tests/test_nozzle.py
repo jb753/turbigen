@@ -352,8 +352,8 @@ def test_condi(dirn):
 
     embsolve.Emb(**settings).run(g)
 
-    plot_nozzle(g, F)
-    plt.show()
+    # plot_nozzle(g, F)
+    # plt.show()
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 

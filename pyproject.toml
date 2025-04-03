@@ -1,33 +1,31 @@
 [project]
 name = "turbigen"
-version = "1.10.1"
-requires-python = ">=3.9"
+version = "2.0.0"
+requires-python = ">=3.13"
 dependencies = [
-    'CoolProp~=6.6.0',
-    'matplotlib~=3.9.0',
-    'numpy~=2.0.0',
-    'PyYAML~=6.0.1',
-    'scipy~=1.13.1',
-    'h5py~=3.11.0',
-    'numpy-stl~=3.1.1',
+    'CoolProp~=6.7.0',
+    'matplotlib~=3.10.0',
+    "numpy~=2.1.0",
+    'PyYAML~=6.0.0',
+    'scipy~=1.15.0',
+    'h5py~=3.13.0',
+    'numpy-stl~=3.2.0',
     'metis~=0.2a5',
+    'mpi4py~=4.0.3',
 ]
 
 [project.optional-dependencies]
 docs = [
-    'sphinx~=7.2.6',
-    'sphinxcontrib-bibtex~=2.5.0',
-    'sphinx-autobuild~=2021.3.14',
-    'sphinx-argparse~=0.4.0',
-    'sphinxcontrib-programoutput~=0.7',
+    'sphinx',
+    'sphinxcontrib-bibtex',
+    'sphinx-autobuild',
+    'sphinx-argparse',
+    'sphinxcontrib-programoutput',
     'autodocsumm',
 ]
 test = [
-    'pytest~=6.2.5',
-    'pre-commit~=3.6.0',
-]
-emb = [
-    'mpi4py',
+    'pytest',
+    'pre-commit',
 ]
 
 [project.scripts]

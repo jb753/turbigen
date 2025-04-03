@@ -3,6 +3,73 @@
 import numpy as np
 
 
+def get_isen_mach(
+    grid,
+    machine,
+    meanline,
+    irow,
+    spf,
+    offset=0,
+):
+    """Extract blade surface pressure distribution from a grid.
+
+    Parameters
+    ----------
+    grid : Grid
+        Grid object containing full flowfield solution.
+    machine :
+        Machine geometry object.
+    meanline :
+        Meanline object containing reference pressures.
+    irow : int
+        Row index to extract.
+    spf: float
+        Span fraction within the row to extract.
+    offset : int
+        Number of cells away from blade surface.
+    use_rot: bool
+        Use rotary static pressure to take out centrifugal effects.
+
+    Returns
+    -------
+    zeta_norm: (ni,) array
+        Surface distance normalised by total surface length on each surface.
+        This is a looped array which goes from TE to LE and back again.
+        The final point is repeated to close the loop.
+    Mas: (ni,) array
+        Isentropic Mach number around the blade surface.
+
+    """
+
+    # Extract reference entropy
+    s1 = meanline.get_row(irow).s[0]
+
+    # Get blade surface and slice at span fraction
+    surf = grid.cut_blade_surfs(offset)[irow][0]
+    xr_spf = machine.ann.get_span_curve(spf)
+    C = surf.meridional_slice(xr_spf)
+
+    # Isentropic from inlet entropy to local static
+    Cs = C.copy().set_P_s(C.P, s1)
+    hs = Cs.h
+    ho = C.ho
+    # Ensure ho > hs
+    dh = ho - hs
+    hs += np.min(dh)
+    Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
+    Mas = Vs / C.a
+
+    # Extract surface distance and normalise to [-1, 1]
+    zeta_stag = C.zeta_stag
+    zeta_max = zeta_stag.max(axis=0)
+    zeta_min = np.abs(zeta_stag.min(axis=0))
+    zeta_norm = zeta_stag.copy()
+    zeta_norm[zeta_norm < 0.0] /= zeta_min
+    zeta_norm[zeta_norm > 0.0] /= zeta_max
+
+    return zeta_norm, Mas
+
+
 def get_pressure_distribution(
     grid,
     machine,

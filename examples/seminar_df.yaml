@@ -14,9 +14,9 @@ blades:
     - -1.5803073028113772
     - 0.0
   q_thick:
-  - - 0.05
+  - - 0.04
     - 0.12
-    - 0.3
+    - 0.35
     - 0.0
     - 0.0
     - 0.18
@@ -27,8 +27,8 @@ blades:
   tip: 0.0
   vortex_expon: -1.0
 cut_offset: 0.02
-grid: /home/james/python/turbigen-dev/runs/test_0008/019/grid.pkl
-guess: /home/james/python/turbigen-dev/runs/test_0008/019/guess.pkl
+grid:
+guess:
 inlet:
   Po: 100000.0
   To: 300.0
@@ -41,7 +41,7 @@ iterate:
     relaxation_factor: 1.0
     tolerance: 1.0
   incidence:
-    clip: 2.0
+    clip: 1.0
     relaxation_factor: 0.1
     target: 0.0
     tolerance: 10.0
@@ -49,6 +49,12 @@ iterate:
     relaxation_factor: 0.8
     tolerance:
       Yh: 0.01
+  diffusion_factor:
+    target:
+      0: 0.4
+  # xpeak:
+  #   target:
+  #     0: 0.5
 max_iter: 20
 mean_line:
   Alpha:
@@ -98,7 +104,7 @@ mesh:
   type: h
   yplus: 30.0
 nblade:
-- Co: 0.7
+- Co: 0.6
   spf: 0.5
 post_process:
   contour:
@@ -111,14 +117,13 @@ post_process:
     value: 0.5
     variable: Cp
   plot_convergence: null
+  plot_blade:
+    row_spf: [[0.5,],]
   blade_surf_dist:
-    var: Vs
+    var: Masf
     row_spf:
     - - 0.5
-  plot_pressure_distributions:
-    row_spf:
-    - - 0.5
-    target: [0.6, 0.3]
+    lim: [0., 1.6]
 skip: false
 solver:
   CFL: 0.65
@@ -32142,8 +32147,8 @@ solver:
   - 2
   - 2
   n_loss: 10
-  n_step: 4000
-  n_step_avg: 1000
+  n_step: 2000
+  n_step_avg: 500
   n_step_dt: 10
   n_step_log: 100
   n_step_mix: 5
@@ -32161,5 +32166,5 @@ solver:
   type: emb
   workdir: null
   xllim_pitch: 0.03
-workdir: /home/james/python/turbigen-dev/runs/test_0008/019
+workdir: runs/*
 ...

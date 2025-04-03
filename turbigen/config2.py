@@ -244,7 +244,7 @@ class TurbigenConfig:
         for k in ["grid", "guess"]:
             val = getattr(self, k)
             if isinstance(val, str):
-                setattr(self, k, pickle.load((self.workdir / f"{k}.pkl").open("rb")))
+                setattr(self, k, pickle.load(Path(val).open("rb")))
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""

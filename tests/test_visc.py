@@ -569,57 +569,6 @@ def test_plate_lam():
     print("max", err.max())
     print("min", err.min())
 
-    # Momentum flux
-    rho = b.rho.mean(axis=2)
-    Vx = b.Vx.mean(axis=2)
-    r = b.r.mean(axis=2)
-    P = b.P.mean(axis=2)
-    x = b.x[:, 0, 0]
-    dr = np.diff(r, axis=-1)
-    rm = 0.5 * (r[:, 1:] + r[:, :-1])
-    rho = 0.5 * (rho[:, 1:] + rho[:, :-1])
-    Vx = 0.5 * (Vx[:, 1:] + Vx[:, :-1])
-    P = 0.5 * (P[:, 1:] + P[:, :-1])
-    mom = np.sum((rho * Vx * Vx + P) * 2 * np.pi * rm * dr, axis=-1)
-
-    # Force on plate = mom in - mom out
-    force = mom[0] - mom  # [N]
-    force_width = force / (2 * np.pi * b.r.min())
-
-    # Drag coefficient
-    dyn_head = 0.5 * rhoinf.mean() * (Vinf.mean() ** 2)
-    Cd = force_width[x > 0.0] / dyn_head / x[x > 0.0]
-
-    # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
-    Cdts3 = np.loadtxt("tests/xcd_yp5_ts3.csv")
-
-    fig, ax = plt.subplots()
-    Cdb = 1.328 / np.sqrt(Rex)
-
-    err = (Cd / Cdb - 1.0)[xx > 0.25]
-    return
-    assert np.abs(err).mean() < 0.05
-
-    print("Blasius drag error")
-    print("mean", np.abs(err).mean())
-    print("max", err.max())
-    print("min", err.min())
-
-    # Cdb /= Cdb[-1]/Cd[-1]
-    xxn = xx / xx[-1]
-    xxts3 = Cdts3[0] / xx[-1]
-    ax.plot(xxn, Cd, label="embsolve")
-    ax.plot(xxts3, Cdts3[1], label="TS3")
-    ax.plot(xxn, Cdb, "k--", label="Blasius")
-    ax.set_ylim([0.0, 0.020])
-    ax.set_ylabel("Drag Coefficient, $C_D$")
-    ax.set_xlabel("Streamwise Distance, $x/L$")
-    ax.legend()
-    plt.tight_layout(pad=0.1)
-    plt.savefig("tests/blasius_cd.pdf")
-    plt.close()
-    # plt.show()
-
 
 def test_poiseuille():
     g, F = make_pipe()
@@ -662,6 +611,7 @@ def test_poiseuille():
     # ax.set_yticks([0, 0.5, 1.0])
     ax.legend()
     plt.savefig("plots/poiseuille.pdf")
+    plt.close()
     # plt.show()
 
     Cm, A, _ = C2.mix_out()
