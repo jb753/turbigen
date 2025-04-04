@@ -13,7 +13,9 @@ import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
 from turbigen.solver import ConvergenceHistory
-from turbigen.solvers.embsolvec import embsolve
+
+# from turbigen.solvers.embsolvec import embsolve
+from embsolvec import embsolve
 
 util = turbigen.util
 logger = turbigen.util.make_logger()

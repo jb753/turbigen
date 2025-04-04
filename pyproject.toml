@@ -33,9 +33,8 @@ turbigen = "turbigen.main:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["meson-python", "numpy"]
+build-backend = "mesonpy"
 
-# Only package what is in the turbigen folder
-[tool.setuptools.packages.find]
-include = ["turbigen",]
+[tool.uv]
+managed = false
