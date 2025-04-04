@@ -26,7 +26,7 @@ mesh:
   ni_TE: 9
   dm_TE: 0.03
   yplus: 30.0
-  resolution_factor: 0.5
+  resolution_factor: 1.0
 
 # Blade shapes
 blades:

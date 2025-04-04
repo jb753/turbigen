@@ -19,9 +19,9 @@ mkdir -p plots
 rm -f plots/bench.dat
 
 # Run the benchmark for different nproc
-# for size in 8 6 4 2 1; do
-for size in 8 6 ; do
-    mpirun --allow-run-as-root -np $size python tests/benchmark.py
+for size in 8 6 4 2 1; do
+# for size in 8 6 ; do
+    mpirun --allow-run-as-root -np $size python scripts/benchmark.py
 done
 
 # Make the plot

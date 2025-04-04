@@ -871,14 +871,28 @@ def exchange_periodic(blocks, bid_local, periodics):
 
         # Otherwise, communication is needed
         else:
-            patch.Send.Start()
+            # print(f"Rank {rank} sending to {patch.nxprocid} tag {patch.pid}")
+            # patch.Send.Start()
+            comm.Send(
+                buf=[patch.buffer, patch.N, MPI.REAL4],
+                dest=patch.nxprocid,
+                tag=patch.pid,
+            )
+            # print(f"Rank {rank} sent to {patch.nxprocid} tag {patch.pid}")
 
     # Once the communication completes, take average of home
     # and away buffers and assign back to grid
     for patch in periodics:
         # Wait for communication if needed
         if not patch.nxprocid == rank:
+            # print(f"Rank {rank} waiting for {patch.nxprocid} tag {patch.pid}")
             patch.Recv.Wait()
+            # comm.Recv(
+            #     buf=[patch.nxbuffer, patch.N, MPI.REAL4],
+            #     source=patch.nxprocid,
+            #     tag=patch.pid,
+            # )
+            # print(f"Rank {rank} recieved from {patch.nxprocid} tag {patch.pid}")
 
         # Take average and assign to home block
         bavg = 0.5 * (patch.buffer + patch.nxbuffer)

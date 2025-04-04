@@ -67,6 +67,10 @@ def make_nozzle(
     nj = 81
     nk = 73
 
+    # ni = 81
+    # nj = 33
+    # nk = 25
+
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
     Nb = int(2.0 * np.pi * rm / pitch)
@@ -314,11 +318,11 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 def run_embsolve(g):
     solver = embsolve.Emb(
-        n_step=500,
+        n_step=200,
         n_step_log=50,
         n_step_ramp=0,
         n_step_avg=100,
-        nstep_damp=-1,
+        nstep_damp=0,
         print_conv=False,
     )
     solver.run(g)
