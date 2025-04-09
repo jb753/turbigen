@@ -69,7 +69,7 @@ class Convergence(BasePost):
 
         dYs_reversed = np.flip(dYs)
         istep_conv = np.flip(conv.istep)[
-            np.argmax(np.abs(dYs_reversed) > rtol_loss * 100.0)
+            np.argmax(np.abs(dYs_reversed) > self.rtol_loss * 100.0)
         ]
 
         # Do the plotting
@@ -116,5 +116,21 @@ class Convergence(BasePost):
             axi.axvline(conv.istep_avg, color="C2", linestyle="--")
             axi.axvline(istep_conv, color="C1", linestyle=":")
 
+        pdf.savefig()
+        plt.close()
+
+
+@dataclasses.dataclass
+class Metadata(BasePost):
+    def post(self, config, pdf):
+        """Make a slide with some text metadata."""
+
+        _, ax = plt.subplots(layout="constrained")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        left = 0.05
+        ax.title("Metadata:")
+        ax.text(left, 0.95, f"workdir={str(config.workdir)}")
         pdf.savefig()
         plt.close()

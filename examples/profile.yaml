@@ -42,9 +42,10 @@ nblade:
 
 solver:
   type: emb
-  n_step: 100
+  n_step: 500
   n_step_avg: 100
   nstep_damp: -1
 
 post_process:
   convergence:
+  metadata:
