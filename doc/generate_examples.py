@@ -1,10 +1,12 @@
 """Loop over examples, run them, and save the results as rst."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 import logging
 import sys
+import yaml
 
 INPUT_DIR = "examples"
 OUTPUT_DIR = "doc/examples"
@@ -34,12 +36,21 @@ def run_example(input_yaml):
         lines = f.readlines()
         comments = [line for line in lines if line.startswith("#")]
 
-    # Attempt to parse the output
-
+    # Attempt to parse the title
     try:
         title = comments[0].split("#")[-1].strip()
     except:
         title = "Example"
+
+    # Parse workdir from the log
+    regex = r"Working directory:\s*([^\s]+)"
+    workdir = Path(re.search(regex, out.stderr).group(1))
+
+    # Convert pdf to svg
+    post_pdf = workdir / "post.pdf"
+    post_svg = workdir / "post_%d.svg"
+    print(f"Converting {post_pdf} to {post_svg}")
+    subprocess.run(["pdf2svg", str(post_pdf), str(post_svg)])
 
     # Now assemble an rst file
     rst = f"""{"=" * len(title)}
