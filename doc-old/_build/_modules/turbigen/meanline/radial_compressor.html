@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>turbigen.meanline.radial_compressor &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+    <script src="../../../_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <h1>Source code for turbigen.meanline.radial_compressor</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Mean-line design of a radial impeller with vaneless diffuser&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">turbigen.flowfield</span>
+<span class="kn">from</span> <span class="nn">turbigen</span> <span class="kn">import</span> <span class="n">util</span>
+
+
+<div class="viewcode-block" id="forward">
+<a class="viewcode-back" href="../../../meanline.html#turbigen.meanline.radial_compressor.forward">[docs]</a>
+<span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
+    <span class="n">So1</span><span class="p">,</span>
+    <span class="n">PR_tt</span><span class="p">,</span>
+    <span class="n">eta_tt</span><span class="p">,</span>
+    <span class="n">mdot</span><span class="p">,</span>
+    <span class="n">phi1</span><span class="p">,</span>
+    <span class="n">Alpha1</span><span class="p">,</span>
+    <span class="n">Ma1_rel</span><span class="p">,</span>
+    <span class="n">htr1</span><span class="p">,</span>
+    <span class="n">Alpha2_rel</span><span class="p">,</span>
+    <span class="n">loss_split</span><span class="p">,</span>
+    <span class="n">DH_rotor</span><span class="p">,</span>
+    <span class="n">DH_diff</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Design the mean-line for a vaneless radial compressor.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    So1: State</span>
+<span class="sd">        Object specifing the working fluid and its state at inlet.</span>
+<span class="sd">    PR_tt : float</span>
+<span class="sd">        Stagnation pressure ratio</span>
+<span class="sd">    eta_tt : float</span>
+<span class="sd">        Estimate of total-to-total isentropic efficiency.</span>
+<span class="sd">    mdot : float</span>
+<span class="sd">        Mass flow rate.</span>
+<span class="sd">    Alpha1 : float</span>
+<span class="sd">        Impeller inlet yaw angle.</span>
+<span class="sd">    Ma1_rel : float</span>
+<span class="sd">        Impeller inlet relative Mach number.</span>
+<span class="sd">    htr1 : float</span>
+<span class="sd">        Impeller inlet hub-to-tip ratio.</span>
+<span class="sd">    Alpha2_rel : float</span>
+<span class="sd">        Impeller exit yaw angle.</span>
+<span class="sd">    loss_split : float</span>
+<span class="sd">        Guess of entropy rise split between impeller and diffuser.</span>
+<span class="sd">    DHimp : float</span>
+<span class="sd">        Impeller de Haller number.</span>
+<span class="sd">    DHdiff : float</span>
+<span class="sd">        Diffuser de Haller number.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    ml: MeanLine</span>
+<span class="sd">        An object specifying the flow along the mean line.</span>
+
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">util</span><span class="o">.</span><span class="n">check_scalar</span><span class="p">(</span>
+        <span class="n">PR_tt</span><span class="o">=</span><span class="n">PR_tt</span><span class="p">,</span>
+        <span class="n">eta_tt</span><span class="o">=</span><span class="n">eta_tt</span><span class="p">,</span>
+        <span class="n">mdot</span><span class="o">=</span><span class="n">mdot</span><span class="p">,</span>
+        <span class="n">phi1</span><span class="o">=</span><span class="n">phi1</span><span class="p">,</span>
+        <span class="n">Alpha1</span><span class="o">=</span><span class="n">Alpha1</span><span class="p">,</span>
+        <span class="n">Ma1_rel</span><span class="o">=</span><span class="n">Ma1_rel</span><span class="p">,</span>
+        <span class="n">htr1</span><span class="o">=</span><span class="n">htr1</span><span class="p">,</span>
+        <span class="n">Alpha2_rel</span><span class="o">=</span><span class="n">Alpha2_rel</span><span class="p">,</span>
+        <span class="n">loss_split</span><span class="o">=</span><span class="n">loss_split</span><span class="p">,</span>
+        <span class="n">DH_rotor</span><span class="o">=</span><span class="n">DH_rotor</span><span class="p">,</span>
+        <span class="n">DH_diff</span><span class="o">=</span><span class="n">DH_diff</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Fully radial outlet pitch angle</span>
+    <span class="n">Beta2</span> <span class="o">=</span> <span class="mf">90.0</span>
+
+    <span class="c1"># Calculate outlet state using</span>
+    <span class="n">Po3</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">P</span> <span class="o">*</span> <span class="n">PR_tt</span>
+    <span class="n">So3s</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_P_s</span><span class="p">(</span><span class="n">Po3</span><span class="p">,</span> <span class="n">So1</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">ho3</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">h</span> <span class="o">+</span> <span class="p">(</span><span class="n">So3s</span><span class="o">.</span><span class="n">h</span> <span class="o">-</span> <span class="n">So1</span><span class="o">.</span><span class="n">h</span><span class="p">)</span> <span class="o">/</span> <span class="n">eta_tt</span>
+    <span class="n">So3</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_P_h</span><span class="p">(</span><span class="n">Po3</span><span class="p">,</span> <span class="n">ho3</span><span class="p">)</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># We shall use the following notation for states</span>
+    <span class="c1"># (1) impeller inlet</span>
+    <span class="c1"># (2) impeller outlet</span>
+    <span class="c1"># (3) diffuser outlet</span>
+
+    <span class="c1"># Precalculate some trig</span>
+    <span class="n">tanAlpha1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Alpha1</span><span class="p">))</span>
+    <span class="n">cosAlpha1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Alpha1</span><span class="p">))</span>
+    <span class="n">tanAlpha2_rel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Alpha2_rel</span><span class="p">))</span>
+    <span class="n">tanBeta2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Beta2</span><span class="p">))</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># (i) set rotor inlet state using, Ma1_rel, Al1, phi, Ypigv</span>
+    <span class="c1">#</span>
+
+    <span class="c1"># Solve for the axial Mach at rotor inlet</span>
+    <span class="n">Max1</span> <span class="o">=</span> <span class="n">Ma1_rel</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="p">(</span><span class="n">tanAlpha1</span> <span class="o">-</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">phi1</span><span class="p">)</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>
+
+    <span class="c1"># Resolve by IGV angle to get total Mach</span>
+    <span class="n">Ma1</span> <span class="o">=</span> <span class="n">Max1</span> <span class="o">/</span> <span class="n">cosAlpha1</span>
+    <span class="n">S1</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">to_static</span><span class="p">(</span><span class="n">Ma1</span><span class="p">)</span>
+
+    <span class="c1"># # Guess lossless and iterate</span>
+    <span class="c1"># So1 = Soin.copy()</span>
+    <span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="c1"># for _ in range(maxiter):</span>
+    <span class="c1">#     Po1 = So1.P - Ypigv * (So1.P - S1.P)</span>
+    <span class="c1">#     So1.set_P_h(Po1, Soin.h)</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># (ii) evaluate rotor inlet velocities and geometry using mdot, htr</span>
+    <span class="c1">#</span>
+
+    <span class="c1"># Velocities</span>
+    <span class="n">Vx1</span> <span class="o">=</span> <span class="n">Max1</span> <span class="o">*</span> <span class="n">S1</span><span class="o">.</span><span class="n">a</span>
+    <span class="n">Vrel1</span> <span class="o">=</span> <span class="n">Ma1_rel</span> <span class="o">*</span> <span class="n">S1</span><span class="o">.</span><span class="n">a</span>
+    <span class="n">Vt1</span> <span class="o">=</span> <span class="n">Vx1</span> <span class="o">*</span> <span class="n">tanAlpha1</span>
+    <span class="n">U1</span> <span class="o">=</span> <span class="n">Vx1</span> <span class="o">/</span> <span class="n">phi1</span>
+
+    <span class="c1"># Geometry</span>
+    <span class="n">A1</span> <span class="o">=</span> <span class="n">mdot</span> <span class="o">/</span> <span class="n">Vx1</span> <span class="o">/</span> <span class="n">S1</span><span class="o">.</span><span class="n">rho</span>
+    <span class="c1"># rmid1 = np.sqrt(A1 / 4.0 / np.pi * (1.0 + htr1) / (1.0 - htr1))</span>
+    <span class="c1"># span1 = A1 / 2.0 / np.pi / rmid1</span>
+    <span class="n">rrms1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">A1</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">htr1</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">htr1</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">Omega</span> <span class="o">=</span> <span class="n">U1</span> <span class="o">/</span> <span class="n">rrms1</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># (iii) prescribe rotor DeHaller and angles to set rel frame velocities</span>
+    <span class="c1">#</span>
+
+    <span class="c1"># Velocities</span>
+    <span class="n">Vrel2</span> <span class="o">=</span> <span class="n">DH_rotor</span> <span class="o">*</span> <span class="n">Vrel1</span>
+    <span class="c1"># Vr2 = Vrel2 / np.sqrt(1.0 + tanAlpha2_rel**2.0)</span>
+    <span class="n">Vr2</span> <span class="o">=</span> <span class="n">Vrel2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Alpha2_rel</span><span class="p">))</span>
+    <span class="c1"># print(Vr2, Vr2_check)</span>
+    <span class="n">Vtrel2</span> <span class="o">=</span> <span class="n">Vr2</span> <span class="o">*</span> <span class="n">tanAlpha2_rel</span>
+    <span class="n">Vm2</span> <span class="o">=</span> <span class="n">Vr2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">tanBeta2</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">Vx2</span> <span class="o">=</span> <span class="n">Vr2</span> <span class="o">/</span> <span class="n">tanBeta2</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># (iv) We need a general way of specifying rotor loss. Choose a prescribed</span>
+    <span class="c1"># fraction of entropy rise between rotor inlet and machine outlet. This</span>
+    <span class="c1"># choice can be updated in response to CFD results.</span>
+    <span class="c1">#</span>
+    <span class="c1"># Together with stagnation enthalpy, this fixes rotor exit stagntaion state</span>
+    <span class="c1">#</span>
+
+    <span class="n">s2</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">s</span> <span class="o">+</span> <span class="n">loss_split</span> <span class="o">*</span> <span class="p">(</span><span class="n">So3</span><span class="o">.</span><span class="n">s</span> <span class="o">-</span> <span class="n">So1</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">So2</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">So3</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span>
+
+    <span class="c1"># Inlet rothalpy</span>
+    <span class="n">I1</span> <span class="o">=</span> <span class="n">S1</span><span class="o">.</span><span class="n">h</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">Vrel1</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">-</span> <span class="n">U1</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span>
+
+    <span class="c1"># # Iterate on rotor exit static state</span>
+    <span class="c1"># Ma2 = 0.01  # Initial guess</span>
+    <span class="c1"># rf = 0.5  # Relaxation factor</span>
+    <span class="c1"># for _ in range(maxiter):</span>
+    <span class="c1">#     # New static state</span>
+    <span class="c1">#     S2 = So2.to_static(Ma2)</span>
+    <span class="c1">#     # New relative stagnation state</span>
+    <span class="c1">#     Marel2 = Vrel2 / S2.a</span>
+    <span class="c1">#     Sorel2 = S2.to_stagnation(Marel2)</span>
+    <span class="c1">#     # Conserve rothalpy to get U2, V2</span>
+    <span class="c1">#     U2 = np.sqrt(2.0 * (Sorel2.h - I1))</span>
+    <span class="c1">#     Vt2 = Vtrel2 + U2</span>
+    <span class="c1">#     V2 = np.sqrt(Vx2**2.0 + Vr2**2.0 + Vt2**2.0)</span>
+    <span class="c1">#     # Updated guess of Mach with relaxation</span>
+    <span class="c1">#     Ma2_new = V2 / S2.a</span>
+    <span class="c1">#     Ma2 = rf * Ma2_new + (1.0 - rf) * Ma2</span>
+    <span class="c1"># print(U2)</span>
+
+    <span class="n">h2</span> <span class="o">=</span> <span class="n">So2</span><span class="o">.</span><span class="n">h</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">U2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">h2</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">Vrel2</span><span class="o">**</span><span class="mi">2</span> <span class="o">-</span> <span class="n">I1</span><span class="p">))</span>
+        <span class="n">h2</span> <span class="o">=</span> <span class="n">So2</span><span class="o">.</span><span class="n">h</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">Vr2</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="p">(</span><span class="n">Vtrel2</span> <span class="o">+</span> <span class="n">U2</span><span class="p">)</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">)</span>
+
+    <span class="n">S2</span> <span class="o">=</span> <span class="n">So2</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">h2</span><span class="p">,</span> <span class="n">So2</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">Vt2</span> <span class="o">=</span> <span class="n">Vtrel2</span> <span class="o">+</span> <span class="n">U2</span>
+    <span class="n">V2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Vx2</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Vr2</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Vt2</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Misc other results</span>
+    <span class="n">Alpha2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan</span><span class="p">(</span><span class="n">Vt2</span> <span class="o">/</span> <span class="n">Vm2</span><span class="p">))</span>
+    <span class="n">A2</span> <span class="o">=</span> <span class="n">mdot</span> <span class="o">/</span> <span class="n">S2</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">Vm2</span>
+    <span class="n">rrms2</span> <span class="o">=</span> <span class="n">U2</span> <span class="o">/</span> <span class="n">Omega</span>
+
+    <span class="n">V3</span> <span class="o">=</span> <span class="n">DH_diff</span> <span class="o">*</span> <span class="n">V2</span>
+
+    <span class="c1"># Iterate on diffuser exit static state</span>
+    <span class="n">Ma3</span> <span class="o">=</span> <span class="mf">0.6</span>  <span class="c1"># Initial guess</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="mf">0.5</span>  <span class="c1"># Relaxation factor</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span> <span class="o">*</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="c1"># New static state</span>
+        <span class="n">S3</span> <span class="o">=</span> <span class="n">So3</span><span class="o">.</span><span class="n">to_static</span><span class="p">(</span><span class="n">Ma3</span><span class="p">)</span>
+        <span class="n">Ma3_new</span> <span class="o">=</span> <span class="n">V3</span> <span class="o">/</span> <span class="n">S3</span><span class="o">.</span><span class="n">a</span>
+        <span class="n">Ma3</span> <span class="o">=</span> <span class="n">rf</span> <span class="o">*</span> <span class="n">Ma3_new</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">rf</span><span class="p">)</span> <span class="o">*</span> <span class="n">Ma3</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># (vi) select radius ratio that is consistent</span>
+    <span class="c1">#</span>
+
+    <span class="c1"># Conserve moment of momentum</span>
+    <span class="n">mom2</span> <span class="o">=</span> <span class="n">rrms2</span> <span class="o">*</span> <span class="n">S2</span><span class="o">.</span><span class="n">rho</span> <span class="o">*</span> <span class="n">Vt2</span>
+
+    <span class="n">V3</span> <span class="o">=</span> <span class="n">Ma3</span> <span class="o">*</span> <span class="n">S3</span><span class="o">.</span><span class="n">a</span>
+    <span class="n">RR3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(((</span><span class="n">mdot</span> <span class="o">/</span> <span class="n">A2</span><span class="p">)</span> <span class="o">**</span> <span class="mf">2.0</span> <span class="o">+</span> <span class="p">(</span><span class="n">mom2</span> <span class="o">/</span> <span class="n">rrms2</span><span class="p">)</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">))</span> <span class="o">/</span> <span class="n">S3</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">V3</span>
+    <span class="n">A3</span> <span class="o">=</span> <span class="n">A2</span> <span class="o">*</span> <span class="n">RR3</span>
+    <span class="n">rrms3</span> <span class="o">=</span> <span class="n">rrms2</span> <span class="o">*</span> <span class="n">RR3</span>
+
+    <span class="n">Vr3</span> <span class="o">=</span> <span class="n">mdot</span> <span class="o">/</span> <span class="n">S3</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">A3</span>
+    <span class="n">Vt3</span> <span class="o">=</span> <span class="n">mom2</span> <span class="o">/</span> <span class="n">S3</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">rrms3</span>
+    <span class="n">Alpha3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan</span><span class="p">(</span><span class="n">Vt3</span> <span class="o">/</span> <span class="n">Vr3</span><span class="p">))</span>
+
+    <span class="c1"># Dummy state</span>
+    <span class="n">rrms2a</span> <span class="o">=</span> <span class="n">rrms2</span> <span class="o">+</span> <span class="mf">0.7</span> <span class="o">*</span> <span class="p">(</span><span class="n">rrms3</span> <span class="o">-</span> <span class="n">rrms2</span><span class="p">)</span>
+    <span class="n">A2a</span> <span class="o">=</span> <span class="n">A2</span> <span class="o">*</span> <span class="n">rrms2a</span> <span class="o">/</span> <span class="n">rrms2</span>
+    <span class="n">So2a</span> <span class="o">=</span> <span class="n">So3</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Iterate on diffuser exit static state</span>
+    <span class="n">Ma2a</span> <span class="o">=</span> <span class="n">Ma3</span> <span class="o">+</span> <span class="mf">0.0</span>  <span class="c1"># Initial guess</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="mf">0.5</span>  <span class="c1"># Relaxation factor</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">S2a</span> <span class="o">=</span> <span class="n">So2a</span><span class="o">.</span><span class="n">to_static</span><span class="p">(</span><span class="n">Ma2a</span><span class="p">)</span>
+        <span class="n">Vr2a</span> <span class="o">=</span> <span class="n">mdot</span> <span class="o">/</span> <span class="n">S2a</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">A2a</span>
+        <span class="n">Vt2a</span> <span class="o">=</span> <span class="n">mom2</span> <span class="o">/</span> <span class="n">S2a</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">rrms2a</span>
+        <span class="n">V2a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Vr2a</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">Vt2a</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span>
+        <span class="n">Ma2a</span> <span class="o">=</span> <span class="n">V2a</span> <span class="o">/</span> <span class="n">S2a</span><span class="o">.</span><span class="n">a</span>
+
+    <span class="n">S_all</span> <span class="o">=</span> <span class="n">S1</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">S1</span><span class="p">,</span> <span class="n">S2</span><span class="p">,</span> <span class="n">S2a</span><span class="p">,</span> <span class="n">S3</span><span class="p">))</span>
+
+    <span class="n">rrms_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">rrms1</span><span class="p">,</span> <span class="n">rrms2</span><span class="p">,</span> <span class="n">rrms2a</span><span class="p">,</span> <span class="n">rrms3</span><span class="p">])</span>
+    <span class="n">A_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">A1</span><span class="p">,</span> <span class="n">A2</span><span class="p">,</span> <span class="n">A2a</span><span class="p">,</span> <span class="n">A3</span><span class="p">])</span>
+    <span class="n">Omega_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Omega</span><span class="p">,</span> <span class="n">Omega</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+
+    <span class="n">Vx</span> <span class="o">=</span> <span class="p">(</span><span class="n">Vx1</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">Vr</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">Vr2</span><span class="p">,</span> <span class="n">Vr2a</span><span class="p">,</span> <span class="n">Vr3</span><span class="p">)</span>
+    <span class="n">Vt</span> <span class="o">=</span> <span class="p">(</span><span class="n">Vt1</span><span class="p">,</span> <span class="n">Vt2</span><span class="p">,</span> <span class="n">Vt2a</span><span class="p">,</span> <span class="n">Vt3</span><span class="p">)</span>
+    <span class="n">Vxrt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">Vx</span><span class="p">,</span> <span class="n">Vr</span><span class="p">,</span> <span class="n">Vt</span><span class="p">))</span>
+
+    <span class="n">Al_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Alpha1</span><span class="p">,</span> <span class="n">Alpha2</span><span class="p">,</span> <span class="n">Alpha2</span><span class="p">,</span> <span class="n">Alpha3</span><span class="p">])</span>
+    <span class="n">Be_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">90.0</span><span class="p">,</span> <span class="mf">90.0</span><span class="p">,</span> <span class="mf">90.0</span><span class="p">])</span>
+
+    <span class="n">ml</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">flowfield</span><span class="o">.</span><span class="n">make_mean_line</span><span class="p">(</span><span class="n">rrms_all</span><span class="p">,</span> <span class="n">A_all</span><span class="p">,</span> <span class="n">Omega_all</span><span class="p">,</span> <span class="n">Vxrt</span><span class="p">,</span> <span class="n">S_all</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">Alpha</span><span class="p">,</span> <span class="n">Al_all</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">Beta</span><span class="p">,</span> <span class="n">Be_all</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ml</span></div>
+
+
+
+<div class="viewcode-block" id="inverse">
+<a class="viewcode-back" href="../../../meanline.html#turbigen.meanline.radial_compressor.inverse">[docs]</a>
+<span class="k">def</span> <span class="nf">inverse</span><span class="p">(</span><span class="n">ml</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reverse a radial compressor mean-line to design variables.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ml: MeanLine</span>
+<span class="sd">        A mean-line object specifying flow in a radial compressor.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    out : dict</span>
+<span class="sd">        Dictionary of aerodynamic design parameters with fields:</span>
+<span class="sd">        `So1`, `PR_tt`, `eta_tt`, `mdot`, `phi1`, `Alpha1`, `Ma1_rel`, `htr1`,</span>
+<span class="sd">        `Alpha2_rel`, `loss_split`, `DHimp`, `DHdiff`</span>
+<span class="sd">        The fields have the same meanings as in :func:`forward`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Pull out states</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Sdot</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">Sdot_wall</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">Sdot</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ske</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ske</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">ske</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Sdot_tip</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">Sdot_tip</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">Sdot_tip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">mdot_stall</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot_stall</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">mdot_stall</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">mdot_choke</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot_choke</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">mdot_choke</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Co1</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">Co</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">Co1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="n">Dsmix</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">Ds_mix</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">blockage</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">blockage</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">blockage</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="n">Deta_s</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">Deta_h</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">s_nomix</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">s</span> <span class="o">-</span> <span class="n">Dsmix</span>
+    <span class="n">Dho</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ptp</span><span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Asurf</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">Asurf</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">Asurf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">Asurf_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Asurf</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">Dho</span><span class="o">**-</span><span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Q</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">Ds</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">r</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">Dho</span><span class="o">**</span><span class="mf">0.25</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">Q</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">Os</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">Omega</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">Q</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">Dho</span><span class="o">**-</span><span class="mf">0.75</span><span class="p">)</span>
+    <span class="n">pc</span> <span class="o">=</span> <span class="mf">100.0</span>
+    <span class="n">Deta_surf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Sdot</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span>
+
+    <span class="n">Deta_surf_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">Sdot</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span>
+    <span class="n">Asurf_norm_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">Asurf</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">Dho</span><span class="o">**-</span><span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Q</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">V3av_arr</span> <span class="o">=</span> <span class="n">Deta_surf_arr</span> <span class="o">/</span> <span class="n">Asurf_norm_arr</span>
+
+    <span class="n">RR</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;So1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">stagnation</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;PR_tt&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">PR_tt</span><span class="p">,</span>
+        <span class="s2">&quot;eta_tt_pc&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;eta_ts_pc&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_ts</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;eta_tt&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span><span class="p">,</span>
+        <span class="s2">&quot;eta_poly&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_poly</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;eta_tt_nomix&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span> <span class="o">+</span> <span class="n">Dsmix</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_s</span><span class="p">)</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;mdot&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;phi1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">phi</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Alpha1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Alpha</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Ma1_rel&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Ma_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;htr1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">htr</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Alpha2_rel&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Alpha_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;DH_rotor&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;DH_diff&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;loss_split&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">s_nomix</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="o">-</span><span class="n">s_nomix</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="n">s_nomix</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">s_nomix</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+        <span class="s2">&quot;RR&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;DR&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rho</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">rho</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;VmR&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Vm1_Vrel1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;psi_turn&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="s2">&quot;psi_ke&quot;</span><span class="p">:</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="s2">&quot;psi_rad&quot;</span><span class="p">:</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="s2">&quot;Nb1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Nb</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Ma2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Ma</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;psi2&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="s2">&quot;Phi&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">stagnation</span><span class="o">.</span><span class="n">rho</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;psi_tot&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">ho</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_surf&quot;</span><span class="p">:</span> <span class="n">Deta_surf</span><span class="p">,</span>
+        <span class="s2">&quot;blockage1&quot;</span><span class="p">:</span> <span class="n">blockage</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_mix&quot;</span><span class="p">:</span> <span class="n">Dsmix</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_tt&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span><span class="p">)</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_ts&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_ts</span><span class="p">)</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_ke&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_ts</span><span class="p">)</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_ske&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ske</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_h</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_tip&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Sdot_tip</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_imp&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;Deta_diff&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">s</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">*</span> <span class="n">Deta_s</span> <span class="o">*</span> <span class="n">pc</span><span class="p">,</span>
+        <span class="s2">&quot;rs1_r2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rtip</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;rs1_rm1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rtip</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;r3&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;r2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;r1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;rs1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rtip</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;rh1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">rhub</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;stall_margin&quot;</span><span class="p">:</span> <span class="n">mdot_stall</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="s2">&quot;choke_margin&quot;</span><span class="p">:</span> <span class="n">mdot_choke</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">mdot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="s2">&quot;range&quot;</span><span class="p">:</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">mdot_stall</span> <span class="o">/</span> <span class="n">mdot_choke</span><span class="p">,</span>
+        <span class="s2">&quot;Co1&quot;</span><span class="p">:</span> <span class="n">Co1</span><span class="p">,</span>
+        <span class="s2">&quot;Omega1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Omega</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;U1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;MU2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">U</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">ao</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Alpha3&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Alpha</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+        <span class="s2">&quot;Asurf&quot;</span><span class="p">:</span> <span class="n">Asurf_norm</span><span class="p">,</span>
+        <span class="s2">&quot;Vrel1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Vrel2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;Vt2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vt</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;V3&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+        <span class="s2">&quot;V3av&quot;</span><span class="p">:</span> <span class="n">Deta_surf</span> <span class="o">/</span> <span class="n">Asurf_norm</span><span class="p">,</span>
+        <span class="s2">&quot;V3av00&quot;</span><span class="p">:</span> <span class="n">V3av_arr</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;V3av01&quot;</span><span class="p">:</span> <span class="n">V3av_arr</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;V3av10&quot;</span><span class="p">:</span> <span class="n">V3av_arr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;V3av11&quot;</span><span class="p">:</span> <span class="n">V3av_arr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;A00&quot;</span><span class="p">:</span> <span class="n">Asurf_norm_arr</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;A01&quot;</span><span class="p">:</span> <span class="n">Asurf_norm_arr</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;A10&quot;</span><span class="p">:</span> <span class="n">Asurf_norm_arr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;A11&quot;</span><span class="p">:</span> <span class="n">Asurf_norm_arr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;AR1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">ARflow</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Ds&quot;</span><span class="p">:</span> <span class="n">Ds</span><span class="p">,</span>
+        <span class="s2">&quot;Os&quot;</span><span class="p">:</span> <span class="n">Os</span><span class="p">,</span>
+        <span class="s2">&quot;logDs&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">Ds</span><span class="p">),</span>
+        <span class="s2">&quot;logOs&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">Os</span><span class="p">),</span>
+        <span class="s2">&quot;span0&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">span</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Asurf_bld&quot;</span><span class="p">:</span> <span class="n">Asurf</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Asurf_ann&quot;</span><span class="p">:</span> <span class="n">Asurf</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+        <span class="c1"># &quot;Lsurf1&quot;: ml.Lsurf[0],</span>
+        <span class="c1"># &quot;Lsurf1_recip&quot;: 1.0 / ml.Lsurf[0],</span>
+        <span class="s2">&quot;turning&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span>
+            <span class="n">ml</span><span class="o">.</span><span class="n">Alpha_rel</span><span class="p">[</span>
+                <span class="p">(</span>
+                    <span class="mi">0</span><span class="p">,</span>
+                    <span class="mi">1</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">]</span>
+        <span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;pitch1&quot;</span><span class="p">:</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">ml</span><span class="o">.</span><span class="n">rrms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Nb</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;V1&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;V2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">V</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s2">&quot;Co_term1&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">RR</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">phi</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Co_term2&quot;</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">tanAlpha_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Co_term3&quot;</span><span class="p">:</span> <span class="o">-</span><span class="n">RR</span> <span class="o">*</span> <span class="n">ml</span><span class="o">.</span><span class="n">tanAlpha_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;Co_term123&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="n">ml</span><span class="o">.</span><span class="n">tanAlpha_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">RR</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">phi</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="o">-</span> <span class="n">RR</span> <span class="o">*</span> <span class="n">ml</span><span class="o">.</span><span class="n">tanAlpha_rel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">Vm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">),</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+</pre></div>
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+    </div>
+
+
+
+
+  </body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Changelog &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Bibliography" href="references.html" />
+    <link rel="prev" title="Post-processing" href="post.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Changelog</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#v1-10-1">v1.10.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-10-0">v1.10.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-9-1">v1.9.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-9-0">v1.9.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-8-0">v1.8.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-7-0">v1.7.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-6-1">v1.6.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-6-0">v1.6.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-5-1">v1.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-5-0">v1.5.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-4-0">v1.4.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-4">v1.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-3">v1.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-2">v1.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-1">v1.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-0">v1.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-2-0">v1.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-1-0">v1.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-0-0">v1.0.0</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="post.html" title="previous chapter">Post-processing</a></li>
+      <li>Next: <a href="references.html" title="next chapter">Bibliography</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="changelog">
+<h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading">¶</a></h1>
+<section id="v1-10-1">
+<h2>v1.10.1<a class="headerlink" href="#v1-10-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Bugfix for AutoGrid server not reading the delete switch</p></li>
+<li><p>Bugfix for scalar mean-line iterate variables</p></li>
+</ul>
+</section>
+<section id="v1-10-0">
+<h2>v1.10.0<a class="headerlink" href="#v1-10-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Use rotation-corrected static pressure to find stagnation points</p></li>
+<li><p>Add mixed-flow mean-line with mixed and pure radial examples</p></li>
+<li><p>Script to read polynomial coefficients and evaluate a previously-fitted design space</p></li>
+<li><p>Allow unbladed first row in H-mesh</p></li>
+<li><p>Add a syntax check for TS4 body force template</p></li>
+<li><p>Generalise to multi-stage machines</p></li>
+<li><p>Wrap the incidence angle with respect to camber angle</p></li>
+<li><p>Bugfix for TS4 throttle config</p></li>
+<li><p>Add -m command-line switch to debug the mean-line</p></li>
+<li><p>Take CFD inlet pitch angle from the mesh, not mean-line design</p></li>
+<li><p>Implement command-line options for AutoGrid server</p></li>
+<li><p>Bugfix to allow incidence correction on only one section</p></li>
+<li><p>Reduce LE recamber when incidence is close to tolerance</p></li>
+</ul>
+</section>
+<section id="v1-9-1">
+<h2>v1.9.1<a class="headerlink" href="#v1-9-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add retry for AutoGrid connections</p></li>
+<li><p>Use unstructured spanwise cuts to calculate incidence</p></li>
+<li><p>More robust tip H-meshing</p></li>
+<li><p>Incidence correction bugfix for unbladed cases</p></li>
+<li><p>Only reduce proportional part of PID controller gain on restart</p></li>
+<li><p>Clean up the hypercube running code</p></li>
+<li><p>Turbostream 3 SA helicity correction</p></li>
+<li><p>Better Turbostream 4 application variable defaults</p></li>
+<li><p>Use turbulent viscosity from old solution on restart</p></li>
+<li><p>Fix error in docs iterate config</p></li>
+</ul>
+</section>
+<section id="v1-9-0">
+<h2>v1.9.0<a class="headerlink" href="#v1-9-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add post-processing functions for unstructured cuts at constant span fraction</p></li>
+<li><p>Put rotational speeds in AutoGrid geomTurbo file when OH meshing</p></li>
+<li><p>Support TS3 cooling patches</p></li>
+<li><p>Method to allow trimming of grid blocks in pre-processing</p></li>
+<li><p>Compatability fixes for numpy 2 and pin dependency versions</p></li>
+<li><p>Add TS4 halo_implementation setting</p></li>
+<li><p>Fix bug with zero wall distance on non-matching patches</p></li>
+<li><p>Check patch indices are consistent with block size before writing TS3 input</p></li>
+</ul>
+</section>
+<section id="v1-8-0">
+<h2>v1.8.0<a class="headerlink" href="#v1-8-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fit blade sections to coordinates read from a file</p></li>
+<li><p>Overhaul post processing with separate functions for all plots</p></li>
+<li><p>Rewrite LE incidence calculation to work generally for axial and radial</p></li>
+<li><p>Allow off-design operation with rpm_adjust and mass_adjust settings</p></li>
+<li><p>Setting for inviscid boudary condition on zero-radius rod</p></li>
+<li><p>When running installed turbomachine, reuse installed initial guess</p></li>
+<li><p>Allow install function to return inverse design variables to mean line</p></li>
+<li><p>Add rounded trailing edge and fillet options to autogrid meshing</p></li>
+<li><p>Check for membership of the turbostream group before running TS3</p></li>
+<li><p>Error if we cannot locate the specified TS4 throttle tag</p></li>
+<li><p>Allow arbitrary setting of perfect gas internal energy datum</p></li>
+<li><p>Handle errors in cluster jobs and hold the node for debugging</p></li>
+<li><p>Allow unbladed rows in OH meshes</p></li>
+<li><p>Close off the tip of unshrouded rotor blades in STL export</p></li>
+<li><p>Make the coordinate check optional for debugging</p></li>
+<li><p>Fix bounds error on annulus interpolation due to floating point error</p></li>
+</ul>
+</section>
+<section id="v1-7-0">
+<h2>v1.7.0<a class="headerlink" href="#v1-7-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fix bug with noisy TS4 console logging</p></li>
+<li><p>Allow labels on TS4 point probes with different file names</p></li>
+<li><p>Implement unsteady boundary conditions into pre-processing framework</p></li>
+<li><p>Add tutorial to documentation</p></li>
+</ul>
+</section>
+<section id="v1-6-1">
+<h2>v1.6.1<a class="headerlink" href="#v1-6-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fix bug where zero-valued configuration options are not written out</p></li>
+</ul>
+</section>
+<section id="v1-6-0">
+<h2>v1.6.0<a class="headerlink" href="#v1-6-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>General grid refinement by subdivision of cells</p></li>
+<li><p>Allow halting iterations by creating a stopit file in working directory</p></li>
+<li><p>Check for two-phase flow at the end of the calculation</p></li>
+<li><p>Incidence correction for splitters</p></li>
+<li><p>Improve robustness and simplify AutoGrid meshing script</p></li>
+<li><p>Use improved clustering functions for H-meshing</p></li>
+<li><p>Plot pressure distributions</p></li>
+<li><p>Implement loading mean-line, annulus, and installation modules from file</p></li>
+<li><p>Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to change body force)</p></li>
+<li><p>Configuration option for maximum H-mesh free stream skew</p></li>
+<li><p>Fix AutoGrid patch matching bug</p></li>
+<li><p>Fix bug with TS4 cfl_ramp_en not set</p></li>
+</ul>
+</section>
+<section id="v1-5-1">
+<h2>v1.5.1<a class="headerlink" href="#v1-5-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Minor corrections for open release</p></li>
+</ul>
+</section>
+<section id="v1-5-0">
+<h2>v1.5.0<a class="headerlink" href="#v1-5-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>General tidying up of the code</p></li>
+<li><p>Incidence correction only when mass flow is on target</p></li>
+<li><p>Rework configuration and command-line options</p></li>
+<li><p>Improve documentation</p></li>
+<li><p>Automatic numbering of working directories</p></li>
+</ul>
+</section>
+<section id="v1-4-0">
+<h2>v1.4.0<a class="headerlink" href="#v1-4-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Implement sweep by changing meridional locations of LE/TE</p></li>
+<li><p>Add splitter capability</p></li>
+<li><p>Allow preconditioning in TS4</p></li>
+<li><p>Yet more AutoGrid meshing options</p></li>
+<li><p>Record Exceptions in the turbigen log file, in addition to STDERR.</p></li>
+</ul>
+</section>
+<section id="v1-3-4">
+<h2>v1.3.4<a class="headerlink" href="#v1-3-4" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>More robust unstructured cutting by Marching Cubes algorithm.</p></li>
+<li><p>Allow prescribing body force in TS 4.2.82</p></li>
+<li><p>Find stagnation point by sign change of surface velocity</p></li>
+<li><p>Implement NaN check for TS4</p></li>
+<li><p>Write out a design space fit to json for web interface</p></li>
+<li><p>More AutoGrid options including untwist outlet</p></li>
+</ul>
+</section>
+<section id="v1-3-3">
+<h2>v1.3.3<a class="headerlink" href="#v1-3-3" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Update radial turbine to set stator LE diameter ratio</p></li>
+</ul>
+</section>
+<section id="v1-3-2">
+<h2>v1.3.2<a class="headerlink" href="#v1-3-2" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Allow custom TS3-&gt;TS4 conversion pipelines</p></li>
+<li><p>True Taylor camberline (quartic in chi, not tan chi)</p></li>
+<li><p>Generalise incidence correction to radial inflows and outflows</p></li>
+</ul>
+</section>
+<section id="v1-3-1">
+<h2>v1.3.1<a class="headerlink" href="#v1-3-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add rotor-only fan mean line</p></li>
+</ul>
+</section>
+<section id="v1-3-0">
+<h2>v1.3.0<a class="headerlink" href="#v1-3-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improved H-mesh tip-gap grid</p></li>
+<li><p>Add installation effects module</p></li>
+<li><p>Add write coordinates solver</p></li>
+<li><p>Allow running in parallel</p></li>
+</ul>
+</section>
+<section id="v1-2-0">
+<h2>v1.2.0<a class="headerlink" href="#v1-2-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Implement polynomial design-space fitting.</p></li>
+<li><p>Add option to run a hypercube of designs.</p></li>
+<li><p>Improve characteristic running.</p></li>
+<li><p>Fix bugs with mixing of supersonic flows and area signage.</p></li>
+<li><p>Fix bug with setting shroud rpm.</p></li>
+<li><p>Generalise to select a type of thickness distribution.</p></li>
+<li><p>Clean up the log file outputs.</p></li>
+<li><p>Skew H-mesh in flow direction outside of blade rows.</p></li>
+<li><p>Added unstructured cutting for post-processing the mixed-out flow.</p></li>
+<li><p>Added throttling options to target mass flow for TS3 and TS4.</p></li>
+<li><p>Added radial turbine mean-line design functions and example.</p></li>
+<li><p>Internal rewrite of data structures to be CFD-solver agnostic.</p></li>
+<li><p>… plus other miscellaneous enhancements and tidying.</p></li>
+</ul>
+</section>
+<section id="v1-1-0">
+<h2>v1.1.0<a class="headerlink" href="#v1-1-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Added H-meshing option, with pinched tips.</p></li>
+<li><p><cite>Config</cite> object for programmatic creation and validation of input files.</p></li>
+<li><p>Automated post processing to get a <cite>MeanLine</cite> object from mixed-out CFD cuts.</p></li>
+<li><p>Use inlet velocity as reference for compressor circulation coefficient.</p></li>
+<li><p>Mixed-out averaging generalised for any meridional cut (not just constant axial coordinate).</p></li>
+<li><p>Iteration to correct for incidence, deviation, and mean-line guesses.</p></li>
+<li><p>Options to set blade number directly or Lieblein diffusion factor.</p></li>
+<li><p>Running characteristics for compressor designs.</p></li>
+<li><p>Generate real gas tables for TS4 on demand.</p></li>
+<li><p>Let TS3 grid object use arbitrary equation of state for post-processing.</p></li>
+<li><p>Post-processing TS4 simulations by reading the flow field into a structured TS3 grid.</p></li>
+<li><p>Config file options to submit a job to the SLURM queue.</p></li>
+</ul>
+</section>
+<section id="v1-0-0">
+<h2>v1.0.0<a class="headerlink" href="#v1-0-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>First Whittle Laboratory internal release.</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/changelog.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

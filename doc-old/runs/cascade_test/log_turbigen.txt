@@ -1,0 +1,94 @@
+TURBIGEN v1.10.1
+Starting at 2025-01-03T09:18:11
+Working directory: /home/jb753/python/turbigen-dev/doc/runs/cascade_test
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a turbine_cascade mean line...
+MeanLine(
+    Po=[1.    0.975] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.4],
+    Vt_rel=[  74.2 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Error encountered, quitting...
+Traceback (most recent call last):
+  File "/home/jb753/.pyenv/versions/turbigen-dev/bin/turbigen", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/main.py", line 259, in main
+    success = turbigen.run.run(conf)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/run.py", line 1333, in run
+    ml_out, _, gguess = run_single(conf)
+                        ^^^^^^^^^^^^^^^^
+  File "/home/jb753/python/turbigen-dev/turbigen/run.py", line 180, in run_single
+    ann = Annulus(ml.rmid, ml.span, ml.Beta, **conf.annulus)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Smooth.__init__() got an unexpected keyword argument 'debug'
+TURBIGEN v1.10.1
+Starting at 2025-01-03T09:19:07
+Working directory: /home/jb753/python/turbigen-dev/doc/runs/cascade_test
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a turbine_cascade mean line...
+MeanLine(
+    Po=[1.    0.975] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.4],
+    Vt_rel=[  74.2 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Annulus(
+    xmid=[-1.4868e-12  6.8784e-02],
+    rmid=[0.95 0.95],
+    span=[0.1  0.12]
+    )
+Re_surf/10^5=[11.6]
+Nblade=[99], s_cm=[0.88], tip=[0.]
+Generating an H-mesh...
+Mesh Npts/10^6=1.57
+Applying boundary conditions...
+Setting intial guess...
+Calculating wall distance...
+No solver specified, continuing with initial guess...
+Post-processing...
+Mixed-out CFD result:
+MeanLine(
+    Po=[1.     0.9748] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.3],
+    Vt_rel=[  74.2 -182.3],
+    Al=[ 39.99 -64.98],
+    Al_rel=[ 39.99 -64.98],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Design variable Nom    CFD    
+------------------------------
+Alpha           [40.0, [ 39.9 
+Ma2             0.6000 0.5996 
+Yh              0.1000 0.1010 
+htr             0.9000 0.9000 
+span            [0.1,  [0.1   
+eta_tt=0.000, eta_ts=0.000
+Elapsed time 0.36 min.

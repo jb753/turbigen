@@ -1399,7 +1399,7 @@ def save_source_tar_gz(output_filename):
     # Set directory to the package location
     directory = os.path.dirname(os.path.abspath(__file__))
 
-    logger.info(f"Saving source code backup to {output_filename}")
+    logger.debug(f"Saving source code backup to {output_filename}")
     with tarfile.open(output_filename, "w:gz") as tar:
         for root, _, files in os.walk(directory):
             for file in files:

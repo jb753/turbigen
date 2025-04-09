@@ -1,0 +1,82 @@
+"""Loop over examples, run them, and save the results as rst."""
+
+import os
+import subprocess
+from pathlib import Path
+import logging
+import sys
+
+INPUT_DIR = "examples"
+OUTPUT_DIR = "doc/examples"
+
+
+# Function to process a single example
+def run_example(input_yaml):
+    # Run turbigen as a subprocess and capture the log on stderr
+    print(f"Running example: {input_yaml}...")
+    out = subprocess.run(
+        ["turbigen", str(input_yaml)],
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    # Load the yaml
+    with open(input_yaml, "r") as f:
+        yaml_str = f.read()
+    yaml_indented = "\n".join(
+        "   " + line if line.strip() != "" else "" for line in yaml_str.splitlines()
+    )
+    # Indent the output
+    log_indented = "\n".join(["    " + l for l in out.stderr.splitlines()])
+
+    # Read comment lines from start of the yaml
+    with open(input_yaml, "r") as f:
+        lines = f.readlines()
+        comments = [line for line in lines if line.startswith("#")]
+
+    # Attempt to parse the output
+
+    try:
+        title = comments[0].split("#")[-1].strip()
+    except:
+        title = "Example"
+
+    # Now assemble an rst file
+    rst = f"""{"=" * len(title)}
+{title}
+{"=" * len(title)}
+
+Input file
+==========
+
+.. code-block:: yaml
+
+{yaml_indented}
+
+Log output
+==========
+
+.. code-block:: none
+
+{log_indented}
+
+"""
+
+    # Create the output directory if it doesn't exist
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Write the rst file to the output directory
+    output_file = Path(OUTPUT_DIR) / (input_yaml.stem + ".rst")
+    with open(output_file, "w") as f:
+        f.write(rst)
+
+    print(f"Example saved to: {output_file}")
+
+
+if __name__ == "__main__":
+    # Loop over  all examples
+    print(f"Running examples from {INPUT_DIR}")
+    for example in Path(INPUT_DIR).iterdir():
+        if example.suffix == ".yaml":
+            # Run the example
+            run_example(example)

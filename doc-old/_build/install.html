@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Installation &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Command-line options" href="usage.html" />
+    <link rel="prev" title="Nomenclature" href="nomenclature.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#obtain-the-code">Obtain the code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#basic-usage">Basic usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#test-case">Test case</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="nomenclature.html" title="previous chapter">Nomenclature</a></li>
+      <li>Next: <a href="usage.html" title="next chapter">Command-line options</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
+<p>This page describes how to install <strong class="program">turbigen</strong>.
+Lines prefixed with <cite>$</cite> are to be run at the Linux terminal.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong class="program">turbigen</strong> is only tested on Linux — expect issues if running on Windows.</p>
+</div>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
+<p>The program requires a working Python installation, version 3.9 or greater.
+Check your Python version by running,</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-V
+<span class="go">Python 3.11.2</span>
+</pre></div>
+</div>
+<p>If your Python version is below 3.9, you need to install a more recent version.
+You will also need the <cite>virtualenv</cite> module to make an installation separate
+from your system Python modules; this may require an extra package, e.g. <cite>sudo
+apt install python3-virtualenv</cite> in Debian. Check for the <cite>virtualenv</cite> module by
+running,</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;import virtualenv; print(&quot;virtualenv installed&quot;)&#39;</span>
+<span class="go">virtualenv installed</span>
+</pre></div>
+</div>
+</section>
+<section id="obtain-the-code">
+<h2>Obtain the code<a class="headerlink" href="#obtain-the-code" title="Link to this heading">¶</a></h2>
+<p>The code is available to download from the University of Cambridge GitLab
+instance.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://gitlab.developers.cam.ac.uk/jb753/turbigen.git
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>turbigen
+<span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>setup.sh
+</pre></div>
+</div>
+<p>This will create a Python virtualenv using your system interpreter, to hold
+<strong class="program">turbigen</strong> and it’s dependencies in isolation from your operating
+system Python installation.</p>
+</section>
+<section id="basic-usage">
+<h2>Basic usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Each time you start a session of turbigen in a new terminal, you must setup
+the environment by running <code class="code highlight bash console docutils literal highlight-console"><span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>setup.sh</code> again. Failing to
+do so will result in errors like <code class="code highlight bash console docutils literal highlight-console"><span class="go">turbigen: command not found</span></code>.</p>
+</div>
+<p>To run a case, use,</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>turbigen<span class="w"> </span>INPUT_FILE
+</pre></div>
+</div>
+<p>where <cite>INPUT_FILE</cite> is a yaml configuration file. The manual contains a list of all <a class="reference internal" href="usage.html#usage"><span class="std std-ref">Command-line options</span></a>. Several specimen configuration files are provided in the <cite>examples</cite> directory.</p>
+</section>
+<section id="test-case">
+<h2>Test case<a class="headerlink" href="#test-case" title="Link to this heading">¶</a></h2>
+<p>As a test to verify the installation has completed sucessfully, run the configuration <code class="file docutils literal notranslate"><span class="pre">examples/cascade_test.yaml</span></code>. This should design and mesh a turbine cascade, but not run the CFD, producing the following output:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>TURBIGEN v1.10.1
+Starting at 2025-01-03T09:19:07
+Working directory: /home/jb753/python/turbigen-dev/doc/runs/cascade_test
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a turbine_cascade mean line...
+MeanLine(
+    Po=[1.    0.975] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.4],
+    Vt_rel=[  74.2 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Designing annulus...
+Annulus(
+    xmid=[-1.4868e-12  6.8784e-02],
+    rmid=[0.95 0.95],
+    span=[0.1  0.12]
+    )
+Re_surf/10^5=[11.6]
+Nblade=[99], s_cm=[0.88], tip=[0.]
+Generating an H-mesh...
+Mesh Npts/10^6=1.57
+Applying boundary conditions...
+Setting intial guess...
+Calculating wall distance...
+No solver specified, continuing with initial guess...
+Post-processing...
+Mixed-out CFD result:
+MeanLine(
+    Po=[1.     0.9748] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.3],
+    Vt_rel=[  74.2 -182.3],
+    Al=[ 39.99 -64.98],
+    Al_rel=[ 39.99 -64.98],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Design variable Nom    CFD
+------------------------------
+Alpha           [40.0, [ 39.9
+Ma2             0.6000 0.5996
+Yh              0.1000 0.1010
+htr             0.9000 0.9000
+span            [0.1,  [0.1
+eta_tt=0.000, eta_ts=0.000
+Elapsed time 0.36 min.
+</pre></div>
+</div>
+</section>
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/install.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

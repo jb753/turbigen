@@ -633,6 +633,16 @@ class Smooth(AnnulusDesigner):
 
         return xr
 
+    def __repr__(self):
+        try:
+            cm = self.chords(0.5)[1::2]
+            mq = np.arange(1.5, self.nrow + 1.5)
+            span = self.get_span(mq)
+            xr_mid = self.evaluate_xr(mq, 0.5)
+            return f"FixedAR(nrow={self.nrow}, x={xr_mid[0]}, r={xr_mid[1]}, AR={span / cm})"
+        except Exception:
+            return f"FixedAR()"
+
 
 #
 #

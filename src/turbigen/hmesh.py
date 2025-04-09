@@ -67,7 +67,7 @@ class H(turbigen.mesh.Mesher):
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
-        logger.info("Generating an H-mesh...")
+        logger.info("Making an H-mesh...")
 
         mesh_config = self
         unbladed = [False for _ in range(mac.Nrow)]

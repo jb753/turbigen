@@ -10,7 +10,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
    :maxdepth: 2
    :caption: Contents:
 
-   examples/index
+   auto_examples
 
 Indices and tables
 ==================

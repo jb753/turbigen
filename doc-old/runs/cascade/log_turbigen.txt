@@ -1,0 +1,118 @@
+TURBIGEN v1.5.1
+Starting at 2024-01-05T09:59:36
+Working directory: /home/jb753/python/turbigen-open/doc/runs/cascade
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a cascade...
+MeanLine(
+    Po=[1.    0.975] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.4],
+    Vt_rel=[  74.2 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Annulus(
+    xmid=[-3.8624e-12  6.8750e-02],
+    rmid=[0.95 0.95],
+    span=[0.1  0.12]
+    )
+Re_surf/10^5=[11.6]
+Nblade=[99], s_cm=[0.88], tip=[0.]
+Generating an H-mesh...
+Mesh Npts/10^6=0.86
+Applying boundary conditions...
+Setting intial guess...
+Calculating wall distance...
+No solver specified, continuing with initial guess...
+Post-processing...
+Mixed-out CFD result:
+MeanLine(
+    Po=[1.     0.9748] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[-2.5e-13  0.0e+00],
+    Vt=[  74.2 -182.3],
+    Vt_rel=[  74.2 -182.3],
+    Al=[ 39.99 -64.98],
+    Al_rel=[ 39.99 -64.98],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+eta_tt=0.000, eta_ts=0.000
+Design variable Nom    CFD    
+------------------------------
+Alpha1          40.000 39.986 
+Alpha2          -65.00 -64.98 
+Ma2             0.6000 0.5996 
+Yh              0.1000 0.1010 
+htr             0.9000 0.9000 
+span1           0.1000 0.1000 
+span2           0.1200 0.1200 
+Elapsed time 0.20 min.
+TURBIGEN v1.5.1
+Starting at 2024-02-02T15:37:36
+Working directory: /home/jb753/python/turbigen-open/doc/runs/cascade
+Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+Designing a cascade...
+MeanLine(
+    Po=[1.    0.975] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[0. 0.],
+    Vt=[  74.2 -182.4],
+    Vt_rel=[  74.2 -182.4],
+    Al=[ 40. -65.],
+    Al_rel=[ 40. -65.],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Checking mean-line conservation...
+Checking mean-line inversion...
+Annulus(
+    xmid=[-3.7438e-12  6.8750e-02],
+    rmid=[0.95 0.95],
+    span=[0.1  0.12]
+    )
+Re_surf/10^5=[11.6]
+Nblade=[99], s_cm=[0.88], tip=[0.]
+Generating an H-mesh...
+Mesh Npts/10^6=1.57
+Applying boundary conditions...
+Setting intial guess...
+Calculating wall distance...
+No solver specified, continuing with initial guess...
+Post-processing...
+Mixed-out CFD result:
+MeanLine(
+    Po=[1.     0.9748] bar,
+    To=[300. 300.] K,
+    Ma=[0.336 0.6  ],
+    Vx=[88.4 85.1],
+    Vr=[-2.6e-13  0.0e+00],
+    Vt=[  74.2 -182.3],
+    Vt_rel=[  74.2 -182.3],
+    Al=[ 39.99 -64.98],
+    Al_rel=[ 39.99 -64.98],
+    rpm=[0. 0.],
+    mdot=[57.95 57.95] kg/s
+    )
+Design variable Nom    CFD    
+------------------------------
+Alpha1          40.000 39.986 
+Alpha2          -65.00 -64.98 
+Ma2             0.6000 0.5996 
+Yh              0.1000 0.1010 
+htr             0.9000 0.9000 
+span1           0.1000 0.1000 
+span2           0.1200 0.1200 
+eta_tt=0.000, eta_ts=0.000
+Elapsed time 0.17 min.

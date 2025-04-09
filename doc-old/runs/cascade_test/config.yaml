@@ -1,0 +1,46 @@
+---
+annulus:
+  AR_chord: 1.6
+  AR_gap:
+  - 0.8
+  - 0.9
+  debug: false
+blades:
+- Co: 0.7
+  sections:
+  - q_thick:
+    - 0.05
+    - 0.12
+    - 0.3
+    - 0.02
+    - 0.02
+    - 0.18
+    qstar_camber:
+    - 0.0
+    - 0.0
+    - 1.0
+    - 1.0
+    - 0.0
+    spf: 0.5
+inlet:
+  Po: 100000.0
+  To: 300.0
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-05
+mean_line:
+  Alpha:
+  - 40.0
+  - -65.0
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+  span:
+  - 0.1
+  - 0.12
+  type: turbine_cascade
+mesh:
+  type: h
+  yplus: 30.0
+workdir: /home/jb753/python/turbigen-dev/doc/runs/cascade_test
+...

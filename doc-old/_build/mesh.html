@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Meshing &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Solvers" href="solver.html" />
+    <link rel="prev" title="Mean-line" href="meanline.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Meshing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#h-meshing">H-meshing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#oh-meshing">OH-meshing</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="meanline.html" title="previous chapter">Mean-line</a></li>
+      <li>Next: <a href="solver.html" title="next chapter">Solvers</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="meshing">
+<span id="id1"></span><h1>Meshing<a class="headerlink" href="#meshing" title="Link to this heading">¶</a></h1>
+<p>In order to run a computational fluid dynamics simulation, the domain must be
+discretised into a ‘mesh’ of cells. <cite>turbigen</cite> supports structured grids
+in polar coordinates of any multi-block topology.</p>
+<section id="h-meshing">
+<h2>H-meshing<a class="headerlink" href="#h-meshing" title="Link to this heading">¶</a></h2>
+<p>The simplest topology is an H-mesh. Each blade row is a single block, indexed
+in the streamwise, spanwise, and pitchwise directions. No special setup is
+required for H-meshing as it is performed using native <strong class="program">turbigen</strong> code.</p>
+<section id="module-turbigen.hmesh">
+<span id="configuration-options"></span><h3>Configuration options<a class="headerlink" href="#module-turbigen.hmesh" title="Link to this heading">¶</a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">HMeshConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/hmesh.html#HMeshConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.hmesh.HMeshConfig" title="Link to this definition">¶</a></dt>
+<dd><p>Override default parameters using keyword args.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.ER_stream">
+<span class="sig-name descname"><span class="pre">ER_stream</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.2</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.ER_stream" title="Link to this definition">¶</a></dt>
+<dd><p>Expansion ratio of streamwise grid from first LE to inlet boundary.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.AR_stream">
+<span class="sig-name descname"><span class="pre">AR_stream</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.AR_stream" title="Link to this definition">¶</a></dt>
+<dd><p>Aspect ratio in blade-to-blade plane of cells at outlet boundary.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.AR_passage">
+<span class="sig-name descname"><span class="pre">AR_passage</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.6</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.AR_passage" title="Link to this definition">¶</a></dt>
+<dd><p>Nominal aspect ratio in blade-to-blade plane of mid-passage cells.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.AR_merid">
+<span class="sig-name descname"><span class="pre">AR_merid</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.AR_merid" title="Link to this definition">¶</a></dt>
+<dd><p>Aspect ratio of mid-chord cells in meridional plane.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.AR_merid_unbladed">
+<span class="sig-name descname"><span class="pre">AR_merid_unbladed</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.AR_merid_unbladed" title="Link to this definition">¶</a></dt>
+<dd><p>Aspect ratio of mid-chord cells in meridional plane.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.ER_span">
+<span class="sig-name descname"><span class="pre">ER_span</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.2</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.ER_span" title="Link to this definition">¶</a></dt>
+<dd><p>Expansion ratio of spanwise grid away from hub and casing.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.dm_LE">
+<span class="sig-name descname"><span class="pre">dm_LE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.002</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.dm_LE" title="Link to this definition">¶</a></dt>
+<dd><p>Streamwise grid spacing at LE, normalised by meridional chord.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.ni_TE">
+<span class="sig-name descname"><span class="pre">ni_TE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">9</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.ni_TE" title="Link to this definition">¶</a></dt>
+<dd><p>Number of streamwise points across trailing edge.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.dm_TE">
+<span class="sig-name descname"><span class="pre">dm_TE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.dm_TE" title="Link to this definition">¶</a></dt>
+<dd><p>Normalised meridional length over which to cluster the TE points, 0. for
+the true actual TE.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.dspf_mid">
+<span class="sig-name descname"><span class="pre">dspf_mid</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.03</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.dspf_mid" title="Link to this definition">¶</a></dt>
+<dd><p>Spanwise grid spacing at midspan, as a fraction of span.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.ER_pitch">
+<span class="sig-name descname"><span class="pre">ER_pitch</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.2</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.ER_pitch" title="Link to this definition">¶</a></dt>
+<dd><p>Expansion ratio away from aerofoil surfaces.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.nchord_relax">
+<span class="sig-name descname"><span class="pre">nchord_relax</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.nchord_relax" title="Link to this definition">¶</a></dt>
+<dd><p>Number of meridional chords over which pitchwise clustering is relaxed.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.resolution_factor">
+<span class="sig-name descname"><span class="pre">resolution_factor</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.resolution_factor" title="Link to this definition">¶</a></dt>
+<dd><p>Multiply the number of points in each direction, keeping relative spacings.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.rtol_smooth">
+<span class="sig-name descname"><span class="pre">rtol_smooth</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.rtol_smooth" title="Link to this definition">¶</a></dt>
+<dd><p>Tolerance on smoothing convergence.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.maxiter_smooth">
+<span class="sig-name descname"><span class="pre">maxiter_smooth</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.maxiter_smooth" title="Link to this definition">¶</a></dt>
+<dd><p>Number of smoothing iterations, zero to disable smoothing.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.pitchwise_grid">
+<span class="sig-name descname"><span class="pre">pitchwise_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">drt_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pitch_chord</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/hmesh.html#HMeshConfig.pitchwise_grid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.pitchwise_grid" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate a pitchwise grid vector given surface spacing.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.hmesh.HMeshConfig.pitchwise_grid_fixed_npts">
+<span class="sig-name descname"><span class="pre">pitchwise_grid_fixed_npts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">drt_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pitch_chord</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">npts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/hmesh.html#HMeshConfig.pitchwise_grid_fixed_npts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.hmesh.HMeshConfig.pitchwise_grid_fixed_npts" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate a pitchwise grid vector given surface spacing.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.hmesh.make_grid">
+<span class="sig-name descname"><span class="pre">make_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mac</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mesh_config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dhub</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dcas</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dsurf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unbladed</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/hmesh.html#make_grid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.hmesh.make_grid" title="Link to this definition">¶</a></dt>
+<dd><p>Generate a Grid object for a machine geometry.</p>
+</dd></dl>
+
+</section>
+</section>
+<section id="oh-meshing">
+<span id="id2"></span><h2>OH-meshing<a class="headerlink" href="#oh-meshing" title="Link to this heading">¶</a></h2>
+<p>Placing an O-mesh around the blade gives better resolution of the boundary
+layers, and removes H-mesh grid distortions at the leading edge and with highly
+staggered blades. Additional H blocks placed around the O-mesh discretise the
+remainder of the fluid domain, yielding an OH-mesh for the entire passage.</p>
+<section id="setting-up">
+<h3>Setting up<a class="headerlink" href="#setting-up" title="Link to this heading">¶</a></h3>
+<p><strong class="program">turbigen</strong> accomplishes OH-meshing by scripting the commercial
+software <strong class="program">AutoGrid</strong>. In general, the machine we want to run the CFD on is not the same one as for the meshing. So we need to start a server process on a remote
+machine with access to an <strong class="program">AutoGrid</strong> license. On the <em>machine with
+AutoGrid</em>, install <strong class="program">turbigen</strong> and run:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>turbigen-autogrid-server
+</pre></div>
+</div>
+<p>The server will stay running indefinitely, waiting for jobs. If the server
+finds a job it will perform the meshing. Meanwhile, the turbigen process on the
+HPC will wait for the meshing to finish and copy back the results for
+preprocessing.</p>
+<p>We will be connecting to the AutoGrid machine frequently. So, on the <em>CFD machine</em>, add an entry in <cite>~/.ssh/config</cite> to allow connection
+reuse:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">Host autogrid-box</span>
+<span class="go">    ControlMaster auto</span>
+<span class="go">    ControlPath ~/.ssh/control-%C</span>
+<span class="go">    ControlPersist yes</span>
+<span class="go">    ServerAliveInterval 240</span>
+</pre></div>
+</div>
+<p>where <cite>autogrid-box</cite> is the hostname of the AutoGrid machine. If you do not
+have SSH keys set up for password-free access to the AutoGrid machine, you will
+have to do that first by, <em>on the CFD machine</em>, running some combination of:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>Make<span class="w"> </span>an<span class="w"> </span>ssh<span class="w"> </span>private/public<span class="w"> </span>key<span class="w"> </span>pair
+<span class="gp">$ </span>ssh-keygen
+
+<span class="gp"># </span>Copy<span class="w"> </span>to<span class="w"> </span>the<span class="w"> </span>remote<span class="w"> </span>machine
+<span class="gp">$ </span>ssh-copy-id<span class="w"> </span>autogrid-box
+
+<span class="gp"># </span>Load<span class="w"> </span>keys<span class="w"> </span>into<span class="w"> </span>agent<span class="w"> </span>to<span class="w"> </span>save<span class="w"> </span>your<span class="w"> </span>passphrase
+<span class="gp">$ </span><span class="nb">eval</span><span class="w"> </span><span class="sb">`</span>ssh-agent<span class="sb">`</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ssh-add
+</pre></div>
+</div>
+<p>Before moving on, check you can connect from the CFD machine to the AutoGrid
+machine without being prompted for a password by running,</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ssh<span class="w"> </span>autogrid-box
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h3>Configuration options<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<dl class="py class" id="module-turbigen.ohmesh">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">OHMeshConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/ohmesh.html#OHMeshConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig" title="Link to this definition">¶</a></dt>
+<dd><p>Initialise a configuration, overriding defaults with keyword arguments.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.spf_ref">
+<span class="sig-name descname"><span class="pre">spf_ref</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.5</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.spf_ref" title="Link to this definition">¶</a></dt>
+<dd><p>Set blade-to-blade mesh parameters based on geometry at this span fraction.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.nj">
+<span class="sig-name descname"><span class="pre">nj</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">[]</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.nj" title="Link to this definition">¶</a></dt>
+<dd><p>Number of spanwise grid points.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.remote_host">
+<span class="sig-name descname"><span class="pre">remote_host</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.remote_host" title="Link to this definition">¶</a></dt>
+<dd><p>Remote host on which AutoGrid server is running.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.span_interpolation">
+<span class="sig-name descname"><span class="pre">span_interpolation</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2.0</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.span_interpolation" title="Link to this definition">¶</a></dt>
+<dd><p>Spanwise % spacing between optimisations of the mesh, interpolate between.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.via_host">
+<span class="sig-name descname"><span class="pre">via_host</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.via_host" title="Link to this definition">¶</a></dt>
+<dd><p>Jump host for SSH connection to the AutoGrid server.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.remote_workdir">
+<span class="sig-name descname"><span class="pre">remote_workdir</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.remote_workdir" title="Link to this definition">¶</a></dt>
+<dd><p>File on remote host to append our queued meshing jobs.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.gbcs_path">
+<span class="sig-name descname"><span class="pre">gbcs_path</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.gbcs_path" title="Link to this definition">¶</a></dt>
+<dd><p>Location of pre-made mesh, or ‘reuse’ to take from <cite>workdir/mesh.{g,bcs}</cite>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.ni_inlet">
+<span class="sig-name descname"><span class="pre">ni_inlet</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">65</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.ni_inlet" title="Link to this definition">¶</a></dt>
+<dd><p>Number of streamwise points in inlet.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.ohmesh.OHMeshConfig.ni_outlet">
+<span class="sig-name descname"><span class="pre">ni_outlet</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">65</span></em><a class="headerlink" href="#turbigen.ohmesh.OHMeshConfig.ni_outlet" title="Link to this definition">¶</a></dt>
+<dd><p>Number of streamwise points in outlet.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/mesh.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

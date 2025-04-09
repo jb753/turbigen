@@ -11,6 +11,7 @@ import turbigen.solver
 import turbigen.iterators
 import turbigen.average
 import turbigen.grid
+import turbigen.post
 import turbigen.geometry
 import turbigen.yaml
 import importlib
@@ -21,6 +22,7 @@ import turbigen.blade
 import turbigen.nblade
 from turbigen import util
 from typing import List
+from matplotlib.backends.backend_pdf import PdfPages
 
 logger = util.make_logger()
 
@@ -109,7 +111,7 @@ class TurbigenConfig:
                 data[k] = str(fname_pkl)
 
         conf_fname = self.workdir / fname
-        logger.info(f"Saving configuration to {conf_fname}")
+        logger.debug(f"Saving configuration to {conf_fname}")
         try:
             turbigen.yaml.write_yaml(data, conf_fname)
         except Exception as e:
@@ -246,6 +248,20 @@ class TurbigenConfig:
             if isinstance(val, str):
                 setattr(self, k, pickle.load(Path(val).open("rb")))
 
+        # Setup the post processors
+        if self.post_process:
+            posts = []
+            for k, v in self.post_process.items():
+                # Find a subclass for this processor
+                cls = util.get_subclass_by_name(turbigen.post.BasePost, k)
+                if v:
+                    # Pass the dictionary to the subclass
+                    posts.append(cls(**v))
+                # Null content implies all defaults
+                else:
+                    posts.append(cls())
+            self.post_process = posts
+
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
 
@@ -257,13 +273,13 @@ class TurbigenConfig:
         logger.info(self.mean_line.nominal)
 
         # Check mean-line design for problems
-        logger.info("Checking mean-line conservation...")
+        logger.debug("Checking mean-line conservation...")
         if not self.mean_line.nominal.check():
             self.mean_line.nominal.show_debug()
             raise Exception(
                 "Mean-line conservation checks failed, have printed debugging information"
             ) from None
-        logger.info("Checking mean-line inversion...")
+        logger.debug("Checking mean-line inversion...")
         self.mean_line.check_backward(self.mean_line.nominal)
         self.mean_line.nominal.warn()
 
@@ -339,8 +355,6 @@ class TurbigenConfig:
         )
 
     def setup_mesh(self):
-        logger.info("Making mesh...")
-
         # Find wall distances for each row
         dsurf = np.array(
             [
@@ -650,21 +664,8 @@ class TurbigenConfig:
         return converged, log_data
 
     def post_process_all(self):
-        postdir = self.workdir / "post"
-        if not postdir.exists():
-            postdir.mkdir()
-        logger.info(f"Post directory {postdir} {postdir.exists()}")
-
-        for post_name, post_conf in self.post_process.items():
-            logger.info(f"Running post function {post_name}")
-            post_func = util.load_post(post_name).post
-            if post_conf is None:
-                post_conf = {}
-            post_func(
-                self.grid,
-                self.get_machine(),
-                self.mean_line.actual,
-                self.solver.convergence,
-                postdir,
-                **post_conf,
-            )
+        # Initialise the pdf
+        with PdfPages(self.workdir / "post.pdf") as pdf:
+            for poster in self.post_process:
+                logger.info(f"Running post function {poster}")
+                poster.post(self, pdf)

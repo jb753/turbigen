@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>turbigen.fluid &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="../../_static/plot_directive.css" />
+    <script src="../../_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <h1>Source code for turbigen.fluid</h1><div class="highlight"><pre>
+<span></span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Calculation of thermodynamic properties for working fluids.</span>
+
+<span class="sd">Turbomachinery design and analysis requires knowledge of thermodynamic</span>
+<span class="sd">properties of the working fluid. This module contains classes that abstract</span>
+<span class="sd">real or perfect gases, so that calculations of thermodynamic properties can</span>
+<span class="sd">be performed using a common interface independent of the fluid equation of</span>
+<span class="sd">state.</span>
+
+<span class="sd">The general pattern of usage of these classes is as follows. First initialise a</span>
+<span class="sd">state using :py:meth:`turbigen.fluid.PerfectState.from_properties` or</span>
+<span class="sd">:py:meth:`turbigen.fluid.RealState.from_fluid_name` constructors. If the type</span>
+<span class="sd">of working fluid is not known at runtime, the `copy()` method of an existing</span>
+<span class="sd">state can be used. Second, specify a pair of two thermodynamic properties</span>
+<span class="sd">using, for example, :py:meth:`turbigen.fluid.PerfectState.set_P_T`. Finally,</span>
+<span class="sd">other derived properties can be read off as</span>
+<span class="sd">attributes of the state, such as :py:attr:`turbigen.fluid.PerfectState.rho`.</span>
+<span class="sd">The examples below illustrate functionality of the</span>
+<span class="sd">classes; practical usages are found in the :py:mod:`turbigen.meanline` functions.</span>
+
+<span class="sd">Example code</span>
+<span class="sd">------------</span>
+
+<span class="sd">Create a state for real Air, print some properties, then if this is a</span>
+<span class="sd">stagnation state, find static pressure given a Mach number:</span>
+
+<span class="sd">.. doctest::</span>
+
+<span class="sd">    &gt;&gt;&gt; import turbigen.fluid</span>
+<span class="sd">    &gt;&gt;&gt; So1 = turbigen.fluid.RealState.from_fluid_name(&#39;Air&#39;)</span>
+<span class="sd">    &gt;&gt;&gt; So1.set_P_T(16e5, 1600.)</span>
+<span class="sd">    RealState(Air, P=16.000 bar, T=1600.0 K)</span>
+<span class="sd">    &gt;&gt;&gt; print(&#39;cp = %.1f kJ/kg&#39; % So1.cp)</span>
+<span class="sd">    cp = 1220.9 kJ/kg</span>
+<span class="sd">    &gt;&gt;&gt; print(&#39;ga = %.3f&#39; % So1.gamma)</span>
+<span class="sd">    ga = 1.308</span>
+<span class="sd">    &gt;&gt;&gt; S1 = So1.to_static(Ma=0.6)</span>
+<span class="sd">    &gt;&gt;&gt; print(&#39;P1 = %.3e&#39; % S1.P)</span>
+<span class="sd">    P1 = 1.271e+06</span>
+
+<span class="sd">Initialise states for both perfect air and steam, then calculate the work</span>
+<span class="sd">required for an isentropic compression:</span>
+
+<span class="sd">.. doctest::</span>
+
+<span class="sd">    &gt;&gt;&gt; S_water = turbigen.fluid.RealState.from_fluid_name(&#39;water&#39;)</span>
+<span class="sd">    &gt;&gt;&gt; S_air = turbigen.fluid.PerfectState.from_properties(</span>
+<span class="sd">    ...     cp=1005.,gamma=1.4, mu=1.8e-4</span>
+<span class="sd">    ... )</span>
+<span class="sd">    &gt;&gt;&gt; PR = 3.</span>
+<span class="sd">    &gt;&gt;&gt; for S1 in (S_water, S_air):</span>
+<span class="sd">    ...     S1.set_P_T(1e5, 300.)</span>
+<span class="sd">    ...     S2 = S1.copy().set_P_s(S1.P * PR, S1.s)</span>
+<span class="sd">    ...     print(f&#39;wx12 = {(S2.h-S1.h)/1e3:.2f} kJ/kg&#39;)</span>
+<span class="sd">    RealState(water, P=1.000 bar, T=300.0 K)</span>
+<span class="sd">    wx12 = 0.20 kJ/kg</span>
+<span class="sd">    PerfectState(P=1.000 bar, T=300.0 K)</span>
+<span class="sd">    wx12 = 111.17 kJ/kg</span>
+
+<span class="sd">Array states are also supported, by passing a shape tuple on initialisation.</span>
+<span class="sd">Broadcasting input values, and read-only iterating and slicing work:</span>
+
+<span class="sd">.. doctest::</span>
+
+<span class="sd">    &gt;&gt;&gt; import turbigen.fluid</span>
+<span class="sd">    &gt;&gt;&gt; S = turbigen.fluid.RealState.from_fluid_name(&#39;water&#39;, shape=(3,))</span>
+<span class="sd">    &gt;&gt;&gt; S.set_P_T(1e5, [400., 500., 800])</span>
+<span class="sd">    RealState(water, P=[1. 1. 1.] bar, T=[400. 500. 800.] K)</span>
+<span class="sd">    &gt;&gt;&gt; print(S.rho)</span>
+<span class="sd">    [0.54760542 0.43514008 0.27102399]</span>
+<span class="sd">    &gt;&gt;&gt; for Si in S[1:]:</span>
+<span class="sd">    ...     print(Si)</span>
+<span class="sd">    RealState(water, P=1.000 bar, T=500.0 K)</span>
+<span class="sd">    RealState(water, P=1.000 bar, T=800.0 K)</span>
+
+<span class="sd">Property attributes</span>
+<span class="sd">-------------------</span>
+
+<span class="sd">The state classes expose the following thermodynamic and fluid properties as</span>
+<span class="sd">attributes:</span>
+
+<span class="sd">=========== ============================================ =======</span>
+<span class="sd"> Attribute   Property                                     Units</span>
+<span class="sd">=========== ============================================ =======</span>
+<span class="sd">`a`          Acoustic Speed                               m/s</span>
+<span class="sd">`cp`         Specific heat capacity at constant pressure  J/kg/K</span>
+<span class="sd">`cv`         Specific heat capacity at constant volume    J/kg/K</span>
+<span class="sd">`gamma`      Ratio of specific heats</span>
+<span class="sd">`h`          Specific enthalpy                            J/kg</span>
+<span class="sd">`mu`         Dynamic viscosity                            kg/m/s</span>
+<span class="sd">`P`          Pressure                                     Pa</span>
+<span class="sd">`Pr`         Prandtl number</span>
+<span class="sd">`rgas`       Specific gas constant                        J/kg/K</span>
+<span class="sd">`rho`        Mass density                                 kg/m^3</span>
+<span class="sd">`s`          Specific entropy                             J/kg/K</span>
+<span class="sd">`T`          Temperature                                  K</span>
+<span class="sd">`u`          Specific internal energy                     J/kg</span>
+<span class="sd">=========== ============================================ =======</span>
+
+
+<span class="sd">Setting methods</span>
+<span class="sd">---------------</span>
+
+<span class="sd">The state classes expose the following methods to specify the thermodynamic</span>
+<span class="sd">state, each taking two properties as arguments:</span>
+
+<span class="sd">=================== ============================================</span>
+<span class="sd"> Method              Properties specified</span>
+<span class="sd">=================== ============================================</span>
+<span class="sd">`set_P_T(P,T)`      Pressure, temperature</span>
+<span class="sd">`set_P_s(P,s)`      Pressure, entropy</span>
+<span class="sd">`set_h_s(h,s)`      Enthalpy, entropy</span>
+<span class="sd">`set_T_s(T,s)`      Temperature, entropy</span>
+<span class="sd">`set_P_h(P,h)`      Enthalpy, entropy</span>
+<span class="sd">`set_rho_u(rho,u)`  Density, internal energy</span>
+<span class="sd">`set_rho_s(rho,s)`  Density, entropy</span>
+<span class="sd">=================== ============================================</span>
+
+<span class="sd">Static/stagnation methods</span>
+<span class="sd">-------------------------</span>
+
+<span class="sd">Consider the problem of converting between static and stagnation conditions at</span>
+<span class="sd">a given Mach number :math:`\Ma=V/a`. If static conditions are known, it is</span>
+<span class="sd">straightforward to use Mach number and acoustic speed to evaluate velocity and</span>
+<span class="sd">hence enthalpy of the stagnation state; an ideal stagnation is an isentropic</span>
+<span class="sd">process, so static and stagnation states have the same entropy. The reverse</span>
+<span class="sd">problem, where static conditions must be found for known stagnation conditions,</span>
+<span class="sd">in general requires iteration because acoustic speed is unknown a-priori.</span>
+
+<span class="sd">The state classes have two methods to streamline these conversions:</span>
+
+<span class="sd">    * `to_stagnation(Ma)` returns a State object for stagnation conditions</span>
+<span class="sd">    * `to_static(Ma)` returns a State object for static conditions</span>
+
+
+
+<span class="sd">Constructor methods</span>
+<span class="sd">-------------------</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">CoolProp</span> <span class="kn">import</span> <span class="n">CoolProp</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">turbigen.base</span> <span class="kn">import</span> <span class="n">dependent_property</span><span class="p">,</span> <span class="n">StructuredData</span>
+<span class="kn">import</span> <span class="nn">turbigen.util</span>
+
+
+<span class="c1"># Share tabular property data across instances in a class-level dict</span>
+<span class="n">_abstract_states</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;HEOS&quot;</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">&quot;BICUBIC&amp;HEOS&quot;</span><span class="p">:</span> <span class="p">{}}</span>
+
+
+<div class="viewcode-block" id="PerfectState">
+<a class="viewcode-back" href="../../fluid.html#turbigen.fluid.PerfectState">[docs]</a>
+<span class="k">class</span> <span class="nc">PerfectState</span><span class="p">(</span><span class="n">StructuredData</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Thermodynamic properties from perfect gas equations of state.&quot;&quot;&quot;</span>
+
+    <span class="n">_data_rows</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;rho&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;u&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Arbitrary reference properties for entropy datum</span>
+    <span class="n">_Ps0_default</span> <span class="o">=</span> <span class="mf">1e5</span>
+    <span class="n">_Ts0_default</span> <span class="o">=</span> <span class="mf">300.0</span>
+    <span class="n">_Tu0_default</span> <span class="o">=</span> <span class="mf">300.0</span>
+
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">other</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">shape</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">cp</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">gamma</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">mu</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">mu</span>
+            <span class="ow">and</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">_match</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">rho</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">_match</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;PerfectState(P=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">/</span><span class="mf">1e5</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> bar, T=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> K)&quot;</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;PerfectState(P=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">array2string</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">/</span><span class="mf">1e5</span><span class="p">,</span><span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2"> bar,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; T=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">array2string</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="p">,</span><span class="n">precision</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2"> K)&quot;</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="PerfectState.from_properties">
+<a class="viewcode-back" href="../../fluid.html#turbigen.fluid.PerfectState.from_properties">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_properties</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">cp</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(),</span> <span class="n">Pr</span><span class="o">=</span><span class="mf">0.72</span><span class="p">):</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Create a state for a perfect gas with specified properties.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cp: float</span>
+<span class="sd">            Specific heat capacity at constant pressure [J/kg/K]</span>
+<span class="sd">        gamma: float</span>
+<span class="sd">            Ratio of specific heats [--].</span>
+<span class="sd">        mu: float</span>
+<span class="sd">            Kinematic viscosity [kg/m/s].</span>
+<span class="sd">        shape: tuple</span>
+<span class="sd">            Specify a tuple to allocate an array of states; defaults to scalar.</span>
+<span class="sd">        Pr: float</span>
+<span class="sd">            Prandtl number [--], default to room-temperature air.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">S</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span>
+        <span class="n">S</span><span class="o">.</span><span class="n">cp</span><span class="p">,</span> <span class="n">S</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="n">S</span><span class="o">.</span><span class="n">mu</span> <span class="o">=</span> <span class="n">cp</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">mu</span>
+        <span class="n">S</span><span class="o">.</span><span class="n">Pr</span> <span class="o">=</span> <span class="n">Pr</span>
+        <span class="k">return</span> <span class="n">S</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Tu0</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="s2">&quot;Tu0&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Tu0&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_Tu0_default</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Tu0&quot;</span><span class="p">)</span>
+
+    <span class="nd">@Tu0</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">Tu0</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Tu0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Tu0&quot;</span><span class="p">,</span> <span class="n">Tu0</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Ps0</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="s2">&quot;Ps0&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ps0&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_Ps0_default</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ps0&quot;</span><span class="p">)</span>
+
+    <span class="nd">@Ps0</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">Ps0</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ps0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ps0&quot;</span><span class="p">,</span> <span class="n">Ps0</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Ts0</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="s2">&quot;Ts0&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ts0&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_Ts0_default</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ts0&quot;</span><span class="p">)</span>
+
+    <span class="nd">@Ts0</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">Ts0</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ts0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Ts0&quot;</span><span class="p">,</span> <span class="n">Ts0</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">cp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;cp&quot;</span><span class="p">)</span>
+
+    <span class="nd">@cp</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">cp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cp</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;cp&quot;</span><span class="p">,</span> <span class="n">cp</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Pr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Pr&quot;</span><span class="p">)</span>
+
+    <span class="nd">@Pr</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">Pr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Pr</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;Pr&quot;</span><span class="p">,</span> <span class="n">Pr</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;gamma&quot;</span><span class="p">)</span>
+
+    <span class="nd">@gamma</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gamma</span><span class="p">):</span>
+        <span class="n">_check_positive_finite_scalar</span><span class="p">(</span><span class="n">gamma</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;gamma&quot;</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">mu</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;mu&quot;</span><span class="p">)</span>
+
+    <span class="nd">@mu</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">mu</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mu</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;mu&quot;</span><span class="p">,</span> <span class="n">mu</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">)</span>
+
+    <span class="nd">@rho</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">val_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">val_array</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">u</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">)</span>
+
+    <span class="nd">@u</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">u</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">val_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="n">val_array</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">cv</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">rgas</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">a</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">h</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">T</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_two_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Perfect gas is never liquid or two-phase</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">s</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">P</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ps0</span>
+        <span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dsdrho_P</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dsdP_rho</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">P</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dhdP_rho</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ga</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span>
+        <span class="k">return</span> <span class="n">ga</span> <span class="o">/</span> <span class="p">(</span><span class="n">ga</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dhdrho_P</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dudrho_P</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">dudP_rho</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">set_Tu0</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Tu0</span><span class="p">):</span>
+        <span class="c1"># Set the temperature for internal energy datum u(Tu0) = 0</span>
+        <span class="n">P</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span> <span class="o">=</span> <span class="n">Tu0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">set_P_T</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">):</span>
+        <span class="n">u</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">*</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span><span class="p">)</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">P</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">/</span> <span class="n">T</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_rho_u</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">u</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">set_P_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">((</span><span class="n">s</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">P</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ps0</span><span class="p">))</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_h_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="p">(</span><span class="n">h</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span>
+        <span class="n">P</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ps0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">T</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span><span class="p">)</span> <span class="o">-</span> <span class="n">s</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_T_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="n">P</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ps0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">T</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span><span class="p">)</span> <span class="o">-</span> <span class="n">s</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_h</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">h</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="p">(</span><span class="n">h</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="c1"># print(self.h[0], h[0])</span>
+        <span class="c1"># assert np.allclose(self.h, h)</span>
+        <span class="c1"># assert np.allclose(self.P, P)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">rho</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">P</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">/</span> <span class="n">rho</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_rho_u</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rho</span><span class="p">,</span> <span class="n">u</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rho</span> <span class="o">=</span> <span class="n">rho</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">=</span> <span class="n">u</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_rho_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rho</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="n">rhos0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ps0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ts0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">((</span><span class="n">s</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgas</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">rho</span> <span class="o">/</span> <span class="n">rhos0</span><span class="p">))</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span><span class="p">)</span>
+        <span class="n">u</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">*</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tu0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_rho_u</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">u</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">to_static</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ma</span><span class="p">):</span>
+        <span class="n">To_T</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">Ma</span><span class="o">**</span><span class="mf">2.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_T_s</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="n">To_T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_stagnation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ma</span><span class="p">):</span>
+        <span class="n">To_T</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">Ma</span><span class="o">**</span><span class="mf">2.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_T_s</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="n">To_T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="RealState">
+<a class="viewcode-back" href="../../fluid.html#turbigen.fluid.RealState">[docs]</a>
+<span class="k">class</span> <span class="nc">RealState</span><span class="p">(</span><span class="n">StructuredData</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Thermodynamic properties for a real fluid using table lookups.&quot;&quot;&quot;</span>
+
+    <span class="n">_data_rows</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;rho&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;u&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">Tu0</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">_backend</span> <span class="o">=</span> <span class="s2">&quot;HEOS&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;RealState(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fluid_name</span><span class="si">}</span><span class="s2">, P=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">/</span><span class="mf">1e5</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> bar,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; T=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> K)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;RealState(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fluid_name</span><span class="si">}</span><span class="s2">,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; P=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">array2string</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">/</span><span class="mf">1e5</span><span class="p">,</span><span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2"> bar,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; T=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">array2string</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="p">,</span><span class="n">precision</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2"> K)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">KeyError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;RealState(uninitialised)&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">other</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">other_fluid_name</span> <span class="o">=</span> <span class="n">other</span><span class="o">.</span><span class="n">fluid_name</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">other_fluid_name</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">self_fluid_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fluid_name</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">self_fluid_name</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">shape</span>
+            <span class="ow">and</span> <span class="n">self_fluid_name</span> <span class="o">==</span> <span class="n">other_fluid_name</span>
+            <span class="ow">and</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">_match</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">rho</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">_match</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="RealState.from_fluid_name">
+<a class="viewcode-back" href="../../fluid.html#turbigen.fluid.RealState.from_fluid_name">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_fluid_name</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">fluid_name</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">()):</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Create a state for a particular real working fluid.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fluid_name: str</span>
+<span class="sd">            Name of the fluid in the `CoolProp nomenclature</span>
+<span class="sd">            &lt;http://www.coolprop.org/fluid_properties/PurePseudoPure.html#list-of-fluids&gt;`_.</span>
+<span class="sd">        shape: tuple</span>
+<span class="sd">            Specify a tuple to allocate an array of states; defaults to scalar.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">S</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span>
+        <span class="n">S</span><span class="o">.</span><span class="n">_metadata</span><span class="p">[</span><span class="s2">&quot;fluid_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">S</span><span class="o">.</span><span class="n">fluid_name</span> <span class="o">=</span> <span class="n">fluid_name</span>
+        <span class="k">return</span> <span class="n">S</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">fluid_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;fluid_name&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">_as</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;abstract_state&quot;</span><span class="p">)</span>
+
+    <span class="nd">@_as</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">_as</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;abstract_state&quot;</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+
+    <span class="nd">@fluid_name</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">fluid_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid_name</span><span class="p">):</span>
+        <span class="c1"># Look for an abstract state for this fluid in the module-level cache</span>
+        <span class="c1"># and use if present, otherwise create a new table</span>
+        <span class="n">_as</span> <span class="o">=</span> <span class="n">_abstract_states</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fluid_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_as</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_as</span> <span class="o">=</span> <span class="n">_as</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_as</span> <span class="o">=</span> <span class="n">_abstract_states</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">][</span>
+                <span class="n">fluid_name</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="n">CoolProp</span><span class="o">.</span><span class="n">AbstractState</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="n">fluid_name</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_metadata_by_key</span><span class="p">(</span><span class="s2">&quot;fluid_name&quot;</span><span class="p">,</span> <span class="n">fluid_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">set_backend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span> <span class="o">=</span> <span class="n">backend</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fluid_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fluid_name</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">u</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_store</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate density and internal energy and store for future use.&quot;&quot;&quot;</span>
+        <span class="c1"># Both inputs scalar, no need to loop</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="p">()</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">==</span> <span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">rhomass</span><span class="p">())</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">umass</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Otherwise, broadcast and loop</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">b</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Broadcasted input shape </span><span class="si">{</span><span class="n">b</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> is wrong, expected </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">rho</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">xk</span><span class="p">,</span> <span class="n">yk</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">b</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">xk</span><span class="p">,</span> <span class="n">yk</span><span class="p">)</span>
+                <span class="n">rho</span><span class="o">.</span><span class="n">flat</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">rhomass</span><span class="p">()</span>
+                <span class="n">u</span><span class="o">.</span><span class="n">flat</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">umass</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">rho</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prop_func</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Table lookup a general property using stored density and internal energy.&quot;&quot;&quot;</span>
+        <span class="c1"># Scalar state, no need to loop</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">DmassUmass_INPUTS</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">prop_func</span><span class="p">()</span>
+        <span class="c1"># Vector state, must loop</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">rhok</span><span class="p">,</span> <span class="n">uk</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="o">.</span><span class="n">flat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="o">.</span><span class="n">flat</span><span class="p">)):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">DmassUmass_INPUTS</span><span class="p">,</span> <span class="n">rhok</span><span class="p">,</span> <span class="n">uk</span><span class="p">)</span>
+                <span class="n">z</span><span class="o">.</span><span class="n">flat</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">prop_func</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">z</span>
+
+    <span class="k">def</span> <span class="nf">_lookup_saturated_property</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prop_func</span><span class="p">,</span> <span class="n">chi</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Table lookup for saturated property at current pressure.&quot;&quot;&quot;</span>
+        <span class="c1"># Scalar state, no need to loop</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">PQ_INPUTS</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="p">,</span> <span class="n">chi</span><span class="p">)</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">prop_func</span><span class="p">()</span>
+        <span class="c1"># Vector state, must loop</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">Pk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="o">.</span><span class="n">flat</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">PQ_INPUTS</span><span class="p">,</span> <span class="n">Pk</span><span class="p">,</span> <span class="n">chi</span><span class="p">)</span>
+                <span class="n">z</span><span class="o">.</span><span class="n">flat</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">prop_func</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">z</span>
+
+    <span class="k">def</span> <span class="nf">set_P_h</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">h</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">HmassP_INPUTS</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">rho</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">DmassP_INPUTS</span><span class="p">,</span> <span class="n">rho</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">PSmass_INPUTS</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_h_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">HmassSmass_INPUTS</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_T_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">SmassT_INPUTS</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_T</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">PT_INPUTS</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_rho_T</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ro</span><span class="p">,</span> <span class="n">T</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">DmassT_INPUTS</span><span class="p">,</span> <span class="n">ro</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_rho_u</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ro</span><span class="p">,</span> <span class="n">u</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">ro</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_data_by_key</span><span class="p">(</span><span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_rho_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ro</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">DmassSmass_INPUTS</span><span class="p">,</span> <span class="n">ro</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_T_chi</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">chi</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">QT_INPUTS</span><span class="p">,</span> <span class="n">chi</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_P_chi</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">chi</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">(</span><span class="n">CoolProp</span><span class="o">.</span><span class="n">PQ_INPUTS</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">chi</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">set_Tu0</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Tu0</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">Tu0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Real gas does not support arbitrary u datum&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_static</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ma</span><span class="p">):</span>
+        <span class="c1"># Function to solve Ma for a scalar state</span>
+        <span class="k">def</span> <span class="nf">_solve_scalar</span><span class="p">(</span><span class="n">Sstag</span><span class="p">,</span> <span class="n">Mai</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">Mai</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">Sstag</span>
+            <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">Mai</span><span class="p">))</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplex</span><span class="p">(</span><span class="n">Mai</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid Ma=</span><span class="si">{</span><span class="n">Mai</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Use fixed point iteration</span>
+            <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+            <span class="n">tolMa</span> <span class="o">=</span> <span class="mf">1e-6</span>
+            <span class="n">rf</span> <span class="o">=</span> <span class="mf">0.5</span>
+            <span class="n">V</span> <span class="o">=</span> <span class="n">Mai</span> <span class="o">*</span> <span class="n">Sstag</span><span class="o">.</span><span class="n">a</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20</span><span class="p">):</span>
+                <span class="n">Sstat</span> <span class="o">=</span> <span class="n">Sstag</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">Sstag</span><span class="o">.</span><span class="n">h</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">V</span><span class="o">**</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">Sstag</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+                <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">Sstag</span><span class="o">.</span><span class="n">h</span> <span class="o">-</span> <span class="n">Sstat</span><span class="o">.</span><span class="n">h</span><span class="p">))</span>
+                <span class="n">Ma_now</span> <span class="o">=</span> <span class="n">V</span> <span class="o">/</span> <span class="n">Sstat</span><span class="o">.</span><span class="n">a</span>
+                <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">Mai</span> <span class="o">-</span> <span class="n">Ma_now</span><span class="p">)</span>
+                <span class="n">V</span> <span class="o">=</span> <span class="n">V</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">rf</span><span class="p">)</span> <span class="o">+</span> <span class="n">rf</span> <span class="o">*</span> <span class="p">(</span><span class="n">Mai</span> <span class="o">*</span> <span class="n">Sstat</span><span class="o">.</span><span class="n">a</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">err</span> <span class="o">&lt;</span> <span class="n">tolMa</span><span class="p">:</span>
+                    <span class="k">break</span>
+            <span class="k">if</span> <span class="n">err</span> <span class="o">&gt;</span> <span class="n">tolMa</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;did not converge&quot;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">Sstat</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">()</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">Ma</span><span class="p">)</span> <span class="o">==</span> <span class="p">():</span>
+            <span class="k">return</span> <span class="n">_solve_scalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">Ma</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
+            <span class="c1"># TODO use slicing capabilities of the class here</span>
+            <span class="c1"># # Broadcast Mach number</span>
+            <span class="c1"># b = np.broadcast(self.h, self.P, Ma)</span>
+            <span class="c1"># h = np.zeros(b.shape)</span>
+            <span class="c1"># P = np.zeros(b.shape)</span>
+            <span class="c1"># for i, (hk, Pk, Mak) in enumerate(b):</span>
+            <span class="c1">#     Sk_stag = self.copy().set_P_h(Pk, hk)</span>
+            <span class="c1">#     Sk_stat = _solve_scalar(Sk_stag, Mak)</span>
+            <span class="c1"># h.flat[i] = Sk_stat.h</span>
+            <span class="c1"># P.flat[i] = Sk_stat.P</span>
+            <span class="c1"># return self.copy().set_P_h(P, h)</span>
+
+    <span class="k">def</span> <span class="nf">to_stagnation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Ma</span><span class="p">):</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">*</span> <span class="n">Ma</span>
+        <span class="n">hstag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">V</span><span class="o">**</span><span class="mf">2.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">hstag</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">T</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">p</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">a</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">speed_sound</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">cp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">cpmass</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">cv</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">cvmass</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cp</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cv</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">rgas</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">cvmass</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">mu</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">viscosity</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">s</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">smass</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">h</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">hmass</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">Pr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">Prandtl</span><span class="p">)</span>
+
+    <span class="c1"># Real gas stuff</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">chi</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">Q</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">hsat_vapour</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_saturated_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">hmass</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">Tsat</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_saturated_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">DTsuperheat</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Superheat in vapour dome extrapolated using saturated vapour cp</span>
+        <span class="n">cpsat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_saturated_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">cpmass</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">DT_sup_2phs</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">h</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">hsat_vapour</span><span class="p">)</span> <span class="o">/</span> <span class="n">cpsat</span>
+
+        <span class="c1"># Temperature diference w.r.t. Tsat outside vapour dome</span>
+        <span class="n">DT_sup_sup</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Tsat</span>
+
+        <span class="c1"># Choose the appropriate definition</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">is_two_phase</span><span class="p">,</span> <span class="n">DT_sup_2phs</span><span class="p">,</span> <span class="n">DT_sup_sup</span><span class="p">)</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">is_two_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_twophase</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">is_liquid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_liquid</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">is_gas</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_gas</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">phase</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">phase</span><span class="p">)</span>
+        <span class="c1"># Convert numpy arrays to integer data type</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">phase</span> <span class="o">=</span> <span class="n">phase</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">phase</span>
+
+    <span class="nd">@dependent_property</span>
+    <span class="k">def</span> <span class="nf">is_supercritical</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_property</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">phase</span><span class="p">)</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_supercritical_gas</span><span class="p">,</span>
+            <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_supercritical_liquid</span><span class="p">,</span>
+            <span class="n">CoolProp</span><span class="o">.</span><span class="n">iphase_supercritical</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Tcrit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">T_critical</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">Pcrit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as</span><span class="o">.</span><span class="n">p_critical</span><span class="p">()</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_check_positive_finite_scalar</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">((),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2"> is not scalar&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">x</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">x</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Bad value for </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+    </div>
+
+
+
+
+  </body>
+</html>

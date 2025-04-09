@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Command-line options &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Tutorial" href="tutorial.html" />
+    <link rel="prev" title="Installation" href="install.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Command-line options</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#positional-arguments">Positional Arguments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#named-arguments">Named Arguments</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="install.html" title="previous chapter">Installation</a></li>
+      <li>Next: <a href="tutorial.html" title="next chapter">Tutorial</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="command-line-options">
+<span id="usage"></span><h1>Command-line options<a class="headerlink" href="#command-line-options" title="Link to this heading">¶</a></h1>
+<p><p>turbigen is a general turbomachinery design system. When called from the command line, the program performs mean-line design, creates annulus and blade geometry, then meshes and runs a computational fluid dynamics simulation. Most input data are specified in a configuration file; the command-line options below override some of that configuration data.</p>
+</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="p">[</span><span class="n">FLAGS</span><span class="p">]</span> <span class="n">CONFIG_YAML</span>
+</pre></div>
+</div>
+<section id="positional-arguments">
+<h2>Positional Arguments<a class="headerlink" href="#positional-arguments" title="Link to this heading">¶</a></h2>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>filename of configuration data in yaml format</p>
+</dd>
+</dl>
+</section>
+<section id="named-arguments">
+<h2>Named Arguments<a class="headerlink" href="#named-arguments" title="Link to this heading">¶</a></h2>
+<dl class="option-list">
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more debugging information (can also enable by setting $TURBIGEN_VERBOSE)</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-V, --version</kbd></dt>
+<dd><p>print version number and exit</p>
+</dd>
+<dt><kbd>-J, --no-job</kbd></dt>
+<dd><p>disable submission of cluster job (when run on login node)</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-j, --job</kbd></dt>
+<dd><p>enable submission of cluster job (when run on compute node)</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-I, --no-iteration</kbd></dt>
+<dd><p>run once only, disabling iterative incidence, deviation, mean-line correction</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-S, --no-solve</kbd></dt>
+<dd><p>disable running of the CFD solver, continuing with the initial guess</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-e, --edit</kbd></dt>
+<dd><p>run on an edited copy of the configuration file (using $EDITOR)</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-m, --meanline-debug</kbd></dt>
+<dd><p>perform the mean-line design, print out debugging information and stop</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-a, --annulus-debug</kbd></dt>
+<dd><p>perform the annulus design, print out debugging information and stop</p>
+<p>Default: False</p>
+</dd>
+<dt><kbd>-W, --no-wdist</kbd></dt>
+<dd><p>skip wall distance caluclation</p>
+<p>Default: False</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/usage.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

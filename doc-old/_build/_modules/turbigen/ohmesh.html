@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>turbigen.ohmesh &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="../../_static/plot_directive.css" />
+    <script src="../../_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <h1>Source code for turbigen.ohmesh</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">turbigen.autogrid</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">turbigen.util</span>
+<span class="kn">from</span> <span class="nn">turbigen.base</span> <span class="kn">import</span> <span class="n">BaseConfig</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">make_logger</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="OHMeshConfig">
+<a class="viewcode-back" href="../../mesh.html#turbigen.ohmesh.OHMeshConfig">[docs]</a>
+<span class="k">class</span> <span class="nc">OHMeshConfig</span><span class="p">(</span><span class="n">BaseConfig</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Contains all configuration options with default values.&quot;&quot;&quot;</span>
+
+    <span class="n">_name</span> <span class="o">=</span> <span class="s2">&quot;OH mesh&quot;</span>
+
+    <span class="n">spf_ref</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Set blade-to-blade mesh parameters based on geometry at this span fraction.&quot;&quot;&quot;</span>
+
+    <span class="n">nj</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of spanwise grid points.&quot;&quot;&quot;</span>
+
+    <span class="n">remote_host</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Remote host on which AutoGrid server is running.&quot;&quot;&quot;</span>
+
+    <span class="n">span_interpolation</span> <span class="o">=</span> <span class="mf">2.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Spanwise % spacing between optimisations of the mesh, interpolate between.&quot;&quot;&quot;</span>
+
+    <span class="n">via_host</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Jump host for SSH connection to the AutoGrid server.&quot;&quot;&quot;</span>
+
+    <span class="n">remote_workdir</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;File on remote host to append our queued meshing jobs.&quot;&quot;&quot;</span>
+
+    <span class="n">workdir</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="n">gbcs_path</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Location of pre-made mesh, or &#39;reuse&#39; to take from `workdir/mesh.{g,bcs}`.&quot;&quot;&quot;</span>
+
+    <span class="n">ni_inlet</span> <span class="o">=</span> <span class="mi">65</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of streamwise points in inlet.&quot;&quot;&quot;</span>
+
+    <span class="n">ni_outlet</span> <span class="o">=</span> <span class="mi">65</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of streamwise points in outlet.&quot;&quot;&quot;</span>
+
+    <span class="n">resolution_factor</span> <span class="o">=</span> <span class="mf">0.5</span>
+
+    <span class="n">fix_h_inlet</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">fix_h_outlet</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">wake_control</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">wake_deviation</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">match_mixing</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">skewness_control</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">orthogonality_control</span> <span class="o">=</span> <span class="mf">0.5</span>
+    <span class="n">nsmooth</span> <span class="o">=</span> <span class="mi">500</span>
+    <span class="n">nsmooth_multigrid</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">blade_streamwise_weight</span> <span class="o">=</span> <span class="mf">3.0</span>
+
+    <span class="n">untwist_outlet</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">untwist_inlet</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">untwist_inlet_extent</span> <span class="o">=</span> <span class="mf">0.5</span>
+
+    <span class="n">round_TE</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="n">const_cells_frac</span> <span class="o">=</span> <span class="mf">0.45</span>
+
+    <span class="n">nj_tip</span> <span class="o">=</span> <span class="mi">25</span>
+    <span class="n">nk_gap</span> <span class="o">=</span> <span class="mi">9</span>
+    <span class="n">const_cells_frac</span> <span class="o">=</span> <span class="mf">0.45</span>
+
+    <span class="n">frac_inlet</span> <span class="o">=</span> <span class="mf">0.9</span>
+    <span class="n">frac_outlet</span> <span class="o">=</span> <span class="mf">0.15</span>
+    <span class="n">relax_outlet</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">relax_inlet</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="n">R_fillet_hub</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">R_fillet_shd</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">nj_fillet_hub</span> <span class="o">=</span> <span class="mi">17</span>
+    <span class="n">nj_fillet_shd</span> <span class="o">=</span> <span class="mi">17</span>
+    <span class="n">is_butterfly</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">nk_fillet</span> <span class="o">=</span> <span class="mi">9</span>
+
+    <span class="n">ncell_target</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">inlet_bulb</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid OH-mesh configuration variable &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">))):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Invalid type for OH-mesh configuration variable </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; should be </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">key</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialise a configuration, overriding defaults with keyword arguments.&quot;&quot;&quot;</span>
+
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_autogrid_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chi_ref</span><span class="p">,</span> <span class="n">dhub</span><span class="p">,</span> <span class="n">dcas</span><span class="p">,</span> <span class="n">dsurf</span><span class="p">,</span> <span class="n">splitter</span><span class="p">):</span>
+
+        <span class="n">stagger_topo</span> <span class="o">=</span> <span class="n">_get_stagger_topology</span><span class="p">(</span><span class="n">chi_ref</span><span class="p">)</span>
+        <span class="n">nrow</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stagger_topo</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">nj</span><span class="p">:</span>
+            <span class="n">nj</span> <span class="o">=</span> <span class="p">[</span><span class="mi">81</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nrow</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">nj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nj</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">via_host</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">via</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">via</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">via_host</span>
+
+        <span class="c1"># Default configs</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;verbose&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;is_cascade&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="s2">&quot;match_mixing&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">match_mixing</span><span class="p">,</span>
+            <span class="s2">&quot;fix_h_inlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fix_h_inlet</span><span class="p">,</span>
+            <span class="s2">&quot;fix_h_outlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fix_h_outlet</span><span class="p">,</span>
+            <span class="s2">&quot;nrow&quot;</span><span class="p">:</span> <span class="n">nrow</span><span class="p">,</span>
+            <span class="s2">&quot;inlet_bulb&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">inlet_bulb</span><span class="p">,</span>
+            <span class="s2">&quot;nx_up&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">ni_inlet</span><span class="p">,</span>
+            <span class="s2">&quot;nx_dn&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">ni_outlet</span><span class="p">,</span>
+            <span class="s2">&quot;ncell_target&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">ncell_target</span><span class="p">,</span>
+            <span class="s2">&quot;nx_mix&quot;</span><span class="p">:</span> <span class="mi">9</span><span class="p">,</span>
+            <span class="s2">&quot;dr_hub&quot;</span><span class="p">:</span> <span class="n">dhub</span><span class="p">,</span>
+            <span class="s2">&quot;dr_cas&quot;</span><span class="p">:</span> <span class="n">dcas</span><span class="p">,</span>
+            <span class="s2">&quot;nr&quot;</span><span class="p">:</span> <span class="n">nj</span><span class="p">,</span>
+            <span class="s2">&quot;round_TE&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">round_TE</span><span class="p">,</span>
+            <span class="s2">&quot;drt_row&quot;</span><span class="p">:</span> <span class="n">dsurf</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="s2">&quot;stagger&quot;</span><span class="p">:</span> <span class="n">stagger_topo</span><span class="p">,</span>
+            <span class="s2">&quot;const_cells_pc&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">const_cells_frac</span> <span class="o">*</span> <span class="mf">100.0</span><span class="p">,</span>
+            <span class="s2">&quot;nr_tip_gap&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nj_tip</span><span class="p">,</span>
+            <span class="s2">&quot;relax_inlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">relax_inlet</span><span class="p">,</span>
+            <span class="s2">&quot;relax_outlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">relax_outlet</span><span class="p">,</span>
+            <span class="s2">&quot;ER_boundary_layer&quot;</span><span class="p">:</span> <span class="mf">1.1</span><span class="p">,</span>
+            <span class="s2">&quot;ER_blade_surf&quot;</span><span class="p">:</span> <span class="mf">1.2</span><span class="p">,</span>
+            <span class="s2">&quot;n_te&quot;</span><span class="p">:</span> <span class="mi">17</span><span class="p">,</span>
+            <span class="s2">&quot;frac_up&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">frac_inlet</span><span class="p">,</span>
+            <span class="s2">&quot;frac_dn&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">frac_outlet</span><span class="p">,</span>
+            <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;mesh&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;spf_ref&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">spf_ref</span><span class="p">,</span>
+            <span class="s2">&quot;remote&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">remote_host</span><span class="p">,</span>
+            <span class="s2">&quot;via&quot;</span><span class="p">:</span> <span class="n">via</span><span class="p">,</span>
+            <span class="s2">&quot;remote_workdir&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">remote_workdir</span><span class="p">,</span>
+            <span class="s2">&quot;nsmooth&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nsmooth</span><span class="p">,</span>
+            <span class="s2">&quot;nsmooth_multigrid&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nsmooth_multigrid</span><span class="p">,</span>
+            <span class="s2">&quot;orthogonality_control&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">orthogonality_control</span><span class="p">,</span>
+            <span class="s2">&quot;skewness_control&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">skewness_control</span><span class="p">,</span>
+            <span class="s2">&quot;wake_control&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">wake_control</span><span class="p">,</span>
+            <span class="s2">&quot;wake_deviation&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">wake_deviation</span><span class="p">,</span>
+            <span class="s2">&quot;untwist_outlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">untwist_outlet</span><span class="p">,</span>
+            <span class="s2">&quot;untwist_inlet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">untwist_inlet</span><span class="p">,</span>
+            <span class="s2">&quot;untwist_inlet_extent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">untwist_inlet_extent</span> <span class="o">*</span> <span class="mi">100</span><span class="p">),</span>
+            <span class="s2">&quot;splitter&quot;</span><span class="p">:</span> <span class="n">splitter</span><span class="p">,</span>
+            <span class="s2">&quot;span_interp&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">span_interpolation</span><span class="p">,</span>
+            <span class="s2">&quot;blade_streamwise_weight&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">blade_streamwise_weight</span><span class="p">,</span>
+            <span class="s2">&quot;R_fillet_hub&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">R_fillet_hub</span><span class="p">,</span>
+            <span class="s2">&quot;R_fillet_shd&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">R_fillet_shd</span><span class="p">,</span>
+            <span class="s2">&quot;nk_fillet&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nk_fillet</span><span class="p">,</span>
+            <span class="s2">&quot;nk_gap&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nk_gap</span><span class="p">,</span>
+            <span class="s2">&quot;nj_fillet_hub&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nj_fillet_hub</span><span class="p">,</span>
+            <span class="s2">&quot;nj_fillet_shd&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">nj_fillet_shd</span><span class="p">,</span>
+            <span class="s2">&quot;is_butterfly&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_butterfly</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_get_stagger_topology</span><span class="p">(</span><span class="n">Al</span><span class="p">):</span>
+    <span class="n">nAl</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">Al</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">mod</span><span class="p">(</span><span class="n">nAl</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="n">Nrow</span> <span class="o">=</span> <span class="n">nAl</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="c1"># Threshold for &#39;normal&#39; angles</span>
+    <span class="n">Al</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">Al</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">45.0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span>
+            <span class="n">Al</span><span class="p">[</span>
+                <span class="p">(</span><span class="n">irow</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">irow</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+        <span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">irow</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">Nrow</span><span class="p">)</span>
+    <span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">make_grid</span><span class="p">(</span><span class="n">machine</span><span class="p">,</span> <span class="n">mesh_config</span><span class="p">,</span> <span class="n">dhub</span><span class="p">,</span> <span class="n">dcas</span><span class="p">,</span> <span class="n">dsurf</span><span class="p">,</span> <span class="n">unbladed</span><span class="p">,</span> <span class="n">Omega</span><span class="p">,</span> <span class="n">skip</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Generating OH-mesh...&quot;</span><span class="p">)</span>
+
+    <span class="n">dsurf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dsurf</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># File paths</span>
+    <span class="n">workdir</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">workdir</span>
+    <span class="k">if</span> <span class="n">workdir</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;workdir for OH meshing not set&quot;</span><span class="p">)</span>
+    <span class="n">output_stem</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">workdir</span><span class="p">),</span> <span class="s2">&quot;mesh&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">mesh_config</span><span class="o">.</span><span class="n">gbcs_path</span> <span class="o">==</span> <span class="s2">&quot;reuse&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">output_stem</span> <span class="o">+</span> <span class="s2">&quot;.g&quot;</span><span class="p">))</span>
+    <span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Reusing existing </span><span class="si">{</span><span class="n">output_stem</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;{g,bcs}&quot;</span><span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">gbcs_path</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="n">chi_ref</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">is_unbladed</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">bld</span> <span class="ow">in</span> <span class="n">machine</span><span class="o">.</span><span class="n">bld</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bld</span><span class="p">:</span>
+                <span class="n">chi_ref</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bld</span><span class="o">.</span><span class="n">get_chi</span><span class="p">(</span><span class="n">mesh_config</span><span class="o">.</span><span class="n">spf_ref</span><span class="p">))</span>
+                <span class="n">is_unbladed</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="c1"># else:</span>
+            <span class="c1">#     chi_ref.append(np.zeros((2,)))</span>
+            <span class="c1">#     is_unbladed.append(1)</span>
+        <span class="n">chi_ref</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">chi_ref</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Making a new mesh.&quot;</span><span class="p">)</span>
+        <span class="n">splitter</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">machine</span><span class="o">.</span><span class="n">split</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">irow</span><span class="p">,</span> <span class="n">splt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">machine</span><span class="o">.</span><span class="n">split</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">splt</span><span class="p">:</span>
+                    <span class="n">splitter</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">irow</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">splitter</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">ag_config</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">to_autogrid_dict</span><span class="p">(</span><span class="n">chi_ref</span><span class="p">,</span> <span class="n">dhub</span><span class="p">,</span> <span class="n">dcas</span><span class="p">,</span> <span class="n">dsurf</span><span class="p">,</span> <span class="n">splitter</span><span class="p">)</span>
+        <span class="n">ag_config</span><span class="p">[</span><span class="s2">&quot;Nb&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">machine</span><span class="o">.</span><span class="n">Nb</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">ag_config</span><span class="p">[</span><span class="s2">&quot;tip&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">machine</span><span class="o">.</span><span class="n">tip</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">success</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">autogrid</span><span class="o">.</span><span class="n">autogrid</span><span class="o">.</span><span class="n">make_mesh</span><span class="p">(</span>
+            <span class="n">output_stem</span><span class="p">,</span> <span class="o">*</span><span class="n">machine</span><span class="o">.</span><span class="n">get_coords</span><span class="p">(),</span> <span class="n">Omega</span><span class="p">,</span> <span class="n">ag_config</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Meshing failed.&quot;</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">output_stem</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">mesh_config</span><span class="o">.</span><span class="n">gbcs_path</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading </span><span class="si">{</span><span class="n">output_stem</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;{g,bcs}&quot;</span><span class="p">)</span>
+
+    <span class="n">bcs_path</span> <span class="o">=</span> <span class="n">output_stem</span> <span class="o">+</span> <span class="s2">&quot;.bcs&quot;</span>
+    <span class="n">g_path</span> <span class="o">=</span> <span class="n">output_stem</span> <span class="o">+</span> <span class="s2">&quot;.g&quot;</span>
+
+    <span class="n">g</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">autogrid</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">g_path</span><span class="p">,</span> <span class="n">bcs_path</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">rf</span> <span class="o">:=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">g</span><span class="p">:</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">subsample</span><span class="p">(</span><span class="n">rf</span><span class="p">)</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">match_patches</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">g</span>
+</pre></div>
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+    </div>
+
+
+
+
+  </body>
+</html>

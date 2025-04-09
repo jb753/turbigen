@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>turbigen.solvers.ts4 &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+    <script src="../../../_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <h1>Source code for turbigen.solvers.ts4</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Functions to write, run, and read for the Turbostream 3 solver.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+<span class="kn">from</span> <span class="nn">timeit</span> <span class="kn">import</span> <span class="n">default_timer</span> <span class="k">as</span> <span class="n">timer</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span> <span class="nn">turbigen.grid</span>
+<span class="kn">import</span> <span class="nn">turbigen.solvers.ts3</span>
+<span class="kn">import</span> <span class="nn">h5py</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial</span> <span class="kn">import</span> <span class="n">KDTree</span>
+<span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">sleep</span>
+<span class="kn">import</span> <span class="nn">turbigen.util</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">turbigen.solvers.base</span> <span class="kn">import</span> <span class="n">BaseSolver</span><span class="p">,</span> <span class="n">ConvergenceHistory</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">make_logger</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="Config">
+<a class="viewcode-back" href="../../../solver.html#turbigen.solvers.ts4.Config">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">Config</span><span class="p">(</span><span class="n">BaseSolver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Settings with default values for the TS4 solver.&quot;&quot;&quot;</span>
+
+    <span class="n">_name</span> <span class="o">=</span> <span class="s2">&quot;ts4&quot;</span>
+
+    <span class="n">workdir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Working directory to run the simulation in.&quot;&quot;&quot;</span>
+
+    <span class="n">environment_script</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
+        <span class="s2">&quot;/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100&quot;</span>
+    <span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Setup environment shell script to be sourced before running.&quot;&quot;&quot;</span>
+
+    <span class="n">cfl</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">25.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Courant--Friedrichs--Lewy number, reduce for more stability.&quot;&quot;&quot;</span>
+
+    <span class="n">cfl_ramp_nstep</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">500</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Ramp the CFL number up over the first `cfl_ramp_nstep` steps.&quot;&quot;&quot;</span>
+
+    <span class="n">cfl_ramp_st</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Starting value for CFL ramp.&quot;&quot;&quot;</span>
+
+    <span class="n">custom_pipeline</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run</span>
+<span class="sd">    using pvpython and take two command-line arguments like `pvpython</span>
+<span class="sd">    custom_pipeline.py input_ts3.hdf5 input_ts4`&quot;&quot;&quot;</span>
+
+    <span class="n">implicit_scheme</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether to use implicit time-marching scheme.&quot;&quot;&quot;</span>
+
+    <span class="n">nstep</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5000</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of time steps for the calculation.&quot;&quot;&quot;</span>
+
+    <span class="n">nstep_avg</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of time steps to average over.&quot;&quot;&quot;</span>
+
+    <span class="n">nstep_ts3</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of steps for a Turbostream 3 initial guess&quot;&quot;&quot;</span>
+
+    <span class="n">nstep_soft</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5000</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of time steps for soft start.&quot;&quot;&quot;</span>
+
+    <span class="n">spf_probe</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;List of span fractions to place probes.&quot;&quot;&quot;</span>
+
+    <span class="n">point_probe</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Specify point probes.&quot;&quot;&quot;</span>
+
+    <span class="n">logical_probe</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Specify logical probes.&quot;&quot;&quot;</span>
+
+    <span class="n">tables_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Path to gas tables for real working fluids.&quot;&quot;&quot;</span>
+
+    <span class="n">body_force_template</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Path to a body_force.ofp definition file template.&quot;&quot;&quot;</span>
+
+    <span class="n">body_force_params</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parameters to be added to body force template.&quot;&quot;&quot;</span>
+
+    <span class="n">viscous_model</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Turbulence model, 0 for inviscid, 1 for laminar, 2 for Spalart-Allmaras.&quot;&quot;&quot;</span>
+
+    <span class="n">outlet_tag</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Outlet&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Identifier string for the outlet patch.&quot;&quot;&quot;</span>
+
+    <span class="n">area_avg_pout</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="n">pout_fac_ramp_nstep</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">inlet_relax_fac</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span>
+    <span class="n">nstep_save_start_probe_1d</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">nstep_save_probe_1d</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">nstep_save_start_probe_2d</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">nstep_save_probe_2d</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">cfl_turb_fac</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span>
+
+    <span class="n">precon</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">precon_fac_ramp_nstep</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">precon_fac_ramp_st</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span>
+    <span class="n">precon_fac_ramp_en</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="n">precon_sigma_pgr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span>
+
+    <span class="n">halo_implementation</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="n">interpolation_update</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c1"># 1 to freeze interpolating plane posn</span>
+
+    <span class="k">def</span> <span class="nf">_robust</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Explicit with a slow CFL ramp.&quot;&quot;&quot;</span>
+        <span class="n">conf</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">implicit_scheme</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">cfl</span> <span class="o">=</span> <span class="mf">3.5</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">cfl_ramp_st</span> <span class="o">=</span> <span class="mf">0.1</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">nstep</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstep_soft</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">cfl_ramp_nstep</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">nstep</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">nstep_avg</span> <span class="o">=</span> <span class="mi">50</span>
+        <span class="k">return</span> <span class="n">conf</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">config_path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;config.ofp&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_ofp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">DEFAULT_CONFIG</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">v</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+                <span class="n">v</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+
+        <span class="c1"># Raise error if averaging not OK</span>
+        <span class="n">nstep</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;nstep&quot;</span><span class="p">]</span>
+        <span class="n">istep_avg_start</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;istep_avg_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;nstep&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstep_avg</span>
+        <span class="k">if</span> <span class="n">istep_avg_start</span> <span class="o">&gt;=</span> <span class="n">nstep</span> <span class="ow">and</span> <span class="n">nstep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;istep_avg_start=</span><span class="si">{</span><span class="n">istep_avg_start</span><span class="si">}</span><span class="s2"> is &gt; nstep=</span><span class="si">{</span><span class="n">nstep</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;cfl_ramp&quot;</span><span class="p">]:</span>
+            <span class="n">v</span><span class="p">[</span><span class="s2">&quot;cfl_ramp_en&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;cfl&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pout_fac_ramp_nstep&quot;</span><span class="p">):</span>
+            <span class="n">v</span><span class="p">[</span><span class="s2">&quot;pout_fac_ramp&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s2">&quot;precon&quot;</span><span class="p">]:</span>
+            <span class="n">v</span><span class="p">[</span><span class="s2">&quot;precon_fac_ramp&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">v</span></div>
+
+
+
+<span class="n">re_nan</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^detected NAN$&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">)</span>
+<span class="n">re_current_step</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^RK LOOP NO:\s*(\d*)$&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">parse_log</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">nstep</span><span class="p">,</span> <span class="n">Nb</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse a log file to get convergence history.&quot;&quot;&quot;</span>
+
+    <span class="c1"># Preallocate</span>
+    <span class="n">resid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">nstep</span><span class="p">,),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="n">inlet</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">nstep</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="n">outlet</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">nstep</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+
+    <span class="c1"># Loop over lines in file</span>
+    <span class="n">istep</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;ROVX DELTA:&quot;</span><span class="p">):</span>
+                <span class="n">resid</span><span class="p">[</span><span class="n">istep</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;INLET: &quot;</span><span class="p">):</span>
+                <span class="n">inlet</span><span class="p">[</span><span class="n">istep</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">:]]</span>
+            <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;OUTLET: &quot;</span><span class="p">):</span>
+                <span class="n">outlet</span><span class="p">[</span><span class="n">istep</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">:]]</span>
+                <span class="n">istep</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="c1"># Multiply by Nb to get mass flow for entire annulus</span>
+    <span class="n">inlet</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="n">Nb</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">outlet</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="n">Nb</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="c1"># Extract the separate variables</span>
+    <span class="n">istep</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nstep</span><span class="p">)</span>
+    <span class="n">mdot</span><span class="p">,</span> <span class="n">ho</span><span class="p">,</span> <span class="n">Po</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">inlet</span><span class="p">,</span> <span class="n">outlet</span><span class="p">))</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">istep</span><span class="p">,</span> <span class="n">mdot</span><span class="p">,</span> <span class="n">ho</span><span class="p">,</span> <span class="n">Po</span><span class="p">,</span> <span class="n">resid</span>
+
+
+<span class="k">def</span> <span class="nf">_check_nan</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return step number of divergence from TS4 log, or zero if no NANs found.&quot;&quot;&quot;</span>
+    <span class="n">NBYTES</span> <span class="o">=</span> <span class="mi">2048</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">while</span> <span class="n">chunk</span> <span class="o">:=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">NBYTES</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">re_nan</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">chunk</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">re_current_step</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">chunk</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">return</span> <span class="mi">0</span>
+
+
+<span class="k">def</span> <span class="nf">_write_wall_distance</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">fname</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Given a TS4 input file, use wall nodes from this grid to get wall distance.&quot;&quot;&quot;</span>
+
+    <span class="c1"># Read the unstructured data from TS4 hdf5</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">h5py</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r+&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Extract coordinates</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_x&quot;</span><span class="p">])</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_y&quot;</span><span class="p">])</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_z&quot;</span><span class="p">])</span>
+
+    <span class="c1"># Convert Cartesian coordinates to polar</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">y</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">z</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">xrrt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">r</span> <span class="o">*</span> <span class="n">t</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># Initialise a kdtree of wall points</span>
+    <span class="n">kdtree</span> <span class="o">=</span> <span class="n">KDTree</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">get_wall_nodes</span><span class="p">()</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+    <span class="c1"># Query the wall distances</span>
+    <span class="n">wdist</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">kdtree</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">xrrt</span><span class="p">,</span> <span class="n">workers</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+
+    <span class="c1"># Insert into grid</span>
+    <span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_wdist&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">wdist</span>
+
+    <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_write_ofp</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">var</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Write a dictionary of configuration variables in ofp format.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">var</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="s2">&quot; = [&quot;</span> <span class="o">+</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">vi</span><span class="p">)</span> <span class="k">for</span> <span class="n">vi</span> <span class="ow">in</span> <span class="n">v</span><span class="p">])</span> <span class="o">+</span> <span class="s2">&quot;]</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="s2">&quot; = &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_read_ofp</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read a dictionary of configuration variables in ofp format.&quot;&quot;&quot;</span>
+    <span class="n">var</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">&quot;.&quot;</span> <span class="ow">in</span> <span class="n">v</span> <span class="ow">or</span> <span class="s2">&quot;e&quot;</span> <span class="ow">in</span> <span class="n">v</span><span class="p">:</span>
+                <span class="n">var</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">var</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">var</span>
+
+
+<span class="n">DEFAULT_CONFIG</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;cfl&quot;</span><span class="p">:</span> <span class="mf">50.0</span><span class="p">,</span>
+    <span class="s2">&quot;cfl_ramp&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;cfl_ramp_nstep&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
+    <span class="s2">&quot;cfl_ramp_st&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;cfl_turb_fac&quot;</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+    <span class="s2">&quot;fluid_model&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;implicit_scheme&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;inlet_relax_fac&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="s2">&quot;interpolation_extend_fac&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="s2">&quot;interpolation_time_step_fac&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="s2">&quot;istep_avg_start&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span>
+    <span class="s2">&quot;halo_implementation&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;kappa2&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;kappa4&quot;</span><span class="p">:</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="mf">128.0</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_alpha&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_bc_method&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_distribution_kind&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_distribution_spacing&quot;</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_method&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_nstation&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_rf&quot;</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_rf_ramp&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_rf_ramp_nstep&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_rf_ramp_st&quot;</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span>
+    <span class="s2">&quot;mixing_rf_ramp_en&quot;</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+    <span class="s2">&quot;node_ordering_option&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">&quot;nstep&quot;</span><span class="p">:</span> <span class="mi">5000</span><span class="p">,</span>
+    <span class="s2">&quot;prandtl_turbulent&quot;</span><span class="p">:</span> <span class="mf">0.9</span><span class="p">,</span>
+    <span class="s2">&quot;sa_helicity_model&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;sa_lim_neg&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">&quot;time_step_mod_fac_nsmooth&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;time_step_mod_fac_smooth_frac&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="s2">&quot;update_mixing_nstep&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="s2">&quot;viscous_model&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">&quot;precon&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;precon_dissipation&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;precon_sigma_pgr&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span>
+    <span class="s2">&quot;precon_beta&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span>
+    <span class="s2">&quot;precon_mach_ref&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="s2">&quot;precon_mach_lim&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="s2">&quot;precon_fac_ramp&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;precon_fac_ramp_nstep&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+    <span class="s2">&quot;precon_fac_ramp_st&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="s2">&quot;precon_fac_ramp_en&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;pout_fac_ramp_nstep&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;pout_fac_ramp&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;pout_fac_ramp_st&quot;</span><span class="p">:</span> <span class="mf">0.8</span><span class="p">,</span>
+    <span class="s2">&quot;pout_fac_ramp_en&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;use_gpu_direct&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span> <span class="nf">_read_flow</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">fname_avg</span><span class="p">):</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">timer</span><span class="p">()</span>
+
+    <span class="c1"># Read the unstructured data from TS4 hdf5</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">h5py</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+    <span class="n">fa</span> <span class="o">=</span> <span class="n">h5py</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="n">fname_avg</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_x&quot;</span><span class="p">])</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_y&quot;</span><span class="p">])</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;node_array_z&quot;</span><span class="p">])</span>
+    <span class="n">ro</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_ro&quot;</span><span class="p">])</span>
+    <span class="n">rovx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_rovx&quot;</span><span class="p">])</span>
+    <span class="n">rovy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_rovy&quot;</span><span class="p">])</span>
+    <span class="n">rovz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_rovz&quot;</span><span class="p">])</span>
+    <span class="n">roe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_roe&quot;</span><span class="p">])</span>
+    <span class="n">turb0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">fa</span><span class="p">[</span><span class="s2">&quot;node_array_turb0&quot;</span><span class="p">])</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="n">fa</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="n">end</span> <span class="o">=</span> <span class="n">timer</span><span class="p">()</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Read flow in </span><span class="si">{</span><span class="n">end</span><span class="o">-</span><span class="n">start</span><span class="si">}</span><span class="s2"> s&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Divide out density</span>
+    <span class="n">vx</span> <span class="o">=</span> <span class="n">rovx</span> <span class="o">/</span> <span class="n">ro</span>
+    <span class="n">vy</span> <span class="o">=</span> <span class="n">rovy</span> <span class="o">/</span> <span class="n">ro</span>
+    <span class="n">vz</span> <span class="o">=</span> <span class="n">rovz</span> <span class="o">/</span> <span class="n">ro</span>
+    <span class="n">vsq</span> <span class="o">=</span> <span class="n">vx</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">vy</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">vz</span><span class="o">**</span><span class="mf">2.0</span>
+
+    <span class="c1"># Convert Cartesian coordinates to polar</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">y</span><span class="o">**</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">z</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="o">-</span><span class="n">z</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">rt</span> <span class="o">=</span> <span class="n">r</span> <span class="o">*</span> <span class="n">t</span>
+
+    <span class="c1"># Convert Cartesian velocities to polar</span>
+    <span class="n">vt</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">vy</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">+</span> <span class="n">vz</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">t</span><span class="p">))</span>
+    <span class="n">vr</span> <span class="o">=</span> <span class="n">vy</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">-</span> <span class="n">vz</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+    <span class="c1"># Calculate internal energy</span>
+    <span class="n">u</span> <span class="o">=</span> <span class="n">roe</span> <span class="o">/</span> <span class="n">ro</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">vsq</span>
+
+    <span class="c1"># Build kdtree for nodes in the TS4 hdf5</span>
+    <span class="n">kdtree</span> <span class="o">=</span> <span class="n">KDTree</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">rt</span><span class="p">)))</span>
+
+    <span class="c1"># Now loop over blocks in the grid</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">grid</span><span class="p">:</span>
+        <span class="c1"># Extract unstructure coordinates for this block</span>
+        <span class="n">xrrtb</span> <span class="o">=</span> <span class="n">block</span><span class="o">.</span><span class="n">to_unstructured</span><span class="p">()</span><span class="o">.</span><span class="n">xrrt</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="c1"># Get nearest neighbours from the TS4 grid</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">ind_pts</span> <span class="o">=</span> <span class="n">kdtree</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">xrrtb</span><span class="p">,</span> <span class="n">workers</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Check these really are the points we want</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">r</span><span class="p">,</span> <span class="n">r</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
+
+        <span class="c1"># Assign the velocities</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">Vx</span> <span class="o">=</span> <span class="n">vx</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">Vr</span> <span class="o">=</span> <span class="n">vr</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">Vt</span> <span class="o">=</span> <span class="n">vt</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+        <span class="c1"># Set thermodynamic properties</span>
+        <span class="n">Tu0_old</span> <span class="o">=</span> <span class="n">block</span><span class="o">.</span><span class="n">Tu0</span> <span class="o">+</span> <span class="mf">0.0</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">Tu0</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">set_rho_u</span><span class="p">(</span>
+            <span class="n">ro</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">u</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">set_Tu0</span><span class="p">(</span><span class="n">Tu0_old</span><span class="p">)</span>
+
+        <span class="c1"># Assign turbulent viscosity</span>
+        <span class="n">block</span><span class="o">.</span><span class="n">mu_turb</span> <span class="o">=</span> <span class="n">turb0</span><span class="p">[</span><span class="n">ind_pts</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_write_throttle</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">fname</span><span class="p">):</span>
+    <span class="c1"># Get indices for outlet bcells</span>
+    <span class="k">with</span> <span class="n">h5py</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">bcell_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="s2">&quot;bcell_names&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;names&quot;</span><span class="p">])</span>
+        <span class="n">bcell_ind</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">bcell_names</span><span class="p">)</span> <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">outlet_tag</span> <span class="o">==</span> <span class="n">b</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">bcell_ind</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Could not find throttle outlet tag </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">outlet_tag</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;should be one of </span><span class="si">{</span><span class="n">bcell_names</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+    <span class="c1"># Loop over outlet patches</span>
+    <span class="n">mass_target</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">throttle_kind</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">throttle_k0</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">mdot_flag</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">patch</span> <span class="ow">in</span> <span class="n">grid</span><span class="o">.</span><span class="n">outlet_patches</span><span class="p">:</span>
+        <span class="c1"># TS4 only has integral control. Multiply by Nb because targets *patch*</span>
+        <span class="c1"># not *annulus* mass flow. Have to reduce a bit because TS4 converges</span>
+        <span class="c1"># in fewer steps than TS3.</span>
+        <span class="n">Nb</span> <span class="o">=</span> <span class="n">patch</span><span class="o">.</span><span class="n">block</span><span class="o">.</span><span class="n">Nb</span>
+
+        <span class="n">fac_adjust</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">implicit_scheme</span> <span class="k">else</span> <span class="mf">1.0</span>
+
+        <span class="k">if</span> <span class="n">patch</span><span class="o">.</span><span class="n">Kpid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mdot_flag</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">mass_target</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">patch</span><span class="o">.</span><span class="n">mdot_target</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">Nb</span><span class="p">))</span>
+            <span class="n">throttle_kind</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">throttle_k0</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">patch</span><span class="o">.</span><span class="n">Kpid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">fac_adjust</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mass_target</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">throttle_kind</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">throttle_k0</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="c1"># Assemble throttle data</span>
+    <span class="n">throt_ofp</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;throttle_tag_list&quot;</span><span class="p">:</span> <span class="n">bcell_ind</span><span class="p">,</span>
+        <span class="s2">&quot;throttle_target_list&quot;</span><span class="p">:</span> <span class="n">mass_target</span><span class="p">,</span>
+        <span class="s2">&quot;throttle_k0_list&quot;</span><span class="p">:</span> <span class="n">throttle_k0</span><span class="p">,</span>
+        <span class="s2">&quot;throttle_correction_initial_list&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">bcell_ind</span><span class="p">],</span>
+        <span class="s2">&quot;throttle_kind_list&quot;</span><span class="p">:</span> <span class="n">throttle_kind</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">throt_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;throttle_config.ofp&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">throt_file_path</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">throt_file_path</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">mdot_flag</span> <span class="ow">or</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">area_avg_pout</span><span class="p">:</span>
+        <span class="n">_write_ofp</span><span class="p">(</span><span class="n">throt_file_path</span><span class="p">,</span> <span class="n">throt_ofp</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">mdot_flag</span>
+
+
+<span class="k">def</span> <span class="nf">_write_probes_ofp</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">):</span>
+    <span class="n">probe_ofp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;probes.ofp&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">probe_ofp</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="c1"># Initialise probe list</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">import ts.process.probe.probe_definition</span>
+<span class="sd">probe_list = []</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_write_point_probe</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="n">xyzp</span><span class="p">,</span> <span class="n">dom</span><span class="p">,</span> <span class="n">label</span><span class="p">):</span>
+    <span class="n">probe_ofp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;probes.ofp&quot;</span><span class="p">)</span>
+
+    <span class="n">istep_save_start</span> <span class="o">=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep</span> <span class="o">-</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_avg</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">probe_ofp</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="c1"># Initialise probe list</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">p = ts.process.probe.probe_definition.ProbeDefinition()</span>
+<span class="s2">p.kind = &quot;point&quot;</span>
+<span class="s2">p.x = </span><span class="si">{</span><span class="n">xyzp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">p.y = </span><span class="si">{</span><span class="n">xyzp</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">p.z = </span><span class="si">{</span><span class="n">xyzp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">p.idomain = </span><span class="si">{</span><span class="n">dom</span><span class="si">}</span>
+<span class="s2">p.absolute_frame = True</span>
+<span class="s2">p.fname_root = &quot;point_probe_</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="s2">p.write_2d = True</span>
+<span class="s2">p.nstep_save_start_1d = </span><span class="si">{</span><span class="n">istep_save_start</span><span class="si">}</span>
+<span class="s2">p.nstep_save_1d = </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_save_probe_1d</span><span class="si">}</span>
+<span class="s2">p.nstep_save_start_2d = </span><span class="si">{</span><span class="n">istep_save_start</span><span class="si">}</span>
+<span class="s2">p.nstep_save_2d = </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_save_probe_2d</span><span class="si">}</span>
+<span class="s2">p.time_average = False  # Must be False in a steady calc?</span>
+<span class="s2">probe_list.append(p)</span>
+
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_write_logical_probe</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">label</span><span class="p">):</span>
+    <span class="n">probe_ofp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;probes.ofp&quot;</span><span class="p">)</span>
+
+    <span class="n">istep_save_start</span> <span class="o">=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep</span> <span class="o">-</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_avg</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">probe_ofp</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="c1"># Initialise probe list</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">p = ts.process.probe.probe_definition.ProbeDefinition()</span>
+<span class="s2">p.kind = &quot;logical&quot;</span>
+<span class="s2">p.val = &quot;</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="s2">p.fname_root = &quot;logical_probe_</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="s2">p.write_2d = False</span>
+<span class="s2">p.nstep_save_start_1d = </span><span class="si">{</span><span class="n">istep_save_start</span><span class="si">}</span>
+<span class="s2">p.nstep_save_1d = </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_save_probe_1d</span><span class="si">}</span>
+<span class="s2">p.nstep_save_start_2d = 99999</span>
+<span class="s2">p.nstep_save_2d = 0</span>
+<span class="s2">probe_list.append(p)</span>
+
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_write_xr_probe</span><span class="p">(</span><span class="n">machine</span><span class="p">,</span> <span class="n">ts4_conf</span><span class="p">,</span> <span class="n">spf</span><span class="p">):</span>
+    <span class="n">probe_ofp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;probes.ofp&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Evaluate the xr curve, extrapolate a little</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="mf">0.01</span>
+    <span class="n">mq</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">eps</span><span class="p">,</span> <span class="n">machine</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">npts</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">eps</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+    <span class="n">xr</span> <span class="o">=</span> <span class="n">machine</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span><span class="n">mq</span><span class="p">,</span> <span class="n">spf</span><span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;min xr=</span><span class="si">{</span><span class="n">xr</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">, max xr=</span><span class="si">{</span><span class="n">xr</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">istep_save_start</span> <span class="o">=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep</span> <span class="o">-</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_avg</span>
+
+    <span class="c1"># Fill values into template</span>
+    <span class="n">pstr</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">irow</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">machine</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">nrow</span><span class="p">):</span>
+        <span class="n">pstr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">p = ts.process.probe.probe_definition.ProbeDefinition()</span>
+<span class="s2">p.kind = &quot;xr&quot;</span>
+<span class="s2">p.s1 = </span><span class="si">{</span><span class="n">xr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">p.s2 = </span><span class="si">{</span><span class="n">xr</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">p.idomain = </span><span class="si">{</span><span class="n">irow</span><span class="si">}</span>
+<span class="s2">p.fname_root = &quot;xr_probe_row_</span><span class="si">{</span><span class="n">irow</span><span class="si">}</span><span class="s2">_spf_</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">spf</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">,</span><span class="s1">&#39;&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="s2">p.write_2d = True</span>
+<span class="s2">p.nstep_save_start_1d = </span><span class="si">{</span><span class="n">istep_save_start</span><span class="si">}</span>
+<span class="s2">p.nstep_save_1d = </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_save_probe_1d</span><span class="si">}</span>
+<span class="s2">p.nstep_save_start_2d = </span><span class="si">{</span><span class="n">istep_save_start</span><span class="si">}</span>
+<span class="s2">p.nstep_save_2d = </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_save_probe_2d</span><span class="si">}</span>
+<span class="s2">probe_list.append(p)</span>
+
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">probe_ofp</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">writelines</span><span class="p">(</span><span class="n">pstr</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ts4_conf</span><span class="p">,</span> <span class="n">machine</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Write, run, and read TS4 results for a grid object, specifying some settings.&quot;&quot;&quot;</span>
+
+    <span class="n">input_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;input_ts4.hdf5&quot;</span><span class="p">)</span>
+    <span class="n">output_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;output_ts4.hdf5&quot;</span><span class="p">)</span>
+    <span class="n">output_avg_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;output_ts4_avg.hdf5&quot;</span><span class="p">)</span>
+    <span class="n">soln_exists</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">output_file_path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">skip</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">soln_exists</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Skipping running, loading previous solution.&quot;</span><span class="p">)</span>
+            <span class="n">_read_flow</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">output_file_path</span><span class="p">,</span> <span class="n">output_avg_file_path</span><span class="p">)</span>
+            <span class="c1"># Write out for debugging</span>
+            <span class="n">ts3_conf</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span><span class="n">workdir</span><span class="o">=</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">)</span>
+            <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">_write_hdf5</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ts3_conf</span><span class="p">,</span> <span class="n">fname</span><span class="o">=</span><span class="s2">&quot;output_ts3.hdf5&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Skipping running, keeping initial guess.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">ofp</span> <span class="o">=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">to_ofp</span><span class="p">()</span>
+
+    <span class="c1"># Invert the sign of inlet pitch angle</span>
+    <span class="n">inpatch</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">inlet_patches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">inpatch</span><span class="o">.</span><span class="n">Beta</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+
+    <span class="c1"># Extract nominal fluid properties</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;gamma&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">gamma</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;cp&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">cp</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;viscosity&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">mu</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;prandtl_laminar&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">Pr</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;prandtl_turbulent&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">Pr</span> <span class="o">*</span> <span class="mf">1.25</span>
+    <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;fluid_model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PerfectBlock</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;fluid_model&quot;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">tables_path</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;No `tables_path` specified for real gas fluid&quot;</span><span class="p">)</span>
+        <span class="n">dest_tables</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;fluid_model_tables.npz&quot;</span><span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">copyfile</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">tables_path</span><span class="p">,</span> <span class="n">dest_tables</span><span class="p">)</span>
+
+    <span class="c1"># Put body force definition into working directory, with substitutions</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">body_force_template</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">body_force_template</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">body_force_str</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">body_force_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">body_force_str</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span>
+                <span class="sa">rf</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">\s*=.*$&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">v</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">body_force_str</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Check syntax</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">compile</span><span class="p">(</span><span class="n">body_force_str</span><span class="p">,</span> <span class="s2">&quot;dummy.py&quot;</span><span class="p">,</span> <span class="s2">&quot;exec&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Error in body force template!&quot;</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+
+        <span class="n">dest_body_force</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;body_force_config.ofp&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">dest_body_force</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">body_force_str</span><span class="p">)</span>
+
+        <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;body_force_mode&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="n">_write_ofp</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">config_path</span><span class="p">,</span> <span class="n">ofp</span><span class="p">)</span>
+
+    <span class="n">ts3_conf</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span><span class="n">workdir</span><span class="o">=</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">)</span><span class="o">.</span><span class="n">_robust</span><span class="p">()</span>
+
+    <span class="c1"># Get number of GPUs from environment var</span>
+    <span class="n">ngpu</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SLURM_NTASKS&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">nnode</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SLURM_NNODES&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">npernode</span> <span class="o">=</span> <span class="n">ngpu</span> <span class="o">//</span> <span class="n">nnode</span>
+
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_ts3</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running TS3 initial guess...&quot;</span><span class="p">)</span>
+        <span class="n">ts3_conf</span><span class="o">.</span><span class="n">nstep</span> <span class="o">=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep_ts3</span>
+        <span class="n">ts3_conf</span><span class="o">.</span><span class="n">ntask</span> <span class="o">=</span> <span class="n">ngpu</span>
+        <span class="n">ts3_conf</span><span class="o">.</span><span class="n">nnode</span> <span class="o">=</span> <span class="n">nnode</span>
+        <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">_run</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ts3_conf</span><span class="p">)</span>
+        <span class="n">grid</span><span class="o">.</span><span class="n">update_outlet</span><span class="p">()</span>
+
+    <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">_write_hdf5</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ts3_conf</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">pipeline</span> <span class="o">:=</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">custom_pipeline</span><span class="p">:</span>
+        <span class="c1"># Write a dictionary of information that *might* be needed by custom pipelines</span>
+        <span class="c1"># In particular, TS4 cannot work out Nblade for wall distance filter by iself</span>
+        <span class="n">pipeline_params</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;Nb_row&quot;</span><span class="p">:</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">blks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">Nb</span><span class="p">)</span> <span class="k">for</span> <span class="n">blks</span> <span class="ow">in</span> <span class="n">grid</span><span class="o">.</span><span class="n">row_blocks</span><span class="p">],</span>
+            <span class="s2">&quot;cp&quot;</span><span class="p">:</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">cp</span><span class="p">,</span>
+            <span class="s2">&quot;ho&quot;</span><span class="p">:</span> <span class="n">inpatch</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">h</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">pipeline_params_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;pipeline_params.json&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">pipeline_params_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">pipeline_params</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+        <span class="n">convert_cmd</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;pvpython </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">pipeline</span><span class="p">)</span><span class="si">}</span><span class="s2"> input.hdf5 input_ts4 &gt; convert.log&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Converting TS3-&gt;TS4 using custom pipeline </span><span class="si">{</span><span class="n">pipeline</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+
+        <span class="c1"># When runing headless, paraview seems to segfault on exit, despite the</span>
+        <span class="c1"># pipeline completing successfully. So we ignore errors when executing</span>
+        <span class="c1"># pvpython. We could verify success by checking for existence of TS4</span>
+        <span class="c1"># input file instead.</span>
+        <span class="n">check</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">convert_script</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">),</span> <span class="s2">&quot;convert_ts3_to_ts4_native.py&quot;</span>
+        <span class="p">)</span>
+        <span class="n">convert_cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">convert_script</span><span class="si">}</span><span class="s2"> input.hdf5 input_ts4 &gt; convert.log&quot;</span>
+        <span class="n">check</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Converting TS3-&gt;TS4...&quot;</span><span class="p">)</span>
+
+    <span class="n">cmd_str</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;source </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">environment_script</span><span class="si">}</span><span class="s2"> 2&gt; /dev/null;&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;cd </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="si">}</span><span class="s2">; </span><span class="si">{</span><span class="n">convert_cmd</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd_str</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="n">check</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;Running TS3-&gt;TS4 conversion failed, exit code </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span>
+<span class="s2">COMMAND: </span><span class="si">{</span><span class="n">cmd_str</span><span class="si">}</span>
+<span class="s2">STDERR: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">getfilesystemencoding</span><span class="p">())</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span> <span class="kc">None</span>
+
+    <span class="n">input_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;input_ts4.hdf5&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Write throttle config file</span>
+    <span class="n">_write_throttle</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">input_file_path</span><span class="p">)</span>
+
+    <span class="c1"># Assume that the custom pipeline will set wall distances for us</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">custom_pipeline</span><span class="p">:</span>
+        <span class="n">_write_wall_distance</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">input_file_path</span><span class="p">)</span>
+
+    <span class="c1"># Write probe config file</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">spf_probe</span> <span class="ow">or</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">point_probe</span><span class="p">:</span>
+        <span class="n">_write_probes_ofp</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">)</span>
+
+    <span class="c1"># Write span fraction probes</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">spf_probe</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">spf</span> <span class="ow">in</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">spf_probe</span><span class="p">:</span>
+            <span class="n">_write_xr_probe</span><span class="p">(</span><span class="n">machine</span><span class="p">,</span> <span class="n">ts4_conf</span><span class="p">,</span> <span class="n">spf</span><span class="p">)</span>
+
+    <span class="c1"># Write point probes</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">point_probe</span><span class="p">:</span>
+        <span class="c1"># Loop over a list of probes</span>
+        <span class="k">for</span> <span class="n">pp_conf</span> <span class="ow">in</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">point_probe</span><span class="p">:</span>
+            <span class="n">xyz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">pp_conf</span><span class="p">[</span><span class="s2">&quot;xyz&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+            <span class="n">idomain</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pp_conf</span><span class="p">[</span><span class="s2">&quot;domain&quot;</span><span class="p">])</span>
+
+            <span class="c1"># Get dimensions of input data</span>
+            <span class="k">assert</span> <span class="n">xyz</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>
+            <span class="k">assert</span> <span class="n">xyz</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">3</span>
+
+            <span class="n">_write_point_probe</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="n">xyz</span><span class="p">,</span> <span class="n">idomain</span><span class="p">,</span> <span class="n">pp_conf</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">])</span>
+
+    <span class="c1"># Write logical probes</span>
+    <span class="k">if</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">logical_probe</span><span class="p">:</span>
+        <span class="c1"># Loop over a list of probes</span>
+        <span class="k">for</span> <span class="n">pp_conf</span> <span class="ow">in</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">logical_probe</span><span class="p">:</span>
+            <span class="n">_write_logical_probe</span><span class="p">(</span><span class="n">ts4_conf</span><span class="p">,</span> <span class="o">**</span><span class="n">pp_conf</span><span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using </span><span class="si">{</span><span class="n">ngpu</span><span class="si">}</span><span class="s2"> GPUs on </span><span class="si">{</span><span class="n">nnode</span><span class="si">}</span><span class="s2"> nodes, </span><span class="si">{</span><span class="n">npernode</span><span class="si">}</span><span class="s2"> per node.&quot;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running TS4...&quot;</span><span class="p">)</span>
+    <span class="n">cmd_str</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;source </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">environment_script</span><span class="si">}</span><span class="s2"> 2&gt; /dev/null;&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;cd </span><span class="si">{</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="si">}</span><span class="s2">;&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;mpirun -np </span><span class="si">{</span><span class="n">ngpu</span><span class="si">}</span><span class="s2"> python $TSHOME/$TSDIR/bin/turbostream.py&quot;</span>
+        <span class="s2">&quot; config.ofp input_ts4.hdf5 input_ts4.hdf5 input_ts4.hdf5 output_ts4&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">npernode</span><span class="si">}</span><span class="s2"> --fname_out_procid=procids.hdf5 &gt; log_ts4.txt 2&gt; err.txt&quot;</span>
+    <span class="p">)</span>
+    <span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd_str</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="n">check</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">)</span>
+
+    <span class="c1"># TODO catch keyboard interrupt here</span>
+    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;Running TS4 failed, exit code </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span>
+<span class="s2">COMMAND: </span><span class="si">{</span><span class="n">cmd_str</span><span class="si">}</span>
+<span class="s2">STDERR: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">getfilesystemencoding</span><span class="p">())</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span> <span class="kc">None</span>
+
+    <span class="n">log_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ts4_conf</span><span class="o">.</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;log_ts4.txt&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">istep_nan</span> <span class="o">:=</span> <span class="n">_check_nan</span><span class="p">(</span><span class="n">log_path</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TS4 diverged at step </span><span class="si">{</span><span class="n">istep_nan</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># output_file_path = os.path.join(ts4_conf.workdir, &quot;output_ts4.hdf5&quot;)</span>
+    <span class="n">_read_flow</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">output_file_path</span><span class="p">,</span> <span class="n">output_avg_file_path</span><span class="p">)</span>
+
+    <span class="c1"># Restore the sign of inlet pitch angle</span>
+    <span class="n">inpatch</span><span class="o">.</span><span class="n">Beta</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+
+    <span class="c1"># Write out the ts4 flowfield to ts3 for debugging</span>
+    <span class="n">turbigen</span><span class="o">.</span><span class="n">solvers</span><span class="o">.</span><span class="n">ts3</span><span class="o">.</span><span class="n">_write_hdf5</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ts3_conf</span><span class="p">,</span> <span class="n">fname</span><span class="o">=</span><span class="s2">&quot;output_ts3.hdf5&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Check convergence</span>
+    <span class="n">Nb</span> <span class="o">=</span> <span class="p">[</span><span class="n">grid</span><span class="o">.</span><span class="n">inlet_patches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">block</span><span class="o">.</span><span class="n">Nb</span><span class="p">,</span> <span class="n">grid</span><span class="o">.</span><span class="n">outlet_patches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">block</span><span class="o">.</span><span class="n">Nb</span><span class="p">]</span>
+    <span class="n">state_log</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">inlet_patches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">state_log</span><span class="o">.</span><span class="n">set_Tu0</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ConvergenceHistory</span><span class="p">(</span>
+        <span class="o">*</span><span class="n">parse_log</span><span class="p">(</span><span class="n">log_path</span><span class="p">,</span> <span class="n">ts4_conf</span><span class="o">.</span><span class="n">nstep</span><span class="p">,</span> <span class="n">Nb</span><span class="p">),</span> <span class="n">state_log</span><span class="p">,</span> <span class="n">ofp</span><span class="p">[</span><span class="s2">&quot;istep_avg_start&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+</pre></div>
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+    </div>
+
+
+
+
+  </body>
+</html>

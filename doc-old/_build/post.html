@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Post-processing &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script>window.MathJax = {"tex": {"macros": {"Ma": "{M\\kern-.1ema}", "Rey": "{R\\kern-.1eme}", "htr": "{\\mathit{HTR}}", "inn": "{\\mathrm{in}}", "out": "{\\mathrm{out}}", "rel": "{\\mathrm{rel}}", "Chi": "{\\hat{\\chi}}", "TE": "{\\mathrm{TE}}", "LE": "{\\mathrm{LE}}", "dee": "\\mathrm{d}", "RR": "{\\mathit{RR}}", "VmR": "{\\mathit{VR}}"}}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Changelog" href="changelog.html" />
+    <link rel="prev" title="Solvers" href="solver.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Post-processing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.calc_surf_dissipation"><code class="docutils literal notranslate"><span class="pre">calc_surf_dissipation()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.check_phase"><code class="docutils literal notranslate"><span class="pre">check_phase()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.contour"><code class="docutils literal notranslate"><span class="pre">contour()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.plot_annulus"><code class="docutils literal notranslate"><span class="pre">plot_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.plot_convergence"><code class="docutils literal notranslate"><span class="pre">plot_convergence()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.plot_pressure_distributions"><code class="docutils literal notranslate"><span class="pre">plot_pressure_distributions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.plot_section"><code class="docutils literal notranslate"><span class="pre">plot_section()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.spanwise"><code class="docutils literal notranslate"><span class="pre">spanwise()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.write_annulus"><code class="docutils literal notranslate"><span class="pre">write_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.write_cuts"><code class="docutils literal notranslate"><span class="pre">write_cuts()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.write_ibl"><code class="docutils literal notranslate"><span class="pre">write_ibl()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#doc.dummy_post.write_stl"><code class="docutils literal notranslate"><span class="pre">write_stl()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="solver.html" title="previous chapter">Solvers</a></li>
+      <li>Next: <a href="changelog.html" title="next chapter">Changelog</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="post-processing">
+<h1>Post-processing<a class="headerlink" href="#post-processing" title="Link to this heading">¶</a></h1>
+<p><strong class="program">turbigen</strong> can generate plots of the designed geometry and CFD-predicted flow field, or write out such data to files, on completion
+of a run.
+The plots or data files appear in a subdirectory of the working directory named <cite>post</cite>.
+Post-processing is configured using the <cite>post_process</cite> key in
+a YAML input file, which may list one or more of the modules under <code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.post</span></code>, and provide arguments as subkeys.  For example, to write out surface
+coordinates for CAD, and plot the first row chordwise pressure distribution at three spanwise locations:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">post_process</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">write_surf</span><span class="p">:</span><span class="w">  </span><span class="c1"># Needs no further arguments</span>
+<span class="w">  </span><span class="nt">plot_pressure_distributions</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># Nested list of span fractions for each row</span>
+<span class="w">    </span><span class="nt">row_spf</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[[</span><span class="nv">0.1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.9</span><span class="p p-Indicator">],]</span>
+</pre></div>
+</div>
+<p id="module-doc.dummy_post">Available post-processing routines are listed below with the arguments they take.</p>
+<p><strong>Functions:</strong></p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.calc_surf_dissipation" title="doc.dummy_post.calc_surf_dissipation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">calc_surf_dissipation</span></code></a>([Cd])</p></td>
+<td><p>Estimate boundary layer loss using a dissipation coefficient.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.check_phase" title="doc.dummy_post.check_phase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">check_phase</span></code></a>()</p></td>
+<td><p>Print number of computational cells in the two-phase region to the log file.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.contour" title="doc.dummy_post.contour"><code class="xref py py-obj docutils literal notranslate"><span class="pre">contour</span></code></a>(coord[, var, lim, step, ...])</p></td>
+<td><p>Plot flow-field contours over a planar cut.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.plot_annulus" title="doc.dummy_post.plot_annulus"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_annulus</span></code></a>([mnorm_cut, show_axis, ...])</p></td>
+<td><p>Plot a meridional x-r view of the annulus lines of the turbomachine.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.plot_convergence" title="doc.dummy_post.plot_convergence"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_convergence</span></code></a>([write_raw])</p></td>
+<td><p>Save plots of convergence history of the calculation.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.plot_pressure_distributions" title="doc.dummy_post.plot_pressure_distributions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_pressure_distributions</span></code></a>(row_spf[, ...])</p></td>
+<td><p>Plot static pressure on blade surface as a function of chordwise distance.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.plot_section" title="doc.dummy_post.plot_section"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_section</span></code></a>(row_spf[, coord_sys, compare, ...])</p></td>
+<td><p>Plot views of the blade sections.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.spanwise" title="doc.dummy_post.spanwise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spanwise</span></code></a>(grid, machine, meanline, __, ...[, ...])</p></td>
+<td><p>Plot a flow property in spanwise direction.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.write_annulus" title="doc.dummy_post.write_annulus"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_annulus</span></code></a>(spf)</p></td>
+<td><p>Write x--r curves at specified span fractions.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.write_cuts" title="doc.dummy_post.write_cuts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_cuts</span></code></a>([mnorm_traverse])</p></td>
+<td><p>Write 2D cuts of the CFD solution to npz files for external processing.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#doc.dummy_post.write_ibl" title="doc.dummy_post.write_ibl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_ibl</span></code></a>()</p></td>
+<td><p>Write machine surface geometry to an ibl file.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#doc.dummy_post.write_stl" title="doc.dummy_post.write_stl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_stl</span></code></a>()</p></td>
+<td><p>Write machine surface geometry to stl files.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.calc_surf_dissipation">
+<span class="sig-name descname"><span class="pre">calc_surf_dissipation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Cd</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.002</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.calc_surf_dissipation" title="Link to this definition">¶</a></dt>
+<dd><p>Estimate boundary layer loss using a dissipation coefficient.</p>
+<p>After Denton (1993), entropy generation due to surface dissipation at walls is</p>
+<div class="math notranslate nohighlight">
+\[\dot{S}_\mathrm{surf} = \int_\mathrm{surf} C_\mathrm{d} \frac{\rho V_s^3}{T} \dee{A}\]</div>
+<p>where <span class="math notranslate nohighlight">\(C_\mathrm{d}\)</span> is a dissipation coefficient, and <span class="math notranslate nohighlight">\(V_s\)</span> is the local isentropic velocity.
+This routine evaluates the above equation using the CFD-predicted flow field and a constant dissipation coefficient,
+then saves the results in the mean-line object for subsequent analysis.</p>
+<p>The calculated <span class="math notranslate nohighlight">\(\dot{S}_\mathrm{surf}\)</span> is a 2D array, broken down by row on the first axis, and on the
+second axis 0 corresponds to the hub and casing surfaces, and 1 the blade surfaces.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>Cd</strong> (<em>float</em>) – Dissipation coefficient, default to the classic Denton value of 0.002.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.check_phase">
+<span class="sig-name descname"><span class="pre">check_phase</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.check_phase" title="Link to this definition">¶</a></dt>
+<dd><p>Print number of computational cells in the two-phase region to the log file.</p>
+<p>This is useful to check if real working fluids remain gaseous throughout
+the turbomachine.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.contour">
+<span class="sig-name descname"><span class="pre">contour</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coord</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.contour" title="Link to this definition">¶</a></dt>
+<dd><p>Plot flow-field contours over a planar cut.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>coord</strong> (<em>str</em>) – Which coordinate to take constant over the cut:
+- ‘x’ axial
+- ‘r’ radial
+- ‘m’ normalised meridional distance</p></li>
+<li><p><strong>value</strong> (<em>float</em>) – Value of the coordinate to cut at.</p></li>
+<li><p><strong>variable</strong> (<em>str</em>) – Variable name to plot. Select from <cite>Yp, Ys, Cho, Vm</cite>.</p></li>
+<li><p><strong>lim</strong> (<em>(</em><em>2</em><em>,</em><em>) </em><em>list</em>) – Upper and lower contour limits for the plot variable.</p></li>
+<li><p><strong>step</strong> (<em>float</em>) – Contour step for, omit to set automatically.</p></li>
+<li><p><strong>theta_offset</strong> (<em>float</em>) – Angular offset of the plot as a fraction of pitch. Use to line up wakes in different simulations.</p></li>
+<li><p><strong>title</strong> (<em>str</em>) – String to add as a plot title, omit for no title.</p></li>
+<li><p><strong>N_passage</strong> (<em>int</em>) – Number of passages to repeat.</p></li>
+<li><p><strong>irow_ref</strong> (<em>int</em>) – Which row to use to make things non-dimensional</p></li>
+<li><p><strong>cmap</strong> (<em>str</em>) – A matplotlib colormap</p></li>
+<li><p><strong>extend</strong> (<em>str</em>) – Extend mode for the contours and colorbar.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.plot_annulus">
+<span class="sig-name descname"><span class="pre">plot_annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mnorm_cut</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_axis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_control_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_blades</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">write_raw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compare</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.plot_annulus" title="Link to this definition">¶</a></dt>
+<dd><p>Plot a meridional x-r view of the annulus lines of the turbomachine.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mnorm_cut</strong> (<em>list</em>) – Show cut planes at the given normalised meridional coordinates.</p></li>
+<li><p><strong>show_axis</strong> (<em>bool</em>) – Add a dot-dash centreline at zero radius to show the axis of the machine.</p></li>
+<li><p><strong>show_control_points</strong> (<em>bool</em>) – Show the control points at the inlet and exit of each row defining the shape.</p></li>
+<li><p><strong>show_blades</strong> (<em>bool</em>) – Hatch bladed areas in the plot.</p></li>
+<li><p><strong>write_raw</strong> (<em>bool</em>) – Save the hub and casing coordinates to an npz file.</p></li>
+<li><p><strong>compare</strong> (<em>str</em>) – Path to an xrt data file with meridional coordinates to compare to current annulus.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.plot_convergence">
+<span class="sig-name descname"><span class="pre">plot_convergence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">write_raw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.plot_convergence" title="Link to this definition">¶</a></dt>
+<dd><p>Save plots of convergence history of the calculation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>write_raw</strong> (<em>bool</em>) – Save data to a csv file.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.plot_pressure_distributions">
+<span class="sig-name descname"><span class="pre">plot_pressure_distributions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">write_raw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_rot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.plot_pressure_distributions" title="Link to this definition">¶</a></dt>
+<dd><p>Plot static pressure on blade surface as a function of chordwise distance.</p>
+<p>The horizontal axis is surface distance away from the stagnation point.
+The vertical axis is a static pressure coefficient defined using the mean-line inlet dynamic head in compressors,
+and the isentropic exit dynamic head in turbines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>row_spf</strong> (<em>list</em>) – For each row of the machine,  a nested list of span fractions to plot at. For example, in a three-row machine,
+to plot the first row at mid-span, the second row at three locations, and omit the third row, use
+<cite>[[0.5,], [0.1, 0.5, 0.9,], []]</cite>.</p></li>
+<li><p><strong>write_raw</strong> (<em>bool</em>) – Save the raw pressure coefficient and surface distance data to an npz file.</p></li>
+<li><p><strong>use_rot</strong> (<em>bool</em>) – Plot using the rotary static pressure to take out centrifugal effects.</p></li>
+<li><p><strong>lim</strong> (<em>(</em><em>2</em><em>,</em><em>) </em><em>iterable</em>) – Vertical limits, set automatically if omitted.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.plot_section">
+<span class="sig-name descname"><span class="pre">plot_section</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coord_sys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'mpt'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compare</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">K_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.plot_section" title="Link to this definition">¶</a></dt>
+<dd><p>Plot views of the blade sections.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>row_spf</strong> (<em>list</em>) – For each row of the machine,  a nested list of span fractions to plot at. For example, in a three-row machine,
+to plot the first row at mid-span, the second row at three locations, and omit the third row, use
+<cite>[[0.5,], [0.1, 0.5, 0.9,], []]</cite>.</p></li>
+<li><p><strong>coord_sys</strong> (<em>str</em>) – Which coordinate system to use, <cite>mpt</cite> for unwrapped radial or <cite>xrt</cite> for axial machines.</p></li>
+<li><p><strong>compare</strong> (<em>str</em>) – Path to an xrt data file with coordinates to compare to current sections.</p></li>
+<li><p><strong>K_offset</strong> (<em>float</em>) – Tangential offset factor of the sections. Use to prevent sections from overlapping.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.spanwise">
+<span class="sig-name descname"><span class="pre">spanwise</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">grid</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">machine</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meanline</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">__</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postdir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merid</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">variable</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.spanwise" title="Link to this definition">¶</a></dt>
+<dd><p>Plot a flow property in spanwise direction.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.write_annulus">
+<span class="sig-name descname"><span class="pre">write_annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.write_annulus" title="Link to this definition">¶</a></dt>
+<dd><p>Write x–r curves at specified span fractions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>spf</strong> (<em>list</em>) – Span fractions of the meridional curves to write.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.write_cuts">
+<span class="sig-name descname"><span class="pre">write_cuts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mnorm_traverse=[]</span> <span class="pre">irow_surf=[]</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.write_cuts" title="Link to this definition">¶</a></dt>
+<dd><p>Write 2D cuts of the CFD solution to npz files for external processing.</p>
+<p>Traverse cuts are unstructured planes at a constant streamwise position, such as
+the exit of a blade row. Blade surface cuts are a structured view over an entire aerofoil.</p>
+<dl class="simple">
+<dt>Unstructured cuts are stored in a 3D data array, where:</dt><dd><ul class="simple">
+<li><p>The first axis indexes over properties <cite>x, r, t, Vx, Vr, Vt, rho, u</cite></p></li>
+<li><p>The second axis indexes over triangles</p></li>
+<li><p>The third axis indexes over vertices in each triangle</p></li>
+</ul>
+</dd>
+<dt>Structured cuts are stored in a 3D data array, where:</dt><dd><ul class="simple">
+<li><p>The first axis indexes over properties <cite>x, r, t, Vx, Vr, Vt, rho, u</cite></p></li>
+<li><p>The second axis indexes over chordwise position</p></li>
+<li><p>The third axis indexes over spanwise position</p></li>
+</ul>
+</dd>
+</dl>
+<p>A example script to read in npz cut data is located in the <cite>scripts</cite> directory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mnorm_traverse</strong> (<em>list</em>) – Normalised meridional coordinates of traverse cuts. The coordinate is defined 0 at the inlet plane, 1 at the
+first row LE, 2 at the first row TE, 3 at the second row LE, and so on. For example, to cut
+just upstream and downstream of the first row, use [0.95, 2.05].</p></li>
+<li><p><strong>irow_surf</strong> (<em>list</em>) – Indices of rows in which to cut the blade surface. For example, to extract the first blade, use [0,].</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.write_ibl">
+<span class="sig-name descname"><span class="pre">write_ibl</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.write_ibl" title="Link to this definition">¶</a></dt>
+<dd><p>Write machine surface geometry to an ibl file.</p>
+<p>Save coordinates around blade sections and annulus lines to Creo format.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="doc.dummy_post.write_stl">
+<span class="sig-name descname"><span class="pre">write_stl</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#doc.dummy_post.write_stl" title="Link to this definition">¶</a></dt>
+<dd><p>Write machine surface geometry to stl files.</p>
+<p>Generates a triangulated Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud.</p>
+</dd></dl>
+
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/post.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

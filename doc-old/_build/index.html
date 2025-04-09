@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>turbigen user manual &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Nomenclature" href="nomenclature.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+      <li>Next: <a href="nomenclature.html" title="next chapter">Nomenclature</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="turbigen-user-manual">
+<h1><strong class="program">turbigen</strong> user manual<a class="headerlink" href="#turbigen-user-manual" title="Link to this heading">¶</a></h1>
+<p><strong class="program">turbigen</strong> is a general turbomachinery design system developed by <a class="reference external" href="https://jamesbrind.uk/">Dr. James Brind</a> of the <a class="reference external" href="https://whittle.eng.cam.ac.uk/">Whittle Laboratory</a>, University of Cambridge.</p>
+<p>This documentation contains
+usage instructions, descriptions of the theory involved, and listings of configuration options.</p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="install.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="install.html#obtain-the-code">Obtain the code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="install.html#basic-usage">Basic usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="install.html#test-case">Test case</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#positional-arguments">Positional Arguments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#named-arguments">Named Arguments</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#problem-statement">Problem statement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#mean-line-design-equations">Mean-line design equations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#setting-up-skeleton-files">Setting up skeleton files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#implementing-the-algorithm">Implementing the algorithm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#inverse-function">Inverse function</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#running-cfd">Running CFD</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#iterating-the-design">Iterating the design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#extensions">Extensions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="config.html#workdir">workdir</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#inlet">inlet</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#mean-line">mean_line</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#annulus">annulus</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#blades">blades</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#mesh">mesh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#solver">solver</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#operating-point">operating_point</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#iterate">iterate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#job">job</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Fluids</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#example-code">Example code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#property-attributes">Property attributes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#setting-methods">Setting methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#static-stagnation-methods">Static/stagnation methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#constructor-methods">Constructor methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectState"><code class="docutils literal notranslate"><span class="pre">PerfectState</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#turbigen.fluid.RealState"><code class="docutils literal notranslate"><span class="pre">RealState</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine"><code class="docutils literal notranslate"><span class="pre">MeanLine</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="meanline.html#module-turbigen.meanline.turbine_cascade">Cascade</a></li>
+<li class="toctree-l2"><a class="reference internal" href="meanline.html#module-turbigen.meanline.axial_turbine">Axial turbine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="meanline.html#module-turbigen.meanline.radial_compressor">Radial compressor</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="mesh.html#h-meshing">H-meshing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mesh.html#oh-meshing">OH-meshing</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="solver.html#turbostream-3">Turbostream 3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver.html#turbostream-4">Turbostream 4</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.calc_surf_dissipation"><code class="docutils literal notranslate"><span class="pre">calc_surf_dissipation()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.check_phase"><code class="docutils literal notranslate"><span class="pre">check_phase()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.contour"><code class="docutils literal notranslate"><span class="pre">contour()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.plot_annulus"><code class="docutils literal notranslate"><span class="pre">plot_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.plot_convergence"><code class="docutils literal notranslate"><span class="pre">plot_convergence()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.plot_pressure_distributions"><code class="docutils literal notranslate"><span class="pre">plot_pressure_distributions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.plot_section"><code class="docutils literal notranslate"><span class="pre">plot_section()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.spanwise"><code class="docutils literal notranslate"><span class="pre">spanwise()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.write_annulus"><code class="docutils literal notranslate"><span class="pre">write_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.write_cuts"><code class="docutils literal notranslate"><span class="pre">write_cuts()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.write_ibl"><code class="docutils literal notranslate"><span class="pre">write_ibl()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="post.html#doc.dummy_post.write_stl"><code class="docutils literal notranslate"><span class="pre">write_stl()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-10-1">v1.10.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-10-0">v1.10.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-9-1">v1.9.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-9-0">v1.9.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-8-0">v1.8.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-7-0">v1.7.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-6-1">v1.6.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-6-0">v1.6.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-5-1">v1.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-5-0">v1.5.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-4-0">v1.4.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-3-4">v1.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-3-3">v1.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-3-2">v1.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-3-1">v1.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-3-0">v1.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-2-0">v1.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-1-0">v1.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v1-0-0">v1.0.0</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+</div>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

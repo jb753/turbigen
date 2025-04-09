@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Fluids &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="_static/plot_directive.css" />
+    <script src="_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script>window.MathJax = {"tex": {"macros": {"Ma": "{M\\kern-.1ema}", "Rey": "{R\\kern-.1eme}", "htr": "{\\mathit{HTR}}", "inn": "{\\mathrm{in}}", "out": "{\\mathrm{out}}", "rel": "{\\mathrm{rel}}", "Chi": "{\\hat{\\chi}}", "TE": "{\\mathrm{TE}}", "LE": "{\\mathrm{LE}}", "dee": "\\mathrm{d}", "RR": "{\\mathit{RR}}", "VmR": "{\\mathit{VR}}"}}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Mean-line" href="meanline.html" />
+    <link rel="prev" title="Configuration file format" href="config.html" />
+
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration file format</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Fluids</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#example-code">Example code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#property-attributes">Property attributes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#setting-methods">Setting methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#static-stagnation-methods">Static/stagnation methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#constructor-methods">Constructor methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.fluid.PerfectState"><code class="docutils literal notranslate"><span class="pre">PerfectState</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.fluid.RealState"><code class="docutils literal notranslate"><span class="pre">RealState</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="config.html" title="previous chapter">Configuration file format</a></li>
+      <li>Next: <a href="meanline.html" title="next chapter">Mean-line</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <section id="module-turbigen.fluid">
+<span id="fluids"></span><h1>Fluids<a class="headerlink" href="#module-turbigen.fluid" title="Link to this heading">¶</a></h1>
+<p>Calculation of thermodynamic properties for working fluids.</p>
+<p>Turbomachinery design and analysis requires knowledge of thermodynamic
+properties of the working fluid. This module contains classes that abstract
+real or perfect gases, so that calculations of thermodynamic properties can
+be performed using a common interface independent of the fluid equation of
+state.</p>
+<p>The general pattern of usage of these classes is as follows. First initialise a
+state using <a class="reference internal" href="#turbigen.fluid.PerfectState.from_properties" title="turbigen.fluid.PerfectState.from_properties"><code class="xref py py-meth docutils literal notranslate"><span class="pre">turbigen.fluid.PerfectState.from_properties()</span></code></a> or
+<a class="reference internal" href="#turbigen.fluid.RealState.from_fluid_name" title="turbigen.fluid.RealState.from_fluid_name"><code class="xref py py-meth docutils literal notranslate"><span class="pre">turbigen.fluid.RealState.from_fluid_name()</span></code></a> constructors. If the type
+of working fluid is not known at runtime, the <cite>copy()</cite> method of an existing
+state can be used. Second, specify a pair of two thermodynamic properties
+using, for example, <code class="xref py py-meth docutils literal notranslate"><span class="pre">turbigen.fluid.PerfectState.set_P_T()</span></code>. Finally,
+other derived properties can be read off as
+attributes of the state, such as <code class="xref py py-attr docutils literal notranslate"><span class="pre">turbigen.fluid.PerfectState.rho</span></code>.
+The examples below illustrate functionality of the
+classes; practical usages are found in the <code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.meanline</span></code> functions.</p>
+<section id="example-code">
+<h2>Example code<a class="headerlink" href="#example-code" title="Link to this heading">¶</a></h2>
+<p>Create a state for real Air, print some properties, then if this is a
+stagnation state, find static pressure given a Mach number:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">turbigen.fluid</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">So1</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">RealState</span><span class="o">.</span><span class="n">from_fluid_name</span><span class="p">(</span><span class="s1">&#39;Air&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">So1</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="mf">16e5</span><span class="p">,</span> <span class="mf">1600.</span><span class="p">)</span>
+<span class="go">RealState(Air, P=16.000 bar, T=1600.0 K)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;cp = </span><span class="si">%.1f</span><span class="s1"> kJ/kg&#39;</span> <span class="o">%</span> <span class="n">So1</span><span class="o">.</span><span class="n">cp</span><span class="p">)</span>
+<span class="go">cp = 1220.9 kJ/kg</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;ga = </span><span class="si">%.3f</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">So1</span><span class="o">.</span><span class="n">gamma</span><span class="p">)</span>
+<span class="go">ga = 1.308</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">S1</span> <span class="o">=</span> <span class="n">So1</span><span class="o">.</span><span class="n">to_static</span><span class="p">(</span><span class="n">Ma</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;P1 = </span><span class="si">%.3e</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">S1</span><span class="o">.</span><span class="n">P</span><span class="p">)</span>
+<span class="go">P1 = 1.271e+06</span>
+</pre></div>
+</div>
+<p>Initialise states for both perfect air and steam, then calculate the work
+required for an isentropic compression:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">S_water</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">RealState</span><span class="o">.</span><span class="n">from_fluid_name</span><span class="p">(</span><span class="s1">&#39;water&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">S_air</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">PerfectState</span><span class="o">.</span><span class="n">from_properties</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">cp</span><span class="o">=</span><span class="mf">1005.</span><span class="p">,</span><span class="n">gamma</span><span class="o">=</span><span class="mf">1.4</span><span class="p">,</span> <span class="n">mu</span><span class="o">=</span><span class="mf">1.8e-4</span>
+<span class="gp">... </span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">PR</span> <span class="o">=</span> <span class="mf">3.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">S1</span> <span class="ow">in</span> <span class="p">(</span><span class="n">S_water</span><span class="p">,</span> <span class="n">S_air</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">S1</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="mf">1e5</span><span class="p">,</span> <span class="mf">300.</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">S2</span> <span class="o">=</span> <span class="n">S1</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">set_P_s</span><span class="p">(</span><span class="n">S1</span><span class="o">.</span><span class="n">P</span> <span class="o">*</span> <span class="n">PR</span><span class="p">,</span> <span class="n">S1</span><span class="o">.</span><span class="n">s</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;wx12 = </span><span class="si">{</span><span class="p">(</span><span class="n">S2</span><span class="o">.</span><span class="n">h</span><span class="o">-</span><span class="n">S1</span><span class="o">.</span><span class="n">h</span><span class="p">)</span><span class="o">/</span><span class="mf">1e3</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> kJ/kg&#39;</span><span class="p">)</span>
+<span class="go">RealState(water, P=1.000 bar, T=300.0 K)</span>
+<span class="go">wx12 = 0.20 kJ/kg</span>
+<span class="go">PerfectState(P=1.000 bar, T=300.0 K)</span>
+<span class="go">wx12 = 111.17 kJ/kg</span>
+</pre></div>
+</div>
+<p>Array states are also supported, by passing a shape tuple on initialisation.
+Broadcasting input values, and read-only iterating and slicing work:</p>
+<div class="highlight-pycon notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">turbigen.fluid</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">S</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">RealState</span><span class="o">.</span><span class="n">from_fluid_name</span><span class="p">(</span><span class="s1">&#39;water&#39;</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">S</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="mf">1e5</span><span class="p">,</span> <span class="p">[</span><span class="mf">400.</span><span class="p">,</span> <span class="mf">500.</span><span class="p">,</span> <span class="mi">800</span><span class="p">])</span>
+<span class="go">RealState(water, P=[1. 1. 1.] bar, T=[400. 500. 800.] K)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">S</span><span class="o">.</span><span class="n">rho</span><span class="p">)</span>
+<span class="go">[0.54760542 0.43514008 0.27102399]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">Si</span> <span class="ow">in</span> <span class="n">S</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="n">Si</span><span class="p">)</span>
+<span class="go">RealState(water, P=1.000 bar, T=500.0 K)</span>
+<span class="go">RealState(water, P=1.000 bar, T=800.0 K)</span>
+</pre></div>
+</div>
+</section>
+<section id="property-attributes">
+<h2>Property attributes<a class="headerlink" href="#property-attributes" title="Link to this heading">¶</a></h2>
+<p>The state classes expose the following thermodynamic and fluid properties as
+attributes:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Attribute</p></th>
+<th class="head"><p>Property</p></th>
+<th class="head"><p>Units</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><cite>a</cite></p></td>
+<td><p>Acoustic Speed</p></td>
+<td><p>m/s</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>cp</cite></p></td>
+<td><p>Specific heat capacity at constant pressure</p></td>
+<td><p>J/kg/K</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>cv</cite></p></td>
+<td><p>Specific heat capacity at constant volume</p></td>
+<td><p>J/kg/K</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>gamma</cite></p></td>
+<td><p>Ratio of specific heats</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p><cite>h</cite></p></td>
+<td><p>Specific enthalpy</p></td>
+<td><p>J/kg</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>mu</cite></p></td>
+<td><p>Dynamic viscosity</p></td>
+<td><p>kg/m/s</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>P</cite></p></td>
+<td><p>Pressure</p></td>
+<td><p>Pa</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>Pr</cite></p></td>
+<td><p>Prandtl number</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p><cite>rgas</cite></p></td>
+<td><p>Specific gas constant</p></td>
+<td><p>J/kg/K</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>rho</cite></p></td>
+<td><p>Mass density</p></td>
+<td><p>kg/m^3</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>s</cite></p></td>
+<td><p>Specific entropy</p></td>
+<td><p>J/kg/K</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>T</cite></p></td>
+<td><p>Temperature</p></td>
+<td><p>K</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>u</cite></p></td>
+<td><p>Specific internal energy</p></td>
+<td><p>J/kg</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="setting-methods">
+<h2>Setting methods<a class="headerlink" href="#setting-methods" title="Link to this heading">¶</a></h2>
+<p>The state classes expose the following methods to specify the thermodynamic
+state, each taking two properties as arguments:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Properties specified</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><cite>set_P_T(P,T)</cite></p></td>
+<td><p>Pressure, temperature</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>set_P_s(P,s)</cite></p></td>
+<td><p>Pressure, entropy</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>set_h_s(h,s)</cite></p></td>
+<td><p>Enthalpy, entropy</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>set_T_s(T,s)</cite></p></td>
+<td><p>Temperature, entropy</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>set_P_h(P,h)</cite></p></td>
+<td><p>Enthalpy, entropy</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>set_rho_u(rho,u)</cite></p></td>
+<td><p>Density, internal energy</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>set_rho_s(rho,s)</cite></p></td>
+<td><p>Density, entropy</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="static-stagnation-methods">
+<h2>Static/stagnation methods<a class="headerlink" href="#static-stagnation-methods" title="Link to this heading">¶</a></h2>
+<p>Consider the problem of converting between static and stagnation conditions at
+a given Mach number <span class="math notranslate nohighlight">\(\Ma=V/a\)</span>. If static conditions are known, it is
+straightforward to use Mach number and acoustic speed to evaluate velocity and
+hence enthalpy of the stagnation state; an ideal stagnation is an isentropic
+process, so static and stagnation states have the same entropy. The reverse
+problem, where static conditions must be found for known stagnation conditions,
+in general requires iteration because acoustic speed is unknown a-priori.</p>
+<p>The state classes have two methods to streamline these conversions:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><cite>to_stagnation(Ma)</cite> returns a State object for stagnation conditions</p></li>
+<li><p><cite>to_static(Ma)</cite> returns a State object for static conditions</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="constructor-methods">
+<h2>Constructor methods<a class="headerlink" href="#constructor-methods" title="Link to this heading">¶</a></h2>
+</section>
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.fluid.PerfectState">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PerfectState</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape=()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order='C'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">typ=&lt;class</span> <span class="pre">'numpy.float64'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/fluid.html#PerfectState"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.fluid.PerfectState" title="Link to this definition">¶</a></dt>
+<dd><p>Thermodynamic properties from perfect gas equations of state.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.fluid.PerfectState.from_properties">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_properties</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mu</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Pr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.72</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/fluid.html#PerfectState.from_properties"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.fluid.PerfectState.from_properties" title="Link to this definition">¶</a></dt>
+<dd><p>Create a state for a perfect gas with specified properties.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>cp</strong> (<em>float</em>) – Specific heat capacity at constant pressure [J/kg/K]</p></li>
+<li><p><strong>gamma</strong> (<em>float</em>) – Ratio of specific heats [–].</p></li>
+<li><p><strong>mu</strong> (<em>float</em>) – Kinematic viscosity [kg/m/s].</p></li>
+<li><p><strong>shape</strong> (<em>tuple</em>) – Specify a tuple to allocate an array of states; defaults to scalar.</p></li>
+<li><p><strong>Pr</strong> (<em>float</em>) – Prandtl number [–], default to room-temperature air.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.fluid.RealState">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">RealState</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape=()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order='C'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">typ=&lt;class</span> <span class="pre">'numpy.float64'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/fluid.html#RealState"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.fluid.RealState" title="Link to this definition">¶</a></dt>
+<dd><p>Thermodynamic properties for a real fluid using table lookups.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.fluid.RealState.from_fluid_name">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_fluid_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/turbigen/fluid.html#RealState.from_fluid_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#turbigen.fluid.RealState.from_fluid_name" title="Link to this definition">¶</a></dt>
+<dd><p>Create a state for a particular real working fluid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fluid_name</strong> (<em>str</em>) – Name of the fluid in the <a class="reference external" href="http://www.coolprop.org/fluid_properties/PurePseudoPure.html#list-of-fluids">CoolProp nomenclature</a>.</p></li>
+<li><p><strong>shape</strong> (<em>tuple</em>) – Specify a tuple to allocate an array of states; defaults to scalar.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+      |
+      <a href="_sources/fluid.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+
+
+
+  </body>
+</html>

@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>turbigen.hmesh &#8212; turbigen 1.10.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=a66d8bb5" />
+    <link rel="stylesheet" type="text/css" href="../../_static/plot_directive.css" />
+    <script src="../../_static/documentation_options.js?v=b95c35c0"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+
+
+
+
+
+  </head><body>
+  <div class="document">
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 1.10.1</p>
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../nomenclature.html">Nomenclature</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Command-line options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../config.html">Configuration file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../fluid.html">Fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../meanline.html">Mean-line</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../mesh.html">Meshing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solver.html">Solvers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../post.html">Post-processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../references.html">Bibliography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+
+
+          <div class="body" role="main">
+
+  <h1>Source code for turbigen.hmesh</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">turbigen</span> <span class="kn">import</span> <span class="n">util</span>
+<span class="kn">import</span> <span class="nn">turbigen.grid</span>
+<span class="kn">import</span> <span class="nn">turbigen.geometry</span>
+<span class="kn">from</span> <span class="nn">turbigen.base</span> <span class="kn">import</span> <span class="n">BaseConfig</span>
+<span class="kn">from</span> <span class="nn">turbigen</span> <span class="kn">import</span> <span class="n">clusterfunc</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">make_logger</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="HMeshConfig">
+<a class="viewcode-back" href="../../mesh.html#turbigen.hmesh.HMeshConfig">[docs]</a>
+<span class="k">class</span> <span class="nc">HMeshConfig</span><span class="p">(</span><span class="n">BaseConfig</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Contains all configuration options with default values.&quot;&quot;&quot;</span>
+
+    <span class="n">_name</span> <span class="o">=</span> <span class="s2">&quot;H mesh&quot;</span>
+
+    <span class="n">recluster</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">ER_stream</span> <span class="o">=</span> <span class="mf">1.2</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Expansion ratio of streamwise grid from first LE to inlet boundary.&quot;&quot;&quot;</span>
+
+    <span class="n">AR_stream</span> <span class="o">=</span> <span class="mf">2.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Aspect ratio in blade-to-blade plane of cells at outlet boundary.&quot;&quot;&quot;</span>
+
+    <span class="n">AR_passage</span> <span class="o">=</span> <span class="mf">1.6</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Nominal aspect ratio in blade-to-blade plane of mid-passage cells.&quot;&quot;&quot;</span>
+
+    <span class="n">AR_merid</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Aspect ratio of mid-chord cells in meridional plane.&quot;&quot;&quot;</span>
+
+    <span class="n">AR_merid_unbladed</span> <span class="o">=</span> <span class="mf">2.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Aspect ratio of mid-chord cells in meridional plane.&quot;&quot;&quot;</span>
+
+    <span class="n">ER_span</span> <span class="o">=</span> <span class="mf">1.2</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Expansion ratio of spanwise grid away from hub and casing.&quot;&quot;&quot;</span>
+
+    <span class="n">dm_LE</span> <span class="o">=</span> <span class="mf">0.002</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Streamwise grid spacing at LE, normalised by meridional chord.&quot;&quot;&quot;</span>
+
+    <span class="n">ni_TE</span> <span class="o">=</span> <span class="mi">9</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of streamwise points across trailing edge.&quot;&quot;&quot;</span>
+
+    <span class="n">dm_TE</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalised meridional length over which to cluster the TE points, 0. for</span>
+<span class="sd">    the true actual TE.&quot;&quot;&quot;</span>
+
+    <span class="n">dspf_mid</span> <span class="o">=</span> <span class="mf">0.03</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Spanwise grid spacing at midspan, as a fraction of span.&quot;&quot;&quot;</span>
+
+    <span class="n">ER_pitch</span> <span class="o">=</span> <span class="mf">1.2</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Expansion ratio away from aerofoil surfaces.&quot;&quot;&quot;</span>
+
+    <span class="n">nchord_relax</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of meridional chords over which pitchwise clustering is relaxed.&quot;&quot;&quot;</span>
+
+    <span class="n">resolution_factor</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Multiply the number of points in each direction, keeping relative spacings.&quot;&quot;&quot;</span>
+
+    <span class="n">rtol_smooth</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tolerance on smoothing convergence.&quot;&quot;&quot;</span>
+
+    <span class="n">maxiter_smooth</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of smoothing iterations, zero to disable smoothing.&quot;&quot;&quot;</span>
+
+    <span class="n">skew_max</span> <span class="o">=</span> <span class="mf">30.0</span>
+
+    <span class="n">slip_annulus</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="nf">spanwise_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dspf_hub</span><span class="p">,</span> <span class="n">dspf_casing</span><span class="p">,</span> <span class="n">tip</span><span class="p">):</span>
+        <span class="c1"># &quot;&quot;&quot;Evaluate a spanwise grid vector given hub and casing spacings.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">tip</span><span class="p">:</span>
+            <span class="n">Lmain</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">tip</span>
+
+            <span class="c1"># We want at least 9 nodes across the tip gap</span>
+            <span class="c1"># So the minimum grid spacing should be the smallest of:</span>
+            <span class="c1">#   - 9 pts uniform</span>
+            <span class="c1">#   - target shroud spacing</span>
+            <span class="n">njtip_min</span> <span class="o">=</span> <span class="mi">9</span>
+            <span class="n">dspf_tip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">dspf_casing</span><span class="p">,</span> <span class="n">tip</span> <span class="o">/</span> <span class="n">njtip_min</span><span class="p">)</span>
+
+            <span class="n">spf_main</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">double</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                <span class="n">dspf_hub</span><span class="p">,</span> <span class="n">dspf_tip</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_span</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">Lmain</span>
+            <span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">spf_tip</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">double</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                    <span class="n">dspf_tip</span><span class="p">,</span> <span class="n">dspf_tip</span><span class="p">,</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">dspf_tip</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_span</span><span class="p">,</span> <span class="n">Lmain</span><span class="p">,</span> <span class="mf">1.0</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">clusterfunc</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ClusteringException</span><span class="p">:</span>
+                <span class="n">spf_tip</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">double</span><span class="o">.</span><span class="n">fixed</span><span class="p">(</span>
+                    <span class="n">dspf_tip</span><span class="p">,</span> <span class="n">dspf_tip</span><span class="p">,</span> <span class="n">njtip_min</span><span class="p">,</span> <span class="n">Lmain</span><span class="p">,</span> <span class="mf">1.0</span>
+                <span class="p">)</span>
+
+            <span class="n">spf_main</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">spf_main</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">spf_tip</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">spf_tip</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">spf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">spf_main</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">spf_tip</span><span class="p">))</span>
+
+            <span class="k">assert</span> <span class="n">spf</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mf">0.0</span>
+            <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">spf</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">spf</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="k">return</span> <span class="n">spf</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span>
+                <span class="n">clusterfunc</span><span class="o">.</span><span class="n">double</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                    <span class="n">dspf_hub</span><span class="p">,</span> <span class="n">dspf_casing</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_span</span>
+                <span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">,</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="HMeshConfig.pitchwise_grid">
+<a class="viewcode-back" href="../../mesh.html#turbigen.hmesh.HMeshConfig.pitchwise_grid">[docs]</a>
+    <span class="k">def</span> <span class="nf">pitchwise_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">drt_row</span><span class="p">,</span> <span class="n">pitch_chord</span><span class="p">,</span> <span class="n">AR_row</span><span class="p">,</span> <span class="n">resample</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Evaluate a pitchwise grid vector given surface spacing.&quot;&quot;&quot;</span>
+        <span class="n">dm_mid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span> <span class="o">*</span> <span class="n">AR_row</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_merid</span>
+        <span class="n">drt_mid</span> <span class="o">=</span> <span class="n">dm_mid</span> <span class="o">/</span> <span class="n">pitch_chord</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_passage</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Free npts: drt_row=</span><span class="si">{</span><span class="n">drt_row</span><span class="si">}</span><span class="s2">, drt_mid=</span><span class="si">{</span><span class="n">drt_mid</span><span class="si">}</span><span class="s2">, ER=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">ER_pitch</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+        <span class="c1"># x1 = 0.5 * util.cluster_new_free(drt_row * 2.0, drt_mid * 2.0, self.ER_pitch)</span>
+        <span class="c1"># x = np.concatenate((x1[:-1], 1.0 - np.flip(x1)))</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">symmetric</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">drt_row</span><span class="p">,</span> <span class="n">drt_mid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_pitch</span><span class="p">)</span>
+
+        <span class="n">dx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dx</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">resample</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">x</span></div>
+
+
+<div class="viewcode-block" id="HMeshConfig.pitchwise_grid_fixed_npts">
+<a class="viewcode-back" href="../../mesh.html#turbigen.hmesh.HMeshConfig.pitchwise_grid_fixed_npts">[docs]</a>
+    <span class="k">def</span> <span class="nf">pitchwise_grid_fixed_npts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">drt_row</span><span class="p">,</span> <span class="n">pitch_chord</span><span class="p">,</span> <span class="n">AR_row</span><span class="p">,</span> <span class="n">npts</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Evaluate a pitchwise grid vector given surface spacing.&quot;&quot;&quot;</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">symmetric</span><span class="o">.</span><span class="n">fixed</span><span class="p">(</span><span class="n">drt_row</span><span class="p">,</span> <span class="n">npts</span><span class="p">)</span>
+
+        <span class="n">dx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dx</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="n">npts</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="c1"># return x</span>
+
+        <span class="k">return</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">pitchwise_grid_unbladed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">AR_row</span><span class="p">,</span> <span class="n">pitch_chord</span><span class="p">):</span>
+        <span class="c1"># &quot;&quot;&quot;Evaluate a pitchwise grid vector for unbladed row.&quot;&quot;&quot;</span>
+        <span class="n">dm_mid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span> <span class="o">*</span> <span class="n">AR_row</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_merid_unbladed</span>
+        <span class="n">drt_mid</span> <span class="o">=</span> <span class="n">dm_mid</span> <span class="o">/</span> <span class="n">pitch_chord</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_passage</span>
+        <span class="n">nk</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">drt_mid</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">nk</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">streamwise_grid</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pitch_chord</span><span class="p">,</span>
+        <span class="n">nrt</span><span class="p">,</span>
+        <span class="n">L</span><span class="p">,</span>
+        <span class="n">AR_row</span><span class="p">,</span>
+        <span class="n">tte</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">unbladed_row</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">chord_factor</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">ni_chord</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="c1"># &quot;&quot;&quot;Evaluate streamwise grid vector for a blade row.&quot;&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">pitch_chord</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">pitch_chord</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">nrt</span> <span class="o">&gt;</span> <span class="mi">1</span>
+
+        <span class="c1"># Normalised grid spacings at endpoints (normalised by their gap chord)</span>
+        <span class="n">dm_boundary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_stream</span> <span class="o">*</span> <span class="n">pitch_chord</span> <span class="o">/</span> <span class="n">nrt</span>  <span class="c1"># * self.resolution_factor</span>
+
+        <span class="n">dm_mid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span> <span class="o">*</span> <span class="n">AR_row</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_merid</span>
+        <span class="n">dm_mid_unbladed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dspf_mid</span> <span class="o">*</span> <span class="n">AR_row</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">AR_merid_unbladed</span><span class="p">,</span> <span class="mf">0.1</span>
+        <span class="p">)</span>
+        <span class="c1"># dm_upstream_LE_unbladed = dm_TE * pitch_chord[0] / pitch_chord[1]</span>
+        <span class="c1"># dm_downstream_TE_unbladed = dm_TE * pitch_chord[-1] / pitch_chord[1]</span>
+
+        <span class="k">if</span> <span class="n">unbladed_row</span><span class="p">:</span>
+            <span class="n">Lu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="c1"># npts = np.round(Lu / dm_boundary / 0.25).astype(int)</span>
+            <span class="n">npts</span> <span class="o">=</span> <span class="n">Lu</span> <span class="o">/</span> <span class="n">dm_mid_unbladed</span>
+            <span class="n">npts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/=</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">npts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/=</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">npts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">npts</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+
+            <span class="n">t_upstream</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">L</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">npts</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">t_chord</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">npts</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">t_downstream</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">L</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">npts</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="o">+</span> <span class="mf">1.0</span>
+
+            <span class="n">t_upstream</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_upstream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">t_downstream</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_downstream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">t_chord</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_chord</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+
+            <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">t_upstream</span><span class="p">,</span> <span class="n">t_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">t_downstream</span><span class="p">[</span><span class="mi">1</span><span class="p">:]])</span>
+            <span class="n">ile</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_upstream</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">ite</span> <span class="o">=</span> <span class="n">ile</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_chord</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Convert the LE/TE grid spacings from chord-normalised to gap-normalised</span>
+            <span class="n">dm_upstream_LE</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dm_LE</span> <span class="o">*</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">dm_TE</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">tte</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">ni_TE</span>
+            <span class="n">dm_downstream_TE</span> <span class="o">=</span> <span class="n">dm_TE</span> <span class="o">*</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">t_upstream</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span>
+                <span class="n">clusterfunc</span><span class="o">.</span><span class="n">single</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                    <span class="n">dm_upstream_LE</span><span class="p">,</span> <span class="n">dm_boundary</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">L</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_stream</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">L</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Apply chord length adjustment factor</span>
+            <span class="n">dm_LE_adj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dm_LE</span> <span class="o">/</span> <span class="n">chord_factor</span>
+            <span class="n">dm_mid_adj</span> <span class="o">=</span> <span class="n">dm_mid</span> <span class="o">/</span> <span class="n">chord_factor</span>
+            <span class="n">dm_TE_adj</span> <span class="o">=</span> <span class="n">dm_TE</span> <span class="o">/</span> <span class="n">chord_factor</span>
+
+            <span class="n">t_chord</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">double</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                <span class="n">dm_LE_adj</span><span class="p">,</span> <span class="n">dm_TE_adj</span><span class="p">,</span> <span class="n">dm_mid_adj</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_stream</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">tte</span>
+            <span class="p">)</span>
+
+            <span class="n">t_te</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">tte</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ni_TE</span><span class="p">)</span>
+
+            <span class="c1"># free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):</span>
+
+            <span class="n">t_downstream</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">single</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                <span class="n">dm_downstream_TE</span><span class="p">,</span> <span class="n">dm_boundary</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">L</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ER_stream</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">L</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span>
+
+            <span class="c1"># for _ in range(20):</span>
+            <span class="c1">#     try:</span>
+            <span class="c1">#         t_downstream = (</span>
+            <span class="c1">#             util.cluster_one_sided_ER(</span>
+            <span class="c1">#                 dm_downstream_TE / L[1], dm_boundary[-1], self.ER_stream</span>
+            <span class="c1">#             )</span>
+            <span class="c1">#             * L[1]</span>
+            <span class="c1">#         )</span>
+            <span class="c1">#     except ValueError:</span>
+            <span class="c1">#         dm_boundary[-1] *= 0.8</span>
+            <span class="c1">#         continue</span>
+
+            <span class="n">t_upstream</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_upstream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">t_downstream</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_downstream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+            <span class="n">t_te</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_te</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">,</span> <span class="n">mult</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">t_chord</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">t_chord</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolution_factor</span><span class="p">)</span>
+
+            <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">t_upstream</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">t_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">t_te</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">t_downstream</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">]</span>
+            <span class="p">)</span>
+
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="p">(</span><span class="n">dt</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="n">ile</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_upstream</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">ite</span> <span class="o">=</span> <span class="n">ile</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_chord</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_te</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span>
+
+        <span class="k">return</span> <span class="n">t</span><span class="p">,</span> <span class="n">ile</span><span class="p">,</span> <span class="n">ite</span>
+
+    <span class="k">def</span> <span class="nf">pitchwise_relaxation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream_frac</span><span class="p">,</span> <span class="n">pitch_chord</span><span class="p">):</span>
+        <span class="c1"># Relax clustering towards a uniform distribution at inlet and exit</span>
+        <span class="n">dt_relax</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">2</span><span class="p">,))</span>
+            <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nchord_relax</span>
+            <span class="o">*</span> <span class="n">pitch_chord</span><span class="p">[</span>
+                <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="p">]</span>
+            <span class="o">/</span> <span class="n">pitch_chord</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">relax_ref</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+        <span class="n">t_ref</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="n">dt_relax</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">dt_relax</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">,</span> <span class="n">t_ref</span><span class="p">,</span> <span class="n">relax_ref</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_theta_limits</span><span class="p">(</span>
+    <span class="n">tq</span><span class="p">,</span> <span class="n">xrt_u</span><span class="p">,</span> <span class="n">xrt_l</span><span class="p">,</span> <span class="n">mlim</span><span class="p">,</span> <span class="n">Theta</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">c</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">Theta_max</span><span class="o">=</span><span class="mf">30.0</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluate pitchwise limits given upper/lower surface section coordinates.&quot;&quot;&quot;</span>
+
+    <span class="c1"># Put geometric leading edge where it should be</span>
+    <span class="c1"># Must handle axial and radial inlets differently</span>
+
+    <span class="c1"># If x varies more than r near LE, is axial, split on min x</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ptp</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">10</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ptp</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="mi">1</span><span class="p">][:</span><span class="mi">10</span><span class="p">]):</span>
+        <span class="n">ind_split</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">iule</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+        <span class="n">ille</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+    <span class="c1"># Otherwise, is radial, split on max r</span>
+    <span class="k">elif</span> <span class="n">xrt_u</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">xrt_u</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="n">ind_split</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">iule</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+        <span class="n">ille</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">ind_split</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">iule</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+        <span class="n">ille</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">])</span>
+
+    <span class="c1"># If the geometric leading edge is on upper surface</span>
+    <span class="c1"># we need to move some points from upper to lower</span>
+    <span class="k">if</span> <span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">][</span><span class="n">iule</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">][</span><span class="n">ille</span><span class="p">]:</span>
+        <span class="n">xrt_l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[:,</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">iule</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">xrt_l</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="n">xrt_u</span> <span class="o">=</span> <span class="n">xrt_u</span><span class="p">[:,</span> <span class="n">iule</span><span class="p">:]</span>
+    <span class="c1"># If the geometric leading edge is on lower surface</span>
+    <span class="c1"># we need to move some points from lower to upper</span>
+    <span class="k">elif</span> <span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">][</span><span class="n">iule</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">][</span><span class="n">ille</span><span class="p">]:</span>
+        <span class="n">xrt_u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">xrt_l</span><span class="p">[:,</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">ille</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">xrt_u</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="n">xrt_l</span> <span class="o">=</span> <span class="n">xrt_l</span><span class="p">[:,</span> <span class="n">ille</span><span class="p">:]</span>
+
+    <span class="c1"># Join the curves together at trailing edge</span>
+    <span class="k">if</span> <span class="n">xrt_u</span><span class="p">[</span><span class="n">ind_split</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">xrt_l</span><span class="p">[</span><span class="n">ind_split</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">():</span>
+        <span class="n">xrt_l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">xrt_l</span><span class="p">,</span> <span class="n">xrt_u</span><span class="p">[:,</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,)]),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">xrt_u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">xrt_u</span><span class="p">,</span> <span class="n">xrt_l</span><span class="p">[:,</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,)]),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># Evaluate normalised meridional distances for each surface</span>
+    <span class="n">m_u</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">cum_arc_length</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+    <span class="n">m_l</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">cum_arc_length</span><span class="p">(</span><span class="n">xrt_l</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+    <span class="n">m_u</span> <span class="o">/=</span> <span class="n">m_u</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">m_l</span> <span class="o">/=</span> <span class="n">m_l</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">m_u</span> <span class="o">=</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">ptp</span><span class="p">(</span><span class="n">mlim</span><span class="p">)</span> <span class="o">*</span> <span class="n">m_u</span>
+    <span class="n">m_l</span> <span class="o">=</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">ptp</span><span class="p">(</span><span class="n">mlim</span><span class="p">)</span> <span class="o">*</span> <span class="n">m_l</span>
+
+    <span class="c1"># Interpolate the pitchwise limits</span>
+    <span class="c1"># Values outside unit interval constant at boundary values</span>
+    <span class="n">theta_u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">tq</span><span class="p">,</span> <span class="n">m_u</span><span class="p">,</span> <span class="n">xrt_u</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+    <span class="n">theta_l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">tq</span><span class="p">,</span> <span class="n">m_l</span><span class="p">,</span> <span class="n">xrt_l</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="c1"># Look for any turning points in last 5% chord</span>
+    <span class="c1"># These correspond to TE corner</span>
+    <span class="n">dtheta_u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">theta_u</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">dtheta_l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">theta_l</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">ind_l_up</span><span class="p">,</span> <span class="n">ind_l_dn</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">zero_crossings</span><span class="p">(</span><span class="n">dtheta_l</span><span class="p">)</span>
+    <span class="n">ind_u_up</span><span class="p">,</span> <span class="n">ind_u_dn</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">zero_crossings</span><span class="p">(</span><span class="n">dtheta_u</span><span class="p">)</span>
+    <span class="n">ind_l_te</span> <span class="o">=</span> <span class="n">ind_l_up</span><span class="p">[</span><span class="n">tq</span><span class="p">[</span><span class="n">ind_l_up</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.2</span><span class="p">]</span>
+    <span class="n">ind_u_te</span> <span class="o">=</span> <span class="n">ind_u_dn</span><span class="p">[</span><span class="n">tq</span><span class="p">[</span><span class="n">ind_u_dn</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.2</span><span class="p">]</span>
+
+    <span class="c1"># If the process for setting tte does not work, then</span>
+    <span class="c1"># arbitrarily cluster grid over last 1.0% chord</span>
+    <span class="c1"># tte = mlim[1] -0.005</span>
+    <span class="n">tte</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">ind_l_te</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># print(f&#39;TE on lower at {ind_l_te[0]}&#39;)</span>
+        <span class="n">tte</span> <span class="o">=</span> <span class="n">tq</span><span class="p">[</span><span class="n">ind_l_te</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="k">elif</span> <span class="n">ind_u_te</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># print(f&#39;TE on upper at {ind_u_te[0]}&#39;)</span>
+        <span class="n">tte</span> <span class="o">=</span> <span class="n">tq</span><span class="p">[</span><span class="n">ind_u_te</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">tte</span> <span class="o">=</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.01</span>
+
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">theta_u</span> <span class="o">&lt;</span> <span class="n">theta_l</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Blade is thicker than calculated pitch!&quot;</span><span class="p">)</span>
+
+    <span class="n">r_u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">tq</span><span class="p">,</span> <span class="n">m_u</span><span class="p">,</span> <span class="n">xrt_u</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">r_l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">tq</span><span class="p">,</span> <span class="n">m_l</span><span class="p">,</span> <span class="n">xrt_l</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">rref</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">r_u</span> <span class="o">+</span> <span class="n">r_l</span><span class="p">)</span>
+
+    <span class="c1"># Skew the mesh upstream of LE and downstream of TE</span>
+    <span class="n">dtheta_skew</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta_u</span><span class="p">)</span>
+    <span class="n">ind_up</span> <span class="o">=</span> <span class="n">tq</span> <span class="o">&lt;</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ind_dn</span> <span class="o">=</span> <span class="n">tq</span> <span class="o">&gt;</span> <span class="n">mlim</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">Theta_now</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">Theta</span><span class="p">,</span> <span class="o">-</span><span class="n">Theta_max</span><span class="p">,</span> <span class="n">Theta_max</span><span class="p">)</span>
+    <span class="n">tanTheta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Theta_now</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">ind_up</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="n">dtheta_skew</span><span class="p">[</span><span class="n">ind_up</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tanTheta</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">util</span><span class="o">.</span><span class="n">cumtrapz0</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">rref</span><span class="p">[</span><span class="n">ind_up</span><span class="p">],</span> <span class="n">tq</span><span class="p">[</span><span class="n">ind_up</span><span class="p">])</span>
+        <span class="p">)</span>
+        <span class="n">dtheta_skew</span><span class="p">[</span><span class="n">ind_up</span><span class="p">]</span> <span class="o">-=</span> <span class="n">dtheta_skew</span><span class="p">[</span><span class="n">ind_up</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">ind_dn</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="n">dtheta_skew</span><span class="p">[</span><span class="n">ind_dn</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tanTheta</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">util</span><span class="o">.</span><span class="n">cumtrapz0</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">rref</span><span class="p">[</span><span class="n">ind_dn</span><span class="p">],</span> <span class="n">tq</span><span class="p">[</span><span class="n">ind_dn</span><span class="p">])</span>
+        <span class="p">)</span>
+    <span class="n">theta_u</span> <span class="o">+=</span> <span class="n">dtheta_skew</span>
+    <span class="n">theta_l</span> <span class="o">+=</span> <span class="n">dtheta_skew</span>
+
+    <span class="k">return</span> <span class="n">theta_u</span><span class="p">,</span> <span class="n">theta_l</span><span class="p">,</span> <span class="n">tte</span>
+
+
+<div class="viewcode-block" id="make_grid">
+<a class="viewcode-back" href="../../mesh.html#turbigen.hmesh.make_grid">[docs]</a>
+<span class="k">def</span> <span class="nf">make_grid</span><span class="p">(</span><span class="n">mac</span><span class="p">,</span> <span class="n">mesh_config</span><span class="p">,</span> <span class="n">dhub</span><span class="p">,</span> <span class="n">dcas</span><span class="p">,</span> <span class="n">dsurf</span><span class="p">,</span> <span class="n">unbladed</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a Grid object for a machine geometry.&quot;&quot;&quot;</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Generating an H-mesh...&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">dsurf</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">dsurf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">dsurf</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+
+    <span class="c1"># Spanwise grid vector</span>
+    <span class="c1"># From hub/casing spacings and ER</span>
+    <span class="n">span_ref</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">span</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">dspf_hub</span> <span class="o">=</span> <span class="n">dhub</span> <span class="o">/</span> <span class="n">span_ref</span>
+    <span class="n">dspf_casing</span> <span class="o">=</span> <span class="n">dhub</span> <span class="o">/</span> <span class="n">span_ref</span>
+
+    <span class="n">blocks</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Loop over rows</span>
+    <span class="n">nrow</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">Nrow</span>
+    <span class="k">assert</span> <span class="n">dsurf</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">nrow</span><span class="p">)</span>
+    <span class="n">theta_lim</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">irow</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nrow</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;irow=</span><span class="si">{</span><span class="n">irow</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Angular pitch</span>
+        <span class="n">pitch_theta</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">mac</span><span class="o">.</span><span class="n">Nb</span><span class="p">[</span><span class="n">irow</span><span class="p">])</span>
+
+        <span class="c1"># Evaluate xr over a uniform grid</span>
+        <span class="n">mrow</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">irow</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">irow</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">xr_hub</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span><span class="n">mrow</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">xr_cas</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span><span class="n">mrow</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">xr_mid</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span><span class="n">mrow</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+
+        <span class="c1"># Meridional chord lengths at midspan of gaps and aerofoils</span>
+        <span class="n">ist</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">irow</span>
+        <span class="n">ien</span> <span class="o">=</span> <span class="n">ist</span> <span class="o">+</span> <span class="mi">3</span>
+        <span class="n">chord_hub</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">chords</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)[</span><span class="n">ist</span><span class="p">:</span><span class="n">ien</span><span class="p">]</span>
+        <span class="n">chord_mid</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">chords</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)[</span><span class="n">ist</span><span class="p">:</span><span class="n">ien</span><span class="p">]</span>
+        <span class="n">chord_cas</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">chords</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)[</span><span class="n">ist</span><span class="p">:</span><span class="n">ien</span><span class="p">]</span>
+
+        <span class="c1"># Circumferential pitches</span>
+        <span class="n">pitch_rtheta_hub</span> <span class="o">=</span> <span class="n">pitch_theta</span> <span class="o">*</span> <span class="n">xr_hub</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">pitch_rtheta_cas</span> <span class="o">=</span> <span class="n">pitch_theta</span> <span class="o">*</span> <span class="n">xr_cas</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Pitch to chord ratios at hub, mid tip</span>
+        <span class="n">pitch_chord_hub</span> <span class="o">=</span> <span class="n">pitch_rtheta_hub</span> <span class="o">/</span> <span class="n">chord_hub</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">pitch_chord_cas</span> <span class="o">=</span> <span class="n">pitch_rtheta_cas</span> <span class="o">/</span> <span class="n">chord_cas</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">pitch_chord_ref</span> <span class="o">=</span> <span class="n">pitch_theta</span> <span class="o">*</span> <span class="n">xr_mid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">/</span> <span class="n">chord_mid</span>
+
+        <span class="n">pitch_chord_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">pitch_chord_hub</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">pitch_chord_cas</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+        <span class="n">pitch_rtheta_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">pitch_rtheta_hub</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">pitch_rtheta_cas</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+
+        <span class="c1"># Normalised wall distance</span>
+        <span class="n">drt_norm</span> <span class="o">=</span> <span class="n">dsurf</span><span class="p">[:,</span> <span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">/</span> <span class="n">pitch_rtheta_max</span>
+
+        <span class="c1"># Row aspect ratios</span>
+        <span class="n">span_row</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">span</span><span class="p">[</span><span class="n">irow</span> <span class="o">*</span> <span class="mi">2</span> <span class="p">:</span> <span class="p">(</span><span class="n">irow</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)])</span>
+        <span class="n">AR_row</span> <span class="o">=</span> <span class="n">span_row</span> <span class="o">/</span> <span class="n">chord_mid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Nominal pitch fractions first</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">irow</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">nk_not_resampled</span> <span class="o">=</span> <span class="mi">33</span>
+                <span class="n">pitch_frac_nom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">nk_not_resampled</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">pitch_frac_nom</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_grid_unbladed</span><span class="p">(</span>
+                    <span class="n">AR_row</span><span class="p">,</span> <span class="n">pitch_chord_ref</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">safety_fac</span> <span class="o">=</span> <span class="mf">1.01</span>
+            <span class="n">pitch_frac_nom</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_grid</span><span class="p">(</span>
+                <span class="n">drt_norm</span><span class="p">,</span> <span class="n">pitch_chord_max</span> <span class="o">*</span> <span class="n">safety_fac</span><span class="p">,</span> <span class="n">AR_row</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Nominal pitchwise grid: </span><span class="si">{</span><span class="n">drt_norm</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">pitch_chord_max</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">AR_row</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Checking we can recluster&quot;</span><span class="p">)</span>
+            <span class="n">pitch_frac_not_resampled</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_grid</span><span class="p">(</span>
+                <span class="n">drt_norm</span><span class="p">,</span> <span class="n">pitch_chord_max</span> <span class="o">*</span> <span class="n">safety_fac</span><span class="p">,</span> <span class="n">AR_row</span><span class="p">,</span> <span class="n">resample</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+            <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_grid_fixed_npts</span><span class="p">(</span>
+                <span class="n">drt_norm</span><span class="p">,</span> <span class="n">pitch_chord_max</span><span class="p">,</span> <span class="n">AR_row</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pitch_frac_not_resampled</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">nk_not_resampled</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pitch_frac_not_resampled</span><span class="p">)</span>
+        <span class="n">nk</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pitch_frac_nom</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;nk=</span><span class="si">{</span><span class="n">nk</span><span class="si">}</span><span class="s2">, nk_not_resampled=</span><span class="si">{</span><span class="n">nk_not_resampled</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Spanwise grid</span>
+        <span class="n">tip_ref</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">mac</span><span class="o">.</span><span class="n">tip</span><span class="p">)</span>
+        <span class="n">span_frac</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">spanwise_grid</span><span class="p">(</span><span class="n">dspf_hub</span><span class="p">,</span> <span class="n">dspf_casing</span><span class="p">,</span> <span class="n">tip_ref</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">slip_annulus</span><span class="p">:</span>
+            <span class="n">dspf</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">dspf_mid</span>
+            <span class="n">span_frac</span> <span class="o">=</span> <span class="n">clusterfunc</span><span class="o">.</span><span class="n">symmetric</span><span class="o">.</span><span class="n">free</span><span class="p">(</span>
+                <span class="n">dspf</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">dspf</span><span class="p">,</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">ER_span</span>
+            <span class="p">)</span>
+
+        <span class="n">nj</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">span_frac</span><span class="p">)</span>
+
+        <span class="c1"># Streamwise grid</span>
+        <span class="c1"># From LE/TE/bcond spacings and ER</span>
+        <span class="c1"># Choose how long to make the inlet/exit</span>
+        <span class="k">if</span> <span class="n">nrow</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">irow</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">irow</span> <span class="o">==</span> <span class="p">(</span><span class="n">nrow</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+
+        <span class="c1"># Generate initial streamwise grid vector at midspan</span>
+        <span class="c1"># This fixes number of points and roughly distributes points</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="n">tte</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">dm_TE</span><span class="p">:</span>
+            <span class="n">tte</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">dm_TE</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">xrt_u</span><span class="p">,</span> <span class="n">xrt_l</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">evaluate_section</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+            <span class="n">mlim_now</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">tq</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">tte</span> <span class="o">=</span> <span class="n">_theta_limits</span><span class="p">(</span><span class="n">tq</span><span class="p">,</span> <span class="n">xrt_u</span><span class="p">,</span> <span class="n">xrt_l</span><span class="p">,</span> <span class="n">mlim_now</span><span class="p">)</span>
+
+        <span class="c1"># Streamwise grid</span>
+        <span class="n">stream_frac</span><span class="p">,</span> <span class="n">ile</span><span class="p">,</span> <span class="n">ite</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">streamwise_grid</span><span class="p">(</span>
+            <span class="n">pitch_chord_ref</span><span class="p">,</span>
+            <span class="n">nk_not_resampled</span><span class="p">,</span>
+            <span class="n">L</span><span class="p">,</span>
+            <span class="n">AR_row</span><span class="p">,</span>
+            <span class="n">tte</span><span class="p">,</span>
+            <span class="n">unbladed_row</span><span class="o">=</span><span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">],</span>
+        <span class="p">)</span>
+
+        <span class="c1"># # Apply some warping to the hub and casing stream fractions</span>
+        <span class="c1"># mov = mesh_config.warp_stream</span>
+        <span class="c1"># delta_hub = np.interp(</span>
+        <span class="c1">#     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, mov, 0.0]</span>
+        <span class="c1"># )</span>
+        <span class="c1"># delta_cas = np.interp(</span>
+        <span class="c1">#     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, -mov, 0.0]</span>
+        <span class="c1"># )</span>
+
+        <span class="n">stream_frac_hub</span> <span class="o">=</span> <span class="n">stream_frac</span>  <span class="c1"># + delta_hub</span>
+        <span class="n">stream_frac_cas</span> <span class="o">=</span> <span class="n">stream_frac</span>  <span class="c1"># + delta_cas</span>
+
+        <span class="c1"># import matplotlib.pyplot as plt</span>
+        <span class="c1"># fig, ax = plt.subplots()</span>
+        <span class="c1"># ax.plot(stream_frac)</span>
+        <span class="c1"># ax.plot(stream_frac_hub)</span>
+        <span class="c1"># ax.plot(stream_frac_cas)</span>
+        <span class="c1"># plt.savefig(&#39;beans.pdf&#39;)</span>
+        <span class="c1"># quit()</span>
+
+        <span class="n">ni</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">)</span>
+
+        <span class="c1"># No repeated grid points</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">))</span> <span class="o">==</span> <span class="n">ni</span>
+
+        <span class="c1"># Grid points should monotonically increase</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="n">spfr</span> <span class="o">=</span> <span class="n">span_frac</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">stream_frac_span</span> <span class="o">=</span> <span class="n">stream_frac_cas</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+            <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span>
+        <span class="p">)</span> <span class="o">*</span> <span class="n">spfr</span> <span class="o">+</span> <span class="n">stream_frac_hub</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">spfr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nj</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+                <span class="n">mlim_now</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">mlim_now</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">_get_mlim</span><span class="p">(</span><span class="n">span_frac</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+            <span class="n">stream_frac_span</span><span class="p">[:,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span>
+                <span class="n">stream_frac_span</span><span class="p">[:,</span> <span class="n">j</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">mlim_now</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">mlim_now</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">2</span><span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="n">xr</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span><span class="n">stream_frac_span</span> <span class="o">+</span> <span class="n">ist</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">spfr</span><span class="p">)</span>
+
+        <span class="c1"># Relax the pitchwise clustering away from LE and TE</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="n">relax</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">relax</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_relaxation</span><span class="p">(</span>
+                <span class="n">stream_frac</span><span class="p">,</span> <span class="n">pitch_chord_ref</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">uniform</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">nk</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">relax</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">relax</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="n">pitch_frac_clust</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">ni</span><span class="p">,</span> <span class="n">nj</span><span class="p">,</span> <span class="n">nk</span><span class="p">))</span>
+
+        <span class="c1"># Get skew angles</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">Theta</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">get_chi</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+
+        <span class="c1"># Loop over spans and get the angular limits from blade section</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">theta_lim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">theta_lim_old</span> <span class="o">=</span> <span class="n">theta_lim</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">theta_lim_old</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="n">ni</span><span class="p">,</span> <span class="n">nj</span><span class="p">))</span>
+                <span class="n">Nb</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">Nb</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span>
+                <span class="n">dtheta</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">Nb</span><span class="p">)</span>
+                <span class="n">theta_lim_old</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">dtheta</span> <span class="o">/</span> <span class="mf">2.0</span>
+                <span class="n">theta_lim_old</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">+</span><span class="n">dtheta</span> <span class="o">/</span> <span class="mf">2.0</span>
+                <span class="n">Theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,))</span>
+                <span class="c1"># raise Exception(</span>
+                <span class="c1">#     &quot;No theta limits from previous row to set unbladed row pitch&quot;</span>
+                <span class="c1"># )</span>
+            <span class="n">theta_lim</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="n">ni</span><span class="p">,</span> <span class="n">nj</span><span class="p">))</span>
+
+            <span class="c1"># Get skew angle from previous blade row</span>
+            <span class="n">Theta_unbladed</span> <span class="o">=</span> <span class="n">Theta</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">Theta_unbladed</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Theta unbladed </span><span class="si">{</span><span class="n">Theta_unbladed</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">Theta_max</span> <span class="o">=</span> <span class="mf">30.0</span>
+            <span class="n">Theta_now</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">Theta_unbladed</span><span class="p">,</span> <span class="o">-</span><span class="n">Theta_max</span><span class="p">,</span> <span class="n">Theta_max</span><span class="p">)</span>
+            <span class="n">tanTheta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">Theta_now</span><span class="p">))</span>
+
+            <span class="c1"># Skew the mesh upstream of LE and downstream of TE</span>
+            <span class="n">ind_up</span> <span class="o">=</span> <span class="n">stream_frac</span> <span class="o">&lt;</span> <span class="mf">0.0</span>
+            <span class="n">ind_dn</span> <span class="o">=</span> <span class="n">stream_frac</span> <span class="o">&gt;</span> <span class="mf">1.0</span>
+            <span class="n">ind_mid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">stream_frac</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">stream_frac</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nj</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ni</span><span class="p">):</span>
+                    <span class="n">pitch_frac_clust</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">pitch_frac_nom</span>
+
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">tlimold_now</span> <span class="o">:=</span> <span class="n">theta_lim_old</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]):</span>
+                    <span class="n">theta_lim</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">tlimold_now</span>
+
+                <span class="n">dtheta_skew</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">)</span>
+                <span class="n">chord_fac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">stream_frac</span><span class="p">)</span>
+                <span class="n">chord_fac</span><span class="p">[</span><span class="n">ind_up</span><span class="p">]</span> <span class="o">*=</span> <span class="n">chord_mid</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">chord_fac</span><span class="p">[</span><span class="n">ind_mid</span><span class="p">]</span> <span class="o">*=</span> <span class="n">chord_mid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">chord_fac</span><span class="p">[</span><span class="n">ind_dn</span><span class="p">]</span> <span class="o">*=</span> <span class="n">chord_mid</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+                <span class="c1"># # Retrieve exit angle from previous blade row</span>
+                <span class="c1"># try:</span>
+                <span class="n">dtheta_skew</span> <span class="o">=</span> <span class="n">tanTheta</span> <span class="o">*</span> <span class="n">util</span><span class="o">.</span><span class="n">cumtrapz0</span><span class="p">(</span>
+                    <span class="n">chord_fac</span> <span class="o">/</span> <span class="n">xr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="p">:,</span> <span class="n">j</span><span class="p">],</span> <span class="n">stream_frac</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">dtheta_skew</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;dtheta_skew not finite&quot;</span><span class="p">)</span>
+                <span class="n">theta_lim</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">dtheta_skew</span>
+
+            <span class="c1"># except:</span>
+            <span class="c1">#     pass</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">theta_lim</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="n">ni</span><span class="p">,</span> <span class="n">nj</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">recluster</span><span class="p">:</span>
+                <span class="n">pitch_frac_clust</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span>
+                    <span class="n">pitch_frac_nom</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">ni</span><span class="p">,</span> <span class="n">nj</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nj</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ni</span><span class="p">):</span>
+                        <span class="n">rt_pitch_now</span> <span class="o">=</span> <span class="n">xr</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">pitch_theta</span>
+                        <span class="c1"># Determine position along blade</span>
+                        <span class="n">mlim_now</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">_get_mlim</span><span class="p">(</span><span class="n">span_frac</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+                        <span class="n">mclip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">stream_frac_span</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">mlim_now</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+                        <span class="n">mfrac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">mclip</span><span class="p">,</span> <span class="n">mclip</span><span class="p">])</span>
+                        <span class="n">drt_norm_now</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dsurf</span><span class="p">[:,</span> <span class="n">irow</span><span class="p">]</span> <span class="o">*</span> <span class="n">mfrac</span><span class="p">)</span> <span class="o">/</span> <span class="n">rt_pitch_now</span>
+
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">pitch_frac_clust</span><span class="p">[</span>
+                                <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span> <span class="o">=</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">pitchwise_grid_fixed_npts</span><span class="p">(</span>
+                                <span class="n">drt_norm_now</span><span class="p">,</span>
+                                <span class="n">pitch_chord_ref</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                <span class="n">AR_row</span><span class="p">,</span>
+                                <span class="n">nk_not_resampled</span><span class="p">,</span>
+                            <span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">&quot;Failed to recluster: </span><span class="si">{</span><span class="n">drt_norm_now</span><span class="si">}</span><span class="s2">,&quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">pitch_chord_ref</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">AR_row</span><span class="si">}</span><span class="s2">&quot;</span>
+                            <span class="p">)</span>
+
+                <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">pitch_frac_clust</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+                <span class="c1"># Smooth the pitch fraction in i and j directions</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+                    <span class="n">pitch_frac_clust</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span>
+                        <span class="n">pitch_frac_clust</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+                        <span class="o">+</span> <span class="n">pitch_frac_clust</span><span class="p">[</span><span class="mi">2</span><span class="p">:,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+                        <span class="o">+</span> <span class="n">pitch_frac_clust</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="p">:]</span>
+                        <span class="o">+</span> <span class="n">pitch_frac_clust</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">:,</span> <span class="p">:]</span>
+                    <span class="p">)</span>
+
+                <span class="k">assert</span> <span class="p">(</span><span class="n">pitch_frac_clust</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="k">assert</span> <span class="p">(</span><span class="n">pitch_frac_clust</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nj</span><span class="p">):</span>
+                <span class="n">xrt_u</span><span class="p">,</span> <span class="n">xrt_l</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">evaluate_section</span><span class="p">(</span><span class="n">span_frac</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+
+                <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">xrt_u</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">xrt_l</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+                <span class="n">xrt_u_rep</span> <span class="o">=</span> <span class="n">xrt_u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrt_u_rep</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">20.0</span>
+                <span class="n">xrt_l_rep</span> <span class="o">=</span> <span class="n">xrt_l</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrt_l_rep</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">20.0</span>
+
+                <span class="n">xrrt_u_rep</span> <span class="o">=</span> <span class="n">xrt_u_rep</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrrt_u_rep</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="n">xrrt_u_rep</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">xrrt_l_rep</span> <span class="o">=</span> <span class="n">xrt_l_rep</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrrt_l_rep</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="n">xrrt_l_rep</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">xrrt_u</span> <span class="o">=</span> <span class="n">xrt_u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrrt_u</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="n">xrrt_u</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">xrrt_l</span> <span class="o">=</span> <span class="n">xrt_l</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">xrrt_l</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="n">xrrt_l</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="c1"># Get tte of current section and warp the streamwise grid</span>
+                <span class="c1"># vector to locate trailing edge exactly</span>
+                <span class="n">mlim_now</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">bld</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">_get_mlim</span><span class="p">(</span><span class="n">span_frac</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+
+                <span class="n">stream_frac_now</span> <span class="o">=</span> <span class="n">stream_frac_span</span><span class="p">[:,</span> <span class="n">j</span><span class="p">]</span>
+                <span class="n">xr</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">ann</span><span class="o">.</span><span class="n">evaluate_xr</span><span class="p">(</span>
+                    <span class="n">stream_frac_now</span> <span class="o">+</span> <span class="n">ist</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">span_frac</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+                <span class="p">)</span>
+
+                <span class="n">theta_lim</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">_theta_limits</span><span class="p">(</span>
+                    <span class="n">stream_frac_now</span><span class="p">,</span>
+                    <span class="n">xrt_u</span><span class="p">,</span>
+                    <span class="n">xrt_l</span><span class="p">,</span>
+                    <span class="n">mlim_now</span><span class="p">,</span>
+                    <span class="n">Theta</span><span class="p">,</span>
+                    <span class="n">chord_mid</span><span class="p">[</span>
+                        <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+                    <span class="p">],</span>
+                    <span class="n">Theta_max</span><span class="o">=</span><span class="n">mesh_config</span><span class="o">.</span><span class="n">skew_max</span><span class="p">,</span>
+                <span class="p">)[:</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">xr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">pitch_frac_clust</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">theta_lim</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="c1"># pitch_frac_relax = (1.0 - relax) * pitch_frac + relax * uniform</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">relax</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">uniform</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="n">pitch_frac_relax</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">relax</span><span class="p">)</span> <span class="o">*</span> <span class="n">pitch_frac_clust</span> <span class="o">+</span> <span class="n">relax</span> <span class="o">*</span> <span class="n">uniform</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">pitch_frac_relax</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">pitch_frac_relax</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="n">pitch_frac_relax</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="c1"># Pinch the tip</span>
+        <span class="k">if</span> <span class="n">mac</span><span class="o">.</span><span class="n">tip</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="n">theta_mid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">theta_lim</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">tau</span> <span class="o">=</span> <span class="n">mac</span><span class="o">.</span><span class="n">tip</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span>
+            <span class="n">pinch_frac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span>
+                <span class="n">span_frac</span><span class="p">,</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">-</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">tau</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.6</span> <span class="o">*</span> <span class="n">tau</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">theta_lim</span> <span class="o">=</span> <span class="n">pinch_frac</span> <span class="o">*</span> <span class="n">theta_mid</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">pinch_frac</span><span class="p">)</span> <span class="o">*</span> <span class="n">theta_lim</span>
+            <span class="n">njtip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pinch_frac</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">njtip</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Convert all matrices to 3d</span>
+        <span class="n">xr3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">xr</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">nk</span><span class="p">))</span>  <span class="c1"># Add pitchwise index</span>
+        <span class="n">pfr3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">pitch_frac_relax</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>  <span class="c1"># Add coord index</span>
+        <span class="n">theta_lim3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">theta_lim</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>  <span class="c1"># Add pitchwise index</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">theta_lim3</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="c1"># Evaluate the angular coordinates and assemble</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span>
+            <span class="n">pfr3</span>
+            <span class="o">*</span> <span class="n">theta_lim3</span><span class="p">[</span>
+                <span class="p">(</span><span class="mi">0</span><span class="p">,),</span>
+            <span class="p">]</span>
+            <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">pfr3</span><span class="p">)</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">theta_lim3</span><span class="p">[</span>
+                    <span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+                <span class="p">]</span>
+                <span class="o">+</span> <span class="n">pitch_theta</span>
+            <span class="p">),</span>
+            <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">pitch_theta</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span>
+                <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">pitch_theta</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-4</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span>
+                <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:</span> <span class="p">(</span><span class="n">ile</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="p">:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:</span> <span class="p">(</span><span class="n">ile</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">],</span>
+                <span class="n">pitch_theta</span><span class="p">,</span>
+                <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span>
+                <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ite</span><span class="p">:,</span> <span class="p">:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">theta</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ite</span><span class="p">:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">pitch_theta</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-4</span>
+            <span class="p">)</span>
+
+        <span class="n">xrt_now</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">xr3</span><span class="p">,</span> <span class="n">theta</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Make periodic patches</span>
+        <span class="k">if</span> <span class="n">unbladed</span><span class="p">[</span><span class="n">irow</span><span class="p">]:</span>
+            <span class="n">patches</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;per_k0&quot;</span><span class="p">),</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;per_nk&quot;</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">patches</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ile</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ile</span><span class="p">),</span> <span class="n">k</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="n">ite</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
+                <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="n">ite</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="p">]</span>
+
+        <span class="c1"># Inlet or mixing</span>
+        <span class="k">if</span> <span class="n">irow</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">InletPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">MixingPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+
+        <span class="c1"># Outlet or mixing</span>
+        <span class="k">if</span> <span class="n">irow</span> <span class="o">==</span> <span class="p">(</span><span class="n">nrow</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">OutletPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">MixingPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Tip gap</span>
+        <span class="k">if</span> <span class="n">njtip</span><span class="p">:</span>
+            <span class="n">patches</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                <span class="p">[</span>
+                    <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="n">ile</span><span class="p">,</span> <span class="n">ite</span><span class="p">),</span> <span class="n">j</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">njtip</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
+                    <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">PeriodicPatch</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="p">(</span><span class="n">ile</span><span class="p">,</span> <span class="n">ite</span><span class="p">),</span> <span class="n">j</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">njtip</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">k</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="n">blocks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">BaseBlock</span><span class="o">.</span><span class="n">from_coordinates</span><span class="p">(</span>
+                <span class="n">xrt_now</span><span class="p">,</span> <span class="n">mac</span><span class="o">.</span><span class="n">Nb</span><span class="p">[</span><span class="n">irow</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">),</span> <span class="n">patches</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">mesh_config</span><span class="o">.</span><span class="n">slip_annulus</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">blocks</span><span class="p">:</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">add_patch</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">InviscidPatch</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">add_patch</span><span class="p">(</span><span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">InviscidPatch</span><span class="p">(</span><span class="n">j</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+
+    <span class="n">g</span> <span class="o">=</span> <span class="n">turbigen</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">Grid</span><span class="p">(</span><span class="n">blocks</span><span class="p">)</span>
+
+    <span class="n">g</span><span class="o">.</span><span class="n">match_patches</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">g</span></div>
+
+</pre></div>
+
+          </div>
+
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2024 James Brind.
+
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+
+    </div>
+
+
+
+
+  </body>
+</html>

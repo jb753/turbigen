@@ -80,7 +80,7 @@ class Emb(turbigen.solver.BaseSolver):
     n_step_dt: int = 10
     """Number of time steps between updates of the local time step."""
 
-    n_step_log: int = 100
+    n_step_log: int = 500
     """Number of time steps between log prints."""
 
     n_step_avg: int = 1
@@ -137,7 +137,7 @@ class Emb(turbigen.solver.BaseSolver):
         )
 
     def run(self, grid, machine=None):
-        logger.info(
+        logger.debug(
             f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )
 
@@ -187,26 +187,26 @@ class Emb(turbigen.solver.BaseSolver):
                     block_split[-1].append(b)
 
         t2 = timer()
-        logger.info(f"Elapsed time {t2 - t1:.2f}s")
+        logger.debug(f"Elapsed time {t2 - t1:.2f}s")
 
         if comm:
-            logger.info("Sending data to processors...")
+            logger.debug("Sending data to processors...")
             tst = timer()
             send_slave(block_split, procids, periodics, mixers)
             ten = timer()
-            logger.info(f"Elapsed time {ten - tst:.2f}s")
+            logger.debug(f"Elapsed time {ten - tst:.2f}s")
 
         logger.info("Starting the main time-stepping loop...")
         block_split[0], mixers_out, tpnps, dUlog = run_slave(
             block_split[0], periodics, mixers, nodes
         )
 
-        logger.info("Recieving data from processors...")
+        logger.debug("Recieving data from processors...")
         tst = timer()
         for iproc in range(1, size):
             block_split[iproc] = comm.recv(source=iproc)
         ten = timer()
-        logger.info(f"Elapsed time {ten - tst:.2f}s")
+        logger.debug(f"Elapsed time {ten - tst:.2f}s")
 
         blocks_out = []
         for bsi in block_split:
@@ -218,7 +218,7 @@ class Emb(turbigen.solver.BaseSolver):
         # Write the conserved vars to an npz
         if conf.workdir:
             os.makedirs(conf.workdir, exist_ok=True)
-            logger.info(f"Writing output to {soln_path}")
+            logger.debug(f"Writing output to {soln_path}")
             dat_out = {
                 f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
                 for ib, b in enumerate(blocks_out)
@@ -271,8 +271,9 @@ class Emb(turbigen.solver.BaseSolver):
 
         if not mdot_out == 0.0:
             merr = mdot_in / mdot_out - 1.0
-            logger.info(f"mdot_in={mdot_in:3}, mdot_out={mdot_out:3}")
-            logger.info(f"Mass flow error: {merr * 100.0:.1f}%")
+            logger.info(
+                f"mdot_in/out={mdot_in:.3g}/{mdot_out:.3g}, err={merr * 100.0:.1f}%"
+            )
         else:
             merr = -1.0
 
@@ -949,13 +950,13 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
     # Now integrate forward
     istep_avg = conf.n_step - conf.n_step_avg
 
-    logger.info(f"Memory usage on rank {rank}: {get_memory_usage():.0f}MB")
+    logger.debug(f"Memory usage on rank {rank}: {get_memory_usage():.0f}MB")
 
     # Allocate working vars
     for iblock in range(nblock):
         blocks[iblock].setup_temporary()
 
-    logger.info(
+    logger.debug(
         f"After allocation Memory usage on rank {rank}: {get_memory_usage():.0f}MB"
     )
 
