@@ -10,6 +10,8 @@ usage instructions, descriptions of the theory involved, and listings of configu
    :maxdepth: 2
    :caption: Contents:
 
+   quickstart
+   nomenclature
    examples/index
 
 Indices and tables

@@ -17,7 +17,7 @@ make reinstall ::
 	source setup.sh
 
 doc-dev ::
-	sphinx-autobuild doc doc/_build --watch=turbigen --watch=doc
+	sphinx-autobuild doc doc/_build --watch=src --watch=doc
 
 doc ::
 	sphinx-build -W doc doc/_build
