@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 import logging
@@ -48,9 +49,22 @@ def run_example(input_yaml):
 
     # Convert pdf to svg
     post_pdf = workdir / "post.pdf"
-    post_svg = workdir / "post_%d.svg"
+    post_svg = workdir / f"{input_yaml.name}_post_%d.svg"
     print(f"Converting {post_pdf} to {post_svg}")
-    subprocess.run(["pdf2svg", str(post_pdf), str(post_svg)])
+    subprocess.run(["pdf2svg", str(post_pdf), str(post_svg) ,'all'])
+
+    # List the images in the workdir
+    images = sorted(workdir.glob("*_post_*.svg"))
+
+    # Copy the images to the output directory
+    for image in images:
+        # Copy the image to the output directory
+        shutil.copy(image, OUTPUT_DIR)
+
+    # Assemble the images into a single string
+    images_str = "\n".join(
+        [f".. image:: {image.name}\n   :width: 100%\n" for image in images]
+    )
 
     # Now assemble an rst file
     rst = f"""{"=" * len(title)}
@@ -70,6 +84,11 @@ Log output
 .. code-block:: none
 
 {log_indented}
+
+Plots
+=====
+
+{images_str}
 
 """
 

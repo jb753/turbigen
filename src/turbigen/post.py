@@ -130,7 +130,7 @@ class Metadata(BasePost):
         ax.set_ylim(0, 1)
         ax.axis("off")
         left = 0.05
-        ax.title("Metadata:")
+        ax.set_title("Metadata:")
         ax.text(left, 0.95, f"workdir={str(config.workdir)}")
         pdf.savefig()
         plt.close()
