@@ -52,7 +52,7 @@ def get_isen_mach(
     # Isentropic from inlet entropy to local static
     Cs = C.copy().set_P_s(C.P, s1)
     hs = Cs.h
-    ho = C.ho
+    ho = C.ho_rel
     # Ensure ho > hs
     dh = ho - hs
     hs += np.min(dh)

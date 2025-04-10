@@ -101,6 +101,7 @@ class DiffusionFactor(IteratorConfig):
 
         # Loop over the rows we want to match
         for irow, DF_target in self.target.items():
+            print(f"Row {irow}, target DF={DF_target}")
             # Calculate the diffusion factor from CFD
             _, Mas = util_post.get_isen_mach(
                 config.grid,

@@ -23,7 +23,7 @@ class BladeDesigner:
     q_camber: np.ndarray
     """Camber design variables (nsect, nqcamber)"""
 
-    camber_type: turbigen.camber.BaseCamber = "quartic"
+    camber_type: turbigen.camber.BaseCamber = "quadratic"
     """Which method to generate the camber line."""
 
     thick_type: turbigen.thickness.BaseThickness = "taylor"

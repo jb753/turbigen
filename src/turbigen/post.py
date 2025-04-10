@@ -6,6 +6,13 @@ import numpy as np
 from turbigen import util
 import matplotlib.pyplot as plt
 
+logger = util.make_logger()
+
+LABELS = {
+    "Mas": r"Isentropic Mach Number, $\mathit{Ma}_s$",
+    "Ys": "Entropy Loss Coefficient, $Y_s$",
+}
+
 
 @dataclasses.dataclass
 class BasePost(ABC):
@@ -134,3 +141,135 @@ class Metadata(BasePost):
         ax.text(left, 0.95, f"workdir={str(config.workdir)}")
         pdf.savefig()
         plt.close()
+
+
+def calculate_nondim(C, ml, vname):
+    """Calculate a non-dimensional varaiable over a cut.
+
+    Parameters
+    ----------
+    C : FlowField object
+        The cut to evaluate.
+    ml : MeanLine object
+        A single-row meanline object used to provide reference values.
+    vname: str
+        String indicating which variable to calculate.
+
+    Returns
+    -------
+    y : ndarray
+        The non-dimensional variable.
+    ylabel : str
+        Label for the y-axis.
+
+    """
+
+    # Isentropic from inlet entropy to local static
+    Cs = C.copy().set_P_s(C.P, ml.s[0])
+    hs = Cs.h
+    ho = C.ho_rel
+
+    # Ensure ho > hs
+    dh = ho - hs
+    hs += np.min(dh)
+
+    # Evaluate velocity and Mach
+    Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
+    Mas = Vs / C.a
+
+    is_compressor = ml.P[1] > ml.P[0]
+
+    if is_compressor:
+        Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[0]
+    else:
+        Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[1]
+
+    if vname == "Mas":
+        return Mas
+    elif vname == "Ys":
+        return Ys
+    elif vname == "Ma_rel":
+        return C.Ma_rel
+    else:
+        raise ValueError(f"Unknown variable {vname} requested.")
+
+
+@dataclasses.dataclass
+class SurfaceDistribution(BasePost):
+    variable: str = "Mas"
+    """Which variable to plot."""
+
+    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    """Mapping of row index to span fraction(s) to plot."""
+
+    offset: int = 0
+    """How many points away from the wall."""
+
+    def post(self, config, pdf):
+        """Plot distribution of a quantity around blade surface."""
+
+        # Default to plotting on the designed sections
+        if not (spf := self.spf):
+            spf = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
+
+        # Loop over rows
+        for irow, spfrow in spf.items():
+            if not spfrow:
+                continue
+
+            # Setup figure
+            _, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"Row {irow}")
+            ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
+            ax.set_xlim((0.0, 1.0))
+
+            label = LABELS.get(self.variable, self.variable)
+            ax.set_ylabel(label)
+
+            # Cut the entire blade
+            C = config.grid.cut_blade_surfs(self.offset)[irow][0]
+
+            # Loop over span fractions
+            for spfi in spfrow:
+                # Slice at required span fractions
+                xrc = config.annulus.get_span_curve(spfi)
+                Ci = C.meridional_slice(xrc)
+
+                # Get the variable
+                y = calculate_nondim(
+                    Ci, config.mean_line.actual.get_row(irow), self.variable
+                )
+
+                # Extract surface distance and normalise
+                zeta_stag = Ci.zeta_stag
+                # Shift zeta=0 to minimum Mas
+                if self.variable == "Mas":
+                    zeta_stag -= zeta_stag[np.argmin(y)]
+                # Calculate maximum zeta only on main blade
+                zeta_max = zeta_stag.max(axis=0)
+                zeta_min = np.abs(zeta_stag.min(axis=0))
+                zeta_norm = zeta_stag.copy()
+                zeta_norm[zeta_norm < 0.0] /= zeta_min
+                zeta_norm[zeta_norm > 0.0] /= zeta_max
+
+                ax.plot(
+                    np.abs(zeta_norm),
+                    y,
+                    label=f"spf={spfi}",
+                    linestyle="-",
+                    marker="",
+                )
+
+            # Finish this row
+            pdf.savefig()
+            plt.close()
+        #
+        # _, ax = plt.subplots(layout="constrained")
+        # ax.set_xlim(0, 1)
+        # ax.set_ylim(0, 1)
+        # ax.axis("off")
+        # left = 0.05
+        # ax.set_title("Metadata:")
+        # ax.text(left, 0.95, f"workdir={str(config.workdir)}")
+        # pdf.savefig()
+        # plt.close()

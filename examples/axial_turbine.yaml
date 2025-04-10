@@ -1,0 +1,104 @@
+# Axial turbine
+#
+# A single-stage axial turbine with two blade rows.
+
+# New working directory for each invocation
+workdir: runs/*
+plugdir: plug
+
+# Perfect gas inlet reprensentatic of a gas turbine
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  gamma: 1.33
+
+# Set viscosity by vane Reynolds number
+Re_surf: 4e5
+
+# Design variables for an axial turbine
+mean_line:
+  type: axial_turbine
+  # Duty
+  Alpha1: 0.
+  mdot: 500.
+  PR_tt: 1.6
+  rrms: 1.0
+  # Aerodynamics
+  phi2: 0.6
+  Ma2: 0.7
+  DMa3_rel: 0.0
+  zeta: [1.0, 1.0]
+  # Guess of loss
+  Ys: [0, 0]
+
+# Prescribe the dimensional chords
+annulus:
+  type: fixed_axial_chord
+  cx_gap: [0.1, 0.06, 0.1]
+  cx_row: [0.1, 0.1]
+
+# Coarse H-mesh
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+# Define a mid-span section in stator and rotor
+blades:
+    - spf: 0.5
+      q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
+      q_camber: [0., 4., 0.0]
+    - spf: 0.5
+      q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
+      q_camber: [0., 2., 0.0]
+      tip: 0.01
+
+# Circulation coefficient to set blade loadings
+# Note an initial guess that is iteratively updated
+# to reach a target diffusing factor (configured below)
+nblade:
+  - Co: 0.7
+  - Co: 0.7
+
+# Configure the RANS solver
+solver:
+  type: emb
+  n_step: 2000
+  n_step_avg: 500
+  n_step_ramp: 1000
+  damping_factor: 10.
+
+# Configure iterative updates of the geometry
+iterate:
+  # Make the mean-line loss match CFD
+  mean_line:
+    tolerance:
+      Ys: 0.01
+  # Correct for deviation using trailing-edge recamber
+  deviation:
+  # Correct for incidence using leading-edge recamber
+  incidence:
+  # Set diffusion factors of 0.4 in stator, 0.3 in rotor
+  diffusion_factor:
+    target:
+      0: 0.4
+      1: 0.3
+
+# Additional plots to produce
+post_process:
+  # Loss contours at stator and rotor exits
+  contour:
+    coord: m
+    value: [2.1, 4.1]
+    variable: Ys
+
+#     coord: spf
+#     value: .5
+#     variable: Cp
+#     N_passage: 2
+#     step: 0.2
+#     extend: both
+#     lim: [-2.2, 0.2]
+#   plot_pressure_distributions:
+#     row_spf: [[0.5,],[0.5,]]

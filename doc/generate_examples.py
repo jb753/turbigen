@@ -51,7 +51,7 @@ def run_example(input_yaml):
     post_pdf = workdir / "post.pdf"
     post_svg = workdir / f"{input_yaml.name}_post_%d.svg"
     print(f"Converting {post_pdf} to {post_svg}")
-    subprocess.run(["pdf2svg", str(post_pdf), str(post_svg) ,'all'])
+    subprocess.run(["pdf2svg", str(post_pdf), str(post_svg), "all"])
 
     # List the images in the workdir
     images = sorted(workdir.glob("*_post_*.svg"))
@@ -104,9 +104,37 @@ Plots
 
 
 if __name__ == "__main__":
+    # Open hashes file if it exists
+    hashes_file = Path(OUTPUT_DIR) / "hashes.yaml"
+    if hashes_file.exists():
+        with hashes_file.open("r") as f:
+            hashes = yaml.safe_load(f)
+    else:
+        hashes = {}
+
     # Loop over  all examples
     print(f"Running examples from {INPUT_DIR}")
     for example in Path(INPUT_DIR).iterdir():
         if example.suffix == ".yaml":
+            # Take md5 hash of the yaml file
+            md5 = subprocess.run(
+                ["md5sum", str(example)],
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.split()[0]
+
+            # Check if the hash is already in the hashes file
+            print(hashes.get(example.stem))
+            print(md5)
+            if hashes.get(example.stem) == md5:
+                print(f"Skipping {example} (already run)")
+                continue
+            else:
+                hashes[example.stem] = md5
+
             # Run the example
             run_example(example)
+
+    # Save the hashes
+    with hashes_file.open("w") as f:
+        yaml.dump(hashes, f)

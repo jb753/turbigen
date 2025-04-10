@@ -1427,7 +1427,7 @@ def get_subclass_by_name(cls, name):
 
     # If no subclass matches the input name, raise an error
     # and list the available subclasses
-    error_message = f"No subclass of {cls.__name__} matche the input name {name}.\n"
+    error_message = f"No {cls.__name__} named {name}.\n"
     error_message += "Available subclasses are:"
     for subclass in cls.__subclasses__():
         error_message += f"\n{camel_to_snake(subclass.__name__)}"

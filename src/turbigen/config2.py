@@ -3,10 +3,13 @@
 import dataclasses
 import numpy as np
 import pickle
+import sys
+import importlib
 from pathlib import Path
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.meanline2
+from turbigen.post import Metadata
 import turbigen.solver
 import turbigen.iterators
 import turbigen.average
@@ -37,6 +40,9 @@ class TurbigenConfig:
 
     workdir: Path
     """Directory in which to store run data."""
+
+    plugdir: Path
+    """Directory to search for custom plugins."""
 
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
@@ -127,8 +133,9 @@ class TurbigenConfig:
         # Built-in dataclasses method gets us most of the way there
         data = dataclasses.asdict(self)
 
-        # Put workdir into a string
+        # Put work and plug dir into a string
         data["workdir"] = str(data["workdir"])
+        data["plugdir"] = str(data["plugdir"])
 
         # Convert the meanline designer to a dictionary
         data["mean_line"] = self.mean_line.to_dict()
@@ -170,11 +177,36 @@ class TurbigenConfig:
 
         return data
 
+    def find_plugins(self):
+        """Find and load plugins from the plugdir."""
+
+        # Find all python files recursively in the plugdir
+        py_files = list(self.plugdir.rglob("*.py"))
+        for py_file in py_files:
+            logger.debug(f"Loading plugin {py_file}")
+            try:
+                # Get the module name
+                module_name = py_file.stem
+                # Import the module from file
+                spec = importlib.util.spec_from_file_location(
+                    f"turbigen.plugin.{module_name}", py_file
+                )
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[f"turbigen.plugin.{module_name}"] = module
+                spec.loader.exec_module(module)
+            except Exception:
+                logger.debug("Failed to load, skipping")
+
     def __post_init__(self):
         """Convert input basic types to our desired types."""
 
         # Convert workdir str to Path object
         self.workdir = Path(self.workdir).absolute()
+
+        # Convert plugdir str to Path object
+        # And look for plugins
+        self.plugdir = Path(self.plugdir).absolute()
+        self.find_plugins()
 
         # Convert inlet dict to InletConfig object
         self.inlet = util.init_subclass_by_signature(
@@ -261,6 +293,24 @@ class TurbigenConfig:
                 else:
                     posts.append(cls())
             self.post_process = posts
+        else:
+            self.post_process = []
+
+        # Add some default post processors
+        defaults = [
+            turbigen.post.SurfaceDistribution(),
+            turbigen.post.Convergence(),
+            turbigen.post.Metadata(),
+        ]
+        for d in defaults:
+            found = False
+            for p in self.post_process:
+                if isinstance(p, d.__class__):
+                    found = True
+            # If not already in the list, insert it
+            # at the start
+            if not found:
+                self.post_process.insert(0, d)
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
@@ -667,5 +717,5 @@ class TurbigenConfig:
         # Initialise the pdf
         with PdfPages(self.workdir / "post.pdf") as pdf:
             for poster in self.post_process:
-                logger.info(f"Running post function {poster}")
+                logger.debug(f"Running post function {poster}")
                 poster.post(self, pdf)

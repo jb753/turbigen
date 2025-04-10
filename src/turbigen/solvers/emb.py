@@ -92,7 +92,7 @@ class Emb(turbigen.solver.BaseSolver):
     n_loss: int = 10
     """Number of time steps between viscous force updates."""
 
-    nstep_damp: int = 500
+    nstep_damp: int = -1
     """Number of steps to apply damping."""
 
     damping_factor: float = 25.0

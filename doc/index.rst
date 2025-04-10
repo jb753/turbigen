@@ -12,6 +12,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 
    quickstart
    nomenclature
+   tutorial
    examples/index
 
 Indices and tables

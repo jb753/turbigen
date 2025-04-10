@@ -320,6 +320,7 @@ class FixedAxialChord(AnnulusDesigner):
         Beta,
         cx_row,
         cx_gap,
+        nozzle_ratio=1.0,
     ):
         # Check input data
         npt = len(rmid)
