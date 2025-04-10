@@ -132,9 +132,10 @@ class Emb(turbigen.solver.BaseSolver):
 
     def restart(self):
         """Create a copy of the config with more robust settings."""
-        return self.replace(
-            n_step_ramp=0,
-        )
+        return self
+        # return self.replace(
+        # n_step_ramp=0,
+        # )
 
     def run(self, grid, machine=None):
         logger.debug(

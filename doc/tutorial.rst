@@ -184,115 +184,99 @@ following code:
 .. code-block:: python
    :caption: tutorial/fan.py
 
-   import turbigen.flowfield
+   from turbigen.meanline import MeanLineDesigner
    import numpy as np
 
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
+   class Fan(MeanLineDesigner):
+      """Mean-line designer for an axial fan rotor."""
 
-       # Insert code to calculate rrms, A, Omega, Vxrt, states
-       # ...
-       raise NotImplementedError
+      @staticmethod
+      def forward(So1, DPo, mdot, phi, psi, htr, etatt):
+         """Calculate mean-line from inlet and design variables.
 
-       # Return assembled mean-line object
-       return turbigen.flowfield.make_mean_line(
-           rrms,  # Mean radii
-           A,  # Annulus areas
-           Omega,  # Shaft angular velocity
-           Vxrt, # Velocity vectors
-           S  # Thermodynamic states
-       )
+         Parameters
+         ----------
+         So1: float
+               Stagnation state at inlet.
+         DPo: float
+               Stagnation pressure rise across the fan [Pa].
+         mdot: float
+               Mass flow rate through the fan [kg/s].
+         phi: float
+               Flow coefficient.
+         psi: float
+               Loading coefficient.
+         htr: float
+               Hub-to-tip ratio.
+         etatt: float
+               Total-to-total isentropic efficiency.
 
-   def inverse(ml):
-       """Calculate design variables from a mean-line object."""
+         Returns
+         -------
+         rrms: (2,) array
+               Mean radii of the fan at inlet and exit [m].
+         A: (2,) array
+               Annulus areas at inlet and exit [m^2].
+         Omega: float
+               Shaft angular velocity [rad/s].
+         Vxrt: (3, 2) array
+               Velocity vectors at inlet and exit [m/s].
+         S: (2) array of thermodynamic states
+               Static states at inlet and exit.
 
-       # The output should be a dictionary keyed by the args to forward
-       return {
-           'So1': ml.stagnation[0],
-           # 'DPo': ...,
-           # 'mdot': ...,
-           # 'phi': ...,
-           # 'psi': ...,
-           # 'htr': ...,
-           # 'etatt': ...,
-       }
+         """
 
+         # Insert code to calculate rrms, A, Omega, Vxrt, states
+         # ...
+         raise NotImplementedError
+
+         # Return assembled mean-line object
+         return (
+               rrms,  # Mean radii
+               A,  # Annulus areas
+               Omega,  # Shaft angular velocity
+               Vxrt,  # Velocity vectors
+               S,  # Thermodynamic states
+         )
+
+      @staticmethod
+      def backward(mean_line):
+         """Reverse a cascade mean-line to design variables.
+
+         Parameters
+         ----------
+         mean_line: MeanLine
+               A mean-line object specifying the flow in a cascade.
+
+         Returns
+         -------
+         out : dict
+               Dictionary of aerodynamic design variables.
+               The fields have the same meanings as in :func:`forward`.
+
+         """
+
+         # The output should be a dictionary keyed by the args to forward
+         return {
+               # 'DPo': ...,
+               # 'mdot': ...,
+               # 'phi': ...,
+               # 'psi': ...,
+               # 'htr': ...,
+               # 'etatt': ...,
+         }
 
 To integrate our new mean-line design into :program:`turbigen`, we have two
-functions to write: a `forward` function which takes our design variables as
+static methods to write on a new subclass: a `forward` function which takes our design variables as
 inputs and returns the geometry, velocity vectors, and thermodynamic states; and a
 `backward` function that recalculates the design variables from an input
 :py:class:`turbigen.meanline.MeanLine` object. Now that we know what input and
-output data are required, and have the equations for our algorithm, we can start writing the functions. In a new file
-called `fan.py`, copy and paste these definitions:
-
-.. code-block:: python
-   :caption: fan.py
-
-   import turbigen.flowfield
-   import numpy as np
-
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
-
-       # Insert code to calculate rrms, A, Omega, Vxrt, states
-       # ...
-       raise NotImplementedError
-
-       # Return assembled mean-line object
-       return turbigen.flowfield.make_mean_line(
-           rrms,  # Mean radii
-           A,  # Annulus areas
-           Omega,  # Shaft angular velocity
-           Vxrt, # Velocity vectors
-           S  # Thermodynamic states
-       )
-
-   def inverse(ml):
-       """Calculate design variables from a mean-line object."""
-
-       # The output should be a dictionary keyed by the args to forward
-       return {
-           'So1': ml.stagnation[0],
-           # 'DPo': ...,
-           # 'mdot': ...,
-           # 'phi': ...,
-           # 'psi': ...,
-           # 'htr': ...,
-           # 'etatt': ...,
-       }
+output data are required, and have the equations for our algorithm, we can
+start writing the functions.
 
 `So1` is a fluid object that encapsualtes the inlet stagnation thermodynamic state. All
 thermodynamic properties can be accessed as attributes, and there are functions
 to manipulate the state to new values, described fully in :py:mod:`turbigen.fluid` .
-
-We also need a minimal configuration file to test our mean-line functions.
-Create a new `config.yaml` with the following content:
-
-.. code-block:: yaml
-   :caption: config.yaml
-
-   # All files relating to the case are held in a working directory
-   workdir: runs/fan
-
-   # Perfect gas inlet state
-   inlet:
-       Po: 1e5
-       To: 300.
-       cp: 1005.
-       mu: 1.8e-5
-       gamma: 1.4
-
-   # Mean-line design
-   mean_line:
-       type: fan.py  # Path to the mean-line module we are writing
-       # Our chosen design variables (args to forward)
-       DPo: 2000.
-       mdot: 5.
-       phi: 0.5
-       psi: 0.4
-       htr: 0.8
-       etatt: 0.9
 
 At this point, running the config.yaml file through :program:`turbigen`
 generates a `NotImplementedError` because the body of the `forward` function is

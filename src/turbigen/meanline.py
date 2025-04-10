@@ -408,18 +408,11 @@ class AxialTurbine(MeanLineDesigner):
         Tref = mean_line.To[0]
         dhead_ref = 0.5 * mean_line.ao[0] ** 2
         sref = mean_line.s[0]
-        s = mean_line.s[
-            (1, 3),
-        ]
+        s = mean_line.s[(1, 3),]
         Ys = (s - sref) * Tref / dhead_ref
 
         # Calculate axial velocity ratios
-        zeta = (
-            mean_line.Vx[
-                (0, 3),
-            ]
-            / Vx2
-        )
+        zeta = mean_line.Vx[(0, 3),] / Vx2
 
         # Assemble the dict
         out = {

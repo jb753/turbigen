@@ -28,7 +28,7 @@ class Deviation(IteratorConfig):
     """Multiplier on changes to metal angle."""
     tolerance: float = 1.0
     """Permissible error on exit flow angle [deg]."""
-    clip: float = 5.0
+    clip: float = 2.0
     """Maximum change in metal angle per iteration [deg]."""
 
     def check(self, config):

@@ -8,8 +8,7 @@ import importlib
 from pathlib import Path
 import turbigen.fluid
 import turbigen.flowfield
-import turbigen.meanline2
-from turbigen.post import Metadata
+import turbigen.meanline
 import turbigen.solver
 import turbigen.iterators
 import turbigen.average
@@ -47,7 +46,7 @@ class TurbigenConfig:
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
 
-    mean_line: turbigen.meanline2.MeanLineDesigner
+    mean_line: turbigen.meanline.MeanLineDesigner
     """Settings for the mean-line designer."""
 
     annulus: turbigen.annulus.AnnulusDesigner
@@ -215,7 +214,7 @@ class TurbigenConfig:
 
         # Set up the meanline designer
         MeanLineDesigner = util.get_subclass_by_name(
-            turbigen.meanline2.MeanLineDesigner, self.mean_line.pop("type")
+            turbigen.meanline.MeanLineDesigner, self.mean_line.pop("type")
         )
         self.mean_line = MeanLineDesigner(self.mean_line)
 
