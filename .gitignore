@@ -1,5 +1,6 @@
 venv
 tests/back-to-back/*/emb
+doc/examples/*.rst
 tags
 venv/
 dist
