@@ -1852,12 +1852,12 @@ and will cause problems with meshing and solving for the flow field."""
     Po={Pstr} bar,
     To={Tstr} K,
     Ma={Mastr},
-    Vx={Vxstr},
-    Vr={Vrstr},
-    Vt={Vtstr},
-    Vt_rel={Vtrstr},
-    Al={Alstr},
-    Al_rel={Alrstr},
+    Vx={Vxstr} m/s,
+    Vr={Vrstr} m/s,
+    Vt={Vtstr} m/s,
+    Vt_rel={Vtrstr} m/s,
+    Al={Alstr} deg,
+    Al_rel={Alrstr} deg,
     rpm={rpmstr},
     mdot={mstr} kg/s
     )"""

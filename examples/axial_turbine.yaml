@@ -20,17 +20,16 @@ Re_surf: 4e5
 mean_line:
   type: axial_turbine
   # Duty
-  Alpha1: 0.
   mdot: 500.
-  PR_tt: 1.6
   rrms: 1.0
   # Aerodynamics
-  phi2: 0.6
-  Ma2: 0.7
-  DMa3_rel: 0.0
+  psi: 1.0
+  phi2: 0.4
+  Ma2: 0.3
+  fac_Ma3_rel: 1.0
   zeta: [1.0, 1.0]
   # Guess of loss
-  Ys: [0, 0]
+  Ys: [0.02, 0.05]
 
 # Prescribe the dimensional chords
 annulus:
@@ -48,18 +47,18 @@ mesh:
 blades:
     - spf: 0.5
       q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
-      q_camber: [0., 4., 0.0]
+      q_camber: [0., 0., 0.0]
     - spf: 0.5
       q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
-      q_camber: [0., 2., 0.0]
+      q_camber: [0., 0., 0.0]
       tip: 0.01
 
 # Circulation coefficient to set blade loadings
 # Note an initial guess that is iteratively updated
 # to reach a target diffusing factor (configured below)
 nblade:
-  - Co: 0.7
-  - Co: 0.7
+  - Co: 0.6
+  - Co: 0.6
 
 # Configure the RANS solver
 solver:
@@ -67,7 +66,6 @@ solver:
   n_step: 2000
   n_step_avg: 500
   n_step_ramp: 1000
-  damping_factor: 10.
 
 # Configure iterative updates of the geometry
 iterate:
@@ -87,11 +85,23 @@ iterate:
 
 # Additional plots to produce
 post_process:
-  # Loss contours at stator and rotor exits
-  contour:
-    coord: m
-    value: [2.1, 4.1]
-    variable: Ys
+  # Loss at stator and rotor exits
+  # Non-dimensional meridional coordinate m is defined:
+  #   m=0 at inlet
+  #   m=1 at stator LE
+  #   m=2 at stator TE,
+  #   m=3 at rotor LE
+  #   m=4 at rotor TE
+  #   m=5 at exit
+  - contour:
+      coord: m
+      value: [2.05, 4.05]
+      variable: Ys
+  # Mid-span Mach
+  - contour:
+      coord: spf
+      value: 0.5
+      variable: Ma_rel
 
 #     coord: spf
 #     value: .5

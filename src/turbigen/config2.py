@@ -82,7 +82,7 @@ class TurbigenConfig:
 
     mean_line_actual: dict = dataclasses.field(default_factory=dict)
 
-    post_process: dict = dataclasses.field(default_factory=dict)
+    post_process: list = dataclasses.field(default_factory=list)
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
@@ -282,12 +282,20 @@ class TurbigenConfig:
         # Setup the post processors
         if self.post_process:
             posts = []
-            for k, v in self.post_process.items():
+            # post_process is a list of dicts
+            # So that we can have, e.g. multiple 'contour' processors
+            for ip, p in enumerate(self.post_process):
+                # Ensure there is only one key in the dict
+                if len(p) != 1:
+                    raise Exception(
+                        f"Items in post_process list should only have one key, got {list(p.keys())} at index {ip}"
+                    )
+                k = list(p.keys())[0]
                 # Find a subclass for this processor
                 cls = util.get_subclass_by_name(turbigen.post.BasePost, k)
-                if v:
+                if p[k]:
                     # Pass the dictionary to the subclass
-                    posts.append(cls(**v))
+                    posts.append(cls(**p[k]))
                 # Null content implies all defaults
                 else:
                     posts.append(cls())
@@ -380,10 +388,13 @@ class TurbigenConfig:
 
     def get_gaps(self):
         # Get dimensional tip gaps
-        Href = 0.5 * (
-            self.mean_line.nominal.span[::2] + self.mean_line.nominal.span[1::2]
-        )
-        return Href * np.array([b[0].tip for b in self.blades])
+        # Href = 0.5 * (
+        # self.mean_line.nominal.span[::2] + self.mean_line.nominal.span[1::2]
+        # )
+        # return Href * np.array([b[0].tip for b in self.blades])
+
+        # Non-dimensional tip gaps
+        return np.array([b[0].tip for b in self.blades])
 
     def apply_recamber(self):
         # Apply recamber to the blades
@@ -483,6 +494,17 @@ class TurbigenConfig:
         Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
         Alpha1 = self.mean_line.nominal.Alpha[0]
         self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
+
+        # Apply profile if available
+        if self.inlet.spf is not None:
+            logger.info("Applying inlet profile...")
+            self.grid.inlet_patches[0].set_profile(
+                self.inlet.spf,
+                self.inlet.fac_Po,
+                self.inlet.fac_To,
+                self.inlet.dAlpha,
+                self.inlet.dBeta,
+            )
 
         # Outlet boundary condition
         self.grid.apply_outlet(self.mean_line.nominal.P[-1])
@@ -606,6 +628,32 @@ class TurbigenConfig:
                         ]
                     )
 
+        # Additional vars not in nominal
+        for k, v in self.mean_line_actual.items():
+            if k not in self.mean_line.design_vars:
+                if np.isscalar(v):
+                    table.append(
+                        [
+                            k,
+                            "",
+                            f"{self.mean_line_actual[k]:.3g}",
+                            "",
+                            "",
+                        ]
+                    )
+                else:
+                    # Each element of v is a row in the table
+                    for i, vi in enumerate(v):
+                        table.append(
+                            [
+                                f"{k}[{i}]",
+                                "",
+                                f"{self.mean_line_actual[k][i]:.3g}",
+                                "",
+                                "",
+                            ]
+                        )
+
         # Find column widths
         ncol = len(table[0])
         widths = np.array([max(len(str(row[i])) for row in table) for i in range(ncol)])
@@ -620,7 +668,7 @@ class TurbigenConfig:
 
         # Add efficiency row
         table_pad.append(
-            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt / 100.0:.1f}, eta_ts={self.mean_line.actual.eta_ts / 100:.1f}"
+            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt * 100.0:.1f}, eta_ts={self.mean_line.actual.eta_ts * 100:.1f}"
         )
 
         # Join the lines

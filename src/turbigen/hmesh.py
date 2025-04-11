@@ -34,13 +34,13 @@ class H(turbigen.mesh.Mesher):
     ER_span: float = 1.2
     """Expansion ratio of spanwise grid away from hub and casing."""
 
-    dm_LE: float = 0.002
+    dm_LE: float = 0.001
     """Streamwise grid spacing at LE, normalised by meridional chord."""
 
     ni_TE: int = 9
     """Number of streamwise points across trailing edge."""
 
-    dm_TE: float = 0.0
+    dm_TE: float = 0.04
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 

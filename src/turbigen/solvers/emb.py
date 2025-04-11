@@ -132,10 +132,9 @@ class Emb(turbigen.solver.BaseSolver):
 
     def restart(self):
         """Create a copy of the config with more robust settings."""
-        return self
-        # return self.replace(
-        # n_step_ramp=0,
-        # )
+        return self.replace(
+            n_step_ramp=0,
+        )
 
     def run(self, grid, machine=None):
         logger.debug(
@@ -1271,9 +1270,10 @@ class OutletBoundary(Boundary):
         """Use static pressure target to set upstream-running wave."""
 
         # Force to uniform at target pressure
-        dP = self.P_target - self.state.P
-        # P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
-        # dP = self.P_target - P_Aavg
+        # dP = self.P_target - self.state.P
+        # Force to an area-averaged static pressure
+        P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
+        dP = self.P_target - P_Aavg
         dVx = -dP / self.state.rho / self.state.a  # from c2=0
         dc1 = dP - self.state.rho * self.state.a * dVx  # definition of c1
         dc = np.zeros(self.shape + (5, 1))
@@ -1287,15 +1287,27 @@ class InletBoundary(Boundary):
         super().__init__(patch, K)
 
         # Store the target ho, s, flow angles
-        bcond_target = np.array(
-            [
-                patch.state.h,
-                patch.state.s,
-                turbigen.util.tand(patch.Alpha),
-                turbigen.util.tand(patch.Beta),
-            ]
-        )
-        self.bcond_target = np.tile(bcond_target, self.shape + (1,))[..., None]
+        if np.isscalar(patch.Alpha):
+            bcond_target = np.array(
+                [
+                    patch.state.h,
+                    patch.state.s,
+                    turbigen.util.tand(patch.Alpha),
+                    turbigen.util.tand(patch.Beta),
+                ]
+            )
+            self.bcond_target = np.tile(bcond_target, self.shape + (1,))[..., None]
+        else:
+            bcond_target = np.stack(
+                [
+                    patch.state.h,
+                    patch.state.s,
+                    turbigen.util.tand(patch.Alpha),
+                    turbigen.util.tand(patch.Beta),
+                ],
+                axis=-1,
+            )
+            self.bcond_target = bcond_target[..., None]
 
     def slice_inward(self):
         """Index the downstream-running chics (inwards thro inlet)."""

@@ -9,7 +9,7 @@ import turbigen.flowfield
 import turbigen.marching_cubes
 import importlib
 from scipy.spatial import KDTree
-from scipy.interpolate import interpn
+from scipy.interpolate import interpn, interp1d
 from enum import IntEnum
 
 
@@ -1631,6 +1631,47 @@ class InletPatch(Patch):
             raise Exception(f"Unknown inlet forcing type {self.force}")
 
         return fac_ho, fac_Po
+
+    def set_profile(self, spf, fac_Po, fac_To, Alpha, Beta):
+        """Apply a radial variation to the inlet profile.
+
+        Parameters
+        ----------
+        spf : (n,) array
+            Span fraction of some radial stations running 0 to 1.
+        fac_Po : (n,) array
+            Factor multiplying nominal stagnation pressure at each station.
+        fac_To : (n,) array
+            Factor multiplying nominal stagnation temperature at each station.
+        dAlpha : (n,) array
+            Perturbation to inlet swirl angle at each station.
+        dBeta : (n,) array
+            Perturbation to inlet pitch angle at each station.
+
+        """
+
+        # Get span fractions for all patch points
+        C = self.get_cut()
+        rmin = C.r.min()
+        rmax = C.r.max()
+        spfq = (C.r - rmin) / (rmax - rmin)
+
+        # Ensure spf is unit interval and monotonic
+        spf -= spf.min()
+        spf /= spf.max()
+        assert (np.diff(spf) > 0.0).all()
+
+        # Interpolate inlet quantities
+        Poq = np.interp(spfq, spf, fac_Po) * self.state.P
+        Toq = np.interp(spfq, spf, fac_To) * self.state.T
+        dAlphaq = np.interp(spfq, spf, Alpha)
+        dBetaq = np.interp(spfq, spf, Beta)
+
+        # Apply to the patch
+        self.state = self.state.empty(shape=C.shape)
+        self.state.set_P_T(Poq, Toq)
+        self.Alpha = dAlphaq + self.Alpha
+        self.Beta = dBetaq + self.Beta
 
 
 class InviscidPatch(Patch):

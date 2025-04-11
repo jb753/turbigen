@@ -2,7 +2,7 @@
 
 # text.usetex : True
 # font.family : 'Computer Modern Roman'
-backend: agg
+# backend: tkagg
 figure.figsize : 7., 4.0
 # figure.figsize : 5.0, 4.0
 axes.linewidth : 1.5

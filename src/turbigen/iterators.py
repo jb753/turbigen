@@ -101,7 +101,6 @@ class DiffusionFactor(IteratorConfig):
 
         # Loop over the rows we want to match
         for irow, DF_target in self.target.items():
-            print(f"Row {irow}, target DF={DF_target}")
             # Calculate the diffusion factor from CFD
             _, Mas = util_post.get_isen_mach(
                 config.grid,
@@ -118,8 +117,8 @@ class DiffusionFactor(IteratorConfig):
             dNb_rel = np.clip(
                 -self.K * (1.0 - DF_actual / DF_target), -self.clip, self.clip
             )
-            log_data["DF[0]"] = DF_actual
-            log_data["DNb_rel[0]"] = dNb_rel
+            log_data[f"DF[{irow}]"] = DF_actual
+            log_data[f"DNb_rel[{irow}]"] = dNb_rel
 
             # Adjust nblade
             config.nblade[irow].adjust(dNb_rel)
@@ -133,7 +132,7 @@ class DiffusionFactor(IteratorConfig):
 
 @dataclasses.dataclass
 class Incidence(IteratorConfig):
-    relaxation_factor: float = 0.1
+    relaxation_factor: float = 0.05
     """Multiplier on changes to metal angle."""
 
     tolerance: float = 10.0

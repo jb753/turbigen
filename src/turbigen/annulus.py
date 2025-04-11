@@ -373,7 +373,17 @@ class FixedAxialChord(AnnulusDesigner):
             cm = self.chords(0.5)[1::2]
             mq = np.arange(1.5, self.nrow + 1.5)
             span = self.get_span(mq)
-            return f"FixedAxialChord(nrow={self.nrow}, AR={span / cm})"
+            xrhub = self.evaluate_xr(mq, 0.0)
+            xrcas = self.evaluate_xr(mq, 0.0)
+            xrrms = np.sqrt(0.5 * (xrhub**2 + xrcas**2))
+            return (
+                "FixedAxialChord(\n"
+                f"    x={util.format_array(xrrms[1])} m,\n"
+                f"    r_rms={util.format_array(xrrms[1])} m,\n"
+                f"    span={util.format_array(span)} m,\n"
+                f"    AR={util.format_array(span / cm)}\n"
+                ")"
+            )
         except Exception:
             return f"FixedAxialChord()"
 
