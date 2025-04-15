@@ -148,7 +148,7 @@ def main():
             # Just run serially if we cannot import mpi4py
             pass
 
-    # Check that we have a workdir before making a config object
+    # Ensure that the workdir is always set
     # This is because we might want to edit the input file before loading proper
     if not (workdir := d.get("workdir")):
         raise Exception(f"No working directory specified in {args.CONFIG_YAML}")
@@ -157,11 +157,27 @@ def main():
     if "*" in workdir:
         d["workdir"] = workdir = util.next_numbered_dir(workdir)
 
-    workdir = os.path.abspath(workdir)
-
     # Make workdir if needed
+    workdir = os.path.abspath(workdir)
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
+
+    # Set up loud logging initially
+    log_path = os.path.join(workdir , "log_turbigen.txt")
+    log_level = logging.ITER
+    fh = logging.FileHandler(log_path)
+    logger.addHandler(fh)
+    logger.setLevel(level=log_level)
+    fh.setLevel(log_level)
+
+    # Print banner
+    logger.iter(f"TURBIGEN v{turbigen.__version__}")
+    logger.iter(
+        f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
+    )
+
+
+    logger.iter(f"Working directory: {workdir}")
 
     # Write config file into the working directory
     working_config = os.path.join(workdir, "config.yaml")
@@ -172,7 +188,7 @@ def main():
         editor = os.environ.get("EDITOR")
         subprocess.run([f"{editor}", f"{working_config}"])
 
-    # Now read into a configuration object proper
+    # Now read back into a configuration object proper
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
 
@@ -190,19 +206,8 @@ def main():
             log_level = logging.ITER
         else:
             log_level = logging.INFO
-
-    log_path = conf.workdir / "log_turbigen.txt"
     logger.setLevel(level=log_level)
-    fh = logging.FileHandler(log_path)
     fh.setLevel(log_level)
-    logger.addHandler(fh)
-
-    # Print banner
-    logger.iter(f"TURBIGEN v{turbigen.__version__}")
-    logger.iter(
-        f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
-    )
-    logger.iter(f"Working directory: {workdir}")
 
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")

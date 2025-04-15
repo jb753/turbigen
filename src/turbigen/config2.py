@@ -182,7 +182,6 @@ class TurbigenConfig:
         # Find all python files recursively in the plugdir
         py_files = list(self.plugdir.rglob("*.py"))
         for py_file in py_files:
-            logger.debug(f"Loading plugin {py_file}")
             try:
                 # Get the module name
                 module_name = py_file.stem
@@ -193,8 +192,9 @@ class TurbigenConfig:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[f"turbigen.plugin.{module_name}"] = module
                 spec.loader.exec_module(module)
+                logger.iter(f"Loaded plugin: {py_file}")
             except Exception:
-                logger.debug("Failed to load, skipping")
+                logger.iter(f"Failed to load {py_file}, skipping")
 
     def __post_init__(self):
         """Convert input basic types to our desired types."""
@@ -307,6 +307,7 @@ class TurbigenConfig:
         defaults = [
             turbigen.post.SurfaceDistribution(),
             turbigen.post.Convergence(),
+            turbigen.post.Annulus(),
             turbigen.post.Metadata(),
         ]
         for d in defaults:

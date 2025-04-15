@@ -113,6 +113,9 @@ post_process:
       coord: m
       value: 0.001
       variable: Cho
+  - annulus:
+      m_cut: [0.5, 1.5, 2.5]
+      show_axis: true
 
 #     coord: spf
 #     value: .5

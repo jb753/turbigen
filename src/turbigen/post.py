@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 import dataclasses
 import numpy as np
 from turbigen import util
+import turbigen.base
+import warnings
 import matplotlib.pyplot as plt
 
 logger = util.make_logger()
@@ -284,3 +286,194 @@ class SurfaceDistribution(BasePost):
         # ax.text(left, 0.95, f"workdir={str(config.workdir)}")
         # pdf.savefig()
         # plt.close()
+
+
+@dataclasses.dataclass
+class Contour(BasePost):
+    variable: str = "Ys"
+    """Which variable to plot."""
+
+    coord: str = "spf"
+    """Mapping of row index to span fraction(s) to plot."""
+
+    value: float = 0.5
+    """How many points away from the wall."""
+
+    irow_ref: int = 0
+    """Which row to use for reference quantities."""
+
+    N_passage: int = 2
+    """Repeat in the circumferential direction."""
+
+    cmap: str = "plasma"
+    """matplotlib colormap to use."""
+
+    def post(self, config, pdf):
+        """Plot contours over a plane."""
+
+        try:
+            for val in self.value:
+                self.contour(val, config, pdf)
+        except TypeError:
+            # If value is not iterable, plot a single contour
+            self.contour(self.value, config, pdf)
+
+    def contour(self, val, config, pdf):
+        if self.coord == "spf":
+            # Span fraction cut
+            # Cut and repeat each row separately
+            xrc = config.annulus.get_span_curve(val)
+            Crow = config.grid.cut_span_unstructured(xrc)
+            Crow = [Ci.repeat_pitchwise(self.N_passage) for Ci in Crow]
+
+            # Combine the rows
+            C = turbigen.base.concatenate(Crow)
+
+        else:
+            # Get an xr curve describing the cut plane.
+            if self.coord == "x":
+                xrc = np.array([[val, val], [0.1, 1.0]])
+            elif self.coord == "r":
+                xrc = np.array([[-1.0, 1.0], [val, val]])
+            elif self.coord == "m":
+                xrc = config.annulus.get_cut_plane(val)[0]
+            else:
+                raise Exception(f"Invalid coord={self.coord}")
+            C = config.grid.unstructured_cut_marching(xrc)
+
+            C = C.repeat_pitchwise(self.N_passage)
+
+        # Centre theta on zero
+        C.t -= 0.5 * (C.t.min() + C.t.max())
+
+        # Matplotlib style triangulate
+        C_tri, triangles = C.get_mpl_triangulation()
+
+        # Get the coordinates to plot
+        if self.coord == "x":
+            c = C_tri.yz
+        elif self.coord == "r":
+            c = C_tri.rt, C_tri.x
+        elif self.coord == "spf":
+            # Now generate a mapping from xr to meridional distance
+            mp_from_xr = config.annulus.get_mp_from_xr(val)
+            c = mp_from_xr(C_tri.xr), C_tri.t
+        elif self.coord == "m":
+            if np.ptp(C_tri.r) > np.ptp(C_tri.x):
+                c = C_tri.yz
+            else:
+                c = C_tri.rt, C_tri.r
+        else:
+            raise Exception(f"Invalid coord={self.coord}")
+
+        # Extract meanline reference row
+        if self.coord == "m":
+            irow_ref = int(val / 2 - 1)
+            row = config.mean_line.actual.get_row(irow_ref)
+        else:
+            row = config.mean_line.actual
+
+        # Get the variable
+        v = calculate_nondim(C_tri, row, self.variable)
+        # levels = clipped_levels(v)
+
+        # Setup figure
+        _, ax = plt.subplots(layout="constrained")
+        ax.set_title(f"{self.variable} at {self.coord}={val:.3g}")
+
+        # It seems that we have to pass triangles as a kwarg to tricontour,
+        # not positional, but this results in a UserWarning that contour
+        # does not take it as a kwarg. So catch and hide this warning.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cm = ax.tricontourf(
+                *c,
+                v,
+                # levels,
+                triangles=triangles,
+                cmap=self.cmap,
+                linestyles="none",
+            )
+        cm.set_edgecolor("face")
+        ax.set_aspect("equal")  # Ensures equal scaling
+        ax.set_adjustable("box")  # Ensures equal scaling
+        ax.axis("off")
+
+        # Make the colorbar
+        label = LABELS.get(self.variable, self.variable)
+        plt.colorbar(cm, label=label, shrink=0.8)
+
+        # Finish this row
+        pdf.savefig()
+        plt.close()
+
+
+@dataclasses.dataclass
+class Annulus(BasePost):
+
+    m_cut: tuple = ()
+    """Meridional cut planes to plot."""
+
+    show_axis: bool = False
+    """Show the axis of rotation."""
+
+    show_blades: bool = True
+    """Show blades."""
+
+    def post(self, config, pdf):
+        """Plot an x-r view of the annulus."""
+
+        # Setup figure
+        fig, ax = plt.subplots(layout="constrained")
+        ax.axis("off")
+        ax.axis("equal")
+        ax.grid("off")
+
+        if self.show_blades:
+
+            grey = np.ones((3,)) * 0.4
+            Npts = 100
+            spf = np.linspace(0.0, 1.0, Npts)
+            # Meridional coordinates as a function of spf for 
+            # blade LE, TE, and diagonals
+            m = np.stack(
+                    (
+                        np.zeros((Npts,)),
+                        spf,
+                        1.-spf,
+                        np.ones((Npts,)),
+                )
+            )
+
+            # Loop over rows
+            for bld in config.blades:
+
+                if not bld:
+                    continue
+
+                # Loop over spanwise stations
+                # Get xr on upper side at each station
+                xr = np.stack(
+                    [bld[0].evaluate_section(spf[j], m=m[:,j])[0][:2] for j in range(Npts)]
+                ).transpose(2, 1, 0)
+
+                # Plot each of LE/TE/diagonals
+                for xri in xr:
+                    ax.plot(*xri, "-", color=grey)
+
+        # Plot the cut planes
+        for mi in self.m_cut:
+            xrc = config.annulus.get_cut_plane(mi)[0]
+            ax.plot(*xrc, "-", color="C0")
+
+        # Plot hub and casing lines
+        xr_hub, xr_cas = config.annulus.get_coords().transpose(0, 2, 1)
+        ax.plot(*xr_hub, "k-")
+        ax.plot(*xr_cas, "k-")
+
+        # Show axis of revolution
+        if self.show_axis:
+            ax.plot(xr_hub[0, (0, -1)], np.zeros((2,)), "k-.")
+
+        pdf.savefig()
+        plt.close()
