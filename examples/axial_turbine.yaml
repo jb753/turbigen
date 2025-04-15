@@ -82,6 +82,7 @@ iterate:
     target:
       0: 0.4
       1: 0.3
+  repeat:
 
 # Additional plots to produce
 post_process:
@@ -102,6 +103,16 @@ post_process:
       coord: spf
       value: 0.5
       variable: Ma_rel
+  - contour:
+      N_passage: 1
+      coord: m
+      value: 0.001
+      variable: CVm
+  - contour:
+      N_passage: 1
+      coord: m
+      value: 0.001
+      variable: Cho
 
 #     coord: spf
 #     value: .5

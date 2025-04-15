@@ -185,12 +185,22 @@ def calculate_nondim(C, ml, vname):
     else:
         Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[1]
 
+    # Work coefficient
+    Cho = (Cs.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
+
+    # Velocity coefficient
+    CVm = C.Vm / ml.V_rel[1]
+
     if vname == "Mas":
         return Mas
     elif vname == "Ys":
         return Ys
     elif vname == "Ma_rel":
         return C.Ma_rel
+    elif vname == "Cho":
+        return Cho
+    elif vname == "CVm":
+        return CVm
     else:
         raise ValueError(f"Unknown variable {vname} requested.")
 

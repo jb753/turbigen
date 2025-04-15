@@ -112,7 +112,7 @@ class Emb(turbigen.solver.BaseSolver):
     K_exit: float = 0.5
     K_inlet: float = 0.5
     K_mix: float = 0.5
-    sf_mix: float = 0.02
+    sf_mix: float = 0.01
 
     print_conv: bool = True
 
@@ -1270,10 +1270,13 @@ class OutletBoundary(Boundary):
         """Use static pressure target to set upstream-running wave."""
 
         # Force to uniform at target pressure
-        # dP = self.P_target - self.state.P
+        dP = self.P_target - self.state.P
+
         # Force to an area-averaged static pressure
-        P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
-        dP = self.P_target - P_Aavg
+        # P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
+        # dP = self.P_target - P_Aavg
+
+        # Calculate the chic wave
         dVx = -dP / self.state.rho / self.state.a  # from c2=0
         dc1 = dP - self.state.rho * self.state.a * dVx  # definition of c1
         dc = np.zeros(self.shape + (5, 1))
@@ -1367,7 +1370,6 @@ class MixingBoundary(Boundary):
 
         # Preallocate pitch-avg flux changes
         self.dflux_avg = np.zeros((1, len(self.spf), 1, 5, 1))
-        self.dflux_last = np.zeros((1, len(self.spf), 1, 5, 1))
 
         # Set direction
         self.is_inlet = np.ones_like(self.spf, dtype=bool)
@@ -1378,6 +1380,41 @@ class MixingBoundary(Boundary):
     @property
     def is_outlet(self):
         return np.logical_not(self.is_inlet)
+
+    def smooth_pitchwise(self):
+        """Force ho, s, and Beta to be uniform in circumferential direction.
+
+        Directly change conserved variables, not chics.
+
+        """
+
+        # Get the average values
+        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
+        s_avg = self.pitchwise_average(self.state.s)[..., None]
+        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
+
+        # Get the differences
+        dho = ho_avg - self.state.ho
+        ds = s_avg - self.state.s
+        dtanBe = tanBe_avg - self.state.tanBeta
+
+        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
+        # Do not need to change Alpha because periodic
+        # Cannot control static P because set by upstream-running chic
+        # So they are both zero
+        Z = np.zeros_like(dho)
+        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
+
+        # Conversion matrices
+        prim_to_inlet = self.state.primitive_to_bcond
+        prim_to_cons = self.state.primitive_to_conserved
+        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
+
+        # Calculate conserved changes
+        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
+
+        # Set the changes in the buffer
+        self.dUn[:, self.is_inlet, ...] += self.sf_mix * dcons[:, self.is_inlet, ...]
 
     def setup_communication(self, comm, mpi_typ):
         self.Send = comm.Send_init(
@@ -1462,33 +1499,33 @@ class MixingBoundary(Boundary):
         # Second, we need to suppress non-uniform ho, s, Beta on inlet
         # Just a little bit of characteristic smoothing
         # Don't need to touch Alpha because periodic in circumferential dirn
-        if self.is_inlet.any():
-            # Calculate perturbations to drive towards uniformity
-            ho_avg = self.pitchwise_average(self.state.ho)[..., None]
-            s_avg = self.pitchwise_average(self.state.s)[..., None]
-            tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
-            dho = ho_avg - self.state.ho
-            ds = s_avg - self.state.s
-            dtanBe = tanBe_avg - self.state.tanBeta
-
-            # Assemble a change in inlet bcond vector
-            # Do not alter flow angles
-            # Cannot control static P because set by upstream-running chic
-            Z = np.zeros_like(dho)
-            dinlet_local = np.stack((dho, ds, Z, dtanBe), axis=-1)[..., None]
-
-            # Convert to downstream-propagating chics
-            inlet_to_chic = np.expand_dims(self.state_avg.inlet_to_chic, (0, 2))
-            dchic_local = inlet_to_chic @ dinlet_local
-
-            # Prepend a zero for upstream-running wave
-            dc1 = np.zeros(self.shape + (1, 1))
-            dchic_local = np.concatenate((dc1, dchic_local), axis=3)
-
-            # We only apply local changes where flow is into domain
-            dchic[:, self.is_inlet, ...] += (
-                self.sf_mix * dchic_local[:, self.is_inlet, ...]
-            )
+        # if self.is_inlet.any():
+        #     # Calculate perturbations to drive towards uniformity
+        #     ho_avg = self.pitchwise_average(self.state.ho)[..., None]
+        #     s_avg = self.pitchwise_average(self.state.s)[..., None]
+        #     tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
+        #     dho = ho_avg - self.state.ho
+        #     ds = s_avg - self.state.s
+        #     dtanBe = tanBe_avg - self.state.tanBeta
+        #
+        #     # Assemble a change in inlet bcond vector
+        #     # Do not alter flow angles
+        #     # Cannot control static P because set by upstream-running chic
+        #     Z = np.zeros_like(dho)
+        #     dinlet_local = np.stack((dho, ds, Z, dtanBe), axis=-1)[..., None]
+        #
+        #     # Convert to downstream-propagating chics
+        #     inlet_to_chic = np.expand_dims(self.state_avg.inlet_to_chic, (0, 2))
+        #     dchic_local = inlet_to_chic @ dinlet_local
+        #
+        #     # Prepend a zero for upstream-running wave
+        #     dc1 = np.zeros(self.shape + (1, 1))
+        #     dchic_local = np.concatenate((dc1, dchic_local), axis=3)
+        #
+        #     # We only apply local changes where flow is into domain
+        #     dchic[:, self.is_inlet, ...] += (
+        #         self.sf_mix * dchic_local[:, self.is_inlet, ...]
+        #     )
 
         return dchic
 
@@ -1502,6 +1539,10 @@ class MixingBoundary(Boundary):
         # Transform to conserved variable changes
         chic_to_conserved = np.expand_dims(self.state_avg.chic_to_conserved, (0, 2))
         dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
+
+        # Pitchwise smooth ho, s, and Beta to uniformity
+        if self.is_inlet.any():
+            self.smooth_pitchwise()
 
         # Send the nodal changes back to the block
         self.dUn[:] = dcons[..., 0] * 0.2

@@ -19,10 +19,10 @@ class Repeat(turbigen.iterators.IteratorConfig):
     atol: float = 0.01
     """Absolute tolerance for convergence of angles."""
 
-    dAlpha_max: float = 0.0
+    dAlpha_max: float = 20.0
     """Clip the variations in yaw."""
 
-    dBeta_max: float = 0.0
+    dBeta_max: float = 10.0
     """Clip the variations in pitch."""
 
     dTo_max: float = 0.1
@@ -32,92 +32,68 @@ class Repeat(turbigen.iterators.IteratorConfig):
     """Clip the variations in Po."""
 
     def check(self, config):
-        pass
+        del config
 
     def update(self, config) -> bool:
         """Pass the outlet profiles upstream."""
 
         log_data = {}
 
-        # Cut out the outlet profiles
-        C_out = config.grid.outlet_patches[0].get_cut()
+        # Cut the outlet patch
+        C = config.grid.outlet_patches[0].get_cut()
 
         # Mix out to uniformity to get reference state
-        Cm_out = C_out.mix_out()[0]
+        Cm = C.mix_out()[0]
 
-        # Calculate factors
-        Cs = C_out.squeeze()
-        fac_Po = Cs.Po.mean(axis=-1) / Cm_out.Po
-        fac_To = Cs.To.mean(axis=-1) / Cm_out.To
-        spf = C_out.spf.mean(axis=-1).squeeze()
-        dAlpha = Cs.Alpha.mean(axis=-1) - Cm_out.Alpha
-        dBeta = Cs.Beta.mean(axis=-1) - Cm_out.Beta
+        # Pitchwise mass-average the boundary condition quantities
+        # Mass flow rate per unit meridional area
+        mdot = C.pitchwise_integrate(C.rhoVm)
+        Po = C.pitchwise_integrate(C.rhoVm * C.Po) / mdot
+        To = C.pitchwise_integrate(C.rhoVm * C.To) / mdot
+        Alpha = C.pitchwise_integrate(C.rhoVm * C.Alpha) / mdot
+        Beta = C.pitchwise_integrate(C.rhoVm * C.Beta) / mdot
 
-        # Clip angle swings
-        dAlpha = np.clip(dAlpha, -self.dAlpha_max, self.dAlpha_max)
-        dBeta = np.clip(dBeta, -self.dBeta_max, self.dBeta_max)
+        # Assemble into a matrix
+        spf = C.spf.mean(axis=2).squeeze()
+        profiles = np.stack([Po, To, Alpha, Beta], axis=1)[0]
 
-        # Scale the To factor
-        dTo = fac_To - 1.0
-        dTo = np.clip(dTo * self.To_frac, -self.dTo_max, self.dTo_max)
-        fac_To = dTo + 1.0
+        # Subtract the meanline values
+        avg = np.array([Cm.Po, Cm.To, Cm.Alpha, Cm.Beta])
+        profiles -= avg[:, None]
 
-        # Clip the Po
-        dPo = fac_Po - 1.0
-        dPo = np.clip(dPo, -self.dPo_max, self.dPo_max)
-        fac_Po = dPo + 1.0
+        # Normalise Po and To
+        profiles[0] /= Cm.Po
+        profiles[1] /= Cm.To
 
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots(layout="constrained")
-        # ax.plot(fac_Po, spf, label="Po")
-        # ax.plot(fac_To, spf, label="To")
-        # ax.legend()
-        # fig, ax = plt.subplots(layout="constrained")
-        # ax.plot(dAlpha, spf, label="dAlpha")
-        # ax.plot(dBeta, spf, label="dBeta")
-        # ax.legend()
-        # plt.show()
-        # # quit()
+        # Apply clipping to the normalised profiles
+        clip = [self.dPo_max, self.dTo_max, self.dAlpha_max, self.dBeta_max]
+        for i in range(4):
+            profiles[i] = np.clip(profiles[i], -clip[i], clip[i])
 
+        # Apply to the config object
         inlet = config.inlet
 
         # No previous inlet, initialise
         if inlet.spf is None:
-            inlet.spf = spf
-            inlet.fac_Po = fac_Po
-            inlet.fac_To = fac_To
-            inlet.dAlpha = dAlpha
-            inlet.dBeta = dBeta
-            err = np.max(np.abs(fac_Po - 1.0))
+            inlet.profiles = profiles
+            err = np.max(np.abs(profiles[1]))
+
         # Compare with the previous inlet
         else:
-            fac_Po_old = np.interp(
-                spf,
-                inlet.spf,
-                inlet.fac_Po,
+            # Interpolate the previous profiles to the new span fraction
+            profiles_old = np.stack(
+                [np.interp(spf, inlet.spf, profiles[i]) for i in range(4)],
             )
-            fac_To_old = np.interp(
-                spf,
-                inlet.spf,
-                inlet.fac_To,
-            )
-            dAlpha_old = np.interp(
-                spf,
-                inlet.spf,
-                inlet.dAlpha,
-            )
-            dBeta_old = np.interp(
-                spf,
-                inlet.spf,
-                inlet.dBeta,
-            )
-            err = np.max(np.abs(fac_Po - fac_Po_old))
-            inlet.spf = spf
+
+            # Calculate To errors
+            err = np.max(np.abs(profiles[1] - profiles_old[1]))
+
+            # Apply relaxation factor
             rf = self.relaxation_factor
             rf1 = 1.0 - rf
-            inlet.fac_Po = rf * fac_Po + rf1 * fac_Po_old
-            inlet.fac_To = rf * fac_To + rf1 * fac_To_old
-            inlet.dAlpha = rf * dAlpha + rf1 * dAlpha_old
-            inlet.dBeta = rf * dBeta + rf1 * dBeta_old
+            inlet.profiles = rf * profiles + rf1 * profiles_old
 
-        return err < self.rtol, {"Rep_dPo": err}
+        inlet.spf = spf
+        print(err)
+
+        return err < self.rtol, {"Repeat_dTo": err}

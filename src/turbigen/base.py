@@ -971,6 +971,10 @@ class Composites:
         return self.rho * self.e
 
     @dependent_property
+    def rhoVm(self):
+        return self.rho * self.Vm
+
+    @dependent_property
     def e(self):
         return self.u + 0.5 * self.V**2.0
 
@@ -1169,6 +1173,19 @@ class Composites:
     def mix_out(self):
         """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
         return turbigen.average.mix_out(self)
+
+    def pitchwise_integrate(self, y):
+        """Integrate something."""
+        # Check if we have a 3D cut and i is singleton
+        assert len(self.shape) == 3
+        assert self.shape[0] == 1
+
+        # The pitchwise grid lines should be at constant radius
+        rtol = 1e-5 * np.ptp(self.r)
+        assert (np.abs(np.diff(self.r, axis=2)) < rtol).all()
+
+        # Trapezoidal integral
+        return np.trapz(y, self.t, axis=2)
 
     def set_conserved(self, conserved):
         rho, *rhoVxrt, rhoe = conserved
@@ -2187,6 +2204,8 @@ and will cause problems with meshing and solving for the flow field."""
     @workdir.setter
     def workdir(self, workdir):
         self._set_metadata_by_key("workdir", workdir)
+
+        # return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
 
 class BaseConfig:

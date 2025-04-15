@@ -500,10 +500,7 @@ class TurbigenConfig:
             logger.info("Applying inlet profile...")
             self.grid.inlet_patches[0].set_profile(
                 self.inlet.spf,
-                self.inlet.fac_Po,
-                self.inlet.fac_To,
-                self.inlet.dAlpha,
-                self.inlet.dBeta,
+                self.inlet.profiles,
             )
 
         # Outlet boundary condition
