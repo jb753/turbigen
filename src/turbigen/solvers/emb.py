@@ -874,9 +874,6 @@ def exchange_periodic(blocks, bid_local, periodics):
         else:
             # Send to away buffer
             patch.Send.Start()
-            # Whether Send actually blocks is implementation-dependent
-            # so we have to explicitly wait for it to finish
-            patch.Send.Wait()
 
     # Once the communication completes, take average of home
     # and away buffers and assign back to grid
@@ -894,6 +891,11 @@ def exchange_periodic(blocks, bid_local, periodics):
         if patch.nxprocid == rank:
             b2 = blocks[bid_local[patch.nxbid]].cons
             embsolve.set_by_ijk(b2, bavg, patch.nxijk)
+
+    # Whether Send actually blocks is implementation-dependent
+    # so we have to explicitly wait for it to finish
+    for patch in periodics:
+        patch.Send.Wait()
 
 
 def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
