@@ -40,9 +40,6 @@ class TurbigenConfig:
     workdir: Path
     """Directory in which to store run data."""
 
-    plugdir: Path
-    """Directory to search for custom plugins."""
-
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
 
@@ -63,6 +60,9 @@ class TurbigenConfig:
 
     solver: turbigen.solver.BaseSolver
     """Settings for flow solution."""
+
+    plugdir: Path = None
+    """Directory to search for custom plugins."""
 
     iterate: List[turbigen.iterators.IteratorConfig] = dataclasses.field(
         default_factory=list
@@ -134,7 +134,8 @@ class TurbigenConfig:
 
         # Put work and plug dir into a string
         data["workdir"] = str(data["workdir"])
-        data["plugdir"] = str(data["plugdir"])
+        if data["plugdir"]:
+            data["plugdir"] = str(data["plugdir"])
 
         # Convert the meanline designer to a dictionary
         data["mean_line"] = self.mean_line.to_dict()
@@ -211,8 +212,9 @@ class TurbigenConfig:
 
         # Convert plugdir str to Path object
         # And look for plugins
-        self.plugdir = Path(self.plugdir).absolute()
-        self.find_plugins()
+        if self.plugdir:
+            self.plugdir = Path(self.plugdir).absolute()
+            self.find_plugins()
 
         # Convert inlet dict to InletConfig object
         self.inlet = util.init_subclass_by_signature(
