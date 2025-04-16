@@ -34,6 +34,7 @@ dev = [
     'pytest',
     'pre-commit',
     'build',
+    'cibuildwheel',
 ]
 parallel = [
     'mpi4py~=3.1.6',
@@ -51,7 +52,7 @@ requires = ["meson-python", "numpy", ]
 build-backend = "mesonpy"
 
 [tool.cibuildwheel]
-build = "cp311-* cp312-*"
+build = "cp311-* cp312-* cp313-*"
 skip = "pp*"
 manylinux-x86_64-image = "manylinux2014"
 

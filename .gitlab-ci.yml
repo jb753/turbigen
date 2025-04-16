@@ -1,6 +1,6 @@
 image: python:3.11
 
-# Run in two stages, only deploy if the tests pass
+# Run in stages, only deploy if the tests pass
 stages:
 - test
 - build
@@ -15,7 +15,7 @@ before_script:
   - pip install --upgrade pip
   - pip install cibuildwheel meson-python line_profiler
   - pip install .[dev,parallel]
-  - mkdir plots
+  - mkdir -p plots
 
 # Define a job to build the wheels
 build_wheels:
