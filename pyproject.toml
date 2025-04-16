@@ -2,6 +2,15 @@
 name = "turbigen"
 version = "2.0.0"
 requires-python = ">=3.11"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+  {name = "James Brind", email = "jb753@cam.ac.uk"},
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: POSIX :: Linux"
+]
 dependencies = [
     'CoolProp~=6.7.0',
     'matplotlib~=3.10.0',
@@ -12,31 +21,39 @@ dependencies = [
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
 ]
+keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "turbine"]
 
 [project.optional-dependencies]
-docs = [
+dev = [
     'sphinx',
     'sphinxcontrib-bibtex',
     'sphinx-autobuild',
     'sphinx-argparse',
     'sphinxcontrib-programoutput',
     'autodocsumm',
-]
-test = [
     'pytest',
     'pre-commit',
+    'build',
 ]
 parallel = [
     'mpi4py~=3.1.6',
 ]
+
+[project.urls]
+Homepage = "https://turbigen.org"
 
 [project.scripts]
 turbigen = "turbigen.main:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
 
 [build-system]
-requires = ["meson-python", "numpy"]
+requires = ["meson-python", "numpy", ]
 build-backend = "mesonpy"
+
+[tool.cibuildwheel]
+build = "cp311-* cp312-*"
+skip = "pp*"
+manylinux-x86_64-image = "manylinux2014"
 
 [tool.uv]
 managed = false
