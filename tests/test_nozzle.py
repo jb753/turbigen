@@ -495,7 +495,9 @@ def test_rpm(rpm):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, rpm=rpm, tper=True, skew=None)
 
-    embsolve.Emb(nstep_damp=-1, **settings).run(g)
+    sol = embsolve.Emb(**settings)
+    sol.nstep_damp = -1
+    sol.run(g)
 
     # plot_nozzle(g,F)
     # plt.show()
@@ -554,5 +556,6 @@ def test_offset(dP):
 
 
 if __name__ == "__main__":
-    test_condi("t")
+    # test_condi("t")
+    test_rpm(-100.0)
     pass

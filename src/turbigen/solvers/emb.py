@@ -1419,6 +1419,8 @@ class MixingBoundary(Boundary):
         self.dUn[:, self.is_inlet, ...] += dcons_relaxed
 
     def setup_communication(self, comm, mpi_typ):
+        if self.procid == self.nxprocid:
+            return
         self.Send = comm.Send_init(
             buf=[self.buffer, self.ncomm, mpi_typ],
             dest=self.nxprocid,
