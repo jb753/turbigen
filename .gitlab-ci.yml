@@ -16,7 +16,7 @@ profile:
   - pip install -U pip
   # Serial profiling.
   - pip install line_profiler
-  - pip install -e .
+  - pip install .
   - mkdir plots
   - ./scripts/profile.sh
   # Now parallel benchmarking
