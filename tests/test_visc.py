@@ -6,11 +6,7 @@ import turbigen.grid
 import turbigen.clusterfunc
 import turbigen.util
 import numpy as np
-from timeit import default_timer as timer
-import sys
-from scipy.interpolate import pchip_interpolate
 import matplotlib.pyplot as plt
-import pytest
 
 # With quasi-2D periodic grids, and no halo cells,
 # a little bit of 2nd order smoothing is needed to
@@ -19,6 +15,7 @@ settings = {
     "n_step": 16000,
     "n_step_avg": 1000,
     "n_step_log": 100,
+    "nstep_damp": 500,
     "xllim_pitch": 0.0,
     "smooth4": 0.001,
     "smooth2_adapt": 0.5,

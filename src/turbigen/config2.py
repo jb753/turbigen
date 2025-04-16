@@ -174,6 +174,13 @@ class TurbigenConfig:
                 iters[k] = data["iterate"][iiter]
             data["iterate"] = iters
 
+        # Add type info to post processors
+        if self.post_process:
+            for i, post in enumerate(self.post_process):
+                data["post_process"][i]["type"] = util.camel_to_snake(
+                    post.__class__.__name__
+                )
+
         return data
 
     def find_plugins(self):
@@ -285,17 +292,16 @@ class TurbigenConfig:
             # post_process is a list of dicts
             # So that we can have, e.g. multiple 'contour' processors
             for ip, p in enumerate(self.post_process):
-                # Ensure there is only one key in the dict
-                if len(p) != 1:
+                # Get the type of this processor
+                if not (type := p.pop("type")):
                     raise Exception(
-                        f"Items in post_process list should only have one key, got {list(p.keys())} at index {ip}"
+                        f"Missing type key in post_process list at index {ip}"
                     )
-                k = list(p.keys())[0]
                 # Find a subclass for this processor
-                cls = util.get_subclass_by_name(turbigen.post.BasePost, k)
-                if p[k]:
+                cls = util.get_subclass_by_name(turbigen.post.BasePost, type)
+                if p:
                     # Pass the dictionary to the subclass
-                    posts.append(cls(**p[k]))
+                    posts.append(cls(**p))
                 # Null content implies all defaults
                 else:
                     posts.append(cls())

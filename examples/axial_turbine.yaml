@@ -1,6 +1,6 @@
 # Axial turbine
 #
-# A single-stage axial turbine with two blade rows.
+# A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
 workdir: runs/*
@@ -78,10 +78,10 @@ iterate:
   # Correct for incidence using leading-edge recamber
   incidence:
   # Set diffusion factors of 0.4 in stator, 0.3 in rotor
-  diffusion_factor:
-    target:
-      0: 0.4
-      1: 0.3
+  # diffusion_factor:
+    # target:
+      # 0: 0.4
+      # 1: 0.3
   repeat:
 
 # Additional plots to produce
@@ -94,35 +94,28 @@ post_process:
   #   m=3 at rotor LE
   #   m=4 at rotor TE
   #   m=5 at exit
-  - contour:
-      coord: m
-      value: [2.05, 4.05]
-      variable: Ys
+  - type: contour
+    coord: m
+    value: [2.05, 4.05]
+    variable: Ys
   # Mid-span Mach
-  - contour:
-      coord: spf
-      value: 0.5
-      variable: Ma_rel
-  - contour:
-      N_passage: 1
-      coord: m
-      value: 0.001
-      variable: CVm
-  - contour:
-      N_passage: 1
-      coord: m
-      value: 0.001
-      variable: Cho
-  - annulus:
-      m_cut: [0.5, 1.5, 2.5]
-      show_axis: true
-
-#     coord: spf
-#     value: .5
-#     variable: Cp
-#     N_passage: 2
-#     step: 0.2
-#     extend: both
-#     lim: [-2.2, 0.2]
-#   plot_pressure_distributions:
-#     row_spf: [[0.5,],[0.5,]]
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel
+  - type: contour
+    coord: m
+    value: [0.05,]
+    variable: Cho
+  - type: contour
+    coord: m
+    value: [0.05,]
+    variable: Ys
+  - type: contour
+    coord: m
+    value: [0.05,]
+    variable: Alpha
+  - type: contour
+    coord: m
+    value: [0.05,]
+    variable: Beta

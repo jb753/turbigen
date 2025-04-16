@@ -1,4 +1,4 @@
-image: python:3.9
+image: python:3.11
 
 # Run in two stages, only deploy if the tests pass
 stages:

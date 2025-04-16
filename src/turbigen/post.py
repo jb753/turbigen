@@ -203,6 +203,10 @@ def calculate_nondim(C, ml, vname):
         return Cho
     elif vname == "CVm":
         return CVm
+    if vname == "Alpha":
+        return C.Alpha
+    if vname == "Beta":
+        return C.Beta
     else:
         raise ValueError(f"Unknown variable {vname} requested.")
 
@@ -410,7 +414,6 @@ class Contour(BasePost):
 
 @dataclasses.dataclass
 class Annulus(BasePost):
-
     m_cut: tuple = ()
     """Meridional cut planes to plot."""
 
@@ -430,31 +433,32 @@ class Annulus(BasePost):
         ax.grid("off")
 
         if self.show_blades:
-
             grey = np.ones((3,)) * 0.4
             Npts = 100
             spf = np.linspace(0.0, 1.0, Npts)
-            # Meridional coordinates as a function of spf for 
+            # Meridional coordinates as a function of spf for
             # blade LE, TE, and diagonals
             m = np.stack(
-                    (
-                        np.zeros((Npts,)),
-                        spf,
-                        1.-spf,
-                        np.ones((Npts,)),
+                (
+                    np.zeros((Npts,)),
+                    spf,
+                    1.0 - spf,
+                    np.ones((Npts,)),
                 )
             )
 
             # Loop over rows
             for bld in config.blades:
-
                 if not bld:
                     continue
 
                 # Loop over spanwise stations
                 # Get xr on upper side at each station
                 xr = np.stack(
-                    [bld[0].evaluate_section(spf[j], m=m[:,j])[0][:2] for j in range(Npts)]
+                    [
+                        bld[0].evaluate_section(spf[j], m=m[:, j])[0][:2]
+                        for j in range(Npts)
+                    ]
                 ).transpose(2, 1, 0)
 
                 # Plot each of LE/TE/diagonals

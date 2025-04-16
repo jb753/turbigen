@@ -215,6 +215,7 @@ settings = {
     "n_step_avg": 500,
     "n_step_log": 100,
     "i_loss": 0,
+    "nstep_damp": 100,
 }
 
 
@@ -553,5 +554,5 @@ def test_offset(dP):
 
 
 if __name__ == "__main__":
-    test_condi("r")
+    test_condi("t")
     pass

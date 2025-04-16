@@ -1,17 +1,17 @@
 [project]
 name = "turbigen"
 version = "2.0.0"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     'CoolProp~=6.7.0',
     'matplotlib~=3.10.0',
-    "numpy~=2.1.0",
+    "numpy~=2.2.4",
     'PyYAML~=6.0.0',
     'scipy~=1.15.0',
     'h5py~=3.13.0',
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
-    'mpi4py~=4.0.3',
+    'mpi4py~=3.1.6',
 ]
 
 [project.optional-dependencies]

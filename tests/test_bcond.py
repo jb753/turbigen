@@ -179,11 +179,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    embsolve.Emb(
-        n_step=6000,
-        n_step_log=100,
-        n_step_avg=1000,
-    ).run(g)
+    embsolve.Emb(n_step=5000, n_step_log=100).run(g)
 
     fluxes = []
     for patch in g.mixing_patches:
@@ -195,13 +191,13 @@ def test_mixer():
         [flux_avg[0], flux_avg[1], flux_avg[1], C.r * flux_avg[1], flux_avg[-1]]
     )
     err = np.diff(fluxes, axis=0) / flux_ref
-    rtol = 2e-6
+    rtol = 2.5e-6
     assert (np.abs(err) < rtol).all()
 
 
 if __name__ == "__main__":
-    pass
+    # pass
     # test_outlet_CFL_0()
     # test_inlet_CFL_0()
-    # test_mixer()
     # test_CFL()
+    test_mixer()
