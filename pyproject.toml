@@ -11,7 +11,6 @@ dependencies = [
     'h5py~=3.13.0',
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
-    'mpi4py~=3.1.6',
 ]
 
 [project.optional-dependencies]
@@ -26,6 +25,9 @@ docs = [
 test = [
     'pytest',
     'pre-commit',
+]
+parallel = [
+    'mpi4py~=3.1.6',
 ]
 
 [project.scripts]

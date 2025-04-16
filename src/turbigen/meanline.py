@@ -449,6 +449,7 @@ class AxialTurbine(MeanLineDesigner):
             "zeta": zeta,
             "Ma2": Ma2,
             "fac_Ma3_rel": mean_line.Ma_rel[3] / mean_line.Ma[1],
+            "Ma3_rel": mean_line.Ma_rel[3],
             "Alpha1": mean_line.Alpha[0],
             "mdot": mean_line.mdot[0],
             "Lam": Lam,
