@@ -9,7 +9,7 @@ profile:
   stage: test
   artifacts:
     paths:
-      - profile.txt
+      - plots
   script:
   - python -V
   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
@@ -21,7 +21,6 @@ profile:
   - ./scripts/profile.sh
   # Now parallel benchmarking
   - ./scripts/benchmark.sh
-  - cat tests/bench.dat
   # - turbigen tests/back-to-back/turbine/emb.yaml
   # - mkdir plots
   # - python tests/back-to-back/turbine/plot.py
@@ -32,9 +31,9 @@ test:
   stage: test
   script:
   - python -V
-  - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
+  - apt update && apt install -y gfortran fonts-freefont-ttf
   - pip install -U pip
-  - pip install -e ".[test]"
+  - pip install .[test]
   - pytest
 
 docs:

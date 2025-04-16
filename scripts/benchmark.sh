@@ -24,5 +24,9 @@ for size in 8 6 4 2 1; do
     mpirun --allow-run-as-root -np $size python scripts/benchmark.py
 done
 
+cat plots/bench.dat
+
 # Make the plot
+echo "Making the plots"
 python scripts/plot_benchmark.py
+echo "Done."
