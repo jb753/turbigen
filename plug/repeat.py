@@ -82,7 +82,7 @@ class Repeat(turbigen.iterators.IteratorConfig):
         else:
             # Interpolate the previous profiles to the new span fraction
             profiles_old = np.stack(
-                [np.interp(inlet.spf, spf, inlet.profiles[i]) for i in range(4)],
+                [np.interp(spf, inlet.spf, inlet.profiles[i]) for i in range(4)],
             )
 
             # Calculate To errors
