@@ -1,6 +1,9 @@
 venv
+uv.lock
 tests/back-to-back/*/emb
 doc/examples/*.rst
+doc/examples/*.svg
+doc/examples/hashes.yaml
 tags
 venv/
 dist

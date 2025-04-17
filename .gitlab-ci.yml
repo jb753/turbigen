@@ -8,7 +8,7 @@ stages:
 
 # Setup env
 before_script:
-  - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
+  - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf pdf2svg
   - curl -LsSf https://astral.sh/uv/install.sh | sh
   - source $HOME/.local/bin/env
   - uv venv
@@ -56,10 +56,13 @@ pypi:
     - ls -l dist
     # - twine upload dist/*  # Upload all the built wheels
   # only:
-  #   - master 
+  #   - master
 
 doc:
   stage: test
+  artifacts:
+    paths:
+      - doc/examples
   script:
     - python doc/generate_examples.py
     - sphinx-build -W doc doc/_build
