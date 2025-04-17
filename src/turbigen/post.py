@@ -434,7 +434,7 @@ class Annulus(BasePost):
 
         if self.show_blades:
             grey = np.ones((3,)) * 0.4
-            Npts = 100
+            Npts = 10
             spf = np.linspace(0.0, 1.0, Npts)
             # Meridional coordinates as a function of spf for
             # blade LE, TE, and diagonals
@@ -453,10 +453,12 @@ class Annulus(BasePost):
                     continue
 
                 # Loop over spanwise stations
-                # Get xr on upper side at each station
+                # Get xr on camber line
                 xr = np.stack(
                     [
-                        bld[0].evaluate_section(spf[j], m=m[:, j])[0][:2]
+                        np.stack(bld[0].evaluate_section(spf[j], m=m[:, j])).mean(
+                            axis=0
+                        )[:2]
                         for j in range(Npts)
                     ]
                 ).transpose(2, 1, 0)

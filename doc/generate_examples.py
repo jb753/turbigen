@@ -71,8 +71,11 @@ def run_example(input_yaml):
 {title}
 {"=" * len(title)}
 
+:download:`Download this example <../../{input_yaml}>`
+
 Input file
 ==========
+
 
 .. code-block:: yaml
 
@@ -113,7 +116,7 @@ if __name__ == "__main__":
         hashes = {}
 
     # Loop over  all examples
-    print(f"Running examples from {INPUT_DIR}")
+    print("Running examples")
     for example in Path(INPUT_DIR).iterdir():
         if example.suffix == ".yaml":
             # Take md5 hash of the yaml file

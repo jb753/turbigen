@@ -4,9 +4,8 @@
 
 # New working directory for each invocation
 workdir: runs/*
-plugdir: plug
 
-# Perfect gas inlet reprensentatic of a gas turbine
+# Perfect gas inlet reprensentative of a gas turbine
 inlet:
   Po: 16.0e5
   To: 1600.
@@ -43,7 +42,7 @@ mesh:
   yplus: 30.0
   resolution_factor: 0.5
 
-# Define a mid-span section in stator and rotor
+# Define one mid-span section in stator and rotor
 blades:
     - spf: 0.5
       q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
@@ -64,7 +63,7 @@ nblade:
 solver:
   type: emb
   n_step: 2000
-  n_step_avg: 500
+  n_step_avg: 100
   n_step_ramp: 1000
 
 # Configure iterative updates of the geometry
@@ -77,11 +76,8 @@ iterate:
   deviation:
   # Correct for incidence using leading-edge recamber
   incidence:
-  # Set diffusion factors of 0.4 in stator, 0.3 in rotor
-  # diffusion_factor:
-    # target:
-      # 0: 0.4
-      # 1: 0.3
+  # Copy spanwise profiles at outlet to the inlet
+  # to model a repeating stage
   repeat:
 
 # Additional plots to produce
@@ -103,19 +99,3 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
-  - type: contour
-    coord: m
-    value: [0.05,]
-    variable: Cho
-  - type: contour
-    coord: m
-    value: [0.05,]
-    variable: Ys
-  - type: contour
-    coord: m
-    value: [0.05,]
-    variable: Alpha
-  - type: contour
-    coord: m
-    value: [0.05,]
-    variable: Beta

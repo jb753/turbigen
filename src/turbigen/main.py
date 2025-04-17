@@ -163,7 +163,7 @@ def main():
         os.makedirs(workdir, exist_ok=True)
 
     # Set up loud logging initially
-    log_path = os.path.join(workdir , "log_turbigen.txt")
+    log_path = os.path.join(workdir, "log_turbigen.txt")
     log_level = logging.ITER
     fh = logging.FileHandler(log_path)
     logger.addHandler(fh)
@@ -175,7 +175,6 @@ def main():
     logger.iter(
         f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
     )
-
 
     logger.iter(f"Working directory: {workdir}")
 
@@ -246,19 +245,32 @@ def main():
             conf.save()
 
             # Update the config
-            converged, log_data = conf.step_iterate()
+            conv_all, log_data = conf.step_iterate()
             toc = timer()
 
             # Insert timing data into log
             elapsed = toc - tic
             log_data = dict(Min=elapsed / 60.0, **log_data)
 
-            logger.iter(format_iter_log(log_data, header=not np.mod(iiter, 5)))
+            reprint = not np.mod(iiter, 5)
+            if reprint:
+                logger.iter("Convergence status:")
+                for k, v in conv_all.items():
+                    logger.iter(f"  {k}: {v}")
+            logger.iter(format_iter_log(log_data, header=reprint))
 
             # Disable soft start after first iteration
             conf.solver.soft_start = False
 
+            # Check for convergence
+            converged = all(conv_all.values())
             if converged:
+                # Copy everything from the final iteration
+                # to the working directory
+                shutil.copytree(conf.workdir, basedir, dirs_exist_ok=True)
+                # Delete iteration directories
+                for i in range(iiter + 1):
+                    shutil.rmtree(basedir / f"{i:03d}")
                 break
 
         logger.iter(f"Finished iterating, converged={converged}.")
