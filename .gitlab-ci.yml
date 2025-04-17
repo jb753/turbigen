@@ -6,49 +6,48 @@ stages:
 - build
 - deploy
 
-
 # Setup env
 before_script:
-  - echo "Checking for docker socket..."
-  - ls -li /var/run/docker.sock
-  - curl -sSL https://get.docker.com/ | sh
   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
-  - python -V
-  - python -m venv venv
-  - source venv/bin/activate
-  - pip install --upgrade pip
-  - pip install cibuildwheel meson-python line_profiler
-  - pip install .[dev,parallel]
+  - curl -LsSf https://astral.sh/uv/install.sh | sh
+  - source $HOME/.local/bin/env
+  - uv venv
+  - uv pip install cibuildwheel meson-python line_profiler .[dev]
+  - source .venv/bin/activate
   - mkdir -p plots
 
-# Define a job to build the wheels
 build_wheels:
   stage: build
   variables:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    - cibuildwheel --platform linux --output-dir dist  # Build the wheels
+    # Install Docker
+    - ls -li /var/run/docker.sock
+    - curl -sSL https://get.docker.com/ | sh
+    # Build the wheels
+    - cibuildwheel --platform linux --output-dir dist
   artifacts:
     paths:
       - dist  # Save the dist folder with the wheels
 
-# profile:
-#   stage: test
-#   artifacts:
-#     paths:
-#       - plots
-#   script:
-#   # Serial profiling.
-#   - ./scripts/profile.sh
-#   # Now parallel benchmarking
-#   - ./scripts/benchmark.sh
-#
-# test:
-#   stage: test
-#   script:
-#   - pytest
-#
+profile:
+  stage: test
+  artifacts:
+    paths:
+      - plots
+  script:
+    - uv pip install .[parallel]
+    # Serial profiling.
+    - ./scripts/profile.sh
+    # Now parallel benchmarking
+    - ./scripts/benchmark.sh
+
+test:
+  stage: test
+  script:
+    - pytest
+
 # docs:
 #   script:
 #   - python -V

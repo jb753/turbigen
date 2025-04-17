@@ -895,7 +895,8 @@ def exchange_periodic(blocks, bid_local, periodics):
     # Whether Send actually blocks is implementation-dependent
     # so we have to explicitly wait for it to finish
     for patch in periodics:
-        patch.Send.Wait()
+        if not patch.nxprocid == rank:
+            patch.Send.Wait()
 
 
 def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
