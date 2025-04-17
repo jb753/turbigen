@@ -55,6 +55,7 @@ build-backend = "mesonpy"
 build = "cp311-* cp312-* cp313-*"
 skip = "pp*"
 manylinux-x86_64-image = "manylinux2014"
+archs = ["x86_64"]
 
 [tool.uv]
 managed = false

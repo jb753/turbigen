@@ -8,6 +8,9 @@ stages:
 
 # Setup env
 before_script:
+  - echo "Checking for docker socket..."
+  - ls -li /var/run/docker.sock
+  - curl -sSL https://get.docker.com/ | sh
   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf
   - python -V
   - python -m venv venv
@@ -20,28 +23,31 @@ before_script:
 # Define a job to build the wheels
 build_wheels:
   stage: build
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_TLS_CERTDIR: ""
   script:
     - cibuildwheel --platform linux --output-dir dist  # Build the wheels
   artifacts:
     paths:
       - dist  # Save the dist folder with the wheels
 
-profile:
-  stage: test
-  artifacts:
-    paths:
-      - plots
-  script:
-  # Serial profiling.
-  - ./scripts/profile.sh
-  # Now parallel benchmarking
-  - ./scripts/benchmark.sh
-
-test:
-  stage: test
-  script:
-  - pytest
-
+# profile:
+#   stage: test
+#   artifacts:
+#     paths:
+#       - plots
+#   script:
+#   # Serial profiling.
+#   - ./scripts/profile.sh
+#   # Now parallel benchmarking
+#   - ./scripts/benchmark.sh
+#
+# test:
+#   stage: test
+#   script:
+#   - pytest
+#
 # docs:
 #   script:
 #   - python -V
