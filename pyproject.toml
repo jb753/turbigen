@@ -26,7 +26,6 @@ keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "tur
 [project.optional-dependencies]
 dev = [
     'sphinx',
-    'sphinxcontrib-bibtex',
     'sphinx-autobuild',
     'sphinx-argparse',
     'sphinxcontrib-programoutput',
