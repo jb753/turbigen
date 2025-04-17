@@ -62,7 +62,7 @@ doc:
   stage: test
   artifacts:
     paths:
-      - doc/examples
+      - doc/_build
   script:
     - python doc/generate_examples.py
     - sphinx-build -W doc doc/_build
