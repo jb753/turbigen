@@ -1,9 +1,5 @@
 image: python:3.11
 
-cache:
-  paths:
-    - .cache/uv
-
 # Run in stages, only deploy if the tests pass
 stages:
 - test
