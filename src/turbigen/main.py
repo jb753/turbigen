@@ -6,13 +6,9 @@ import subprocess
 from turbigen import util
 import turbigen.yaml
 from timeit import default_timer as timer
-import turbigen.slurm
-import turbigen.run2
-import socket
 import shutil
 import sys
 import os
-import turbigen.config
 import turbigen.config2
 import datetime
 import argparse
@@ -38,7 +34,7 @@ def _make_argparser():
             "turbigen is a general turbomachinery design system. When "
             "called from the command line, the program performs mean-line design, "
             "creates annulus and blade geometry, then meshes and runs a "
-            "computational fluid dynamics simulation. Most input data are specified "
+            "computational fluid dynamics simulation. Optionally, the design can be iterated in response to the simulation results. A job or a series of jobs can be submitted to a queuing system. Most input data are specified "
             "in a configuration file; the command-line options below override some "
             "of that configuration data."
         ),
@@ -53,7 +49,6 @@ def _make_argparser():
         "--verbose",
         help=(
             "output more debugging information "
-            "(can also enable by setting $TURBIGEN_VERBOSE)"
         ),
         action="store_true",
     )
@@ -67,13 +62,7 @@ def _make_argparser():
     parser.add_argument(
         "-J",
         "--no-job",
-        help="disable submission of cluster job (when run on login node)",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-j",
-        "--job",
-        help="enable submission of cluster job (when run on compute node)",
+        help="disable submission of cluster job (when job is already configured in INPUT_YAML)",
         action="store_true",
     )
     parser.add_argument(
@@ -95,25 +84,6 @@ def _make_argparser():
         "-e",
         "--edit",
         help="run on an edited copy of the configuration file (using $EDITOR)",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "-m",
-        "--meanline-debug",
-        help="perform the mean-line design, print out debugging information and stop",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-a",
-        "--annulus-debug",
-        help="perform the annulus design, print out debugging information and stop",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-W",
-        "--no-wdist",
-        help="skip wall distance caluclation",
         action="store_true",
     )
     return parser
@@ -162,6 +132,7 @@ def main():
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
 
+
     # Set up loud logging initially
     log_path = os.path.join(workdir, "log_turbigen.txt")
     log_level = logging.ITER
@@ -171,7 +142,7 @@ def main():
     fh.setLevel(log_level)
 
     # Print banner
-    logger.iter(f"TURBIGEN v{turbigen.__version__}")
+    logger.iter(f"*** TURBIGEN v{turbigen.__version__} ***")
     logger.iter(
         f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
     )
@@ -187,21 +158,26 @@ def main():
         editor = os.environ.get("EDITOR")
         subprocess.run([f"{editor}", f"{working_config}"])
 
+    # From this point we can assume the workdir exists
+    # and the config file is in the working directory
+
     # Now read back into a configuration object proper
+    # to ensure that all the defaults are set,
+    # the config is valid, and pathnames are absolute
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
+    # Resave the config so that the internal state and
+    # the YAML file are consistent (e.g. if submitting a job)
+    conf.save()
 
-    # Apply command-line overrides to the config
-    if args.no_iteration:
-        conf.iterate = []
-    if args.no_solve:
-        conf.skip = True
+    # Determine if we are overriding iteration
+    iterate_flag = conf.iterate and not args.no_iteration
 
     # Set up logging to file
-    if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
+    if args.verbose:
         log_level = logging.DEBUG
     else:
-        if conf.iterate:
+        if iterate_flag:
             log_level = logging.ITER
         else:
             log_level = logging.INFO
@@ -211,9 +187,14 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")
 
+    # If we are submitting a job, do that and exit
+    if conf.job and not args.no_job:
+        conf.job.submit(conf.fname)
+        sys.exit(0)
+
     # Iterate if requested
-    if not conf.iterate:
-        conf.design_and_run()
+    if not iterate_flag:
+        conf.design_and_run(args.no_solve)
         # Write back the config with actual meanline and grid
         conf.save()
         converged = True
@@ -239,7 +220,7 @@ def main():
                 conf.skip = False
 
             # Design and run the configuration
-            conf.design_and_run()
+            conf.design_and_run(args.no_solve)
 
             # Write back the config with actual meanline and grid
             conf.save()

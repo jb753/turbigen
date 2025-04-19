@@ -1,6 +1,7 @@
 """Initial thoughts on an improved config class."""
 
 import dataclasses
+from copy import deepcopy
 import numpy as np
 import pickle
 import sys
@@ -22,6 +23,7 @@ import turbigen.inlet
 import turbigen.mesh
 import turbigen.blade
 import turbigen.nblade
+import turbigen.job
 from turbigen import util
 from typing import List
 from matplotlib.backends.backend_pdf import PdfPages
@@ -75,14 +77,25 @@ class TurbigenConfig:
     grid: turbigen.grid.Grid = None
     guess: turbigen.grid.Grid = None
 
-    skip: bool = False
-
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
 
     mean_line_actual: dict = dataclasses.field(default_factory=dict)
 
     post_process: list = dataclasses.field(default_factory=list)
+
+    job: turbigen.job.BaseJob = None
+    """Settings for queue job submission."""
+
+    _basename: str = "config.yaml"
+
+    def copy(self):
+        """Return a copy of the configuration."""
+        return deepcopy(self)
+
+    @property
+    def fname(self):
+        return self.workdir / self._basename
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
@@ -91,11 +104,14 @@ class TurbigenConfig:
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname: str = "config.yaml"):
+    def save(self, fname=None):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
         """
+
+        if fname is None:
+            fname = self.fname
 
         if not self.workdir.exists():
             self.workdir.mkdir(parents=True)
@@ -121,7 +137,7 @@ class TurbigenConfig:
             turbigen.yaml.write_yaml(data, conf_fname)
         except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
-            print(data)
+            logger.error(data)
             quit()
 
         return conf_fname
@@ -164,6 +180,13 @@ class TurbigenConfig:
         if not self.mean_line_actual:
             del data["mean_line_actual"]
 
+        # If no job, remove it
+        if not self.job:
+            del data["job"]
+        else:
+            # Add the job type to the dictionary
+            data["job"]["type"] = util.camel_to_snake(self.job.__class__.__name__)
+
         # If no iterators, remove it
         if not self.iterate:
             del data["iterate"]
@@ -181,6 +204,12 @@ class TurbigenConfig:
                 data["post_process"][i]["type"] = util.camel_to_snake(
                     post.__class__.__name__
                 )
+
+        # Remove keys starting with '_'
+        # These are not part of the configuration
+        for k in list(data.keys()):
+            if k.startswith("_"):
+                data.pop(k)
 
         return data
 
@@ -310,6 +339,15 @@ class TurbigenConfig:
             self.post_process = posts
         else:
             self.post_process = []
+
+        # Configure job submission if present
+        if (j:=self.job):
+            if not (type := j.pop("type")):
+                raise Exception(
+                    "Missing type key in job settings"
+                    )
+            cls = util.get_subclass_by_name(turbigen.job.BaseJob, type)
+            self.job = cls(**j)
 
         # Add some default post processors
         defaults = [
@@ -689,7 +727,7 @@ class TurbigenConfig:
         self.inlet.mu = mu
         self.mean_line.nominal.mu = mu
 
-    def design_and_run(self):
+    def design_and_run(self, skip):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
@@ -729,7 +767,7 @@ class TurbigenConfig:
         # (3) Normal operation: mesh and run the CFD solver
 
         # Generate mesh in cases (2) and (3)
-        if not (self.skip and self.grid):
+        if not (skip and self.grid):
             logger.info("Generating mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
             self.apply_guess()
@@ -738,7 +776,7 @@ class TurbigenConfig:
             logger.info("Skipping and already have a guess, not generating mesh...")
 
         # In case (3), run the CFD solver
-        if not self.skip:
+        if not skip:
             self.run_solver()
         # Case (1), load convergence history
         # A no-op in Case (2)
