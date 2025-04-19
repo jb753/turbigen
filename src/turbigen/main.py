@@ -38,7 +38,7 @@ def _make_argparser():
             "turbigen is a general turbomachinery design system. When "
             "called from the command line, the program performs mean-line design, "
             "creates annulus and blade geometry, then meshes and runs a "
-            "computational fluid dynamics simulation. Most input data are specified "
+            "computational fluid dynamics simulation. Optionally, the design can be iterated in response to the simulation results. A job or a series of jobs can be submitted to a queuing system. Most input data are specified "
             "in a configuration file; the command-line options below override some "
             "of that configuration data."
         ),
@@ -53,7 +53,6 @@ def _make_argparser():
         "--verbose",
         help=(
             "output more debugging information "
-            "(can also enable by setting $TURBIGEN_VERBOSE)"
         ),
         action="store_true",
     )
@@ -67,13 +66,7 @@ def _make_argparser():
     parser.add_argument(
         "-J",
         "--no-job",
-        help="disable submission of cluster job (when run on login node)",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-j",
-        "--job",
-        help="enable submission of cluster job (when run on compute node)",
+        help="disable submission of cluster job (when job is already configured in INPUT_YAML)",
         action="store_true",
     )
     parser.add_argument(
@@ -95,25 +88,6 @@ def _make_argparser():
         "-e",
         "--edit",
         help="run on an edited copy of the configuration file (using $EDITOR)",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "-m",
-        "--meanline-debug",
-        help="perform the mean-line design, print out debugging information and stop",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-a",
-        "--annulus-debug",
-        help="perform the annulus design, print out debugging information and stop",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-W",
-        "--no-wdist",
-        help="skip wall distance caluclation",
         action="store_true",
     )
     return parser
@@ -191,17 +165,14 @@ def main():
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
 
-    # Apply command-line overrides to the config
-    if args.no_iteration:
-        conf.iterate = []
-    if args.no_solve:
-        conf.skip = True
+    # Determine if we are overriding iteration
+    iterate_flag = conf.iterate and not args.no_iteration
 
     # Set up logging to file
-    if args.verbose or os.environ.get("TURBIGEN_VERBOSE"):
+    if args.verbose:
         log_level = logging.DEBUG
     else:
-        if conf.iterate:
+        if iterate_flag:
             log_level = logging.ITER
         else:
             log_level = logging.INFO
@@ -212,8 +183,8 @@ def main():
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")
 
     # Iterate if requested
-    if not conf.iterate:
-        conf.design_and_run()
+    if not iterate_flag:
+        conf.design_and_run(args.no_solve)
         # Write back the config with actual meanline and grid
         conf.save()
         converged = True
@@ -239,7 +210,7 @@ def main():
                 conf.skip = False
 
             # Design and run the configuration
-            conf.design_and_run()
+            conf.design_and_run(args.no_solve)
 
             # Write back the config with actual meanline and grid
             conf.save()

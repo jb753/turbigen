@@ -16,6 +16,8 @@ User manual
 
    quickstart
    nomenclature
+   usage
    examples/index
    changelog
+   license
 

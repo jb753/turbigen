@@ -75,8 +75,6 @@ class TurbigenConfig:
     grid: turbigen.grid.Grid = None
     guess: turbigen.grid.Grid = None
 
-    skip: bool = False
-
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
 
@@ -689,7 +687,7 @@ class TurbigenConfig:
         self.inlet.mu = mu
         self.mean_line.nominal.mu = mu
 
-    def design_and_run(self):
+    def design_and_run(self, skip):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
@@ -729,7 +727,7 @@ class TurbigenConfig:
         # (3) Normal operation: mesh and run the CFD solver
 
         # Generate mesh in cases (2) and (3)
-        if not (self.skip and self.grid):
+        if not (skip and self.grid):
             logger.info("Generating mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
             self.apply_guess()
@@ -738,7 +736,7 @@ class TurbigenConfig:
             logger.info("Skipping and already have a guess, not generating mesh...")
 
         # In case (3), run the CFD solver
-        if not self.skip:
+        if not skip:
             self.run_solver()
         # Case (1), load convergence history
         # A no-op in Case (2)
