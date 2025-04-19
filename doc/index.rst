@@ -17,4 +17,5 @@ User manual
    quickstart
    nomenclature
    examples/index
+   changelog
 
