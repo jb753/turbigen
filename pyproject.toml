@@ -21,6 +21,8 @@ dependencies = [
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
 ]
+description = "Framework for turbomachinery design and computational fluid dynamics simulation"
+readme = "README.md"
 keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "turbine"]
 
 [project.optional-dependencies]
@@ -43,6 +45,7 @@ parallel = [
 
 [project.urls]
 Homepage = "https://turbigen.org"
+Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 
 [project.scripts]
 turbigen = "turbigen.main:main"
