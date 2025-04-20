@@ -1,6 +1,7 @@
 """Classes for submitting jobs to a queue."""
 
 import os
+import sys
 import subprocess
 from abc import ABC, abstractmethod
 import dataclasses
@@ -65,7 +66,15 @@ class Slurm(BaseJob):
     """Whether to hold the node on failure."""
 
     def submit(self, fname):
-        """Submit the config as a SLURM job."""
+        """Submit a config file as a SLURM job.
+
+        Parameters
+        ----------
+        fname : Path
+            Path to the config file to submit.
+
+        """
+
 
         workdir = fname.parent
 
@@ -113,20 +122,22 @@ turbigen -J {fname}
 
         # Run sbatch in the workdir specified in the config
         # This ensures that slurm.out is kept with the job
-        try:
-            sbatch_out = subprocess.run(
-                ["sbatch", SBATCH_FILE],
-                text=True,
-                cwd=workdir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            ).stdout
-        except subprocess.CalledProcessError as e:
-            logger.info(e.stderr.decode("utf-8"))
-            raise e
+        sbatch_out = subprocess.run(
+            ["sbatch", SBATCH_FILE],
+            text=True,
+            cwd=workdir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        # Check for errors
+        if sbatch_out.returncode != 0:
+            logger.iter(sbatch_out.stderr)
+            logger.iter("Error submitting job, exiting.")
+            sys.exit(1)
 
         # Extract the job id from the output and print it
-        jid = sbatch_out.strip().split(" ")[-1]
+        jid = sbatch_out.stdout.strip().split(" ")[-1]
         logger.iter(f"Submitted SLURM jobid={jid} in {workdir}")
 
         return jid
