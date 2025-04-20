@@ -136,6 +136,7 @@ def main():
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
 
+
     # Set up loud logging initially
     log_path = os.path.join(workdir, "log_turbigen.txt")
     log_level = logging.ITER
@@ -145,7 +146,7 @@ def main():
     fh.setLevel(log_level)
 
     # Print banner
-    logger.iter(f"TURBIGEN v{turbigen.__version__}")
+    logger.iter(f"*** TURBIGEN v{turbigen.__version__} ***")
     logger.iter(
         f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
     )
@@ -160,6 +161,9 @@ def main():
     if args.edit:
         editor = os.environ.get("EDITOR")
         subprocess.run([f"{editor}", f"{working_config}"])
+
+    # From this point we can assume the workdir exists
+    # and the config file is in the working directory
 
     # Now read back into a configuration object proper
     conf = turbigen.yaml.read_yaml(working_config)
@@ -181,6 +185,12 @@ def main():
 
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")
+
+    # If we are submitting a job, do that and exit
+    if conf.job and not args.no_job:
+        conf.job.submit(conf.fname)
+        sys.exit(0)
+
 
     # Iterate if requested
     if not iterate_flag:

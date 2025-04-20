@@ -22,6 +22,7 @@ import turbigen.inlet
 import turbigen.mesh
 import turbigen.blade
 import turbigen.nblade
+import turbigen.job
 from turbigen import util
 from typing import List
 from matplotlib.backends.backend_pdf import PdfPages
@@ -82,6 +83,15 @@ class TurbigenConfig:
 
     post_process: list = dataclasses.field(default_factory=list)
 
+    job: turbigen.job.BaseJob = None
+    """Settings for queue job submission."""
+
+    _basename: str = "config.yaml"
+
+    @property
+    def fname(self):
+        return self.workdir / self._basename
+
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
 
@@ -89,11 +99,14 @@ class TurbigenConfig:
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname: str = "config.yaml"):
+    def save(self, fname=None):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
         """
+
+        if fname is None:
+            fname = self.fname
 
         if not self.workdir.exists():
             self.workdir.mkdir(parents=True)
@@ -161,6 +174,10 @@ class TurbigenConfig:
         # If no acutal meanline, remove it
         if not self.mean_line_actual:
             del data["mean_line_actual"]
+
+        # If no job, remove it
+        if not self.job:
+            del data["job"]
 
         # If no iterators, remove it
         if not self.iterate:
@@ -308,6 +325,15 @@ class TurbigenConfig:
             self.post_process = posts
         else:
             self.post_process = []
+
+        # Configure job submission if present
+        if (j:=self.job):
+            if not (type := j.pop("type")):
+                raise Exception(
+                    "Missing type key in job settings"
+                    )
+            cls = util.get_subclass_by_name(turbigen.job.BaseJob, type)
+            self.job = cls(**j)
 
         # Add some default post processors
         defaults = [
