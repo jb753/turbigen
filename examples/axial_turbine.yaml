@@ -104,5 +104,6 @@ job:
   partition: ampere
   hours: 1
   account: brind-sl3-cpu
+  hold_on_fail: true
 
 

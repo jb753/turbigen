@@ -1,6 +1,7 @@
 """Initial thoughts on an improved config class."""
 
 import dataclasses
+from copy import deepcopy
 import numpy as np
 import pickle
 import sys
@@ -87,6 +88,10 @@ class TurbigenConfig:
     """Settings for queue job submission."""
 
     _basename: str = "config.yaml"
+
+    def copy(self):
+        """Return a copy of the configuration."""
+        return deepcopy(self)
 
     @property
     def fname(self):

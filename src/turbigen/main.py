@@ -188,7 +188,16 @@ def main():
 
     # If we are submitting a job, do that and exit
     if conf.job and not args.no_job:
-        conf.job.submit(conf.fname)
+        # conf.job.submit(conf.fname)
+        confs = []
+        yamls = []
+        for i in range(4):
+            confs.append(conf.copy())
+            confs[-1].workdir = conf.workdir / f"{i:03d}"
+            confs[-1].save()
+            yamls.append(confs[-1].fname)
+        print(yamls)
+        conf.job.submit_array(yamls)
         sys.exit(0)
 
 

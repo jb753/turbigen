@@ -1,6 +1,7 @@
 """Classes for submitting jobs to a queue."""
 
 import os
+import numpy as np
 import sys
 import subprocess
 from abc import ABC, abstractmethod
@@ -8,8 +9,11 @@ import dataclasses
 from turbigen import util
 
 SBATCH_FILE = "submit.sh"
+SBATCH_ARRAY = "submit_array.sh"
 
-ERROR_HANDLER_STR = r"""trap 'handle_error' ERR
+ERROR_HANDLER_STR = r"""
+
+trap 'handle_error' ERR
 handle_error() {
     echo "# Command failed, starting a shell on ${HOSTNAME}. Attach using:" > failed.txt
     echo "ssh -t $HOSTNAME tmux att" >> failed.txt
@@ -20,7 +24,9 @@ handle_error() {
     tmux new -d 'exec bash' &> /dev/null
     # Keep the job running until it times out
     sleep 36h
-}"""
+}
+
+"""
 
 logger = util.make_logger()
 
@@ -33,6 +39,11 @@ class BaseJob(ABC):
         """Send a job to the queue."""
         raise NotImplementedError()
 
+    def submit_array(self, fnames):
+        """Submit many jobs the queue."""
+        # Trivial implementation as a default
+        for fname in fnames:
+            self.submit(fname)
 
 @dataclasses.dataclass
 class Slurm(BaseJob):
@@ -42,7 +53,7 @@ class Slurm(BaseJob):
     """Time limit in wall-clock hours for the job."""
 
     account: str
-    """Name of the account to charge the compute time."""
+    """Name of the account to charge compute time."""
 
     partition: str
     """Which cluster partition to use."""
@@ -51,7 +62,7 @@ class Slurm(BaseJob):
     """Generic consumable resources specification."""
 
     qos: str = ""
-    """Quality of service level for this job in the queuing system."""
+    """Quality of service level for the job."""
 
     tasks: int = 1
     """Number of tasks to run in parallel."""
@@ -65,24 +76,10 @@ class Slurm(BaseJob):
     hold_on_fail: bool = False
     """Whether to hold the node on failure."""
 
-    def submit(self, fname):
-        """Submit a config file as a SLURM job.
+    max_concurrent: int = 0
+    """Maximum number of simultaneous jobs to run from an array, 0 for no limit."""
 
-        Parameters
-        ----------
-        fname : Path
-            Path to the config file to submit.
-
-        """
-
-
-        workdir = fname.parent
-
-        # Error handler if needed
-        if self.hold_on_fail:
-            error_handler_str = ERROR_HANDLER_STR
-        else:
-            error_handler_str = ""
+    def _get_sbatch_header(self, jobname):
 
         # QOS if needed
         if self.qos:
@@ -97,7 +94,7 @@ class Slurm(BaseJob):
 
         # Prepare a submission script
         sbatch_str = f"""#!/bin/bash
-#SBATCH -J turbigen_{workdir.name}
+#SBATCH -J {jobname}
 #SBATCH -p {self.partition}
 #SBATCH -A {self.account}
 #SBATCH --mail-type={self.mail_type}
@@ -105,27 +102,51 @@ class Slurm(BaseJob):
 #SBATCH --ntasks={self.tasks}
 #SBATCH --gres={self.gres}
 #SBATCH --time={timestr}
-{qos_str}
+{qos_str}"""
 
-{error_handler_str}
+        return sbatch_str
 
+    def submit(self, fname):
+        """Submit a config file as a SLURM job.
+
+        Parameters
+        ----------
+        fname : Path
+            Path to the config file to submit.
+
+        """
+
+        workdir = fname.parent
+        jobname = f"turbigen_{workdir.name}"
+
+        # Get header and add the command
+        sbatch_str = self._get_sbatch_header(jobname) 
+
+        # Error handler if needed
+        if self.hold_on_fail:
+            sbatch_str += ERROR_HANDLER_STR
+
+        sbatch_str += f"""
 # Invoke turbigen with the -J flag to ignore the job information
 # in the config file and run directly on the compute node
 turbigen -J {fname}
 
 """
+        self.sbatch(sbatch_str, workdir / SBATCH_FILE)
+
+    def sbatch(self, sbatch_str, sbatch_path):
+        """Write out the sbatch script and run through sbatch."""
 
         # Write out the submission script
-        sbatch_path = workdir / SBATCH_FILE
-        with open(sbatch_path, "w") as f:
+        with sbatch_path.open("w") as f:
             f.write(sbatch_str)
 
         # Run sbatch in the workdir specified in the config
         # This ensures that slurm.out is kept with the job
         sbatch_out = subprocess.run(
-            ["sbatch", SBATCH_FILE],
+            ["sbatch", sbatch_path.name],
             text=True,
-            cwd=workdir,
+            cwd=sbatch_path.parent,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -138,11 +159,53 @@ turbigen -J {fname}
 
         # Extract the job id from the output and print it
         jid = sbatch_out.stdout.strip().split(" ")[-1]
-        logger.iter(f"Submitted SLURM jobid={jid} in {workdir}")
-
-        return jid
+        logger.iter(f"Submitted SLURM jobid={jid} in {sbatch_path.parent}")
 
 
+    def submit_array(self, fnames):
+        """Submit many config files as a SLURM job array.
+
+        Parameters
+        ----------
+        fnames : list of Path
+            List of paths to the config files to submit.
+
+        """
+
+        # Check that the fnames are all in the same directory
+        base_dir = fnames[0].parent.parent
+        for fname in fnames:
+            if fname.parent.parent != base_dir:
+                raise ValueError(
+                    "All config files must be in the same directory for job arrays."
+                )
+
+        # Check that the directories are consecutive numbers
+        try:
+            nums = [int(fname.parent.name) for fname in fnames]
+            assert np.all(np.diff(nums) == 1)
+        except (ValueError, AssertionError):
+            raise ValueError(
+                "Job array must be a consecutive range of numbered directories."
+            )
+
+        width = len(str(fnames[0].parent.name))
+
+        maxstr = "%{self.max_concurrent}" if self.max_concurrent else ""
+
+        sbatch_str = self._get_sbatch_header('turbigen_array')
+        sbatch_str += f"#SBATCH --array={nums[0]}-{nums[-1]}{maxstr}"
+        sbatch_str += rf"""
+
+WORKDIR="{base_dir}/$(printf "%0{width}d\n" $SLURM_ARRAY_TASK_ID)"
+
+# Run directly on compute node and ignore the job info in the config file
+# Using the -J flag to turbigen
+turbigen  -J $WORKDIR/config.yaml
+
+"""
+        sbatch_path = base_dir / SBATCH_ARRAY
+        self.sbatch(sbatch_str, sbatch_path)
 
 def _next_id(base_dir):
     # Find the ids of existing directories
@@ -208,18 +271,11 @@ def submit_array(confs, basedir, Nmax):
 #SBATCH --gres=gpu:{gres}
 #SBATCH --time={'%02d' % cj['hours']}:00:00
 #SBATCH --qos={cj.get('qos','gpu1')}
-#SBATCH --array={ids[0]}-{ids[-1]}{maxstr}
-
-cd {TURBIGEN_ROOT}
-turbigen {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/config.yaml &>\
-    {basedir}/$(printf "%04d\n" $SLURM_ARRAY_TASK_ID)/log_turbigen.txt
 
 """
 
-    SBATCH_FILE = "submit_array.sh"
-
     # Write out
-    with open(os.path.join(basedir, SBATCH_FILE), "w") as f:
+    with open(os.path.join(basedir, SBATCH_ARRAY), "w") as f:
         f.write(sbatch_str)
 
     orig_workdir = os.getcwd()
