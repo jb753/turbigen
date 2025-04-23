@@ -34,7 +34,9 @@ def _make_argparser():
             "turbigen is a general turbomachinery design system. When "
             "called from the command line, the program performs mean-line design, "
             "creates annulus and blade geometry, then meshes and runs a "
-            "computational fluid dynamics simulation. Optionally, the design can be iterated in response to the simulation results. A job or a series of jobs can be submitted to a queuing system. Most input data are specified "
+            "computational fluid dynamics simulation. Optionally, the design can be "
+            "iterated in response to the simulation results. A job or a series of "
+            "jobs can be submitted to a queuing system. Most input data are specified "
             "in a configuration file; the command-line options below override some "
             "of that configuration data."
         ),
@@ -255,71 +257,6 @@ def main():
     logger.iter(conf.format_design_vars_table())
 
     if not converged:
-        sys.exit(1)
-
-    quit()
-
-    # Hypercubes are always jobs
-    if conf.hypercube:
-        if not conf.job:
-            raise Exception("Need job submission configured to run a hypercube.")
-
-        basedir = conf.workdir
-        conf.database["conf_path"] = os.path.join(basedir, "config_db.yaml")
-        conf.database["mean_line_path"] = os.path.join(basedir, "mean_line_db.yaml")
-        conf.workdir = None
-
-        if conf.hypercube.get("N"):
-            logger.iter("Running a hypercube...")
-            cs = conf.sample_hypercube()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            turbigen.slurm.submit_array(cs, basedir, Nrunmax)
-
-        if conf.hypercube.get("Nedge"):
-            logger.iter("Running hypercube edges...")
-            ce = conf.sample_hyperfaces()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            turbigen.slurm.submit_array(ce, basedir, Nrunmax)
-
-        success = True
-
-    else:
-        # Determine whether to try to run job or not
-        hostname = socket.gethostname()
-        job_flag = True
-        if not conf.job:
-            job_flag = False
-        elif args.no_job:
-            logger.iter("No job submission forced with flag -J.")
-            job_flag = False
-        elif not shutil.which("sbatch"):
-            logger.iter("No `sbatch` on PATH, declining to submit job to queue.")
-            job_flag = False
-        elif hostname.startswith("gpu"):
-            if args.job:
-                logger.iter("Job submission from compute node forced with flag -j.")
-            else:
-                logger.iter(
-                    f"Running on compute node {hostname}, declining to submit job to queue."
-                )
-                job_flag = False
-
-        if job_flag:
-            turbigen.slurm.submit(conf)
-            success = True
-        else:
-            log_path = os.path.join(workdir, "log_turbigen.txt")
-            fh = logging.FileHandler(log_path)
-            fh.setLevel(log_level)
-            logger.addHandler(fh)
-            logger.iter(f"TURBIGEN v{turbigen.__version__}")
-            logger.iter(
-                f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
-            )
-            logger.iter(f"Working directory: {workdir}")
-            success = turbigen.run.run(conf)
-
-    if not success:
         sys.exit(1)
 
 

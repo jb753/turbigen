@@ -17,7 +17,6 @@ import turbigen.grid
 import turbigen.post
 import turbigen.geometry
 import turbigen.yaml
-import importlib
 import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
@@ -135,10 +134,10 @@ class TurbigenConfig:
         logger.debug(f"Saving configuration to {conf_fname}")
         try:
             turbigen.yaml.write_yaml(data, conf_fname)
-        except Exception as e:
+        except Exception:
             logger.error(f"Failed to save configuration to {conf_fname}")
             logger.error(data)
-            quit()
+            sys.exit(1)
 
         return conf_fname
 
@@ -341,11 +340,9 @@ class TurbigenConfig:
             self.post_process = []
 
         # Configure job submission if present
-        if (j:=self.job):
+        if j := self.job:
             if not (type := j.pop("type")):
-                raise Exception(
-                    "Missing type key in job settings"
-                    )
+                raise Exception("Missing type key in job settings")
             cls = util.get_subclass_by_name(turbigen.job.BaseJob, type)
             self.job = cls(**j)
 
@@ -712,7 +709,8 @@ class TurbigenConfig:
 
         # Add efficiency row
         table_pad.append(
-            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt * 100.0:.1f}, eta_ts={self.mean_line.actual.eta_ts * 100:.1f}"
+            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt * 100.0:.1f}, "
+            f"eta_ts={self.mean_line.actual.eta_ts * 100:.1f}"
         )
 
         # Join the lines

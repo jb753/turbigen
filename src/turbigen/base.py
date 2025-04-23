@@ -811,10 +811,6 @@ class Kinematics:
         # Interpolate the data
         Cf = C.to_unstructured()
 
-        print(f"Theta pitch={pitch}")
-        print(f"Unstr theta lim = {np.max(Cf.t), np.min(Cf.t)}")
-        print(f"Struct theta lim = {np.max(Cs.t), np.min(Cs.t)}")
-
         if np.ptp(Cf.x) > np.ptp(Cf.r):
             xi = np.stack((Cf.x, Cf.t), axis=-1)
             xo = np.stack((Cs.x, Cs.t), axis=-1)
