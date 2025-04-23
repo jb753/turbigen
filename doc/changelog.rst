@@ -1,10 +1,13 @@
 Changelog
 =========
 
-v2.0.1
+v2.1.0
 ^^^^^^
 
+* Add generic job configuration, and implement SLURM submission
 * Add description and README to PyPI
+* Add changelog, license, command-line options to docs
+* Clean up some dead code and unused imports
 
 v2.0.0
 ^^^^^^

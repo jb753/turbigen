@@ -47,9 +47,7 @@ def _make_argparser():
     parser.add_argument(
         "-v",
         "--verbose",
-        help=(
-            "output more debugging information "
-        ),
+        help=("output more debugging information "),
         action="store_true",
     )
     parser.add_argument(
@@ -131,7 +129,6 @@ def main():
     workdir = os.path.abspath(workdir)
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
-
 
     # Set up loud logging initially
     log_path = os.path.join(workdir, "log_turbigen.txt")
