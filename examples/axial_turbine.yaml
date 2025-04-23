@@ -99,11 +99,4 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
-job:
-  type: slurm
-  partition: ampere
-  hours: 1
-  account: brind-sl3-cpu
-  hold_on_fail: true
-
 

@@ -137,7 +137,7 @@ class TurbigenConfig:
             turbigen.yaml.write_yaml(data, conf_fname)
         except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
-            print(data)
+            logger.error(data)
             quit()
 
         return conf_fname
@@ -183,6 +183,9 @@ class TurbigenConfig:
         # If no job, remove it
         if not self.job:
             del data["job"]
+        else:
+            # Add the job type to the dictionary
+            data["job"]["type"] = util.camel_to_snake(self.job.__class__.__name__)
 
         # If no iterators, remove it
         if not self.iterate:
@@ -201,6 +204,12 @@ class TurbigenConfig:
                 data["post_process"][i]["type"] = util.camel_to_snake(
                     post.__class__.__name__
                 )
+
+        # Remove keys starting with '_'
+        # These are not part of the configuration
+        for k in list(data.keys()):
+            if k.startswith("_"):
+                data.pop(k)
 
         return data
 

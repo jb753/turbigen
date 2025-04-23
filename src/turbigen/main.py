@@ -6,13 +6,9 @@ import subprocess
 from turbigen import util
 import turbigen.yaml
 from timeit import default_timer as timer
-import turbigen.slurm
-import turbigen.run2
-import socket
 import shutil
 import sys
 import os
-import turbigen.config
 import turbigen.config2
 import datetime
 import argparse
@@ -166,8 +162,13 @@ def main():
     # and the config file is in the working directory
 
     # Now read back into a configuration object proper
+    # to ensure that all the defaults are set,
+    # the config is valid, and pathnames are absolute
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
+    # Resave the config so that the internal state and
+    # the YAML file are consistent (e.g. if submitting a job)
+    conf.save()
 
     # Determine if we are overriding iteration
     iterate_flag = conf.iterate and not args.no_iteration
@@ -188,18 +189,8 @@ def main():
 
     # If we are submitting a job, do that and exit
     if conf.job and not args.no_job:
-        # conf.job.submit(conf.fname)
-        confs = []
-        yamls = []
-        for i in range(4):
-            confs.append(conf.copy())
-            confs[-1].workdir = conf.workdir / f"{i:03d}"
-            confs[-1].save()
-            yamls.append(confs[-1].fname)
-        print(yamls)
-        conf.job.submit_array(yamls)
+        conf.job.submit(conf.fname)
         sys.exit(0)
-
 
     # Iterate if requested
     if not iterate_flag:

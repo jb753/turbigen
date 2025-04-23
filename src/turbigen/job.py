@@ -1,6 +1,5 @@
 """Classes for submitting jobs to a queue."""
 
-import os
 import numpy as np
 import sys
 import subprocess
@@ -58,10 +57,10 @@ class Slurm(BaseJob):
     partition: str
     """Which cluster partition to use."""
 
-    gres: str = ""
+    gres: str = None
     """Generic consumable resources specification."""
 
-    qos: str = ""
+    qos: str = None
     """Quality of service level for the job."""
 
     tasks: int = 1
@@ -81,16 +80,14 @@ class Slurm(BaseJob):
 
     def _get_sbatch_header(self, jobname):
 
-        # QOS if needed
-        if self.qos:
-            qos_str = f"#SBATCH --qos={self.qos}"
-        else:
-            qos_str = ""
+        # QOS and gres if needed
+        qos_str = f"#SBATCH --qos={self.qos}" if self.qos else ""
+        gres_str = f"#SBATCH --gres={self.gres}" if self.gres else ""
 
         # Convert fractional hours to time string
         hours, frac_hours = divmod(self.hours, 1)
         mins = frac_hours * 60
-        timestr = f"{hours:02d}:{mins:02d}:00"
+        timestr = f"{int(hours):02d}:{int(mins):02d}:00"
 
         # Prepare a submission script
         sbatch_str = f"""#!/bin/bash
@@ -100,8 +97,8 @@ class Slurm(BaseJob):
 #SBATCH --mail-type={self.mail_type}
 #SBATCH --nodes={self.nodes}
 #SBATCH --ntasks={self.tasks}
-#SBATCH --gres={self.gres}
 #SBATCH --time={timestr}
+{gres_str}
 {qos_str}"""
 
         return sbatch_str
@@ -127,9 +124,7 @@ class Slurm(BaseJob):
             sbatch_str += ERROR_HANDLER_STR
 
         sbatch_str += f"""
-# Invoke turbigen with the -J flag to ignore the job information
-# in the config file and run directly on the compute node
-turbigen -J {fname}
+turbigen --no-job {fname}
 
 """
         self.sbatch(sbatch_str, workdir / SBATCH_FILE)
@@ -193,101 +188,16 @@ turbigen -J {fname}
 
         maxstr = "%{self.max_concurrent}" if self.max_concurrent else ""
 
-        sbatch_str = self._get_sbatch_header('turbigen_array')
+        sbatch_str = self._get_sbatch_header(f'turbigen_{base_dir.name}_array')
         sbatch_str += f"#SBATCH --array={nums[0]}-{nums[-1]}{maxstr}"
+        if self.hold_on_fail:
+            sbatch_str += ERROR_HANDLER_STR
         sbatch_str += rf"""
 
 WORKDIR="{base_dir}/$(printf "%0{width}d\n" $SLURM_ARRAY_TASK_ID)"
 
-# Run directly on compute node and ignore the job info in the config file
-# Using the -J flag to turbigen
-turbigen  -J $WORKDIR/config.yaml
+turbigen --no-job $WORKDIR/config.yaml
 
 """
         sbatch_path = base_dir / SBATCH_ARRAY
         self.sbatch(sbatch_str, sbatch_path)
-
-def _next_id(base_dir):
-    # Find the ids of existing directories
-    max_id = -1
-    subdirs = next(os.walk(base_dir))[1]
-    for d in subdirs:
-        try:
-            id_now = int(d)
-            max_id = max(id_now, max_id)
-        except ValueError:
-            pass
-
-    # Use the next available id
-    next_id = max_id + 1
-
-    return next_id
-
-
-
-def _make_rundirs(base_dir, N):
-    if not os.path.exists(base_dir):
-        os.mkdir(base_dir)
-    next_id = _next_id(base_dir)
-    ids = [next_id + n for n in range(N)]
-    workdirs = [os.path.join(base_dir, f"{idn:04d}") for idn in ids]
-    for d in workdirs:
-        os.mkdir(d)
-    return ids, workdirs
-
-
-
-def submit_array(confs, basedir, Nmax):
-    # Assign ids and make workdir for each config
-    N = len(confs)
-    logger.iter("Making workdirs...")
-    ids, workdirs = _make_rundirs(basedir, N)
-
-    job_name = os.path.basename(basedir) + "_array"
-
-    maxstr = f"%{Nmax}" if Nmax else ""
-
-    # Write a turbigen config to each dir
-    logger.iter("Writing configs into workdirs...")
-    for n in range(N):
-        # Delete job info
-        conf_out = confs[n].copy()
-        conf_out.job = {}
-        conf_out.workdir = workdirs[n]
-        conf_out.write(os.path.join(workdirs[n], "config.yaml"))
-
-    # Prepare submission script
-    cj = confs[0].job
-    nnode = cj.get("nodes", 1)
-    ntask = cj.get("tasks", 1)
-    gres = min((ntask, 4))
-    sbatch_str = rf"""#!/bin/bash
-#SBATCH -J turbigen_{job_name}
-#SBATCH -p ampere
-#SBATCH -A {cj['account']}
-#SBATCH --mail-type=NONE
-#SBATCH --nodes={nnode}
-#SBATCH --ntasks={ntask}
-#SBATCH --gres=gpu:{gres}
-#SBATCH --time={'%02d' % cj['hours']}:00:00
-#SBATCH --qos={cj.get('qos','gpu1')}
-
-"""
-
-    # Write out
-    with open(os.path.join(basedir, SBATCH_ARRAY), "w") as f:
-        f.write(sbatch_str)
-
-    orig_workdir = os.getcwd()
-    os.chdir(basedir)
-
-    # Run sbatch
-    try:
-        subprocess.check_output(
-            f"sbatch {SBATCH_FILE}", shell=True, stderr=subprocess.PIPE
-        )
-        logger.iter("Submitted array job.")
-    except subprocess.CalledProcessError as e:
-        logger.info(e.stderr.decode("utf-8"))
-        raise e
-    os.chdir(orig_workdir)
