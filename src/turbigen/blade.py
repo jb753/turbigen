@@ -1,13 +1,11 @@
-from abc import abstractmethod
 from turbigen import util
 import numpy as np
 import dataclasses
 import turbigen.nblade
 import turbigen.camber
 import turbigen.thickness
-import turbigen.thickness
 
-logger = turbigen.util.make_logger()
+logger = util.make_logger()
 
 
 @dataclasses.dataclass

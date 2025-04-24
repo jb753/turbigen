@@ -29,6 +29,7 @@ handle_error() {
 
 logger = util.make_logger()
 
+
 @dataclasses.dataclass
 class BaseJob(ABC):
     """Define the interface for a queue job."""
@@ -43,6 +44,7 @@ class BaseJob(ABC):
         # Trivial implementation as a default
         for fname in fnames:
             self.submit(fname)
+
 
 @dataclasses.dataclass
 class Slurm(BaseJob):
@@ -69,7 +71,7 @@ class Slurm(BaseJob):
     nodes: int = 1
     """Number of nodes to run the job on."""
 
-    mail_type: str = 'FAIL'
+    mail_type: str = "FAIL"
     """Type of email notification to send."""
 
     hold_on_fail: bool = False
@@ -117,7 +119,7 @@ class Slurm(BaseJob):
         jobname = f"turbigen_{workdir.name}"
 
         # Get header and add the command
-        sbatch_str = self._get_sbatch_header(jobname) 
+        sbatch_str = self._get_sbatch_header(jobname)
 
         # Error handler if needed
         if self.hold_on_fail:
@@ -156,7 +158,6 @@ turbigen --no-job {fname}
         jid = sbatch_out.stdout.strip().split(" ")[-1]
         logger.iter(f"Submitted SLURM jobid={jid} in {sbatch_path.parent}")
 
-
     def submit_array(self, fnames):
         """Submit many config files as a SLURM job array.
 
@@ -188,7 +189,7 @@ turbigen --no-job {fname}
 
         maxstr = "%{self.max_concurrent}" if self.max_concurrent else ""
 
-        sbatch_str = self._get_sbatch_header(f'turbigen_{base_dir.name}_array')
+        sbatch_str = self._get_sbatch_header(f"turbigen_{base_dir.name}_array")
         sbatch_str += f"#SBATCH --array={nums[0]}-{nums[-1]}{maxstr}"
         if self.hold_on_fail:
             sbatch_str += ERROR_HANDLER_STR

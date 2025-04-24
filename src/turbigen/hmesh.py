@@ -2,7 +2,6 @@ import numpy as np
 from turbigen import util
 import turbigen.grid
 import turbigen.geometry
-from turbigen.base import BaseConfig
 from turbigen import clusterfunc
 import turbigen.mesh
 import dataclasses

@@ -4,7 +4,6 @@ from abc import abstractmethod
 from turbigen import util
 import numpy as np
 import turbigen.flowfield
-from scipy.optimize import fsolve, root_scalar
 
 logger = util.make_logger()
 
@@ -110,7 +109,6 @@ class TurbineCascade(MeanLineDesigner):
 
         # Trig
         cosBeta = util.cosd(Beta)
-        cosAlpha = util.cosd(Alpha)
         tanAlpha = util.tand(Alpha)
 
         # Evaluate geometry first
@@ -121,7 +119,6 @@ class TurbineCascade(MeanLineDesigner):
         rt = rm + 0.5 * span * cosBeta
         rrms = np.sqrt(0.5 * (rh**2.0 + rt**2.0))
         A = 2.0 * np.pi * rm * span
-        Aflow = A * cosAlpha
 
         # We will have to guess an entropy rise, then update it according to the
         # loss coefficients and Mach number
@@ -438,8 +435,6 @@ class AxialTurbine(MeanLineDesigner):
         Lam = (h[1] - h[0]) / (h[3] - h[0])
 
         phi2 = Vx2 / U2
-        Alpha1 = mean_line.Alpha[0]
-        psi_rep = 2 * (1 - Lam - phi2 * np.tan(np.radians(Alpha1)))
 
         # Assemble the dict
         out = {

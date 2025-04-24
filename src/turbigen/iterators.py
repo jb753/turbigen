@@ -1,4 +1,4 @@
-"""Classes to iteratively update a mean-line design in response to a CFD solution."""
+"""Classes to update mean-line design using a CFD solution."""
 
 from abc import ABC, abstractmethod
 import dataclasses
@@ -35,7 +35,7 @@ class Deviation(IteratorConfig):
         """Ensure that the iterator is correctly configured."""
         if self.tolerance <= 0:
             raise ValueError(
-                f"Could not initialise deviation iterator: tolerance must be positive."
+                "Could not initialise deviation iterator: tolerance must be positive."
             )
 
     def update(self, config) -> bool:
@@ -87,7 +87,7 @@ class DiffusionFactor(IteratorConfig):
         for irow, DF_target in self.target.items():
             if DF_target <= 0:
                 raise ValueError(
-                    f"Could not initialise diffusion factor iterator: target DF must be positive."
+                    "Could not initialise diffusion factor iterator: target DF must be positive."
                 )
             if irow > config.nrow:
                 raise ValueError(
@@ -205,7 +205,8 @@ class MeanLine(IteratorConfig):
         for vname, vtol in self.tolerance.items():
             if vname not in config.mean_line.design_vars:
                 raise ValueError(
-                    f"Could not initialise mean_line iterator: design variable {vname} not found in design variables, should be one of {list(config.mean_line.design_vars.keys())}."
+                    f"Could not initialise mean_line iterator: design variable {vname} "
+                    f"not found in design variables, should be one of {list(config.mean_line.design_vars.keys())}."
                 )
             if vtol <= 0:
                 raise ValueError(

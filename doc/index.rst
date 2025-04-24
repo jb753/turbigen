@@ -20,4 +20,3 @@ User manual
    examples/index
    changelog
    license
-

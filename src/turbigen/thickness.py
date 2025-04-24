@@ -11,7 +11,6 @@ contributed by each side.
 """
 
 import numpy as np
-from scipy.optimize import minimize
 
 from abc import ABC, abstractmethod
 

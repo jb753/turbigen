@@ -179,8 +179,8 @@ class PerfectState(StructuredData):
             return f"PerfectState(P={self.P/1e5:.3f} bar, T={self.T:.1f} K)"
         except TypeError:
             return (
-                f"PerfectState(P={np.array2string(self.P/1e5,precision=3)} bar,"
-                f" T={np.array2string(self.T,precision=1)} K)"
+                f"PerfectState(P={np.array2string(self.P/1e5, precision=3)} bar, "
+                f" T={np.array2string(self.T, precision=1)} K)"
             )
 
     @classmethod
@@ -434,8 +434,8 @@ class RealState(StructuredData):
         except TypeError:
             return (
                 f"RealState({self.fluid_name},"
-                f" P={np.array2string(self.P/1e5,precision=3)} bar,"
-                f" T={np.array2string(self.T,precision=1)} K)"
+                f" P={np.array2string(self.P/1e5, precision=3)} bar, "
+                f" T={np.array2string(self.T, precision=1)} K)"
             )
         except (KeyError, ValueError):
             return "RealState(uninitialised)"
