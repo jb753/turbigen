@@ -134,9 +134,10 @@ class TurbigenConfig:
         logger.debug(f"Saving configuration to {conf_fname}")
         try:
             turbigen.yaml.write_yaml(data, conf_fname)
-        except Exception:
+        except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
             logger.error(data)
+            logger.error(e)
             sys.exit(1)
 
         return conf_fname
