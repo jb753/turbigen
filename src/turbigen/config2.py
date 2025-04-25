@@ -86,7 +86,13 @@ class TurbigenConfig:
     job: turbigen.job.BaseJob = None
     """Settings for queue job submission."""
 
+    converged: bool = False
+    """Flag to indicate iterative convergence."""
+
     _basename: str = "config.yaml"
+
+    _fast_init: bool = False
+    """Flag to not read large object from file on init."""
 
     def copy(self):
         """Return a copy of the configuration."""
@@ -129,6 +135,12 @@ class TurbigenConfig:
                 fname_pkl = self.workdir / f"{k}.pkl"
                 pickle.dump(val, fname_pkl.open("wb"))
                 data[k] = str(fname_pkl)
+
+        # Convert convergence history to a filename
+        if conv := self.solver.convergence:
+            fname_conv = self.workdir / "convergence.npz"
+            conv.save(fname_conv)
+            data["solver"]["convergence"] = str(fname_conv)
 
         conf_fname = self.workdir / fname
         logger.debug(f"Saving configuration to {conf_fname}")
@@ -314,8 +326,14 @@ class TurbigenConfig:
         # If grid or guess is a filename, load and unpickle it
         for k in ["grid", "guess"]:
             val = getattr(self, k)
-            if isinstance(val, str):
+            if isinstance(val, str) and not self._fast_init:
                 setattr(self, k, pickle.load(Path(val).open("rb")))
+
+        # If solver has convergence history, load it
+        if isinstance(self.solver.convergence, str) and not self._fast_init:
+            self.solver.convergence = turbigen.solver.ConvergenceHistory.load(
+                self.solver.convergence, self.grid[0].empty()
+            )
 
         # Setup the post processors
         if self.post_process:
@@ -777,10 +795,6 @@ class TurbigenConfig:
         # In case (3), run the CFD solver
         if not skip:
             self.run_solver()
-        # Case (1), load convergence history
-        # A no-op in Case (2)
-        else:
-            self.solver.setup_convergence(self.mean_line.nominal)
 
         # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()

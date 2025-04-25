@@ -47,6 +47,43 @@ class ConvergenceHistory:
             "u": self.state.u.tolist(),
         }
 
+    def save(self, fname):
+        """Save the convergence history to a file.
+
+        Parameters
+        ----------
+        fname: str
+            Filename to save the data to.
+
+        """
+        np.savez_compressed(fname, **self.to_dict())
+
+    @classmethod
+    def load(cls, fname, state):
+        """Load the convergence history from a file.
+
+        Parameters
+        ----------
+        fname: str
+            Filename to load the data from.
+
+        Returns
+        -------
+        ConvergenceHistory
+            The loaded convergence history object.
+
+        """
+        data = np.load(fname)
+        nstep = len(data["istep"])
+        state = state.empty(shape=(2, nstep)).set_rho_u(data["rho"], data["u"])
+        return cls(
+            istep=data["istep"],
+            istep_avg=data["istep_avg"],
+            resid=data["resid"],
+            mdot=data["mdot"],
+            state=state,
+        )
+
 
 @dataclasses.dataclass
 class BaseSolver(ABC):
@@ -93,24 +130,6 @@ class BaseSolver(ABC):
 
         """
         raise NotImplementedError
-
-    def setup_convergence(self, state):
-        """Convert convergence history to an object, if needed."""
-        if isinstance(self.convergence, dict):
-            nstep = len(self.convergence["istep"])
-            state = state.copy().empty(
-                (
-                    2,
-                    nstep,
-                )
-            )
-            rho = self.convergence.pop("rho")
-            u = self.convergence.pop("u")
-            state.set_rho_u(rho, u)
-            self.convergence = ConvergenceHistory(**self.convergence, state=state)
-            self.convergence.istep = np.array(self.convergence.istep)
-            self.convergence.mdot = np.array(self.convergence.mdot)
-            self.convergence.resid = np.array(self.convergence.resid)
 
     def to_dict(self):
         # Built in dataclasses.asdict() gets us most of way
