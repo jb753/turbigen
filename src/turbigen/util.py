@@ -1448,6 +1448,7 @@ def init_subclass_by_signature(cls, kwargs):
     # If no subclass matches the input arguments, raise an error
     # and list the available subclasses and their signatures
     error_message = f"No subclass of {cls.__name__} matches the input arguments.\n"
+    error_message += str(kwargs) + "\n"
     error_message += "Available subclasses are:"
     for subclass in cls.__subclasses__():
         error_message += (

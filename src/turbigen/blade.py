@@ -1,10 +1,8 @@
-from abc import abstractmethod
 from turbigen import util
 import numpy as np
 import dataclasses
 import turbigen.nblade
 import turbigen.camber
-import turbigen.thickness
 import turbigen.thickness
 
 logger = turbigen.util.make_logger()
@@ -244,6 +242,16 @@ class BladeDesigner:
         Lu = util.arc_length(xrrtu)
         Ll = util.arc_length(xrrtl)
         return np.maximum(Lu, Ll)
+
+    def chord(self, spf):
+        """Evaluate meridional length of a line from LE to TE."""
+
+        # Meridional coordinates along camber line
+        # are the average of the upper and lower surfaces
+        xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
+
+        # Integrate the arc length
+        return util.arc_length(xr)
 
     def get_coords(self, nspf=20, nchord=100, flip_theta=False):
         """3-D coordinates for this blade row in AutoGrid-style format.

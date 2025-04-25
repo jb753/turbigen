@@ -2066,37 +2066,6 @@ and will cause problems with meshing and solving for the flow field."""
 
         return smin, smax, Pmin, Tmax
 
-    def eval_Cbtob(self, chord, Cbtob):
-        # Change of angular momentum
-        DrVt = self.rVt[1::2] - self.rVt[::2]
-        span = np.minimum(self.span[1::2], self.span[::2])
-        r = np.minimum(self.rmid[1::2], self.rmid[::2])
-        Vrel = np.minimum(self.V_rel[1::2], self.V_rel[::2])
-        rho = np.minimum(self.rho[1::2], self.rho[::2])
-        mdot = self.mdot[0]
-
-        Nb = DrVt * mdot / 2.0 / rho / Vrel**2.0 / span / chord / r / Cbtob * 2.0
-
-        return Nb
-
-    def set_Lieblein_DF(self, DFL):
-        V1 = self.V_rel[::2]
-        V2 = self.V_rel[1::2]
-        DVt = np.abs(self.Vt_rel[1::2] - self.Vt_rel[::2])
-        logger.debug(f"V1={V1}, V2={V2}, DVt={DVt}")
-        if np.any((DFL + V2 / V1 - 1.0) < 0.0):
-            raise Exception(
-                f"V2/V1={V2 / V1} is too low for this DFL={DFL}, need DFL + V2/V1 > 1"
-            )
-        s_c = 2.0 * V1 / DVt * (DFL + V2 / V1 - 1.0)
-        logger.debug(f"s_c={s_c}")
-        Al1 = self.Alpha_rel[::2]
-        Al2 = self.Alpha_rel[1::2]
-        stag = util.atand(0.5 * (util.tand(Al1) + util.tand(Al2)))
-        logger.debug(f"stag={stag}")
-        s_cx = s_c / util.cosd(stag)
-        return s_cx
-
     @property
     def Co(self):
         return self._get_metadata_by_key("Co")
