@@ -245,6 +245,7 @@ def main():
 
             # Check for convergence
             converged = all(conv_all.values())
+            conf.converged = converged
             if converged:
                 # Copy everything from the final iteration
                 # to the working directory
