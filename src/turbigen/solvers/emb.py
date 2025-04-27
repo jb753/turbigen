@@ -850,6 +850,12 @@ def exchange_mixing(mixers):
         mixer.unpack_buffers()
         mixer.set_direction()
 
+    # Whether Send actually blocks is implementation-dependent
+    # so we have to explicitly wait for it to finish
+    for mixer in mixers:
+        if not mixer.nxprocid == rank:
+            mixer.Send.Wait()
+
 
 def exchange_periodic(blocks, bid_local, periodics):
     # Update periodic boundaries

@@ -98,8 +98,8 @@ def main():
     # Load input data in dictionary format
     d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
 
-    # If we are planning to use embsolve
-    if d.get("solver", {}).get("type") == "embsolve":
+    # If we are planning to use emb
+    if d.get("solver", {}).get("type") == "emb":
         try:
             # Check our MPI rank
             from mpi4py import MPI
@@ -109,13 +109,14 @@ def main():
 
             # Jump to solver slave process if not first rank
             if rank > 0:
-                from turbigen.solvers import embsolve
+                from turbigen.solvers import emb
 
-                embsolve.run_slave()
+                emb.run_slave()
                 sys.exit(0)
 
         except ImportError:
             # Just run serially if we cannot import mpi4py
+            print('Failed to import "mpi4py", running serially.')
             pass
 
     # Ensure that the workdir is always set
@@ -285,7 +286,3 @@ def format_iter_log(log_data, header=False):
         out_str = value_strs
 
     return out_str
-
-
-if __name__ == "__main__":
-    main()
