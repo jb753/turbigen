@@ -23,16 +23,13 @@ design_space = {
 
 dspace = turbigen.dspace.DesignSpace(**design_space)
 
-print(conf.mean_line.design_vars["phi2"], conf.nblade[0].Co, conf.nblade[1].Co)
-x = dspace.independent.get_independent(conf)
-dspace.independent.set_independent(conf, x + 0.1)
-print(conf.mean_line.design_vars["phi2"], conf.nblade[0].Co, conf.nblade[1].Co)
-
-print(dspace.independent.get_limits())
-confs = dspace.sample(10)
+print(dspace.datum.workdir)
+print('Bounds:')
+print(dspace.get_bounds())
+# confs = dspace.sample(10)
 
 # for i, conf in enumerate(confs):
-#     conf.save()
-#
+    # conf.save()
+
 # conf.workdir = Path("test_dspace").absolute()
 # conf.save()

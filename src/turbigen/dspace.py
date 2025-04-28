@@ -17,6 +17,12 @@ class IndependentConfig:
     nblade: list = dataclasses.field(default_factory=list)
     """dict keyed by row index of dict keyed by blade count parameter, value a limits tuple of (min, max)."""
 
+    def __post_init__(self):
+        # Check limits are valid
+        xlim = self.get_limits()
+        if (xlim[0] >= xlim[1]).any():
+            raise ValueError("Invalid limits: min >= max")
+
     @property
     def nx(self):
         """Number of independent variables."""
@@ -90,6 +96,12 @@ class DesignSpace:
     independent: IndependentConfig
     """Independent variables for the design space."""
 
+    basis: str = "total-order"
+    """Basis for the polynomal orders of surrogate model."""
+
+    order: int = 3
+    """Maximum order of the polynomial surrogate model."""
+
     seed: int = 0
     """Seed for random number generator."""
 
@@ -133,14 +145,59 @@ class DesignSpace:
             raise ValueError("IDs are not unique.")
         if not np.all(np.diff(ids) == 1):
             raise ValueError("IDs are not consecutive.")
-        if not ids[0] == 0:
+        if len(ids) > 0 and ids[0] != 0:
             raise ValueError("IDs do not start at 0.")
+
+        # Shuffle the samples from sorted order using the seed
+        np.random.seed(self.seed)
+        np.random.shuffle(self.samples)
 
         # Initialise the sampler and fast-forward over the existing samples
         self._sampler = LatinHypercube(
             d=self.independent.nx, seed=self.seed, optimization="random-cd"
         )
         self._sampler.fast_forward(len(self.samples))
+
+        # Extract and store all x vectors from the samples
+        self.x = np.stack([self.independent.get_independent(c) for c in self.samples])
+
+        # Store the bounds of the design space
+        # The most extreme of the prescribed limits and the actual
+        # limits of the samples. Ensures we are in correct interval
+        # for polynomial fitting after normalisation
+        self.xlim = self.independent.get_limits()
+        if self.samples:
+            x = np.stack([self.independent.get_independent(c) for c in self.samples])
+            xlim_samples = np.stack([np.min(x, axis=0), np.max(x, axis=0)])
+
+            # Get the most extreme of the two
+            self.xlim[0] = np.minimum(xlim[0], xlim_samples[0])
+            self.xlim[1] = np.maximum(xlim[1], xlim_samples[1])
+
+        # Normalise the samples to [-1, 1]
+        self.xn = (self.x - self.xlim[0]) / (self.xlim[1] - self.xlim[0])
+        self.xn = 2.0 * self.xn - 1.0
+
+        # Indices for orders of each polynomial
+        nx = self.independent.nx
+        inds = np.meshgrid(*[np.arange(0, self.order + 1) for _ in range(self.ndim)])
+        inds = np.column_stack([np.reshape(i, -1) for i in inds])
+        if self.basis == "total-order":
+            inds = inds[np.sum(inds, axis=1) <= self.order]
+        elif self.basis == "hyperbolic":
+            # 0.2<q<1 is a parameter that eliminates high order interactions.
+            # q=1 is same as total order.
+            q = 0.7
+            inds = inds[np.sum(inds**q, axis=1) ** (1.0 / q) <= self.order]
+        elif self.basis == "tensor-grid":
+            pass
+        else:
+            raise Exception(f'Unknown basis "{self.basis}"')
+        self._inds = inds
+        self.ndof = len(inds)
+
+        # Pre-compute Vandermode-like matrix for fitting
+        self._A = np.column_stack([legval(self._xn_train, i) for i in inds])
 
     def sample(self, n):
         """Generate random configurations in the design space."""
@@ -165,19 +222,17 @@ class DesignSpace:
 
         return configs
 
-    def interpolate(self, func, x):
+    def interpolate(self, func, conf):
         """Interpolate something as a function of x through the design space.
 
         Parameters
         ----------
         func : callable
             Function to interpolate, takes a config object and returns a value.
-        x : (nx,) array
-            Design variable vector to interpolate at.
+        conf : turbigen.config2.TurbigenConfig
+            Query configuration to perform interpolation at.
 
         """
-
-        assert len(x) == self.independent.nx, "x must be of length nx"
 
     def fit(self, x, y):
         """Construct a surrogate model for y as a function of x."""
