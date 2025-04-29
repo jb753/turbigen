@@ -451,6 +451,7 @@ class AxialTurbine(MeanLineDesigner):
             "Ys": tuple(Ys),
             "htr2": mean_line.htr[1],
             "rrms": mean_line.rrms[0],
+            "Omega": mean_line.Omega[-1],
         }
 
         return out

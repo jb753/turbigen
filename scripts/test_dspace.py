@@ -5,15 +5,15 @@ from pathlib import Path
 
 fname = "examples/axial_turbine.yaml"
 conf = turbigen.config2.TurbigenConfig(**turbigen.yaml.read_yaml(fname))
-conf.workdir = Path("test_dspace2").absolute()
+conf.workdir = Path("test_dspace3").absolute()
+conf.workdir.mkdir(exist_ok=True, parents=True)
 
 independent = {
     "mean_line": {
         "phi2": (0.2, 0.8),
         "psi": (0.5, 2.0),
-        "Ma2": (0.5, 0.9),
     },
-    "nblade": {0: {"Co": (0.4, 1.0)}, 1: {"Co": (0.3, 0.8)}},
+    # "nblade": {0: {"Co": (0.4, 1.0)}, 1: {"Co": (0.3, 0.8)}},
 }
 
 design_space = {
@@ -23,11 +23,9 @@ design_space = {
 
 dspace = turbigen.dspace.DesignSpace(**design_space)
 
-print(dspace.datum.workdir)
-print('Bounds:')
-print(dspace.get_bounds())
-# confs = dspace.sample(10)
-
+f = lambda x: x.mean_line_actual["Omega"]
+print(f(dspace.datum))
+# confs = dspace.sample(20)
 # for i, conf in enumerate(confs):
     # conf.save()
 
