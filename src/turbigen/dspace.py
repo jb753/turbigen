@@ -28,6 +28,16 @@ class IndependentConfig:
         """Number of independent variables."""
         return len(self.mean_line) + len(self.nblade)
 
+    def keys(self):
+        """Get the keys of the independent variables."""
+        keys = []
+        for k in self.mean_line:
+            keys.append(k)
+        for k1 in self.nblade:
+            for k2 in self.nblade[k1]:
+                keys.append(f"nblade[{k1}][{k2}]")
+        return keys
+
     def get_limits(self):
         """Get x vectors for upper and lower limits of the design space.
 
@@ -167,15 +177,26 @@ class DesignSpace:
             self.setup()
 
     def normalise(self, x):
-        # Normalise the samples to [-1, 1]
-        xn = (x - self.xlim[0]) / (self.xlim[1] - self.xlim[0])
+
+        nx = x.shape[0]
+        assert nx == self.independent.nx
+
+        # Shape the limits for broadcasting
+        shape = (2, nx,) + (
+            1,
+        ) * (x.ndim - 1)
+        xlim = self.xlim.reshape(shape)
+
+        xn = (x - xlim[0]) / (xlim[1] - xlim[0])
         xn = 2.0 * xn - 1.0
         return xn
 
     def setup(self):
 
         # Extract and store all x vectors from the samples
-        self.x = np.stack([self.independent.get_independent(c) for c in self.samples])
+        self.x = np.stack(
+            [self.independent.get_independent(c) for c in self.samples], axis=-1
+        )
 
         # Store the bounds of the design space
         # The most extreme of the prescribed limits and the actual
@@ -236,7 +257,28 @@ class DesignSpace:
 
         return configs
 
-    def interpolate(self, func, conf):
+    def fit(self, func):
+        """Construct a polynomial surrogate model of func over the samples.
+
+        Parameters
+        ----------
+        func : callable
+            Function to interpolate, takes a config object and returns a value.
+
+        """
+        y = np.array([func(c) for c in self.samples])
+        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
+        return coeff
+
+    def evaluate(self, coeff, xq):
+        xnq = self.normalise(xq)
+        Aq = np.stack([legval(xnq, i) for i in self._inds], axis=-1)
+        # Evaluate the polynomial at the query point
+        yq = np.matmul(Aq, coeff)
+
+        return yq
+
+    def interpolate(self, func, confs):
         """Interpolate something as a function of x through the design space.
 
         Parameters
@@ -253,7 +295,7 @@ class DesignSpace:
         coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
 
         # Get the xn and A for query configuration
-        xq = self.independent.get_independent(conf)
+        xq = np.stack([self.independent.get_independent(c) for c in confs])
         xnq = self.normalise(xq)
         Aq = np.column_stack([legval(xnq, i) for i in self._inds])
 
@@ -261,6 +303,31 @@ class DesignSpace:
         yq = np.matmul(Aq, coeff)
 
         return yq
+
+    def meshgrid(self, N=11, **kwargs):
+
+        # Get datum x
+        xd = self.independent.get_independent(self.datum)
+
+        # Assemble coordinate vectors
+        xv = []
+        for ik, k in enumerate(self.independent.keys()):
+            if k in kwargs:
+                # Get the limits from the keyword argument
+                xv.append(np.linspace(*kwargs[k], N))
+            else:
+                xv.append(
+                    np.array(
+                        [
+                            xd[ik],
+                        ]
+                    )
+                )
+
+        # Create a meshgrid of the coordinate vectors
+        xg = np.stack(np.meshgrid(*xv, indexing="ij"))
+
+        return xg
 
 
 def legcoeff(n):
@@ -296,12 +363,17 @@ def legcoeff(n):
         c = np.array([231.0, 0.0, -315.0, 0.0, 105.0, 0.0, -5.0]) / 16.0
     elif n == 7:
         c = np.array([429.0, 0.0, -693.0, 0.0, 315.0, 0.0, -35.0, 0.0]) / 16.0
+    elif n == 8:
+        c = (
+            np.array([6435.0, 0.0, -12012.0, 0.0, 6930.0, 0.0, -1260.0, 0.0, 35.0])
+            / 128.0
+        )
     else:
         raise ValueError(f"Do not know Legendre coefficients for n={n}")
     return c
 
 
-def legval(x, k, der=None):
+def legval(x, k):
     r"""Evaluate a multidimensional Legendre polynomial.
 
     Define a multidimensional polynomial :math:`\vec{x}` as a product of
@@ -315,12 +387,10 @@ def legval(x, k, der=None):
 
     Parameters
     ----------
-    x: array (npts, ndim)
+    x: array (ndim, npts)
         Coordinates at which to evaluate polynomials.
     k: array (ndim,)
         Polynomial orders for each dimension.
-    der: int
-        Index of dimension to take derivative with respect to.
 
     Returns
     -------
@@ -330,18 +400,11 @@ def legval(x, k, der=None):
     """
 
     # Check input data
-    npts, ndim = x.shape
+    ndim = x.shape[0]
     assert len(k) == ndim
 
     # Evaluate polynomials for each variable at given order
-    y = np.zeros((npts, ndim))
-    for i in range(ndim):
-        if i == der:
-            y[:, i] = np.polyval(np.polyder(legcoeff(k[i]), 1), x[:, i])
-        else:
-            y[:, i] = np.polyval(legcoeff(k[i]), x[:, i])
+    y = np.stack([np.polyval(legcoeff(k[i]), x[i]) for i in range(ndim)])
 
     # Take the product of univariate polynomials over all variables
-    return np.prod(y, axis=1)
-
-
+    return np.prod(y, axis=0)
