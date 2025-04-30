@@ -294,8 +294,8 @@ class AxialTurbine(MeanLineDesigner):
             # Preallocate and loop
             So = So1.empty(shape=(4,)).set_h_s(So1.h, s)
             S = So.copy()
-            MAXITER = 100
-            RTOL = 1e-6
+            MAXITER = 500
+            RTOL = 1e-7
             for _ in range(MAXITER):
                 # Axial velocities
                 Vx2 = U * phi2

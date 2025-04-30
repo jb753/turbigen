@@ -6,6 +6,7 @@ import subprocess
 from abc import ABC, abstractmethod
 import dataclasses
 from turbigen import util
+from pathlib import Path
 
 SBATCH_FILE = "submit.sh"
 SBATCH_ARRAY = "submit_array.sh"
@@ -45,6 +46,9 @@ class BaseJob(ABC):
         for fname in fnames:
             self.submit(fname)
 
+    def to_dict(self):
+        return dataclasses.asdict(self)
+
 
 @dataclasses.dataclass
 class Slurm(BaseJob):
@@ -81,7 +85,6 @@ class Slurm(BaseJob):
     """Maximum number of simultaneous jobs to run from an array, 0 for no limit."""
 
     def _get_sbatch_header(self, jobname):
-
         # QOS and gres if needed
         qos_str = f"#SBATCH --qos={self.qos}" if self.qos else ""
         gres_str = f"#SBATCH --gres={self.gres}" if self.gres else ""
@@ -202,3 +205,39 @@ turbigen --no-job $WORKDIR/config.yaml
 """
         sbatch_path = base_dir / SBATCH_ARRAY
         self.sbatch(sbatch_str, sbatch_path)
+
+
+@dataclasses.dataclass
+class Local(BaseJob):
+    """Submit a job to a local queue."""
+
+    queue_file: str = "~/.turbigen/queue.txt"
+    """List of pending jobs to monitor."""
+
+    def __post_init__(self):
+        if isinstance(self.queue_file, str):
+            self.queue_file = Path(self.queue_file).expanduser()
+
+        self.queue_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def to_dict(self):
+        # Built-in dataclasses method gets us most of the way there
+        data = dataclasses.asdict(self)
+        data["queue_file"] = str(data["queue_file"])
+        return data
+
+    def submit(self, fname):
+        """Submit a config file to the local queue.
+
+        Parameters
+        ----------
+        fname : Path
+            Path to the config file to submit.
+
+        """
+
+        # Append fname to the queue file
+        with open(self.queue_file, "a") as f:
+            f.write(f"{fname}\n")
+
+        logger.iter(f"Submitted local job {fname}")

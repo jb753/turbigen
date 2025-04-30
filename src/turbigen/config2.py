@@ -21,6 +21,7 @@ import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
 import turbigen.blade
+import turbigen.dspace
 import turbigen.nblade
 import turbigen.job
 from turbigen import util
@@ -88,6 +89,9 @@ class TurbigenConfig:
 
     converged: bool = False
     """Flag to indicate iterative convergence."""
+
+    design_space: turbigen.dspace.DesignSpace = None
+    """Settings for design space mapping."""
 
     _basename: str = "config.yaml"
 
@@ -196,6 +200,7 @@ class TurbigenConfig:
         if not self.job:
             del data["job"]
         else:
+            data["job"] = self.job.to_dict()
             # Add the job type to the dictionary
             data["job"]["type"] = util.camel_to_snake(self.job.__class__.__name__)
 
@@ -216,6 +221,10 @@ class TurbigenConfig:
                 data["post_process"][i]["type"] = util.camel_to_snake(
                     post.__class__.__name__
                 )
+
+        if self.design_space:
+            # Convert the design space to a dictionary
+            data["design_space"] = self.design_space.to_dict()
 
         # Remove keys starting with '_'
         # These are not part of the configuration
@@ -381,6 +390,16 @@ class TurbigenConfig:
             # at the start
             if not found:
                 self.post_process.insert(0, d)
+
+        # Init the design space
+        if self.design_space:
+            if isinstance(self.design_space, dict):
+                self.design_space = turbigen.dspace.DesignSpace(**self.design_space)
+                if not self.design_space.basedir:
+                    self.design_space.basedir = Path(self.workdir)
+                else:
+                    self.design_space.basedir = Path(self.design_space.basedir)
+            self.design_space.load()
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""

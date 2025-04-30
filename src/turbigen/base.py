@@ -1788,35 +1788,35 @@ and will cause problems with meshing and solving for the flow field."""
             check_failed = True
             logger.iter(f"Mass is not conserved, mdot={mdot}")
 
-        # Check that rothalpy is conserved in blade rows
-        I = self.I
+        # Get a sensible rothalpy tolerance
         if (self.Omega == 0.0).all():
-            Itol = I[0] * rtol
+            Itol = (self.a.mean() ** 2) * 1e-3
         else:
-            Itol = np.ptp(I) * rtol
+            Itol = np.ptp(self.I) * rtol
 
-        irow = np.where(np.abs(np.diff(I)) < Itol)[0]
+        # Split the rothalpy into rows (where Omega changes)
+        isplit = np.where(np.abs(np.diff(self.Omega)) > 0.0)[0] + 1
+        Irow = np.stack(np.array_split(self.I, isplit))
+        assert Irow.shape[1] == 2
         logger.debug("Checking row rothalpies")
-        for iIrow, Irow in enumerate(np.array_split(I, irow)[1:]):
-            logger.debug(f"Irow: {Irow}")
-            if np.ptp(Irow) > Itol:
+        for irow in range(Irow.shape[0]):
+            Iirow = Irow[irow, :]
+            if np.ptp(Iirow) > Itol:
                 check_failed = True
                 logger.iter(
-                    f"Rothalpy not conserved in row {iIrow}: I = [{Irow[0], Irow[1]}]"
+                    f"Rothalpy not conserved in row {irow}: I = {Iirow}\n"
+                    f"tolerance: {Itol}, diff: {np.ptp(Iirow)}"
                 )
 
         # Check that stagnation enthalpy is conserved between blade rows
-        ho = self.ho
-        hotol = np.ptp(ho) * rtol
-        igap = np.where(np.abs(np.diff(I)) < Itol)[0] + 1
         logger.debug("Checking gap enthalpies")
-        for igap, hogap in enumerate(np.array_split(ho, igap)[1:-1]):
-            logger.debug(f"hogap: {hogap}")
-            if not np.all(np.ptp(hogap) < hotol):
+        hogap = np.array_split(self.ho[:-1], isplit - 1)[1:]
+        for igap in range(len(hogap)):
+            if not np.ptp(hogap[igap]).item() < Itol:
                 check_failed = True
                 logger.iter(
-                    f"Absolute stagnation enthalpy not conserved across gap {igap}: ho"
-                    f" = [{hogap[0], hogap[1]}]"
+                    f"Absolute stagnation enthalpy not conserved across gap {igap}:\n"
+                    f"hogap = {hogap[igap]}"
                 )
 
         return not check_failed

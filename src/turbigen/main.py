@@ -187,6 +187,22 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")
 
+    # If we are sampling a design space, do that and exit
+    if conf.design_space and not args.no_job:
+        logger.iter("Sampling the design space...")
+        samples = conf.design_space.sample(conf)
+        if not samples:
+            logger.iter("No samples to run, exiting.")
+
+        # Write out all the sample configs
+        for s in samples:
+            s.save()
+
+        # Submit as an array
+        conf.job.submit_array([s.fname for s in samples])
+
+        sys.exit(0)
+
     # If we are submitting a job, do that and exit
     if conf.job and not args.no_job:
         conf.job.submit(conf.fname)

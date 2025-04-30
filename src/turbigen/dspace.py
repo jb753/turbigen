@@ -5,6 +5,10 @@ import numpy as np
 import turbigen.yaml
 import turbigen.config2
 from scipy.stats.qmc import LatinHypercube
+from pathlib import Path
+from turbigen import util
+
+logger = util.make_logger()
 
 
 @dataclasses.dataclass
@@ -100,11 +104,14 @@ class IndependentConfig:
 class DesignSpace:
     """Provide methods to sample and fit a design space."""
 
-    datum: turbigen.config2.TurbigenConfig
-    """Datum configuration."""
-
     independent: IndependentConfig
     """Independent variables for the design space."""
+
+    nsample: int = 0
+    """Target number of samples in the design space."""
+
+    basedir: Path = None
+    """Base directory for the design space."""
 
     basis: str = "total-order"
     """Basis for the polynomal orders of surrogate model."""
@@ -115,36 +122,44 @@ class DesignSpace:
     seed: int = 0
     """Seed for random number generator."""
 
-    configs: list = dataclasses.field(default_factory=list)
-    """Configurations for all simulated samples in the design space."""
-
-    def __post_init__(self):
-
-        if isinstance(self.datum, dict):
-            # Convert datum to a config object
-            self.datum = turbigen.config2.TurbigenConfig(**self.datum)
-
-        # Conver independent to an object
-        if isinstance(self.independent, dict):
-            self.independent = IndependentConfig(**self.independent)
-
+    def check_consistency(self, datum):
         # Consistency check for x getting and setting
-        x0 = self.independent.get_independent(self.datum)
-        c = self.datum.copy()
+        x0 = self.independent.get_independent(datum)
+        c = datum.copy()
         self.independent.set_independent(c, x0)
         x1 = self.independent.get_independent(c)
         assert np.allclose(x0, x1), "Inconsistent x setting and getting"
 
-        # Search for all configs under the datum workdir
+    def __post_init__(self):
+        # Conver independent to an object
+        if isinstance(self.independent, dict):
+            self.independent = IndependentConfig(**self.independent)
+
+        # Initialise the sampler and fast-forward over the existing samples
+        np.random.seed(self.seed)
+        self._sampler = LatinHypercube(
+            d=self.independent.nx, seed=self.seed, optimization="random-cd"
+        )
+
+    def to_dict(self):
+        # Built-in dataclasses method gets us most of the way there
+        data = dataclasses.asdict(self)
+        data["basedir"] = str(data["basedir"])
+        return data
+
+    def load(self):
+        # Search for all configs in subdirs under the base directory
         # get the YAML data and fast load them
         # Could parallelize this for big datasets
         # print(f"Loading configs from {self.datum.workdir}...")
-        fnames = sorted(self.datum.workdir.glob("**/*.yaml"))
+        fnames = sorted(self.basedir.glob("*/config.yaml"))
         confs = []
         for f in fnames:
-            # print(f"  {f}")
+            if not f.parent.name.isnumeric():
+                continue
             try:
                 data = turbigen.yaml.read_yaml(f)
+                data.pop("design_space", None)
                 # if not data.get("converged", False):
                 #     print(f"  {f} not converged, skipping")
                 #     continue
@@ -153,6 +168,9 @@ class DesignSpace:
             except Exception as e:
                 raise RuntimeError(f"Error reading {f}: {e}")
         self.samples = confs
+
+        if not self.samples:
+            return
 
         # Check the ids are in order and consecutive
         ids = [int(f.parent.name) for f in fnames]
@@ -164,20 +182,12 @@ class DesignSpace:
             raise ValueError("IDs do not start at 0.")
 
         # Shuffle the samples from sorted order using the seed
-        np.random.seed(self.seed)
         np.random.shuffle(self.samples)
 
-        # Initialise the sampler and fast-forward over the existing samples
-        self._sampler = LatinHypercube(
-            d=self.independent.nx, seed=self.seed, optimization="random-cd"
-        )
+        self.setup()
         self._sampler.fast_forward(len(self.samples))
 
-        if self.samples:
-            self.setup()
-
     def normalise(self, x):
-
         nx = x.shape[0]
         assert nx == self.independent.nx
 
@@ -192,7 +202,6 @@ class DesignSpace:
         return xn
 
     def setup(self):
-
         # Extract and store all x vectors from the samples
         self.x = np.stack(
             [self.independent.get_independent(c) for c in self.samples], axis=-1
@@ -234,8 +243,19 @@ class DesignSpace:
         # Pre-compute Vandermode-like matrix for fitting
         self._A = np.column_stack([legval(self.xn, i) for i in inds])
 
-    def sample(self, n):
-        """Generate random configurations in the design space."""
+    def sample(self, datum):
+        """Generate random configurations in the design space.
+
+        Samples until we have the target number of samples. If we already have
+        enough samples, return nothing.
+
+        """
+
+        n_current = len(self.samples)
+        logger.iter(f"Found {n_current} samples, target {self.nsample}.")
+        n = self.nsample - len(self.samples)
+        if n <= 0:
+            return []
 
         # Sample n points in the design space
         xnorm = self._sampler.random(n)
@@ -249,10 +269,10 @@ class DesignSpace:
         # Create a list of configurations
         configs = []
         for i in range(n):
-            c = self.datum.copy()
+            c = datum.copy()
             self.independent.set_independent(c, x[i])
             # Set a numbered workdir under the datum workdir
-            c.workdir = self.datum.workdir / f"{i:03d}"
+            c.workdir = self.basedir / f"{i + n_current:03d}"
             configs.append(c)
 
         return configs
@@ -305,7 +325,6 @@ class DesignSpace:
         return yq
 
     def meshgrid(self, N=11, **kwargs):
-
         # Get datum x
         xd = self.independent.get_independent(self.datum)
 
