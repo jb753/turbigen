@@ -3,6 +3,7 @@ from copy import copy
 
 import turbigen.util
 import os
+import sys
 
 from dataclasses import dataclass
 
@@ -997,6 +998,12 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
                 # Update pressure, ho, velocities
                 sb.set_secondary()
+
+                # Check for NaNs
+                if not np.mod(istep, 10):
+                    if np.any(np.isnan(sb.cons)):
+                        logger.iter(f"NaN at step {istep} in block {iblock}")
+                        sys.exit(3)
 
                 # Accumulate time average
                 if istep >= istep_avg:

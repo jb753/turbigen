@@ -10,10 +10,10 @@ QUEUE_FILE = "~/.turbigen/queue.txt"
 
 def run_command(yaml_path):
     """Execute turbigen with the given YAML config file path"""
+    # Use the no-job flag so that the jobs do not multiply
     command = ["turbigen", "--no-job", yaml_path]
     tid = str(threading.get_ident())[-3:]
     wstr = f"W{tid}"
-    print(f"{wstr} --- RUN : {yaml_path}")
     result = subprocess.run(command, text=True, capture_output=True)
     if result.returncode == 0:
         print(f"{wstr} --- DONE: {yaml_path}")

@@ -295,7 +295,9 @@ class AxialTurbine(MeanLineDesigner):
             So = So1.empty(shape=(4,)).set_h_s(So1.h, s)
             S = So.copy()
             MAXITER = 500
-            RTOL = 1e-7
+            RTOL = 1e-6
+            rf = 0.5
+            convU = False
             for _ in range(MAXITER):
                 # Axial velocities
                 Vx2 = U * phi2
@@ -331,9 +333,13 @@ class AxialTurbine(MeanLineDesigner):
                 # Check convergence
                 dU = Unew - U
                 if np.abs(dU) < RTOL * U:
+                    convU = True
                     break
                 else:
-                    U = Unew
+                    U = Unew * rf + U * (1.0 - rf)
+
+            if not convU:
+                raise ValueError(f"U iteration did not converge: {U} -> {Unew}")
 
             # Conservation of mass to get areas
             A = mdot / S.rho / Vx

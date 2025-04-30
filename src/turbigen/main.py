@@ -212,8 +212,8 @@ def main():
     if not iterate_flag:
         conf.design_and_run(args.no_solve)
         # Write back the config with actual meanline and grid
+        conf.converged = converged = not args.no_solve
         conf.save()
-        converged = True
     else:
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
         basedir = conf.workdir
