@@ -1,0 +1,108 @@
+# Axial turbine
+#
+# A repeating-stage axial turbine with two blade rows.
+
+# New working directory for each invocation
+workdir: runs/*
+
+# Perfect gas inlet reprensentative of a gas turbine
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  gamma: 1.33
+
+# Set viscosity by vane Reynolds number
+Re_surf: 4e5
+
+# Design variables for an axial turbine
+mean_line:
+  type: axial_turbine
+  # Duty
+  mdot: 500.
+  rrms: 1.0
+  # Aerodynamics
+  psi: 1.6
+  phi2: 0.6
+  Ma2: 0.7
+  fac_Ma3_rel: 1.0
+  zeta: [1.0, 1.0]
+  # Guess of loss
+  Ys: [0.02, 0.05]
+
+# Prescribe the dimensional chords
+annulus:
+  type: fixed_axial_chord
+  cx_gap: [0.1, 0.06, 0.1]
+  cx_row: [0.1, 0.1]
+
+# Coarse H-mesh
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+# Define one mid-span section in stator and rotor
+blades:
+    - spf: 0.5
+      q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
+      q_camber: [0., 0., 0.0]
+    - spf: 0.5
+      q_thick: [0.05, 0.12, 0.3, 0.2, 0.0, 0.1]
+      q_camber: [0., 0., 0.0]
+      tip: 0.01
+
+# Circulation coefficient to set blade loadings
+nblade:
+  - Co: 0.6
+  - Co: 0.6
+
+# Configure the RANS solver
+solver:
+  type: emb
+  n_step: 2000
+  n_step_avg: 100
+  n_step_ramp: 1000
+
+job:
+  type: local
+
+
+# # Configure iterative updates of the geometry
+iterate:
+  mean_line:
+    tolerance:
+      Ys: 0.005
+  deviation:
+  incidence:
+    tolerance: 10.
+    relaxation_factor: 0.025
+  repeat:
+
+# Additional plots to produce
+post_process:
+  # Loss at stator and rotor exits
+  # Non-dimensional meridional coordinate m is defined:
+  #   m=0 at inlet
+  #   m=1 at stator LE
+  #   m=2 at stator TE,
+  #   m=3 at rotor LE
+  #   m=4 at rotor TE
+  #   m=5 at exit
+  - type: contour
+    coord: m
+    value: [2.05, 4.05]
+    variable: Ys
+  # Mid-span Mach
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel
+
+design_space:
+  independent:
+    mean_line:
+      phi2: [0.4, 1.2]
+      psi: [0.8, 2.4]
+  order: 3
+  nsample: 32

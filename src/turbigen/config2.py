@@ -70,7 +70,7 @@ class TurbigenConfig:
         default_factory=list
     )
 
-    max_iter: int = 10
+    max_iter: int = 20
     """Maximum number of iterations to perform."""
 
     """Settings for blade number selection."""
@@ -829,13 +829,7 @@ class TurbigenConfig:
         converged = {}
 
         for iterator in self.iterate:
-            # Use the design space if available
-            if self.design_space.samples:
-                iterator.interpolate(self)
-
-            # Otherwise fallback to simple update
-            else:
-                conv_now, log_data_now = iterator.update(self)
+            conv_now, log_data_now = iterator.update(self)
 
             # Update the overall convergence flag and log data
             name = util.camel_to_snake(iterator.__class__.__name__)

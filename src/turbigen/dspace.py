@@ -150,6 +150,7 @@ class DesignSpace:
         # get the YAML data and fast load them
         # Could parallelize this for big datasets
         # print(f"Loading configs from {self.datum.workdir}...")
+        logger.iter(f"Loading design space from {self.basedir}")
         fnames = sorted(self.basedir.glob("*/config.yaml"))
         fnames = [f for f in fnames if f.parent.name.isnumeric()]
         confs = []
@@ -163,12 +164,15 @@ class DesignSpace:
                     c.design_and_run(skip=True, skip_post=True)
                 confs.append(c)
             except Exception as e:
-                raise RuntimeError(f"Error reading {f}: {e}")
+                logger.iter(f"Error reading {f}")
 
         # Nothing else to do if no configs found
         if not confs:
+            self.nall = 0
             self.samples = []
             return
+        else:
+            self.nall = len(fnames)
 
         # Check the ids are in order and consecutive
         ids = [int(f.parent.name) for f in fnames]
@@ -256,9 +260,9 @@ class DesignSpace:
 
         """
 
-        n_current = len(self.samples)
+        n_current = self.nall
         logger.iter(f"Found {n_current} samples, target {self.nsample}.")
-        n = self.nsample - len(self.samples)
+        n = self.nsample - n_current
         if n <= 0:
             return []
 
