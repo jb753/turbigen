@@ -75,7 +75,7 @@ class IndependentConfig:
         i = 0  # Keep track of index in x
 
         for k in self.mean_line:
-            x[i] = config.mean_line.design_vars[k]
+            x[i] = config.mean_line_actual[k]
             i += 1
 
         for k1 in self.nblade:
@@ -122,13 +122,11 @@ class DesignSpace:
     seed: int = 0
     """Seed for random number generator."""
 
-    def check_consistency(self, datum):
-        # Consistency check for x getting and setting
-        x0 = self.independent.get_independent(datum)
-        c = datum.copy()
-        self.independent.set_independent(c, x0)
-        x1 = self.independent.get_independent(c)
-        assert np.allclose(x0, x1), "Inconsistent x setting and getting"
+    fast_load: bool = True
+    """Skip loading 3D solution for speed."""
+
+    frac_test: float = 0.2
+    """Fraction of samples to use for fit error testing."""
 
     def __post_init__(self):
         # Conver independent to an object
@@ -153,23 +151,23 @@ class DesignSpace:
         # Could parallelize this for big datasets
         # print(f"Loading configs from {self.datum.workdir}...")
         fnames = sorted(self.basedir.glob("*/config.yaml"))
+        fnames = [f for f in fnames if f.parent.name.isnumeric()]
         confs = []
         for f in fnames:
-            if not f.parent.name.isnumeric():
-                continue
             try:
                 data = turbigen.yaml.read_yaml(f)
                 data.pop("design_space", None)
-                # if not data.get("converged", False):
-                #     print(f"  {f} not converged, skipping")
-                #     continue
-                data["_fast_init"] = True
-                confs.append(turbigen.config2.TurbigenConfig(**data))
+                data["_fast_init"] = self.fast_load
+                c = turbigen.config2.TurbigenConfig(**data)
+                if not self.fast_load:
+                    c.design_and_run(skip=True, skip_post=True)
+                confs.append(c)
             except Exception as e:
                 raise RuntimeError(f"Error reading {f}: {e}")
-        self.samples = confs
 
-        if not self.samples:
+        # Nothing else to do if no configs found
+        if not confs:
+            self.samples = []
             return
 
         # Check the ids are in order and consecutive
@@ -182,10 +180,17 @@ class DesignSpace:
             raise ValueError("IDs do not start at 0.")
 
         # Shuffle the samples from sorted order using the seed
-        np.random.shuffle(self.samples)
+        np.random.shuffle(confs)
 
-        self.setup()
-        self._sampler.fast_forward(len(self.samples))
+        # Fast forward the sampler to the number of samples
+        self._sampler.fast_forward(len(confs))
+
+        # Now exclude any unconverged samples
+        self.samples = [c for c in confs if c.converged]
+
+        # If we have samples, pre-calculate for fitting
+        if self.samples:
+            self.setup()
 
     def normalise(self, x):
         nx = x.shape[0]
@@ -277,56 +282,87 @@ class DesignSpace:
 
         return configs
 
-    def fit(self, func):
-        """Construct a polynomial surrogate model of func over the samples.
+    def evaluate(self, func, xq, **kwargs):
+        """Evaluate a fit to a function at query points.
 
         Parameters
         ----------
         func : callable
-            Function to interpolate, takes a config object and returns a value.
+            Function to interpolate, takes a config object and returns a scalar.
+        xq : (ndim, ...) array
+            Query points to evaluate the fit at, first axis the independent vars,
+            remaining axes any shape.
+
+        Returns
+        -------
+        yq : (...) array
+            Values of the fit at query points, same shape as xq[i].
 
         """
-        y = np.array([func(c) for c in self.samples])
-        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
-        return coeff
 
-    def evaluate(self, coeff, xq):
+        # Perform the polynomial fit
+        y = np.array([func(c, **kwargs) for c in self.samples])
+        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
+
+        # Get the xn and A for query points
         xnq = self.normalise(xq)
         Aq = np.stack([legval(xnq, i) for i in self._inds], axis=-1)
-        # Evaluate the polynomial at the query point
+
+        # Evaluate the polynomial at the query points
         yq = np.matmul(Aq, coeff)
 
         return yq
 
-    def interpolate(self, func, confs):
-        """Interpolate something as a function of x through the design space.
+    def rmse(self, func):
+        """Calculate train and test RMSE of a function over samples."""
+
+        # Split the samples into train and test sets
+        # (we shuffled the samples on initialization)
+        n = len(self.samples)
+        n_train = int(n * (1.0 - self.frac_test))
+
+        # Perform the polynomial fit on train set
+        y = np.array([func(c) for c in self.samples])
+        coeff = np.linalg.lstsq(self._A[:n_train], y[:n_train], rcond=None)[0]
+
+        # Evaluate the fit over all samples
+        yfit = np.matmul(self._A, coeff)
+
+        # Calculate the RMSE
+        sqe = (y - yfit) ** 2
+        rmse_train = np.sqrt(np.mean(sqe[:n_train])).item()
+        rmse_test = np.sqrt(np.mean(sqe[n_train:])).item()
+
+        return rmse_train, rmse_test
+
+    def interpolate(self, func, confs, **kwargs):
+        """Interpolate the value of a function for query configs.
 
         Parameters
         ----------
         func : callable
-            Function to interpolate, takes a config object and returns a value.
-        conf : turbigen.config2.TurbigenConfig
-            Query configuration to perform interpolation at.
+            Function to interpolate, takes a config object and returns a scalar.
+        confs : (n,) list of turbigen.config2.TurbigenConfig
+            Query configurations to perform interpolation at.
+        kwargs : dict
+            Additional keyword arguments to pass to the function.
+
+        Returns
+        -------
+        yq : (n,) array
+            Values of the fit at query points.
 
         """
 
-        # First construct a fit from the existing samples
-        y = np.array([func(c) for c in self.samples])
-        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
+        # Get independent variable vectors at query points
+        xq = np.stack([self.independent.get_independent(c) for c in confs], axis=-1)
 
-        # Get the xn and A for query configuration
-        xq = np.stack([self.independent.get_independent(c) for c in confs])
-        xnq = self.normalise(xq)
-        Aq = np.column_stack([legval(xnq, i) for i in self._inds])
+        # Now evaluate the function at the query points
+        return self.evaluate(func, xq, **kwargs)
 
-        # Evaluate the polynomial at the query point
-        yq = np.matmul(Aq, coeff)
-
-        return yq
-
-    def meshgrid(self, N=11, **kwargs):
+    def meshgrid(self, datum, N=11, **kwargs):
         # Get datum x
-        xd = self.independent.get_independent(self.datum)
+        xd = self.independent.get_independent(datum)
 
         # Assemble coordinate vectors
         xv = []

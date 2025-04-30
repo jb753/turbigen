@@ -20,6 +20,12 @@ class IteratorConfig(ABC):
     @abstractmethod
     def check(self, config):
         """Ensure that the iterator is correctly configured."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def interpolate(self, config):
+        """Use a fitted design space to interpolate a config adjustment."""
+        raise NotImplementedError
 
 
 @dataclasses.dataclass
@@ -63,6 +69,33 @@ class Deviation(IteratorConfig):
             log_data[f"DDev[{irow}]"] = ddev
 
         return converged, log_data
+
+    def interpolate(self, config):
+        """Correct for deviation using a fitted design space."""
+
+        # We need to interpolate q_camber[:, 1] at config
+        dspace = config.design_space
+
+        # Function to extract the blade camber
+        def extract_camber(config, irow, isect):
+            return config.blades[irow][0].q_camber[isect, 1]
+
+        # Loop over rows
+        for irow in range(config.nrow):
+            blade = config.blades[irow][0]
+            # Loop over sections
+            for isect in range(blade.nsect):
+                logger.iter(f"Interpolating blade {irow} section {isect}")
+                logger.iter(f"Old camber: {blade.q_camber[isect, 1]}")
+                blade.q_camber[isect, 1] = dspace.interpolate(
+                    extract_camber,
+                    [
+                        config,
+                    ],
+                    irow=irow,
+                    isect=isect,
+                ).item()
+                logger.iter(f"New camber: {blade.q_camber[isect, 1]}")
 
 
 @dataclasses.dataclass

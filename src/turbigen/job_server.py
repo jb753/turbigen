@@ -74,7 +74,7 @@ def monitor_queue(queue_file, max_workers, poll_interval=5):
                 break
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Run turbigen config files on parallel workers"
     )
@@ -101,3 +101,7 @@ if __name__ == "__main__":
         print(f"Created queue file at {queue_file}")
     print(f"Monitoring {args.queue_file} for jobs.")
     monitor_queue(queue_file, args.max_workers, args.poll_interval)
+
+
+if __name__ == "__main__":
+    main()

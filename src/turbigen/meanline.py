@@ -444,8 +444,9 @@ class AxialTurbine(MeanLineDesigner):
 
         # Assemble the dict
         out = {
+            "PR_ts": mean_line.PR_ts,
             "PR_tt": mean_line.PR_tt,
-            "psi": -(mean_line.ho[3] - mean_line.ho[0]) / U2**2,
+            "psi": (mean_line.ho[0] - mean_line.ho[3]) / U2**2,
             "phi2": phi2,
             "zeta": zeta,
             "Ma2": Ma2,
@@ -457,6 +458,8 @@ class AxialTurbine(MeanLineDesigner):
             "Ys": tuple(Ys),
             "htr2": mean_line.htr[1],
             "rrms": mean_line.rrms[0],
+            "eta_tt": mean_line.eta_tt,
+            "eta_ts": mean_line.eta_ts,
             "Omega": mean_line.Omega[-1],
         }
 

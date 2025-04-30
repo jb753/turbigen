@@ -236,6 +236,10 @@ class Local(BaseJob):
 
         """
 
+        # Check that the config file exists
+        if not fname.exists():
+            raise FileNotFoundError(f"Config file {fname} does not exist.")
+
         # Append fname to the queue file
         with open(self.queue_file, "a") as f:
             f.write(f"{fname}\n")

@@ -189,6 +189,13 @@ def main():
 
     # If we are sampling a design space, do that and exit
     if conf.design_space and not args.no_job:
+        # Put datum in non-numbered directory
+        conf.workdir = conf.workdir / "datum"
+        conf.save()
+        # If datum not ran yet, run it first
+        if not conf.mean_line_actual:
+            logger.iter("Running the datum...")
+            conf.job.submit(conf.fname)
         logger.iter("Sampling the design space...")
         samples = conf.design_space.sample(conf)
         if not samples:
@@ -269,6 +276,10 @@ def main():
                 # Delete iteration directories
                 for i in range(iiter + 1):
                     shutil.rmtree(basedir / f"{i:03d}")
+                # Reset the workdir to the final one
+                conf.workdir = basedir
+                # Save the final config
+                conf.save()
                 break
 
         logger.iter(f"Finished iterating, converged={converged}.")

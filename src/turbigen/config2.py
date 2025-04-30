@@ -763,7 +763,7 @@ class TurbigenConfig:
         self.inlet.mu = mu
         self.mean_line.nominal.mu = mu
 
-    def design_and_run(self, skip):
+    def design_and_run(self, skip, skip_post=False):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
@@ -818,7 +818,9 @@ class TurbigenConfig:
         # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()
         self.undo_recamber()
-        self.post_process_all()
+        logger.info("Post-processing...")
+        if not skip_post:
+            self.post_process_all()
 
     def step_iterate(self):
         """Apply all iterators to the configuration."""
@@ -827,8 +829,13 @@ class TurbigenConfig:
         converged = {}
 
         for iterator in self.iterate:
-            # Perform the update
-            conv_now, log_data_now = iterator.update(self)
+            # Use the design space if available
+            if self.design_space.samples:
+                iterator.interpolate(self)
+
+            # Otherwise fallback to simple update
+            else:
+                conv_now, log_data_now = iterator.update(self)
 
             # Update the overall convergence flag and log data
             name = util.camel_to_snake(iterator.__class__.__name__)
