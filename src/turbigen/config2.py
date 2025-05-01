@@ -578,7 +578,7 @@ class TurbigenConfig:
         self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
 
         # Apply profile if available
-        if self.inlet.spf is not None:
+        if self.inlet.profiles is not None:
             logger.info("Applying inlet profile...")
             self.grid.inlet_patches[0].set_profile(
                 self.inlet.spf,

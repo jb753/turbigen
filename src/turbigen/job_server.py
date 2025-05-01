@@ -85,7 +85,12 @@ def main():
         help="Path to the queue file with one YAML config path per line",
     )
     parser.add_argument(
-        "--max-workers", type=int, default=4, help="Maximum number of parallel workers"
+        "--purge",
+        action="store_true",
+        help="Clear the queue file before starting",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=4, help="Maximum number of parallel workers"
     )
     parser.add_argument(
         "--poll-interval",
@@ -102,8 +107,12 @@ def main():
         queue_file.parent.mkdir(parents=True, exist_ok=True)
         queue_file.touch()
         print(f"Created queue file at {queue_file}")
+    elif args.purge:
+        print(f"Purging queue file at {queue_file}")
+        with queue_file.open("w") as f:
+            f.write("")
     print(f"Monitoring {args.queue_file} for jobs.")
-    monitor_queue(queue_file, args.max_workers, args.poll_interval)
+    monitor_queue(queue_file, args.workers, args.poll_interval)
 
 
 if __name__ == "__main__":

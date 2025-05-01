@@ -51,6 +51,7 @@ solver:
   n_step: 1000
   n_step_avg: 100
   n_step_ramp: 1000
+  sf_mix: 0.001
 
 job:
   type: local
