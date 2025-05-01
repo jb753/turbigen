@@ -120,6 +120,8 @@ class Emb(turbigen.solver.BaseSolver):
     fmgrid: float = 0.2
     multigrid: tuple = (2, 2, 2)
 
+    area_avg_Pout: bool = True
+
     def robust(self):
         """Create a copy of the config with more robust settings."""
         return self.replace(
@@ -329,7 +331,10 @@ class SolverBlock:
         # Store boundary conditions
         self.bconds = [
             InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
-        ] + [OutletBoundary(patch, conf.K_exit) for patch in block.outlet_patches]
+        ] + [
+            OutletBoundary(patch, conf.K_exit, conf.area_avg_Pout)
+            for patch in block.outlet_patches
+        ]
 
         # Initialise the state object for this block
         # With the correct data type
@@ -1271,12 +1276,13 @@ class Boundary:
 
 
 class OutletBoundary(Boundary):
-    def __init__(self, patch, K):
+    def __init__(self, patch, K, area_avg):
         # Set up the common features of all boundaries
         super().__init__(patch, K)
 
         # Store the target static pressure
         self.P_target = patch.Pout
+        self.area_avg = area_avg
 
     def slice_inward(self):
         """Index the upstream-running chics (inwards thro outlet)."""
@@ -1285,12 +1291,13 @@ class OutletBoundary(Boundary):
     def inward_chics(self):
         """Use static pressure target to set upstream-running wave."""
 
-        # Force to uniform at target pressure
-        dP = self.P_target - self.state.P
-
-        # Force to an area-averaged static pressure
-        # P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
-        # dP = self.P_target - P_Aavg
+        if self.area_avg:
+            # Force to an area-averaged static pressure
+            P_Aavg = np.sum(self.wAabs * self.state.P) / self.A
+            dP = self.P_target - P_Aavg
+        else:
+            # Force to uniform at target pressure
+            dP = self.P_target - self.state.P
 
         # Calculate the chic wave
         dVx = -dP / self.state.rho / self.state.a  # from c2=0
