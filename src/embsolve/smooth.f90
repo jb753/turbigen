@@ -47,15 +47,7 @@ subroutine smooth( &
     real :: sf2n(ni, nj, nk, 3)
     real :: sf4n(ni, nj, nk, 3)
     real :: sftn(ni, nj, nk)
-    real :: xm2(ni, nj, nk, np)
-    real :: xm4(ni, nj, nk, np)
-    real :: Pm2(ni, nj, nk)
     integer :: ip
-
-    ! Premultiplied
-    xm2 = 2e0*x
-    xm4 = 4e0*x
-    Pm2 = 2e0*P
 
     ! 2nd-order smoothed values for each direcion
 
@@ -66,12 +58,12 @@ subroutine smooth( &
 
     ! i start
     xs2(1, :, :, :, 1) =  ( &
-        xm2(2, :, :, :) - x(3, :, :, :) &
+        2e0*x(2, :, :, :) - x(3, :, :, :) &
     )
 
     ! i end
     xs2(ni, :, :, :, 1) = ( &
-        xm2(ni-1, :, :, :) - x(ni-2, :, :, :) &
+        2e0*x(ni-1, :, :, :) - x(ni-2, :, :, :) &
     )
 
     ! j interior
@@ -81,12 +73,12 @@ subroutine smooth( &
 
     ! j start
     xs2(:, 1, :, :, 2) =  ( &
-        xm2(:, 2, :, :) - x(:, 3,   :, :) &
+        2e0*x(:, 2, :, :) - x(:, 3,   :, :) &
     )
 
     ! j end
     xs2(:, nj, :, :, 2) = ( &
-        xm2(:, nj-1, :, :) - x(:, nj-2, :, :) &
+        2e0*x(:, nj-1, :, :) - x(:, nj-2, :, :) &
     )
 
     ! k interior
@@ -96,12 +88,12 @@ subroutine smooth( &
 
     ! k start
     xs2(:, :, 1, :, 3) = ( &
-        xm2(:, :, 2, :) - x(:, :,   3, :) &
+        2e0*x(:, :, 2, :) - x(:, :,   3, :) &
     )
 
     ! k end
     xs2(:, :, nk, :, 3) = ( &
-        xm2(:, :, nk-1, :) - x(:, :,   nk-2, :) &
+        2e0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
     )
 
     ! 4th-order smoothed values for each direcion
@@ -109,62 +101,62 @@ subroutine smooth( &
 
     ! i interior
     xs4(3:ni-2, :, :, :, 1) = ( &
-        -     x(1:ni-4, :, :, :) + xm4(2:ni-3, :, :, :) &
-        + xm4(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
+        -     x(1:ni-4, :, :, :) + 4e0*x(2:ni-3, :, :, :) &
+        + 4e0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
     )/6e0
 
     ! j interior
     xs4(:, 3:nj-2, :, :, 2) = ( &
-        -     x(:, 1:nj-4, :, :) + xm4(:, 2:nj-3, :, :) &
-        + xm4(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
+        -     x(:, 1:nj-4, :, :) + 4e0*x(:, 2:nj-3, :, :) &
+        + 4e0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
     )/6e0
 
     ! k interior
     xs4(:, :, 3:nk-2, :, 3) = ( &
-        -     x(:, :, 1:nk-4, :) + xm4(:, :, 2:nk-3, :) &
-        + xm4(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
+        -     x(:, :, 1:nk-4, :) + 4e0*x(:, :, 2:nk-3, :) &
+        + 4e0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
     )/6e0
 
     ! Calculate the pressure sensor (Jameson et al. 1981)
 
     ! interior i
     nu(2:ni-1, :, :, 1) = &
-        abs(P(1:ni-2, :, :) - Pm2(2:ni-1, :, :) + P(3:ni, :, :)) &
-        /  (P(1:ni-2, :, :) + Pm2(2:ni-1, :, :) + P(3:ni, :, :))
+        abs(P(1:ni-2, :, :) - 2e0*P(2:ni-1, :, :) + P(3:ni, :, :)) &
+        /  (P(1:ni-2, :, :) + 2e0*P(2:ni-1, :, :) + P(3:ni, :, :))
 
     ! start/end i
     nu(1, :, :, 1) = &
-        abs(P(1, :, :) - Pm2(2, :, :) + P(3, :, :)) &
-        /  (P(1, :, :) + Pm2(2, :, :) + P(3, :, :))
+        abs(P(1, :, :) - 2e0*P(2, :, :) + P(3, :, :)) &
+        /  (P(1, :, :) + 2e0*P(2, :, :) + P(3, :, :))
     nu(ni, :, :, 1) = &
-        abs(P(ni, :, :) - Pm2(ni-1, :, :) + P(ni-2, :, :)) &
-        /  (P(ni, :, :) + Pm2(ni-1, :, :) + P(ni-2, :, :))
+        abs(P(ni, :, :) - 2e0*P(ni-1, :, :) + P(ni-2, :, :)) &
+        /  (P(ni, :, :) + 2e0*P(ni-1, :, :) + P(ni-2, :, :))
 
     ! interior j
     nu(:, 2:nj-1, :, 2) = &
-        abs(P(:, 1:nj-2, :) - Pm2(:, 2:nj-1, :) + P(:, 3:nj, :)) &
-        /  (P(:, 1:nj-2, :) + Pm2(:, 2:nj-1, :) + P(:, 3:nj, :))
+        abs(P(:, 1:nj-2, :) - 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :)) &
+        /  (P(:, 1:nj-2, :) + 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :))
 
     ! start/end j
     nu(:, 1, :, 2) = &
-        abs(P(:, 1, :) - Pm2(:, 2, :) + P(:, 3, :)) &
-        /  (P(:, 1, :) + Pm2(:, 2, :) + P(:, 3, :))
+        abs(P(:, 1, :) - 2e0*P(:, 2, :) + P(:, 3, :)) &
+        /  (P(:, 1, :) + 2e0*P(:, 2, :) + P(:, 3, :))
     nu(:, nj, :, 2) = &
-        abs(P(:, nj, :) - Pm2(:, nj-1, :) + P(:, nj-2, :)) &
-        /  (P(:, nj, :) + Pm2(:, nj-1, :) + P(:, nj-2, :))
+        abs(P(:, nj, :) - 2e0*P(:, nj-1, :) + P(:, nj-2, :)) &
+        /  (P(:, nj, :) + 2e0*P(:, nj-1, :) + P(:, nj-2, :))
 
     ! interior k
     nu(:, :, 2:nk-1, 3) = &
-        abs(P(:, :, 1:nk-2) - Pm2(:, :, 2:nk-1) + P(:, :, 3:nk)) &
-        /  (P(:, :, 1:nk-2) + Pm2(:, :, 2:nk-1) + P(:, :, 3:nk))
+        abs(P(:, :, 1:nk-2) - 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk)) &
+        /  (P(:, :, 1:nk-2) + 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk))
 
     ! start/end k
     nu(:, :, 1, 3) = &
-        abs(P(:, :, 1) - Pm2(:, :, 2) + P(:, :, 3)) &
-        /  (P(:, :, 1) + Pm2(:, :, 2) + P(:, :, 3))
+        abs(P(:, :, 1) - 2e0*P(:, :, 2) + P(:, :, 3)) &
+        /  (P(:, :, 1) + 2e0*P(:, :, 2) + P(:, :, 3))
     nu(:, :, nk, 3) = &
-        abs(P(:, :, nk) - Pm2(:, :, nk-1) + P(:, :, nk-2)) &
-        /  (P(:, :, nk) + Pm2(:, :, nk-1) + P(:, :, nk-2))
+        abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
+        /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
 
     ! Calculate nodal smoothing factors for each direction
 
