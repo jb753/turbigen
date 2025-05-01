@@ -188,7 +188,8 @@ def calculate_nondim(C, ml, vname):
         Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[1]
 
     # Work coefficient
-    Cho = (Cs.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
+    Cho_rel = (Cs.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
+    Cho = (Cs.ho - ml.ho[0]) / ml.halfVsq[1]
 
     # Velocity coefficient
     CVm = C.Vm / ml.V_rel[1]
@@ -201,6 +202,8 @@ def calculate_nondim(C, ml, vname):
         return C.Ma_rel
     elif vname == "Cho":
         return Cho
+    elif vname == "Cho_rel":
+        return Cho_rel
     elif vname == "CVm":
         return CVm
     if vname == "Alpha":

@@ -843,4 +843,8 @@ class TurbigenConfig:
         with PdfPages(self.workdir / "post.pdf") as pdf:
             for poster in self.post_process:
                 logger.debug(f"Running post function {poster}")
-                poster.post(self, pdf)
+                try:
+                    poster.post(self, pdf)
+                except Exception as e:
+                    logger.error(f"Failed to run post function {poster}")
+                    logger.error(e)

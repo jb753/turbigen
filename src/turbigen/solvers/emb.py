@@ -112,7 +112,7 @@ class Emb(turbigen.solver.BaseSolver):
 
     K_exit: float = 0.5
     K_inlet: float = 0.5
-    K_mix: float = 0.5
+    K_mix: float = 0.1
     sf_mix: float = 0.01
 
     print_conv: bool = True
@@ -1428,7 +1428,6 @@ class MixingBoundary(Boundary):
 
         # Calculate conserved changes
         dcons = (inlet_to_cons @ dinlet_local)[..., 0]
-
         dcons_relaxed = self.sf_mix * dcons[:, self.is_inlet, ...]
 
         # Set the changes in the buffer
@@ -1530,7 +1529,7 @@ class MixingBoundary(Boundary):
         dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Store the nodal changes
-        self.dUn[:] = dcons[..., 0] * 0.2
+        self.dUn[:] = dcons[..., 0]
 
         # Pitchwise smooth ho, s, and Beta to uniformity
         # By changing dUn in place
