@@ -2,6 +2,7 @@ import concurrent.futures
 import subprocess
 import argparse
 import time
+import os
 from pathlib import Path
 import threading
 
@@ -93,6 +94,8 @@ def main():
         help="Polling interval in seconds for queue file",
     )
     args = parser.parse_args()
+
+    os.environ["OMP_NUM_THREADS"] = "1"
 
     queue_file = Path(args.queue_file).expanduser()
     if not queue_file.exists():

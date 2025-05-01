@@ -296,7 +296,7 @@ class MeanLine(IteratorConfig):
 class Repeat(IteratorConfig):
     """Settings for repeating stage."""
 
-    relaxation_factor: float = 0.5
+    relaxation_factor: float = 1.0
     """Factor controlling size of changes."""
 
     To_frac: float = 0.5
