@@ -16,7 +16,7 @@ settings = {
     "n_step_avg": 1000,
     "n_step_log": 100,
     "nstep_damp": 500,
-    "xllim_pitch": 0.0,
+    "xllim_pitch": 1e-9,
     "smooth4": 0.001,
     "smooth2_adapt": 0.5,
     "smooth2_const": 0.002,
@@ -214,7 +214,7 @@ def make_pipe():
     mu = 5e-2
     Beta = 0.0
     Po1 = 1e5
-    To1 = 300.0
+    To1 = 320.0
 
     # Set inlet Ma to get inlet static state
     rgas = cp * (ga - 1.0) / ga
@@ -569,6 +569,7 @@ def test_plate_lam():
 
 def test_poiseuille():
     g, F = make_pipe()
+
 
     embsolve.Emb(**settings).run(g)
 
