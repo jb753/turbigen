@@ -556,7 +556,7 @@ class SolverBlock:
         # Having xllim exactly zero does not seem to play well with
         # aggressive compiler optimisations e.g. -ffast-math
         # So we set a minimum value here
-        xllim_pitch = np.max(1e-9, self.conf.xllim_pitch)
+        xllim_pitch = np.maximum(1e-9, self.conf.xllim_pitch)
         # Mixing length limit
         xllim = block.pitch * 0.5 * (block.r.max() + block.r.min()) * xllim_pitch
         # Nodal xlength

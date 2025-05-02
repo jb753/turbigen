@@ -384,7 +384,8 @@ class TurbineCascade(MeanLineDesigner):
         # Assemble the data
         S = [S1, S2]
         Ma = np.array((Ma1, Ma2))
-        V = S.a * Ma
+        a = np.array((S1.a, S2.a))
+        V = a * Ma
         Vxrt = np.stack(util.angles_to_velocities(V, Alpha, Beta))
         Omega = np.zeros_like(Vxrt[0])
 
