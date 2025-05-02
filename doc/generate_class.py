@@ -9,7 +9,8 @@ def generate_subclass(cls, fname):
     rst_str = ""
 
     # Base class first
-    rst_str += inspect.getdoc(cls)
+    doc = inspect.getdoc(cls).split("xxx")
+    rst_str += doc[0]
 
     # Now subclasses
     for subclass in cls.__subclasses__():
@@ -22,6 +23,9 @@ def generate_subclass(cls, fname):
             rst_str += format_yaml_snippet(subclass._design_vars, cls_name)
         except AttributeError:
             pass
+
+    if len(doc) > 1:
+        rst_str += doc[1]
 
     # Write the rst string to a file
     with open(f"doc/{fname}.rst", "w") as f:

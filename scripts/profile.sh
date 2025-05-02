@@ -8,3 +8,4 @@ kernprof -l turbigen examples/axial_turbine.yaml -I
 mkdir -p plots
 python -m line_profiler -rmt "turbigen.lprof" > plots/profile.txt
 sed -i '/@profile/d' "$PYFILE"
+uv pip uninstall turbigen && uv pip install --no-cache .

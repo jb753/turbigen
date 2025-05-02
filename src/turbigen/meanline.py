@@ -16,18 +16,20 @@ class MeanLineDesigner(util.BaseDesigner):
     The first step in turbomachinery design is a one-dimensional analysis along
     a representative 'mean-line', a simplified model of the true
     three-dimensional flow. We consider an axisymmetric streamsurface at an
-    intermediate position between hub and casing lines, with stations at the
+    intermediate position between hub and casing, with stations at the
     inlet and exit of each blade row.
 
     The inputs to the mean-line design are the inlet condition and the machine duty.
     Specifying some aerodynamic design variables and applying conservation of
     mass, momentum and energy, we can calculate the outputs of
-    annulus areas, radii and flow angles at each station.
+    annulus areas, mean radii and flow angles at each station.
 
     The mean-line design process is different for each machine architecture:
     compressor/turbine, axial/radial, and so on. :program:`turbigen` provides
     the built-in architectures listed below, and also allows considerable flexibility
-    in defining your own architectures.
+    in defining your own :ref:`Custom Architectures`.
+
+    xxx
 
     Custom architectures
     --------------------
@@ -53,7 +55,7 @@ class MeanLineDesigner(util.BaseDesigner):
 
             # Your design variables are arguments to the forward method
             @staticmethod
-            def forward(So1, phi, psi, Ma1, ...):
+            def forward(So1, phi, psi, Ma1):
                 '''Use design variables to calculate flow field.
 
                 Parameters
@@ -78,18 +80,19 @@ class MeanLineDesigner(util.BaseDesigner):
                     Shaft angular velocities at all stations [rad/s].
                 Vxrt: (3, 2*nrow) array
                     Velocity components at all stations [m/s].
-                S: (2*nrow,) Fluid
+                S: (2*nrow,) list of Fluid
                     Static states for all stations.
 
                 '''
+
+                # Your code here...
+                raise NotImplementedError("Implement the forward method")
 
                 # Manipulate thermodynamic states by copying the inlet
                 # add setting new property values, say
                 V1 = Ma1 * So1.a  # Approx, should iterate this
                 h1 = So1.h - 0.5 * V1**2
                 S1 = So1.copy().set_h_s(h1 So1.s)
-
-                # Your code here...
 
                 # Collect the static states
                 S = [S1, S2]
@@ -113,12 +116,12 @@ class MeanLineDesigner(util.BaseDesigner):
 
                 '''
 
-                # Blade speed at station 1 (first row inlet)
-                U = mean_line.U[0]
-
                 # The mean_line object has all the flow field data
                 # and calculates most composite quantities like
                 # velocity components, stagnation enthalpy, for you
+
+                # Blade speed at station 1 (first row inlet)
+                U = mean_line.U[0]
 
                 return {
                     # Inlet flow coefficient
@@ -127,7 +130,13 @@ class MeanLineDesigner(util.BaseDesigner):
                     'psi': (mean_line.ho[-1] - mean_line.ho[0]) / U**2,
                     # Mach number at inlet
                     'Ma1': mean_line.Ma[0],
-                    # Your other design variables here...
+                    # Your design variables here...
+                    # ...
+                    # Other keys are printed to the log file and saved to the
+                    # output configuration file
+                    'eta_tt': mean_line.eta_tt,
+                    'Alpha1': mean_line.Alpha[0],
+                    'DH': mean_line.V_rel[1] / mean_line.V_rel[0],
                 }
 
     You will need to implement two static methods: `forward()` and `backward()`.
@@ -171,14 +180,16 @@ class MeanLineDesigner(util.BaseDesigner):
     * Specify aerodynamic design variables instead of geometric ones, e.g.
       flow coefficient and Mach number instead of shaft
       angular velocity and radius ratio. Constraining geometry can lead to
-      feasible designs only over a narrow range of duty. It is more
+      feasible designs only over a narrow range of duty, with many infeasible designs with no solution to the mean-line equations. It is more
       straighforward to map out a design space by varying independent variables
       within their natural aerodynamic bounds.
-      with no solution to the mean-line equations.
     * Controlling Mach number prevents choking when moving around the
       design space. It is imperative to limit deceleration through compressors
       to avoid flow separation, so specifying a relative velocity ratio or de
-      Haller number is a good idea. Letting meridional velocity float can lead to wide variations in span and hence unfavourable high-curvature annulus lines, so controlling the change in meridional velocity through the machine is advisable.
+      Haller number is a good idea. Letting meridional velocity float can lead
+      to wide variations in span and hence unfavourable high-curvature annulus
+      lines, so controlling the change in meridional velocity through the
+      machine is advisable.
     * Loss is best handled by guessing a vector of entropy rise at each
       station, which does not depend on the frame of reference. The values can then be
       updated using CFD results.
@@ -196,9 +207,9 @@ class MeanLineDesigner(util.BaseDesigner):
     `forward()` straight into `backward()` acts as a check that the mean-line
     design is consistent with the requested inputs. `backward()` can also be
     used to post-process other quantities of interest from the mixed-out CFD
-    flow field, which are printed the log file and saved to the output configuration
-    file. Only keys that are also design variables will be fed back
-    into `forward()`.
+    flow field. Extra keys are printed the log file and saved to the output configuration
+    file; only keys that are also design variables will be fed back
+    into `forward()` for the consistency check.
 
     """
 
