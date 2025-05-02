@@ -10,6 +10,10 @@ import os
 
 def make_mean_line(rrms, A, Omega, Vxrt, S):
     """Assemble a perfect or real mean-line data structure from input states."""
+    try:
+        S = S[0].stack(S)
+    except AttributeError:
+        pass
     if isinstance(S, turbigen.fluid.PerfectState):
         ml_class = PerfectMeanLine
     elif isinstance(S, turbigen.fluid.RealState):
