@@ -6,7 +6,7 @@ project('turbigen',
                             'warning_level=1',
                             'buildtype=release'
                           ])
-add_global_arguments(['-Ofast','-funroll-loops','-march=native','-ffast-math','-ftree-vectorize'], language : 'fortran')
+add_global_arguments(['-O3','-funroll-loops','-march=native','-ffast-math','-ftree-vectorize'], language : 'fortran')
 fc = meson.get_compiler('fortran')
 
 # py = import('python').find_installation('''/home/jb753/python/turbigen-dev/.venv/bin/python3''', pure: false)

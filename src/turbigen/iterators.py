@@ -222,7 +222,7 @@ class Incidence(IteratorConfig):
 class MeanLine(IteratorConfig):
     """Settings for mean-line iteration."""
 
-    relaxation_factor: float = 0.8
+    relaxation_factor: float = 0.5
     """Factor controlling size of changes."""
 
     tolerance: dict = dataclasses.field(default_factory=lambda: ({}))
@@ -296,7 +296,7 @@ class MeanLine(IteratorConfig):
 class Repeat(IteratorConfig):
     """Settings for repeating stage."""
 
-    relaxation_factor: float = 1.0
+    relaxation_factor: float = 0.5
     """Factor controlling size of changes."""
 
     To_frac: float = 0.5
