@@ -48,19 +48,23 @@ class TurbigenConfig:
     mean_line: turbigen.meanline.MeanLineDesigner
     """Settings for the mean-line designer."""
 
-    annulus: turbigen.annulus.AnnulusDesigner
+    annulus: turbigen.annulus.AnnulusDesigner = None
     """Settings for the annulus designer."""
 
-    blades: List[List[turbigen.blade.BladeDesigner]]
+    blades: List[List[turbigen.blade.BladeDesigner]] = dataclasses.field(
+        default_factory=list
+    )
     """Settings for the blade designers."""
 
-    nblade: List[turbigen.nblade.BladeNumberConfig]
+    nblade: List[turbigen.nblade.BladeNumberConfig] = dataclasses.field(
+        default_factory=list
+    )
     """Settings for blade number selection."""
 
-    mesh: turbigen.mesh.Mesher
+    mesh: turbigen.mesh.Mesher = None
     """Settings for mesh generation."""
 
-    solver: turbigen.solver.BaseSolver
+    solver: turbigen.solver.BaseSolver = None
     """Settings for flow solution."""
 
     plugdir: Path = None
@@ -141,7 +145,7 @@ class TurbigenConfig:
                 data[k] = str(fname_pkl)
 
         # Convert convergence history to a filename
-        if conv := self.solver.convergence:
+        if self.solver and (conv := self.solver.convergence):
             fname_conv = self.workdir / "convergence.npz"
             conv.save(fname_conv)
             data["solver"]["convergence"] = str(fname_conv)
@@ -173,9 +177,10 @@ class TurbigenConfig:
         data["mean_line"] = self.mean_line.to_dict()
 
         # Convert the annulus designer to a dictionary
-        data["annulus"] = self.annulus.to_dict()
+        if self.annulus:
+            data["annulus"] = self.annulus.to_dict()
 
-        # Convert the annulus designer to a dictionary
+        # Convert the blade designer to a dictionary
         data["blades"] = []
         for row in self.blades:
             if len(row) == 1:
@@ -186,11 +191,13 @@ class TurbigenConfig:
                     data["blades"][-1].append(blade.to_dict())
 
         # Restore the mesh type
-        data["mesh"]["type"] = util.camel_to_snake(self.mesh.__class__.__name__)
+        if self.mesh:
+            data["mesh"]["type"] = util.camel_to_snake(self.mesh.__class__.__name__)
 
         # Restore the solver type
-        data["solver"] = self.solver.to_dict()
-        data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
+        if self.solver:
+            data["solver"] = self.solver.to_dict()
+            data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
 
         # If no acutal meanline, remove it
         if not self.mean_line_actual:
@@ -278,10 +285,11 @@ class TurbigenConfig:
         self.mean_line = MeanLineDesigner(self.mean_line)
 
         # Set up the annulus designer
-        AnnulusDesigner = util.get_subclass_by_name(
-            turbigen.annulus.AnnulusDesigner, self.annulus.pop("type", "smooth")
-        )
-        self.annulus = AnnulusDesigner(self.annulus)
+        if self.annulus:
+            AnnulusDesigner = util.get_subclass_by_name(
+                turbigen.annulus.AnnulusDesigner, self.annulus.pop("type", "smooth")
+            )
+            self.annulus = AnnulusDesigner(self.annulus)
 
         # Set up the blade designers
         blades = []
@@ -303,16 +311,23 @@ class TurbigenConfig:
         ]
 
         # Set up the mesher
-        Mesher = util.get_subclass_by_name(
-            turbigen.mesh.Mesher, self.mesh.pop("type", "h")
-        )
-        self.mesh = Mesher(**self.mesh)
+        if self.mesh:
+            Mesher = util.get_subclass_by_name(
+                turbigen.mesh.Mesher, self.mesh.pop("type", "h")
+            )
+            self.mesh = Mesher(**self.mesh)
 
         # Lazy import the solver
-        solver_name = self.solver.pop("type")
-        importlib.import_module(f".{solver_name}", package="turbigen.solvers")
-        Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
-        self.solver = Solver(**self.solver)
+        if self.solver:
+            solver_name = self.solver.pop("type")
+            importlib.import_module(f".{solver_name}", package="turbigen.solvers")
+            Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
+            self.solver = Solver(**self.solver)
+            # If solver has convergence history, load it
+            if isinstance(self.solver.convergence, str) and not self._fast_init:
+                self.solver.convergence = turbigen.solver.ConvergenceHistory.load(
+                    self.solver.convergence, self.grid[0].empty()
+                )
 
         # Convert iterator dicts to Config objects
         if self.iterate:
@@ -337,12 +352,6 @@ class TurbigenConfig:
             val = getattr(self, k)
             if isinstance(val, str) and not self._fast_init:
                 setattr(self, k, pickle.load(Path(val).open("rb")))
-
-        # If solver has convergence history, load it
-        if isinstance(self.solver.convergence, str) and not self._fast_init:
-            self.solver.convergence = turbigen.solver.ConvergenceHistory.load(
-                self.solver.convergence, self.grid[0].empty()
-            )
 
         # Setup the post processors
         if self.post_process:
@@ -427,11 +436,21 @@ class TurbigenConfig:
 
         # Annulus design
         logger.info("Designing annulus...")
+
+        if not self.annulus:
+            logger.error("No annulus defined, quitting.")
+            sys.exit(0)
+
         self.annulus.setup_annulus(self.mean_line.nominal)
         logger.info(f"{self.annulus}")
 
         # Blade design
         logger.info("Designing blades...")
+
+        if not self.blades:
+            logger.error("No blades defined, quitting.")
+            sys.exit(0)
+
         for irow, row in enumerate(self.blades):
             # Set meridional locations
             for blade in row:
@@ -497,6 +516,11 @@ class TurbigenConfig:
         )
 
     def setup_mesh(self):
+
+        if not self.mesh:
+            logger.error("No mesh configured, quitting.")
+            sys.exit(0)
+
         # Find wall distances for each row
         dsurf = np.array(
             [
@@ -602,6 +626,11 @@ class TurbigenConfig:
         self.grid.update_outlet()
 
     def run_solver(self):
+
+        if not self.solver:
+            logger.error("No solver configured, quitting.")
+            sys.exit(0)
+
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(self.grid, self.get_machine)

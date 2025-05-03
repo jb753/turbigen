@@ -16,7 +16,7 @@ settings = {
     "n_step_avg": 1000,
     "n_step_log": 100,
     "nstep_damp": 500,
-    "xllim_pitch": 1e-9,
+    "xllim_pitch": 0.0,
     "smooth4": 0.001,
     "smooth2_adapt": 0.5,
     "smooth2_const": 0.002,
@@ -569,7 +569,6 @@ def test_plate_lam():
 
 def test_poiseuille():
     g, F = make_pipe()
-
 
     embsolve.Emb(**settings).run(g)
 

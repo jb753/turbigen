@@ -553,12 +553,10 @@ class SolverBlock:
         return dlmg
 
     def get_xlength(self, block):
-        # Having xllim exactly zero does not seem to play well with
-        # aggressive compiler optimisations e.g. -ffast-math
-        # So we set a minimum value here
-        xllim_pitch = np.maximum(1e-9, self.conf.xllim_pitch)
         # Mixing length limit
-        xllim = block.pitch * 0.5 * (block.r.max() + block.r.min()) * xllim_pitch
+        xllim = (
+            block.pitch * 0.5 * (block.r.max() + block.r.min()) * self.conf.xllim_pitch
+        )
         # Nodal xlength
         xlength = self.cast_array(np.clip(block.w, 0.0, xllim))
         # Times von Karman and squared
