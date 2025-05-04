@@ -16,8 +16,7 @@ import re
 import grp
 import getpass
 from copy import copy
-from turbigen.solver import ConvergenceHistory
-from turbigen.solvers.base import BaseSolver
+from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 import time
 
 import turbigen.util
@@ -26,7 +25,7 @@ logger = turbigen.util.make_logger()
 
 
 @dataclass
-class Config(BaseSolver):
+class ts3(BaseSolver):
     # Override base attributes
     _name = "ts3"
 
@@ -117,6 +116,19 @@ class Config(BaseSolver):
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
 
+    def __post_init__(self):
+        if isinstance(self.workdir, str):
+            self.workdir = Path(self.workdir)
+        if isinstance(self.environment_script, str):
+            self.environment_script = Path(self.environment_script)
+
+    def to_dict(self):
+        """Convert the configuration to a dictionary."""
+        config = super().to_dict()
+        config.pop("workdir")
+        config["environment_script"] = str(self.environment_script)
+        return config
+
     def application_variables(self, ga, cp, mu):
         # """Make a complete set of applications variables, with defaults overriden
         av = DEFAULT_AV.copy()
@@ -126,6 +138,10 @@ class Config(BaseSolver):
         av["ga"] = ga
         av["cp"] = cp
         av["viscosity"] = mu
+
+        # Never use the built-in guesses
+        # Always restart from our own flow field
+        av["restart"] = 1
 
         if av["dts"]:
             av["nstep_save_start"] = av["ncycle"] * av["nstep_cycle"] - self.nstep_avg
@@ -194,25 +210,30 @@ class Config(BaseSolver):
 
         return bv
 
-    def _robust(self):
+    def robust(self):
         """Increase damping and smoothing, lower CFL, and use mixing-length model."""
+        return self.replace(
+            ilos = 1,
+            dampin = 3.0,
+            facsecin = 0.02,
+            sfin = 2.0,
+            cfl = 0.3,
+            fmgrid = 0.0,
+            soft_start = False,
+            precon = 0,
+            dts = 0,
+        )
 
-        c = copy(self)
-        c.ilos = 1
-        c.dampin = 3.0
-        c.facsecin = 0.02
-        c.sfin = 2.0
-        c.cfl = 0.3
-        c.fmgrid = 0.0
-        c.soft_start = False
-        c.precon = 0
-        c.dts = 0
-        if c.nstep_soft:
-            c.nstep = c.nstep_soft
-        c.nstep_avg = 100
+    def restart(self):
+        """Restart the simulation from a previous solution."""
+        return self.replace(
+            nchange = 0,
+        )
 
-        return c
-
+    def run(self, grid, machine, workdir):
+        if not workdir.exists():
+            workdir.mkdir(parents=True, exist_ok=True)
+        run(grid, self, machine, workdir)
 
 # Block attributes that must be present
 # Where we should not set a default, use None
@@ -314,7 +335,6 @@ DEFAULT_AV = {
     "prandtl": 1.0,
     "precon": 0,
     "pref": 1e5,
-    "restart": 1,
     "rfmix": 0.0,
     "rfvis": 0.2,
     "rg_cp0": 1005.0,
@@ -1071,7 +1091,7 @@ def _read_hdf5(grid, ts3_config):
         block.mu_turb = trans_dyn_vis
 
         # Print yplus if requested
-        if ts3_config.show_yplus and not ts3_config.skip:
+        if ts3_config.show_yplus:
             yplus = _unflip(block_group["yplus_bp"])
             # Remove not-wall nodes
             yplus = yplus[yplus > 0.0]
@@ -1089,7 +1109,7 @@ def _run(grid, ts3_config):
     _read_hdf5(grid, ts3_config)
 
 
-def run(grid, ts3_conf, machine):
+def run(grid, ts3_conf, machine, workdir):
     """Write, run, and read TS3 results for a grid object, specifying some settings.
 
     Parameters
@@ -1098,6 +1118,10 @@ def run(grid, ts3_conf, machine):
     ts3_conf
     machine
     """
+
+    del machine
+
+    ts3_conf.workdir = workdir
 
     # Check that the user is a member of the turbostream group
     try:
@@ -1108,32 +1132,7 @@ def run(grid, ts3_conf, machine):
                 f"Current user {current_user} is not a member of the turbostream group"
             )
     except KeyError:
-        if not ts3_conf.skip:
-            raise Exception("Cannot locate turbostream - are you on the HPC?") from None
-
-    # Make workdir if needed
-    if not os.path.exists(ts3_conf.workdir):
-        os.makedirs(ts3_conf.workdir)
-
-    input_file_path = os.path.join(ts3_conf.workdir, "input.hdf5")
-    output_file_path = os.path.join(ts3_conf.workdir, "output_avg.hdf5")
-    output_inst_file_path = os.path.join(ts3_conf.workdir, "output.hdf5")
-    soln_exists = os.path.exists(output_file_path) and os.path.exists(
-        output_inst_file_path
-    )
-
-    if ts3_conf.skip and soln_exists:
-        logger.info("Skipping running, loading previous solution.")
-        try:
-            _read_hdf5(grid, ts3_conf)
-        except ValueError:
-            logger.info("Failed, will continue with initial guess.")
-        return
-
-    # Final check of the mesh
-    grid.match_patches()
-    for block in grid:
-        block.check_wall_distance()
+        raise Exception("Cannot locate turbostream - are you on the HPC?") from None
 
     # Load balancing
     try:
@@ -1147,23 +1146,12 @@ def run(grid, ts3_conf, machine):
             "(are you on a compute node?)"
         )
 
-    if ts3_conf.skip:
-        logger.info("Skipping running, reloading initial guess.")
-        _write_hdf5(grid, ts3_conf)
-        shutil.copy(input_file_path, output_file_path)
-        shutil.copy(input_file_path, output_inst_file_path)
-        _read_hdf5(grid, ts3_conf)
-        return
-
     # Keep old log file if it exists (e.g. after a soft start)
     log_path = os.path.join(ts3_conf.workdir, "log.txt")
     if os.path.exists(log_path):
         os.rename(log_path, log_path.replace("log.txt", "log_old.txt"))
 
     _run(grid, ts3_conf)
-
-    # Produce a warning if the outlet is choked
-    grid.check_outlet_choke()
 
     # Parse the log file
     istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
@@ -1174,7 +1162,9 @@ def run(grid, ts3_conf, machine):
         state_log.set_Tu0(0.0)
         state_log.set_P_h(ho, Po)
         conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
-    except Exception:
+    except Exception as e:
+        logger.iter(f"Failed to parse log file {log_path}")
+        logger.iter(f"Exception: {e}")
         conv = None
 
     return conv

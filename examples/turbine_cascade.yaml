@@ -50,5 +50,5 @@ nblade:
 # Configure the built-in flow solver
 solver:
   type: emb
-  n_step: 5000
-  n_step_avg: 1000
+  n_step: 500
+  n_step_avg: 100

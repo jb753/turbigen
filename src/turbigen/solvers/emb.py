@@ -13,9 +13,8 @@ from timeit import default_timer as timer
 import turbigen.flowfield
 import turbigen.fluid
 import turbigen.grid
-from turbigen.solver import ConvergenceHistory
+import turbigen.solvers.base
 
-# from turbigen.solvers.embsolvec import embsolve
 from embsolvec import embsolve
 
 util = turbigen.util
@@ -46,12 +45,10 @@ def get_memory_usage():
 
 
 @dataclass
-class Emb(turbigen.solver.BaseSolver):
+class Emb(turbigen.solvers.base.BaseSolver):
     """Settings with default values for the native solver."""
 
     _name = "Native"
-
-    workdir: Path = None
 
     smooth4: float = 0.01
     """Fourth-order smoothing factor."""
@@ -139,28 +136,15 @@ class Emb(turbigen.solver.BaseSolver):
             n_step_ramp=0,
         )
 
-    def run(self, grid, machine=None):
+    def run(self, grid, machine=None, workdir):
         logger.debug(
             f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )
 
-        del machine
+        del machine, workdir
         conf = self
 
-        if conf.workdir:
-            soln_path = os.path.join(conf.workdir, "soln.npz")
-            if conf.skip:
-                if os.path.exists(soln_path):
-                    logger.info("Skipping, loading existing solution.")
-                    dat = np.load(soln_path)
-                    cons = [dat[f"cons_{ib:03d}"] for ib in range(len(grid))]
-                    for b, c in zip(grid, cons):
-                        b.set_conserved(c)
-                else:
-                    logger.info("Skipping, no saved solution fount, doing nothing.")
-                return
-
-        logger.info("Initialising native solver...")
+        logger.info("Initialising ember...")
         t1 = timer()
 
         nodes = np.sum([b.size for b in grid])
@@ -218,18 +202,6 @@ class Emb(turbigen.solver.BaseSolver):
         isort = np.argsort([b.bid for b in blocks_out])
         blocks_out = [blocks_out[i] for i in isort]
 
-        # Write the conserved vars to an npz
-        if conf.workdir:
-            os.makedirs(conf.workdir, exist_ok=True)
-            logger.debug(f"Writing output to {soln_path}")
-            dat_out = {
-                f"cons_{ib:03d}": np.moveaxis(b.cons_avg, -1, 0)
-                for ib, b in enumerate(blocks_out)
-            }
-            np.savez(
-                soln_path,
-                **dat_out,
-            )
 
         # Assemble a convergence history
         mhos = np.full(
@@ -255,7 +227,7 @@ class Emb(turbigen.solver.BaseSolver):
         resid = np.concatenate(dUlog, axis=0)[:, 0]
         state_conv = blocks_out[0].state.empty(shape=(2, nnow))
         state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
-        conv = ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+        conv = turbigen.solvers.base.ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
         conv.tpnps = tpnps
 
         for b, sb in zip(grid, blocks_out):

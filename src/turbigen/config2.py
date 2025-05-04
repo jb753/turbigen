@@ -2,15 +2,17 @@
 
 import dataclasses
 from copy import deepcopy
+import gzip
 import numpy as np
 import pickle
 import sys
 import importlib
+from timeit import default_timer as timer
 from pathlib import Path
 import turbigen.fluid
 import turbigen.flowfield
 import turbigen.meanline
-import turbigen.solver
+import turbigen.solvers.base
 import turbigen.iterators
 import turbigen.average
 import turbigen.grid
@@ -64,7 +66,7 @@ class TurbigenConfig:
     mesh: turbigen.mesh.Mesher = None
     """Settings for mesh generation."""
 
-    solver: turbigen.solver.BaseSolver = None
+    solver: turbigen.solvers.base.BaseSolver = None
     """Settings for flow solution."""
 
     plugdir: Path = None
@@ -140,8 +142,9 @@ class TurbigenConfig:
             else:
                 # Otherwise, save the grid to a separate pickle
                 # and replace the grid with the filename
-                fname_pkl = self.workdir / f"{k}.pkl"
-                pickle.dump(val, fname_pkl.open("wb"))
+                fname_pkl = self.workdir / f"{k}.pkl.gz"
+                with gzip.open(fname_pkl, "wb") as f:
+                    pickle.dump(val, f)
                 data[k] = str(fname_pkl)
 
         # Convert convergence history to a filename
@@ -273,6 +276,13 @@ class TurbigenConfig:
             self.plugdir = Path(self.plugdir).absolute()
             self.find_plugins()
 
+        # If grid or guess is a filename, load and unpickle it
+        for k in ["grid", "guess"]:
+            val = getattr(self, k)
+            if isinstance(val, str) and not self._fast_init:
+                with gzip.open(Path(val), "rb") as f:
+                    setattr(self, k, pickle.load(f))
+
         # Convert inlet dict to InletConfig object
         self.inlet = util.init_subclass_by_signature(
             turbigen.inlet.InletConfig, self.inlet
@@ -321,11 +331,11 @@ class TurbigenConfig:
         if self.solver:
             solver_name = self.solver.pop("type")
             importlib.import_module(f".{solver_name}", package="turbigen.solvers")
-            Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
+            Solver = util.get_subclass_by_name(turbigen.solvers.base.BaseSolver, solver_name)
             self.solver = Solver(**self.solver)
             # If solver has convergence history, load it
             if isinstance(self.solver.convergence, str) and not self._fast_init:
-                self.solver.convergence = turbigen.solver.ConvergenceHistory.load(
+                self.solver.convergence = turbigen.solvers.base.ConvergenceHistory.load(
                     self.solver.convergence, self.grid[0].empty()
                 )
 
@@ -346,12 +356,6 @@ class TurbigenConfig:
         # Check the iterators
         for iterator in self.iterate:
             iterator.check(self)
-
-        # If grid or guess is a filename, load and unpickle it
-        for k in ["grid", "guess"]:
-            val = getattr(self, k)
-            if isinstance(val, str) and not self._fast_init:
-                setattr(self, k, pickle.load(Path(val).open("rb")))
 
         # Setup the post processors
         if self.post_process:
@@ -634,7 +638,7 @@ class TurbigenConfig:
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(self.grid, self.get_machine)
-        self.solver.run(self.grid, self.get_machine)
+        self.solver.run(self.grid, self.get_machine, self.workdir / "solve")
 
     def get_mean_line_actual(self):
         """Extract the actual mean-line flow field by mixing out CFD result."""

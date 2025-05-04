@@ -24,7 +24,7 @@ logger = turbigen.util.make_logger()
 
 
 @dataclass
-class Config(BaseSolver):
+class ts4(BaseSolver):
     """Settings with default values for the TS4 solver."""
 
     _name = "ts4"
@@ -87,12 +87,17 @@ class Config(BaseSolver):
     viscous_model: int = 2
     """Turbulence model, 0 for inviscid, 1 for laminar, 2 for Spalart-Allmaras."""
 
+
+    kappa2: float = 1.0
+    kappa4: float = 1.0 / 128.0
+
     outlet_tag: str = "Outlet"
     """Identifier string for the outlet patch."""
 
     area_avg_pout: bool = True
 
     pout_fac_ramp_nstep: int = 0
+    mixing_rf_ramp_nstep: int = 0
 
     inlet_relax_fac: float = 0.5
     nstep_save_start_probe_1d: int = 0
@@ -117,16 +122,36 @@ class Config(BaseSolver):
 
     interpolation_update: int = 1  # 1 to freeze interpolating plane posn
 
-    def _robust(self):
-        """Explicit with a slow CFL ramp."""
-        conf = copy(self)
-        conf.implicit_scheme = 0
-        conf.cfl = 3.5
-        conf.cfl_ramp_st = 0.1
-        conf.nstep = self.nstep_soft
-        conf.cfl_ramp_nstep = conf.nstep
-        conf.nstep_avg = 50
+    def to_dict(self):
+        conf = super().to_dict()
+        conf.pop("workdir")
+        conf["environment_script"] = str(self.environment_script)
         return conf
+
+    def robust(self):
+        """Explicit with a slow CFL ramp."""
+        return self.replace(
+            implicit_scheme = 0,
+            cfl = 3.5,
+            cfl_ramp_st = 0.1,
+            nstep = self.nstep_soft,
+            cfl_ramp_nstep = self.nstep,
+            nstep_avg = 50,
+        )
+
+    def restart(self):
+        """Restart from a previous solution."""
+        return self.replace(
+            cfl_ramp_nstep = 0,
+            precon_fac_ramp_nstep = 0,
+            pout_fac_ramp_nstep = 0,
+            mixing_rf_ramp_nstep = 0,
+        )
+
+    def run(self, grid, machine, workdir):
+        if not workdir.exists():
+            workdir.mkdir(parents=True, exist_ok=True)
+        return run(grid, self, machine, workdir)
 
     @property
     def config_path(self):
@@ -559,8 +584,10 @@ probe_list.append(p)
         f.writelines(pstr)
 
 
-def run(grid, ts4_conf, machine):
+def run(grid, ts4_conf, machine, workdir):
     """Write, run, and read TS4 results for a grid object, specifying some settings."""
+
+    ts4_conf.workdir = workdir
 
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
     output_file_path = os.path.join(ts4_conf.workdir, "output_ts4.hdf5")
@@ -571,7 +598,7 @@ def run(grid, ts4_conf, machine):
             logger.info("Skipping running, loading previous solution.")
             _read_flow(grid, output_file_path, output_avg_file_path)
             # Write out for debugging
-            ts3_conf = turbigen.solvers.ts3.Config(workdir=ts4_conf.workdir)
+            ts3_conf = turbigen.solvers.ts3.ts3(workdir=ts4_conf.workdir)
             turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
         else:
             logger.info("Skipping running, keeping initial guess.")
@@ -662,18 +689,18 @@ pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
                 )
             logger.info("Wrote out unsteady boundary conditions.")
 
-    ts3_conf = turbigen.solvers.ts3.Config(dts=0, workdir=ts4_conf.workdir)._robust()
+    ts3_conf = turbigen.solvers.ts3.ts3(dts=0, workdir=ts4_conf.workdir).robust()
 
     # Get number of GPUs from environment var
     ngpu = int(os.environ.get("SLURM_NTASKS", 1))
     nnode = int(os.environ.get("SLURM_NNODES", 1))
     npernode = ngpu // nnode
+    ts3_conf.ntask = ngpu
+    ts3_conf.nnode = nnode
 
     if ts4_conf.nstep_ts3:
         logger.info("Running TS3 initial guess...")
         ts3_conf.nstep = ts4_conf.nstep_ts3
-        ts3_conf.ntask = ngpu
-        ts3_conf.nnode = nnode
         turbigen.solvers.ts3._run(grid, ts3_conf)
         grid.update_outlet()
 
@@ -756,11 +783,12 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         for patch in grid.probe_patches:
             if patch.is_point:
                 xyzp.append(patch.get_cut().xyz.squeeze())
-        xyz = np.stack(xyzp).T
-        xyz = xyz[
-            (0, 2, 1),
-        ]  # Swap y and z for TS4 coord system
-        _write_point_probe(ts4_conf, xyz, idomain, label)
+        if xyzp:
+            xyz = np.stack(xyzp).T
+            xyz = xyz[
+                (0, 2, 1),
+            ]  # Swap y and z for TS4 coord system
+            _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write span fraction probes
     if ts4_conf.spf_probe:
