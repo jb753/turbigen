@@ -51,9 +51,6 @@ subroutine smooth( &
 
     ! 2nd-order smoothed values for each direcion
 
-    !$omp parallel
-
-    !$omp workshare
     ! i interior
     xs2(2:ni-1, :, :, :, 1) = ( &
         x(1:ni-2, :, :, :) + x(3:ni, :, :, :) &
@@ -108,89 +105,17 @@ subroutine smooth( &
         + 4e0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
     )/6e0
 
-    ! ! i=1
-    ! xs4(1, :, :, :, 1) =  ( &
-    !     4e0*x(2, :, :, :) - 6e0*x(3, :, :, :) &
-    !     + 4e0*x(4, :, :, :) -     x(5, :, :, :) &
-    ! )
-
-    ! ! i=2
-    ! xs4(2, :, :, :, 1) = ( &
-    !         x(1, :, :, :) + 6e0*x(3, :, :, :) &
-    !     - 4e0*x(4, :, :, :) +     x(5, :, :, :) &
-    ! )/4e0
-
-    ! ! i=ni-1
-    ! xs4(ni-1, :, :, :, 1) = ( &
-    !         x(ni-4, :, :, :) - 4e0*x(ni-3, :, :, :) &
-    !     + 6e0*x(ni-2, :, :, :) +     x(ni, :, :, :) &
-    ! )/4e0
-
-    ! ! i=ni
-    ! xs4(ni, :, :, :, 1) = ( &
-    !     -     x(ni-4, :, :, :) + 4e0*x(ni-3, :, :, :) &
-    !     - 6e0*x(ni-2, :, :, :) + 4e0*x(ni-1, :, :, :) &
-    ! )
-
     ! j interior
     xs4(:, 3:nj-2, :, :, 2) = ( &
         -     x(:, 1:nj-4, :, :) + 4e0*x(:, 2:nj-3, :, :) &
         + 4e0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
     )/6e0
 
-    ! ! j=1
-    ! xs4(:, 1, :, :, 2) = ( &
-    !     4e0*x(:, 2, :, :) - 6e0*x(:, 3, :, :) &
-    !     + 4e0*x(:, 4, :, :) -     x(:, 5, :, :) &
-    ! )
-
-    ! ! j=2
-    ! xs4(:, 2, :, :, 2) = ( &
-    !         x(:, 1, :, :) + 6e0*x(:, 3, :, :) &
-    !     - 4e0*x(:, 4, :, :) +     x(:, 5, :, :) &
-    ! )/4e0
-
-    ! ! j=nj-1
-    ! xs4(:, nj-1, :, :, 2) = ( &
-    !         x(:, nj-4, :, :) - 4e0*x(:, nj-3, :, :) &
-    !     + 6e0*x(:, nj-2, :, :) +     x(:, nj, :, :) &
-    ! )/4e0
-
-    ! ! j=nj
-    ! xs4(:, nj, :, :, 2) = ( &
-    !     -     x(:, nj-4, :, :) + 4e0*x(:, nj-3, :, :) &
-    !     - 6e0*x(:, nj-2, :, :) + 4e0*x(:, nj-1, :, :) &
-    ! )
-
     ! k interior
     xs4(:, :, 3:nk-2, :, 3) = ( &
         -     x(:, :, 1:nk-4, :) + 4e0*x(:, :, 2:nk-3, :) &
         + 4e0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
     )/6e0
-
-    ! ! k=1
-    ! xs4(:, :, 1, :, 3) = ( &
-    !     4e0*x(:, :, 2, :) - 6e0*x(:, :, 3, :) &
-    !     + 4e0*x(:, :, 4, :) -     x(:, :, 5, :) &
-    ! )
-
-    ! ! k=2
-    ! xs4(:, :, 2, :, 3) = ( &
-    !         x(:, :, 1, :) + 6e0*x(:, :, 3, :) &
-    !     - 4e0*x(:, :, 4, :) +     x(:, :, 5, :) &
-    ! )/4e0
-
-    ! ! k=nk-1
-    ! xs4(:, :, nk-1, :, 3) = ( &
-    !         x(:, :, nk-4, :) - 4e0*x(:, :, nk-3, :) &
-    !     + 6e0*x(:, :, nk-2, :) +     x(:, :, nk, :) &
-    ! )/4e0
-
-    ! ! k=nk
-    ! xs4(:, :, nk, :, 3) = ( &
-    !     -     x(:, :, nk-4, :) + 4e0*x(:, :, nk-3, :) &
-    !     - 6e0*x(:, :, nk-2, :) + 4e0*x(:, :, nk-1, :) &
-    ! )
 
     ! Calculate the pressure sensor (Jameson et al. 1981)
 
@@ -232,12 +157,10 @@ subroutine smooth( &
     nu(:, :, nk, 3) = &
         abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
         /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
-    !$omp end workshare
 
     ! Calculate nodal smoothing factors for each direction
 
     ! 2nd-order
-    !$omp workshare
     sf2n = sf2*nu
     where (sf2n.lt.sf2min)
         sf2n = sf2min
@@ -248,18 +171,14 @@ subroutine smooth( &
     where (sf4n.lt.0e0)
         sf4n = 0e0
     end where
-    !$omp end workshare
 
     ! Apply the scale factors for cell side length
-    !$omp workshare
     sf2n = sf2n * L
     sf4n = sf4n * L
-    !$omp end workshare
 
     ! Loop over properties
     do ip=1,np
 
-        !$omp workshare
         ! Products of local smoothing factors and flow property
         ! Summed over all grid directions
         sfx2 = sum(sf2n*xs2(:,:,:,ip,:),4)
@@ -270,10 +189,8 @@ subroutine smooth( &
 
         ! Do the smoothing
         x(:,:,:,ip) = (1e0-sftn)*x(:,:,:,ip)  + sfx2 + sfx4
-        !$omp end workshare
 
     end do
-    !$omp end parallel
 
 
 

@@ -13,17 +13,8 @@ class InletConfig(ABC):
     spf: list = None
     """Span fraction of some radial stations running 0 to 1."""
 
-    fac_Po: list = None
-    """Factor multiplying nominal stagnation pressure at each station."""
-
-    fac_To: list = None
-    """Factor multiplying nominal stagnation temperature at each station."""
-
-    dAlpha: list = None
-    """Perturbation to inlet swirl angle at each station."""
-
-    dBeta: list = None
-    """Perturbation to inlet pitch angle at each station."""
+    profiles: np.ndarray = None
+    """Po, To, Alpha, Beta at each span fraction, shape (4,nspf)"""
 
     @abstractmethod
     def get_inlet(self):

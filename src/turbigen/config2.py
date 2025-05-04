@@ -17,11 +17,11 @@ import turbigen.grid
 import turbigen.post
 import turbigen.geometry
 import turbigen.yaml
-import importlib
 import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
 import turbigen.blade
+import turbigen.dspace
 import turbigen.nblade
 import turbigen.job
 from turbigen import util
@@ -48,19 +48,23 @@ class TurbigenConfig:
     mean_line: turbigen.meanline.MeanLineDesigner
     """Settings for the mean-line designer."""
 
-    annulus: turbigen.annulus.AnnulusDesigner
+    annulus: turbigen.annulus.AnnulusDesigner = None
     """Settings for the annulus designer."""
 
-    blades: List[List[turbigen.blade.BladeDesigner]]
+    blades: List[List[turbigen.blade.BladeDesigner]] = dataclasses.field(
+        default_factory=list
+    )
     """Settings for the blade designers."""
 
-    nblade: List[turbigen.nblade.BladeNumberConfig]
+    nblade: List[turbigen.nblade.BladeNumberConfig] = dataclasses.field(
+        default_factory=list
+    )
     """Settings for blade number selection."""
 
-    mesh: turbigen.mesh.Mesher
+    mesh: turbigen.mesh.Mesher = None
     """Settings for mesh generation."""
 
-    solver: turbigen.solver.BaseSolver
+    solver: turbigen.solver.BaseSolver = None
     """Settings for flow solution."""
 
     plugdir: Path = None
@@ -70,7 +74,7 @@ class TurbigenConfig:
         default_factory=list
     )
 
-    max_iter: int = 10
+    max_iter: int = 20
     """Maximum number of iterations to perform."""
 
     """Settings for blade number selection."""
@@ -87,7 +91,16 @@ class TurbigenConfig:
     job: turbigen.job.BaseJob = None
     """Settings for queue job submission."""
 
+    converged: bool = False
+    """Flag to indicate iterative convergence."""
+
+    design_space: turbigen.dspace.DesignSpace = None
+    """Settings for design space mapping."""
+
     _basename: str = "config.yaml"
+
+    _fast_init: bool = False
+    """Flag to not read large object from file on init."""
 
     def copy(self):
         """Return a copy of the configuration."""
@@ -131,6 +144,12 @@ class TurbigenConfig:
                 pickle.dump(val, fname_pkl.open("wb"))
                 data[k] = str(fname_pkl)
 
+        # Convert convergence history to a filename
+        if self.solver and (conv := self.solver.convergence):
+            fname_conv = self.workdir / "convergence.npz"
+            conv.save(fname_conv)
+            data["solver"]["convergence"] = str(fname_conv)
+
         conf_fname = self.workdir / fname
         logger.debug(f"Saving configuration to {conf_fname}")
         try:
@@ -138,7 +157,8 @@ class TurbigenConfig:
         except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
             logger.error(data)
-            quit()
+            logger.error(e)
+            sys.exit(1)
 
         return conf_fname
 
@@ -157,9 +177,10 @@ class TurbigenConfig:
         data["mean_line"] = self.mean_line.to_dict()
 
         # Convert the annulus designer to a dictionary
-        data["annulus"] = self.annulus.to_dict()
+        if self.annulus:
+            data["annulus"] = self.annulus.to_dict()
 
-        # Convert the annulus designer to a dictionary
+        # Convert the blade designer to a dictionary
         data["blades"] = []
         for row in self.blades:
             if len(row) == 1:
@@ -170,11 +191,13 @@ class TurbigenConfig:
                     data["blades"][-1].append(blade.to_dict())
 
         # Restore the mesh type
-        data["mesh"]["type"] = util.camel_to_snake(self.mesh.__class__.__name__)
+        if self.mesh:
+            data["mesh"]["type"] = util.camel_to_snake(self.mesh.__class__.__name__)
 
         # Restore the solver type
-        data["solver"] = self.solver.to_dict()
-        data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
+        if self.solver:
+            data["solver"] = self.solver.to_dict()
+            data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
 
         # If no acutal meanline, remove it
         if not self.mean_line_actual:
@@ -184,6 +207,7 @@ class TurbigenConfig:
         if not self.job:
             del data["job"]
         else:
+            data["job"] = self.job.to_dict()
             # Add the job type to the dictionary
             data["job"]["type"] = util.camel_to_snake(self.job.__class__.__name__)
 
@@ -204,6 +228,10 @@ class TurbigenConfig:
                 data["post_process"][i]["type"] = util.camel_to_snake(
                     post.__class__.__name__
                 )
+
+        if self.design_space:
+            # Convert the design space to a dictionary
+            data["design_space"] = self.design_space.to_dict()
 
         # Remove keys starting with '_'
         # These are not part of the configuration
@@ -257,10 +285,11 @@ class TurbigenConfig:
         self.mean_line = MeanLineDesigner(self.mean_line)
 
         # Set up the annulus designer
-        AnnulusDesigner = util.get_subclass_by_name(
-            turbigen.annulus.AnnulusDesigner, self.annulus.pop("type", "smooth")
-        )
-        self.annulus = AnnulusDesigner(self.annulus)
+        if self.annulus:
+            AnnulusDesigner = util.get_subclass_by_name(
+                turbigen.annulus.AnnulusDesigner, self.annulus.pop("type", "smooth")
+            )
+            self.annulus = AnnulusDesigner(self.annulus)
 
         # Set up the blade designers
         blades = []
@@ -282,16 +311,23 @@ class TurbigenConfig:
         ]
 
         # Set up the mesher
-        Mesher = util.get_subclass_by_name(
-            turbigen.mesh.Mesher, self.mesh.pop("type", "h")
-        )
-        self.mesh = Mesher(**self.mesh)
+        if self.mesh:
+            Mesher = util.get_subclass_by_name(
+                turbigen.mesh.Mesher, self.mesh.pop("type", "h")
+            )
+            self.mesh = Mesher(**self.mesh)
 
         # Lazy import the solver
-        solver_name = self.solver.pop("type")
-        importlib.import_module(f".{solver_name}", package="turbigen.solvers")
-        Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
-        self.solver = Solver(**self.solver)
+        if self.solver:
+            solver_name = self.solver.pop("type")
+            importlib.import_module(f".{solver_name}", package="turbigen.solvers")
+            Solver = util.get_subclass_by_name(turbigen.solver.BaseSolver, solver_name)
+            self.solver = Solver(**self.solver)
+            # If solver has convergence history, load it
+            if isinstance(self.solver.convergence, str) and not self._fast_init:
+                self.solver.convergence = turbigen.solver.ConvergenceHistory.load(
+                    self.solver.convergence, self.grid[0].empty()
+                )
 
         # Convert iterator dicts to Config objects
         if self.iterate:
@@ -314,7 +350,7 @@ class TurbigenConfig:
         # If grid or guess is a filename, load and unpickle it
         for k in ["grid", "guess"]:
             val = getattr(self, k)
-            if isinstance(val, str):
+            if isinstance(val, str) and not self._fast_init:
                 setattr(self, k, pickle.load(Path(val).open("rb")))
 
         # Setup the post processors
@@ -341,11 +377,9 @@ class TurbigenConfig:
             self.post_process = []
 
         # Configure job submission if present
-        if (j:=self.job):
+        if j := self.job:
             if not (type := j.pop("type")):
-                raise Exception(
-                    "Missing type key in job settings"
-                    )
+                raise Exception("Missing type key in job settings")
             cls = util.get_subclass_by_name(turbigen.job.BaseJob, type)
             self.job = cls(**j)
 
@@ -365,6 +399,16 @@ class TurbigenConfig:
             # at the start
             if not found:
                 self.post_process.insert(0, d)
+
+        # Init the design space
+        if self.design_space:
+            if isinstance(self.design_space, dict):
+                self.design_space = turbigen.dspace.DesignSpace(**self.design_space)
+                if not self.design_space.basedir:
+                    self.design_space.basedir = Path(self.workdir)
+                else:
+                    self.design_space.basedir = Path(self.design_space.basedir)
+            self.design_space.load()
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
@@ -392,11 +436,21 @@ class TurbigenConfig:
 
         # Annulus design
         logger.info("Designing annulus...")
+
+        if not self.annulus:
+            logger.error("No annulus defined, quitting.")
+            sys.exit(0)
+
         self.annulus.setup_annulus(self.mean_line.nominal)
         logger.info(f"{self.annulus}")
 
         # Blade design
         logger.info("Designing blades...")
+
+        if not self.blades:
+            logger.error("No blades defined, quitting.")
+            sys.exit(0)
+
         for irow, row in enumerate(self.blades):
             # Set meridional locations
             for blade in row:
@@ -462,6 +516,11 @@ class TurbigenConfig:
         )
 
     def setup_mesh(self):
+
+        if not self.mesh:
+            logger.error("No mesh configured, quitting.")
+            sys.exit(0)
+
         # Find wall distances for each row
         dsurf = np.array(
             [
@@ -543,7 +602,7 @@ class TurbigenConfig:
         self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
 
         # Apply profile if available
-        if self.inlet.spf is not None:
+        if self.inlet.profiles is not None:
             logger.info("Applying inlet profile...")
             self.grid.inlet_patches[0].set_profile(
                 self.inlet.spf,
@@ -567,6 +626,11 @@ class TurbigenConfig:
         self.grid.update_outlet()
 
     def run_solver(self):
+
+        if not self.solver:
+            logger.error("No solver configured, quitting.")
+            sys.exit(0)
+
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(self.grid, self.get_machine)
@@ -712,7 +776,8 @@ class TurbigenConfig:
 
         # Add efficiency row
         table_pad.append(
-            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt * 100.0:.1f}, eta_ts={self.mean_line.actual.eta_ts * 100:.1f}"
+            f"Efficiency/%: eta_tt={self.mean_line.actual.eta_tt * 100.0:.1f}, "
+            f"eta_ts={self.mean_line.actual.eta_ts * 100:.1f}"
         )
 
         # Join the lines
@@ -727,7 +792,7 @@ class TurbigenConfig:
         self.inlet.mu = mu
         self.mean_line.nominal.mu = mu
 
-    def design_and_run(self, skip):
+    def design_and_run(self, skip, skip_post=False):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
@@ -778,15 +843,13 @@ class TurbigenConfig:
         # In case (3), run the CFD solver
         if not skip:
             self.run_solver()
-        # Case (1), load convergence history
-        # A no-op in Case (2)
-        else:
-            self.solver.setup_convergence(self.mean_line.nominal)
 
         # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()
         self.undo_recamber()
-        self.post_process_all()
+        logger.info("Post-processing...")
+        if not skip_post:
+            self.post_process_all()
 
     def step_iterate(self):
         """Apply all iterators to the configuration."""
@@ -795,7 +858,6 @@ class TurbigenConfig:
         converged = {}
 
         for iterator in self.iterate:
-            # Perform the update
             conv_now, log_data_now = iterator.update(self)
 
             # Update the overall convergence flag and log data
@@ -810,4 +872,8 @@ class TurbigenConfig:
         with PdfPages(self.workdir / "post.pdf") as pdf:
             for poster in self.post_process:
                 logger.debug(f"Running post function {poster}")
-                poster.post(self, pdf)
+                try:
+                    poster.post(self, pdf)
+                except Exception as e:
+                    logger.error(f"Failed to run post function {poster}")
+                    logger.error(e)

@@ -214,7 +214,7 @@ def make_pipe():
     mu = 5e-2
     Beta = 0.0
     Po1 = 1e5
-    To1 = 300.0
+    To1 = 320.0
 
     # Set inlet Ma to get inlet static state
     rgas = cp * (ga - 1.0) / ga

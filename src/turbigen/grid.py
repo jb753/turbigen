@@ -9,7 +9,7 @@ import turbigen.flowfield
 import turbigen.marching_cubes
 import importlib
 from scipy.spatial import KDTree
-from scipy.interpolate import interpn, interp1d
+from scipy.interpolate import interpn
 from enum import IntEnum
 
 

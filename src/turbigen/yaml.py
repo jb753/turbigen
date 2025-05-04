@@ -1,7 +1,6 @@
 """Functions for reading and writing YAML files."""
 
 import yaml
-from pathlib import Path
 import gzip
 import os
 import re

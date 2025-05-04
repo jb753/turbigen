@@ -1,4 +1,4 @@
-"""Classes to iteratively update a mean-line design in response to a CFD solution."""
+"""Classes to update mean-line design using a CFD solution."""
 
 from abc import ABC, abstractmethod
 import dataclasses
@@ -20,6 +20,7 @@ class IteratorConfig(ABC):
     @abstractmethod
     def check(self, config):
         """Ensure that the iterator is correctly configured."""
+        raise NotImplementedError
 
 
 @dataclasses.dataclass
@@ -35,7 +36,7 @@ class Deviation(IteratorConfig):
         """Ensure that the iterator is correctly configured."""
         if self.tolerance <= 0:
             raise ValueError(
-                f"Could not initialise deviation iterator: tolerance must be positive."
+                "Could not initialise deviation iterator: tolerance must be positive."
             )
 
     def update(self, config) -> bool:
@@ -64,6 +65,33 @@ class Deviation(IteratorConfig):
 
         return converged, log_data
 
+    # def interpolate(self, config):
+    #     """Correct for deviation using a fitted design space."""
+    #
+    #     # We need to interpolate q_camber[:, 1] at config
+    #     dspace = config.design_space
+    #
+    #     # Function to extract the blade camber
+    #     def extract_camber(config, irow, isect):
+    #         return config.blades[irow][0].q_camber[isect, 1]
+    #
+    #     # Loop over rows
+    #     for irow in range(config.nrow):
+    #         blade = config.blades[irow][0]
+    #         # Loop over sections
+    #         for isect in range(blade.nsect):
+    #             logger.iter(f"Interpolating blade {irow} section {isect}")
+    #             logger.iter(f"Old camber: {blade.q_camber[isect, 1]}")
+    #             blade.q_camber[isect, 1] = dspace.interpolate(
+    #                 extract_camber,
+    #                 [
+    #                     config,
+    #                 ],
+    #                 irow=irow,
+    #                 isect=isect,
+    #             ).item()
+    #             logger.iter(f"New camber: {blade.q_camber[isect, 1]}")
+
 
 @dataclasses.dataclass
 class DiffusionFactor(IteratorConfig):
@@ -87,7 +115,7 @@ class DiffusionFactor(IteratorConfig):
         for irow, DF_target in self.target.items():
             if DF_target <= 0:
                 raise ValueError(
-                    f"Could not initialise diffusion factor iterator: target DF must be positive."
+                    "Could not initialise diffusion factor iterator: target DF must be positive."
                 )
             if irow > config.nrow:
                 raise ValueError(
@@ -194,7 +222,7 @@ class Incidence(IteratorConfig):
 class MeanLine(IteratorConfig):
     """Settings for mean-line iteration."""
 
-    relaxation_factor: float = 0.8
+    relaxation_factor: float = 0.5
     """Factor controlling size of changes."""
 
     tolerance: dict = dataclasses.field(default_factory=lambda: ({}))
@@ -205,7 +233,8 @@ class MeanLine(IteratorConfig):
         for vname, vtol in self.tolerance.items():
             if vname not in config.mean_line.design_vars:
                 raise ValueError(
-                    f"Could not initialise mean_line iterator: design variable {vname} not found in design variables, should be one of {list(config.mean_line.design_vars.keys())}."
+                    f"Could not initialise mean_line iterator: design variable {vname} "
+                    f"not found in design variables, should be one of {list(config.mean_line.design_vars.keys())}."
                 )
             if vtol <= 0:
                 raise ValueError(

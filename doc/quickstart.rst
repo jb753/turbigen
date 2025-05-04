@@ -18,6 +18,7 @@ avoid interference, we recommend the `uv` `package manager <https://docs.astral.
 .. code-block:: console
 
    $ curl -LsSf https://astral.sh/uv/install.sh | sh
+   $ source $HOME/.local/bin/env
    $ uv tool install turbigen
 
 These commands will install `uv`, then use it to install :program:`turbigen` into an
@@ -41,7 +42,7 @@ To run a case, use,
     $ turbigen INPUT_YAML
 
 where `INPUT_YAML` is a yaml configuration file. Specimen configuration files
-are provided in the :doc:`examples/index` directory. 
+are provided in the :doc:`examples/index` directory.
 Results will be logged to the screen and saved to a file in the working
 directory specified in the input file.
 
@@ -52,4 +53,3 @@ run:
 .. code-block:: console
 
     $ turbigen --help
-

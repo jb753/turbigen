@@ -53,8 +53,6 @@ blades:
       tip: 0.01
 
 # Circulation coefficient to set blade loadings
-# Note an initial guess that is iteratively updated
-# to reach a target diffusing factor (configured below)
 nblade:
   - Co: 0.6
   - Co: 0.6
@@ -99,4 +97,3 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
-

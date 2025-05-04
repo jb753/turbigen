@@ -1,6 +1,6 @@
 [project]
 name = "turbigen"
-version = "2.0.0"
+version = "2.1.0"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 authors = [
@@ -50,6 +50,7 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 [project.scripts]
 turbigen = "turbigen.main:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
+turbigen-local-queue= "turbigen.job_server:main"
 
 [build-system]
 requires = ["meson-python", "numpy", ]
@@ -65,7 +66,7 @@ archs = ["x86_64"]
 managed = false
 
 [tool.bumpversion]
-current_version = "2.0.0"
+current_version = "2.1.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"

@@ -1,6 +1,7 @@
 from turbigen.solvers.emb import embsolve
 import numpy as np
 import turbigen.grid
+from timeit import default_timer as timer
 
 np.random.seed = 3
 
@@ -207,8 +208,12 @@ def test_smooth_converge():
 
 
 if __name__ == "__main__":
-    test_smooth_zero()
-    test_smooth_const()
-    test_smooth_linear()
-    test_smooth_cubic()
-    test_smooth_converge()
+    start = timer()
+    for _ in range(10):
+        test_smooth_zero()
+        test_smooth_const()
+        test_smooth_linear()
+        test_smooth_cubic()
+        test_smooth_converge()
+    end = timer()
+    print(f"All tests passed in {end - start:.3f} seconds")

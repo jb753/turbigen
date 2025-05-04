@@ -5,8 +5,6 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-import logging
-import sys
 import yaml
 
 INPUT_DIR = "examples"
@@ -40,7 +38,7 @@ def run_example(input_yaml):
     # Attempt to parse the title
     try:
         title = comments[0].split("#")[-1].strip()
-    except:
+    except Exception:
         title = "Example"
 
     # Parse workdir from the log

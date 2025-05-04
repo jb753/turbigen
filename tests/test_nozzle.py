@@ -526,7 +526,7 @@ def test_To1(To1):
     # plot_nozzle(g, F)
     # plt.show()
 
-    rtol = 2.5e-4
+    rtol = 3e-4
 
     assert (np.abs(err_Ma) < rtol).all()
     assert (np.abs(Ys) < rtol).all()

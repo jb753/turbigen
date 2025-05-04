@@ -14,7 +14,7 @@ from turbigen import util
 from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar
 import scipy.interpolate
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 import numpy as np
 
@@ -385,7 +385,7 @@ class FixedAxialChord(AnnulusDesigner):
                 ")"
             )
         except Exception:
-            return f"FixedAxialChord()"
+            return "FixedAxialChord()"
 
     @property
     def nrow(self):
@@ -652,7 +652,7 @@ class Smooth(AnnulusDesigner):
             xr_mid = self.evaluate_xr(mq, 0.5)
             return f"FixedAR(nrow={self.nrow}, x={xr_mid[0]}, r={xr_mid[1]}, AR={span / cm})"
         except Exception:
-            return f"FixedAR()"
+            return "FixedAR()"
 
 
 #

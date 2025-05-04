@@ -17,7 +17,7 @@ User manual
    quickstart
    nomenclature
    usage
+   meanline
    examples/index
    changelog
    license
-

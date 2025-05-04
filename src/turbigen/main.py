@@ -34,7 +34,9 @@ def _make_argparser():
             "turbigen is a general turbomachinery design system. When "
             "called from the command line, the program performs mean-line design, "
             "creates annulus and blade geometry, then meshes and runs a "
-            "computational fluid dynamics simulation. Optionally, the design can be iterated in response to the simulation results. A job or a series of jobs can be submitted to a queuing system. Most input data are specified "
+            "computational fluid dynamics simulation. Optionally, the design can be "
+            "iterated in response to the simulation results. A job or a series of "
+            "jobs can be submitted to a queuing system. Most input data are specified "
             "in a configuration file; the command-line options below override some "
             "of that configuration data."
         ),
@@ -47,9 +49,7 @@ def _make_argparser():
     parser.add_argument(
         "-v",
         "--verbose",
-        help=(
-            "output more debugging information "
-        ),
+        help=("output more debugging information "),
         action="store_true",
     )
     parser.add_argument(
@@ -98,8 +98,8 @@ def main():
     # Load input data in dictionary format
     d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
 
-    # If we are planning to use embsolve
-    if d.get("solver", {}).get("type") == "embsolve":
+    # If we are planning to use emb
+    if d.get("solver", {}).get("type") == "emb":
         try:
             # Check our MPI rank
             from mpi4py import MPI
@@ -109,13 +109,14 @@ def main():
 
             # Jump to solver slave process if not first rank
             if rank > 0:
-                from turbigen.solvers import embsolve
+                from turbigen.solvers import emb
 
-                embsolve.run_slave()
+                emb.run_slave()
                 sys.exit(0)
 
         except ImportError:
             # Just run serially if we cannot import mpi4py
+            print('Failed to import "mpi4py", running serially.')
             pass
 
     # Ensure that the workdir is always set
@@ -131,7 +132,6 @@ def main():
     workdir = os.path.abspath(workdir)
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
-
 
     # Set up loud logging initially
     log_path = os.path.join(workdir, "log_turbigen.txt")
@@ -187,6 +187,29 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.workdir / "src.tar.gz")
 
+    # If we are sampling a design space, do that and exit
+    if conf.design_space and not args.no_job:
+        # Put datum in non-numbered directory
+        conf.workdir = conf.workdir / "datum"
+        conf.save()
+        # If datum not ran yet, run it first
+        if not conf.mean_line_actual:
+            logger.iter("Running the datum...")
+            conf.job.submit(conf.fname)
+        logger.iter("Sampling the design space...")
+        samples = conf.design_space.sample(conf)
+        if not samples:
+            logger.iter("No samples to run, exiting.")
+
+        # Write out all the sample configs
+        for s in samples:
+            s.save()
+
+        # Submit as an array
+        conf.job.submit_array([s.fname for s in samples])
+
+        sys.exit(0)
+
     # If we are submitting a job, do that and exit
     if conf.job and not args.no_job:
         conf.job.submit(conf.fname)
@@ -196,8 +219,8 @@ def main():
     if not iterate_flag:
         conf.design_and_run(args.no_solve)
         # Write back the config with actual meanline and grid
+        conf.converged = converged = not args.no_solve
         conf.save()
-        converged = True
     else:
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
         basedir = conf.workdir
@@ -245,6 +268,7 @@ def main():
 
             # Check for convergence
             converged = all(conv_all.values())
+            conf.converged = converged
             if converged:
                 # Copy everything from the final iteration
                 # to the working directory
@@ -252,77 +276,16 @@ def main():
                 # Delete iteration directories
                 for i in range(iiter + 1):
                     shutil.rmtree(basedir / f"{i:03d}")
+                # Reset the workdir to the final one
+                conf.workdir = basedir
+                # Save the final config
+                conf.save()
                 break
 
         logger.iter(f"Finished iterating, converged={converged}.")
     logger.iter(conf.format_design_vars_table())
 
     if not converged:
-        sys.exit(1)
-
-    quit()
-
-    # Hypercubes are always jobs
-    if conf.hypercube:
-        if not conf.job:
-            raise Exception("Need job submission configured to run a hypercube.")
-
-        basedir = conf.workdir
-        conf.database["conf_path"] = os.path.join(basedir, "config_db.yaml")
-        conf.database["mean_line_path"] = os.path.join(basedir, "mean_line_db.yaml")
-        conf.workdir = None
-
-        if conf.hypercube.get("N"):
-            logger.iter("Running a hypercube...")
-            cs = conf.sample_hypercube()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            turbigen.slurm.submit_array(cs, basedir, Nrunmax)
-
-        if conf.hypercube.get("Nedge"):
-            logger.iter("Running hypercube edges...")
-            ce = conf.sample_hyperfaces()
-            Nrunmax = conf.hypercube.get("max_jobs", 0)
-            turbigen.slurm.submit_array(ce, basedir, Nrunmax)
-
-        success = True
-
-    else:
-        # Determine whether to try to run job or not
-        hostname = socket.gethostname()
-        job_flag = True
-        if not conf.job:
-            job_flag = False
-        elif args.no_job:
-            logger.iter("No job submission forced with flag -J.")
-            job_flag = False
-        elif not shutil.which("sbatch"):
-            logger.iter("No `sbatch` on PATH, declining to submit job to queue.")
-            job_flag = False
-        elif hostname.startswith("gpu"):
-            if args.job:
-                logger.iter("Job submission from compute node forced with flag -j.")
-            else:
-                logger.iter(
-                    f"Running on compute node {hostname}, declining to submit job to queue."
-                )
-                job_flag = False
-
-        if job_flag:
-            turbigen.slurm.submit(conf)
-            success = True
-        else:
-            log_path = os.path.join(workdir, "log_turbigen.txt")
-            fh = logging.FileHandler(log_path)
-            fh.setLevel(log_level)
-            logger.addHandler(fh)
-            logger.iter(f"TURBIGEN v{turbigen.__version__}")
-            logger.iter(
-                f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
-            )
-            logger.iter(f"Working directory: {workdir}")
-            success = turbigen.run.run(conf)
-
-    if not success:
         sys.exit(1)
 
 
@@ -351,7 +314,3 @@ def format_iter_log(log_data, header=False):
         out_str = value_strs
 
     return out_str
-
-
-if __name__ == "__main__":
-    main()

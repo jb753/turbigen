@@ -1,0 +1,86 @@
+workdir: runs/*
+
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  gamma: 1.33
+
+# Set viscosity by vane Reynolds number
+Re_surf: 4e5
+
+mean_line:
+  type: axial_turbine
+  # Duty
+  mdot: 500.
+  rrms: 1.0
+  # Aerodynamics
+  psi: 1.6
+  phi2: 0.6
+  Ma2: 0.6
+  fac_Ma3_rel: 1.0
+  zeta: [1.0, 1.0]
+  # Guess of loss
+  Ys: [0.02, 0.05]
+
+annulus:
+  type: fixed_axial_chord
+  cx_gap: [0.1, 0.06, 0.1]
+  cx_row: [0.1, 0.1]
+
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+blades:
+    - spf: 0.5
+      q_thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      q_camber: [0., 0., 0.0]
+    - spf: 0.5
+      q_thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      q_camber: [0., 0., 0.0]
+      tip: 0.01
+
+nblade:
+  - Co: 0.6
+  - Co: 0.6
+
+solver:
+  type: emb
+  n_step: 1000
+  n_step_avg: 100
+  n_step_ramp: 1000
+
+job:
+  type: local
+
+iterate:
+  mean_line:
+    tolerance:
+      Ys: 0.005
+  deviation:
+  incidence:
+    tolerance: 10.
+    relaxation_factor: 0.025
+  repeat:
+
+post_process:
+  # Loss at stator and rotor exits
+  - type: contour
+    coord: m
+    value: [2.05, 4.05]
+    variable: Ys
+  # Mid-span Mach
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel
+
+design_space:
+  independent:
+    mean_line:
+      phi2: [0.4, 1.2]
+      psi: [0.8, 2.4]
+  order: 3
+  nsample: 32
