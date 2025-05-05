@@ -87,11 +87,39 @@ class ConvergenceHistory:
 
 @dataclasses.dataclass
 class BaseSolver(ABC):
-    """Base class for flow solvers."""
+    """Base class for flow solvers.
 
-    skip: bool = False
-    """False to run the CFD as normal, True to write out initial guess and read
-    back in, or use a previous solution if available."""
+    :program:`turbigen` is CFD-solver agnostic, in that all all pre- and
+    post-processing is done by native code.
+
+    Each CFD solver accepts different configuration options. Solver options and
+    their default values are listed below; override the defaults using the
+    `solver` section of the configuration file.
+
+    Adding a new solver only requires
+    functions to save CFD input files, execute the
+    solver, and read back the flow solution into :program:`turbigen`'s internal
+    data structures. See the :ref:`solver-custom` section for more details.
+
+    xxx
+
+    .. _solver-custom:
+
+    Custom solvers
+    --------------
+
+    To add a new solver, create a new class that inherits from :class:`turbigen.solvers.base.BaseSolver`.  and implement the following methods:
+
+    - :meth:`run`: Run the solver on the given grid and machine geometry.
+    - :meth:`robust`: Create a copy of the config with more robust settings.
+    - :meth:`restart`: Create a copy of the config with settings to restart from converged solution.
+
+    :class:`turbigen.solvers.base.BaseSolver` is a dataclass, so has an automatic constructor and
+    useful built-in methods. The configuration file `solver` section
+    is fed into the constructor as keyword arguments and becomes attributes of
+    the instance.
+
+    """
 
     soft_start: bool = False
     """Run a robust initial guess solution first, then restart."""

@@ -18,6 +18,7 @@ User manual
    nomenclature
    usage
    meanline
+   solver
    examples/index
    changelog
    license

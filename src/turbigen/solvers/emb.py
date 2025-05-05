@@ -44,9 +44,13 @@ def get_memory_usage():
 
 @dataclass
 class Emb(turbigen.solvers.base.BaseSolver):
-    """Settings with default values for the native solver."""
+    """
+    ember
+    -----
 
-    _name = "Native"
+    :program:`ember` is the native flow solver built into :program:`turbigen`.
+
+    """
 
     smooth4: float = 0.01
     """Fourth-order smoothing factor."""
@@ -58,14 +62,10 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Second-order smoothing factor, constant throughout the flow."""
 
     smooth_ratio_min: float = 0.1
-    """Largest reduction in smoothing on a non-isotropic grid. Unity disables
-    directional scaling, lower values clip the local smoothing factor to be
-    sf_local >= sf * smooth_ratio_min."""
+    """Largest reduction in smoothing on a non-isotropic grid. Unity disables directional scaling, lower values clip the local smoothing factor to be sf_local >= sf * smooth_ratio_min."""
 
     CFL: float = 0.65
-    """Courant--Friedrichs--Lewy number, time step normalised by local wave
-    speed and cell size. Reduced values are more stable but slower to
-    converge."""
+    """Courant--Friedrichs--Lewy number, time step normalised by local wave speed and cell size. Reduced values are more stable but slower to converge."""
 
     n_step: int = 5000
     """Number of time steps to run for."""
@@ -98,24 +98,40 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Turbulent Prandtl number."""
 
     xllim_pitch: float = 0.03
+    """Maximum mixing length as a fraction of the pitch."""
 
     precision: int = 1
+    """Precision of the solver. 1: single, 2: double."""
 
     i_scheme: int = 1
+    """Which time-stepping scheme to use. 0: scree, 1: super."""
 
     i_loss: int = 1
+    """Viscous loss model. 0: inviscid, 1: viscous."""
 
     K_exit: float = 0.5
+    """Relaxation factor for outlet forcing."""
+
     K_inlet: float = 0.5
+    """Relaxation factor for inlet forcing."""
+
     K_mix: float = 0.1
+    """Relaxation factor for mixing plane forcing."""
+
     sf_mix: float = 0.01
+    """Smoothing factor for uniform enthalpy and entropy downstream of mixing plane."""
 
     print_conv: bool = True
+    """Print convergence history in the log."""
 
     fmgrid: float = 0.2
+    """Factor scaling the multigrid residual."""
+
     multigrid: tuple = (2, 2, 2)
+    """Number of cells forming each multigrid level. (2, 2, 2) gives coarse cells of side length 2, 4, and 8 fine cells."""
 
     area_avg_Pout: bool = True
+    """Force area-averaged outlet pressure to target, otherwise use uniform outlet pressure."""
 
     def robust(self):
         """Create a copy of the config with more robust settings."""
