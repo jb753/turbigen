@@ -27,9 +27,11 @@ class MeanLineDesigner(util.BaseDesigner):
     The mean-line design process is different for each machine architecture:
     compressor/turbine, axial/radial, and so on. :program:`turbigen` provides
     the built-in architectures listed below, and also allows considerable flexibility
-    in defining your own :ref:`Custom Architectures`.
+    in defining your own :ref:`ml-custom`.
 
     xxx
+
+    .. _ml-custom:
 
     Custom architectures
     --------------------

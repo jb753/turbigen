@@ -65,6 +65,7 @@ doc:
       - doc/_build
   script:
     - python doc/generate_examples.py
+    - python doc/generate_meanline.py
     - sphinx-build -W doc doc/_build
 
 pages:

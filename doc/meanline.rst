@@ -15,7 +15,7 @@ annulus areas, mean radii and flow angles at each station.
 The mean-line design process is different for each machine architecture:
 compressor/turbine, axial/radial, and so on. :program:`turbigen` provides
 the built-in architectures listed below, and also allows considerable flexibility
-in defining your own :ref:`Custom Architectures`.
+in defining your own :ref:`ml-custom`.
 
 
 
@@ -80,6 +80,8 @@ To use this architecture, add the following snippet in your configuration file:
       Ys:
       # Axial velocity ratios [--], (2,) vector
       zeta: (1.0, 1.0)
+
+.. _ml-custom:
 
 Custom architectures
 --------------------
@@ -186,7 +188,7 @@ Then, create a new Python file in the `plug` directory, e.g.
                 # output configuration file
                 'eta_tt': mean_line.eta_tt,
                 'Alpha1': mean_line.Alpha[0],
-                "DH": mean_line.V_rel[1] / mean_line.V_rel[0],
+                'DH': mean_line.V_rel[1] / mean_line.V_rel[0],
             }
 
 You will need to implement two static methods: `forward()` and `backward()`.

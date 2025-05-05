@@ -39,7 +39,6 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx.ext.autosectionlabel",
     "autodocsumm",
     "sphinxcontrib.programoutput",
     "matplotlib.sphinxext.plot_directive",
