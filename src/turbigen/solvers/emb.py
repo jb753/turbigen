@@ -2,12 +2,10 @@ import numpy as np
 from copy import copy
 
 import turbigen.util
-import os
 import sys
 
 from dataclasses import dataclass
 
-from pathlib import Path
 from timeit import default_timer as timer
 
 import turbigen.flowfield
@@ -136,7 +134,7 @@ class Emb(turbigen.solvers.base.BaseSolver):
             n_step_ramp=0,
         )
 
-    def run(self, grid, machine=None, workdir):
+    def run(self, grid, machine=None, workdir=None):
         logger.debug(
             f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )
@@ -202,7 +200,6 @@ class Emb(turbigen.solvers.base.BaseSolver):
         isort = np.argsort([b.bid for b in blocks_out])
         blocks_out = [blocks_out[i] for i in isort]
 
-
         # Assemble a convergence history
         mhos = np.full(
             (
@@ -227,7 +224,9 @@ class Emb(turbigen.solvers.base.BaseSolver):
         resid = np.concatenate(dUlog, axis=0)[:, 0]
         state_conv = blocks_out[0].state.empty(shape=(2, nnow))
         state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
-        conv = turbigen.solvers.base.ConvergenceHistory(istep, istep_avg, resid, mhos[:, 0], state_conv)
+        conv = turbigen.solvers.base.ConvergenceHistory(
+            istep, istep_avg, resid, mhos[:, 0], state_conv
+        )
         conv.tpnps = tpnps
 
         for b, sb in zip(grid, blocks_out):

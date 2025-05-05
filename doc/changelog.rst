@@ -1,6 +1,21 @@
 Changelog
 =========
 
+v2.2.0
+^^^^^^
+
+* Allow partial configuration files, exiting at first blank required key
+* Faster compiler flags for Fortran
+* Turbostream solvers with new base class
+* Generate meanline documentation from the docstrings
+* Catch post-processing errors and continue
+* Submit jobs to a local queue, implement worker script
+* Check for nans in ember
+* Allow invocation with `python -m turbigen`
+* Implement design space sampling
+* Bug fix for repeating stage iterator if spanwise points unequal
+* General tidying up
+
 v2.1.0
 ^^^^^^
 
