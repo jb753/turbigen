@@ -40,6 +40,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "autodocsumm",
+    "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
     "matplotlib.sphinxext.plot_directive",
     "sphinxarg.ext",

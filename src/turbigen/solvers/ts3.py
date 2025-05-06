@@ -26,6 +26,27 @@ logger = turbigen.util.make_logger()
 
 @dataclass
 class ts3(BaseSolver):
+    """
+
+    .. _solver-ts3:
+
+    Turbostream 3
+    -------------
+
+    Turbostream 3 is a multi-block structured, GPU-accelerated Reynolds-averaged
+    Navier--Stokes code developed by :cite:t:`Brandvik2011`.
+
+    To use this solver, add the following to your configuration file:
+
+    .. code-block:: yaml
+
+        solver:
+          type: ts3
+          nstep: 10000  # Case-dependent
+          nstep_avg: 2500  # Typically ~0.25 nstep
+
+    """
+
     # Override base attributes
     _name = "ts3"
 
@@ -95,8 +116,9 @@ class ts3(BaseSolver):
     smooth_scale_directional_option: int = 0
 
     show_yplus: bool = False
+
+    # Enable laminar boundary layers on all walls.
     laminar: bool = False
-    """Enable laminar boundary layers on all walls."""
 
     fac_st0: float = 1.0
     ipout: int = 3
@@ -213,27 +235,28 @@ class ts3(BaseSolver):
     def robust(self):
         """Increase damping and smoothing, lower CFL, and use mixing-length model."""
         return self.replace(
-            ilos = 1,
-            dampin = 3.0,
-            facsecin = 0.02,
-            sfin = 2.0,
-            cfl = 0.3,
-            fmgrid = 0.0,
-            soft_start = False,
-            precon = 0,
-            dts = 0,
+            ilos=1,
+            dampin=3.0,
+            facsecin=0.02,
+            sfin=2.0,
+            cfl=0.3,
+            fmgrid=0.0,
+            soft_start=False,
+            precon=0,
+            dts=0,
         )
 
     def restart(self):
         """Restart the simulation from a previous solution."""
         return self.replace(
-            nchange = 0,
+            nchange=0,
         )
 
     def run(self, grid, machine, workdir):
         if not workdir.exists():
             workdir.mkdir(parents=True, exist_ok=True)
         run(grid, self, machine, workdir)
+
 
 # Block attributes that must be present
 # Where we should not set a default, use None

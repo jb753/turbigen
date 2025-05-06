@@ -87,19 +87,41 @@ class ConvergenceHistory:
 
 @dataclasses.dataclass
 class BaseSolver(ABC):
-    """Base class for flow solvers.
+    """
+    Flow solvers
+    ============
 
-    :program:`turbigen` is CFD-solver agnostic, in that all all pre- and
-    post-processing is done by native code.
+    Once the machine geometry is generated, and the fluid domain discretised
+    using a suitable mesh, the next step is to predict the flow field and hence
+    aerodynamic performance using a computational fluid dynamics (CFD) solver.
+
+    :program:`turbigen` is solver-agnostic: either the built in CFD solver or
+    an interface to an external code can be used for flow field prediction;
+    pre- and post-processing is done in common, native Python code. Adding a new
+    external solver only requires implementing functions to save input files,
+    execute the solver, and then read back the output file into
+    :program:`turbigen`'s internal data structures. See the
+    :ref:`solver-custom` section for more details.
 
     Each CFD solver accepts different configuration options. Solver options and
     their default values are listed below; override the defaults using the
-    `solver` section of the configuration file.
+    `solver` section of the configuration file. For example, to use the
+    built-in :program:`ember` solver, with a reduced damping factor:
 
-    Adding a new solver only requires
-    functions to save CFD input files, execute the
-    solver, and read back the flow solution into :program:`turbigen`'s internal
-    data structures. See the :ref:`solver-custom` section for more details.
+    .. code-block:: yaml
+
+        solver:
+          type: emb
+          n_step: 1000  # Case-dependent
+          n_step_avg: 250  # Typically ~1/4 of n_step
+          damping_factor: 10.  # Override default value of 25.0
+
+
+    Every solver accepts a `soft_start` flag, which runs a precursor simulation
+    with more robust settings before running the actual simulation. Enabling
+    this option should be the first step when a simulation fails to converge.
+    If a design does not run with `soft_start` enabled, this suggests the mesh
+    is poor quality, or the aerodynamic design itself is not feasible.
 
     xxx
 

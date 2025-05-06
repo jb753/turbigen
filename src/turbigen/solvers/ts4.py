@@ -25,7 +25,70 @@ logger = turbigen.util.make_logger()
 
 @dataclass
 class ts4(BaseSolver):
-    """Settings with default values for the TS4 solver."""
+    """
+
+    .. _solver-ts4:
+
+    Turbostream 4
+    -------------
+
+    Turbostream 4 is an unstructured, GPU-accelerated Reynolds-averaged
+    Navier--Stokes code developed by Turbostream Ltd.
+
+    To use this solver, add the following to your configuration file:
+
+    .. code-block:: yaml
+
+        solver:
+          type: ts4
+          nstep: 10000  # Case-dependent
+          nstep_avg: 2500  # Typically ~0.25 nstep
+
+
+    .. _solver-ts4-tables:
+
+    Real gas tables generation
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    For real gas simulations, working fluid property tables must be
+    pre-generated before the calculation. This can be done using the
+    :meth:`turbigen.tables.make_tables` function following the example below:
+
+    .. code-block:: python
+
+        from turbigen.tables import make_tables
+
+        fluid_name = "water"  # Fluid name in CoolProp
+        smin = 7308.0  # Minimum entropy in J/kg/K
+        smax = 7600.0  # Maximum entropy in J/kg/K
+        Pmin = 37746.0  # Minimum pressure in Pa
+        Tmax = 550.0  # Maximum temperature in K
+        ni = 200  # Number of interpolation points in each direction
+        new_npz_path = "water_new.npz"  # Path to save the new tables
+
+        make_tables(fluid_name, smin, smax, Pmin, Tmax, ni, new_npz_path)
+
+    Then in the configuration file, specify the path to the tables:
+
+    .. code-block:: yaml
+
+        solver:
+          type: ts4
+          tables_path: water_new.npz
+
+    Some notes on real gas calculations:
+
+    - The real gas working fluid is less stable than the ideal gas, so take
+      care with mesh generation and avoid racy solver settings.
+    - It is vital that the limits of the tables are wide enough to cover fluid
+      property values over the entire flow field, including local features like
+      the suction peak, shock waves and boundary layers.
+    - There is no handling of phase changes in the tables, so the fluid must
+      remain a single phase for accurate results.
+    - Of order 1000 points may be required in each direction to get
+      discretisation-independent results.
+
+    """
 
     _name = "ts4"
 
@@ -35,91 +98,79 @@ class ts4(BaseSolver):
     environment_script: Path = Path(
         "/usr/local/software/turbostream/ts42111/bashrc_module_ts42111_a100"
     )
-    """Setup environment shell script to be sourced before running."""
+    """Setup shell script to be sourced before running."""
 
     cfl: float = 25.0
-    """Courant--Friedrichs--Lewy number, reduce for more stability."""
+    """Courant--Friedrichs--Lewy number setting the time step."""
 
     cfl_ramp_nstep: int = 500
-    """Ramp the CFL number up over the first `cfl_ramp_nstep` steps."""
+    """Ramp the CFL number up over this many initial time steps."""
 
     cfl_ramp_st: int = 1.0
     """Starting value for CFL ramp."""
 
     custom_pipeline: str = ""
-    """Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run
-    using pvpython and take two command-line arguments like `pvpython
-    custom_pipeline.py input_ts3.hdf5 input_ts4`"""
+    """Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run using pvpython and take two command-line arguments like `pvpython custom_pipeline.py input_ts3.hdf5 input_ts4`"""
 
     implicit_scheme: int = 1
-    """Whether to use implicit time-marching scheme."""
+    """1: implicit, 0: explicit time marching."""
 
     nstep: int = 5000
     """Number of time steps for the calculation."""
 
     nstep_avg: int = 1000
-    """Number of time steps to average over."""
+    """Number of final time steps to average over."""
 
     nstep_ts3: int = 0
-    """Number of steps for a Turbostream 3 initial guess"""
+    """Number of steps to run a Turbostream 3 initial guess"""
 
     nstep_soft: int = 5000
     """Number of time steps for soft start."""
 
-    spf_probe: list = None
-    """List of span fractions to place probes."""
-
     point_probe: list = None
-    """Specify point probes."""
+    # """Specify point probes."""
 
     logical_probe: list = None
-    """Specify logical probes."""
+    # """Specify logical probes."""
 
     tables_path: str = ""
-    """Path to gas tables for real working fluids."""
+    """Path to gas tables npz for real working fluids. See :ref:`solver-ts4-tables`."""
 
     body_force_template: str = ""
-    """Path to a body_force.ofp definition file template."""
 
     body_force_params = {}
-    """Parameters to be added to body force template."""
 
     viscous_model: int = 2
-    """Turbulence model, 0 for inviscid, 1 for laminar, 2 for Spalart-Allmaras."""
+    """Turbulence model, 0: inviscid, 1: laminar, 2:  Spalart-Allmaras, 3: k-omega."""
 
+    area_avg_pout: bool = True
+    """Allow non-uniform outlet pressure, force area-average to target."""
+
+    outlet_tag: str = "Outlet"
+    """String to identify the outlet boundary condition in the TS4 input file. Only requires changing for custom pipelines."""
 
     kappa2: float = 1.0
     kappa4: float = 1.0 / 128.0
 
-    outlet_tag: str = "Outlet"
-    """Identifier string for the outlet patch."""
-
-    area_avg_pout: bool = True
-
     pout_fac_ramp_nstep: int = 0
     mixing_rf_ramp_nstep: int = 0
-
     inlet_relax_fac: float = 0.5
     nstep_save_start_probe_1d: int = 0
     nstep_save_probe_1d: int = 100
     nstep_save_start_probe_2d: int = 0
     nstep_save_probe_2d: int = 100
     cfl_turb_fac: float = 0.5
-
     precon: int = 0
     precon_fac_ramp_nstep: int = 100
     precon_fac_ramp_st: float = 0.1
     precon_fac_ramp_en: float = 1.0
     precon_sigma_pgr: float = 3.0
-
     if_dts: int = 0
     frequency: float = 0.0
     ncycle: int = 0
     nstep_cycle: int = 72
-
     halo_implementation: int = 1
     ncycle_avg: int = 1
-
     interpolation_update: int = 1  # 1 to freeze interpolating plane posn
 
     def to_dict(self):
@@ -131,21 +182,21 @@ class ts4(BaseSolver):
     def robust(self):
         """Explicit with a slow CFL ramp."""
         return self.replace(
-            implicit_scheme = 0,
-            cfl = 3.5,
-            cfl_ramp_st = 0.1,
-            nstep = self.nstep_soft,
-            cfl_ramp_nstep = self.nstep,
-            nstep_avg = 50,
+            implicit_scheme=0,
+            cfl=3.5,
+            cfl_ramp_st=0.1,
+            nstep=self.nstep_soft,
+            cfl_ramp_nstep=self.nstep,
+            nstep_avg=50,
         )
 
     def restart(self):
         """Restart from a previous solution."""
         return self.replace(
-            cfl_ramp_nstep = 0,
-            precon_fac_ramp_nstep = 0,
-            pout_fac_ramp_nstep = 0,
-            mixing_rf_ramp_nstep = 0,
+            cfl_ramp_nstep=0,
+            precon_fac_ramp_nstep=0,
+            pout_fac_ramp_nstep=0,
+            mixing_rf_ramp_nstep=0,
         )
 
     def run(self, grid, machine, workdir):
@@ -547,43 +598,6 @@ probe_list.append(p)
         )
 
 
-def _write_xr_probe(machine, ts4_conf, spf):
-    probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
-
-    # Evaluate the xr curve, extrapolate a little
-    eps = 0.01
-    mq = np.linspace(-eps, machine.ann.npts - 1 + eps, 100)
-    xr = machine.ann.evaluate_xr(mq, spf)
-
-    logger.debug(f"min xr={xr.min(axis=1)}, max xr={xr.max(axis=1)}")
-
-    istep_save_start = ts4_conf.nstep - ts4_conf.nstep_avg
-
-    # Fill values into template
-    pstr = []
-    for irow in range(machine.ann.nrow):
-        pstr.append(
-            f"""
-p = ts.process.probe.probe_definition.ProbeDefinition()
-p.kind = "xr"
-p.s1 = {xr[0].tolist()}
-p.s2 = {xr[1].tolist()}
-p.idomain = {irow}
-p.fname_root = "xr_probe_row_{irow}_spf_{str(spf).replace(".", "")}"
-p.write_2d = True
-p.nstep_save_start_1d = {istep_save_start}
-p.nstep_save_1d = {ts4_conf.nstep_save_probe_1d}
-p.nstep_save_start_2d = {istep_save_start}
-p.nstep_save_2d = {ts4_conf.nstep_save_probe_2d}
-probe_list.append(p)
-
-"""
-        )
-
-    with open(probe_ofp, "a") as f:
-        f.writelines(pstr)
-
-
 def run(grid, ts4_conf, machine, workdir):
     """Write, run, and read TS4 results for a grid object, specifying some settings."""
 
@@ -762,7 +776,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
         _write_wall_distance(grid, input_file_path)
 
     # Write probe config file
-    # if ts4_conf.spf_probe or ts4_conf.point_probe:
     _write_probes_ofp(ts4_conf)
 
     # Write point probes
@@ -789,11 +802,6 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
                 (0, 2, 1),
             ]  # Swap y and z for TS4 coord system
             _write_point_probe(ts4_conf, xyz, idomain, label)
-
-    # Write span fraction probes
-    if ts4_conf.spf_probe:
-        for spf in ts4_conf.spf_probe:
-            _write_xr_probe(machine, ts4_conf, spf)
 
     # Write logical probes
     if ts4_conf.logical_probe:

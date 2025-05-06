@@ -10,8 +10,8 @@ logger = util.make_logger()
 
 class MeanLineDesigner(util.BaseDesigner):
     r"""
-    Mean-line
-    =========
+    Mean-line design
+    ================
 
     The first step in turbomachinery design is a one-dimensional analysis along
     a representative 'mean-line', a simplified model of the true
@@ -134,8 +134,8 @@ class MeanLineDesigner(util.BaseDesigner):
                     'Ma1': mean_line.Ma[0],
                     # Your design variables here...
                     # ...
-                    # Other keys are printed to the log file and saved to the
-                    # output configuration file
+                    # Other keys are printed to the log file and saved to
+                    # the output configuration file
                     'eta_tt': mean_line.eta_tt,
                     'Alpha1': mean_line.Alpha[0],
                     'DH': mean_line.V_rel[1] / mean_line.V_rel[0],

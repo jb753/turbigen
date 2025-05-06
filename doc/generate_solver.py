@@ -1,7 +1,7 @@
 """Make documentation for an abstract base class and subclasses."""
 
 import turbigen.solvers.base
-import turbigen.solvers.emb
+from turbigen.solvers import emb, ts3, ts4
 from turbigen import util
 import inspect
 import dataclasses
@@ -58,10 +58,15 @@ def generate_rst_table(cls):
                 doc_map[current_field] = doc
                 current_field = None
 
+    doc_map.pop("workdir", None)
+
     # RST table header
     lines = [
-        ".. list-table:: Parameters",
-        "   :widths: 20 15 15 50",
+        "Configuration options",
+        "~~~~~~~~~~~~~~~~~~~~~",
+        "",
+        ".. list-table::",
+        "   :widths: 10 10 10 70",
         "   :header-rows: 1",
         "",
         "   * - Name",
@@ -70,11 +75,17 @@ def generate_rst_table(cls):
         "     - Description",
     ]
 
+    # Sort alphabetically
+    fields = sorted(fields, key=lambda f: f.name)
+
     for f in fields:
         name = f.name
         type_ = f.type.__name__ if hasattr(f.type, "__name__") else str(f.type)
         default = f.default if f.default != dataclasses.MISSING else "Required"
-        doc = doc_map.get(name, "")
+        if not (doc := doc_map.get(name, None)):
+            continue
+        if len(str(default)) > 10:
+            default = str(default)[:10] + "..."
         try:
             getattr(turbigen.solvers.base.BaseSolver, name)
             print(f"Skipping field: {name}")

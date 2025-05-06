@@ -45,10 +45,23 @@ def get_memory_usage():
 @dataclass
 class Emb(turbigen.solvers.base.BaseSolver):
     """
+
+    .. _solver-ember:
+
     ember
     -----
 
-    :program:`ember` is the native flow solver built into :program:`turbigen`.
+    :program:`ember` is the 'Enhanced MultiBlock flow solvER' built into :program:`turbigen`. It is a hybrid Python--Fortran reimplementation of the classic :cite:t:`Denton1992,Denton2017` algorithms
+    for compressible turbomachinery flows, with a few enhancements.
+
+    To use this solver, add the following to your configuration file:
+
+    .. code-block:: yaml
+
+        solver:
+          type: emb
+          n_step: 2000  # Case-dependent
+          n_step_avg: 500  # Typically ~0.25 n_step
 
     """
 
@@ -62,13 +75,13 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Second-order smoothing factor, constant throughout the flow."""
 
     smooth_ratio_min: float = 0.1
-    """Largest reduction in smoothing on a non-isotropic grid. Unity disables directional scaling, lower values clip the local smoothing factor to be sf_local >= sf * smooth_ratio_min."""
+    """Largest directional reduction in smoothing on a non-isotropic grid. Unity disables directional scaling."""
 
     CFL: float = 0.65
-    """Courant--Friedrichs--Lewy number, time step normalised by local wave speed and cell size. Reduced values are more stable but slower to converge."""
+    """Courant--Friedrichs--Lewy number, time step normalised by local wave speed and cell size."""
 
     n_step: int = 5000
-    """Number of time steps to run for."""
+    """Total number of time steps to run."""
 
     n_step_mix: int = 5
     """Number of time steps between mixing plane updates."""
@@ -80,25 +93,25 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Number of time steps between log prints."""
 
     n_step_avg: int = 1
-    """Number of time steps to average over."""
+    """Number of final time steps to average over."""
 
     n_step_ramp: int = 250
-    """Number of time steps to ramp smoothing and damping."""
+    """Number of inital time steps to ramp smoothing and damping down."""
 
     n_loss: int = 5
     """Number of time steps between viscous force updates."""
 
     nstep_damp: int = -1
-    """Number of steps to apply damping."""
+    """Number of steps to apply damping, -1 for all steps."""
 
     damping_factor: float = 25.0
-    """Negative feedback to damp down high residuals. Lower values are more stable."""
+    """Negative feedback to damp down high residuals. Smaller values are more stable."""
 
     Pr_turb: float = 1.0
     """Turbulent Prandtl number."""
 
     xllim_pitch: float = 0.03
-    """Maximum mixing length as a fraction of the pitch."""
+    """Maximum mixing length as a fraction of row pitch."""
 
     precision: int = 1
     """Precision of the solver. 1: single, 2: double."""
@@ -110,13 +123,13 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Viscous loss model. 0: inviscid, 1: viscous."""
 
     K_exit: float = 0.5
-    """Relaxation factor for outlet forcing."""
+    """Relaxation factor for outlet boundary."""
 
     K_inlet: float = 0.5
-    """Relaxation factor for inlet forcing."""
+    """Relaxation factor for inlet boundary."""
 
     K_mix: float = 0.1
-    """Relaxation factor for mixing plane forcing."""
+    """Relaxation factor for mixing plane."""
 
     sf_mix: float = 0.01
     """Smoothing factor for uniform enthalpy and entropy downstream of mixing plane."""
@@ -128,7 +141,7 @@ class Emb(turbigen.solvers.base.BaseSolver):
     """Factor scaling the multigrid residual."""
 
     multigrid: tuple = (2, 2, 2)
-    """Number of cells forming each multigrid level. (2, 2, 2) gives coarse cells of side length 2, 4, and 8 fine cells."""
+    """Number of cells forming each multigrid level. `(2, 2, 2)` gives coarse cells of side length 2, 4, and 8 fine cells."""
 
     area_avg_Pout: bool = True
     """Force area-averaged outlet pressure to target, otherwise use uniform outlet pressure."""

@@ -24,10 +24,7 @@ def test_compare_tables():
     # Load good tables
 
     tables_good_npz = os.path.join(DATA_DIR, "water_table_known_good.npz")
-    if not os.path.exists(tables_good_npz):
-        pytest.skip(f"Known good table {tables_good_npz} not found")
     tables_good = np.load(tables_good_npz)
-    # tables_good = np.load(os.path.join(DATA_DIR, "water_coarse.npz"))
 
     # Get temporary director to save new tables
     tmp_dir = mkdtemp()
@@ -61,10 +58,7 @@ def test_compare_tables():
 def test_compare_hydrogen():
     # Load good tables
     tables_good_npz = os.path.join(DATA_DIR, "hydrogen_table_known_good.npz")
-    if not os.path.exists(tables_good_npz):
-        pytest.skip(f"Known good table {tables_good_npz} not found")
     tables_good = np.load(tables_good_npz)
-    # tables_good = np.load(os.path.join(DATA_DIR, "water_coarse.npz"))
 
     # Get temporary director to save new tables
     tmp_dir = mkdtemp()
