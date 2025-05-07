@@ -5,8 +5,6 @@ import numpy as np
 import os
 import inspect
 import tarfile
-import sys
-import importlib
 import scipy.interpolate
 
 from turbigen.exceptions import ConfigError
@@ -85,10 +83,6 @@ def cum_arc_length(xr, axis=1):
     return s
 
 
-def rms(x):
-    return np.sqrt(np.mean(np.array(x) ** 2))
-
-
 def tand(x):
     """Tangent of degree angle"""
     return np.tan(np.radians(x))
@@ -120,48 +114,6 @@ def tolist(x):
             x,
         ]
     else:
-        return x
-
-
-def list_of_dict_to_dict_of_list(ldict):
-    # Get unique blade keys
-    all_keys = []
-    for d in ldict:
-        if d:
-            all_keys += d.keys()
-    keys = list(set(all_keys))
-
-    dictl = {}
-    for k in keys:
-        dictl[k] = []
-
-    for d in ldict:
-        for k in keys:
-            if not d or k not in d:
-                dictl[k].append(None)
-            else:
-                dictl[k].append(d[k])
-
-    return dictl
-
-
-def find(path, pattern=None):
-    """Return all files under `path` with the substring `pattern`."""
-    results = []
-    for root, dirs, files in os.walk(path):
-        for f in files:
-            if not pattern or (pattern in f):
-                results.append(os.path.join(root, f))
-    return results
-
-
-def to_basic_type(x):
-    try:
-        if np.shape(x) == ():
-            return x.item()
-        else:
-            return x.tolist()
-    except (AttributeError, TypeError):
         return x
 
 
@@ -209,7 +161,7 @@ def resample(x, f, mult=None):
     npts = len(x)
     npts_new = np.round((npts - 1) * f).astype(int) + 1
     if mult:
-        npts_new = round_mg(npts_new, mult)
+        npts_new = int(mult * np.ceil((npts_new - 1) / mult)) + 1
     inorm = np.linspace(0.0, 1.0, npts)
     inorm_new = np.linspace(0.0, 1.0, npts_new)
     xnorm_new = np.interp(inorm_new, inorm, xnorm)
@@ -272,103 +224,6 @@ def node_to_face(var):
         ),
         axis=0,
     )
-
-
-def node_to_cell(var):
-    """For a (...,ni,nj,nk) matrix of some property, average over eight corners of
-    each cell to produce an (...,ni-1,nj-1,nk-1) matrix of cell-centered properties."""
-    return np.mean(
-        np.stack(
-            (
-                var[..., :-1, :-1, :-1],  # i, j, k
-                var[..., 1:, :-1, :-1],  # i+1, j, k
-                var[..., :-1, 1:, :-1],  # i, j+1, k
-                var[..., 1:, 1:, :-1],  # i+1, j+1, k
-                var[..., :-1, :-1, 1:],  # i, j, k+1
-                var[..., 1:, :-1, 1:],  # i+1, j, k+1
-                var[..., :-1, 1:, 1:],  # i, j+1, k+1
-                var[..., 1:, 1:, 1:],  # i+1, j+1, k+1
-            ),
-        ),
-        axis=0,
-    )
-
-
-def subsample_cases(c, k, K):
-    """Split into K parts, extract kth and other K-1 subsamples."""
-    di = int(np.floor(len(c) / K))
-    c_test = []
-    c_train = []
-    for i in range(K):
-        ist = di * i
-        if i == K - 1:
-            ien = len(c)
-        else:
-            ien = di * (i + 1)
-        cnow = c[ist:ien]
-        if i == k:
-            c_test += cnow
-        else:
-            c_train += cnow
-    return c_test, c_train
-
-
-def hyperfaces(x):
-    """Unstructured copy of all elements on hypercube faces.
-
-    This function is the multidimensional equivalent of the following:
-
-    xf = np.unique(
-        np.concatenate(
-            (
-                x[:, 0, :],
-                x[:, -1, :],
-                x[:, :, 0],
-                x[:, :, -1],
-            ),
-            axis=-1,
-        ),
-        axis=-1,
-    )
-
-    Parameters
-    ----------
-    x: (M, N0, N1, ..., NM) array
-        Points in an M-dimensional hypercube; x.ndim == M+1.
-
-    Returns
-    -------
-    xf: (M, Nf) array
-        All points that are located on faces of the hypercube.
-
-    """
-
-    M = x.shape[0]
-    assert x.ndim == M + 1
-
-    xf = []
-
-    # Loop over each index to extract the faces of
-    for m in range(M):
-        # For the face located at start or end of current index
-        for iface in (0, -1):
-            # Construct a fancy indexing tuple that slices everything
-            ind = [
-                slice(None),
-            ] * (M + 1)
-            # On the current index, select only the start or end
-            # Add one because the first element slices over dimensions
-            ind[m + 1] = iface
-            # Extract these elements and add to list
-            xf.append(x[tuple(ind)].reshape(M, -1))
-
-    # Join all the elements from each of the faces
-    xf = np.concatenate(xf, axis=-1)
-
-    # Remove duplicates
-    xf = np.unique(xf, axis=1)
-
-    return xf
 
 
 def make_logger():
@@ -454,10 +309,6 @@ def interpolate_transfinite(c, plot=False):
 
 
 logger = make_logger()
-
-
-def round_mg(n, mult=8):
-    return int(mult * np.ceil((n - 1) / mult)) + 1
 
 
 def signed_distance(xrc, xr):
@@ -565,79 +416,6 @@ def next_numbered_dir(basename):
         pass
     next_id = cur_id + 1
     return os.path.join(base_dir, stem.replace("*", f"{next_id:04d}"))
-
-
-def load_mean_line(mean_line_type):
-    if not mean_line_type.endswith(".py"):
-        # Attempt to load a built-in meanline
-        mod = importlib.import_module(f".{mean_line_type}", package="turbigen.meanline")
-    else:
-        # Use as a file path
-        mod_file = os.path.abspath(mean_line_type)
-        # If abs path not found, look relative
-        if not os.path.exists(mod_file):
-            mod_file = os.path.split(mod_file)[-1]
-        mod_name = os.path.basename(mean_line_type)
-        spec = importlib.util.spec_from_file_location(
-            f"turbigen.meanline.{mod_name}", mod_file
-        )
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[f"turbigen.meanline.{mod_name}"] = mod
-        spec.loader.exec_module(mod)
-    return mod
-
-
-def load_annulus(annulus_type):
-    if not annulus_type.endswith(".py"):
-        # Attempt to load a built-in annulus
-        mod = importlib.import_module(".annulus", package="turbigen")
-        mod = getattr(mod, annulus_type)
-    else:
-        # Use as a file path
-        mod_file = os.path.abspath(annulus_type)
-        mod_name = os.path.basename(annulus_type)
-        spec = importlib.util.spec_from_file_location(
-            f"turbigen.annulus.{mod_name}", mod_file
-        )
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[f"turbigen.annulus.{mod_name}"] = mod
-        spec.loader.exec_module(mod)
-        mod = mod.Annulus
-    return mod
-
-
-def load_install(install_type):
-    if not install_type.endswith(".py"):
-        # Attempt to load a built-in meanline
-        mod = importlib.import_module(f".{install_type}", package="turbigen.install")
-    else:
-        # Use as a file path
-        mod_file = os.path.abspath(install_type)
-        mod_name = os.path.basename(install_type)
-        spec = importlib.util.spec_from_file_location(
-            f"turbigen.install.{mod_name}", mod_file
-        )
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[f"turbigen.install.{mod_name}"] = mod
-        spec.loader.exec_module(mod)
-    return mod
-
-
-def load_post(post_type):
-    if not post_type.endswith(".py"):
-        # Attempt to load a built-in post
-        mod = importlib.import_module(f".{post_type}", package="turbigen.post")
-    else:
-        # Use as a file path
-        mod_file = os.path.abspath(post_type)
-        mod_name = os.path.basename(post_type)
-        spec = importlib.util.spec_from_file_location(
-            f"turbigen.post.{mod_name}", mod_file
-        )
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[f"turbigen.post.{mod_name}"] = mod
-        spec.loader.exec_module(mod)
-    return mod
 
 
 def node_to_face3(x):
@@ -852,40 +630,6 @@ def yaw_from_xrt(xrt1, xrt2, Vxrt, yaw_ref=None):
     return yaw
 
 
-def incidence(grid, machine, meanline, fac_Rle=1.0):
-    chi_stag_all = stagnation_point_angle(grid, machine, meanline, fac_Rle)
-
-    out = []
-
-    # Loop over rows
-    for irow, chi_stag_row in enumerate(chi_stag_all):
-        out.append([])
-
-        for jblade, chi_stag_blade in enumerate(chi_stag_row):
-            spf, chi_stag, chi_metal = chi_stag_blade
-
-            # bldnow = machine.split[irow] if jblade else machine.bld[irow]
-            # chi_metal = np.array([bldnow.get_chi(spfj)[0] for spfj in spf])
-
-            # Smooth
-            nsmooth = 10
-            sf = 0.5
-            for _ in range(nsmooth):
-                chi_avg = 0.5 * (chi_stag[:-2] + chi_stag[2:])
-                chi_stag[1:-1] = sf * chi_stag[1:-1] + (1.0 - sf) * chi_avg
-
-            incidence = chi_stag - chi_metal
-
-            out_now = np.stack((spf, incidence, chi_stag, chi_metal))
-
-            # Remove results in tip gap
-            out_now[1:, spf > (1.0 - machine.tip[irow])] = np.nan
-
-            out[-1].append(out_now)
-
-    return out
-
-
 def qinv(x, q):
     xs = np.sort(x)
     n = len(x)
@@ -1008,17 +752,6 @@ def dA_Gauss(A, B, C, D):
     return dA
 
 
-def cart_to_pol(dA, t):
-    dAx, dAy, dAz = -dA
-    cost = np.cos(t)
-    sint = np.sin(t)
-
-    dAr = -dAy * sint - dAz * cost
-    dAt = dAy * cost - dAz * sint
-
-    return np.stack((dAx, dAr, dAt))
-
-
 def moving_average_1d(arr, window_size):
     if window_size < 1:
         raise ValueError("Window size must be at least 1")
@@ -1029,214 +762,8 @@ def moving_average_1d(arr, window_size):
     return np.convolve(arr, kernel, mode="same")
 
 
-def moving_average(x, n):
-    xa = x.copy()
-    N = x.shape[1]
-    for i in range(N):
-        ist = np.max(i - n, 0)
-        ien = i + 1
-        xa[:, i] = x[:, ist:ien].sum(axis=1) / (ien - ist)
-    return xa
-
-
-def write_sections(xrrt, fname):
-    """Dump section coordinates in a format turbigen can read."""
-    Nsect = len(xrrt)
-    with open(fname, "w") as f:
-        f.write("Blade section xrt coordinates for turbigen\n")
-        f.write(f"Nsect = {Nsect}\n")
-        for isect in range(Nsect):
-            f.write(f"Section {isect}\n")
-            Nc, Npts = xrrt[isect].shape
-            assert Nc == 3
-            f.write(f"Npts = {Npts}\n")
-            for c in xrrt[isect]:
-                np.savetxt(f, c.reshape(1, -1))
-
-
-def read_sections(fname):
-    """Load section coordinates from a formatted data file."""
-    with open(fname, "r") as f:
-        f.readline()  # Skip header
-        Nsect = int(f.readline().split()[-1])
-        xrrt = []
-        for isect in range(Nsect):
-            f.readline()  # Skip header
-            f.readline()  # Skip Npts
-            xrrt.append(
-                np.stack([[float(n) for n in f.readline().split()] for _ in range(3)])
-            )
-
-    return xrrt
-
-
-def offset_curve(xr, d, flip=False):
-    """Offset meridional curve by a perpendicular distance.
-
-    Parameters
-    ----------
-    xr: (2, N) array
-        Coordinates of the original curve.
-    d: scalar or (M,) array
-        Perpendicular distances.
-
-    """
-
-    # Check input
-    assert xr.shape[0] == 2
-    assert xr.ndim == 2
-
-    # Edge length vectors
-    dxr = np.diff(xr, axis=1)
-
-    # Perpendicular vectors, edge-centered
-    perp_edge = np.stack((-dxr[1], dxr[0]))
-    perp_edge /= np.linalg.norm(perp_edge, axis=0, keepdims=True)
-
-    # Put the perpendicular vectors back to nodes
-    perp_node = np.concatenate(
-        (
-            perp_edge[:, (0,)],
-            0.5 * (perp_edge[:, :-1] + perp_edge[:, 1:]),
-            perp_edge[:, (-1,)],
-        ),
-        axis=1,
-    )
-
-    # Arrange vectors so they broadcast
-    d = np.array(d).reshape(1, 1, -1)
-    perp_node = perp_node.reshape(2, -1, 1)
-    xr = xr.reshape(2, -1, 1)
-
-    # Choose direction
-    if flip:
-        d *= -1.0
-
-    # Add on the distance
-    xr_offset = xr + perp_node * d
-
-    return xr_offset
-
-
-def interpolate_curve_2d(xr, sq, axis):
-    """Interpolate along a curve at given length fractions."""
-    s = cum_arc_length(xr, axis=axis)
-    s /= s[(-1,), :]
-    xrq = np.zeros((2, len(sq), xr.shape[2]))
-    for k in range(xr.shape[2]):
-        xrq[:, :, k] = scipy.interpolate.interp1d(s[:, k], xr[:, :, k], axis=axis)(sq)
-    return xrq
-
-
-def interpolate_curve_1d(xr, sq):
-    """Interpolate along a curve at given length fractions."""
-    s = cum_arc_length(xr, axis=1)
-    s /= s[-1]
-    xrq = scipy.interpolate.interp1d(s, xr, axis=1)(sq)
-    return xrq
-
-
-def angle_curve(xr):
-    """Angle of slope of a curve."""
-    dxr = np.diff(xr, 1)
-    return np.degrees(np.arctan2(dxr[1], dxr[0]))
-
-
-def angle_curve_node(xr):
-    """Angle of slope of a curve."""
-    angle_cell = angle_curve(xr)
-    angle_node = np.zeros((xr.shape[1],))
-    angle_node[1:-1] = 0.5 * (angle_cell[1:] + angle_cell[:-1])
-    angle_node[0] = angle_cell[0]
-    angle_node[-1] = angle_cell[-1]
-    return angle_node
-
-
-def interpolate_block(xr_hub, xr_cas, spf):
-    """Make a block given points on hub/casing and span fractions."""
-
-    # Ensure the arrays broadcast
-    spf = spf.reshape(1, 1, -1)
-    xr_hub = xr_hub.reshape(2, -1, 1)
-    xr_cas = xr_cas.reshape(2, -1, 1)
-
-    xr = spf * (xr_cas - xr_hub) + xr_hub
-
-    return xr
-
-
-def meshgrid_block(x, r, t):
-    return np.stack(np.meshgrid(x, r, t, indexing="ij"))
-
-
-def extrude_block(xr, t):
-    _, ni, nj = xr.shape
-    nk = t.shape[0]
-    xr = xr.reshape(2, ni, nj, 1)
-    t = t.reshape(1, 1, 1, nk)
-    xr = np.tile(xr, (1, 1, 1, nk))
-    t = np.tile(t, (1, ni, nj, 1))
-    return np.concatenate((xr, t), axis=0)
-
-
-def extrude_block_2d(xr, t):
-    _, ni, nj = xr.shape
-    nj2, nk = t.shape
-    assert nj == nj2
-    xr = xr.reshape(2, ni, nj, 1)
-    t = t.reshape(1, 1, nj, nk)
-    xr = np.tile(xr, (1, 1, 1, nk))
-    t = np.tile(t, (1, ni, 1, 1))
-    return np.concatenate((xr, t), axis=0)
-
-
-def arg_smallest_positive(x):
-    x = x.copy()
-    xbig = 2 * np.max(np.abs(x))
-    x[x < 0.0] = xbig
-    return np.argmin(x)
-
-
-def arg_largest_negative(x):
-    x = x.copy()
-    xbig = 2 * np.max(np.abs(x))
-    x[x > 0.0] = -xbig
-    return np.argmax(x)
-
-
-def unwrap_xr(xr):
-    # Get an unstructured list of xr coords
-    xru = xr.reshape(2, -1)
-
-    # Sort by the product of x and r
-    # isort = np.argsort(np.prod(xru,axis=0))
-    isort = np.argsort(xru[0])
-    xru = xru[:, isort]
-
-    # Integrate arc length
-    rc = 0.5 * (xru[1, :1] + xru[1, :-1])
-    dxr = np.diff(xru, axis=1) ** 2
-    dm = np.sqrt(np.sum(dxr, axis=0))
-    dmp = dm / rc
-    mp = cumsum0(dmp)
-
-    # Invert the sorting
-    isort_inverse = np.array([np.where(isort == i)[0] for i in range(len(isort))])
-    mp = mp[isort_inverse]
-
-    return mp.reshape(xr.shape[1:])
-
-
 def relax(x_old, x_new, rf):
     return x_new * rf + x_old * (1.0 - rf)
-
-
-def smooth_1d(x, sf, nsmooth):
-    # Smooth
-    for _ in range(nsmooth):
-        xa = 0.5 * (x[:-2] + x[2:])
-        x[1:-1] = sf * xa + (1.0 - sf) * x[1:-1]
-    return x
 
 
 def interp1d_linear_extrap(x, y, axis=0):
@@ -1284,35 +811,6 @@ def interp1d_linear_extrap(x, y, axis=0):
         spline.extend(rightcoeffs, rightxnext)
 
     return spline
-
-
-def intersect_indices(x, y, tol):
-    # Ensure the input matrices have the correct shape
-    assert x.shape[0] == 2 and y.shape[0] == 2, "Both matrices must have 2 rows."
-
-    # Initialize empty lists to store indices
-    ix = []
-    iy = []
-
-    # Iterate over each column in matrix y
-    for j in range(y.shape[1]):
-        # Find the column in x that matches the current column in y
-        match = np.where((np.isclose(x, y[:, j : j + 1], atol=tol)).all(axis=0))[0]
-        if len(match) > 0:
-            iy.append(j)  # Append the index of y
-            ix.append(match[0])  # Append the corresponding index of x
-
-    # Convert the index lists to numpy arrays
-    ix = np.array(ix, dtype=int)
-    iy = np.array(iy, dtype=int)
-
-    return ix, iy
-
-
-class AttrDict(dict):
-    def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
-        self.__dict__ = self
 
 
 def fit_plane(xyz):
@@ -1371,17 +869,6 @@ def project_onto_plane(points, basis1, basis2):
 def shoelace_formula(xy):
     x, y = xy
     return 0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
-
-
-def node_to_face2(x):
-    return np.stack(
-        (
-            x[:-1, :-1],
-            x[1:, 1:],
-            x[:-1, 1:],
-            x[1:, :-1],
-        )
-    ).mean(axis=0)
 
 
 def asscalar(x):
@@ -1518,11 +1005,6 @@ class BaseDesigner(ABC):
     @abstractmethod
     def forward(*args, **kwargs):
         raise NotImplementedError
-
-
-def xrt_to_xrrt(xrt):
-    x, r, t = xrt
-    return np.stack((x, r, r * t))
 
 
 def format_sf(x, sig=3):
