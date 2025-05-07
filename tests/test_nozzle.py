@@ -1,6 +1,6 @@
 """Run a quasi-1D nozzle in the native solver."""
 
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.ember as embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.util
@@ -351,7 +351,7 @@ def test_condi(dirn):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, dirn=dirn)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     # plot_nozzle(g, F)
     # plt.show()
@@ -372,7 +372,7 @@ def test_Tu0(Tu0):
     xA = np.array([[0.0, 0.01, 0.99, 1.0], [1.0, 1.0, 1.0, 1.0]])
     g, F = make_nozzle(xA, Tu0=Tu0)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     # plot_nozzle(g,F)
     # plt.show()
@@ -394,7 +394,7 @@ def test_uniform(Alpha):
 
     g, F = make_nozzle(xA, Alpha=Alpha, skew=Alpha)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -413,7 +413,7 @@ def test_Ma(Ma):
 
     g, F = make_nozzle(xA, Ma1=Ma)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -431,7 +431,7 @@ def test_skew(Alpha):
 
     g, F = make_nozzle(xA, skew=Alpha, tper=True)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -450,7 +450,7 @@ def test_radius(Alpha):
 
     g, F = make_nozzle(xA, xnRR=xR, htr=0.9, Alpha=Alpha, skew=Alpha, tper=True)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     _, Ys, Cho = post_nozzle(g, F)
 
@@ -495,7 +495,7 @@ def test_rpm(rpm):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, rpm=rpm, tper=True, skew=None)
 
-    sol = embsolve.Emb(**settings)
+    sol = embsolve.Ember(**settings)
     sol.nstep_damp = -1
     sol.run(g)
 
@@ -519,7 +519,7 @@ def test_To1(To1):
 
     g, F = make_nozzle(xA, To1=To1)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 
@@ -541,7 +541,7 @@ def test_offset(dP):
 
     g, F = make_nozzle(xA, dP=dP)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     err_Ma, Ys, Cho = post_nozzle(g, F)
 

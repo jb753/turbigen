@@ -54,7 +54,6 @@ TABLES_BY_GRID = {
 
 FLIP_GRID = [CP.PSmass_INPUTS, CP.HmassSmass_INPUTS]
 
-
 LOG_VARS = [CP.iDmass, CP.iP]
 
 INPUT_VARS = [CP.iDmass, CP.iUmass, CP.iHmass, CP.iP, CP.iSmass, CP.iT]
@@ -375,10 +374,10 @@ def read_ro_u_interpolators(fname):
     itable_P = PROPERTY_TABLES.index((CP.iP, CP.DmassUmass_INPUTS))
     itable_T = PROPERTY_TABLES.index((CP.iT, CP.DmassUmass_INPUTS))
 
-    ro = dat[f"arr_{itable_P*3}"]
-    u = dat[f"arr_{itable_P*3+1}"]
-    P = dat[f"arr_{itable_P*3+2}"]
-    T = dat[f"arr_{itable_T*3+2}"]
+    ro = dat[f"arr_{itable_P * 3}"]
+    u = dat[f"arr_{itable_P * 3 + 1}"]
+    P = dat[f"arr_{itable_P * 3 + 2}"]
+    T = dat[f"arr_{itable_T * 3 + 2}"]
 
     func_P = RegularGridInterpolator((ro, u), P.T, method="nearest")
     func_T = RegularGridInterpolator((ro, u), T.T, method="nearest")

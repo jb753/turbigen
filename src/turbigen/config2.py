@@ -331,7 +331,9 @@ class TurbigenConfig:
         if self.solver:
             solver_name = self.solver.pop("type")
             importlib.import_module(f".{solver_name}", package="turbigen.solvers")
-            Solver = util.get_subclass_by_name(turbigen.solvers.base.BaseSolver, solver_name)
+            Solver = util.get_subclass_by_name(
+                turbigen.solvers.base.BaseSolver, solver_name
+            )
             self.solver = Solver(**self.solver)
             # If solver has convergence history, load it
             if isinstance(self.solver.convergence, str) and not self._fast_init:
@@ -520,7 +522,6 @@ class TurbigenConfig:
         )
 
     def setup_mesh(self):
-
         if not self.mesh:
             logger.error("No mesh configured, quitting.")
             sys.exit(0)
@@ -630,7 +631,6 @@ class TurbigenConfig:
         self.grid.update_outlet()
 
     def run_solver(self):
-
         if not self.solver:
             logger.error("No solver configured, quitting.")
             sys.exit(0)
@@ -793,8 +793,13 @@ class TurbigenConfig:
         ell = self.get_ell()
         ml = self.mean_line.nominal
         mu = (ml.rho_ref * ml.V_ref * ell)[0] / self.Re_surf
-        self.inlet.mu = mu
-        self.mean_line.nominal.mu = mu
+        try:
+            self.inlet.mu = mu
+            self.mean_line.nominal.mu = mu
+        except TypeError:
+            raise Exception(
+                "Cannot set Reynolds number by changing viscosity of a real gas."
+            )
 
     def design_and_run(self, skip, skip_post=False):
         """Run a configuration file through the CFD solver.
@@ -811,8 +816,12 @@ class TurbigenConfig:
 
         """
 
-        # Prepare the geometry
         self.get_mean_line_nominal()
+
+        # Print real gas table limits
+        if isinstance(self.mean_line.nominal, turbigen.fluid.RealState):
+            self.show_table_limits()
+
         self.get_geometry()
         self.apply_recamber()
 
@@ -870,6 +879,25 @@ class TurbigenConfig:
             log_data.update(log_data_now)
 
         return converged, log_data
+
+    def show_table_limits(self):
+        # """Return limiting property values and deltas for gas table generation."""
+
+        ml = self.mean_line.nominal
+
+        # Min/max entropy
+        smin = ml.s.min()
+        smax = ml.s.max()
+
+        # Minimum pressure
+        Pmin = ml.P.min()
+
+        # Maximum temperature
+        Tmax = ml.To.max()
+
+        logger.info(
+            f"Real gas table limits: smin={smin:.3g} J/kgK, smax={smax:.3g} J/kgK , Pmin={Pmin:.3g} Pa, Tmax={Tmax:.3g} K"
+        )
 
     def post_process_all(self):
         # Initialise the pdf

@@ -1,6 +1,6 @@
 """Viscous test cases."""
 
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.ember as embsolve
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -394,7 +394,7 @@ def test_plate_turb():
 
     g = make_plate(mu=0.5e-4)
 
-    solver = embsolve.Emb(**settings)
+    solver = embsolve.Ember(**settings)
     solver.xllim_pitch = 1e5
     solver.run(g)
 
@@ -510,7 +510,7 @@ def test_plate_lam():
 
     g = make_plate(mu=8e-4)
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     # Extract skin friction
     b = g[0]
@@ -570,7 +570,7 @@ def test_plate_lam():
 def test_poiseuille():
     g, F = make_pipe()
 
-    embsolve.Emb(**settings).run(g)
+    embsolve.Ember(**settings).run(g)
 
     print("Processing last block...")
     b = g[-1]

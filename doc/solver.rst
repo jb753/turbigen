@@ -13,6 +13,13 @@ execute the solver, and then read back the output file into
 :program:`turbigen`'s internal data structures. See the
 :ref:`solver-custom` section for more details.
 
+Select which solver to use by setting the `type` key under the `solver` section
+of the configuration file. Valid choices are:
+
+- `ember`: :ref:`Enhanced Multi-Block solvER<solver-ember>`
+- `ts3`: :ref:`solver-ts3`
+- `ts4`: :ref:`solver-ts4`
+
 Each CFD solver accepts different configuration options. Solver options and
 their default values are listed below; override the defaults using the
 `solver` section of the configuration file. For example, to use the
@@ -21,7 +28,7 @@ built-in :program:`ember` solver, with a reduced damping factor:
 .. code-block:: yaml
 
     solver:
-      type: emb
+      type: ember
       n_step: 1000  # Case-dependent
       n_step_avg: 250  # Typically ~1/4 of n_step
       damping_factor: 10.  # Override default value of 25.0
@@ -306,7 +313,7 @@ Real gas tables generation
 
 For real gas simulations, working fluid property tables must be
 pre-generated before the calculation. This can be done using the
-:meth:`turbigen.tables.make_tables` function following the example below:
+:meth:`turbigen.tables.make_tables` function following the example script below:
 
 .. code-block:: python
 
@@ -322,7 +329,23 @@ pre-generated before the calculation. This can be done using the
 
     make_tables(fluid_name, smin, smax, Pmin, Tmax, ni, new_npz_path)
 
-Then in the configuration file, specify the path to the tables:
+
+The enthalpy and entropy datums are those used by CoolProp, so in general
+
+.. math::
+
+    h &= c_p (T - T_\mathrm{ref}) \\
+    s &= c_p \ln \left( \frac{T}{T_\mathrm{ref}} \right) - R \ln \left( \frac{P}{P_\mathrm{ref}} \right)
+
+This means that the correct numerical values for the entropy limits are not
+immediately obvious. :program:`turbigen` will print out numerical values for
+the limits calculated from the nominal mean-line design. These should be,
+however, extended by some margin of safety. It is vital that the limits
+of the tables are wide enough to cover fluid property values over the
+entire flow field, including local features like the suction peak, shock
+waves and boundary layers.
+
+Finally, in the configuration file, specify the path to the tables:
 
 .. code-block:: yaml
 
@@ -334,12 +357,9 @@ Some notes on real gas calculations:
 
 - The real gas working fluid is less stable than the ideal gas, so take
   care with mesh generation and avoid racy solver settings.
-- It is vital that the limits of the tables are wide enough to cover fluid
-  property values over the entire flow field, including local features like
-  the suction peak, shock waves and boundary layers.
 - There is no handling of phase changes in the tables, so the fluid must
   remain a single phase for accurate results.
-- Of order 1000 poins may be required in each direction to get
+- Of order 1000 points may be required in each direction to get
   discretisation-independent results.
 
 Configuration options
@@ -419,7 +439,11 @@ Configuration options
 Custom solvers
 --------------
 
-To add a new solver, create a new class that inherits from :class:`turbigen.solvers.base.BaseSolver`.  and implement the following methods:
+To add a new solver, create a new Python module in the user-defined plugin
+directory, say `./plug/my_solver.py` and set `plugdir: ./plug` in the
+configuration file. Write a new class that inherits from
+:class:`turbigen.solvers.base.BaseSolver`  and implement the following
+methods:
 
 - :meth:`run`: Run the solver on the given grid and machine geometry.
 - :meth:`robust`: Create a copy of the config with more robust settings.

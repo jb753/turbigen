@@ -2039,33 +2039,6 @@ and will cause problems with meshing and solving for the flow field."""
             self.Po_rel[:-1:2] - self.P_ref
         )
 
-    def get_table_limits(self, safety_factors):
-        # """Return limiting property values and deltas for gas table generation."""
-
-        # Min/max entropy
-        smin = self.s.min()
-        smax = self.s.max()
-        Ds = smax - smin
-
-        # Minimum pressure
-        iPmin = np.argmin(self.P)
-        Pmin = self.P[iPmin]
-        # Perform the mean-line design
-        DP = (self.Po - self.P)[iPmin]
-
-        # Maximum temperature
-        iTmax = np.argmax(self.To)
-        Tmax = self.To[iTmax]
-        DT = (self.To - self.T)[iTmax]
-
-        # Apply a safety factor
-        smin -= Ds * safety_factors[0]
-        smax += Ds * safety_factors[1]
-        Pmin -= DP * safety_factors[2]
-        Tmax += DT * safety_factors[3]
-
-        return smin, smax, Pmin, Tmax
-
     @property
     def Co(self):
         return self._get_metadata_by_key("Co")
