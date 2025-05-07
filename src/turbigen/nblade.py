@@ -61,7 +61,7 @@ class Co(BladeNumberConfig):
 
     def get_blade_number(self, mean_line, blade):
         # Calculate pitch to surface length ratio
-        VmR = self.Vm[1:] / self.Vm[:-1]
+        VmR = mean_line.Vm[1:] / mean_line.Vm[:-1]
         centrifugal = (1.0 - mean_line.RR[::2] ** 2.0) * (
             mean_line.tanAlpha[::2] - mean_line.tanAlpha_rel[::2]
         )

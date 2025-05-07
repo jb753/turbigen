@@ -22,12 +22,6 @@ logger = turbigen.util.make_logger()
 REMOTE = "gp-111"  # Destination host where AutoGrid is running
 
 SSH_ENV_VARS = ["SSH_AUTH_SOCK", "SSH_AGENT_PID"]
-# Get the named vars for ssh agent setup from execution environment and format
-# as a string to prepend commands with
-try:
-    SSH_ENV_STR = " ".join(["%s=%s" % (v, os.environ[v]) for v in SSH_ENV_VARS])
-except KeyError:
-    SSH_ENV_STR = ""
 
 # The scripts we feed to autogrid are stored in same dir as this module
 THIS_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -293,7 +287,8 @@ def _write_geomturbo(
 
 def _add_via(s, via):
     """Add a jump host to a command."""
-    return "ssh -q %s '%s %s'" % (via, SSH_ENV_STR, s)
+    env_str = " ".join(["%s=%s" % (v, os.environ[v]) for v in SSH_ENV_VARS])
+    return "ssh -q %s '%s %s'" % (via, env_str, s)
 
 
 def _scp_to_remote(to_path, from_path, remote, via=None):
@@ -330,6 +325,7 @@ def _execute_on_remote(cmd, remote, via, ntry=3):
     )
     if via:
         cmd_str = _add_via(cmd_str, via)
+    logger.debug(f"_execute_on_remote: {cmd_str}")
 
     for itry in range(max(1, ntry)):
         try:
@@ -526,43 +522,60 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
             raise Exception("Cannot connect to via host %s" % via) from None
 
         # Check the ssh-agent worker is running on via
-        logger.debug("Checking for ssh-agent on via host...")
+        logger.debug("Searching for ssh-agent pid on via host...")
         pid = _execute_on_remote(
             r"""ps aux | grep $(whoami) |  tr -s ' ' | cut -d' ' -f2,11 | grep ssh-agent | cut -d' ' -f1""",
             via,
             None,
             ntry=0,
         ).strip()
+        logger.debug(f"pid={pid}")
+
+        # Raise an error if the pid is not found
         if not pid:
             raise Exception(
-                f"""ssh-agent is not running on via_host {via}
-    You need to start the ssh-agent, enter your password to unlock the keys,
-    and load the details into the current terminal by running:
-    ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}"""
+                f"""ssh-agent is not running on via_host: {via}
+You need to start the ssh-agent and enter your key password:
+ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
             ) from None
-        if not pid == os.environ.get("SSH_AGENT_PID"):
-            raise Exception(
-                f"""ssh-agent is running on via_host {via}
-    but we do not have the details in current shell. Fix by running:
-    source get_ssh_agent.sh {via}
-    If the problem persists, then it is possible that the already
-    running ssh-agent process is stuck somehow. So kill it and restart
-    by running:
-    ssh -t {via} 'pkill ssh-agent && eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}
-    """
-            ) from None
+
+        # Insert the ssh-agent pid into the environment
+        os.environ["SSH_AGENT_PID"] = pid
+        logger.debug("Attempting to find $SSH_AUTH_SOCK on via host using command:")
+        cmd_str = f"find /tmp -path /tmp/ssh-*/agent.{pid[:5]}* || true"
+        logger.debug(cmd_str)
+
+        os.environ["SSH_AUTH_SOCK"] = sock = _execute_on_remote(
+            cmd_str,
+            via,
+            None,
+            ntry=0,
+        ).strip()
+
+        if not sock:
+            raise Exception(f"""ssh-agent socket not found on via_host: {via}""")
+
+    logger.info(
+        f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"
+    )
 
     # Check we can connect to the AG box
     try:
         logger.debug(f"Test connection to remote host {remote}...")
         _execute_on_remote("hostname", remote, via, ntry=0)
     except Exception:
-        raise Exception(
-            f"""Cannot connect to remote host {remote}
-You may need to start the ssh-agent, enter your password to unlock the keys,
-and load the details into the current terminal by running:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add' && source get_ssh_agent.sh {via}"""
-        ) from None
+        if via:
+            raise Exception(
+                f"""Cannot connect to remote host {remote} via {via}.
+You may need to restart the ssh-agent and enter your key password:
+ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
+            ) from None
+        else:
+            raise Exception(
+                f"""Cannot connect to remote host {remote}
+If you use an ssh-agent on this machine, you may need to restart it:
+pkill ssh-agent && eval $(ssh-agent) && ssh-add"""
+            ) from None
 
     # Check the AG worker is running on remote
     try:

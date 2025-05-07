@@ -21,6 +21,12 @@ def run_example(input_yaml):
         text=True,
     )
 
+    # Check return code
+    if out.returncode != 0:
+        print(f"Error running example: {input_yaml}")
+        print(out.stderr)
+        quit(1)
+
     # Load the yaml
     with open(input_yaml, "r") as f:
         yaml_str = f.read()
