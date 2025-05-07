@@ -39,6 +39,7 @@ dev = [
     'cibuildwheel',
     'twine',
     'bump-my-version',
+    'setuptools',
 ]
 parallel = [
     'mpi4py~=3.1.6',

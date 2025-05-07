@@ -35,6 +35,26 @@ def check_vector(shape, **kwargs):
             raise ConfigError(f"{k}={v} has shape {shape_in}, but expected {shape}")
 
 
+def node_to_cell(var):
+    """For a (...,ni,nj,nk) matrix of some property, average over eight corners of
+    each cell to produce an (...,ni-1,nj-1,nk-1) matrix of cell-centered properties."""
+    return np.mean(
+        np.stack(
+            (
+                var[..., :-1, :-1, :-1],  # i, j, k
+                var[..., 1:, :-1, :-1],  # i+1, j, k
+                var[..., :-1, 1:, :-1],  # i, j+1, k
+                var[..., 1:, 1:, :-1],  # i+1, j+1, k
+                var[..., :-1, :-1, 1:],  # i, j, k+1
+                var[..., 1:, :-1, 1:],  # i+1, j, k+1
+                var[..., :-1, 1:, 1:],  # i, j+1, k+1
+                var[..., 1:, 1:, 1:],  # i+1, j+1, k+1
+            ),
+        ),
+        axis=0,
+    )
+
+
 def cell_to_node(x):
     """One-dimensional centered values to nodal values."""
     return np.concatenate(
