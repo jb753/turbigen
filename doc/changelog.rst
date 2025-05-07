@@ -4,6 +4,10 @@ Changelog
 v2.2.0
 ^^^^^^
 
+
+v2.2.0
+^^^^^^
+
 * Allow partial configuration files, exiting at first blank required key
 * Faster compiler flags for Fortran
 * Turbostream solvers with new base class

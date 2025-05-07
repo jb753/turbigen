@@ -154,51 +154,44 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
 end subroutine
 
 
-subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, Fsum, ni, nj, nk, np)
-
+subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fsum, ni, nj, nk, np)
     implicit none
 
-    integer, intent (in)  :: ni
-    integer, intent (in)  :: nj
-    integer, intent (in)  :: nk
-    integer, intent (in)  :: np
+    integer, intent (in)  :: ni, nj, nk, np
+    real, intent (in)     :: dAi(ni, nj-1, nk-1, 3)
+    real, intent (in)     :: dAj(ni-1, nj, nk-1, 3)
+    real, intent (in)     :: dAk(ni-1, nj-1, nk, 3)
+    real, intent (in)     :: fi(ni, nj-1, nk-1, 3, np)
+    real, intent (in)     :: fj(ni-1, nj, nk-1, 3, np)
+    real, intent (in)     :: fk(ni-1, nj-1, nk, 3, np)
+    real, intent (out)    :: fsum(ni-1, nj-1, nk-1, np)
 
-    integer :: ip
+    integer :: i, j, k, ip, d
+    real :: fisum, fjsum, fksum
 
-    real, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-    real, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-    real, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-
-    real, intent (in)  :: fi(ni, nj-1, nk-1, 3, np)
-    real, intent (in)  :: fj(ni-1, nj, nk-1, 3, np)
-    real, intent (in)  :: fk(ni-1, nj-1, nk, 3, np)
-
-    real :: fisum(ni, nj-1, nk-1)
-    real :: fjsum(ni-1, nj, nk-1)
-    real :: fksum(ni-1, nj-1, nk)
-
-    real, intent (out)  :: fsum(ni-1, nj-1, nk-1, np)
-
-    fsum = 0e0
-    !$omp parallel
     do ip = 1, np
-        !$omp workshare
-        ! Dot product areas with the fluxes
-        fisum = sum(dAi*fi(:,:,:,:,ip),4)
-        fjsum = sum(dAj*fj(:,:,:,:,ip),4)
-        fksum = sum(dAk*fk(:,:,:,:,ip),4)
-        ! Net flux
-        fsum(:, :, :, ip) = (&
-            fisum(1:ni-1,:,:) - fisum(2:ni,:,:) & ! i faces
-            + fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:) & ! j faces
-            + fksum(:,:,1:nk-1) - fksum(:,:,2:nk) & ! k faces
-        )
-        !$omp end workshare
+        do k = 1, nk-1
+            do j = 1, nj-1
+                do i = 1, ni-1
+                    fisum = 0.0
+                    fjsum = 0.0
+                    fksum = 0.0
+                    do d = 1, 3
+                        fisum = fisum + dAi(i, j, k, d) * fi(i, j, k, d, ip)
+                        fisum = fisum - dAi(i+1, j, k, d) * fi(i+1, j, k, d, ip)
+
+                        fjsum = fjsum + dAj(i, j, k, d) * fj(i, j, k, d, ip)
+                        fjsum = fjsum - dAj(i, j+1, k, d) * fj(i, j+1, k, d, ip)
+
+                        fksum = fksum + dAk(i, j, k, d) * fk(i, j, k, d, ip)
+                        fksum = fksum - dAk(i, j, k+1, d) * fk(i, j, k+1, d, ip)
+                    end do
+                    fsum(i, j, k, ip) = fisum + fjsum + fksum
+                end do
+            end do
+        end do
     end do
-    !$omp end parallel
-
 end subroutine
-
 
 subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nc, npt)
 
