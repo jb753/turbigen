@@ -43,7 +43,7 @@ def get_memory_usage():
 
 
 @dataclass
-class Emb(turbigen.solvers.base.BaseSolver):
+class Ember(turbigen.solvers.base.BaseSolver):
     """
 
     .. _solver-ember:

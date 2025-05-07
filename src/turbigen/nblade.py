@@ -60,11 +60,24 @@ class Co(BladeNumberConfig):
     """Span fraction to take surface length from."""
 
     def get_blade_number(self, mean_line, blade):
+        # Calculate pitch to surface length ratio
+        VmR = mean_line.Vm[1:] / mean_line.Vm[:-1]
+        centrifugal = (1.0 - mean_line.RR[::2] ** 2.0) * (
+            mean_line.tanAlpha[::2] - mean_line.tanAlpha_rel[::2]
+        )
+        tangential = (
+            mean_line.tanAlpha_rel[::2]
+            - mean_line.RR[::2] * VmR[::2] * mean_line.tanAlpha_rel[1::2]
+        )
+        total_in = mean_line.cosAlpha_rel[::2] * (centrifugal + tangential)
+        total_out = mean_line.cosAlpha_rel[1::2] / VmR[::2] * (centrifugal + tangential)
+        total = np.where(mean_line.ARflow[::2] > 1.0, total_in, total_out)
+        s_ell = np.abs(self.Co / total)
+
         # Surface length of blade from geometry
         ell = blade.surface_length(self.spf)
 
-        # Pitch to surface length ratio from mean line
-        s_ell = mean_line.s_ell(self.Co)
+        # Evaluate pitch
         s = s_ell * ell
 
         # Take reference radius to be mean of LE and TE rrms

@@ -1,7 +1,7 @@
 """Run a periodic grid with CFL=0 to check which nodes have periodicity applied."""
 
 import turbigen.grid
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.ember as embsolve
 import numpy as np
 
 
@@ -95,7 +95,7 @@ def test_periodic():
     t = block.t[:, 0, (0, -1)]
     rho_pre = block.rho[:, :, (0, -1)]
 
-    embsolve.Emb(
+    embsolve.Ember(
         n_step=1,
         n_step_avg=1,
         n_step_log=1,

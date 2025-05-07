@@ -25,7 +25,7 @@ logger = turbigen.util.make_logger()
 
 @dataclass
 class ts4(BaseSolver):
-    """
+    r"""
 
     .. _solver-ts4:
 
@@ -52,7 +52,7 @@ class ts4(BaseSolver):
 
     For real gas simulations, working fluid property tables must be
     pre-generated before the calculation. This can be done using the
-    :meth:`turbigen.tables.make_tables` function following the example below:
+    :meth:`turbigen.tables.make_tables` function following the example script below:
 
     .. code-block:: python
 
@@ -68,7 +68,23 @@ class ts4(BaseSolver):
 
         make_tables(fluid_name, smin, smax, Pmin, Tmax, ni, new_npz_path)
 
-    Then in the configuration file, specify the path to the tables:
+
+    The enthalpy and entropy datums are those used by CoolProp, so in general
+
+    .. math::
+
+        h &= c_p (T - T_\mathrm{ref}) \\
+        s &= c_p \ln \left( \frac{T}{T_\mathrm{ref}} \right) - R \ln \left( \frac{P}{P_\mathrm{ref}} \right)
+
+    This means that the correct numerical values for the entropy limits are not
+    immediately obvious. :program:`turbigen` will print out numerical values for
+    the limits calculated from the nominal mean-line design. These should be,
+    however, extended by some margin of safety. It is vital that the limits
+    of the tables are wide enough to cover fluid property values over the
+    entire flow field, including local features like the suction peak, shock
+    waves and boundary layers.
+
+    Finally, in the configuration file, specify the path to the tables:
 
     .. code-block:: yaml
 
@@ -80,9 +96,6 @@ class ts4(BaseSolver):
 
     - The real gas working fluid is less stable than the ideal gas, so take
       care with mesh generation and avoid racy solver settings.
-    - It is vital that the limits of the tables are wide enough to cover fluid
-      property values over the entire flow field, including local features like
-      the suction peak, shock waves and boundary layers.
     - There is no handling of phase changes in the tables, so the fluid must
       remain a single phase for accurate results.
     - Of order 1000 points may be required in each direction to get

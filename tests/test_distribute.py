@@ -1,4 +1,4 @@
-from turbigen.solvers.emb import embsolve
+from turbigen.solvers.ember import embsolve
 import numpy as np
 import turbigen.grid
 

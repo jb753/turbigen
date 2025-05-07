@@ -103,6 +103,13 @@ class BaseSolver(ABC):
     :program:`turbigen`'s internal data structures. See the
     :ref:`solver-custom` section for more details.
 
+    Select which solver to use by setting the `type` key under the `solver` section
+    of the configuration file. Valid choices are:
+
+    - `ember`: :ref:`Enhanced Multi-Block solvER<solver-ember>`
+    - `ts3`: :ref:`solver-ts3`
+    - `ts4`: :ref:`solver-ts4`
+
     Each CFD solver accepts different configuration options. Solver options and
     their default values are listed below; override the defaults using the
     `solver` section of the configuration file. For example, to use the
@@ -111,7 +118,7 @@ class BaseSolver(ABC):
     .. code-block:: yaml
 
         solver:
-          type: emb
+          type: ember
           n_step: 1000  # Case-dependent
           n_step_avg: 250  # Typically ~1/4 of n_step
           damping_factor: 10.  # Override default value of 25.0
@@ -130,7 +137,11 @@ class BaseSolver(ABC):
     Custom solvers
     --------------
 
-    To add a new solver, create a new class that inherits from :class:`turbigen.solvers.base.BaseSolver`.  and implement the following methods:
+    To add a new solver, create a new Python module in the user-defined plugin
+    directory, say `./plug/my_solver.py` and set `plugdir: ./plug` in the
+    configuration file. Write a new class that inherits from
+    :class:`turbigen.solvers.base.BaseSolver`  and implement the following
+    methods:
 
     - :meth:`run`: Run the solver on the given grid and machine geometry.
     - :meth:`robust`: Create a copy of the config with more robust settings.

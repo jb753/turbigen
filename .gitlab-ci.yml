@@ -30,6 +30,7 @@ build_wheels:
     # Source dist
     - python -m build --sdist
   artifacts:
+    expire_in: 2 weeks
     paths:
       - dist
 

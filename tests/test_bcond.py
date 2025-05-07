@@ -5,7 +5,7 @@ import numpy as np
 import turbigen.compflow_native as cf
 import turbigen.fluid
 import turbigen.grid
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.ember as embsolve
 import turbigen.util
 
 
@@ -141,7 +141,7 @@ def test_outlet_CFL_0():
     g = make_grid(use_inlet=False, use_outlet=True, use_mixing=False)
     outlet_patch = g.outlet_patches[0]
 
-    embsolve.Emb(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
+    embsolve.Ember(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
 
     C = outlet_patch.get_cut()
     assert np.isclose(C.P.mean(), outlet_patch.Pout)
@@ -152,7 +152,7 @@ def test_inlet_CFL_0():
 
     g = make_grid(use_inlet=True, use_outlet=False, use_mixing=False)
 
-    embsolve.Emb(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
+    embsolve.Ember(n_step=1000, n_step_avg=1, CFL=0.0).run(g)
 
     patch = g.inlet_patches[0]
     C = patch.get_cut()
@@ -168,7 +168,7 @@ def test_inlet_CFL_0():
 def test_CFL():
     """Does it nan immediately with non-zero CFL?"""
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=False)
-    embsolve.Emb(
+    embsolve.Ember(
         n_step=2,
         n_step_avg=1,
     ).run(g)
@@ -179,7 +179,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    embsolve.Emb(n_step=5000, n_step_log=100).run(g)
+    embsolve.Ember(n_step=5000, n_step_log=100).run(g)
 
     fluxes = []
     for patch in g.mixing_patches:

@@ -1,6 +1,6 @@
 [project]
 name = "turbigen"
-version = "2.2.1"
+version = "2.2.3"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 authors = [
@@ -31,6 +31,7 @@ dev = [
     'sphinx-autobuild',
     'sphinx-argparse',
     'sphinxcontrib-programoutput',
+    'sphinxcontrib-bibtex',
     'autodocsumm',
     'pytest',
     'pre-commit',
@@ -38,6 +39,7 @@ dev = [
     'cibuildwheel',
     'twine',
     'bump-my-version',
+    'setuptools',
 ]
 parallel = [
     'mpi4py~=3.1.6',
@@ -66,7 +68,7 @@ archs = ["x86_64"]
 managed = false
 
 [tool.bumpversion]
-current_version = "2.2.1"
+current_version = "2.2.3"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"

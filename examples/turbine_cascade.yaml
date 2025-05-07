@@ -49,6 +49,6 @@ nblade:
 
 # Configure the built-in flow solver
 solver:
-  type: emb
+  type: ember
   n_step: 500
   n_step_avg: 100

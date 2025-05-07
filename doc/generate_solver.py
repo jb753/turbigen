@@ -1,8 +1,7 @@
 """Make documentation for an abstract base class and subclasses."""
 
 import turbigen.solvers.base
-from turbigen.solvers import emb, ts3, ts4
-from turbigen import util
+from turbigen.solvers import ember, ts3, ts4
 import inspect
 import dataclasses
 
@@ -20,8 +19,6 @@ def generate_subclass(cls, fname):
         rst_str += "\n\n"
         rst_str += inspect.getdoc(subclass)
         rst_str += "\n\n"
-
-        cls_name = util.camel_to_snake(subclass.__name__)
         rst_str += generate_rst_table(subclass)
 
     if len(doc) > 1:
@@ -92,6 +89,9 @@ def generate_rst_table(cls):
             continue
         except AttributeError:
             pass
+        # Catch empty defaults
+        if default == "":
+            default = " "
         lines.append(f"   * - ``{name}``")
         lines.append(f"     - ``{type_}``")
         lines.append(f"     - ``{default}``")
