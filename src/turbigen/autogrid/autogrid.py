@@ -542,7 +542,7 @@ ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
         # Insert the ssh-agent pid into the environment
         os.environ["SSH_AGENT_PID"] = pid
         logger.debug("Attempting to find $SSH_AUTH_SOCK on via host using command:")
-        cmd_str = f"find /tmp -path /tmp/ssh-*/agent.{pid[:5]}* || true"
+        cmd_str = f"ls /tmp/ssh-*/agent.{pid[:5]}*"
         logger.debug(cmd_str)
 
         os.environ["SSH_AUTH_SOCK"] = sock = _execute_on_remote(
@@ -553,11 +553,13 @@ ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
         ).strip()
 
         if not sock:
-            raise Exception(f"""ssh-agent socket not found on via_host: {via}""")
+            raise Exception(f"""ssh-agent socket not found on via_host: {via}
+You may need to restart the ssh-agent and enter your key password:
+ssh -t {via} 'eval $(ssh-agent) && ssh-add'""")
 
-    logger.info(
-        f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"
-    )
+        logger.info(
+            f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"
+        )
 
     # Check we can connect to the AG box
     try:
