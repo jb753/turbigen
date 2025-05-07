@@ -1,11 +1,11 @@
 Changelog
 =========
 
-v2.2.1
+v2.2.2
 ^^^^^^
 
-* Error if trying to set viscosity from Reynolds with real gas working fluid
-* Show mean-line table limits in the log file when running real gas
+* Error if trying to set viscosity from Reynolds with real working fluid
+* Show mean-line table limits in the log when running real gas
 * Add solver documentation page
 
 v2.2.0
