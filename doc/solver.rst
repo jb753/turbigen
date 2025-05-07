@@ -391,7 +391,7 @@ Configuration options
      - Starting value for CFL ramp.
    * - ``custom_pipeline``
      - ``str``
-     - ````
+     - `` ``
      - Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run using pvpython and take two command-line arguments like `pvpython custom_pipeline.py input_ts3.hdf5 input_ts4`
    * - ``environment_script``
      - ``Path``
@@ -427,7 +427,7 @@ Configuration options
      - String to identify the outlet boundary condition in the TS4 input file. Only requires changing for custom pipelines.
    * - ``tables_path``
      - ``str``
-     - ````
+     - `` ``
      - Path to gas tables npz for real working fluids. See :ref:`solver-ts4-tables`.
    * - ``viscous_model``
      - ``int``
