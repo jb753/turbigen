@@ -611,6 +611,7 @@ class TurbigenConfig:
                 logger.info(f"mdot/mdot_design={1.0 + mdot_adjust:.3g}")
             if pid := self.operating_point.pid:
                 # Constants are scaled by meanline Delta P / mdot
+                logger.info(f"Exit PID constants={pid}")
                 scale = (
                     np.ptp(self.mean_line.nominal.P) / self.mean_line.nominal.mdot[-1]
                 )
