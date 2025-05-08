@@ -15,6 +15,7 @@ import turbigen.meanline
 import turbigen.solvers.base
 import turbigen.iterators
 import turbigen.average
+import turbigen.op_point
 import turbigen.grid
 import turbigen.post
 import turbigen.geometry
@@ -71,6 +72,9 @@ class TurbigenConfig:
 
     plugdir: Path = None
     """Directory to search for custom plugins."""
+
+    operating_point: turbigen.op_point.OperatingPoint = None
+    """Settings for off-design operation and throttling."""
 
     iterate: List[turbigen.iterators.IteratorConfig] = dataclasses.field(
         default_factory=list
@@ -300,6 +304,11 @@ class TurbigenConfig:
                 turbigen.annulus.AnnulusDesigner, self.annulus.pop("type", "smooth")
             )
             self.annulus = AnnulusDesigner(self.annulus)
+
+        if self.operating_point:
+            self.operating_point = turbigen.op_point.OperatingPoint(
+                **self.operating_point
+            )
 
         # Set up the blade designers
         blades = []
@@ -583,8 +592,32 @@ class TurbigenConfig:
         )
 
     def apply_bconds(self):
+        # Get nominal exit pressure, mdot, shaft speed
+        Omega = self.mean_line.nominal.Omega[::2].copy()
+        Pout = self.mean_line.nominal.P[-1]
+        mdot = self.mean_line.nominal.mdot[-1]
+
+        # Alter the operating point if needed
+        if self.operating_point:
+            logger.info("Setting operating point...")
+            if Omega_adjust := self.operating_point.Omega_adjust:
+                Omega *= 1.0 + Omega_adjust
+                logger.info(f"Omega/Omega_design={1.0 + Omega_adjust:.3g}")
+            if PR_ts_adjust := self.operating_point.PR_ts_adjust:
+                Pout /= 1.0 + PR_ts_adjust
+                logger.info(f"PR/PR_design={1.0 + PR_ts_adjust:.3g}")
+            if mdot_adjust := self.operating_point.mdot_adjust:
+                mdot *= 1.0 + mdot_adjust
+                logger.info(f"mdot/mdot_design={1.0 + mdot_adjust:.3g}")
+            if pid := self.operating_point.pid:
+                # Constants are scaled by meanline Delta P / mdot
+                scale = (
+                    np.ptp(self.mean_line.nominal.P) / self.mean_line.nominal.mdot[-1]
+                )
+                Kpid = np.array(pid) * scale
+                self.grid.apply_throttle(mdot, Kpid)
+
         # Set the rotation types
-        Omega = self.mean_line.nominal.Omega[::2]
         gaps = self.get_gaps()
         rot_types = []
         for irow in range(self.nrow):
@@ -615,7 +648,7 @@ class TurbigenConfig:
             )
 
         # Outlet boundary condition
-        self.grid.apply_outlet(self.mean_line.nominal.P[-1])
+        self.grid.apply_outlet(Pout)
 
     def apply_guess(self):
         # Apply 3D guess if available
@@ -661,7 +694,9 @@ class TurbigenConfig:
         Call = turbigen.base.stack(Cmix)
 
         # Copy Omega and Nb from nominal
-        Call.Omega = self.mean_line.nominal.Omega
+        Call.Omega = np.concatenate(
+            [g[0].Omega.flat[0] * np.ones((2,)) for g in self.grid.row_blocks]
+        )
         Call.Nb = self.mean_line.nominal.Nb
 
         # Assemble the meanline flowfield
@@ -837,6 +872,9 @@ class TurbigenConfig:
             self.set_mu_from_Re_surf()
         Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
         logger.info(f"Re_surf={util.format_array(Re_surf)}")
+
+        # Vary operating point if needed
+        # self.set_operating_point()
 
         # We are now ready to generate mesh and run CFD
         # There are three cases to consider
