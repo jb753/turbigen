@@ -1,6 +1,6 @@
 #!/bin/bash 
 # Profile emb solver
-PYFILE="src/turbigen/solvers/emb.py"
+PYFILE="src/turbigen/solvers/ember.py"
 export OMP_NUM_THREADS=1
 sed -i '/def run_slave(/i @profile' "$PYFILE"
 uv pip uninstall turbigen && uv pip install --no-cache .

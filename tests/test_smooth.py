@@ -114,9 +114,11 @@ def test_smooth_const():
 
             embsolve.smooth(X, P2, L, sf2=sf2, sf4=sf4, sf2min=0.0)
             assert np.allclose(X, 1.0)
+            assert not np.isnan(X).any()
 
             embsolve.smooth(X, P4, L, sf2=sf2, sf4=sf4, sf2min=0.0)
             assert np.allclose(X, 1.0)
+            assert not np.isnan(X).any()
 
 
 def test_smooth_linear():
@@ -134,20 +136,18 @@ def test_smooth_linear():
     L, P2, P4 = get_L_P(fs)
 
     embsolve.smooth(fs, P2, L, sf2=0.1, sf4=0.0, sf2min=0.0)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
     assert np.allclose(f, fs)
 
     fs = np.asfortranarray(f.copy())
     embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.05, sf2min=0.0)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
     assert np.allclose(f, fs)
 
     fs = np.asfortranarray(f.copy())
     embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.0)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
+    assert np.allclose(f, fs)
+
+    fs = np.asfortranarray(f.copy())
+    embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.1)
     assert np.allclose(f, fs)
 
 
@@ -164,25 +164,20 @@ def test_smooth_cubic():
     # Check no change after smoothing
     fs = np.asfortranarray(f.copy())
     L, P2, P4 = get_L_P(fs)
-    embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.1, sf2min=0.0)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
+    embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.0)
     # Note because we revert to 2nd-order at boundaries the edges
     # will be wrong - exclude from comparison
+
     assert np.allclose(f[2:-2, 2:-2, 2:-2, 0], fs[2:-2, 2:-2, 2:-2, 0])
 
     # Check that the shock sensor works
     fs = np.asfortranarray(f.copy())
     embsolve.smooth(fs, P2, L, sf2=0.1, sf4=0.1, sf2min=0.0)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
     assert not np.allclose(f, fs)
 
     # Check that sf2min works
     fs = np.asfortranarray(f.copy())
     embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.1)
-    err_abs = np.abs(fs - f)
-    err_rel = err_abs / f.mean()
     assert not np.allclose(f, fs)
 
 
