@@ -19,11 +19,6 @@ subroutine set_fluxes( &
     ! Reference frame angular velocity
     real, intent (in) :: Omega
 
-    ! real, intent (in) :: U(ni, nj, nk)
-    ! real, intent(in) :: Ui( ni, nj-1, nk-1)
-    ! real, intent(in) :: Uj( ni-1, nj, nk-1)
-    ! real, intent(in) :: Uk( ni-1, nj-1, nk)
-
     ! Radii at nodes and face centers
     real, intent(in) :: r( ni, nj, nk)
     real, intent(in) :: ri( ni, nj-1, nk-1)
@@ -110,6 +105,7 @@ subroutine set_fluxes( &
             fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
         end do
     end do
+
     ! Add pressure fluxes
     call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
     call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)

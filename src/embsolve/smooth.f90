@@ -13,144 +13,179 @@
 ! is scaled proportional to the grid spacing via L.
 !
 subroutine smooth( &
-    x, P, L, &  ! Array to smooth
-    sf4, sf2, sf2min, &  ! Smoothing factors
-    ni, nj, nk, np &  ! Array sizes
-)
-    implicit none
+        x, P, L, &  ! Array to smooth
+        sf4, sf2, sf2min, &  ! Smoothing factors
+        ni, nj, nk, np &  ! Array sizes
+    )
 
-    ! Inputs
-    integer, intent(in) :: ni, nj, nk, np
-    real, intent(in) :: sf4, sf2, sf2min
-    real, intent(inout) :: x(ni, nj, nk, np)
-    real, intent(in) :: P(ni, nj, nk)
-    real, intent(in) :: L(ni, nj, nk, 3)
+    ! Array sizes
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+    integer, intent (in)  :: np
 
-    ! Locals
-    integer :: i, j, k, ip, d
-    real :: xs2(3), xs4(3), nu(3)
-    real :: sf2n(3), sf4n(3), sfx2, sfx4, sftn
-    real :: p1, p2, p3, denom
-    real :: xnew(ni, nj, nk, np)
+    ! Smoothing factors
+    real, intent (in)  :: sf4
+    real, intent (in)  :: sf2
+    real, intent (in)  :: sf2min
 
-    do ip = 1, np
-        do k = 1, nk
-            do j = 1, nj
-                do i = 1, ni
+    ! Array to smooth
+    real, intent (inout)  :: x(ni, nj, nk, np)
 
-                    ! Loop over directions: 1=i, 2=j, 3=k
-                    do d = 1, 3
-                        ! Compute smoothed xs2 and xs4 (2nd and 4th order)
+    ! Pressure for adaptive term
+    real, intent (in)  :: P(ni, nj, nk)
 
-                        select case (d)
-                        case (1)  ! i-direction
-                            if (i == 1) then
-                                xs2(d) = 2e0 * x(2,j,k,ip) - x(3,j,k,ip)
-                            else if (i == ni) then
-                                xs2(d) = 2e0 * x(ni-1,j,k,ip) - x(ni-2,j,k,ip)
-                            else
-                                xs2(d) = 0.5e0 * (x(i-1,j,k,ip) + x(i+1,j,k,ip))
-                            end if
+    ! Side length scale factors
+    real, intent (in)  :: L(ni, nj, nk, 3)
 
-                            if (i >= 3 .and. i <= ni-2) then
-                                xs4(d) = (-x(i-2,j,k,ip) + 4e0*x(i-1,j,k,ip) + 4e0*x(i+1,j,k,ip) - x(i+2,j,k,ip)) / 6e0
-                            else
-                                xs4(d) = xs2(d)
-                            end if
+    ! Working variables
+    real :: nu(ni, nj, nk, 3)
+    real :: xs2(ni, nj, nk, np, 3)
+    real :: xs4(ni, nj, nk, np, 3)
+    real :: sfx2(ni, nj, nk)
+    real :: sfx4(ni, nj, nk)
+    real :: sf2n(ni, nj, nk, 3)
+    real :: sf4n(ni, nj, nk, 3)
+    real :: sftn(ni, nj, nk)
+    integer :: ip
 
-                            ! Pressure sensor
-                            if (i == 1) then
-                                p1 = P(1,j,k); p2 = P(2,j,k); p3 = P(3,j,k)
-                            else if (i == ni) then
-                                p1 = P(ni-2,j,k); p2 = P(ni-1,j,k); p3 = P(ni,j,k)
-                            else
-                                p1 = P(i-1,j,k); p2 = P(i,j,k); p3 = P(i+1,j,k)
-                            end if
+    ! 2nd-order smoothed values for each direcion
 
-                        case (2)  ! j-direction
-                            if (j == 1) then
-                                xs2(d) = 2e0 * x(i,2,k,ip) - x(i,3,k,ip)
-                            else if (j == nj) then
-                                xs2(d) = 2e0 * x(i,nj-1,k,ip) - x(i,nj-2,k,ip)
-                            else
-                                xs2(d) = 0.5e0 * (x(i,j-1,k,ip) + x(i,j+1,k,ip))
-                            end if
+    ! i interior
+    xs2(2:ni-1, :, :, :, 1) = ( &
+        x(1:ni-2, :, :, :) + x(3:ni, :, :, :) &
+    )/2e0
 
-                            if (j >= 3 .and. j <= nj-2) then
-                                xs4(d) = (-x(i,j-2,k,ip) + 4e0*x(i,j-1,k,ip) + 4e0*x(i,j+1,k,ip) - x(i,j+2,k,ip)) / 6e0
-                            else
-                                xs4(d) = xs2(d)
-                            end if
+    ! i start
+    xs2(1, :, :, :, 1) =  ( &
+        2e0*x(2, :, :, :) - x(3, :, :, :) &
+    )
 
-                            if (j == 1) then
-                                p1 = P(i,1,k); p2 = P(i,2,k); p3 = P(i,3,k)
-                            else if (j == nj) then
-                                p1 = P(i,nj-2,k); p2 = P(i,nj-1,k); p3 = P(i,nj,k)
-                            else
-                                p1 = P(i,j-1,k); p2 = P(i,j,k); p3 = P(i,j+1,k)
-                            end if
+    ! i end
+    xs2(ni, :, :, :, 1) = ( &
+        2e0*x(ni-1, :, :, :) - x(ni-2, :, :, :) &
+    )
 
-                        case (3)  ! k-direction
-                            if (k == 1) then
-                                xs2(d) = 2e0 * x(i,j,2,ip) - x(i,j,3,ip)
-                            else if (k == nk) then
-                                xs2(d) = 2e0 * x(i,j,nk-1,ip) - x(i,j,nk-2,ip)
-                            else
-                                xs2(d) = 0.5e0 * (x(i,j,k-1,ip) + x(i,j,k+1,ip))
-                            end if
+    ! j interior
+    xs2(:, 2:nj-1, :, :, 2) = ( &
+        x(:, 1:nj-2, :, :) + x(:, 3:nj,   :, :) &
+    )/2e0
 
-                            if (k >= 3 .and. k <= nk-2) then
-                                xs4(d) = (-x(i,j,k-2,ip) + 4e0*x(i,j,k-1,ip) + 4e0*x(i,j,k+1,ip) - x(i,j,k+2,ip)) / 6e0
-                            else
-                                xs4(d) = xs2(d)
-                            end if
+    ! j start
+    xs2(:, 1, :, :, 2) =  ( &
+        2e0*x(:, 2, :, :) - x(:, 3,   :, :) &
+    )
 
-                            if (k == 1) then
-                                p1 = P(i,j,1); p2 = P(i,j,2); p3 = P(i,j,3)
-                            else if (k == nk) then
-                                p1 = P(i,j,nk-2); p2 = P(i,j,nk-1); p3 = P(i,j,nk)
-                            else
-                                p1 = P(i,j,k-1); p2 = P(i,j,k); p3 = P(i,j,k+1)
-                            end if
-                        end select
+    ! j end
+    xs2(:, nj, :, :, 2) = ( &
+        2e0*x(:, nj-1, :, :) - x(:, nj-2, :, :) &
+    )
 
-                        ! Calculate pressure limiter
-                        nu(d) = abs(p1 - 2e0*p2 + p3) / (p1 + 2e0*p2 + p3)
+    ! k interior
+    xs2(:, :, 2:nk-1, :, 3) = ( &
+        x(:, :, 1:nk-2, :) + x(:, :,   3:nk, :) &
+    )/2e0
 
-                        ! Compute smoothing factors
-                        sf2n(d) = max(sf2 * nu(d), sf2min)
-                        sf2n(d) = sf2n(d) * L(i,j,k,d)
-                        sf4n(d) = max(sf4 - sf2n(d), 0e0)
-                        sf4n(d) = sf4n(d) * L(i,j,k,d)
-                    end do
+    ! k start
+    xs2(:, :, 1, :, 3) = ( &
+        2e0*x(:, :, 2, :) - x(:, :,   3, :) &
+    )
 
-                    ! Combine smoothing directions
-                    sfx2 = 0e0
-                    sfx4 = 0e0
-                    sftn = 0e0
-                    do d = 1, 3
-                        sfx2 = sfx2 + sf2n(d) * xs2(d)
-                        sfx4 = sfx4 + sf4n(d) * xs4(d)
-                        sftn = sftn + sf2n(d) + sf4n(d)
-                    end do
+    ! k end
+    xs2(:, :, nk, :, 3) = ( &
+        2e0*x(:, :, nk-1, :) - x(:, :,   nk-2, :) &
+    )
 
-                    ! Final update
-                    xnew(i,j,k,ip) = (1e0 - sftn) * x(i,j,k,ip) + sfx2 + sfx4
+    ! 4th-order smoothed values for each direcion
+    xs4 = xs2
 
-                end do
-            end do
-        end do
+    ! i interior
+    xs4(3:ni-2, :, :, :, 1) = ( &
+        -     x(1:ni-4, :, :, :) + 4e0*x(2:ni-3, :, :, :) &
+        + 4e0*x(4:ni-1, :, :, :) -     x(5:ni,   :, :, :) &
+    )/6e0
+
+    ! j interior
+    xs4(:, 3:nj-2, :, :, 2) = ( &
+        -     x(:, 1:nj-4, :, :) + 4e0*x(:, 2:nj-3, :, :) &
+        + 4e0*x(:, 4:nj-1, :, :) -     x(:,   5:nj, :, :) &
+    )/6e0
+
+    ! k interior
+    xs4(:, :, 3:nk-2, :, 3) = ( &
+        -     x(:, :, 1:nk-4, :) + 4e0*x(:, :, 2:nk-3, :) &
+        + 4e0*x(:, :, 4:nk-1, :) -     x(:,   :, 5:nk, :) &
+    )/6e0
+
+    ! Calculate the pressure sensor (Jameson et al. 1981)
+
+    ! interior i
+    nu(2:ni-1, :, :, 1) = &
+        abs(P(1:ni-2, :, :) - 2e0*P(2:ni-1, :, :) + P(3:ni, :, :)) &
+        /  (P(1:ni-2, :, :) + 2e0*P(2:ni-1, :, :) + P(3:ni, :, :))
+
+    ! start/end i
+    nu(1, :, :, 1) = &
+        abs(P(1, :, :) - 2e0*P(2, :, :) + P(3, :, :)) &
+        /  (P(1, :, :) + 2e0*P(2, :, :) + P(3, :, :))
+    nu(ni, :, :, 1) = &
+        abs(P(ni, :, :) - 2e0*P(ni-1, :, :) + P(ni-2, :, :)) &
+        /  (P(ni, :, :) + 2e0*P(ni-1, :, :) + P(ni-2, :, :))
+
+    ! interior j
+    nu(:, 2:nj-1, :, 2) = &
+        abs(P(:, 1:nj-2, :) - 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :)) &
+        /  (P(:, 1:nj-2, :) + 2e0*P(:, 2:nj-1, :) + P(:, 3:nj, :))
+
+    ! start/end j
+    nu(:, 1, :, 2) = &
+        abs(P(:, 1, :) - 2e0*P(:, 2, :) + P(:, 3, :)) &
+        /  (P(:, 1, :) + 2e0*P(:, 2, :) + P(:, 3, :))
+    nu(:, nj, :, 2) = &
+        abs(P(:, nj, :) - 2e0*P(:, nj-1, :) + P(:, nj-2, :)) &
+        /  (P(:, nj, :) + 2e0*P(:, nj-1, :) + P(:, nj-2, :))
+
+    ! interior k
+    nu(:, :, 2:nk-1, 3) = &
+        abs(P(:, :, 1:nk-2) - 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk)) &
+        /  (P(:, :, 1:nk-2) + 2e0*P(:, :, 2:nk-1) + P(:, :, 3:nk))
+
+    ! start/end k
+    nu(:, :, 1, 3) = &
+        abs(P(:, :, 1) - 2e0*P(:, :, 2) + P(:, :, 3)) &
+        /  (P(:, :, 1) + 2e0*P(:, :, 2) + P(:, :, 3))
+    nu(:, :, nk, 3) = &
+        abs(P(:, :, nk) - 2e0*P(:, :, nk-1) + P(:, :, nk-2)) &
+        /  (P(:, :, nk) + 2e0*P(:, :, nk-1) + P(:, :, nk-2))
+
+    ! Calculate nodal smoothing factors for each direction
+
+    ! 2nd-order
+    sf2n = max( sf2*nu, sf2min)
+
+    ! 4th-order
+    sf4n = max(sf4-sf2n, 0e0)
+
+    ! Apply the scale factors for cell side length
+    sf2n = sf2n * L
+    sf4n = sf4n * L
+
+    ! Loop over properties
+    do ip=1,np
+
+        ! Products of local smoothing factors and flow property
+        ! Summed over all grid directions
+        sfx2 = sum(sf2n*xs2(:,:,:,ip,:),4)
+        sfx4 = sum(sf4n*xs4(:,:,:,ip,:),4)
+
+        ! Total smoothing factor for all grid directions
+        sftn = sum(sf2n + sf4n,4)
+
+        ! Do the smoothing
+        x(:,:,:,ip) = (1e0-sftn)*x(:,:,:,ip)  + sfx2 + sfx4
+
     end do
 
-    ! Copy smoothed array back to original
-    do ip = 1, np
-        do k = 1, nk
-            do j = 1, nj
-                do i = 1, ni
-                    x(i,j,k,ip) = xnew(i,j,k,ip)
-                end do
-            end do
-        end do
-    end do
+
 
 end subroutine

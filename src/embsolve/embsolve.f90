@@ -120,7 +120,6 @@ contains
 
         ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
 
-
         ! End of working variable declarations
 
         Pm = P - Pref
@@ -245,9 +244,7 @@ contains
         R_avg = sum(sum(sum(R_abs,1),1),1)/real((ni-1)*(nj-1)*(nk-1))
 
         ! Apply damping to all cons Ruals
-        where (R_avg.eq.0)
-            R_avg = 1e-9
-        end where
+        R_avg = max(R_avg, 1e-9)
         do ip = 1, 5
             R(:,:,:,ip) = R(:,:,:,ip) &
                 / (1e0 + R_abs(:,:,:,ip)/R_avg(ip)/fdamp)
