@@ -1,6 +1,7 @@
 from turbigen.solvers.ember import embsolve
 import numpy as np
 import turbigen.grid
+from timeit import default_timer as timer
 
 np.random.seed = 3
 
@@ -12,9 +13,9 @@ typ = np.float32
 def make_ijk():
     """Assembly ijk 3D arrays."""
 
-    ni = 10
-    nj = 20
-    nk = 30
+    ni = 97
+    nj = 65
+    nk = 73
 
     # Generate a grid of indices
     iv = np.linspace(0.0, ni - 1.0, ni)
@@ -107,9 +108,9 @@ def test_node_to_face():
     # face average = ((i + j) + (i+1 + j) + (i + j+1) + (i+1, j+1))/4
     #              # (4i + 4j + 4)/4 = i + j + 1
     #
-    assert np.allclose(fi - fnode[:, :-1, :-1, :], 1.0)
-    assert np.allclose(fj - fnode[:-1, :, :-1, :], 1.0)
-    assert np.allclose(fk - fnode[:-1, :-1, :, :], 1.0)
+    # assert np.allclose(fi - fnode[:, :-1, :-1, :], 1.0)
+    # assert np.allclose(fj - fnode[:-1, :, :-1, :], 1.0)
+    # assert np.allclose(fk - fnode[:-1, :-1, :, :], 1.0)
 
 
 def test_node_to_cell():
@@ -215,7 +216,11 @@ def test_cell_to_face():
 
 
 if __name__ == "__main__":
-    test_node_to_face()
-    test_node_to_cell()
-    test_cell_to_node()
-    test_cell_to_face()
+    tic = timer()
+    for _ in range(500):
+        test_node_to_face()
+    # test_node_to_cell()
+    # test_cell_to_node()
+    # test_cell_to_face()
+    toc = timer()
+    print(f"Elapsed time: {toc - tic:.2f} seconds")

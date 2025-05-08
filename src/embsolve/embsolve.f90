@@ -139,12 +139,8 @@ contains
         rho = cons(:, :, :, 1)
         Vt = Vxrt(:, :, :, 3)
         S = (rho*Vt*Vt + Pm)/r
-        !$omp parallel
         call node_to_cell(S, Sc, ni, nj, nk, 1)
-        !$omp workshare
         Sc = Sc * vol(:,:,:,1)
-        !$omp end workshare
-        !$omp end parallel
 
         ! Sum fluxes to get the net flux into each cell
         call sum_fluxes( &
@@ -154,12 +150,10 @@ contains
             ni, nj, nk, 5 &         ! Numbers of points for dummy args
         )
 
-        !$omp parallel workshare
         ! Add on source term to the radial momentum eqn
         fsum(:,:,:,3) = fsum(:,:,:,3) + Sc
         ! Add on body forces
         fsum = fsum + fb
-        !$omp end parallel workshare
 
         ! fsum now contains the sum of fluxes for all cells
         call multigrid_integrate(fsum, resid_cell(:,:,:,:,1), ijk_mg, dt_vol, fmgrid, ni-1, nj-1, nk-1, 5, nmg-1)
@@ -169,9 +163,6 @@ contains
 
         ! Time march and distribute to nodes
         call step(resid_cell, resid_node, ischeme, ni, nj, nk)
-
-        ! ! Stabilise with smoothing
-        ! call smooth( cons, P, L, sf4, sf2, sf2min, ni, nj, nk, 5)
 
     end subroutine
 
@@ -186,7 +177,6 @@ contains
         real :: Rcell(ni-1, nj-1, nk-1, 5)
         real, intent (inout) :: Rnode(ni, nj, nk, 5)
 
-        !$omp parallel
         if (ischeme.eq.-1) then
             ! At the start, we have no previous time level available
             ! So just apply the one residual we have
@@ -196,20 +186,15 @@ contains
         else if (ischeme.eq.0) then
         ! Otherwise, combine current and previous time level
         ! According to the selected time marching scheme
-            !$omp workshare
             Rcell = 2e0*R(:,:,:,:,1) - R(:,:,:,:,2)
             R(:,:,:,:,2) = R(:,:,:,:,1)
-            !$omp end workshare
         else if (ischeme.eq.1) then
-            !$omp workshare
             Rcell = 2e0*R(:,:,:,:,1) - 1.65e0*R(:,:,:,:,2)
             R(:,:,:,:,2) = R(:,:,:,:,1) - 0.65e0*R(:,:,:,:,2)
-            !$omp end workshare
         end if
 
         ! Distribute cell residual to nodes and add on
         call cell_to_node(Rcell, Rnode, ni, nj, nk, 5)
-        !$omp end parallel
 
     end subroutine
 
@@ -263,14 +248,10 @@ contains
         where (R_avg.eq.0)
             R_avg = 1e-9
         end where
-        !$omp parallel
         do ip = 1, 5
-            !$omp workshare
             R(:,:,:,ip) = R(:,:,:,ip) &
                 / (1e0 + R_abs(:,:,:,ip)/R_avg(ip)/fdamp)
-            !$omp end workshare
         end do
-        !$omp end parallel
 
     end subroutine
 

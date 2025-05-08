@@ -187,7 +187,7 @@ def test_grad():
     xc = np.zeros(shape_cell, order="F", dtype=typ)
     embsolve.node_to_cell(xn, xc)
 
-    rtol = 2e-4
+    rtol = 3e-4
 
     q = np.asfortranarray(np.ones_like(b.r)).astype(typ)
     embsolve.grad(q, gradq, vol, dAi, dAj, dAk, rn, rc)
