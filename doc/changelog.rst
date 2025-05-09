@@ -1,16 +1,20 @@
 Changelog
 =========
 
+v2.3.0
+^^^^^^
+
+* Improve AutoGrid meshing robustness, error messages, and locate ssh-agent on via host host automatically
+* Enable operating point change in new configuration format
+* Fix exit PID controller
+* Log full error message and exit if we fail to import a plugin
+
 v2.2.2
 ^^^^^^
 
 * Error if trying to set viscosity from Reynolds with real working fluid
 * Show mean-line table limits in the log when running real gas
 * Add solver documentation page
-
-v2.2.0
-^^^^^^
-
 
 v2.2.0
 ^^^^^^

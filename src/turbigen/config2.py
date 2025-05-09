@@ -251,6 +251,7 @@ class TurbigenConfig:
     def find_plugins(self):
         """Find and load plugins from the plugdir."""
 
+        logger.iter(f"Importing plugins from {self.plugdir}")
         # Find all python files recursively in the plugdir
         py_files = list(self.plugdir.rglob("*.py"))
         for py_file in py_files:
@@ -265,8 +266,10 @@ class TurbigenConfig:
                 sys.modules[f"turbigen.plugin.{module_name}"] = module
                 spec.loader.exec_module(module)
                 logger.iter(f"Loaded plugin: {py_file}")
-            except Exception:
-                logger.iter(f"Failed to load {py_file}, skipping")
+            except Exception as e:
+                logger.iter(f"Failed to load {py_file}, error:")
+                logger.iter(e)
+                sys.exit(1)
 
     def __post_init__(self):
         """Convert input basic types to our desired types."""
