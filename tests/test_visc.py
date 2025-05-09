@@ -496,7 +496,7 @@ def test_plate_turb():
     ax.legend()
     plt.tight_layout(pad=0.1)
     # plt.show()
-    plt.savefig("tests/turb_cd.pdf")
+    plt.savefig("tests/fig/turb_cd.pdf")
     plt.close()
 
 
@@ -554,7 +554,7 @@ def test_plate_lam():
     ax.set_yticks(np.arange(0, 8, 2))
     ax.legend()
     plt.tight_layout(pad=0.1)
-    plt.savefig("plots/blasius_cf.pdf")
+    plt.savefig("tests/fig/blasius_cf.pdf")
     plt.close()
 
     # Get error
@@ -607,7 +607,7 @@ def test_poiseuille():
     ax.set_xticks(np.arange(0, 0.4, 0.1))
     # ax.set_yticks([0, 0.5, 1.0])
     ax.legend()
-    plt.savefig("plots/poiseuille.pdf")
+    plt.savefig("tests/fig/poiseuille.pdf")
     plt.close()
     # plt.show()
 
