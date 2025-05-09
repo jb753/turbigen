@@ -471,7 +471,7 @@ def test_plate_turb():
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
     # np.savetxt('tests/xcd_yp5_turb.csv', np.stack((xx, Cd)))
-    Cdts3 = np.loadtxt("tests/xcd_yp5_turb.csv")
+    Cdts3 = np.loadtxt("tests/data/xcd_yp5_turb.csv")
 
     fig, ax = plt.subplots()
 
@@ -535,7 +535,7 @@ def test_plate_lam():
     ax.set_ylim((0.0, 6))
 
     # Plot skin friction
-    xcf_ts3 = np.loadtxt("tests/xcf_yp5_ts3.csv")
+    xcf_ts3 = np.loadtxt("tests/data/xcf_yp5_ts3.csv")
     xcf_ts3[1] /= 1e-3
     xcf_ts3[0] /= Lref
     ax.plot(x / Lref, cf / 1e-3, "-", label="EMB")
