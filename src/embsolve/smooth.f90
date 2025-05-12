@@ -161,16 +161,10 @@ subroutine smooth( &
     ! Calculate nodal smoothing factors for each direction
 
     ! 2nd-order
-    sf2n = sf2*nu
-    where (sf2n.lt.sf2min)
-        sf2n = sf2min
-    end where
+    sf2n = max( sf2*nu, sf2min)
 
     ! 4th-order
-    sf4n = sf4-sf2n
-    where (sf4n.lt.0e0)
-        sf4n = 0e0
-    end where
+    sf4n = max(sf4-sf2n, 0e0)
 
     ! Apply the scale factors for cell side length
     sf2n = sf2n * L

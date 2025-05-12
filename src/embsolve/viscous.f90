@@ -90,11 +90,9 @@ subroutine shear_stress(&
     Vrel = V
     Vrel(:,:,:,3) = Vrel(:,:,:,3)-Omega*r
 
-    !$omp parallel
     ! Cell-centered vars
     call node_to_cell(Vrel, Vc, ni, nj, nk, 3)
     call node_to_cell(cons(:,:,:,1), roc, ni, nj, nk, 1)
-    !$omp end parallel
 
     call node_to_face(V, Vi, Vj, Vk, ni, nj, nk, 3)
 
@@ -113,8 +111,6 @@ subroutine shear_stress(&
 
     ! tau contains the six unique terms in the tensor
     ! divV and gradV are cell-centered
-    !$omp parallel
-    !$omp workshare
 
     ! tau_xx = 2*dVx_dx - 2/3*divV
     tauc(:,:,:,1) = 2e0*gradV(:,:,:,1,1) - divV
@@ -149,7 +145,6 @@ subroutine shear_stress(&
     where (mu_turb.ge.visc_lim)
         mu_turb = visc_lim
     end where
-    !$omp end workshare
 
     ! Thermal conductivity
     k = (mu + mu_turb) * cp / Pr_turb
@@ -161,9 +156,7 @@ subroutine shear_stress(&
 
     ! Get shear stress for a Newtonian fluid
     do i = 1,6
-        !$omp workshare
         tauc(:,:,:,i) = -tauc(:,:,:,i) * (mu + mu_turb)
-        !$omp end workshare
     end do
 
     ! Now distribute cell values to faces
@@ -188,7 +181,6 @@ subroutine shear_stress(&
     call viscous_flux(fi, taui, qi, Vi, ri, ni, nj-1, nk-1)
     call viscous_flux(fj, tauj, qj, Vj, rj, ni-1, nj, nk-1)
     call viscous_flux(fk, tauk, qk, Vk, rk, ni-1, nj-1, nk)
-    !$omp end parallel
 
     ! Get the net viscous force on each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
@@ -205,9 +197,7 @@ subroutine shear_stress(&
     )
 
     ! Apply relaxation
-    !$omp parallel workshare
     fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
-    !$omp end parallel workshare
 
 end subroutine
 
@@ -232,7 +222,6 @@ subroutine viscous_flux(f, tau, q, V, r, ni, nj, nk)
     ! 5 tau_xt
     ! 6 tau_rt
 
-    !$omp workshare
     ! mass
     f(:, :, :, :, 1) = 0e0
 
@@ -267,7 +256,6 @@ subroutine viscous_flux(f, tau, q, V, r, ni, nj, nk)
     f(:, :, :, 2, 5) = q(:,:,:,2) + wvisc(:,:,:,2)
     f(:, :, :, 3, 5) = q(:,:,:,3) + wvisc(:,:,:,3)
 
-    !$omp end workshare
 
 end subroutine
 
@@ -528,7 +516,6 @@ subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall, nd)
     if (nwall > 0) then
 
         ! Loop over all points
-        !$omp do private(i,j,k)
         do iwall = 1,nwall
 
             ! Extract indices
@@ -542,7 +529,6 @@ subroutine zero_wall_stress(tau, ijk, ni, nj, nk, nwall, nd)
             end if
 
         end do
-        !$omp end do
 
     end if
 

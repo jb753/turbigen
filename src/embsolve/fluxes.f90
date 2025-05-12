@@ -19,11 +19,6 @@ subroutine set_fluxes( &
     ! Reference frame angular velocity
     real, intent (in) :: Omega
 
-    ! real, intent (in) :: U(ni, nj, nk)
-    ! real, intent(in) :: Ui( ni, nj-1, nk-1)
-    ! real, intent(in) :: Uj( ni-1, nj, nk-1)
-    ! real, intent(in) :: Uk( ni-1, nj-1, nk)
-
     ! Radii at nodes and face centers
     real, intent(in) :: r( ni, nj, nk)
     real, intent(in) :: ri( ni, nj-1, nk-1)
@@ -77,7 +72,6 @@ subroutine set_fluxes( &
     rhoV = cons(:, :, :, 2:4)
     rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
 
-    !$omp parallel
 
     ! Calculate face-centered pressure
     call node_to_face( P, Pi, Pj, Pk, ni, nj, nk, 1)
@@ -86,24 +80,19 @@ subroutine set_fluxes( &
     call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
 
     ! zero mass fluxes on the wall
-    !$omp sections
     call zero_wall_fluxes(rhoVi, ijk_iwall, ni, nj-1, nk-1, 3, niwall)
     call zero_wall_fluxes(rhoVj, ijk_jwall, ni-1, nj, nk-1, 3, njwall)
     call zero_wall_fluxes(rhoVk, ijk_kwall, ni-1, nj-1, nk, 3, nkwall)
-    !$omp end sections
 
-    !$omp workshare
     ! Mass fluxes through ijk faces
     fluxi(:, :, :, :, 1) = rhoVi
     fluxj(:, :, :, :, 1) = rhoVj
     fluxk(:, :, :, :, 1) = rhoVk
 
-    ! Now evaluate the nodal fluxes per unit mass of other quantities
     fmass(:, :, :, 1) = Vxrt(:,:,:,1)  ! axial momentum per unit mass
     fmass(:, :, :, 2) = Vxrt(:,:,:,2)  ! radial momentum per unit mass
     fmass(:, :, :, 3) = Vxrt(:,:,:,3)*r ! angular momentum per unit mass
     fmass(:, :, :, 4) = ho  ! energy per unit mass
-    !$omp end workshare
 
     ! Distribute to the faces
     call node_to_face( fmass, fmassi, fmassj, fmassk, ni, nj, nk, 4)
@@ -111,18 +100,16 @@ subroutine set_fluxes( &
     ! Now multiply fmass and rhoV for fluxes of other quantites
     do ip = 1,4
         do id = 1,3
-            !$omp workshare
             fluxi(:, :, :, id, ip+1) = rhoVi(:, :, :, id) * fmassi(:, :, :, ip)
             fluxj(:, :, :, id, ip+1) = rhoVj(:, :, :, id) * fmassj(:, :, :, ip)
             fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
-            !$omp end workshare
         end do
     end do
+
     ! Add pressure fluxes
     call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
     call add_pressure_fluxes(fluxj, Pj, rj, Omega, ni-1, nj, nk-1)
     call add_pressure_fluxes(fluxk, Pk, rk, Omega, ni-1, nj-1, nk)
-    !$omp end parallel
 
 end subroutine
 
@@ -138,7 +125,6 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
     real, intent (out) :: flux(ni, nj, nk, 3, 5)
     real, intent (in)  :: P(ni, nj, nk)
 
-    !$omp workshare
     ! pressure fluxes
     ! x-mom in x-dirn
     flux(:, :, :, 1, 2) = flux(:, :, :, 1, 2) + P
@@ -148,7 +134,6 @@ subroutine add_pressure_fluxes(flux, P, r, Omega, ni, nj, nk)
     flux(:, :, :, 3, 4) = flux(:, :, :, 3, 4) + r*P
     ! ho in t-dirn
     flux(:, :, :, 3, 5) = flux(:, :, :, 3, 5) + r*Omega*P
-    !$omp end workshare
 
 
 end subroutine
@@ -169,6 +154,9 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fsum, ni, nj, nk, np)
     integer :: i, j, k, ip, d
     real :: fisum, fjsum, fksum
 
+    ! Warning, this version seems to have more numerical error
+    ! than using intrinsic sum() for the dot product
+    ! but is faster.
     do ip = 1, np
         do k = 1, nk-1
             do j = 1, nj-1

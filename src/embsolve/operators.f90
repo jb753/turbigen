@@ -65,44 +65,32 @@ subroutine grad(x, gradx, vol, dAi, dAj, dAk, r, rc, ni, nj, nk)
     ! Loop over coordinate directions
     do ii = 1,3
 
-        !$omp parallel
 
         ! Set the current coordinate direction of the
         ! storge vector to the scalar we want to take
         ! gradient of
-        !$omp workshare
         xv(:,:,:,ii) = x
-        !$omp end workshare
 
         ! Special case for theta direction
         if (ii.eq.2) then
-            !$omp workshare
             xv(:,:,:,ii) = xv(:,:,:,ii)/r
-            !$omp end workshare
         end if
 
         ! Find values on faces
         call node_to_face( xv, xi, xj, xk, ni, nj, nk, 3 )
-        !$omp end parallel
 
         ! Apply Gauss' theorem to get volume-averaged spatial derivative
         call sum_fluxes(xi, xj, xk, dAi, dAj, dAk, gradx(:,:,:,ii), ni, nj, nk, 1)
         gradx(:,:,:,ii) = - gradx(:,:,:,ii) / vol
 
-        !$omp parallel
 
         ! Special case the theta direction
         if (ii.eq.2) then
-            !$omp workshare
             gradx(:,:,:,ii) = gradx(:,:,:,ii)*rc
-            !$omp end workshare
         end if
 
         ! Reset the storage vector to zero
-        !$omp workshare
         xv(:,:,:,ii) = 0e0
-        !$omp end workshare
-        !$omp end parallel
 
     end do
 

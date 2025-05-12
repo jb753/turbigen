@@ -50,13 +50,11 @@ subroutine multigrid_integrate( &
     ! indices to extract the summed coarse block change for each fine
     ! point and add on multiplied by the safety factor fmgrid.
 
-    !$omp parallel
 
     ! Loop over multigrid levels
     do ilev = 1,nlev
 
         ! Loop over fine cells in the block
-        !$omp do private(j, i, ib, jb, kb)
         do k = 1,nk
             do j = 1,nj
                 do i = 1,ni
@@ -74,15 +72,12 @@ subroutine multigrid_integrate( &
                 end do
             end do
         end do
-        !$omp end do
     end do
 
     ! Intialise residual to fine value
     dU = 0e0
     do ip = 1, 5
-        !$omp workshare
         dU(:,:,:,ip)  = fsum( :,:,:,ip) * dt_vol(:,:,:,1)
-        !$omp end workshare
     end do
 
 
@@ -90,7 +85,6 @@ subroutine multigrid_integrate( &
     do ilev = 1,nlev
 
         ! Loop over fine points in the block
-        !$omp do private(j, i, ib, jb, kb)
         do k = 1,nk
             do j = 1,nj
                 do i = 1,ni
@@ -113,10 +107,8 @@ subroutine multigrid_integrate( &
                 end do
             end do
         end do
-        !$omp end do
 
     end do
-    !$omp end parallel
 
 end subroutine
 

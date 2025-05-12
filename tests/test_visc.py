@@ -471,7 +471,7 @@ def test_plate_turb():
 
     # Cd = (mom-mom[0])[1:][x>0.]/(xx*0.5*rhoinf.mean()*Vinf.mean()**2)
     # np.savetxt('tests/xcd_yp5_turb.csv', np.stack((xx, Cd)))
-    Cdts3 = np.loadtxt("tests/xcd_yp5_turb.csv")
+    Cdts3 = np.loadtxt("tests/data/xcd_yp5_turb.csv")
 
     fig, ax = plt.subplots()
 
@@ -496,7 +496,7 @@ def test_plate_turb():
     ax.legend()
     plt.tight_layout(pad=0.1)
     # plt.show()
-    plt.savefig("tests/turb_cd.pdf")
+    plt.savefig("tests/fig/turb_cd.pdf")
     plt.close()
 
 
@@ -535,7 +535,7 @@ def test_plate_lam():
     ax.set_ylim((0.0, 6))
 
     # Plot skin friction
-    xcf_ts3 = np.loadtxt("tests/xcf_yp5_ts3.csv")
+    xcf_ts3 = np.loadtxt("tests/data/xcf_yp5_ts3.csv")
     xcf_ts3[1] /= 1e-3
     xcf_ts3[0] /= Lref
     ax.plot(x / Lref, cf / 1e-3, "-", label="EMB")
@@ -554,7 +554,7 @@ def test_plate_lam():
     ax.set_yticks(np.arange(0, 8, 2))
     ax.legend()
     plt.tight_layout(pad=0.1)
-    plt.savefig("plots/blasius_cf.pdf")
+    plt.savefig("tests/fig/blasius_cf.pdf")
     plt.close()
 
     # Get error
@@ -607,7 +607,7 @@ def test_poiseuille():
     ax.set_xticks(np.arange(0, 0.4, 0.1))
     # ax.set_yticks([0, 0.5, 1.0])
     ax.legend()
-    plt.savefig("plots/poiseuille.pdf")
+    plt.savefig("tests/fig/poiseuille.pdf")
     plt.close()
     # plt.show()
 

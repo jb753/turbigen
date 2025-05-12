@@ -130,7 +130,7 @@ def plot_error():
             ax[1].set_title("New")
             ax[2].set_title("Error")
             plt.tight_layout()
-            plt.savefig(f"table_{i}.pdf")
+            # plt.savefig(f"table_{i}.pdf")
             plt.close()
 
 
