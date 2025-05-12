@@ -1,4 +1,6 @@
 venv
+.coverage
+plug
 uv.lock
 tests/back-to-back/*/emb
 doc/examples/*.rst
