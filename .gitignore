@@ -1,5 +1,4 @@
 venv
-tests/fig
 uv.lock
 tests/back-to-back/*/emb
 doc/examples/*.rst

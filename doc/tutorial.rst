@@ -391,7 +391,7 @@ Running CFD
 
 We have now finished the mean-line design. To create blade shapes and run a
 computational fluid dynamics simulation, we can add some extra code to the
-`config.yaml`. These options are described fully in :doc:`config`.
+`config.yaml`. These options are described fully in
 
 .. code-block:: yaml
    :caption: config.yaml
@@ -634,7 +634,7 @@ Extensions
 
 This tutorial has demonstrated some of the functionality of
 :program:`turbigen`. With the current choice of parameterisation, any change to
-the design is just an edit to the `config.yaml`, as described in :doc:`config`.
+the design is just an edit to the `config.yaml`, as described in
 
 * Increase the number of blades by changing `DFL`
 * Increase the grid density under `mesh`
