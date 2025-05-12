@@ -19,6 +19,7 @@ User manual
    usage
    meanline
    solver
+   tutorial
    examples/index
    changelog
    license
