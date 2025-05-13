@@ -8,6 +8,10 @@ import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
 
+import os
+if not os.path.exists("tests/fig"):
+    os.makedirs("tests/fig")
+
 # With quasi-2D periodic grids, and no halo cells,
 # a little bit of 2nd order smoothing is needed to
 # prevent instability
