@@ -134,9 +134,8 @@ class StructuredData:
             A view of the data array with the same shape and metadata.
 
         """
-        out = self.__class__()
+        out = self.__class__(**self._metadata)
         out._data = self._data
-        out._metadata = self._metadata
         out._order = self._order
         out._dtype = self._dtype
         return out
@@ -466,8 +465,10 @@ class BaseFluid(StructuredData, ABC):
         self._set_data_by_key("rhorVt", 0.0)
 
     def _get_stagnation(self):
-        """Copy the state and set h -> h + 0.5 * V^2."""
         return self.copy().set_h_s(self.ho, self.s)
+
+    def _get_stagnation_rel(self):
+        return self.copy().set_h_s(self.ho_rel, self.s)
 
     #
     # Angular velocity and number of blades
@@ -580,28 +581,28 @@ class BaseFluid(StructuredData, ABC):
         """Temperature [K]."""
         pass
 
-    # @property
-    # @abstractmethod
-    # def s(self):
-    #     """Specific entropy [J/kg/K]."""
-    #     pass
+    @property
+    @abstractmethod
+    def s(self):
+        """Specific entropy [J/kg/K]."""
+        pass
 
     #
     # Transport properties
     # (abstract)
     #
 
-    # @property
-    # @abstractmethod
-    # def mu(self):
-    #     """Kinematic viscosity [m^2/s]."""
-    #     raise NotImplementedError()
+    @property
+    @abstractmethod
+    def mu(self):
+        """Kinematic viscosity [m^2/s]."""
+        raise NotImplementedError()
 
-    # @property
-    # @abstractmethod
-    # def Pr(self):
-    #     """Prandtl number [--]."""
-    #     raise NotImplementedError()
+    @property
+    @abstractmethod
+    def Pr(self):
+        """Prandtl number [--]."""
+        raise NotImplementedError()
 
     #
     # Derived coordinates
@@ -756,6 +757,16 @@ class BaseFluid(StructuredData, ABC):
         """Relative frame stagnation enthalpy [J/kg]."""
         return self.h + self.halfVsq_rel
 
+    @dependent_property
+    def Po(self):
+        """Stagnation pressure [Pa]."""
+        return self._get_stagnation().P
+
+    @dependent_property
+    def Po_rel(self):
+        """Relative frame stagnation pressure [Pa]."""
+        return self._get_stagnation_rel().P
+
     #
     # Derived miscellaneous
     #
@@ -788,20 +799,42 @@ class BaseFluid(StructuredData, ABC):
     # Thermodynamic state setters
     # (abstract)
 
-    # @abstractmethod
-    # def set_h_s(self, h, s):
-    #     """Set enthalpy and entropy.
+    @abstractmethod
+    def set_h_s(self, h, s):
+        """Set enthalpy and entropy.
+
+        Parameters
+        ----------
+        h : float
+            Enthalpy [J/kg].
+        s : float
+            Entropy [J/kg/K].
+
+        """
+        raise NotImplementedError()
+
     #
-    #     Parameters
-    #     ----------
-    #     h : float
-    #         Enthalpy [J/kg].
-    #     s : float
-    #         Entropy [J/kg/K].
+    # Velocity setters
     #
-    #     """
-    #     pass
-    #
+
+    def set_Vxrt(self, Vx, Vr, Vt):
+        """Set velocity vector.
+
+        Parameters
+        ----------
+        Vx : float
+            Axial velocity [m/s].
+        Vr : float
+            Radial velocity [m/s].
+        Vt : float
+            Tangential velocity [m/s].
+
+        """
+        u_old = self.u
+        self._set_data_by_key("rhoVx", self.rho * Vx)
+        self._set_data_by_key("rhoVr", self.rho * Vr)
+        self._set_data_by_key("rhorVt", self.rho * Vt)
+        self._set_data_by_key("rhoe", self.rho * (u_old + self.halfVsq))
 
 
 class PerfectFluid(BaseFluid):
@@ -809,6 +842,7 @@ class PerfectFluid(BaseFluid):
 
     def __post_init__(self):
         """Check that the cp and gamma are set."""
+        self._defaults.update({"mu": np.nan, "Pr": np.nan})
         if "cp" not in self._metadata:
             raise ValueError("cp must be set for a Perfect fluid.")
         if "gamma" not in self._metadata:
@@ -826,6 +860,14 @@ class PerfectFluid(BaseFluid):
     @property
     def gamma(self):
         return self._get_metadata_by_key("gamma")
+
+    @property
+    def mu(self):
+        return self._get_metadata_by_key("gamma")
+
+    @property
+    def Pr(self):
+        return self._get_metadata_by_key("Pr")
 
     @dependent_property
     def cv(self):
@@ -851,11 +893,41 @@ class PerfectFluid(BaseFluid):
     def T(self):
         return self.u / self.cv + self.Tu0
 
+    @dependent_property
+    def s(self):
+        return self.cp * np.log(self.T / self.Ts0) - self.rgas * np.log(
+            self.P / self.Ps0
+        )
+
+    def set_h_s(self, h, s):
+        """Set enthalpy and entropy.
+
+        Parameters
+        ----------
+        h : float
+            Enthalpy [J/kg].
+        s : float
+            Entropy [J/kg/K].
+
+        """
+        T = (h + self.cv * self.Tu0) / self.cp
+        P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
+        self.set_P_T(P, T)
+        return self
+
+    def set_P_T(self, P, T):
+        u = self.cv * (T - self.Tu0)
+        rho = P / self.rgas / T
+        return self.set_rho_u(rho, u)
+
 
 if __name__ == "__main__":
     # Test the class
     f = PerfectFluid(cp=1000, gamma=1.4)
     f.set_rho_u(1.0, 100e3)
+    f.set_Vxrt(1000.0, 0.0, 0.0)
     print(f.rho)
-    print(f.u)
+    print(f.V, f.Ma, f.Alpha, f.Beta)
+    print(f.u, f.s)
     print(f.cp, f.gamma, f.rgas)
+    print(f.Po, f.Po_rel, f.P)
