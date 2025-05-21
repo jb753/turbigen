@@ -604,6 +604,49 @@ class BaseFluid(StructuredData, ABC):
         """Prandtl number [--]."""
         raise NotImplementedError()
 
+    # Derivatives
+    # (abstract)
+
+    @property
+    @abstractmethod
+    def dsdrho_P(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def dsdP_rho(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def dhdP_rho(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def dhdrho_P(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def dudrho_P(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def dudP_rho(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def drhoe_drho_P(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def drhoe_dP_rho(self):
+        raise NotImplementedError()
+
     #
     # Derived coordinates
     #
@@ -724,6 +767,7 @@ class BaseFluid(StructuredData, ABC):
         return self.u + self.P / self.rho
 
     #
+
     # Derived composite
     #
 
@@ -767,6 +811,16 @@ class BaseFluid(StructuredData, ABC):
         """Relative frame stagnation pressure [Pa]."""
         return self._get_stagnation_rel().P
 
+    @dependent_property
+    def To(self):
+        """Stagnation temperature [K]."""
+        return self._get_stagnation().T
+
+    @dependent_property
+    def To_rel(self):
+        """Relative frame stagnation temperature [K]."""
+        return self._get_stagnation_rel().T
+
     #
     # Derived miscellaneous
     #
@@ -780,6 +834,10 @@ class BaseFluid(StructuredData, ABC):
     def pitch(self):
         """Angular blade pitch, circumferential period [rad]."""
         return 2.0 * np.pi / self.Nb
+
+    #
+    # Thermodynamic state setters
+    # (abstract)
 
     def set_rho_u(self, rho, u):
         """Set density and internal energy.
@@ -795,10 +853,6 @@ class BaseFluid(StructuredData, ABC):
         self._set_data_by_key("rho", rho)
         self._set_data_by_key("rhoe", rho * (u + self.halfVsq))
 
-    #
-    # Thermodynamic state setters
-    # (abstract)
-
     @abstractmethod
     def set_h_s(self, h, s):
         """Set enthalpy and entropy.
@@ -809,6 +863,62 @@ class BaseFluid(StructuredData, ABC):
             Enthalpy [J/kg].
         s : float
             Entropy [J/kg/K].
+
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_P_T(self, P, T):
+        """Set pressure and temperature.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        T : float
+            Temperature [K].
+
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_P_s(self, P, s):
+        """Set pressure and entropy.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        s : float
+            Entropy [J/kg/K].
+
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_P_h(self, P, h):
+        """Set pressure and enthalpy.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        h : float
+            Specific enthalpy [J/kgK].
+
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_P_rho(self, P, rho):
+        """Set pressure and density.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        rho : float
+            Density [kg/m^3].
 
         """
         raise NotImplementedError()
@@ -835,6 +945,28 @@ class BaseFluid(StructuredData, ABC):
         self._set_data_by_key("rhoVr", self.rho * Vr)
         self._set_data_by_key("rhorVt", self.rho * Vt)
         self._set_data_by_key("rhoe", self.rho * (u_old + self.halfVsq))
+        return self
+
+    def set_V_Alpha_Beta(self, V, Alpha, Beta):
+        """Set velocity vector using magnitude and angles.
+
+        Parameters
+        ----------
+        V : float
+            Absolute velocity magnitude [m/s].
+        Alpha : float
+            Yaw angle [deg].
+        Beta : float
+            Pitch angle [deg].
+
+        """
+        tanAl = np.tan(np.radians(Alpha))
+        tanBe = np.tan(np.radians(Beta))
+        Vm = V / np.sqrt(1.0 + tanAl**2)
+        Vx = V / np.sqrt((1.0 + tanBe**2) * (1.0 + tanAl**2))
+        Vt = Vm * tanAl
+        Vr = Vx * tanBe
+        return self.set_Vxrt(Vx, Vr, Vt)
 
 
 class PerfectFluid(BaseFluid):
@@ -899,6 +1031,40 @@ class PerfectFluid(BaseFluid):
             self.P / self.Ps0
         )
 
+    # Derivatives
+
+    @dependent_property
+    def dsdrho_P(self):
+        return -self.cp / self.rho
+
+    @dependent_property
+    def dsdP_rho(self):
+        return self.cv / self.P
+
+    @dependent_property
+    def dhdP_rho(self):
+        return self.gamma / (self.gamma - 1.0) / self.rho
+
+    @dependent_property
+    def dhdrho_P(self):
+        return -self.cp * self.T / self.rho
+
+    @dependent_property
+    def dudrho_P(self):
+        return -self.P / self.rho**2 / (self.gamma - 1.0)
+
+    @dependent_property
+    def dudP_rho(self):
+        return 1.0 / self.rho / (self.gamma - 1.0)
+
+    @dependent_property
+    def drhoe_drho_P(self):
+        return self.e + self.rho * self.dudrho_P
+
+    @dependent_property
+    def drhoe_dP_rho(self):
+        return self.rho * self.dudP_rho
+
     def set_h_s(self, h, s):
         """Set enthalpy and entropy.
 
@@ -912,13 +1078,64 @@ class PerfectFluid(BaseFluid):
         """
         T = (h + self.cv * self.Tu0) / self.cp
         P = self.Ps0 * np.exp((self.cp * np.log(T / self.Ts0) - s) / self.rgas)
-        self.set_P_T(P, T)
-        return self
+        return self.set_P_T(P, T)
 
     def set_P_T(self, P, T):
+        """Set pressure and temperature.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        T : float
+            Temperature [K].
+
+        """
         u = self.cv * (T - self.Tu0)
         rho = P / self.rgas / T
         return self.set_rho_u(rho, u)
+
+    def set_P_s(self, P, s):
+        """Set pressure and entropy.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        s : float
+            Entropy [J/kg/K].
+
+        """
+        T = self.Ts0 * np.exp((s + self.rgas * np.log(P / self.Ps0)) / self.cp)
+        return self.set_P_T(P, T)
+
+    def set_P_h(self, P, h):
+        """Set pressure and enthalpy.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        h : float
+            Specific enthalpy [J/kgK].
+
+        """
+        T = (h + self.cv * self.Tu0) / self.cp
+        return self.set_P_T(P, T)
+
+    def set_P_rho(self, P, rho):
+        """Set pressure and density.
+
+        Parameters
+        ----------
+        P : float
+            Pressure [Pa].
+        rho : float
+            Density [kg/m^3].
+
+        """
+        T = P / self.rgas / rho
+        return self.set_P_T(P, T)
 
 
 if __name__ == "__main__":
@@ -926,8 +1143,6 @@ if __name__ == "__main__":
     f = PerfectFluid(cp=1000, gamma=1.4)
     f.set_rho_u(1.0, 100e3)
     f.set_Vxrt(1000.0, 0.0, 0.0)
-    print(f.rho)
+    f.set_V_Alpha_Beta(2000.0, 10.0, 20.0)
+    print(f.dhdP_rho)
     print(f.V, f.Ma, f.Alpha, f.Beta)
-    print(f.u, f.s)
-    print(f.cp, f.gamma, f.rgas)
-    print(f.Po, f.Po_rel, f.P)
