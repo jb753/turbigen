@@ -1,6 +1,7 @@
 import numpy as np
 from copy import copy
 
+
 import turbigen.util
 import sys
 
@@ -18,6 +19,19 @@ from embsolvec import embsolve
 util = turbigen.util
 logger = turbigen.util.make_logger()
 
+# We want to make it easy and optional to use line_profiler
+# Attempt to import it, but don't fail if not available
+try:
+    # Import the decorator from line_profiler
+    from line_profiler import profile
+except ImportError:
+    # Otherwise assign a no-op decorator to profile
+    def profile(func):
+        return func
+
+
+# Now we can enable profiling by exporting LINE_PROFILE=1
+# and running as normal but no errors if not available
 
 try:
     from mpi4py import MPI
@@ -911,6 +925,7 @@ def exchange_periodic(blocks, bid_local, periodics):
             patch.Send.Wait()
 
 
+@profile
 def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
     if blocks is None:
         blocks = comm.recv()

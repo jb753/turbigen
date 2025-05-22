@@ -97,10 +97,3 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
-
-# operating_point:
-#   # Omega_adjust: 0.2
-#   # PR_ts_adjust: -0.2
-#   # mdot_adjust: 0.1
-#   pid: [0.5, 0.1, 0.0]
-#

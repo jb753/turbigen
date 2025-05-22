@@ -36,13 +36,11 @@ build_wheels:
 
 profile:
   stage: test
-  artifacts:
-    paths:
-      - plots
   script:
     - uv pip install .[parallel]
     # Serial profiling.
-    - ./scripts/profile.sh
+    - OMP_NUM_THREADS=1 LINE_PROFILE=1 turbigen examples/axial_turbine.yaml -I
+    - cat profile_output.txt
     # Now parallel benchmarking
     - ./scripts/benchmark.sh
 

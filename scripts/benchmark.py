@@ -1,4 +1,4 @@
-import turbigen.solvers.emb as embsolve
+import turbigen.solvers.ember as embsolve
 import turbigen.solvers.ts3
 import turbigen.compflow_native as cf
 import turbigen.grid
@@ -67,9 +67,9 @@ def make_nozzle(
     nj = 81
     nk = 73
 
-    # ni = 81
-    # nj = 33
-    # nk = 25
+    ni = 65
+    nj = 17
+    nk = 9
 
     # Use pitchwise aspect ratio to find cell spacing, pitch and Nb
     pitch = h / (nj - 1) * (nk - 1) * AR_pitch
@@ -317,7 +317,7 @@ xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
 
 
 def run_embsolve(g):
-    solver = embsolve.Emb(
+    solver = embsolve.Ember(
         n_step=200,
         n_step_log=50,
         n_step_ramp=0,
