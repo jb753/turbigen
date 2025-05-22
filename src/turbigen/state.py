@@ -111,15 +111,12 @@ class StructuredData:
             A composite stacked variable.
 
         """
-        out = self.view()
         if self._order == "C":
-            out._data = np.stack(args, axis=0)
+            return np.stack(args, axis=0)
         elif self._order == "F":
-            out._data = np.stack(args, axis=-1)
+            return np.stack(args, axis=-1)
         else:
             raise ValueError(f"Invalid order '{self._order}'.")
-
-        return out
 
     #
     # numpy ndarray style functions
@@ -304,7 +301,21 @@ class StructuredData:
             Value of the metadata variable.
 
         """
-        return self._metadata.get(key, self._defaults.get(key))
+        if key in self._metadata:
+            return self._metadata[key]
+        elif key in self._defaults:
+            return self._cast_metadata(self._defaults[key])
+        else:
+            raise KeyError(f"Metadata key '{key}' not found.")
+
+    def _cast_metadata(self, val):
+        """Convert metadata to the correct type."""
+        # String or integer vals are stored as-is
+        if isinstance(val, (str, int)):
+            return val
+        # Float vals are converted to the correct type
+        else:
+            return self._dtype(val)
 
     def _set_metadata_by_key(self, key, val):
         """Set metadata by variable name.
@@ -317,7 +328,7 @@ class StructuredData:
             Value to set for the metadata variable.
 
         """
-        self._metadata[key] = val
+        self._metadata[key] = self._cast_metadata(val)
         self._dependent_property_cache.clear()
 
     def _lookup_index(self, key):
@@ -336,6 +347,9 @@ class StructuredData:
         """
         if isinstance(key, tuple):
             ind = tuple([self._data_rows.index(ki) for ki in key])
+            # Convert to a slice if consecutive indices
+            if (np.diff(ind) == 1).all():
+                ind = slice(ind[0], ind[-1] + 1)
         else:
             ind = self._data_rows.index(key)
         return ind
@@ -356,9 +370,7 @@ class StructuredData:
         """
         ind = self._lookup_index(key)
         if self._order == "C":
-            out = self._data[
-                ind,
-            ]
+            out = self._data[ind, ...]
         elif self._order == "F":
             out = self._data[..., ind]
         else:
@@ -542,9 +554,7 @@ class BaseFluid(StructuredData, ABC):
     @property
     def conserved(self):
         """Vector of all conserved variables."""
-        cons = self._get_data_by_key(("rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"))
-        assert cons.base is self._data.base
-        return cons
+        return self._get_data_by_key(("rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"))
 
     #
     # Thermodynamic properties
@@ -927,6 +937,18 @@ class BaseFluid(StructuredData, ABC):
     # Velocity setters
     #
 
+    def set_Omega(self, Omega):
+        """Set reference frame angular velocity.
+
+        Parameters
+        ----------
+        Omgea : float
+            Angular velocity [rad/s].
+
+        """
+        self._set_metadata_by_key("Omega", Omega)
+        return self
+
     def set_Vxrt(self, Vx, Vr, Vt):
         """Set velocity vector.
 
@@ -1140,9 +1162,9 @@ class PerfectFluid(BaseFluid):
 
 if __name__ == "__main__":
     # Test the class
-    f = PerfectFluid(cp=1000, gamma=1.4)
+    f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float64, order="F")
     f.set_rho_u(1.0, 100e3)
     f.set_Vxrt(1000.0, 0.0, 0.0)
     f.set_V_Alpha_Beta(2000.0, 10.0, 20.0)
-    print(f.dhdP_rho)
-    print(f.V, f.Ma, f.Alpha, f.Beta)
+    # f.set_Omega(100.0)
+    print(type(f.Tu0), f.U.dtype)
