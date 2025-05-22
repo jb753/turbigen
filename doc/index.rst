@@ -9,6 +9,13 @@
 This documentation contains
 usage instructions, descriptions of the theory involved, and listings of configuration options.
 
+Publications using :program:`turbigen`:
+
+- Brind, J., "Data-driven radial compressor design space mapping". *J. Turbomach.* :cite:`Brind2024`.
+
+- Torres-Gomez, A., Brind, J., and Pullan, G. "Cryogenic Radial Turbine Design for High-Efficiency Hydrogen Liquefaction Plants". *ASME Turbo Expo 2025* :cite:`TorresGomez2025`.
+
+
 User manual
 ===========
 .. toctree::
@@ -19,7 +26,9 @@ User manual
    usage
    meanline
    solver
+   tutorial
    examples/index
    changelog
    license
+   GitLab repository <https://gitlab.developers.cam.ac.uk/jb753/turbigen>
    references

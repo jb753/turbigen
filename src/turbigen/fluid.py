@@ -176,10 +176,10 @@ class PerfectState(StructuredData):
 
     def __repr__(self):
         try:
-            return f"PerfectState(P={self.P/1e5:.3f} bar, T={self.T:.1f} K)"
+            return f"PerfectState(P={self.P / 1e5:.3f} bar, T={self.T:.1f} K)"
         except TypeError:
             return (
-                f"PerfectState(P={np.array2string(self.P/1e5, precision=3)} bar, "
+                f"PerfectState(P={np.array2string(self.P / 1e5, precision=3)} bar, "
                 f" T={np.array2string(self.T, precision=1)} K)"
             )
 
@@ -428,13 +428,13 @@ class RealState(StructuredData):
     def __repr__(self):
         try:
             return (
-                f"RealState({self.fluid_name}, P={self.P/1e5:.3f} bar,"
+                f"RealState({self.fluid_name}, P={self.P / 1e5:.3f} bar,"
                 f" T={self.T:.1f} K)"
             )
         except TypeError:
             return (
                 f"RealState({self.fluid_name},"
-                f" P={np.array2string(self.P/1e5, precision=3)} bar, "
+                f" P={np.array2string(self.P / 1e5, precision=3)} bar, "
                 f" T={np.array2string(self.T, precision=1)} K)"
             )
         except (KeyError, ValueError):
