@@ -118,6 +118,34 @@ class StructuredData:
         else:
             raise ValueError(f"Invalid order '{self._order}'.")
 
+    def _stack_matrix(self, *args):
+        """Stack nested iterables into a matrix.
+
+        Parameters
+        ----------
+        args : nested iterables length [nrow][ncol]
+            Variables to stack.
+
+        """
+
+        # Determine the shape of the input arrays
+        nrow = len(args)
+        ncol = len(args[0])
+
+        if self._order == "C":
+            out = np.empty(self.shape + (nrow, ncol), dtype=self._dtype)
+            for i in range(nrow):
+                for j in range(ncol):
+                    out[..., i, j] = args[i][j]
+        elif self._order == "F":
+            out = np.empty((nrow, ncol) + self.shape, dtype=self._dtype)
+            for i in range(nrow):
+                for j in range(ncol):
+                    out[i, j, ...] = args[i][j]
+        else:
+            raise ValueError(f"Invalid order '{self._order}'.")
+        return out
+
     #
     # numpy ndarray style functions
     #
@@ -695,7 +723,11 @@ class BaseFluid(StructuredData, ABC):
 
     @dependent_property
     def halfVsq(self):
-        return 0.5 * self.V**2
+        return 0.5 * (
+            (self.rhoVx / self.rho) ** 2
+            + (self.rhoVr / self.rho) ** 2
+            + (self.rhorVt / self.rho / self.r) ** 2
+        )
 
     @dependent_property
     def U(self):
@@ -1160,11 +1192,53 @@ class PerfectFluid(BaseFluid):
         return self.set_P_T(P, T)
 
 
+class Perturbator:
+    def __init__(self, state):
+        """Calculate linear perturbations of a state.
+
+        Parameters
+        ----------
+        state : BaseFluid
+            A State to perturb.
+
+        """
+        self._state = state
+
+        def primitive_to_conserved(self):
+            """Matrix to convert primitive to conserved perturbations.
+
+            Get a matrix at every node that converts linear pertubations in
+            primitive variables [rho, Vx, Vr, Vt, P]
+            to perturbations in
+            conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
+
+            Returns
+            -------
+            C: (npts, 5, 5) array
+
+            """
+
+            Z = np.zeros(self.shape)
+            one = np.ones(self.shape)
+            C = np.stack(
+                (
+                    (one, self.Vx, self.Vr, self.rVt, self.drhoe_drho_P),  # d/drho
+                    (Z, self.rho, Z, Z, self.rhoVx),  # d/dVx
+                    (Z, Z, self.rho, Z, self.rhoVr),  # d/dVr
+                    (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
+                    (Z, Z, Z, Z, self.drhoe_dP_rho),  # d/dP
+                )
+            )
+            C = np.moveaxis(C, (0, 1), (-1, -2))
+            return C
+
+
 if __name__ == "__main__":
     # Test the class
     f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float32, order="F")
     f.set_rho_u(1.0, 100e3)
-    f.set_Vxrt(1000.0, 0.0, 0.0)
-    f.set_V_Alpha_Beta(2000.0, 10.0, 20.0)
+    f.set_Vxrt(0.0, 0.0, 0.0)
+    f.set_V_Alpha_Beta(100.0, 10.0, 20.0)
     # f.set_Omega(100.0)
+    print(f.u, f.T)
     print(type(f.Tu0), f.U.dtype)
