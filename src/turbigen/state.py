@@ -1162,7 +1162,7 @@ class PerfectFluid(BaseFluid):
 
 if __name__ == "__main__":
     # Test the class
-    f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float64, order="F")
+    f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float32, order="F")
     f.set_rho_u(1.0, 100e3)
     f.set_Vxrt(1000.0, 0.0, 0.0)
     f.set_V_Alpha_Beta(2000.0, 10.0, 20.0)
