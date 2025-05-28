@@ -94,23 +94,36 @@ class StructuredData:
         else:
             raise ValueError(f"Invalid order '{self._order}'. Use 'C' or 'F'.")
 
-    def _stack(self, *args):
-        """Stack some variables into a composite variable.
+    def _stack_vector(self, *args, order=None):
+        """Stack some variables into a composite vector.
 
-        If the order is 'F', the variables are stacked along the last axis.
-        If the order is 'C', the variables are stacked along the first axis.
 
         Parameters
         ----------
         args : tuple
             Variables to stack.
+        order : str
+            Stacking axis, default to the instance memory layout.
+            If 'C', then stack along first axes.
+            If 'F', then stack along last axes.
 
         Returns
         -------
         out : ndarray
             A composite stacked variable.
 
+        In the case of Fortran memory layout, stacking along the last axis
+        means that each component of the vector is contiguous in memory but the
+        the vector at a specific grid point is discontiguous in memory. This
+        may or may not be the fastest behaviour -- for example to do a matrix
+        multiply at every grid point, it is better to override the stack order
+        to 'C' so that each vector is contiguous in memory.
+
         """
+
+        if order is None:
+            order = self._order
+
         if self._order == "C":
             return np.stack(args, axis=0)
         elif self._order == "F":
@@ -118,32 +131,46 @@ class StructuredData:
         else:
             raise ValueError(f"Invalid order '{self._order}'.")
 
-    def _stack_matrix(self, *args):
+    def _stack_matrix(self, *args, order=None):
         """Stack nested iterables into a matrix.
 
         Parameters
         ----------
         args : nested iterables length [nrow][ncol]
             Variables to stack.
+        order : str
+            Stacking axis, default to the instance memory layout.
+            If 'C', then stack along last two axes.
+            If 'F', then stack along first two axes.
+
+        Returns
+        -------
+        out : ndarray
+            A composite matrix variable.
 
         """
 
         # Determine the shape of the input arrays
         nrow = len(args)
         ncol = len(args[0])
+        print(nrow, ncol)
 
-        if self._order == "C":
-            out = np.empty(self.shape + (nrow, ncol), dtype=self._dtype)
+        if order is None:
+            order = self._order
+
+        # Note that these for loops are faster than calls to np.stack
+        if order == "C":
+            out = np.full(self.shape + (nrow, ncol), np.nan, dtype=self._dtype)
             for i in range(nrow):
                 for j in range(ncol):
                     out[..., i, j] = args[i][j]
-        elif self._order == "F":
-            out = np.empty((nrow, ncol) + self.shape, dtype=self._dtype)
+        elif order == "F":
+            out = np.full((nrow, ncol) + self.shape, np.nan, dtype=self._dtype)
             for i in range(nrow):
                 for j in range(ncol):
                     out[i, j, ...] = args[i][j]
         else:
-            raise ValueError(f"Invalid order '{self._order}'.")
+            raise ValueError(f"Invalid order '{order}'.")
         return out
 
     #
@@ -715,7 +742,7 @@ class BaseFluid(StructuredData, ABC):
 
     @dependent_property
     def Vxrt(self):
-        return self._stack(self.Vx, self.Vr, self.Vt)
+        return self._stack_vector(self.Vx, self.Vr, self.Vt)
 
     @dependent_property
     def V(self):
@@ -748,6 +775,14 @@ class BaseFluid(StructuredData, ABC):
     @dependent_property
     def halfVsq_rel(self):
         return 0.5 * self.V_rel**2
+
+    @dependent_property
+    def rVt(self):
+        return self.rhorVt / self.rho
+
+    @dependent_property
+    def rhoVt(self):
+        return self.rhorVt / self.r
 
     #
     # Derived angles
@@ -1204,41 +1239,68 @@ class Perturbator:
         """
         self._state = state
 
-        def primitive_to_conserved(self):
-            """Matrix to convert primitive to conserved perturbations.
+    def primitive_to_conserved(self):
+        """Matrix to convert primitive to conserved perturbations.
 
-            Get a matrix at every node that converts linear pertubations in
-            primitive variables [rho, Vx, Vr, Vt, P]
-            to perturbations in
-            conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
+        Get a matrix at every node that converts linear pertubations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+        to perturbations in
+        conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
 
-            Returns
-            -------
-            C: (npts, 5, 5) array
+        Returns
+        -------
+        C: (npts, 5, 5) array
 
-            """
+        """
+        S = self._state
+        return S._stack_matrix(
+            (1.0, S.Vx, S.Vr, S.rVt, S.drhoe_drho_P),  # d/drho
+            (0.0, S.rho, 0.0, 0.0, S.rhoVx),  # d/dVx
+            (0.0, 0.0, S.rho, 0.0, S.rhoVr),  # d/dVr
+            (0.0, 0.0, 0.0, S.r * S.rho, S.rhoVt),  # d/dVt
+            (0.0, 0.0, 0.0, 0.0, S.drhoe_dP_rho),  # d/dP
+        )
 
-            Z = np.zeros(self.shape)
-            one = np.ones(self.shape)
-            C = np.stack(
-                (
-                    (one, self.Vx, self.Vr, self.rVt, self.drhoe_drho_P),  # d/drho
-                    (Z, self.rho, Z, Z, self.rhoVx),  # d/dVx
-                    (Z, Z, self.rho, Z, self.rhoVr),  # d/dVr
-                    (Z, Z, Z, self.r * self.rho, self.rhoVt),  # d/dVt
-                    (Z, Z, Z, Z, self.drhoe_dP_rho),  # d/dP
-                )
-            )
-            C = np.moveaxis(C, (0, 1), (-1, -2))
-            return C
+    def conserved_to_primitive(self):
+        """Get a matrix at every node that converts linear pertubations in
+        conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
+        to perturbations in
+        primitive variables [rho, Vx, Vr, Vt, P]
+
+        Returns
+        -------
+        Cinv: (npts, 5, 5) array
+
+        """
+        S = self._state
+        out = S._stack_matrix(
+            (1.0, 0, 0, 0, 0),
+            (-S.Vx, 1, 0, 0, 0),
+            (-S.Vr, 0, 1, 0, 0),
+            (-S.Vt, 0, 0, 1 / S.r, 0),
+            (
+                (S.V**2 - S.drhoe_drho_P),
+                -S.Vx,
+                -S.Vr,
+                -S.Vt / S.r,
+                1,
+            ),
+        )
+        out[1:4] /= S.rho
+        out[-1] /= S.drhoe_dP_rho
+        return out
 
 
-if __name__ == "__main__":
-    # Test the class
-    f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float32, order="F")
-    f.set_rho_u(1.0, 100e3)
-    f.set_Vxrt(0.0, 0.0, 0.0)
-    f.set_V_Alpha_Beta(100.0, 10.0, 20.0)
-    # f.set_Omega(100.0)
-    print(f.u, f.T)
-    print(type(f.Tu0), f.U.dtype)
+# if __name__ == "__main__":
+#     # Test the class
+#     f = PerfectFluid(cp=1000, gamma=1.4, dtype=np.float32, order="F")
+#     f.set_rho_u(1.0, 100e3)
+#     f.set_Vxrt(0.0, 0.0, 0.0)
+#     f.set_V_Alpha_Beta(100.0, 10.0, 20.0)
+#     # f.set_Omega(100.0)
+#     print(f.u, f.T)
+#     print(type(f.Tu0), f.U.dtype)
+#     perturbator = Perturbator(f)
+#     C = perturbator.primitive_to_conserved()
+#     Cinv = perturbator.conserved_to_primitive()
+#
