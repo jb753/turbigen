@@ -434,6 +434,7 @@ def test_perfect_deriv():
     assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
     assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
     assert np.allclose(S1.drhoe_dP_rho[1:-1], drhoe_dP[1:-1], rtol=rtol)
+    print(S1.rhoe.mean(), S1.rho.mean(), S1.drhoe_dP_rho[5], drhoe_dP[5])
 
 
 def test_matrices():
@@ -594,4 +595,4 @@ def test_chic_waves():
 
 if __name__ == "__main__":
     # np.set_printoptions(precision=2)
-    test_matrices()
+    test_perfect_deriv()

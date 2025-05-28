@@ -302,9 +302,12 @@ class StructuredData:
             Shape of the new array. Defaults to scalar.
 
         """
-        out = self.view()
-        out._data = np.full((self.nvar,) + shape, np.nan, dtype=self._dtype)
-        return out
+        return self.__class__(
+            **self._metadata,
+            shape=shape,
+            dtype=self._dtype,
+            order=self._order,
+        )
 
     def reshape(self, shape):
         """Change the shape of the data in place.
@@ -926,9 +929,25 @@ class BaseFluid(StructuredData, ABC):
         u : float
             Internal energy [J/kg].
 
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
+
         """
+        # Store old velocities
+        if np.isfinite(self.rho).all():
+            Vx, Vr, Vt = self.Vx, self.Vr, self.Vt
+            halfVsq = self.halfVsq
+        else:
+            Vx, Vr, Vt = 0.0, 0.0, 0.0
+            halfVsq = 0.0
         self._set_data_by_key("rho", rho)
-        self._set_data_by_key("rhoe", rho * (u + self.halfVsq))
+        self._set_data_by_key("rhoe", rho * (u + halfVsq))
+        self._set_data_by_key("rhoVx", rho * Vx)
+        self._set_data_by_key("rhoVr", rho * Vr)
+        self._set_data_by_key("rhorVt", rho * self.r * Vt)
+        return self
 
     @abstractmethod
     def set_h_s(self, h, s):
@@ -940,6 +959,11 @@ class BaseFluid(StructuredData, ABC):
             Enthalpy [J/kg].
         s : float
             Entropy [J/kg/K].
+
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
 
         """
         raise NotImplementedError()
@@ -955,6 +979,11 @@ class BaseFluid(StructuredData, ABC):
         T : float
             Temperature [K].
 
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
+
         """
         raise NotImplementedError()
 
@@ -968,6 +997,11 @@ class BaseFluid(StructuredData, ABC):
             Pressure [Pa].
         s : float
             Entropy [J/kg/K].
+
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
 
         """
         raise NotImplementedError()
@@ -983,6 +1017,11 @@ class BaseFluid(StructuredData, ABC):
         h : float
             Specific enthalpy [J/kgK].
 
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
+
         """
         raise NotImplementedError()
 
@@ -996,6 +1035,11 @@ class BaseFluid(StructuredData, ABC):
             Pressure [Pa].
         rho : float
             Density [kg/m^3].
+
+        Returns
+        -------
+        self : BaseFluid
+            The current instance with updated state.
 
         """
         raise NotImplementedError()
