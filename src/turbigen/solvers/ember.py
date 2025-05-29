@@ -100,6 +100,9 @@ class Ember(turbigen.solvers.base.BaseSolver):
     n_step_mix: int = 5
     """Number of time steps between mixing plane updates."""
 
+    n_step_throttle: int = 5
+    """Number of time steps between outlet throttle updates."""
+
     n_step_dt: int = 10
     """Number of time steps between updates of the local time step."""
 
@@ -159,6 +162,9 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
     area_avg_Pout: bool = True
     """Force area-averaged outlet pressure to target, otherwise use uniform outlet pressure."""
+
+    rf_throttle: float = 0.1
+    """Relaxation factor on throttled exit pressure changes."""
 
     def robust(self):
         """Create a copy of the config with more robust settings."""
@@ -346,7 +352,7 @@ class SolverBlock:
         self.bconds = [
             InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
         ] + [
-            OutletBoundary(patch, conf.K_exit, conf.area_avg_Pout)
+            OutletBoundary(patch, conf.K_exit, conf.area_avg_Pout, conf.rf_throttle)
             for patch in block.outlet_patches
         ]
 
@@ -1056,6 +1062,12 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
                 # Apply boundary conditions
                 for bc in sb.bconds:
+                    if (
+                        isinstance(bc, OutletBoundary)
+                        and np.mod(istep, conf.n_step_throttle) == 0
+                    ):
+                        bc.set_throttle()
+
                     bc.apply(sb)
 
             # Apply mixers
@@ -1134,7 +1146,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
     if master_flag:
         tpnps = (tlast - tfirst) / nodes / conf.n_step
-        logger.info(f"Elapsed time {tlast - tfirst:.2f}s")
+        logger.info(f"Elapsed time {(tlast - tfirst) / 60:.2f} min")
         logger.info(f"Average tpnps={tpnps:.3e}")
         return blocks, mixers, tpnps, dUlog
     else:
@@ -1173,15 +1185,17 @@ class Boundary:
         # We apply boundary conditions by intercepting them
         self.dUn = np.zeros(self.shape + (5,))
 
-        # Determine a permutation order such that
-        # first axis is spanwise, second axis is pitchwise
-        ax_theta = np.argmax([np.ptp(C.t, axis=n).mean() for n in range(3)]).item()
-        ax_stream = np.argmax(np.array(C.shape) == 1).item()
-        ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
-        self.order = (ax_stream, ax_span, ax_theta)
-        if not self.order == (0, 1, 2):
-            raise Exception("Boundary conditions must be on const-i faces.")
+        # # Determine a permutation order such that
+        # # first axis is spanwise, second axis is pitchwise
+        # ax_theta = np.argmax([np.ptp(C.t, axis=n).mean() for n in range(3)]).item()
+        # ax_stream = np.argmax(np.array(C.shape) == 1).item()
+        # ax_span = np.setdiff1d([0, 1, 2], [ax_theta, ax_stream]).item()
+        # self.order = (ax_stream, ax_span, ax_theta)
 
+        # Hard-code permutation order
+        self.order = (0, 1, 2)
+        if not self.shape[0] == 1:
+            raise Exception("Boundary conditions must be on const-i faces.")
         self.Nb = C.Nb
 
         # Store weights for area integral
@@ -1291,7 +1305,7 @@ class Boundary:
 
 
 class OutletBoundary(Boundary):
-    def __init__(self, patch, K, area_avg):
+    def __init__(self, patch, K, area_avg, rf_throttle):
         # Set up the common features of all boundaries
         super().__init__(patch, K)
 
@@ -1299,9 +1313,40 @@ class OutletBoundary(Boundary):
         self.P_target = patch.Pout
         self.area_avg = area_avg
 
+        # Store throttle parameters
+        self.mdot_target = patch.mdot_target
+        self.rf_throttle = rf_throttle
+        if self.mdot_target:
+            self.k_throttle = patch.Pout / self.integrate_mdot() ** 2
+
     def slice_inward(self):
         """Index the upstream-running chics (inwards thro outlet)."""
         return slice(0, 1, None)
+
+    def integrate_mdot(self):
+        flux_mass = self.state.flux_mass * self.Nb
+        return np.sum(self.wA * flux_mass).astype(float)
+
+    def set_throttle(self):
+        # No op if not throttling
+        if not self.mdot_target:
+            return
+
+        # Relaxation factors
+        rf = self.rf_throttle
+        rf1 = 1 - rf
+
+        # Inner loop - calculate new pressure on current throttle line
+        # Quadratic is much more stabilsing than linear here
+        mdot = self.integrate_mdot()
+        Pnew = self.k_throttle * mdot**2
+        self.P_target = Pnew * rf + self.P_target * rf1
+
+        # Outer loop - adjust throttle line to reach target mdot
+        rf = 0.05
+        rf1 = 1 - rf
+        knew = self.k_throttle * (mdot / self.mdot_target) ** 0.5
+        self.k_throttle = knew * rf + self.k_throttle * rf1
 
     def inward_chics(self):
         """Use static pressure target to set upstream-running wave."""

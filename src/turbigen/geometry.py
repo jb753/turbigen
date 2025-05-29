@@ -534,8 +534,8 @@ class Blade:
         isort = np.argsort(self.spf)
         self.spf = self.spf[isort]
         N = len(self.spf)
-        self.q_thick = np.reshape(q_thick, (N, -1))[isort]
-        self.q_camber = np.reshape(q_camber, (N, -1))[isort]
+        self.thick = np.reshape(q_thick, (N, -1))[isort]
+        self.camber = np.reshape(q_camber, (N, -1))[isort]
         self.mstack = mstack
         if mlim is None:
             self.mlim = np.tile((0.0, 1.0), (N, 1))
@@ -548,12 +548,12 @@ class Blade:
 
     def get_pvec(self, isect=None):
         if isect is not None:
-            qthick = self.q_thick[isect, :]
-            qcam = self.q_camber[isect, :]
+            qthick = self.thick[isect, :]
+            qcam = self.camber[isect, :]
             mlim = self.mlim[isect, :]
         else:
-            qthick = self.q_thick.reshape(-1)
-            qcam = self.q_camber.reshape(-1)
+            qthick = self.thick.reshape(-1)
+            qcam = self.camber.reshape(-1)
             mlim = self.mlim.reshape(-1)
         toff = [
             self.theta_offset,
@@ -561,10 +561,10 @@ class Blade:
         return np.concatenate((qthick, qcam, mlim, toff))
 
     def get_bound(self, isect=None):
-        Nspf, Nthick = self.q_thick.shape
+        Nspf, Nthick = self.thick.shape
         if isect is not None:
             Nspf = 1
-        _, Ncam = self.q_camber.shape
+        _, Ncam = self.camber.shape
         bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
         bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
         bound_mlim = np.tile(((-0.0, 0.0), (1.0, 1.0)), (Nspf, 1))
@@ -593,8 +593,8 @@ class Blade:
 
     def set_pvec(self, q, isect=None):
         self.theta_offset = q[-1]
-        Nspf, Nthick = self.q_thick.shape
-        _, Ncam = self.q_camber.shape
+        Nspf, Nthick = self.thick.shape
+        _, Ncam = self.camber.shape
         if isect is not None:
             Nspf = 1
         ithick = Nthick * Nspf
@@ -603,12 +603,12 @@ class Blade:
         if isect is not None:
             # print(q[icam:im],self.mlim[isect,:])
             # quit()
-            self.q_thick[isect, :] = q[:ithick]
-            self.q_camber[isect, :] = q[ithick:icam]
+            self.thick[isect, :] = q[:ithick]
+            self.camber[isect, :] = q[ithick:icam]
             self.mlim[isect, :] = q[icam:im]
         else:
-            self.q_thick = q[:ithick].reshape(Nspf, Nthick)
-            self.q_camber = q[ithick:icam].reshape(Nspf, Ncam)
+            self.thick = q[:ithick].reshape(Nspf, Nthick)
+            self.camber = q[ithick:icam].reshape(Nspf, Ncam)
             self.mlim = q[icam:im].reshape(Nspf, 2)
 
     @property
@@ -646,8 +646,8 @@ class Blade:
         # Create thickness and camber lines
         if len(self.spf) == 1:
             # Constant values
-            thick = self._Thick(self.q_thick[0])
-            cam = self._Cam(self.q_camber[0])
+            thick = self._Thick(self.thick[0])
+            cam = self._Cam(self.camber[0])
         else:
             # # Interpolate the parameters
             # qthick = scipy.interpolate.interp1d(
@@ -665,8 +665,8 @@ class Blade:
             #     kind=self._interp_method,
             # )
 
-            qcam = util.interp1d_linear_extrap(self.spf, self.q_camber)
-            qthick = util.interp1d_linear_extrap(self.spf, self.q_thick)
+            qcam = util.interp1d_linear_extrap(self.spf, self.camber)
+            qthick = util.interp1d_linear_extrap(self.spf, self.thick)
 
             thick = self._Thick(qthick(spf).reshape(-1))
             cam = self._Cam(qcam(spf).reshape(-1))

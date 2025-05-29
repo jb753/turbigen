@@ -29,7 +29,7 @@ class BasePost(ABC):
 
 @dataclasses.dataclass
 class Convergence(BasePost):
-    dn_smooth: int = 0
+    dn_smooth: int = 11
     """Smoothing window for the time series."""
 
     rtol_loss: float = 0.01

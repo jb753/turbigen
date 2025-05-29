@@ -612,7 +612,8 @@ class TurbigenConfig:
             if mdot_adjust := self.operating_point.mdot_adjust:
                 mdot *= 1.0 + mdot_adjust
                 logger.info(f"mdot/mdot_design={1.0 + mdot_adjust:.3g}")
-            if pid := self.operating_point.pid:
+            if self.operating_point.throttle:
+                pid = self.operating_point.pid
                 # Constants are scaled by meanline Delta P / mdot
                 logger.info(f"Exit PID constants={pid}")
                 scale = (
@@ -665,6 +666,9 @@ class TurbigenConfig:
             self.grid.apply_guess_meridional(
                 self.mean_line.nominal.interpolate_guess(self.annulus)
             )
+
+        # Update the outlet static pressure based on the guess
+        # This helps running multiple iterations of a throttled case
         self.grid.update_outlet()
 
     def run_solver(self):

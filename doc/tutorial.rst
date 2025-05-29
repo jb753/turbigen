@@ -127,7 +127,7 @@ Start by creating a new directory to store our custom plugins, for example
    $ mkdir ./plugins
 
 and create a new file called `fan.py` inside this directory. We will code up the
-equations from the previous section in this file. The struction looks like this:
+equations from the previous section in this file. The structure looks like this:
 
 .. code-block:: python
    :caption: ./plugins/fan.py
@@ -228,7 +228,7 @@ values.
 
    @staticmethod
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
+       """Calculate mean-line from inlet and design variables."""
 
        # Get the ideal exit state
        So2s = So1.copy()  # Duplicate the inlet state
@@ -293,7 +293,7 @@ radius, and the shaft angular velocity. The completed function is:
    :caption: ./plugins/fan.py
 
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
+       """Calculate mean-line from inlet and design variables."""
 
        # Get the ideal exit state
        So2s = So1.copy()  # Duplicate the inlet state
@@ -336,7 +336,8 @@ radius, and the shaft angular velocity. The completed function is:
        A = mdot/S.rho/Vx
 
        # Mean radius from HTR Eqn. (6)
-       rrms = np.sqrt(A/np.pi/2.*(1.+htr**2)/(1.-htr**2))
+       rrms = np.sqrt(A[0] / np.pi / 2.0 * (1.0 + htr**2) / (1.0 - htr**2))
+       rrms = np.ones((2,)) * rrms  # Make rrms constant across stations
 
        # Shaft angular velocity
        Omega = U / rrms
@@ -384,7 +385,7 @@ The `backward` function serves as a verification check that the mean-line
 matches the design intent, and also to extract design variables from a
 mixed-out CFD solution. We add the design variables as keys in the output
 dictionary, using the attributes of the flowfield class to calculate them. Many
-useful quantites are already available in the `mean_line` object, such as efficiency.
+useful quantities are already available in the `mean_line` object, such as efficiency.
 
 .. code-block:: python
    :caption: ./plugins/fan.py
@@ -421,22 +422,22 @@ computational fluid dynamics simulation, we add extra options to the
 
    # Perfect gas inlet state
    inlet:
-       Po: 1e5
-       To: 300.
-       cp: 1005.
-       mu: 1.8e-5
-       gamma: 1.4
+      Po: 1e5
+      To: 300.
+      cp: 1005.
+      mu: 1.8e-5
+      gamma: 1.4
 
    # Mean-line design
    mean_line:
-       type: fan  # Path to the mean-line module we are writing
-       # Our chosen design variables (args to forward)
-       DPo: 2000.
-       mdot: 5.
-       phi: 0.5
-       psi: 0.4
-       htr: 0.8
-       etatt: 0.9
+      type: fan  # Path to the mean-line module we are writing
+      # Our chosen design variables (args to forward)
+      DPo: 2000.
+      mdot: 5.
+      phi: 0.5
+      psi: 0.4
+      htr: 0.8
+      etatt: 0.9
 
    #
    # ADD THE BELOW
@@ -444,103 +445,93 @@ computational fluid dynamics simulation, we add extra options to the
 
    # Annulus configuration
    annulus:
-     AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
-     AR_chord: 3.  # Span to chord
-     nozzle_ratio: 0.9  # Exit nozzle contraction
+      AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+      AR_chord: 3.  # Span to chord
 
    # Blade shapes
    blades:
-      - spf: 0.5  # Define one sectino at midspan
+      - spf: 0.5  # Define one section at midspan
         thick: [0.02, 0.05, 0.3, 0.2, 0.0, 0.1]
         camber: [0., 4., 0.0]
 
    # Lieblein to set number of blades
    nblade:
-   - Co: 0.6
+      - DFL: 0.45
 
    # Mesh generation
    mesh:
-     type: h  # Mesh topology
-     yplus: 30.0  # Non-dimensional wall distance
-     resolution_factor: 0.5  # Use a coarse mesh
+      type: h  # Mesh topology
+      yplus: 30.0  # Non-dimensional wall distance
+      resolution_factor: 0.5  # Use a coarse mesh
 
-   # CFD solver
+   # Built-in Enhanced Multiblock solvER
    solver:
-     nstep: 20000
-     nstep_avg: 5000
+      type: ember
+      n_step: 8000
+      n_step_avg: 2000
 
    # Control mass flow using a PID on exit pressure
    operating_point:
-     mdot_pid: [0.5, 0.1, 0.0]
+      throttle: true
 
 If we now run :program:`turbigen` on our `config.yaml` using the shell command,
 we can quickly obtain a CFD solution for our newly designed fan.
 
 .. code-block:: console
 
-    $ turbigen config.yaml
-    TURBIGEN v1.5.1
-    Starting at 2024-01-29T13:57:10
-    Working directory: ...
-    Inlet: PerfectState(P=1.000 bar, T=300.0 K)
-    Designing a fan.py...
-    MeanLine(
-        Po=[1.   1.02] bar,
-        To=[300.     301.8913] K,
-        Ma=[0.099 0.127],
-        Vx=[34.5 34.5],
-        Vr=[0. 0.],
-        Vt=[ 0.  27.6],
-        Vt_rel=[-68.9 -41.4],
-        Al=[ 0.   38.66],
-        Al_rel=[-63.43 -50.19],
-        rpm=[2182. 2193.],
-        mdot=[5. 5.] kg/s
-        )
-    Checking mean-line conservation...
-    Checking mean-line inversion...
-    Annulus(
-        xmid=[-7.5253e-07  2.2099e-02],
-        rmid=[0.2999 0.2983],
-        span=[0.0666 0.0663]
-        )
-    Re_surf/10^5=[2.]
-    Nblade=[54], s_cm=[1.57], tip=[0.]
-    Generating an H-mesh...
-    Mesh Npts/10^6=0.11
-    Applying boundary conditions...
-    Setting intial guess...
-    Calculating wall distance...
-    Running solver ts3...
-    Using 1 GPUs on 1 nodes, 1 per node.
-    Checking convergence over last 5000 steps...
-    mdot drift = 0.0%, mdot error = -0.3%, eta_drift = -0.0%
-    Post-processing...
-    Mixed-out CFD result:
-    MeanLine(
-        Po=[0.9997 1.0115] bar,
-        To=[300.0521 301.2397] K,
-        Ma=[0.099 0.113],
-        Vx=[34.5 34.6],
-        Vr=[ 0.4 -0.8],
-        Vt=[ 0.8 18.2],
-        Vt_rel=[-68.1 -50.7],
-        Al=[ 1.35 27.72],
-        Al_rel=[-63.17 -55.69],
-        rpm=[2182. 2193.],
-        mdot=[5. 5.] kg/s
-        )
-    Design variable Nom    CFD
-    ------------------------------
-    DPo             2000.0 1172.7
-    etatt           0.9000 0.8433
-    htr             0.8000 0.8000
-    mdot            5.0000 4.9961
-    phi             0.5000 0.4997
-    psi             0.4000 0.2511
-    eta_tt=0.843, eta_ts=0.203
-    Elapsed time 1.40 min.
-
+   $ turbigen config.yaml
+   *** TURBIGEN v2.3.0 ***
+   Starting at 2025-05-29T16:26:06
+   Working directory: /home/jb753/python/turbigen-dev/tut2/runs/fan
+   Importing plugins from /home/jb753/python/turbigen-dev/tut2/plugins
+   Loaded plugin: /home/jb753/python/turbigen-dev/tut2/plugins/fan.py
+   Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+   MeanLine(
+      Po=[1.   1.02] bar,
+      To=[300.     301.8913] K,
+      Ma=[0.099 0.127],
+      Vx=[34.5 34.5] m/s,
+      Vr=[0. 0.] m/s,
+      Vt=[ 0.  27.6] m/s,
+      Vt_rel=[-68.9 -41.4] m/s,
+      Al=[ 0.   38.66] deg,
+      Al_rel=[-63.43 -50.19] deg,
+      rpm=[2182. 2182.],
+      mdot=[5. 5.] kg/s
+      )
+   Designing annulus...
+   FixedAR(nrow=1, x=[0.01105477], r=[0.29992128], AR=[2.99850036])
+   Designing blades...
+   Nblade: [55]
+   Tip gaps: [0.]
+   Re_surf=[1.99e+05]
+   Generating mesh...
+   Making an H-mesh...
+   ncell/1e6=0.1
+   Applying 2D guess...
+   Setting operating point...
+   Exit PID constants=(1.0, 0.5, 0.0)
+   Initialising ember...
+   Patitioning onto 1 processors...
+   Starting the main time-stepping loop...
+   500: tpnps=3.174e-07, remaining=4m15s
+   block 0: 3.60e-05 6.73e-03 3.62e-03 1.42e-03 3.14e+00
+   ...
+   7999: tpnps=3.189e-07, remaining=0m0s
+   block 0: 2.28e-07 1.40e-04 2.92e-05 1.22e-05 1.81e-02
+   Elapsed time 4.56 min
+   Average tpnps=3.176e-07
+   mdot_in/out=5/5, err=0.0%
+   Post-processing...
+   Variable  Nominal    Actual    Err_abs  Err_rel/%
+   -------------------------------------------------
+        DPo    2e+03  1.63e+03        367       18.4
+      etatt      0.9      0.92    -0.0201      -2.24
+        htr      0.8       0.8  -0.000129    -0.0162
+       mdot        5         5   -0.00436    -0.0873
+        phi      0.5       0.5  -0.000259    -0.0519
+        psi      0.4      0.32     0.0801         20
+   Efficiency/%: eta_tt=92.0, eta_ts=35.7
 
 Creating and running designs with different velocity triangles is as simple as
 changing a line or two in the mean-line section of `config.yaml`. This allows
@@ -556,18 +547,18 @@ Inspecting the output for our new fan, we can identify several problems:
 
 .. code-block:: console
 
-    Design variable Nom    CFD
-    ------------------------------
-    DPo             2000.0 1172.7  # Pressure rise too low
-    etatt           0.9000 0.8433  # Guessed efficiency too high
-    htr             0.8000 0.8000
-    mdot            5.0000 4.9961
-    phi             0.5000 0.4997
-    psi             0.4000 0.2511  # Loading too low
+   Variable  Nominal    Actual    Err_abs  Err_rel/%
+   -------------------------------------------------
+        DPo    2e+03  1.63e+03        367       18.4  # Pressure rise too low
+      etatt      0.9      0.92    -0.0201      -2.24  # Guessed efficiency too low
+        htr      0.8       0.8  -0.000129    -0.0162
+       mdot        5         5   -0.00436    -0.0873
+        phi      0.5       0.5  -0.000259    -0.0519
+        psi      0.4      0.32     0.0801         20  # Not enough loading
 
 The root cause of the lack of pressure rise is that we have not allowed for
 deviation in designing the blade shapes, hence the flow is underturned.
-Assuming a guess of efficiency was neccesary to complete mean-line design, but
+Assuming a guess of efficiency was necessary to complete mean-line design, but
 its value should be updated so that the annulus areas are compatible with the
 intended velocity triangles.
 
@@ -579,7 +570,9 @@ aerofoil to yield the smoothest pressure distributions.
 :program:`turbigen` has the capability to correct for all these issues. Adding
 an `iterate` key to the `config.yaml` will cause the program to repeatedly run
 the CFD, updating the efficiency guess and recambering the leading and trailing
-edges as needed:
+edges as needed. We can also cut the number of time steps, as each CFD
+simulation is restarted from the previous flow field, so convergence can take
+place over multiple iterations in parallel with geometry adjustment.
 
 
 .. code-block:: yaml
@@ -587,86 +580,81 @@ edges as needed:
 
    # ...
 
+   # Reduce number of time steps to speed up convergence
+   solver:
+      type: ember
+      n_step: 4000
+      n_step_avg: 2000
+
    # ADD new section for iterative corrections
-   iterate:
-   mean_line:  # Correct efficiency guess
-     match_tolerance:
-       etatt: 0.01  # Efficiency to within 1%
-     relaxation_factor: 0.5  # Change is half CFD minus nominal
-   deviation:  # Correct exit flow angles by TE recamber
-     clip: 5.0  # Maximum recamber in one step
-     relaxation_factor: 0.8  # Multiplier on changes to metal angle
-     tolerance: 1.0  # Absolute tolerance for termination in degrees
-   incidence:  # Correct incidence by LE recamber
-     clip: 5.0   # Maximum recamber in one step
-     relaxation_factor: 0.2  # Multiplier on changes to metal angle
-     tolerance: 2.0  # Absolute tolerance for termination in degrees
 
 Running the extended input file gives:
 
 .. code-block:: console
 
-    $ turbigen config.yaml
-    TURBIGEN v1.5.1
-    Starting at 2024-01-29T09:58:58
-    Working directory: ...
-    Iterating for max_iter=20 iterations
-    Min   Inc   DInc  Dev   DDev  etatt Detatt
-    -------------------------------------------
-    1.401 6.271 1.254 -5.49 4.398 0.844 -0.002
-    1.401 4.064 0.812 -2.56 2.051 0.893 0.0232
-    1.401 2.502 0.500 -1.24 0.996 0.907 0.0182
-    1.401 1.491 0.298 -0.60 0.482 0.911 0.0115
-    1.401 0.885 0.177 -0.32 0.258 0.913 0.0067
-    1.401 0.497 0.099 -0.11 0.093 0.915 0.0041
-    Design variable Nom    CFD
-    ------------------------------
-    DPo             2000.0 1932.2
-    etatt           0.9111 0.9153
-    htr             0.8000 0.8000
-    mdot            5.0000 4.9941
-    phi             0.5000 0.4995
-    psi             0.4000 0.3832
-    eta_tt=0.915, eta_ts=0.383
-    Iteration finished in 8.4 min.
+   $ turbigen config.yaml
+   *** TURBIGEN v2.3.0 ***
+   Starting at 2025-05-29T21:02:49
+   Working directory: /home/jb753/python/turbigen-dev/tut2/runs/fan
+   Importing plugins from /home/jb753/python/turbigen-dev/tut2/plugins
+   Loaded plugin: /home/jb753/python/turbigen-dev/tut2/plugins/fan.py
+   Iterating for max 20 iterations...
+   Min Dev[0] DDev[0] Inc[0] DInc[0] etatt Detatt
+   ------------------------------------------------
+   2.45  -2.95       2    112       2 0.926  0.013
+   2.56  -1.08    1.08   7.07   0.354 0.932  0.009
+   2.55  -0.34   0.343   4.23   0.212 0.933  0.005
+   2.55  -0.07   0.076   32.9    1.64 0.933  0.002
+   2.55  0.499   -0.49   18.1   0.905 0.933  0.001
+   Finished iterating, converged=True.
+   Variable  Nominal  Actual    Err_abs  Err_rel/%
+   -----------------------------------------------
+        DPo    2e+03   2e+03      -1.74    -0.0868
+      etatt    0.932   0.933   -0.00125     -0.134
+        htr      0.8     0.8  -0.000128     -0.016
+       mdot        5       5   -0.00479    -0.0958
+        phi      0.5     0.5  -0.000301    -0.0602
+        psi      0.4   0.399   0.000598      0.149
+   Efficiency/%: eta_tt=93.3, eta_ts=40.9
 
 The corrections applied, `DInc`, `DDev`, and `Detatt`, decrease with each
 iteration indicating stable convergence. When the iteration terminates, the
 mixed-out CFD solution corresponds closely to the design intent. A new
 configuration file has been written out in the working directory
-`runs/fan/config_conv.yaml` for the converged solution. Inspecting this file:
+`runs/fan/config.yaml` for the converged solution. Inspecting this file:
 
 .. code-block:: yaml
-   :caption: config_conv.yaml
+   :caption: runs/fan/config.yaml
 
    # ...
-   qstar_camber:
-      - 3.142689298065078
-      - 8.280434755893827
-      - 1.0
-      - 1.0
-      - 0.0
+
+   - camber:
+      - - 5.113164958868248
+         - 6.99784007331111
+         - 0.0
+
    # ...
 
-Under the `qstar_camber` key that defines the camber line, we see that 3.1
-degrees of recamber was required to align the stagnation point, and the
-deviation was 8.3 degrees. The efficiency has also been updated to 91.5%.
+
+Under the `camber` key that defines the camber line, we see that 5.1
+degrees of leading-edge recamber was required to align the stagnation point,
+and the deviation was 7 degrees. The efficiency has also been updated to 93.3%.
 
 Extensions
 ^^^^^^^^^^
 
 This tutorial has demonstrated some of the functionality of
-:program:`turbigen`. With the current choice of parameterisation, any change to
-the design is just an edit to the `config.yaml`, as described in
+:program:`turbigen`. Within the current choice of parameterisation, any change to
+the design is just an edit to the `config.yaml`, as described in ???
 
 * Increase the number of blades by changing `DFL`
 * Increase the grid density under `mesh`
-* Control camber and thickness distributions by changing `qthick` and `qstar_camber`
+* Control camber and thickness distributions by changing `thick` and `camber`
 * Specify blade sections at multiple spanwise locations
 * Change the aspect ratio `AR_chord`
 * With a compatible CFD solver, change the working fluid to a real gas under `inlet`
 
-To change the mean-line design, edit the `forward` and `inverse` functions in
+To change the mean-line design, edit the `forward` and `backward` functions in
 `fan.py`. For example: relax the assumption of constant axial velocity by
 adding a velocity ratio as one of the arguments to forward, replace
 specification of loading coefficient with a de Haller number, or specify an

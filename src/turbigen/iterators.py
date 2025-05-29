@@ -57,7 +57,7 @@ class Deviation(IteratorConfig):
             ddev = -np.clip(dev * self.relaxation_factor, -self.clip, self.clip)
 
             # Apply a uniform change at all sections
-            config.blades[irow][0].q_camber[:, 1] += ddev
+            config.blades[irow][0].camber[:, 1] += ddev
 
             # Record log data
             log_data[f"Dev[{irow}]"] = dev
@@ -163,7 +163,7 @@ class Incidence(IteratorConfig):
     relaxation_factor: float = 0.05
     """Multiplier on changes to metal angle."""
 
-    tolerance: float = 10.0
+    tolerance: float = 20.0
     """Permissible error on local incidence angle [deg]."""
 
     target: float = 0.0
@@ -208,7 +208,7 @@ class Incidence(IteratorConfig):
             dinc = np.clip(inc * self.relaxation_factor, -self.clip, self.clip)
 
             # Apply to the config
-            row[0].q_camber[:, 0] += dinc
+            row[0].camber[:, 0] += dinc
 
             # Save log data
             imax = np.argmax(np.abs(inc))

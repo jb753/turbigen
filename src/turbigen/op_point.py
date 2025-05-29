@@ -15,7 +15,10 @@ class OperatingPoint:
     PR_ts_adjust: float = 0.0
     """Total to static pressure ratio change relative to design."""
 
-    pid: tuple = (0.0, 0.0, 0.0)
+    throttle: bool = False
+    """Enable throttling exit pressure for design mass flow rate."""
+
+    pid: tuple = (1.0, 0.5, 0.0)
     """PID controller parameters for mass flow rate setpoint."""
 
     def __post_init__(self):

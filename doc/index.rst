@@ -22,11 +22,11 @@ User manual
    :maxdepth: 2
 
    quickstart
+   tutorial
    nomenclature
    usage
    meanline
    solver
-   tutorial
    examples/index
    changelog
    license

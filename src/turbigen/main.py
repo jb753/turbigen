@@ -257,10 +257,10 @@ def main():
             log_data = dict(Min=elapsed / 60.0, **log_data)
 
             reprint = not np.mod(iiter, 5)
-            if reprint:
-                logger.iter("Convergence status:")
-                for k, v in conv_all.items():
-                    logger.iter(f"  {k}: {v}")
+            # if reprint:
+            #     logger.iter("Convergence status:")
+            #     for k, v in conv_all.items():
+            #         logger.iter(f"  {k}: {v}")
             logger.iter(format_iter_log(log_data, header=reprint))
 
             # Disable soft start after first iteration

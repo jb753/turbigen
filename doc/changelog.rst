@@ -1,6 +1,15 @@
 Changelog
 =========
 
+v2.4.0
+^^^^^^
+
+* Add exit throttling to ember solver
+* Allow profiling the code speed by exporting LINE_PROFILE=1
+* Bug fix for Lieblein diffusion factor
+* Bug fix for rotor-only mean-line check
+* Finish tutorial
+
 v2.3.0
 ^^^^^^
 

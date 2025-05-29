@@ -135,25 +135,10 @@ class DFL(BladeNumberConfig):
         s_cx = s_c / util.cosd(stag)
 
         # Pitch
-        s = blade.chord(self.spf) / s_cx
+        s = blade.chord(self.spf) * s_cx
 
         # Number of blades
         rrms = np.mean(mean_line.rrms)
         Nb = np.round(2.0 * np.pi * rrms / s).astype(int)
 
         return Nb
-
-
-# @dataclasses.dataclass
-# class DiffusionFactorConfig:
-#     """Settings for calculating diffusion factor."""
-#
-#     spf: float = 0.5
-#     """Span fraction at which to calculate diffusion factor."""
-#
-#     target: dict = dataclasses.field(default_factory=lambda: ({}))
-#     """Mapping of row index to target diffusion factors."""
-#
-#     dNb_dDF: float = 0.5
-#     """Factor to scale diffusion factor change to relative change in blade number."""
-#
