@@ -1785,13 +1785,13 @@ and will cause problems with meshing and solving for the flow field."""
             logger.iter(f"Mass is not conserved, mdot={mdot}")
 
         # Get a sensible rothalpy tolerance
-        if (self.Omega == 0.0).all():
-            Itol = (self.a.mean() ** 2) * 1e-3
-        else:
-            Itol = np.ptp(self.I) * rtol
+        Itol = (self.a.mean() ** 2) * 1e-3
 
         # Split the rothalpy into rows (where Omega changes)
-        isplit = np.where(np.abs(np.diff(self.Omega)) > 0.0)[0] + 1
+        if self.Omega.all() or not self.Omega.any():
+            isplit = []
+        else:
+            isplit = np.where(np.abs(np.diff(self.Omega)) > 0.0)[0] + 1
         Irow = np.stack(np.array_split(self.I, isplit))
         assert Irow.shape[1] == 2
         logger.debug("Checking row rothalpies")
@@ -1805,15 +1805,16 @@ and will cause problems with meshing and solving for the flow field."""
                 )
 
         # Check that stagnation enthalpy is conserved between blade rows
-        logger.debug("Checking gap enthalpies")
-        hogap = np.array_split(self.ho[:-1], isplit - 1)[1:]
-        for igap in range(len(hogap)):
-            if not np.ptp(hogap[igap]).item() < Itol:
-                check_failed = True
-                logger.iter(
-                    f"Absolute stagnation enthalpy not conserved across gap {igap}:\n"
-                    f"hogap = {hogap[igap]}"
-                )
+        if isplit:
+            logger.debug("Checking gap enthalpies")
+            hogap = np.array_split(self.ho[:-1], isplit - 1)[1:]
+            for igap in range(len(hogap)):
+                if not np.ptp(hogap[igap]).item() < Itol:
+                    check_failed = True
+                    logger.iter(
+                        f"Absolute stagnation enthalpy not conserved across gap {igap}:\n"
+                        f"hogap = {hogap[igap]}"
+                    )
 
         return not check_failed
 

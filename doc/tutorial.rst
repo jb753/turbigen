@@ -12,13 +12,13 @@ We first need to install :program:`turbigen`:
    $ uv tool install turbigen
 
 Problem statement
------------------
+^^^^^^^^^^^^^^^^^
 
 Suppose we wish to design a rotor-only axial fan. We shall assume
 a constant axial velocity. The inlet state is specified
 as fixed values of :math:`T_{01}` and :math:`p_{01}` with no inlet swirl,
 :math:`\alpha_1=0`. We can then parametrise the aerodynamics of the stage using the
-following design variables:
+following design variables (many other choices are possible):
 
 * Total pressure rise, :math:`\Delta p_0`
 * Mass flow rate, :math:`\dot{m}`
@@ -114,62 +114,54 @@ Finally, the shaft angular velocity is simply
 Setting up skeleton files
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To integrate our new mean-line design into :program:`turbigen`, we have two
-functions to write: a `forward` function which takes our design variables as
-inputs and returns a :py:class:`turbigen.meanline.MeanLine` object; and an
-`inverse` function that recalculates the design variables from an input
-:py:class:`turbigen.meanline.MeanLine` object. Now that we know what input and
-output data are required, and have the equations for our algorithm, we can start writing the functions. In a new file
-called `fan.py`, copy and paste these definitions:
+To integrate our new mean-line design into :program:`turbigen`, we need to
+write a subclass with two static methods: a `forward` function which takes our
+design variables as inputs and returns a flow field along the mean line; and a
+`backward` function that recalculates the design variables from an input flow
+field. The :ref:`ml-custom` section describes the general process in more detail.
+
+Start by creating a new directory to store our custom plugins, for example
+
+.. code-block:: console
+
+   $ mkdir ./plugins
+
+and create a new file called `fan.py` inside this directory. We will code up the
+equations from the previous section in this file. The struction looks like this:
 
 .. code-block:: python
-   :caption: fan.py
+   :caption: ./plugins/fan.py
 
-   import turbigen.flowfield
-   import numpy as np
+   import turbigen.meanline
 
-   def forward(So1, DPo, mdot, phi, psi, htr, etatt):
-       """Caluclate mean-line from inlet and design variables."""
+   class Fan(turbigen.meanline.MeanLineDesigner):
 
-       # Insert code to calculate rrms, A, Omega, Vxrt, states
-       # ...
-       raise NotImplementedError
+      @staticmethod
+      def forward(So1, DPo, mdot, phi, psi, htr, etatt):
+         '''Use design variables to calculate flow field.'''
 
-       # Return assembled mean-line object
-       return turbigen.flowfield.make_mean_line(
-           rrms,  # Mean radii
-           A,  # Annulus areas
-           Omega,  # Shaft angular velocity
-           Vxrt, # Velocity vectors
-           S  # Thermodynamic states
-       )
+         raise NotImplementedError("Implement the forward method")
 
-   def inverse(ml):
-       """Calculate design variables from a mean-line object."""
+         return rrms, A, Omega, Vxrt, S
 
-       # The output should be a dictionary keyed by the args to forward
-       return {
-           'So1': ml.stagnation[0],
-           # 'DPo': ...,
-           # 'mdot': ...,
-           # 'phi': ...,
-           # 'psi': ...,
-           # 'htr': ...,
-           # 'etatt': ...,
-       }
+      @staticmethod
+      def backward(mean_line):
+         '''Calculate design variables from flow field.'''
 
-`So1` is a fluid object that encapsualtes the inlet stagnation thermodynamic state. All
-thermodynamic properties can be accessed as attributes, and there are functions
-to manipulate the state to new values, described fully in :py:mod:`turbigen.fluid` .
+         raise NotImplementedError("Implement the backward method")
+
+         # Dictionary of design variables
+         return {}
+
 
 We also need a minimal configuration file to test our mean-line functions.
 Create a new `config.yaml` with the following content:
 
 .. code-block:: yaml
-   :caption: config.yaml
+   :caption: ./config.yaml
 
-   # All files relating to the case are held in a working directory
-   workdir: runs/fan
+   workdir: runs/fan  # Store output files here
+   plugdir: ./plugins  # Directory containing our custom mean line
 
    # Perfect gas inlet state
    inlet:
@@ -181,7 +173,7 @@ Create a new `config.yaml` with the following content:
 
    # Mean-line design
    mean_line:
-       type: fan.py  # Path to the mean-line module we are writing
+       type: fan  # Path to the mean-line module we are writing
        # Our chosen design variables (args to forward)
        DPo: 2000.
        mdot: 5.
@@ -190,14 +182,37 @@ Create a new `config.yaml` with the following content:
        htr: 0.8
        etatt: 0.9
 
+The file structure should now look like this:
+
+.. code-block:: console
+
+   $ tree
+   .
+   ├── config.yaml
+   └── plugins
+       └── fan.py
+
 At this point, running the config.yaml file through :program:`turbigen`
 generates a `NotImplementedError` because the body of the `forward` function is
 missing.
 
+.. code-block:: console
+
+   $ turbigen config.yaml
+   *** TURBIGEN v2.3.0 ***
+   Starting at 2025-05-29T12:21:26
+   Working directory: /home/jb753/python/turbigen-dev/runs/fan
+   Importing plugins from /home/jb753/python/turbigen-dev/plugins
+   Loaded plugin: /home/jb753/python/turbigen-dev/plugins/fan.py
+   Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+   Error encountered, quitting...
+   Traceback (most recent call last):
+   ...
+   NotImplementedError: Implement the forward method
 
 
-Implementing the algorithm
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+Implementing forward
+^^^^^^^^^^^^^^^^^^^^
 
 We can now start to add the :ref:`tut-ml-algo` to the `forward` function inside
 `fan.py`.
@@ -210,8 +225,8 @@ copy of the inlet state, and set its pressure and entropy to the required
 values.
 
 .. code-block:: python
-   :caption: fan.py
 
+   @staticmethod
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
        """Caluclate mean-line from inlet and design variables."""
 
@@ -225,21 +240,13 @@ We can now calculate the compressor work by reading off
 enthalpy values from our two state objects `So1` and `So2s`.
 
 .. code-block:: python
-   :caption: fan.py
-
-       # ...
 
        # Work from defn efficiency Eqn. (1)
        Dho = (So2s.h-So1.h)/etatt
 
-       # ...
-
 Proceeding straightforwardly to calculate blade speed and velocity vectors
 
 .. code-block:: python
-   :caption: fan.py
-
-       # ...
 
        # Blade speed from defn psi Eqn. (2)
        U = np.sqrt(Dho/psi)
@@ -260,17 +267,12 @@ Proceeding straightforwardly to calculate blade speed and velocity vectors
            )
        )
 
-       # ...
-
 Next, we need to calculate the static thermodynamic states. As we know
 stagnation states and velocity vectors everywhere, this is most straightforward
 to do by evaluating the static enthalpy :math:`h=h_0-\frac{1}{2}V^2`. The
 static and stagnation states have the same entropy. In code, this looks like:
 
 .. code-block:: python
-   :caption: fan.py
-
-       # ...
 
        # Outlet stagnation state from known total rises
        So2 = So1.copy().set_P_h(So1.P + DPo, So1.h + Dho)
@@ -283,14 +285,12 @@ static and stagnation states have the same entropy. In code, this looks like:
        h = So.h - 0.5*Vmag**2  # Static enthalpy
        S = So.copy().set_h_s(h , So.s)
 
-       # ...
-
 Now that the static states are known, the density can be used in the
 conservation of mass equation to continue with evaluating areas, the RMS
 radius, and the shaft angular velocity. The completed function is:
 
 .. code-block:: python
-   :caption: fan.py
+   :caption: ./plugins/fan.py
 
    def forward(So1, DPo, mdot, phi, psi, htr, etatt):
        """Caluclate mean-line from inlet and design variables."""
@@ -341,63 +341,83 @@ radius, and the shaft angular velocity. The completed function is:
        # Shaft angular velocity
        Omega = U / rrms
 
-       # Return assembled mean-line object
-       return turbigen.flowfield.make_mean_line(
-           rrms,  # Mean radii
-           A,  # Annulus areas
-           Omega,  # Shaft angular velocity
-           Vxrt, # Velocity vectors
-           S  # Thermodynamic states
-       )
+       # Return mean-line data
+      return rrms, A, Omega, Vxrt, S
+
 
 This concludes the `forward` function --- all the required quantities have been
 evaluated and can be returned for further processing.
-
-Inverse function
-^^^^^^^^^^^^^^^^
-
 If we run :program:`turbigen` on the `config.yaml` file now, it will complete
 mean-line design successfully using the `forward` function, but raise an
-Exception because the `inverse` function is incomplete.
+Exception because the `backward` function is incomplete:
 
-The `inverse` function serves as a verification check that the mean-line
+.. code-block:: console
+
+   *** TURBIGEN v2.3.0 ***
+   Starting at 2025-05-29T12:43:46
+   Working directory: /home/jb753/python/turbigen-dev/tut2/runs/fan
+   Importing plugins from /home/jb753/python/turbigen-dev/tut2/plugins
+   Loaded plugin: /home/jb753/python/turbigen-dev/tut2/plugins/fan.py
+   Inlet: PerfectState(P=1.000 bar, T=300.0 K)
+   MeanLine(
+      Po=[1.   1.02] bar,
+      To=[300.     301.8913] K,
+      Ma=[0.099 0.127],
+      Vx=[34.5 34.5] m/s,
+      Vr=[0. 0.] m/s,
+      Vt=[ 0.  27.6] m/s,
+      Vt_rel=[-68.9 -41.4] m/s,
+      Al=[ 0.   38.66] deg,
+      Al_rel=[-63.43 -50.19] deg,
+      rpm=[2182. 2193.],
+      mdot=[5. 5.] kg/s
+      )
+   Error encountered, quitting...
+   Traceback (most recent call last):
+   ...
+   NotImplementedError: Implement the backward method
+
+Implementing backward
+^^^^^^^^^^^^^^^^^^^^^
+
+The `backward` function serves as a verification check that the mean-line
 matches the design intent, and also to extract design variables from a
 mixed-out CFD solution. We add the design variables as keys in the output
-dictionary, using the attributes of the :py:class:`turbigen.meanline.MeanLine`
-class to calculate them:
+dictionary, using the attributes of the flowfield class to calculate them. Many
+useful quantites are already available in the `mean_line` object, such as efficiency.
 
 .. code-block:: python
-   :caption: fan.py
+   :caption: ./plugins/fan.py
 
-   def inverse(ml):
-       """Calculate design variables from a mean-line object."""
+      @staticmethod
+      def backward(mean_line):
+         '''Calculate design variables from flow field.'''
 
-       So1 = ml.stagnation[0]
-       So2s = So1.copy().set_P_s(ml.Po[-1], ml.s[0])
-       ho2s = So2s.h
+         return {
+               "DPo": mean_line.Po[-1] - mean_line.Po[0],
+               "mdot": mean_line.mdot[0],
+               "phi": mean_line.Vx[0] / mean_line.U[0],
+               "psi": (mean_line.ho[-1] - mean_line.ho[0]) / (mean_line.U[0]) ** 2,
+               "etatt": mean_line.eta_tt,
+               "htr": mean_line.rhub[0] / mean_line.rtip[0],
+         }
 
-       return {
-           "So1": So1,
-           'DPo': ml.Po[-1] - ml.Po[0],
-           'mdot': ml.mdot[0],
-           'phi': ml.Vx[0]/ml.U[0],
-           'psi': (ml.ho[-1]-ml.ho[0])/(ml.U[0])**2,
-           'etatt': (ho2s-So1.h)/(ml.ho[-1]-ml.ho[0]),
-           'htr': ml.rhub[0]/ml.rtip[0]
-       }
+Running :program:`turbigen` on the `config.yaml` file now will complete the
+mean-line design using `forward`, check it using `backward` and then halt
+because further information is needed to proceed with the design.
 
 Running CFD
 ^^^^^^^^^^^
 
-We have now finished the mean-line design. To create blade shapes and run a
-computational fluid dynamics simulation, we can add some extra code to the
-`config.yaml`. These options are described fully in
+To create blade shapes and run a
+computational fluid dynamics simulation, we add extra options to the
+`config.yaml`:
 
 .. code-block:: yaml
    :caption: config.yaml
 
-   # All files relating to the case are held in a working directory
-   workdir: runs/fan
+   workdir: runs/fan  # Store output files here
+   plugdir: ./plugins  # Directory containing our custom mean line
 
    # Perfect gas inlet state
    inlet:
@@ -409,7 +429,7 @@ computational fluid dynamics simulation, we can add some extra code to the
 
    # Mean-line design
    mean_line:
-       type: fan.py  # Path to the mean-line module we are writing
+       type: fan  # Path to the mean-line module we are writing
        # Our chosen design variables (args to forward)
        DPo: 2000.
        mdot: 5.
@@ -418,35 +438,38 @@ computational fluid dynamics simulation, we can add some extra code to the
        htr: 0.8
        etatt: 0.9
 
-   # ADD annulus configuration
+   #
+   # ADD THE BELOW
+   #
+
+   # Annulus configuration
    annulus:
      AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
      AR_chord: 3.  # Span to chord
      nozzle_ratio: 0.9  # Exit nozzle contraction
 
-   # ADD blade shapes
+   # Blade shapes
    blades:
-     - DFL: 0.45  # Set number of blades using Lieblein
-       sections:  # One blade section at midheight
-         - spf: 0.5
-           q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
-           qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.5  # Define one sectino at midspan
+        thick: [0.02, 0.05, 0.3, 0.2, 0.0, 0.1]
+        camber: [0., 4., 0.0]
 
-   # ADD mesh generation
+   # Lieblein to set number of blades
+   nblade:
+   - Co: 0.6
+
+   # Mesh generation
    mesh:
      type: h  # Mesh topology
      yplus: 30.0  # Non-dimensional wall distance
      resolution_factor: 0.5  # Use a coarse mesh
 
-   # ADD CFD solver
+   # CFD solver
    solver:
-     type: ts3  # Use Turbostream 3
      nstep: 20000
      nstep_avg: 5000
-     ilos: 1  # Mixing-length turbulence model
-     fmgrid: 0.4  # Full multigrid
 
-   # ADD control mass flow using a PID on exit pressure
+   # Control mass flow using a PID on exit pressure
    operating_point:
      mdot_pid: [0.5, 0.1, 0.0]
 

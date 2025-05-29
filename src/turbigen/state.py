@@ -1029,6 +1029,10 @@ class BaseFluid(StructuredData, ABC):
             Tangential velocity [m/s].
 
         """
+        if np.any(np.isnan(self.rho)):
+            raise ValueError(
+                "Cannot set velocity when thermodynamic state is uninitialised."
+            )
         u_old = self.u
         self._set_data_by_key("rhoVx", self.rho * Vx)
         self._set_data_by_key("rhoVr", self.rho * Vr)

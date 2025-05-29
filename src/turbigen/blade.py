@@ -15,11 +15,11 @@ class BladeDesigner:
     spf: np.ndarray
     """Span fractions to define sections on len(spf) = nsect"""
 
-    q_thick: np.ndarray
-    """Thickness design variables (nsect, nqthick)"""
+    thick: np.ndarray
+    """Thickness design variables (nsect, nthick)"""
 
-    q_camber: np.ndarray
-    """Camber design variables (nsect, nqcamber)"""
+    camber: np.ndarray
+    """Camber design variables (nsect, ncamber)"""
 
     camber_type: turbigen.camber.BaseCamber = "quadratic"
     """Which method to generate the camber line."""
@@ -55,14 +55,14 @@ class BladeDesigner:
         # Check the dimensions of the design variables
         self.spf = np.reshape(self.spf, -1)
         nsect = len(self.spf)
-        self.q_thick = np.atleast_2d(self.q_thick)
-        self.q_camber = np.atleast_2d(self.q_camber)
+        self.thick = np.atleast_2d(self.thick)
+        self.camber = np.atleast_2d(self.camber)
         assert (
-            self.q_thick.shape[0] == nsect
-        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.q_thick.shape[0]}"
+            self.thick.shape[0] == nsect
+        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
         assert (
-            self.q_camber.shape[0] == nsect
-        ), f"Wrong number of sections for camber, expected {nsect}, got {self.q_camber.shape[0]}"
+            self.camber.shape[0] == nsect
+        ), f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
 
     def to_dict(self):
         # Built-in dataclasses method gets us most of the way there
@@ -74,8 +74,8 @@ class BladeDesigner:
 
         # Convert ndarray to list
         data["spf"] = data["spf"].tolist()
-        data["q_thick"] = data["q_thick"].tolist()
-        data["q_camber"] = data["q_camber"].tolist()
+        data["thick"] = data["thick"].tolist()
+        data["camber"] = data["camber"].tolist()
 
         return data
 
@@ -91,7 +91,7 @@ class BladeDesigner:
         # Calculate the local flow angles
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
         # Add the recamber angles to get the local angle
-        chi = Alpha_rel + self.q_camber[:, :2]
+        chi = Alpha_rel + self.camber[:, :2]
         if np.any(np.abs(chi) > 90.0):
             raise Exception(f"Cannot set a blade angle over 90 degrees! chi={chi}")
         if np.any(np.abs(chi) > 80.0):
@@ -99,7 +99,7 @@ class BladeDesigner:
                 f"WARNING: High blade angles may cause meshing problems: chi={chi}"
             )
         # Take the tangent and store in the class
-        self.q_camber[:, :2] = util.tand(chi)
+        self.camber[:, :2] = util.tand(chi)
 
     def get_chi(self, spf):
         """Interpolate metal angles at a given span fraction."""
@@ -136,7 +136,7 @@ class BladeDesigner:
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
         # Subtract the local flow angles to get the recamber angles
         # After taking the arctangent
-        self.q_camber[:, :2] = util.atand(self.q_camber[:, :2]) - Alpha_rel
+        self.camber[:, :2] = util.atand(self.camber[:, :2]) - Alpha_rel
 
     def set_streamsurface(self, streamsurface):
         self.streamsurface = streamsurface
@@ -149,12 +149,12 @@ class BladeDesigner:
         # Create thickness and camber lines
         if len(self.spf) == 1:
             # Constant values
-            thick = self.thick_type(self.q_thick[0])
-            cam = self.camber_type(self.q_camber[0])
+            thick = self.thick_type(self.thick[0])
+            cam = self.camber_type(self.camber[0])
         else:
             # Interpolate the parameters
-            qcam = util.interp1d_linear_extrap(self.spf, self.q_camber)
-            qthick = util.interp1d_linear_extrap(self.spf, self.q_thick)
+            qcam = util.interp1d_linear_extrap(self.spf, self.camber)
+            qthick = util.interp1d_linear_extrap(self.spf, self.thick)
 
             thick = self.thick_type(qthick(spf).reshape(-1))
             cam = self.camber_type(qcam(spf).reshape(-1))
