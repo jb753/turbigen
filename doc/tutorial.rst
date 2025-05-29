@@ -415,7 +415,7 @@ computational fluid dynamics simulation, we add extra options to the
 `config.yaml`:
 
 .. code-block:: yaml
-   :caption: config.yaml
+   :caption: ./config.yaml
 
    workdir: runs/fan  # Store output files here
    plugdir: ./plugins  # Directory containing our custom mean line
@@ -547,14 +547,14 @@ Inspecting the output for our new fan, we can identify several problems:
 
 .. code-block:: console
 
-   Variable  Nominal    Actual    Err_abs  Err_rel/%
-   -------------------------------------------------
-        DPo    2e+03  1.63e+03        367       18.4  # Pressure rise too low
-      etatt      0.9      0.92    -0.0201      -2.24  # Guessed efficiency too low
-        htr      0.8       0.8  -0.000129    -0.0162
-       mdot        5         5   -0.00436    -0.0873
-        phi      0.5       0.5  -0.000259    -0.0519
-        psi      0.4      0.32     0.0801         20  # Not enough loading
+   Variable  Nominal    Actual    Err_rel/%
+   ----------------------------------------
+        DPo    2e+03  1.63e+03         18.4  # Pressure rise too low
+      etatt      0.9      0.92        -2.24  # Loss guess too low
+        htr      0.8       0.8      -0.0162
+       mdot        5         5      -0.0873
+        phi      0.5       0.5      -0.0519
+        psi      0.4      0.32           20  # Not enough loading
 
 The root cause of the lack of pressure rise is that we have not allowed for
 deviation in designing the blade shapes, hence the flow is underturned.
@@ -576,17 +576,26 @@ place over multiple iterations in parallel with geometry adjustment.
 
 
 .. code-block:: yaml
-   :caption: config.yaml
+   :caption: ./config.yaml
 
    # ...
 
    # Reduce number of time steps to speed up convergence
    solver:
-      type: ember
-      n_step: 4000
-      n_step_avg: 2000
+     type: ember
+     n_step: 4000
+     n_step_avg: 2000
 
-   # ADD new section for iterative corrections
+   # Add new section for iterative corrections
+   iterate:
+     # Make the mean-line loss match CFD within 0.5% effy
+     mean_line:
+       tolerance:
+         etatt: 0.005
+     # Correct for deviation using trailing-edge recamber
+     deviation:
+     # Correct for incidence using leading-edge recamber
+     incidence:
 
 Running the extended input file gives:
 
@@ -624,15 +633,13 @@ configuration file has been written out in the working directory
 `runs/fan/config.yaml` for the converged solution. Inspecting this file:
 
 .. code-block:: yaml
-   :caption: runs/fan/config.yaml
+   :caption: ./runs/fan/config.yaml
 
    # ...
-
    - camber:
       - - 5.113164958868248
          - 6.99784007331111
          - 0.0
-
    # ...
 
 
