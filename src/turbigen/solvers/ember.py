@@ -163,8 +163,11 @@ class Ember(turbigen.solvers.base.BaseSolver):
     area_avg_Pout: bool = True
     """Force area-averaged outlet pressure to target, otherwise use uniform outlet pressure."""
 
-    rf_throttle: float = 0.1
-    """Relaxation factor on throttled exit pressure changes."""
+    rf_P_throttle: float = 0.1
+    """Relaxation factor on throttle exit pressure changes, for movement on current throttle characteristic."""
+
+    rf_k_throttle: float = 0.05
+    """Relaxation factor on throttle loss coefficient changes, for matching design mass flow rate."""
 
     def robust(self):
         """Create a copy of the config with more robust settings."""
@@ -352,7 +355,13 @@ class SolverBlock:
         self.bconds = [
             InletBoundary(patch, conf.K_inlet) for patch in block.inlet_patches
         ] + [
-            OutletBoundary(patch, conf.K_exit, conf.area_avg_Pout, conf.rf_throttle)
+            OutletBoundary(
+                patch,
+                conf.K_exit,
+                conf.area_avg_Pout,
+                conf.rf_P_throttle,
+                conf.rf_k_throttle,
+            )
             for patch in block.outlet_patches
         ]
 
@@ -1305,7 +1314,7 @@ class Boundary:
 
 
 class OutletBoundary(Boundary):
-    def __init__(self, patch, K, area_avg, rf_throttle):
+    def __init__(self, patch, K, area_avg, rfP, rfk):
         # Set up the common features of all boundaries
         super().__init__(patch, K)
 
@@ -1315,7 +1324,8 @@ class OutletBoundary(Boundary):
 
         # Store throttle parameters
         self.mdot_target = patch.mdot_target
-        self.rf_throttle = rf_throttle
+        self.rfP = rfP
+        self.rfk = rfk
         if self.mdot_target:
             self.k_throttle = patch.Pout / self.integrate_mdot() ** 2
 
@@ -1332,21 +1342,15 @@ class OutletBoundary(Boundary):
         if not self.mdot_target:
             return
 
-        # Relaxation factors
-        rf = self.rf_throttle
-        rf1 = 1 - rf
-
         # Inner loop - calculate new pressure on current throttle line
         # Quadratic is much more stabilsing than linear here
         mdot = self.integrate_mdot()
         Pnew = self.k_throttle * mdot**2
-        self.P_target = Pnew * rf + self.P_target * rf1
+        self.P_target = Pnew * self.rfP + self.P_target * (1.0 - self.rfP)
 
         # Outer loop - adjust throttle line to reach target mdot
-        rf = 0.05
-        rf1 = 1 - rf
         knew = self.k_throttle * (mdot / self.mdot_target) ** 0.5
-        self.k_throttle = knew * rf + self.k_throttle * rf1
+        self.k_throttle = knew * self.rfk + self.k_throttle * (1.0 - self.rfk)
 
     def inward_chics(self):
         """Use static pressure target to set upstream-running wave."""

@@ -25,6 +25,7 @@ User manual
    tutorial
    nomenclature
    usage
+   fluid
    meanline
    solver
    examples/index
