@@ -38,9 +38,7 @@ def make_mean_line_from_flowfield(A, F, Ds_mix=0.0):
     return ml
 
 
-class BaseFlowField(
-    turbigen.base.StructuredData, turbigen.base.Kinematics, turbigen.base.Composites
-):
+class BaseFlowField(turbigen.base.StructuredData, turbigen.base.FlowField):
     def check_flow(self):
         assert np.isfinite(self.Vxrt).all()
         assert np.isfinite(self.P).all()

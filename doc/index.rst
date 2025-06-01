@@ -25,7 +25,7 @@ User manual
    tutorial
    nomenclature
    usage
-   fluid
+   data_structures
    meanline
    solver
    examples/index
