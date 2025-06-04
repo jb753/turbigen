@@ -1,7 +1,6 @@
 """Make documentation for fluid, flowfield, meanline data structures."""
 
-import turbigen.fluid
-import turbigen.base
+import turbigen.abstract
 import inspect
 
 prop_names = {
@@ -53,7 +52,12 @@ def generate_fluid(cls):
     for quantity in quantities:
         doc = inspect.getdoc(getattr(cls, quantity))
         # get units
-        name, units = doc.split(" [")
+        split = doc.split(" [")
+        name = split[0]
+        if len(split) == 1:
+            units = ""
+        else:
+            units = split[1]
         units = units.split("]")[0]
         quantities_str += (
             f"\n   * - ``{cls.__name__}.{quantity}``\n     - {name}\n     - {units}"
@@ -70,6 +74,29 @@ def generate_flowfield(cls):
     doc = inspect.getdoc(cls)
     rst_str += doc
 
+    # Get names of setter methods
+    setters = [
+        m[0]
+        for m in inspect.getmembers(cls, predicate=inspect.isfunction)
+        if m[0].startswith("set_")
+    ]
+    setters.sort(key=str.lower)
+
+    # Start table
+    setter_str = ".. list-table::\n   :widths: 65 35\n   :header-rows: 1\n\n"
+    setter_str += "   * - Method\n     - Arguments"
+    for method in setters:
+        args = [
+            k
+            for k in inspect.signature(getattr(cls, method)).parameters.keys()
+            if k != "self"
+        ]
+        methods_str = f"   * - ``{cls.__name__}.{method}({', '.join(args)})``"
+        doc = inspect.getdoc(getattr(cls, method)).splitlines()[0].strip(".")
+        setter_str += f"\n{methods_str}\n     - {doc}"
+
+    rst_str = rst_str.replace("xxx", setter_str)
+
     # Get names and docstrings of quantities that use @property decorator
     quantities = [m[0] for m in inspect.getmembers(cls) if not m[0].startswith("_")]
     quantities.sort(key=str.lower)
@@ -78,7 +105,6 @@ def generate_flowfield(cls):
     quantities_str += "   * - Property\n     - Description\n     - Units\n"
     for quantity in quantities:
         doc = inspect.getdoc(getattr(cls, quantity))
-        print(quantity)
         try:
             assert len(doc.split(" [")) == 2
             assert "\n" not in doc
@@ -95,7 +121,7 @@ def generate_flowfield(cls):
 
 
 if __name__ == "__main__":
-    state_str = generate_fluid(turbigen.fluid.State)
+    state_str = generate_fluid(turbigen.abstract.State)
 
     rst_str = """
 Data Structures
@@ -110,7 +136,7 @@ plugins or developers modifying the source code.
 
     rst_str += state_str + "\n\n"
 
-    rst_str += generate_flowfield(turbigen.base.FlowField)
+    rst_str += generate_flowfield(turbigen.abstract.FlowField)
     # Write the rst string to a file
     with open("doc/data_structures.rst", "w") as f:
         f.write(rst_str)

@@ -151,28 +151,32 @@ _abstract_states = {"HEOS": {}, "BICUBIC&HEOS": {}}
 
 class State(ABC):
     """Working fluids
-    -------------
+    =============
 
     Both perfect and real working fluids are represented by a :class:`State`
-    class, which has a common interface for setting and reading thermodynamic
-    properties. The interface allows the same mean-line design code to work
-    with any working fluid. :class:`State` does not store velocity information
-    and hence makes no distinction between static and stagnation states, the
-    handling of which is left to the calling code.
+    class, which has a
+    common interface for setting and reading thermodynamic properties. The interface allows
+    the same mean-line design code to work with any working fluid.
+
+    This section describes:
+
+    * Methods to set the thermodynamic state of the fluid
+    * Properties of the fluid that can be read back as attributes
+    * Example code to illustrate usage
 
     Setter methods
-    ^^^^^^^^^^^^^^
+    --------------
 
-    The following methods are used to set the thermodynamic state of the fluid
-    to a new value. The object is updated in-place; a copy can be explicitly
-    created using :meth:`State.copy`. By the two-property rule, the setters all
-    take two arguments to uniquely specify the thermodynamic state. The
-    following methods are available:
+    The following methods are used to set the thermodynamic state of the fluid to a new value.
+    The object is updated
+    in-place; a copy can be explicitly created using :meth:`State.copy`.
+    By the two-property rule, the setters all take two arguments
+    to uniquely specify the thermodynamic state. The following methods are available:
 
     xxx
 
     Property attributes
-    ^^^^^^^^^^^^^^^^^^^
+    -------------------
 
     Thermodynamic properties of the fluid are accessed as attributes of the
     :class:`State` object. The following properties are available:

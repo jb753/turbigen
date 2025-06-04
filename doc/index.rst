@@ -31,5 +31,5 @@ User manual
    examples/index
    changelog
    license
-   GitLab repository <https://gitlab.developers.cam.ac.uk/jb753/turbigen>
+   Source code repository <https://gitlab.developers.cam.ac.uk/jb753/turbigen>
    references

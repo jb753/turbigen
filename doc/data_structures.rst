@@ -55,7 +55,7 @@ following methods are available:
 Property attributes
 ^^^^^^^^^^^^^^^^^^^
 
-Thermodynamic properties of the fluid are accessed as attributes of the
+Thermodynamic and transport properties of the fluid are accessed as attributes of the
 :class:`State` object. The following properties are available:
 
 .. list-table::
@@ -75,6 +75,24 @@ Thermodynamic properties of the fluid are accessed as attributes of the
    * - ``State.cv``
      - Specific heat at constant volume
      - J/kg/K
+   * - ``State.dhdP_rho``
+     - Derivative of enthalpy with respect to pressure at constant density.
+     -
+   * - ``State.dhdrho_P``
+     - Derivative of enthalpy with respect to density at constant pressure.
+     -
+   * - ``State.dsdP_rho``
+     - Derivative of entropy with respect to pressure at constant density.
+     -
+   * - ``State.dsdrho_P``
+     - Derivative of entropy with respect to density at constant pressure.
+     -
+   * - ``State.dudP_rho``
+     - Derivative of internal energy with respect to pressure at constant density.
+     -
+   * - ``State.dudrho_P``
+     - Derivative of internal energy with respect to density at constant pressure.
+     -
    * - ``State.gamma``
      - Ratio of specific heats
      - --
@@ -109,14 +127,49 @@ Thermodynamic properties of the fluid are accessed as attributes of the
 Flow fields
 -----------
 
-Stuff
+Augmenting a thermodynamic state with velocity and coordinate data
+allows the :class:`FlowField` class to represent a flow field.
+Composite properties such as stagnation pressure and Mach number
+can then be computed from the thermodynamic state and velocity vector.
+Setting an angular velocity allows evaluation of quantities in a rotating
+frame. Circumferential periodicity is represented by a number of blades.
+
+Setter methods
+^^^^^^^^^^^^^^
+
+The :class:`FlowField` class has extra setter methods as well as those
+defined in :class:`State`. Omitting a coordinate or velocity argument
+will leave the corresponding values unchanged.
+
+.. list-table::
+   :widths: 65 35
+   :header-rows: 1
+
+   * - Method
+     - Arguments
+   * - ``FlowField.set_conserved(conserved)``
+     - Vector of conserved variables
+   * - ``FlowField.set_Nb(Nb)``
+     - Number of blades
+   * - ``FlowField.set_Omega(Omega)``
+     - Set reference frame angular velocity
+   * - ``FlowField.set_V_Alpha_Beta(V, Alpha, Beta)``
+     - Velocity magnitude and angles
+   * - ``FlowField.set_Vxrt(Vx, Vr, Vt)``
+     - Polar velocity vector
+   * - ``FlowField.set_Vxyz(Vx, Vy, Vz)``
+     - Cartesian velocity vector
+   * - ``FlowField.set_xrt(x, r, t)``
+     - Set polar coordinates
+   * - ``FlowField.set_xyz(x, y, z)``
+     - Set Cartesian coordinates
 
 Property attributes
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 In addition to all the pure thermodynamic properties defined in
 :class:`State`, incorporating velocity and coordinate data allow the
-:class:`FlowField` to provide the following additional properties:
+:class:`FlowField` to provide the following other properties:
 
 .. list-table::
    :widths: 25 60 15
@@ -138,6 +191,18 @@ In addition to all the pure thermodynamic properties defined in
    * - ``FlowField.Beta``
      - Pitch angle
      - deg
+   * - ``FlowField.conserved``
+     - Vector of conserved variables
+     -
+   * - ``FlowField.drhoe_dP_rho``
+     - Derivative of volumetric total energy with respect to pressure at constant density
+     -
+   * - ``FlowField.drhoe_drho_P``
+     - Derivative of volumetric total energy with respect to density at constant pressure
+     -
+   * - ``FlowField.e``
+     - Specific total energy
+     - J/kg
    * - ``FlowField.halfVsq``
      - Specific kinetic energy
      - J/kg
@@ -145,10 +210,10 @@ In addition to all the pure thermodynamic properties defined in
      - Relative frame specific kinetic energy
      - J/kg
    * - ``FlowField.ho``
-     - Stagnation enthalpy
+     - Stagnation specific enthalpy
      - J/kg
    * - ``FlowField.ho_rel``
-     - Relative frame stagnation enthalpy
+     - Relative frame stagnation specific enthalpy
      - J/kg
    * - ``FlowField.I``
      - Rothalpy
@@ -159,9 +224,15 @@ In addition to all the pure thermodynamic properties defined in
    * - ``FlowField.Ma_rel``
      - Relative frame Mach number
      - --
+   * - ``FlowField.Nb``
+     - Number of blades, circumferential periodicity
+     - --
    * - ``FlowField.Omega``
      - Reference frame angular velocity
      - rad/s
+   * - ``FlowField.pitch``
+     - Angular blade pitch, circumferential period
+     - rad
    * - ``FlowField.Po``
      - Stagnation pressure
      - Pa
@@ -171,6 +242,9 @@ In addition to all the pure thermodynamic properties defined in
    * - ``FlowField.r``
      - Radial coordinate
      - m
+   * - ``FlowField.rpm``
+     - Reference frame revolutions per minute
+     - rpm
    * - ``FlowField.t``
      - Circumferential coordinate
      - rad

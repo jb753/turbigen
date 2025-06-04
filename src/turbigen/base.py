@@ -24,7 +24,7 @@ def stack(sd, axis=0):
     return out
 
 
-class dependent_property(property):
+class dependent_property:
     """Decorator which returns a cached value if instance data unchanged."""
 
     def __init__(self, func):
@@ -34,9 +34,6 @@ class dependent_property(property):
 
     def __get__(self, instance, owner):
         del owner  # So linters do not find unused var
-        # If instance is None, we are in the class context
-        if instance is None:
-            return self._func
         if self._property_name not in instance._dependent_property_cache:
             instance._dependent_property_cache[self._property_name] = self._func(
                 instance
@@ -282,23 +279,8 @@ class StructuredData:
         return np.prod(self.shape)
 
 
-class FlowField:
-    """
-    Flow fields
-    -----------
-
-    Stuff
-
-    Property attributes
-    -------------------
-
-    In addition to all the pure thermodynamic properties defined in
-    :class:`State`, incorporating velocity and coordinate data allow the
-    :class:`FlowField` to provide the following additional properties:
-
-    yyy
-
-    """
+class Kinematics:
+    """Methods to calculate coordinates and velocities from instance attributes."""
 
     #
     # Independent coordinates
@@ -315,7 +297,6 @@ class FlowField:
 
     @property
     def r(self):
-        """Radial coordinate [m]"""
         return self._get_data_by_key("r")
 
     @r.setter
@@ -324,7 +305,6 @@ class FlowField:
 
     @property
     def t(self):
-        """Circumferential coordinate [rad]"""
         return self._get_data_by_key("t")
 
     @t.setter
@@ -353,7 +333,6 @@ class FlowField:
 
     @property
     def Vx(self):
-        """Axial velocity [m/s]"""
         return self._get_data_by_key("Vx")
 
     @Vx.setter
@@ -362,7 +341,6 @@ class FlowField:
 
     @property
     def Vr(self):
-        """Radial velocity [m/s]"""
         return self._get_data_by_key("Vr")
 
     @Vr.setter
@@ -371,7 +349,6 @@ class FlowField:
 
     @property
     def Vt(self):
-        """Circumferential velocity [m/s]"""
         return self._get_data_by_key("Vt")
 
     @Vt.setter
@@ -388,7 +365,6 @@ class FlowField:
 
     @property
     def Omega(self):
-        """Reference frame angular velocity [rad/s]"""
         return self._get_data_by_key("Omega")
 
     @Omega.setter
@@ -437,7 +413,7 @@ class FlowField:
 
     @dependent_property
     def Vi_rel(self):
-        # """Velocity in grid i-direction."""
+        """Velocity in grid i-direction."""
 
         # Edge-center vector for grid spacing
         qi_edge = np.diff(self.xrt, axis=1)
@@ -745,7 +721,7 @@ class FlowField:
 
     @dependent_property
     def zeta(self):
-        # """Arc length along each i gridline."""
+        """Arc length along each i gridline."""
         return util.cum_arc_length(self.xyz, axis=1)
 
     @dependent_property
@@ -884,37 +860,30 @@ class FlowField:
 
     @dependent_property
     def U(self):
-        """Blade speed [m/s]."""
         return self.r * self.Omega
 
     @dependent_property
     def V(self):
-        """Absolute velocity magnitude [m/s]."""
         return util.vecnorm(self.Vxrt)
 
     @dependent_property
     def Vm(self):
-        """Meridional velocity magnitude [m/s]."""
         return util.vecnorm(self.Vxrt[:2])
 
     @dependent_property
     def Vt_rel(self):
-        """Relative frame circumferential velocity [m/s]."""
         return self.Vt - self.U
 
     @dependent_property
     def V_rel(self):
-        """Relative frame velocity magnitude [m/s]."""
         return np.sqrt(self.Vm**2.0 + self.Vt_rel**2.0)
 
     @dependent_property
     def halfVsq(self):
-        """Specific kinetic energy [J/kg]."""
         return 0.5 * self.V**2
 
     @dependent_property
     def halfVsq_rel(self):
-        """Relative frame specific kinetic energy [J/kg]."""
         return 0.5 * self.V_rel**2
 
     #
@@ -923,17 +892,14 @@ class FlowField:
 
     @dependent_property
     def Alpha_rel(self):
-        """Relative frame yaw angle [deg]."""
         return np.degrees(np.arctan2(self.Vt_rel, self.Vm))
 
     @dependent_property
     def Alpha(self):
-        """Yaw angle [deg]."""
         return np.degrees(np.arctan2(self.Vt, self.Vm))
 
     @dependent_property
     def Beta(self):
-        """Pitch angle [deg]."""
         return np.degrees(np.arctan2(self.Vr, self.Vx))
 
     @dependent_property
@@ -967,6 +933,10 @@ class FlowField:
     @dependent_property
     def rpm(self):
         return self.Omega / 2.0 / np.pi * 60.0
+
+
+class Composites:
+    """Methods for properties depending on thermodynamic and velocity fields."""
 
     @dependent_property
     def conserved(self):
@@ -1006,12 +976,10 @@ class FlowField:
 
     @dependent_property
     def Ma(self):
-        """Mach number [--]."""
         return self.V / self.a
 
     @dependent_property
     def Ma_rel(self):
-        """Relative frame Mach number [--]."""
         return self.V_rel / self.a
 
     @dependent_property
@@ -1020,7 +988,6 @@ class FlowField:
 
     @dependent_property
     def I(self):
-        """Rothalpy [J/kg]."""
         return self.h + 0.5 * self.V**2.0 - self.U * self.Vt
 
     @dependent_property
@@ -1038,38 +1005,31 @@ class FlowField:
 
     @property
     def To(self):
-        """Stagnation temperature [K]."""
         return self.stagnation.T
 
     @property
     def ao(self):
-        """Stagnation acoustic speed [m/s]."""
         return self.stagnation.a
 
     @property
     def ho(self):
-        """Stagnation enthalpy [J/kg]."""
         # We can directly use static enthalpy and velocity
         return self.h + 0.5 * self.V**2.0
 
     @property
     def halfVsq(self):
-        """Specific kinetic energy [J/kg]."""
         return 0.5 * self.V**2.0
 
     @property
     def Po_rel(self):
-        """Relative frame stagnation pressure [Pa]."""
         return self.stagnation_rel.P
 
     @property
     def To_rel(self):
-        """Relative frame stagnation temperature [K]."""
         return self.stagnation_rel.T
 
     @property
     def ho_rel(self):
-        """Relative frame stagnation enthalpy [J/kg]."""
         # We can directly use static enthalpy and velocity
         return self.h + 0.5 * self.V_rel**2.0
 
