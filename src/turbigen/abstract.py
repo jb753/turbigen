@@ -552,33 +552,110 @@ class FlowField(ABC):
     def drhoe_dP_rho(self):
         raise NotImplementedError()
 
-    # @property
-    # @abstractmethod
-    # def dAi(self):
-    #     """Areas of constant i faces [m^2]."""
-    #     raise NotImplementedError()
-    #
-    # @property
-    # @abstractmethod
-    # def dAj(self):
-    #     """Areas of constant j faces [m^2]."""
-    #     raise NotImplementedError()
-    #
-    # @property
-    # @abstractmethod
-    # def dAk(self):
-    #     """Areas of constant k faces [m^2]."""
-    #     raise NotImplementedError()
 
-
-class Block(ABC):
+class MeanLine(ABC):
     """
-    Blocks
-    ------
 
-    A 'block' is a three-dimensional volume of flow field that is
-    defined by a structured array of points forming hexahedral cells.
-    Blocks may be connected to each other by 'patches'
+    Mean line
+    ---------
 
+    The :class:`MeanLine` class encapsulates the quasi-one-dimensional geometry
+    and flow field of a turbomachine. In addition to thermodynamic states and
+    velocity vectors, it also contains a root-mean-square radii and annulus
+    areas. Assuming the span is perpendicular to the mean-line pitch angle,
+    These data are sufficient to determine hub and tip radii, and
+    the midspan blade angles.
+
+    Property attributes
+    ^^^^^^^^^^^^^^^^^^^
+
+    In addition to the properties defined in
+    :class:`State` and
+    :class:`FlowField`, the :class:`MeanLine` class provides the following
+
+    yyy
 
     """
+
+    @property
+    @abstractmethod
+    def rrms(self):
+        """Root-mean-square radius [m]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def mdot(self):
+        """Mass flow rate [kg/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def span(self):
+        """Span [m]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rmid(self):
+        """Midspan radius [m]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhub(self):
+        """Hub radius [m]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rtip(self):
+        """Tip radius [m]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def htr(self):
+        """Hub-to-tip radius ratio [--]."""
+        return self.rhub / self.rtip
+
+    @property
+    @abstractmethod
+    def PR_tt(self):
+        """Total-to-total pressure ratio [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def PR_ts(self):
+        """Total-to-static pressure ratio [--]."""
+
+    @property
+    @abstractmethod
+    def eta_tt(self):
+        """Total-to-total isentropic efficiency [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def eta_ts(self):
+        """Total-to-static isentropic efficiency [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def eta_poly(self):
+        """Total-to-total polytropic efficiency [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def A(self):
+        """Annulus area [m^2]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def Nb(self):
+        """Number of blades [--]."""
+        raise NotImplementedError()

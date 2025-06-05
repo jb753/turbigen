@@ -249,3 +249,71 @@ In addition to all the pure thermodynamic properties defined in
    * - ``FlowField.x``
      - Axial coordinate
      - m
+
+Mean Line
+---------
+
+The :class:`MeanLine` class encapsulates the quasi-one-dimensional geometry
+and flow field of a turbomachine. In addition to thermodynamic states and
+velocity vectors, it also contains a root-mean-square radii and annulus
+areas. Assuming the span is perpendicular to the mean-line pitch angle,
+These data are sufficient to determine hub and tip radii, and
+the midspan blade angles.
+
+Property attributes
+^^^^^^^^^^^^^^^^^^^
+
+In addition to the properties defined in
+:class:`State` and
+:class:`FlowField`, the :class:`MeanLine` class provides the following
+
+.. list-table::
+   :widths: 25 60 15
+   :header-rows: 1
+
+   * - Property
+     - Description
+     - Units
+
+   * - ``MeanLine.A``
+     - Annulus area
+     - m^2
+   * - ``MeanLine.eta_poly``
+     - Total-to-total polytropic efficiency
+     - --
+   * - ``MeanLine.eta_ts``
+     - Total-to-static isentropic efficiency
+     - --
+   * - ``MeanLine.eta_tt``
+     - Total-to-total isentropic efficiency
+     - --
+   * - ``MeanLine.htr``
+     - Hub-to-tip radius ratio
+     - --
+   * - ``MeanLine.mdot``
+     - Mass flow rate
+     - kg/s
+   * - ``MeanLine.Nb``
+     - Number of blades
+     - --
+   * - ``MeanLine.PR_ts``
+     - Total-to-static pressure ratio
+     - --
+   * - ``MeanLine.PR_tt``
+     - Total-to-total pressure ratio
+     - --
+   * - ``MeanLine.rhub``
+     - Hub radius
+     - m
+   * - ``MeanLine.rmid``
+     - Midspan radius
+     - m
+   * - ``MeanLine.rrms``
+     - Root-mean-square radius
+     - m
+   * - ``MeanLine.rtip``
+     - Tip radius
+     - m
+   * - ``MeanLine.span``
+     - Span
+     - m
