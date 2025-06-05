@@ -250,7 +250,7 @@ In addition to all the pure thermodynamic properties defined in
      - Axial coordinate
      - m
 
-Mean Line
+Mean line
 ---------
 
 The :class:`MeanLine` class encapsulates the quasi-one-dimensional geometry
