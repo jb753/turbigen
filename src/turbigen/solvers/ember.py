@@ -434,8 +434,8 @@ class SolverBlock:
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
         embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
 
-        self.rf = [self.cast_array(r) for r in block.r_face]
-        self.rc = self.cast_array(block.r_cell)
+        self.rf = [self.cast_array(r) for r in turbigen.util.node_to_face3(block.r)]
+        self.rc = self.cast_array(turbigen.util.node_to_cell(block.r))
 
         #
         # Don't need block after this
@@ -1223,7 +1223,7 @@ class Boundary:
         # Get normal vectors pointing into the domain
         C0 = C.copy().transpose(self.order)
         C1 = patch.get_cut(offset=1).transpose(self.order)
-        dxr = C1.xr - C0.xr
+        dxr = (C1.xrt - C0.xrt)[:2]
         self.normal = dxr / turbigen.util.vecnorm(dxr)
 
         # Angular pitch and cell widths for integration
@@ -1244,13 +1244,10 @@ class Boundary:
 
     def record_flows(self):
         """Append mass flow and mass-averaged ho and s to convergence log."""
-        flux_mass = self.state.flux_mass * self.Nb
-        s = self.state.s
-        ho = self.state.ho
-        mdot = np.sum(self.wA * flux_mass).astype(float)
-        hodot = np.sum(self.wA * flux_mass * ho).astype(float) / mdot
-        sdot = np.sum(self.wA * flux_mass * s).astype(float) / mdot
-        self.convergence_log.append((mdot, hodot, sdot))
+        mdot = self.state.mass_integrate()
+        hodot = self.state.mass_integrate(self.state.ho)
+        sdot = self.state.mass_integrate(self.state.s)
+        self.convergence_log.append((mdot * self.Nb, hodot, sdot))
 
     def pull(self, block):
         """Update stored state using solution from parent block."""

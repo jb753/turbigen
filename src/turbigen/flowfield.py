@@ -85,11 +85,11 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
 
     @property
     def Nb(self):
-        return self._get_data_by_key("Nb")
+        return self._get_metadata_by_key("Nb")
 
     @Nb.setter
     def Nb(self, val):
-        return self._set_data_by_key("Nb", val)
+        return self._set_metadata_by_key("Nb", val)
 
     @dependent_property
     def Alpha_rel(self):
@@ -183,6 +183,10 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
         return self.rho * self.Vr
 
     @dependent_property
+    def rVt(self):
+        return self.r * self.Vt
+
+    @dependent_property
     def rhoVt(self):
         return self.rho * self.Vt
 
@@ -242,6 +246,10 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
     def xrt(self):
         return self._get_data_by_key(("x", "r", "t"))
 
+    @property
+    def xrrt(self):
+        return np.stack((self.x, self.r, self.r * self.t))
+
     @dependent_property
     def y(self):
         return self.r * np.sin(self.t)
@@ -261,6 +269,38 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
     @property
     def pitch(self):
         return 2.0 * np.pi / self.Nb
+
+    @dependent_property
+    def dli(self):
+        return np.diff(self.xyz, axis=1)
+
+    @dependent_property
+    def dlj(self):
+        return np.diff(self.xyz, axis=2)
+
+    @dependent_property
+    def dlk(self):
+        return np.diff(self.xyz, axis=3)
+
+    @dependent_property
+    def dlmin(self):
+        # Get face area magnitudes
+        dAi = util.vecnorm(self.dAi)
+        dAj = util.vecnorm(self.dAj)
+        dAk = util.vecnorm(self.dAk)
+
+        # For each volume, take the minimum of the bounding length
+        # scales for every coordinate direction
+        vol = self.vol
+        dli = np.minimum(vol / dAi[1:, :, :], vol / dAi[:-1, :, :])
+        dlj = np.minimum(vol / dAj[:, 1:, :], vol / dAj[:, :-1, :])
+        dlk = np.minimum(vol / dAk[:, :, 1:], vol / dAk[:, :, :-1])
+
+        # Now take minimum of all directions
+        dlmin = np.minimum(dli, dlj)
+        dlmin = np.minimum(dlmin, dlk)
+
+        return dlmin
 
     def set_Nb(self, Nb):
         self.Nb = Nb
@@ -378,6 +418,102 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
         )
 
     @property
+    def dAi(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if self.ndim == 4:
+            v = self.xrt[:, :, :, :, 0]  # Discard any time dimension
+        elif self.ndim == 3:
+            v = self.xrt
+        elif self.ndim == 2:
+            v = self.xrt[:, None, :, :]  # Dummy i dimension
+        else:
+            raise Exception("Face area is only defined for 2D to 4D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAj(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrt
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        return -util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAk(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrt
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def vol(self):
+        # Volume
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Get face-centered coordinates
+        xi, xj, xk = util.node_to_face3(self.x)
+        ri, rj, rk = util.node_to_face3(self.r)
+        rti, rtj, rtk = util.node_to_face3(self.r * self.t)
+        Fi = np.stack((xi, ri / 2.0, rti))
+        Fj = np.stack((xj, rj / 2.0, rtj))
+        Fk = np.stack((xk, rk / 2.0, rtk))
+        dAi = self.dAi
+        dAj = self.dAj
+        dAk = self.dAk
+
+        # Volume by Gauss' theorem
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
+        vol = Fisum + Fjsum + Fksum
+
+        return vol / 3.0
+
+    @property
     def vol_Cartesian(self):
         if not self.ndim == 3:
             raise Exception("Cell volume is only defined for 3D grids")
@@ -391,6 +527,72 @@ class BaseFlowField(turbigen.base.StructuredData, turbigen.abstract.FlowField):
         qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
 
         return -np.sum(qk * np.cross(qi, qj), axis=-1)
+
+    def mass_integrate(self, property=1.0, axis=(0, -2, -1)):
+        """Integrate property * rhoV dot dA."""
+        # Check we are in 2D
+        if not ((self.ndim == 2) or (self.ndim == 3 and self.shape[0] == 1)):
+            raise Exception("Mass integration is only defined for 2D grids")
+
+        # Check that property is a scalar or has the same shape as the flow field
+        # No vectors allowed
+        if np.shape(property) not in ((), (1,), self.shape):
+            raise Exception(
+                f"Property shape {np.shape(property)} does not match flow field shape {self.shape}"
+            )
+
+        # Get mass flux
+        flux_mass = np.stack((self.rhoVx, self.rhoVr, self.rhoVt))
+
+        # Add dummy i dimension if we are in 2D
+        if self.ndim == 2:
+            flux_mass = flux_mass[:, None]
+
+        # Nodal areas
+        dA = util.face_to_node(self.dAi)
+
+        # Do the integration
+        integral = np.sum(flux_mass * property * dA, axis=axis)
+
+        if self.ndim == 2:
+            # Remove dummy i dimension if we are in 2D
+            integral = integral.item()
+
+        return integral
+
+    def area_integrate(self, property=1.0, axis=(0, -2, -1)):
+        """Integrate property dot dA."""
+
+        # Check we are in 2D
+        if not self.ndim == 2 or (self.ndim == 3 and self.shape[0] == 1):
+            raise Exception("Area integration is only defined for 2D grids")
+
+        # Check that property is a scalar or has the same shape as the flow field
+        # or is a 3-component vector
+        if isinstance(property, (list, tuple)) and len(property) == 3:
+            property = np.stack(np.broadcast_arrays(*property))
+        elif np.shape(property) in ((), (1,), self.shape):
+            pass
+        else:
+            raise Exception(
+                f"Property shape {np.shape(property)} does not match flow field shape {self.shape}"
+            )
+
+        # Nodal areas
+        dA = util.face_to_node(self.dAi)
+
+        if self.ndim == 2:
+            # Add dummy i dimension if we are in 2D
+            property = property[:, None]
+
+        # Do the integration
+        integral = np.sum(property * dA, axis=axis)
+
+        if self.ndim == 2:
+            # Remove dummy i dimension if we are in 2D
+            integral = integral.item()
+
+        return integral
 
     def set_xrt(self, x=None, r=None, t=None):
         if x is not None:

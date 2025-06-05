@@ -152,33 +152,27 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fsum, ni, nj, nk, np)
     real, intent (out)    :: fsum(ni-1, nj-1, nk-1, np)
 
     integer :: i, j, k, ip, d
-    real :: fisum, fjsum, fksum
+    real :: fisum(ni, nj-1, nk-1)
+    real :: fjsum(ni-1, nj, nk-1)
+    real :: fksum(ni-1, nj-1, nk)
 
-    ! Warning, this version seems to have more numerical error
-    ! than using intrinsic sum() for the dot product
-    ! but is faster.
     do ip = 1, np
-        do k = 1, nk-1
-            do j = 1, nj-1
-                do i = 1, ni-1
-                    fisum = 0.0
-                    fjsum = 0.0
-                    fksum = 0.0
-                    do d = 1, 3
-                        fisum = fisum + dAi(i, j, k, d) * fi(i, j, k, d, ip)
-                        fisum = fisum - dAi(i+1, j, k, d) * fi(i+1, j, k, d, ip)
 
-                        fjsum = fjsum + dAj(i, j, k, d) * fj(i, j, k, d, ip)
-                        fjsum = fjsum - dAj(i, j+1, k, d) * fj(i, j+1, k, d, ip)
+        ! Face fluxes
+        fisum = sum(dAi*fi(:, :, :, :, ip), dim=4)
+        fjsum = sum(dAj*fj(:, :, :, :, ip), dim=4)
+        fksum = sum(dAk*fk(:, :, :, :, ip), dim=4)
 
-                        fksum = fksum + dAk(i, j, k, d) * fk(i, j, k, d, ip)
-                        fksum = fksum - dAk(i, j, k+1, d) * fk(i, j, k+1, d, ip)
-                    end do
-                    fsum(i, j, k, ip) = fisum + fjsum + fksum
-                end do
-            end do
-        end do
+        ! Net cell flux
+        fsum(:,:,:,ip) = ( &
+            fisum(1:ni-1,:,:) - fisum(2:ni,:,:) & ! i faces
+            + fjsum(:,1:nj-1,:) - fjsum(:,2:nj,:) & ! j faces
+            + fksum(:,:,1:nk-1) - fksum(:,:,2:nk) & ! k faces
+        )
+
+
     end do
+
 end subroutine
 
 subroutine zero_wall_fluxes(x, ijk, ni, nj, nk, nc, npt)

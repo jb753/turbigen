@@ -246,6 +246,24 @@ def node_to_face(var):
     )
 
 
+def face_to_node(var):
+    """For a (...,n-1,m-1) matrix of some property, distribute the face values
+    back to the nodes of shape (...,n-1,m-1)."""
+
+    shape = np.array(var.shape)
+    shape[-2:] += 1
+
+    # Distribute face areas to nodes
+    x = np.zeros(shape, dtype=var.dtype)
+    x[..., :-1, :-1] += var
+    x[..., 1:, :-1] += var
+    x[..., :-1, 1:] += var
+    x[..., 1:, 1:] += var
+    x /= 4.0
+
+    return x
+
+
 def make_logger():
     # Add a special logging level above INFO for iterations
     logger = logging.getLogger("turbigen")
@@ -709,18 +727,17 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 def dA_Gauss(A, B, C, D):
     # Assemble all vertices together
     # xrrt[4, 3, ni, nj, nk]
-    xrrt = np.stack((A, B, C, D), axis=0).copy()
+    xrt = np.stack((A, B, C, D), axis=0).copy()
 
     # Shift theta origin to face center
     # This is important so that constant-theta faces have no radial area
-    t = xrrt[:, 2] / xrrt[:, 1]
-    t -= t.mean(axis=0)
-    xrrt[:, 2] = xrrt[:, 1] * t
+    xrt[:, 2] -= xrt[:, 2].mean(axis=0, keepdims=True)
 
-    # Subtract face-center coords to reduce round-off error
-    xrrtc = xrrt.mean(axis=0)
-    xrrt -= xrrtc
+    # Convert to cylindrical coordinate
+    xrrt = xrt.copy()
+    xrrt[:, 2] *= xrrt[:, 1]  # Multiply theta component by radius
 
+    #
     # Circular array of vertices
     v = np.concatenate((xrrt, xrrt[0][None, ...]), axis=0)
 

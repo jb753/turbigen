@@ -13,67 +13,12 @@ MU = 1.8e-4
 Tu0 = turbigen.flowfield.PerfectFlowField._Tu0_default
 
 
-def test_grid():
-    """Verify that area vectors have correct signs."""
-
-    # Assemble radial and angular grids
-    # r is j, rt is k
-    nj = 3
-    nk = 4
-    rv = np.linspace(1.0, 1.1, nj)
-    rtv = np.linspace(0.05, -0.05, nk)
-    r, rt = np.meshgrid(rv, rtv, indexing="ij")
-
-    # Now check that the sign of dAr is consistent with slope in meridional plane
-    # if dx_dr < 0 then sloping backwards, so Vr>0 => mdot > 0 and dAr > 0
-    # if dx_dr > 0 then sloping forwards, so Vr>0 => mdot < 0 and dAr < 0
-    for dx_dr in (-0.1, 0.0, 0.1):
-        x = 1 + dx_dr * r
-
-        for ax_flip in ((), (0,), (1,), (0, 1)):
-            print(dx_dr, ax_flip)
-
-            xrtnow = np.stack([np.flip(c, ax_flip) for c in (x, r, rt)])
-            flipper = turbigen.average.orient_grid(*xrtnow)
-            xrtflip = np.stack([flipper(q) for q in xrtnow])
-
-            dAx, dAr = turbigen.average.face_area(*xrtflip)
-            assert (dAx > 0.0).all()
-            assert (np.sign(dAr) == np.sign(-dx_dr)).all()
-
-    # Test a constant-r grid
-    # Note that this case is ambigous for the sign of dAr - is the flow
-    # approaching from above or below? - so we let the direction of x dictate the sign of dAr
-    # Where i in -x dirn => dAr > 0
-    rtv = np.linspace(-0.05, 0.05, nk)
-    xv = np.linspace(0.1, 0.0, nj)
-    x, rt = np.meshgrid(xv, rtv, indexing="ij")
-    r = np.ones_like(rt)
-    for ax_flip in ((), (1,)):
-        if ax_flip:
-            xnow = np.flip(x, ax_flip)
-            rnow = np.flip(r, ax_flip)
-            rtnow = np.flip(rt, ax_flip)
-        else:
-            xnow = x.copy()
-            rnow = r.copy()
-            rtnow = rt.copy()
-
-        flipper = turbigen.average.orient_grid(xnow, rnow, rtnow)
-
-        xnow, rnow, rtnow = [flipper(q) for q in (xnow, rnow, rtnow)]
-
-        dAx, dAr = turbigen.average.face_area(xnow, rnow, rtnow)
-        assert np.isclose(dAx, 0.0).all()
-        assert (dAr > 0.0).all()
-
-
 def test_nonuniform_energy():
     """Run a test flow with nonuniform energy."""
     # Coordinates
     r0, r1 = 1.0, 2.0
-    rv = np.linspace(r0, r1, 3)
-    tv = np.linspace(-np.pi / 8.0, np.pi / 8.0, 4)
+    rv = np.linspace(r0, r1, 6)
+    tv = np.linspace(-np.pi / 8.0, np.pi / 8.0, 7)
     r, t = np.meshgrid(rv, tv, indexing="ij")
     t = t + np.pi / 64 * r / r0  # Warp the grid
     rt = r * t
@@ -591,7 +536,7 @@ def test_radial():
         )
 
         # Do the mixing
-        F_mix = F.mix_out()[0]  # average.mix_out(F)
+        F_mix = turbigen.average.mix_out(F)[0]
 
         # The mixed-out mass flux should be sum of axial and radial contribs
         assert np.isclose(F_mix.rhoVx + F_mix.rhoVr, rovx_ref + rovr_ref, rtol=1e-4)
@@ -701,16 +646,17 @@ def test_cfd():
     F = turbigen.flowfield.PerfectFlowField.from_properties(
         xrt, Vxrt, PT, cp, ga, mu, Omega
     )
-    F_mix, Aann, _ = F.mix_out()
+    F_mix = turbigen.average.mix_out(F)[0]
 
     # Make sure we have obtained the supersonic solution
-    assert F_mix.Mam > 1.0
+    Mam = F_mix.Vm / F_mix.a
+    assert Mam > 1.0
 
 
 if __name__ == "__main__":
     # test_supersonic_radial()
     # quit()
-    test_cfd()
+    # test_cfd()
     # test_mixing()
     test_nonuniform_energy()
     test_nonuniform_xmom()

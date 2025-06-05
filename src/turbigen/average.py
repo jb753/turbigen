@@ -7,113 +7,6 @@ import scipy.optimize
 logger = turbigen.util.make_logger()
 
 
-def face_length(c):
-    """For (n,m) matrix of coordinates, get face length matrices in i- and j-dirs."""
-    return c[1:, 1:] - c[:-1, :-1], c[:-1, 1:] - c[1:, :-1]
-
-
-def face_area(x, r, rt):
-    """Calculate x and r areas for all cells in a cut."""
-
-    # Lengths of each face
-    dx1, dx2 = face_length(x)
-    dr1, dr2 = face_length(r)
-    drt1, drt2 = face_length(rt)
-
-    # Cross lengths
-    dAx = 0.5 * (dr1 * drt2 - dr2 * drt1)
-    dAr = 0.5 * (dx2 * drt1 - dx1 * drt2)
-
-    return dAx, dAr
-
-
-def orient_grid(x, r, rt):
-    """Return a closure that orients (n,m) matrix to be consistent with correct dA."""
-
-    ax_flip = []
-
-    logger.debug("Orienting grid")
-
-    # Want k to be along increasing theta
-    Dt_k = np.mean(rt[:, -1] - rt[:, 0])
-    if Dt_k < 0.0:
-        ax_flip.append(1)
-
-    # Want j to be along increasing r
-    # or failing that along decreasing x
-    Dx_j = np.mean(x[-1, :] - x[0, :])
-    Dr_j = np.mean(r[-1, :] - r[0, :])
-    logger.debug(f"Dx_j: {Dx_j}")
-    logger.debug(f"Dr_j: {Dr_j}")
-
-    if np.abs(Dr_j) > np.abs(Dx_j):
-        logger.debug("This cut is x~const")
-        if Dr_j < 0.0:
-            ax_flip.append(0)
-
-    else:
-        logger.debug("This cut is r~const")
-        if Dx_j > 0.0:
-            ax_flip.append(0)
-
-    logger.debug(f"Flipping along axes {ax_flip}")
-
-    def _orient(q):
-        return np.flip(q, axis=ax_flip).copy()
-
-    return _orient
-
-
-def area_total(x, r, rt):
-    dAx, dAr = face_area(x, r, rt)
-    return np.sum(dAx), np.sum(dAr)
-
-
-def area_integrate(x, r, rt, fx, fr):
-    """Integrate variable over a y-z area and return total."""
-
-    # Face areas and face-centered fluxes
-    dAx, dAr = face_area(x, r, rt)
-    fx_face = turbigen.util.node_to_face(fx)
-    fr_face = turbigen.util.node_to_face(fr)
-
-    # Perform integration
-    return np.sum(fx_face * dAx) + np.sum(fr_face * dAr)
-
-
-def specific_heats(ga, rgas):
-    """Calculate specific heats from gas constant and specific heat ratio ."""
-    cv = rgas / (ga - 1.0)
-    cp = cv * ga
-    return cp, cv
-
-
-def primary_to_fluxes(r, ro, rovx, rovr, rorvt, P, ho, Omega):
-    """Convert CFD primary variables into fluxes of mass, momentum, energy."""
-
-    # Divide out velocities
-    vx = rovx / ro
-    vr = rovr / ro
-    rvt = rorvt / ro
-
-    # Mass fluxes in x and r dirns
-    mass_fluxes = np.stack((rovx, rovr))
-
-    # Axial momentum fluxes in x and r dirns
-    xmom_fluxes = np.stack((rovx * vx + P, rovr * vx))
-
-    # Radial momentum fluxes in x and r dirns
-    rmom_fluxes = np.stack((rovx * vr, rovr * vr + P))
-
-    # Moment of angular momentum fluxes in x and r dirns
-    rtmom_fluxes = np.stack((rovx * rvt, rovr * rvt))
-
-    # Stagnation rothalpy fluxes in x an r dirns
-    ho_fluxes = np.stack((rovx * (ho - Omega * rvt), rovr * (ho - Omega * rvt)))
-
-    return mass_fluxes, xmom_fluxes, rmom_fluxes, rtmom_fluxes, ho_fluxes
-
-
 def solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot, Ax, Ar, F_mix):
     # Normalise vars for minimise
     ro0 = F_mix.rho + 0.0
@@ -274,164 +167,99 @@ def solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot, Ax, Ar, F_mix):
 def mix_out(F):
     """Perform mixed-out averaging on a flow field."""
 
-    logger.debug("MIXING OUT A CUT")
-
-    x = F.x.squeeze()
-    r = F.r.squeeze()
-    t = F.t.squeeze()
-    rt = r * t
-
     assert np.ptp(F.Omega) == 0.0
     Omega = np.float64(F.Omega.mean())
-    s = F.s.squeeze()
-
-    ro = F.rho.squeeze()
-    rovx = F.rhoVx.squeeze()
-    rovr = F.rhoVr.squeeze()
-
-    # # Orient grid
-    # flipper = orient_grid(x, r, rt)
-    # x, r, rt, ro, rovx, rovr, rorvt, P, ho, s = [
-    #     flipper(q).astype(np.float64)
-    #     for q in (x, r, rt, ro, rovx, rovr, rorvt, P, ho, s)
-    # ]
-
-    # Mass fluxes in x and r dirns
-    mass_fl = F.flux_mass.squeeze()
-
-    # Axial momentum fluxes in x and r dirns
-    xmom_fl = F.flux_xmom.squeeze()
-
-    # Radial momentum fluxes in x and r dirns
-    rmom_fl = F.flux_rmom.squeeze()
-
-    # Moment of angular momentum fluxes in x and r dirns
-    rtmom_fl = F.flux_rtmom.squeeze()
-
-    # Stagnation rothalpy fluxes in x an r dirns
-    ho_fl = F.flux_rothalpy.squeeze()
 
     # Get totals by integrating over area
-    mass_tot = area_integrate(x, r, rt, *mass_fl[:2])
-    xmom_tot = area_integrate(x, r, rt, *xmom_fl[:2])
-    rmom_tot = area_integrate(x, r, rt, *rmom_fl[:2])
-    rtmom_tot = area_integrate(x, r, rt, *rtmom_fl[:2])
-    ho_tot = area_integrate(x, r, rt, *ho_fl[:2])
-
-    # Assemble all total fluxes into a vector for convenience
-    all_names = ["mass", "xmom", "rmom", "rtmom", "ho"]
-    logger.debug("Total fluxes of conserved quantities are:")
-    all_tot = np.array([mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot])
-    for n, v in zip(all_names, all_tot):
-        logger.debug(f"  {n}: {v}")
-
-    if np.isnan(all_tot).any():
-        raise Exception(f"Cannot average a NaN total flux: {all_tot}")
+    mass_tot = F.mass_integrate()
+    xmom_tot = F.mass_integrate(F.Vx) + F.area_integrate((F.P, 0.0, 0.0))
+    rmom_tot = F.mass_integrate(F.Vr) + F.area_integrate((0.0, F.P, 0.0))
+    rtmom_tot = F.mass_integrate(F.rVt) + F.area_integrate((0.0, 0.0, F.r * F.P))
+    I_tot = F.mass_integrate(F.I)
+    s_tot = F.mass_integrate(F.s)
 
     # Mix out at the rms radius
-    r_mix = np.sqrt(0.5 * (r.min() ** 2.0 + r.max() ** 2.0))
-    x_mix = 0.5 * (x.max() + x.min())
-    t_mix = 0.5 * (t.max() + t.min())
+    r_mix = np.sqrt(0.5 * (F.r.min() ** 2.0 + F.r.max() ** 2.0))
+    x_mix = 0.5 * (F.x.max() + F.x.min())
+    t_mix = 0.5 * (F.t.max() + F.t.min())
     xrt_mix = np.array([x_mix, r_mix, t_mix])
 
-    # Get the projected area in x-direction by integrating fx = 1, fr = 0
-    Ax = area_integrate(x, r, rt, np.ones_like(x), np.zeros_like(x))
-    # Get the projected area in r-direction by integrating fx = 0, fr = 1
-    Ar = area_integrate(x, r, rt, np.zeros_like(x), np.ones_like(x))
-
-    # Initial guesses for pitch angle
-    vr_guess = (rovr / ro).mean()
-    vx_guess = (rovx / ro).mean()
-    vm_guess = np.sqrt(vr_guess**2.0 + vx_guess**2.0)
-    Beta_mix = np.degrees(np.arccos(vx_guess / vm_guess))
+    # Get the projected areas in x and r directions
+    Ax = F.area_integrate((np.ones(F.shape), 0.0, 0.0))
+    Ar = F.area_integrate((0.0, np.ones(F.shape), 0.0))
 
     # An initial guess of zero pitch can prevent convergence of radial momentum, so
     # override small pitch angles
+    Beta_mix = F.Beta.mean()
     if np.abs(Beta_mix < 1.0):
         Beta_mix = 0.1
 
     # Set up initial guess state
-    F_mix = F.copy().empty()
-    F_mix.xrt = xrt_mix
-    F_mix.Vx = vx_guess
-    F_mix.Vr = vr_guess
-    F_mix.Vt = F.Vt.mean()
-    F_mix.Omega = Omega
-    F_mix.set_rho_u(F.rho.mean(), F.u.mean())
+    Fm = F.copy().empty()
+    Fm.xrt = xrt_mix
+    Fm.Vx = F.Vx.mean()
+    Fm.Vr = F.Vr.mean()
+    Fm.Vt = F.Vt.mean()
+    Fm.Omega = Omega
+    Fm.set_rho_u(F.rho.mean(), F.u.mean())
 
     # Iterate on the guess state to match the desired total fluxes
-    solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot, Ax, Ar, F_mix)
+    solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, I_tot, Ax, Ar, Fm)
 
     # Check conservation
-    Axr = np.array([Ax, Ar])
-    mass_mix = (F_mix.flux_mass[:2] * Axr).sum()
-    xmom_mix = (F_mix.flux_xmom[:2] * Axr).sum()
-    rmom_mix = (F_mix.flux_rmom[:2] * Axr).sum()
-    rtmom_mix = (F_mix.flux_rtmom[:2] * Axr).sum()
-    ho_mix = (F_mix.flux_rothalpy[:2] * Axr).sum()
+    mass_mix = (Fm.rhoVx * Ax + Fm.rhoVr * Ar).sum()
+    xmom_mix = ((Fm.rhoVx * Fm.Vx + Fm.P) * Ax + Fm.rhoVr * Fm.Vx * Ar).sum()
+    rmom_mix = (Fm.rhoVx * Fm.Vr * Ax + (Fm.rhoVr * Fm.Vr + Fm.P) * Ar).sum()
+    rtmom_mix = (Fm.rhoVx * Fm.r * Fm.Vt * Ax + Fm.rhoVr * Fm.r * Fm.Vt * Ar).sum()
+    I_mix = Fm.I * mass_mix
+    s_mix = Fm.s * mass_mix
 
     # Set absolute tolerances to rtol*reference to be more numerically robust
     # This handles with xmom or rmom ~ 0, and cases with low net mass flow
     rtol = 2e-2
 
-    # Mass
-    V_ref = np.abs(vm_guess)
-    ro_ref = ro.mean()
+    # Mass tolerance
+    V_ref = F.V.mean()
+    ro_ref = F.rho.mean()
     A_ref = np.sqrt(Ax**2.0 + Ar**2.0)
     mass_ref = ro_ref * V_ref * A_ref
     mass_tol = mass_ref * rtol
+    assert np.isclose(
+        mass_tot, mass_mix, atol=mass_tol
+    ), f"Total mass {mass_tot} does not match mixed {mass_mix} within tolerance {mass_tol}"
 
     # Momentum
     mom_ref = np.max((np.abs(xmom_tot), np.abs(rmom_tot)))
     mom_tol = rtol * mom_ref
+    assert np.isclose(
+        xmom_tot, xmom_mix, atol=mom_tol
+    ), f"Total xmom {xmom_tot} does not match mixed {xmom_mix} within tolerance {mom_tol}"
+    assert np.isclose(
+        rmom_tot, rmom_mix, atol=mom_tol
+    ), f"Total rmom {rmom_tot} does not match mixed {rmom_mix} within tolerance {mom_tol}"
 
-    # Energy error is proportional to mass
-    ho_tol = np.abs(ho_tot * mass_tol / mass_tot)
+    # Angular momentum
+    rtmom_tol = mom_ref * r_mix * rtol
+    assert np.isclose(
+        rtmom_tot, rtmom_mix, atol=rtmom_tol
+    ), f"Total rtmom {rtmom_tot} does not match mixed {rtmom_mix} within tolerance {rtmom_tol}"
 
-    if not np.isclose(mass_mix, mass_tot, atol=mass_tol):
-        raise Exception(
-            f"""Mixing out did not converge:
-    mass {mass_mix, mass_tot, mass_tol}, rel_err={(mass_mix - mass_tot) / mass_tol:.3f}"""
-        )
-
-    if not np.isclose(xmom_mix, xmom_tot, atol=mom_tol):
-        raise Exception(
-            f"""Mixing out did not converge:
-    xmom {xmom_mix, xmom_tot, mom_tol}, rel_err={(xmom_mix - xmom_tot) / mom_tol:.3f}"""
-        )
-
-    if not np.isclose(rmom_mix, rmom_tot, atol=mom_tol):
-        raise Exception(
-            f"""Mixing out did not converge:
-    rmom {rmom_mix, rmom_tot, mom_tol}, rel_err={(rmom_mix - rmom_tot) / mom_tol:.3f}"""
-        )
-
-    if not np.isclose(rtmom_mix, rtmom_tot, atol=mom_tol * r_mix):
-        raise Exception(
-            f"""Mixing out did not converge:
-            rtmom {rtmom_mix, rtmom_tot, mom_tol * r_mix},
-            rel_err={(rtmom_mix - rtmom_tot) / mom_tol / r_mix:.3f}"""
-        )
-
-    if not np.isclose(ho_mix, ho_tot, atol=ho_tol):
-        raise Exception(
-            f"""Mixing out did not converge:
-    energy {ho_mix, ho_tot, ho_tol}, rel_err={(ho_mix - ho_tot) / ho_tol:.3f}"""
-        )
+    # Rothalpy error is proportional to mass
+    I_tol = np.abs(I_tot * mass_tol / mass_tot)
+    assert np.isclose(
+        I_tot, I_mix, atol=I_tol
+    ), f"Total rothalpy {I_tot} does not match mixed {I_mix} within tolerance {I_tol}"
 
     try:
         Nb = F.Nb
-    except AttributeError:
+    except (AttributeError, KeyError):
         Nb = 1
 
     # Quantify mixing loss
-    ent_fl = np.stack((rovx * s, rovr * s))
-    ent_tot = area_integrate(x, r, rt, *ent_fl)
-    ent_mix = mass_mix * F_mix.s
-    dsirrev = (ent_mix - ent_tot) / mass_tot
+    dsirrev = (s_mix - s_tot) / mass_tot
     Aann = A_ref * Nb
     # Return the mixed-out flow field state
-    return F_mix, Aann, dsirrev
+    return Fm, Aann, dsirrev
 
 
 def primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas):
