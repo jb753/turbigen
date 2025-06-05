@@ -4,6 +4,7 @@ import numpy as np
 import turbigen.base
 import turbigen.fluid
 import turbigen.yaml
+import turbigen.abstract
 from multiprocessing import Pool
 import os
 
@@ -39,7 +40,10 @@ def make_mean_line_from_flowfield(A, F, Ds_mix=0.0):
 
 
 class BaseFlowField(
-    turbigen.base.StructuredData, turbigen.base.Kinematics, turbigen.base.Composites
+    turbigen.base.StructuredData,
+    turbigen.base.Kinematics,
+    turbigen.base.Composites,
+    turbigen.abstract.FlowField,
 ):
     def check_flow(self):
         assert np.isfinite(self.Vxrt).all()

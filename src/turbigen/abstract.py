@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 
 class State(ABC):
     """Working fluids
-    -------------
+    --------------
 
     Both perfect and real working fluids are represented by a :class:`State`
     class, which has a common interface for setting and reading thermodynamic
@@ -241,37 +241,31 @@ class State(ABC):
     @property
     @abstractmethod
     def dsdrho_P(self):
-        """Derivative of entropy with respect to density at constant pressure."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def dsdP_rho(self):
-        """Derivative of entropy with respect to pressure at constant density."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def dhdP_rho(self):
-        """Derivative of enthalpy with respect to pressure at constant density."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def dhdrho_P(self):
-        """Derivative of enthalpy with respect to density at constant pressure."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def dudrho_P(self):
-        """Derivative of internal energy with respect to density at constant pressure."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def dudP_rho(self):
-        """Derivative of internal energy with respect to pressure at constant density."""
         raise NotImplementedError()
 
 
@@ -290,11 +284,9 @@ class FlowField(ABC):
     Setter methods
     ^^^^^^^^^^^^^^
 
-    The :class:`FlowField` class has extra setter methods as well as those
-    defined in :class:`State`. Omitting a coordinate or velocity argument
-    will leave the corresponding values unchanged.
-
-    xxx
+    The :class:`FlowField` class has the same thermodynamic setter methods as
+    the :class:`State` class. Velocity and coordinate data are set directly
+    by assigning to the corresponding attributes.
 
     Property attributes
     ^^^^^^^^^^^^^^^^^^^
@@ -331,18 +323,6 @@ class FlowField(ABC):
 
     @property
     @abstractmethod
-    def Nb(self):
-        """Number of blades, circumferential periodicity [--]."""
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
-    def pitch(self):
-        """Angular blade pitch, circumferential period [rad]."""
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
     def Omega(self):
         """Reference frame angular velocity [rad/s]"""
         raise NotImplementedError()
@@ -351,120 +331,6 @@ class FlowField(ABC):
     @abstractmethod
     def rpm(self):
         """Reference frame revolutions per minute [rpm]"""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_xrt(self, x, r, t):
-        """Set polar coordinates.
-
-        Parameters
-        ----------
-        x : float
-            Axial coordinate [m].
-        r : float
-            Radial coordinate [m].
-        t : float
-            Circumferential coordinate [rad].
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_xyz(self, x, y, z):
-        """Set Cartesian coordinates.
-
-        Parameters
-        ----------
-        x : float
-            Axial coordinate [m].
-        y : float
-            Vertical coordinate [m].
-        z : float
-            Horizontal coordinate [m].
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_Omega(self, Omega):
-        """Set reference frame angular velocity.
-
-        Parameters
-        ----------
-        Omega : float
-            Angular velocity [rad/s].
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_Nb(self, Nb):
-        """Number of blades.
-
-        Parameters
-        ----------
-        Nb : int
-            Number of blades, circumferential periodicity [--].
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_conserved(self, conserved):
-        """Vector of conserved variables.
-
-        Parameters
-        ----------
-        conserved : float
-            Vector of [rho, rhoVx, rhoVr, rhorVt, rhoe]
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_Vxrt(self, Vx, Vr, Vt):
-        """Polar velocity vector.
-
-        Parameters
-        ----------
-        Vx : float
-            Axial velocity [m/s].
-        Vr : float
-            Radial velocity [m/s].
-        Vt : float
-            Tangential velocity [m/s].
-
-        """
-        raise NotImplementedError()
-
-    def set_Vxyz(self, Vx, Vy, Vz):
-        """Cartesian velocity vector.
-        Parameters
-        ----------
-        Vx : float
-            Axial velocity [m/s].
-        Vy : float
-            Vertical velocity [m/s].
-        Vz : float
-            Horizontal velocity [m/s].
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_V_Alpha_Beta(self, V, Alpha, Beta):
-        """Velocity magnitude and angles.
-
-        Parameters
-        ----------
-        V : float
-            Absolute velocity magnitude [m/s].
-        Alpha : float
-            Yaw angle [deg].
-        Beta : float
-            Pitch angle [deg].
-
-        """
         raise NotImplementedError()
 
     #
@@ -553,6 +419,24 @@ class FlowField(ABC):
         """Pitch angle [deg]."""
         raise NotImplementedError()
 
+    @property
+    @abstractmethod
+    def tanBeta(self):
+        """Tangent of pitch angle [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def tanAlpha(self):
+        """Tangent of yaw angle [--]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def tanAlpha_rel(self):
+        """Tangent of relative frame yaw angle [--]."""
+        raise NotImplementedError()
+
     #
     # Composite properties
     #
@@ -560,7 +444,6 @@ class FlowField(ABC):
     @property
     @abstractmethod
     def conserved(self):
-        """Vector of conserved variables []."""
         raise NotImplementedError()
 
     @property
@@ -631,15 +514,61 @@ class FlowField(ABC):
 
     @property
     @abstractmethod
+    def rhoVx(self):
+        """Volumetric axial momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoVr(self):
+        """Volumetric radial momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoVt(self):
+        """Volumetric angular momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhorVt(self):
+        """Volumetric angular momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoe(self):
+        """Volumetric total energy [J/m^3]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def drhoe_drho_P(self):
-        """Derivative of volumetric total energy with respect to density at constant pressure []."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def drhoe_dP_rho(self):
-        """Derivative of volumetric total energy with respect to pressure at constant density []."""
         raise NotImplementedError()
+
+    # @property
+    # @abstractmethod
+    # def dAi(self):
+    #     """Areas of constant i faces [m^2]."""
+    #     raise NotImplementedError()
+    #
+    # @property
+    # @abstractmethod
+    # def dAj(self):
+    #     """Areas of constant j faces [m^2]."""
+    #     raise NotImplementedError()
+    #
+    # @property
+    # @abstractmethod
+    # def dAk(self):
+    #     """Areas of constant k faces [m^2]."""
+    #     raise NotImplementedError()
 
 
 class Block(ABC):

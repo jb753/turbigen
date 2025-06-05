@@ -65,6 +65,7 @@ doc:
   script:
     - python doc/generate_examples.py
     - python doc/generate_meanline.py
+    - python doc/generate_data_structures.py
     - sphinx-build -W doc doc/_build
 
 pages:

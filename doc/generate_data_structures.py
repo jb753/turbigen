@@ -52,6 +52,8 @@ def generate_fluid(cls):
     for quantity in quantities:
         doc = inspect.getdoc(getattr(cls, quantity))
         # get units
+        if not doc:
+            continue
         split = doc.split(" [")
         name = split[0]
         if len(split) == 1:
@@ -84,7 +86,7 @@ def generate_flowfield(cls):
 
     # Start table
     setter_str = ".. list-table::\n   :widths: 65 35\n   :header-rows: 1\n\n"
-    setter_str += "   * - Method\n     - Arguments"
+    setter_str += "   * - Method\n     - Arguments\n"
     for method in setters:
         args = [
             k

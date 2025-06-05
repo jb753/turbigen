@@ -142,242 +142,14 @@ from CoolProp import CoolProp
 import numpy as np
 from turbigen.base import dependent_property, StructuredData
 import turbigen.util
-from abc import ABC, abstractmethod
+import turbigen.abstract
 
 
 # Share tabular property data across instances in a class-level dict
 _abstract_states = {"HEOS": {}, "BICUBIC&HEOS": {}}
 
 
-class State(ABC):
-    """Working fluids
-    =============
-
-    Both perfect and real working fluids are represented by a :class:`State`
-    class, which has a
-    common interface for setting and reading thermodynamic properties. The interface allows
-    the same mean-line design code to work with any working fluid.
-
-    This section describes:
-
-    * Methods to set the thermodynamic state of the fluid
-    * Properties of the fluid that can be read back as attributes
-    * Example code to illustrate usage
-
-    Setter methods
-    --------------
-
-    The following methods are used to set the thermodynamic state of the fluid to a new value.
-    The object is updated
-    in-place; a copy can be explicitly created using :meth:`State.copy`.
-    By the two-property rule, the setters all take two arguments
-    to uniquely specify the thermodynamic state. The following methods are available:
-
-    xxx
-
-    Property attributes
-    -------------------
-
-    Thermodynamic properties of the fluid are accessed as attributes of the
-    :class:`State` object. The following properties are available:
-
-    yyy
-
-    """
-
-    @abstractmethod
-    def set_rho_u(self, rho, u):
-        """Set density and internal energy.
-
-        Parameters
-        ----------
-        rho : float
-            Density [kg/m^3].
-        u : float
-            Internal energy [J/kg].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with updated thermodynamic properties.
-
-        """
-
-    @abstractmethod
-    def set_h_s(self, h, s):
-        """Set enthalpy and entropy.
-
-        Parameters
-        ----------
-        h : float
-            Enthalpy [J/kg].
-        s : float
-            Entropy [J/kg/K].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with thermodynamic properties.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_P_T(self, P, T):
-        """Set pressure and temperature.
-
-        Parameters
-        ----------
-        P : float
-            Pressure [Pa].
-        T : float
-            Temperature [K].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with thermodynamic properties.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_P_s(self, P, s):
-        """Set pressure and entropy.
-
-        Parameters
-        ----------
-        P : float
-            Pressure [Pa].
-        s : float
-            Entropy [J/kg/K].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with thermodynamic properties.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_P_h(self, P, h):
-        """Set pressure and enthalpy.
-
-        Parameters
-        ----------
-        P : float
-            Pressure [Pa].
-        h : float
-            Specific enthalpy [J/kgK].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with thermodynamic properties.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def set_P_rho(self, P, rho):
-        """Set pressure and density.
-
-        Parameters
-        ----------
-        P : float
-            Pressure [Pa].
-        rho : float
-            Density [kg/m^3].
-
-        Returns
-        -------
-        self : Fluid
-            The current instance with thermodynamic properties.
-
-        """
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
-    def gamma(self):
-        """Ratio of specific heats [--]."""
-        pass
-
-    @property
-    @abstractmethod
-    def rgas(self):
-        """Specific gas constant [J/kg/K]."""
-        pass
-
-    @property
-    @abstractmethod
-    def u(self):
-        """Specific internal energy [J/kg]."""
-        pass
-
-    @property
-    @abstractmethod
-    def h(self):
-        """Specific enthalpy [J/kg]."""
-        pass
-
-    @property
-    @abstractmethod
-    def cp(self):
-        """Specific heat at constant pressure [J/kg/K]."""
-        pass
-
-    @property
-    @abstractmethod
-    def cv(self):
-        """Specific heat at constant volume [J/kg/K]."""
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
-    def a(self):
-        """Acoustic speed [m/s]."""
-        pass
-
-    @property
-    @abstractmethod
-    def P(self):
-        """Pressure [Pa]."""
-        pass
-
-    @property
-    @abstractmethod
-    def T(self):
-        """Temperature [K]."""
-        pass
-
-    @property
-    @abstractmethod
-    def s(self):
-        """Specific entropy [J/kg/K]."""
-        pass
-
-    @property
-    @abstractmethod
-    def mu(self):
-        """Kinematic viscosity [m^2/s]."""
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
-    def Pr(self):
-        """Prandtl number [--]."""
-        raise NotImplementedError()
-
-    @property
-    @abstractmethod
-    def rho(self):
-        """Density [kg/m^3]."""
-        raise NotImplementedError()
-
-
-class PerfectState(StructuredData, State):
+class PerfectState(StructuredData, turbigen.abstract.State):
     """Thermodynamic properties from perfect gas equations of state."""
 
     _data_rows = (
@@ -642,7 +414,7 @@ class PerfectState(StructuredData, State):
         return self.copy().set_T_s(self.T * To_T, self.s)
 
 
-class RealState(StructuredData, State):
+class RealState(StructuredData, turbigen.abstract.State):
     """Thermodynamic properties for a real fluid using table lookups."""
 
     _data_rows = (
@@ -782,6 +554,20 @@ class RealState(StructuredData, State):
             for i, (rhok, uk) in enumerate(zip(self.rho.flat, self.u.flat)):
                 self._as.update(CoolProp.DmassUmass_INPUTS, rhok, uk)
                 z.flat[i] = prop_func()
+        return z
+
+    def _lookup_derivative(self, of, wrt, const):
+        """Table lookup a derivative."""
+        # Scalar state, no need to loop
+        if self.shape == ():
+            self._as.update(CoolProp.DmassUmass_INPUTS, self.rho, self.u)
+            z = self._as.first_partial_deriv(of, wrt, const)
+        # Vector state, must loop
+        else:
+            z = np.zeros(self.shape)
+            for i, (rhok, uk) in enumerate(zip(self.rho.flat, self.u.flat)):
+                self._as.update(CoolProp.DmassUmass_INPUTS, rhok, uk)
+                z.flat[i] = self._as.first_partial_deriv(of, wrt, const)
         return z
 
     def _lookup_saturated_property(self, prop_func, chi):
@@ -1008,6 +794,30 @@ class RealState(StructuredData, State):
     @property
     def Pcrit(self):
         return self._as.p_critical()
+
+    @dependent_property
+    def dhdP_rho(self):
+        return self._lookup_derivative(CoolProp.iHmass, CoolProp.iP, CoolProp.iDmass)
+
+    @dependent_property
+    def dhdrho_P(self):
+        return self._lookup_derivative(CoolProp.iHmass, CoolProp.iDmass, CoolProp.iP)
+
+    @dependent_property
+    def dsdP_rho(self):
+        return self._lookup_derivative(CoolProp.iSmass, CoolProp.iP, CoolProp.iDmass)
+
+    @dependent_property
+    def dsdrho_P(self):
+        return self._lookup_derivative(CoolProp.iSmass, CoolProp.iDmass, CoolProp.iP)
+
+    @dependent_property
+    def dudP_rho(self):
+        return self._lookup_derivative(CoolProp.iUmass, CoolProp.iP, CoolProp.iDmass)
+
+    @dependent_property
+    def dudrho_P(self):
+        return self._lookup_derivative(CoolProp.iUmass, CoolProp.iDmass, CoolProp.iP)
 
 
 def _check_positive_finite_scalar(x):
