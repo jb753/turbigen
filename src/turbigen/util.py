@@ -707,7 +707,7 @@ def get_mp_from_xr(grid, machine, irow, spf, mlim):
 
 
 def dA_Gauss(A, B, C, D):
-    # Assemble all vertices together (stack along second axis)
+    # Assemble all vertices together
     # xrrt[4, 3, ni, nj, nk]
     xrrt = np.stack((A, B, C, D), axis=0).copy()
 
@@ -1033,3 +1033,80 @@ def format_sf(x, sig=3):
 
 def format_array(x, precision=3):
     return "[" + ", ".join(format_sf(xi, precision) for xi in x) + "]"
+
+
+def stack_vector(*args, order):
+    """Stack some vectors into a composite vector.
+
+    Parameters
+    ----------
+    args : tuple
+        Variables to stack.
+    order : str
+        Stacking axis, default to the instance memory layout.
+        If 'C', then stack along first axes.
+        If 'F', then stack along last axes.
+
+    Returns
+    -------
+    out : ndarray
+        A composite stacked variable.
+
+    In the case of Fortran memory layout, stacking along the last axis
+    means that each component of the vector is contiguous in memory but the
+    the vector at a specific grid point is discontiguous in memory. This
+    may or may not be the fastest behaviour -- for example to do a matrix
+    multiply at every grid point, it is better to override the stack order
+    to 'C' so that each vector is contiguous in memory.
+
+    """
+
+    if order == "C":
+        return np.stack(args, axis=0)
+    elif order == "F":
+        return np.stack(args, axis=-1)
+    else:
+        raise ValueError(f"Invalid order '{order}'.")
+
+
+def stack_matrix(*args, order, shape, dtype):
+    """Stack nested iterables into a matrix.
+
+    Parameters
+    ----------
+    args : nested iterables length [nrow][ncol]
+        Variables to stack.
+    order : str
+        Stacking axis, default to the instance memory layout.
+        If 'C', then stack along last two axes.
+        If 'F', then stack along first two axes.
+    shape : tuple
+        The shape of the individual matrix variables.
+    dtype : dtype
+        The data type of the individual matrix variables.
+
+    Returns
+    -------
+    out : ndarray
+        A composite matrix variable.
+
+    """
+
+    # Determine the shape of the input arrays
+    nrow = len(args)
+    ncol = len(args[0])
+
+    # Note that these for loops are faster than calls to np.stack
+    if order == "C":
+        out = np.full(shape + (nrow, ncol), np.nan, dtype=dtype)
+        for i in range(nrow):
+            for j in range(ncol):
+                out[..., i, j] = args[i][j]
+    elif order == "F":
+        out = np.full((nrow, ncol) + shape, np.nan, dtype=dtype)
+        for i in range(nrow):
+            for j in range(ncol):
+                out[i, j, ...] = args[i][j]
+    else:
+        raise ValueError(f"Invalid order '{order}'.")
+    return out

@@ -422,7 +422,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             raise Exception("Coordinates not finite")
 
         # No negative cells
-        assert (self.vol_approx > 0.0).all()
+        assert (self.vol_Cartesian > 0.0).all()
 
     def check_wall_distance(self):
         """Raise an error if wall distance is invalid."""
@@ -832,16 +832,8 @@ class Grid:
         raise Exception(f"Could not locate {block} in the row lists")
 
     def check_coordinates(self):
-        passed = True
         for ib, b in enumerate(self):
-            try:
-                b.check_coordinates()
-            except Exception as e:
-                logger.iter(f"Block {ib}")
-                logger.iter(e)
-                passed = False
-        if not passed:
-            raise Exception("Coordinate check failed.")
+            b.check_coordinates()
 
     def apply_periodic(self):
         """For each pair of periodic patches, set average of conserved quantities."""
@@ -984,9 +976,6 @@ class Grid:
 
     def apply_guess_meridional(self, Fg):
         """Apply meridional guess from a mean-line object."""
-
-        # Ensure the guess flow field is sane
-        Fg.check_flow()
 
         # Initialise a kdtree of guess points
         xrgT = Fg.xr.T

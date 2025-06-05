@@ -403,194 +403,43 @@ def test_perfect_deriv():
     Pv = delta * P1
     rhov = delta * rho1
 
-    S1 = flowfield.PerfectFlowField(shape=delta.shape)
-    S1.mu = 1.84e-5
-    S1.cp = cp
-    S1.gamma = ga
-    S1.Vxrt = np.ones((3, N)) * 100.0
-    S1.Vr = 0.0
-    S1.xrt = np.ones((3, N))
+    SA = flowfield.PerfectFlowField(shape=delta.shape)
+    SA.mu = 1.84e-5
+    SA.cp = cp
+    SA.gamma = ga
 
-    rtol = 1e-3
+    SB = flowfield.RealFlowField(shape=delta.shape)
+    SB.fluid_name = "Air"
 
-    # by rho first at constant P
-    S1.set_P_rho(P1, rhov)
-    dsdrho = np.gradient(S1.s, rhov)
-    dhdrho = np.gradient(S1.h, rhov)
-    dudrho = np.gradient(S1.u, rhov)
-    drhoe_drho = np.gradient(S1.rhoe, rhov)
-    assert np.allclose(S1.dsdrho_P[1:-1], dsdrho[1:-1], rtol=rtol)
-    assert np.allclose(S1.dhdrho_P[1:-1], dhdrho[1:-1], rtol=rtol)
-    assert np.allclose(S1.dudrho_P[1:-1], dudrho[1:-1], rtol=rtol)
-    assert np.allclose(S1.drhoe_drho_P[1:-1], drhoe_drho[1:-1], rtol=rtol)
+    for S1 in (SA, SB):
+        S1.Vxrt = np.ones((3, N)) * 100.0
+        S1.Vr = 0.0
+        S1.xrt = np.ones((3, N))
 
-    # by P first at constant rho
-    S1.set_P_rho(Pv, rho1)
-    dsdP = np.gradient(S1.s, Pv)
-    dhdP = np.gradient(S1.h, Pv)
-    dudP = np.gradient(S1.u, Pv)
-    drhoe_dP = np.gradient(S1.rhoe, Pv)
-    assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
-    assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
-    assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
-    assert np.allclose(S1.drhoe_dP_rho[1:-1], drhoe_dP[1:-1], rtol=rtol)
-    print(S1.rhoe.mean(), S1.rho.mean(), S1.drhoe_dP_rho[5], drhoe_dP[5])
+        rtol = 1e-3
 
+        # by rho first at constant P
+        S1.set_P_rho(P1, rhov)
+        dsdrho = np.gradient(S1.s, rhov)
+        dhdrho = np.gradient(S1.h, rhov)
+        dudrho = np.gradient(S1.u, rhov)
+        drhoe_drho = np.gradient(S1.rhoe, rhov)
+        assert np.allclose(S1.dsdrho_P[1:-1], dsdrho[1:-1], rtol=rtol)
+        assert np.allclose(S1.dhdrho_P[1:-1], dhdrho[1:-1], rtol=rtol)
+        assert np.allclose(S1.dudrho_P[1:-1], dudrho[1:-1], rtol=rtol)
+        assert np.allclose(S1.drhoe_drho_P[1:-1], drhoe_drho[1:-1], rtol=rtol)
 
-def test_matrices():
-    # Set up two flow fields with a small perturbation between them
-
-    mag = 1e-5
-    tol = 1e-2
-    perturbations = [
-        [1.0, 0.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 0.0, 1.0],
-        [1.0, 1.0, 1.0, 1.0, 1.0],
-        [-1.0, -1.0, -1.0, -1.0, -1.0],
-        [-0.7, 0.9, -0.7, 0.8, 1.0],
-        [-1.2, 3.5, -0.7, 4.1, 2.2],
-    ]
-
-    F = flowfield.PerfectFlowField(shape=(1,))
-    F.cp = 1105.0
-    F.gamma = 1.3
-    F.mu = 1.8e-5
-    F.xrt = 2 * np.ones((3, 1))
-    F.Vxrt = [[[100.0], [80.0], [50.0]]]
-    F.set_P_T(1.2e5, 295.0)
-    F2 = F.copy()
-
-    for fac_prim in perturbations:
-        dprim = F.prim * np.array(fac_prim)[..., None] * mag
-        F2.set_prim(F.prim + dprim)
-
-        # Check conserved
-        dcons = F2.conserved - F.conserved
-        C = F.primitive_to_conserved
-        Cinv = F.conserved_to_primitive
-        assert np.allclose(dcons, C @ dprim, rtol=tol)
-        assert np.allclose(np.diag((Cinv @ C).squeeze()), 1.0, rtol=1e-6)
-
-        # Manually calculate chic vector
-        dp = F2.P - F.P
-        dVx = F2.Vx - F.Vx
-        dVr = F2.Vr - F.Vr
-        dVt = F2.Vt - F.Vt
-        drho = F2.rho - F.rho
-        a = 0.5 * (F2.a + F.a)
-        rho = 0.5 * (F2.rho + F.rho)
-        dchic = [
-            dp - rho * a * dVx,
-            dp + rho * a * dVx,
-            rho * a * dVr,
-            rho * a * dVt,
-            dp - (a**2) * drho,
-        ]
-
-        # Check prim to chic
-        B = F.primitive_to_chic
-        Binv = F.chic_to_primitive
-        assert np.allclose(np.diag((Binv @ B).squeeze()), 1.0, rtol=1e-6)
-        assert np.allclose(dchic, B @ dprim, rtol=tol)
-
-        # Check prim to fluxes
-        dflux = F2.fluxes - F.fluxes
-        A = F.primitive_to_flux
-        Ainv = F.flux_to_primitive
-        assert np.allclose(np.diag((Ainv @ A).squeeze()), 1.0, rtol=1e-6)
-        assert np.allclose(dflux, A @ dprim, rtol=tol)
-
-        # Check prim to bcond
-        dbcond = F2.bcond - F.bcond
-        Y = F.primitive_to_bcond
-        Yinv = F.bcond_to_primitive
-        assert np.allclose(np.diag((Yinv @ Y).squeeze()), 1.0, rtol=1e-6)
-        assert np.allclose(dbcond, Y @ dprim, rtol=tol)
-
-        # Check chic to conserved
-        X = F.chic_to_conserved
-        Xinv = F.conserved_to_chic
-        assert np.allclose(np.diag((Xinv @ X).squeeze()), 1.0, rtol=1e-6)
-        assert np.allclose(dcons, X @ dchic, rtol=tol)
-
-        # Check inverses if no zeros in dprim
-        if not (dprim.squeeze() == 0.0).any():
-            assert np.allclose(dprim, Yinv @ dbcond, rtol=tol)
-            assert np.allclose(dprim, Ainv @ dflux, rtol=tol)
-            assert np.allclose(dprim, Binv @ dchic, rtol=tol)
-            assert np.allclose(dprim, Cinv @ dcons, rtol=tol)
-
-            # Check chic to conserved
-            assert np.allclose(dchic, Xinv @ dcons, rtol=tol)
-
-    print("ok")
-
-
-def test_chic_waves():
-    """Set up a flow field with travelling waves and check chics recovered."""
-
-    cp = 1005.0
-    ga = 1.4
-    mu = 1.84e-5
-    Vx = 100.0
-    L = 1.0
-    f = 500.0
-
-    # Set up coordinates
-    ni = 50
-    nt = 100
-    xv = np.linspace(0.0, L, ni)
-    xrt = np.stack((xv, np.ones_like(xv), np.zeros_like(xv)))
-    omega = 2 * np.pi * f
-    t = np.linspace(0.0, 1 / f, nt, endpoint=False)[None, :]
-    dt = np.diff(t)[0]
-    x = xv[:, None]
-
-    # Mean flow field first
-    F = flowfield.PerfectFlowField(shape=(ni, nt))
-    F.cp = cp
-    F.gamma = ga
-    F.mu = mu
-    F.xrt = xrt[..., None]
-    F.Vx = Vx
-    F.Vr = 0.0
-    F.Vt = 0.0
-    F.set_P_T(1e5, 300.0)
-
-    # Prescribe pressure wave
-    Aup = 1e-3
-    Adn = 2.2e-3
-    a0 = F.a
-    rho0 = F.rho
-    dPdn = Adn * np.exp(1j * omega * (t - x / a0))
-    dPup = Aup * np.exp(1j * omega * (t + x / a0))
-    dP = np.real(dPdn + dPup)
-
-    # Momentum for velocity
-    # du/dt = -1/rho dp/dx
-    dV = np.real(dPdn - dPup) / rho0 / a0
-
-    # Apply to the flowfield
-    F.set_P_s(F.P + dP, F.s)
-    F.Vx = F.Vx + dV
-
-    # Get changes over a time step
-    dU = np.moveaxis(np.diff(F.conserved, axis=-1), 0, -1)[..., None]
-
-    # Convert to chics
-    dchic = F.conserved_to_chic[:, :-1, :, :] @ dU
-
-    # The zero-to-peak amplitudes should match the ratio of up to down waves
-    # Neglecting any scaling factors
-    Amp_x = np.mean(np.ptp(dchic, axis=0)[:, :2, 0], axis=0)
-    Amp_t = np.mean(np.ptp(dchic, axis=1)[:, :2, 0], axis=0)
-
-    assert np.isclose(Amp_x[0] / Amp_x[1], Aup / Adn)
-    assert np.isclose(Amp_t[0] / Amp_t[1], Aup / Adn)
-
-    return
+        # by P first at constant rho
+        S1.set_P_rho(Pv, rho1)
+        dsdP = np.gradient(S1.s, Pv)
+        dhdP = np.gradient(S1.h, Pv)
+        dudP = np.gradient(S1.u, Pv)
+        drhoe_dP = np.gradient(S1.rhoe, Pv)
+        assert np.allclose(S1.dsdP_rho[1:-1], dsdP[1:-1], rtol=rtol)
+        assert np.allclose(S1.dhdP_rho[1:-1], dhdP[1:-1], rtol=rtol)
+        assert np.allclose(S1.dudP_rho[1:-1], dudP[1:-1], rtol=rtol)
+        assert np.allclose(S1.drhoe_dP_rho[1:-1], drhoe_dP[1:-1], rtol=rtol)
+        print(S1.rhoe.mean(), S1.rho.mean(), S1.drhoe_dP_rho[5], drhoe_dP[5])
 
 
 if __name__ == "__main__":

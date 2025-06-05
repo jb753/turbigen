@@ -278,8 +278,8 @@ def mix_out(F):
 
     x = F.x.squeeze()
     r = F.r.squeeze()
-    rt = F.rt.squeeze()
     t = F.t.squeeze()
+    rt = r * t
 
     assert np.ptp(F.Omega) == 0.0
     Omega = np.float64(F.Omega.mean())
@@ -391,32 +391,32 @@ def mix_out(F):
     if not np.isclose(mass_mix, mass_tot, atol=mass_tol):
         raise Exception(
             f"""Mixing out did not converge:
-    mass {mass_mix, mass_tot, mass_tol}, rel_err={(mass_mix-mass_tot)/mass_tol:.3f}"""
+    mass {mass_mix, mass_tot, mass_tol}, rel_err={(mass_mix - mass_tot) / mass_tol:.3f}"""
         )
 
     if not np.isclose(xmom_mix, xmom_tot, atol=mom_tol):
         raise Exception(
             f"""Mixing out did not converge:
-    xmom {xmom_mix, xmom_tot, mom_tol}, rel_err={(xmom_mix-xmom_tot)/mom_tol:.3f}"""
+    xmom {xmom_mix, xmom_tot, mom_tol}, rel_err={(xmom_mix - xmom_tot) / mom_tol:.3f}"""
         )
 
     if not np.isclose(rmom_mix, rmom_tot, atol=mom_tol):
         raise Exception(
             f"""Mixing out did not converge:
-    rmom {rmom_mix, rmom_tot, mom_tol}, rel_err={(rmom_mix-rmom_tot)/mom_tol:.3f}"""
+    rmom {rmom_mix, rmom_tot, mom_tol}, rel_err={(rmom_mix - rmom_tot) / mom_tol:.3f}"""
         )
 
     if not np.isclose(rtmom_mix, rtmom_tot, atol=mom_tol * r_mix):
         raise Exception(
             f"""Mixing out did not converge:
             rtmom {rtmom_mix, rtmom_tot, mom_tol * r_mix},
-            rel_err={(rtmom_mix-rtmom_tot)/mom_tol/r_mix:.3f}"""
+            rel_err={(rtmom_mix - rtmom_tot) / mom_tol / r_mix:.3f}"""
         )
 
     if not np.isclose(ho_mix, ho_tot, atol=ho_tol):
         raise Exception(
             f"""Mixing out did not converge:
-    energy {ho_mix, ho_tot, ho_tol}, rel_err={(ho_mix-ho_tot)/ho_tol:.3f}"""
+    energy {ho_mix, ho_tot, ho_tol}, rel_err={(ho_mix - ho_tot) / ho_tol:.3f}"""
         )
 
     try:

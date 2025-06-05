@@ -589,75 +589,6 @@ class Kinematics:
         return turbigen.util.node_to_face3(self.x)
 
     @dependent_property
-    def dAi(self):
-        # Vector area for i=const faces, Gauss' theorem method
-        if self.ndim < 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      j>
-        #
-        if self.ndim > 3:
-            v = self.xrrt[:, :, :, :, 0]  # Discard any time dimension
-        else:
-            v = self.xrrt
-        A = v[:, :, :-1, :-1]
-        B = v[:, :, :-1, 1:]
-        C = v[:, :, 1:, 1:]
-        D = v[:, :, 1:, :-1]
-
-        return util.dA_Gauss(A, B, C, D)
-
-    @dependent_property
-    def dAj(self):
-        # Vector area for j=const faces, Gauss' theorem method
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      i>
-        #
-        v = self.xrrt
-        A = v[:, :-1, :, :-1]
-        B = v[:, :-1, :, 1:]
-        C = v[:, 1:, :, 1:]
-        D = v[:, 1:, :, :-1]
-
-        return -util.dA_Gauss(A, B, C, D)
-
-    @dependent_property
-    def dAk(self):
-        # Vector area for k=const faces, Gauss' theorem method
-        if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      i>
-        #
-        v = self.xrrt
-        A = v[:, :-1, :-1, :]
-        B = v[:, :-1, 1:, :]
-        C = v[:, 1:, 1:, :]
-        D = v[:, 1:, :-1, :]
-
-        return util.dA_Gauss(A, B, C, D)
-
-    @dependent_property
     def vol(self):
         # Volume
         if not self.ndim == 3:
@@ -1331,8 +1262,8 @@ class Composites:
             (
                 self.ho,
                 self.s,
-                self.tanAlpha,
-                self.tanBeta,
+                self.Vt / self.Vm,  # tanAlpha
+                self.Vr / self.Vx,  # tanBeta
                 self.P,
             )
         )
@@ -1451,14 +1382,6 @@ class Composites:
         return B
 
     @dependent_property
-    def chic_to_conserved(self):
-        return self.primitive_to_conserved @ self.chic_to_primitive
-
-    @dependent_property
-    def chic_to_bcond(self):
-        return self.primitive_to_bcond @ self.chic_to_primitive
-
-    @dependent_property
     def chic_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         characteristic variables
@@ -1495,110 +1418,12 @@ class Composites:
         return Binv
 
     @dependent_property
-    def primitive_to_flux(self):
-        """Get a matrix at every node that converts linear pertubations in
-        primitive variables [rho, Vx, Vr, Vt, P]
-        to perturbations in
-        flux variables
-        [rhoVx, rhoVx^2+P, rhoVxVr, rhoVxrVt, rhoVx*ho].
-
-        Returns
-        -------
-        A: (npts, 5, 5) array
-
-        """
-
-        Z = np.zeros(self.shape)
-        one = np.ones(self.shape)
-        VxVr = self.Vx * self.Vr
-        VxrVt = self.Vx * self.rVt
-        VxVx = self.Vx**2
-        dE_drho = self.Vx * self.ho + self.rhoVx * self.dhdrho_P
-        dE_dVx = self.rho * self.ho + self.rhoVx * self.Vx
-        A = np.stack(
-            (
-                (self.Vx, VxVx, VxVr, VxrVt, dE_drho),  # d/rho
-                (self.rho, 2.0 * self.rhoVx, self.rhoVr, self.rhorVt, dE_dVx),  # d/dVx
-                (Z, Z, self.rhoVx, Z, self.rhoVx * self.Vr),  # d/dVr
-                (Z, Z, Z, self.rhoVx * self.r, self.rhoVx * self.Vt),  # d/dVt
-                (Z, one, Z, Z, self.rhoVx * self.dhdP_rho),  # d/dP
-            )
-        )
-        A = np.moveaxis(A, (0, 1), (-1, -2))
-        return A
-
-    @dependent_property
     def flux_to_chic(self):
         return self.primitive_to_chic @ self.flux_to_primitive
 
     @dependent_property
     def bcond_to_cons(self):
         return self.primitive_to_conserved @ self.bcond_to_primitive
-
-    @dependent_property
-    def flux_to_primitive(self):
-        """Get a matrix at every node that converts linear pertubations in
-        flux variables
-        [rhoVx, rhoVx^2+P, rhoVxVr, rhoVxrVt, rhoVx*ho].
-        to perturbations in
-        primitive variables [rho, Vx, Vr, Vt, P]
-
-        Returns
-        -------
-        Ainv: (npts, 5, 5) array
-        """
-        return np.linalg.inv(self.primitive_to_flux)
-
-    @dependent_property
-    def primitive_to_bcond(self):
-        """Get a matrix at every node that converts linear pertubations in
-        primitive variables [rho, Vx, Vr, Vt, P]
-        to perturbations in
-        boundary condition variables
-        [ho, s, tanAlpha, tanBeta, P].
-
-        Returns
-        -------
-        Y: (npts, 5, 5) array
-
-        """
-
-        Z = np.zeros(self.shape)
-        one = np.ones(self.shape)
-
-        dtanAl_dVx = -self.tanAlpha * self.Vx / self.Vm**2
-        dtanAl_dVr = -self.tanAlpha * self.Vr / self.Vm**2
-        dtanAl_dVt = 1.0 / self.Vm
-
-        dtanBe_dVx = -self.Vr / self.Vx**2
-        dtanBe_dVr = 1.0 / self.Vx
-
-        Y = np.stack(
-            (
-                (self.dhdrho_P, self.dsdrho_P, Z, Z, Z),  # d/rho
-                (self.Vx, Z, dtanAl_dVx, dtanBe_dVx, Z),  # d/dVx
-                (self.Vr, Z, dtanAl_dVr, dtanBe_dVr, Z),  # d/dVr
-                (self.Vt, Z, dtanAl_dVt, Z, Z),  # d/dVt
-                (self.dhdP_rho, self.dsdP_rho, Z, Z, one),  # d/dP
-            )
-        )
-        Y = np.moveaxis(Y, (0, 1), (-1, -2))
-        return Y
-
-    @dependent_property
-    def bcond_to_primitive(self):
-        """Get a matrix at every node that converts linear pertubations in
-        boundary condition variables
-        [ho, s, tanAlpha, tanBeta, P].
-        to perturbations in
-        primitive variables [rho, Vx, Vr, Vt, P]
-
-        Returns
-        -------
-        Yinv: (npts, 5, 5) array
-
-        """
-        return np.linalg.inv(self.primitive_to_bcond)
 
     def resolve_meridional(self, psi):
         """Replace axial and radial components by resolving at angle to axial dirn."""

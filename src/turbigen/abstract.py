@@ -331,6 +331,18 @@ class FlowField(ABC):
 
     @property
     @abstractmethod
+    def xrt(self):
+        """Vector of polar coordinates []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def xyz(self):
+        """Vector of Cartesian coordinates []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def Nb(self):
         """Number of blades, circumferential periodicity [--]."""
         raise NotImplementedError()
@@ -417,6 +429,18 @@ class FlowField(ABC):
         ----------
         conserved : float
             Vector of [rho, rhoVx, rhoVr, rhorVt, rhoe]
+
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_primitive(self, primitive):
+        """Vector of primitive variables.
+
+        Parameters
+        ----------
+        primitive : float
+            Vector of [rho, Vx, Vr, Vt, P]
 
         """
         raise NotImplementedError()
@@ -565,6 +589,36 @@ class FlowField(ABC):
 
     @property
     @abstractmethod
+    def primitive(self):
+        """Vector of primitive variables []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def fluxx(self):
+        """Vector of fluxes in x-direction []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def fluxr(self):
+        """Vector of fluxes in r-direction []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def fluxt(self):
+        """Vector of fluxes in t-direction []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def bcond(self):
+        """Vector of boundary condition variables []."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def e(self):
         """Specific total energy [J/kg]."""
         raise NotImplementedError()
@@ -631,6 +685,36 @@ class FlowField(ABC):
 
     @property
     @abstractmethod
+    def rhoVx(self):
+        """Volumetric axial momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoVr(self):
+        """Volumetric radial momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoVt(self):
+        """Volumetric angular momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhorVt(self):
+        """Volumetric angular momentum [kg/m^2/s]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def rhoe(self):
+        """Volumetric total energy [J/m^3]."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def drhoe_drho_P(self):
         """Derivative of volumetric total energy with respect to density at constant pressure []."""
         raise NotImplementedError()
@@ -640,6 +724,24 @@ class FlowField(ABC):
     def drhoe_dP_rho(self):
         """Derivative of volumetric total energy with respect to pressure at constant density []."""
         raise NotImplementedError()
+
+    # @property
+    # @abstractmethod
+    # def dAi(self):
+    #     """Areas of constant i faces [m^2]."""
+    #     raise NotImplementedError()
+    #
+    # @property
+    # @abstractmethod
+    # def dAj(self):
+    #     """Areas of constant j faces [m^2]."""
+    #     raise NotImplementedError()
+    #
+    # @property
+    # @abstractmethod
+    # def dAk(self):
+    #     """Areas of constant k faces [m^2]."""
+    #     raise NotImplementedError()
 
 
 class Block(ABC):
