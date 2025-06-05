@@ -15,7 +15,7 @@ contains
     include 'viscous.f90'
     include 'fluxes.f90'
     include 'multigrid.f90'
-    include 'matmul.f90'
+
 
     ! Using the current flow field, calculate changes to conserved
     ! variables that advance each cell in time. Specifically,
