@@ -1,5 +1,5 @@
 
-Data Structures
+Data structures
 ===============
 
 This page documents the internal data structures used in :program:`turbigen`.
@@ -7,8 +7,10 @@ It is intended as a reference for users extending the program using custom
 plugins or developers modifying the source code.
 
 
-Working fluids
---------------
+.. _state:
+
+State
+-----
 
 Both perfect and real working fluids are represented by a :class:`State`
 class, which has a common interface for setting and reading thermodynamic
@@ -105,6 +107,8 @@ Thermodynamic and transport properties of the fluid are accessed as attributes o
    * - ``State.u``
      - Specific internal energy
      - J/kg
+
+.. _flowfield:
 
 Flow fields
 -----------
@@ -249,6 +253,8 @@ In addition to all the pure thermodynamic properties defined in
    * - ``FlowField.x``
      - Axial coordinate
      - m
+
+.. _meanline:
 
 Mean line
 ---------

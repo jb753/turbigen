@@ -11,8 +11,12 @@ from abc import ABC, abstractmethod
 
 
 class State(ABC):
-    """Working fluids
-    --------------
+    """
+
+    .. _state:
+
+    State
+    -----
 
     Both perfect and real working fluids are represented by a :class:`State`
     class, which has a common interface for setting and reading thermodynamic
@@ -271,6 +275,9 @@ class State(ABC):
 
 class FlowField(ABC):
     """
+
+    .. _flowfield:
+
     Flow fields
     -----------
 
@@ -556,8 +563,10 @@ class FlowField(ABC):
 class MeanLine(ABC):
     """
 
-    Mean line
-    ---------
+    .. _meanline:
+
+    MeanLine
+    --------
 
     The :class:`MeanLine` class encapsulates the quasi-one-dimensional geometry
     and flow field of a turbomachine. In addition to thermodynamic states and

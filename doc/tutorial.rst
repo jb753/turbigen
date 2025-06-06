@@ -220,7 +220,7 @@ We can now start to add the :ref:`tut-ml-algo` to the `forward` function inside
 The first task is to calculate the ideal exit enthalpy :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)`
 in Eqn. :eq:`eqn-eta`. Mean-line design functions should be written to make
 no assumptions about the working fluid equation of state --- this is accomplished
-using the fluid modelling abstractions in :py:mod:`turbigen.fluid`. We take a
+using the fluid modelling abstractions of the :ref:`state` class. We take a
 copy of the inlet state, and set its pressure and entropy to the required
 values.
 
@@ -384,8 +384,8 @@ Implementing backward
 The `backward` function serves as a verification check that the mean-line
 matches the design intent, and also to extract design variables from a
 mixed-out CFD solution. We add the design variables as keys in the output
-dictionary, using the attributes of the flowfield class to calculate them. Many
-useful quantities are already available in the `mean_line` object, such as efficiency.
+dictionary, using the attributes of the :ref:`meanline` class to calculate them. Many
+useful quantities are already available in the :ref:`meanline` object, such as efficiency.
 
 .. code-block:: python
    :caption: ./plugins/fan.py
@@ -652,7 +652,7 @@ Extensions
 
 This tutorial has demonstrated some of the functionality of
 :program:`turbigen`. Within the current choice of parameterisation, any change to
-the design is just an edit to the `config.yaml`, as described in ???
+the design is just an edit to the `config.yaml`.
 
 * Increase the number of blades by changing `DFL`
 * Increase the grid density under `mesh`

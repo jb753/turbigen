@@ -112,7 +112,7 @@ Then, create a new Python file in the `plug` directory, e.g.
 
             Parameters
             ----------
-            So1: Fluid
+            So1: State
                 The working fluid and its thermodynamic state at inlet.
             phi: float
                 Flow coefficient at inlet.
@@ -132,7 +132,7 @@ Then, create a new Python file in the `plug` directory, e.g.
                 Shaft angular velocities at all stations [rad/s].
             Vxrt: (3, 2*nrow) array
                 Velocity components at all stations [m/s].
-            S: (2*nrow,) list of Fluid
+            S: (2*nrow,) list of State
                 Static states for all stations.
 
             '''
@@ -193,7 +193,7 @@ Then, create a new Python file in the `plug` directory, e.g.
 
 You will need to implement two static methods: `forward()` and `backward()`.
 
-The `forward()` function takes as arguments an inlet state object and
+The `forward()` function takes as arguments an inlet :ref:`state` object and
 some duty, geometric, or aerodynamic design variables. This function
 returns all information required to lay out the mean-line: radii, annulus
 areas, angular velocities, velocity components, and thermodynamic states at
@@ -226,7 +226,7 @@ the `MyCustomMeanLine` class and calls its `forward()` method like:
 Some notes on implementing the `forward()` method:
 
 * Retain generality of the working fluid by using the set property methods
-  of the `Fluid` class, as in the example above. This is preferable to
+  of the :ref:`state` class, as in the example above. This is preferable to
   hard-coding calculations assuming a specific equation of state such as
   ideal gas.
 * Specify aerodynamic design variables instead of geometric ones, e.g.
@@ -251,7 +251,7 @@ Some notes on implementing the `forward()` method:
   total-to-static pressure ratio requires iteration because the exit
   dynamic head is not known a priori.
 
-The `backward()` function takes a mean-line flow field as its only
+The `backward()` function takes a :ref:`meanline` flow field object as its only
 argument, and calculates a dictionary of the arguments to `forward()`.
 Given a suitably averaged CFD solution, `backward()` is a post-processing
 step that allows comparison of the three-dimensional simulated flow field
