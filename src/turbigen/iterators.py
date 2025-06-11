@@ -22,6 +22,11 @@ class IteratorConfig(ABC):
         """Ensure that the iterator is correctly configured."""
         raise NotImplementedError
 
+    def interpolate(self, config):
+        """Use a fitted design space to set design variables."""
+        logger.info(f"interpolate() is not implemented for {self.__class__.__name__}. ")
+        del config
+
 
 @dataclasses.dataclass
 class Deviation(IteratorConfig):
@@ -290,6 +295,27 @@ class MeanLine(IteratorConfig):
                 log_data["D" + vname] = dvar  # Change
 
         return converged, log_data
+
+    def interpolate(self, config):
+        """Use a fitted design space to set loss guess."""
+
+        dspace = config.design_space
+
+        # Function to extract mean-line quantity of interest
+        def extract_mean_line(config, vname):
+            return config.mean_line_actual[vname]
+
+        # Loop over the design variables we want to match
+        for vname in self.tolerance:
+            logger.iter(f"Interpolating mean-line design variable {vname}")
+            var_nom = config.mean_line.design_vars[vname]
+            var_interp = dspace.interpolate(extract_mean_line, config, vname=vname)
+            assert np.shape(var_interp) == np.shape(var_nom)
+            logger.iter(f"  Nominal value: {var_nom}")
+            logger.iter(f"  New value: {var_interp}")
+
+            # Assign back to the configuration
+            config.mean_line.design_vars[vname] = var_interp
 
 
 @dataclasses.dataclass

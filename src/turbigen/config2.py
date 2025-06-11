@@ -881,9 +881,6 @@ class TurbigenConfig:
         Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
         logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
-        # Vary operating point if needed
-        # self.set_operating_point()
-
         # We are now ready to generate mesh and run CFD
         # There are three cases to consider
         # (1) Skipping from guess: just use existing mesh and solution
@@ -909,6 +906,12 @@ class TurbigenConfig:
         logger.info("Post-processing...")
         if not skip_post:
             self.post_process_all()
+
+    def interpolate_all_iterators(self):
+        """Use fitted design space to set values for all iterated variables."""
+
+        for iterator in self.iterate:
+            iterator.interpolate(self)
 
     def step_iterate(self):
         """Apply all iterators to the configuration."""

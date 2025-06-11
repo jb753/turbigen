@@ -75,7 +75,11 @@ class IndependentConfig:
         i = 0  # Keep track of index in x
 
         for k in self.mean_line:
-            x[i] = config.mean_line_actual[k]
+            # Default to actual value if set, otherwise nominal
+            if k in config.mean_line_actual:
+                x[i] = config.mean_line_actual[k]
+            else:
+                x[i] = config.mean_line.design_vars[k]
             i += 1
 
         for k1 in self.nblade:
@@ -151,8 +155,18 @@ class DesignSpace:
         # Could parallelize this for big datasets
         # print(f"Loading configs from {self.datum.workdir}...")
         logger.iter(f"Loading design space from {self.basedir}")
+        logger.iter(
+            f"fast_load={self.fast_load}, basis={self.basis}, order={self.order}"
+        )
         fnames = sorted(self.basedir.glob("*/config.yaml"))
-        fnames = [f for f in fnames if f.parent.name.isnumeric()]
+        # Remove configs two levels deep
+        # (e.g. from a previous run of the design space)
+        fnames = [
+            f
+            for f in fnames
+            if f.parent.name.isnumeric() and f.parent.parent == self.basedir
+        ]
+
         confs = []
         for f in fnames:
             try:
@@ -165,6 +179,7 @@ class DesignSpace:
                 confs.append(c)
             except Exception as e:
                 logger.iter(f"Error reading {f}")
+        logger.iter(f"Loaded {len(confs)} configurations")
 
         # Nothing else to do if no configs found
         if not confs:
@@ -191,10 +206,13 @@ class DesignSpace:
 
         # Now exclude any unconverged samples
         self.samples = [c for c in confs if c.converged]
+        logger.iter(f"Found {len(self.samples)} converged samples")
 
         # If we have samples, pre-calculate for fitting
+        logger.iter("Setting up the design space...")
         if self.samples:
             self.setup()
+        logger.iter("Done.")
 
     def normalise(self, x):
         nx = x.shape[0]
@@ -345,24 +363,42 @@ class DesignSpace:
         Parameters
         ----------
         func : callable
-            Function to interpolate, takes a config object and returns a scalar.
-        confs : (n,) list of turbigen.config2.TurbigenConfig
+            Function to interpolate, takes a config object and returns a scalar or 1D array.
+        confs : config or (n,) list of turbigen.config2.TurbigenConfig
             Query configurations to perform interpolation at.
         kwargs : dict
             Additional keyword arguments to pass to the function.
 
         Returns
         -------
-        yq : (n,) array
+        yq : scalar or (n,) array
             Values of the fit at query points.
 
         """
 
+        try:
+            len(confs)
+            flag_scalar = False
+        except TypeError:
+            # If confs is a single config, convert to a list
+            confs = [confs]
+            flag_scalar = True
+
         # Get independent variable vectors at query points
         xq = np.stack([self.independent.get_independent(c) for c in confs], axis=-1)
 
+        # Check the callable gives the right shape
+        yq = func(confs[0], **kwargs)
+        assert np.shape(yq) == () or np.ndim(yq) == 1
+
         # Now evaluate the function at the query points
-        return self.evaluate(func, xq, **kwargs)
+        yq = self.evaluate(func, xq, **kwargs)
+
+        # If we had a single config, return a scalar
+        if flag_scalar:
+            yq = yq[0]
+
+        return yq
 
     def meshgrid(self, datum, N=11, **kwargs):
         # Get datum x

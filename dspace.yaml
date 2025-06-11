@@ -35,11 +35,11 @@ mesh:
 
 blades:
     - spf: 0.5
-      q_thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
-      q_camber: [0., 0., 0.0]
+      thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      camber: [0., 0., 0.0]
     - spf: 0.5
-      q_thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
-      q_camber: [0., 0., 0.0]
+      thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      camber: [0., 0., 0.0]
       tip: 0.01
 
 nblade:
@@ -47,7 +47,7 @@ nblade:
   - Co: 0.6
 
 solver:
-  type: emb
+  type: ember
   n_step: 1000
   n_step_avg: 100
   n_step_ramp: 1000
@@ -83,4 +83,4 @@ design_space:
       phi2: [0.4, 1.2]
       psi: [0.8, 2.4]
   order: 3
-  nsample: 32
+  nsample: 4

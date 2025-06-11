@@ -190,12 +190,12 @@ def main():
     # If we are sampling a design space, do that and exit
     if conf.design_space and not args.no_job:
         # Put datum in non-numbered directory
-        conf.workdir = conf.workdir / "datum"
-        conf.save()
+        # conf.workdir = conf.workdir / "datum"
+        # conf.save()
         # If datum not ran yet, run it first
-        if not conf.mean_line_actual:
-            logger.iter("Running the datum...")
-            conf.job.submit(conf.fname)
+        # if not conf.mean_line_actual:
+        # logger.iter("Running the datum...")
+        # conf.job.submit(conf.fname)
         logger.iter("Sampling the design space...")
         samples = conf.design_space.sample(conf)
         if not samples:
@@ -224,6 +224,11 @@ def main():
     else:
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
         basedir = conf.workdir
+
+        if conf.design_space.samples:
+            logger.info("Initialising iterators with fitted design space.")
+            conf.interpolate_all_iterators()
+
         for iiter in range(conf.max_iter):
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
