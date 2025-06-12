@@ -1910,7 +1910,7 @@ def from_jmesh(blocks, conn_face, state):
     return g
 
 
-def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
+def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
     """Generate a grid object from Cartesian coordinates with face-to-face patching.
 
     To greatly simplify block connectivity, all periodic boundaries occupy
@@ -1949,7 +1949,9 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
 
     # Initialise the blocks
     blocks = []
-    for xyzi, labi in zip(xyz, labels):
+    for i in range(len(xyz)):
+        xyzi = xyz[i]
+        labi = labels[i]
         if sector:
             xrt = xyzi.copy()
             xrt[1] += roffset
@@ -1962,17 +1964,20 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True):
             xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces
-        patches = (
-            PeriodicPatch(i=0),
-            PeriodicPatch(i=-1),
-            PeriodicPatch(j=0),
-            PeriodicPatch(j=-1),
-            PeriodicPatch(k=0),
-            PeriodicPatch(k=-1),
-        )
+        if not patches:
+            patches_block = (
+                PeriodicPatch(i=0),
+                PeriodicPatch(i=-1),
+                PeriodicPatch(j=0),
+                PeriodicPatch(j=-1),
+                PeriodicPatch(k=0),
+                PeriodicPatch(k=-1),
+            )
+        else:
+            patches_block = patches[i]
 
         # block = Block.from_coordinates(np.flip(xrt, axis=-1), Nb, patches, label=labi)
-        block = Block.from_coordinates(xrt, Nb, patches, label=labi)
+        block = Block.from_coordinates(xrt, Nb, patches_block, label=labi)
         block._metadata.update(state._metadata)
         blocks.append(block)
 

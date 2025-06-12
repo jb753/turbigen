@@ -59,6 +59,7 @@ iterate:
   mean_line:
     tolerance:
       Ys: 0.005
+    relaxation_factor: 1.0
   deviation:
   incidence:
     tolerance: 10.

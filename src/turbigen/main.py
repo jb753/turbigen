@@ -166,9 +166,12 @@ def main():
     # the config is valid, and pathnames are absolute
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
+    logger.debug("Configuration intialised, writing back...")
     # Resave the config so that the internal state and
     # the YAML file are consistent (e.g. if submitting a job)
-    conf.save()
+    # We have not changed grid or guess yet, so do not overwrite those pickles
+    conf.save(overwrite_pkl=False)
+    logger.debug("Done.")
 
     # Determine if we are overriding iteration
     iterate_flag = conf.iterate and not args.no_iteration
@@ -222,16 +225,26 @@ def main():
         conf.converged = converged = not args.no_solve
         conf.save()
     else:
-        logger.iter(f"Iterating for max {conf.max_iter} iterations...")
         basedir = conf.workdir
 
         if conf.design_space.samples:
             logger.info("Initialising iterators with fitted design space.")
             conf.interpolate_all_iterators()
 
+        logger.iter(f"Iterating for max {conf.max_iter} iterations...")
+
+        old_nstep = conf.solver.n_step
+
         for iiter in range(conf.max_iter):
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
+
+            if iiter == 0:
+                conf.solver.n_step = int(old_nstep * (conf.fac_nstep_initial))
+                logger.iter(f"Using initial n_step={conf.solver.n_step}")
+            elif iiter == 1:
+                conf.solver.n_step = old_nstep
+                logger.iter(f"Reset n_step={conf.solver.n_step}")
 
             # Ensure that the iteration directory is empty
             # Do not want to pick up old meshes etc.

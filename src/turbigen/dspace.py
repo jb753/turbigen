@@ -209,10 +209,8 @@ class DesignSpace:
         logger.iter(f"Found {len(self.samples)} converged samples")
 
         # If we have samples, pre-calculate for fitting
-        logger.iter("Setting up the design space...")
         if self.samples:
             self.setup()
-        logger.iter("Done.")
 
     def normalise(self, x):
         nx = x.shape[0]

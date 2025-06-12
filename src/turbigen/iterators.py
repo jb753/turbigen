@@ -24,7 +24,7 @@ class IteratorConfig(ABC):
 
     def interpolate(self, config):
         """Use a fitted design space to set design variables."""
-        logger.info(f"interpolate() is not implemented for {self.__class__.__name__}. ")
+        logger.iter(f"interpolate() is not implemented for {self.__class__.__name__}. ")
         del config
 
 
@@ -70,32 +70,26 @@ class Deviation(IteratorConfig):
 
         return converged, log_data
 
-    # def interpolate(self, config):
-    #     """Correct for deviation using a fitted design space."""
-    #
-    #     # We need to interpolate q_camber[:, 1] at config
-    #     dspace = config.design_space
-    #
-    #     # Function to extract the blade camber
-    #     def extract_camber(config, irow, isect):
-    #         return config.blades[irow][0].q_camber[isect, 1]
-    #
-    #     # Loop over rows
-    #     for irow in range(config.nrow):
-    #         blade = config.blades[irow][0]
-    #         # Loop over sections
-    #         for isect in range(blade.nsect):
-    #             logger.iter(f"Interpolating blade {irow} section {isect}")
-    #             logger.iter(f"Old camber: {blade.q_camber[isect, 1]}")
-    #             blade.q_camber[isect, 1] = dspace.interpolate(
-    #                 extract_camber,
-    #                 [
-    #                     config,
-    #                 ],
-    #                 irow=irow,
-    #                 isect=isect,
-    #             ).item()
-    #             logger.iter(f"New camber: {blade.q_camber[isect, 1]}")
+    def interpolate(self, config):
+        """Correct for deviation using a fitted design space."""
+
+        logger.iter("Interpolating deviation correction")
+
+        # Function to extract the blade TE recamber
+        def extract_camber(config, irow):
+            return config.blades[irow][0].camber[:, 1]
+
+        # Loop over rows
+        for irow in range(config.nrow):
+            blade = config.blades[irow][0]
+            logger.iter(f"Blade {irow}")
+            logger.iter(f"  Old TE recamber: {blade.camber[:, 1]}")
+            blade.camber[:, 1] = config.design_space.interpolate(
+                extract_camber,
+                config,
+                irow=irow,
+            )
+            logger.iter(f"  New TE recamber: {blade.camber[:, 1]}")
 
 
 @dataclasses.dataclass
@@ -222,6 +216,28 @@ class Incidence(IteratorConfig):
 
         return converged, log_data
 
+    def interpolate(self, config):
+        """Use a fitted design space to set LE recamber."""
+
+        logger.iter("Interpolating incidence correction")
+
+        # Function to extract the LE recamber
+        def extract_camber(config, irow):
+            return config.blades[irow][0].camber[:, 0]
+
+        # Loop over rows
+        for irow in range(config.nrow):
+            blade = config.blades[irow][0]
+
+            logger.iter(f"Blade {irow}")
+            logger.iter(f"  Old LE recamber: {blade.camber[:, 0]}")
+            blade.camber[:, 0] = config.design_space.interpolate(
+                extract_camber,
+                config,
+                irow=irow,
+            )
+            logger.iter(f"  New LE recamber: {blade.camber[:, 0]}")
+
 
 @dataclasses.dataclass
 class MeanLine(IteratorConfig):
@@ -299,22 +315,32 @@ class MeanLine(IteratorConfig):
     def interpolate(self, config):
         """Use a fitted design space to set loss guess."""
 
-        dspace = config.design_space
-
         # Function to extract mean-line quantity of interest
+        # Although the converged samples have actual mean line,
+        # the query config does not have actual mean line yet.
+        # So fall back to the nominal value if actual is unavailable
         def extract_mean_line(config, vname):
-            return config.mean_line_actual[vname]
+            v_actual = config.mean_line_actual.get(vname)
+            v_nom = config.mean_line.design_vars[vname]
+            return v_actual if v_actual is not None else v_nom
 
         # Loop over the design variables we want to match
         for vname in self.tolerance:
             logger.iter(f"Interpolating mean-line design variable {vname}")
+
+            # Get nominal value
             var_nom = config.mean_line.design_vars[vname]
-            var_interp = dspace.interpolate(extract_mean_line, config, vname=vname)
-            assert np.shape(var_interp) == np.shape(var_nom)
             logger.iter(f"  Nominal value: {var_nom}")
+
+            # Interpolate this variable from the design space
+            var_interp = config.design_space.interpolate(
+                extract_mean_line, config, vname=vname
+            )
             logger.iter(f"  New value: {var_interp}")
 
             # Assign back to the configuration
+            # Ensure that the shape matches
+            assert np.shape(var_interp) == np.shape(var_nom)
             config.mean_line.design_vars[vname] = var_interp
 
 
@@ -413,3 +439,29 @@ class Repeat(IteratorConfig):
         inlet.spf = spf
 
         return bool(err < self.rtol), {"Repeat_dTo": err}
+
+    def interpolate(self, config):
+        """Use a fitted design space to set repeating profiles."""
+        logger.iter("Interpolating repeating profiles")
+
+        # Define a new span fraction vector
+        # Clustered towards the endwalls
+        spf_new = config.inlet.spf = util.cluster_cosine(50)
+
+        # Function to extract profiles from the design space at target spf
+        def extract_profile(config, ivar):
+            return np.interp(spf_new, config.inlet.spf, config.inlet.profiles[ivar])
+
+        # Loop over profile variables
+        # And interpolate each from the design space
+        # Apply clipping to the normalised profiles
+        clip = [self.dPo_max, self.dTo_max, self.dAlpha_max, self.dBeta_max]
+        config.inlet.profiles = np.full((4, len(spf_new)), np.nan)
+        for ivar in range(4):
+            var = config.design_space.interpolate(extract_profile, config, ivar=ivar)
+            var_clip = np.clip(
+                var,
+                -clip[ivar],
+                clip[ivar],
+            )
+            config.inlet.profiles[ivar] = var_clip

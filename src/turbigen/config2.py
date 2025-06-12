@@ -83,6 +83,9 @@ class TurbigenConfig:
     max_iter: int = 20
     """Maximum number of iterations to perform."""
 
+    fac_nstep_initial: float = 1.0
+    """Multiplier on nstep for the first run of iterating case."""
+
     """Settings for blade number selection."""
     grid: turbigen.grid.Grid = None
     guess: turbigen.grid.Grid = None
@@ -123,7 +126,7 @@ class TurbigenConfig:
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname=None):
+    def save(self, fname=None, overwrite_pkl=True):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
@@ -145,11 +148,17 @@ class TurbigenConfig:
                 del data[k]
             else:
                 # Otherwise, save the grid to a separate pickle
-                # and replace the grid with the filename
+                # and replace the grid with the filename in yaml
                 fname_pkl = self.workdir / f"{k}.pkl.gz"
-                with gzip.open(fname_pkl, "wb") as f:
-                    pickle.dump(val, f)
                 data[k] = str(fname_pkl)
+
+                if fname_pkl.exists() and not overwrite_pkl:
+                    logger.debug(f"Not overwriting existing {fname_pkl}")
+                    continue
+                else:
+                    logger.debug(f"Saving {k} to {fname_pkl}")
+                    with gzip.open(fname_pkl, "wb") as f:
+                        pickle.dump(val, f)
 
         # Convert convergence history to a filename
         if self.solver and (conv := self.solver.convergence):
