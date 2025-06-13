@@ -82,7 +82,7 @@ def get_dimensional_bcond(Ma, Re):
     To1 = 420.0
     cp = 1004.0  # Specific heat at constant pressure [J/(kg*K)]
     ga = 1.4  # Specific heat ratio
-    mu = 1.7894e-5  # Dynamic viscosity [kg/(m*s)]
+    mu = 2.1e-5  # Dynamic viscosity [kg/(m*s)]
     L = 0.067647  # Reference length [m]
 
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
@@ -144,8 +144,8 @@ xy2[1] += g
 m = jmesh.builder.Builder()
 
 # Cell sizes
-dxLE = cx * 0.001
-dxTE = cx * 0.01
+dxLE = cx * 0.005
+dxTE = cx * 0.02
 dxmax = cx * 0.1
 
 Re = 1e6
@@ -165,7 +165,7 @@ dyout = dw * 5
 
 # Offset vectors for inlet and exit planes
 Dxy_in = np.array([-cx, 0.0, 0.0]).reshape(3, 1)
-ang = -45.0
+ang = -30.0
 Dxy_out = np.array([cx, cx * np.tan(np.radians(ang)), 0.0]).reshape(3, 1)
 
 # Blade vertices
@@ -355,9 +355,8 @@ jplot = g[0].nj // 2
 # quit()
 
 ember.Ember(
-    n_step=1000,
-    # n_step_ramp=500,
-    n_step_avg=1,
+    n_step=4000,
+    n_step_avg=1000,
 ).run(g)
 
 
@@ -371,7 +370,93 @@ ember.Ember(
 fig, ax = plt.subplots()
 C = g[0][:, jplot, :]
 ax.axis("equal")
-ax.clabel(ax.contour(C.x, C.rt, C.Alpha), inline=True, fontsize=8)
+ax.contour(C.x, C.rt, C.Ma)
+
+# Data
+dPS = np.reshape(
+    [
+        2.027,
+        0.084,
+        4.057,
+        0.102,
+        10.138,
+        0.143,
+        20.274,
+        0.164,
+        33.833,
+        0.221,
+        47.362,
+        0.379,
+        58.991,
+        0.63,
+    ],
+    (-1, 2),
+)
+dSS = np.reshape(
+    [
+        0,
+        0,
+        2.1,
+        0.131,
+        4.06,
+        0.184,
+        10.17,
+        0.433,
+        16.904,
+        0.687,
+        20.298,
+        0.809,
+        23.691,
+        0.851,
+        27.046,
+        0.863,
+        33.817,
+        0.912,
+        39.232,
+        0.94,
+        42.6,
+        0.953,
+        46,
+        0.964,
+        50.747,
+        0.945,
+        54.118,
+        0.944,
+        57.493,
+        0.935,
+        64.26,
+        0.903,
+        71.012,
+        0.881,
+        77.78,
+        0.872,
+        82.781,
+        0.89,
+        86.463,
+        0.806,
+    ],
+    (-1, 2),
+)
+dSS[:, 0] /= c_ref * 1000
+dPS[:, 0] /= c_ref * 1000
+dSS = dSS.T
+dPS = dPS.T
+
+
+C = C[iLE : (iTE + 1), :]
+P = C.P[:, (0, -1)]
+ga = So1.gamma
+gae = (ga - 1.0) / ga
+fac = (So1.P / P) ** gae - 1.0
+fac[fac < 0.0] = 0.0
+Ms = np.sqrt(fac) * 2.0 / (ga - 1.0)
+fig, ax = plt.subplots()
+zPS = C[:, 0].zeta / c_ref
+zSS = C[:, -1].zeta / c_ref
+ax.plot(*dSS, "kx")
+ax.plot(*dPS, "kx")
+ax.plot(zPS, Ms[:, 0])
+ax.plot(zSS, Ms[:, -1])
 
 plt.show()
 
