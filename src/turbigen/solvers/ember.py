@@ -751,9 +751,16 @@ class Periodic:
                 b2.r[nxijknow],
             )
 
-            t1 = np.mod(b1.t[ijknow], b1.pitch) + 1.0
-            t2 = np.mod(b2.t[nxijknow], b2.pitch) + 1.0
-            assert np.allclose(t1, t2)
+            t1 = np.mod(b1.t[ijknow] + 0.1, b1.pitch)
+            t2 = np.mod(b2.t[nxijknow] + 0.1, b2.pitch)
+            ttol = np.minimum(b1.pitch, b2.pitch) * 1e-6
+            try:
+                assert np.allclose(t1, t2, atol=ttol)
+            except AssertionError:
+                print(np.max(np.abs(t1 - t2)))
+                print(t1, t2)
+                print(b1.pitch, b2.pitch)
+                quit()
 
         # Check we have the correct number of points
         npt = patch.get_cut().to_unstructured().shape[0]
