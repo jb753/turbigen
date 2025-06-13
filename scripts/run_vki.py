@@ -1,11 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import jmesh
+import pickle
 import turbigen.fluid
 import turbigen.grid
 from turbigen.solvers import ember
 from turbigen import util
 import logging
+import sys
 
 logger = util.make_logger()
 log_level = logging.INFO
@@ -31,6 +33,12 @@ def get_blade(fname, restagger=0.0):
     R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
     xy1 = R @ xy1
     xy2 = R @ xy2
+
+    # Set up axial grid vector
+    xLE = 0.0
+    xTE = max(xy1[0].max(), xy2[0].max())
+    cx_old = xTE - xLE
+    print(f"cx_old = {cx_old:.5f}")
 
     # Find last non-zero value in xy2 and cut after that
     ilast = np.where(xy2[1, :] != 0.0)[0][-1]
@@ -73,6 +81,13 @@ def get_blade(fname, restagger=0.0):
     xy2 = np.concatenate((xy2, xyc[:, None]), axis=1)
     xy1 = np.concatenate((xy1, xyc[:, None]), axis=1)
 
+    # # Correct the axial chord
+    # xTE = max(xy1[0].max(), xy2[0].max())
+    # cx_new = xTE - xLE
+    # print(f"cx_new = {cx_new:.5f}")
+    # xy1 *= cx_old / cx_new
+    # xy2 *= cx_old / cx_new
+
     return xy1, xy2
 
 
@@ -80,7 +95,7 @@ def get_dimensional_bcond(Ma, Re):
     """Calculate dimensional boundary conditions from non-dimensional values."""
 
     To1 = 420.0
-    cp = 1004.0  # Specific heat at constant pressure [J/(kg*K)]
+    cp = 1010.0  # Specific heat at constant pressure [J/(kg*K)]
     ga = 1.4  # Specific heat ratio
     mu = 2.1e-5  # Dynamic viscosity [kg/(m*s)]
     L = 0.067647  # Reference length [m]
@@ -119,6 +134,8 @@ def get_dimensional_bcond(Ma, Re):
     assert np.isclose(V2s / S2s.a, Ma)
     assert np.isclose(Re, S2s.rho * V2s * L / S2s.mu)
 
+    print(f"Po1 = {So1.P:.5f} Pa, P2 = {S2s.P:.5f} Pa")
+
     return So1, S2s, V2s
 
 
@@ -126,17 +143,18 @@ dstag = 0.0  # stagger / 2.0
 
 xy1, xy2 = get_blade("scripts/vki_blade.csv", restagger=dstag)
 
-# plot the blade
-plt.figure()
-plt.plot(*xy1)
-plt.plot(*xy2)
-plt.axis("equal")
-# plt.show()
+# # plot the blade
+# plt.figure()
+# plt.plot(*xy1)
+# plt.plot(*xy2)
+# plt.axis("equal")
+# # plt.show()
 
 # Set up axial grid vector
 xLE = 0.0
 xTE = max(xy1[0].max(), xy2[0].max())
 cx = xTE - xLE
+print(f"cx = {cx:.5f}")
 
 # Offset the blade surface pitchwise
 xy2[1] += g
@@ -144,12 +162,12 @@ xy2[1] += g
 m = jmesh.builder.Builder()
 
 # Cell sizes
-dxLE = cx * 0.005
+dxLE = cx * 0.01
 dxTE = cx * 0.02
 dxmax = cx * 0.1
 
 Re = 1e6
-Ma = 0.6
+Ma = 0.875
 
 So1, S2s, V2s = get_dimensional_bcond(Ma, Re)
 
@@ -165,7 +183,7 @@ dyout = dw * 5
 
 # Offset vectors for inlet and exit planes
 Dxy_in = np.array([-cx, 0.0, 0.0]).reshape(3, 1)
-ang = -30.0
+ang = -0.0
 Dxy_out = np.array([cx, cx * np.tan(np.radians(ang)), 0.0]).reshape(3, 1)
 
 # Blade vertices
@@ -195,19 +213,19 @@ dy_in = m["AE"].ds.max()
 ARin = 2.0
 ARout = 2.0
 dx_in = dy_in * ARin
-ni_inlet = m.generate_edge_single_clustered("FE", dxLE, dx_in).n
-m.generate_edge_single_clustered("BA", dxLE, dx_in)
+ni_inlet = m.generate_edge_single_clustered("FE", dxLE / 2.5, dx_in).n
+m.generate_edge_single_clustered("BA", dxLE / 2.5, dx_in, N=ni_inlet)
 dy_out = m["DH"].ds.max()
 dx_out = dy_out * ARout
-ni_outlet = m.generate_edge_single_clustered("GH", dxTE, dx_out).n
-m.generate_edge_single_clustered("CD", dxTE, dx_out)
+ni_outlet = m.generate_edge_single_clustered("GH", dxTE / 2, dx_out).n
+m.generate_edge_single_clustered("CD", dxTE / 2, dx_out, N=ni_outlet)
 
 # All xy edges done.
 # Now project spanwise
-H = cx * 3.0
+H = cx * 3
 edge_projected, edge_spanwise = m.project_edges(list(m.edges.keys()), z=H)
 # Coarse clustering in spanwise direction (we will usen inviscid walls)
-dzw = H * 0.02
+dzw = H * 0.01
 dzmax = H * 0.05
 nj = 36
 m.generate_edge_double_clustered(edge_spanwise, dzw, dzw, dzmax, N=nj)
@@ -218,9 +236,12 @@ print(list(m.faces.keys()))
 m.generate_blocks()
 print("Number of blocks:", len(m.blocks))
 print(list(m.blocks.keys()))
-m.plot_xy(z=0.0)
-m.plot_yz(x=0.0)
+# m.plot_xy(z=0.0)
+# m.plot_yz(x=0.0)
+# plt.show()
+# quit()
 # m.plot_xyz(show_faces=False, show_edges=False)
+
 
 # Calculate rmid based on an integer number of blades
 Nb = 100
@@ -333,31 +354,26 @@ g.apply_inlet(So1, dstag, 0.0)
 g.apply_outlet(S2s.P)
 g.calculate_wall_distance()
 
-# ember.Ember(
-#     n_step=1000,
-#     fmgrid=0.0,
-#     damping_factor=3.0,
-#     n_step_avg=1,
-#     smooth4=0.05,
-#     smooth2_adapt=2.5,
-#     CFL=0.3,
-#     i_scheme=0,
-#     n_step_ramp=1000,
-# ).run(g)
-
 jplot = g[0].nj // 2
 
-# C = g[0][:, jplot, :]
-# fig, ax = plt.subplots()
-# ax.axis("equal")
-# ax.contourf(C.x, C.rt, C.w)
-# # plt.show()
-# quit()
+fname_pkl = "vki_soln.pkl"
 
-ember.Ember(
-    n_step=4000,
-    n_step_avg=1000,
-).run(g)
+rerun = True if len(sys.argv) > 1 and sys.argv[1] == "--rerun" else False
+
+if rerun:
+    solver = ember.Ember(n_step=5000, n_step_avg=1000, n_step_ramp=1000)
+    solver.run(g)
+    with open(fname_pkl, "wb") as f:
+        pickle.dump(g, f)
+
+    with open("conv.pkl", "wb") as f:
+        pickle.dump(solver.convergence, f)
+
+with open(fname_pkl, "rb") as f:
+    g = pickle.load(f)
+
+with open("conv.pkl", "rb") as f:
+    conv = pickle.load(f)
 
 
 # fig, ax = plt.subplots()
@@ -370,7 +386,7 @@ ember.Ember(
 fig, ax = plt.subplots()
 C = g[0][:, jplot, :]
 ax.axis("equal")
-ax.contour(C.x, C.rt, C.Ma)
+ax.contourf(C.x, C.rt, C.Ma)
 
 # Data
 dPS = np.reshape(
@@ -437,26 +453,73 @@ dSS = np.reshape(
     ],
     (-1, 2),
 )
-dSS[:, 0] /= c_ref * 1000
-dPS[:, 0] /= c_ref * 1000
+dSS[:, 0] /= 1000
+dPS[:, 0] /= 1000
 dSS = dSS.T
 dPS = dPS.T
+
+ga = So1.gamma
+gae = (ga - 1.0) / ga
+
+rhub = g[0].r.min()
+rtip = g[0].r.max()
+print(f"htr={rhub / rtip:.3f}")
+
+# Cmid = g[0][iTE + 12, jplot:(jplot+1), :]
+Cmid = g[0][iTE + 14, jplot - 5, :]
+print()
+Dt = np.trapezoid(np.ones_like(Cmid.Alpha), Cmid.t)
+P2_avg = np.trapezoid(Cmid.P, Cmid.t) / Dt
+Po2_avg = np.trapezoid(Cmid.Po, Cmid.t) / Dt
+Po1 = So1.P
+P2_Po2 = P2_avg / Po2_avg
+P2_Po1 = P2_avg / Po1
+Alpha_mid = np.trapezoid(Cmid.Alpha, Cmid.t) / Dt
+loss_mid = 1.0 - (1.0 - P2_Po2**gae) / (1.0 - P2_Po1**gae)
+# loss_mid = np.trapezoid(loss, Cmid.t)
+# loss_mid = np.trapezoid(loss, Cmid.t)
+print(
+    f"x/cx={Cmid.x.mean() / cx}, Midspan Alpha = {Alpha_mid:.2f}, loss = {loss_mid:.4f}"
+)
+
+Cexit = g[0][:, jplot, :].squeeze()
+fig, ax = plt.subplots()
+ax.axis("equal")
+ax.plot(Cexit.x, Cexit.rt, "k-", lw=0.5)
+ax.plot(Cexit.x.T, Cexit.rt.T, "k-", lw=0.5)
+
+fig, ax = plt.subplots()
+ax.axis("equal")
+ax.contourf(*Cexit.yz, Cexit.Alpha)
+
+plt.show()
 
 
 C = C[iLE : (iTE + 1), :]
 P = C.P[:, (0, -1)]
-ga = So1.gamma
-gae = (ga - 1.0) / ga
 fac = (So1.P / P) ** gae - 1.0
 fac[fac < 0.0] = 0.0
-Ms = np.sqrt(fac) * 2.0 / (ga - 1.0)
+Ms = np.sqrt(fac * 2.0 / (ga - 1.0))
 fig, ax = plt.subplots()
-zPS = C[:, 0].zeta / c_ref
-zSS = C[:, -1].zeta / c_ref
+zPS = C[:, -1].zeta
+zSS = C[:, -0].zeta
+zSSmax = 0.086462
+zPSmax = 0.065349
+imin = np.argmin(Ms[:, -1])
+zSS += zPS[imin]
+zPS -= zPS[imin]
+iSS = zSS <= zSSmax
+iPS = zPS <= zPSmax
+zSS /= zSSmax
+zPS /= zPSmax
+dSS[0] /= zSSmax
+dPS[0] /= zPSmax
 ax.plot(*dSS, "kx")
 ax.plot(*dPS, "kx")
-ax.plot(zPS, Ms[:, 0])
-ax.plot(zSS, Ms[:, -1])
+ax.plot(zSS[iSS], Ms[iSS, 0], "-")
+ax.plot(zPS[iPS], Ms[iPS, -1], "-")
+ax.set_ylim([0, 1.4])
+ax.set_xlim([0, 1.0])
 
 plt.show()
 

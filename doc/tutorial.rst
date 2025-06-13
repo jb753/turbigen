@@ -343,7 +343,7 @@ radius, and the shaft angular velocity. The completed function is:
        Omega = U / rrms
 
        # Return mean-line data
-      return rrms, A, Omega, Vxrt, S
+       return rrms, A, Omega, Vxrt, S
 
 
 This concludes the `forward` function --- all the required quantities have been
