@@ -1,4 +1,4 @@
-workdir: runs/*
+workdir: runs/0244
 
 inlet:
   Po: 16.0e5
@@ -83,5 +83,7 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [0.8, 2.4]
-  order: 3
+  order_max: 3
   nsample: 4
+
+fac_nstep_initial: 2.0

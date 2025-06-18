@@ -15,6 +15,7 @@ def run_command(yaml_path):
     command = ["turbigen", "--no-job", yaml_path]
     tid = str(threading.get_ident())[-3:]
     wstr = f"W{tid}"
+    print(f"{wstr} --- RUN : {yaml_path}")
     result = subprocess.run(command, text=True, capture_output=True)
     if result.returncode == 0:
         print(f"{wstr} --- DONE: {yaml_path}")

@@ -158,6 +158,8 @@ def main():
         editor = os.environ.get("EDITOR")
         subprocess.run([f"{editor}", f"{working_config}"])
 
+    start_tic = timer()
+
     # From this point we can assume the workdir exists
     # and the config file is in the working directory
 
@@ -227,7 +229,7 @@ def main():
     else:
         basedir = conf.workdir
 
-        if conf.design_space.samples:
+        if conf.design_space and conf.design_space.samples:
             logger.info("Initialising iterators with fitted design space.")
             conf.interpolate_all_iterators()
 
@@ -239,12 +241,15 @@ def main():
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
 
-            if iiter == 0:
-                conf.solver.n_step = int(old_nstep * (conf.fac_nstep_initial))
-                logger.iter(f"Using initial n_step={conf.solver.n_step}")
-            elif iiter == 1:
-                conf.solver.n_step = old_nstep
-                logger.iter(f"Reset n_step={conf.solver.n_step}")
+            if not conf.fac_nstep_initial == 1.0:
+                if iiter == 0:
+                    conf.solver.n_step = int(old_nstep * conf.fac_nstep_initial)
+                    logger.iter(
+                        f"Using initial n_step={conf.fac_nstep_initial}*{old_nstep}"
+                        f"={conf.solver.n_step}"
+                    )
+                elif iiter == 1:
+                    conf.solver.n_step = old_nstep
 
             # Ensure that the iteration directory is empty
             # Do not want to pick up old meshes etc.
@@ -287,13 +292,25 @@ def main():
             # Check for convergence
             converged = all(conv_all.values())
             conf.converged = converged
+            # Do some cleanup if converged
             if converged:
                 # Copy everything from the final iteration
-                # to the working directory
+                # up to the base directory
                 shutil.copytree(conf.workdir, basedir, dirs_exist_ok=True)
-                # Delete iteration directories
+
+                # Move iteration configs to a subdirectory
+                # But delete the solutions and postprocessing
+                all_iter_dir = basedir / "iterations"
+                all_iter_dir.mkdir(exist_ok=True)
                 for i in range(iiter + 1):
-                    shutil.rmtree(basedir / f"{i:03d}")
+                    iter_dir = basedir / f"{i:03d}"
+                    iter_conf_dest = all_iter_dir / f"config_{i:03d}.yaml"
+                    if not i == iiter:
+                        # If this is the last convereged iteration, we do not want to
+                        # copy the configuration file, because it will be a duplicate
+                        # of the one that gets copied up to the basedir
+                        shutil.move(iter_dir / conf.basename, iter_conf_dest)
+                    shutil.rmtree(iter_dir)
                 # Reset the workdir to the final one
                 conf.workdir = basedir
                 # Save the final config
@@ -302,6 +319,8 @@ def main():
 
         logger.iter(f"Finished iterating, converged={converged}.")
     logger.iter(conf.format_design_vars_table())
+
+    logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
 
     if not converged:
         sys.exit(1)

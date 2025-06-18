@@ -27,6 +27,18 @@ class IteratorConfig(ABC):
         logger.iter(f"interpolate() is not implemented for {self.__class__.__name__}. ")
         del config
 
+    def get_independent(self, config):
+        """Get the changeable independent variables."""
+        return ()
+
+    def get_dependent(self, config):
+        """Get the targeted dependent variables."""
+        raise NotImplementedError
+
+    def get_nominal(self, config):
+        """Get the nominal value of target variables."""
+        raise NotImplementedError
+
 
 @dataclasses.dataclass
 class Deviation(IteratorConfig):
@@ -44,29 +56,63 @@ class Deviation(IteratorConfig):
                 "Could not initialise deviation iterator: tolerance must be positive."
             )
 
+    def get_independent(self, config):
+        """Extract mean trailing edge recamber from the configuration.
+
+        We will make the same adjustments over the span, disregarding the
+        spanwise distribution, so take the mean value over sections."""
+        return np.array([b[0].camber[:, 1].mean() for b in config.blades])
+
+    def get_dependent(self, config):
+        """Extract mixed-out exit flow angles from the configuration."""
+        return np.array(
+            [
+                config.mean_line.actual.Alpha_rel[irow * 2 + 1]
+                for irow in range(config.nrow)
+            ]
+        )
+
+    def get_nominal(self, config):
+        return np.array(
+            [
+                config.mean_line.nominal.Alpha_rel[irow * 2 + 1]
+                for irow in range(config.nrow)
+            ]
+        )
+
+    def set_independent(self, config, value):
+        """Set the mean trailing edge recamber in the configuration."""
+        # Loop over rows
+        for recam_new, blade in zip(value, config.blades):
+            recam_old = blade[0].camber[:, 1].mean()
+            blade[0].camber[:, 1] += recam_new - recam_old
+            assert blade[0].camber[:, 1].mean() == recam_new
+
     def update(self, config) -> bool:
         """Move the metal angle to match the exit flow angle."""
-        converged = True
 
+        # Extract angles
+        yaw_actual = self.get_dependent(config)
+        yaw_target = self.get_nominal(config)
+
+        # Calculate deviation
+        dev = yaw_actual - yaw_target
+
+        # Calculate the change to be applied to the current metal angle
+        ddev = -np.clip(dev * self.relaxation_factor, -self.clip, self.clip)
+
+        # Apply the change to the metal angle
+        recam_TE = self.get_independent(config) + ddev
+        self.set_independent(config, recam_TE)
+
+        # Convergence check
+        converged = (np.abs(dev) <= self.tolerance).all()
+
+        # Record log data
         log_data = {}
         for irow in range(config.nrow):
-            # Get the actual and target exit flow angles
-            yaw_actual = config.mean_line.actual.Alpha_rel[irow * 2 + 1]
-            yaw_target = config.mean_line.nominal.Alpha_rel[irow * 2 + 1]
-            # Calculate deviation
-            dev = yaw_actual - yaw_target
-            # Convergence check
-            if (np.abs(dev) > self.tolerance).any():
-                converged = False
-            # Calculate the change to be applied to the current metal angle
-            ddev = -np.clip(dev * self.relaxation_factor, -self.clip, self.clip)
-
-            # Apply a uniform change at all sections
-            config.blades[irow][0].camber[:, 1] += ddev
-
-            # Record log data
-            log_data[f"Dev[{irow}]"] = dev
-            log_data[f"DDev[{irow}]"] = ddev
+            log_data[f"Dev[{irow}]"] = dev[irow]
+            log_data[f"DDev[{irow}]"] = ddev[irow]
 
         return converged, log_data
 

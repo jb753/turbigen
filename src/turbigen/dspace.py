@@ -71,23 +71,19 @@ class IndependentConfig:
     def get_independent(self, config):
         """Extract a design variable vector from a full config object."""
 
-        x = np.full((self.nx,), np.nan)
-        i = 0  # Keep track of index in x
-
+        x = []
         for k in self.mean_line:
             # Default to actual value if set, otherwise nominal
             if k in config.mean_line_actual:
-                x[i] = config.mean_line_actual[k]
+                x.append(config.mean_line_actual[k])
             else:
-                x[i] = config.mean_line.design_vars[k]
-            i += 1
+                x.append(config.mean_line.design_vars[k])
 
         for k1 in self.nblade:
             for k2 in self.nblade[k1]:
-                x[i] = getattr(config.nblade[k1], k2)
-                i += 1
+                x.append(getattr(config.nblade[k1], k2))
 
-        return x
+        return np.array(x)
 
     def set_independent(self, config, x):
         """Insert a design variable vector into a full config object."""
@@ -103,136 +99,42 @@ class IndependentConfig:
                 setattr(config.nblade[k1], k2, x[i])
                 i += 1
 
+    def get_independent_inverse(self, config):
+        """Extract inverse design variable vector from unconverged config object.
 
-@dataclasses.dataclass
-class DesignSpace:
-    """Provide methods to sample and fit a design space."""
+        This includes variables changed by iterators such as TE recamber."""
 
-    independent: IndependentConfig
-    """Independent variables for the design space."""
+        # Sampled independent variables
+        x_sampled = self.get_independent(config)
 
-    nsample: int = 0
-    """Target number of samples in the design space."""
-
-    basedir: Path = None
-    """Base directory for the design space."""
-
-    basis: str = "total-order"
-    """Basis for the polynomal orders of surrogate model."""
-
-    order: int = 3
-    """Maximum order of the polynomial surrogate model."""
-
-    seed: int = 0
-    """Seed for random number generator."""
-
-    fast_load: bool = True
-    """Skip loading 3D solution for speed."""
-
-    frac_test: float = 0.2
-    """Fraction of samples to use for fit error testing."""
-
-    def __post_init__(self):
-        # Conver independent to an object
-        if isinstance(self.independent, dict):
-            self.independent = IndependentConfig(**self.independent)
-
-        # Initialise the sampler and fast-forward over the existing samples
-        np.random.seed(self.seed)
-        self._sampler = LatinHypercube(
-            d=self.independent.nx, seed=self.seed, optimization="random-cd"
+        # Now get the iterated variables
+        x_dependent = np.concatenate(
+            [iterator.get_dependent(config) for iterator in config.iterate]
         )
 
-    def to_dict(self):
-        # Built-in dataclasses method gets us most of the way there
-        data = dataclasses.asdict(self)
-        data["basedir"] = str(data["basedir"])
-        return data
+        # Concatenate the two
+        return np.concatenate((x_sampled, x_dependent))
 
-    def load(self):
-        # Search for all configs in subdirs under the base directory
-        # get the YAML data and fast load them
-        # Could parallelize this for big datasets
-        # print(f"Loading configs from {self.datum.workdir}...")
-        logger.iter(f"Loading design space from {self.basedir}")
-        logger.iter(
-            f"fast_load={self.fast_load}, basis={self.basis}, order={self.order}"
-        )
-        fnames = sorted(self.basedir.glob("*/config.yaml"))
-        # Remove configs two levels deep
-        # (e.g. from a previous run of the design space)
-        fnames = [
-            f
-            for f in fnames
-            if f.parent.name.isnumeric() and f.parent.parent == self.basedir
-        ]
 
-        confs = []
-        for f in fnames:
-            try:
-                data = turbigen.yaml.read_yaml(f)
-                data.pop("design_space", None)
-                data["_fast_init"] = self.fast_load
-                c = turbigen.config2.TurbigenConfig(**data)
-                if not self.fast_load:
-                    c.design_and_run(skip=True, skip_post=True)
-                confs.append(c)
-            except Exception as e:
-                logger.iter(f"Error reading {f}")
-        logger.iter(f"Loaded {len(confs)} configurations")
+class Fit:
+    def __init__(self, independent, samples, order_max, frac_dof, basis, frac_test):
+        """Prepare a fit over a subset of the design space."""
 
-        # Nothing else to do if no configs found
-        if not confs:
-            self.nall = 0
-            self.samples = []
-            return
-        else:
-            self.nall = len(fnames)
+        self.independent = independent
+        self.samples = samples
+        self.order_max = order_max
+        self.frac_dof = frac_dof
+        self.basis = basis
+        self.frac_test = frac_test
 
-        # Check the ids are in order and consecutive
-        ids = [int(f.parent.name) for f in fnames]
-        if len(ids) != len(set(ids)):
-            raise ValueError("IDs are not unique.")
-        if not np.all(np.diff(ids) == 1):
-            raise ValueError("IDs are not consecutive.")
-        if len(ids) > 0 and ids[0] != 0:
-            raise ValueError("IDs do not start at 0.")
+        self.ns = len(samples)
 
-        # Shuffle the samples from sorted order using the seed
-        np.random.shuffle(confs)
-
-        # Fast forward the sampler to the number of samples
-        self._sampler.fast_forward(len(confs))
-
-        # Now exclude any unconverged samples
-        self.samples = [c for c in confs if c.converged]
-        logger.iter(f"Found {len(self.samples)} converged samples")
-
-        # If we have samples, pre-calculate for fitting
-        if self.samples:
-            self.setup()
-
-    def normalise(self, x):
-        nx = x.shape[0]
-        assert nx == self.independent.nx
-
-        # Shape the limits for broadcasting
-        shape = (2, nx,) + (
-            1,
-        ) * (x.ndim - 1)
-        xlim = self.xlim.reshape(shape)
-
-        xn = (x - xlim[0]) / (xlim[1] - xlim[0])
-        xn = 2.0 * xn - 1.0
-        return xn
-
-    def setup(self):
         # Extract and store all x vectors from the samples
         self.x = np.stack(
             [self.independent.get_independent(c) for c in self.samples], axis=-1
         )
 
-        # Store the bounds of the design space
+        # Store the limits of the design space
         # The most extreme of the prescribed limits and the actual
         # limits of the samples. Ensures we are in correct interval
         # for polynomial fitting after normalisation
@@ -245,93 +147,32 @@ class DesignSpace:
             self.xlim[0] = np.minimum(self.xlim[0], xlim_samples[0])
             self.xlim[1] = np.maximum(self.xlim[1], xlim_samples[1])
 
+        # We can now normalise the sampled x vectors
         self.xn = self.normalise(self.x)
 
-        # Indices for orders of each polynomial
-        nx = self.independent.nx
-        inds = np.meshgrid(*[np.arange(0, self.order + 1) for _ in range(nx)])
-        inds = np.column_stack([np.reshape(i, -1) for i in inds])
-        if self.basis == "total-order":
-            inds = inds[np.sum(inds, axis=1) <= self.order]
-        elif self.basis == "hyperbolic":
-            # 0.2<q<1 is a parameter that eliminates high order interactions.
-            # q=1 is same as total order.
-            q = 0.7
-            inds = inds[np.sum(inds**q, axis=1) ** (1.0 / q) <= self.order]
-        elif self.basis == "tensor-grid":
-            pass
+        # Select the degrees of freedom for the fit
+        if not self.frac_dof:
+            # Disable adaptive fitting
+            self.set_basis_orders(self.order_max)
         else:
-            raise Exception(f'Unknown basis "{self.basis}"')
-        self._inds = inds
-        self.ndof = len(inds)
+            # Adaptive fitting: start at order_max and reduce the number of
+            # polynomial orders until we have few enough degrees of freedom
+            dof_target = int(self.frac_dof * self.ns)
+            logger.debug("Starting adaptive fitting loop.")
+            logger.debug(f"Total number of samples: {self.ns}")
+            logger.debug(f"Fraction of degrees of freedom: {self.frac_dof}")
+            logger.debug(f"Target degrees of freedom: {dof_target}")
+            for order in range(self.order_max, -1, -1):
+                if order < 0:
+                    raise ValueError("Unable to obtain a fit.")
+                self.set_basis_orders(order)
+                logger.debug(f"order={order}, dof={len(self._inds)}")
+                if self.ndof <= dof_target:
+                    logger.debug("Breaking adaptive fitting loop.")
+                    break
 
         # Pre-compute Vandermode-like matrix for fitting
-        self._A = np.column_stack([legval(self.xn, i) for i in inds])
-
-    def sample(self, datum):
-        """Generate random configurations in the design space.
-
-        Samples until we have the target number of samples. If we already have
-        enough samples, return nothing.
-
-        """
-
-        n_current = self.nall
-        logger.iter(f"Found {n_current} samples, target {self.nsample}.")
-        n = self.nsample - n_current
-        if n <= 0:
-            return []
-
-        # Sample n points in the design space
-        xnorm = self._sampler.random(n)
-
-        # Get the limits of the design space
-        xlim = self.independent.get_limits()
-
-        # De-normalize the samples
-        x = xlim[0] * (1.0 - xnorm) + xlim[1] * xnorm
-
-        # Create a list of configurations
-        configs = []
-        for i in range(n):
-            c = datum.copy()
-            self.independent.set_independent(c, x[i])
-            # Set a numbered workdir under the datum workdir
-            c.workdir = self.basedir / f"{i + n_current:03d}"
-            configs.append(c)
-
-        return configs
-
-    def evaluate(self, func, xq, **kwargs):
-        """Evaluate a fit to a function at query points.
-
-        Parameters
-        ----------
-        func : callable
-            Function to interpolate, takes a config object and returns a scalar.
-        xq : (ndim, ...) array
-            Query points to evaluate the fit at, first axis the independent vars,
-            remaining axes any shape.
-
-        Returns
-        -------
-        yq : (...) array
-            Values of the fit at query points, same shape as xq[i].
-
-        """
-
-        # Perform the polynomial fit
-        y = np.array([func(c, **kwargs) for c in self.samples])
-        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
-
-        # Get the xn and A for query points
-        xnq = self.normalise(xq)
-        Aq = np.stack([legval(xnq, i) for i in self._inds], axis=-1)
-
-        # Evaluate the polynomial at the query points
-        yq = np.matmul(Aq, coeff)
-
-        return yq
+        self._A = np.column_stack([legval(self.xn, i) for i in self._inds])
 
     def rmse(self, func):
         """Calculate train and test RMSE of a function over samples."""
@@ -397,6 +238,262 @@ class DesignSpace:
             yq = yq[0]
 
         return yq
+
+    def evaluate(self, func, xq, **kwargs):
+        """Evaluate a fit to a function at query points.
+
+        Parameters
+        ----------
+        func : callable
+            Function to interpolate, takes a config object and returns a scalar.
+        xq : (ndim, ...) array
+            Query points to evaluate the fit at, first axis the independent vars,
+            remaining axes any shape.
+
+        Returns
+        -------
+        yq : (...) array
+            Values of the fit at query points, same shape as xq[i].
+
+        """
+
+        # Perform the polynomial fit
+        y = np.array([func(c, **kwargs) for c in self.samples])
+        coeff = np.linalg.lstsq(self._A, y, rcond=None)[0]
+
+        # Get the xn and A for query points
+        xnq = self.normalise(xq)
+        Aq = np.stack([legval(xnq, i) for i in self._inds], axis=-1)
+
+        # Evaluate the polynomial at the query points
+        yq = np.matmul(Aq, coeff)
+
+        return yq
+
+    def set_basis_orders(self, order):
+        """Get indices for polynomial orders in the basis.
+
+        Parameters
+        ----------
+        order : int
+            Order of the polynomial basis to use.
+
+        Sets:
+        self.inds : (n, nx) array
+            Each row has one order for each independent variable.
+            The number of combinations is determined by the order and the basis type.
+        self.ndof = len(self.inds)
+        """
+
+        # Get the number of independent variables
+        nx = self.independent.nx
+        self.order = order
+
+        # Initialise a tensor grid of all possible combinations
+        # of orders for each independent variable
+        inds = np.meshgrid(*[np.arange(0, order + 1) for _ in range(nx)])
+        inds = np.column_stack([np.reshape(i, -1) for i in inds])
+
+        # Eliminate some orders that are not needed, depending on the chosen basis
+        if self.basis == "tensor-grid":
+            pass  # tensor grid is already setup
+        elif self.basis == "total-order":
+            # Combinations of orders summing <= order_max
+            inds = inds[np.sum(inds, axis=1) <= order]
+        elif self.basis == "hyperbolic":
+            # 0.2<q<1 is a parameter that eliminates high order interactions.
+            # q=1 is same as total order.
+            q = 0.7
+            inds = inds[np.sum(inds**q, axis=1) ** (1.0 / q) <= order]
+        else:
+            raise Exception(f'Unknown basis "{self.basis}"')
+
+        self._inds = inds
+        self.ndof = len(self._inds)
+
+    def normalise(self, x):
+        """Given dimensional independent variable vectors, return normalised ones.
+
+        Based on the limits for the current fit."""
+
+        # Check we have the correct number of independent variables
+        nx = x.shape[0]
+        assert nx == self.independent.nx
+
+        # Shape our limits for broadcasting
+        shape = (2, nx,) + (
+            1,
+        ) * (x.ndim - 1)
+        xlim = self.xlim.reshape(shape)
+
+        # Normalise the x vector to [-1, 1] range
+        xn = (x - xlim[0]) / (xlim[1] - xlim[0])
+        xn = 2.0 * xn - 1.0
+
+        return xn
+
+
+@dataclasses.dataclass
+class DesignSpace:
+    """Provide methods to sample and fit a design space."""
+
+    independent: IndependentConfig
+    """Independent variables for the design space."""
+
+    nsample: int = 0
+    """Target number of samples in the design space."""
+
+    basedir: Path = None
+    """Base directory for the design space."""
+
+    basis: str = "total-order"
+    """Basis for the polynomal orders of surrogate model."""
+
+    frac_dof: float = 0.7
+    """Adaptive fitting max degrees of freedom as a fraction of number of samples.
+    Set to 0.0 for no adaption and possible overfitting."""
+
+    order_max: int = 3
+    """Maximum order of the polynomial surrogate model."""
+
+    seed: int = 0
+    """Seed for random number generator."""
+
+    fast_load: bool = True
+    """Skip loading 3D solution for speed."""
+
+    frac_test: float = 0.2
+    """Fraction of samples to use for fit error testing."""
+
+    def __post_init__(self):
+        # Conver independent to an object
+        if isinstance(self.independent, dict):
+            self.independent = IndependentConfig(**self.independent)
+
+        # Initialise the sampler
+        np.random.seed(self.seed)
+        self._sampler = LatinHypercube(
+            d=self.independent.nx, seed=self.seed, optimization="random-cd"
+        )
+
+    def to_dict(self):
+        # Built-in dataclasses method gets us most of the way there
+        data = dataclasses.asdict(self)
+        data["basedir"] = str(data["basedir"])
+        return data
+
+    def load_configs(self):
+        """Read in all configs under the design space base directory.
+
+        Store them as a list in the `self.configs` attribute."""
+        # Search for all configs in subdirs under the base directory
+        # get the YAML data and fast load them
+        # Could parallelize this for big datasets
+        # print(f"Loading configs from {self.datum.workdir}...")
+        logger.iter(f"Loading design space from {self.basedir}")
+        logger.iter(f"fast_load={self.fast_load}")
+        fnames = sorted(self.basedir.glob("**/config*.yaml"))
+        # Exclude root config
+        fnames = [f for f in fnames if not f.parent == self.basedir]
+
+        confs = []
+        for f in fnames:
+            try:
+                data = turbigen.yaml.read_yaml(f)
+                data.pop("design_space", None)
+                data["_fast_init"] = self.fast_load
+                c = turbigen.config2.TurbigenConfig(**data)
+                if not self.fast_load:
+                    c.design_and_run(skip=True, skip_post=True)
+                confs.append(c)
+            except Exception as e:
+                logger.iter(f"Error reading {f}")
+
+        # Check the ids are in order and consecutive
+        # This is so we know how many samples have been taken already
+        fnames_done = [
+            f
+            for f in fnames
+            if f.parent.name.isnumeric() and f.parent.parent == self.basedir
+        ]
+        ids = [int(f.parent.name) for f in fnames_done]
+        if len(ids) != len(set(ids)):
+            raise ValueError("IDs are not unique.")
+        if not np.all(np.diff(ids) == 1):
+            raise ValueError("IDs are not consecutive.")
+        if len(ids) > 0 and ids[0] != 0:
+            raise ValueError("IDs do not start at 0.")
+
+        # Shuffle the samples from sorted order using the seed
+        np.random.shuffle(confs)
+
+        # Fast forward the sampler by the number of samples
+        self._nsampled = len(fnames_done)
+        self._sampler.fast_forward(self._nsampled)
+
+        # # Now exclude any unconverged samples
+        # self.samples_unconverged = confs
+        # self.samples = [c for c in confs if c.converged]
+        logger.iter(f"Loaded {len(confs)} config files.")
+        self.configs = confs
+
+    def setup(self):
+        # Populate configs list
+        self.load_configs()
+
+        # Construct fits for converged and unconverged samples
+        self.converged = Fit(
+            self.independent,
+            [c for c in self.configs if c.converged],
+            self.order_max,
+            self.frac_dof,
+            self.basis,
+            self.frac_test,
+        )
+        print(self.converged.ndof, self.converged.ns)
+        self.all = Fit(
+            self.independent,
+            self.configs,
+            self.order_max,
+            self.frac_dof,
+            self.basis,
+            self.frac_test,
+        )
+        print(self.all.ndof, self.all.ns)
+
+    def sample(self, datum):
+        """Generate random configurations in the design space.
+
+        Samples until we have the target number of samples. If we already have
+        enough samples, return nothing.
+
+        """
+
+        n_current = self._nsampled
+        logger.iter(f"Found {n_current} samples, target {self.nsample}.")
+        n = self.nsample - n_current
+        if n <= 0:
+            return []
+
+        # Sample n points in the design space
+        xnorm = self._sampler.random(n)
+
+        # Get the limits of the design space
+        xlim = self.independent.get_limits()
+
+        # De-normalize the samples
+        x = xlim[0] * (1.0 - xnorm) + xlim[1] * xnorm
+
+        # Create a list of configurations
+        configs = []
+        for i in range(n):
+            c = datum.copy()
+            self.independent.set_independent(c, x[i])
+            # Set a numbered workdir under the datum workdir
+            c.workdir = self.basedir / f"{i + n_current:03d}"
+            configs.append(c)
+
+        return configs
 
     def meshgrid(self, datum, N=11, **kwargs):
         # Get datum x

@@ -106,10 +106,12 @@ class TurbigenConfig:
     design_space: turbigen.dspace.DesignSpace = None
     """Settings for design space mapping."""
 
-    _basename: str = "config.yaml"
+    basename: str = "config.yaml"
 
     _fast_init: bool = False
     """Flag to not read large object from file on init."""
+
+    mixed_out_flowfield: dict = None
 
     def copy(self):
         """Return a copy of the configuration."""
@@ -117,7 +119,7 @@ class TurbigenConfig:
 
     @property
     def fname(self):
-        return self.workdir / self._basename
+        return self.workdir / self.basename
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
@@ -159,6 +161,22 @@ class TurbigenConfig:
                     logger.debug(f"Saving {k} to {fname_pkl}")
                     with gzip.open(fname_pkl, "wb") as f:
                         pickle.dump(val, f)
+
+        # Save mean_line_acutal as a pickle
+        try:
+            fname_pkl = self.workdir / "mixed_out_flowfield.pkl.gz"
+            data["mixed_out_flowfield"] = str(fname_pkl)
+            if fname_pkl.exists() and not overwrite_pkl:
+                logger.debug(f"Not overwriting existing {fname_pkl}")
+            else:
+                logger.debug(f"Saving {k} to {fname_pkl}")
+                with gzip.open(fname_pkl, "wb") as f:
+                    pickle.dump(self.mean_line.actual, f)
+        except Exception:
+            pass
+
+        if not data["mixed_out_flowfield"]:
+            del data["mixed_out_flowfield"]
 
         # Convert convergence history to a filename
         if self.solver and (conv := self.solver.convergence):
@@ -310,6 +328,11 @@ class TurbigenConfig:
         )
         self.mean_line = MeanLineDesigner(self.mean_line)
 
+        # If mixed_out_flowfield is a filename, load and unpickle it
+        if isinstance(self.mixed_out_flowfield, str):
+            with gzip.open(Path(self.mixed_out_flowfield), "rb") as f:
+                self.mean_line.actual = pickle.load(f)
+
         # Set up the annulus designer
         if self.annulus:
             AnnulusDesigner = util.get_subclass_by_name(
@@ -435,7 +458,7 @@ class TurbigenConfig:
                     self.design_space.basedir = Path(self.workdir)
                 else:
                     self.design_space.basedir = Path(self.design_space.basedir)
-            self.design_space.load()
+            self.design_space.setup()
 
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
