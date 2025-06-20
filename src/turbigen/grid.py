@@ -469,20 +469,23 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         Lmax = np.max(np.ptp(self.xrrt, axis=(1, 2, 3)))
         assert (self.w < Lmax).all()
 
-    def get_connected(self, max_depth=10):
-        """Return all blocks that are connected to this patch."""
-        blocks = [
-            self,
-        ]
-        for _ in range(max_depth):
-            for block in blocks:
-                for patch in block.patches:
-                    if isinstance(patch, PeriodicPatch) or isinstance(
-                        patch, PorousPatch
+    def get_connected(self, npass=10):
+        g = self.grid
+        bid_start = g.index(self)
+        bid_conn = [bid_start]
+        for n in range(npass):
+            bid_conn_new = []
+            for bid in bid_conn:
+                for p in g[bid].patches:
+                    if not isinstance(
+                        p, (turbigen.grid.PeriodicPatch, turbigen.grid.NonMatchPatch)
                     ):
-                        if patch.match and (patch.match.block not in blocks):
-                            blocks.append(patch.match.block)
-        return blocks
+                        continue
+                    bid_match = g.index(p.match.block)
+                    if bid_match not in bid_conn:
+                        bid_conn_new.append(bid_match)
+            bid_conn.extend(bid_conn_new)
+        return [g[bid] for bid in bid_conn]
 
     def add_patch(self, patch):
         patch.block = self
@@ -633,6 +636,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         xrrt[2] *= xrrt[1]
         dist = np.sum((self.xrrt - np.reshape(xrrt, (3, 1, 1, 1))) ** 2, axis=0)
         return np.unravel_index(np.argmin(dist), self.shape)
+
+    def __eq__(self, other):
+        """Two blocks are equal if they have the same coordinates."""
+        return np.array_equal(self.xrt, other.xrt) and self.shape == other.shape
 
 
 class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
@@ -854,6 +861,8 @@ class Grid:
             for b in self._blocks:
                 if b not in blk_flat:
                     blk[-1].append(b)
+
+            # assert sum([len(b) for b in blk]) == len(self._blocks)
 
             return blk
 
