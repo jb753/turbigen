@@ -2001,7 +2001,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
             xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces
-        if not patches:
+        if patches is None:
             patches_block = (
                 PeriodicPatch(i=0),
                 PeriodicPatch(i=-1),
