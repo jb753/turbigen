@@ -1383,6 +1383,17 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
+    def get_npts(self):
+        if hasattr(self, "_npts"):
+            return self._npts
+
+        nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
+        ijk_lim = self.ijk_limits.copy()
+        ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+        ijk_lim[:, 1] += 1
+        self._npts = np.prod(np.diff(ijk_lim, axis=1))
+        return self._npts
+
     def get_indices(self, perm=None, flip=()):
         # Return ijk indices over the patch
         nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
@@ -1788,15 +1799,21 @@ NOT_SLIPWALL_PATCHES = [
 def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
     """Patch attributes describing periodic or mixing connectivity."""
 
-    # Get patches and their coordinates and shapes
+    # Get patches
     p = [patch, other]
-    xrt = [pi.get_cut().xrt.copy() for pi in p]
-    dijk = [xrti.shape[1:] for xrti in xrt]
 
     # The patches cannot match if their pitches are different
     pitch = [2.0 * np.pi / pi.block.Nb for pi in p]
     if not np.ptp(pitch) == 0.0:
         return False
+
+    if p[0].get_npts() != p[1].get_npts() and not corners_only:
+        # If the number of points is different, they cannot match
+        return False
+
+    # and their coordinates and shapes
+    xrt = [pi.get_cut().xrt.copy() for pi in p]
+    dijk = [xrti.shape[1:] for xrti in xrt]
 
     # Cope with circumferential offset by taking mod wrt pitch
     for xrti in xrt:
