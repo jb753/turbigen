@@ -1,6 +1,7 @@
 """A general multiblock structured grid class."""
 
 import numpy as np
+from copy import copy
 from turbigen import util
 import turbigen.yaml
 import turbigen.fluid
@@ -69,12 +70,33 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         bnew.mu_turb = np.full_like(bnew.w, np.nan)
         return bnew
 
+    def copy(self):
+        b = super().copy()
+        b.patches = []
+        for p in self.patches:
+            b.add_patch(copy(p))
+            b.patches[-1].ijk_limits = b.patches[-1].ijk_limits + 0
+        return b
+
     def write_npz(self, fname):
         """Save this object to an npz file."""
         d = self.to_dict()
         d["metadata"].pop("patches")
         d.update(d.pop("metadata"))
         np.savez_compressed(fname, **d)
+
+    def check_negative_volumes(self):
+        ni, nj, nk = self.shape
+        vol = self.vol
+        for i in range(ni - 1):
+            for j in range(nj - 1):
+                for k in range(nk - 1):
+                    if vol[i, j, k] < 0.0:
+                        print(
+                            f"Negative volume at i={i}, j={j}, k={k} "
+                            f"({vol[i, j, k]:.3e}) in block {self.label}"
+                        )
+        print(f"Summary: {np.sum(vol < 0.0)} negative volumes in block {self.label}")
 
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=(), label=None, Omega=0.0):
@@ -176,7 +198,16 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         self.Omega = Omega
         self.set_P_T(P, T)
 
-    def trim(self, i=None, j=None, k=None):
+    def delete(self):
+        """Delete this block from the parent grid"""
+        logger.debug(f"Deleting block {self.label}")
+        # Remove this block from the grid
+        if self.grid is not None:
+            self.grid._blocks.remove(self)
+        else:
+            logger.warning("Block is not part of a grid, cannot remove from grid.")
+
+    def trim(self, i=None, j=None, k=None, update_matches=True):
         """Extract a subset of this block in-place, correct patch indices."""
 
         logger.debug(f"Trimming block {self}")
@@ -199,29 +230,30 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 logger.debug(f"{isten_old}->{isten}")
 
             # Now adjust the patches that reference this block
-            logger.debug("Now updating the matching patches")
-            for p2 in self.grid.periodic_patches:
-                if p2.match is None:
-                    raise Exception("Must match patches before trimming the block")
-                if (p2.block is self) or (p2.match.block is not self):
-                    continue
-                logger.debug(f"{p2}")
-                if p2.idir == 0:
-                    logger.debug("next patch i matches trim block i")
-                    isten = p2.ijk_limits[0, :]
-                    isten[isten == ni_old - 1] = -1
-                    isten[isten > 0] = isten[isten > 0] - i[0]
-                    logger.debug(f"{isten_old}->{isten}")
-                elif p2.jdir == 0:
-                    logger.debug("next patch j matches trim block i")
-                elif p2.kdir == 0:
-                    logger.debug("next patch k matches trim block i")
-                elif p2.idir == 3:
-                    logger.debug("next patch i matches trim block -i")
-                elif p2.jdir == 3:
-                    logger.debug("next patch j matches trim block -i")
-                elif p2.kdir == 3:
-                    logger.debug("next patch k matches trim block -i")
+            if update_matches:
+                logger.debug("Now updating the matching patches")
+                for p2 in self.grid.periodic_patches:
+                    if p2.match is None:
+                        raise Exception("Must match patches before trimming the block")
+                    if (p2.block is self) or (p2.match.block is not self):
+                        continue
+                    logger.debug(f"{p2}")
+                    if p2.idir == 0:
+                        logger.debug("next patch i matches trim block i")
+                        isten = p2.ijk_limits[0, :]
+                        isten[isten == ni_old - 1] = -1
+                        isten[isten > 0] = isten[isten > 0] - i[0]
+                        logger.debug(f"{isten_old}->{isten}")
+                    elif p2.jdir == 0:
+                        logger.debug("next patch j matches trim block i")
+                    elif p2.kdir == 0:
+                        logger.debug("next patch k matches trim block i")
+                    elif p2.idir == 3:
+                        logger.debug("next patch i matches trim block -i")
+                    elif p2.jdir == 3:
+                        logger.debug("next patch j matches trim block -i")
+                    elif p2.kdir == 3:
+                        logger.debug("next patch k matches trim block -i")
 
         if j:
             raise NotImplementedError
@@ -974,9 +1006,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.to_unstructured().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.to_unstructured().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1927,7 +1960,8 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
     Nb: int
         Number of blades, setting the circumferential period.
     roffset: float
-        Raidus at y=0.
+        Raidus at y=0. If negative, then do not offset but use -roffset as
+        reference radius for z->t conversion.
     labels: list of str
     sector: bool
         If True, the mesh is distorted such that a rectangle in the y-z plane
@@ -1954,8 +1988,11 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
         labi = labels[i]
         if sector:
             xrt = xyzi.copy()
-            xrt[1] += roffset
-            xrt[2] /= roffset
+            if roffset > 0.0:
+                xrt[1] += roffset
+                xrt[2] /= roffset
+            else:
+                xrt[2] /= -roffset
         else:
             x, y, z = xyzi.copy()
             y += roffset
@@ -1973,6 +2010,8 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
                 PeriodicPatch(k=0),
                 PeriodicPatch(k=-1),
             )
+        elseif patches==False:
+            patches_block = ()
         else:
             patches_block = patches[i]
 
