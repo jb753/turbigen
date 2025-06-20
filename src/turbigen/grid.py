@@ -2011,7 +2011,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
                 PeriodicPatch(k=-1),
             )
         elif patches == False:
-            patches_block = ()
+            patches_block = []
         else:
             patches_block = patches[i]
 
