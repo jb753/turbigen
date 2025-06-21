@@ -473,7 +473,7 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         g = self.grid
         bid_start = g.index(self)
         bid_conn = [bid_start]
-        for n in range(npass):
+        for _ in range(npass):
             bid_conn_new = []
             for bid in bid_conn:
                 for p in g[bid].patches:
@@ -482,9 +482,11 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                     ):
                         continue
                     bid_match = g.index(p.match.block)
-                    if bid_match not in bid_conn:
+                    if bid_match not in bid_conn + bid_conn_new:
                         bid_conn_new.append(bid_match)
             bid_conn.extend(bid_conn_new)
+
+        assert len(bid_conn) == len(set(bid_conn)), "Connected blocks not unique"
         return [g[bid] for bid in bid_conn]
 
     def add_patch(self, patch):
@@ -639,17 +641,17 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
     def __eq__(self, other):
         """Two blocks are equal if they have the same coordinates."""
-        return np.array_equal(self.xrt, other.xrt) and self.shape == other.shape
+        return self is other
 
 
-class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
+class PerfectBlock(BaseBlock, turbigen.flowfield.PerfectFlowField):
     _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
         return f"Block({self.label})"
 
 
-class RealBlock(turbigen.flowfield.RealFlowField, BaseBlock):
+class RealBlock(BaseBlock, turbigen.flowfield.RealFlowField):
     _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
@@ -847,7 +849,7 @@ class Grid:
             # Start at inlet
             blk.append(self.inlet_patches[0].block.get_connected())
             mix_visited = []
-            for irow in range(1, self.nrow - 1):
+            for _ in range(1, self.nrow - 1):
                 # Look for a mixing patch in the previous row
                 for p in self.mixing_patches:
                     if p.block in blk[-1] and p not in mix_visited:
@@ -862,7 +864,7 @@ class Grid:
                 if b not in blk_flat:
                     blk[-1].append(b)
 
-            # assert sum([len(b) for b in blk]) == len(self._blocks)
+            assert sum([len(b) for b in blk]) == len(self._blocks)
 
             return blk
 
