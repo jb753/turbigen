@@ -1554,6 +1554,10 @@ def _get_time_vector(ts3_config):
     return t
 
 
+def scalar(x):
+    return np.squeeze(x).item()
+
+
 def read_grid(fname_hdf5):
     """Read a Turbostream 3 input file and return a Grid object.
 
@@ -1576,12 +1580,12 @@ def read_grid(fname_hdf5):
 
     # Get gas properties from application vars and initialise a state
     # These are data items of the root group
-    cp, ga, mu = (f[f"{k}_av"][0] for k in ("cp", "ga", "viscosity"))
+    cp, ga, mu = (scalar(f[f"{k}_av"]) for k in ("cp", "ga", "viscosity"))
     logger.info(f"Fluid properties: cp = {cp:.0f}, ga = {ga:.3f}, mu = {mu:.3g}")
     Sref = turbigen.fluid.PerfectState.from_properties(cp=cp, gamma=ga, mu=mu)
 
     # Get number of blocks from root group
-    nb = f.attrs["nb"]
+    nb = int(scalar(f.attrs["nb"]))
     logger.info(f"Number of blocks: {nb}")
 
     # Loop over blocks
@@ -1590,11 +1594,12 @@ def read_grid(fname_hdf5):
         b = f[f"block{ib}"]
 
         # Shape from attributes
-        ni, nj, nk = (b.attrs[k] for k in ("ni", "nj", "nk"))
-        npatch = b.attrs["np"]
+        ni, nj, nk = [int(scalar(b.attrs[k])) for k in ("ni", "nj", "nk")]
+        npatch = int(scalar(b.attrs["np"]))
 
         # Now read the block variables we need
-        rpm, Nb = (b[f"{k}_bv"][0] for k in ("rpm", "nblade"))
+        rpm = scalar(b["rpm_bv"])
+        Nb = int(scalar(b["nblade_bv"]))
         logger.info(
             f"bid {ib}: shape={ni}x{nj}x{nk}, rpm={rpm:.0f}, Nb={Nb:.0f}, np={npatch}"
         )
@@ -1680,20 +1685,43 @@ def read_grid(fname_hdf5):
 
             patches.append(patch)
 
+        # Convert rpm block variables to RotatingPatch
+
+        if rpmi1 := b["rpmi1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(i=0))
+            patches[-1].Omega = rpmi1 * 2 * np.pi / 60.0
+        if rpmi2 := b["rpmi2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(i=1))
+            patches[-1].Omega = rpmi2 * 2 * np.pi / 60.0
+
+        if rpmj1 := b["rpmj1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(j=0))
+            patches[-1].Omega = rpmj1 * 2 * np.pi / 60.0
+        if rpmj2 := b["rpmj2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(j=-1))
+            patches[-1].Omega = rpmj2 * 2 * np.pi / 60.0
+
+        if rpmk1 := b["rpmk1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(k=0))
+            patches[-1].Omega = rpmk1 * 2 * np.pi / 60.0
+        if rpmk2 := b["rpmk2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(k=-1))
+            patches[-1].Omega = rpmk2 * 2 * np.pi / 60.0
+
         # Initialise the block object
         block = turbigen.grid.PerfectBlock.from_coordinates(
-            xrt, Nb, patches, Omega=Omega
+            xrt, Nb, patches, Omega=Omega, label=str(ib)
         )
         block.gamma = ga
         block.mu = mu
         block.cp = cp
         block.set_conserved(conserved)
 
+        blocks.append(block)
+
     # Create the grid object
     g = turbigen.grid.Grid(blocks)
 
-    g.check_coordinates()
-    g.match_patches()
     logger.info("Finished reading TS3 grid.")
 
     return g

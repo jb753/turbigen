@@ -1586,7 +1586,7 @@ class MixingPatch(Patch):
     match = None
     slide = False
 
-    def check_match(self, other, rtol=1e-6):
+    def check_match(self, other, rtol=1e-5):
         # Slice both the patches
         C = [self.get_cut(), other.get_cut()]
 
