@@ -524,10 +524,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def cooling_patches(self):
         return self.find_patches(CoolingPatch)
 
-    @property
-    def rotating_patches(self):
-        return self.find_patches(CoolingPatch)
-
     def interp_from(self, other):
         """Interpolate solution from another block."""
 
@@ -784,6 +780,10 @@ class Grid:
     @property
     def cooling_patches(self):
         return self.find_patches(CoolingPatch)
+
+    @property
+    def rotating_patches(self):
+        return self.find_patches(RotatingPatch)
 
     @property
     def nonmatch_patches(self):
@@ -1640,6 +1640,7 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
     harmonics = (1,)
+    force_factor = None
 
     def get_unsteady_multipliers(self, freq, nstep_cycle, ncycle):
         """Given time discretisation, generate unsteady bcond factors.
@@ -1668,15 +1669,26 @@ class InletPatch(Patch):
         dt = 1.0 / freq / nstep_cycle
         t = it * dt
 
-        # Start with a steady unity factor
-        fac = np.ones((nt,))
-
-        # Add on perturbations for each harmonic
-        for n in self.harmonics:
-            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
-            fac += self.amplitude * np.sin(
-                2.0 * np.pi * freq * n * t + phase + self.phase
+        if self.force_factor is not None:
+            fac = self.force_factor
+            assert np.shape(fac) == (nt,), (
+                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             )
+        else:
+            # Start with a steady unity factor
+            fac = np.ones((nt,))
+
+            # Phase offsets for each harmonic
+            try:
+                len(self.phase)
+                phase = self.phase
+            except TypeError:
+                phase = np.pi * self.harmonics**2 / 2.5338  # For minimum crest factor
+                phase += self.phase
+
+            # Add on perturbations for each harmonic
+            for n in self.harmonics:
+                fac += self.amplitude * np.sin(2.0 * np.pi * freq * n * t + phase)
 
         # Choose the forcing type
         if self.force == "isentropic":

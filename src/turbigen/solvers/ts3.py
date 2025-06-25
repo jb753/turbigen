@@ -889,31 +889,20 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             for name, val in _patch_properties(patch).items():
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
-                    if force := patch.force and ts3_config.dts:
-                        t = _get_time_vector(ts3_config)
-                        nt = len(t)
-                        F = np.ones((1, 1, 1, nt))
-                        for n in patch.harmonics:
-                            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
-                            F += patch.amplitude * np.sin(
-                                2.0 * np.pi * ts3_config.frequency * n * t + phase
-                            )
+                    if patch.force and ts3_config.dts:
+                        fac_Po, fac_ho = patch.get_unsteady_multipliers(
+                            ts3_config.frequency,
+                            ts3_config.nstep_cycle,
+                            ts3_config.ncycle,
+                        )
+                        nt = len(fac_Po)
                         ga = patch.state.gamma
-
-                        if force == "isentropic":
-                            Po_Poav = F
-                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
-                        elif force == "entropic":
-                            Po_Poav = np.ones_like(F)
-                            To_Toav = F
-                        else:
-                            raise Exception(f"Unknown inlet forcing type {force}")
 
                         val = np.expand_dims(val, 3)
                         if name == "pstag":
-                            val = val * Po_Poav
+                            val = val * fac_Po.reshape(1, 1, 1, nt)
                         elif name == "tstag":
-                            val = val * To_Toav
+                            val = val * fac_ho.reshape(1, 1, 1, nt)
                         else:
                             val = np.tile(val, (1, 1, 1, nt))
 
@@ -921,6 +910,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
                 if isinstance(patch, turbigen.grid.OutletPatch):
                     if patch.force and ts3_config.dts:
+                        raise NotImplementedError()
                         t = _get_time_vector(ts3_config)
                         F = 1.0 + patch.amplitude * np.sin(
                             2.0 * np.pi * ts3_config.frequency * t
