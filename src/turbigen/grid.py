@@ -524,6 +524,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
     def cooling_patches(self):
         return self.find_patches(CoolingPatch)
 
+    @property
+    def rotating_patches(self):
+        return self.find_patches(CoolingPatch)
+
     def interp_from(self, other):
         """Interpolate solution from another block."""
 

@@ -1004,7 +1004,7 @@ and then back in to refresh your access permissions.
     nnode = ts3_config.nnode
     npernode = ngpu // nnode
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
-    if ngpu == 1:
+    if ngpu == 1 and False:
         cmd_str = (
             f". {ts3_config.environment_script};"
             "turbostream input.hdf5 output 1 > log.txt"
