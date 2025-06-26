@@ -1388,7 +1388,7 @@ def parse_log(fname):
         return err[np.argmax(np.abs(err))]
 
 
-def read_probe_dat_dir(dname):
+def read_probe_dat_dir(dname, stack=True):
     """Load all probe text files in a directory into one big array.
 
     This function will write out an npz into the directory containing the data
@@ -1436,7 +1436,8 @@ def read_probe_dat_dir(dname):
         # Load each dat and trim to the same length
         data_all = [read_probe_dat(f) for f in fnames]
         nstep = min([d.shape[1] for d in data_all])
-        data = np.stack([d[:, :nstep] for d in data_all], axis=1)
+        if stack:
+            data = np.stack([d[:, :nstep] for d in data_all], axis=1)
         np.savez(npz_fname, data=data)
 
     # If the probes are more than 48 hours old, then the calculation has
@@ -1470,7 +1471,7 @@ def read_probe_dat(fname):
     return np.loadtxt(fname, skiprows=1).T
 
 
-def read_probe_flow(dname, S, shape=()):
+def read_probe_flow(dname, S, shape=(), stack=True):
     """Load all probes from a directory into a flowfield object.
 
     Parameters
@@ -1485,7 +1486,7 @@ def read_probe_flow(dname, S, shape=()):
     """
 
     # Get the raw data and split into conserved variables
-    x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname)
+    x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname, stack)
     nprobe = x.shape[1]
 
     # Reshape if requested
