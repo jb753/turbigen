@@ -5,6 +5,7 @@ import dataclasses
 import numpy as np
 from turbigen import util
 import turbigen.base
+import turbigen.average
 import warnings
 import matplotlib.pyplot as plt
 
@@ -486,3 +487,134 @@ class Annulus(BasePost):
 
         pdf.savefig()
         plt.close()
+
+
+@dataclasses.dataclass
+class StreamtubeLoss(BasePost):
+    frac_mdot_break: tuple = (0.2, 0.8)
+    """Cumulative mass flow fractions for breakdown."""
+
+    def post(self, config, pdf):
+        # Find meridional coordinates of the cut planes
+        xr_cut = config.annulus.get_offset_planes(config.cut_offset)
+
+        # Take the cuts
+        cuts = [
+            config.grid.unstructured_cut_marching(xri).interpolate_to_structured()
+            for xri in xr_cut
+        ]
+
+        # Loop over cuts
+        Sdot_tube = []
+        for cut in cuts:
+            xtol = np.ptp(cut.r) * 1e-4
+            assert np.ptp(cut.x) < xtol
+
+            _, nj, nk = cut.shape
+
+            # Pitchwise-integrate mass flow to kg/s per unit span
+            mdot_pitch = np.trapz(cut.Nb * cut.rhoVx * cut.r, cut.t).squeeze()
+
+            # Spanwise-integrate mass flow to kg/s
+            mdot_span = util.cumtrapz0(mdot_pitch, cut.r[0, :, 0])
+
+            # Find indices for the mass flow fractions
+            frac_mdot = mdot_span / mdot_span[-1]
+            jbreak = np.interp(
+                self.frac_mdot_break, frac_mdot, np.arange(len(frac_mdot))
+            )
+
+            # Insert jbreaks into the cut
+            new_data = insert_jbreaks(cut._data, jbreak)
+            cut_new = cut.empty(new_data.shape[1:])
+            cut_new._data = new_data
+            cut_new._metadata = cut._metadata.copy()
+            cut = cut_new
+
+            # Recalculate jbreaks
+            mdot_pitch = np.trapz(cut.Nb * cut.rhoVx * cut.r, cut.t).squeeze()
+            mdot_span = util.cumtrapz0(mdot_pitch, cut.r[0, :, 0])
+            frac_mdot = mdot_span / mdot_span[-1]
+            jbreak = np.interp(
+                self.frac_mdot_break, frac_mdot, np.arange(len(frac_mdot))
+            )
+            jbreak_round = np.round(jbreak).astype(int)
+            assert np.allclose(jbreak_round, jbreak, atol=0.01)
+
+            # Split the cuts into tubes at jbreak_round
+            jbreak_round = np.insert(jbreak_round, 0, 0)
+            jbreak_round = np.append(jbreak_round, cut.nj - 1)
+            Sdot_tube.append([])
+            for j0, j1 in zip(jbreak_round[:-1], jbreak_round[1:]):
+                # Get current streamtube
+                tube = cut[:, j0 : j1 + 1, :]
+
+                # Integrate the entropy flow
+                Sdot_pitch = np.trapz(
+                    tube.Nb * tube.rhoVx * tube.s * tube.r, tube.t
+                ).squeeze()
+                Sdot_span = np.trapz(Sdot_pitch, tube.r[0, :, 0])
+                Sdot_tube[-1].append(Sdot_span)
+
+        # Convert entropy flows to an array
+        # indexed [station, streamtube]
+        Sdot_tube = np.array(Sdot_tube)
+
+        # Change in each row
+        DSdot = np.diff(Sdot_tube, axis=0)
+
+        # Exit mixing loss
+        cuts[-1].Omega = cuts[-1].Omega.mean()
+        Cexit, Aexit, Dsexit = turbigen.average.mix_out(cuts[-1].squeeze())
+
+        mdot_exit = Cexit.rhoVx * Aexit
+        DSexit = Dsexit * mdot_exit
+        DStot = np.sum(DSdot) + DSexit
+
+        # Normalise by total machine entropy rise
+        DSdot_norm = DSdot / DStot
+        DSexit_norm = DSexit / DStot
+        logger.info("Entropy flow breakdown by streamtube[irow, itube]:")
+        logger.info(DSdot_norm)
+        logger.info(DSdot_norm.sum())
+        logger.info("Exit mixing loss:")
+        logger.info(DSexit_norm)
+
+        config.post_3d["DS_tube_norm"] = DSdot_norm
+        config.post_3d["DS_exit_norm"] = DSexit_norm
+
+
+def insert_jbreaks(data, jbreak):
+    """
+    Insert interpolated j-lines into `data` at fractional j-indices using np.insert.
+
+    Parameters:
+        data (np.ndarray): Array of shape (8, ni, nj, nk)
+        jbreak (list of float): Fractional j indices where new lines should be inserted (e.g., [1.5, 2.5])
+
+    Returns:
+        np.ndarray: New array with additional j-lines inserted.
+    """
+    assert data.ndim == 4, "Input must be a 4D array (8, ni, nj, nk)"
+    jbreak = sorted(jbreak)
+
+    new_slices = []
+    insert_indices = []
+
+    for jb in jbreak:
+        j0 = int(np.floor(jb))
+        frac = jb - j0
+        # Linear interpolation between j0 and j0+1
+        interpolated = (1 - frac) * data[:, :, (j0,), :] + frac * data[
+            :, :, (j0 + 1,), :
+        ]
+        new_slices.append(interpolated)
+        insert_indices.append(j0 + 1)  # insert *after* j0
+
+    # Insert along axis=2 (j-axis)
+    new_slices = np.concatenate(new_slices, axis=2)
+    new_data = np.insert(data, insert_indices, new_slices, axis=2)
+
+    assert new_data.shape[2] == data.shape[2] + len(jbreak)
+
+    return new_data
