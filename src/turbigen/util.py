@@ -1,11 +1,10 @@
-"""Miscellaneous utility functions that don't fit anywhere else."""
-
 from abc import ABC, abstractmethod
 import numpy as np
 import os
 import inspect
 import tarfile
 import scipy.interpolate
+import numpy as np
 
 from scipy.interpolate import RBFInterpolator
 from turbigen.exceptions import ConfigError
@@ -1077,3 +1076,12 @@ class Warper:
         dxrt = dxrtq_flat.reshape(xrrtq.shape)
 
         return xrtq + dxrt
+
+
+def amplitude_spectrum(x, fs, axis=-1):
+    """Calculate the amplitude spectrum of a real signal."""
+    nt = x.shape[axis]
+    f = np.fft.rfftfreq(nt, 1.0 / fs)
+    xfluc = x - np.mean(x, axis=axis, keepdims=True)
+    X = np.fft.rfft(xfluc, axis=axis) / nt * 2
+    return f, X

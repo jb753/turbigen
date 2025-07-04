@@ -2,6 +2,8 @@ from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
 import shutil
+import turbigen.fluid
+import turbigen.flowfield
 from glob import glob
 import h5py
 import numpy as np
@@ -9,6 +11,7 @@ import turbigen.grid
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
+from turbigen import yaml
 from pathlib import Path
 import signal
 import sys
@@ -147,6 +150,9 @@ class ts3(BaseSolver):
     # Enable laminar boundary layers on all walls.
     laminar: bool = False
 
+    if_no_mg: int = 0  # Disable multigrid for SA
+    fac_sa_smth: float = 4.0  # SA smoothing (lower is more stable)
+    fac_sa_step: float = 1.0  # SA time step factor
     fac_st0: float = 1.0
     ipout: int = 3
     convert_sliding: bool = False
@@ -161,7 +167,8 @@ class ts3(BaseSolver):
     xllim_free: float = 0.1
     free_turb: float = 0.05
     turbvis_lim: float = 3000.0
-
+    rfvis: float = 0.2
+    use_temperature_sensor: int = 0
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
 
@@ -926,6 +933,22 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
         assert ip == block_group.attrs["np"]
 
+    # Write out a probe metadata file with shapes of the patches
+    if grid.probe_patches:
+        probe_shape_path = os.path.join(ts3_config.workdir, "probe_meta.yaml")
+        probe_metadata = {}
+        for ib, b in enumerate(grid):
+            bmeta = {}
+            for ip, p in enumerate(b.patches):
+                if isinstance(p, turbigen.grid.ProbePatch):
+                    C = p.get_cut()
+                    bmeta[ip] = {"shape": C.shape, "Omega": C.Omega.mean()}
+
+            if bmeta:
+                probe_metadata[ib] = bmeta
+
+        yaml.write_yaml(probe_metadata, probe_shape_path)
+
     # Now check that patch and block ids are consistent
     logger.debug("Checking np")
     for ib in range(nb):
@@ -954,12 +977,19 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             jen = pch.attrs["jen"]
             ken = pch.attrs["ken"]
 
-            assert ist < ni
-            assert ien < (ni + 1)
-            assert jst < nj
-            assert jen < (nj + 1)
-            assert kst < nk
-            assert ken < (nk + 1)
+            try:
+                assert ist < ni
+                assert ien < (ni + 1)
+                assert jst < nj
+                assert jen < (nj + 1)
+                assert kst < nk
+                assert ken < (nk + 1)
+            except AssertionError:
+                raise Exception(
+                    f"Patch {pch} has invalid indices: "
+                    f"ist={ist}, ien={ien}, jst={jst}, jen={jen}, "
+                    f"kst={kst}, ken={ken}, ni={ni}, nj={nj}, nk={nk}"
+                )
 
             assert nxbid < nb
             assert nxpid < nxblk.attrs["np"]
@@ -1451,7 +1481,7 @@ def read_probe_dat_dir(dname, stack=True):
 
 
 def read_probe_dat(fname):
-    """Load a probe text file into a big array.
+    """Load a probe text file into a flow field.
 
     Note that this returns flattened arrays, i.e. the shape of the probe patch
     is lost
@@ -1468,7 +1498,94 @@ def read_probe_dat(fname):
         Rows are time steps.
 
     """
-    return np.loadtxt(fname, skiprows=1).T
+
+    dname = os.path.dirname(fname)
+
+    # Look for a probe metadata file in same directory
+    probe_meta_path = os.path.join(dname, "probe_meta.yaml")
+    if os.path.exists(probe_meta_path):
+        # Parse the bid and pid from the file name
+        bid, pid = (int(x) for x in os.path.basename(fname)[:-4].split("_")[-2:])
+
+        # Extract shape from metadata
+        probe_meta = yaml.read_yaml(probe_meta_path)
+        shape = tuple(probe_meta[bid][pid]["shape"])
+        Omega = float(probe_meta[bid][pid]["Omega"])
+
+    else:
+        # Default to a point probe
+        shape = (1,)
+        Omega = 0.0
+
+    # Add time dimension
+    shape = shape + (-1,)
+
+    # Check for npz file and modification time
+    npz_fname = fname.replace(".dat", ".npz")
+    if os.path.exists(npz_fname):
+        npz_mtime = os.path.getmtime(npz_fname)
+    else:
+        npz_mtime = 0
+
+    # Get dat files and modification time
+    if os.path.exists(fname):
+        dat_mtime = os.path.getmtime(fname)
+    else:
+        dat_mtime = 0
+
+    # Load the npz if it exists and is newer than dat file
+    if os.path.exists(npz_fname) and npz_mtime > dat_mtime:
+        with np.load(npz_fname) as d:
+            conserved = d["conserved"]
+
+    # Otherwise load the dat file
+    else:
+        conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")
+        np.savez(npz_fname, conserved=conserved)
+
+        # If the probes are more than 48 hours old, then the calculation has
+        # finished and we can delete the raw dat files
+        if (time.time() - dat_mtime) > 48 * 3600:
+            os.remove(fname)
+
+    # Split up the conserved vars
+    x, r, rt, ro, rovx, rovr, rorvt, roe = conserved
+
+    # Read gas properties from hdf5 file
+    fname_hdf5 = os.path.join(dname, "input.hdf5")
+    with h5py.File(fname_hdf5, "r") as f:
+        # Get gas properties from application vars and initialise a state
+        # These are data items of the root group
+        cp, ga, mu, frequency, nstep_cycle, nstep_save_probe = (
+            scalar(f[f"{k}_av"])
+            for k in (
+                "cp",
+                "ga",
+                "viscosity",
+                "frequency",
+                "nstep_cycle",
+                "nstep_save_probe",
+            )
+        )
+
+    fs = frequency * nstep_cycle / nstep_save_probe
+
+    F = turbigen.flowfield.PerfectFlowField(x.shape)
+    F.Tu0 = 0.0
+    F.cp = cp
+    F.gamma = ga
+    F.mu = mu
+    F.Omega = Omega
+
+    # Insert the coordinates and velocities
+    F.xrt = np.stack((x, r, rt / r))
+    F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro
+
+    # Insert the thermodynamic state
+    u = roe / ro - 0.5 * F.V**2.0
+    F.set_rho_u(ro, u)
+
+    return F, fs
 
 
 def read_probe_flow(dname, S, shape=(), stack=True):

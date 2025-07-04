@@ -811,8 +811,6 @@ class Grid:
                         if P1 is P2:  # or p1.match or p2.match:
                             continue
                         elif P1.check_match(P2):
-                            # Now verify that reference frame angular
-                            # velocity is the same on each side
                             break
                     except Exception as e:
                         logger.info("Error checking match:")
@@ -1807,7 +1805,7 @@ NOT_WALL_PATCHES = [
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
-    CoolingPatch,
+    # CoolingPatch,
     NonMatchPatch,
 ]
 NOT_SLIPWALL_PATCHES = [
