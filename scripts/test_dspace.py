@@ -15,6 +15,7 @@ conf = turbigen.config2.TurbigenConfig(**turbigen.yaml.read_yaml(fname))
 
 dspace = conf.design_space
 dspace.setup()
+quit()
 
 # Plot LE recamber as a function of incidence
 
