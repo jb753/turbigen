@@ -277,7 +277,7 @@ class Incidence(IteratorConfig):
 
             logger.iter(f"Blade {irow}")
             logger.iter(f"  Old LE recamber: {blade.camber[:, 0]}")
-            blade.camber[:, 0] = config.design_space.interpolate(
+            blade.camber[:, 0] = config.design_space.converged.interpolate(
                 extract_camber,
                 config,
                 irow=irow,

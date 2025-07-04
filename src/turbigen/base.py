@@ -1968,3 +1968,17 @@ and will cause problems with meshing and solving for the flow field."""
         if eta_poly > 1.0:
             eta_poly = 1.0 / eta_poly
         return eta_poly
+
+    def to_dump(self):
+        """Make a simple dict dump of the mean-line data."""
+        # Without any state information
+        return {
+            "rrms": self.rrms.tolist(),
+            "A": self.A.tolist(),
+            "Omega": self.Omega.tolist(),
+            "Vxrt": self.Vxrt.tolist(),
+            "Nb": self.Nb.tolist(),
+            "rho": self.rho.tolist(),
+            "u": self.u.tolist(),
+            "Ds_mix": self.Ds_mix,
+        }

@@ -13,6 +13,7 @@ import turbigen.fluid
 import turbigen.flowfield
 import turbigen.meanline
 import turbigen.solvers.base
+import turbigen.base
 import turbigen.iterators
 import turbigen.average
 import turbigen.op_point
@@ -162,19 +163,8 @@ class TurbigenConfig:
                     with gzip.open(fname_pkl, "wb") as f:
                         pickle.dump(val, f)
 
-        # Save mean_line_acutal as a pickle
-        try:
-            fname_pkl = self.workdir / "mixed_out_flowfield.pkl.gz"
-            data["mixed_out_flowfield"] = str(fname_pkl)
-            if fname_pkl.exists() and not overwrite_pkl:
-                logger.debug(f"Not overwriting existing {fname_pkl}")
-            else:
-                logger.debug(f"Saving {k} to {fname_pkl}")
-                with gzip.open(fname_pkl, "wb") as f:
-                    pickle.dump(self.mean_line.actual, f)
-        except Exception:
-            pass
-
+        if hasattr(self.mean_line, "actual"):
+            data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
         if not data["mixed_out_flowfield"]:
             del data["mixed_out_flowfield"]
 
@@ -328,10 +318,10 @@ class TurbigenConfig:
         )
         self.mean_line = MeanLineDesigner(self.mean_line)
 
-        # If mixed_out_flowfield is a filename, load and unpickle it
-        if isinstance(self.mixed_out_flowfield, str):
-            with gzip.open(Path(self.mixed_out_flowfield), "rb") as f:
-                self.mean_line.actual = pickle.load(f)
+        if isinstance(self.mixed_out_flowfield, dict):
+            self.mean_line.actual = turbigen.flowfield.meanline_from_dump(
+                self.mixed_out_flowfield, self.inlet.get_inlet()
+            )
 
         # Set up the annulus designer
         if self.annulus:
@@ -737,12 +727,15 @@ class TurbigenConfig:
         Call.Omega = np.concatenate(
             [g[0].Omega.flat[0] * np.ones((2,)) for g in self.grid.row_blocks]
         )
-        Call.Nb = self.mean_line.nominal.Nb
+        Nb = np.concatenate(
+            [g[0].Nb * np.ones((2,)) for g in self.grid.row_blocks]
+        ).astype(int)
 
         # Assemble the meanline flowfield
         self.mean_line.actual = turbigen.flowfield.make_mean_line_from_flowfield(
             Amix, Call, Dsmix
         )
+        self.mean_line.actual.Nb = self.mean_line.nominal.Nb = Nb
 
         # Back-calculate the design variables
         self.mean_line_actual = self.mean_line.backward(self.mean_line.actual)

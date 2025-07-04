@@ -128,3 +128,24 @@ def read_mean_line_database(database_file):
     with Pool(Nworker) as p:
         ml = p.map(mean_line_from_dict, turbigen.yaml.read_yaml_list(database_file))
     return ml
+
+
+def meanline_from_dump(dump, So1):
+    """Load a mean-line from a simple dict dump."""
+    n = len(dump["rrms"])
+    S = So1.empty(shape=(n,))
+    S.set_rho_u(dump["rho"], dump["u"])
+
+    if isinstance(So1, turbigen.fluid.PerfectState):
+        ml_class = PerfectMeanLine
+    elif isinstance(So1, turbigen.fluid.RealState):
+        ml_class = RealMeanLine
+    else:
+        raise Exception(f"Unknown fluid class {type(So1)}")
+    ml = ml_class.from_states(
+        dump["rrms"], dump["A"], dump["Omega"], dump["Vxrt"], S, dump["Nb"]
+    )
+    ml.Ds_mix = dump["Ds_mix"]
+    ml._metadata.pop("patches", None)
+    ml._metadata.pop("Nb", None)
+    return ml

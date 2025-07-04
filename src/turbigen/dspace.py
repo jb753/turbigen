@@ -408,6 +408,7 @@ class DesignSpace:
                 confs.append(c)
             except Exception as e:
                 logger.iter(f"Error reading {f}")
+                logger.iter(e)
 
         # Check the ids are in order and consecutive
         # This is so we know how many samples have been taken already
@@ -431,15 +432,16 @@ class DesignSpace:
         self._nsampled = len(fnames_done)
         self._sampler.fast_forward(self._nsampled)
 
-        # # Now exclude any unconverged samples
-        # self.samples_unconverged = confs
-        # self.samples = [c for c in confs if c.converged]
+        # # Now exclude any configs that have not ran yet
+        self.configs = [c for c in confs if c.mean_line_actual]
         logger.iter(f"Loaded {len(confs)} config files.")
-        self.configs = confs
 
     def setup(self):
         # Populate configs list
         self.load_configs()
+
+        if not self.configs:
+            return
 
         # Construct fits for converged and unconverged samples
         self.converged = Fit(
@@ -450,6 +452,7 @@ class DesignSpace:
             self.basis,
             self.frac_test,
         )
+        logger.iter(f"{self.converged.ns} converged samples.")
         print(self.converged.ndof, self.converged.ns)
         self.all = Fit(
             self.independent,
@@ -459,7 +462,7 @@ class DesignSpace:
             self.basis,
             self.frac_test,
         )
-        print(self.all.ndof, self.all.ns)
+        logger.iter(f"{self.all.ns} all samples.")
 
     def sample(self, datum):
         """Generate random configurations in the design space.
