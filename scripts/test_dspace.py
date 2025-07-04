@@ -10,23 +10,18 @@ import logging
 logger = util.make_logger()
 logger.setLevel(level=logging.DEBUG)
 
-fname = "runs/0217/config.yaml"
+fname = "scripts/dspace_test.yaml"
 conf = turbigen.config2.TurbigenConfig(**turbigen.yaml.read_yaml(fname))
 
 dspace = conf.design_space
 dspace.setup()
+quit()
 
+# Plot LE recamber as a function of incidence
 
 datum = dspace.configs[0]
-# datum = turbigen.config2.TurbigenConfig(
-#     **turbigen.yaml.read_yaml("runs/0243/config.yaml")
-# )
-# print(dspace.independent.get_independent_inverse(datum))
-# print(datum.blades[0][0].camber)
-# quit()
-
-f = lambda x: x.mean_line_actual["Omega"]
-xg = dspace.meshgrid(datum, psi=(0.8, 2.4), phi2=(0.4, 1.2)).squeeze()
+f = lambda x: x.blades[0][0].camber[:, 0]
+xg = dspace.meshgrid(datum, phi2=(0.4, 1.2)).squeeze()
 yg = dspace.converged.evaluate(f, xg)
 print(dspace.converged.rmse(f))
 

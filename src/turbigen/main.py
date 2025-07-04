@@ -229,7 +229,7 @@ def main():
     else:
         basedir = conf.workdir
 
-        if conf.design_space and conf.design_space.samples:
+        if conf.design_space and conf.design_space.configs:
             logger.info("Initialising iterators with fitted design space.")
             conf.interpolate_all_iterators()
 

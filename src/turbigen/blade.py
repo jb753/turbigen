@@ -30,6 +30,9 @@ class BladeDesigner:
     tip: float = 0.0
     """Tip clearance as fraction of span."""
 
+    tip_ref: str = "span"
+    """Reference for tip clearance, {'span', 'chord', 'absolute'}."""
+
     vortex_expon: float = -1.0
     """Spanwise swirl distribution, Vt ~ r**vortex_expon."""
 

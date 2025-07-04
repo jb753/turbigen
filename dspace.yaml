@@ -1,4 +1,4 @@
-workdir: runs/0244
+workdir: runs/*
 
 inlet:
   Po: 16.0e5
@@ -56,15 +56,15 @@ job:
   type: local
 
 iterate:
-  mean_line:
-    tolerance:
-      Ys: 0.005
-    relaxation_factor: 1.0
-  deviation:
+  # mean_line:
+  #   tolerance:
+  #     Ys: 0.005
+  #   relaxation_factor: 1.0
+  # deviation:
   incidence:
     tolerance: 10.
     relaxation_factor: 0.025
-  repeat:
+  # repeat:
 
 post_process:
   # Loss at stator and rotor exits
@@ -84,6 +84,6 @@ design_space:
       phi2: [0.4, 1.2]
       psi: [0.8, 2.4]
   order_max: 3
-  nsample: 4
+  nsample_target: 4
 
 fac_nstep_initial: 2.0
