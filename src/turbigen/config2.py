@@ -114,6 +114,9 @@ class TurbigenConfig:
 
     mixed_out_flowfield: dict = None
 
+    post_3d: dict = dataclasses.field(default_factory=dict)
+    """Results post-processed from the full 3D flow field."""
+
     def copy(self):
         """Return a copy of the configuration."""
         return deepcopy(self)

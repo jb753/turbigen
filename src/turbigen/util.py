@@ -60,9 +60,13 @@ def cell_to_node(x):
     """One-dimensional centered values to nodal values."""
     return np.concatenate(
         (
-            x[(0,),],
+            x[
+                (0,),
+            ],
             0.5 * (x[1:] + x[:-1]),
-            x[(-1,),],
+            x[
+                (-1,),
+            ],
         )
     )
 
@@ -81,9 +85,9 @@ def cumsum0(x, axis=None):
     return np.insert(np.cumsum(x, axis=axis), 0, 0.0, axis=axis)
 
 
-def cumtrapz0(x, *args):
+def cumtrapz0(x, *args, axis=-1):
     """Cumulative integration including an inital zero, input same length as output."""
-    return np.insert(cumtrapz(x, *args), 0, 0.0)
+    return np.insert(cumtrapz(x, *args, axis=axis), 0, 0.0, axis=axis)
 
 
 def arc_length(xr):
@@ -185,8 +189,12 @@ def resample(x, f, mult=None):
     xnew = xnorm_new * np.ptp(x) + x[0]
 
     assert np.allclose(
-        xnew[(0, -1),],
-        x[(0, -1),],
+        xnew[
+            (0, -1),
+        ],
+        x[
+            (0, -1),
+        ],
     )
 
     return xnew
