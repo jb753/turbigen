@@ -23,6 +23,33 @@ import turbigen.util
 
 logger = turbigen.util.make_logger()
 
+KIND_LOOKUP = {
+    0: turbigen.grid.InletPatch,
+    1: turbigen.grid.OutletPatch,
+    19: turbigen.grid.OutletPatch,  # outlet2d
+    2: turbigen.grid.MixingPatch,
+    17: turbigen.grid.PorousPatch,
+    16: turbigen.grid.PeriodicPatch,  # periodic_cartesian
+    5: turbigen.grid.PeriodicPatch,
+    7: turbigen.grid.InviscidPatch,
+    8: turbigen.grid.ProbePatch,
+    15: turbigen.grid.NonMatchPatch,
+    6: turbigen.grid.CoolingPatch,
+}
+
+
+def _unflip(x, shape=None):
+    """Make the shape of a TS3 hdf5 array [ni, nj, nk]
+
+    Although the TS3 hdf5 reports the shape of the data as ni x nj x nk,
+    this is not actually true and the underlying data is stored in nk x nj x
+    ni order. So we reshape and swap the axes back."""
+    if not shape:
+        ni, nj, nk = x.shape
+    else:
+        ni, nj, nk = shape
+    return np.swapaxes(np.reshape(x, (nk, nj, ni)), 0, 2)
+
 
 @dataclass
 class ts3(BaseSolver):
@@ -862,31 +889,20 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             for name, val in _patch_properties(patch).items():
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
-                    if force := patch.force and ts3_config.dts:
-                        t = _get_time_vector(ts3_config)
-                        nt = len(t)
-                        F = np.ones((1, 1, 1, nt))
-                        for n in patch.harmonics:
-                            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
-                            F += patch.amplitude * np.sin(
-                                2.0 * np.pi * ts3_config.frequency * n * t + phase
-                            )
+                    if patch.force and ts3_config.dts:
+                        fac_Po, fac_ho = patch.get_unsteady_multipliers(
+                            ts3_config.frequency,
+                            ts3_config.nstep_cycle,
+                            ts3_config.ncycle,
+                        )
+                        nt = len(fac_Po)
                         ga = patch.state.gamma
-
-                        if force == "isentropic":
-                            Po_Poav = F
-                            To_Toav = Po_Poav ** ((ga - 1.0) / ga)
-                        elif force == "entropic":
-                            Po_Poav = np.ones_like(F)
-                            To_Toav = F
-                        else:
-                            raise Exception(f"Unknown inlet forcing type {force}")
 
                         val = np.expand_dims(val, 3)
                         if name == "pstag":
-                            val = val * Po_Poav
+                            val = val * fac_Po.reshape(1, 1, 1, nt)
                         elif name == "tstag":
-                            val = val * To_Toav
+                            val = val * fac_ho.reshape(1, 1, 1, nt)
                         else:
                             val = np.tile(val, (1, 1, 1, nt))
 
@@ -894,6 +910,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
                 if isinstance(patch, turbigen.grid.OutletPatch):
                     if patch.force and ts3_config.dts:
+                        raise NotImplementedError()
                         t = _get_time_vector(ts3_config)
                         F = 1.0 + patch.amplitude * np.sin(
                             2.0 * np.pi * ts3_config.frequency * t
@@ -977,7 +994,7 @@ and then back in to refresh your access permissions.
     nnode = ts3_config.nnode
     npernode = ngpu // nnode
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
-    if ngpu == 1:
+    if ngpu == 1 and False:
         cmd_str = (
             f". {ts3_config.environment_script};"
             "turbostream input.hdf5 output 1 > log.txt"
@@ -1064,10 +1081,6 @@ def _read_hdf5(grid, ts3_config):
 
     # Although the TS3 hdf5 reports the shape of the data as ni x nj x nk, this
     # is not correct and actually the underlying data is stored in nk x nj x ni order.
-    # So we reshape and swap the axes back
-    def _unflip(x):
-        ni, nj, nk = x.shape
-        return np.swapaxes(np.reshape(x, (nk, nj, ni)), 0, 2)
 
     # Loop over blocks
     nb = len(grid)
@@ -1375,7 +1388,7 @@ def parse_log(fname):
         return err[np.argmax(np.abs(err))]
 
 
-def read_probe_dat_dir(dname):
+def read_probe_dat_dir(dname, stack=True):
     """Load all probe text files in a directory into one big array.
 
     This function will write out an npz into the directory containing the data
@@ -1423,7 +1436,8 @@ def read_probe_dat_dir(dname):
         # Load each dat and trim to the same length
         data_all = [read_probe_dat(f) for f in fnames]
         nstep = min([d.shape[1] for d in data_all])
-        data = np.stack([d[:, :nstep] for d in data_all], axis=1)
+        if stack:
+            data = np.stack([d[:, :nstep] for d in data_all], axis=1)
         np.savez(npz_fname, data=data)
 
     # If the probes are more than 48 hours old, then the calculation has
@@ -1457,7 +1471,7 @@ def read_probe_dat(fname):
     return np.loadtxt(fname, skiprows=1).T
 
 
-def read_probe_flow(dname, S, shape=()):
+def read_probe_flow(dname, S, shape=(), stack=True):
     """Load all probes from a directory into a flowfield object.
 
     Parameters
@@ -1472,7 +1486,7 @@ def read_probe_flow(dname, S, shape=()):
     """
 
     # Get the raw data and split into conserved variables
-    x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname)
+    x, r, rt, ro, rovx, rovr, rorvt, roe = read_probe_dat_dir(dname, stack)
     nprobe = x.shape[1]
 
     # Reshape if requested
@@ -1529,3 +1543,176 @@ def _get_time_vector(ts3_config):
     dt = 1.0 / freq / nstep_cycle
     t = it * dt
     return t
+
+
+def scalar(x):
+    return np.squeeze(x).item()
+
+
+def read_grid(fname_hdf5):
+    """Read a Turbostream 3 input file and return a Grid object.
+
+    This function loads not only the flow field, but also coordinates
+    and patch information from the file.
+
+    Parameters
+    ----------
+    fname : str
+        The name of the hdf5 file to read.
+
+    Returns
+    -------
+    g : turbigen.grid.Grid
+        The Grid object containing the data from the file.
+    """
+
+    f = h5py.File(fname_hdf5, "r")
+    logger.info(f"Reading TS3 input file {fname_hdf5}")
+
+    # Get gas properties from application vars and initialise a state
+    # These are data items of the root group
+    cp, ga, mu = (scalar(f[f"{k}_av"]) for k in ("cp", "ga", "viscosity"))
+    logger.info(f"Fluid properties: cp = {cp:.0f}, ga = {ga:.3f}, mu = {mu:.3g}")
+    Sref = turbigen.fluid.PerfectState.from_properties(cp=cp, gamma=ga, mu=mu)
+
+    # Get number of blocks from root group
+    nb = int(scalar(f.attrs["nb"]))
+    logger.info(f"Number of blocks: {nb}")
+
+    # Loop over blocks
+    blocks = []
+    for ib in range(nb):
+        b = f[f"block{ib}"]
+
+        # Shape from attributes
+        ni, nj, nk = [int(scalar(b.attrs[k])) for k in ("ni", "nj", "nk")]
+        npatch = int(scalar(b.attrs["np"]))
+
+        # Now read the block variables we need
+        rpm = scalar(b["rpm_bv"])
+        Nb = int(scalar(b["nblade_bv"]))
+        logger.info(
+            f"bid {ib}: shape={ni}x{nj}x{nk}, rpm={rpm:.0f}, Nb={Nb:.0f}, np={npatch}"
+        )
+        Omega = 2 * np.pi * rpm / 60.0
+
+        # Read block properties at all nodes
+
+        # Coordinates
+        xrt = np.full((3, ni, nj, nk), np.nan)
+        xrt[0] = _unflip(b["x_bp"])
+        xrt[1] = _unflip(b["r_bp"])
+        xrt[2] = _unflip(b["rt_bp"]) / xrt[1]
+
+        # Conserved variables
+        conserved = np.stack(
+            (
+                _unflip(b["ro_bp"]),
+                _unflip(b["rovx_bp"]),
+                _unflip(b["rovr_bp"]),
+                _unflip(b["rorvt_bp"]),
+                _unflip(b["roe_bp"]),
+            )
+        )
+
+        # Now read the patches
+        patches = []
+        for ip in range(npatch):
+            p = b[f"patch{ip}"]
+
+            # Check bid and pid
+            assert p.attrs["bid"] == ib
+            assert p.attrs["pid"] == ip
+
+            # Start and end indices of the patch
+            ist, ien, jst, jen, kst, ken = (
+                p.attrs[k] for k in ("ist", "ien", "jst", "jen", "kst", "ken")
+            )
+
+            # Patch shape
+            di = ien - ist
+            dj = jen - jst
+            dk = ken - kst
+            pshape = (di, dj, dk)
+
+            # Subtract 1 to make the end indices inclusive
+            ien -= 1
+            jen -= 1
+            ken -= 1
+
+            # Select what subclass of Patch to use
+            kind = p.attrs["kind"]
+            if kind not in KIND_LOOKUP:
+                raise ValueError(f"Unknown patch kind {kind} in block {ib}, patch {ip}")
+            patch = KIND_LOOKUP[kind](i=(ist, ien), j=(jst, jen), k=(kst, ken))
+
+            # Now process the patch variables and properties according to sublcass
+
+            # Inlet
+            if isinstance(patch, turbigen.grid.InletPatch):
+                pstag = _unflip(p["pstag_pp"], pshape)
+                tstag = _unflip(p["tstag_pp"], pshape)
+                yaw = _unflip(p["yaw_pp"], pshape)
+                pitch = _unflip(p["pitch_pp"], pshape)
+                patch.state = Sref.empty(shape=(di, dj, dk))
+                patch.state.set_P_T(pstag, tstag)
+                patch.Alpha = yaw
+                patch.Beta = pitch
+
+            # Outlet
+            elif isinstance(patch, turbigen.grid.OutletPatch):
+                patch.Pout = float(p["pout_pv"][0])
+
+            # Cooling
+            elif isinstance(patch, turbigen.grid.CoolingPatch):
+                patch.cool_type = int(p["cool_type_pv"][0])
+                patch.cool_mass = float(p["cool_mass_pv"][0])
+                patch.cool_pstag = float(p["cool_pstag_pv"][0])
+                patch.cool_tstag = float(p["cool_tstag_pv"][0])
+                patch.cool_sangle = float(p["cool_sangle_pv"][0])
+                patch.cool_xangle = float(p["cool_xangle_pv"][0])
+                patch.cool_mach = float(p["cool_mach_pv"][0])
+                patch.cool_angle_def = 1
+
+            patches.append(patch)
+
+        # Convert rpm block variables to RotatingPatch
+
+        if rpmi1 := b["rpmi1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(i=0))
+            patches[-1].Omega = rpmi1 * 2 * np.pi / 60.0
+        if rpmi2 := b["rpmi2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(i=1))
+            patches[-1].Omega = rpmi2 * 2 * np.pi / 60.0
+
+        if rpmj1 := b["rpmj1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(j=0))
+            patches[-1].Omega = rpmj1 * 2 * np.pi / 60.0
+        if rpmj2 := b["rpmj2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(j=-1))
+            patches[-1].Omega = rpmj2 * 2 * np.pi / 60.0
+
+        if rpmk1 := b["rpmk1_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(k=0))
+            patches[-1].Omega = rpmk1 * 2 * np.pi / 60.0
+        if rpmk2 := b["rpmk2_bv"][0]:
+            patches.append(turbigen.grid.RotatingPatch(k=-1))
+            patches[-1].Omega = rpmk2 * 2 * np.pi / 60.0
+
+        # Initialise the block object
+        block = turbigen.grid.PerfectBlock.from_coordinates(
+            xrt, Nb, patches, Omega=Omega, label=str(ib)
+        )
+        block.gamma = ga
+        block.mu = mu
+        block.cp = cp
+        block.set_conserved(conserved)
+
+        blocks.append(block)
+
+    # Create the grid object
+    g = turbigen.grid.Grid(blocks)
+
+    logger.info("Finished reading TS3 grid.")
+
+    return g

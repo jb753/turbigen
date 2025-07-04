@@ -1,6 +1,7 @@
 """A general multiblock structured grid class."""
 
 import numpy as np
+from copy import copy
 from turbigen import util
 import turbigen.yaml
 import turbigen.fluid
@@ -69,12 +70,33 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         bnew.mu_turb = np.full_like(bnew.w, np.nan)
         return bnew
 
+    def copy(self):
+        b = super().copy()
+        b.patches = []
+        for p in self.patches:
+            b.add_patch(copy(p))
+            b.patches[-1].ijk_limits = b.patches[-1].ijk_limits + 0
+        return b
+
     def write_npz(self, fname):
         """Save this object to an npz file."""
         d = self.to_dict()
         d["metadata"].pop("patches")
         d.update(d.pop("metadata"))
         np.savez_compressed(fname, **d)
+
+    def check_negative_volumes(self):
+        ni, nj, nk = self.shape
+        vol = self.vol
+        for i in range(ni - 1):
+            for j in range(nj - 1):
+                for k in range(nk - 1):
+                    if vol[i, j, k] < 0.0:
+                        print(
+                            f"Negative volume at i={i}, j={j}, k={k} "
+                            f"({vol[i, j, k]:.3e}) in block {self.label}"
+                        )
+        print(f"Summary: {np.sum(vol < 0.0)} negative volumes in block {self.label}")
 
     @classmethod
     def from_coordinates(cls, xrt, Nb, patches=(), label=None, Omega=0.0):
@@ -176,7 +198,16 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         self.Omega = Omega
         self.set_P_T(P, T)
 
-    def trim(self, i=None, j=None, k=None):
+    def delete(self):
+        """Delete this block from the parent grid"""
+        logger.debug(f"Deleting block {self.label}")
+        # Remove this block from the grid
+        if self.grid is not None:
+            self.grid._blocks.remove(self)
+        else:
+            logger.warning("Block is not part of a grid, cannot remove from grid.")
+
+    def trim(self, i=None, j=None, k=None, update_matches=True):
         """Extract a subset of this block in-place, correct patch indices."""
 
         logger.debug(f"Trimming block {self}")
@@ -199,29 +230,30 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 logger.debug(f"{isten_old}->{isten}")
 
             # Now adjust the patches that reference this block
-            logger.debug("Now updating the matching patches")
-            for p2 in self.grid.periodic_patches:
-                if p2.match is None:
-                    raise Exception("Must match patches before trimming the block")
-                if (p2.block is self) or (p2.match.block is not self):
-                    continue
-                logger.debug(f"{p2}")
-                if p2.idir == 0:
-                    logger.debug("next patch i matches trim block i")
-                    isten = p2.ijk_limits[0, :]
-                    isten[isten == ni_old - 1] = -1
-                    isten[isten > 0] = isten[isten > 0] - i[0]
-                    logger.debug(f"{isten_old}->{isten}")
-                elif p2.jdir == 0:
-                    logger.debug("next patch j matches trim block i")
-                elif p2.kdir == 0:
-                    logger.debug("next patch k matches trim block i")
-                elif p2.idir == 3:
-                    logger.debug("next patch i matches trim block -i")
-                elif p2.jdir == 3:
-                    logger.debug("next patch j matches trim block -i")
-                elif p2.kdir == 3:
-                    logger.debug("next patch k matches trim block -i")
+            if update_matches:
+                logger.debug("Now updating the matching patches")
+                for p2 in self.grid.periodic_patches:
+                    if p2.match is None:
+                        raise Exception("Must match patches before trimming the block")
+                    if (p2.block is self) or (p2.match.block is not self):
+                        continue
+                    logger.debug(f"{p2}")
+                    if p2.idir == 0:
+                        logger.debug("next patch i matches trim block i")
+                        isten = p2.ijk_limits[0, :]
+                        isten[isten == ni_old - 1] = -1
+                        isten[isten > 0] = isten[isten > 0] - i[0]
+                        logger.debug(f"{isten_old}->{isten}")
+                    elif p2.jdir == 0:
+                        logger.debug("next patch j matches trim block i")
+                    elif p2.kdir == 0:
+                        logger.debug("next patch k matches trim block i")
+                    elif p2.idir == 3:
+                        logger.debug("next patch i matches trim block -i")
+                    elif p2.jdir == 3:
+                        logger.debug("next patch j matches trim block -i")
+                    elif p2.kdir == 3:
+                        logger.debug("next patch k matches trim block -i")
 
         if j:
             raise NotImplementedError
@@ -437,20 +469,25 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         Lmax = np.max(np.ptp(self.xrrt, axis=(1, 2, 3)))
         assert (self.w < Lmax).all()
 
-    def get_connected(self, max_depth=10):
-        """Return all blocks that are connected to this patch."""
-        blocks = [
-            self,
-        ]
-        for _ in range(max_depth):
-            for block in blocks:
-                for patch in block.patches:
-                    if isinstance(patch, PeriodicPatch) or isinstance(
-                        patch, PorousPatch
+    def get_connected(self, npass=10):
+        g = self.grid
+        bid_start = g.index(self)
+        bid_conn = [bid_start]
+        for _ in range(npass):
+            bid_conn_new = []
+            for bid in bid_conn:
+                for p in g[bid].patches:
+                    if not isinstance(
+                        p, (turbigen.grid.PeriodicPatch, turbigen.grid.NonMatchPatch)
                     ):
-                        if patch.match and (patch.match.block not in blocks):
-                            blocks.append(patch.match.block)
-        return blocks
+                        continue
+                    bid_match = g.index(p.match.block)
+                    if bid_match not in bid_conn + bid_conn_new:
+                        bid_conn_new.append(bid_match)
+            bid_conn.extend(bid_conn_new)
+
+        assert len(bid_conn) == len(set(bid_conn)), "Connected blocks not unique"
+        return [g[bid] for bid in bid_conn]
 
     def add_patch(self, patch):
         patch.block = self
@@ -602,15 +639,19 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         dist = np.sum((self.xrrt - np.reshape(xrrt, (3, 1, 1, 1))) ** 2, axis=0)
         return np.unravel_index(np.argmin(dist), self.shape)
 
+    def __eq__(self, other):
+        """Two blocks are equal if they have the same coordinates."""
+        return self is other
 
-class PerfectBlock(turbigen.flowfield.PerfectFlowField, BaseBlock):
+
+class PerfectBlock(BaseBlock, turbigen.flowfield.PerfectFlowField):
     _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
         return f"Block({self.label})"
 
 
-class RealBlock(turbigen.flowfield.RealFlowField, BaseBlock):
+class RealBlock(BaseBlock, turbigen.flowfield.RealFlowField):
     _data_rows = ("x", "r", "t", "Vx", "Vr", "Vt", "rho", "u", "w", "mu_turb", "Omega")
 
     def __str__(self):
@@ -741,6 +782,10 @@ class Grid:
         return self.find_patches(CoolingPatch)
 
     @property
+    def rotating_patches(self):
+        return self.find_patches(RotatingPatch)
+
+    @property
     def nonmatch_patches(self):
         return self.find_patches(NonMatchPatch)
 
@@ -808,7 +853,7 @@ class Grid:
             # Start at inlet
             blk.append(self.inlet_patches[0].block.get_connected())
             mix_visited = []
-            for irow in range(1, self.nrow - 1):
+            for _ in range(1, self.nrow - 1):
                 # Look for a mixing patch in the previous row
                 for p in self.mixing_patches:
                     if p.block in blk[-1] and p not in mix_visited:
@@ -822,6 +867,8 @@ class Grid:
             for b in self._blocks:
                 if b not in blk_flat:
                     blk[-1].append(b)
+
+            assert sum([len(b) for b in blk]) == len(self._blocks)
 
             return blk
 
@@ -974,9 +1021,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.to_unstructured().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.to_unstructured().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1350,6 +1398,17 @@ class Patch:
                 sl.append(slice(lim_now[0], lim_now[1] + 1))
         return tuple(sl)
 
+    def get_npts(self):
+        if hasattr(self, "_npts"):
+            return self._npts
+
+        nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
+        ijk_lim = self.ijk_limits.copy()
+        ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
+        ijk_lim[:, 1] += 1
+        self._npts = np.prod(np.diff(ijk_lim, axis=1))
+        return self._npts
+
     def get_indices(self, perm=None, flip=()):
         # Return ijk indices over the patch
         nijk = np.tile(np.reshape(self.block.shape, (3, 1)), (1, 2))
@@ -1531,7 +1590,7 @@ class MixingPatch(Patch):
     match = None
     slide = False
 
-    def check_match(self, other, rtol=1e-6):
+    def check_match(self, other, rtol=1e-5):
         # Slice both the patches
         C = [self.get_cut(), other.get_cut()]
 
@@ -1581,6 +1640,7 @@ class InletPatch(Patch):
     phase = 0.0
     rho_store = None
     harmonics = (1,)
+    force_factor = None
 
     def get_unsteady_multipliers(self, freq, nstep_cycle, ncycle):
         """Given time discretisation, generate unsteady bcond factors.
@@ -1609,15 +1669,26 @@ class InletPatch(Patch):
         dt = 1.0 / freq / nstep_cycle
         t = it * dt
 
-        # Start with a steady unity factor
-        fac = np.ones((nt,))
-
-        # Add on perturbations for each harmonic
-        for n in self.harmonics:
-            phase = np.pi * n**2 / 2.5338  # For minimum crest factor
-            fac += self.amplitude * np.sin(
-                2.0 * np.pi * freq * n * t + phase + self.phase
+        if self.force_factor is not None:
+            fac = self.force_factor
+            assert np.shape(fac) == (nt,), (
+                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             )
+        else:
+            # Start with a steady unity factor
+            fac = np.ones((nt,))
+
+            # Phase offsets for each harmonic
+            try:
+                len(self.phase)
+                phase = self.phase
+            except TypeError:
+                phase = np.pi * self.harmonics**2 / 2.5338  # For minimum crest factor
+                phase += self.phase
+
+            # Add on perturbations for each harmonic
+            for n in self.harmonics:
+                fac += self.amplitude * np.sin(2.0 * np.pi * freq * n * t + phase)
 
         # Choose the forcing type
         if self.force == "isentropic":
@@ -1755,15 +1826,21 @@ NOT_SLIPWALL_PATCHES = [
 def _get_patch_connectivity(patch, other, corners_only=False, rtol=1e-4):
     """Patch attributes describing periodic or mixing connectivity."""
 
-    # Get patches and their coordinates and shapes
+    # Get patches
     p = [patch, other]
-    xrt = [pi.get_cut().xrt.copy() for pi in p]
-    dijk = [xrti.shape[1:] for xrti in xrt]
 
     # The patches cannot match if their pitches are different
     pitch = [2.0 * np.pi / pi.block.Nb for pi in p]
     if not np.ptp(pitch) == 0.0:
         return False
+
+    if p[0].get_npts() != p[1].get_npts() and not corners_only:
+        # If the number of points is different, they cannot match
+        return False
+
+    # and their coordinates and shapes
+    xrt = [pi.get_cut().xrt.copy() for pi in p]
+    dijk = [xrti.shape[1:] for xrti in xrt]
 
     # Cope with circumferential offset by taking mod wrt pitch
     for xrti in xrt:
@@ -1927,7 +2004,8 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
     Nb: int
         Number of blades, setting the circumferential period.
     roffset: float
-        Raidus at y=0.
+        Raidus at y=0. If negative, then do not offset but use -roffset as
+        reference radius for z->t conversion.
     labels: list of str
     sector: bool
         If True, the mesh is distorted such that a rectangle in the y-z plane
@@ -1954,8 +2032,11 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
         labi = labels[i]
         if sector:
             xrt = xyzi.copy()
-            xrt[1] += roffset
-            xrt[2] /= roffset
+            if roffset > 0.0:
+                xrt[1] += roffset
+                xrt[2] /= roffset
+            else:
+                xrt[2] /= -roffset
         else:
             x, y, z = xyzi.copy()
             y += roffset
@@ -1964,7 +2045,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
             xrt = np.stack((x, r, t))
 
         # Periodic patches on all faces
-        if not patches:
+        if patches is None:
             patches_block = (
                 PeriodicPatch(i=0),
                 PeriodicPatch(i=-1),
@@ -1973,6 +2054,8 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
                 PeriodicPatch(k=0),
                 PeriodicPatch(k=-1),
             )
+        elif patches == False:
+            patches_block = []
         else:
             patches_block = patches[i]
 

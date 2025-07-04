@@ -7,9 +7,11 @@ import inspect
 import tarfile
 import scipy.interpolate
 
+from scipy.interpolate import RBFInterpolator
 from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata
+from scipy.spatial import cKDTree
 import re
 
 import logging
@@ -59,13 +61,9 @@ def cell_to_node(x):
     """One-dimensional centered values to nodal values."""
     return np.concatenate(
         (
-            x[
-                (0,),
-            ],
+            x[(0,),],
             0.5 * (x[1:] + x[:-1]),
-            x[
-                (-1,),
-            ],
+            x[(-1,),],
         )
     )
 
@@ -188,12 +186,8 @@ def resample(x, f, mult=None):
     xnew = xnorm_new * np.ptp(x) + x[0]
 
     assert np.allclose(
-        xnew[
-            (0, -1),
-        ],
-        x[
-            (0, -1),
-        ],
+        xnew[(0, -1),],
+        x[(0, -1),],
     )
 
     return xnew
@@ -1033,3 +1027,53 @@ def format_sf(x, sig=3):
 
 def format_array(x, precision=3):
     return "[" + ", ".join(format_sf(xi, precision) for xi in x) + "]"
+
+
+class Warper:
+    def __init__(self, xrt, dxrt, rref, neighbours=10, power=2):
+        """Initialise the warper with control points and decay radius."""
+
+        # Store input data
+        self.rref = rref
+
+        # Scale theta to arc length using r_ref
+        assert xrt.shape[0] == 3
+        assert xrt.ndim == 2
+        assert dxrt.shape[0] == 3
+        assert dxrt.ndim == 2
+        xrrt = xrt.copy()
+        xrrt[2] *= rref
+
+        # Build tree
+        self.tree = cKDTree(xrrt.T)
+        self.k = neighbours
+        assert neighbours > 1
+
+        self.dxrt = dxrt.copy().T
+        self.power = power  # Inverse distance weighting power
+
+    def warp(self, xrtq):
+        """Calculate new coordinates for the query points."""
+
+        # Scale theta to arc length using r_ref
+        assert xrtq.shape[0] == 3, "xrt must have shape (3, ni, nj, nk)"
+        xrrtq = xrtq.copy()
+        xrrtq[2] *= self.rref
+        xrrtq_flat = xrrtq.reshape(3, -1)
+
+        # Query k nearest neighbors for each query point
+        dists, idxs = self.tree.query(xrrtq_flat.T, k=self.k)
+
+        # Avoid division by zero
+        dists = np.maximum(dists, 1e-10)
+
+        # Inverse distance weights
+        weights = 1.0 / dists**self.power
+        weights /= weights.sum(axis=1, keepdims=True)
+
+        # Weighted sum of displacement vectors
+        dxrtq_flat = np.einsum("ij,ijk->ik", weights, self.dxrt[idxs]).T
+        assert dxrtq_flat.shape[0] == 3, "dxrt must have shape (3, ni, nj, nk)"
+        dxrt = dxrtq_flat.reshape(xrrtq.shape)
+
+        return xrtq + dxrt
