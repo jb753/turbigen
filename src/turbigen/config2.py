@@ -498,7 +498,7 @@ class TurbigenConfig:
 
         self.check_pitch_chord()
         logger.info(f"Nblade: {self.get_nblade()}")
-        logger.info(f"Tip gaps: {self.get_gaps()}")
+        logger.info(f"Tip gaps/span: {self.get_gaps()}")
 
     def get_nblade(self):
         Nb = np.full((len(self.blades),), 0, dtype=int)
@@ -528,14 +528,28 @@ class TurbigenConfig:
             )
 
     def get_gaps(self):
-        # Get dimensional tip gaps
-        # Href = 0.5 * (
-        # self.mean_line.nominal.span[::2] + self.mean_line.nominal.span[1::2]
-        # )
-        # return Href * np.array([b[0].tip for b in self.blades])
+        """Return non-dimensional tip gaps as fraction of span."""
 
-        # Non-dimensional tip gaps
-        return np.array([b[0].tip for b in self.blades])
+        # Relative gaps from blade definition
+        gap_span = np.full((self.nrow,), 0.0)
+        chord = self.annulus.chords(0.5)[1::2]
+        span = self.mean_line.nominal.span
+        span = 0.5 * (span[::2] + span[1::2])  # Average span for each row
+        for irow, row in enumerate(self.blades):
+            # Choose reference length
+            if row[0].tip_ref == "span":
+                gap_span[irow] = row[0].tip
+            elif row[0].tip_ref == "chord":
+                gap_span[irow] = row[0].tip * chord[irow] / span[irow]
+            elif row[0].tip_ref == "absolute":
+                gap_span[irow] = row[0].tip / span[irow]
+            else:
+                logger.error(
+                    f"Unknown tip reference length {row[0].tip_ref}, quitting."
+                )
+                sys.exit(1)
+
+        return gap_span
 
     def apply_recamber(self):
         # Apply recamber to the blades

@@ -10,7 +10,7 @@ import logging
 logger = util.make_logger()
 logger.setLevel(level=logging.DEBUG)
 
-fname = "runs/0271/config.yaml"
+fname = "scripts/dspace_test.yaml"
 conf = turbigen.config2.TurbigenConfig(**turbigen.yaml.read_yaml(fname))
 
 dspace = conf.design_space

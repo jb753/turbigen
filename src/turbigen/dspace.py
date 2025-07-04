@@ -135,7 +135,7 @@ class IndependentConfig:
 
     def get_independent(self, config):
         """Extract a design variable vector from a full config object."""
-        return np.array(self.get_by_key(config, k) for k in self.keys())
+        return np.array([self.get_by_key(config, k) for k in self.keys()])
 
     def set_independent(self, config, x):
         """Insert a design variable vector into a full config object."""
@@ -316,7 +316,7 @@ class DesignSpace:
         logger.iter(f"Loaded {len(confs)} config files.")
 
     @property
-    def ndesign(self):
+    def nsample(self):
         """Number of converged, successfully run sample designs."""
         return len(self.configs)
 
@@ -390,7 +390,7 @@ class DesignSpace:
 
         # Extract and store all x vectors from the samples
         self.x = np.stack(
-            (self.independent.get_independent(c) for c in self.configs), axis=-1
+            [self.independent.get_independent(c) for c in self.configs], axis=-1
         )
 
         # Store the limits of the design space
@@ -398,7 +398,7 @@ class DesignSpace:
         # Prescribed limits
         self.xlim = self.independent.limits()
         # Actual limits from samples
-        xlim_samples = np.stack((np.min(self.x, axis=0), np.max(self.x, axis=0)))
+        xlim_samples = np.stack([np.min(self.x, axis=-1), np.max(self.x, axis=-1)])
 
         # Get the most extreme of the prescribed limits and the actual
         # limits of the samples. Ensures we are in correct interval
@@ -416,11 +416,11 @@ class DesignSpace:
         else:
             # Adaptive fitting: start at order_max and reduce the number of
             # polynomial orders until we have few enough degrees of freedom
-            dof_target = int(self.frac_dof * self.ns)
+            dof_target = int(self.frac_dof * self.nsample)
             logger.debug("Starting adaptive fitting loop.")
-            logger.debug(f"Total number of samples: {self.ns}")
+            logger.debug(f"Total number of samples: {self.nsample}")
             logger.debug(f"Fraction of degrees of freedom: {self.frac_dof}")
-            logger.debug(f"Target degrees of freedom: {dof_target}")
+            logger.debug(f"Target max degrees of freedom: {dof_target}")
             for order in range(self.order_max, -1, -1):
                 if order < 0:
                     raise ValueError("Unable to obtain a fit.")
@@ -523,7 +523,7 @@ class DesignSpace:
 
         # Split the samples into train and test sets
         # (we shuffled the samples on initialization)
-        n = self.ndesign
+        n = self.nsample
         n_train = int(n * (1.0 - self.frac_test))
 
         # Perform the polynomial fit on train set only

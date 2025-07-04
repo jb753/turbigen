@@ -82,7 +82,8 @@ design_space:
   independent:
     mean_line:
       phi2: [0.4, 1.2]
+      psi: [0.8, 2.4]
   order_max: 3
-  nsample: 4
+  nsample_target: 4
 
 fac_nstep_initial: 2.0

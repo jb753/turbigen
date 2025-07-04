@@ -1,6 +1,15 @@
 Changelog
 =========
 
+v2.5.0
+^^^^^^
+
+* Allow scaling tip gap on chord, span, or absolute value
+* Bugfix for generous block equality
+* Speed improvement for matching patches
+* Add function to initialise a grid from TS3 hdf5
+* Low-level utility function for grid warping
+
 v2.4.0
 ^^^^^^
 

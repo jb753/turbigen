@@ -371,7 +371,7 @@ class FixedAxialChord(AnnulusDesigner):
     def __repr__(self):
         try:
             cm = self.chords(0.5)[1::2]
-            mq = np.arange(1.5, self.nrow + 1.5)
+            mq = np.arange(1.5, self.nrow + 1.50001, 2.0)
             span = self.get_span(mq)
             xrhub = self.evaluate_xr(mq, 0.0)
             xrcas = self.evaluate_xr(mq, 0.0)
