@@ -171,6 +171,7 @@ class ts3(BaseSolver):
     use_temperature_sensor: int = 0
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
+    bv: dict = None  # nested dict bv[bid][bv_name] = bv_value
 
     def __post_init__(self):
         if isinstance(self.workdir, str):
@@ -846,6 +847,11 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
         for name, val in ts3_config.block_variables(
             block, rref_block, ts3_config.laminar
         ).items():
+            # Apply block variables overrides
+            if ts3_config.bv and ib in ts3_config.bv and name in ts3_config.bv[ib]:
+                val = ts3_config.bv[ib][name]
+                print(f"Overriding block variable {name}={val} for block {ib}")
+
             _write_variable(block_group, name, "_bv", val)
 
         # Block properties
