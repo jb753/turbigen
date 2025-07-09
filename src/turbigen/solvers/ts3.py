@@ -1396,40 +1396,6 @@ def parse_log(fname):
 
     return istep, mdot, To * cp, Po, resid
 
-    @property
-    def nstep(self):
-        return np.linspace(0, self._nlog - 1, self._nlog, dtype=int) * self._step_fac
-
-    def __str__(self):
-        return (
-            f"TS3Log(mdot_drift={self.mdot_drift * 100.0:.2f}%,"
-            f"mdot_err={self.mdot_err * 100:.2f}%,"
-            f"eta_drift={self.eta_drift * 100:.2f}℅"
-        )
-
-    @property
-    def eta_drift(self):
-        eta_avg = self._eta[self.nstep >= self._nstep_save_start]
-        # Consider instantaneous eta
-        # drift = eta_avg - eta_avg[-1]
-        # return drift[np.argmax(np.abs(drift))]
-        # Split averaging period into two and check eta same for both
-        n2 = len(eta_avg) // 2
-        return eta_avg[:n2].mean() - eta_avg[n2:].mean()
-
-    @property
-    def mdot_err(self):
-        err = (self._mdot[0] / self._mdot[1] - 1.0)[
-            self.nstep >= self._nstep_save_start
-        ]
-        return err[np.argmax(np.abs(err))]
-
-    @property
-    def mdot_drift(self):
-        drift = self._mdot[0] / self._mdot[0, -1] - 1.0
-        err = drift[self.nstep >= self._nstep_save_start]
-        return err[np.argmax(np.abs(err))]
-
 
 def read_probe_dat_dir(dname):
     """Load all probe text files in a directory into one big array.
@@ -1453,44 +1419,42 @@ def read_probe_dat_dir(dname):
 
     """
 
-    # Check for pickle file and modification time
-    pickle_fname = os.path.join(dname, "probe_data.pkl")
-    if os.path.exists(pickle_fname):
-        pickle_mtime = os.path.getmtime(pickle_fname)
-    else:
-        pickle_mtime = 0
-
     # Get all dat files and their modification times
-    fnames = glob(os.path.join(dname, "*.dat"))
-    dat_mtimes = [os.path.getmtime(f) for f in fnames]
-    if not fnames:
-        max_dat_mtime = 0
-    else:
-        max_dat_mtime = max(dat_mtimes)
+    fnames = glob(os.path.join(dname, "*.npz")) + glob(os.path.join(dname, "*.dat"))
 
-    # Load the pickle if it exists and is newer than all dat files
-    if os.path.exists(pickle_fname) and pickle_mtime > max_dat_mtime:
-        logger.info(f"Loading probe data from {pickle_fname}")
-        with gzip.open(pickle_fname, "rb") as f:
-            data = pickle.load(f)
+    # Load the dats and save as a pickle
+    data0, fs = read_probe_dat(fnames[0])
+    data = [data0] + [read_probe_dat(f)[0] for f in fnames[1:]]
 
-    # Otherwise load the dat files
-    else:
-        logger.info(f"Loading probe data from {dname}")
+    return data, fs
 
-        # Load the dats and save as a pickle
-        data = [read_probe_dat(f) for f in fnames]
-        with gzip.open(pickle_fname, "wb") as f:
-            pickle.dump(data, f)
 
-    # If the probes are more than 48 hours old, then the calculation has
-    # finished and we can delete the raw dat files
-    if (time.time() - max_dat_mtime) > 48 * 3600:
-        for fname in fnames:
-            logger.info(f"Removing {fname}")
-            # os.remove(fname)
+def read_inlet(fname):
+    """Get inlet data from an hdf5 file."""
 
-    return data
+    # Open the file
+    f = h5py.File(fname, "r")
+    nb = f.attrs["nb"]
+
+    # Loop over blocks and patches until we find an inlet
+    for ib in range(nb):
+        bgrp = f[f"block{ib}"]
+        npatch = bgrp.attrs["np"]
+        for ip in range(npatch):
+            pgrp = bgrp[f"patch{ip}"]
+            ptype = KIND_LOOKUP[pgrp.attrs["kind"]]
+            if ptype == turbigen.grid.InletPatch:
+                ist = int(pgrp.attrs["ist"])
+                ien = int(pgrp.attrs["ien"])
+                jst = int(pgrp.attrs["jst"])
+                jen = int(pgrp.attrs["jen"])
+                kst = int(pgrp.attrs["kst"])
+                ken = int(pgrp.attrs["ken"])
+                nt = int(pgrp.attrs["nt"])
+                shape = (ien - ist, jen - jst, ken - kst, nt)[::-1]
+                pstag = np.array(pgrp["pstag_pp"])
+                pstag = np.transpose(pstag.reshape(shape))
+                return pstag
 
 
 def read_probe_dat(fname):
@@ -1511,6 +1475,8 @@ def read_probe_dat(fname):
         Rows are time steps.
 
     """
+
+    fname = fname.replace(".npz", ".dat")
 
     dname = os.path.dirname(fname)
 
@@ -1548,8 +1514,13 @@ def read_probe_dat(fname):
 
     # Load the npz if it exists and is newer than dat file
     if os.path.exists(npz_fname) and npz_mtime > dat_mtime:
-        with np.load(npz_fname) as d:
-            conserved = d["conserved"]
+        try:
+            with np.load(npz_fname) as d:
+                conserved = d["conserved"]
+        except Exception as e:
+            logger.error(f"Failed to load {npz_fname}: {e}")
+            conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")
+            np.savez(npz_fname, conserved=conserved)
 
     # Otherwise load the dat file
     else:
