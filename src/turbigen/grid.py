@@ -1672,6 +1672,7 @@ class InletPatch(Patch):
             assert np.shape(fac) == (nt,), (
                 f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             )
+            print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor
             fac = np.ones((nt,))

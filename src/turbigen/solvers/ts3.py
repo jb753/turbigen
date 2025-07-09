@@ -21,6 +21,8 @@ import getpass
 from copy import copy
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 import time
+import pickle
+import gzip
 
 import turbigen.util
 
@@ -919,6 +921,11 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                         else:
                             val = np.tile(val, (1, 1, 1, nt))
 
+                        print(
+                            'Forcing unsteady inlet patch "%s" with %d time steps.'
+                            % (name, nt)
+                        )
+
                         pa["nt"] = nt
 
                 if isinstance(patch, turbigen.grid.OutletPatch):
@@ -1424,7 +1431,7 @@ def parse_log(fname):
         return err[np.argmax(np.abs(err))]
 
 
-def read_probe_dat_dir(dname, stack=True):
+def read_probe_dat_dir(dname):
     """Load all probe text files in a directory into one big array.
 
     This function will write out an npz into the directory containing the data
@@ -1446,12 +1453,12 @@ def read_probe_dat_dir(dname, stack=True):
 
     """
 
-    # Check for npz file and modification time
-    npz_fname = os.path.join(dname, "probe_data.npz")
-    if os.path.exists(npz_fname):
-        npz_mtime = os.path.getmtime(npz_fname)
+    # Check for pickle file and modification time
+    pickle_fname = os.path.join(dname, "probe_data.pkl")
+    if os.path.exists(pickle_fname):
+        pickle_mtime = os.path.getmtime(pickle_fname)
     else:
-        npz_mtime = 0
+        pickle_mtime = 0
 
     # Get all dat files and their modification times
     fnames = glob(os.path.join(dname, "*.dat"))
@@ -1461,27 +1468,27 @@ def read_probe_dat_dir(dname, stack=True):
     else:
         max_dat_mtime = max(dat_mtimes)
 
-    # Load the npz if it exists and is newer than all dat files
-    if os.path.exists(npz_fname) and npz_mtime > max_dat_mtime:
-        logger.info(f"Loading probe data from {npz_fname}")
-        with np.load(npz_fname) as d:
-            data = d["data"]
+    # Load the pickle if it exists and is newer than all dat files
+    if os.path.exists(pickle_fname) and pickle_mtime > max_dat_mtime:
+        logger.info(f"Loading probe data from {pickle_fname}")
+        with gzip.open(pickle_fname, "rb") as f:
+            data = pickle.load(f)
+
     # Otherwise load the dat files
     else:
         logger.info(f"Loading probe data from {dname}")
-        # Load each dat and trim to the same length
-        data_all = [read_probe_dat(f) for f in fnames]
-        nstep = min([d.shape[1] for d in data_all])
-        if stack:
-            data = np.stack([d[:, :nstep] for d in data_all], axis=1)
-        np.savez(npz_fname, data=data)
+
+        # Load the dats and save as a pickle
+        data = [read_probe_dat(f) for f in fnames]
+        with gzip.open(pickle_fname, "wb") as f:
+            pickle.dump(data, f)
 
     # If the probes are more than 48 hours old, then the calculation has
     # finished and we can delete the raw dat files
     if (time.time() - max_dat_mtime) > 48 * 3600:
         for fname in fnames:
             logger.info(f"Removing {fname}")
-            os.remove(fname)
+            # os.remove(fname)
 
     return data
 
