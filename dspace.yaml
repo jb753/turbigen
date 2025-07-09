@@ -83,6 +83,8 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [0.8, 2.4]
+      zeta[0]: [0.8, 1.0]
+      zeta[1]: [1.0, 1.2]
   order_max: 3
   nsample_target: 4
 

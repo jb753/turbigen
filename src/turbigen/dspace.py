@@ -46,6 +46,15 @@ class IndependentConfig:
         k1, k2 = re.findall(r"\[(.*)\]", key)
         return int(k1), k2
 
+    def _split_meanline_key(self, key):
+        if "[" in key:
+            k1 = key.split("[")[0]  # Vector variable name
+            k2 = int(key.split("[")[1].split("]")[0])  # Index into the vector
+        else:
+            k1 = key
+            k2 = None
+        return k1, k2
+
     @property
     def nvar(self):
         """Number of independent variables."""
@@ -107,10 +116,20 @@ class IndependentConfig:
 
         # Mean-line default to actual value if set, otherwise nominal
         if key in self.mean_line:
-            if key in config.mean_line_actual:
-                return config.mean_line_actual[key]
+            # Handle vector variables
+            name, ind = self._split_meanline_key(key)
+
+            # Get variable by name
+            if name in config.mean_line_actual:
+                var = config.mean_line_actual[name]
             else:
-                return config.mean_line.design_vars[key]
+                var = config.mean_line.design_vars[name]
+
+            # Index into the variable if needed
+            if ind is not None:
+                return var[ind]
+            else:
+                return var
 
         elif key.startswith("nblade"):
             irow, param = self._split_nblade_key(key)
@@ -124,7 +143,12 @@ class IndependentConfig:
 
         # Always set the nominal mean-line value
         if key in self.mean_line:
-            config.mean_line.design_vars[key] = value
+            name, ind = self._split_meanline_key(key)
+            if ind is not None:
+                # If it's a vector variable, set the indexed value
+                config.mean_line.design_vars[name][ind] = value
+            else:
+                config.mean_line.design_vars[name] = value
 
         elif key.startswith("nblade"):
             irow, param = self._split_nblade_key(key)
