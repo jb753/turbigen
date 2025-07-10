@@ -2,6 +2,7 @@
 
 import numpy as np
 from abc import ABC, abstractmethod
+from typing import cast
 
 
 class dependent_property:
@@ -153,7 +154,6 @@ class StructuredData:
         # Determine the shape of the input arrays
         nrow = len(args)
         ncol = len(args[0])
-        print(nrow, ncol)
 
         if order is None:
             order = self._order
@@ -534,10 +534,10 @@ class BaseFluid(StructuredData, ABC):
         self._set_data_by_key("rhoVr", 0.0)
         self._set_data_by_key("rhorVt", 0.0)
 
-    def _get_stagnation(self):
+    def _get_stagnation(self) -> "BaseFluid":
         return self.copy().set_h_s(self.ho, self.s)
 
-    def _get_stagnation_rel(self):
+    def _get_stagnation_rel(self) -> "BaseFluid":
         return self.copy().set_h_s(self.ho_rel, self.s)
 
     #
@@ -545,14 +545,14 @@ class BaseFluid(StructuredData, ABC):
     #
 
     @property
-    def Omega(self):
+    def Omega(self) -> float:
         """Relative frame angular velocity [rad/s]."""
-        return self._get_metadata_by_key("Omega")
+        return cast(float, self._get_metadata_by_key("Omega"))
 
     @property
-    def Nb(self):
+    def Nb(self) -> int:
         """Number of blades, circumferential periodicity [--]."""
-        return self._get_metadata_by_key("Nb")
+        return cast(int, self._get_metadata_by_key("Nb"))
 
     #
     # Datum levels
@@ -582,7 +582,7 @@ class BaseFluid(StructuredData, ABC):
         return self._get_data_by_key("x")
 
     @property
-    def r(self):
+    def r(self) -> np.ndarray:
         return self._get_data_by_key("r")
 
     @property

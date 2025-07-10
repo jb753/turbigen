@@ -1019,10 +1019,9 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(
-                block.to_unstructured().xrrt.T,
-                workers=-1,
-            )[0].reshape(block.shape)
+            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
+                0
+            ].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1044,7 +1043,7 @@ class Grid:
             block._metadata.update(Fg._metadata)
 
             # Find indices of nearest guess point to all block points
-            xri = block.to_unstructured().xr.T
+            xri = block.flatten().xr.T
             ind_nearest = kdtree.query(
                 xri,
                 workers=-1,
@@ -1197,6 +1196,7 @@ class Grid:
         return np.argmin(np.abs(self[0].spf[1, :, 1] - spf))
 
     def cut_span_unstructured(self, xr):
+        """Take an unstructured meridional cut, e.g. at constant span."""
         bcut = []
         for row in self.row_blocks:
             brow = []
@@ -1669,9 +1669,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (nt,), (
-                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
-            )
+            assert np.shape(fac) == (
+                nt,
+            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor
@@ -2053,7 +2053,7 @@ def from_xyz(xyz, state, Nb, roffset, labels, sector=True, patches=None):
                 PeriodicPatch(k=0),
                 PeriodicPatch(k=-1),
             )
-        elif patches == False:
+        elif patches is False:
             patches_block = []
         else:
             patches_block = patches[i]

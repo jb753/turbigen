@@ -52,7 +52,6 @@ class dependent_property:
 class StructuredData:
     """Store array data with scalar metadata in one sliceable object."""
 
-    _read_only = False
     _data_rows = ()
 
     def __init__(self, shape=(), order="C", typ=np.double):
@@ -61,49 +60,12 @@ class StructuredData:
         self._order = order
         if order == "C":
             self._data = np.full((self.nprop,) + shape, np.nan, order=order, dtype=typ)
-        else:
+        elif order == "F":
             self._data = np.full(shape + (self.nprop,), np.nan, order=order, dtype=typ)
+        else:
+            raise ValueError(f"Invalid order {order}, expected 'C' or 'F'")
         self._metadata = {}
         self._dependent_property_cache = {}
-
-    def to_dict(self):
-        """Make a dictionary for this object."""
-        out = {
-            "class": self.__class__.__name__,
-            "metadata": self._metadata.copy(),
-            "data": self._data.tolist(),
-            "data_rows": self._data_rows,
-        }
-        md = out["metadata"]
-        for k in md:
-            if isinstance(md[k], np.ndarray):
-                md[k] = md[k].tolist()
-        md.pop("abstract_state", None)
-        return out
-
-    @classmethod
-    def from_dict(cls, d):
-        data = np.array(d["data"])
-        out = cls(data.shape)
-        out._data = data
-        out._metadata = d["metadata"]
-        assert cls.__name__ == d["class"]
-        return out
-
-    def write(self, fname, mode="w"):
-        """Save this object to a yaml file."""
-        turbigen.yaml.write_yaml(self.to_dict(), fname, mode)
-
-    def write_npz(self, fname):
-        """Save this object to an npz file."""
-        np.savez_compressed(fname, **self.to_dict())
-
-    @classmethod
-    def stack(cls, sd, axis=0):
-        out = cls()
-        out._data = np.stack([sdi._data for sdi in sd], axis=axis + 1)
-        out._metadata = sd[0]._metadata
-        return out
 
     def flip(self, axis):
         out = self.__class__()
@@ -128,11 +90,11 @@ class StructuredData:
         out._metadata = self._metadata
         return out
 
-    def to_unstructured(self):
-        """Make an unstructured view of these data."""
+    def flatten(self):
+        """Make an flattened view of these data."""
         # Make an empty object by calling constructor with no args
         out = self.__class__()
-        # Insert unstructured version of current data and metadata
+        # Insert flattened version of current data and metadata
         out._data = self._data.reshape(self._data.shape[0], -1)
         out._metadata = self._metadata
         return out
@@ -199,11 +161,8 @@ class StructuredData:
             return self._metadata.get(key, default)
 
     def _set_metadata_by_key(self, key, val):
-        if self._read_only:
-            raise Exception(f"Cannot modify read-only {self}")
-        else:
-            self._metadata[key] = val
-            self._dependent_property_cache.clear()
+        self._metadata[key] = val
+        self._dependent_property_cache.clear()
 
     def _lookup_index(self, key):
         if isinstance(key, tuple):
@@ -215,34 +174,25 @@ class StructuredData:
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
         if self._order == "C":
-            return self._data[ind,]
+            return self._data[
+                ind,
+            ]
         else:
             return self._data[..., ind]
 
     def _set_data_by_key(self, key, val):
-        if self._read_only:
-            raise Exception(f"Cannot modify read-only {self}")
-        else:
-            ind = self._lookup_index(key)
-            if np.shape(val) == (1,):
-                if self._order == "C":
-                    self._data[ind] = val[0]
-                else:
-                    self._data[..., ind] = val[0]
+        ind = self._lookup_index(key)
+        if np.shape(val) == (1,):
+            if self._order == "C":
+                self._data[ind] = val[0]
             else:
-                if self._order == "C":
-                    self._data[ind] = val
-                else:
-                    self._data[..., ind] = val
-            self._dependent_property_cache.clear()
-
-    def set_read_only(self):
-        self._read_only = True
-        return self
-
-    def unset_read_only(self):
-        self._read_only = False
-        return self
+                self._data[..., ind] = val[0]
+        else:
+            if self._order == "C":
+                self._data[ind] = val
+            else:
+                self._data[..., ind] = val
+        self._dependent_property_cache.clear()
 
     def copy(self, dtype=None):
         # Make an empty object by calling constructor with no args
@@ -753,7 +703,7 @@ class Kinematics:
             raise Exception("This is not a triangulated cut.")
 
         # Reshape to a 1D array
-        C = self.to_unstructured()
+        C = self.flatten()
 
         # Because we store all three vertices for every triangle, many vertices are repeated
         # Matplotlib prefers without repeats
@@ -812,7 +762,7 @@ class Kinematics:
         Cs.xrt = xrt1
 
         # Interpolate the data
-        Cf = C.to_unstructured()
+        Cf = C.flatten()
 
         if np.ptp(Cf.x) > np.ptp(Cf.r):
             xi = np.stack((Cf.x, Cf.t), axis=-1)
@@ -994,25 +944,25 @@ class Composites:
         return self.h + 0.5 * self.V**2.0 - self.U * self.Vt
 
     @dependent_property
-    def stagnation(self):
-        return self.to_stagnation(self.Ma).set_read_only()
+    def _stagnation(self):
+        return self.to_stagnation(self.Ma)
 
     @dependent_property
-    def stagnation_rel(self):
-        return self.to_stagnation(self.Ma_rel).set_read_only()
+    def _stagnation_rel(self):
+        return self.to_stagnation(self.Ma_rel)
 
     @property
     def Po(self):
         """Stagnation pressure [Pa]."""
-        return self.stagnation.P
+        return self._stagnation.P
 
     @property
     def To(self):
-        return self.stagnation.T
+        return self._stagnation.T
 
     @property
     def ao(self):
-        return self.stagnation.a
+        return self._stagnation.a
 
     @property
     def ho(self):
@@ -1025,11 +975,11 @@ class Composites:
 
     @property
     def Po_rel(self):
-        return self.stagnation_rel.P
+        return self._stagnation_rel.P
 
     @property
     def To_rel(self):
-        return self.stagnation_rel.T
+        return self._stagnation_rel.T
 
     @property
     def ho_rel(self):
@@ -1193,56 +1143,6 @@ class Composites:
         self.Vxrt = Vxrt
         u = rhoe / rho - 0.5 * self.V**2
         self.set_rho_u(rho, u)
-
-    def Ai_average(self):
-        dA = np.expand_dims(util.vecnorm(self.dAi), 0)
-        if self.ndim > 3:
-            dA = np.expand_dims(dA, -1)
-            conserved = np.moveaxis(
-                util.node_to_face(np.moveaxis(self.conserved, -1, 0)), 0, -1
-            )
-            xrt = np.moveaxis(util.node_to_face(np.moveaxis(self.xrt, -1, 0)), 0, -1)
-        else:
-            conserved = util.node_to_face(self.conserved)
-            xrt = util.node_to_face(self.xrt)
-        conserved_avg = np.sum(conserved * dA, axis=(1, 2, 3)) / np.sum(dA)
-        xrt_avg = np.sum(xrt * dA, axis=(1, 2, 3)) / np.sum(dA)
-        out = self.empty(shape=conserved_avg.shape[1:])
-        out.xrt = xrt_avg
-        out.set_conserved(conserved_avg)
-        return out
-
-    def area_average(self):
-        dA = np.linalg.norm(self.surface_area[:, :, 0, :], axis=-1, ord=2)
-        A = np.sum(dA)
-        conserved = np.moveaxis(self.conserved, -1, 1)
-        xrt = np.moveaxis(self.xrt, -1, 1)
-        conserved_av = (
-            np.sum(dA * turbigen.util.node_to_face(conserved), axis=(-2, -1)) / A
-        )
-        xrt_av = np.sum(dA * turbigen.util.node_to_face(xrt), axis=(-2, -1)) / A
-
-        F = self.empty((conserved_av.shape[1],))
-        F.xrt = xrt_av
-        F.set_conserved(conserved_av)
-
-        return F
-
-    def mix_out_pitchwise(self):
-        """Mix out in the pitchwise direction, to a spanwise profile."""
-
-        nj = self.shape[1]
-        cuts = []
-        spf = np.zeros(nj - 1)
-        for j in range(nj - 1):
-            spf[j] = self.spf[:, j : j + 2, :].mean()
-            cut_now = self[:, j : j + 2, :].squeeze()
-            try:
-                cuts.append(cut_now.mix_out()[0])
-            except Exception:
-                cuts.append(cut_now.empty())
-        Call = self.stack(cuts)
-        return spf, Call
 
     @dependent_property
     def i_stag(self):

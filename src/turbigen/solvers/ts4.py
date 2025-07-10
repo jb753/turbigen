@@ -1,7 +1,6 @@
 """Functions to write, run, and read for the Turbostream 3 solver."""
 
 import numpy as np
-from copy import copy
 from timeit import default_timer as timer
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,7 +122,9 @@ class ts4(BaseSolver):
     """Starting value for CFL ramp."""
 
     custom_pipeline: str = ""
-    """Specify a custom pipeline to convert Turbostream 3 to 4 input file. Should run using pvpython and take two command-line arguments like `pvpython custom_pipeline.py input_ts3.hdf5 input_ts4`"""
+    """Specify a custom pipeline to convert Turbostream 3 to 4 input file.
+    Should run using pvpython and take two command-line arguments like
+    `pvpython custom_pipeline.py input_ts3.hdf5 input_ts4`"""
 
     implicit_scheme: int = 1
     """1: implicit, 0: explicit time marching."""
@@ -160,7 +161,8 @@ class ts4(BaseSolver):
     """Allow non-uniform outlet pressure, force area-average to target."""
 
     outlet_tag: str = "Outlet"
-    """String to identify the outlet boundary condition in the TS4 input file. Only requires changing for custom pipelines."""
+    """String to identify the outlet boundary condition in the TS4 input file.
+    Only requires changing for custom pipelines."""
 
     kappa2: float = 1.0
     kappa4: float = 1.0 / 128.0
@@ -454,7 +456,7 @@ def _read_flow(grid, fname, fname_avg):
     # Now loop over blocks in the grid
     for block in grid:
         # Extract unstructure coordinates for this block
-        xrrtb = block.to_unstructured().xrrt.T
+        xrrtb = block.flatten().xrrt.T
 
         # Get nearest neighbours from the TS4 grid
         _, ind_pts = kdtree.query(xrrtb, workers=-1)

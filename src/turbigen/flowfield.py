@@ -12,7 +12,7 @@ import os
 def make_mean_line(rrms, A, Omega, Vxrt, S):
     """Assemble a perfect or real mean-line data structure from input states."""
     try:
-        S = S[0].stack(S)
+        S = turbigen.base.stack(S)
     except AttributeError:
         pass
     if isinstance(S, turbigen.fluid.PerfectState):

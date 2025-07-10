@@ -60,7 +60,7 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 2000
+  n_step: 200
   n_step_avg: 100
   n_step_ramp: 1000
 

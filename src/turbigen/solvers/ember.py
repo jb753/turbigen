@@ -65,7 +65,9 @@ class Ember(turbigen.solvers.base.BaseSolver):
     ember
     -----
 
-    :program:`ember` is the 'Enhanced MultiBlock flow solvER' built into :program:`turbigen`. It is a hybrid Python--Fortran reimplementation of the classic :cite:t:`Denton1992,Denton2017` algorithms
+    :program:`ember` is the 'Enhanced MultiBlock flow solvER' built into
+    :program:`turbigen`. It is a hybrid Python--Fortran reimplementation of the
+    classic :cite:t:`Denton1992,Denton2017` algorithms
     for compressible turbomachinery flows, with a few enhancements.
 
     To use this solver, add the following to your configuration file:
@@ -158,7 +160,8 @@ class Ember(turbigen.solvers.base.BaseSolver):
     """Factor scaling the multigrid residual."""
 
     multigrid: tuple = (2, 2, 2)
-    """Number of cells forming each multigrid level. `(2, 2, 2)` gives coarse cells of side length 2, 4, and 8 fine cells."""
+    """Number of cells forming each multigrid level.
+    `(2, 2, 2)` gives coarse cells of side length 2, 4, and 8 fine cells."""
 
     area_avg_Pout: bool = True
     """Force area-averaged outlet pressure to target, otherwise use uniform outlet pressure."""
@@ -763,7 +766,7 @@ class Periodic:
                 quit()
 
         # Check we have the correct number of points
-        npt = patch.get_cut().to_unstructured().shape[0]
+        npt = patch.get_cut().flatten().shape[0]
         assert ijk.shape[1] == npt
         assert nxijk.shape[1] == npt
         self.N = npt * 5
