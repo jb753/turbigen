@@ -1432,64 +1432,6 @@ class Patch:
             ind = np.flip(ind, axis=flip).transpose(perm)
         return ind.reshape(-1)
 
-    def get_A_avg_weights(self, order="C"):
-        # Return ind, w such that the area average of block prop is
-        # np.sum( prop.ravel(order)[ind]*w)
-
-        ijk = self.get_indices()
-        shape = self.block.shape
-
-        ind = np.ravel_multi_index(ijk, shape, order=order)
-
-        # At this point ind has shape (di, dj, dk) and one of them is zero
-        di, dj, dk = ind.shape
-
-        C = self.get_cut()
-
-        if di == 1:
-            ind_face = np.stack(
-                (
-                    ind[0, :-1, :-1],
-                    ind[0, 1:, :-1],
-                    ind[0, :-1, 1:],
-                    ind[0, 1:, 1:],
-                )
-            ).reshape(4, -1)
-            dA = C.dAi.reshape(3, -1)
-        else:
-            raise NotImplementedError
-
-        ind_flat = ind.reshape(-1)
-
-        assert np.allclose(self.block.x.ravel(order=order)[ind_flat], C.x.reshape(-1))
-        assert np.allclose(self.block.r.ravel(order=order)[ind_flat], C.r.reshape(-1))
-        assert np.allclose(self.block.t.ravel(order=order)[ind_flat], C.t.reshape(-1))
-
-        # We want to express the area integral of a variable x
-        #   int x dA
-        # as a weighted sum of the nodal values of x
-        nnode = np.size(ind)
-        nface = dA.shape[-1]
-
-        w = np.zeros(
-            (
-                3,
-                nnode,
-            )
-        )
-
-        # Loop over faces
-        for iface in range(nface):
-            # For all four corners on this face,
-            # add dA to the relavent nodal weight
-            for k in range(4):
-                w[:, ind_flat == ind_face[k, iface]] += dA[:, (iface,)]
-
-        # Normalise
-        w /= 4.0
-
-        return w
-
     def get_cut(self, offset=0):
         return self.block[self.get_slice(offset)]
 

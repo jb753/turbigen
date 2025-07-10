@@ -5,9 +5,11 @@ class Perturbation:
     def __init__(self, state):
         self._state = state
 
+    @property
     def conserved_to_chic(self):
         return self.primitive_to_chic @ self.conserved_to_primitive
 
+    @property
     def primitive_to_conserved(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -40,6 +42,7 @@ class Perturbation:
         C = np.moveaxis(C, (0, 1), (-1, -2))
         return C
 
+    @property
     def conserved_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         conserved variables [rho, rhoVx, rhoVr, rhorVt, rhoe].
@@ -73,6 +76,7 @@ class Perturbation:
         Cinv = np.moveaxis(Cinv, (0, 1), (-2, -1))
         return Cinv
 
+    @property
     def primitive_to_chic(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -102,12 +106,15 @@ class Perturbation:
         B = np.moveaxis(B, (0, 1), (-1, -2))
         return B
 
+    @property
     def chic_to_conserved(self):
         return self.primitive_to_conserved @ self.chic_to_primitive
 
+    @property
     def chic_to_bcond(self):
         return self.primitive_to_bcond @ self.chic_to_primitive
 
+    @property
     def chic_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         characteristic variables
@@ -143,6 +150,7 @@ class Perturbation:
         Binv = np.moveaxis(Binv, (0, 1), (-2, -1))
         return Binv
 
+    @property
     def primitive_to_flux(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -195,12 +203,15 @@ class Perturbation:
         A = np.moveaxis(A, (0, 1), (-1, -2))
         return A
 
+    @property
     def flux_to_chic(self):
         return self.primitive_to_chic @ self.flux_to_primitive
 
+    @property
     def bcond_to_cons(self):
         return self.primitive_to_conserved @ self.bcond_to_primitive
 
+    @property
     def flux_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         flux variables
@@ -214,6 +225,7 @@ class Perturbation:
         """
         return np.linalg.inv(self.primitive_to_flux)
 
+    @property
     def primitive_to_bcond(self):
         """Get a matrix at every node that converts linear pertubations in
         primitive variables [rho, Vx, Vr, Vt, P]
@@ -249,6 +261,7 @@ class Perturbation:
         Y = np.moveaxis(Y, (0, 1), (-1, -2))
         return Y
 
+    @property
     def bcond_to_primitive(self):
         """Get a matrix at every node that converts linear pertubations in
         boundary condition variables
@@ -263,6 +276,7 @@ class Perturbation:
         """
         return np.linalg.inv(self.primitive_to_bcond)
 
+    @property
     def inlet_to_chic(self):
         # Convert downstream-running chics to primitive changes
         # Omit first column corresponding to upstream-running chic

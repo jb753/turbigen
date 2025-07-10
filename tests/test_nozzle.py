@@ -469,27 +469,6 @@ def test_radius(Alpha):
     assert (np.abs(Cho) < tol_sh).all()
 
 
-def test_patch_A_avg():
-    """Check patch area averaging weights."""
-
-    # Make an arbitrary grid
-    xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
-    g, F = make_nozzle(xA)
-    block = g[-1]
-    patch = block.outlet_patches[0]
-
-    # Calculate area average using weight
-    ind = patch.get_flat_indices(order="F")
-    w = patch.get_A_avg_weights(order="F")
-    rsqavg = np.sum((block.r.ravel(order="F")[ind] ** 2.0) * w) / np.sum(w)
-
-    # Manually check the area average
-    C = patch.get_cut()
-    dA = turbigen.util.vecnorm(C.dAi)
-    rsqavg_check = np.sum((C.r_face[0] ** 2) * dA) / np.sum(dA)
-    assert np.isclose(rsqavg, rsqavg_check)
-
-
 @pytest.mark.parametrize("rpm", (-100.0, 100.0))
 def test_rpm(rpm):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])

@@ -107,6 +107,10 @@ def test_nonuniform_energy():
     # Do the mixing
     F_mix = turbigen.average.mix_out(F)[0]
 
+    # Mass-average To should equal mixed out
+    assert np.isclose(F_mix.To, F.mass_average(F.To), rtol=1e-6)
+    assert np.isclose(F_mix.ho, F.mass_average(F.ho), rtol=1e-6)
+
     # We used to manually check for conservation here, but now this is done
     # internally by `average.mix_out` which will raise an error if any of mass,
     # momentum, energy are not balanced
@@ -599,6 +603,11 @@ def test_radial():
         # The mixed-out moment of momentum should be same
         rvt_mix = F_mix.Vt * F_mix.r
         assert np.isclose(rvt_mix, rvt_ref, rtol=1e-4)
+
+        # Mass average == mixed out average for To
+        assert np.isclose(F_mix.To, F.mass_average(F.To), rtol=1e-6)
+        assert np.isclose(F_mix.ho, F.mass_average(F.ho), rtol=1e-6)
+        assert np.isclose(F_mix.s, F.mass_average(F.s), rtol=1e-6)
 
 
 def test_radial_inflow():

@@ -3,6 +3,7 @@
 import turbigen.grid
 import numpy as np
 import turbigen.compflow_native as cf
+from turbigen import util
 
 
 def dot(a, b, axis=0):
@@ -10,7 +11,6 @@ def dot(a, b, axis=0):
 
 
 def test_box():
-
     print(f"Checking discretisation of a cube...")
 
     # Geometry
@@ -93,7 +93,6 @@ def test_box():
 
 
 def test_cylinder():
-
     # Geometry
     L = 0.1
     rm = 10.0
@@ -131,7 +130,6 @@ def test_cylinder():
     Ar2 = L * r2 * pitch
     Ax = np.pi * (r2**2.0 - r1**2.0) * pitch / 2.0 / np.pi
     At = L * dr
-    Arside = (r2 - r1) * pitch * L / 2.0
     vol = Ax * L
 
     b = g[0]
@@ -178,3 +176,22 @@ def test_cylinder():
     rtol_vol = 1e-12
     print(f"Volume error = {err:.2e}")
     assert np.abs(err) < rtol_vol
+
+    # Check face area
+    atolA = vol ** (2 / 3) * 1e-5
+    erri = np.abs(b[0, :, :].dA - b.dAi[:, 0, :, :])
+    errj = np.abs(-b[:, 0, :].dA - b.dAj[:, :, 0, :])
+    errk = np.abs(b[:, :, 0].dA - b.dAk[:, :, :, 0])
+    assert (erri < atolA).all()
+    assert (errj < atolA).all()
+    assert (errk < atolA).all()
+
+    # Check nodal area
+    dAnodei = util.vecnorm(b[0, :, :].dA_node).sum()
+    dAnodej0 = util.vecnorm(b[:, 0, :].dA_node).sum()
+    dAnodej1 = util.vecnorm(b[:, -1, :].dA_node).sum()
+    dAnodek = util.vecnorm(b[:, :, 0].dA_node).sum()
+    assert np.isclose(dAnodei, Ax, rtol=rtol_A)
+    assert np.isclose(dAnodej0, Ar1, rtol=rtol_A)
+    assert np.isclose(dAnodej1, Ar2, rtol=rtol_A)
+    assert np.isclose(dAnodek, At, rtol=rtol_A)

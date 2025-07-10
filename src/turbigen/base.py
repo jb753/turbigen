@@ -417,10 +417,34 @@ class Kinematics:
         return turbigen.util.node_to_face3(self.x)
 
     @dependent_property
+    def dA_node(self):
+        """Nodal weighted area.
+
+        sum(dA_node) = A
+        sum(prop * dA_node) = integral(prop dA)
+
+        """
+        if not self.ndim == 2:
+            raise Exception("nodal area is only defined for 2D grids")
+
+        # Face area magnitudes
+        dA_face = self.dA
+
+        # Distribute face area to nodes
+        dA_node = np.zeros((3,) + self.shape)
+        dA_node[:, :-1, :-1] += dA_face
+        dA_node[:, :-1, 1:] += dA_face
+        dA_node[:, 1:, :-1] += dA_face
+        dA_node[:, 1:, 1:] += dA_face
+        dA_node /= 4.0
+
+        return dA_node
+
+    @dependent_property
     def dAi(self):
         # Vector area for i=const faces, Gauss' theorem method
         if self.ndim < 3:
-            raise Exception("Face area is only defined for 3D grids")
+            raise Exception("i-face area is only defined for 3D grids")
 
         # Define four vertices ABCD
         #    B      C
@@ -445,7 +469,7 @@ class Kinematics:
     def dAj(self):
         # Vector area for j=const faces, Gauss' theorem method
         if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
+            raise Exception("j-face area is only defined for 3D grids")
 
         # Define four vertices ABCD
         #    B      C
@@ -467,7 +491,7 @@ class Kinematics:
     def dAk(self):
         # Vector area for k=const faces, Gauss' theorem method
         if not self.ndim == 3:
-            raise Exception("Face area is only defined for 3D grids")
+            raise Exception("k-face area is only defined for 3D grids")
 
         # Define four vertices ABCD
         #    B      C
@@ -484,6 +508,27 @@ class Kinematics:
         D = v[:, 1:, :-1, :]
 
         return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dA(self):
+        # Vector area for 2D cuts, Gauss' theorem method
+        if not self.ndim == 2:
+            raise Exception("Face area is only defined for 2D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, None]
+        B = v[:, :-1, 1:, None]
+        C = v[:, 1:, 1:, None]
+        D = v[:, 1:, :-1, None]
+        return util.dA_Gauss(A, B, C, D)[..., 0]
 
     @dependent_property
     def vol(self):
@@ -515,15 +560,13 @@ class Kinematics:
         if not self.ndim == 3:
             raise Exception("Cell volume is only defined for 3D grids")
 
-        # Numpy cross function assumes that the components are in last axis
-        xyz = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
-
         # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, :-1, :], axis=0)
-        qj = np.diff(xyz[:-1, :, :-1, :], axis=1)
-        qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
+        xyz = self.xrrt
+        qi = np.diff(xyz[:, :, :-1, :-1], axis=1)
+        qj = np.diff(xyz[:, :-1, :, :-1], axis=2)
+        qk = np.diff(xyz[:, :-1, :-1, :], axis=3)
 
-        return np.sum(qk * np.cross(qi, qj), axis=-1)
+        return np.sum(qk * np.cross(qi, qj, axis=0), axis=0)
 
     @dependent_property
     def spf(self):
@@ -549,11 +592,7 @@ class Kinematics:
         qAB = self.xrrt[..., 1] - self.xrrt[..., 0]
         qAC = self.xrrt[..., 2] - self.xrrt[..., 0]
 
-        # Numpy cross function assumes that the components are in last axis
-        qAB = np.moveaxis(qAB, 0, -1).astype(np.float64)
-        qAC = np.moveaxis(qAC, 0, -1).astype(np.float64)
-
-        return 0.5 * np.cross(qAC, qAB).transpose(1, 0)
+        return 0.5 * np.cross(qAC, qAB, axis=0)
 
     def get_mpl_triangulation(self):
         """Generate a matplotlib-compatible triangulation for an unstructured cut."""
@@ -1106,6 +1145,51 @@ class Composites:
         self.set_P_rho(P, rho)
         self.Vxrt = Vxrt
         return self
+
+    def area_average(self, prop):
+        """Take area average of property over the cut surface.
+
+        prop_avg = integral (prop  dA) / integral (dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        return np.sum(prop * self.dA_node) / np.sum(self.dA_node)
+
+    @dependent_property
+    def mass_flow(self):
+        """Integrate the mass flow through a cut surface."""
+        if not self.ndim == 2:
+            raise Exception("Mass flow is only defined for 2D cuts")
+        return np.sum(util.dot(self.flux_mass, self.dA_node))
+
+    def mass_average(self, prop):
+        """Take mass average of property through the cut surface.
+
+        prop_avg = integral (prop  rho V dot dA) / integral (rho V dot dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        if not self.ndim == 2:
+            raise Exception("Mass average is only defined for 2D cuts")
+        return np.sum(prop * util.dot(self.flux_mass, self.dA_node)) / self.mass_flow
 
 
 class MeanLine:

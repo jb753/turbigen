@@ -178,3 +178,23 @@ def get_diffusion_factor(
     xpeak = np.abs(zeta_norm[Cp.argmin()].item())
 
     return xpeak, DF
+
+
+def area_average(F, prop):
+    """Take the area average of property over a cut surface.
+
+    prop_avg = integral (prop  dA) / integral (dA)
+
+    Parameters
+    ----------
+    F : FlowField
+        Cut flow field object. Must squeeze to 2D.
+    prop : array
+        Property to average over the cut surface, same shape as F.
+
+    Returns
+    -------
+        prop_avg : float
+        Area average of the property over the cut surface.
+
+    """

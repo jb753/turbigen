@@ -291,13 +291,13 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
         mdot_in = 0.0
         for patch in grid.inlet_patches:
-            Cm, A, _ = patch.get_cut().mix_out()
-            mdot_in += Cm.rho * Cm.Vm * A
+            C = patch.get_cut().squeeze()
+            mdot_in += C.mass_flow * C.Nb
 
         mdot_out = 0.0
         for patch in grid.outlet_patches:
-            Cm, A, _ = patch.get_cut().mix_out()
-            mdot_out += Cm.rho * Cm.Vm * A
+            C = patch.get_cut().squeeze()
+            mdot_out += C.mass_flow * C.Nb
 
         if not mdot_out == 0.0:
             merr = mdot_in / mdot_out - 1.0
@@ -1304,7 +1304,7 @@ class Boundary:
         dchic_inwards = self.inward_chics() * self.K
 
         # Transform to conserved variable changes
-        dcons = self.state.chic_to_conserved @ (dchic_outwards + dchic_inwards)
+        dcons = self.perturb.chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Send the nodal changes back to the block
         self.dUn[:] = dcons[..., 0]
@@ -1574,7 +1574,7 @@ class MixingBoundary(Boundary):
     def outward_chics(self):
         """Get chics propagating out of domain using local flow dirn."""
         # Transform conserved changes to chics
-        conserved_to_chic = np.expand_dims(self.perturb.conserved_to_chic, (0, 2))
+        conserved_to_chic = np.expand_dims(self.perturb_avg.conserved_to_chic, (0, 2))
         dchic = conserved_to_chic @ self.dUn[..., None]
         # Where the pitch-avg flow is into the domain
         # zero the downstream-running chics
