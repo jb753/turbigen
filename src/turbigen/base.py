@@ -365,131 +365,6 @@ class Kinematics:
         return np.stack((self.Vx, self.Vr))
 
     @dependent_property
-    def Vi_rel(self):
-        """Velocity in grid i-direction."""
-
-        # Edge-center vector for grid spacing
-        qi_edge = np.diff(self.xrt, axis=1)
-
-        # Multiply theta component by average radius on that face
-        r_edge = 0.5 * (self.r[:-1, ...] + self.r[1:, ...])
-        qi_edge[2] *= r_edge
-
-        # Convert to node-centered
-        qi_node = np.full(self.xrrt.shape, np.nan)
-        qi_node[:, 0, ...] = qi_edge[:, 0, ...]
-        qi_node[:, -1, ...] = qi_edge[:, -1, ...]
-        qi_node[:, 1:-1, ...] = 0.5 * (qi_edge[:, :-1, ...] + qi_edge[:, 1:, ...])
-
-        # Normalise to unit length
-        qi_node /= util.vecnorm(qi_node)
-
-        return (self.Vxrt_rel * qi_node).sum(axis=0)
-
-    @dependent_property
-    def surface_area(self):
-        # if not self.ndim == 2:
-        #     raise Exception("Surface area is only defined for 2D grids")
-        # Numpy cross function assumes that the components are in last axis
-        xyz = np.moveaxis(self.xyz, 0, -1).astype(np.float64)
-        # Vectors for cell sides
-        qi = np.diff(xyz[:, :-1, ...], axis=0)
-        qj = np.diff(xyz[:-1, :, ...], axis=1)
-        dA = np.cross(qi, qj)
-        return dA
-
-    @dependent_property
-    def surface_area_xrrt(self):
-        if not self.ndim == 2:
-            raise Exception("Surface area is only defined for 2D grids")
-        # Numpy cross function assumes that the components are in last axis
-        xrrt = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
-        # Vectors for cell sides
-        qi = np.diff(xrrt[:, :-1, :], axis=0)
-        qj = np.diff(xrrt[:-1, :, :], axis=1)
-        dA = np.cross(qi, qj)
-        return dA
-
-    @dependent_property
-    def dAt(self):
-        if not self.ndim == 2:
-            raise Exception("Surface area is only defined for 2D grids")
-
-        # Numpy cross function assumes that the components are in last axis
-        xrrt = np.moveaxis(self.xrrt, 0, -1).astype(np.float64)
-
-        # Vectors for cell sides
-        qi = np.diff(xrrt[:, :-1, :], axis=0)
-        qj = np.diff(xrrt[:-1, :, :], axis=1)
-        dA = np.cross(qi, qj)
-
-        return dA[..., 2]
-
-    @dependent_property
-    def dlif(self):
-        # Forward diagonal vector across i face
-        # From j,k to j+1, k+1
-        #
-        # j+1 * *
-        #      /
-        # j   * *
-        #    k  k+1
-        dlif = self.xrt[:, :, 1:, 1:] - self.xrt[:, :, :-1, :-1]
-        # Reference theta is at j,k
-        dlif[2] *= self.r[:, 1:, 1:]
-        return dlif
-
-    @dependent_property
-    def dlib(self):
-        # Backward diagonal vector across i face
-        # From j,k+1 to j+1, k ***via j,k**
-        #
-        # j+1 * *
-        #     |\
-        # j   *-*
-        #    k  k+1
-
-        # from k+1 to k, reference radius at j,k for
-        dk = self.xrt[:, :, :-1, :-1] - self.xrt[:, :, :-1, 1:]
-        dk[2] *= self.r[:, :-1, :-1]
-        # from j to j+1, reference radius at e
-
-        dlib = self.xrt[:, :, 1:, :-1] - self.xrt[:, :, :-1, 1:]
-        return dlib
-
-    @dependent_property
-    def dljf(self):
-        # Forward diagonal vector across j face
-        # From i,k to i+1, k+1
-        dljf = self.xrt[:, 1:, :, 1:] - self.xrt[:, :-1, :, :-1]
-        dljf[2] *= self.r_face[1]
-        return dljf
-
-    @dependent_property
-    def dljb(self):
-        # Backward diagonal vector across i face
-        # From i,k+1 to i+1,k
-        dljb = self.xrt[:, 1:, :, :-1] - self.xrt[:, :-1, :, 1:]
-        dljb[2] *= self.r_face[1]
-        return dljb
-
-    @dependent_property
-    def dlkf(self):
-        # Forward diagonal vector across k face
-        # From i,j to i+1, j+1
-        dlkf = self.xrt[:, 1:, 1:, :] - self.xrt[:, :-1, :-1, :]
-        dlkf[2] *= self.r_face[2]
-        return dlkf
-
-    @dependent_property
-    def dlkb(self):
-        # Backward diagonal vector across k face
-        # From i,j+1 to i+1,j
-        dlkb = self.xrt[:, 1:, :-1, :] - self.xrt[:, :-1, 1:, :]
-        dlkb[2] *= self.r_face[2]
-        return dlkb
-
-    @dependent_property
     def dli(self):
         return np.diff(self.xyz, axis=1)
 
@@ -649,18 +524,6 @@ class Kinematics:
         qk = np.diff(xyz[:-1, :-1, :, :], axis=2)
 
         return np.sum(qk * np.cross(qi, qj), axis=-1)
-
-    @dependent_property
-    def flux_all(self):
-        return np.stack(
-            (
-                self.flux_mass,
-                self.flux_xmom,
-                self.flux_rmom,
-                self.flux_rtmom,
-                self.flux_energy,
-            )
-        )
 
     @dependent_property
     def spf(self):
@@ -1064,20 +927,6 @@ class Composites:
                 self.rhoVx * self.ho,
                 self.rhoVr * self.ho,
                 self.rhoVt * self.ho + self.Omega * self.r * self.P,
-            )
-        )
-
-    @dependent_property
-    def source_all(self):
-        source_rtmom = (self.P + self.rho * self.Vt**2) / self.r
-        Z = np.zeros_like(source_rtmom)
-        return np.stack(
-            (
-                Z,  # mass
-                Z,  # xmom
-                Z,  # rmom
-                source_rtmom,  # rtmom
-                Z,  # energy
             )
         )
 
