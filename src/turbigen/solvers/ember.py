@@ -4,6 +4,7 @@ from copy import copy
 
 import turbigen.util
 import sys
+import turbigen.perturb
 
 from dataclasses import dataclass
 
@@ -1252,6 +1253,9 @@ class Boundary:
         # Initialise lists for convergence recording
         self.convergence_log = []
 
+        # Initialise a perturbation
+        self.perturb = turbigen.perturb.Perturbation(self.state)
+
     def record_flows(self):
         """Append mass flow and mass-averaged ho and s to convergence log."""
         flux_mass = self.state.flux_mass * self.Nb
@@ -1317,7 +1321,7 @@ class Boundary:
     def outward_chics(self):
         """Get chics propagating out of domain from nodal changes."""
         # Transform conserved changes to chics
-        dchic = self.state.conserved_to_chic @ self.dUn[..., None]
+        dchic = self.perturb.conserved_to_chic @ self.dUn[..., None]
         # Zero out the inwards chics
         dchic[..., self.slice_inward(), 0] = 0.0
         return dchic
@@ -1424,7 +1428,7 @@ class InletBoundary(Boundary):
         dbcond = self.bcond_target - bcond_now
 
         # Convert to chics
-        dchic = self.state.inlet_to_chic @ dbcond
+        dchic = self.perturb.inlet_to_chic @ dbcond
 
         # Prepend a zero for upstream-running wave
         dc1 = np.zeros(self.shape + (1, 1))
@@ -1465,6 +1469,8 @@ class MixingBoundary(Boundary):
         cons_avg = self.pitchwise_average(self.state.conserved)
         self.state_avg.set_conserved(cons_avg.squeeze())
 
+        self.perturb_avg = turbigen.perturb.Perturbation(self.state_avg)
+
         # Preallocate pitch-avg flux changes
         self.dflux_avg = np.zeros((1, len(self.spf), 1, 5, 1))
 
@@ -1503,8 +1509,8 @@ class MixingBoundary(Boundary):
         dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
 
         # Conversion matrices
-        prim_to_inlet = self.state.primitive_to_bcond
-        prim_to_cons = self.state.primitive_to_conserved
+        prim_to_inlet = self.perturb.primitive_to_bcond
+        prim_to_cons = self.perturb.primitive_to_conserved
         inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
 
         # Calculate conserved changes
@@ -1568,7 +1574,7 @@ class MixingBoundary(Boundary):
     def outward_chics(self):
         """Get chics propagating out of domain using local flow dirn."""
         # Transform conserved changes to chics
-        conserved_to_chic = np.expand_dims(self.state_avg.conserved_to_chic, (0, 2))
+        conserved_to_chic = np.expand_dims(self.perturb.conserved_to_chic, (0, 2))
         dchic = conserved_to_chic @ self.dUn[..., None]
         # Where the pitch-avg flow is into the domain
         # zero the downstream-running chics
@@ -1582,7 +1588,7 @@ class MixingBoundary(Boundary):
         """Set inward chics to drive flux error to zero at uniform ho and s."""
 
         # First calculate chic changes due to flux error
-        flux_to_chic = np.expand_dims(self.state_avg.flux_to_chic, (0, 2))
+        flux_to_chic = np.expand_dims(self.perturb_avg.flux_to_chic, (0, 2))
         dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
 
         # Relax
@@ -1606,7 +1612,7 @@ class MixingBoundary(Boundary):
         dchic_inwards = self.inward_chics()
 
         # Transform to conserved variable changes
-        chic_to_conserved = np.expand_dims(self.state_avg.chic_to_conserved, (0, 2))
+        chic_to_conserved = np.expand_dims(self.perturb_avg.chic_to_conserved, (0, 2))
         dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Store the nodal changes
