@@ -4,6 +4,7 @@ from abc import abstractmethod
 from turbigen import util
 import numpy as np
 import turbigen.flowfield
+import turbigen.meanline_data
 
 logger = util.make_logger()
 
@@ -275,7 +276,7 @@ class MeanLineDesigner(util.BaseDesigner):
 
     def setup_mean_line(self, So1):
         """Calculate the nominal mean line flow field from stored design variables."""
-        self.nominal = turbigen.flowfield.make_mean_line(
+        self.nominal = turbigen.meanline_data.make_mean_line_from_states(
             *self.forward(So1=So1, **self.design_vars)
         )
 

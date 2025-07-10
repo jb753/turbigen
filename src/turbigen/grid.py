@@ -2,11 +2,13 @@
 
 import numpy as np
 from copy import copy
+from turbigen.base import dependent_property, concatenate
 from turbigen import util
 import turbigen.yaml
 import turbigen.fluid
 import turbigen.base
 import turbigen.flowfield
+from scipy.interpolate import LinearNDInterpolator
 import turbigen.marching_cubes
 import importlib
 from scipy.spatial import KDTree
@@ -47,6 +49,522 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
             f"Block({self.label}, xav={self.x.mean()}, rav={self.r.mean()},"
             f" tav={self.t.mean()}"
         )
+
+    def area_average(self, prop):
+        """Take area average of property over the cut surface.
+
+        prop_avg = integral (prop  dA) / integral (dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        return np.sum(prop * self.dA_node) / np.sum(self.dA_node)
+
+    @dependent_property
+    def mass_flow(self):
+        """Integrate the mass flow through a cut surface."""
+        if not self.ndim == 2:
+            raise Exception("Mass flow is only defined for 2D cuts")
+        return np.sum(util.dot(self.flux_mass, self.dA_node))
+
+    def mass_average(self, prop):
+        """Take mass average of property through the cut surface.
+
+        prop_avg = integral (prop  rho V dot dA) / integral (rho V dot dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        if not self.ndim == 2:
+            raise Exception("Mass average is only defined for 2D cuts")
+        return np.sum(prop * util.dot(self.flux_mass, self.dA_node)) / self.mass_flow
+
+    @dependent_property
+    def i_stag(self):
+        """i-index of stagnation point."""
+
+        if not self.ndim == 2:
+            raise Exception(
+                "Can only find stagnation point on 2D cuts; "
+                f"this cut has shape {self.shape}"
+            )
+
+        # Use rotary static pressure to take out centrifugal pressure gradient
+        P = self.P_rot
+
+        # Extract surface distance, normalise to [-1,1] on each j-line
+        z = self.zeta / np.ptp(self.zeta, axis=0) * 2.0 - 1.0
+
+        # Find pressure maxima
+        # This must be a loop over j because there can be a different number of
+        # turning points at each spanwise lnocation
+        _, nj = self.shape
+        istag = np.full((nj,), 0, dtype=int)
+        for j in range(nj):
+            # Calculate gradient and curvature
+            dP = np.diff(P[:, j])
+
+            # Indices of downward zero crossings of pressure derivative
+            izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
+
+            # Only keep maxima close to LE
+            izj = izj[np.abs(z[izj, j]) < 0.2]
+
+            # Now take the candiate point with maximum pressure
+            try:
+                istag[j] = izj[np.argsort(P[izj, j])][-1]
+            except Exception:
+                istag[j] = 0
+
+        return istag
+
+    @dependent_property
+    def zeta_stag(self):
+        """Surface distance along i-line with origin at stagnation point."""
+
+        _, nj = self.shape
+        zstag = np.full(
+            (
+                1,
+                nj,
+            ),
+            np.nan,
+        )
+        istag = self.i_stag
+        for j in range(nj):
+            zstag[0, j] = self.zeta[istag[j], j]
+
+        return self.zeta - zstag
+
+    @dependent_property
+    def xrt_stag(self):
+        """Coordinates of the stagnation point at all j indices."""
+        _, nj = self.shape
+        xrt_stag = np.full(
+            (
+                3,
+                nj,
+            ),
+            np.nan,
+        )
+        for j in range(nj):
+            xrt_stag[:, j] = self.xrt[:, self.i_stag[j], j]
+        return xrt_stag
+
+    def meridional_slice(self, xrc):
+        """Slice a block cut using a meridional curve."""
+
+        # Get signed distance
+        dist = util.signed_distance_piecewise(xrc, self.xr)
+
+        # Get j indices above slice
+        jcut = np.argmax(dist > 0, axis=1, keepdims=True) - 1
+
+        # Preallocate
+        data = self._data
+        nv, ni, nj, nk = self._data.shape
+        data_cut = np.zeros(
+            (
+                nv,
+                ni,
+                nk,
+            )
+        )
+        for i in range(ni):
+            jnow = jcut[i]
+            dist_now = dist[i, (jnow, jnow + 1), :]
+            frac = -dist_now[0] / (dist_now[1] - dist_now[0])
+            data_cut[:, i, :] = (
+                data[:, i, jnow, :]
+                + (data[:, i, jnow + 1, :] - data[:, i, jnow, :]) * frac
+            )[:, 0, 0, :]
+
+        out = self.empty(shape=(ni, nk))
+        out._data = data_cut
+        out._metadata = self._metadata
+        return out
+
+    def mix_out(self):
+        """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
+        return turbigen.average.mix_out(self)
+
+    def pitchwise_integrate(self, y):
+        """Integrate something."""
+        # Check if we have a 3D cut and i is singleton
+        assert len(self.shape) == 3
+        assert self.shape[0] == 1
+
+        # The pitchwise grid lines should be at constant radius
+        rtol = 1e-5 * np.ptp(self.r)
+        assert (np.abs(np.diff(self.r, axis=2)) < rtol).all()
+
+        # Trapezoidal integral
+        return np.trapz(y, self.t, axis=2)
+
+    @dependent_property
+    def dA_node(self):
+        """Nodal weighted area.
+
+        sum(dA_node) = A
+        sum(prop * dA_node) = integral(prop dA)
+
+        """
+        if not self.ndim == 2:
+            raise Exception("nodal area is only defined for 2D grids")
+
+        # Face area magnitudes
+        dA_face = self.dA
+
+        # Distribute face area to nodes
+        dA_node = np.zeros((3,) + self.shape)
+        dA_node[:, :-1, :-1] += dA_face
+        dA_node[:, :-1, 1:] += dA_face
+        dA_node[:, 1:, :-1] += dA_face
+        dA_node[:, 1:, 1:] += dA_face
+        dA_node /= 4.0
+
+        return dA_node
+
+    @dependent_property
+    def dA(self):
+        # Vector area for 2D cuts, Gauss' theorem method
+        if not self.ndim == 2:
+            raise Exception("Face area is only defined for 2D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, None]
+        B = v[:, :-1, 1:, None]
+        C = v[:, 1:, 1:, None]
+        D = v[:, 1:, :-1, None]
+        return util.dA_Gauss(A, B, C, D)[..., 0]
+
+    @dependent_property
+    def vol(self):
+        # Volume
+        if not self.ndim == 3:
+            raise Exception("Face area is only defined for 3D grids")
+
+        # Get face-centered coordinates
+        xi, xj, xk = self.x_face
+        ri, rj, rk = self.r_face
+        rti, rtj, rtk = self.rt_face
+        Fi = np.stack((xi, ri / 2.0, rti))
+        Fj = np.stack((xj, rj / 2.0, rtj))
+        Fk = np.stack((xk, rk / 2.0, rtk))
+        dAi = self.dAi
+        dAj = self.dAj
+        dAk = self.dAk
+
+        # Volume by Gauss' theorem
+        Fisum = np.diff(np.sum(Fi * dAi, axis=0), axis=0)
+        Fjsum = np.diff(np.sum(Fj * dAj, axis=0), axis=1)
+        Fksum = np.diff(np.sum(Fk * dAk, axis=0), axis=2)
+        vol = Fisum + Fjsum + Fksum
+
+        return vol / 3.0
+
+    @property
+    def vol_approx(self):
+        if not self.ndim == 3:
+            raise Exception("Cell volume is only defined for 3D grids")
+
+        # Vectors for cell sides
+        xyz = self.xrrt
+        qi = np.diff(xyz[:, :, :-1, :-1], axis=1)
+        qj = np.diff(xyz[:, :-1, :, :-1], axis=2)
+        qk = np.diff(xyz[:, :-1, :-1, :], axis=3)
+
+        return np.sum(qk * np.cross(qi, qj, axis=0), axis=0)
+
+    @dependent_property
+    def spf(self):
+        if self.ndim == 1:
+            span = util.cum_arc_length(self.xr, axis=1)
+            spf = span / np.max(span, axis=0, keepdims=True)
+        else:
+            span = util.cum_arc_length(self.xr, axis=2)
+            spf = span / np.max(span, axis=1, keepdims=True)
+        return spf
+
+    @dependent_property
+    def zeta(self):
+        """Arc length along each i gridline."""
+        return util.cum_arc_length(self.xyz, axis=1)
+
+    @dependent_property
+    def tri_area(self):
+        if not self.shape[1] == 3:
+            raise Exception("This is not a triangulated cut.")
+
+        # Vectors for each side
+        qAB = self.xrrt[..., 1] - self.xrrt[..., 0]
+        qAC = self.xrrt[..., 2] - self.xrrt[..., 0]
+
+        return 0.5 * np.cross(qAC, qAB, axis=0)
+
+    def get_mpl_triangulation(self):
+        """Generate a matplotlib-compatible triangulation for an unstructured cut."""
+
+        # Check we have a triangulated shape (ntri, 3)
+        try:
+            ntri, ndim = self.shape
+            assert ndim == 3
+        except Exception:
+            raise Exception("This is not a triangulated cut.")
+
+        # Reshape to a 1D array
+        C = self.flatten()
+
+        # Because we store all three vertices for every triangle, many vertices are repeated
+        # Matplotlib prefers without repeats
+        # So find the 1D indices of unique coordiates only
+        _, iunique, triangles = np.unique(
+            C.xrt,
+            axis=1,
+            return_index=True,
+            return_inverse=True,
+        )
+
+        # Only keep unique points
+        C = C[(iunique,)]
+
+        # The triangles are indices into the 1D unique data that
+        # reconstruct the original (ntri, 3) data
+        triangles = triangles.reshape(-1, 3)
+
+        return C, triangles
+
+    def interpolate_to_structured(self, npitch=99, nspan=101):
+        """Given an unstructured cut interpolate to a regular grid.
+
+        Note must be a straight line in x-r plane."""
+
+        # TODO - at the moment we just use a brute force interpolation
+        # but the *correct* way to do this is to:
+        # Define a set of xr points along the cut line
+        # Examine each triangle to see if it encloses the xr point
+        # Interpolate within each triangle appropriately
+
+        # unstructured shape (ntri, 3, nvar)
+
+        # Repeat and centre on theta=0
+        C = self.repeat_pitchwise(3)
+        tmid = 0.5 * (C.t.max() + C.t.min())
+        C.t -= tmid
+
+        # Set up new coordinates
+        xr0 = np.reshape((np.min(self.x), np.min(self.r)), (2, 1, 1))
+        xr1 = np.reshape((np.max(self.x), np.max(self.r)), (2, 1, 1))
+        eps = 1e-3
+        clu = (
+            (turbigen.util.cluster_cosine(nspan).reshape(1, -1, 1) + eps)
+            / (1.0 + eps)
+            * (1.0 - eps)
+        )
+        xr = clu * xr0 + (1.0 - clu) * xr1
+        pitch = self.pitch
+        t = -np.linspace(-pitch / 2.0, pitch / 2.0, npitch).reshape(1, -1)
+        xrt = np.stack(np.broadcast_arrays(*xr, t), axis=0)
+
+        # Initialise a new cut
+        Cs = C.empty(shape=(1,) + xrt.shape[1:])
+        xrt1 = np.expand_dims(xrt, 1)
+        Cs.xrt = xrt1
+
+        # Interpolate the data
+        Cf = C.flatten()
+
+        if np.ptp(Cf.x) > np.ptp(Cf.r):
+            xi = np.stack((Cf.x, Cf.t), axis=-1)
+            xo = np.stack((Cs.x, Cs.t), axis=-1)
+        else:
+            xi = np.stack((Cf.r, Cf.t), axis=-1)
+            xo = np.stack((Cs.r, Cs.t), axis=-1)
+
+        yi = Cf._data.T
+
+        # ind_t = np.abs(xi[:, 1]) <= pitch * 0.6
+        # xi = xi[ind_t]
+        # yi = yi[ind_t]
+
+        # fig, ax = plt.subplots()
+        # ax.plot(xi[:, 0], xi[:, 1], "rx")
+        # ax.plot(xo[0, :, :, 0], xo[0, :, :, 1], "b-")
+        # ax.plot(xo[0, :, :, 0].T, xo[0, :, :, 1].T, "b-")
+        # ax.axis("equal")
+        # plt.show()
+        # quit()
+        #
+        interp = LinearNDInterpolator(xi, yi)
+        yo = np.moveaxis(interp(xo), -1, 0)
+        ind_nan = np.isnan(yo)
+        if ind_nan.any():
+            raise Exception()
+        Cs._data[:] = yo
+
+        assert np.allclose(Cs.xrt, xrt1)
+
+        return Cs
+
+    def repeat_pitchwise(self, N, axis=0):
+        """Replicate the data in pitchwise direction."""
+
+        # Make a list of copies of this cut with different theta
+        C_all = []
+        for i in range(N):
+            Ci = self.copy()
+            Ci.t += self.pitch * i
+            C_all.append(Ci)
+
+        # Join the copies together
+        C_all = concatenate(C_all, axis=axis)
+
+        return C_all
+
+    @property
+    def dli(self):
+        return np.diff(self.xyz, axis=1)
+
+    @property
+    def dlj(self):
+        return np.diff(self.xyz, axis=2)
+
+    @property
+    def dlk(self):
+        return np.diff(self.xyz, axis=3)
+
+    @property
+    def dlmin(self):
+        # Get face area magnitudes
+        dAi = util.vecnorm(self.dAi)
+        dAj = util.vecnorm(self.dAj)
+        dAk = util.vecnorm(self.dAk)
+
+        # For each volume, take the minimum of the bounding length
+        # scales for every coordinate direction
+        vol = self.vol
+        dli = np.minimum(vol / dAi[1:, :, :], vol / dAi[:-1, :, :])
+        dlj = np.minimum(vol / dAj[:, 1:, :], vol / dAj[:, :-1, :])
+        dlk = np.minimum(vol / dAk[:, :, 1:], vol / dAk[:, :, :-1])
+
+        # Now take minimum of all directions
+        dlmin = np.minimum(dli, dlj)
+        dlmin = np.minimum(dlmin, dlk)
+
+        return dlmin
+
+    @dependent_property
+    def dAi(self):
+        # Vector area for i=const faces, Gauss' theorem method
+        if self.ndim < 3:
+            raise Exception("i-face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      j>
+        #
+        if self.ndim > 3:
+            v = self.xrrt[:, :, :, :, 0]  # Discard any time dimension
+        else:
+            v = self.xrrt
+        A = v[:, :, :-1, :-1]
+        B = v[:, :, :-1, 1:]
+        C = v[:, :, 1:, 1:]
+        D = v[:, :, 1:, :-1]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAj(self):
+        # Vector area for j=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("j-face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :, :-1]
+        B = v[:, :-1, :, 1:]
+        C = v[:, 1:, :, 1:]
+        D = v[:, 1:, :, :-1]
+
+        return -util.dA_Gauss(A, B, C, D)
+
+    @dependent_property
+    def dAk(self):
+        # Vector area for k=const faces, Gauss' theorem method
+        if not self.ndim == 3:
+            raise Exception("k-face area is only defined for 3D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, :]
+        B = v[:, :-1, 1:, :]
+        C = v[:, 1:, 1:, :]
+        D = v[:, 1:, :-1, :]
+
+        return util.dA_Gauss(A, B, C, D)
+
+    @property
+    def r_face(self):
+        return util.node_to_face3(self.r)
+
+    @property
+    def r_cell(self):
+        return util.node_to_cell(self.r)
+
+    @property
+    def t_face(self):
+        return util.node_to_face3(self.t)
+
+    @property
+    def rt_face(self):
+        return util.node_to_face3(self.rt)
+
+    @property
+    def x_face(self):
+        return util.node_to_face3(self.x)
 
     def to_perfect(self):
         bnew = PerfectBlock(shape=self.shape)

@@ -10,7 +10,7 @@ import importlib
 from pathlib import Path
 import turbigen.fluid
 import turbigen.flowfield
-import turbigen.meanline
+import turbigen.meanline_design
 import turbigen.solvers.base
 import turbigen.base
 import turbigen.iterators
@@ -48,7 +48,7 @@ class TurbigenConfig:
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
 
-    mean_line: turbigen.meanline.MeanLineDesigner
+    mean_line: turbigen.meanline_design.MeanLineDesigner
     """Settings for the mean-line designer."""
 
     annulus: turbigen.annulus.AnnulusDesigner = None
@@ -316,12 +316,12 @@ class TurbigenConfig:
 
         # Set up the meanline designer
         MeanLineDesigner = util.get_subclass_by_name(
-            turbigen.meanline.MeanLineDesigner, self.mean_line.pop("type")
+            turbigen.meanline_design.MeanLineDesigner, self.mean_line.pop("type")
         )
         self.mean_line = MeanLineDesigner(self.mean_line)
 
         if isinstance(self.mixed_out_flowfield, dict):
-            self.mean_line.actual = turbigen.flowfield.meanline_from_dump(
+            self.mean_line.actual = turbigen.meanline_data.meanline_from_dump(
                 self.mixed_out_flowfield, self.inlet.get_inlet()
             )
 
@@ -748,7 +748,7 @@ class TurbigenConfig:
         ).astype(int)
 
         # Assemble the meanline flowfield
-        self.mean_line.actual = turbigen.flowfield.make_mean_line_from_flowfield(
+        self.mean_line.actual = turbigen.meanline_data.make_mean_line_from_flowfield(
             Amix, Call, Dsmix
         )
         self.mean_line.actual.Nb = self.mean_line.nominal.Nb = Nb
