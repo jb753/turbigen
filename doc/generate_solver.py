@@ -1,7 +1,7 @@
 """Make documentation for an abstract base class and subclasses."""
 
 import turbigen.solvers.base
-from turbigen.solvers import ember, ts3, ts4
+from turbigen.solvers import ember, ts3, ts4  # noqa: F401
 import inspect
 import dataclasses
 

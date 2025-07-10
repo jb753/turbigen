@@ -4,9 +4,7 @@ import os
 import inspect
 import tarfile
 import scipy.interpolate
-import numpy as np
 
-from scipy.interpolate import RBFInterpolator
 from turbigen.exceptions import ConfigError
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata

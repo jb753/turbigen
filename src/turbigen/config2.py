@@ -7,7 +7,6 @@ import numpy as np
 import pickle
 import sys
 import importlib
-from timeit import default_timer as timer
 from pathlib import Path
 import turbigen.fluid
 import turbigen.flowfield
@@ -987,7 +986,9 @@ class TurbigenConfig:
         Tmax = ml.To.max()
 
         logger.info(
-            f"Real gas table limits: smin={smin:.3g} J/kgK, smax={smax:.3g} J/kgK , Pmin={Pmin:.3g} Pa, Tmax={Tmax:.3g} K"
+            f"Real gas table limits: "
+            f"smin={smin:.3g} J/kgK, smax={smax:.3g} J/kgK , "
+            f"Pmin={Pmin:.3g} Pa, Tmax={Tmax:.3g} K"
         )
 
     def post_process_all(self):

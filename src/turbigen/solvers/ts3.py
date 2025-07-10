@@ -1,7 +1,6 @@
 from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
-import shutil
 import turbigen.fluid
 import turbigen.flowfield
 from glob import glob
@@ -18,11 +17,8 @@ import sys
 import re
 import grp
 import getpass
-from copy import copy
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 import time
-import pickle
-import gzip
 
 import turbigen.util
 

@@ -553,9 +553,11 @@ ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
         ).strip()
 
         if not sock:
-            raise Exception(f"""ssh-agent socket not found on via_host: {via}
+            raise Exception(
+                f"""ssh-agent socket not found on via_host: {via}
 You may need to restart the ssh-agent and enter your key password:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add'""")
+ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
+            )
 
         logger.info(
             f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"

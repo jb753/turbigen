@@ -37,7 +37,9 @@ class MeanLineDesigner(util.BaseDesigner):
     --------------------
 
     Custom architectures are defined by subclassing the :class:`MeanLineDesigner`.
-    First, set the user plugin directory in the configuration file, e.g. to a new folder called `plug` in the current directory by adding the following line:
+    First, set the user plugin directory in the configuration file, e.g. to a
+    new folder called `plug` in the current directory by adding the following
+    line:
 
     .. code-block:: yaml
 
@@ -182,7 +184,8 @@ class MeanLineDesigner(util.BaseDesigner):
     * Specify aerodynamic design variables instead of geometric ones, e.g.
       flow coefficient and Mach number instead of shaft
       angular velocity and radius ratio. Constraining geometry can lead to
-      feasible designs only over a narrow range of duty, with many infeasible designs with no solution to the mean-line equations. It is more
+      feasible designs only over a narrow range of duty, with many infeasible
+      designs with no solution to the mean-line equations. It is more
       straighforward to map out a design space by varying independent variables
       within their natural aerodynamic bounds.
     * Controlling Mach number prevents choking when moving around the
@@ -454,9 +457,13 @@ class AxialTurbine(MeanLineDesigner):
     Axial turbine
     -------------
 
-    A repeating-stage axial turbine. Duty is set by a mass flow rate and a constant mean radius.
+    A repeating-stage axial turbine. Duty is set by a mass flow rate and a
+    constant mean radius.
     Vane exit Mach number is set directly, while the rotor exit relative Mach
-    number is set by a scaling factor off the vane value. This allows compressibility effects to be predominantly controlled by `Ma2`; the degree of reaction is controlled by `fac_Ma3_rel`, with 50% reaction corresponding approximately to unity.
+    number is set by a scaling factor off the vane value. This allows
+    compressibility effects to be predominantly controlled by `Ma2`; the degree
+    of reaction is controlled by `fac_Ma3_rel`, with 50% reaction corresponding
+    approximately to unity.
     The default is constant axial velocity, but this can be controlled by `zeta`.
     Pressure ratio and shaft speed are dependent variables under this parameterisation.
 
