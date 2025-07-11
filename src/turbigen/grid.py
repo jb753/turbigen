@@ -218,51 +218,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return np.trapz(y, self.t, axis=2)
 
     @dependent_property
-    def dA_node(self):
-        """Nodal weighted area.
-
-        sum(dA_node) = A
-        sum(prop * dA_node) = integral(prop dA)
-
-        """
-        if not self.ndim == 2:
-            raise Exception("nodal area is only defined for 2D grids")
-
-        # Face area magnitudes
-        dA_face = self.dA
-
-        # Distribute face area to nodes
-        dA_node = np.zeros((3,) + self.shape)
-        dA_node[:, :-1, :-1] += dA_face
-        dA_node[:, :-1, 1:] += dA_face
-        dA_node[:, 1:, :-1] += dA_face
-        dA_node[:, 1:, 1:] += dA_face
-        dA_node /= 4.0
-
-        return dA_node
-
-    @dependent_property
-    def dA(self):
-        # Vector area for 2D cuts, Gauss' theorem method
-        if not self.ndim == 2:
-            raise Exception("Face area is only defined for 2D grids")
-
-        # Define four vertices ABCD
-        #    B      C
-        #     *----*
-        #  ^  |    |
-        #  k  *----*
-        #    A      D
-        #      i>
-        #
-        v = self.xrrt
-        A = v[:, :-1, :-1, None]
-        B = v[:, :-1, 1:, None]
-        C = v[:, 1:, 1:, None]
-        D = v[:, 1:, :-1, None]
-        return util.dA_Gauss(A, B, C, D)[..., 0]
-
-    @dependent_property
     def vol(self):
         # Volume
         if not self.ndim == 3:
@@ -1537,9 +1492,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.flatten().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -2129,9 +2085,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (
-                nt,
-            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            assert np.shape(fac) == (nt,), (
+                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            )
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor

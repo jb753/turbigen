@@ -452,6 +452,99 @@ class BaseFlowField(
         self.Vxrt = Vxrt
         return self
 
+    def area_average(self, prop):
+        """Take area average of property over the cut surface.
+
+        prop_avg = integral (prop  dA) / integral (dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        dA = util.vecnorm(self.dA_node)
+        if prop.ndim == 3:
+            dA = dA[..., None]  # Add a dimension for broadcasting
+        return np.sum(prop * dA) / np.sum(dA)
+
+    @dependent_property
+    def mass_flow(self):
+        """Integrate the mass flow through a cut surface."""
+        if not self.ndim == 2:
+            raise Exception("Mass flow is only defined for 2D cuts")
+        return np.sum(util.dot(self.flux_mass, self.dA_node))
+
+    def mass_average(self, prop):
+        """Take mass average of property through the cut surface.
+
+        prop_avg = integral (prop  rho V dot dA) / integral (rho V dot dA)
+
+        Parameters
+        ----------
+        prop : array
+            Nodal property to average over the cut surface, same shape as self.
+
+        Returns
+        -------
+            prop_avg : float
+            Area average of the property over the cut surface.
+
+        """
+        if not self.ndim == 2:
+            raise Exception("Mass average is only defined for 2D cuts")
+        return np.sum(prop * util.dot(self.flux_mass, self.dA_node)) / self.mass_flow
+
+    @dependent_property
+    def dA_node(self):
+        """Nodal weighted area.
+
+        sum(dA_node) = A
+        sum(prop * dA_node) = integral(prop dA)
+
+        """
+        if not self.ndim == 2:
+            raise Exception("nodal area is only defined for 2D grids")
+
+        # Face area magnitudes
+        dA_face = self.dA
+
+        # Distribute face area to nodes
+        dA_node = np.zeros((3,) + self.shape)
+        dA_node[:, :-1, :-1] += dA_face
+        dA_node[:, :-1, 1:] += dA_face
+        dA_node[:, 1:, :-1] += dA_face
+        dA_node[:, 1:, 1:] += dA_face
+        dA_node /= 4.0
+
+        return dA_node
+
+    @dependent_property
+    def dA(self):
+        # Vector area for 2D cuts, Gauss' theorem method
+        if not self.ndim == 2:
+            raise Exception("Face area is only defined for 2D grids")
+
+        # Define four vertices ABCD
+        #    B      C
+        #     *----*
+        #  ^  |    |
+        #  k  *----*
+        #    A      D
+        #      i>
+        #
+        v = self.xrrt
+        A = v[:, :-1, :-1, None]
+        B = v[:, :-1, 1:, None]
+        C = v[:, 1:, 1:, None]
+        D = v[:, 1:, :-1, None]
+        return util.dA_Gauss(A, B, C, D)[..., 0]
+
 
 class PerfectFlowField(turbigen.fluid.PerfectState, BaseFlowField):
     """Flow and thermodynamic properties of a perfect gas."""
