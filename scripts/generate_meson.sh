@@ -35,4 +35,4 @@ sed -i "/fc =/i\add_global_arguments(['-O3','-funroll-loops','-march=native','-f
 echo "install_subdir('src/turbigen', install_dir: py.get_install_dir())" >> meson.build
 
 # Clean up
-rm -rf $WORKDIR
+rm -r $WORKDIR
