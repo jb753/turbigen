@@ -452,6 +452,10 @@ class BaseFlowField(
         self.Vxrt = Vxrt
         return self
 
+    def mix_out(self):
+        """Mix out the cut to a scalar state, conserving mass, momentum and energy."""
+        return turbigen.average.mix_out(self)
+
     def area_average(self, prop):
         """Take area average of property over the cut surface.
 

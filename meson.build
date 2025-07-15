@@ -1,4 +1,4 @@
-project('turbigen',
+project('emberc',
         ['c', 'fortran'],
         version : '0.1',
         meson_version: '>= 1.1.0',
@@ -6,10 +6,8 @@ project('turbigen',
                             'warning_level=1',
                             'buildtype=release'
                           ])
-add_global_arguments(['-O3','-funroll-loops','-march=native','-fno-math-errno','-fno-trapping-math','-ftree-vectorize'], language : 'fortran')
 fc = meson.get_compiler('fortran')
 
-# py = import('python').find_installation('''/home/jb753/python/turbigen-dev/.venv/bin/python3''', pure: false)
 py = import('python').find_installation(pure: false)
 py_dep = py.dependency()
 
@@ -37,20 +35,20 @@ quadmath_dep = fc.find_library('quadmath', required: false)
 
 
 
-py.extension_module('embsolvec',
+py.extension_module('emberc',
                      [
-                     '''src/embsolve/distribute.f90''',
-                     '''src/embsolve/embsolve.f90''',
-                     '''src/embsolve/fluxes.f90''',
-                     '''src/embsolve/indexing.f90''',
-                     '''src/embsolve/multigrid.f90''',
-                     '''src/embsolve/operators.f90''',
-                     '''src/embsolve/smooth.f90''',
-                     '''src/embsolve/viscous.f90''',
-                     '''src/embsolve/matmul.f90''',
-                     '''src/embsolve/embsolvecmodule.c''',
-                     '''src/embsolve/embsolvec-f2pywrappers2.f90''',
-                     '''src/embsolve/embsolvec-f2pywrappers.f''',
+                     'src/ember/distribute.f90',
+                     'src/ember/embsolve.f90',
+                     'src/ember/fluxes.f90',
+                     'src/ember/indexing.f90',
+                     'src/ember/matmul.f90',
+                     'src/ember/multigrid.f90',
+                     'src/ember/operators.f90',
+                     'src/ember/smooth.f90',
+                     'src/ember/viscous.f90',
+                     'src/ember/embercmodule.c',
+                     'src/ember/emberc-f2pywrappers2.f90',
+                     'src/ember/emberc-f2pywrappers.f',
                      fortranobject_c
                      ],
                      include_directories: [
@@ -66,6 +64,4 @@ py.extension_module('embsolvec',
                      ],
 
                      install : true)
-
-# Install the pure Python module
 install_subdir('src/turbigen', install_dir: py.get_install_dir())
