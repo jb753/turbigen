@@ -31,6 +31,19 @@ sed -i "/py\.extension_module.*emberc/,/fortranobject_c/ s|'''\\([^']*\\)'''|'sr
 # Insert compiler flags for the Fortran compiler
 sed -i "/fc =/i\add_global_arguments(['-O3','-funroll-loops','-march=native','-fno-math-errno', '-fno-trapping-math','-ftree-vectorize'], language : 'fortran')" meson.build
 
+# Convert print include directories to relative paths
+# This is needed because
+# 1) Doing the pip install -e . with build isolation enabled sets the
+#    numpy include directories to absolute paths in /tmp
+#    which are not available when rebuilding editable installs
+# 2) Running pip install -e . --no-build-isolation causes an error
+#    when the numpy include is in an absolute path to a .venv inside
+#    the project root directory, like uv makes
+# 3) The workaround is to convert the absolute paths for numpy includes
+#    to relative paths from the project root, as if the numpy code is ours
+sed -i 's/print(\(.*\))/print(os.path.relpath(\1))/' meson.build
+sed -i 's/os.chdir("..");//' meson.build
+
 # Also install the pure python turbigen module
 echo "install_subdir('src/turbigen', install_dir: py.get_install_dir())" >> meson.build
 

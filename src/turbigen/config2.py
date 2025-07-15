@@ -927,6 +927,7 @@ class TurbigenConfig:
         # (1) Skipping from guess: just use existing mesh and solution
         # (2) Skipping from cold: mesh but do not run the CFD solver
         # (3) Normal operation: mesh and run the CFD solver
+        logger.info("BEANS!")
 
         # Generate mesh in cases (2) and (3)
         if not (skip and self.grid):
