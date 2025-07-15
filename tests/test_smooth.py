@@ -1,4 +1,4 @@
-from turbigen.solvers.ember import embsolve
+from turbigen.solvers.ember import ember
 import numpy as np
 import turbigen.grid
 from timeit import default_timer as timer
@@ -97,10 +97,10 @@ def test_smooth_zero():
     Xs = to_fort(X)
     L, P2, P4 = get_L_P(Xs)
 
-    embsolve.smooth(Xs, P2, L, sf2=0.0, sf4=0.0, sf2min=0.0)
+    ember.smooth(Xs, P2, L, sf2=0.0, sf4=0.0, sf2min=0.0)
     assert np.allclose(X, Xs)
 
-    embsolve.smooth(Xs, P4, L, sf2=0.0, sf4=0.0, sf2min=0.0)
+    ember.smooth(Xs, P4, L, sf2=0.0, sf4=0.0, sf2min=0.0)
     assert np.allclose(X, Xs)
 
 
@@ -112,11 +112,11 @@ def test_smooth_const():
             X = np.ones((10, 15, 20, 1), order="F", dtype=typ)
             L, P2, P4 = get_L_P(X)
 
-            embsolve.smooth(X, P2, L, sf2=sf2, sf4=sf4, sf2min=0.0)
+            ember.smooth(X, P2, L, sf2=sf2, sf4=sf4, sf2min=0.0)
             assert np.allclose(X, 1.0)
             assert not np.isnan(X).any()
 
-            embsolve.smooth(X, P4, L, sf2=sf2, sf4=sf4, sf2min=0.0)
+            ember.smooth(X, P4, L, sf2=sf2, sf4=sf4, sf2min=0.0)
             assert np.allclose(X, 1.0)
             assert not np.isnan(X).any()
 
@@ -135,19 +135,19 @@ def test_smooth_linear():
     fs = np.asfortranarray(f.copy())
     L, P2, P4 = get_L_P(fs)
 
-    embsolve.smooth(fs, P2, L, sf2=0.1, sf4=0.0, sf2min=0.0)
+    ember.smooth(fs, P2, L, sf2=0.1, sf4=0.0, sf2min=0.0)
     assert np.allclose(f, fs)
 
     fs = np.asfortranarray(f.copy())
-    embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.05, sf2min=0.0)
+    ember.smooth(fs, P4, L, sf2=0.0, sf4=0.05, sf2min=0.0)
     assert np.allclose(f, fs)
 
     fs = np.asfortranarray(f.copy())
-    embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.0)
+    ember.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.0)
     assert np.allclose(f, fs)
 
     fs = np.asfortranarray(f.copy())
-    embsolve.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.1)
+    ember.smooth(fs, P4, L, sf2=0.1, sf4=0.05, sf2min=0.1)
     assert np.allclose(f, fs)
 
 
@@ -164,7 +164,7 @@ def test_smooth_cubic():
     # Check no change after smoothing
     fs = np.asfortranarray(f.copy())
     L, P2, P4 = get_L_P(fs)
-    embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.0)
+    ember.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.0)
     # Note because we revert to 2nd-order at boundaries the edges
     # will be wrong - exclude from comparison
 
@@ -172,12 +172,12 @@ def test_smooth_cubic():
 
     # Check that the shock sensor works
     fs = np.asfortranarray(f.copy())
-    embsolve.smooth(fs, P2, L, sf2=0.1, sf4=0.1, sf2min=0.0)
+    ember.smooth(fs, P2, L, sf2=0.1, sf4=0.1, sf2min=0.0)
     assert not np.allclose(f, fs)
 
     # Check that sf2min works
     fs = np.asfortranarray(f.copy())
-    embsolve.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.1)
+    ember.smooth(fs, P4, L, sf2=0.0, sf4=0.1, sf2min=0.1)
     assert not np.allclose(f, fs)
 
 
@@ -195,7 +195,7 @@ def test_smooth_converge():
     L, P2, P4 = get_L_P(X)
     for istep in range(10000):
         Xnew = np.asfortranarray(X.copy()).astype(typ)
-        embsolve.smooth(Xnew, P4, L, sf2, sf4, sf2min=0.0)
+        ember.smooth(Xnew, P4, L, sf2, sf4, sf2min=0.0)
         derr = np.ptp(X) - np.ptp(Xnew)
         X = Xnew
 

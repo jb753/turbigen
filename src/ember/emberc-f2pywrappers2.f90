@@ -3,37 +3,37 @@
 !     It contains Fortran 90 wrappers to fortran functions.
 
 
-      subroutine f2pyinitembsolve(f2pysetupfunc)
-      use embsolve, only : get_by_ijk
-      use embsolve, only : average_by_ijk
-      use embsolve, only : set_by_ijk
-      use embsolve, only : node_to_face
-      use embsolve, only : node_to_cell
-      use embsolve, only : cell_to_node
-      use embsolve, only : cell_to_face
-      use embsolve, only : div
-      use embsolve, only : grad
-      use embsolve, only : smooth
-      use embsolve, only : shear_stress
-      use embsolve, only : viscous_flux
-      use embsolve, only : wall_function
-      use embsolve, only : zero_wall_stress
-      use embsolve, only : set_fluxes
-      use embsolve, only : add_pressure_fluxes
-      use embsolve, only : sum_fluxes
-      use embsolve, only : zero_wall_fluxes
-      use embsolve, only : multigrid_integrate
-      use embsolve, only : set_timesteps
-      use embsolve, only : multigrid_indices
-      use embsolve, only : multigrid_volumes
-      use embsolve, only : smatvec
-      use embsolve, only : smatmat
-      use embsolve, only : dmatvec
-      use embsolve, only : dmatmat
-      use embsolve, only : residual
-      use embsolve, only : step
-      use embsolve, only : secondary
-      use embsolve, only : damp
+      subroutine f2pyinitember(f2pysetupfunc)
+      use ember, only : get_by_ijk
+      use ember, only : average_by_ijk
+      use ember, only : set_by_ijk
+      use ember, only : node_to_face
+      use ember, only : node_to_cell
+      use ember, only : cell_to_node
+      use ember, only : cell_to_face
+      use ember, only : div
+      use ember, only : grad
+      use ember, only : smooth
+      use ember, only : shear_stress
+      use ember, only : viscous_flux
+      use ember, only : wall_function
+      use ember, only : zero_wall_stress
+      use ember, only : set_fluxes
+      use ember, only : add_pressure_fluxes
+      use ember, only : sum_fluxes
+      use ember, only : zero_wall_fluxes
+      use ember, only : multigrid_integrate
+      use ember, only : set_timesteps
+      use ember, only : multigrid_indices
+      use ember, only : multigrid_volumes
+      use ember, only : smatvec
+      use ember, only : smatmat
+      use ember, only : dmatvec
+      use ember, only : dmatmat
+      use ember, only : residual
+      use ember, only : step
+      use ember, only : secondary
+      use ember, only : damp
       external f2pysetupfunc
       call f2pysetupfunc(get_by_ijk,average_by_ijk,set_by_ijk,node_to_fa&
      &ce,node_to_cell,cell_to_node,cell_to_face,div,grad,smooth,shear_st&
@@ -41,4 +41,4 @@
      &essure_fluxes,sum_fluxes,zero_wall_fluxes,multigrid_integrate,set_&
      &timesteps,multigrid_indices,multigrid_volumes,smatvec,smatmat,dmat&
      &vec,dmatmat,residual,step,secondary,damp)
-      end subroutine f2pyinitembsolve
+      end subroutine f2pyinitember

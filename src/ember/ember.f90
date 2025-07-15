@@ -2,7 +2,7 @@
 ! These are compiled with Python interfaces using f2py
 ! and then called from the main program which deals with
 ! fiddly bits like block patching and boundary conditions
-module embsolve
+module ember
 
     implicit none
 
@@ -253,4 +253,4 @@ contains
 
     end subroutine
 
-end module embsolve
+end module ember

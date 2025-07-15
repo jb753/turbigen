@@ -15,7 +15,7 @@ import turbigen.fluid
 import turbigen.grid
 import turbigen.solvers.base
 
-from embsolvec import embsolve
+from emberc import ember
 
 util = turbigen.util
 logger = turbigen.util.make_logger()
@@ -192,7 +192,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
     def run(self, grid, machine=None, workdir=None):
         logger.debug(
-            f"Entering embsolve run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
+            f"Entering ember run, memory usage on rank {rank}: {get_memory_usage():.0f}MB"
         )
 
         del machine, workdir
@@ -436,7 +436,7 @@ class SolverBlock:
         # Now distribute cell length scales to nodes
         ni, nj, nk = self.shape
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
-        embsolve.cell_to_node(L, self.L, ni, nj, nk, 3)
+        ember.cell_to_node(L, self.L, ni, nj, nk, 3)
 
         self.rf = [self.cast_array(r) for r in block.r_face]
         self.rc = self.cast_array(block.r_cell)
@@ -525,7 +525,7 @@ class SolverBlock:
         nlev = len(nb)
         ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
         nbf = np.asfortranarray(nb, dtype=np.int16)
-        embsolve.multigrid_indices(ijkmg, nbf)
+        ember.multigrid_indices(ijkmg, nbf)
         assert (ijkmg >= 0).all()
         return ijkmg + 1
 
@@ -533,7 +533,7 @@ class SolverBlock:
         nlev = self.ijk_multigrid.shape[-1]
         vol = self.cast_array(vol)
         volmg = self.preallocate(vol.shape + (nlev + 1,))
-        embsolve.multigrid_volumes(volmg, vol, self.ijk_multigrid)
+        ember.multigrid_volumes(volmg, vol, self.ijk_multigrid)
         assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
         return volmg
 
@@ -596,7 +596,7 @@ class SolverBlock:
         xlength = (0.41 * xlength) ** 2.0
         # Distribute to cellss
         xlength_cell = self.preallocate(self.shape_cell)
-        embsolve.node_to_cell(xlength, xlength_cell)
+        ember.node_to_cell(xlength, xlength_cell)
         return xlength_cell
 
     def get_wall_indices(self, block, ignore_slip):
@@ -612,7 +612,7 @@ class SolverBlock:
         jwall1[1, jwall1[1, :] == nj] -= 1
         kwall1[2, kwall1[2, :] == nk] -= 1
         return [
-            embsolve.get_by_ijk(self.cast_array(dl), ijk)
+            ember.get_by_ijk(self.cast_array(dl), ijk)
             for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
 
@@ -623,12 +623,11 @@ class SolverBlock:
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
         self.dA_face = [
-            embsolve.get_by_ijk(dA, ijk)
-            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
+            ember.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
     def set_timestep(self, CFL, relax=0.0):
-        embsolve.set_timesteps(
+        ember.set_timesteps(
             self.dt_vol,
             self.vol,
             self.state.a,
@@ -640,7 +639,7 @@ class SolverBlock:
         )
 
     def residual(self, fmgrid, damp, ischeme):
-        embsolve.residual(
+        ember.residual(
             self.cons,
             self.Vxrt,
             self.state.P,
@@ -665,7 +664,7 @@ class SolverBlock:
         )
 
     def step(self, istep, ischeme):
-        embsolve.step(
+        ember.step(
             self.cons,
             self.dUc,
             self.dUn,
@@ -674,14 +673,14 @@ class SolverBlock:
 
     def set_secondary(self):
         """Calculate velocity components and update thermodynamic state."""
-        embsolve.secondary(self.r, self.cons, self.Vxrt, self.u)
+        ember.secondary(self.r, self.cons, self.Vxrt, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
 
     def smooth(self, sf2, sf4, sf2min):
-        embsolve.smooth(self.cons, self.state.P, self.L, sf4, sf2, sf2min)
+        ember.smooth(self.cons, self.state.P, self.L, sf4, sf2, sf2min)
 
     def damp(self, fdamp):
-        embsolve.damp(self.dU1, fdamp)
+        ember.damp(self.dU1, fdamp)
 
     def set_viscous_stress(self):
         # Assemble args in a dictionary and send as keywords
@@ -716,7 +715,7 @@ class SolverBlock:
             "da_kwall": self.dA_face[2],
             "fvisc": self.fb,
         }
-        embsolve.shear_stress(**kwargs)
+        ember.shear_stress(**kwargs)
 
 
 class Periodic:
@@ -915,12 +914,12 @@ def exchange_periodic(blocks, bid_local, periodics):
     for patch in periodics:
         # Load flow field into our buffer
         b1 = blocks[bid_local[patch.bid]].cons
-        patch.buffer[:] = embsolve.get_by_ijk(b1, patch.ijk)
+        patch.buffer[:] = ember.get_by_ijk(b1, patch.ijk)
 
         # Can directly set away buffer if same rank
         if patch.nxprocid == rank:
             b2 = blocks[bid_local[patch.nxbid]].cons
-            patch.nxbuffer[:] = embsolve.get_by_ijk(b2, patch.nxijk)
+            patch.nxbuffer[:] = ember.get_by_ijk(b2, patch.nxijk)
 
         # Otherwise, communication is needed
         else:
@@ -937,12 +936,12 @@ def exchange_periodic(blocks, bid_local, periodics):
         # Take average and assign to home block
         bavg = 0.5 * (patch.buffer + patch.nxbuffer)
         b1 = blocks[bid_local[patch.bid]].cons
-        embsolve.set_by_ijk(b1, bavg, patch.ijk)
+        ember.set_by_ijk(b1, bavg, patch.ijk)
 
         # If we are on same proc, then we have to set other side as well
         if patch.nxprocid == rank:
             b2 = blocks[bid_local[patch.nxbid]].cons
-            embsolve.set_by_ijk(b2, bavg, patch.nxijk)
+            ember.set_by_ijk(b2, bavg, patch.nxijk)
 
     # Whether Send actually blocks is implementation-dependent
     # so we have to explicitly wait for it to finish

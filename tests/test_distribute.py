@@ -1,4 +1,4 @@
-from turbigen.solvers.ember import embsolve
+from turbigen.solvers.ember import ember
 import numpy as np
 import turbigen.grid
 from timeit import default_timer as timer
@@ -95,7 +95,7 @@ def test_node_to_face():
     fk = np.zeros(shape_kface, order="F", dtype=typ)
 
     # Call the subroutine
-    embsolve.node_to_face(fnode, fi, fj, fk)
+    ember.node_to_face(fnode, fi, fj, fk)
 
     # If all directions are increasing linearly, then the face-averaged value
     # is exactly one plus the value at low i,j node
@@ -124,20 +124,20 @@ def test_node_to_cell():
     ni, nj, nk, nv = i.shape
     shape_cell = (ni - 1, nj - 1, nk - 1, nv)
     xc = np.zeros(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(xn, xc)
+    ember.node_to_cell(xn, xc)
     assert np.allclose(xn[:-1, :-1, :-1, :], xc)
 
     # Discrepancy should be exactly half for linear variation in each dirn
     ic = np.zeros(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(i, ic)
+    ember.node_to_cell(i, ic)
     assert np.allclose(ic - i[:-1, :-1, :-1, :], 0.5)
 
     jc = np.zeros(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(j, jc)
+    ember.node_to_cell(j, jc)
     assert np.allclose(jc - j[:-1, :-1, :-1, :], 0.5)
 
     kc = np.zeros(shape_cell, order="F", dtype=typ)
-    embsolve.node_to_cell(k, kc)
+    ember.node_to_cell(k, kc)
     assert np.allclose(kc - k[:-1, :-1, :-1, :], 0.5)
 
 
@@ -152,7 +152,7 @@ def test_cell_to_node():
     ni, nj, nk, nv = xc.shape
     shape_node = (ni + 1, nj + 1, nk + 1, nv)
     xn = np.zeros(shape_node, order="F", dtype=typ)
-    embsolve.cell_to_node(xc, xn)
+    ember.cell_to_node(xc, xn)
     assert np.allclose(xc, 1.0)
 
     # Check linear variation in each direction
@@ -160,19 +160,19 @@ def test_cell_to_node():
     # Offset of 1/2 along the ramping directoin
 
     inode = np.zeros(shape_node, order="F", dtype=typ)
-    embsolve.cell_to_node(i, inode)
+    ember.cell_to_node(i, inode)
     assert np.allclose(inode[0, :-1, :-1], i[0, :, :])
     assert np.allclose(inode[-1, :-1, :-1], i[-1, :, :])
     assert np.allclose(inode[1:-1, :-1, :-1] - i[:-1, :, :], 0.5)
 
     jnode = np.zeros(shape_node, order="F", dtype=typ)
-    embsolve.cell_to_node(j, jnode)
+    ember.cell_to_node(j, jnode)
     assert np.allclose(jnode[:-1, 0, :-1], j[:, 0, :])
     assert np.allclose(jnode[:-1, -1, :-1], j[:, -1, :])
     assert np.allclose(jnode[:-1, 1:-1, :-1] - j[:, :-1, :], 0.5)
 
     knode = np.zeros(shape_node, order="F", dtype=typ)
-    embsolve.cell_to_node(k, knode)
+    ember.cell_to_node(k, knode)
     assert np.allclose(knode[:-1, :-1, 0], k[:, :, 0])
     assert np.allclose(knode[:-1, :-1, -1], k[:, :, -1])
     assert np.allclose(knode[:-1, :-1, 1:-1] - k[:, :, :-1], 0.5)
@@ -197,19 +197,19 @@ def test_cell_to_face():
     # Offset of 1/2 along the direction of interest
 
     fcell = np.asfortranarray(i[:-1, :-1, :-1, :])
-    embsolve.cell_to_face(fcell, fi, fj, fk)
+    ember.cell_to_face(fcell, fi, fj, fk)
     assert np.allclose(fi[1:-1, :, :, :], i[:-2, :-1, :-1, :] + 0.5)
     assert np.allclose(fi[0, :, :, :], 0.0)
     assert np.allclose(fi[-1, :, :, :], ni - 2.0)
 
     fcell = np.asfortranarray(j[:-1, :-1, :-1, :])
-    embsolve.cell_to_face(fcell, fi, fj, fk)
+    ember.cell_to_face(fcell, fi, fj, fk)
     assert np.allclose(fj[:, 1:-1, :, :], j[:-1, :-2, :-1, :] + 0.5)
     assert np.allclose(fj[:, 0, :, :], 0.0)
     assert np.allclose(fj[:, -1, :, :], nj - 2.0)
 
     fcell = np.asfortranarray(k[:-1, :-1, :-1, :])
-    embsolve.cell_to_face(fcell, fi, fj, fk)
+    ember.cell_to_face(fcell, fi, fj, fk)
     assert np.allclose(fk[:, :, 1:-1, :], k[:-1, :-1, :-2, :] + 0.5)
     assert np.allclose(fk[:, :, 0, :], 0.0)
     assert np.allclose(fk[:, :, -1, :], nk - 2.0)

@@ -1,6 +1,6 @@
 """Run a rotor."""
 
-import turbigen.solvers.embsolve
+import turbigen.solvers.ember
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.util
@@ -210,7 +210,7 @@ settings = {
     "plot_conv": True,
 }
 
-conf = turbigen.solvers.embsolve.Config(**settings)
+conf = turbigen.solvers.ember.Config(**settings)
 
 def plot_rotor(g, F):
 
@@ -267,7 +267,7 @@ def test_static():
     print(F[0].Alpha, F[0].Alpha_rel)
     print(F[-1].Alpha, F[-1].Alpha_rel)
     np.set_printoptions(precision=2)
-    turbigen.solvers.embsolve.run(g, conf)
+    turbigen.solvers.ember.run(g, conf)
     plot_rotor(g, F)
 
 def test_rotating(phi1):
@@ -275,7 +275,7 @@ def test_rotating(phi1):
     np.set_printoptions(precision=2)
     print(F[0].Alpha, F[0].Alpha_rel)
     print(F[0].Vt)
-    turbigen.solvers.embsolve.run(g, conf)
+    turbigen.solvers.ember.run(g, conf)
     plot_rotor(g, F)
 
 

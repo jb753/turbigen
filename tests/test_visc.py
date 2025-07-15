@@ -1,6 +1,6 @@
 """Viscous test cases."""
 
-import turbigen.solvers.ember as embsolve
+import turbigen.solvers.ember as ember
 import turbigen.compflow_native as cf
 import turbigen.grid
 import turbigen.clusterfunc
@@ -398,7 +398,7 @@ def test_plate_turb():
 
     g = make_plate(mu=0.5e-4)
 
-    solver = embsolve.Ember(**settings)
+    solver = ember.Ember(**settings)
     solver.xllim_pitch = 1e5
     solver.run(g)
 
@@ -428,7 +428,7 @@ def test_plate_turb():
 
     # # Plot skin friction
     # xcf_ts3 = np.loadtxt("tests/xcf_yp5_turb.csv")
-    # ax.plot(x, cf, "-", label="embsolve")
+    # ax.plot(x, cf, "-", label="ember")
     # ax.plot(*xcf_ts3, "-", label="TS3")
 
     # # Plot correlation
@@ -490,7 +490,7 @@ def test_plate_turb():
     # Cdb /= Cdb[-1]/Cd[-1]
     xxn = xx / xx[-1]
     xxts3 = Cdts3[0] / xx[-1]
-    ax.plot(xxn, Cd, label="embsolve")
+    ax.plot(xxn, Cd, label="ember")
     ax.plot(xxts3, Cdts3[1], label="TS3")
     # ax.plot(xxn, Cdb, 'k--', label='Blasius')
     # ax.set_ylim([0.,0.020])
@@ -514,7 +514,7 @@ def test_plate_lam():
 
     g = make_plate(mu=8e-4)
 
-    embsolve.Ember(**settings).run(g)
+    ember.Ember(**settings).run(g)
 
     # Extract skin friction
     b = g[0]
@@ -574,7 +574,7 @@ def test_plate_lam():
 def test_poiseuille():
     g, F = make_pipe()
 
-    embsolve.Ember(**settings).run(g)
+    ember.Ember(**settings).run(g)
 
     print("Processing last block...")
     b = g[-1]
