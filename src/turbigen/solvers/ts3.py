@@ -1420,7 +1420,14 @@ def read_probe_dat_dir(dname):
 
     # Load the dats and save as a pickle
     data0, fs = read_probe_dat(fnames[0])
-    data = [data0] + [read_probe_dat(f)[0] for f in fnames[1:]]
+    data = [data0]
+
+    for f in fnames[1:]:
+        try:
+            data.append(read_probe_dat(f)[0])
+        except Exception as e:
+            logger.error(f"Failed to read {f}: {e}")
+            continue
 
     return data, fs
 
