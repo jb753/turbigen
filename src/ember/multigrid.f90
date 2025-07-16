@@ -215,19 +215,20 @@ subroutine multigrid_indices( &
     integer*2 :: k
     integer*2 :: ilev
     integer*2 :: nbi
+    integer*2 :: one = 1 ! To prevent conversion warnings
 
     do ilev = 1,nlev
 
         ! Number of cells along each side of this
         ! multigrid level is product of all previous
-        nbi = product(nb(1:ilev))
+        nbi = int(product(nb(1:ilev)), kind=2)
 
         do i = 1,ni
             do j = 1,nj
                 do k = 1,nk
-                    ijkmg(1, i, j, k, ilev) = (i-1) / nbi
-                    ijkmg(2, i, j, k, ilev) = (j-1) / nbi
-                    ijkmg(3, i, j, k, ilev) = (k-1) / nbi
+                    ijkmg(1, i, j, k, ilev) = (i-one) / nbi
+                    ijkmg(2, i, j, k, ilev) = (j-one) / nbi
+                    ijkmg(3, i, j, k, ilev) = (k-one) / nbi
                 end do
             end do
         end do

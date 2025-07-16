@@ -30,17 +30,16 @@ contains
     !       d(cons) = resid * dt / vol = (flux_net/vol + source) * dt
     !
     subroutine residual(&
-        cons, Vxrt, P, Pref, h, fb, &              ! Flow properties and body force
-        Omega, &                              ! Reference frame angular velocity
-        r, ri, rj, rk, &                      ! Node and face-centered radii
+        cons, Vxrt, P, Pref, fb, &              ! Flow properties and body force
+        r, &                      ! Node and face-centered radii
         dAi, dAj, dAk, vol, dt_vol, &             ! Cell areas, volumes, time step
-        ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
+        fluxi, fluxj, fluxk, &             ! Fluxes
         ijk_mg, fmgrid, &                     ! Multigrid indexing and factor
         fdamp, &                              ! Damping factor
         resid_cell, &                              ! Cell residual out
         resid_node, &                          ! Previous residual out
         ischeme, &
-        ni, nj, nk, niwall, njwall, nkwall, nmg &  ! Numbers of points dummy args
+        ni, nj, nk, nmg &  ! Numbers of points dummy args
         )
 
         ! Number of conserved variables nv = 5
@@ -52,19 +51,14 @@ contains
         real, intent (inout) :: cons(ni, nj, nk, 5)
         real, intent (in) :: Vxrt(ni, nj, nk, 3)
         real, intent (in) :: P   (ni, nj, nk)
-        real, intent (in) :: h  (ni, nj, nk)
         ! Cell body force per unit volume (and potential mass/energy sources)
         real, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
 
         ! Reference frame angular velocity
         real, intent (in)  :: Pref
-        real, intent (in)  :: Omega
 
         ! Radii at nodes and face centers
         real, intent(in) :: r( ni, nj, nk)
-        real, intent(in) :: ri( ni, nj-1, nk-1)
-        real, intent(in) :: rj( ni-1, nj, nk-1)
-        real, intent(in) :: rk( ni-1, nj-1, nk)
 
         ! Cell areas, volumes, time steps
         real, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
@@ -72,11 +66,6 @@ contains
         real, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
         real, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
         real, intent (in)  :: dt_vol(ni-1, nj-1, nk-1, nmg)
-
-        ! Wall locations
-        integer*2, intent (in) :: ijk_iwall(3, niwall)
-        integer*2, intent (in) :: ijk_jwall(3, njwall)
-        integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
         ! Multigrid indices
         integer*2, intent (in) :: ijk_mg(3, ni-1, nj-1, nk-1, nmg-1)
@@ -89,9 +78,6 @@ contains
         integer, intent (in)  :: ni
         integer, intent (in)  :: nj
         integer, intent (in)  :: nk
-        integer, intent (in)  :: niwall
-        integer, intent (in)  :: njwall
-        integer, intent (in)  :: nkwall
         integer, intent (in)  :: nmg
 
         ! Scalar settings
@@ -99,13 +85,13 @@ contains
         real, intent (in)  :: fmgrid
         real, intent (in)  :: fdamp
 
+        ! Fluxes on cell faces for each dirn and eqn
+        real, intent (in) :: fluxi(ni, nj-1, nk-1, 3, 5)
+        real, intent (in) :: fluxj(ni-1, nj, nk-1, 3, 5)
+        real, intent (in) :: fluxk(ni-1, nj-1, nk, 3, 5)
+
         ! End of argument declarations
         ! Begin working variables
-
-        ! Fluxes on cell faces for each dirn and eqn
-        real :: fluxi(ni, nj-1, nk-1, 3, 5)
-        real :: fluxj(ni-1, nj, nk-1, 3, 5)
-        real :: fluxk(ni-1, nj-1, nk, 3, 5)
 
         ! For the centrifugal source term
         real :: S(ni, nj, nk)
@@ -116,27 +102,13 @@ contains
         ! Net fluxes for each cell
         real :: fsum(ni-1, nj-1, nk-1, 5)
 
-        real :: Pm (ni, nj, nk)
-
 
         ! End of working variable declarations
-
-        Pm = P - Pref
-
-        ! Calculate the convective fluxes
-        call set_fluxes( &
-            cons, Vxrt, Pm, h, &              ! Flow properties and body force
-            Omega, &                      ! Reference frame angular velocity
-            r, ri, rj, rk, &                      ! Node and face-centered radii
-            ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
-            fluxi, fluxj, fluxk, &                ! Fluxes out
-            ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
-            )
 
         ! Evaluate source term at nodes, average to cell center
         rho = cons(:, :, :, 1)
         Vt = Vxrt(:, :, :, 3)
-        S = (rho*Vt*Vt + Pm)/r
+        S = (rho*Vt*Vt + (P-Pref))/r
         call node_to_cell(S, Sc, ni, nj, nk, 1)
         Sc = Sc * vol(:,:,:,1)
 

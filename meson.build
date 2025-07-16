@@ -6,7 +6,7 @@ project('emberc',
                             'warning_level=1',
                             'buildtype=release'
                           ])
-add_global_arguments(['-O3','-funroll-loops','-march=native','-fno-math-errno', '-fno-trapping-math','-ftree-vectorize'], language : 'fortran')
+add_global_arguments(['-Werror', '-O3','-funroll-loops','-march=native','-fno-math-errno', '-fno-trapping-math','-ftree-vectorize'], language : 'fortran')
 fc = meson.get_compiler('fortran')
 
 py = import('python').find_installation(pure: false)
