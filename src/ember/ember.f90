@@ -119,10 +119,10 @@ contains
         real :: Pm (ni, nj, nk)
         real :: ho (ni, nj, nk)
 
-        ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
 
         ! End of working variable declarations
 
+        ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
         Pm = P - Pref
 
         ! Calculate the convective fluxes

@@ -1,6 +1,6 @@
 """Make documentation for an abstract base class and subclasses."""
 
-import turbigen.meanline
+import turbigen.meanline_design
 from turbigen import util
 import inspect
 
@@ -51,4 +51,4 @@ def format_yaml_snippet(data_dict, title):
 
 
 if __name__ == "__main__":
-    print(generate_subclass(turbigen.meanline.MeanLineDesigner, "meanline"))
+    print(generate_subclass(turbigen.meanline_design.MeanLineDesigner, "meanline"))
