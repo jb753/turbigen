@@ -1,7 +1,7 @@
 ! Evaluate and summing fluxes
 
 subroutine set_fluxes( &
-    cons, Vxrt, P, ho, &                  ! Flow properties
+    cons, Vxrt, P, h, &                  ! Flow properties
     Omega, &                              ! Reference frame angular velocity
     r, ri, rj, rk, &                      ! Node and face-centered radii
     ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
@@ -14,7 +14,7 @@ subroutine set_fluxes( &
     real, intent (in) :: cons(ni, nj, nk, 5)
     real, intent (in) :: Vxrt(ni, nj, nk, 3)
     real, intent (in) :: P   (ni, nj, nk)
-    real, intent (in) :: ho  (ni, nj, nk)
+    real, intent (in) :: h  (ni, nj, nk)
 
     ! Reference frame angular velocity
     real, intent (in) :: Omega
@@ -52,6 +52,9 @@ subroutine set_fluxes( &
     real :: Pj( ni-1, nj, nk-1)
     real :: Pk( ni-1, nj-1, nk)
 
+    ! Stagnation enthalpy
+    real :: ho( ni, nj, nk)
+
     ! Fluxes per unit mass
     real :: fmass( ni, nj, nk, 4)
     real :: fmassi( ni, nj-1, nk-1, 4)
@@ -71,6 +74,7 @@ subroutine set_fluxes( &
     ! Extract the quantities we will need to get fluxes
     rhoV = cons(:, :, :, 2:4)
     rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
+    ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
 
 
     ! Calculate face-centered pressure

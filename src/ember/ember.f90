@@ -117,17 +117,15 @@ contains
         real :: fsum(ni-1, nj-1, nk-1, 5)
 
         real :: Pm (ni, nj, nk)
-        real :: ho (ni, nj, nk)
 
 
         ! End of working variable declarations
 
-        ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
         Pm = P - Pref
 
         ! Calculate the convective fluxes
         call set_fluxes( &
-            cons, Vxrt, Pm, ho, &              ! Flow properties and body force
+            cons, Vxrt, Pm, h, &              ! Flow properties and body force
             Omega, &                      ! Reference frame angular velocity
             r, ri, rj, rk, &                      ! Node and face-centered radii
             ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations

@@ -464,6 +464,12 @@ class SolverBlock:
         self.dUc = self.preallocate(self.shape_cell + (5, 2))
         self.dUn = self.preallocate(self.shape + (5,))
         self.dt_vol = self.dlmin * 0.0
+        ni, nj, nk = self.shape
+        self.fluxes = [
+            self.preallocate((ni, nj - 1, nk - 1, 3, 5)),
+            self.preallocate((ni - 1, nj, nk - 1, 3, 5)),
+            self.preallocate((ni - 1, nj - 1, nk, 3, 5)),
+        ]
 
     def set_dummy_ijk(self):
         """Where the lists of wall faces have zero length, set sentinel values."""
@@ -1070,6 +1076,8 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
                     damp = conf.damping_factor * damping_ramp
                 else:
                     damp = 1e6
+
+                # Calculate the fluxes
 
                 # Sum fluxes for each cell and distribute to the nodes
                 i_scheme = -1 if not istep else conf.i_scheme
