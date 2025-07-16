@@ -1453,7 +1453,7 @@ def read_inlet(fname):
                 return pstag
 
 
-def read_probe_dat(fname):
+def read_probe_dat(fname, point=False):
     """Load a probe text file into a flow field.
 
     Note that this returns flattened arrays, i.e. the shape of the probe patch
@@ -1487,10 +1487,13 @@ def read_probe_dat(fname):
         shape = tuple(probe_meta[bid][pid]["shape"])
         Omega = float(probe_meta[bid][pid]["Omega"])
 
-    else:
+    elif point:
         # Default to a point probe
         shape = (1,)
         Omega = 0.0
+
+    else:
+        raise Exception("No probe metadata found, cannot determine probe shape.")
 
     # Add time dimension
     shape = shape + (-1,)
@@ -1513,6 +1516,8 @@ def read_probe_dat(fname):
         try:
             with np.load(npz_fname) as d:
                 conserved = d["conserved"]
+                if conserved.shape != (8,) + shape:
+                    conserved = d["conserved"].reshape((8,) + shape, order="F")
         except Exception as e:
             logger.error(f"Failed to load {npz_fname}: {e}")
             conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")

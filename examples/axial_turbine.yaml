@@ -67,9 +67,9 @@ solver:
 # Configure iterative updates of the geometry
 iterate:
   # Make the mean-line loss match CFD
-  # mean_line:
-    # tolerance:
-      # Ys: 0.01
+  mean_line:
+    tolerance:
+      Ys: 0.01
   # Correct for deviation using trailing-edge recamber
   deviation:
   # Correct for incidence using leading-edge recamber
