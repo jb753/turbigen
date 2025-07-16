@@ -41,6 +41,7 @@ dev = [
     'twine',
     'bump-my-version',
     'setuptools',
+    'meson-python',
 ]
 parallel = [
     'mpi4py~=3.1.6',

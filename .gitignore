@@ -43,5 +43,3 @@ tests/*.log
 /build/
 *.prof
 tests/bench.dat
-src/ember/embercmodule.c
-src/ember/emberc-f2pywrappers*
