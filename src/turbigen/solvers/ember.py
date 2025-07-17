@@ -91,7 +91,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    smooth_ratio_min: float = 0.1
+    smooth_ratio_min: float = 0.5
     """Largest directional reduction in smoothing on a non-isotropic grid. Unity disables directional scaling."""
 
     CFL: float = 0.65
@@ -1140,9 +1140,12 @@ def run_slave(
                 sb.set_secondary()
 
                 # Check for NaNs
-                if not np.mod(istep, 10):
+                if not np.mod(istep, 1):
                     if np.any(np.isnan(sb.cons)):
-                        logger.iter(f"NaN at step {istep} in block {iblock}")
+                        _, i, j, k = np.mean(np.argwhere(np.isnan(sb.cons)), axis=0)
+                        logger.iter(
+                            f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
+                        )
                         sys.exit(3)
 
                 # Accumulate time average

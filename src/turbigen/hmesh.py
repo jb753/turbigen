@@ -498,15 +498,21 @@ class H(turbigen.mesh.Mesher):
             import matplotlib.pyplot as plt
 
             fig, ax = plt.subplots()
-            ax.axis("equal")
             nj = g[0].shape[1]
             jplot = nj // 2
 
-            for b in g:
-                ARj = b.cell_ARj[:, jplot, :]
-                xc = util.node_to_cell(b.x)[:, jplot, :]
-                rtc = util.node_to_cell(b.rt)[:, jplot, :]
-                ax.contourf(xc, rtc, ARj)
+            for ib, b in enumerate(g):
+                ARi = b.cell_ARi[:, jplot, 0]
+                ARj = b.cell_ARj[:, jplot, 0]
+                ARk = b.cell_ARk[:, jplot, 0]
+                xc = util.node_to_cell(b.x)[:, jplot, 0]
+                x = b.x[:, jplot, 0]
+                ax.plot(x, ARi, color="C0", label="i")
+                ax.plot(xc, ARj, color="C1", label="j")
+                ax.plot(xc, ARk, color="C2", label="k")
+                print(
+                    f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
+                )
             plt.show()
 
         return g

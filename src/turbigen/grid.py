@@ -429,14 +429,34 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         return dlmin
 
     @property
+    def cell_ARi(self):
+        """Cell aspect ratio at constant i."""
+        assert self.ndim == 3, "Cell aspect ratio is only defined for 3D grids"
+        dlj = util.average(util.vecnorm(self.dlj), axis=2)
+        dlk = util.average(util.vecnorm(self.dlk), axis=1)
+        AR = dlj / dlk
+        AR[AR < 1] = 1.0 / AR[AR < 1]  # Ensure AR >= 1
+        return AR
+
+    @property
     def cell_ARj(self):
         """Cell aspect ratio at constant j."""
         assert self.ndim == 3, "Cell aspect ratio is only defined for 3D grids"
         dli = util.average(util.vecnorm(self.dli), axis=2)
         dlk = util.average(util.vecnorm(self.dlk), axis=0)
-        ARj = dli / dlk
-        ARj[ARj < 1] = 1.0 / ARj[ARj < 1]  # Ensure AR >= 1
-        return ARj
+        AR = dli / dlk
+        AR[AR < 1] = 1.0 / AR[AR < 1]  # Ensure AR >= 1
+        return AR
+
+    @property
+    def cell_ARk(self):
+        """Cell aspect ratio at constant k."""
+        assert self.ndim == 3, "Cell aspect ratio is only defined for 3D grids"
+        dli = util.average(util.vecnorm(self.dli), axis=1)
+        dlj = util.average(util.vecnorm(self.dlj), axis=0)
+        AR = dli / dlj
+        AR[AR < 1] = 1.0 / AR[AR < 1]  # Ensure AR >= 1
+        return AR
 
     @dependent_property
     def dAi(self):

@@ -7,7 +7,7 @@ inlet:
   gamma: 1.33
 
 # Set viscosity by vane Reynolds number
-Re_surf: 1e6
+Re_surf: 5e5
 
 mean_line:
   type: axial_turbine
@@ -25,17 +25,19 @@ mean_line:
 
 annulus:
   type: smooth
-  AR_gap: [2.0, 4.0, 2.0]
+  AR_gap: [2.0, 4.0, 2.5]
   AR_chord: [2.0, 2.0]
   smooth: false
 
 mesh:
   type: h
-  yplus: 30.
+  yplus: 15.
   resolution_factor: 0.5
   ni_TE: 9
   dm_TE: 0.05
-  plot: true
+  # dspf_mid: 0.012
+  # ER_span: 1.3
+  # plot: true
 
 blades:
     - spf: 0.5
@@ -52,9 +54,9 @@ nblade:
 
 solver:
   type: ember
-  n_step: 2500
+  n_step: 5000
   n_step_avg: 500
-  n_step_ramp: 1000
+  n_step_ramp: 500
 
 job:
   type: local
