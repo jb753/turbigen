@@ -2164,6 +2164,24 @@ class ProbePatch(Patch):
     pass
 
 
+class CuspPatch(Patch):
+    def check_match(self, other, rtol=1e-4):
+        # Should be on same block
+        if self.block is not other.block:
+            return False
+
+        # Should have same shape
+        xyz = self.get_cut()
+        xyz_other = other.get_cut()
+        if not xyz.shape == xyz_other.shape:
+            return False
+
+        # Check that the patches are touching
+        dxyz = np.abs(xyz - xyz_other)
+        Lref = np.max([np.ptp(c) for c in xyz])
+        return np.any(dxyz < Lref * rtol)
+
+
 class CoolingPatch(Patch):
     cool_mass = 0.0
     cool_pstag = 0.0
