@@ -178,3 +178,67 @@ def get_diffusion_factor(
     xpeak = np.abs(zeta_norm[Cp.argmin()].item())
 
     return xpeak, DF
+
+
+def separate_waves(F, fs):
+    """Perform least-squares wave separation for a microphone set.
+    Assumes that time is on the last dimension.
+    And only accepts 2D Flowfields
+
+    Parameters
+    ----------
+    F: FlowField shape (nprobe, nt)
+        Unsteady probe data
+    fs: float
+        Sampling frequency [Hz]
+
+    Returns
+    -------
+    W: array (2, nf)
+        W[0] is upstream-running amplitudes at all frequencies
+        W[1] is downstream-running amplitudes at all frequencies
+        Normalised by the time-mean pressure
+    err: array (nf,)
+        Error in the least-squares fit at all frequencies
+    f: array (nf,)
+        Frequencies at which the wave amplitudes are defined [Hz]
+
+    """
+
+    assert F.ndim == 2
+
+    # Pressure fluctuations wrt mean
+    Pav = np.mean(F.P, axis=1, keepdims=True)
+    Pprime = F.P - Pav
+
+    # Go to frequency domain
+    nt = F.shape[1]
+    f = np.fft.rfftfreq(nt, 1.0 / fs)
+    Pfft = np.fft.rfft(Pprime, axis=1) / nt * 2.0
+    nf = len(f)
+
+    # Wavenumbers
+    f1 = f.reshape(1, -1)
+    kp = 2.0 * np.pi * f1 / (F.a + F.Vx).mean()
+    km = 2.0 * np.pi * f1 / (F.a - F.Vx).mean()
+
+    # Axial coordinates
+    x = F.x[:, (0,)]
+
+    # Matrix problem
+    A = np.stack((np.exp(-1j * kp * x), np.exp(1j * km * x)), axis=1)
+
+    # Loop over frequencies and solve
+    Pwav = np.empty((2, nf), dtype=complex)
+    err = np.empty((nf,))
+    for n in range(nf):
+        b = Pfft[:, (n,)]
+        val, resid = np.linalg.lstsq(A[..., n], b, rcond=None)[:2]
+        Pwav[:, n] = val.squeeze()
+        ref = np.maximum(np.linalg.norm(b), 1e-9)
+        err[n] = np.abs(np.linalg.norm(resid) / ref)
+
+    # Put upstream-running first
+    W = np.flip(Pwav, axis=0)
+
+    return W, err, f

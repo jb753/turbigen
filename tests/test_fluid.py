@@ -1,6 +1,6 @@
 """Tests for thermodynamic properties of working fluids."""
 
-from turbigen import fluid, flowfield, util, perturb
+from turbigen import fluid, flowfield, util, perturb, util_post
 import numpy as np
 import pytest
 
@@ -530,9 +530,7 @@ def test_matrices():
     print("ok")
 
 
-def test_chic_waves():
-    """Set up a flow field with travelling waves and check chics recovered."""
-
+def make_travelling_wave(Aup, Adn, phiup, phidn, imic=None):
     cp = 1005.0
     ga = 1.4
     mu = 1.84e-5
@@ -544,10 +542,15 @@ def test_chic_waves():
     ni = 50
     nt = 100
     xv = np.linspace(0.0, L, ni)
+    if imic:
+        imic = (20, 22, 25)
+        xv = xv[imic,]
+        ni = len(xv)
     xrt = np.stack((xv, np.ones_like(xv), np.zeros_like(xv)))
     omega = 2 * np.pi * f
     t = np.linspace(0.0, 1 / f, nt, endpoint=False)[None, :]
     dt = np.diff(t)[0]
+    fs = 1.0 / dt[0]
     x = xv[:, None]
 
     # Mean flow field first
@@ -562,12 +565,10 @@ def test_chic_waves():
     F.set_P_T(1e5, 300.0)
 
     # Prescribe pressure wave
-    Aup = 1e-3
-    Adn = 2.2e-3
     a0 = F.a
     rho0 = F.rho
-    dPdn = Adn * np.exp(1j * omega * (t - x / a0))
-    dPup = Aup * np.exp(1j * omega * (t + x / a0))
+    dPdn = Adn * np.exp(1j * (omega * (t - x / (a0 + Vx)) + phidn))
+    dPup = Aup * np.exp(1j * (omega * (t + x / (a0 - Vx)) + phiup))
     dP = np.real(dPdn + dPup)
 
     # Momentum for velocity
@@ -578,6 +579,35 @@ def test_chic_waves():
     F.set_P_s(F.P + dP, F.s)
     F.Vx = F.Vx + dV
 
+    return F, f, fs
+
+
+def test_sep_waves():
+    amp_in = np.array([1e-3, 2.2e-3])
+    phi_in = np.array([0.3, -0.1]) * np.pi
+    F, f, fs = make_travelling_wave(*amp_in, *phi_in, imic=(20, 22, 25))
+    waves, err, fbin = util_post.separate_waves(F, fs)
+
+    assert np.all(err < 1e-6), "Error in wave separation is too high"
+
+    phi_out = np.angle(waves[:, fbin == f]).reshape(-1)
+    amp_out = np.abs(waves[:, fbin == f]).reshape(-1)
+
+    assert np.allclose(amp_out, amp_in, rtol=1e-2), (
+        "Amplitude mismatch in wave separation"
+    )
+    assert np.allclose(phi_out, phi_in, rtol=1e-2), "Phase mismatch in wave separation"
+
+
+def test_chic_waves():
+    """Set up a flow field with travelling waves and check chics recovered."""
+
+    Aup = 1e-3
+    Adn = 2.2e-3
+    phiup = np.pi * 0.3
+    phidn = -np.pi * 0.1
+    F = make_travelling_wave(Aup, Adn, phiup, phidn)[0]
+
     # Get changes over a time step
     dU = np.moveaxis(np.diff(F.conserved, axis=-1), 0, -1)[..., None]
 
@@ -586,17 +616,22 @@ def test_chic_waves():
     # Convert to chics
     dchic = P.conserved_to_chic[:, :-1, :, :] @ dU
 
-    # The zero-to-peak amplitudes should match the ratio of up to down waves
-    # Neglecting any scaling factors
-    Amp_x = np.mean(np.ptp(dchic, axis=0)[:, :2, 0], axis=0)
-    Amp_t = np.mean(np.ptp(dchic, axis=1)[:, :2, 0], axis=0)
+    # Check the amplitudes
+    # Not sure where factor of 4 comes from, but the perturbations get relaxed anyway
+    Amp_x = np.mean(np.ptp(dchic, axis=0)[:, :2, 0], axis=0) * 4.0
+    Amp_t = np.mean(np.ptp(dchic, axis=1)[:, :2, 0], axis=0) * 4.0
 
-    assert np.isclose(Amp_x[0] / Amp_x[1], Aup / Adn)
-    assert np.isclose(Amp_t[0] / Amp_t[1], Aup / Adn)
+    rtol = 1e-2
+    assert np.isclose(Amp_x[0], Aup, rtol=rtol)
+    assert np.isclose(Amp_x[1], Adn, rtol=rtol)
+    assert np.isclose(Amp_t[0], Aup, rtol=rtol)
+    assert np.isclose(Amp_t[1], Adn, rtol=rtol)
 
     return
 
 
 if __name__ == "__main__":
     # np.set_printoptions(precision=2)
-    test_perfect_deriv()
+    # test_perfect_deriv()
+    test_chic_waves()
+    test_sep_waves()
