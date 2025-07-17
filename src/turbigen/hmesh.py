@@ -59,9 +59,12 @@ class H(turbigen.mesh.Mesher):
 
     slip_annulus: bool = False
 
-    dm_cusp: float = 0.0
+    AR_cusp: float = 0.0
+    ni_cusp: int = 0
 
     yplus: float = np.nan
+
+    plot: bool = False
 
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
@@ -200,25 +203,8 @@ class H(turbigen.mesh.Mesher):
                 unbladed_row=unbladed[irow],
             )
 
-            # # Apply some warping to the hub and casing stream fractions
-            # mov = mesh_config.warp_stream
-            # delta_hub = np.interp(
-            #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, mov, 0.0]
-            # )
-            # delta_cas = np.interp(
-            #     stream_frac, [0.0, mesh_config.mwarp_stream, 1.0], [0.0, -mov, 0.0]
-            # )
-
             stream_frac_hub = stream_frac  # + delta_hub
             stream_frac_cas = stream_frac  # + delta_cas
-
-            # import matplotlib.pyplot as plt
-            # fig, ax = plt.subplots()
-            # ax.plot(stream_frac)
-            # ax.plot(stream_frac_hub)
-            # ax.plot(stream_frac_cas)
-            # plt.savefig('beans.pdf')
-            # quit()
 
             ni = len(stream_frac)
 
@@ -271,9 +257,6 @@ class H(turbigen.mesh.Mesher):
                     theta_lim_old[0] = -dtheta / 2.0
                     theta_lim_old[1] = +dtheta / 2.0
                     Theta = np.zeros((2,))
-                    # raise Exception(
-                    #     "No theta limits from previous row to set unbladed row pitch"
-                    # )
                 theta_lim = np.zeros((2, ni, nj))
 
                 # Get skew angle from previous blade row
@@ -303,16 +286,12 @@ class H(turbigen.mesh.Mesher):
                     chord_fac[ind_dn] *= chord_mid[2]
 
                     # # Retrieve exit angle from previous blade row
-                    # try:
                     dtheta_skew = tanTheta * util.cumtrapz0(
                         chord_fac / xr[1, :, j], stream_frac
                     )
                     if not np.isfinite(dtheta_skew).all():
                         raise Exception("dtheta_skew not finite")
                     theta_lim[:, :, j] += dtheta_skew
-
-                # except:
-                #     pass
 
             else:
                 theta_lim = np.zeros((2, ni, nj))
@@ -363,32 +342,12 @@ class H(turbigen.mesh.Mesher):
                 for j in range(nj):
                     nchord = 5000
                     m = util.cluster_cosine(nchord)
-                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
+                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(
+                        span_frac[j], m=m, AR_cusp=mesh_config.AR_cusp
+                    )
 
                     assert np.all(xrt_u[2] >= xrt_l[2])
 
-                    if dmcusp := mesh_config.dm_cusp:
-                        cosTheta = np.cos(np.radians(Theta))
-                        ncusp = nchord - np.where(m > 1.0 - cosTheta[1] * dmcusp)[0][0]
-                        # Blend upper and lower surfaces to meet at TE
-                        # over the last ncusp points
-                        fcusp = np.linspace(0.0, 1.0, ncusp)
-                        if Theta[1] > 30.0:
-                            xrt_avg = xrt_l
-                        elif Theta[1] < -30.0:
-                            xrt_avg = xrt_u
-                        else:
-                            xrt_avg = 0.5 * (xrt_u + xrt_l)
-                        xrt_u[:, -ncusp:] = (
-                            fcusp * xrt_avg[:, -ncusp:]
-                            + (1.0 - fcusp) * xrt_u[:, -ncusp:]
-                        )
-                        xrt_l[:, -ncusp:] = (
-                            fcusp * xrt_avg[:, -ncusp:]
-                            + (1.0 - fcusp) * xrt_l[:, -ncusp:]
-                        )
-
-                    #
                     # Get tte of current section and warp the streamwise grid
                     # vector to locate trailing edge exactly
                     mlim_now = (0, 1)
@@ -487,6 +446,17 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(ite, -1), k=0),
                     turbigen.grid.PeriodicPatch(i=(ite, -1), k=-1),
                 ]
+                if nicusp := mesh_config.ni_cusp:
+                    patches.extend(
+                        [
+                            turbigen.grid.CuspPatch(
+                                i=(ite - nicusp, ite), k=0, label="cusp_k0"
+                            ),
+                            turbigen.grid.CuspPatch(
+                                i=(ite - nicusp, ite), k=-1, label="cusp_nk"
+                            ),
+                        ]
+                    )
 
             # Inlet or mixing
             if irow == 0:
@@ -523,6 +493,21 @@ class H(turbigen.mesh.Mesher):
         g = turbigen.grid.Grid(blocks)
 
         g.match_patches()
+
+        if mesh_config.plot:
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots()
+            ax.axis("equal")
+            nj = g[0].shape[1]
+            jplot = nj // 2
+
+            for b in g:
+                ARj = b.cell_ARj[:, jplot, :]
+                xc = util.node_to_cell(b.x)[:, jplot, :]
+                rtc = util.node_to_cell(b.rt)[:, jplot, :]
+                ax.contourf(xc, rtc, ARj)
+            plt.show()
 
         return g
 

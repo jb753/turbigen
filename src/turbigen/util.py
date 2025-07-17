@@ -1091,3 +1091,10 @@ def amplitude_spectrum(x, fs, axis=-1):
     xfluc = x - np.mean(x, axis=axis, keepdims=True)
     X = np.fft.rfft(xfluc, axis=axis) / nt * 2
     return f, X
+
+
+def average(x, axis):
+    n = np.shape(x)[axis]
+    return 0.5 * (
+        np.take(x, range(1, n), axis=axis) + np.take(x, range(0, n - 1), axis=axis)
+    )

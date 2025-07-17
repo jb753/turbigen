@@ -676,7 +676,7 @@ class Blade:
     def _get_mlim(self, spf):
         return util.interp1d_linear_extrap(self.spf, self.mlim)(spf)
 
-    def evaluate_section(self, spf, nchord=10000, ncusp=0, debug=False, m=None):
+    def evaluate_section(self, spf, nchord=10000, AR_cusp=0.0, debug=False, m=None):
         """Coordinates of upper and lower surfaces at one span fraction."""
 
         cam, thick = self._get_cam_thick(spf)
@@ -753,7 +753,7 @@ class Blade:
         xrtl[2] /= xrtl[1]
 
         # Add cusp if requested
-        if ncusp:
+        if AR_cusp:
             xrrtu = xrtu.copy()
             xrrtu[2] *= xrrtu[1]
             xrrtl = xrtl.copy()
@@ -767,7 +767,8 @@ class Blade:
                 axis=-1,
             )
 
-            L_cusp = norm(dxrrt_te, 2) * 2.0
+            L_cusp = norm(dxrrt_te, 2) * AR_cusp
+            ncusp = 10
             dxrrt_cam /= norm(dxrrt_cam, 2)
             xrrt_point = (xrrt_te + L_cusp * dxrrt_cam).reshape(3, 1)
             cusp_frac = np.linspace(0.0, 1.0, ncusp).reshape(1, -1)

@@ -218,6 +218,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
         procids = grid.partition(size)
         periodics = get_periodics(grid, procids, typ)
         mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
+        cusps = get_cusps(grid, procids)
 
         # Split into lists for each procid
         block_split = []
@@ -239,7 +240,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
         logger.info("Starting the main time-stepping loop...")
         block_split[0], mixers_out, tpnps, dUlog = run_slave(
-            block_split[0], periodics, mixers, nodes
+            block_split[0], periodics, mixers, nodes, cusps=cusps
         )
 
         logger.debug("Recieving data from processors...")
@@ -747,6 +748,33 @@ class SolverBlock:
         ember.shear_stress(**kwargs)
 
 
+class Cusp:
+    """Encapsulate information needed for cusp patch."""
+
+    def __init__(self, patch, pid, procids):
+        match = patch.match
+
+        assert patch.get_cut().shape == match.get_cut().shape
+
+        self.pid = pid
+        self.bid = patch.block.grid.index(patch.block)
+        self.nxbid = match.block.grid.index(match.block)
+
+        self.ijk = ijk = np.asfortranarray(patch.get_indices().reshape(3, -1)).astype(
+            np.int16
+        )
+        self.nxijk = nxijk = np.asfortranarray(
+            match.get_indices().reshape(3, -1)
+        ).astype(np.int16)
+
+        # Add one for 1-based Fortran indices
+        self.ijk += 1
+        self.nxijk += 1
+
+        self.procid = procids[self.bid]
+        self.nxprocid = procids[self.nxbid]
+
+
 class Periodic:
     """Encapsulate information needed for periodic boundary."""
 
@@ -844,6 +872,23 @@ class Periodic:
         )
 
 
+def get_cusps(g, procids):
+    cusps = []
+    seen = []
+    pid = 0
+    for patch in g.cusp_patches:
+        if patch in seen:
+            continue
+        else:
+            seen.append(patch)
+            seen.append(patch.match)
+
+        cusps.append(Cusp(patch, pid, procids))
+        pid += 1
+
+    return cusps
+
+
 def get_mixers(grid, procids, typ, K_mix, sf_mix):
     mixers = []
     seen = []
@@ -860,9 +905,9 @@ def get_mixers(grid, procids, typ, K_mix, sf_mix):
         pid += 1
         mixers[-2].nxpid = mixers[-1].pid
         mixers[-1].nxpid = mixers[-2].pid
-        if mixers[0].procid == mixers[1].procid:
-            mixers[0].nxbuffer = mixers[1].buffer
-            mixers[1].nxbuffer = mixers[0].buffer
+        if mixers[-2].procid == mixers[-1].procid:
+            mixers[-2].nxbuffer = mixers[-1].buffer
+            mixers[-1].nxbuffer = mixers[-2].buffer
     return mixers
 
 
@@ -931,6 +976,24 @@ def exchange_mixing(mixers):
             mixer.Send.Wait()
 
 
+def exchange_cusps(blocks, bid_local, cusps):
+    # Update cusps
+
+    # Loop to populate home buffer and send away buffer
+    for patch in cusps:
+        # Load flow field into our buffer
+        b1 = blocks[bid_local[patch.bid]].cons
+        C1 = ember.get_by_ijk(b1, patch.ijk)
+
+        b2 = blocks[bid_local[patch.nxbid]].cons
+        C2 = ember.get_by_ijk(b2, patch.nxijk)
+
+        # Take average and assign to home block
+        Cavg = 0.5 * (C1 + C2)
+        ember.set_by_ijk(b1, Cavg, patch.ijk)
+        ember.set_by_ijk(b2, Cavg, patch.nxijk)
+
+
 def exchange_periodic(blocks, bid_local, periodics):
     # Update periodic boundaries
 
@@ -980,7 +1043,9 @@ def exchange_periodic(blocks, bid_local, periodics):
 
 
 @profile
-def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None):
+def run_slave(
+    blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf=None, cusps=[]
+):
     if blocks is None:
         blocks = comm.recv()
         comm.Barrier()
@@ -1065,6 +1130,7 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
 
             # Exchange conserved variables across periodic patches
             exchange_periodic(blocks, bid_local, periodics)
+            exchange_cusps(blocks, bid_local, cusps)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):

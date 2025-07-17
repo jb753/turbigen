@@ -42,6 +42,7 @@ def test_cusp():
 
     ite = int(ni * 0.6)
     icusp = ite - 4
+    print(icusp, ite, ni)
 
     patches = [
         turbigen.grid.InletPatch(i=0),
@@ -86,6 +87,9 @@ def test_cusp():
     g.check_coordinates()
     g.match_patches()
 
+    assert g[0].patches[-1].match is g[0].patches[-2], "Cusp patches do not match"
+    assert g[0].patches[-2].match is g[0].patches[-1], "Cusp patches do not match"
+
     # Boundary conditions
     cp = 1005.0
     ga = 1.4
@@ -112,7 +116,7 @@ def test_cusp():
     block.Omega = 0.0
     block.mu = mu
 
-    P1 = Po1 * 0.8
+    P1 = Po1 * 0.7
     So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
     So1.set_P_T(Po1, To1)
     g.apply_inlet(So1, Alpha, Beta)
@@ -121,7 +125,8 @@ def test_cusp():
 
     ember.Ember(
         n_step=2000,
-        n_step_avg=100,
+        n_step_avg=1000,
+        i_loss=0,
     ).run(g)
 
     C = g[0][:, nj // 2, :]

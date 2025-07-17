@@ -34,12 +34,14 @@ annulus:
 # Specify camber and thickness one one mid-span section
 blades:
     - spf: 0.5
-      thick: [0.05, 0.12, 0.3, 0., 0.00, 0.18]
+      thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
       camber: [10., -2., 0.0]
 
 # Discretise fluid domain using a coarse H-mesh
 mesh:
   type: h
+  AR_cusp: 2.0
+  ni_cusp: 5
   yplus: 30.0
   resolution_factor: 0.5
 
@@ -50,5 +52,11 @@ nblade:
 # Configure the built-in flow solver
 solver:
   type: ember
-  n_step: 500
-  n_step_avg: 100
+  n_step: 2000
+  n_step_avg: 500
+
+post_process:
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel

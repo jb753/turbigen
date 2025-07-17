@@ -403,6 +403,7 @@ class Contour(BasePost):
                 linestyles="none",
             )
         cm.set_edgecolor("face")
+        cm.set_linewidth(0.05)
         ax.set_aspect("equal")  # Ensures equal scaling
         ax.set_adjustable("box")  # Ensures equal scaling
         ax.axis("off")

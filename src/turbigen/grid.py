@@ -428,6 +428,16 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         return dlmin
 
+    @property
+    def cell_ARj(self):
+        """Cell aspect ratio at constant j."""
+        assert self.ndim == 3, "Cell aspect ratio is only defined for 3D grids"
+        dli = util.average(util.vecnorm(self.dli), axis=2)
+        dlk = util.average(util.vecnorm(self.dlk), axis=0)
+        ARj = dli / dlk
+        ARj[ARj < 1] = 1.0 / ARj[ARj < 1]  # Ensure AR >= 1
+        return ARj
+
     @dependent_property
     def dAi(self):
         # Vector area for i=const faces, Gauss' theorem method
@@ -1258,6 +1268,10 @@ class Grid:
     def nonmatch_patches(self):
         return self.find_patches(NonMatchPatch)
 
+    @property
+    def cusp_patches(self):
+        return self.find_patches(CuspPatch)
+
     def match_patches(self, raise_fail=True):
         """Connect all pairs of patches that should match together."""
 
@@ -1266,6 +1280,7 @@ class Grid:
             self.periodic_patches,
             self.mixing_patches,
             self.nonmatch_patches,
+            self.cusp_patches,
         ]:
             # Remove existing matches
             for P in patches:
@@ -2171,15 +2186,20 @@ class CuspPatch(Patch):
             return False
 
         # Should have same shape
-        xyz = self.get_cut()
-        xyz_other = other.get_cut()
+        xyz = self.get_cut().xyz
+        xyz_other = other.get_cut().xyz
         if not xyz.shape == xyz_other.shape:
             return False
 
         # Check that the patches are touching
         dxyz = np.abs(xyz - xyz_other)
         Lref = np.max([np.ptp(c) for c in xyz])
-        return np.any(dxyz < Lref * rtol)
+
+        if matched := np.any(dxyz < Lref * rtol):
+            self.match = other
+            other.match = self
+
+        return matched
 
 
 class CoolingPatch(Patch):
@@ -2237,6 +2257,7 @@ NOT_WALL_PATCHES = [
     ProbePatch,
     # CoolingPatch,
     NonMatchPatch,
+    # CuspPatch,
 ]
 NOT_SLIPWALL_PATCHES = [
     InletPatch,
@@ -2248,6 +2269,8 @@ NOT_SLIPWALL_PATCHES = [
     InviscidPatch,
     CoolingPatch,
     NonMatchPatch,
+    CuspPatch,
+    # CuspPatch,
 ]
 
 

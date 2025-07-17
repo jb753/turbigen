@@ -7,7 +7,7 @@ inlet:
   gamma: 1.33
 
 # Set viscosity by vane Reynolds number
-Re_surf: 4e5
+Re_surf: 1e6
 
 mean_line:
   type: axial_turbine
@@ -17,62 +17,60 @@ mean_line:
   # Aerodynamics
   psi: 1.6
   phi2: 0.6
-  Ma2: 0.6
+  Ma2: 0.7
   fac_Ma3_rel: 1.0
   zeta: [1.0, 1.0]
   # Guess of loss
-  Ys: [0.02, 0.05]
+  Ys: [0.0, 0.0]
 
 annulus:
-  type: fixed_axial_chord
-  cx_gap: [0.1, 0.06, 0.1]
-  cx_row: [0.1, 0.1]
+  type: smooth
+  AR_gap: [2.0, 4.0, 2.0]
+  AR_chord: [2.0, 2.0]
+  smooth: false
 
 mesh:
   type: h
-  yplus: 30.0
+  yplus: 30.
   resolution_factor: 0.5
+  ni_TE: 9
+  dm_TE: 0.05
+  plot: true
 
 blades:
     - spf: 0.5
-      thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
       camber: [0., 0., 0.0]
     - spf: 0.5
-      thick: [0.04, 0.1, 0.35, 0.0, 0.0, 0.15]
+      thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
       camber: [0., 0., 0.0]
       tip: 0.01
 
 nblade:
-  - Co: 0.6
-  - Co: 0.6
+  - Co: 0.7
+  - Co: 0.7
 
 solver:
   type: ember
-  n_step: 1000
-  n_step_avg: 100
+  n_step: 2500
+  n_step_avg: 500
   n_step_ramp: 1000
 
 job:
   type: local
 
 iterate:
-  # mean_line:
-  #   tolerance:
-  #     Ys: 0.005
-  #   relaxation_factor: 1.0
-  # deviation:
+  mean_line:
+    tolerance:
+      Ys: 0.005
+    relaxation_factor: 1.0
+  deviation:
   incidence:
     tolerance: 10.
     relaxation_factor: 0.025
-  # repeat:
+  repeat:
 
 post_process:
-  # Loss at stator and rotor exits
-  - type: contour
-    coord: m
-    value: [2.05, 4.05]
-    variable: Ys
-  # Mid-span Mach
   - type: contour
     coord: spf
     value: 0.5
@@ -85,7 +83,14 @@ design_space:
       psi: [0.8, 2.4]
       zeta[0]: [0.8, 1.0]
       zeta[1]: [1.0, 1.2]
+      Ma2: [0.5, 0.9]
+      fac_Ma3_rel: [0.8, 1.2]
+    nblade:
+      0:
+        Co: [0.6, 0.9]
+      1:
+        Co: [0.6, 0.9]
   order_max: 3
-  nsample_target: 4
+  nsample_target: 8
 
 fac_nstep_initial: 2.0
