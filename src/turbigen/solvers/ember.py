@@ -464,6 +464,12 @@ class SolverBlock:
         self.dUc = self.preallocate(self.shape_cell + (5, 2))
         self.dUn = self.preallocate(self.shape + (5,))
         self.dt_vol = self.dlmin * 0.0
+        ni, nj, nk = self.shape
+        self.fluxes = [
+            self.preallocate((ni, nj - 1, nk - 1, 3, 5)),
+            self.preallocate((ni - 1, nj, nk - 1, 3, 5)),
+            self.preallocate((ni - 1, nj - 1, nk, 3, 5)),
+        ]
 
     def set_dummy_ijk(self):
         """Where the lists of wall faces have zero length, set sentinel values."""
@@ -638,32 +644,55 @@ class SolverBlock:
             CFL,
         )
 
-    def residual(self, fmgrid, damp, ischeme):
-        ember.residual(
-            self.cons,
-            self.Vxrt,
-            self.state.P,
-            self.Pref,
-            self.state.h,
-            self.fb,
-            self.Omega,
-            self.r,
-            *self.rf,
-            self.dAi,
-            self.dAj,
-            self.dAk,
-            self.vol,
-            self.dt_vol,
-            *self.ijk_wall_face,
-            self.ijk_multigrid,
-            fmgrid,
-            damp,
-            self.dUc,
-            self.dUn,
-            ischeme,
+    def set_fluxes(self):
+        ember.set_fluxes(
+            **{
+                "cons": self.cons,
+                "vxrt": self.Vxrt,
+                "p": self.state.P,
+                "pref": self.Pref,
+                "h": self.state.h,
+                "omega": self.Omega,
+                "r": self.r,
+                "ri": self.rf[0],
+                "rj": self.rf[1],
+                "rk": self.rf[2],
+                "ijk_iwall": self.ijk_wall_face[0],
+                "ijk_jwall": self.ijk_wall_face[1],
+                "ijk_kwall": self.ijk_wall_face[2],
+                "fluxi": self.fluxes[0],
+                "fluxj": self.fluxes[1],
+                "fluxk": self.fluxes[2],
+            }
         )
 
-    def step(self, istep, ischeme):
+    def residual(self, fmgrid, damp, ischeme):
+        ember.residual(
+            **{
+                "cons": self.cons,
+                "vxrt": self.Vxrt,
+                "p": self.state.P,
+                "pref": self.Pref,
+                "fb": self.fb,
+                "r": self.r,
+                "dai": self.dAi,
+                "daj": self.dAj,
+                "dak": self.dAk,
+                "fluxi": self.fluxes[0],
+                "fluxj": self.fluxes[1],
+                "fluxk": self.fluxes[2],
+                "vol": self.vol,
+                "dt_vol": self.dt_vol,
+                "ijk_mg": self.ijk_multigrid,
+                "fmgrid": fmgrid,
+                "fdamp": damp,
+                "resid_cell": self.dUc,
+                "resid_node": self.dUn,
+                "ischeme": ischeme,
+            }
+        )
+
+    def step(self, ischeme):
         ember.step(
             self.cons,
             self.dUc,
@@ -1071,8 +1100,11 @@ def run_slave(blocks=None, periodics_all=None, mixers_all=None, nodes=None, conf
                 else:
                     damp = 1e6
 
+                # Calculate the fluxes
+
                 # Sum fluxes for each cell and distribute to the nodes
                 i_scheme = -1 if not istep else conf.i_scheme
+                sb.set_fluxes()
                 sb.residual(
                     conf.fmgrid * fmgrid_ramp,
                     damp,

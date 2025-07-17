@@ -13,7 +13,7 @@ rm -f src/ember/*-f2pywrappers*
 
 # Run f2py in a temporary directory to generate wrappers
 WORKDIR="tmp_build"
-python3 -m numpy.f2py -m emberc  --opt='-fmax-errors=1' -c src/ember/*.f90 --build-dir $WORKDIR
+python3 -m numpy.f2py -m emberc  --opt='-fmax-errors=1 -Werror' -c src/ember/*.f90 --build-dir $WORKDIR
 
 # Move the generated meson.build file to root
 mv $WORKDIR/meson.build meson.build
@@ -29,7 +29,7 @@ sed -i "s|py = import('python').find_installation('''.*''', pure: false)|py = im
 sed -i "/py\.extension_module.*emberc/,/fortranobject_c/ s|'''\\([^']*\\)'''|'src/ember/\1'|g" meson.build
 
 # Insert compiler flags for the Fortran compiler
-sed -i "/fc =/i\add_global_arguments(['-O3','-funroll-loops','-march=native','-fno-math-errno', '-fno-trapping-math','-ftree-vectorize'], language : 'fortran')" meson.build
+sed -i "/fc =/i\add_global_arguments(['-Werror', '-O3','-funroll-loops','-march=native','-fno-math-errno', '-fno-trapping-math','-ftree-vectorize'], language : 'fortran')" meson.build
 
 # Convert print include directories to relative paths
 # This is needed because
