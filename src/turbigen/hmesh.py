@@ -21,7 +21,7 @@ class H(turbigen.mesh.Mesher):
     AR_stream: float = 2.0
     """Aspect ratio in blade-to-blade plane of cells at outlet boundary."""
 
-    AR_passage: float = 1.6
+    AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
     AR_merid: float = 1.0
@@ -168,6 +168,7 @@ class H(turbigen.mesh.Mesher):
                 )
 
             nj = len(span_frac)
+            logger.info(f"irow={irow}, nj={nj}")
 
             # Streamwise grid
             # From LE/TE/bcond spacings and ER
@@ -447,6 +448,7 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(ite, -1), k=-1),
                 ]
                 if nicusp := mesh_config.ni_cusp:
+                    logger.iter("Adding cusps")
                     patches.extend(
                         [
                             turbigen.grid.CuspPatch(
@@ -497,10 +499,11 @@ class H(turbigen.mesh.Mesher):
         if mesh_config.plot:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots()
             nj = g[0].shape[1]
             jplot = nj // 2
 
+            fig, ax = plt.subplots()
+            ax.axis("equal")
             for ib, b in enumerate(g):
                 ARi = b.cell_ARi[:, jplot, 0]
                 ARj = b.cell_ARj[:, jplot, 0]
@@ -513,6 +516,16 @@ class H(turbigen.mesh.Mesher):
                 print(
                     f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
                 )
+
+            jplot = 41
+            fig, ax = plt.subplots()
+            ax.axis("equal")
+            for ib, b in enumerate(g):
+                x = b.x[:, jplot, :]
+                rt = b.rt[:, jplot, :]
+                ax.plot(x, rt, "k-", lw=0.5)
+                ax.plot(x[40, 2], rt[40, 2], "b*", lw=0.5)
+                ax.plot(x.T, rt.T, "k-", lw=0.5)
             plt.show()
 
         return g
@@ -577,6 +590,9 @@ class H(turbigen.mesh.Mesher):
         assert np.isclose(x[0], 0.0)
         assert np.isclose(x[-1], 1.0)
         assert np.all(dx > 0.0)
+        ERout = dx[1:] / dx[:-1]
+        ERout[ERout < 1.0] = 1.0 / ERout[ERout < 1.0]
+        assert np.all(ERout <= self.ER_pitch)
         assert np.isfinite(x).all()
 
         if resample:
@@ -824,7 +840,7 @@ def _theta_limits(
     # Skew the mesh upstream of LE and downstream of TE
     dtheta_skew = np.zeros_like(theta_u)
     ind_up = tq < mlim[0]
-    ind_dn = tq > mlim[1]
+    ind_dn = tq >= mlim[1]
     Theta_now = np.clip(Theta, -Theta_max, Theta_max)
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():

@@ -91,7 +91,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    smooth_ratio_min: float = 0.5
+    smooth_ratio_min: float = 0.1
     """Largest directional reduction in smoothing on a non-isotropic grid. Unity disables directional scaling."""
 
     CFL: float = 0.65
@@ -178,10 +178,13 @@ class Ember(turbigen.solvers.base.BaseSolver):
         return self.replace(
             damping_factor=3.0,
             smooth2_adapt=1.0,
-            smooth4=0.02,
+            smooth4=0.01,
+            smooth_ratio_min=1.0,
             fmgrid=0.0,
-            CFL=0.4,
+            CFL=0.3,
             i_scheme=0,
+            n_step=self.n_step_ramp,
+            n_step_avg=1,
         )
 
     def restart(self):

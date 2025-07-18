@@ -337,6 +337,7 @@ class DesignSpace:
 
         # Fast forward the sampler by the number of samples already taken
         self._nsampled = len(fnames_done)
+        logger.iter(f"Fast forwarding sampler by {self._nsampled}")
         self._sampler.fast_forward(self._nsampled)
 
         # Now exclude any configs that have not ran yet or not converged

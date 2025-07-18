@@ -48,4 +48,4 @@ sed -i 's/os.chdir("..");//' meson.build
 echo "install_subdir('src/turbigen', install_dir: py.get_install_dir())" >> meson.build
 
 # Clean up
-rm -r $WORKDIR
+# rm -r $WORKDIR
