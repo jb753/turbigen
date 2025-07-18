@@ -49,8 +49,8 @@ def test_cusp():
         turbigen.grid.OutletPatch(i=-1),
         turbigen.grid.PeriodicPatch(k=0, i=(ite, -1)),
         turbigen.grid.PeriodicPatch(k=-1, i=(ite, -1)),
-        turbigen.grid.CuspPatch(k=0, i=(icusp, ite)),
-        turbigen.grid.CuspPatch(k=-1, i=(icusp, ite)),
+        turbigen.grid.CuspPatch(k=0, i=(icusp + 1, ite)),
+        turbigen.grid.CuspPatch(k=-1, i=(icusp + 1, ite)),
     ]
 
     pitch = 2.0 * np.pi / float(Nb)
@@ -124,8 +124,8 @@ def test_cusp():
     g.apply_outlet(P1)
 
     ember.Ember(
-        n_step=2000,
-        n_step_avg=1000,
+        n_step=4000,
+        n_step_avg=2000,
         i_loss=0,
     ).run(g)
 
@@ -141,7 +141,7 @@ def test_cusp():
     m = ax.contourf(
         C.x,
         C.rt,
-        C.P,
+        C.w,
     )
     plt.colorbar(m)
     ax.axis("equal")

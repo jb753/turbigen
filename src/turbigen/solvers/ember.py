@@ -85,6 +85,8 @@ class Ember(turbigen.solvers.base.BaseSolver):
     smooth4: float = 0.01
     """Fourth-order smoothing factor."""
 
+    Tu0: float = 0.0
+
     smooth2_adapt: float = 1.0
     """Second-order smoothing factor, adaptive on pressure."""
 
@@ -200,6 +202,10 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
         del machine, workdir
         conf = self
+
+        for b in grid:
+            if self.Tu0:
+                b.set_Tu0(self.Tu0)
 
         logger.info("Initialising ember...")
         t1 = timer()
@@ -384,6 +390,7 @@ class SolverBlock:
             state.mu = self.cast_scalar(block.mu)
             state.set_rho_u(block.rho, block.u)
             state.set_Tu0(block.Tu0)
+            logger.info(f"Tu0={state.Tu0:.3g}K")
         else:
             raise NotImplementedError()
 
@@ -993,8 +1000,10 @@ def exchange_cusps(blocks, bid_local, cusps):
 
         # Take average and assign to home block
         Cavg = 0.5 * (C1 + C2)
-        ember.set_by_ijk(b1, Cavg, patch.ijk)
-        ember.set_by_ijk(b2, Cavg, patch.nxijk)
+        rf = 0.1
+        rf1 = 1.0 - rf
+        ember.set_by_ijk(b1, Cavg * rf + C1 * rf1, patch.ijk)
+        ember.set_by_ijk(b2, Cavg * rf + C2 * rf1, patch.nxijk)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1143,13 +1152,13 @@ def run_slave(
                 sb.set_secondary()
 
                 # Check for NaNs
-                if not np.mod(istep, 1):
-                    if np.any(np.isnan(sb.cons)):
-                        _, i, j, k = np.mean(np.argwhere(np.isnan(sb.cons)), axis=0)
+                if np.any(np.isnan(sb.cons)):
+                    for ijk in np.argwhere(np.isnan(sb.cons[..., 0])):
+                        i, j, k = ijk
                         logger.iter(
                             f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
                         )
-                        sys.exit(3)
+                    sys.exit(3)
 
                 # Accumulate time average
                 if istep >= istep_avg:

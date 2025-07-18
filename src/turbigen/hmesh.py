@@ -503,7 +503,6 @@ class H(turbigen.mesh.Mesher):
             jplot = nj // 2
 
             fig, ax = plt.subplots()
-            ax.axis("equal")
             for ib, b in enumerate(g):
                 ARi = b.cell_ARi[:, jplot, 0]
                 ARj = b.cell_ARj[:, jplot, 0]
@@ -517,14 +516,14 @@ class H(turbigen.mesh.Mesher):
                     f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
                 )
 
-            jplot = 41
+            iplot, jplot, kplot = mesh_config.plot
             fig, ax = plt.subplots()
             ax.axis("equal")
             for ib, b in enumerate(g):
                 x = b.x[:, jplot, :]
                 rt = b.rt[:, jplot, :]
                 ax.plot(x, rt, "k-", lw=0.5)
-                ax.plot(x[40, 2], rt[40, 2], "b*", lw=0.5)
+                ax.plot(x[iplot, kplot], rt[iplot, kplot], "b*", lw=0.5)
                 ax.plot(x.T, rt.T, "k-", lw=0.5)
             plt.show()
 
