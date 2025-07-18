@@ -585,6 +585,36 @@ class StreamtubeLoss(BasePost):
         config.post_3d["DS_exit_norm"] = DSexit_norm
 
 
+@dataclasses.dataclass
+class InletProfiles(BasePost):
+    def post(self, config, pdf):
+        # Skip if no inlet profiles are available
+        if not config.inlet.spf:
+            return
+
+        spf = config.inlet.spf
+        Po, To, Alpha, Beta = config.inlet.profiles
+
+        # Setup figure
+        fig, ax = plt.subplots(1, 4, layout="constrained", sharey=True)
+        fig.suptitle("Inlet Profiles")
+        ax[0].set_ylabel("Span Fraction")
+
+        ax[0].plot(Po, spf)
+        ax[0].set_xlabel(r"$P_0/\overline{P_0}$")
+
+        ax[1].plot(To, spf)
+        ax[1].set_xlabel(r"$T_0/\overline{T_0}$")
+
+        ax[2].plot(Alpha, spf)
+        ax[2].set_xlabel(r"$\alpha - \overline{\alpha}$")
+
+        ax[3].plot(Beta, spf)
+        ax[3].set_xlabel(r"$\beta - \overline{\beta}$")
+
+        pdf.savefig()
+
+
 def insert_jbreaks(data, jbreak):
     """
     Insert interpolated j-lines into `data` at fractional j-indices using np.insert.

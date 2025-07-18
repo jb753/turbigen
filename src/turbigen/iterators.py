@@ -400,16 +400,16 @@ class Repeat(IteratorConfig):
     To_frac: float = 0.5
     """Fraction of varation in To to pass upstream."""
 
-    rtol: float = 0.001
+    rtol: float = 0.002
     """Relative tolerance for convergence of Po and To."""
 
     atol: float = 0.01
     """Absolute tolerance for convergence of angles."""
 
-    dAlpha_max: float = 20.0
+    dAlpha_max: float = 16.0
     """Clip the variations in yaw."""
 
-    dBeta_max: float = 10.0
+    dBeta_max: float = 8.0
     """Clip the variations in pitch."""
 
     dTo_max: float = 0.1

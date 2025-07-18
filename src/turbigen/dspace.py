@@ -288,6 +288,9 @@ class DesignSpace:
         # Exclude root config
         fnames = [f for f in fnames if not f.parent == self.basedir]
 
+        # Exclude iterations, only keep finished runs
+        fnames = [f for f in fnames if f.parent.parent == self.basedir]
+
         # Loop through the config files and read them
         confs = []
         for f in fnames:
@@ -337,9 +340,10 @@ class DesignSpace:
         self._sampler.fast_forward(self._nsampled)
 
         # Now exclude any configs that have not ran yet or not converged
+        nconf = len(confs)
+        nconv = sum(c.converged for c in confs)
         self.configs = [c for c in confs if c.mean_line_actual and c.converged]
-
-        logger.iter(f"Loaded {len(confs)} config files.")
+        logger.iter(f"Loaded {nconf} config files, {nconv} converged.")
 
     @property
     def nsample(self):
@@ -488,7 +492,7 @@ class DesignSpace:
             c = datum.copy()
             self.independent.set_independent(c, x[i])
             # Set a numbered workdir under the datum workdir
-            c.workdir = self.basedir / f"{i + n_current:03d}"
+            c.workdir = self.basedir / f"{i + n_current:04d}"
             configs.append(c)
 
         return configs

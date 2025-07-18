@@ -21,11 +21,11 @@ mean_line:
   fac_Ma3_rel: 1.0
   zeta: [1.0, 1.0]
   # Guess of loss
-  Ys: [0.0, 0.0]
+  Ys: [0.05, 0.1]
 
 annulus:
   type: smooth
-  AR_gap: [2.0, 4.0, 2.5]
+  AR_gap: [2.0, 4.0, 2.0]
   AR_chord: [2.0, 2.0]
   smooth: false
 
@@ -42,10 +42,10 @@ mesh:
 blades:
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
-      camber: [0., 0., 0.0]
+      camber: [-2., 0.5, 0.0]
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
-      camber: [0., 0., 0.0]
+      camber: [-1., -0.8, 0.0]
       tip: 0.01
 
 nblade:
@@ -54,9 +54,9 @@ nblade:
 
 solver:
   type: ember
-  n_step: 5000
+  n_step: 2000
   n_step_avg: 500
-  n_step_ramp: 500
+  n_step_ramp: 1000
 
 job:
   type: local
@@ -64,7 +64,7 @@ job:
 iterate:
   mean_line:
     tolerance:
-      Ys: 0.005
+      Ys: 0.01
     relaxation_factor: 1.0
   deviation:
   incidence:
@@ -83,8 +83,8 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [0.8, 2.4]
-      zeta[0]: [0.8, 1.0]
-      zeta[1]: [1.0, 1.2]
+      zeta[0]: [0.9, 1.0]
+      zeta[1]: [1.0, 1.1]
       Ma2: [0.5, 0.9]
       fac_Ma3_rel: [0.8, 1.2]
     nblade:
@@ -93,6 +93,6 @@ design_space:
       1:
         Co: [0.6, 0.9]
   order_max: 3
-  nsample_target: 8
+  nsample_target: 128
 
 fac_nstep_initial: 2.0
