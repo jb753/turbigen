@@ -951,7 +951,11 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             for ip, p in enumerate(b.patches):
                 if isinstance(p, turbigen.grid.ProbePatch):
                     C = p.get_cut()
-                    bmeta[ip] = {"shape": C.shape, "Omega": C.Omega.mean()}
+                    bmeta[ip] = {
+                        "shape": C.shape,
+                        "Omega": C.Omega.mean(),
+                        "label": p.label,
+                    }
 
             if bmeta:
                 probe_metadata[ib] = bmeta
