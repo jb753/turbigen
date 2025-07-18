@@ -93,6 +93,6 @@ design_space:
       1:
         Co: [0.6, 0.9]
   order_max: 3
-  nsample_target: 128
+  nsample_target: 32
 
 fac_nstep_initial: 2.0
