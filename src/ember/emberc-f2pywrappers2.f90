@@ -18,6 +18,7 @@
       use ember, only : viscous_flux
       use ember, only : wall_function
       use ember, only : zero_wall_stress
+      use ember, only : add_polar_source
       use ember, only : set_fluxes
       use ember, only : add_pressure_fluxes
       use ember, only : sum_fluxes
@@ -37,8 +38,8 @@
       external f2pysetupfunc
       call f2pysetupfunc(get_by_ijk,average_by_ijk,set_by_ijk,node_to_fa&
      &ce,node_to_cell,cell_to_node,cell_to_face,div,grad,smooth,shear_st&
-     &ress,viscous_flux,wall_function,zero_wall_stress,set_fluxes,add_pr&
-     &essure_fluxes,sum_fluxes,zero_wall_fluxes,multigrid_integrate,set_&
-     &timesteps,multigrid_indices,multigrid_volumes,smatvec,smatmat,dmat&
-     &vec,dmatmat,residual,step,secondary,damp)
+     &ress,viscous_flux,wall_function,zero_wall_stress,add_polar_source,&
+     &set_fluxes,add_pressure_fluxes,sum_fluxes,zero_wall_fluxes,multigr&
+     &id_integrate,set_timesteps,multigrid_indices,multigrid_volumes,sma&
+     &tvec,smatmat,dmatvec,dmatmat,residual,step,secondary,damp)
       end subroutine f2pyinitember

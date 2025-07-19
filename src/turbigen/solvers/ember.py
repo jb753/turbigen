@@ -481,6 +481,7 @@ class SolverBlock:
             self.preallocate((ni - 1, nj, nk - 1, 3, 5)),
             self.preallocate((ni - 1, nj - 1, nk, 3, 5)),
         ]
+        self.net_flow = self.preallocate((ni - 1, nj - 1, nk - 1, 5))
 
     def set_dummy_ijk(self):
         """Where the lists of wall faces have zero length, set sentinel values."""
@@ -655,7 +656,22 @@ class SolverBlock:
             CFL,
         )
 
+    def add_polar_source(self):
+        """Calculate the polar coordinates source term."""
+        ember.add_polar_source(
+            **{
+                "cons": self.cons,
+                "vxrt": self.Vxrt,
+                "p": self.state.P,
+                "pref": self.Pref,
+                "r": self.r,
+                "vol": self.vol[..., 0],
+                "fsum": self.net_flow[..., 2],  # Radial momentum eqn
+            }
+        )
+
     def set_fluxes(self):
+        """Calculate and store convective fluxes through each face."""
         ember.set_fluxes(
             **{
                 "cons": self.cons,
@@ -677,22 +693,25 @@ class SolverBlock:
             }
         )
 
-    def residual(self, fmgrid, damp, ischeme):
-        ember.residual(
+    def integrate_flows(self):
+        """Integrate flux dot dA over all cells to get net flows."""
+        ember.sum_fluxes(
             **{
-                "cons": self.cons,
-                "vxrt": self.Vxrt,
-                "p": self.state.P,
-                "pref": self.Pref,
-                "fb": self.fb,
-                "r": self.r,
+                "fi": self.fluxes[0],
+                "fj": self.fluxes[1],
+                "fk": self.fluxes[2],
                 "dai": self.dAi,
                 "daj": self.dAj,
                 "dak": self.dAk,
-                "fluxi": self.fluxes[0],
-                "fluxj": self.fluxes[1],
-                "fluxk": self.fluxes[2],
-                "vol": self.vol,
+                "fsum": self.net_flow,
+            }
+        )
+
+    def time_step(self, fmgrid, damp, ischeme):
+        ember.residual(
+            **{
+                "fb": self.fb,
+                "fsum": self.net_flow,
                 "dt_vol": self.dt_vol,
                 "ijk_mg": self.ijk_multigrid,
                 "fmgrid": fmgrid,
@@ -1181,12 +1200,18 @@ def run_slave(
                 else:
                     damp = 1e6
 
-                # Calculate the fluxes
+                # Calculate the fluxes through all faces
+                sb.set_fluxes()
+
+                # Integrate the net flows into each cell
+                sb.integrate_flows()
+
+                # Plus the polar coordinates radial momentum source term
+                sb.add_polar_source()
 
                 # Sum fluxes for each cell and distribute to the nodes
                 i_scheme = -1 if not istep else conf.i_scheme
-                sb.set_fluxes()
-                sb.residual(
+                sb.time_step(
                     conf.fmgrid * fmgrid_ramp,
                     damp,
                     i_scheme,

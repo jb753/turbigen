@@ -30,10 +30,9 @@ contains
     !       d(cons) = resid * dt / vol = (flux_net/vol + source) * dt
     !
     subroutine residual(&
-        cons, Vxrt, P, Pref, fb, &              ! Flow properties and body force
-        r, &                      ! Node and face-centered radii
-        dAi, dAj, dAk, vol, dt_vol, &             ! Cell areas, volumes, time step
-        fluxi, fluxj, fluxk, &             ! Fluxes
+        fb, &              ! Flow properties and body force
+        dt_vol, &
+        fsum, &
         ijk_mg, fmgrid, &                     ! Multigrid indexing and factor
         fdamp, &                              ! Damping factor
         resid_cell, &                              ! Cell residual out
@@ -46,25 +45,10 @@ contains
         ! Number of coordinate directions nc = 3
         ! Have to use magic numbers or f2py thinks they should be dummy args
 
-        ! Flow properties and body force
-        ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
-        real, intent (inout) :: cons(ni, nj, nk, 5)
-        real, intent (in) :: Vxrt(ni, nj, nk, 3)
-        real, intent (in) :: P   (ni, nj, nk)
         ! Cell body force per unit volume (and potential mass/energy sources)
         real, intent (in) :: fb   (ni-1, nj-1, nk-1, 5)
 
-        ! Reference frame angular velocity
-        real, intent (in)  :: Pref
-
-        ! Radii at nodes and face centers
-        real, intent(in) :: r( ni, nj, nk)
-
         ! Cell areas, volumes, time steps
-        real, intent (in)  :: dAi(ni, nj-1, nk-1, 3)
-        real, intent (in)  :: dAj(ni-1, nj, nk-1, 3)
-        real, intent (in)  :: dAk(ni-1, nj-1, nk, 3)
-        real, intent (in)  :: vol(ni-1, nj-1, nk-1, nmg)
         real, intent (in)  :: dt_vol(ni-1, nj-1, nk-1, nmg)
 
         ! Multigrid indices
@@ -85,43 +69,32 @@ contains
         real, intent (in)  :: fmgrid
         real, intent (in)  :: fdamp
 
-        ! Fluxes on cell faces for each dirn and eqn
-        real, intent (in) :: fluxi(ni, nj-1, nk-1, 3, 5)
-        real, intent (in) :: fluxj(ni-1, nj, nk-1, 3, 5)
-        real, intent (in) :: fluxk(ni-1, nj-1, nk, 3, 5)
-
         ! End of argument declarations
         ! Begin working variables
 
-        ! For the centrifugal source term
-        real :: S(ni, nj, nk)
-        real :: Sc(ni-1, nj-1, nk-1)
-        real :: rho(ni, nj, nk)
-        real :: Vt(ni, nj, nk)
-
         ! Net fluxes for each cell
-        real :: fsum(ni-1, nj-1, nk-1, 5)
+        real, intent (inout) :: fsum(ni-1, nj-1, nk-1, 5)
 
 
         ! End of working variable declarations
 
-        ! Evaluate source term at nodes, average to cell center
-        rho = cons(:, :, :, 1)
-        Vt = Vxrt(:, :, :, 3)
-        S = (rho*Vt*Vt + (P-Pref))/r
-        call node_to_cell(S, Sc, ni, nj, nk, 1)
-        Sc = Sc * vol(:,:,:,1)
+        !! Evaluate source term at nodes, average to cell center
+        !rho = cons(:, :, :, 1)
+        !Vt = Vxrt(:, :, :, 3)
+        !S = (rho*Vt*Vt + (P-Pref))/r
+        !call node_to_cell(S, Sc, ni, nj, nk, 1)
+        !Sc = Sc * vol(:,:,:,1)
 
-        ! Sum fluxes to get the net flux into each cell
-        call sum_fluxes( &
-            fluxi, fluxj, fluxk, &  ! Fluxes on the faces
-            dAi, dAj, dAk, &        ! Cell geometry
-            fsum, &                 ! Net flux
-            ni, nj, nk, 5 &         ! Numbers of points for dummy args
-        )
+        !! Sum fluxes to get the net flux into each cell
+        !call sum_fluxes( &
+        !    fluxi, fluxj, fluxk, &  ! Fluxes on the faces
+        !    dAi, dAj, dAk, &        ! Cell geometry
+        !    fsum, &                 ! Net flux
+        !    ni, nj, nk, 5 &         ! Numbers of points for dummy args
+        !)
 
-        ! Add on source term to the radial momentum eqn
-        fsum(:,:,:,3) = fsum(:,:,:,3) + Sc
+         !Add on source term to the radial momentum eqn
+        !fsum(:,:,:,3) = fsum(:,:,:,3)
         ! Add on body forces
         fsum = fsum + fb
 

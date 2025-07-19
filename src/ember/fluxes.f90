@@ -1,5 +1,41 @@
 ! Evaluate and summing fluxes
 
+
+subroutine add_polar_source( &
+    cons, Vxrt, P, Pref, r, vol, fsum, &
+    ni, nj, nk &
+    )
+
+    implicit none
+
+    ! Flow properties and body force
+    ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
+    real, intent (in) :: cons(ni, nj, nk, 5)
+    real, intent (in) :: Vxrt(ni, nj, nk, 3)
+    real, intent (in) :: P(ni, nj, nk)
+    real, intent (in) :: Pref
+    real, intent (in) :: r(ni, nj, nk)
+    real, intent (in) :: vol(ni-1, nj-1, nk-1)
+    real, intent (inout) :: fsum(ni-1, nj-1, nk-1)
+
+    integer, intent (in)  :: ni
+    integer, intent (in)  :: nj
+    integer, intent (in)  :: nk
+
+    real :: Sn(ni, nj, nk)
+    real :: S(ni-1, nj-1, nk-1)
+    real :: rho(ni, nj, nk)
+    real :: Vt(ni, nj, nk)
+
+    rho = cons(:, :, :, 1)
+    Vt = Vxrt(:, :, :, 3)
+    Sn = (rho*Vt*Vt + (P-Pref))/r
+    call node_to_cell(Sn, S, ni, nj, nk, 1)
+    S = S * vol
+    fsum = fsum + S
+
+end subroutine
+
 subroutine set_fluxes( &
     cons, Vxrt, P, Pref, h, &                  ! Flow properties
     Omega, &                              ! Reference frame angular velocity
@@ -160,7 +196,7 @@ subroutine sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fsum, ni, nj, nk, np)
     real, intent (in)     :: fi(ni, nj-1, nk-1, 3, np)
     real, intent (in)     :: fj(ni-1, nj, nk-1, 3, np)
     real, intent (in)     :: fk(ni-1, nj-1, nk, 3, np)
-    real, intent (out)    :: fsum(ni-1, nj-1, nk-1, np)
+    real, intent (inout)    :: fsum(ni-1, nj-1, nk-1, np)
 
     integer :: ip
     real :: fisum(ni, nj-1, nk-1)
