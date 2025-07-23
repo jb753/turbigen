@@ -784,21 +784,28 @@ class Cusp:
         match = patch.match
 
         assert patch.get_cut().shape == match.get_cut().shape
+        assert patch.get_cut().shape[2] == 1
 
         self.pid = pid
         self.bid = patch.block.grid.index(patch.block)
         self.nxbid = match.block.grid.index(match.block)
 
-        self.ijk = ijk = np.asfortranarray(patch.get_indices().reshape(3, -1)).astype(
-            np.int16
-        )
-        self.nxijk = nxijk = np.asfortranarray(
-            match.get_indices().reshape(3, -1)
-        ).astype(np.int16)
-
+        # Extract matching node indices
         # Add one for 1-based Fortran indices
-        self.ijk += 1
-        self.nxijk += 1
+        ijk = patch.get_indices() + 1
+        nxijk = match.get_indices() + 1
+
+        def flatten(x):
+            return np.asfortranarray(x.reshape(3, -1)).astype(np.int16)
+
+        # Indices to apply nodal periodicity
+        self.ijk_node = flatten(ijk)
+        self.nxijk_node = flatten(nxijk)
+
+        # Indices into k-faces for flux periodicity
+        # Exclude last i and j values from matching indices
+        self.ijk_face = flatten(ijk[:, :-1, :-1, :])
+        self.nxijk_face = flatten(nxijk[:, :-1, :-1])
 
         self.procid = procids[self.bid]
         self.nxprocid = procids[self.nxbid]
@@ -1008,21 +1015,31 @@ def exchange_mixing(mixers):
 def exchange_cusps(blocks, bid_local, cusps):
     # Update cusps
 
-    # Loop to populate home buffer and send away buffer
+    # Loop over cusp pairs
     for patch in cusps:
-        # Load flow field into our buffer
-        b1 = blocks[bid_local[patch.bid]].cons
-        C1 = ember.get_by_ijk(b1, patch.ijk)
+        # Blocks on each side
+        b1 = blocks[bid_local[patch.bid]]
+        b2 = blocks[bid_local[patch.nxbid]]
 
-        b2 = blocks[bid_local[patch.nxbid]].cons
-        C2 = ember.get_by_ijk(b2, patch.nxijk)
+        # Now extract values on the patch from the blocks
 
-        # Take average and assign to home block
+        # Nodes
+        C1 = ember.get_by_ijk(b1.cons, patch.ijk_node)
+        C2 = ember.get_by_ijk(b2.cons, patch.nxijk_node)
+
+        # k-face fluxes
+        F1 = ember.get_by_ijk(b1.fluxes[2], patch.ijk_face)
+        F2 = ember.get_by_ijk(b2.fluxes[2], patch.nxijk_face)
+
+        # Take mean values
         Cavg = 0.5 * (C1 + C2)
-        rf = 0.1
-        rf1 = 1.0 - rf
-        ember.set_by_ijk(b1, Cavg * rf + C1 * rf1, patch.ijk)
-        ember.set_by_ijk(b2, Cavg * rf + C2 * rf1, patch.nxijk)
+        Favg = 0.5 * (F1 - F2)
+
+        # Assign back to block
+        ember.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
+        ember.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
+        ember.set_by_ijk(b1.fluxes[2], Favg, patch.ijk_face)
+        ember.set_by_ijk(b2.fluxes[2], -Favg, patch.nxijk_face)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1202,6 +1219,11 @@ def run_slave(
 
                 # Calculate the fluxes through all faces
                 sb.set_fluxes()
+
+            exchange_cusps(blocks, bid_local, cusps)
+
+            for iblock in range(nblock):
+                sb = blocks[iblock]
 
                 # Integrate the net flows into each cell
                 sb.integrate_flows()

@@ -125,27 +125,18 @@ def test_cusp():
 
     ember.Ember(
         n_step=4000,
-        n_step_avg=2000,
+        n_step_avg=1000,
         i_loss=0,
     ).run(g)
 
     C = g[0][:, nj // 2, :]
-    fig, ax = plt.subplots()
-    ax.plot(C.x[:, 0], C.P[:, (0, -1)], "k-")
-    ax.plot(C.x[(ite, ite), 0], C.P[ite, (0, -1)], "r*", label="ite")
-    ax.plot(C.x[(icusp, icusp), 0], C.P[icusp, (0, -1)], "bo", label="icusp")
-    ax.legend()
+    P = C.P[:, (0, -1)]
 
-    C = g[0][:, nj // 2, :]
-    fig, ax = plt.subplots()
-    m = ax.contourf(
-        C.x,
-        C.rt,
-        C.w,
+    # Should be unloaded from icusp+1 onwards
+    Ptol = 1e-6 * P1
+    assert (np.abs(np.diff(P[icusp + 1 :, :], axis=-1)) < Ptol).all(), (
+        "Cusp patch not unloaded correctly"
     )
-    plt.colorbar(m)
-    ax.axis("equal")
-    plt.show()
 
 
 if __name__ == "__main__":

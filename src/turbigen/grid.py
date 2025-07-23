@@ -780,10 +780,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         for patch in self.patches:
             # Skip if this patch *is* a wall
             if ignore_slip:
-                if not type(patch) in NOT_SLIPWALL_PATCHES:
+                if not type(patch) in NOT_WALL_FRICTION:
                     continue
             else:
-                if not type(patch) in NOT_WALL_PATCHES:
+                if not type(patch) in NOT_WALL_WDIST:
                     continue
 
             # Make block number of points in each direction
@@ -2269,28 +2269,26 @@ class NonMatchPatch(Patch):
 
 # Default is that block edges are walls
 # So we want to identify patches that are NOT walls
-NOT_WALL_PATCHES = [
+# But there are two seperate lists:
+# 1) For the purpose of wall distance calculation and setting boundary
+#    conditions in CFD. This list does not include InviscidWalls, because
+#    their wdist=0 and they are impermeable
+# 2) For the purpose of wall functions in viscous CFD. This list also
+#    includes Inviscid and Cooling patches, which should be treated as
+#    impermeable but frictionless
+NOT_WALL_WDIST = [
     InletPatch,
     OutletPatch,
     MixingPatch,
     PeriodicPatch,
     PorousPatch,
     ProbePatch,
-    # CoolingPatch,
-    NonMatchPatch,
-    # CuspPatch,
-]
-NOT_SLIPWALL_PATCHES = [
-    InletPatch,
-    OutletPatch,
-    MixingPatch,
-    PeriodicPatch,
-    PorousPatch,
-    ProbePatch,
-    InviscidPatch,
-    CoolingPatch,
     NonMatchPatch,
     CuspPatch,
+]
+NOT_WALL_FRICTION = NOT_WALL_WDIST + [
+    InviscidPatch,
+    CoolingPatch,
 ]
 
 
