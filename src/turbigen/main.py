@@ -322,6 +322,8 @@ def main():
 
     logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
 
+    logger.iter(f"Working directory was: {workdir}")
+
     if not converged:
         sys.exit(1)
 
