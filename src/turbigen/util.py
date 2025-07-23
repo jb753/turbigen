@@ -1098,3 +1098,11 @@ def average(x, axis):
     return 0.5 * (
         np.take(x, range(1, n), axis=axis) + np.take(x, range(0, n - 1), axis=axis)
     )
+
+
+def to_xrrt_ref(xrt, rref):
+    return np.stack((xrt[0], xrt[1], xrt[2] * rref)).copy()
+
+
+def from_xrrt_ref(xrrt_ref, rref):
+    return np.stack((xrrt_ref[0], xrrt_ref[1], xrrt_ref[2] / rref)).copy()

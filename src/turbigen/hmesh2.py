@@ -26,8 +26,8 @@ class H2(turbigen.mesh.Mesher):
 
     dspf_mid_max: float = 0.05
 
-    AR_cusp: float = 0.0
-    ni_cusp: int = 0
+    AR_cusp: float = 4.0
+    ni_cusp: int = 5
     nj_tip_min = 9
 
     yplus: float = np.nan
@@ -72,7 +72,8 @@ class H2(turbigen.mesh.Mesher):
 
         nrow = mac.Nrow
         for irow in range(nrow):
-            generate_meridional_grid_vectors(self, mac, irow, dm_max[irow])
+            # generate_meridional_grid_vectors(self, mac, irow, dm_max[irow])
+            generate_blade(self, mac, irow, spf)
             pass
 
             # B
@@ -286,8 +287,8 @@ def generate_meridional_grid_vectors(conf, mac, irow, dM_max):
     )
     spf_query = np.array([0.0, 1.0]).reshape((2, 1))
 
-    # Now for each of these query meridional segments:
-    # 1. Evaluate xr on hub and casing
+    # Now for each of these meridional segments:
+    # 1. Evaluate arc lengths
     # 2. Attempt to cluster using fixed dimensional dm_LE etc
     #    Normalising by the current arc length
     # 3. Take the maximum number of points from hub and casing
@@ -297,7 +298,6 @@ def generate_meridional_grid_vectors(conf, mac, irow, dM_max):
     L_ann = np.stack(
         [util.arc_length(mac.ann.evaluate_xr(m, spf_query), axis=-1) for m in m_all]
     )
-    print(L_ann.shape)
 
     # Assemble the dimesional cluster spacings lengths for all segments
     dM_end = [
@@ -369,3 +369,105 @@ def generate_meridional_grid_vectors(conf, mac, irow, dM_max):
         ],
     )
     xr_ann = ii
+
+
+def generate_blade(conf, mac, irow, spf):
+    """Make the grid of a blade surface, including cusps."""
+
+    j = 0
+
+    # Section coordinates on upper and lower surfaces
+    # With an open trailing edge, initially
+    xrt_ul = np.stack(mac.bld[irow][0].evaluate_section(spf[j]))
+    rref = xrt_ul[:, 1, :].mean()
+    xrrt_ul = np.stack([util.to_xrrt_ref(xrti, rref) for xrti in xrt_ul])
+
+    # Camber line coordinates
+    print(xrt_ul.shape)
+    xrrt_cam = np.mean(xrrt_ul, axis=0)
+
+    # Centre of trailing edge
+    xrrt_te = xrrt_cam[:, -1]
+
+    # Vector across the trailing edge
+    dxrrt_te = xrrt_ul[0, :, -1] - xrrt_ul[1, :, -1]
+    W_te = np.linalg.norm(dxrrt_te)
+    print(W_te)
+
+    # Extrapolation direction of camber line TE
+    dxrrt_cam = xrrt_cam[:, -1] - xrrt_cam[:, -2]
+    dxrrt_cam /= np.linalg.norm(dxrrt_cam)
+
+    # Evaluate cusp point
+    L_cusp = conf.AR_cusp * W_te
+    xrrt_point = xrrt_te + L_cusp * dxrrt_cam
+
+    # Now we need to snap to the streamsurface
+    mTE = 2.0 + irow * 2.0
+    mq = np.linspace(mTE - 0.1, mTE + 0.3, 1000)
+    xr_streamsurface = mac.ann.evaluate_xr(mq, spf[j])
+    print(spf[j])
+    xrTE = mac.ann.evaluate_xr(mTE, (spf[j],)).squeeze()
+    if np.abs(dxrrt_cam[0]) > np.abs(dxrrt_cam[1]):
+        mcusp_end = np.interp(xrrt_point[0], xr_streamsurface[0], mq)
+        mTEu = np.interp(xrrt_ul[0, 0, -2:], xr_streamsurface[0], mq)
+        mTEl = np.interp(xrrt_ul[1, 0, -2:], xr_streamsurface[0], mq)
+    else:
+        # Mostly radial, interpolate in r
+        mcusp_end = np.interp(xrrt_point[1], xr_streamsurface[1], mq)
+        mTEu = np.interp(xrrt_ul[0, 1, -2:], xr_streamsurface[1], mq)
+        mTEl = np.interp(xrrt_ul[1, 1, -2:], xr_streamsurface[1], mq)
+
+    # Extrapolate the blade surfaces to the cusp point
+    # Still brute forcing the number of points, will reinterpolate later
+    nicusp = 20
+    f = np.linspace(0.0, 1.0, nicusp)
+    f1 = 1.0 - f
+    # xrrt_cusp = f * xrrt_ul[:, :, -1
+
+    import matplotlib.pyplot as plt
+
+    plt.plot(xrrt_cam[0], xrrt_cam[2], "k-", label="camber")
+    plt.plot(
+        *xrrt_point[
+            (0, 2),
+        ],
+        "bx",
+        label="cusp"
+    )
+
+    # The cusp starts at the furthest downstream point of the upper and lower
+    # surfaces, extrapolate the other surface to that m value
+    mcusp_start = np.max([mTEu[1], mTEl[1]])
+    mcuspu = np.linspace(mTEu[1], mcusp_end, nicusp)
+    mcuspl = np.linspace(mTEl[1], mcusp_end, nicusp)
+
+    xr_u_cusp = mac.ann.evaluate_xr(mcuspu, (spf[j],))
+    t_u_cusp = f1 * xrrt_ul[0, 2, -1] + f * xrrt_point[2]
+    xrrt_u_cusp = np.stack([xr_u_cusp[0], xr_u_cusp[1], t_u_cusp])
+    xrrt_u = np.concatenate((xrrt_ul[0, :, :-1], xrrt_u_cusp[:, 1:]), axis=-1)
+
+    xr_l_cusp = mac.ann.evaluate_xr(mcuspl, (spf[j],))
+    t_l_cusp = f1 * xrrt_ul[1, 2, -1] + f * xrrt_point[2]
+    xrrt_l_cusp = np.stack([xr_l_cusp[0], xr_l_cusp[1], t_l_cusp])
+    xrrt_l = np.concatenate((xrrt_ul[1, :, :-1], xrrt_l_cusp[:, 1:]), axis=-1)
+
+    plt.plot(
+        *xrrt_u[
+            (0, 2),
+        ],
+        "g-+",
+        label="cusp lower"
+    )
+    plt.plot(
+        *xrrt_l[
+            (0, 2),
+        ],
+        "c->",
+        label="cusp lower"
+    )
+    # plt.plot(*xrrt_u[(0, 2),], "r-", label="cusp lower")
+    # plt.plot(*xrrt_lin[0, (0, 2)], "c+", label="cusp upper")
+    # plt.plot(*xrrt_lin[1, (0, 2)], "g+", label="cusp lower")
+    plt.axis("equal")
+    plt.show()
