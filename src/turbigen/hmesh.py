@@ -341,11 +341,9 @@ class H(turbigen.mesh.Mesher):
                     assert (pitch_frac_clust <= 1.0).all()
 
                 for j in range(nj):
-                    nchord = 5000
+                    nchord = 10000
                     m = util.cluster_cosine(nchord)
-                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(
-                        span_frac[j], m=m, AR_cusp=mesh_config.AR_cusp
-                    )
+                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
 
                     assert np.all(xrt_u[2] >= xrt_l[2])
 
@@ -433,6 +431,17 @@ class H(turbigen.mesh.Mesher):
                 )
 
             xrt_now = np.concatenate([xr3, theta], axis=0)
+
+            # Add cusps if required
+            if mesh_config.AR_cusp:
+                add_cusp(
+                    xrt_now,
+                    ite,
+                    mesh_config.ni_TE,
+                    mesh_config.AR_cusp,
+                    mesh_config.ni_cusp,
+                )
+                quit()
 
             # Make periodic patches
             if unbladed[irow]:
@@ -855,3 +864,21 @@ def _theta_limits(
     theta_l += dtheta_skew
 
     return theta_u, theta_l, tte
+
+
+def add_cusp(xrt, i_TE, ni_TE, AR_cusp, ni_cusp):
+    """Change block coordinates from square TE to cusped TE.
+
+    This assumes that the trailing edge is located exactly
+    at ni_TE points upstream of the zero-thicknes point of the blade
+    (achieve this by setting dm_TE to 0.0 and ni_TE > 0 in config.)
+
+    """
+
+    nj = xrt.shape[2]
+    jplot = nj // 2
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.plot(xrt[0, :, jplot], xrt[2, :, jplot], "k-", lw=0.5)

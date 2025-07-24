@@ -43,6 +43,7 @@ mesh:
   resolution_factor: 0.5
   ni_TE: 9
   dm_TE: 0.05
+  plot: [0, 20, 0]
 
 # Define one mid-span section in stator and rotor
 blades:
