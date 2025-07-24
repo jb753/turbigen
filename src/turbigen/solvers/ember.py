@@ -810,6 +810,16 @@ class Cusp:
         self.ijk_node = flatten(ijk[:, 1:, :, :])
         self.nxijk_node = flatten(nxijk[:, 1:, :, :])
 
+        i, j, k = self.ijk_node
+        print(
+            f"ijk_node: {i.min()}-{i.max()}, {j.min()}-{j.max()}, {k.min()}-{k.max()}"
+        )
+        i, j, k = self.nxijk_node
+        print(
+            f"nxijk_node: {i.min()}-{i.max()}, {j.min()}-{j.max()}, {k.min()}-{k.max()}"
+        )
+        quit()
+
         # Indices into k-faces for flux periodicity
         # Exclude last i and j values from matching indices
         self.ijk_face = flatten(ijk[:, :-1, :-1, :])
