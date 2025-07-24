@@ -41,9 +41,10 @@ mesh:
   type: h
   yplus: 30.0
   resolution_factor: 0.5
-  ni_TE: 9
-  dm_TE: 0.05
-  plot: [0, 20, 0]
+  ni_TE: 5
+  dm_TE: 0.
+  AR_cusp: 4.0
+  ni_cusp: 5
 
 # Define one mid-span section in stator and rotor
 blades:
@@ -63,9 +64,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 4000
+  n_step: 1000
   n_step_avg: 250
-  damping_factor: 10.0
   # smooth2_adapt: 0.5
 
 # Configure iterative updates of the geometry

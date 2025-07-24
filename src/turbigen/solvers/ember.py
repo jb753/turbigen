@@ -1036,10 +1036,12 @@ def exchange_cusps(blocks, bid_local, cusps):
         Favg = 0.5 * (F1 - F2)
 
         # Assign back to block
+        rf = 0.2
+        rf1 = 1.0 - rf
         ember.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
         ember.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
-        ember.set_by_ijk(b1.fluxes[2], Favg, patch.ijk_face)
-        ember.set_by_ijk(b2.fluxes[2], -Favg, patch.nxijk_face)
+        ember.set_by_ijk(b1.fluxes[2], Favg * rf + F1 * rf1, patch.ijk_face)
+        ember.set_by_ijk(b2.fluxes[2], -Favg * rf + F2 * rf1, patch.nxijk_face)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
