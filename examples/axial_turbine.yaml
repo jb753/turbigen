@@ -41,10 +41,10 @@ mesh:
   type: h
   yplus: 30.0
   resolution_factor: 0.5
-  ni_TE: 3
+  ni_TE: 5
   dm_TE: 0.
   AR_cusp: 4.0
-  ni_cusp: 3
+  ni_cusp: 5
 
 # Define one mid-span section in stator and rotor
 blades:

@@ -37,9 +37,7 @@ subroutine add_polar_source( &
 end subroutine
 
 subroutine set_fluxes( &
-    cons, Vxrt, P, Pref, h, &                  ! Flow properties
-    Omega, &                              ! Reference frame angular velocity
-    r, ri, rj, rk, &                      ! Node and face-centered radii
+    cons, Vxrt, h, r, Omega, &                  ! Flow properties
     ijk_iwall, ijk_jwall, ijk_kwall, &    ! Wall locations
     fluxi, fluxj, fluxk, &                ! Fluxes out
     ni, nj, nk, niwall, njwall, nkwall &  ! Numbers of points dummy args
@@ -49,20 +47,9 @@ subroutine set_fluxes( &
     ! Nodal conserved quantities: rho, rhoVx, rhoVr, rhorVt, rhoe
     real, intent (in) :: cons(ni, nj, nk, 5)
     real, intent (in) :: Vxrt(ni, nj, nk, 3)
-    real, intent (in) :: P   (ni, nj, nk)
     real, intent (in) :: h  (ni, nj, nk)
-
-    ! Reference frame angular velocity
+    real, intent (in) :: r  (ni, nj, nk)
     real, intent (in) :: Omega
-
-    ! Reference pressure
-    real, intent (in) :: Pref
-
-    ! Radii at nodes and face centers
-    real, intent(in) :: r( ni, nj, nk)
-    real, intent(in) :: ri( ni, nj-1, nk-1)
-    real, intent(in) :: rj( ni-1, nj, nk-1)
-    real, intent(in) :: rk( ni-1, nj-1, nk)
 
     ! Wall locations
     integer*2, intent (in) :: ijk_iwall(3, niwall)
@@ -85,14 +72,6 @@ subroutine set_fluxes( &
     ! End of input declarations
 
     ! Declare working variables
-
-    ! Relative presure
-    real :: Pm( ni, nj, nk)
-
-    ! Face pressures
-    real :: Pi( ni, nj-1, nk-1)
-    real :: Pj( ni-1, nj, nk-1)
-    real :: Pk( ni-1, nj-1, nk)
 
     ! Stagnation enthalpy
     real :: ho( ni, nj, nk)
@@ -118,10 +97,6 @@ subroutine set_fluxes( &
     rhoV(:, :, :, 3) = cons(:,:,:,1)*(Vxrt(:, :, :, 3) - Omega*r)
     ho = h + 0.5e0*sum(Vxrt*Vxrt, 4)
 
-
-    ! Calculate face-centered pressure
-    Pm = P - Pref
-    call node_to_face( Pm, Pi, Pj, Pk, ni, nj, nk, 1)
 
     ! Evaluate the mass flux at face centers
     call node_to_face( rhoV, rhoVi, rhoVj, rhoVk, ni, nj, nk, 3)
@@ -152,6 +127,43 @@ subroutine set_fluxes( &
             fluxk(:, :, :, id, ip+1) = rhoVk(:, :, :, id) * fmassk(:, :, :, ip)
         end do
     end do
+
+end subroutine
+
+subroutine add_pressure_fluxes_all(fluxi, fluxj, fluxk, P, Pref, ri, rj, rk, Omega, ni, nj, nk)
+
+    ! Reference frame angular velocity
+    real, intent (in) :: Omega
+
+    ! Radii at nodes and face centers
+    real, intent(in) :: P( ni, nj, nk)
+
+    ! Reference pressure
+    real, intent (in) :: Pref
+
+    ! Fluxes out
+    real, intent (inout) :: fluxi(ni, nj-1, nk-1, 3, 5)
+    real, intent (inout) :: fluxj(ni-1, nj, nk-1, 3, 5)
+    real, intent (inout) :: fluxk(ni-1, nj-1, nk, 3, 5)
+
+    integer, intent (in) :: ni
+    integer, intent (in) :: nj
+    integer, intent (in) :: nk
+
+    ! Working vars
+    real, intent(in) :: ri( ni, nj-1, nk-1)
+    real, intent(in) :: rj( ni-1, nj, nk-1)
+    real, intent(in) :: rk( ni-1, nj-1, nk)
+
+    real :: Pm( ni, nj, nk)
+    real :: Pi( ni, nj-1, nk-1)
+    real :: Pj( ni-1, nj, nk-1)
+    real :: Pk( ni-1, nj-1, nk)
+
+
+    ! Calculate face-centered pressure
+    Pm = P - Pref
+    call node_to_face( Pm, Pi, Pj, Pk, ni, nj, nk, 1)
 
     ! Add pressure fluxes
     call add_pressure_fluxes(fluxi, Pi, ri, Omega, ni, nj-1, nk-1)
