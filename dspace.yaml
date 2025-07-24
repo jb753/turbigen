@@ -32,13 +32,16 @@ annulus:
 mesh:
   type: h
   yplus: 30.
-  ni_TE: 3
+  ni_TE: 5
   dm_TE: 0.0
   dspf_mid: 0.04
+  AR_cusp: 4.0
+  ni_cusp: 5
   dm_LE: 0.002
   ER_pitch: 1.3
   ER_span: 1.3
   ER_stream: 1.3
+  # plot: [0, 35, 0]
 
 blades:
     - spf: 0.5
@@ -58,6 +61,7 @@ solver:
   n_step: 2000
   n_step_avg: 500
   n_step_ramp: 1000
+  i_loss: 0
 
 job:
   type: local

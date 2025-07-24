@@ -35,6 +35,82 @@ def make_sector():
     return xrt, Nb
 
 
+def test_periodic():
+    xrt, Nb = make_sector()
+
+    L = np.ptp(xrt[0])
+    dtdx = np.tan(np.radians(30.0))
+    xrt[2] += dtdx * xrt[0]
+
+    patches = [
+        turbigen.grid.InletPatch(i=0),
+        turbigen.grid.OutletPatch(i=-1),
+        turbigen.grid.CuspPatch(k=0),
+        turbigen.grid.CuspPatch(k=-1),
+    ]
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
+
+    g = turbigen.grid.Grid([block])
+    g.check_coordinates()
+    g.match_patches()
+
+    # Boundary conditions
+    cp = 1005.0
+    ga = 1.4
+    mu = 1.8e-5
+    Po1 = 1e5
+    To1 = 300.0
+    Alpha = 0.0
+    Beta = 0.0
+    rgas = cp * ga / (ga - 1.0)
+    cv = rgas / ga
+    rho0 = Po1 / (rgas * To1)
+    u0 = cv * To1
+
+    # Set an initial guess
+    block.set_rho_u(rho0, u0)
+    block.Vx = 50.0
+    block.Vr = 0.0
+    block.Vt = 0.0
+    block.cp = cp
+    block.gamma = ga
+    block.Omega = 0.0
+    block.mu = mu
+
+    P1 = Po1 * 0.7
+    So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
+    So1.set_P_T(Po1, To1)
+    g.apply_inlet(So1, Alpha, Beta)
+    g.calculate_wall_distance()
+    g.apply_outlet(P1)
+
+    ember.Ember(
+        n_step=4000,
+        n_step_avg=1000,
+        i_loss=0,
+    ).run(g)
+
+    C = g[0][:, g[0].nj // 2, :]
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.P)
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.To)
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.s)
+
+    fig, ax = plt.subplots()
+    m = ax.contourf(C.x, C.rt, C.Alpha)
+    plt.colorbar(m, ax=ax)
+
+    plt.show()
+
+
 def test_cusp():
     xrt, Nb = make_sector()
 
@@ -129,7 +205,7 @@ def test_cusp():
         i_loss=0,
     ).run(g)
 
-    C = g[0][:, nj // 2, :]
+    C = g[0][:, g[0].nj // 2, :]
     P = C.P[:, (0, -1)]
 
     # Should be unloaded from icusp+1 onwards
@@ -140,4 +216,4 @@ def test_cusp():
 
 
 if __name__ == "__main__":
-    test_cusp()
+    test_periodic()

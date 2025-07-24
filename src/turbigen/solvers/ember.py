@@ -275,21 +275,29 @@ class Ember(turbigen.solvers.base.BaseSolver):
             ),
             np.nan,
         )
-        nnow = conf.n_step
         for b in blocks_out:
             for bc in b.bconds:
                 mhos_now = np.array(bc.convergence_log).T
-                nnow = mhos_now.shape[-1]
+                mhos_now = np.append(
+                    mhos_now,
+                    np.full((3, conf.n_step - mhos_now.shape[1]), np.nan),
+                    axis=1,
+                )
                 if isinstance(bc, InletBoundary):
-                    mhos[0, :, :nnow] = mhos_now
+                    mhos[0] = mhos_now
                 elif isinstance(bc, OutletBoundary):
-                    mhos[1, :, :nnow] = mhos_now
+                    mhos[1] = mhos_now
 
         istep = np.arange(conf.n_step)
         istep_avg = conf.n_step - conf.n_step_avg
         resid = np.concatenate(dUlog, axis=0)[:, 0]
-        state_conv = blocks_out[0].state.empty(shape=(2, nnow))
-        state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+        if (conf.n_step - resid.shape[0]) > 0:
+            resid = np.append(
+                resid,
+                np.full((conf.n_step - resid.shape[0],), np.nan),
+            )
+        state_conv = blocks_out[0].state.empty(shape=(2, conf.n_step))
+        state_conv.set_h_s(mhos[:, 1], mhos[:, 2])
         conv = turbigen.solvers.base.ConvergenceHistory(
             istep, istep_avg, resid, mhos[:, 0], state_conv
         )
@@ -799,13 +807,47 @@ class Cusp:
             return np.asfortranarray(x.reshape(3, -1)).astype(np.int16)
 
         # Indices to apply nodal periodicity
-        self.ijk_node = flatten(ijk)
-        self.nxijk_node = flatten(nxijk)
+        self.ijk_node = flatten(ijk[:, 1:, :, :])
+        self.nxijk_node = flatten(nxijk[:, 1:, :, :])
 
         # Indices into k-faces for flux periodicity
         # Exclude last i and j values from matching indices
         self.ijk_face = flatten(ijk[:, :-1, :-1, :])
         self.nxijk_face = flatten(nxijk[:, :-1, :-1])
+
+        # Incices into volumes for cell body force periodicity
+        # Patch on k=nk face corresponds to k=nk-1 volume
+        # Also remove the last i and j values
+        if ijk[2].mean() != 1:
+            ijk[2] -= 1
+        if nxijk[2].mean() != 1:
+            nxijk[2] -= 1
+        self.ijk_cell = flatten(ijk[:, :-1, :-1, :])
+        self.nxijk_cell = flatten(nxijk[:, :-1, :-1, :])
+
+        # Volumes
+        vol = np.asfortranarray(
+            np.tile(patch.block.vol[..., None], (1, 1, 1, 5))
+        ).astype(np.float32)
+        nxvol = np.asfortranarray(
+            np.tile(match.block.vol[..., None], (1, 1, 1, 5))
+        ).astype(np.float32)
+        self.vol = ember.get_by_ijk(vol, self.ijk_cell)
+        self.nxvol = ember.get_by_ijk(nxvol, self.nxijk_cell)
+
+        # Projected area components for each face
+        dA = np.moveaxis(patch.block.dAk, 0, -1)
+        nxdA = np.moveaxis(match.block.dAk, 0, -1)
+        dA = np.asfortranarray(np.tile(dA[..., None], (1, 1, 1, 1, 5))).astype(
+            np.float32
+        )
+        nxdA = np.asfortranarray(np.tile(nxdA[..., None], (1, 1, 1, 1, 5))).astype(
+            np.float32
+        )
+        self.dA = ember.get_by_ijk(dA, self.ijk_face)
+        self.nxdA = ember.get_by_ijk(nxdA, self.nxijk_face)
+        self.idA = np.abs(self.dA) > 0.0
+        self.nxidA = np.abs(self.nxdA) > 0.0
 
         self.procid = procids[self.bid]
         self.nxprocid = procids[self.nxbid]
@@ -1031,17 +1073,39 @@ def exchange_cusps(blocks, bid_local, cusps):
         F1 = ember.get_by_ijk(b1.fluxes[2], patch.ijk_face)
         F2 = ember.get_by_ijk(b2.fluxes[2], patch.nxijk_face)
 
+        # body forces
+        fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell)
+        fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell)
+
+        # Multiply by areas to get flows
+        # Note that get_by_ijk returns one long array of all
+        # components concatenated along the same dimesion, so
+        # we do not need to do a dot product
+        m1 = F1 * patch.dA
+        m2 = F2 * patch.nxdA
+
         # Take mean values
         Cavg = 0.5 * (C1 + C2)
-        Favg = 0.5 * (F1 - F2)
+        mavg = 0.5 * (m1 + m2)
+        fviscavg = 0.5 * (fvisc1 + fvisc2)
+
+        F1new = mavg[patch.idA] / patch.dA[patch.idA]
+        F2new = mavg[patch.nxidA] / patch.nxdA[patch.nxidA]
+
+        # Convert back to fluxes
+        F1[patch.idA] = F1new
+        F2[patch.nxidA] = F2new
 
         # Assign back to block
-        rf = 0.2
-        rf1 = 1.0 - rf
+        # ember.set_by_ijk(b1.fluxes[2][..., 0], F1[..., 0], patch.ijk_face)
+        # ember.set_by_ijk(b2.fluxes[2][..., 0], F2[..., 0], patch.nxijk_face)
+
         ember.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
         ember.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
-        ember.set_by_ijk(b1.fluxes[2], Favg * rf + F1 * rf1, patch.ijk_face)
-        ember.set_by_ijk(b2.fluxes[2], -Favg * rf + F2 * rf1, patch.nxijk_face)
+        ember.set_by_ijk(b1.fluxes[2], F1, patch.ijk_face)
+        ember.set_by_ijk(b2.fluxes[2], F2, patch.nxijk_face)
+        ember.set_by_ijk(b1.fb, fviscavg, patch.ijk_cell)
+        ember.set_by_ijk(b2.fb, fviscavg, patch.nxijk_cell)
 
 
 def exchange_periodic(blocks, bid_local, periodics):

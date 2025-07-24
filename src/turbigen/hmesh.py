@@ -379,7 +379,6 @@ class H(turbigen.mesh.Mesher):
                     np.moveaxis(theta_lim, 0, -1),
                 )
             )
-            print(xr.shape, theta_lim.shape)
             xrt_cusped = add_cusp(
                 xrt_ul,
                 ite,
@@ -388,7 +387,6 @@ class H(turbigen.mesh.Mesher):
             )
             xr = xrt_cusped[:2, ...].mean(axis=-1)
             theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
-            print(xr.shape, theta_lim.shape)
 
             assert np.isfinite(xr).all()
             assert np.isfinite(pitch_frac_clust).all()
@@ -461,15 +459,16 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
                 ]
             else:
-                icusp = mesh_config.ni_cusp + ite
+                icusp = mesh_config.ni_cusp + ite - 1
                 patches = [
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
                     turbigen.grid.PeriodicPatch(i=(icusp, -1), k=0),
                     turbigen.grid.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
-                if mesh_config.AR_cusp and False:
+                if mesh_config.AR_cusp:
                     logger.iter("Adding cusps")
+                    assert mesh_config.ni_cusp > 0
                     patches.extend(
                         [
                             turbigen.grid.CuspPatch(
@@ -887,6 +886,8 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
 
     """
 
+    assert AR_cusp > 0.0
+
     nj = xrt.shape[2]
     jmid = nj // 2
 
@@ -895,22 +896,28 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
     xrrt = util.to_xrrt_ref(xrt, rref)
     pitch = np.ptp(xrt[2, 0, jmid, :])
 
+    assert np.allclose(xrt[2, iTE, :, 0], xrt[2, iTE, :, 1])
+
     # Plot old coords
-    fig, ax = plt.subplots()
-    ax.plot(
-        xrrt[0, :, jmid, (0, -1)].T,
-        xrrt[2, :, jmid, (0, -1)].T,
-        "r-",
-        lw=0.5,
-        alpha=0.2,
-    )
+    # fig, ax = plt.subplots()
+    # ax.plot(
+    #     xrrt[0, :, jmid, (0, -1)].T,
+    #     xrrt[2, :, jmid, (0, -1)].T,
+    #     "r-",
+    #     lw=0.5,
+    #     alpha=0.2,
+    # )
+    # ax.plot(xrrt[0, iTE, jmid, 0], xrrt[2, iTE, jmid, 0], "go")
     # Determine if the exit angle is +ve or -ve
     plus_exit = np.diff(xrrt[2, iTE : iTE + 2, jmid, 0]).item() > 0.0
+    logger.debug(f"{plus_exit=}")
 
     # Find both corners of the trailing edge
+    istlook = iTE - 12
     if plus_exit:
         # Look for turning point on lower surface
-        ilower = np.where(np.diff(xrrt[2, :, jmid, 0]) < 0.0)[0][-1] - 1
+        ilower = istlook + np.argmax(xrrt[2, istlook:iTE, jmid, 0]).item()
+        logger.debug(f"{ilower=}, iTE={iTE}")
         xrrt_TE = np.stack(
             (
                 xrrt[:, ilower - 10 : ilower + 1, :, 0],
@@ -919,33 +926,46 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
         )
     else:
         # Look for turning point on upper surface
-        ilower = np.where(np.diff(xrrt[2, :, jmid, -1]) > 0.0)[0][-1] - 1
+        # ilower = np.where(np.diff(xrrt[2, :, jmid, -1]) > 0.0)[0][-1] - 1
+        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, jmid, -1]).item()
         xrrt_TE = np.stack(
             (
                 xrrt[:, ilower - 10 : ilower + 1, :, -1],
                 xrrt[:, iTE - 10 : iTE + 1, :, 0],
             )
         )
+    # ax.plot(xrrt_TE[:, 0, :, jmid], xrrt_TE[:, 2, :, jmid], "b-x")
 
     # Centre of trailing edge
     xrrt_cent = np.mean(xrrt_TE[:, :, -1], axis=0)
 
     # Vectors across TE and along camber line
+    # xrrt_TE is indexed[side, coord, i, j]
     vec_TE = xrrt_TE[0, :, -1] - xrrt_TE[1, :, -1]
+    print(vec_TE.shape)
     W_TE = util.vecnorm(vec_TE)
     vec_TE /= W_TE
-    vec_cam = np.mean(np.diff(xrrt_TE[:, :, -2:], axis=2), axis=0).squeeze()
+    vec_cam = np.mean(np.diff(xrrt_TE[:, :, -2:, :], axis=2), axis=0).squeeze()
     vec_cam /= util.vecnorm(vec_cam)
+    print(f"{vec_TE[:,jmid]=}")
+    print(f"{vec_cam[:,jmid]=}")
+    print(f"{W_TE[jmid]=}")
 
     # Find cusp point
     L_cusp = AR_cusp * W_TE
+    print(f"{L_cusp=}")
     xrrt_point = xrrt_cent + L_cusp * vec_cam
+
+    # ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
+    # ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
+    # plt.axis("equal")
+    # plt.show()
+    # quit()
 
     # Now get the coordinates to be added
     f_near = np.linspace(0.0, 1.0, ni_cusp).reshape(1, -1, 1)
     f_far = np.linspace(0.0, 1.0, ni_cusp + (iTE - ilower)).reshape(1, -1, 1)
 
-    print(xrrt_TE.shape)
     xrrt_cusp_near = (
         f_near * xrrt_point[:, None, :] + (1.0 - f_near) * xrrt_TE[1, :, None, -1, :]
     )
@@ -963,7 +983,6 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
             xrrt_cusp_far[0, :, j],
             m_cusp_far,
         )
-        print(len(m_cusp_far_new))
         xrrt_cusp_far[2, :, j] = np.interp(
             m_cusp_far_new, m_cusp_far, xrrt_cusp_far[2, :, j]
         )
@@ -971,8 +990,8 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
         (xrrt_TE[1, :2, -nfar:, :], xrrt_cusp_near[:2, 1:, :]), axis=1
     )
 
-    ax.plot(xrrt_cusp_near[0, :, jmid], xrrt_cusp_near[2, :, jmid], "m+")
-    ax.plot(xrrt_cusp_far[0, :, jmid], xrrt_cusp_far[2, :, jmid], "c+")
+    # ax.plot(xrrt_cusp_near[0, :, jmid], xrrt_cusp_near[2, :, jmid], "m+")
+    # ax.plot(xrrt_cusp_far[0, :, jmid], xrrt_cusp_far[2, :, jmid], "c+")
 
     if plus_exit:
         # The near corner is on the upper surface
@@ -1042,24 +1061,22 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
 
     xrrt_new = np.concatenate((xrrt_new[:, :-1, :, :], xrrt_new_down), axis=1)
 
-    ax.plot(
-        xrrt_new[0, :, jmid, (0, -1)].T,
-        xrrt_new[2, :, jmid, (0, -1)].T,
-        "k.-",
-        lw=0.5,
-        ms=1.0,
-    )
     # ax.plot(
-    #     xrrt_extra[0, :, jmid, (0, -1)].T,
-    #     xrrt_extra[2, :, jmid, (0, -1)].T,
-    #     "k-",
+    #     xrrt_new[0, :, jmid, (0, -1)].T,
+    #     xrrt_new[2, :, jmid, (0, -1)].T,
+    #     "k.-",
     #     lw=0.5,
+    #     ms=1.0,
     # )
-    ax.plot(xrrt_TE[:, 0, :, jmid], xrrt_TE[:, 2, :, jmid], "bx")
-    ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
-    ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
-    plt.axis("equal")
+    # # ax.plot(
+    # #     xrrt_extra[0, :, jmid, (0, -1)].T,
+    # #     xrrt_extra[2, :, jmid, (0, -1)].T,
+    # #     "k-",
+    # #     lw=0.5,
+    # # )
+    # # plt.show()
 
-    plt.show()
+    # Convert back to xrt
+    xrt_new = util.from_xrrt_ref(xrrt_new, rref)
 
-    return xrrt_new
+    return xrt_new

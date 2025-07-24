@@ -24,7 +24,7 @@ mean_line:
   # Aerodynamics
   psi: 1.6
   phi2: 0.6
-  Ma2: 0.8
+  Ma2: 0.6
   fac_Ma3_rel: 1.0
   zeta: [1.0, 1.0]
   # Guess of loss
@@ -41,10 +41,10 @@ mesh:
   type: h
   yplus: 30.0
   resolution_factor: 0.5
-  ni_TE: 5
+  ni_TE: 3
   dm_TE: 0.
   AR_cusp: 4.0
-  ni_cusp: 5
+  ni_cusp: 3
 
 # Define one mid-span section in stator and rotor
 blades:
@@ -64,9 +64,9 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 1000
-  n_step_avg: 250
-  # smooth2_adapt: 0.5
+  n_step: 2000
+  n_step_avg: 500
+  i_loss: 0
 
 # Configure iterative updates of the geometry
 iterate:
@@ -101,3 +101,7 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ys
