@@ -673,6 +673,9 @@ class SolverBlock:
                 "rj": self.rf[1],
                 "rk": self.rf[2],
                 "omega": self.Omega,
+                "fluxi": self.fluxes[0],
+                "fluxj": self.fluxes[1],
+                "fluxk": self.fluxes[2],
             }
         )
 
@@ -814,8 +817,8 @@ class Cusp:
             return np.asfortranarray(x.reshape(3, -1)).astype(np.int16)
 
         # Indices to apply nodal periodicity
-        self.ijk_node = flatten(ijk[:, :, :, :])
-        self.nxijk_node = flatten(nxijk[:, :, :, :])
+        self.ijk_node = flatten(ijk[:, 1:, :, :])
+        self.nxijk_node = flatten(nxijk[:, 1:, :, :])
 
         # Indices into k-faces for flux periodicity
         # Exclude last i and j values from matching indices
@@ -1095,12 +1098,12 @@ def exchange_cusp_fluxes(blocks, bid_local, cusps):
         b1 = blocks[bid_local[patch.bid]]
         b2 = blocks[bid_local[patch.nxbid]]
 
-        # body forces
-        fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell)
-        fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell)
-        fviscavg = 0.5 * (fvisc1 + fvisc2)
-        ember.set_by_ijk(b1.fb, fviscavg, patch.ijk_cell)
-        ember.set_by_ijk(b2.fb, fviscavg, patch.nxijk_cell)
+        # # body forces
+        # fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell) / patch.vol
+        # fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell) / patch.nxvol
+        # fviscavg = 0.5 * (fvisc1 + fvisc2)
+        # ember.set_by_ijk(b1.fb, fviscavg * patch.vol, patch.ijk_cell)
+        # ember.set_by_ijk(b2.fb, fviscavg * patch.nxvol, patch.nxijk_cell)
 
         # Now extract values on the patch from the blocks
         # ifluxes = (0, 1, 2, 3, 4)
@@ -1308,7 +1311,7 @@ def run_slave(
                 else:
                     damp = 1e6
 
-                # Calculate the fluxes through all faces
+                # Calculate the convective fluxes through all faces
                 sb.set_fluxes()
 
             exchange_cusp_fluxes(blocks, bid_local, cusps)

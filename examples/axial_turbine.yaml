@@ -66,7 +66,7 @@ solver:
   type: ember
   n_step: 2000
   n_step_avg: 500
-  i_loss: 0
+  # i_loss: 0
 
 # Configure iterative updates of the geometry
 iterate:
