@@ -817,8 +817,8 @@ class Cusp:
             return np.asfortranarray(x.reshape(3, -1)).astype(np.int16)
 
         # Indices to apply nodal periodicity
-        self.ijk_node = flatten(ijk[:, 1:, :, :])
-        self.nxijk_node = flatten(nxijk[:, 1:, :, :])
+        self.ijk_node = flatten(ijk[:, :, :, :])
+        self.nxijk_node = flatten(nxijk[:, :, :, :])
 
         # Indices into k-faces for flux periodicity
         # Exclude last i and j values from matching indices
@@ -1099,11 +1099,11 @@ def exchange_cusp_fluxes(blocks, bid_local, cusps):
         b2 = blocks[bid_local[patch.nxbid]]
 
         # # body forces
-        # fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell) / patch.vol
-        # fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell) / patch.nxvol
+        # fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell)  # / patch.vol
+        # fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell)  # / patch.nxvol
         # fviscavg = 0.5 * (fvisc1 + fvisc2)
-        # ember.set_by_ijk(b1.fb, fviscavg * patch.vol, patch.ijk_cell)
-        # ember.set_by_ijk(b2.fb, fviscavg * patch.nxvol, patch.nxijk_cell)
+        # ember.set_by_ijk(b1.fb, fviscavg, patch.ijk_cell)
+        # ember.set_by_ijk(b2.fb, fviscavg, patch.nxijk_cell)
 
         # Now extract values on the patch from the blocks
         # ifluxes = (0, 1, 2, 3, 4)

@@ -29,39 +29,49 @@ annulus:
   AR_chord: [2.0, 2.0]
   smooth: false
 
+# mesh:
+#   type: h
+#   yplus: 30.
+#   ni_TE: 5
+#   dm_TE: 0.0
+#   dspf_mid: 0.04
+#   AR_cusp: 4.0
+#   ni_cusp: 5
+#   dm_LE: 0.002
+#   ER_pitch: 1.3
+#   ER_span: 1.3
+#   ER_stream: 1.3
+#   plot: [0, 35, 0]
+
 mesh:
   type: h
-  yplus: 30.
+  yplus: 15.0
   ni_TE: 5
   dm_TE: 0.0
-  dspf_mid: 0.04
   AR_cusp: 4.0
   ni_cusp: 5
-  dm_LE: 0.002
-  ER_pitch: 1.3
-  ER_span: 1.3
-  ER_stream: 1.3
-  # plot: [0, 35, 0]
+  resolution_factor: 0.5
+
 
 blades:
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
-      camber: [-2., 0.5, 0.0]
+      camber: [0., 0., 0.0]
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.0, 0.04, 0.15]
-      camber: [-1., -0.8, 0.0]
+      camber: [0., 0., 0.0]
       tip: 0.01
 
 nblade:
-  - Co: 0.7
-  - Co: 0.7
+  - Co: 0.6
+  - Co: 0.6
 
 solver:
   type: ember
   n_step: 2000
   n_step_avg: 500
-  n_step_ramp: 1000
-  i_loss: 0
+  # n_step_ramp:
+  # damping_factor: 10.0
 
 job:
   type: local

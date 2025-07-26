@@ -1620,6 +1620,7 @@ class Grid:
         cuts = []
 
         for i in range(self.nrow):
+            # Check periodics first
             ile = None
             ite = None
             for patch in self.periodic_patches:
@@ -1633,6 +1634,12 @@ class Grid:
                         ile = patch.ijk_limits[0, 1]
                     elif patch.ijk_limits[0, 1] == -1:
                         ite = patch.ijk_limits[0, 0]
+
+            # Now check cusps
+            for patch in self.cusp_patches:
+                this_row = patch.block in self.row_blocks[i]
+                if this_row:
+                    ite = patch.ijk_limits[0, 0] - 1
 
             if not ile or not ite:
                 cuts.append(None)
