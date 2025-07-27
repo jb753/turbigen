@@ -1,5 +1,4 @@
 import importlib.metadata
-from . import hmesh2
 from . import hmesh
 from . import ohmesh
 from . import state
