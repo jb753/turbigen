@@ -7,11 +7,6 @@ import re
 import numpy as np
 
 
-# Allow dumping of Path to yaml
-def represent_path(dumper, data):
-    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data))
-
-
 # Allow dumping of numpy float64 to yaml
 def represent_float(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:float", str(data))
@@ -71,10 +66,12 @@ def read_yaml(fname):
     )
 
     # Read the YAML
+    config = {}
     with open(fname, "r") as f:
         config = yaml.load(f, Loader=loader)
 
     # Look for top-level include key
+    config_include = {}
     for fname_inc in config.pop("include", []):
         # If fname does not exist, use as a relative path
         if not os.path.exists(fname_inc):
@@ -83,9 +80,15 @@ def read_yaml(fname):
         # Read the included file
         with open(fname_inc, "r") as f:
             inc_config = yaml.load(f, Loader=loader)
-        config.update(inc_config)
+        config_include.update(inc_config)
 
-    return config
+    for k, v in config.items():
+        if k in config_include:
+            config_include[k].update(v)
+        else:
+            config_include[k] = v
+
+    return config_include
 
 
 def read_yaml_list(fname):
