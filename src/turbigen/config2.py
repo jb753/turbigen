@@ -714,10 +714,12 @@ class TurbigenConfig:
             logger.error("No solver configured, quitting.")
             sys.exit(0)
 
+        run_args = self.grid, self.get_machine, self.workdir / "solve"
+
         if self.solver.soft_start:
             logger.info("Soft start...")
-            self.solver.robust().run(self.grid, self.get_machine)
-        self.solver.run(self.grid, self.get_machine, self.workdir / "solve")
+            self.solver.robust().run(*run_args)
+        self.solver.run(*run_args)
 
     def get_mean_line_actual(self):
         """Extract the actual mean-line flow field by mixing out CFD result."""

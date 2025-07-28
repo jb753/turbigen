@@ -46,6 +46,7 @@ annulus:
 mesh:
   type: h
   yplus: 15.0
+  slip_cusp: true
   ni_TE: 5
   dm_TE: 0.0
   AR_cusp: 4.0
@@ -66,12 +67,12 @@ nblade:
   - Co: 0.6
   - Co: 0.6
 
-solver:
-  type: ember
-  n_step: 2000
-  n_step_avg: 500
-  # n_step_ramp:
-  # damping_factor: 10.0
+# solver:
+#   type: ember
+#   n_step: 2000
+#   n_step_avg: 500
+#   # n_step_ramp:
+#   # damping_factor: 10.0
 
 job:
   type: local
@@ -92,11 +93,11 @@ post_process:
     coord: spf
     value: 0.5
     variable: Ma_rel
-    show_mesh: true
   - type: contour
     coord: m
     value: [2.05, 4.05]
     variable: Ys
+    show_mesh: true
 
 design_space:
   independent:

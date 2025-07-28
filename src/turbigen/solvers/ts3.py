@@ -563,6 +563,10 @@ def _get_patch_kind(patch):
             return 5
     elif isinstance(patch, turbigen.grid.InviscidPatch):
         return 7
+    elif isinstance(patch, turbigen.grid.CuspPatch):
+        # The real TS3 cusp patch appears broken
+        # approximate using inviscid patch
+        return 7
     elif isinstance(patch, turbigen.grid.ProbePatch):
         return 8
     elif isinstance(patch, turbigen.grid.NonMatchPatch):

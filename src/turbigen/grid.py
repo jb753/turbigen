@@ -1292,6 +1292,10 @@ class Grid:
     def cusp_patches(self):
         return self.find_patches(CuspPatch)
 
+    @property
+    def inviscid_patches(self):
+        return self.find_patches(CuspPatch)
+
     def match_patches(self, raise_fail=True):
         """Connect all pairs of patches that should match together."""
 
@@ -1523,9 +1527,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.flatten().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1636,7 +1641,7 @@ class Grid:
                         ite = patch.ijk_limits[0, 0]
 
             # Now check cusps
-            for patch in self.cusp_patches:
+            for patch in self.cusp_patches + self.inviscid_patches:
                 this_row = patch.block in self.row_blocks[i]
                 if this_row:
                     ite = patch.ijk_limits[0, 0] - 1
@@ -2122,9 +2127,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (
-                nt,
-            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            assert np.shape(fac) == (nt,), (
+                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            )
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor

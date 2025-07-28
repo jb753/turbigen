@@ -15,6 +15,7 @@ class H(turbigen.mesh.Mesher):
     """Generate a mesh using H topology for each row."""
 
     recluster: bool = False
+    slip_cusp: bool = False
 
     ER_stream: float = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
@@ -313,13 +314,13 @@ class H(turbigen.mesh.Mesher):
                             drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
                             try:
-                                pitch_frac_clust[
-                                    i, j, :
-                                ] = mesh_config.pitchwise_grid_fixed_npts(
-                                    drt_norm_now,
-                                    pitch_chord_ref[1],
-                                    AR_row,
-                                    nk_not_resampled,
+                                pitch_frac_clust[i, j, :] = (
+                                    mesh_config.pitchwise_grid_fixed_npts(
+                                        drt_norm_now,
+                                        pitch_chord_ref[1],
+                                        AR_row,
+                                        nk_not_resampled,
+                                    )
                                 )
                             except ValueError:
                                 raise Exception(
@@ -363,9 +364,7 @@ class H(turbigen.mesh.Mesher):
                         xrt_l,
                         mlim_now,
                         Theta,
-                        chord_mid[
-                            (0, -1),
-                        ],
+                        chord_mid[(0, -1),],
                         Theta_max=mesh_config.skew_max,
                     )[:2]
 
@@ -419,17 +418,8 @@ class H(turbigen.mesh.Mesher):
 
             # Evaluate the angular coordinates and assemble
             theta = np.flip(
-                pfr3
-                * theta_lim3[
-                    (0,),
-                ]
-                + (1.0 - pfr3)
-                * (
-                    theta_lim3[
-                        (1,),
-                    ]
-                    + pitch_theta
-                ),
+                pfr3 * theta_lim3[(0,),]
+                + (1.0 - pfr3) * (theta_lim3[(1,),] + pitch_theta),
                 axis=-1,
             )
 
@@ -469,14 +459,15 @@ class H(turbigen.mesh.Mesher):
                 if mesh_config.AR_cusp:
                     logger.iter("Adding cusps")
                     assert mesh_config.ni_cusp > 0
+                    cusp_type = (
+                        turbigen.grid.InviscidPatch
+                        if mesh_config.slip_cusp
+                        else turbigen.grid.CuspPatch
+                    )
                     patches.extend(
                         [
-                            turbigen.grid.CuspPatch(
-                                i=(ite, icusp), k=0, label="cusp_k0"
-                            ),
-                            turbigen.grid.CuspPatch(
-                                i=(ite, icusp), k=-1, label="cusp_nk"
-                            ),
+                            cusp_type(i=(ite, icusp), k=0, label="cusp_k0"),
+                            cusp_type(i=(ite, icusp), k=-1, label="cusp_nk"),
                         ]
                     )
 
@@ -756,12 +747,7 @@ class H(turbigen.mesh.Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         # Relax clustering towards a uniform distribution at inlet and exit
         dt_relax = (
-            np.ones((2,))
-            * self.nchord_relax
-            * pitch_chord[
-                (0, -1),
-            ]
-            / pitch_chord[1]
+            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])
