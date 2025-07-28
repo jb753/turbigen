@@ -836,14 +836,8 @@ class Cusp:
         self.nxijk_cell = flatten(nxijk[:, :-1, :-1, :])
 
         # Volumes
-        vol = np.asfortranarray(
-            np.tile(patch.block.vol[..., None], (1, 1, 1, 5))
-        ).astype(np.float32)
-        nxvol = np.asfortranarray(
-            np.tile(match.block.vol[..., None], (1, 1, 1, 5))
-        ).astype(np.float32)
-        self.vol = ember.get_by_ijk(vol, self.ijk_cell)
-        self.nxvol = ember.get_by_ijk(nxvol, self.nxijk_cell)
+        vol = np.asfortranarray(patch.block.vol).astype(np.float32)
+        self.zeros = ember.get_by_ijk(vol, self.ijk_cell) * 0.0
 
         # Projected area components for each face
         dA = np.moveaxis(patch.block.dAk, 0, -1)
@@ -1098,18 +1092,15 @@ def exchange_cusp_fluxes(blocks, bid_local, cusps):
         b1 = blocks[bid_local[patch.bid]]
         b2 = blocks[bid_local[patch.nxbid]]
 
-        # # body forces
-        # fvisc1 = ember.get_by_ijk(b1.fb, patch.ijk_cell)  # / patch.vol
-        # fvisc2 = ember.get_by_ijk(b2.fb, patch.nxijk_cell)  # / patch.nxvol
-        # fviscavg = 0.5 * (fvisc1 + fvisc2)
-        # ember.set_by_ijk(b1.fb, fviscavg, patch.ijk_cell)
-        # ember.set_by_ijk(b2.fb, fviscavg, patch.nxijk_cell)
-
         # Now extract values on the patch from the blocks
         # ifluxes = (0, 1, 2, 3, 4)
         ifluxes = (0, 1, 2, 3, 4)
 
         for iflux in ifluxes:
+            # faces
+            ember.set_by_ijk(b1.fb[..., iflux], patch.zeros, patch.ijk_cell)
+            ember.set_by_ijk(b2.fb[..., iflux], patch.zeros, patch.nxijk_cell)
+
             # k-face fluxes
             F1 = ember.get_by_ijk(b1.fluxes[2][..., iflux], patch.ijk_face)
             F2 = ember.get_by_ijk(b2.fluxes[2][..., iflux], patch.nxijk_face)

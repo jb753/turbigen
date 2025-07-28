@@ -1,13 +1,12 @@
-include: 
+include:
   - dspace.yaml
 
 solver:
   type: ember
   n_step: 5000
   n_step_avg: 1000
-  Tu0: 600.0
+  # Tu0: 600.0
   # smooth4: 0.005
-  smooth2_adapt: 2.0
+  # smooth2_adapt: 2.0
   # n_step_ramp:
   # damping_factor: 10.0
-

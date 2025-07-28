@@ -273,8 +273,8 @@ class SurfaceDistribution(BasePost):
                 # Extract surface distance and normalise
                 zeta_stag = Ci.zeta_stag
                 # Shift zeta=0 to minimum Mas
-                # if self.variable == "Mas":
-                # zeta_stag -= zeta_stag[np.argmin(y)]
+                if self.variable == "Mas":
+                    zeta_stag -= zeta_stag[np.argmin(y)]
                 # Calculate maximum zeta only on main blade
                 zeta_max = zeta_stag.max(axis=0)
                 zeta_min = np.abs(zeta_stag.min(axis=0))

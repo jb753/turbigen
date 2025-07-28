@@ -46,12 +46,14 @@ annulus:
 mesh:
   type: h
   yplus: 15.0
-  slip_cusp: true
-  ni_TE: 5
+  # slip_cusp: true
+  ni_TE: 6
   dm_TE: 0.0
   AR_cusp: 4.0
   ni_cusp: 5
   resolution_factor: 0.5
+  # skew_max: 60.
+  plot: [66,48,-1]
 
 
 blades:
