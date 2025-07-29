@@ -41,7 +41,7 @@ class H(turbigen.mesh.Mesher):
     ni_TE: int = 9
     """Number of streamwise points across trailing edge."""
 
-    dm_TE: float = 0.04
+    dm_TE: float = 0.05
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
@@ -380,14 +380,15 @@ class H(turbigen.mesh.Mesher):
                     np.moveaxis(theta_lim, 0, -1),
                 )
             )
-            xrt_cusped = add_cusp(
-                xrt_ul,
-                ite,
-                mesh_config.AR_cusp,
-                mesh_config.ni_cusp,
-            )
-            xr = xrt_cusped[:2, ...].mean(axis=-1)
-            theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
+            if mesh_config.AR_cusp:
+                xrt_cusped = add_cusp(
+                    xrt_ul,
+                    ite,
+                    mesh_config.AR_cusp,
+                    mesh_config.ni_cusp,
+                )
+                xr = xrt_cusped[:2, ...].mean(axis=-1)
+                theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
 
             assert np.isfinite(xr).all()
             assert np.isfinite(pitch_frac_clust).all()
@@ -437,20 +438,6 @@ class H(turbigen.mesh.Mesher):
             assert np.isfinite(pitch_theta)
             assert np.isfinite(theta).all()
 
-            # if unbladed[irow]:
-            #     assert np.allclose(
-            #         theta[0, :, :, -1] - theta[0, :, :, 0], pitch_theta, rtol=1e-4
-            #     )
-            # else:
-            #     assert np.allclose(
-            #         theta[0, : (ile + 1), :, -1] - theta[0, : (ile + 1), :, 0],
-            #         pitch_theta,
-            #         rtol=1e-4,
-            #     )
-            #     assert np.allclose(
-            #         theta[0, ite:, :, -1] - theta[0, ite:, :, 0], pitch_theta, rtol=1e-4
-            #     )
-
             xrt_now = np.concatenate([xr3, theta], axis=0)
 
             # Make periodic patches
@@ -460,7 +447,7 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
                 ]
             else:
-                icusp = mesh_config.ni_cusp + ite - 1
+                icusp = mesh_config.ni_cusp + ite
                 patches = [
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
