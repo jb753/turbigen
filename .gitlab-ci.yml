@@ -12,7 +12,7 @@ before_script:
   - curl -LsSf https://astral.sh/uv/install.sh | sh
   - source $HOME/.local/bin/env
   - uv venv
-  - uv pip install cibuildwheel meson-python line_profiler .[dev]
+  - uv pip install cibuildwheel meson-python line_profiler==4.2.0 .[dev]
   - source .venv/bin/activate
   - mkdir -p plots
 
