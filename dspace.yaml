@@ -33,15 +33,17 @@ mesh:
   type: h
   yplus: 30.0
   # slip_cusp: true
-  ni_TE: 5
+  ni_TE: 4
   dm_TE: 0.0
-  AR_cusp: 1.0
-  ni_cusp: 5
+  dspf_mid: 0.05
+  AR_cusp: 1.2
+  ni_cusp: 4
   ER_span: 1.4
   ER_stream: 1.4
   ER_pitch: 1.4
   dm_LE: 0.002
-  plot: [0, 0, 0]
+  # resolution_factor: 0.8
+  # plot: [0, 0, 0]
 
 
 blades:
@@ -68,11 +70,12 @@ iterate:
   deviation:
   incidence:
     tolerance: 10.
-    relaxation_factor: 0.025
+    relaxation_factor: 0.1
   repeat:
+    dPo_max: 0.05
+    dTo_max: 0.05
+    dAlpha_max: 10.
     dBeta_max: 0.
-    dTo_max: 0.
-    dAlpha_max: 0.
 
 post_process:
   - type: inlet_profiles
@@ -81,15 +84,9 @@ post_process:
     value: 0.5
     variable: Ma_rel
   - type: contour
-    coord: spf
-    value: 0.5
-    variable: Ys
-    show_mesh: true
-  - type: contour
     coord: m
     value: [2.05, 4.05]
     variable: Ys
-    show_mesh: true
 
 design_space:
   independent:
@@ -106,6 +103,6 @@ design_space:
       1:
         Co: [0.6, 0.9]
   order_max: 3
-  nsample_target: 4
+  nsample_target: 32
 
 fac_nstep_initial: 2.0

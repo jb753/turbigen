@@ -400,7 +400,7 @@ class Repeat(IteratorConfig):
     To_frac: float = 0.5
     """Fraction of varation in To to pass upstream."""
 
-    rtol: float = 0.002
+    rtol: float = 0.01
     """Relative tolerance for convergence of Po and To."""
 
     atol: float = 0.01
@@ -441,6 +441,7 @@ class Repeat(IteratorConfig):
         # Assemble into a matrix
         spf = C.spf.mean(axis=2).squeeze()
         profiles = np.stack([Po, To, Alpha, Beta], axis=1)[0]
+        nj = len(spf)
 
         # Subtract the meanline values
         avg = np.array([Cm.Po, Cm.To, Cm.Alpha, Cm.Beta])
@@ -464,24 +465,23 @@ class Repeat(IteratorConfig):
 
         # No previous inlet, initialise
         if inlet.spf is None:
-            inlet.profiles = profiles
-            err = np.max(np.abs(profiles[1]))
+            inlet.spf = spf
+            inlet.profiles = np.zeros((4, nj))
 
         # Compare with the previous inlet
-        else:
-            # Interpolate the previous profiles to the new span fraction
-            profiles_old = np.stack(
-                [np.interp(spf, inlet.spf, inlet.profiles[i]) for i in range(4)],
-            )
 
-            # Calculate To errors
-            err = np.max(np.abs(profiles[1] - profiles_old[1]))
+        # Interpolate the previous profiles to the new span fraction
+        profiles_old = np.stack(
+            [np.interp(spf, inlet.spf, inlet.profiles[i]) for i in range(4)],
+        )
 
-            # Apply relaxation factor
-            rf = self.relaxation_factor
-            rf1 = 1.0 - rf
-            inlet.profiles = rf * profiles + rf1 * profiles_old
+        # Calculate To errors
+        err = np.max(np.abs(profiles[1] - profiles_old[1]))
 
+        # Apply relaxation factor to get new profiles
+        rf = self.relaxation_factor
+        rf1 = 1.0 - rf
+        inlet.profiles = rf * profiles + rf1 * profiles_old
         inlet.spf = spf
 
         return bool(err < self.rtol), {"Repeat_dTo": err}

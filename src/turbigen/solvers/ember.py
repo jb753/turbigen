@@ -191,9 +191,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
     def restart(self):
         """Create a copy of the config to smoothly restart."""
-        return self.replace(
-            n_step_ramp=0,
-        )
+        return self.replace(n_step_ramp=0, K_inlet=0.2)
 
     def run(self, grid, machine=None, workdir=None):
         logger.debug(
@@ -1274,9 +1272,7 @@ def run_slave(
 
                 # Check for NaNs
                 if np.any(np.isnan(sb.cons)):
-                    i, j, k = np.argwhere(np.isnan(sb.cons[..., 0]))[0].mean(
-                        axis=(0, 1, 2)
-                    )
+                    i, j, k = np.argwhere(np.isnan(sb.cons[..., 0])).mean(axis=0)
                     logger.iter(
                         f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
                     )

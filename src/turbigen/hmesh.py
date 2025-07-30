@@ -387,6 +387,7 @@ class H(turbigen.mesh.Mesher):
                     ite,
                     mesh_config.AR_cusp,
                     mesh_config.ni_cusp,
+                    plot=mesh_config.plot,
                 )
                 xr = xrt_cusped[:2, ...].mean(axis=-1)
                 theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)

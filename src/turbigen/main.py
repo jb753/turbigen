@@ -257,6 +257,9 @@ def main():
                 shutil.rmtree(conf.workdir)
             conf.workdir.mkdir(parents=True)
 
+            # Write out the config before we begin
+            conf.save()
+
             # If we already have a solution, don't need to
             # run CFD again on first iteration
             tic = timer()

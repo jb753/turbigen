@@ -4,7 +4,5 @@ include:
 solver:
   type: ember
   n_step: 2000
-  n_step_avg: 500
+  n_step_avg: 1000
   n_step_ramp: 1000
-  damping_factor: 10.
-  smooth2_adapt: 2.

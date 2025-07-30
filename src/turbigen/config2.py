@@ -809,8 +809,8 @@ class TurbigenConfig:
                         k,
                         f"{v:.3g}",
                         f"{self.mean_line_actual[k]:.3g}",
-                        f"{err[k]:.3g}",
-                        f"{rel_err[k]:.3g}",
+                        f"{err[k]:.2g}",
+                        f"{rel_err[k]:.1f}",
                     ]
                 )
             else:
