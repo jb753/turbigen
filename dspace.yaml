@@ -33,14 +33,15 @@ mesh:
   type: h
   yplus: 30.0
   # slip_cusp: true
-  ni_TE: 6
+  ni_TE: 5
   dm_TE: 0.0
-  AR_cusp: 4.0
+  AR_cusp: 1.0
   ni_cusp: 5
-  ER_span: 1.3
-  ER_stream: 1.3
-  ER_pitch: 1.3
+  ER_span: 1.4
+  ER_stream: 1.4
+  ER_pitch: 1.4
   dm_LE: 0.002
+  plot: [0, 0, 0]
 
 
 blades:

@@ -9,8 +9,11 @@ if [ ! -d "src" ]; then
     exit 1
 fi
 
+# Uninstall existing turbigen
+uv pip uninstall -y turbigen
+
 # Remove old wrapper files
-rm -f src/ember/*-f2pywrappers* src/ember/embercmodule.c
+rm -f src/ember/*wrapper* src/ember/embercmodule.c
 
 # Run f2py in a temporary directory to generate wrappers
 WORKDIR="tmp_build"
@@ -51,3 +54,6 @@ echo "install_subdir('src/turbigen', install_dir: py.get_install_dir())" >> meso
 # Clean up
 rm -r $WORKDIR
 rm emberc.cpython-*.so
+
+# Reinstall turbigen
+uv pip install -e . --no-build-isolation --no-cache

@@ -6,6 +6,7 @@ from turbigen import clusterfunc
 import turbigen.mesh
 import dataclasses
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 
 logger = util.make_logger()
 
@@ -869,7 +870,7 @@ def _theta_limits(
     return theta_u, theta_l, tte
 
 
-def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
+def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
     """Change block coordinates from square TE to cusped TE.
 
     This assumes that the trailing edge is located exactly
@@ -886,47 +887,74 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
     # Convert to xrrt
     rref = xrt[1, iTE, jmid, 0]
     xrrt = util.to_xrrt_ref(xrt, rref)
-    pitch = np.ptp(xrt[2, 0, jmid, :])
 
     assert np.allclose(xrt[2, iTE, :, 0], xrt[2, iTE, :, 1])
 
     # Plot old coords
-    # fig, ax = plt.subplots()
-    # ax.plot(
-    #     xrrt[0, :, jmid, (0, -1)].T,
-    #     xrrt[2, :, jmid, (0, -1)].T,
-    #     "r-",
-    #     lw=0.5,
-    #     alpha=0.2,
-    # )
-    # ax.plot(xrrt[0, iTE, jmid, 0], xrrt[2, iTE, jmid, 0], "go")
+    if plot:
+        fig, ax = plt.subplots()
+        ax.plot(
+            xrrt[0, :, jmid, (0, -1)].T,
+            xrrt[2, :, jmid, (0, -1)].T,
+            "r-",
+            lw=0.5,
+            alpha=0.2,
+        )
+        ax.plot(xrrt[0, iTE, jmid, 0], xrrt[2, iTE, jmid, 0], "go")
+
     # Determine if the exit angle is +ve or -ve
     plus_exit = np.diff(xrrt[2, iTE : iTE + 2, jmid, 0]).item() > 0.0
     logger.debug(f"{plus_exit=}")
+
+    is_axial = bool(
+        np.ptp(xrrt[0, iTE : iTE + 2, jmid, 0])
+        > np.ptp(xrrt[1, iTE : iTE + 2, jmid, 0])
+    )
+    print(f"{is_axial=}")
 
     # Find both corners of the trailing edge
     istlook = iTE - 12
     if plus_exit:
         # Look for turning point on lower surface
         ilower = istlook + np.argmax(xrrt[2, istlook:iTE, jmid, 0]).item()
+        # Extrapolate lower surface to TE
+        if is_axial:
+            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, 0], axis=0)
+            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, 0], axis=0)
+            grad = dt / dx
+            xrrt[2, ilower + 1 : iTE + 1, :, 0] = xrrt[2, ilower, :, 0] + grad * (
+                xrrt[0, ilower + 1 : iTE + 1, :, 0] - xrrt[0, ilower, :, 0]
+            )
+
+        else:
+            raise NotImplementedError()
         logger.debug(f"{ilower=}, iTE={iTE}")
+        xrrt_TE = np.moveaxis(xrrt[:, iTE - 10 : iTE + 1, :, :], -1, 0)
+    else:
+        # Look for turning point on upper surface
+        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, jmid, -1]).item()
+        # Extrapolate lower surface to TE
+        if is_axial:
+            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, -1], axis=0)
+            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, -1], axis=0)
+            grad = dt / dx
+            xrrt[2, ilower : iTE + 1, :, -1] = xrrt[2, ilower, :, -1] + grad * (
+                xrrt[0, ilower : iTE + 1, :, -1] - xrrt[0, ilower, :, -1]
+            )
+
+        else:
+            raise NotImplementedError()
         xrrt_TE = np.stack(
             (
-                xrrt[:, ilower - 10 : ilower + 1, :, 0],
+                xrrt[:, iTE - 10 : iTE + 1, :, 0],
                 xrrt[:, iTE - 10 : iTE + 1, :, -1],
             )
         )
-    else:
-        # Look for turning point on upper surface
-        # ilower = np.where(np.diff(xrrt[2, :, jmid, -1]) > 0.0)[0][-1] - 1
-        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, jmid, -1]).item()
-        xrrt_TE = np.stack(
-            (
-                xrrt[:, ilower - 10 : ilower + 1, :, -1],
-                xrrt[:, iTE - 10 : iTE + 1, :, 0],
-            )
-        )
-    # ax.plot(xrrt_TE[:, 0, :, jmid], xrrt_TE[:, 2, :, jmid], "b-x")
+
+    # Extrapolate the lower surface to
+
+    if plot:
+        ax.plot(xrrt_TE[:, 0, :, jmid], xrrt_TE[:, 2, :, jmid], "b-x")
 
     # Centre of trailing edge
     xrrt_cent = np.mean(xrrt_TE[:, :, -1], axis=0)
@@ -948,68 +976,30 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
     print(f"L_cusp={L_cusp.mean():.3g}")
     xrrt_point = xrrt_cent + L_cusp * vec_cam
 
-    # ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
-    # ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
-    # plt.axis("equal")
-    # plt.show()
-    # quit()
+    if plot:
+        ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
+        ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
+        plt.axis("equal")
 
     # Now get the coordinates to be added
-    f_near = np.linspace(0.0, 1.0, ni_cusp).reshape(1, -1, 1)
-    f_far = np.linspace(0.0, 1.0, ni_cusp + (iTE - ilower)).reshape(1, -1, 1)
+    f_cusp = np.linspace(0.0, 1.0, ni_cusp).reshape(1, -1, 1)
 
-    xrrt_cusp_near = (
-        f_near * xrrt_point[:, None, :] + (1.0 - f_near) * xrrt_TE[1, :, None, -1, :]
+    xrrt_cusp = (
+        f_cusp * xrrt_point[None, :, None, :]
+        + (1.0 - f_cusp) * xrrt_TE[:, :, None, -1, :]
     )
-    xrrt_cusp_far = (
-        f_far * xrrt_point[:, None, :] + (1.0 - f_far) * xrrt_TE[0, :, None, -1, :]
+    if plot:
+        for xrrtci in xrrt_cusp:
+            ax.plot(xrrtci[0, :, jmid], xrrtci[2, :, jmid], "g^-")
+
+    xrrt_new = np.concatenate(
+        (xrrt[:, : iTE + 1, :, :], np.moveaxis(xrrt_cusp, 0, -1)[:, 1:]), axis=1
     )
-
-    nfar = iTE - ilower + 1
-    for j in range(nj):
-        m_cusp_far = util.cum_arc_length(xrrt_cusp_far[:2, :, j])
-        m_cusp_far_new = np.interp(
-            np.concatenate(
-                (xrrt_TE[1, 0, -nfar:, j], xrrt_cusp_near[0, 1:, j]), axis=0
-            ),
-            xrrt_cusp_far[0, :, j],
-            m_cusp_far,
-        )
-        xrrt_cusp_far[2, :, j] = np.interp(
-            m_cusp_far_new, m_cusp_far, xrrt_cusp_far[2, :, j]
-        )
-    xrrt_cusp_far[:2, :, :] = np.concatenate(
-        (xrrt_TE[1, :2, -nfar:, :], xrrt_cusp_near[:2, 1:, :]), axis=1
-    )
-
-    # ax.plot(xrrt_cusp_near[0, :, jmid], xrrt_cusp_near[2, :, jmid], "m+")
-    # ax.plot(xrrt_cusp_far[0, :, jmid], xrrt_cusp_far[2, :, jmid], "c+")
-
-    if plus_exit:
-        # The near corner is on the upper surface
-        xrrt_new = np.stack(
-            (
-                np.concatenate((xrrt[:, :ilower, :, 0], xrrt_cusp_far), axis=1),
-                np.concatenate((xrrt[:, :iTE, :, -1], xrrt_cusp_near), axis=1),
-            ),
-            axis=-1,
-        )
-    else:
-        # The near corner is on the lower surface
-        xrrt_new = np.stack(
-            (
-                np.concatenate((xrrt[:, :iTE, :, 0], xrrt_cusp_near), axis=1),
-                np.concatenate((xrrt[:, :ilower, :, -1], xrrt_cusp_far), axis=1),
-            ),
-            axis=-1,
-        )
 
     # Shift the downstream coordiates to new theta TE
     dtheta_TE = xrrt_new[2, -1, :, 0] - xrrt[2, iTE, :, 0]
     xrrt_extra = xrrt[:, iTE:, :, :].copy()
     xrrt_extra[2] += dtheta_TE.reshape(1, -1, 1)
-
-    m_new = util.cum_arc_length(xrrt_new[:2, :, :, 0])
 
     # Define a curvilinear meridional coordinate along xrrt_extra
     # m_extra[i, j]
@@ -1053,20 +1043,21 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp):
 
     xrrt_new = np.concatenate((xrrt_new[:, :-1, :, :], xrrt_new_down), axis=1)
 
-    # ax.plot(
-    #     xrrt_new[0, :, jmid, (0, -1)].T,
-    #     xrrt_new[2, :, jmid, (0, -1)].T,
-    #     "k.-",
-    #     lw=0.5,
-    #     ms=1.0,
-    # )
-    # # ax.plot(
-    # #     xrrt_extra[0, :, jmid, (0, -1)].T,
-    # #     xrrt_extra[2, :, jmid, (0, -1)].T,
-    # #     "k-",
-    # #     lw=0.5,
-    # # )
-    # # plt.show()
+    if plot:
+        ax.plot(
+            xrrt_new[0, :, jmid, (0, -1)].T,
+            xrrt_new[2, :, jmid, (0, -1)].T,
+            "k.-",
+            lw=0.5,
+            ms=1.0,
+        )
+        ax.plot(
+            xrrt_extra[0, :, jmid, (0, -1)].T,
+            xrrt_extra[2, :, jmid, (0, -1)].T,
+            "k-",
+            lw=0.5,
+        )
+        plt.show()
 
     # Convert back to xrt
     xrt_new = util.from_xrrt_ref(xrrt_new, rref)
