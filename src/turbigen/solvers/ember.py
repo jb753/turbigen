@@ -1274,11 +1274,12 @@ def run_slave(
 
                 # Check for NaNs
                 if np.any(np.isnan(sb.cons)):
-                    for ijk in np.argwhere(np.isnan(sb.cons[..., 0])):
-                        i, j, k = ijk
-                        logger.iter(
-                            f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
-                        )
+                    i, j, k = np.argwhere(np.isnan(sb.cons[..., 0]))[0].mean(
+                        axis=(0, 1, 2)
+                    )
+                    logger.iter(
+                        f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
+                    )
                     sys.exit(3)
 
                 # Accumulate time average

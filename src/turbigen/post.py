@@ -605,7 +605,7 @@ class StreamtubeLoss(BasePost):
 class InletProfiles(BasePost):
     def post(self, config, pdf):
         # Skip if no inlet profiles are available
-        if not config.inlet.spf:
+        if config.inlet.spf is None:
             return
 
         spf = config.inlet.spf

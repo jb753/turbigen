@@ -447,7 +447,10 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
                 ]
             else:
-                icusp = mesh_config.ni_cusp + ite
+                if mesh_config.ni_cusp:
+                    icusp = ite + mesh_config.ni_cusp - 1
+                else:
+                    icusp = ite
                 patches = [
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
@@ -455,7 +458,7 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
                 if mesh_config.AR_cusp:
-                    logger.iter("Adding cusps")
+                    logger.info("Adding cusps")
                     assert mesh_config.ni_cusp > 0
                     cusp_type = (
                         turbigen.grid.InviscidPatch
