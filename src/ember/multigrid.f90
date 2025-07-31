@@ -89,12 +89,6 @@ subroutine multigrid_integrate( &
             do j = 1,nj
                 do i = 1,ni
 
-                    ! Skip coarse levels on i=1 and i=ni
-                    ! To avoid problems at boundary conditions
-                    if ((i == 1 .or. i == ni) .and. (ilev > 1)) then
-                        cycle
-                    end if
-
                     ! Pull out the indices of the coarse
                     ! block that corresponds to current fine point
                     ib = ijkmg(1, i, j, k, ilev)

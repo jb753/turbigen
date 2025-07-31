@@ -227,6 +227,12 @@ class Ember(turbigen.solvers.base.BaseSolver):
         mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
         cusps = get_cusps(grid, procids)
 
+        # Disable multigrid on mixing planes and cusps
+        for mixer in mixers:
+            blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        for cusp in cusps:
+            blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
+
         # Split into lists for each procid
         block_split = []
         for iproc in range(size):
@@ -620,6 +626,27 @@ class SolverBlock:
 
         return dlmg
 
+    def local_disable_multigrid(self, ijk):
+        """Zero coarse multigrid lengths corresponding to given fine indices.
+
+        This results in zero time step and henced disables multigrid.
+
+        The indices are one-based."""
+
+        assert ijk.shape[0] == 3
+        assert ijk.ndim == 2
+
+        # Loop over the cell indices to zero
+        for i, j, k in ijk.T:
+            # Look up the coarse indices
+            ijkb = self.ijk_multigrid[:, i, j, k, :].T - 1
+
+            # Zero the coarse volumes
+            nlev = ijkb.shape[0]
+            for ilev in range(1, nlev):
+                ib, jb, kb = ijkb[ilev]
+                self.dlmin[ib, jb, kb, ilev] = 0.0
+
     def get_xlength(self, block):
         # Mixing length limit
         xllim = (
@@ -821,17 +848,6 @@ class SolverBlock:
                     "yplus": self.yplus[dirn],
                 }
             )
-
-    # !! ! Add on wall cell forces due to stress from wall function
-    # !call wall_function( &
-    # !    fvisc_new, ijk_iwall, 1, cons, Omega, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
-    # !)
-    # !call wall_function( &
-    # !    fvisc_new, ijk_jwall, 2, cons, Omega, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
-    # !)
-    # !call wall_function( &
-    # !    fvisc_new, ijk_kwall, 3, cons, Omega, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
-    # !)
 
 
 class Cusp:
@@ -1540,6 +1556,23 @@ class Boundary:
 
         # Initialise a perturbation
         self.perturb = turbigen.perturb.Perturbation(self.state)
+
+        # Node indices
+        ijk_node = patch.get_indices().reshape(3, -1)
+        ijk_max = np.reshape(patch.block.shape, (3, 1)) - 1
+        ijk_cell = ijk_node.copy()
+
+        # If we are on a const-i patch, and i=imax
+        # then move those indices back one to correspond to last i cell
+        # Same for other directions
+        c = patch.cdir
+        ijk_cell[c, ijk_cell[c, :] == ijk_max[c, 0]] -= 1
+
+        # If we are on a const-i patch, discard j=jmax and k=kmax
+        c2 = np.setdiff1d((0, 1, 2), c)
+        ijk_cell = ijk_cell[:, (ijk_cell[c2, :] != ijk_max[c2, :]).all(axis=0)]
+
+        self.ijk_cell = np.asfortranarray(ijk_cell + 1).astype(np.int16)
 
     def record_flows(self):
         """Append mass flow and mass-averaged ho and s to convergence log."""
