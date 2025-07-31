@@ -5,7 +5,8 @@ v2.5.0
 ^^^^^^
 
 * Allow scaling tip gap on chord, span, or absolute value
-* Implement trailing-edge cusps
+* Implement trailing-edge cusps in ember
+* Print out area-averaged yplus in ember
 * Add post processing for inlet profile plot and streamtube loss breakdown
 * Bugfix for overly generous block equality
 * Speed improvement for matching patches

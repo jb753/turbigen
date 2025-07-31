@@ -10,7 +10,7 @@ if [ ! -d "src" ]; then
 fi
 
 # Uninstall existing turbigen
-uv pip uninstall -y turbigen
+uv pip uninstall turbigen
 
 # Remove old wrapper files
 rm -f src/ember/*wrapper* src/ember/embercmodule.c
@@ -56,4 +56,5 @@ rm -r $WORKDIR
 rm emberc.cpython-*.so
 
 # Reinstall turbigen
+uv pip install . --no-cache
 uv pip install -e . --no-build-isolation --no-cache

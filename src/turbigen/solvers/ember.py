@@ -323,6 +323,16 @@ class Ember(turbigen.solvers.base.BaseSolver):
         else:
             merr = -1.0
 
+        # Print yplus on all blocks
+        logger.info("Calculating yplus on all blocks...")
+        for b in blocks_out:
+            yplus = np.concatenate(b.yplus)
+            dA = np.concatenate(b.dA_face)
+            yplus_av = np.sum(yplus * dA) / np.sum(dA)
+            logger.info(
+                f"Block {b.bid}: A-avg yplus={yplus_av:.1f}, median yplus={np.median(yplus):.1f}"
+            )
+
         self.convergence = conv  # , tpnps, merr
 
 
@@ -470,8 +480,9 @@ class SolverBlock:
         self.Pref = self.cast_scalar(self.state.P.mean())
 
         # Intialise from geometry after data transfer
-        self.dA_wall_face = self.get_wall_area_magnitude()
+        self.dA_face = self.get_wall_area_magnitude()
         self.set_dummy_ijk()
+        self.yplus = [self.preallocate(dA.shape) for dA in self.dA_face]
 
         # Preallocate
         self.u = self.preallocate()
@@ -497,7 +508,7 @@ class SolverBlock:
                 ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
                 self.ijk_wall_face_slip[n] = ijkdum
                 self.dw_face[n] = self.cast_array(np.ones((1,)))
-                self.dA_face[n] = self.cast_array(np.ones((1,)))
+                self.dA_face[n] = self.cast_array(np.zeros((1,)))
 
     def get_data_type(self):
         """Return configured single or double numeric data type."""
@@ -646,7 +657,7 @@ class SolverBlock:
             np.sqrt((self.dAj**2).sum(axis=-1)),
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
-        self.dA_face = [
+        return [
             ember.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
@@ -782,15 +793,45 @@ class SolverBlock:
             "ijk_iwall": self.ijk_wall_face_slip[0],
             "ijk_jwall": self.ijk_wall_face_slip[1],
             "ijk_kwall": self.ijk_wall_face_slip[2],
-            "dw_iwall": self.dw_face[0],
-            "dw_jwall": self.dw_face[1],
-            "dw_kwall": self.dw_face[2],
-            "da_iwall": self.dA_face[0],
-            "da_jwall": self.dA_face[1],
-            "da_kwall": self.dA_face[2],
+            # "dw_iwall": self.dw_face[0],
+            # "dw_jwall": self.dw_face[1],
+            # "dw_kwall": self.dw_face[2],
+            # "da_iwall": self.dA_face[0],
+            # "da_jwall": self.dA_face[1],
+            # "da_kwall": self.dA_face[2],
             "fvisc": self.fb,
         }
         ember.shear_stress(**kwargs)
+
+        # Now wall functions
+        for dirn in range(3):
+            if self.dA_face[dirn].shape == (1,):
+                continue
+            ember.wall_function(
+                **{
+                    "f": self.fb,
+                    "ijk": self.ijk_wall_face_slip[dirn],
+                    "dirn": dirn + 1,  # Fortran indexing
+                    "cons": self.cons,
+                    "omega": self.Omega,
+                    "r": self.r,
+                    "dw": self.dw_face[dirn],
+                    "da": self.dA_face[dirn],
+                    "mu": self.mu,
+                    "yplus": self.yplus[dirn],
+                }
+            )
+
+    # !! ! Add on wall cell forces due to stress from wall function
+    # !call wall_function( &
+    # !    fvisc_new, ijk_iwall, 1, cons, Omega, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
+    # !)
+    # !call wall_function( &
+    # !    fvisc_new, ijk_jwall, 2, cons, Omega, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
+    # !)
+    # !call wall_function( &
+    # !    fvisc_new, ijk_kwall, 3, cons, Omega, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
+    # !)
 
 
 class Cusp:
