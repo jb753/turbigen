@@ -6,7 +6,6 @@ from turbigen import clusterfunc
 import turbigen.mesh
 import dataclasses
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 
 logger = util.make_logger()
 
@@ -527,7 +526,7 @@ class H(turbigen.mesh.Mesher):
                 ax.plot(x, ARi, color="C0", label="i")
                 ax.plot(xc, ARj, color="C1", label="j")
                 ax.plot(xc, ARk, color="C2", label="k")
-                print(
+                logger.info(
                     f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
                 )
 
@@ -715,9 +714,19 @@ class H(turbigen.mesh.Mesher):
 
             # free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
 
-            t_downstream = clusterfunc.single.free(
-                dm_downstream_TE, dm_boundary[-1] * L[1], self.ER_stream, 0.0, L[1]
-            )
+            try:
+                t_downstream = clusterfunc.single.free(
+                    dm_downstream_TE, dm_boundary[-1] * L[1], self.ER_stream, 0.0, L[1]
+                )
+            except turbigen.clusterfunc.exceptions.ClusteringException:
+                t_downstream = clusterfunc.single.free(
+                    dm_downstream_TE,
+                    dm_boundary[-1] * L[1],
+                    self.ER_stream,
+                    0.0,
+                    L[1],
+                    mult=1,
+                )
 
             # for _ in range(20):
             #     try:
@@ -912,7 +921,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
         np.ptp(xrrt[0, iTE : iTE + 2, jmid, 0])
         > np.ptp(xrrt[1, iTE : iTE + 2, jmid, 0])
     )
-    print(f"{is_axial=}")
+    logger.info(f"{is_axial=}")
 
     # Find both corners of the trailing edge
     istlook = iTE - 12
@@ -964,18 +973,16 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
     # Vectors across TE and along camber line
     # xrrt_TE is indexed[side, coord, i, j]
     vec_TE = xrrt_TE[0, :, -1] - xrrt_TE[1, :, -1]
-    print(vec_TE.shape)
+    logger.info(vec_TE.shape)
     W_TE = util.vecnorm(vec_TE)
     vec_TE /= W_TE
     vec_cam = np.mean(np.diff(xrrt_TE[:, :, -2:, :], axis=2), axis=0).squeeze()
     vec_cam /= util.vecnorm(vec_cam)
-    print(f"{vec_TE[:,jmid]=}")
-    print(f"{vec_cam[:,jmid]=}")
-    print(f"{W_TE[jmid]=}")
+    logger.info(f"{W_TE[jmid]=}")
 
     # Find cusp point
     L_cusp = AR_cusp * W_TE
-    print(f"L_cusp={L_cusp.mean():.3g}")
+    logger.info(f"L_cusp={L_cusp.mean():.3g}")
     xrrt_point = xrrt_cent + L_cusp * vec_cam
 
     if plot:
@@ -994,6 +1001,25 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
         for xrrtci in xrrt_cusp:
             ax.plot(xrrtci[0, :, jmid], xrrtci[2, :, jmid], "g^-")
 
+    # Now make the grid spacing at TE match
+    for j in range(nj):
+        m_TE = util.cum_arc_length(xrrt_TE[0, :, :, j])
+        dm_TE = np.diff(m_TE, axis=0)
+        dm_end = dm_TE[-2].mean()
+        dm_start = dm_TE[0].mean()
+        m_TE_new = clusterfunc.double.fixed(
+            dm_start,
+            dm_end,
+            len(m_TE),
+            0.0,
+            m_TE[-1],
+        )
+        for k in range(2):
+            for c in range(3):
+                xrrt[c, iTE - len(m_TE_new) + 1 : iTE + 1, j, k] = np.interp(
+                    m_TE_new, m_TE, xrrt_TE[k, c, :, j]
+                )
+
     xrrt_new = np.concatenate(
         (xrrt[:, : iTE + 1, :, :], np.moveaxis(xrrt_cusp, 0, -1)[:, 1:]), axis=1
     )
@@ -1006,7 +1032,6 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
     # Define a curvilinear meridional coordinate along xrrt_extra
     # m_extra[i, j]
     m_extra = util.cum_arc_length(xrrt_extra[:2, :, :, 0])
-    M_extra = m_extra / m_extra[(-1), :]
 
     # Find the value of m that corresponds to cusp point
     m_point = np.zeros((nj,))
@@ -1026,15 +1051,13 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
             xrrt_extra[2, :, j, :] += dt.reshape(-1, 1)
 
             L = m_extra[-1, j] - m_point
-            clu = (
-                np.interp(
-                    np.linspace(0.0, 1, nidown),
-                    np.linspace(0.0, 1, len(M_extra[:, j])),
-                    M_extra[:, j],
-                )
-                * L
-                + m_point
+
+            dm_start = util.cum_arc_length(xrrt_new[:2, -2:, j, 0])[-1]
+            dm_end = m_extra[-1, j] - m_extra[-2, j]
+            clu = clusterfunc.double.fixed(
+                dm_start, dm_end, nidown, m_point, m_point + L
             )
+
             for ii in range(3):
                 xrrt_new_down[ii, :, j, :] = np.interp(
                     clu, m_extra[:, j], xrrt_extra[ii, :, j, 0]

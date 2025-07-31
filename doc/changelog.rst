@@ -5,10 +5,20 @@ v2.5.0
 ^^^^^^
 
 * Allow scaling tip gap on chord, span, or absolute value
-* Bugfix for generous block equality
+* Implement trailing-edge cusps
+* Add post processing for inlet profile plot and streamtube loss breakdown
+* Bugfix for overly generous block equality
 * Speed improvement for matching patches
 * Add function to initialise a grid from TS3 hdf5
 * Low-level utility function for grid warping
+* Scripts to automate rebuilding the compiled Fortran code
+* Save config to iteration directories before running the solver
+* Split long Fortran routines into smaller subroutines
+* Write out metdata for TS3 probes into a yaml file
+* Allow per block overrides of block variables in TS3
+* Implement general unsteady inlet boundary condition
+* Functions for post-processing TS3 unsteady probes and wave separation
+* Much internal restructuring and tidying up
 
 v2.4.0
 ^^^^^^

@@ -1802,7 +1802,7 @@ class MixingBoundary(Boundary):
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
 
         # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        Ma_min = 0.01
+        Ma_min = 0.05
         V_min = self.state_avg.a.mean() * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
         self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])

@@ -44,9 +44,7 @@ class IndependentConfig:
     def _split_nblade_key(self, key):
         assert key.startswith("nblade")
         match = re.match(r"^nblade\[(\d+)\]\[(.*)\]$", key)
-        k1 = match.group(1)  # Row index of the nblade dict
-        k2 = match.group(2)
-        return int(match.group(1)), k2
+        return int(match.group(1)), match.group(2)
 
     def _split_meanline_key(self, key):
         if "[" in key:
