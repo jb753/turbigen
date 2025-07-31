@@ -1842,8 +1842,9 @@ class MixingBoundary(Boundary):
         self.state_avg.set_conserved(cons_avg)
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
 
-        # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
-        Ma_min = 0.05
+        # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices.
+        # Smaller is more agressive and applies larger corrections
+        Ma_min = 0.01
         V_min = self.state_avg.a.mean() * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
         self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
@@ -1886,6 +1887,10 @@ class MixingBoundary(Boundary):
         # Where the pitch-avg flow is out of the domain like an outlet
         # zero the downstream-running chic
         dchic[:, self.is_outlet, :, 1:, 0] = 0.0
+
+        # Smaller changes on the upstream side
+        # Reduce upstream-running chic where we are an outlet
+        # dchic[:, self.is_outlet, :, 0, 0] *= 0.5
 
         return dchic
 

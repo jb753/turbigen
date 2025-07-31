@@ -517,6 +517,12 @@ class H(turbigen.mesh.Mesher):
             jplot = nj // 2
 
             fig, ax = plt.subplots()
+            ax.axis("equal")
+            for b in g:
+                ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
+                ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
+
+            fig, ax = plt.subplots()
             for ib, b in enumerate(g):
                 ARi = b.cell_ARi[:, jplot, 0]
                 ARj = b.cell_ARj[:, jplot, 0]
@@ -539,6 +545,7 @@ class H(turbigen.mesh.Mesher):
                 ax.plot(x, rt, "k-", lw=0.5)
                 ax.plot(x[iplot, kplot], rt[iplot, kplot], "b*", lw=0.5)
                 ax.plot(x.T, rt.T, "k-", lw=0.5)
+
             plt.show()
 
         return g
@@ -1082,7 +1089,6 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
             "k-",
             lw=0.5,
         )
-        plt.show()
 
     # Convert back to xrt
     xrt_new = util.from_xrrt_ref(xrrt_new, rref)
