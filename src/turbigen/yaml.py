@@ -5,6 +5,7 @@ import gzip
 import os
 import re
 import numpy as np
+from pathlib import Path
 
 
 # Allow dumping of numpy float64 to yaml
@@ -12,15 +13,9 @@ def represent_float(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:float", str(data))
 
 
-yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
-
-
 # Allow dumping int to yaml
 def represent_int(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:int", str(data))
-
-
-yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
 
 
 # Allow dumping np.ndarray as a list to yaml
@@ -28,7 +23,15 @@ def represent_ndarray(dumper, data):
     return dumper.represent_list(data.tolist())
 
 
+# Dump path objects as strings
+def represent_path(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data.expanduser()))
+
+
+yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
+yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
 yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
+yaml.representer.SafeRepresenter.add_representer(Path, represent_path)
 
 
 class UniqueKeyLoader(yaml.SafeLoader):

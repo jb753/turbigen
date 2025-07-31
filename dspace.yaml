@@ -33,14 +33,14 @@ mesh:
   type: h
   yplus: 30.0
   # slip_cusp: true
-  ni_TE: 4
+  ni_TE: 3
   dm_TE: 0.0
   dspf_mid: 0.05
   AR_cusp: 1.2
   ni_cusp: 4
-  ER_span: 1.4
-  ER_stream: 1.4
-  ER_pitch: 1.4
+  ER_span: 1.3
+  ER_stream: 1.3
+  ER_pitch: 1.3
   dm_LE: 0.002
   # resolution_factor: 0.8
   # plot: [0, 0, 0]
@@ -69,8 +69,8 @@ iterate:
     relaxation_factor: 1.0
   deviation:
   incidence:
-    tolerance: 10.
-    relaxation_factor: 0.1
+    tolerance: 16.
+    relaxation_factor: 0.05
   repeat:
     dPo_max: 0.05
     dTo_max: 0.05
@@ -99,9 +99,9 @@ design_space:
       fac_Ma3_rel: [0.8, 1.2]
     nblade:
       0:
-        Co: [0.6, 0.9]
+        Co: [0.6, 0.8]
       1:
-        Co: [0.6, 0.9]
+        Co: [0.6, 0.8]
   order_max: 3
   nsample_target: 32
 

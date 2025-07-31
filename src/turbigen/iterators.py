@@ -498,16 +498,11 @@ class Repeat(IteratorConfig):
         def extract_profile(config, ivar):
             return np.interp(spf_new, config.inlet.spf, config.inlet.profiles[ivar])
 
-        # Loop over profile variables
-        # And interpolate each from the design space
-        # Apply clipping to the normalised profiles
+        # Loop over profile variables and interpolate each from the design space
+        # Apply clipping and relaxation to the normalised profiles
         clip = [self.dPo_max, self.dTo_max, self.dAlpha_max, self.dBeta_max]
         config.inlet.profiles = np.full((4, len(spf_new)), np.nan)
         for ivar in range(4):
             var = config.design_space.interpolate(extract_profile, config, ivar=ivar)
-            var_clip = np.clip(
-                var,
-                -clip[ivar],
-                clip[ivar],
-            )
-            config.inlet.profiles[ivar] = var_clip
+            var_clip = np.clip(var, -clip[ivar], clip[ivar])
+            config.inlet.profiles[ivar] = var_clip * self.relaxation_factor

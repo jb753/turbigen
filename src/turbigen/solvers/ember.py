@@ -191,7 +191,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
     def restart(self):
         """Create a copy of the config to smoothly restart."""
-        return self.replace(n_step_ramp=0, K_inlet=0.2)
+        return self.replace(n_step_ramp=0)
 
     def run(self, grid, machine=None, workdir=None):
         logger.debug(

@@ -451,6 +451,7 @@ class H(turbigen.mesh.Mesher):
             else:
                 if mesh_config.ni_cusp:
                     icusp = ite + mesh_config.ni_cusp - 1
+                    ite -= 1
                 else:
                     icusp = ite
                 patches = [
