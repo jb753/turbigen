@@ -2,8 +2,10 @@
 
 subroutine shear_stress(&
     cons, V, T, mu, cp, Pr_turb, xlength, vol, dAi, dAj, dAk, &
-    Omega, r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, dw_iwall, dw_jwall, dw_kwall, &
-    dA_iwall, dA_jwall, dA_kwall, fvisc, ni, nj, nk, niwall, njwall, nkwall)
+    Omega, r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, &
+    !dw_iwall, dw_jwall, dw_kwall, &
+    !dA_iwall, dA_jwall, dA_kwall, &
+    fvisc_new, ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
 
@@ -37,13 +39,13 @@ subroutine shear_stress(&
     real :: tauj(ni-1, nj, nk-1, 6)
     real :: tauk(ni-1, nj-1, nk, 6)
 
-    real, intent (in) :: dw_iwall(niwall)
-    real, intent (in) :: dw_jwall(njwall)
-    real, intent (in) :: dw_kwall(nkwall)
+    !real, intent (in) :: dw_iwall(niwall)
+    !real, intent (in) :: dw_jwall(njwall)
+    !real, intent (in) :: dw_kwall(nkwall)
+    !real, intent (in) :: dA_iwall(niwall)
+    !real, intent (in) :: dA_jwall(njwall)
+    !real, intent (in) :: dA_kwall(nkwall)
 
-    real, intent (in) :: dA_iwall(niwall)
-    real, intent (in) :: dA_jwall(njwall)
-    real, intent (in) :: dA_kwall(nkwall)
     real :: visc_lim
 
     real, intent (in) :: V(ni, nj, nk, 3)
@@ -65,8 +67,7 @@ subroutine shear_stress(&
     integer*2, intent (in) :: ijk_jwall(3, njwall)
     integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
-    real, intent(inout) :: fvisc(ni-1, nj-1, nk-1, 5)
-    real :: fvisc_new(ni-1, nj-1, nk-1, 5)
+    real, intent(inout) :: fvisc_new(ni-1, nj-1, nk-1, 5)
     integer :: i
 
     real :: fi(ni, nj-1, nk-1, 3, 5)
@@ -185,19 +186,8 @@ subroutine shear_stress(&
     ! Get the net viscous force on each cell
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
 
-    ! ! Add on wall cell forces due to stress from wall function
-    call wall_function( &
-        fvisc_new, ijk_iwall, 1, cons, Omega, r, dw_iwall, dA_iwall, mu, ni, nj, nk, niwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_jwall, 2, cons, Omega, r, dw_jwall, dA_jwall, mu, ni, nj, nk, njwall &
-    )
-    call wall_function( &
-        fvisc_new, ijk_kwall, 3, cons, Omega, r, dw_kwall, dA_kwall, mu, ni, nj, nk, nkwall &
-    )
-
     ! Apply relaxation
-    fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
+    !fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
 
 end subroutine
 
@@ -262,7 +252,7 @@ end subroutine
 
 ! Add on cell forces due to wall functions
 subroutine wall_function(f, ijk, dirn, cons, &
-        Omega, r, dw, dA, mu, &
+        Omega, r, dw, dA, mu, yplus, &
         ni, nj, nk, nwall)
 
     integer, intent (in)  :: ni
@@ -278,6 +268,7 @@ subroutine wall_function(f, ijk, dirn, cons, &
 
     real, intent (in) :: dw(nwall)
     real, intent (in) :: dA(nwall)
+    real, intent (inout) :: yplus(nwall)
     real, intent (in) :: mu
     real, intent (in) :: Omega
 
@@ -309,9 +300,8 @@ subroutine wall_function(f, ijk, dirn, cons, &
     real :: tauw
     real :: rc
     real :: Rew_lim = 127.53373025e0
+    real :: vtau
 
-    ! real :: yplus
-    ! real :: vtau
 
     a1 = -1.767e-3
     a2 = 3.177e-2
@@ -467,8 +457,8 @@ subroutine wall_function(f, ijk, dirn, cons, &
                 vec = 0e0
             end if
 
-            ! vtau = sqrt(tauw/row)
-            ! yplus = row*vtau*dw(iwall)/mu
+             vtau = sqrt(tauw/row)
+             yplus(iwall) = row*vtau*dw(iwall)/mu
 
             rc = ( &
                 r(ic, jc, kc) &

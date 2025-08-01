@@ -200,7 +200,7 @@ class AnnulusDesigner(util.BaseDesigner):
         m = np.linspace(0.0, self.mmax, self.nseg * npts + 1)
         return self.get_cut_plane(m).transpose(2, 0, 1)
 
-    def get_span(self, m):
+    def get_span(self, m=None):
         """Span of the annulus at a given meridional position.
 
         Parameters
@@ -214,6 +214,8 @@ class AnnulusDesigner(util.BaseDesigner):
             Span of the annulus at the given meridional position.
 
         """
+        if m is None:
+            m = np.arange(1.0, self.mmax)
         xr_span = self.get_cut_plane(m).transpose(1, 2, 0)
         return util.arc_length(xr_span)
 

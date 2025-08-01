@@ -183,10 +183,13 @@ def calculate_nondim(C, ml, vname):
 
     is_compressor = ml.P[1] > ml.P[0]
 
+    Poref = ml.Po_rel[0]
     if is_compressor:
         Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[0]
+        Pref = ml.P[0]
     else:
         Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[1]
+        Pref = ml.P[1]
 
     # Work coefficient
     Cho_rel = (Cs.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
@@ -195,10 +198,14 @@ def calculate_nondim(C, ml, vname):
     # Velocity coefficient
     CVm = C.Vm / ml.V_rel[1]
 
+    Cp = (C.P - Poref) / (Poref - Pref)
+
     if vname == "Mas":
         return Mas
     elif vname == "Ys":
         return Ys
+    elif vname == "Cp":
+        return Cp
     elif vname == "Ma_rel":
         return C.Ma_rel
     elif vname == "Cho":
@@ -207,9 +214,11 @@ def calculate_nondim(C, ml, vname):
         return Cho_rel
     elif vname == "CVm":
         return CVm
-    if vname == "Alpha":
+    elif vname == "Alpha":
         return C.Alpha
-    if vname == "Beta":
+    elif vname == "Alpha_rel":
+        return C.Alpha_rel
+    elif vname == "Beta":
         return C.Beta
     else:
         raise ValueError(f"Unknown variable {vname} requested.")
@@ -264,8 +273,8 @@ class SurfaceDistribution(BasePost):
                 # Extract surface distance and normalise
                 zeta_stag = Ci.zeta_stag
                 # Shift zeta=0 to minimum Mas
-                # if self.variable == "Mas":
-                # zeta_stag -= zeta_stag[np.argmin(y)]
+                if self.variable == "Mas":
+                    zeta_stag -= zeta_stag[np.argmin(y)]
                 # Calculate maximum zeta only on main blade
                 zeta_max = zeta_stag.max(axis=0)
                 zeta_min = np.abs(zeta_stag.min(axis=0))
@@ -306,6 +315,9 @@ class Contour(BasePost):
 
     value: float = 0.5
     """How many points away from the wall."""
+
+    show_mesh: bool = False
+    """Show grid lines."""
 
     irow_ref: int = 0
     """Which row to use for reference quantities."""
@@ -407,6 +419,10 @@ class Contour(BasePost):
         ax.set_aspect("equal")  # Ensures equal scaling
         ax.set_adjustable("box")  # Ensures equal scaling
         ax.axis("off")
+
+        if self.show_mesh:
+            # Show the mesh
+            ax.triplot(*c, triangles, "k-", lw=0.05)
 
         # Make the colorbar
         label = LABELS.get(self.variable, self.variable)
@@ -589,7 +605,7 @@ class StreamtubeLoss(BasePost):
 class InletProfiles(BasePost):
     def post(self, config, pdf):
         # Skip if no inlet profiles are available
-        if not config.inlet.spf:
+        if config.inlet.spf is None:
             return
 
         spf = config.inlet.spf

@@ -44,9 +44,7 @@ class IndependentConfig:
     def _split_nblade_key(self, key):
         assert key.startswith("nblade")
         match = re.match(r"^nblade\[(\d+)\]\[(.*)\]$", key)
-        k1 = match.group(1)  # Row index of the nblade dict
-        k2 = match.group(2)
-        return int(match.group(1)), k2
+        return int(match.group(1)), match.group(2)
 
     def _split_meanline_key(self, key):
         if "[" in key:
@@ -337,6 +335,7 @@ class DesignSpace:
 
         # Fast forward the sampler by the number of samples already taken
         self._nsampled = len(fnames_done)
+        logger.iter(f"Fast forwarding sampler by {self._nsampled}")
         self._sampler.fast_forward(self._nsampled)
 
         # Now exclude any configs that have not ran yet or not converged
@@ -537,6 +536,10 @@ class DesignSpace:
 
         return xg
 
+    def evaluate_samples(self, func):
+        """Evaluate a function over all sampled points in the design space."""
+        return np.array([func(c) for c in self.configs])
+
     def rmse(self, func):
         """Calculate train and test RMSE of a function over samples.
 
@@ -549,7 +552,7 @@ class DesignSpace:
         """
 
         # Extract dependent variable vectors
-        y = np.array([func(c) for c in self.configs])
+        y = self.evaluate_samples(func)
 
         # Split the samples into train and test sets
         # (we shuffled the samples on initialization)

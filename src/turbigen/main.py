@@ -235,14 +235,13 @@ def main():
 
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
 
-        old_nstep = conf.solver.n_step
-
         for iiter in range(conf.max_iter):
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
 
-            if not conf.fac_nstep_initial == 1.0:
+            if conf.fac_nstep_initial != 1.0:
                 if iiter == 0:
+                    old_nstep = conf.solver.n_step
                     conf.solver.n_step = int(old_nstep * conf.fac_nstep_initial)
                     logger.iter(
                         f"Using initial n_step={conf.fac_nstep_initial}*{old_nstep}"
@@ -256,6 +255,9 @@ def main():
             if conf.workdir.exists():
                 shutil.rmtree(conf.workdir)
             conf.workdir.mkdir(parents=True)
+
+            # Write out the config before we begin
+            conf.save()
 
             # If we already have a solution, don't need to
             # run CFD again on first iteration
@@ -321,6 +323,8 @@ def main():
     logger.iter(conf.format_design_vars_table())
 
     logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
+
+    logger.iter(f"Working directory was: {workdir}")
 
     if not converged:
         sys.exit(1)

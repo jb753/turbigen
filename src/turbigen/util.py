@@ -88,10 +88,10 @@ def cumtrapz0(x, *args, axis=-1):
     return np.insert(cumtrapz(x, *args, axis=axis), 0, 0.0, axis=axis)
 
 
-def arc_length(xr):
+def arc_length(xr, axis=1):
     """Arc length along second axis, assuming x/r on first axis"""
-    dxr = np.diff(xr, n=1, axis=1) ** 2.0
-    return np.sum(np.sqrt(np.sum(dxr, axis=0, keepdims=True)), axis=1).squeeze()
+    dxr = np.diff(xr, n=1, axis=axis) ** 2.0
+    return np.sum(np.sqrt(np.sum(dxr, axis=0, keepdims=True)), axis=axis).squeeze()
 
 
 def cum_arc_length(xr, axis=1):
@@ -1098,3 +1098,11 @@ def average(x, axis):
     return 0.5 * (
         np.take(x, range(1, n), axis=axis) + np.take(x, range(0, n - 1), axis=axis)
     )
+
+
+def to_xrrt_ref(xrt, rref):
+    return np.stack((xrt[0], xrt[1], xrt[2] * rref)).copy()
+
+
+def from_xrrt_ref(xrrt_ref, rref):
+    return np.stack((xrrt_ref[0], xrrt_ref[1], xrrt_ref[2] / rref)).copy()

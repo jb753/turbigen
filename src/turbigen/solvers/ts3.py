@@ -288,7 +288,7 @@ class ts3(BaseSolver):
     def run(self, grid, machine, workdir):
         if not workdir.exists():
             workdir.mkdir(parents=True, exist_ok=True)
-        run(grid, self, machine, workdir)
+        self.convergence = run(grid, self, machine, workdir)
 
 
 # Block attributes that must be present
@@ -563,6 +563,10 @@ def _get_patch_kind(patch):
             return 5
     elif isinstance(patch, turbigen.grid.InviscidPatch):
         return 7
+    elif isinstance(patch, turbigen.grid.CuspPatch):
+        # The real TS3 cusp patch appears broken
+        # approximate using inviscid patch
+        return 7
     elif isinstance(patch, turbigen.grid.ProbePatch):
         return 8
     elif isinstance(patch, turbigen.grid.NonMatchPatch):
@@ -710,16 +714,13 @@ def _patch_properties(patch):
     """Make a dictionary of patch properties."""
     pp = {}
     if isinstance(patch, turbigen.grid.InletPatch):
-        if patch.state.shape == ():
-            x = np.ones_like(patch.get_cut().x)
-            pp["pstag"] = patch.state.P * x
-            # So that the TS3->TS4 converter works for real gases
-            pp["tstag"] = patch.state.h / patch.state.cp * x
-            pp["pitch"] = patch.Beta * x
-            pp["yaw"] = patch.Alpha * x
-            pp["fsturb_mul"] = x
-        else:
-            raise NotImplementedError("Inlet shape not supported")
+        x = np.ones_like(patch.get_cut().x)
+        pp["pstag"] = patch.state.P * x
+        # So that the TS3->TS4 converter works for real gases
+        pp["tstag"] = patch.state.h / patch.state.cp * x
+        pp["pitch"] = patch.Beta * x
+        pp["yaw"] = patch.Alpha * x
+        pp["fsturb_mul"] = x
     elif isinstance(patch, turbigen.grid.OutletPatch):
         if patch.force:
             pp["pout"] = patch.Pout * np.ones_like(patch.get_cut().x)

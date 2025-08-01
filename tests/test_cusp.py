@@ -35,6 +35,82 @@ def make_sector():
     return xrt, Nb
 
 
+def test_periodic():
+    xrt, Nb = make_sector()
+
+    L = np.ptp(xrt[0])
+    dtdx = np.tan(np.radians(30.0))
+    xrt[2] += dtdx * xrt[0]
+
+    patches = [
+        turbigen.grid.InletPatch(i=0),
+        turbigen.grid.OutletPatch(i=-1),
+        turbigen.grid.CuspPatch(k=0),
+        turbigen.grid.CuspPatch(k=-1),
+    ]
+
+    block = turbigen.grid.PerfectBlock.from_coordinates(xrt, Nb, patches)
+
+    g = turbigen.grid.Grid([block])
+    g.check_coordinates()
+    g.match_patches()
+
+    # Boundary conditions
+    cp = 1005.0
+    ga = 1.4
+    mu = 1.8e-5
+    Po1 = 1e5
+    To1 = 300.0
+    Alpha = 0.0
+    Beta = 0.0
+    rgas = cp * ga / (ga - 1.0)
+    cv = rgas / ga
+    rho0 = Po1 / (rgas * To1)
+    u0 = cv * To1
+
+    # Set an initial guess
+    block.set_rho_u(rho0, u0)
+    block.Vx = 50.0
+    block.Vr = 0.0
+    block.Vt = 0.0
+    block.cp = cp
+    block.gamma = ga
+    block.Omega = 0.0
+    block.mu = mu
+
+    P1 = Po1 * 0.7
+    So1 = turbigen.fluid.PerfectState.from_properties(cp, ga, mu)
+    So1.set_P_T(Po1, To1)
+    g.apply_inlet(So1, Alpha, Beta)
+    g.calculate_wall_distance()
+    g.apply_outlet(P1)
+
+    ember.Ember(
+        n_step=4000,
+        n_step_avg=1000,
+        i_loss=0,
+    ).run(g)
+
+    C = g[0][:, g[0].nj // 2, :]
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.P)
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.To)
+
+    fig, ax = plt.subplots()
+    ax.contourf(C.x, C.rt, C.s)
+
+    fig, ax = plt.subplots()
+    m = ax.contourf(C.x, C.rt, C.Alpha)
+    plt.colorbar(m, ax=ax)
+
+    plt.show()
+
+
 def test_cusp():
     xrt, Nb = make_sector()
 
@@ -49,8 +125,8 @@ def test_cusp():
         turbigen.grid.OutletPatch(i=-1),
         turbigen.grid.PeriodicPatch(k=0, i=(ite, -1)),
         turbigen.grid.PeriodicPatch(k=-1, i=(ite, -1)),
-        turbigen.grid.CuspPatch(k=0, i=(icusp, ite)),
-        turbigen.grid.CuspPatch(k=-1, i=(icusp, ite)),
+        turbigen.grid.CuspPatch(k=0, i=(icusp + 1, ite)),
+        turbigen.grid.CuspPatch(k=-1, i=(icusp + 1, ite)),
     ]
 
     pitch = 2.0 * np.pi / float(Nb)
@@ -124,29 +200,20 @@ def test_cusp():
     g.apply_outlet(P1)
 
     ember.Ember(
-        n_step=2000,
+        n_step=4000,
         n_step_avg=1000,
         i_loss=0,
     ).run(g)
 
-    C = g[0][:, nj // 2, :]
-    fig, ax = plt.subplots()
-    ax.plot(C.x[:, 0], C.P[:, (0, -1)], "k-")
-    ax.plot(C.x[(ite, ite), 0], C.P[ite, (0, -1)], "r*", label="ite")
-    ax.plot(C.x[(icusp, icusp), 0], C.P[icusp, (0, -1)], "bo", label="icusp")
-    ax.legend()
+    C = g[0][:, g[0].nj // 2, :]
+    P = C.P[:, (0, -1)]
 
-    C = g[0][:, nj // 2, :]
-    fig, ax = plt.subplots()
-    m = ax.contourf(
-        C.x,
-        C.rt,
-        C.P,
+    # Should be unloaded from icusp+1 onwards
+    Ptol = 1e-6 * P1
+    assert (np.abs(np.diff(P[icusp + 1 :, :], axis=-1)) < Ptol).all(), (
+        "Cusp patch not unloaded correctly"
     )
-    plt.colorbar(m)
-    ax.axis("equal")
-    plt.show()
 
 
 if __name__ == "__main__":
-    test_cusp()
+    test_periodic()

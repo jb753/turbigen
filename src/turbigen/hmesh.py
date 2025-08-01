@@ -5,6 +5,7 @@ import turbigen.geometry
 from turbigen import clusterfunc
 import turbigen.mesh
 import dataclasses
+import matplotlib.pyplot as plt
 
 logger = util.make_logger()
 
@@ -14,6 +15,7 @@ class H(turbigen.mesh.Mesher):
     """Generate a mesh using H topology for each row."""
 
     recluster: bool = False
+    slip_cusp: bool = False
 
     ER_stream: float = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
@@ -21,7 +23,7 @@ class H(turbigen.mesh.Mesher):
     AR_stream: float = 2.0
     """Aspect ratio in blade-to-blade plane of cells at outlet boundary."""
 
-    AR_passage: float = 1.6
+    AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
     AR_merid: float = 1.0
@@ -39,7 +41,7 @@ class H(turbigen.mesh.Mesher):
     ni_TE: int = 9
     """Number of streamwise points across trailing edge."""
 
-    dm_TE: float = 0.04
+    dm_TE: float = 0.05
     """Normalised meridional length over which to cluster the TE points, 0. for
     the true actual TE."""
 
@@ -168,6 +170,7 @@ class H(turbigen.mesh.Mesher):
                 )
 
             nj = len(span_frac)
+            logger.info(f"irow={irow}, nj={nj}")
 
             # Streamwise grid
             # From LE/TE/bcond spacings and ER
@@ -340,11 +343,9 @@ class H(turbigen.mesh.Mesher):
                     assert (pitch_frac_clust <= 1.0).all()
 
                 for j in range(nj):
-                    nchord = 5000
+                    nchord = 10000
                     m = util.cluster_cosine(nchord)
-                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(
-                        span_frac[j], m=m, AR_cusp=mesh_config.AR_cusp
-                    )
+                    xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
 
                     assert np.all(xrt_u[2] >= xrt_l[2])
 
@@ -368,6 +369,27 @@ class H(turbigen.mesh.Mesher):
                         ],
                         Theta_max=mesh_config.skew_max,
                     )[:2]
+
+            # At this point we have xrt coords for upper and lower
+            # surfaces all the way to the boundaries
+            # Take the opportunity to add cusps
+            xrt_ul = np.stack(
+                np.broadcast_arrays(
+                    xr[0, ..., None],
+                    xr[1, ..., None],
+                    np.moveaxis(theta_lim, 0, -1),
+                )
+            )
+            if mesh_config.AR_cusp:
+                xrt_cusped = add_cusp(
+                    xrt_ul,
+                    ite,
+                    mesh_config.AR_cusp,
+                    mesh_config.ni_cusp,
+                    plot=mesh_config.plot,
+                )
+                xr = xrt_cusped[:2, ...].mean(axis=-1)
+                theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
 
             assert np.isfinite(xr).all()
             assert np.isfinite(pitch_frac_clust).all()
@@ -417,20 +439,6 @@ class H(turbigen.mesh.Mesher):
             assert np.isfinite(pitch_theta)
             assert np.isfinite(theta).all()
 
-            if unbladed[irow]:
-                assert np.allclose(
-                    theta[0, :, :, -1] - theta[0, :, :, 0], pitch_theta, rtol=1e-4
-                )
-            else:
-                assert np.allclose(
-                    theta[0, : (ile + 1), :, -1] - theta[0, : (ile + 1), :, 0],
-                    pitch_theta,
-                    rtol=1e-4,
-                )
-                assert np.allclose(
-                    theta[0, ite:, :, -1] - theta[0, ite:, :, 0], pitch_theta, rtol=1e-4
-                )
-
             xrt_now = np.concatenate([xr3, theta], axis=0)
 
             # Make periodic patches
@@ -440,21 +448,29 @@ class H(turbigen.mesh.Mesher):
                     turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
                 ]
             else:
+                if mesh_config.ni_cusp:
+                    icusp = ite + mesh_config.ni_cusp - 1
+                    ite -= 1
+                else:
+                    icusp = ite
                 patches = [
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
                     turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
-                    turbigen.grid.PeriodicPatch(i=(ite, -1), k=0),
-                    turbigen.grid.PeriodicPatch(i=(ite, -1), k=-1),
+                    turbigen.grid.PeriodicPatch(i=(icusp, -1), k=0),
+                    turbigen.grid.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
-                if nicusp := mesh_config.ni_cusp:
+                if mesh_config.AR_cusp:
+                    logger.info("Adding cusps")
+                    assert mesh_config.ni_cusp > 0
+                    cusp_type = (
+                        turbigen.grid.InviscidPatch
+                        if mesh_config.slip_cusp
+                        else turbigen.grid.CuspPatch
+                    )
                     patches.extend(
                         [
-                            turbigen.grid.CuspPatch(
-                                i=(ite - nicusp, ite), k=0, label="cusp_k0"
-                            ),
-                            turbigen.grid.CuspPatch(
-                                i=(ite - nicusp, ite), k=-1, label="cusp_nk"
-                            ),
+                            cusp_type(i=(ite, icusp), k=0, label="cusp_k0"),
+                            cusp_type(i=(ite, icusp), k=-1, label="cusp_nk"),
                         ]
                     )
 
@@ -497,10 +513,16 @@ class H(turbigen.mesh.Mesher):
         if mesh_config.plot:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots()
             nj = g[0].shape[1]
             jplot = nj // 2
 
+            fig, ax = plt.subplots()
+            ax.axis("equal")
+            for b in g:
+                ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
+                ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
+
+            fig, ax = plt.subplots()
             for ib, b in enumerate(g):
                 ARi = b.cell_ARi[:, jplot, 0]
                 ARj = b.cell_ARj[:, jplot, 0]
@@ -510,9 +532,20 @@ class H(turbigen.mesh.Mesher):
                 ax.plot(x, ARi, color="C0", label="i")
                 ax.plot(xc, ARj, color="C1", label="j")
                 ax.plot(xc, ARk, color="C2", label="k")
-                print(
+                logger.info(
                     f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
                 )
+
+            iplot, jplot, kplot = mesh_config.plot
+            fig, ax = plt.subplots()
+            ax.axis("equal")
+            for ib, b in enumerate(g):
+                x = b.x[:, jplot, :]
+                rt = b.rt[:, jplot, :]
+                ax.plot(x, rt, "k-", lw=0.5)
+                ax.plot(x[iplot, kplot], rt[iplot, kplot], "b*", lw=0.5)
+                ax.plot(x.T, rt.T, "k-", lw=0.5)
+
             plt.show()
 
         return g
@@ -577,6 +610,9 @@ class H(turbigen.mesh.Mesher):
         assert np.isclose(x[0], 0.0)
         assert np.isclose(x[-1], 1.0)
         assert np.all(dx > 0.0)
+        ERout = dx[1:] / dx[:-1]
+        ERout[ERout < 1.0] = 1.0 / ERout[ERout < 1.0]
+        assert np.all(ERout <= self.ER_pitch)
         assert np.isfinite(x).all()
 
         if resample:
@@ -685,9 +721,19 @@ class H(turbigen.mesh.Mesher):
 
             # free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
 
-            t_downstream = clusterfunc.single.free(
-                dm_downstream_TE, dm_boundary[-1] * L[1], self.ER_stream, 0.0, L[1]
-            )
+            try:
+                t_downstream = clusterfunc.single.free(
+                    dm_downstream_TE, dm_boundary[-1] * L[1], self.ER_stream, 0.0, L[1]
+                )
+            except turbigen.clusterfunc.exceptions.ClusteringException:
+                t_downstream = clusterfunc.single.free(
+                    dm_downstream_TE,
+                    dm_boundary[-1] * L[1],
+                    self.ER_stream,
+                    0.0,
+                    L[1],
+                    mult=1,
+                )
 
             # for _ in range(20):
             #     try:
@@ -824,7 +870,7 @@ def _theta_limits(
     # Skew the mesh upstream of LE and downstream of TE
     dtheta_skew = np.zeros_like(theta_u)
     ind_up = tq < mlim[0]
-    ind_dn = tq > mlim[1]
+    ind_dn = tq >= mlim[1]
     Theta_now = np.clip(Theta, -Theta_max, Theta_max)
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():
@@ -840,3 +886,211 @@ def _theta_limits(
     theta_l += dtheta_skew
 
     return theta_u, theta_l, tte
+
+
+def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
+    """Change block coordinates from square TE to cusped TE.
+
+    This assumes that the trailing edge is located exactly
+    at ni_TE points upstream of the zero-thicknes point of the blade
+    (achieve this by setting dm_TE to 0.0 and ni_TE > 0 in config.)
+
+    """
+
+    assert AR_cusp > 0.0
+
+    nj = xrt.shape[2]
+    jmid = nj // 2
+
+    # Convert to xrrt
+    rref = xrt[1, iTE, jmid, 0]
+    xrrt = util.to_xrrt_ref(xrt, rref)
+
+    assert np.allclose(xrt[2, iTE, :, 0], xrt[2, iTE, :, 1])
+
+    # Plot old coords
+    if plot:
+        fig, ax = plt.subplots()
+        ax.plot(
+            xrrt[0, :, jmid, (0, -1)].T,
+            xrrt[2, :, jmid, (0, -1)].T,
+            "r-",
+            lw=0.5,
+            alpha=0.2,
+        )
+        ax.plot(xrrt[0, iTE, jmid, 0], xrrt[2, iTE, jmid, 0], "go")
+
+    # Determine if the exit angle is +ve or -ve
+    plus_exit = np.diff(xrrt[2, iTE : iTE + 2, jmid, 0]).item() > 0.0
+    logger.debug(f"{plus_exit=}")
+
+    is_axial = bool(
+        np.ptp(xrrt[0, iTE : iTE + 2, jmid, 0])
+        > np.ptp(xrrt[1, iTE : iTE + 2, jmid, 0])
+    )
+    logger.info(f"{is_axial=}")
+
+    # Find both corners of the trailing edge
+    istlook = iTE - 12
+    if plus_exit:
+        # Look for turning point on lower surface
+        ilower = istlook + np.argmax(xrrt[2, istlook:iTE, jmid, 0]).item()
+        # Extrapolate lower surface to TE
+        if is_axial:
+            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, 0], axis=0)
+            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, 0], axis=0)
+            grad = dt / dx
+            xrrt[2, ilower + 1 : iTE + 1, :, 0] = xrrt[2, ilower, :, 0] + grad * (
+                xrrt[0, ilower + 1 : iTE + 1, :, 0] - xrrt[0, ilower, :, 0]
+            )
+
+        else:
+            raise NotImplementedError()
+        logger.debug(f"{ilower=}, iTE={iTE}")
+        xrrt_TE = np.moveaxis(xrrt[:, iTE - 10 : iTE + 1, :, :], -1, 0)
+    else:
+        # Look for turning point on upper surface
+        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, jmid, -1]).item()
+        # Extrapolate lower surface to TE
+        if is_axial:
+            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, -1], axis=0)
+            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, -1], axis=0)
+            grad = dt / dx
+            xrrt[2, ilower : iTE + 1, :, -1] = xrrt[2, ilower, :, -1] + grad * (
+                xrrt[0, ilower : iTE + 1, :, -1] - xrrt[0, ilower, :, -1]
+            )
+
+        else:
+            raise NotImplementedError()
+        xrrt_TE = np.stack(
+            (
+                xrrt[:, iTE - 10 : iTE + 1, :, 0],
+                xrrt[:, iTE - 10 : iTE + 1, :, -1],
+            )
+        )
+
+    # Extrapolate the lower surface to
+
+    if plot:
+        ax.plot(xrrt_TE[:, 0, :, jmid], xrrt_TE[:, 2, :, jmid], "b-x")
+
+    # Centre of trailing edge
+    xrrt_cent = np.mean(xrrt_TE[:, :, -1], axis=0)
+
+    # Vectors across TE and along camber line
+    # xrrt_TE is indexed[side, coord, i, j]
+    vec_TE = xrrt_TE[0, :, -1] - xrrt_TE[1, :, -1]
+    logger.info(vec_TE.shape)
+    W_TE = util.vecnorm(vec_TE)
+    vec_TE /= W_TE
+    vec_cam = np.mean(np.diff(xrrt_TE[:, :, -2:, :], axis=2), axis=0).squeeze()
+    vec_cam /= util.vecnorm(vec_cam)
+    logger.info(f"{W_TE[jmid]=}")
+
+    # Find cusp point
+    L_cusp = AR_cusp * W_TE
+    logger.info(f"L_cusp={L_cusp.mean():.3g}")
+    xrrt_point = xrrt_cent + L_cusp * vec_cam
+
+    if plot:
+        ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
+        ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
+        plt.axis("equal")
+
+    # Now get the coordinates to be added
+    f_cusp = np.linspace(0.0, 1.0, ni_cusp).reshape(1, -1, 1)
+
+    xrrt_cusp = (
+        f_cusp * xrrt_point[None, :, None, :]
+        + (1.0 - f_cusp) * xrrt_TE[:, :, None, -1, :]
+    )
+    if plot:
+        for xrrtci in xrrt_cusp:
+            ax.plot(xrrtci[0, :, jmid], xrrtci[2, :, jmid], "g^-")
+
+    # Now make the grid spacing at TE match
+    for j in range(nj):
+        m_TE = util.cum_arc_length(xrrt_TE[0, :, :, j])
+        dm_TE = np.diff(m_TE, axis=0)
+        dm_end = dm_TE[-2].mean()
+        dm_start = dm_TE[0].mean()
+        m_TE_new = clusterfunc.double.fixed(
+            dm_start,
+            dm_end,
+            len(m_TE),
+            0.0,
+            m_TE[-1],
+        )
+        for k in range(2):
+            for c in range(3):
+                xrrt[c, iTE - len(m_TE_new) + 1 : iTE + 1, j, k] = np.interp(
+                    m_TE_new, m_TE, xrrt_TE[k, c, :, j]
+                )
+
+    xrrt_new = np.concatenate(
+        (xrrt[:, : iTE + 1, :, :], np.moveaxis(xrrt_cusp, 0, -1)[:, 1:]), axis=1
+    )
+
+    # Shift the downstream coordiates to new theta TE
+    dtheta_TE = xrrt_new[2, -1, :, 0] - xrrt[2, iTE, :, 0]
+    xrrt_extra = xrrt[:, iTE:, :, :].copy()
+    xrrt_extra[2] += dtheta_TE.reshape(1, -1, 1)
+
+    # Define a curvilinear meridional coordinate along xrrt_extra
+    # m_extra[i, j]
+    m_extra = util.cum_arc_length(xrrt_extra[:2, :, :, 0])
+
+    # Find the value of m that corresponds to cusp point
+    m_point = np.zeros((nj,))
+    nidown = xrrt_extra.shape[1] - ni_cusp + 1
+    xrrt_new_down = np.zeros((3, nidown, nj, 2))
+    if np.abs(vec_cam[0]).mean() > np.abs(vec_cam[1]).mean():
+        # Mostly axial, interpolate using x
+        for j in range(nj):
+            m_point = np.interp(xrrt_point[0, j], xrrt_extra[0, :, j, 0], m_extra[:, j])
+            # Theta offset required to exactly align TE
+
+            dt_point = xrrt_point[2, j] - np.interp(
+                m_point, m_extra[:, j], xrrt_extra[2, :, j, 0]
+            )
+            dt = np.interp(m_extra[:, j], [m_point, m_extra[-1, j]], [dt_point, 0.0])
+
+            xrrt_extra[2, :, j, :] += dt.reshape(-1, 1)
+
+            L = m_extra[-1, j] - m_point
+
+            dm_start = util.cum_arc_length(xrrt_new[:2, -2:, j, 0])[-1]
+            dm_end = m_extra[-1, j] - m_extra[-2, j]
+            clu = clusterfunc.double.fixed(
+                dm_start, dm_end, nidown, m_point, m_point + L
+            )
+
+            for ii in range(3):
+                xrrt_new_down[ii, :, j, :] = np.interp(
+                    clu, m_extra[:, j], xrrt_extra[ii, :, j, 0]
+                )[:, None]
+
+    else:
+        raise NotImplementedError()
+
+    xrrt_new = np.concatenate((xrrt_new[:, :-1, :, :], xrrt_new_down), axis=1)
+
+    if plot:
+        ax.plot(
+            xrrt_new[0, :, jmid, (0, -1)].T,
+            xrrt_new[2, :, jmid, (0, -1)].T,
+            "k.-",
+            lw=0.5,
+            ms=1.0,
+        )
+        ax.plot(
+            xrrt_extra[0, :, jmid, (0, -1)].T,
+            xrrt_extra[2, :, jmid, (0, -1)].T,
+            "k-",
+            lw=0.5,
+        )
+
+    # Convert back to xrt
+    xrt_new = util.from_xrrt_ref(xrrt_new, rref)
+
+    return xrt_new

@@ -85,13 +85,15 @@ class Ember(turbigen.solvers.base.BaseSolver):
     smooth4: float = 0.01
     """Fourth-order smoothing factor."""
 
+    Tu0: float = 0.0
+
     smooth2_adapt: float = 1.0
     """Second-order smoothing factor, adaptive on pressure."""
 
     smooth2_const: float = 0.0
     """Second-order smoothing factor, constant throughout the flow."""
 
-    smooth_ratio_min: float = 0.5
+    smooth_ratio_min: float = 0.1
     """Largest directional reduction in smoothing on a non-isotropic grid. Unity disables directional scaling."""
 
     CFL: float = 0.65
@@ -151,7 +153,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     K_mix: float = 0.1
     """Relaxation factor for mixing plane."""
 
-    sf_mix: float = 0.01
+    sf_mix: float = 0.001
     """Smoothing factor for uniform enthalpy and entropy downstream of mixing plane."""
 
     print_conv: bool = True
@@ -178,17 +180,18 @@ class Ember(turbigen.solvers.base.BaseSolver):
         return self.replace(
             damping_factor=3.0,
             smooth2_adapt=1.0,
-            smooth4=0.02,
+            smooth4=0.01,
+            smooth_ratio_min=1.0,
             fmgrid=0.0,
-            CFL=0.4,
+            CFL=0.3,
             i_scheme=0,
+            n_step=self.n_step_ramp,
+            n_step_avg=1,
         )
 
     def restart(self):
         """Create a copy of the config to smoothly restart."""
-        return self.replace(
-            n_step_ramp=0,
-        )
+        return self.replace(n_step_ramp=0)
 
     def run(self, grid, machine=None, workdir=None):
         logger.debug(
@@ -197,6 +200,10 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
         del machine, workdir
         conf = self
+
+        for b in grid:
+            if self.Tu0:
+                b.set_Tu0(self.Tu0)
 
         logger.info("Initialising ember...")
         t1 = timer()
@@ -219,6 +226,16 @@ class Ember(turbigen.solvers.base.BaseSolver):
         periodics = get_periodics(grid, procids, typ)
         mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
         cusps = get_cusps(grid, procids)
+
+        # Disable multigrid on cusps
+        for cusp in cusps:
+            blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
+
+        # for mixer in mixers:
+        #     blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        # for block in blocks:
+        #     for bcond in block.bconds:
+        #         block.local_disable_multigrid(bcond.ijk_cell - 1)
 
         # Split into lists for each procid
         block_split = []
@@ -266,21 +283,29 @@ class Ember(turbigen.solvers.base.BaseSolver):
             ),
             np.nan,
         )
-        nnow = conf.n_step
         for b in blocks_out:
             for bc in b.bconds:
                 mhos_now = np.array(bc.convergence_log).T
-                nnow = mhos_now.shape[-1]
+                mhos_now = np.append(
+                    mhos_now,
+                    np.full((3, conf.n_step - mhos_now.shape[1]), np.nan),
+                    axis=1,
+                )
                 if isinstance(bc, InletBoundary):
-                    mhos[0, :, :nnow] = mhos_now
+                    mhos[0] = mhos_now
                 elif isinstance(bc, OutletBoundary):
-                    mhos[1, :, :nnow] = mhos_now
+                    mhos[1] = mhos_now
 
         istep = np.arange(conf.n_step)
         istep_avg = conf.n_step - conf.n_step_avg
         resid = np.concatenate(dUlog, axis=0)[:, 0]
-        state_conv = blocks_out[0].state.empty(shape=(2, nnow))
-        state_conv.set_h_s(mhos[:, 1, :], mhos[:, 2, :])
+        if (conf.n_step - resid.shape[0]) > 0:
+            resid = np.append(
+                resid,
+                np.full((conf.n_step - resid.shape[0],), np.nan),
+            )
+        state_conv = blocks_out[0].state.empty(shape=(2, conf.n_step))
+        state_conv.set_h_s(mhos[:, 1], mhos[:, 2])
         conv = turbigen.solvers.base.ConvergenceHistory(
             istep, istep_avg, resid, mhos[:, 0], state_conv
         )
@@ -307,6 +332,19 @@ class Ember(turbigen.solvers.base.BaseSolver):
             )
         else:
             merr = -1.0
+
+        # Print yplus on all blocks
+        logger.info("Calculating yplus...")
+        for b in blocks_out:
+            yplus = np.concatenate(b.yplus)
+            dA = np.concatenate(b.dA_face)
+            A = np.sum(dA)
+            if not A:
+                continue
+            yplus_av = np.sum(yplus * dA) / np.sum(dA)
+            logger.info(
+                f"Block {b.bid}: A-avg yplus={yplus_av:.1f}, median yplus={np.median(yplus):.1f}"
+            )
 
         self.convergence = conv  # , tpnps, merr
 
@@ -381,6 +419,7 @@ class SolverBlock:
             state.mu = self.cast_scalar(block.mu)
             state.set_rho_u(block.rho, block.u)
             state.set_Tu0(block.Tu0)
+            logger.info(f"Tu0={state.Tu0:.3g}K")
         else:
             raise NotImplementedError()
 
@@ -454,14 +493,16 @@ class SolverBlock:
         self.Pref = self.cast_scalar(self.state.P.mean())
 
         # Intialise from geometry after data transfer
-        self.dA_wall_face = self.get_wall_area_magnitude()
+        self.dA_face = self.get_wall_area_magnitude()
         self.set_dummy_ijk()
+        self.yplus = [self.preallocate(dA.shape) for dA in self.dA_face]
 
         # Preallocate
         self.u = self.preallocate()
         self.Vxrt = self.preallocate(self.shape + (3,))
         self.cons_avg = self.preallocate(self.shape + (5,))
         self.fb = self.preallocate(self.shape_cell + (5,))
+        self.fb_new = self.preallocate(self.shape_cell + (5,))
         self.dUc = self.preallocate(self.shape_cell + (5, 2))
         self.dUn = self.preallocate(self.shape + (5,))
         self.dt_vol = self.dlmin * 0.0
@@ -471,6 +512,7 @@ class SolverBlock:
             self.preallocate((ni - 1, nj, nk - 1, 3, 5)),
             self.preallocate((ni - 1, nj - 1, nk, 3, 5)),
         ]
+        self.net_flow = self.preallocate((ni - 1, nj - 1, nk - 1, 5))
 
     def set_dummy_ijk(self):
         """Where the lists of wall faces have zero length, set sentinel values."""
@@ -480,7 +522,7 @@ class SolverBlock:
                 ijkdum = np.asfortranarray(-np.ones((3, 1))).astype(np.int16)
                 self.ijk_wall_face_slip[n] = ijkdum
                 self.dw_face[n] = self.cast_array(np.ones((1,)))
-                self.dA_face[n] = self.cast_array(np.ones((1,)))
+                self.dA_face[n] = self.cast_array(np.zeros((1,)))
 
     def get_data_type(self):
         """Return configured single or double numeric data type."""
@@ -592,6 +634,27 @@ class SolverBlock:
 
         return dlmg
 
+    def local_disable_multigrid(self, ijk):
+        """Zero coarse multigrid lengths corresponding to given fine indices.
+
+        This results in zero time step and henced disables multigrid.
+
+        The indices are one-based."""
+
+        assert ijk.shape[0] == 3
+        assert ijk.ndim == 2
+
+        # Loop over the cell indices to zero
+        for i, j, k in ijk.T:
+            # Look up the coarse indices
+            ijkb = self.ijk_multigrid[:, i, j, k, :].T - 1
+
+            # Zero the coarse volumes
+            nlev = ijkb.shape[0]
+            for ilev in range(1, nlev):
+                ib, jb, kb = ijkb[ilev]
+                self.dlmin[ib, jb, kb, ilev] = 0.0
+
     def get_xlength(self, block):
         # Mixing length limit
         xllim = (
@@ -629,7 +692,7 @@ class SolverBlock:
             np.sqrt((self.dAj**2).sum(axis=-1)),
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
-        self.dA_face = [
+        return [
             ember.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
@@ -645,19 +708,44 @@ class SolverBlock:
             CFL,
         )
 
-    def set_fluxes(self):
-        ember.set_fluxes(
+    def add_pressure_fluxes(self):
+        ember.add_pressure_fluxes_all(
+            **{
+                "p": self.state.P,
+                "pref": self.Pref,
+                "ri": self.rf[0],
+                "rj": self.rf[1],
+                "rk": self.rf[2],
+                "omega": self.Omega,
+                "fluxi": self.fluxes[0],
+                "fluxj": self.fluxes[1],
+                "fluxk": self.fluxes[2],
+            }
+        )
+
+    def add_polar_source(self):
+        """Calculate the polar coordinates source term."""
+        ember.add_polar_source(
             **{
                 "cons": self.cons,
                 "vxrt": self.Vxrt,
                 "p": self.state.P,
                 "pref": self.Pref,
+                "r": self.r,
+                "vol": self.vol[..., 0],
+                "fsum": self.net_flow[..., 2],  # Radial momentum eqn
+            }
+        )
+
+    def set_fluxes(self):
+        """Calculate and store convective fluxes through each face."""
+        ember.set_fluxes(
+            **{
+                "cons": self.cons,
+                "vxrt": self.Vxrt,
                 "h": self.state.h,
                 "omega": self.Omega,
                 "r": self.r,
-                "ri": self.rf[0],
-                "rj": self.rf[1],
-                "rk": self.rf[2],
                 "ijk_iwall": self.ijk_wall_face[0],
                 "ijk_jwall": self.ijk_wall_face[1],
                 "ijk_kwall": self.ijk_wall_face[2],
@@ -667,22 +755,25 @@ class SolverBlock:
             }
         )
 
-    def residual(self, fmgrid, damp, ischeme):
-        ember.residual(
+    def integrate_flows(self):
+        """Integrate flux dot dA over all cells to get net flows."""
+        ember.sum_fluxes(
             **{
-                "cons": self.cons,
-                "vxrt": self.Vxrt,
-                "p": self.state.P,
-                "pref": self.Pref,
-                "fb": self.fb,
-                "r": self.r,
+                "fi": self.fluxes[0],
+                "fj": self.fluxes[1],
+                "fk": self.fluxes[2],
                 "dai": self.dAi,
                 "daj": self.dAj,
                 "dak": self.dAk,
-                "fluxi": self.fluxes[0],
-                "fluxj": self.fluxes[1],
-                "fluxk": self.fluxes[2],
-                "vol": self.vol,
+                "fsum": self.net_flow,
+            }
+        )
+
+    def time_step(self, fmgrid, damp, ischeme):
+        ember.residual(
+            **{
+                "fb": self.fb,
+                "fsum": self.net_flow,
                 "dt_vol": self.dt_vol,
                 "ijk_mg": self.ijk_multigrid,
                 "fmgrid": fmgrid,
@@ -737,15 +828,32 @@ class SolverBlock:
             "ijk_iwall": self.ijk_wall_face_slip[0],
             "ijk_jwall": self.ijk_wall_face_slip[1],
             "ijk_kwall": self.ijk_wall_face_slip[2],
-            "dw_iwall": self.dw_face[0],
-            "dw_jwall": self.dw_face[1],
-            "dw_kwall": self.dw_face[2],
-            "da_iwall": self.dA_face[0],
-            "da_jwall": self.dA_face[1],
-            "da_kwall": self.dA_face[2],
-            "fvisc": self.fb,
+            "fvisc_new": self.fb_new,
         }
         ember.shear_stress(**kwargs)
+
+        # Now wall functions
+        for dirn in range(3):
+            if self.dA_face[dirn].shape == (1,):
+                continue
+            ember.wall_function(
+                **{
+                    "f": self.fb_new,
+                    "ijk": self.ijk_wall_face_slip[dirn],
+                    "dirn": dirn + 1,  # Fortran indexing
+                    "cons": self.cons,
+                    "omega": self.Omega,
+                    "r": self.r,
+                    "dw": self.dw_face[dirn],
+                    "da": self.dA_face[dirn],
+                    "mu": self.mu,
+                    "yplus": self.yplus[dirn],
+                }
+            )
+
+        # Relax
+        rf = 0.2
+        self.fb = self.fb * (1.0 - rf) + self.fb_new * rf
 
 
 class Cusp:
@@ -755,21 +863,58 @@ class Cusp:
         match = patch.match
 
         assert patch.get_cut().shape == match.get_cut().shape
+        assert patch.get_cut().shape[2] == 1
 
         self.pid = pid
         self.bid = patch.block.grid.index(patch.block)
         self.nxbid = match.block.grid.index(match.block)
 
-        self.ijk = ijk = np.asfortranarray(patch.get_indices().reshape(3, -1)).astype(
-            np.int16
-        )
-        self.nxijk = nxijk = np.asfortranarray(
-            match.get_indices().reshape(3, -1)
-        ).astype(np.int16)
-
+        # Extract matching node indices
         # Add one for 1-based Fortran indices
-        self.ijk += 1
-        self.nxijk += 1
+        ijk = patch.get_indices() + 1
+        nxijk = match.get_indices() + 1
+
+        def flatten(x):
+            return np.asfortranarray(x.reshape(3, -1)).astype(np.int16)
+
+        # Indices to apply nodal periodicity
+        self.ijk_node = flatten(ijk[:, :, :, :])
+        self.nxijk_node = flatten(nxijk[:, :, :, :])
+
+        # Indices into k-faces for flux periodicity
+        # Exclude last i and j values from matching indices
+        self.ijk_face = flatten(ijk[:, :-1, :-1, :])
+        self.nxijk_face = flatten(nxijk[:, :-1, :-1])
+
+        # Incices into volumes for cell body force periodicity
+        # Patch on k=nk face corresponds to k=nk-1 volume
+        # Also remove the last i and j values
+        if ijk[2].mean() != 1:
+            ijk[2] -= 1
+        if nxijk[2].mean() != 1:
+            nxijk[2] -= 1
+        self.ijk_cell = flatten(ijk[:, :-1, :-1, :])
+        self.nxijk_cell = flatten(nxijk[:, :-1, :-1, :])
+
+        # Volumes
+        vol = np.asfortranarray(patch.block.vol).astype(np.float32)
+        self.zeros = ember.get_by_ijk(vol, self.ijk_cell) * 0.0
+
+        # Projected area components for each face
+        dA = np.moveaxis(patch.block.dAk, 0, -1)
+        nxdA = np.moveaxis(match.block.dAk, 0, -1)
+        # dA = np.asfortranarray(np.tile(dA[..., None], (1, 1, 1, 1, 5))).astype(
+        #     np.float32
+        # )
+        # nxdA = np.asfortranarray(np.tile(nxdA[..., None], (1, 1, 1, 1, 5))).astype(
+        #     np.float32
+        # )
+        dA = np.asfortranarray(dA).astype(np.float32)
+        nxdA = np.asfortranarray(dA).astype(np.float32)
+        self.dA = ember.get_by_ijk(dA, self.ijk_face)
+        self.nxdA = ember.get_by_ijk(nxdA, self.nxijk_face)
+        self.idA = np.abs(self.dA) > 0.0
+        self.nxidA = np.abs(self.nxdA) > 0.0
 
         self.procid = procids[self.bid]
         self.nxprocid = procids[self.nxbid]
@@ -976,22 +1121,71 @@ def exchange_mixing(mixers):
             mixer.Send.Wait()
 
 
-def exchange_cusps(blocks, bid_local, cusps):
+def exchange_cusp_nodes(blocks, bid_local, cusps):
     # Update cusps
 
-    # Loop to populate home buffer and send away buffer
+    # Loop over cusp pairs
     for patch in cusps:
-        # Load flow field into our buffer
-        b1 = blocks[bid_local[patch.bid]].cons
-        C1 = ember.get_by_ijk(b1, patch.ijk)
+        # Blocks on each side
+        b1 = blocks[bid_local[patch.bid]]
+        b2 = blocks[bid_local[patch.nxbid]]
 
-        b2 = blocks[bid_local[patch.nxbid]].cons
-        C2 = ember.get_by_ijk(b2, patch.nxijk)
+        # Now extract values on the patch from the blocks
 
-        # Take average and assign to home block
+        # Nodes
+        C1 = ember.get_by_ijk(b1.cons, patch.ijk_node)
+        C2 = ember.get_by_ijk(b2.cons, patch.nxijk_node)
+
+        # Take mean values
         Cavg = 0.5 * (C1 + C2)
-        ember.set_by_ijk(b1, Cavg, patch.ijk)
-        ember.set_by_ijk(b2, Cavg, patch.nxijk)
+
+        # Assign back to block
+        ember.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
+        ember.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
+
+
+def exchange_cusp_fluxes(blocks, bid_local, cusps):
+    # Update cusps
+
+    # Loop over cusp pairs
+    for patch in cusps:
+        # Blocks on each side
+        b1 = blocks[bid_local[patch.bid]]
+        b2 = blocks[bid_local[patch.nxbid]]
+
+        # Now extract values on the patch from the blocks
+        # ifluxes = (0, 1, 2, 3, 4)
+        ifluxes = (0, 1, 2, 3, 4)
+
+        for iflux in ifluxes:
+            # faces
+            ember.set_by_ijk(b1.fb[..., iflux], patch.zeros, patch.ijk_cell)
+            ember.set_by_ijk(b2.fb[..., iflux], patch.zeros, patch.nxijk_cell)
+
+            # k-face fluxes
+            F1 = ember.get_by_ijk(b1.fluxes[2][..., iflux], patch.ijk_face)
+            F2 = ember.get_by_ijk(b2.fluxes[2][..., iflux], patch.nxijk_face)
+
+            # Multiply by areas to get flows
+            # Note that get_by_ijk returns one long array of all
+            # components concatenated along the same dimesion, so
+            # we do not need to do a dot product
+            m1 = F1 * patch.dA
+            m2 = F2 * patch.nxdA
+
+            # Take mean values
+            mavg = 0.5 * (m1 + m2)
+
+            F1new = mavg[patch.idA] / patch.dA[patch.idA]
+            F2new = mavg[patch.nxidA] / patch.nxdA[patch.nxidA]
+
+            # Convert back to fluxes
+            F1[patch.idA] = F1new
+            F2[patch.nxidA] = F2new
+
+            # Assign back to block
+            ember.set_by_ijk(b1.fluxes[2][..., iflux], F1, patch.ijk_face)
+            ember.set_by_ijk(b2.fluxes[2][..., iflux], F2, patch.nxijk_face)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1130,7 +1324,7 @@ def run_slave(
 
             # Exchange conserved variables across periodic patches
             exchange_periodic(blocks, bid_local, periodics)
-            exchange_cusps(blocks, bid_local, cusps)
+            exchange_cusp_nodes(blocks, bid_local, cusps)
 
             # Update boundary conditions and calculate residual for all blocks
             for iblock in range(nblock):
@@ -1140,13 +1334,12 @@ def run_slave(
                 sb.set_secondary()
 
                 # Check for NaNs
-                if not np.mod(istep, 1):
-                    if np.any(np.isnan(sb.cons)):
-                        _, i, j, k = np.mean(np.argwhere(np.isnan(sb.cons)), axis=0)
-                        logger.iter(
-                            f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
-                        )
-                        sys.exit(3)
+                if np.any(np.isnan(sb.cons)):
+                    i, j, k = np.argwhere(np.isnan(sb.cons[..., 0])).mean(axis=0)
+                    logger.iter(
+                        f"NaN at step {istep} in block {iblock} i={i} j={j} k={k}"
+                    )
+                    sys.exit(3)
 
                 # Accumulate time average
                 if istep >= istep_avg:
@@ -1169,12 +1362,26 @@ def run_slave(
                 else:
                     damp = 1e6
 
-                # Calculate the fluxes
+                # Calculate the convective fluxes through all faces
+                sb.set_fluxes()
+
+            exchange_cusp_fluxes(blocks, bid_local, cusps)
+
+            for iblock in range(nblock):
+                sb = blocks[iblock]
+
+                # Add pressure fluxes
+                sb.add_pressure_fluxes()
+
+                # Integrate the net flows into each cell
+                sb.integrate_flows()
+
+                # Plus the polar coordinates radial momentum source term
+                sb.add_polar_source()
 
                 # Sum fluxes for each cell and distribute to the nodes
                 i_scheme = -1 if not istep else conf.i_scheme
-                sb.set_fluxes()
-                sb.residual(
+                sb.time_step(
                     conf.fmgrid * fmgrid_ramp,
                     damp,
                     i_scheme,
@@ -1289,6 +1496,8 @@ class Boundary:
     def __init__(self, patch, K):
         """Set up the boundary condition using a patch object."""
 
+        self.smooth_flag = False
+
         # Store slicing data for this patch so we can exchange
         # information with the block on which the patch resides
         self.slice = patch.get_slice()
@@ -1356,6 +1565,23 @@ class Boundary:
         # Initialise a perturbation
         self.perturb = turbigen.perturb.Perturbation(self.state)
 
+        # Node indices
+        ijk_node = patch.get_indices().reshape(3, -1)
+        ijk_max = np.reshape(patch.block.shape, (3, 1)) - 1
+        ijk_cell = ijk_node.copy()
+
+        # If we are on a const-i patch, and i=imax
+        # then move those indices back one to correspond to last i cell
+        # Same for other directions
+        c = patch.cdir
+        ijk_cell[c, ijk_cell[c, :] == ijk_max[c, 0]] -= 1
+
+        # If we are on a const-i patch, discard j=jmax and k=kmax
+        c2 = np.setdiff1d((0, 1, 2), c)
+        ijk_cell = ijk_cell[:, (ijk_cell[c2, :] != ijk_max[c2, :]).all(axis=0)]
+
+        self.ijk_cell = np.asfortranarray(ijk_cell + 1).astype(np.int16)
+
     def record_flows(self):
         """Append mass flow and mass-averaged ho and s to convergence log."""
         flux_mass = self.state.flux_mass * self.Nb
@@ -1365,6 +1591,46 @@ class Boundary:
         hodot = np.sum(self.wA * flux_mass * ho).astype(float) / mdot
         sdot = np.sum(self.wA * flux_mass * s).astype(float) / mdot
         self.convergence_log.append((mdot, hodot, sdot))
+
+    def pitchwise_average(self, y):
+        """Area-average a variable in the circumferential direction."""
+        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
+
+    def smooth_pitchwise(self, sf, ind):
+        """Force ho, s, and Beta to be uniform in circumferential direction.
+
+        Directly change conserved variables, not chics.
+
+        """
+
+        # Get the average values
+        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
+        s_avg = self.pitchwise_average(self.state.s)[..., None]
+        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
+
+        # Get the differences
+        dho = ho_avg - self.state.ho
+        ds = s_avg - self.state.s
+        dtanBe = tanBe_avg - self.state.tanBeta
+
+        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
+        # Do not need to change Alpha because periodic
+        # Cannot control static P because set by upstream-running chic
+        # So they are both zero
+        Z = np.zeros_like(dho)
+        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
+
+        # Conversion matrices
+        prim_to_inlet = self.perturb.primitive_to_bcond
+        prim_to_cons = self.perturb.primitive_to_conserved
+        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
+
+        # Calculate conserved changes
+        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
+        dcons_relaxed = sf * dcons[:, ind, ...]
+
+        # Set the changes in the buffer
+        self.dUn[:, ind, ...] += dcons_relaxed
 
     def pull(self, block):
         """Update stored state using solution from parent block."""
@@ -1408,6 +1674,23 @@ class Boundary:
 
         # Send the nodal changes back to the block
         self.dUn[:] = dcons[..., 0]
+
+        # Damp the inlet/outlet residuals to prevent small local instability
+        damp = 25.0
+        dUn_abs = np.abs(self.dUn)
+        if dUn_abs.all():
+            dUn_avg = np.mean(dUn_abs, axis=(0, 1, 2), keepdims=True)
+            self.dUn[:] = self.dUn / (1 + dUn_abs / (damp * dUn_avg))
+
+        # # Reduce changes on j and k edges
+        # fac = 1.0 / np.sqrt(2)
+        # for ind in (0, 1, -2, -1):
+        #     self.dUn[:, ind, :, :] *= fac
+        #     self.dUn[:, :, ind, :] *= fac
+
+        # if self.smooth_flag:
+        #     self.smooth_pitchwise(1e-5, slice(None))
+
         self.push(block)
 
     def slice_inward(self):
@@ -1513,6 +1796,8 @@ class InletBoundary(Boundary):
             )
             self.bcond_target = bcond_target[..., None]
 
+        self.smooth_flag = True
+
     def slice_inward(self):
         """Index the downstream-running chics (inwards thro inlet)."""
         return slice(1, None, None)
@@ -1584,42 +1869,6 @@ class MixingBoundary(Boundary):
     def is_outlet(self):
         return np.logical_not(self.is_inlet)
 
-    def smooth_pitchwise(self):
-        """Force ho, s, and Beta to be uniform in circumferential direction.
-
-        Directly change conserved variables, not chics.
-
-        """
-
-        # Get the average values
-        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
-        s_avg = self.pitchwise_average(self.state.s)[..., None]
-        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
-
-        # Get the differences
-        dho = ho_avg - self.state.ho
-        ds = s_avg - self.state.s
-        dtanBe = tanBe_avg - self.state.tanBeta
-
-        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
-        # Do not need to change Alpha because periodic
-        # Cannot control static P because set by upstream-running chic
-        # So they are both zero
-        Z = np.zeros_like(dho)
-        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
-
-        # Conversion matrices
-        prim_to_inlet = self.perturb.primitive_to_bcond
-        prim_to_cons = self.perturb.primitive_to_conserved
-        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
-
-        # Calculate conserved changes
-        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
-        dcons_relaxed = self.sf_mix * dcons[:, self.is_inlet, ...]
-
-        # Set the changes in the buffer
-        self.dUn[:, self.is_inlet, ...] += dcons_relaxed
-
     def setup_communication(self, comm, mpi_typ):
         if self.procid == self.nxprocid:
             return
@@ -1633,10 +1882,6 @@ class MixingBoundary(Boundary):
             source=self.nxprocid,
             tag=self.nxpid,
         )
-
-    def pitchwise_average(self, y):
-        """Area-average a variable in the circumferential direction."""
-        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
     def fill_buffer(self):
         """Prepare pitch-avg fluxes and conserved vars to send."""
@@ -1657,7 +1902,8 @@ class MixingBoundary(Boundary):
         self.state_avg.set_conserved(cons_avg)
         self.dflux_avg[:] = -np.expand_dims(dflux.T, (0, 2, -1))
 
-        # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices."""
+        # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices.
+        # Smaller is more agressive and applies larger corrections
         Ma_min = 0.01
         V_min = self.state_avg.a.mean() * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
@@ -1702,6 +1948,10 @@ class MixingBoundary(Boundary):
         # zero the downstream-running chic
         dchic[:, self.is_outlet, :, 1:, 0] = 0.0
 
+        # Smaller changes on the upstream side
+        # Reduce upstream-running chic where we are an outlet
+        # dchic[:, self.is_outlet, :, 0, 0] *= 0.5
+
         return dchic
 
     def apply(self, block):
@@ -1721,7 +1971,7 @@ class MixingBoundary(Boundary):
         # Pitchwise smooth ho, s, and Beta to uniformity
         # By changing dUn in place
         if self.is_inlet.any():
-            self.smooth_pitchwise()
+            self.smooth_pitchwise(self.sf_mix, self.is_inlet)
 
         # Send the nodal changes back to the block
         self.push(block)

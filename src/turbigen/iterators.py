@@ -400,7 +400,7 @@ class Repeat(IteratorConfig):
     To_frac: float = 0.5
     """Fraction of varation in To to pass upstream."""
 
-    rtol: float = 0.002
+    rtol: float = 0.005
     """Relative tolerance for convergence of Po and To."""
 
     atol: float = 0.01
@@ -441,6 +441,7 @@ class Repeat(IteratorConfig):
         # Assemble into a matrix
         spf = C.spf.mean(axis=2).squeeze()
         profiles = np.stack([Po, To, Alpha, Beta], axis=1)[0]
+        nj = len(spf)
 
         # Subtract the meanline values
         avg = np.array([Cm.Po, Cm.To, Cm.Alpha, Cm.Beta])
@@ -464,31 +465,32 @@ class Repeat(IteratorConfig):
 
         # No previous inlet, initialise
         if inlet.spf is None:
-            inlet.profiles = profiles
-            err = np.max(np.abs(profiles[1]))
+            inlet.spf = spf
+            inlet.profiles = np.zeros((4, nj))
 
         # Compare with the previous inlet
-        else:
-            # Interpolate the previous profiles to the new span fraction
-            profiles_old = np.stack(
-                [np.interp(spf, inlet.spf, inlet.profiles[i]) for i in range(4)],
-            )
 
-            # Calculate To errors
-            err = np.max(np.abs(profiles[1] - profiles_old[1]))
+        # Interpolate the previous profiles to the new span fraction
+        profiles_old = np.stack(
+            [np.interp(spf, inlet.spf, inlet.profiles[i]) for i in range(4)],
+        )
 
-            # Apply relaxation factor
-            rf = self.relaxation_factor
-            rf1 = 1.0 - rf
-            inlet.profiles = rf * profiles + rf1 * profiles_old
+        # Calculate To errors
+        err = np.max(np.abs(profiles[1] - profiles_old[1]))
 
+        # Apply relaxation factor to get new profiles
+        rf = self.relaxation_factor
+        rf1 = 1.0 - rf
+        inlet.profiles = rf * profiles + rf1 * profiles_old
         inlet.spf = spf
 
         return bool(err < self.rtol), {"Repeat_dTo": err}
 
     def interpolate(self, config):
         """Use a fitted design space to set repeating profiles."""
-        logger.iter("Interpolating repeating profiles")
+        logger.iter("NOT interpolating repeating profiles")
+        return
+        # logger.iter("Interpolating repeating profiles")
 
         # Define a new span fraction vector
         # Clustered towards the endwalls
@@ -498,16 +500,11 @@ class Repeat(IteratorConfig):
         def extract_profile(config, ivar):
             return np.interp(spf_new, config.inlet.spf, config.inlet.profiles[ivar])
 
-        # Loop over profile variables
-        # And interpolate each from the design space
-        # Apply clipping to the normalised profiles
+        # Loop over profile variables and interpolate each from the design space
+        # Apply clipping and relaxation to the normalised profiles
         clip = [self.dPo_max, self.dTo_max, self.dAlpha_max, self.dBeta_max]
         config.inlet.profiles = np.full((4, len(spf_new)), np.nan)
         for ivar in range(4):
             var = config.design_space.interpolate(extract_profile, config, ivar=ivar)
-            var_clip = np.clip(
-                var,
-                -clip[ivar],
-                clip[ivar],
-            )
-            config.inlet.profiles[ivar] = var_clip
+            var_clip = np.clip(var, -clip[ivar], clip[ivar])
+            config.inlet.profiles[ivar] = var_clip * self.relaxation_factor

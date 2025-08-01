@@ -59,8 +59,12 @@ def get_isen_mach(
     Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
     Mas = Vs / C.a
 
-    # Extract surface distance and normalise to [-1, 1]
-    zeta_stag = C.zeta_stag
+    # Ensure that minimum Mach number is not negative
+    zeta_stag = C.zeta_stag.copy()
+    zeta_stag -= zeta_stag[np.argmin(Mas)]
+    print("beans")
+
+    # Normalise to [-1, 1]
     zeta_max = zeta_stag.max(axis=0)
     zeta_min = np.abs(zeta_stag.min(axis=0))
     zeta_norm = zeta_stag.copy()

@@ -1,0 +1,9 @@
+include:
+  - dspace.yaml
+
+solver:
+  type: ts3
+  # soft_start: true
+  nstep: 10000
+  nstep_avg: 2500
+  ilos: 1

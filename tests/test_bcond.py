@@ -179,7 +179,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    ember.Ember(n_step=5000, n_step_log=100).run(g)
+    ember.Ember(n_step=5000, n_step_log=100, sf_mix=0.01).run(g)
 
     fluxes = []
     for patch in g.mixing_patches:
