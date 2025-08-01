@@ -954,6 +954,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                     bmeta[ip] = {
                         "shape": C.shape,
                         "Omega": C.Omega.mean(),
+                        "Nb": C.Nb,
                         "label": p.label,
                     }
 
@@ -1397,7 +1398,45 @@ def parse_log(fname):
     return istep, mdot, To * cp, Po, resid
 
 
-def read_probe_dat_dir(dname):
+def read_probe_metadata(dname):
+    """Get probe metadata from a directory.
+
+    Parameters
+    ----------
+    dname: string
+        Directory name containing Turbostream 3 probe dat files.
+
+    Returns
+    -------
+
+    probe_meta: dict
+        Dictionary of metadata for each probe, keyed by file name.
+
+    """
+
+    # Get all dat files and their modification times
+    fnames = glob(os.path.join(dname, "*.npz")) + glob(os.path.join(dname, "*.dat"))
+
+    # Strip fnames with duplicate prefix but different suffixes
+    fnames = set(os.path.splitext(f)[0] + ".dat" for f in fnames)
+
+    # Read the metadata yaml
+    probe_meta_path = os.path.join(dname, "probe_meta.yaml")
+    probe_meta = yaml.read_yaml(probe_meta_path)
+
+    # Parse the bid and pid from the file names
+    bid, pid = zip(
+        *(
+            tuple(int(x) for x in os.path.basename(f)[:-4].split("_")[-2:])
+            for f in fnames
+        )
+    )
+
+    # Now assemble the dict keyed by file name
+    return {f: probe_meta[b][p] for f, (b, p) in zip(fnames, zip(bid, pid))}
+
+
+def read_probe_dat_dir(dname, label=None):
     """Load all probe text files in a directory into one big array.
 
     This function will write out an npz into the directory containing the data
@@ -1409,6 +1448,8 @@ def read_probe_dat_dir(dname):
     ----------
     dname: string
         Directory name containing Turbostream 3 probe dat files.
+    label: str
+        If specified, only load probes with this label.
 
     Returns
     -------
@@ -1419,19 +1460,28 @@ def read_probe_dat_dir(dname):
 
     """
 
-    # Get all dat files and their modification times
-    fnames = glob(os.path.join(dname, "*.npz")) + glob(os.path.join(dname, "*.dat"))
+    # Load the metadata first and filter on label if specified
+    metadata = read_probe_metadata(dname)
+    if label:
+        metadata = {f: m for f, m in metadata.items() if label == m["label"]}
+        logger.info(f'Filtered by label "{label}", found {len(metadata)} probes.')
 
-    # Load the dats and save as a pickle
+    # Load first file and get the sampling frequency
+    fnames = list(metadata.keys())
+    if not fnames:
+        return [], None
     data0, fs = read_probe_dat(fnames[0])
     data = [data0]
 
+    # Now loop over the rest of the files
     for f in fnames[1:]:
         try:
             data.append(read_probe_dat(f)[0])
         except Exception as e:
             logger.error(f"Failed to read {f}: {e}")
             continue
+
+    assert len(data) == len(metadata)
 
     return data, fs
 
@@ -1442,6 +1492,8 @@ def read_inlet(fname):
     # Open the file
     f = h5py.File(fname, "r")
     nb = f.attrs["nb"]
+
+    pstag_all = []
 
     # Loop over blocks and patches until we find an inlet
     for ib in range(nb):
@@ -1461,7 +1513,9 @@ def read_inlet(fname):
                 shape = (ien - ist, jen - jst, ken - kst, nt)[::-1]
                 pstag = np.array(pgrp["pstag_pp"])
                 pstag = np.transpose(pstag.reshape(shape))
-                return pstag
+                pstag_all.append(pstag)
+
+    return pstag_all
 
 
 def read_probe_dat(fname, point=False):
