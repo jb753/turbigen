@@ -153,7 +153,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     K_mix: float = 0.1
     """Relaxation factor for mixing plane."""
 
-    sf_mix: float = 0.01
+    sf_mix: float = 0.001
     """Smoothing factor for uniform enthalpy and entropy downstream of mixing plane."""
 
     print_conv: bool = True
@@ -232,6 +232,9 @@ class Ember(turbigen.solvers.base.BaseSolver):
             blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
         for cusp in cusps:
             blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
+        for block in blocks:
+            for bcond in block.bconds:
+                block.local_disable_multigrid(bcond.ijk_cell - 1)
 
         # Split into lists for each procid
         block_split = []
@@ -1490,6 +1493,8 @@ class Boundary:
     def __init__(self, patch, K):
         """Set up the boundary condition using a patch object."""
 
+        self.smooth_flag = False
+
         # Store slicing data for this patch so we can exchange
         # information with the block on which the patch resides
         self.slice = patch.get_slice()
@@ -1584,6 +1589,46 @@ class Boundary:
         sdot = np.sum(self.wA * flux_mass * s).astype(float) / mdot
         self.convergence_log.append((mdot, hodot, sdot))
 
+    def pitchwise_average(self, y):
+        """Area-average a variable in the circumferential direction."""
+        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
+
+    def smooth_pitchwise(self, sf, ind):
+        """Force ho, s, and Beta to be uniform in circumferential direction.
+
+        Directly change conserved variables, not chics.
+
+        """
+
+        # Get the average values
+        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
+        s_avg = self.pitchwise_average(self.state.s)[..., None]
+        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
+
+        # Get the differences
+        dho = ho_avg - self.state.ho
+        ds = s_avg - self.state.s
+        dtanBe = tanBe_avg - self.state.tanBeta
+
+        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
+        # Do not need to change Alpha because periodic
+        # Cannot control static P because set by upstream-running chic
+        # So they are both zero
+        Z = np.zeros_like(dho)
+        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
+
+        # Conversion matrices
+        prim_to_inlet = self.perturb.primitive_to_bcond
+        prim_to_cons = self.perturb.primitive_to_conserved
+        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
+
+        # Calculate conserved changes
+        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
+        dcons_relaxed = sf * dcons[:, ind, ...]
+
+        # Set the changes in the buffer
+        self.dUn[:, ind, ...] += dcons_relaxed
+
     def pull(self, block):
         """Update stored state using solution from parent block."""
 
@@ -1626,6 +1671,22 @@ class Boundary:
 
         # Send the nodal changes back to the block
         self.dUn[:] = dcons[..., 0]
+
+        # Damp the inlet/outlet residuals to prevent small local instability
+        damp = 25.0
+        dUn_abs = np.abs(self.dUn)
+        dUn_avg = np.mean(dUn_abs, axis=(0, 1, 2), keepdims=True)
+        self.dUn[:] = self.dUn / (1 + dUn_abs / (damp * dUn_avg))
+
+        # # Reduce changes on j and k edges
+        # fac = 1.0 / np.sqrt(2)
+        # for ind in (0, 1, -2, -1):
+        #     self.dUn[:, ind, :, :] *= fac
+        #     self.dUn[:, :, ind, :] *= fac
+
+        # if self.smooth_flag:
+        #     self.smooth_pitchwise(1e-5, slice(None))
+
         self.push(block)
 
     def slice_inward(self):
@@ -1731,6 +1792,8 @@ class InletBoundary(Boundary):
             )
             self.bcond_target = bcond_target[..., None]
 
+        self.smooth_flag = True
+
     def slice_inward(self):
         """Index the downstream-running chics (inwards thro inlet)."""
         return slice(1, None, None)
@@ -1802,42 +1865,6 @@ class MixingBoundary(Boundary):
     def is_outlet(self):
         return np.logical_not(self.is_inlet)
 
-    def smooth_pitchwise(self):
-        """Force ho, s, and Beta to be uniform in circumferential direction.
-
-        Directly change conserved variables, not chics.
-
-        """
-
-        # Get the average values
-        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
-        s_avg = self.pitchwise_average(self.state.s)[..., None]
-        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
-
-        # Get the differences
-        dho = ho_avg - self.state.ho
-        ds = s_avg - self.state.s
-        dtanBe = tanBe_avg - self.state.tanBeta
-
-        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
-        # Do not need to change Alpha because periodic
-        # Cannot control static P because set by upstream-running chic
-        # So they are both zero
-        Z = np.zeros_like(dho)
-        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
-
-        # Conversion matrices
-        prim_to_inlet = self.perturb.primitive_to_bcond
-        prim_to_cons = self.perturb.primitive_to_conserved
-        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
-
-        # Calculate conserved changes
-        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
-        dcons_relaxed = self.sf_mix * dcons[:, self.is_inlet, ...]
-
-        # Set the changes in the buffer
-        self.dUn[:, self.is_inlet, ...] += dcons_relaxed
-
     def setup_communication(self, comm, mpi_typ):
         if self.procid == self.nxprocid:
             return
@@ -1851,10 +1878,6 @@ class MixingBoundary(Boundary):
             source=self.nxprocid,
             tag=self.nxpid,
         )
-
-    def pitchwise_average(self, y):
-        """Area-average a variable in the circumferential direction."""
-        return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
     def fill_buffer(self):
         """Prepare pitch-avg fluxes and conserved vars to send."""
@@ -1944,7 +1967,7 @@ class MixingBoundary(Boundary):
         # Pitchwise smooth ho, s, and Beta to uniformity
         # By changing dUn in place
         if self.is_inlet.any():
-            self.smooth_pitchwise()
+            self.smooth_pitchwise(self.sf_mix, self.is_inlet)
 
         # Send the nodal changes back to the block
         self.push(block)
