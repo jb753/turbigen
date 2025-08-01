@@ -2182,7 +2182,6 @@ class InletPatch(Patch):
         # Interpolate inlet stagnation quantities
         Poq = (np.interp(spfq, spf, profiles[0]) + 1.0) * self.state.P
         Toq = (np.interp(spfq, spf, profiles[1]) + 1.0) * self.state.T
-        print(Poq.shape)
         self.state = self.state.empty(shape=C.shape)
         self.state.set_P_T(Poq, Toq)
 

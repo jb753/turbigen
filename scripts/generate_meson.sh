@@ -57,4 +57,3 @@ rm emberc.cpython-*.so
 
 # Reinstall turbigen
 uv pip install . --no-cache
-uv pip install -e . --no-build-isolation --no-cache
