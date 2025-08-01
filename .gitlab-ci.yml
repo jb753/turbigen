@@ -14,6 +14,7 @@ before_script:
   - uv venv
   - uv pip install cibuildwheel meson-python line_profiler==4.2.0 .[dev]
   - source .venv/bin/activate
+  - ./scripts/generate_meson.sh
   - mkdir -p plots
 
 build_wheels:
