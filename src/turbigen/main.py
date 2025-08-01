@@ -235,14 +235,13 @@ def main():
 
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
 
-        old_nstep = conf.solver.n_step
-
         for iiter in range(conf.max_iter):
             # Set a numbered iteration workdir
             conf.workdir = basedir / f"{iiter:03d}"
 
-            if not conf.fac_nstep_initial == 1.0:
+            if conf.fac_nstep_initial != 1.0:
                 if iiter == 0:
+                    old_nstep = conf.solver.n_step
                     conf.solver.n_step = int(old_nstep * conf.fac_nstep_initial)
                     logger.iter(
                         f"Using initial n_step={conf.fac_nstep_initial}*{old_nstep}"
