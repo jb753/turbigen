@@ -7,8 +7,10 @@ import turbigen.clusterfunc
 import turbigen.util
 import numpy as np
 import matplotlib.pyplot as plt
+import turbigen.average
 
 import os
+
 if not os.path.exists("tests/fig"):
     os.makedirs("tests/fig")
 

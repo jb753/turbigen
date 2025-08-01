@@ -227,14 +227,15 @@ class Ember(turbigen.solvers.base.BaseSolver):
         mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
         cusps = get_cusps(grid, procids)
 
-        # Disable multigrid on mixing planes and cusps
-        for mixer in mixers:
-            blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        # Disable multigrid on cusps
         for cusp in cusps:
             blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
-        for block in blocks:
-            for bcond in block.bconds:
-                block.local_disable_multigrid(bcond.ijk_cell - 1)
+
+        # for mixer in mixers:
+        #     blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        # for block in blocks:
+        #     for bcond in block.bconds:
+        #         block.local_disable_multigrid(bcond.ijk_cell - 1)
 
         # Split into lists for each procid
         block_split = []
@@ -333,10 +334,13 @@ class Ember(turbigen.solvers.base.BaseSolver):
             merr = -1.0
 
         # Print yplus on all blocks
-        logger.info("Calculating yplus on all blocks...")
+        logger.info("Calculating yplus...")
         for b in blocks_out:
             yplus = np.concatenate(b.yplus)
             dA = np.concatenate(b.dA_face)
+            A = np.sum(dA)
+            if not A:
+                continue
             yplus_av = np.sum(yplus * dA) / np.sum(dA)
             logger.info(
                 f"Block {b.bid}: A-avg yplus={yplus_av:.1f}, median yplus={np.median(yplus):.1f}"
@@ -498,6 +502,7 @@ class SolverBlock:
         self.Vxrt = self.preallocate(self.shape + (3,))
         self.cons_avg = self.preallocate(self.shape + (5,))
         self.fb = self.preallocate(self.shape_cell + (5,))
+        self.fb_new = self.preallocate(self.shape_cell + (5,))
         self.dUc = self.preallocate(self.shape_cell + (5, 2))
         self.dUn = self.preallocate(self.shape + (5,))
         self.dt_vol = self.dlmin * 0.0
@@ -823,13 +828,7 @@ class SolverBlock:
             "ijk_iwall": self.ijk_wall_face_slip[0],
             "ijk_jwall": self.ijk_wall_face_slip[1],
             "ijk_kwall": self.ijk_wall_face_slip[2],
-            # "dw_iwall": self.dw_face[0],
-            # "dw_jwall": self.dw_face[1],
-            # "dw_kwall": self.dw_face[2],
-            # "da_iwall": self.dA_face[0],
-            # "da_jwall": self.dA_face[1],
-            # "da_kwall": self.dA_face[2],
-            "fvisc": self.fb,
+            "fvisc_new": self.fb_new,
         }
         ember.shear_stress(**kwargs)
 
@@ -839,7 +838,7 @@ class SolverBlock:
                 continue
             ember.wall_function(
                 **{
-                    "f": self.fb,
+                    "f": self.fb_new,
                     "ijk": self.ijk_wall_face_slip[dirn],
                     "dirn": dirn + 1,  # Fortran indexing
                     "cons": self.cons,
@@ -851,6 +850,10 @@ class SolverBlock:
                     "yplus": self.yplus[dirn],
                 }
             )
+
+        # Relax
+        rf = 0.2
+        self.fb = self.fb * (1.0 - rf) + self.fb_new * rf
 
 
 class Cusp:
@@ -1675,8 +1678,9 @@ class Boundary:
         # Damp the inlet/outlet residuals to prevent small local instability
         damp = 25.0
         dUn_abs = np.abs(self.dUn)
-        dUn_avg = np.mean(dUn_abs, axis=(0, 1, 2), keepdims=True)
-        self.dUn[:] = self.dUn / (1 + dUn_abs / (damp * dUn_avg))
+        if dUn_abs.all():
+            dUn_avg = np.mean(dUn_abs, axis=(0, 1, 2), keepdims=True)
+            self.dUn[:] = self.dUn / (1 + dUn_abs / (damp * dUn_avg))
 
         # # Reduce changes on j and k edges
         # fac = 1.0 / np.sqrt(2)

@@ -5,7 +5,7 @@ subroutine shear_stress(&
     Omega, r, rc, ri, rj, rk, ijk_iwall, ijk_jwall, ijk_kwall, &
     !dw_iwall, dw_jwall, dw_kwall, &
     !dA_iwall, dA_jwall, dA_kwall, &
-    fvisc, ni, nj, nk, niwall, njwall, nkwall)
+    fvisc_new, ni, nj, nk, niwall, njwall, nkwall)
 
     implicit none
 
@@ -67,8 +67,7 @@ subroutine shear_stress(&
     integer*2, intent (in) :: ijk_jwall(3, njwall)
     integer*2, intent (in) :: ijk_kwall(3, nkwall)
 
-    real, intent(inout) :: fvisc(ni-1, nj-1, nk-1, 5)
-    real :: fvisc_new(ni-1, nj-1, nk-1, 5)
+    real, intent(inout) :: fvisc_new(ni-1, nj-1, nk-1, 5)
     integer :: i
 
     real :: fi(ni, nj-1, nk-1, 3, 5)
@@ -188,7 +187,7 @@ subroutine shear_stress(&
     call sum_fluxes(fi, fj, fk, dAi, dAj, dAk, fvisc_new, ni, nj, nk, 5)
 
     ! Apply relaxation
-    fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
+    !fvisc = rfvisc*fvisc_new + rfvisc1*fvisc
 
 end subroutine
 
