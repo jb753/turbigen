@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from turbigen import util
 
-fname = "runs/0052/config.yaml"
+fname = "runs/1119/config.yaml"
 conf = turbigen.config2.TurbigenConfig(**turbigen.yaml.read_yaml(fname))
 dspace = conf.design_space
 
@@ -16,10 +16,15 @@ dspace = conf.design_space
 # d = dspace.datum
 # d.mean_line.setup_mean_line(d.inlet.get_inlet())
 #
-print(dspace.ndof, len(dspace.samples))
+print(dspace.ndof, dspace.nsample)
+
+f = lambda x: x.mean_line_actual["eta_tt"]
+eta_tt = dspace.evaluate_samples(f)
+print(eta_tt.min(), eta_tt.max())
+print(dspace.rmse(f))
 #
-# # f = lambda x: x.mean_line.backward(x.mean_line.nominal)["phi2"]
-f = lambda x: x.mean_line_actual["htr2"]
+# f = lambda x: x.mean_line.backward(x.mean_line.nominal)["phi2"]
+# f = lambda x: x.mean_line_actual["htr2"]
 # print(f(dspace.datum))
 # # print(dspace.interpolate(f, [d,d]))
 xg = dspace.meshgrid(conf, psi=(0.8, 2.4), phi2=(0.4, 1.2)).squeeze()

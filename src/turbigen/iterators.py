@@ -400,7 +400,7 @@ class Repeat(IteratorConfig):
     To_frac: float = 0.5
     """Fraction of varation in To to pass upstream."""
 
-    rtol: float = 0.01
+    rtol: float = 0.005
     """Relative tolerance for convergence of Po and To."""
 
     atol: float = 0.01
@@ -488,9 +488,9 @@ class Repeat(IteratorConfig):
 
     def interpolate(self, config):
         """Use a fitted design space to set repeating profiles."""
-        # logger.iter("Interpolating repeating profiles")
         logger.iter("NOT interpolating repeating profiles")
         return
+        # logger.iter("Interpolating repeating profiles")
 
         # Define a new span fraction vector
         # Clustered towards the endwalls

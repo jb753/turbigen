@@ -536,6 +536,10 @@ class DesignSpace:
 
         return xg
 
+    def evaluate_samples(self, func):
+        """Evaluate a function over all sampled points in the design space."""
+        return np.array([func(c) for c in self.configs])
+
     def rmse(self, func):
         """Calculate train and test RMSE of a function over samples.
 
@@ -548,7 +552,7 @@ class DesignSpace:
         """
 
         # Extract dependent variable vectors
-        y = np.array([func(c) for c in self.configs])
+        y = self.evaluate_samples(func)
 
         # Split the samples into train and test sets
         # (we shuffled the samples on initialization)
