@@ -31,7 +31,7 @@ annulus:
 
 mesh:
   type: h
-  yplus: 60.0
+  yplus: 50.0
   ni_TE: 3
   dm_TE: 0.0
   dspf_mid: 0.05
@@ -41,8 +41,6 @@ mesh:
   ER_stream: 1.3
   ER_pitch: 1.3
   dm_LE: 0.002
-  # resolution_factor: 1.25
-  # plot: [0, 0, 0]
 
 
 blades:
@@ -67,6 +65,7 @@ iterate:
       Ys: 0.01
     relaxation_factor: 1.0
   deviation:
+    tolerance: 0.5
   incidence:
     tolerance: 16.
     relaxation_factor: 0.05
@@ -102,6 +101,6 @@ design_space:
       1:
         Co: [0.6, 0.8]
   order_max: 3
-  nsample_target: 32
+  nsample_target: 512
 
 fac_nstep_initial: 2.0
