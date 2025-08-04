@@ -12,12 +12,15 @@ fi
 # Uninstall existing turbigen
 uv pip uninstall turbigen
 
+# Install required build dependencies
+uv pip install meson-python numpy ninja
+
 # Remove old wrapper files
 rm -f src/ember/*wrapper* src/ember/embercmodule.c
 
 # Run f2py in a temporary directory to generate wrappers
 WORKDIR="tmp_build"
-python3 -m numpy.f2py -m emberc  --opt='-fmax-errors=1 -Werror' -c src/ember/*.f90 --build-dir $WORKDIR
+python3 -m numpy.f2py --backend=meson -m emberc  --opt='-fmax-errors=1 -Werror' -c src/ember/*.f90 --build-dir $WORKDIR
 
 # Move the generated meson.build file to root
 mv $WORKDIR/meson.build meson.build
@@ -53,7 +56,7 @@ echo "install_subdir('src/turbigen', install_dir: py.get_install_dir())" >> meso
 
 # Clean up
 rm -r $WORKDIR
-rm emberc.cpython-*.so
+rm -f emberc.cpython-*.so
 
 # Reinstall turbigen
-uv pip install . --no-cache
+uv pip install . #--no-cache
