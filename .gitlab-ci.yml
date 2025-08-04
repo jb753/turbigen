@@ -19,9 +19,6 @@ variables:
 
 build_test_wheel:
   stage: build
-  variables:
-    DOCKER_HOST: unix:///var/run/docker.sock
-    DOCKER_TLS_CERTDIR: ""
   script:
     - apt update && apt install -y gfortran
     - ./scripts/generate_meson.sh
@@ -39,12 +36,14 @@ tests:
   stage: test
   script:
     - uv pip install dist/*.whl
+    - uv pip install pytest
     - pytest
 
 profile:
   stage: deploy
   script:
     - uv pip install mpi4py
+    - uv pip install line_profiler==4.2.0
     # Serial profiling.
     - OMP_NUM_THREADS=1 LINE_PROFILE=1 turbigen examples/axial_turbine.yaml -I
     - cat profile_output.txt
