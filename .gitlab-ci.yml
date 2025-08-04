@@ -2,7 +2,7 @@ image: python:3.11
 
 stages:
 - build
-# - test
+- test
 # - deploy
 
 variables:
