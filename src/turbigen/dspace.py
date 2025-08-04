@@ -522,19 +522,19 @@ class DesignSpace:
         # Get datum x
         xd = self.independent.get_independent(datum)
 
-        # Assemble coordinate vectors
-        xv = []
+        # Assemble grid vectors
+        xv = {}
         for ik, k in enumerate(self.independent.keys()):
             if k in kwargs:
                 # Get the limits from the keyword argument
-                xv.append(np.linspace(*kwargs[k], N))
+                xv[k] = np.linspace(*kwargs[k], N)
             else:
-                xv.append(np.array([xd[ik]]))
+                xv[k](np.array([xd[ik]]))
 
         # Create a meshgrid of the coordinate vectors
-        xg = np.stack(np.meshgrid(*xv, indexing="ij"))
-
-        return xg
+        return {
+            k: v for k, v in zip(np.meshgrid(*xv.values(), indexing="ij"), xv.keys())
+        }
 
     def evaluate_samples(self, func):
         """Evaluate a function over all sampled points in the design space."""
