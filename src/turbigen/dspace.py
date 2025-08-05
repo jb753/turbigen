@@ -35,6 +35,9 @@ class IndependentConfig:
     nblade: dict = dataclasses.field(default_factory=lambda: ({}))
     """Keyed by row index of dict keyed by blade count parameter, value a limits tuple of (min, max)."""
 
+    tip: dict = dataclasses.field(default_factory=lambda: ({}))
+    """Keyed by row index of tuples of (min, max) for each blade row."""
+
     def __post_init__(self):
         # Check limits are valid
         xlim = self.limits()
@@ -55,11 +58,15 @@ class IndependentConfig:
             k2 = None
         return k1, k2
 
+    def _split_tip_key(self, key):
+        assert key.startswith("tip")
+        return int(key.split("[")[1].split("]")[0])
+
     @property
     def nvar(self):
         """Number of independent variables."""
         # Sum the lengths of all types of independent variables
-        return len(self.mean_line) + len(self.nblade)
+        return len(self.mean_line) + len(self.nblade) + len(self.tip)
 
     def keys(self):
         """Get keys for the independent variables.
@@ -77,6 +84,9 @@ class IndependentConfig:
         for k1 in self.nblade:
             for k2 in self.nblade[k1]:
                 keys.append(f"nblade[{k1}][{k2}]")
+
+        for k in self.tip:
+            keys.append(f"tip[{k}]")
 
         if len(keys) != len(set(keys)):
             raise ValueError("Independent variable keys are not unique.")
@@ -109,6 +119,10 @@ class IndependentConfig:
                 xlim[:, i] = v
                 i += 1
 
+        for v in self.tip.values():
+            xlim[:, i] = v
+            i += 1
+
         return xlim
 
     def get_by_key(self, config, key):
@@ -135,6 +149,10 @@ class IndependentConfig:
             irow, param = self._split_nblade_key(key)
             return getattr(config.nblade[irow], param)
 
+        elif key.startswith("tip"):
+            irow = self._split_tip_key(key)
+            return config.blades[irow][0].tip
+
         else:
             raise ValueError(f"Unknown key: {key}")
 
@@ -153,6 +171,10 @@ class IndependentConfig:
         elif key.startswith("nblade"):
             irow, param = self._split_nblade_key(key)
             setattr(config.nblade[irow], param, value)
+
+        elif key.startswith("tip"):
+            irow = self._split_tip_key(key)
+            config.blades[irow][0].tip = value
 
         else:
             raise ValueError(f"Unknown key: {key}")
@@ -481,6 +503,11 @@ class DesignSpace:
 
         # Get the limits of the design space
         xlim = self.independent.limits()
+        logger.debug(f"Design space limits:")
+        keys = self.independent.keys()
+        for k in keys:
+            ik = keys.index(k)
+            logger.debug(f"  {k}: {xlim[0, ik]} to {xlim[1, ik]}")
 
         # De-normalize the samples
         x = xlim[0] * (1.0 - xnorm) + xlim[1] * xnorm

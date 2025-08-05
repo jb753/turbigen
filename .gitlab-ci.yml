@@ -42,6 +42,7 @@ tests:
 profile:
   stage: deploy
   script:
+    - apt update && apt install -y gfortran libopenmpi-dev
     - uv pip install mpi4py
     - uv pip install line_profiler==4.2.0
     # Serial profiling.
@@ -56,7 +57,7 @@ doc:
     paths:
       - doc/_build
   script:
-    - uv pip install dist/*.whl
+    - uv pip install dist/*.whl sphinx sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
     - uv run doc/generate_examples.py
     - uv run doc/generate_meanline.py
     - uv run doc/generate_data_structures.py

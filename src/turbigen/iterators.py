@@ -488,9 +488,9 @@ class Repeat(IteratorConfig):
 
     def interpolate(self, config):
         """Use a fitted design space to set repeating profiles."""
-        logger.iter("NOT interpolating repeating profiles")
-        return
-        # logger.iter("Interpolating repeating profiles")
+        # logger.iter("NOT interpolating repeating profiles")
+        # return
+        logger.iter("Interpolating repeating profiles")
 
         # Define a new span fraction vector
         # Clustered towards the endwalls
