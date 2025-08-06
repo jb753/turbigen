@@ -1613,14 +1613,31 @@ class Boundary:
         dho = ho_avg - self.state.ho
         ds = s_avg - self.state.s
         dtanBe = tanBe_avg - self.state.tanBeta
-        print(np.abs(dho / ho_avg).mean())
+
+        # We do not want Alpha to be uniform but we need to
+        # damp it down somehow. So just use simple smoothing.
+        Alpha_smoothed = self.state.Alpha.copy()
+        Alpha_smoothed[..., 1:-1] = 0.5 * (
+            self.state.Alpha[..., :-2] + self.state.Alpha[..., 2:]
+        )
+        Alpha_edge = 0.5 * (self.state.Alpha[..., 1] + self.state.Alpha[..., -2])
+        Alpha_smoothed[..., 0] = Alpha_edge
+        Alpha_smoothed[..., -1] = Alpha_edge
+        dtanAl = np.tan(np.radians(Alpha_smoothed)) - self.state.tanAlpha
+        dtanAl *= 1e-6
+
+        # print("***")
+        # print("ho", np.abs(dho / ho_avg).mean())
+        # print("s", np.abs(ds - s_avg).mean() / self.state.rgas)
+        # print("tanBe", np.ptp(self.state.Beta))
+        # print("alpha", np.ptp(self.state.Alpha))
 
         # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
         # Do not need to change Alpha because periodic
         # Cannot control static P because set by upstream-running chic
         # So they are both zero
         Z = np.zeros_like(dho)
-        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
+        dinlet_local = np.stack((dho, ds, dtanAl, dtanBe, Z), axis=-1)[..., None]
 
         # Conversion matrices
         prim_to_inlet = self.perturb.primitive_to_bcond
