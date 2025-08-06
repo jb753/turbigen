@@ -562,6 +562,16 @@ ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
         logger.info(
             f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"
         )
+    else:
+        try:
+            logger.debug(f"Test connection to remote host {remote}...")
+            _execute_on_remote("hostname", remote, via, ntry=0)
+        except Exception:
+            raise Exception(
+                f"""Cannot connect to remote host {remote}
+    If you use an ssh-agent on this machine, you may need to restart it:
+    pkill ssh-agent && eval $(ssh-agent) && ssh-add"""
+            ) from None
 
     # Check we can connect to the AG box
     try:
