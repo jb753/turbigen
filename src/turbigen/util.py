@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
+import gzip
 import os
 import inspect
 import tarfile
@@ -10,6 +11,11 @@ from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
 import re
+
+import pickle
+import tempfile
+from pathlib import Path
+
 
 import logging
 
@@ -1106,3 +1112,53 @@ def to_xrrt_ref(xrt, rref):
 
 def from_xrrt_ref(xrrt_ref, rref):
     return np.stack((xrrt_ref[0], xrrt_ref[1], xrrt_ref[2] / rref)).copy()
+
+
+def safe_pickle_dump(obj, filename, zip, max_retries=3):
+    """Safely writes a pickle file, retrying on keyboard interrupts.
+
+    Parameters
+    ----------
+    obj : object
+        The object to pickle.
+    filename : Path
+        The path to the file where the object will be pickled.
+    zip : bool
+        If True, compress the pickle file using gzip.
+    max_retries : int, optional
+        The maximum number of retries on keyboard interrupts. Default is 3.
+
+    """
+
+    filename = Path(filename).resolve()
+    attempts = 0
+    tmp_path = None  # track for cleanup
+
+    while attempts < max_retries:
+        try:
+            # Create a temp file in the same directory
+            with tempfile.NamedTemporaryFile(
+                dir=filename.parent, delete=False
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                if zip:
+                    with gzip.open(tmp_file, "wb") as f:
+                        pickle.dump(obj, f)
+                else:
+                    pickle.dump(obj, tmp_file)
+
+            # Replace the original file with the completed temp file
+            tmp_path.replace(filename)
+
+            return
+
+        except KeyboardInterrupt:
+            #
+            attempts += 1
+            logger.iter(f"Writing pickle interrupted, retry {attempts}/{max_retries}")
+
+            # Clean up temp file if it exists
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+
+    raise Exception("Maximum number of retries writing pickle.")

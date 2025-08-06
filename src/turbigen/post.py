@@ -30,7 +30,7 @@ class BasePost(ABC):
 
 @dataclasses.dataclass
 class Convergence(BasePost):
-    dn_smooth: int = 11
+    dn_smooth: int = 49
     """Smoothing window for the time series."""
 
     rtol_loss: float = 0.01
@@ -239,12 +239,12 @@ class SurfaceDistribution(BasePost):
         """Plot distribution of a quantity around blade surface."""
 
         # Default to plotting on the designed sections
-        if not (spf := self.spf):
+        if self.spf is not None:
             spf = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
 
         # Loop over rows
         for irow, spfrow in spf.items():
-            if not spfrow:
+            if spfrow is None:
                 continue
 
             # Setup figure
@@ -293,16 +293,6 @@ class SurfaceDistribution(BasePost):
             # Finish this row
             pdf.savefig()
             plt.close()
-        #
-        # _, ax = plt.subplots(layout="constrained")
-        # ax.set_xlim(0, 1)
-        # ax.set_ylim(0, 1)
-        # ax.axis("off")
-        # left = 0.05
-        # ax.set_title("Metadata:")
-        # ax.text(left, 0.95, f"workdir={str(config.workdir)}")
-        # pdf.savefig()
-        # plt.close()
 
 
 @dataclasses.dataclass

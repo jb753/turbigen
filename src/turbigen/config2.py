@@ -1,6 +1,7 @@
 """Initial thoughts on an improved config class."""
 
 import dataclasses
+import traceback
 from copy import deepcopy
 import gzip
 import numpy as np
@@ -162,8 +163,7 @@ class TurbigenConfig:
                     continue
                 else:
                     logger.debug(f"Saving {k} to {fname_pkl}")
-                    with gzip.open(fname_pkl, "wb") as f:
-                        pickle.dump(val, f)
+                    util.safe_pickle_dump(val, fname_pkl, zip=True)
 
         if hasattr(self.mean_line, "actual"):
             data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
@@ -952,6 +952,7 @@ class TurbigenConfig:
         logger.info("Post-processing...")
         if not skip_post:
             self.post_process_all()
+        logger.info("Done post-processing.")
 
     def interpolate_all_iterators(self):
         """Use fitted design space to set values for all iterated variables."""
@@ -1005,4 +1006,4 @@ class TurbigenConfig:
                     poster.post(self, pdf)
                 except Exception as e:
                     logger.error(f"Failed to run post function {poster}")
-                    logger.error(e)
+                    traceback.print_exc()

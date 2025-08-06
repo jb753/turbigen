@@ -26,23 +26,6 @@ readme = "README.md"
 keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "turbine"]
 
 [project.optional-dependencies]
-dev = [
-    'sphinx',
-    'sphinx-autobuild',
-    'sphinx-argparse',
-    'sphinxcontrib-programoutput',
-    'sphinxcontrib-bibtex',
-    'snowballstemmer==2.2.0',
-    'autodocsumm',
-    'pytest',
-    'pre-commit',
-    'build',
-    'cibuildwheel',
-    'twine',
-    'bump-my-version',
-    'setuptools',
-    'meson-python',
-]
 parallel = [
     'mpi4py~=3.1.6',
 ]
@@ -57,7 +40,7 @@ turbigen-autogrid-server = "turbigen.autogrid.server:main"
 turbigen-local-queue= "turbigen.job_server:main"
 
 [build-system]
-requires = ["meson-python", "numpy", ]
+requires = ["meson-python", "numpy", "ninja", "cibuildwheel"]
 build-backend = "mesonpy"
 
 [tool.cibuildwheel]
@@ -87,5 +70,18 @@ message = "Bump version: {current_version} → {new_version}"
 commit_args = ""
 [[tool.bumpversion.files ]]
 filename = "pyproject.toml"
-[tool.pyright]
-reportUndefinedVariable = "none"
+
+[dependency-groups]
+dev = [
+    'sphinx',
+    'sphinx-autobuild',
+    'sphinx-argparse',
+    'sphinxcontrib-programoutput',
+    'sphinxcontrib-bibtex',
+    'snowballstemmer==2.2.0',
+    'autodocsumm',
+    'pytest',
+    'pre-commit',
+    'twine',
+    'bump-my-version',
+]

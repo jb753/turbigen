@@ -1,91 +1,129 @@
 image: python:3.11
 
-# Run in stages, only deploy if the tests pass
 stages:
-- test
 - build
+- test
 - deploy
 
-# Setup env
+
 before_script:
-  - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf pdf2svg
   - curl -LsSf https://astral.sh/uv/install.sh | sh
   - source $HOME/.local/bin/env
   - uv venv
-  - uv pip install cibuildwheel meson-python line_profiler==4.2.0 .[dev]
   - source .venv/bin/activate
-  - ./scripts/generate_meson.sh
-  - mkdir -p plots
 
-build_wheels:
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_TLS_CERTDIR: ""
+
+build_test_wheel:
   stage: build
-  variables:
-    DOCKER_HOST: unix:///var/run/docker.sock
-    DOCKER_TLS_CERTDIR: ""
   script:
-    # Install Docker
-    - ls -li /var/run/docker.sock
+    - apt update && apt install -y gfortran
+    - ./scripts/generate_meson.sh
     - curl -sSL https://get.docker.com/ | sh
-    # Build the wheels
-    - cibuildwheel --platform linux --output-dir dist
-    # Source dist
+    - uv pip install cibuildwheel
+    - cibuildwheel --only cp311-manylinux_x86_64 --output-dir dist .
     - python -m build --sdist
+    - ls -l dist
   artifacts:
-    expire_in: 2 weeks
+    expire_in: 2 hours
     paths:
       - dist
 
-profile:
+tests:
   stage: test
   script:
-    - uv pip install .[parallel]
+    - uv pip install dist/*.whl pytest
+    - pytest
+
+profile:
+  stage: deploy
+  script:
+    - apt update && apt install -y gfortran libopenmpi-dev
+    - uv pip install mpi4py line_profiler==4.2.0 dist/*.whl
     # Serial profiling.
     - OMP_NUM_THREADS=1 LINE_PROFILE=1 turbigen examples/axial_turbine.yaml -I
     - cat profile_output.txt
     # Now parallel benchmarking
     - ./scripts/benchmark.sh
 
-test:
-  stage: test
-  script:
-    - pytest
-
-pypi:
-  stage: deploy
-  script:
-    - ls -l dist
-    - twine upload dist/*
-  only:
-    - master
-
 doc:
-  stage: test
+  stage: deploy
   artifacts:
     paths:
       - doc/_build
   script:
-    - python doc/generate_examples.py
-    - python doc/generate_meanline.py
-    - python doc/generate_data_structures.py
+    - apt update && apt install -y pdf2svg
+    - uv pip install dist/*.whl sphinx sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
+    - uv run doc/generate_examples.py
+    - uv run doc/generate_meanline.py
+    - uv run doc/generate_data_structures.py
     - sphinx-build -W doc doc/_build
 
-pages:
+build_all_wheels:
   stage: deploy
   script:
-    - mv doc/_build public
+    - apt update && apt install -y gfortran
+    - ./scripts/generate_meson.sh
+    - curl -sSL https://get.docker.com/ | sh
+    - uv pip install cibuildwheel
+    - cibuildwheel --platform linux --output-dir dist .
+    - python -m build --sdist
+    - ls -l dist
   artifacts:
+    expire_in: 1 day
     paths:
-      - public
-  only:
-  - master
+      - dist
 
+# #
 #
-# # release_job:
-# #   image: registry.gitlab.com/gitlab-org/release-cli:latest
-# #   rules:
-# #     - if: $CI_COMMIT_TAG                 # Run this job when a tag is created
-# #   script:
-# #     - echo "running release_job"
-# #   release:                               # See https://docs.gitlab.com/ee/ci/yaml/#release for available properties
-# #     tag_name: '$CI_COMMIT_TAG'
-# #     description: '$CI_COMMIT_TAG'
+# before_script:
+#   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf pdf2svg
+#   - curl -LsSf https://astral.sh/uv/install.sh | sh
+#   - source $HOME/.local/bin/env
+#   - uv venv
+#   - uv pip install cibuildwheel meson-python line_profiler==4.2.0 .[dev]
+#   - source .venv/bin/activate
+#   - ./scripts/generate_meson.sh
+#   - mkdir -p plots
+#
+# build_wheels:
+#   stage: build
+#   variables:
+#     DOCKER_HOST: unix:///var/run/docker.sock
+#     DOCKER_TLS_CERTDIR: ""
+#   script:
+#     # Install Docker
+#     - ls -li /var/run/docker.sock
+#     - curl -sSL https://get.docker.com/ | sh
+#     # Build the wheels
+#     - cibuildwheel --platform linux --output-dir dist
+#     # Source dist
+#     - python -m build --sdist
+#   artifacts:
+#     expire_in: 2 weeks
+#     paths:
+#       - dist
+#
+#
+# pypi:
+#   stage: deploy
+#   script:
+#     - ls -l dist
+#     - twine upload dist/*
+#   only:
+#     - master
+#
+#
+# pages:
+#   stage: deploy
+#   script:
+#     - mv doc/_build public
+#   artifacts:
+#     paths:
+#       - public
+#   only:
+#   - master
+#
