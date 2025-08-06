@@ -231,8 +231,9 @@ class Ember(turbigen.solvers.base.BaseSolver):
         for cusp in cusps:
             blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
 
-        # for mixer in mixers:
-        #     blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        for mixer in mixers:
+            blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+
         # for block in blocks:
         #     for bcond in block.bconds:
         #         block.local_disable_multigrid(bcond.ijk_cell - 1)
@@ -1612,6 +1613,7 @@ class Boundary:
         dho = ho_avg - self.state.ho
         ds = s_avg - self.state.s
         dtanBe = tanBe_avg - self.state.tanBeta
+        print(np.abs(dho / ho_avg).mean())
 
         # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
         # Do not need to change Alpha because periodic

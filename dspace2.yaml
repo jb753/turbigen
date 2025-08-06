@@ -1,0 +1,114 @@
+workdir: runs/*
+
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  gamma: 1.33
+
+# Set viscosity by vane Reynolds number
+Re_surf: 5e5
+
+mean_line:
+  type: axial_turbine
+  # Duty
+  mdot: 500.
+  rrms: 1.0
+  # Aerodynamics
+  psi: 1.6
+  phi2: 0.6
+  Ma2: 0.6
+  fac_Ma3_rel: 1.0
+  zeta: [1.0, 1.0]
+  # Guess of loss
+  Ys: [0.05, 0.1]
+
+annulus:
+  type: smooth
+  AR_gap: [2.0, 3.33, 2.0]
+  AR_chord: [2.0, 2.0]
+  smooth: false
+
+mesh:
+  type: h
+  yplus: 40.0
+  ni_TE: 6
+  dm_TE: 0.0
+  dspf_mid: 0.03
+  AR_cusp: 1.2
+  ni_cusp: 8
+  ER_span: 1.2
+  ER_stream: 1.2
+  ER_pitch: 1.2
+  dm_LE: 0.001
+
+
+blades:
+    - spf: 0.5
+      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
+      camber: [0., 0., 0.0]
+    - spf: 0.5
+      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
+      camber: [0., 0., 0.0]
+      tip: 0.00
+
+nblade:
+  - Co: 0.6
+  - Co: 0.6
+
+job:
+  type: local
+
+iterate:
+  mean_line:
+    tolerance:
+      Ys: 0.01
+    relaxation_factor: 1.0
+  deviation:
+    tolerance: 0.5
+  incidence:
+    tolerance: 16.
+    relaxation_factor: 0.05
+  repeat:
+    dPo_max: 0.05
+    dTo_max: 0.05
+    dAlpha_max: 10.
+    dBeta_max: 0.
+
+post_process:
+  - type: inlet_profiles
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel
+  - type: contour
+    coord: m
+    value: [2.05, 4.05]
+    variable: Ys
+
+design_space:
+  independent:
+    mean_line:
+      phi2: [0.4, 1.2]
+      psi: [0.8, 2.4]
+      zeta[0]: [0.9, 1.0]
+      zeta[1]: [1.0, 1.1]
+      Ma2: [0.5, 0.9]
+      fac_Ma3_rel: [0.8, 1.2]
+    nblade:
+      0:
+        Co: [0.6, 0.8]
+      1:
+        Co: [0.6, 0.8]
+  order_max: 3
+  nsample_target: 512
+
+fac_nstep_initial: 2.0
+
+
+
+solver:
+  type: ember
+  n_step: 4000
+  n_step_avg: 1000
+  n_step_ramp: 500

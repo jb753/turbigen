@@ -63,10 +63,10 @@ class Convergence(BasePost):
         CWx = (state.h[1] - state.h[0]) / dhref
 
         # Normalise work and loss as percent
-        # changes with respect to final value
-        dYs = (Ys / Ys[-1] - 1.0) * 100.0
+        # changes with respect to averaged value
+        dYs = (Ys / Ys[conv.istep_avg :].mean() - 1.0) * 100.0
         if meanline.U.any():
-            dCWx = (CWx / CWx[-1] - 1.0) * 100.0
+            dCWx = (CWx / CWx[conv.istep_avg :].mean() - 1.0) * 100.0
         else:
             # Fall back to absolute in a cascade
             dCWx = CWx * 100.0

@@ -3,6 +3,7 @@
 import numpy as np
 
 import turbigen.compflow_native as cf
+import turbigen.average
 import turbigen.fluid
 import turbigen.grid
 import turbigen.solvers.ember as ember
@@ -120,6 +121,7 @@ def make_grid(use_inlet, use_outlet, use_mixing):
 
     # Initial guess with an offset
     mag = 0.01
+    Omega = -Vx / (rm * np.cos(np.radians(Alpha)))
     for ib, b in enumerate(g):
         dV = (ib + 1) * Vx * mag
         dT = (ib + 1) * To1 * mag
@@ -128,7 +130,8 @@ def make_grid(use_inlet, use_outlet, use_mixing):
         b.Vr = -dV
         b.Vt = Vt + dV
         b.set_P_T(P1 + dP, T1 + dT)
-        b.Omega = 0.0
+        b.Omega = Omega * float(ib)
+        print(b.Alpha_rel.mean())
 
     g.match_patches()
 
@@ -179,7 +182,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    ember.Ember(n_step=5000, n_step_log=100, sf_mix=0.01).run(g)
+    ember.Ember(n_step=5000, n_step_log=100, sf_mix=0.02).run(g)
 
     fluxes = []
     for patch in g.mixing_patches:
