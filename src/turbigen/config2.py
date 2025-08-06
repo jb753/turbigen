@@ -274,6 +274,9 @@ class TurbigenConfig:
         # Find all python files recursively in the plugdir
         py_files = list(self.plugdir.rglob("*.py"))
         for py_file in py_files:
+            # Exclude hidden files and directories
+            if any(part.startswith(".") for part in py_file.parts):
+                continue
             try:
                 # Get the module name
                 module_name = py_file.stem
