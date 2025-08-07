@@ -379,6 +379,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         assert np.allclose(Cs.xrt, xrt1)
 
+        # Ensure that Omega is exactly constant
+        # (removing numerical error due to interpolation)
+        Cs.Omega[:] = Cs.Omega.mean()
+
         return Cs
 
     def repeat_pitchwise(self, N, axis=0):
@@ -1527,10 +1531,9 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(
-                block.flatten().xrrt.T,
-                workers=-1,
-            )[0].reshape(block.shape)
+            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
+                0
+            ].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1615,6 +1618,8 @@ class Grid:
 
             out = last_block.empty(shape=triangles.shape[1:])
             out._data[:] = triangles
+            # Ensure Omega is exactly uniform
+            out.Omega[:] = np.mean(out.Omega)
 
             return out
 
@@ -2127,9 +2132,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (nt,), (
-                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
-            )
+            assert np.shape(fac) == (
+                nt,
+            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor

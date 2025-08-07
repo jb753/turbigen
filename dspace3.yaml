@@ -98,7 +98,7 @@ iterate:
     dAlpha_max: 10.
     dBeta_max: 0.
     rtol: 0.001
-    relaxation_factor: 0.8
+    relaxation_factor: 0.5
 
 post_process:
   - type: inlet_profiles
@@ -123,6 +123,6 @@ design_space:
     tip:
       1: [0.005, 0.05]
   order_max: 3
-  nsample_target: 64
+  nsample_target: 16
 
 fac_nstep_initial: 2.0

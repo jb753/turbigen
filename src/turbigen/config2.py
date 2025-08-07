@@ -132,7 +132,7 @@ class TurbigenConfig:
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname=None, overwrite_pkl=True):
+    def save(self, fname=None, overwrite_pkl=True, use_gzip=True):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
@@ -163,7 +163,7 @@ class TurbigenConfig:
                     continue
                 else:
                     logger.debug(f"Saving {k} to {fname_pkl}")
-                    util.safe_pickle_dump(val, fname_pkl, zip=True)
+                    util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
 
         if hasattr(self.mean_line, "actual"):
             data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
@@ -306,8 +306,13 @@ class TurbigenConfig:
         for k in ["grid", "guess"]:
             val = getattr(self, k)
             if isinstance(val, str) and not self._fast_init:
-                with gzip.open(Path(val), "rb") as f:
-                    setattr(self, k, pickle.load(f))
+                try:
+                    with gzip.open(Path(val), "rb") as f:
+                        setattr(self, k, pickle.load(f))
+                except gzip.BadGzipFile:
+                    # If gzip fails, try loading without it
+                    with open(Path(val), "rb") as f:
+                        setattr(self, k, pickle.load(f))
 
         # Convert inlet dict to InletConfig object
         self.inlet = util.init_subclass_by_signature(

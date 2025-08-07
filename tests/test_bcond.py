@@ -121,7 +121,7 @@ def make_grid(use_inlet, use_outlet, use_mixing):
 
     # Initial guess with an offset
     mag = 0.01
-    Omega = Vx / (rm * np.cos(np.radians(Alpha)))
+    Omega = Vx / (rm * np.cos(np.radians(Alpha))) if use_mixing else 0.0
     for ib, b in enumerate(g):
         dV = (ib + 1) * Vx * mag
         dT = (ib + 1) * To1 * mag
@@ -182,7 +182,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    ember.Ember(n_step=5000, n_step_log=100, sf_mix=0.1).run(g)
+    ember.Ember(n_step=5000).run(g)
 
     fluxes = []
     err_ho = []
@@ -202,6 +202,9 @@ def test_mixer():
     )
     err = np.diff(fluxes, axis=0) / flux_ref
     rtol = 2.5e-6
+    print(f"Flux errors: {err.flatten()}")
+    print(f"ho errors: {err_ho}")
+    print(f"s errors: {err_s}")
     assert (np.abs(err) < rtol).all()
     assert (err_ho < rtol).all()
     assert (err_s < rtol).all()
