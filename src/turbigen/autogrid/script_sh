@@ -3,6 +3,9 @@
 #
 QFILE="$1"
 
+# Change to the directory where the meshing script is located
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
 # Make sure that we can access
 chmod -R a+rwx .
 

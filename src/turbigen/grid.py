@@ -173,12 +173,9 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Get signed distance
         dist = util.signed_distance_piecewise(xrc, self.xr)
 
-        # Get j indices above slice
-        jcut = np.argmax(dist > 0, axis=1, keepdims=True) - 1
-
         # Preallocate
         data = self._data
-        nv, ni, nj, nk = self._data.shape
+        nv, ni, nj, nk = data.shape
         data_cut = np.zeros(
             (
                 nv,
@@ -186,6 +183,12 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 nk,
             )
         )
+
+        # Get j indices above slice
+        jcut = np.argmax(dist > 0, axis=1, keepdims=True) - 1
+        if (dist > 0).all():
+            return
+
         for i in range(ni):
             jnow = jcut[i]
             dist_now = dist[i, (jnow, jnow + 1), :]

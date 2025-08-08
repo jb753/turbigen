@@ -11,6 +11,7 @@ import glob
 import json
 import shutil
 import numpy as np
+import turbigen.ssh
 from tempfile import mkdtemp
 from time import sleep
 import turbigen.util
@@ -358,8 +359,7 @@ def _run_remote(
     confjson,
     gbcs_output_dir,
     remote_workdir,
-    remote,
-    via=None,
+    ssh_conn,
     verbose=False,
 ):
     """Copy a geomturbo file to remote and run autogrid on it."""
@@ -370,43 +370,39 @@ def _run_remote(
 
     # Make tmp dir on remote
     logger.debug("Making temp dir on remote ")
-    tmpdir = _execute_on_remote(
-        f"mktemp -p {remote_workdir} -d", remote, via
-    ).splitlines()[0]
+    tmpdir = ssh_conn.run_remote(f"mktemp -p {remote_workdir} -d").stdout.strip()
     logger.debug(tmpdir)
 
     logger.debug("Copying meshing config to remote... ")
     mesh_conf_remote = os.path.join(tmpdir, CONF_NAME)
     mesh_conf_local = os.path.abspath(confjson)
-    _scp_to_remote(mesh_conf_remote, mesh_conf_local, remote, via)
+    ssh_conn.copy_to_remote(mesh_conf_local, mesh_conf_remote)
     logger.debug("Deleting local temp file... ")
 
     # Copy files across
     logger.debug("Copying geometry file... ")
-    _scp_to_remote(
-        os.path.join(tmpdir, "mesh.geomTurbo"), os.path.abspath(geomturbo), remote, via
+    ssh_conn.copy_to_remote(
+        os.path.abspath(geomturbo), os.path.join(tmpdir, "mesh.geomTurbo")
     )
     logger.debug("Copying scripts file... ")
-    _scp_to_remote(tmpdir, " ".join(SCRIPTS), remote, via)
+    ssh_conn.copy_to_remote(" ".join(SCRIPTS), tmpdir)
 
     sleep(0.5)
 
     # Run the shell script
     queuefile = os.path.join(remote_workdir, "queue.txt")
-    logger.debug(f"Adding job to queue file {remote}:{queuefile} and waiting... ")
-    try:
-        _execute_on_remote(
-            "cd %s ; bash %s %s" % (tmpdir, SH_SCRIPT, queuefile), remote, via
-        )
-    except subprocess.CalledProcessError as e:
-        raise e
+    logger.debug(
+        f"Adding job to queue file {ssh_conn.remote_host}:{queuefile} and waiting... "
+    )
+    script_path = os.path.join(tmpdir, SH_SCRIPT)
+    ssh_conn.run_remote("bash %s %s" % (script_path, queuefile), timeout=1800)
 
     # Copy mesh back
     sleep(0.5)
     logger.debug("Copying mesh back... ")
     for ext in ("g", "bcs"):
         remote_mesh_files = os.path.join(tmpdir, f"mesh.{ext}")
-        _scp_from_remote(gbcs_output_dir, remote_mesh_files, remote, via)
+        ssh_conn.copy_from_remote(remote_mesh_files, gbcs_output_dir)
 
     # Check the g and bcs arrived
     logger.debug("Checking g and bcs have arrived... ")
@@ -512,91 +508,18 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
     remote = conf["remote"]
     if not remote:
         raise Exception("No `remote_host` for AutoGrid meshing specified in config.")
-
-    # Check we can connect to the jump host
-    if via:
-        try:
-            logger.debug(f"Test connection to via host {via}...")
-            _execute_on_remote("hostname", via, None, ntry=0)
-        except Exception:
-            raise Exception("Cannot connect to via host %s" % via) from None
-
-        # Check the ssh-agent worker is running on via
-        logger.debug("Searching for ssh-agent pid on via host...")
-        pid = _execute_on_remote(
-            r"""ps aux | grep $(whoami) |  tr -s ' ' | cut -d' ' -f2,11 | grep ssh-agent | cut -d' ' -f1""",
-            via,
-            None,
-            ntry=0,
-        ).strip()
-        logger.debug(f"pid={pid}")
-
-        # Raise an error if the pid is not found
-        if not pid:
-            raise Exception(
-                f"""ssh-agent is not running on via_host: {via}
-You need to start the ssh-agent and enter your key password:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
-            ) from None
-
-        # Insert the ssh-agent pid into the environment
-        os.environ["SSH_AGENT_PID"] = pid
-        logger.debug("Attempting to find $SSH_AUTH_SOCK on via host using command:")
-        cmd_str = f"ls /tmp/ssh-*/agent.{pid[:5]}*"
-        logger.debug(cmd_str)
-
-        os.environ["SSH_AUTH_SOCK"] = sock = _execute_on_remote(
-            cmd_str,
-            via,
-            None,
-            ntry=0,
-        ).strip()
-
-        if not sock:
-            raise Exception(
-                f"""ssh-agent socket not found on via_host: {via}
-You may need to restart the ssh-agent and enter your key password:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
-            )
-
-        logger.info(
-            f"Got SSH_AGENT_PID={os.environ['SSH_AGENT_PID']} SSH_AUTH_SOCK={os.environ['SSH_AUTH_SOCK']}"
-        )
-    else:
-        try:
-            logger.debug(f"Test connection to remote host {remote}...")
-            _execute_on_remote("hostname", remote, via, ntry=0)
-        except Exception:
-            raise Exception(
-                f"""Cannot connect to remote host {remote}
-    If you use an ssh-agent on this machine, you may need to restart it:
-    pkill ssh-agent && eval $(ssh-agent) && ssh-add"""
-            ) from None
-
-    # Check we can connect to the AG box
-    try:
-        logger.debug(f"Test connection to remote host {remote}...")
-        _execute_on_remote("hostname", remote, via, ntry=0)
-    except Exception:
-        if via:
-            raise Exception(
-                f"""Cannot connect to remote host {remote} via {via}.
-You may need to restart the ssh-agent and enter your key password:
-ssh -t {via} 'eval $(ssh-agent) && ssh-add'"""
-            ) from None
-        else:
-            raise Exception(
-                f"""Cannot connect to remote host {remote}
-If you use an ssh-agent on this machine, you may need to restart it:
-pkill ssh-agent && eval $(ssh-agent) && ssh-add"""
-            ) from None
+    # Initialise the SSH connection
+    ssh_conn = turbigen.ssh.SSHConnection(
+        remote_host=remote,
+        via_host=via,
+    )
 
     # Check the AG worker is running on remote
-    try:
-        logger.debug("Checking the AutoGrid server is running...")
-        _execute_on_remote("pgrep ag_server.sh", remote, via, ntry=1).strip()
-    except Exception:
-        raise Exception("ag_server.sh is not running on %s" % remote) from None
+    logger.debug("Checking the AutoGrid server is running...")
+    if ssh_conn.run_remote('ps -e | grep -w "[a]g_server.sh"', check=False).returncode:
+        raise Exception(
+            f"ag_server.sh is not running on {remote}. Please start it first."
+        )
 
     # Check the AG worker is running on remote
     if not conf["remote_workdir"]:
@@ -604,7 +527,7 @@ pkill ssh-agent && eval $(ssh-agent) && ssh-add"""
 
     # Execute the meshing process on remote machine
     success = _run_remote(
-        geomturbo_path, conf_path, tmp_dir, conf["remote_workdir"], remote, via, verbose
+        geomturbo_path, conf_path, tmp_dir, conf["remote_workdir"], ssh_conn, verbose
     )
     if not success:
         return False

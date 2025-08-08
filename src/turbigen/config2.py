@@ -31,6 +31,7 @@ import turbigen.job
 from turbigen import util
 from typing import List
 from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.pyplot as plt
 
 logger = util.make_logger()
 
@@ -1007,3 +1008,5 @@ class TurbigenConfig:
                 except Exception as e:
                     logger.error(f"Failed to run post function {poster}")
                     traceback.print_exc()
+        # Ensure all figures are closed
+        plt.close("all")
