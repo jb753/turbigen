@@ -81,7 +81,7 @@ solver:
   xllim_pitch: 0.01
   K_mix: 0.1
   sf_mix: 0.5
-  sf_Alpha: 0.
+  sf_Alpha: 1e-4
 
 job:
   type: local

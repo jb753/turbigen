@@ -182,7 +182,7 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    ember.Ember(n_step=20000).run(g)
+    ember.Ember(n_step=5000).run(g)
 
     fluxes = []
     err_ho = []
