@@ -1162,3 +1162,29 @@ def safe_pickle_dump(obj, filename, zip, max_retries=3):
                 tmp_path.unlink()
 
     raise Exception("Maximum number of retries writing pickle.")
+
+
+def smooth2(x, axis):
+    """Second-order smoothing along an axis"""
+    xs = x.copy()
+    # Number of points along the smoothing axis
+    n = x.shape[axis]
+    # Interior nodes
+    shape_interior = np.ones(x.ndim, dtype=int)
+    shape_interior[axis] = n - 2
+    np.put_along_axis(
+        xs,
+        np.arange(1, n - 1).reshape(shape_interior),
+        0.5 * (x[..., :-2] + x[..., 2:]),
+        axis=axis,
+    )
+    # Edge nodes (assuming the axis wraps around periodically)
+    shape_edge = np.ones(x.ndim, dtype=int)
+    shape_edge[axis] = 2
+    np.put_along_axis(
+        xs,
+        np.array([0, -1]).reshape(shape_edge),
+        0.5 * (x[..., 1] + x[..., -2])[..., None],
+        axis=axis,
+    )
+    return xs

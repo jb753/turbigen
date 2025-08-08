@@ -102,7 +102,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     n_step: int = 5000
     """Total number of time steps to run."""
 
-    n_step_mix: int = 5
+    n_step_mix: int = 1
     """Number of time steps between mixing plane updates."""
 
     n_step_throttle: int = 5
@@ -150,11 +150,14 @@ class Ember(turbigen.solvers.base.BaseSolver):
     K_inlet: float = 0.5
     """Relaxation factor for inlet boundary."""
 
-    K_mix: float = 0.1
+    K_mix: float = 0.5
     """Relaxation factor for mixing plane."""
 
-    sf_mix: float = 0.001
-    """Smoothing factor for uniform enthalpy and entropy downstream of mixing plane."""
+    sf_mix: float = 0.5
+    """Smoothing factor for pictchwise-uniform ho, s downstream of mixing planes."""
+
+    sf_Alpha: float = 0.0  # 1e-3
+    """Smoothing factor for flow angle downstream of mixing planes."""
 
     print_conv: bool = True
     """Print convergence history in the log."""
@@ -224,7 +227,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
         # procids is a list of length nblocks, of which processor is alocated to each block
         procids = grid.partition(size)
         periodics = get_periodics(grid, procids, typ)
-        mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix)
+        mixers = get_mixers(grid, procids, typ, conf.K_mix, conf.sf_mix, conf.sf_Alpha)
         cusps = get_cusps(grid, procids)
 
         # Disable multigrid on cusps
@@ -233,6 +236,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
 
         # for mixer in mixers:
         #     blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+
         # for block in blocks:
         #     for bcond in block.bconds:
         #         block.local_disable_multigrid(bcond.ijk_cell - 1)
@@ -1034,7 +1038,7 @@ def get_cusps(g, procids):
     return cusps
 
 
-def get_mixers(grid, procids, typ, K_mix, sf_mix):
+def get_mixers(grid, procids, typ, K_mix, sf_mix, sf_Alpha):
     mixers = []
     seen = []
     pid = 0
@@ -1044,15 +1048,18 @@ def get_mixers(grid, procids, typ, K_mix, sf_mix):
         else:
             seen.append(patch)
             seen.append(patch.match)
-        mixers.append(MixingBoundary(patch, pid, procids, typ, K_mix, sf_mix))
+        mixers.append(MixingBoundary(patch, pid, procids, typ, K_mix, sf_mix, sf_Alpha))
         pid += 1
-        mixers.append(MixingBoundary(patch.match, pid, procids, typ, K_mix, sf_mix))
+        mixers.append(
+            MixingBoundary(patch.match, pid, procids, typ, K_mix, sf_mix, sf_Alpha)
+        )
         pid += 1
         mixers[-2].nxpid = mixers[-1].pid
         mixers[-1].nxpid = mixers[-2].pid
         if mixers[-2].procid == mixers[-1].procid:
             mixers[-2].nxbuffer = mixers[-1].buffer
             mixers[-1].nxbuffer = mixers[-2].buffer
+
     return mixers
 
 
@@ -1596,42 +1603,6 @@ class Boundary:
         """Area-average a variable in the circumferential direction."""
         return 0.5 * np.sum((y[..., 1:] + y[..., :-1]) * self.dt, axis=-1) / self.pitch
 
-    def smooth_pitchwise(self, sf, ind):
-        """Force ho, s, and Beta to be uniform in circumferential direction.
-
-        Directly change conserved variables, not chics.
-
-        """
-
-        # Get the average values
-        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
-        s_avg = self.pitchwise_average(self.state.s)[..., None]
-        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
-
-        # Get the differences
-        dho = ho_avg - self.state.ho
-        ds = s_avg - self.state.s
-        dtanBe = tanBe_avg - self.state.tanBeta
-
-        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
-        # Do not need to change Alpha because periodic
-        # Cannot control static P because set by upstream-running chic
-        # So they are both zero
-        Z = np.zeros_like(dho)
-        dinlet_local = np.stack((dho, ds, Z, dtanBe, Z), axis=-1)[..., None]
-
-        # Conversion matrices
-        prim_to_inlet = self.perturb.primitive_to_bcond
-        prim_to_cons = self.perturb.primitive_to_conserved
-        inlet_to_cons = prim_to_cons @ np.linalg.inv(prim_to_inlet)
-
-        # Calculate conserved changes
-        dcons = (inlet_to_cons @ dinlet_local)[..., 0]
-        dcons_relaxed = sf * dcons[:, ind, ...]
-
-        # Set the changes in the buffer
-        self.dUn[:, ind, ...] += dcons_relaxed
-
     def pull(self, block):
         """Update stored state using solution from parent block."""
 
@@ -1823,7 +1794,7 @@ class InletBoundary(Boundary):
 
 
 class MixingBoundary(Boundary):
-    def __init__(self, patch, pid, procids, typ, K_mix, sf_mix):
+    def __init__(self, patch, pid, procids, typ, K_mix, sf_mix, sf_Alpha):
         """Define the mixing boundary with patch and communication info."""
         # Set up the common features of all boundaries
         super().__init__(patch, K_mix)
@@ -1864,6 +1835,7 @@ class MixingBoundary(Boundary):
 
         # Store smoothing factors
         self.sf_mix = sf_mix
+        self.sf_Alpha = sf_Alpha
 
     @property
     def is_outlet(self):
@@ -1904,10 +1876,10 @@ class MixingBoundary(Boundary):
 
         # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices.
         # Smaller is more agressive and applies larger corrections
-        Ma_min = 0.01
-        V_min = self.state_avg.a.mean() * Ma_min
+        Ma_min = 0.001
+        V_min = self.state_avg.a * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
-        self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
+        self.state_avg.Vx[ind_clip] = (V_min * np.sign(self.state_avg.Vx))[ind_clip]
 
     def set_direction(self):
         """Use current avg velocity and normals to get flow direction."""
@@ -1920,7 +1892,8 @@ class MixingBoundary(Boundary):
     def outward_chics(self):
         """Get chics propagating out of domain using local flow dirn."""
         # Transform conserved changes to chics
-        conserved_to_chic = np.expand_dims(self.perturb_avg.conserved_to_chic, (0, 2))
+        # conserved_to_chic = np.expand_dims(self.perturb_avg.conserved_to_chic, (0, 2))
+        conserved_to_chic = self.perturb.conserved_to_chic
         dchic = conserved_to_chic @ self.dUn[..., None]
         # Where the pitch-avg flow is into the domain
         # zero the downstream-running chics
@@ -1934,11 +1907,16 @@ class MixingBoundary(Boundary):
         """Set inward chics to drive flux error to zero at uniform ho and s."""
 
         # First calculate chic changes due to flux error
-        flux_to_chic = np.expand_dims(self.perturb_avg.flux_to_chic, (0, 2))
-        dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
+        flux_to_chic = self.perturb.flux_to_chic
+        dchic = flux_to_chic @ self.dflux_avg
+
+        # flux_to_chic = np.expand_dims(self.perturb_avg.flux_to_chic, (0, 2))
+        # dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
 
         # Relax
         dchic *= self.K
+        # Mam = self.state_avg.Mam[None, :, None, None, None]
+        # dchic *= 1.0 - Mam**2
 
         # Discard the outwards-running chics
         # Where the pitch-avg flow is into the domain like an inlet
@@ -1948,9 +1926,46 @@ class MixingBoundary(Boundary):
         # zero the downstream-running chic
         dchic[:, self.is_outlet, :, 1:, 0] = 0.0
 
-        # Smaller changes on the upstream side
-        # Reduce upstream-running chic where we are an outlet
-        # dchic[:, self.is_outlet, :, 0, 0] *= 0.5
+        # Apply smoothing where we are an inlet
+        if self.is_inlet.any():
+            dchic[:, self.is_inlet, :, :, 0] += self.smooth_chics()[
+                :, self.is_inlet, :, :, 0
+            ]
+
+        return dchic
+
+    def smooth_chics(self):
+        # Get the average values
+        ho_avg = self.pitchwise_average(self.state.ho)[..., None]
+        s_avg = self.pitchwise_average(self.state.s)[..., None]
+        tanBe_avg = self.pitchwise_average(self.state.tanBeta)[..., None]
+
+        # Get the differences
+        dho = ho_avg - self.state.ho
+        ds = s_avg - self.state.s
+        dtanBe = tanBe_avg - self.state.tanBeta
+
+        # We do not want Alpha to be uniform but we need to
+        # damp it down somehow. So just use simple smoothing.
+        dtanAl = (
+            turbigen.util.smooth2(self.state.tanAlpha, axis=-1) - self.state.tanAlpha
+        )
+
+        # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
+        dinlet = np.stack((dho, ds, dtanAl, dtanBe), axis=-1)
+        dinlet[..., 0] *= self.sf_mix
+        dinlet[..., 1] *= self.sf_mix
+        dinlet[..., 2] *= self.sf_Alpha
+        dinlet[..., 3] *= self.sf_mix
+
+        # Convert the bcond changes to chics (only four of them, excluding upstream c1)
+        dchic = self.perturb.inlet_to_chic @ dinlet[..., None]
+        # Mam = self.state_avg.Mam[None, :, None, None, None]
+        # dchic *= 1.0 - Mam**2
+
+        # Prepend a zero for upstream-running wave
+        dc1 = np.zeros(self.shape + (1, 1))
+        dchic = np.concatenate((dc1, dchic), axis=3)
 
         return dchic
 
@@ -1962,16 +1977,12 @@ class MixingBoundary(Boundary):
         dchic_inwards = self.inward_chics()
 
         # Transform to conserved variable changes
-        chic_to_conserved = np.expand_dims(self.perturb_avg.chic_to_conserved, (0, 2))
+        # chic_to_conserved = np.expand_dims(self.perturb_avg.chic_to_conserved, (0, 2))
+        chic_to_conserved = self.perturb.chic_to_conserved
         dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Store the nodal changes
         self.dUn[:] = dcons[..., 0]
-
-        # Pitchwise smooth ho, s, and Beta to uniformity
-        # By changing dUn in place
-        if self.is_inlet.any():
-            self.smooth_pitchwise(self.sf_mix, self.is_inlet)
 
         # Send the nodal changes back to the block
         self.push(block)

@@ -3,6 +3,7 @@
 import numpy as np
 
 import turbigen.compflow_native as cf
+import turbigen.average
 import turbigen.fluid
 import turbigen.grid
 import turbigen.solvers.ember as ember
@@ -120,6 +121,7 @@ def make_grid(use_inlet, use_outlet, use_mixing):
 
     # Initial guess with an offset
     mag = 0.01
+    Omega = Vx / (rm * np.cos(np.radians(Alpha))) if use_mixing else 0.0
     for ib, b in enumerate(g):
         dV = (ib + 1) * Vx * mag
         dT = (ib + 1) * To1 * mag
@@ -128,7 +130,8 @@ def make_grid(use_inlet, use_outlet, use_mixing):
         b.Vr = -dV
         b.Vt = Vt + dV
         b.set_P_T(P1 + dP, T1 + dT)
-        b.Omega = 0.0
+        b.Omega = Omega * float(ib)
+        print("Alpha_rel", b.Alpha_rel.mean())
 
     g.match_patches()
 
@@ -179,20 +182,32 @@ def test_mixer():
 
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=True)
 
-    ember.Ember(n_step=5000, n_step_log=100, sf_mix=0.01).run(g)
+    ember.Ember(n_step=5000).run(g)
 
     fluxes = []
+    err_ho = []
+    err_s = []
     for patch in g.mixing_patches:
-        C = patch.get_cut().mix_out()[0]
-        fluxes.append(C.fluxes)
+        C = patch.get_cut()
+        err_ho.append(np.abs(C.ho / C.ho.mean(axis=-1, keepdims=True) - 1.0).mean())
+        err_s.append(np.abs((C.s - C.s.mean(axis=-1, keepdims=True)) / C.rgas).mean())
+        Cm = C.mix_out()[0]
+        fluxes.append(Cm.fluxes)
+    err_ho = np.array(err_ho)
+    err_s = np.array(err_s)
     fluxes = np.stack(fluxes)
     flux_avg = np.mean(fluxes, axis=0)
     flux_ref = np.array(
-        [flux_avg[0], flux_avg[1], flux_avg[1], C.r * flux_avg[1], flux_avg[-1]]
+        [flux_avg[0], flux_avg[1], flux_avg[1], Cm.r * flux_avg[1], flux_avg[-1]]
     )
     err = np.diff(fluxes, axis=0) / flux_ref
     rtol = 2.5e-6
+    print(f"Flux errors: {err.flatten()}")
+    print(f"ho errors: {err_ho}")
+    print(f"s errors: {err_s}")
     assert (np.abs(err) < rtol).all()
+    assert (err_ho < rtol).all()
+    assert (err_s < rtol).all()
 
 
 if __name__ == "__main__":

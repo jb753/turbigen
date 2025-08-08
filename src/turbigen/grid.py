@@ -333,13 +333,13 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Set up new coordinates
         xr0 = np.reshape((np.min(self.x), np.min(self.r)), (2, 1, 1))
         xr1 = np.reshape((np.max(self.x), np.max(self.r)), (2, 1, 1))
-        eps = 1e-3
+        eps = 1e-5
         clu = (
             (turbigen.util.cluster_cosine(nspan).reshape(1, -1, 1) + eps)
             / (1.0 + eps)
             * (1.0 - eps)
         )
-        xr = clu * xr0 + (1.0 - clu) * xr1
+        xr = clu * xr1 + (1.0 - clu) * xr0
         pitch = self.pitch
         t = -np.linspace(-pitch / 2.0, pitch / 2.0, npitch).reshape(1, -1)
         xrt = np.stack(np.broadcast_arrays(*xr, t), axis=0)
@@ -381,6 +381,10 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         Cs._data[:] = yo
 
         assert np.allclose(Cs.xrt, xrt1)
+
+        # Ensure that Omega is exactly constant
+        # (removing numerical error due to interpolation)
+        Cs.Omega[:] = Cs.Omega.mean()
 
         return Cs
 
@@ -1530,10 +1534,9 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(
-                block.flatten().xrrt.T,
-                workers=-1,
-            )[0].reshape(block.shape)
+            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
+                0
+            ].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -1618,6 +1621,8 @@ class Grid:
 
             out = last_block.empty(shape=triangles.shape[1:])
             out._data[:] = triangles
+            # Ensure Omega is exactly uniform
+            out.Omega[:] = np.mean(out.Omega)
 
             return out
 
@@ -2130,9 +2135,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (nt,), (
-                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
-            )
+            assert np.shape(fac) == (
+                nt,
+            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor

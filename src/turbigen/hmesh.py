@@ -508,6 +508,14 @@ class H(turbigen.mesh.Mesher):
 
         g = turbigen.grid.Grid(blocks)
 
+        # Ensure xr coordinates match exactly at mixing plane
+        for irow in range(0, nrow - 1):
+            xr0 = g[irow].xr[:, -1, :, 0]
+            xr1 = g[irow + 1].xr[:, 0, :, 0]
+            xrav = 0.5 * (xr0 + xr1)
+            g[irow].xr[:, -1, :, :] = xrav[..., None]
+            g[irow + 1].xr[:, 0, :, :] = xrav[..., None]
+
         g.match_patches()
 
         if mesh_config.plot:

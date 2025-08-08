@@ -129,11 +129,14 @@ class TurbigenConfig:
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
 
+    save_iteration_grids: bool = False
+    """Save grid and guess at each iteration to workdir."""
+
     @property
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname=None, overwrite_pkl=True):
+    def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=True):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
@@ -151,7 +154,7 @@ class TurbigenConfig:
         for k in ["grid", "guess"]:
             val = getattr(self, k)
             # If not there remove the key
-            if val is None:
+            if val is None or not write_grids:
                 del data[k]
             else:
                 # Otherwise, save the grid to a separate pickle
@@ -164,7 +167,7 @@ class TurbigenConfig:
                     continue
                 else:
                     logger.debug(f"Saving {k} to {fname_pkl}")
-                    util.safe_pickle_dump(val, fname_pkl, zip=True)
+                    util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
 
         if hasattr(self.mean_line, "actual"):
             data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
@@ -310,8 +313,13 @@ class TurbigenConfig:
         for k in ["grid", "guess"]:
             val = getattr(self, k)
             if isinstance(val, str) and not self._fast_init:
-                with gzip.open(Path(val), "rb") as f:
-                    setattr(self, k, pickle.load(f))
+                try:
+                    with gzip.open(Path(val), "rb") as f:
+                        setattr(self, k, pickle.load(f))
+                except gzip.BadGzipFile:
+                    # If gzip fails, try loading without it
+                    with open(Path(val), "rb") as f:
+                        setattr(self, k, pickle.load(f))
 
         # Convert inlet dict to InletConfig object
         self.inlet = util.init_subclass_by_signature(

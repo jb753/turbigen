@@ -63,10 +63,10 @@ class Convergence(BasePost):
         CWx = (state.h[1] - state.h[0]) / dhref
 
         # Normalise work and loss as percent
-        # changes with respect to final value
-        dYs = (Ys / Ys[-1] - 1.0) * 100.0
+        # changes with respect to averaged value
+        dYs = (Ys / Ys[conv.istep_avg :].mean() - 1.0) * 100.0
         if meanline.U.any():
-            dCWx = (CWx / CWx[-1] - 1.0) * 100.0
+            dCWx = (CWx / CWx[conv.istep_avg :].mean() - 1.0) * 100.0
         else:
             # Fall back to absolute in a cascade
             dCWx = CWx * 100.0
@@ -92,7 +92,7 @@ class Convergence(BasePost):
         ax[1].set_ylim(ylim)
         ax[1].set_yticks(ytick)
         ax[2].plot(conv.istep, dYs, marker="")
-        ax[2].set_ylim(2 * ylim)
+        ax[2].set_ylim(ylim)
         ax[2].set_yticks(ytick)
         ax[2].set_title("dLoss/percent")
 
@@ -192,8 +192,8 @@ def calculate_nondim(C, ml, vname):
         Pref = ml.P[1]
 
     # Work coefficient
-    Cho_rel = (Cs.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
-    Cho = (Cs.ho - ml.ho[0]) / ml.halfVsq[1]
+    Cho_rel = (C.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
+    Cho = (C.ho - ml.ho[0]) / ml.halfVsq[1]
 
     # Velocity coefficient
     CVm = C.Vm / ml.V_rel[1]
@@ -208,6 +208,14 @@ def calculate_nondim(C, ml, vname):
         return Cp
     elif vname == "Ma_rel":
         return C.Ma_rel
+    elif vname == "Mar":
+        return C.Vr / C.a
+    elif vname == "Max":
+        return C.Vx / C.a
+    elif vname == "Mat":
+        return C.Vt / C.a
+    elif vname == "Mam":
+        return C.Vm / C.a
     elif vname == "Cho":
         return Cho
     elif vname == "Cho_rel":

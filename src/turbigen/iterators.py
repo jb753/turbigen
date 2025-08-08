@@ -83,10 +83,16 @@ class Deviation(IteratorConfig):
     def set_independent(self, config, value):
         """Set the mean trailing edge recamber in the configuration."""
         # Loop over rows
+        logger.debug("Dev correction: setting TE recam")
         for recam_new, blade in zip(value, config.blades):
-            recam_old = blade[0].camber[:, 1].mean()
-            blade[0].camber[:, 1] += recam_new - recam_old
-            assert blade[0].camber[:, 1].mean() == recam_new
+            logger.debug(f"  {recam_new=}")
+            recam_old = blade[0].camber[:, 1]
+            logger.debug(f"  {recam_old=}")
+            # Uniform adjustment across span
+            drecam = recam_new.mean() - recam_old.mean()
+            blade[0].camber[:, 1] += drecam
+            logger.debug(f"  recam_corrected={blade[0].camber[:, 1]}")
+            assert np.isclose(blade[0].camber[:, 1].mean(), recam_new.mean())
 
     def update(self, config) -> bool:
         """Move the metal angle to match the exit flow angle."""
@@ -418,14 +424,18 @@ class Repeat(IteratorConfig):
     dPo_max: float = 0.1
     """Clip the variations in Po."""
 
+    Dchord: float = 0.5
+    """Number of chord lengths downstream of last TE to extract profile."""
+
     def check(self, config):
         del config
 
     def update(self, config) -> bool:
         """Pass the outlet profiles upstream."""
 
-        # Cut the outlet patch
-        C = config.grid.outlet_patches[0].get_cut()
+        # Get a cut plane after last TE
+        xr_cut = config.annulus.get_offset_planes(self.Dchord)[-1]
+        C = config.grid.unstructured_cut_marching(xr_cut).interpolate_to_structured()
 
         # Mix out to uniformity to get reference state
         Cm = C.mix_out()[0]
