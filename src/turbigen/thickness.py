@@ -204,7 +204,9 @@ class Taylor(BaseThickness):
             Samples of thickness distribution at the requested points :math:`t(m)`.
 
         """
-        return self._from_shape(m, self.tau(m))
+        t = self._from_shape(m, self.tau(m))
+        assert t.max() <= self.t_max, "Thickness exceeds maximum thickness."
+        return t
 
 
 # class Impeller:

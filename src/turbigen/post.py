@@ -64,9 +64,10 @@ class Convergence(BasePost):
 
         # Normalise work and loss as percent
         # changes with respect to averaged value
-        dYs = (Ys / Ys[conv.istep_avg :].mean() - 1.0) * 100.0
+        istart = np.where(conv.istep == conv.istep_avg)[0][0]
+        dYs = (Ys / Ys[istart:].mean() - 1.0) * 100.0
         if meanline.U.any():
-            dCWx = (CWx / CWx[conv.istep_avg :].mean() - 1.0) * 100.0
+            dCWx = (CWx / CWx[istart:].mean() - 1.0) * 100.0
         else:
             # Fall back to absolute in a cascade
             dCWx = CWx * 100.0

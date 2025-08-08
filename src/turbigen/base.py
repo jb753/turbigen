@@ -9,10 +9,12 @@ def concatenate(sd, axis=0, touching=False):
     out = sd[0].empty()
     data = [sdi._data for sdi in sd]
     # Cut out touching points
+    print(data[0].shape, "data shape before concatenation")
     if touching:
         for i in range(1, len(data)):
             data[i] = np.delete(data[i], 0, axis=axis + 1)
     out._data = np.concatenate(data, axis=axis + 1)
+    print(out._data.shape, "data shape after concatenation")
     out._metadata = sd[0]._metadata
     return out
 
@@ -172,9 +174,7 @@ class StructuredData:
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
         if self._order == "C":
-            return self._data[
-                ind,
-            ]
+            return self._data[ind,]
         else:
             return self._data[..., ind]
 
