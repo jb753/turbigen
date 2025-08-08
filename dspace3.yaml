@@ -77,9 +77,11 @@ solver:
   type: ember
   n_step: 5000 # 2500
   n_step_avg: 1500
-  n_step_mix: 1
   n_step_ramp: 1000
   xllim_pitch: 0.01
+  K_mix: 0.1
+  sf_mix: 0.5
+  sf_Alpha: 0.
 
 job:
   type: local
