@@ -75,13 +75,13 @@ nblade:
 
 solver:
   type: ember
-  n_step: 5000 # 2500
+  n_step: 2500
   n_step_avg: 1500
   n_step_ramp: 1000
   xllim_pitch: 0.01
   K_mix: 0.1
   sf_mix: 0.5
-  sf_Alpha: 1e-4
+  sf_Alpha: 1e-3
 
 job:
   type: local
@@ -89,7 +89,7 @@ job:
 iterate:
   mean_line:
     tolerance:
-      Ys: 0.0005
+      Ys: 0.0004
     relaxation_factor: 1.0
   deviation:
     tolerance: 0.5
@@ -139,4 +139,4 @@ design_space:
 
 fac_nstep_initial: 2.0
 
-save_iteration_grids: true
+save_iteration_grids: false

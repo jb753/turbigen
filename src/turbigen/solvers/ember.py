@@ -1950,6 +1950,8 @@ class MixingBoundary(Boundary):
         dtanAl = (
             turbigen.util.smooth2(self.state.tanAlpha, axis=-1) - self.state.tanAlpha
         )
+        # Only apply Alpha smoothing near hub and casing
+        dtanAl[:, 5:-5, :] = 0.0
 
         # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
         dinlet = np.stack((dho, ds, dtanAl, dtanBe), axis=-1)
