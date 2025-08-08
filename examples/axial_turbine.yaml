@@ -60,8 +60,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 200
-  n_step_avg: 50
+  n_step: 5000
+  n_step_avg: 1000
   # smooth2_adapt: 0.5
 
 # Configure iterative updates of the geometry
@@ -90,7 +90,15 @@ post_process:
   #   m=5 at exit
   - type: contour
     coord: m
-    value: [2.05, 4.05]
+    value: [2.48, 2.52]
+    variable: Alpha
+  - type: contour
+    coord: m
+    value: [2.48, 2.52]
+    variable: Cho
+  - type: contour
+    coord: m
+    value: [2.48, 2.52]
     variable: Ys
   # Mid-span Mach
   - type: contour

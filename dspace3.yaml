@@ -31,6 +31,7 @@ annulus:
 
 mesh:
   type: h
+  skew_max: 1.
   yplus: 40.0
   ni_TE: 3
   dm_TE: 0.0
@@ -75,9 +76,10 @@ nblade:
 
 solver:
   type: ember
-  n_step: 2500
+  n_step: 5000 # 2500
   n_step_avg: 1500
   n_step_ramp: 1000
+  xllim_pitch: 0.01
 
 job:
   type: local
@@ -97,7 +99,7 @@ iterate:
     dTo_max: 0.05
     dAlpha_max: 10.
     dBeta_max: 0.
-    rtol: 0.001
+    rtol: 0.005
     relaxation_factor: 0.5
 
 post_process:
@@ -108,7 +110,15 @@ post_process:
     variable: Ma_rel
   - type: contour
     coord: m
-    value: [2.05, 4.05]
+    value: [0.01, 2.48, 2.52, 4.25]
+    variable: Alpha
+  - type: contour
+    coord: m
+    value: [0.01, 2.48, 2.52, 4.25]
+    variable: Cho
+  - type: contour
+    coord: m
+    value: [0.01, 2.48, 2.52, 4.25]
     variable: Ys
 
 design_space:
@@ -126,3 +136,5 @@ design_space:
   nsample_target: 16
 
 fac_nstep_initial: 2.0
+
+save_iteration_grids: true

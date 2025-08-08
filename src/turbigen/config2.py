@@ -128,11 +128,14 @@ class TurbigenConfig:
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
 
+    save_iteration_grids: bool = False
+    """Save grid and guess at each iteration to workdir."""
+
     @property
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname=None, overwrite_pkl=True, use_gzip=True):
+    def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=False):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.
@@ -150,7 +153,7 @@ class TurbigenConfig:
         for k in ["grid", "guess"]:
             val = getattr(self, k)
             # If not there remove the key
-            if val is None:
+            if val is None or not write_grids:
                 del data[k]
             else:
                 # Otherwise, save the grid to a separate pickle

@@ -257,7 +257,7 @@ def main():
             conf.workdir.mkdir(parents=True)
 
             # Write out the config before we begin
-            # conf.save(use_gzip=False)
+            conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
 
             # If we already have a solution, don't need to
             # run CFD again on first iteration
@@ -271,7 +271,7 @@ def main():
             conf.design_and_run(args.no_solve)
 
             # Write back the config with actual meanline and grid
-            conf.save(use_gzip=False)
+            conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
 
             # Update the config
             conv_all, log_data = conf.step_iterate()

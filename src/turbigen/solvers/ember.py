@@ -150,13 +150,13 @@ class Ember(turbigen.solvers.base.BaseSolver):
     K_inlet: float = 0.5
     """Relaxation factor for inlet boundary."""
 
-    K_mix: float = 0.1
+    K_mix: float = 0.5
     """Relaxation factor for mixing plane."""
 
-    sf_mix: float = 0.05
+    sf_mix: float = 0.5
     """Smoothing factor for pictchwise-uniform ho, s downstream of mixing planes."""
 
-    sf_Alpha: float = 1e-6
+    sf_Alpha: float = 0.0  # 1e-3
     """Smoothing factor for flow angle downstream of mixing planes."""
 
     print_conv: bool = True
@@ -234,8 +234,8 @@ class Ember(turbigen.solvers.base.BaseSolver):
         for cusp in cusps:
             blocks[cusp.bid].local_disable_multigrid(cusp.ijk_cell - 1)
 
-        for mixer in mixers:
-            blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
+        # for mixer in mixers:
+        #     blocks[mixer.bid].local_disable_multigrid(mixer.ijk_cell - 1)
 
         # for block in blocks:
         #     for bcond in block.bconds:
@@ -1059,6 +1059,7 @@ def get_mixers(grid, procids, typ, K_mix, sf_mix, sf_Alpha):
         if mixers[-2].procid == mixers[-1].procid:
             mixers[-2].nxbuffer = mixers[-1].buffer
             mixers[-1].nxbuffer = mixers[-2].buffer
+
     return mixers
 
 
@@ -1875,10 +1876,10 @@ class MixingBoundary(Boundary):
 
         # Limit the minimum absolute throughflow velocity to avoid singular transformation matrices.
         # Smaller is more agressive and applies larger corrections
-        Ma_min = 0.01
-        V_min = self.state_avg.a.mean() * Ma_min
+        Ma_min = 0.001
+        V_min = self.state_avg.a * Ma_min
         ind_clip = np.abs(self.state_avg.Vx) < V_min
-        self.state_avg.Vx[ind_clip] = V_min * np.sign(self.state_avg.Vx[ind_clip])
+        self.state_avg.Vx[ind_clip] = (V_min * np.sign(self.state_avg.Vx))[ind_clip]
 
     def set_direction(self):
         """Use current avg velocity and normals to get flow direction."""
@@ -1891,7 +1892,8 @@ class MixingBoundary(Boundary):
     def outward_chics(self):
         """Get chics propagating out of domain using local flow dirn."""
         # Transform conserved changes to chics
-        conserved_to_chic = np.expand_dims(self.perturb_avg.conserved_to_chic, (0, 2))
+        # conserved_to_chic = np.expand_dims(self.perturb_avg.conserved_to_chic, (0, 2))
+        conserved_to_chic = self.perturb.conserved_to_chic
         dchic = conserved_to_chic @ self.dUn[..., None]
         # Where the pitch-avg flow is into the domain
         # zero the downstream-running chics
@@ -1905,11 +1907,16 @@ class MixingBoundary(Boundary):
         """Set inward chics to drive flux error to zero at uniform ho and s."""
 
         # First calculate chic changes due to flux error
-        flux_to_chic = np.expand_dims(self.perturb_avg.flux_to_chic, (0, 2))
-        dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
+        flux_to_chic = self.perturb.flux_to_chic
+        dchic = flux_to_chic @ self.dflux_avg
+
+        # flux_to_chic = np.expand_dims(self.perturb_avg.flux_to_chic, (0, 2))
+        # dchic = np.tile(flux_to_chic @ self.dflux_avg, (1, 1, self.shape[2], 1, 1))
 
         # Relax
         dchic *= self.K
+        # Mam = self.state_avg.Mam[None, :, None, None, None]
+        # dchic *= 1.0 - Mam**2
 
         # Discard the outwards-running chics
         # Where the pitch-avg flow is into the domain like an inlet
@@ -1946,13 +1953,15 @@ class MixingBoundary(Boundary):
 
         # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
         dinlet = np.stack((dho, ds, dtanAl, dtanBe), axis=-1)
-        dinlet[..., 0] *= self.sf_mix
+        dinlet[..., 0] *= self.sf_mix * 2.0
         dinlet[..., 1] *= self.sf_mix
         dinlet[..., 2] *= self.sf_Alpha
         dinlet[..., 3] *= self.sf_mix
 
         # Convert the bcond changes to chics (only four of them, excluding upstream c1)
-        dchic = self.perturb_avg.inlet_to_chic[None, :, None, :, :] @ dinlet[..., None]
+        dchic = self.perturb.inlet_to_chic @ dinlet[..., None]
+        # Mam = self.state_avg.Mam[None, :, None, None, None]
+        # dchic *= 1.0 - Mam**2
 
         # Prepend a zero for upstream-running wave
         dc1 = np.zeros(self.shape + (1, 1))
@@ -1968,7 +1977,8 @@ class MixingBoundary(Boundary):
         dchic_inwards = self.inward_chics()
 
         # Transform to conserved variable changes
-        chic_to_conserved = np.expand_dims(self.perturb_avg.chic_to_conserved, (0, 2))
+        # chic_to_conserved = np.expand_dims(self.perturb_avg.chic_to_conserved, (0, 2))
+        chic_to_conserved = self.perturb.chic_to_conserved
         dcons = chic_to_conserved @ (dchic_outwards + dchic_inwards)
 
         # Store the nodal changes

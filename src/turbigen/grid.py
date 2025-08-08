@@ -330,13 +330,13 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         # Set up new coordinates
         xr0 = np.reshape((np.min(self.x), np.min(self.r)), (2, 1, 1))
         xr1 = np.reshape((np.max(self.x), np.max(self.r)), (2, 1, 1))
-        eps = 1e-3
+        eps = 1e-5
         clu = (
             (turbigen.util.cluster_cosine(nspan).reshape(1, -1, 1) + eps)
             / (1.0 + eps)
             * (1.0 - eps)
         )
-        xr = clu * xr0 + (1.0 - clu) * xr1
+        xr = clu * xr1 + (1.0 - clu) * xr0
         pitch = self.pitch
         t = -np.linspace(-pitch / 2.0, pitch / 2.0, npitch).reshape(1, -1)
         xrt = np.stack(np.broadcast_arrays(*xr, t), axis=0)
