@@ -135,7 +135,7 @@ class TurbigenConfig:
     def nrow(self):
         return len(self.blades)
 
-    def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=False):
+    def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=True):
         """Save the configuration to a YAML file inside workdir.
 
         The working directory will be created if it does not exist.

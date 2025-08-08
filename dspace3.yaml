@@ -31,7 +31,6 @@ annulus:
 
 mesh:
   type: h
-  skew_max: 1.
   yplus: 40.0
   ni_TE: 3
   dm_TE: 0.0
@@ -78,6 +77,7 @@ solver:
   type: ember
   n_step: 5000 # 2500
   n_step_avg: 1500
+  n_step_mix: 1
   n_step_ramp: 1000
   xllim_pitch: 0.01
 

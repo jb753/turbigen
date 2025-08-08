@@ -92,7 +92,7 @@ class Convergence(BasePost):
         ax[1].set_ylim(ylim)
         ax[1].set_yticks(ytick)
         ax[2].plot(conv.istep, dYs, marker="")
-        ax[2].set_ylim(2 * ylim)
+        ax[2].set_ylim(ylim)
         ax[2].set_yticks(ytick)
         ax[2].set_title("dLoss/percent")
 

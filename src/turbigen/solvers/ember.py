@@ -102,7 +102,7 @@ class Ember(turbigen.solvers.base.BaseSolver):
     n_step: int = 5000
     """Total number of time steps to run."""
 
-    n_step_mix: int = 5
+    n_step_mix: int = 1
     """Number of time steps between mixing plane updates."""
 
     n_step_throttle: int = 5
@@ -1953,7 +1953,7 @@ class MixingBoundary(Boundary):
 
         # Assemble a change in bcond vector [ho, s, tanAl, tanBe, P]
         dinlet = np.stack((dho, ds, dtanAl, dtanBe), axis=-1)
-        dinlet[..., 0] *= self.sf_mix * 2.0
+        dinlet[..., 0] *= self.sf_mix
         dinlet[..., 1] *= self.sf_mix
         dinlet[..., 2] *= self.sf_Alpha
         dinlet[..., 3] *= self.sf_mix
