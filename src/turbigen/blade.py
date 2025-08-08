@@ -61,12 +61,12 @@ class BladeDesigner:
         nsect = len(self.spf)
         self.thick = np.atleast_2d(self.thick)
         self.camber = np.atleast_2d(self.camber)
-        assert self.thick.shape[0] == nsect, (
-            f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
-        )
-        assert self.camber.shape[0] == nsect, (
-            f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
-        )
+        assert (
+            self.thick.shape[0] == nsect
+        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
+        assert (
+            self.camber.shape[0] == nsect
+        ), f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
 
     def to_dict(self):
         # Built-in dataclasses method gets us most of the way there
@@ -165,7 +165,7 @@ class BladeDesigner:
 
         return cam, thick
 
-    def evaluate_section(self, spf, nchord=10000, m=None, AR_cusp=0.0):
+    def evaluate_section(self, spf, nchord=10000, m=None):
         """Coordinates of upper and lower surfaces at one span fraction."""
 
         cam, thick = self._get_camber_thickness(spf)
@@ -217,7 +217,6 @@ class BladeDesigner:
 
         # Add on the whole blade angular offset
         theta += self.theta_offset
-        # theta += util.interp1d_linear_extrap(self.spf, self.dtheta)(spf)
 
         # Change in theta if r were constant
         dtu = Dy * chord / xr[1]
@@ -236,39 +235,6 @@ class BladeDesigner:
         xrtl = xrrtl + 0.0
         xrtl[2] /= xrtl[1]
 
-        # Add cusp if requested
-        if AR_cusp:
-            xrrtu = xrtu.copy()
-            xrrtu[2] *= xrrtu[1]
-            xrrtl = xrtl.copy()
-            xrrtl[2] *= xrrtl[1]
-
-            xrrt_te = 0.5 * (xrrtu[:, -1] + xrrtl[:, -1])
-            dxrrt_te = xrrtu[:, -1] - xrrtl[:, -1]
-            dxrrt_cam = np.mean(
-                0.5
-                * (np.diff(xrrtu, axis=-1)[:, -3:] + np.diff(xrrtl, axis=-1)[:, -3:]),
-                axis=-1,
-            )
-
-            L_cusp = norm(dxrrt_te, 2) * AR_cusp
-            ncusp = 10
-            dxrrt_cam /= norm(dxrrt_cam, 2)
-            xrrt_point = (xrrt_te + L_cusp * dxrrt_cam).reshape(3, 1)
-            cusp_frac = np.linspace(0.0, 1.0, ncusp).reshape(1, -1)
-            xrrtu_cusp = cusp_frac * xrrt_point + (1.0 - cusp_frac) * xrrtu[
-                :, -1
-            ].reshape(3, 1)
-            xrrtl_cusp = cusp_frac * xrrt_point + (1.0 - cusp_frac) * xrrtl[
-                :, -1
-            ].reshape(3, 1)
-            xrrtu = np.concatenate((xrrtu, xrrtu_cusp), axis=-1)
-            xrrtl = np.concatenate((xrrtl, xrrtl_cusp), axis=-1)
-
-            xrtu = xrrtu.copy()
-            xrtl = xrrtl.copy()
-            xrtu[2] /= xrtu[1]
-            xrtl[2] /= xrtl[1]
         return xrtu, xrtl
 
     def surface_length(self, spf):

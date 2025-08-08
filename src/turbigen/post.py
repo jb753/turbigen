@@ -606,6 +606,8 @@ class Sections(BasePost):
     """Mapping of row index to span fraction(s) to plot."""
 
     def post(self, config, pdf):
+        config.apply_recamber()
+
         # Default to plotting on the designed sections
         if not self.spf:
             spf_all = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
@@ -643,6 +645,8 @@ class Sections(BasePost):
             plt.tight_layout()
             pdf.savefig()
             plt.close()
+
+        config.undo_recamber()
 
 
 @dataclasses.dataclass

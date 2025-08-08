@@ -106,6 +106,7 @@ iterate:
 
 post_process:
   - type: inlet_profiles
+  - type: sections
   - type: contour
     coord: spf
     value: 0.5
