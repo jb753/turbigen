@@ -61,12 +61,12 @@ class BladeDesigner:
         nsect = len(self.spf)
         self.thick = np.atleast_2d(self.thick)
         self.camber = np.atleast_2d(self.camber)
-        assert (
-            self.thick.shape[0] == nsect
-        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
-        assert (
-            self.camber.shape[0] == nsect
-        ), f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
+        assert self.thick.shape[0] == nsect, (
+            f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
+        )
+        assert self.camber.shape[0] == nsect, (
+            f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
+        )
 
     def to_dict(self):
         # Built-in dataclasses method gets us most of the way there
@@ -213,7 +213,7 @@ class BladeDesigner:
         theta = util.cumtrapz0(dydm / xr[1], mcam * chord_full)
 
         # Stack so that camber theta=0 at the stacking point
-        theta -= self.mstack
+        theta -= np.interp(self.mstack, mcam, theta)
 
         # Add on the whole blade angular offset
         theta += self.theta_offset

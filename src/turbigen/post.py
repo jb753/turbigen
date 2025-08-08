@@ -601,6 +601,51 @@ class StreamtubeLoss(BasePost):
 
 
 @dataclasses.dataclass
+class Sections(BasePost):
+    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    """Mapping of row index to span fraction(s) to plot."""
+
+    def post(self, config, pdf):
+        # Default to plotting on the designed sections
+        if not self.spf:
+            spf_all = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
+        else:
+            spf_all = self.spf
+
+        logger.info(f"Plotting sections at span fractions: {spf_all}")
+
+        # Loop over rows
+        for irow, spfrow in spf_all.items():
+            # Set up axes
+            _, ax = plt.subplots()
+            ax.axis("equal")
+
+            # Loop over span fractions
+            for ispf, spf in enumerate(spfrow):
+                #
+                xrt_ul = np.stack(config.blades[irow][0].evaluate_section(spf))
+                xrrt_ul = xrt_ul.copy()
+                xrrt_ul[:, 2] *= xrrt_ul[:, 1]  # Convert to r,rt
+
+                logger.info(f"Plotting section row={irow} at spf={spf:.2g}")
+
+                for xrrti in xrrt_ul:
+                    ax.plot(
+                        xrrti[0],
+                        xrrti[2],
+                        "-",
+                        color=f"C{ispf}",
+                        label=f"spf={spf:.2g}",
+                    )
+
+            if len(spfrow) > 1:
+                ax.legend()
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
+
+
+@dataclasses.dataclass
 class InletProfiles(BasePost):
     def post(self, config, pdf):
         # Skip if no inlet profiles are available
