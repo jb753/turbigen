@@ -4,6 +4,7 @@ stages:
 - build
 - test
 - deploy
+- publish
 
 
 before_script:
@@ -77,53 +78,22 @@ build_all_wheels:
     paths:
       - dist
 
-# #
-#
-# before_script:
-#   - apt update && apt install -y gfortran libopenmpi-dev fonts-freefont-ttf pdf2svg
-#   - curl -LsSf https://astral.sh/uv/install.sh | sh
-#   - source $HOME/.local/bin/env
-#   - uv venv
-#   - uv pip install cibuildwheel meson-python line_profiler==4.2.0 .[dev]
-#   - source .venv/bin/activate
-#   - ./scripts/generate_meson.sh
-#   - mkdir -p plots
-#
-# build_wheels:
-#   stage: build
-#   variables:
-#     DOCKER_HOST: unix:///var/run/docker.sock
-#     DOCKER_TLS_CERTDIR: ""
-#   script:
-#     # Install Docker
-#     - ls -li /var/run/docker.sock
-#     - curl -sSL https://get.docker.com/ | sh
-#     # Build the wheels
-#     - cibuildwheel --platform linux --output-dir dist
-#     # Source dist
-#     - python -m build --sdist
-#   artifacts:
-#     expire_in: 2 weeks
-#     paths:
-#       - dist
-#
-#
-# pypi:
-#   stage: deploy
-#   script:
-#     - ls -l dist
-#     - twine upload dist/*
-#   only:
-#     - master
-#
-#
-# pages:
-#   stage: deploy
-#   script:
-#     - mv doc/_build public
-#   artifacts:
-#     paths:
-#       - public
-#   only:
-#   - master
-#
+pypi:
+  stage: publish
+  script:
+    - uv pip install twine
+    - ls -l dist
+    - twine upload dist/*
+  only:
+    - master
+
+
+pages:
+  stage: publish
+  script:
+    - mv doc/_build public
+  artifacts:
+    paths:
+      - public
+  only:
+  - master
