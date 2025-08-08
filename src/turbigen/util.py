@@ -777,14 +777,16 @@ def dA_Gauss(A, B, C, D):
     return dA
 
 
-def moving_average_1d(arr, window_size):
-    if window_size < 1:
+def moving_average_1d(arr, w):
+    if w < 1:
         raise ValueError("Window size must be at least 1")
-    if window_size % 2 == 0:
+    if w % 2 == 0:
         raise ValueError("Window size must be odd to preserve shape")
 
-    kernel = np.ones(window_size) / window_size
-    return np.convolve(arr, kernel, mode="same")
+    kernel = np.ones(w) / w
+    arr_smth = np.copy(arr)
+    arr_smth[w // 2 : -w // 2 + 1] = np.convolve(arr, kernel, mode="valid")
+    return arr_smth
 
 
 def relax(x_old, x_new, rf):
