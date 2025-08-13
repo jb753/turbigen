@@ -1086,10 +1086,16 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
                 ijkc[m] += ijk_lim[m].tolist()
         ijkc = [np.unique(c) for c in ijkc]
 
+        # Allow different factors for each direction
+        if not isinstance(factor, (list, tuple)):
+            factors = (factor,) * 3
+        else:
+            factors = factor
+
         # Now resample keeping the critical indices
         ijk_new = [
-            util.resample_critical_indices(nii, ijkci, factor)
-            for nii, ijkci in zip(self.shape, ijkc)
+            util.resample_critical_indices(nii, ijkci, f)
+            for nii, ijkci, f in zip(self.shape, ijkc, factors)
         ]
         nijk_new = tuple([len(xx) for xx in ijk_new])
 
@@ -1534,9 +1540,10 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
-                0
-            ].reshape(block.shape)
+            block.w = kdtree.query(
+                block.flatten().xrrt.T,
+                workers=-1,
+            )[0].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -2135,9 +2142,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (
-                nt,
-            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            assert np.shape(fac) == (nt,), (
+                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
+            )
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor
