@@ -153,6 +153,7 @@ class BladeDesigner:
         span = util.arc_length(self.streamsurface(spfq, 0.5))
         if self.thick_ref == "span":
             self._thick_scale = span / chord
+            print(self._thick_scale, span, chord)
         elif self.thick_ref == "absolute":
             self._thick_scale = 1.0 / chord
         elif self.thick_ref == "chord":
@@ -170,8 +171,8 @@ class BladeDesigner:
         # Create thickness and camber lines
         if len(self.spf) == 1:
             # Constant values
-            thick = self.thick_type(self.thick[0])
-            cam = self.camber_type(self.camber[0])
+            thick = self.thick_type(self.thick[0].copy())
+            cam = self.camber_type(self.camber[0].copy())
         else:
             # Interpolate the parameters
             qcam = util.interp1d_linear_extrap(self.spf, self.camber)

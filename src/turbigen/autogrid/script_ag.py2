@@ -212,9 +212,15 @@ for n in range(nrow):
     else:
         ib = (1,)
     for iib in ib:
+
         if row(n1).blade(iib).get_shroud_gap():
             row(n1).blade(iib).shroud_gap().set_clustering(conf["dr_cas"])
             row(n1).blade(iib).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
+            row(n1).blade(iib).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(conf["nk_gap"])
+
+        if row(n1).blade(iib).get_hub_gap():
+            row(n1).blade(iib).hub_gap().set_clustering(conf["dr_cas"])
+            row(n1).blade(iib).hub_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
             row(n1).blade(iib).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(conf["nk_gap"])
 
 select_all()

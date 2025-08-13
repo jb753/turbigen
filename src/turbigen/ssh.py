@@ -81,9 +81,9 @@ class SSHConnection:
         return self.base_ssh + [self.via_host] + env_str
 
     def _scp(self, command, check):
-        assert "'" not in command, (
-            f"Command should not contain single quotes: {command}"
-        )
+        assert (
+            "'" not in command
+        ), f"Command should not contain single quotes: {command}"
         return self._execute(self._via_prefix() + self.base_scp + command, check)
 
     def start_via_agent(self):
@@ -145,10 +145,8 @@ class SSHConnection:
         os.environ["SSH_AGENT_PID"] = pid
 
     def copy_to_remote(self, local_path, remote_path):
-        command = [
-            f"{os.path.abspath(local_path)}",
-            f"{self.remote_host}:{remote_path}",
-        ]
+        local_paths = os.path.abspath(local_path).split()
+        command = [p for p in local_paths] + [f"{self.remote_host}:{remote_path}"]
         return self._scp(command, check=True)
 
     def copy_from_remote(self, remote_path, local_path):

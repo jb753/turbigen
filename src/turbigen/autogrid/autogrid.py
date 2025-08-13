@@ -87,11 +87,18 @@ def _write_geomturbo(
             if np.shape(gap_now) == ():
                 gap_now = gap_now * np.ones(2)
 
-            if gap_now[0]:
+            # +ve gaps are tip
+            if (gap_now > 0.0).all():
                 writeln("NI_BEGIN NITipGap")
                 writeln("WIDTH_AT_LEADING_EDGE %f" % gap_now[0])
                 writeln("WIDTH_AT_TRAILING_EDGE %f" % gap_now[1])
                 writeln("NI_END NITipGap")
+            # -ve gaps are hub
+            else:
+                writeln("NI_BEGIN NIHubGap")
+                writeln("WIDTH_AT_LEADING_EDGE %f" % -gap_now[0])
+                writeln("WIDTH_AT_TRAILING_EDGE %f" % -gap_now[1])
+                writeln("NI_END NIHubGap")
 
         writeln("NI_BEGIN nibladegeometry")
         writeln("TYPE GEOMTURBO")
@@ -115,6 +122,9 @@ def _write_geomturbo(
         writeln("SECTIONAL")
         writeln(str(n_sect))
         for k in range(n_sect):
+            if np.allclose(ps_now[k][-1], ss_now[k][-1]) and np.any(gap_now):
+                raise ValueError("Sharp trailing edge is not compatible with gaps.")
+
             writeln("# section %d" % (k + 1))
             if cascade:
                 writeln("XYZ")
