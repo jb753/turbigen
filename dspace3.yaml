@@ -75,7 +75,7 @@ nblade:
 
 solver:
   type: ember
-  n_step: 5000 # 2500
+  n_step: 2500
   n_step_avg: 1500
   n_step_ramp: 1000
   xllim_pitch: 0.01
@@ -96,6 +96,7 @@ iterate:
   incidence:
     tolerance: 16.
     relaxation_factor: 0.05
+    clip: 0.5
   repeat:
     dPo_max: 0.05
     dTo_max: 0.05

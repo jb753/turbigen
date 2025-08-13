@@ -56,6 +56,7 @@ solver:
   n_step_avg: 500
 
 post_process:
+  - type: section
   - type: contour
     coord: spf
     value: 0.5

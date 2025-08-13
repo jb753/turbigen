@@ -32,7 +32,10 @@ class BladeDesigner:
     """Tip clearance as fraction of span."""
 
     tip_ref: str = "span"
-    """Reference for tip clearance, {'span', 'chord', 'absolute'}."""
+    """Reference length for clearances, {'span', 'chord', 'absolute'}."""
+
+    thick_ref: str = "chord"
+    """Reference length for thickness, {'span', 'chord', 'absolute'}."""
 
     vortex_expon: float = -1.0
     """Spanwise swirl distribution, Vt ~ r**vortex_expon."""
@@ -144,6 +147,20 @@ class BladeDesigner:
 
     def set_streamsurface(self, streamsurface):
         self.streamsurface = streamsurface
+        # Calculate reference lengths for thickness
+        mq = spfq = np.linspace(0.0, 1.0)
+        chord = util.arc_length(self.streamsurface(0.5, mq))
+        span = util.arc_length(self.streamsurface(spfq, 0.5))
+        if self.thick_ref == "span":
+            self._thick_scale = span / chord
+        elif self.thick_ref == "absolute":
+            self._thick_scale = 1.0 / chord
+        elif self.thick_ref == "chord":
+            self._thick_scale = 1.0
+        else:
+            raise ValueError(
+                f"Unknown thickness reference length {self.thick_ref}, must be one of 'span', 'chord', 'absolute'"
+            )
 
     @property
     def nsect(self):
@@ -162,6 +179,8 @@ class BladeDesigner:
 
             thick = self.thick_type(qthick(spf).reshape(-1))
             cam = self.camber_type(qcam(spf).reshape(-1))
+
+        thick.scale(self._thick_scale)
 
         return cam, thick
 
@@ -213,7 +232,8 @@ class BladeDesigner:
         theta = util.cumtrapz0(dydm / xr[1], mcam * chord_full)
 
         # Stack so that camber theta=0 at the stacking point
-        theta -= self.mstack
+        # theta -= self.mstack
+        theta -= np.interp(self.mstack, mcam, theta)
 
         # Add on the whole blade angular offset
         theta += self.theta_offset
