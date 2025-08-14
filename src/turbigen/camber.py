@@ -181,7 +181,8 @@ class TaylorQuadratic(BaseCamber):
     def chi_hat(self, m):
         a = self.q_camber[2]  # Aft-loading factor
         m = np.array(m)
-        chi = m * (a * m + (1 - a))
+        chi_norm = m * (a * m + (1 - a))
+        chi = chi_norm * self.Dchi + self.chi_LE
         tanchi = np.tan(np.radians(chi))
         return (tanchi - self.tanchi_LE) / self.Dtanchi
 
