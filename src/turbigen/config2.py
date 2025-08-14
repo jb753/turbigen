@@ -627,7 +627,6 @@ class TurbigenConfig:
             # Apply recamber, set meridional locations for
             # main and splitters
             for blade in row:
-                # blade.apply_recamber(self.mean_line.nominal)
                 blade.set_streamsurface(self.annulus.xr_row(irow))
 
         # Choose whether the blocks are real or perfect

@@ -64,12 +64,12 @@ class BladeDesigner:
         nsect = len(self.spf)
         self.thick = np.atleast_2d(self.thick)
         self.camber = np.atleast_2d(self.camber)
-        assert (
-            self.thick.shape[0] == nsect
-        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
-        assert (
-            self.camber.shape[0] == nsect
-        ), f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
+        assert self.thick.shape[0] == nsect, (
+            f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
+        )
+        assert self.camber.shape[0] == nsect, (
+            f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
+        )
 
     def to_dict(self):
         # Built-in dataclasses method gets us most of the way there
@@ -98,7 +98,11 @@ class BladeDesigner:
         # Calculate the local flow angles
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
         # Add the recamber angles to get the local angle
-        chi = Alpha_rel + self.camber[:, :2]
+        dchi = self.camber[:, :2]
+        logger.debug(
+            f"Applying recamber angles: {dchi}, Alpha_rel={Alpha_rel}, vortex_expon={self.vortex_expon}"
+        )
+        chi = Alpha_rel + dchi
         if np.any(np.abs(chi) > 90.0):
             raise Exception(f"Cannot set a blade angle over 90 degrees! chi={chi}")
         if np.any(np.abs(chi) > 80.0):

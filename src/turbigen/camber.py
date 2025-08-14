@@ -167,12 +167,23 @@ class Taylor(BaseCamber):
 
 
 class Quadratic(BaseCamber):
-    """Use a quadratic polynomial to set camber angle."""
+    """Use a quadratic polynomial to set camber slope."""
 
     def chi_hat(self, m):
         a = self.q_camber[2]  # Aft-loading factor
         m = np.array(m)
         return m * (a * m + (1 - a))
+
+
+class TaylorQuadratic(BaseCamber):
+    """Use a quadratic polynomial to set camber angle."""
+
+    def chi_hat(self, m):
+        a = self.q_camber[2]  # Aft-loading factor
+        m = np.array(m)
+        chi = m * (a * m + (1 - a))
+        tanchi = np.tan(np.radians(chi))
+        return (tanchi - self.tanchi_LE) / self.Dtanchi
 
 
 def load_camber(camber_type):
