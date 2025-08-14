@@ -1,5 +1,6 @@
 """Run a periodic grid with CFL=0 to check which nodes have periodicity applied."""
 
+import pytest
 import turbigen.grid
 import turbigen.solvers.ember as ember
 import numpy as np
@@ -35,6 +36,7 @@ def make_sector():
     return xrt, Nb
 
 
+@pytest.mark.slow
 def test_periodic():
     xrt, Nb = make_sector()
 
@@ -111,6 +113,7 @@ def test_periodic():
     plt.show()
 
 
+@pytest.mark.slow
 def test_cusp():
     xrt, Nb = make_sector()
 

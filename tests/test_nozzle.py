@@ -1,5 +1,6 @@
 """Run a quasi-1D nozzle in the native solver."""
 
+import pytest
 import turbigen.solvers.ember as ember
 import turbigen.compflow_native as cf
 import turbigen.grid
@@ -345,6 +346,7 @@ def post_nozzle(g, F):
 
 
 @pytest.mark.parametrize("dirn", ("r", "t"))
+@pytest.mark.slow
 def test_condi(dirn):
     """Run subsonic con-di nozzles."""
 
@@ -366,6 +368,7 @@ def test_condi(dirn):
 
 
 @pytest.mark.parametrize("Tu0", (0.0, 150.0, 300.0))
+@pytest.mark.slow
 def test_Tu0(Tu0):
     """Check that the internal energy datum makes no difference."""
 
@@ -387,6 +390,7 @@ def test_Tu0(Tu0):
 
 
 @pytest.mark.parametrize("Alpha", (-30.0, 0.0, 30.0))
+@pytest.mark.slow
 def test_uniform(Alpha):
     """Run the most basic parallel annulus, grid aligned with flow."""
 
@@ -406,6 +410,7 @@ def test_uniform(Alpha):
 
 
 @pytest.mark.parametrize("Ma", (0.6, 0.9))
+@pytest.mark.slow
 def test_Ma(Ma):
     """Run uniform flow at different Mach."""
 
@@ -424,6 +429,7 @@ def test_Ma(Ma):
 
 
 @pytest.mark.parametrize("Alpha", (-30.0, 0.0, 30.0))
+@pytest.mark.slow
 def test_skew(Alpha):
     """Run an axial flow with skewed grid."""
 
@@ -442,6 +448,7 @@ def test_skew(Alpha):
 
 
 @pytest.mark.parametrize("Alpha", (-30.0, 0.0, 30.0))
+@pytest.mark.slow
 def test_radius(Alpha):
     """Constant area with radius change."""
 
@@ -470,6 +477,7 @@ def test_radius(Alpha):
 
 
 @pytest.mark.parametrize("rpm", (-100.0, 100.0))
+@pytest.mark.slow
 def test_rpm(rpm):
     xA = np.array([[0.0, 0.02, 0.3, 0.98, 1.0], [1.0, 1.0, 0.6, 1.0, 1.0]])
     g, F = make_nozzle(xA, rpm=rpm, tper=True, skew=None)
@@ -491,6 +499,7 @@ def test_rpm(rpm):
 
 
 @pytest.mark.parametrize("To1", (200.0, 300.0, 400.0))
+@pytest.mark.slow
 def test_To1(To1):
     """Run the most basic parallel annulus, grid aligned with flow."""
 
@@ -513,6 +522,7 @@ def test_To1(To1):
 
 
 @pytest.mark.parametrize("dP", (-1000.0, 1000.0))
+@pytest.mark.slow
 def test_offset(dP):
     """Set an initial guess with different static pressure."""
 

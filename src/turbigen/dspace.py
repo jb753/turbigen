@@ -503,7 +503,7 @@ class DesignSpace:
 
         # Get the limits of the design space
         xlim = self.independent.limits()
-        logger.debug(f"Design space limits:")
+        logger.debug("Design space limits:")
         keys = self.independent.keys()
         for k in keys:
             ik = keys.index(k)
