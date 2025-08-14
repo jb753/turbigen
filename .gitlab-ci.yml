@@ -37,7 +37,7 @@ tests:
   stage: test
   script:
     - uv pip install dist/*.whl pytest
-    - pytest
+    - pytest --slow
 
 profile:
   stage: deploy

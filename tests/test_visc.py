@@ -1,5 +1,6 @@
 """Viscous test cases."""
 
+import pytest
 import turbigen.solvers.ember as ember
 import turbigen.compflow_native as cf
 import turbigen.grid
@@ -390,6 +391,7 @@ def make_pipe():
     return g, F
 
 
+@pytest.mark.slow
 def test_plate_turb():
     """Run boundary layer with yplus ~ 30."""
 
@@ -506,6 +508,7 @@ def test_plate_turb():
     plt.close()
 
 
+@pytest.mark.slow
 def test_plate_lam():
     """Run boundary layer with yplus ~ 5."""
 
@@ -573,6 +576,7 @@ def test_plate_lam():
     print("min", err.min())
 
 
+@pytest.mark.slow
 def test_poiseuille():
     g, F = make_pipe()
 
