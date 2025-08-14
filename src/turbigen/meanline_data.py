@@ -295,10 +295,6 @@ and will cause problems with meshing and solving for the flow field."""
         return self.rhub * (1.0 - spf) + self.rtip * spf
 
     def Vt_free_vortex(self, spf, n=-1):
-        print("In Vt_free_vortex")
-        print(f"{spf=}, {self.rspf(spf)=}, {self.rrms=}")
-        print(f"{self.Vt=}")
-        print(self.Vt * (self.rspf(spf) / self.rrms) ** n)
         return self.Vt * (self.rspf(spf) / self.rrms) ** n
 
     def Vt_rel_free_vortex(self, spf, n=-1):
