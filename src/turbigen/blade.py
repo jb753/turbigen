@@ -2,7 +2,6 @@ from turbigen import util
 import numpy as np
 import dataclasses
 import turbigen.nblade
-from scipy.linalg import norm
 import turbigen.camber
 import turbigen.thickness
 
@@ -50,6 +49,7 @@ class BladeDesigner:
         # self.number = util.init_subclass_by_signature(
         #     turbigen.nblade.BladeNumberConfig, self.number
         # )
+        self.is_recambered = False
 
         self.camber_type = util.get_subclass_by_name(
             turbigen.camber.BaseCamber, self.camber_type
@@ -95,6 +95,8 @@ class BladeDesigner:
         On exit from this function, q_camber[:2] are the local tanchi values.
 
         """
+        if self.is_recambered:
+            raise ValueError("The blade is already recambered, cannot recamber again.")
         # Calculate the local flow angles
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
         # Add the recamber angles to get the local angle
@@ -111,6 +113,7 @@ class BladeDesigner:
             )
         # Take the tangent and store in the class
         self.camber[:, :2] = util.tand(chi)
+        self.is_recambered = True
 
     def get_chi(self, spf):
         """Interpolate metal angles at a given span fraction."""
@@ -145,9 +148,12 @@ class BladeDesigner:
     def undo_recamber(self, mean_line):
         """Convert the stored tanchi back to recamber angles."""
         Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+        if not self.is_recambered:
+            raise ValueError("The blade is not recambered, cannot undo recambering.")
         # Subtract the local flow angles to get the recamber angles
         # After taking the arctangent
         self.camber[:, :2] = util.atand(self.camber[:, :2]) - Alpha_rel
+        self.is_recambered = False
 
     def set_streamsurface(self, streamsurface):
         self.streamsurface = streamsurface
@@ -191,6 +197,11 @@ class BladeDesigner:
 
     def evaluate_section(self, spf, nchord=10000, m=None):
         """Coordinates of upper and lower surfaces at one span fraction."""
+
+        if not self.is_recambered:
+            raise ValueError(
+                "Cannot evaluate section before recambering, call apply_recamber first."
+            )
 
         cam, thick = self._get_camber_thickness(spf)
 
@@ -237,7 +248,8 @@ class BladeDesigner:
         theta = util.cumtrapz0(dydm / xr[1], mcam * chord_full)
 
         # Stack so that camber theta=0 at the stacking point
-        theta -= np.interp(self.mstack, mcam, theta)
+        dtheta_stack = np.interp(self.mstack, mcam, theta)
+        theta -= dtheta_stack
 
         # Add on the whole blade angular offset
         theta += self.theta_offset
