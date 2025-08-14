@@ -239,6 +239,7 @@ class Incidence(IteratorConfig):
                 continue
 
             # Find flow and metal angles
+            config.apply_recamber()
             chi = util.incidence_unstructured(
                 config.grid,
                 config.get_machine(),
@@ -246,6 +247,7 @@ class Incidence(IteratorConfig):
                 irow,
                 row[0].spf,
             )
+            config.undo_recamber()
 
             # Calculate the incidence angle wrt target
             inc = np.atleast_1d(np.diff(chi[0], axis=0).squeeze())

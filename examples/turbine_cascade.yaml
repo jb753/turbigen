@@ -34,10 +34,8 @@ annulus:
 # Specify camber and thickness one one mid-span section
 blades:
     - spf: 0.5
-      # thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
-      # thick: [0.0005, 0.001, 0.3, 0., 0.001, 0.18]
+      thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
       camber: [10., -2., 0.0]
-      thick_ref: absolute
 
 # Discretise fluid domain using a coarse H-mesh
 mesh:

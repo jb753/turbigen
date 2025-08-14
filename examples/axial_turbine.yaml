@@ -47,6 +47,7 @@ blades:
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
       camber: [0., 0., 0.0]
+      theta_offset: 0.1
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
       camber: [0., 0., 0.0]
@@ -60,7 +61,7 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 5000
+  n_step: 2000
   n_step_avg: 1000
   # smooth2_adapt: 0.5
 
@@ -74,9 +75,6 @@ iterate:
   deviation:
   # Correct for incidence using leading-edge recamber
   incidence:
-  # Copy spanwise profiles at outlet to the inlet
-  # to model a repeating stage
-  repeat:
 
 # Additional plots to produce
 post_process:
