@@ -15,7 +15,7 @@ import turbigen.fluid
 import turbigen.grid
 import turbigen.solvers.base
 
-from emberc import ember
+from emberc import ember as fortran
 
 util = turbigen.util
 logger = turbigen.util.make_logger()
@@ -480,7 +480,7 @@ class SolverBlock:
         # Now distribute cell length scales to nodes
         ni, nj, nk = self.shape
         self.L = self.cast_array(np.ones((3, ni, nj, nk)))
-        ember.cell_to_node(L, self.L, ni, nj, nk, 3)
+        fortran.cell_to_node(L, self.L, ni, nj, nk, 3)
 
         self.rf = [self.cast_array(r) for r in block.r_face]
         self.rc = self.cast_array(block.r_cell)
@@ -578,7 +578,7 @@ class SolverBlock:
         nlev = len(nb)
         ijkmg = np.asfortranarray(np.full((3,) + shape + (nlev,), -1, dtype=np.int16))
         nbf = np.asfortranarray(nb, dtype=np.int16)
-        ember.multigrid_indices(ijkmg, nbf)
+        fortran.multigrid_indices(ijkmg, nbf)
         assert (ijkmg >= 0).all()
         return ijkmg + 1
 
@@ -586,7 +586,7 @@ class SolverBlock:
         nlev = self.ijk_multigrid.shape[-1]
         vol = self.cast_array(vol)
         volmg = self.preallocate(vol.shape + (nlev + 1,))
-        ember.multigrid_volumes(volmg, vol, self.ijk_multigrid)
+        fortran.multigrid_volumes(volmg, vol, self.ijk_multigrid)
         assert np.ptp(np.sum(volmg, axis=(0, 1, 2))) / np.sum(vol) < 1e-3
         return volmg
 
@@ -670,7 +670,7 @@ class SolverBlock:
         xlength = (0.41 * xlength) ** 2.0
         # Distribute to cellss
         xlength_cell = self.preallocate(self.shape_cell)
-        ember.node_to_cell(xlength, xlength_cell)
+        fortran.node_to_cell(xlength, xlength_cell)
         return xlength_cell
 
     def get_wall_indices(self, block, ignore_slip):
@@ -686,7 +686,7 @@ class SolverBlock:
         jwall1[1, jwall1[1, :] == nj] -= 1
         kwall1[2, kwall1[2, :] == nk] -= 1
         return [
-            ember.get_by_ijk(self.cast_array(dl), ijk)
+            fortran.get_by_ijk(self.cast_array(dl), ijk)
             for dl, ijk in zip(block.get_dwall(), [iwall1, jwall1, kwall1])
         ]
 
@@ -697,11 +697,12 @@ class SolverBlock:
             np.sqrt((self.dAk**2).sum(axis=-1)),
         ]
         return [
-            ember.get_by_ijk(dA, ijk) for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
+            fortran.get_by_ijk(dA, ijk)
+            for dA, ijk in zip(dAijk, self.ijk_wall_face_slip)
         ]
 
     def set_timestep(self, CFL, relax=0.0):
-        ember.set_timesteps(
+        fortran.set_timesteps(
             self.dt_vol,
             self.vol,
             self.state.a,
@@ -713,7 +714,7 @@ class SolverBlock:
         )
 
     def add_pressure_fluxes(self):
-        ember.add_pressure_fluxes_all(
+        fortran.add_pressure_fluxes_all(
             **{
                 "p": self.state.P,
                 "pref": self.Pref,
@@ -729,7 +730,7 @@ class SolverBlock:
 
     def add_polar_source(self):
         """Calculate the polar coordinates source term."""
-        ember.add_polar_source(
+        fortran.add_polar_source(
             **{
                 "cons": self.cons,
                 "vxrt": self.Vxrt,
@@ -743,7 +744,7 @@ class SolverBlock:
 
     def set_fluxes(self):
         """Calculate and store convective fluxes through each face."""
-        ember.set_fluxes(
+        fortran.set_fluxes(
             **{
                 "cons": self.cons,
                 "vxrt": self.Vxrt,
@@ -761,7 +762,7 @@ class SolverBlock:
 
     def integrate_flows(self):
         """Integrate flux dot dA over all cells to get net flows."""
-        ember.sum_fluxes(
+        fortran.sum_fluxes(
             **{
                 "fi": self.fluxes[0],
                 "fj": self.fluxes[1],
@@ -774,7 +775,7 @@ class SolverBlock:
         )
 
     def time_step(self, fmgrid, damp, ischeme):
-        ember.residual(
+        fortran.residual(
             **{
                 "fb": self.fb,
                 "fsum": self.net_flow,
@@ -789,7 +790,7 @@ class SolverBlock:
         )
 
     def step(self, ischeme):
-        ember.step(
+        fortran.step(
             self.cons,
             self.dUc,
             self.dUn,
@@ -798,14 +799,14 @@ class SolverBlock:
 
     def set_secondary(self):
         """Calculate velocity components and update thermodynamic state."""
-        ember.secondary(self.r, self.cons, self.Vxrt, self.u)
+        fortran.secondary(self.r, self.cons, self.Vxrt, self.u)
         self.state.set_rho_u(self.cons[..., 0], self.u)
 
     def smooth(self, sf2, sf4, sf2min):
-        ember.smooth(self.cons, self.state.P, self.L, sf4, sf2, sf2min)
+        fortran.smooth(self.cons, self.state.P, self.L, sf4, sf2, sf2min)
 
     def damp(self, fdamp):
-        ember.damp(self.dU1, fdamp)
+        fortran.damp(self.dU1, fdamp)
 
     def set_viscous_stress(self):
         # Assemble args in a dictionary and send as keywords
@@ -834,13 +835,13 @@ class SolverBlock:
             "ijk_kwall": self.ijk_wall_face_slip[2],
             "fvisc_new": self.fb_new,
         }
-        ember.shear_stress(**kwargs)
+        fortran.shear_stress(**kwargs)
 
         # Now wall functions
         for dirn in range(3):
             if self.dA_face[dirn].shape == (1,):
                 continue
-            ember.wall_function(
+            fortran.wall_function(
                 **{
                     "f": self.fb_new,
                     "ijk": self.ijk_wall_face_slip[dirn],
@@ -902,7 +903,7 @@ class Cusp:
 
         # Volumes
         vol = np.asfortranarray(patch.block.vol).astype(np.float32)
-        self.zeros = ember.get_by_ijk(vol, self.ijk_cell) * 0.0
+        self.zeros = fortran.get_by_ijk(vol, self.ijk_cell) * 0.0
 
         # Projected area components for each face
         dA = np.moveaxis(patch.block.dAk, 0, -1)
@@ -915,8 +916,8 @@ class Cusp:
         # )
         dA = np.asfortranarray(dA).astype(np.float32)
         nxdA = np.asfortranarray(dA).astype(np.float32)
-        self.dA = ember.get_by_ijk(dA, self.ijk_face)
-        self.nxdA = ember.get_by_ijk(nxdA, self.nxijk_face)
+        self.dA = fortran.get_by_ijk(dA, self.ijk_face)
+        self.nxdA = fortran.get_by_ijk(nxdA, self.nxijk_face)
         self.idA = np.abs(self.dA) > 0.0
         self.nxidA = np.abs(self.nxdA) > 0.0
 
@@ -1140,15 +1141,15 @@ def exchange_cusp_nodes(blocks, bid_local, cusps):
         # Now extract values on the patch from the blocks
 
         # Nodes
-        C1 = ember.get_by_ijk(b1.cons, patch.ijk_node)
-        C2 = ember.get_by_ijk(b2.cons, patch.nxijk_node)
+        C1 = fortran.get_by_ijk(b1.cons, patch.ijk_node)
+        C2 = fortran.get_by_ijk(b2.cons, patch.nxijk_node)
 
         # Take mean values
         Cavg = 0.5 * (C1 + C2)
 
         # Assign back to block
-        ember.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
-        ember.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
+        fortran.set_by_ijk(b1.cons, Cavg, patch.ijk_node)
+        fortran.set_by_ijk(b2.cons, Cavg, patch.nxijk_node)
 
 
 def exchange_cusp_fluxes(blocks, bid_local, cusps):
@@ -1166,12 +1167,12 @@ def exchange_cusp_fluxes(blocks, bid_local, cusps):
 
         for iflux in ifluxes:
             # faces
-            ember.set_by_ijk(b1.fb[..., iflux], patch.zeros, patch.ijk_cell)
-            ember.set_by_ijk(b2.fb[..., iflux], patch.zeros, patch.nxijk_cell)
+            fortran.set_by_ijk(b1.fb[..., iflux], patch.zeros, patch.ijk_cell)
+            fortran.set_by_ijk(b2.fb[..., iflux], patch.zeros, patch.nxijk_cell)
 
             # k-face fluxes
-            F1 = ember.get_by_ijk(b1.fluxes[2][..., iflux], patch.ijk_face)
-            F2 = ember.get_by_ijk(b2.fluxes[2][..., iflux], patch.nxijk_face)
+            F1 = fortran.get_by_ijk(b1.fluxes[2][..., iflux], patch.ijk_face)
+            F2 = fortran.get_by_ijk(b2.fluxes[2][..., iflux], patch.nxijk_face)
 
             # Multiply by areas to get flows
             # Note that get_by_ijk returns one long array of all
@@ -1191,8 +1192,8 @@ def exchange_cusp_fluxes(blocks, bid_local, cusps):
             F2[patch.nxidA] = F2new
 
             # Assign back to block
-            ember.set_by_ijk(b1.fluxes[2][..., iflux], F1, patch.ijk_face)
-            ember.set_by_ijk(b2.fluxes[2][..., iflux], F2, patch.nxijk_face)
+            fortran.set_by_ijk(b1.fluxes[2][..., iflux], F1, patch.ijk_face)
+            fortran.set_by_ijk(b2.fluxes[2][..., iflux], F2, patch.nxijk_face)
 
 
 def exchange_periodic(blocks, bid_local, periodics):
@@ -1207,12 +1208,12 @@ def exchange_periodic(blocks, bid_local, periodics):
     for patch in periodics:
         # Load flow field into our buffer
         b1 = blocks[bid_local[patch.bid]].cons
-        patch.buffer[:] = ember.get_by_ijk(b1, patch.ijk)
+        patch.buffer[:] = fortran.get_by_ijk(b1, patch.ijk)
 
         # Can directly set away buffer if same rank
         if patch.nxprocid == rank:
             b2 = blocks[bid_local[patch.nxbid]].cons
-            patch.nxbuffer[:] = ember.get_by_ijk(b2, patch.nxijk)
+            patch.nxbuffer[:] = fortran.get_by_ijk(b2, patch.nxijk)
 
         # Otherwise, communication is needed
         else:
@@ -1229,12 +1230,12 @@ def exchange_periodic(blocks, bid_local, periodics):
         # Take average and assign to home block
         bavg = 0.5 * (patch.buffer + patch.nxbuffer)
         b1 = blocks[bid_local[patch.bid]].cons
-        ember.set_by_ijk(b1, bavg, patch.ijk)
+        fortran.set_by_ijk(b1, bavg, patch.ijk)
 
         # If we are on same proc, then we have to set other side as well
         if patch.nxprocid == rank:
             b2 = blocks[bid_local[patch.nxbid]].cons
-            ember.set_by_ijk(b2, bavg, patch.nxijk)
+            fortran.set_by_ijk(b2, bavg, patch.nxijk)
 
     # Whether Send actually blocks is implementation-dependent
     # so we have to explicitly wait for it to finish
