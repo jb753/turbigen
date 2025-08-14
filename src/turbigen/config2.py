@@ -395,7 +395,7 @@ class TurbigenConfig:
             # If solver has convergence history, load it
             if isinstance(self.solver.convergence, str) and not self._fast_init:
                 self.solver.convergence = turbigen.solvers.base.ConvergenceHistory.load(
-                    self.solver.convergence, self.grid[0].empty()
+                    self.solver.convergence, self.inlet.get_inlet()
                 )
 
         # Convert iterator dicts to Config objects
