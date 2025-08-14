@@ -280,7 +280,7 @@ def parse_log(fname, nstep, Nb):
 
     # Multiply by Nb to get mass flow for entire annulus
     inlet[:, 0] *= Nb[0]
-    outlet[:, 0] *= Nb[1]
+    outlet[:, 0] *= Nb[-1]
 
     # Extract the separate variables
     istep = np.arange(nstep)
@@ -621,17 +621,6 @@ def run(grid, ts4_conf, machine, workdir):
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
     output_file_path = os.path.join(ts4_conf.workdir, "output_ts4.hdf5")
     output_avg_file_path = os.path.join(ts4_conf.workdir, "output_ts4_avg.hdf5")
-    soln_exists = os.path.exists(output_file_path)
-    if ts4_conf.skip:
-        if soln_exists:
-            logger.info("Skipping running, loading previous solution.")
-            _read_flow(grid, output_file_path, output_avg_file_path)
-            # Write out for debugging
-            ts3_conf = turbigen.solvers.ts3.ts3(workdir=ts4_conf.workdir)
-            turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
-        else:
-            logger.info("Skipping running, keeping initial guess.")
-        return
 
     ofp = ts4_conf.to_ofp()
 
@@ -769,14 +758,15 @@ pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
 
     cmd_str = (
         f"source {ts4_conf.environment_script} 2> /dev/null;"
-        f"cd {ts4_conf.workdir}; {convert_cmd}"
+        f"cd {ts4_conf.workdir}; mpirun -np 1 {convert_cmd}"
     )
     try:
-        subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
+        subprocess.run(cmd_str, shell=True, check=check, capture_output=True)
     except subprocess.CalledProcessError as e:
         raise Exception(
             f"""Running TS3->TS4 conversion failed, exit code {e.returncode}
 COMMAND: {cmd_str}
+STDOUT: {e.stdout.decode(sys.getfilesystemencoding()).strip()}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 """
         ) from None
@@ -813,9 +803,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
                 xyzp.append(patch.get_cut().xyz.squeeze())
         if xyzp:
             xyz = np.stack(xyzp).T
-            xyz = xyz[
-                (0, 2, 1),
-            ]  # Swap y and z for TS4 coord system
+            xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
             _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write logical probes
