@@ -1144,13 +1144,6 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
 
         self.Omega = Omega
 
-    def nearest_index(self, xrt):
-        """Get the indices of closest point in a block to a query point."""
-        xrrt = np.copy(xrt)
-        xrrt[2] *= xrrt[1]
-        dist = np.sum((self.xrrt - np.reshape(xrrt, (3, 1, 1, 1))) ** 2, axis=0)
-        return np.unravel_index(np.argmin(dist), self.shape)
-
     def __eq__(self, other):
         """Two blocks are equal if they have the same coordinates."""
         return self is other
