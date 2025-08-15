@@ -220,11 +220,11 @@ class ts4(BaseSolver):
 
     def restart(self):
         """Restart from a previous solution."""
+        nramp = 250
         return self.replace(
-            cfl_ramp_nstep=0,
-            precon_fac_ramp_nstep=0,
-            pout_fac_ramp_nstep=0,
-            mixing_rf_ramp_nstep=0,
+            cfl_ramp_nstep=nramp,
+            precon_fac_ramp_nstep=nramp,
+            mixing_rf_ramp_nstep=nramp,
         )
 
     def run(self, grid, machine, workdir):

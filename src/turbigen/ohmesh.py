@@ -3,98 +3,89 @@ import turbigen.autogrid
 import os
 import turbigen.util
 import turbigen.mesh
+import dataclasses
 
 logger = turbigen.util.make_logger()
 
 
+@dataclasses.dataclass
 class OH(turbigen.mesh.Mesher):
     """Contains all configuration options with default values."""
 
     _name = "OH mesh"
 
-    spf_ref = 0.5
+    spf_ref: float = 0.5
     """Set blade-to-blade mesh parameters based on geometry at this span fraction."""
 
-    nj = []
+    nj: tuple = ()
     """Number of spanwise grid points."""
 
-    remote_host = ""
+    remote_host: str = ""
     """Remote host on which AutoGrid server is running."""
 
-    span_interpolation = 2.0
+    span_interpolation: float = 2.0
     """Spanwise % spacing between optimisations of the mesh, interpolate between."""
 
-    via_host = ""
+    via_host: str = ""
     """Jump host for SSH connection to the AutoGrid server."""
 
-    remote_workdir = ""
+    remote_workdir: str = ""
     """File on remote host to append our queued meshing jobs."""
 
     workdir = ""
 
-    gbcs_path = ""
+    gbcs_path: str = ""
     """Location of pre-made mesh, or 'reuse' to take from `workdir/mesh.{g,bcs}`."""
 
-    ni_inlet = 65
+    ni_inlet: int = 65
     """Number of streamwise points in inlet."""
 
-    ni_outlet = 65
+    ni_outlet: int = 65
     """Number of streamwise points in outlet."""
 
-    resolution_factor = 1.0
+    resolution_factor: float = 1.0
 
-    fix_h_inlet = False
-    fix_h_outlet = False
+    fix_h_inlet: bool = False
+    fix_h_outlet: bool = False
 
-    wake_control = False
-    wake_deviation = 0.0
+    wake_control: bool = False
+    wake_deviation: float = 0.0
 
-    match_mixing = False
+    match_mixing: bool = False
 
-    skewness_control = 0
-    orthogonality_control = 0.5
-    nsmooth = 100
-    nsmooth_multigrid = 100
-    blade_streamwise_weight = 2.0
+    skewness_control: int = 0
+    orthogonality_control: float = 0.5
+    nsmooth: int = 100
+    nsmooth_multigrid: int = 100
+    blade_streamwise_weight: float = 2.0
 
-    untwist_outlet = False
-    untwist_inlet = False
-    untwist_inlet_extent = 0.5
+    untwist_outlet: bool = False
+    untwist_inlet: bool = False
+    untwist_inlet_extent: float = 0.5
 
-    round_TE = True
+    round_TE: bool = True
 
-    const_cells_frac = 0.45
+    const_cells_frac: float = 0.45
 
-    nj_tip = 25
-    nk_gap = 9
-    const_cells_frac = 0.45
+    nj_tip: int = 25
+    nk_gap: int = 9
+    const_cells_frac: float = 0.45
 
-    frac_inlet = 0.9
-    frac_outlet = 0.15
-    relax_outlet = 1
-    relax_inlet = 1
+    frac_inlet: float = 0.9
+    frac_outlet: float = 0.15
+    relax_outlet: int = 1
+    relax_inlet: int = 1
 
-    R_fillet_hub = 0.0
-    R_fillet_shd = 0.0
-    nj_fillet_hub = 17
-    nj_fillet_shd = 17
-    is_butterfly = False
-    nk_fillet = 9
+    R_fillet_hub: float = 0.0
+    R_fillet_shd: float = 0.0
+    nj_fillet_hub: float = 17
+    nj_fillet_shd: float = 17
+    is_butterfly: bool = False
+    nk_fillet: int = 9
 
-    ncell_target = 0.0
+    ncell_target: float = 0.0
 
-    inlet_bulb = ""
-
-    def __setattr__(self, key, value):
-        if key not in dir(self):
-            raise TypeError(f"Invalid OH-mesh configuration variable '{key}'")
-        elif not isinstance(value, type(getattr(self, key))):
-            raise TypeError(
-                f"Invalid type for OH-mesh configuration variable {key}={value},"
-                f" should be {type(getattr(self, key))}"
-            )
-        else:
-            super().__setattr__(key, value)
+    inlet_bulb: str = ""
 
     def __init__(self, **kwargs):
         """Initialise a configuration, overriding defaults with keyword arguments."""
