@@ -45,11 +45,15 @@ def _unflip(x, shape=None):
     Although the TS3 hdf5 reports the shape of the data as ni x nj x nk,
     this is not actually true and the underlying data is stored in nk x nj x
     ni order. So we reshape and swap the axes back."""
-    if not shape:
-        ni, nj, nk = x.shape
+    if shape and len(shape) == 4:
+        ni, nj, nk, nt = shape
+        return np.transpose(np.reshape(x, (nt, nk, nj, ni)))[..., 0]
     else:
-        ni, nj, nk = shape
-    return np.swapaxes(np.reshape(x, (nk, nj, ni)), 0, 2)
+        if not shape:
+            ni, nj, nk = x.shape
+        else:
+            ni, nj, nk = shape
+        return np.swapaxes(np.reshape(x, (nk, nj, ni)), 0, 2)
 
 
 @dataclass
@@ -1796,12 +1800,14 @@ def read_grid(fname_hdf5):
             ist, ien, jst, jen, kst, ken = (
                 p.attrs[k] for k in ("ist", "ien", "jst", "jen", "kst", "ken")
             )
+            nt = int(p.attrs["nt"])
 
             # Patch shape
             di = ien - ist
             dj = jen - jst
             dk = ken - kst
             pshape = (di, dj, dk)
+            psize = di * dj * dk
 
             # Subtract 1 to make the end indices inclusive
             ien -= 1
@@ -1818,10 +1824,14 @@ def read_grid(fname_hdf5):
 
             # Inlet
             if isinstance(patch, turbigen.grid.InletPatch):
-                pstag = _unflip(p["pstag_pp"], pshape)
-                tstag = _unflip(p["tstag_pp"], pshape)
-                yaw = _unflip(p["yaw_pp"], pshape)
-                pitch = _unflip(p["pitch_pp"], pshape)
+                if nt > 1:
+                    tshape = (*pshape, nt)
+                else:
+                    tshape = pshape
+                pstag = _unflip(p["pstag_pp"], tshape)
+                tstag = _unflip(p["tstag_pp"], tshape)
+                yaw = _unflip(p["yaw_pp"], tshape)
+                pitch = _unflip(p["pitch_pp"], tshape)
                 patch.state = Sref.empty(shape=(di, dj, dk))
                 patch.state.set_P_T(pstag, tstag)
                 patch.Alpha = yaw
