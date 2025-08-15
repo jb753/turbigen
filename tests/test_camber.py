@@ -80,6 +80,18 @@ def camber_params(camber_class):
 class TestBaseFunctionality:
     """Test basic functionality common to all camber subclasses."""
 
+    def test_all_subclasses_covered(self):
+        """Test that all BaseCamber subclasses are included in CAMBER_CLASSES."""
+        all_subclasses = set(camber.BaseCamber.__subclasses__())
+        tested_classes = set(CAMBER_CLASSES)
+        
+        missing_classes = all_subclasses - tested_classes
+        assert not missing_classes, f"Missing camber classes in tests: {missing_classes}"
+        
+        # Also verify no extra classes in test list
+        extra_classes = tested_classes - all_subclasses
+        assert not extra_classes, f"Extra classes in test list: {extra_classes}"
+
     def test_initialization_valid_params(self, camber_class, camber_params):
         """Test initialization with valid parameter vectors."""
         for params in camber_params:
