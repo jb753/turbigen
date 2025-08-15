@@ -1,6 +1,19 @@
 Changelog
 =========
 
+v2.6.0
+^^^^^^
+
+* Allow hub gaps in OH meshing by setting negative tip values
+* Scale blade thickness on chord/span/absolute value
+* Fix broken TS3 to TS4 conversion script on Wilkes
+* More TS4 configuration options and better restart settings
+* OH meshing data now saves correctly into the config file
+* Bug fix where incidence was calculated on uncambered blades
+* Additional TaylorQuadratic camber line setting metal angle directly instead of metal angle tangent
+* Fix sections were always stacked at LE irrespective of mstack value
+
+
 v2.5.0
 ^^^^^^
 
