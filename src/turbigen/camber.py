@@ -80,12 +80,12 @@ class BaseCamber(ABC):
     @property
     def chi_LE(self):
         """Camber angle at leading edge."""
-        return np.degrees(self.tanchi_LE)
+        return np.degrees(np.arctan(self.tanchi_LE))
 
     @property
     def chi_TE(self):
         """Camber angle at trailing edge."""
-        return np.degrees(self.tanchi_TE)
+        return np.degrees(np.arctan(self.tanchi_TE))
 
     @property
     def Dchi(self):
@@ -96,6 +96,12 @@ class BaseCamber(ABC):
     def Dtanchi(self):
         """Camber angle tangend change."""
         return self.tanchi_TE - self.tanchi_LE
+
+    def _validate_domain(self, m):
+        """Validate that m is within the valid domain [0, 1]."""
+        m_array = np.asarray(m)
+        if np.any(m_array < 0) or np.any(m_array > 1):
+            raise ValueError("Meridional distance m must be in the range [0, 1]")
 
     @abstractmethod
     def chi_hat(self, m) -> np.ndarray:
@@ -130,6 +136,8 @@ class BaseCamber(ABC):
         chi: (n,) array
             Camber angle at requested meridional positions [deg].
         """
+        # Validate domain
+        self._validate_domain(m)
         return np.degrees(np.arctan(self.tanchi_LE + self.chi_hat(m) * self.Dtanchi))
 
     def dydm(self, m):
@@ -147,6 +155,8 @@ class BaseCamber(ABC):
         dydm: (n,) array
             Camber line slope at requested meridional positions.
         """
+        # Validate domain
+        self._validate_domain(m)
         return np.tan(np.radians(self.chi(m)))
 
 
@@ -154,6 +164,7 @@ class Quartic(BaseCamber):
     """Use a quartic polynomial to set normalised camber."""
 
     def chi_hat(self, m):
+        self._validate_domain(m)
         return np.polyval(_fit_quartic_camber(*self.q_camber[2:]), m)
 
 
@@ -161,8 +172,20 @@ class Taylor(BaseCamber):
     """Use a quartic polynomial to set camber angle."""
 
     def chi_hat(self, m):
-        chi = np.polyval(_fit_quartic_camber(*self.q_camber[2:]), m)
+        self._validate_domain(m)
+        chi_norm = np.polyval(_fit_quartic_camber(*self.q_camber[2:]), m)
+        chi = chi_norm * self.Dchi + self.chi_LE
         tanchi = np.tan(np.radians(chi))
+
+        # Handle zero camber case (Dtanchi = 0)
+        # Return m to satisfy boundary conditions; value is arbitrary when Dtanchi == 0
+        if np.abs(self.Dtanchi) < 1e-14:
+            # Preserve scalar inputs as scalars, convert sequences to arrays
+            if np.isscalar(m):
+                return m
+            else:
+                return np.asarray(m)
+
         return (tanchi - self.tanchi_LE) / self.Dtanchi
 
 
@@ -170,6 +193,7 @@ class Quadratic(BaseCamber):
     """Use a quadratic polynomial to set camber slope."""
 
     def chi_hat(self, m):
+        self._validate_domain(m)
         a = self.q_camber[2]  # Aft-loading factor
         m = np.array(m)
         return m * (a * m + (1 - a))
@@ -179,11 +203,22 @@ class TaylorQuadratic(BaseCamber):
     """Use a quadratic polynomial to set camber angle."""
 
     def chi_hat(self, m):
+        self._validate_domain(m)
         a = self.q_camber[2]  # Aft-loading factor
-        m = np.array(m)
-        chi_norm = m * (a * m + (1 - a))
+        m_array = np.array(m)  # Convert to array for calculations
+        chi_norm = m_array * (a * m_array + (1 - a))
         chi = chi_norm * self.Dchi + self.chi_LE
         tanchi = np.tan(np.radians(chi))
+
+        # Handle zero camber case (Dtanchi = 0)
+        # Return appropriate type to satisfy boundary conditions; value is arbitrary when Dtanchi == 0
+        if np.abs(self.Dtanchi) < 1e-14:
+            # Preserve scalar inputs as scalars, use array for sequences
+            if np.isscalar(m):
+                return m
+            else:
+                return m_array
+
         return (tanchi - self.tanchi_LE) / self.Dtanchi
 
 
