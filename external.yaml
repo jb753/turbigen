@@ -1,0 +1,62 @@
+# Turbine cascade with external solver
+#
+# Run a stationary turbine cascade using the external solver interface.
+#
+
+
+# Use a new workdir for each run
+workdir: runs/*
+
+# Perfect gas inlet condition
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  gamma: 1.4
+
+# Set viscosity from Reynolds number
+Re_surf: 4e5
+
+# Turbine cascade design variables
+mean_line:
+  type: turbine_cascade
+  span: [0.01, 0.011]
+  Alpha: [40., -65.0]
+  Ma2: 0.6
+  Yh: 0.029
+  htr: 0.99
+
+# Setup annulus using fixed aspect ratios
+annulus:
+  AR_gap: [1.0, 1.0]
+  AR_chord: 2.0
+
+# Specify camber and thickness one one mid-span section
+blades:
+    - spf: 0.5
+      thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
+      camber: [10., -2., 0.0]
+
+# Discretise fluid domain using a coarse H-mesh
+mesh:
+  type: h
+  AR_cusp: 2.0
+  ni_cusp: 5
+  yplus: 30.0
+  resolution_factor: 0.5
+
+# Use circulation for number of blades
+nblade:
+  - Co: 0.7
+
+# Configure the external solver interface
+solver:
+  type: external
+  script_path: test_receiver.py
+
+post_process:
+  - type: sections
+  - type: contour
+    coord: spf
+    value: 0.5
+    variable: Ma_rel

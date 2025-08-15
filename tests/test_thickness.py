@@ -209,7 +209,6 @@ class TestThickMethod:
         # Check for no sudden jumps (basic continuity check)
         jump = np.abs(np.diff(thick_values))
         max_jump = np.max(jump)
-        imax = np.argmax(jump)
 
         # Threshold should be reasonable for thickness distributions
         max_allowed_jump = thickness_instance.t_max * 0.01
