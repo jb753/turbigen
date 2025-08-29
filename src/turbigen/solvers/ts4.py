@@ -169,12 +169,18 @@ class ts4(BaseSolver):
 
     pout_fac_ramp_nstep: int = 0
     mixing_rf_ramp_nstep: int = 0
+    mixing_bc_method: int = 2
+    mixing_distribution_kind: int = 1
+    mixing_method: int = 2
     inlet_relax_fac: float = 0.5
     nstep_save_start_probe_1d: int = 0
     nstep_save_probe_1d: int = 100
     nstep_save_start_probe_2d: int = 0
     nstep_save_probe_2d: int = 100
     cfl_turb_fac: float = 0.5
+    rot_fac_ramp_nstep: int = 0
+    rot_fac_ramp_st: float = 0.1
+    rot_fac_ramp_en: float = 1.0
     precon: int = 0
     precon_fac_ramp_nstep: int = 100
     precon_fac_ramp_st: float = 0.1
@@ -196,28 +202,35 @@ class ts4(BaseSolver):
 
     def robust(self):
         """Explicit with a slow CFL ramp."""
+        nramp = min(self.nstep, 2000)
         return self.replace(
             implicit_scheme=0,
             cfl=3.5,
-            cfl_ramp_st=0.1,
+            cfl_ramp_st=0.05,
             nstep=self.nstep_soft,
             cfl_ramp_nstep=self.nstep,
             nstep_avg=50,
+            mixing_rf_ramp_nstep=nramp,
+            mixing_method=0,
+            mixing_bc_method=0,
+            mixing_distribution_kind=0,
+            rot_fac_ramp_nstep=nramp,
+            viscous_model=1,
         )
 
     def restart(self):
         """Restart from a previous solution."""
+        nramp = 250
         return self.replace(
-            cfl_ramp_nstep=0,
-            precon_fac_ramp_nstep=0,
-            pout_fac_ramp_nstep=0,
-            mixing_rf_ramp_nstep=0,
+            cfl_ramp_nstep=nramp,
+            precon_fac_ramp_nstep=nramp,
+            mixing_rf_ramp_nstep=nramp,
         )
 
     def run(self, grid, machine, workdir):
         if not workdir.exists():
             workdir.mkdir(parents=True, exist_ok=True)
-        return run(grid, self, machine, workdir)
+        self.convergence = run(grid, self, machine, workdir)
 
     @property
     def config_path(self):
@@ -243,6 +256,12 @@ class ts4(BaseSolver):
 
         if v["precon"]:
             v["precon_fac_ramp"] = 1
+
+        if v["rot_fac_ramp_nstep"]:
+            v["rot_fac_ramp"] = 1
+
+        if v["mixing_rf_ramp_nstep"]:
+            v["mixing_rf_ramp"] = 1
 
         # Disable ramping in unsteady runs
         if self.if_dts:
@@ -280,7 +299,7 @@ def parse_log(fname, nstep, Nb):
 
     # Multiply by Nb to get mass flow for entire annulus
     inlet[:, 0] *= Nb[0]
-    outlet[:, 0] *= Nb[1]
+    outlet[:, 0] *= Nb[-1]
 
     # Extract the separate variables
     istep = np.arange(nstep)
@@ -371,14 +390,17 @@ DEFAULT_CONFIG = {
     "mixing_alpha": 1.0,
     "mixing_bc_method": 2,
     "mixing_distribution_kind": 1,
-    "mixing_distribution_spacing": 5e-4,
     "mixing_method": 2,
+    "mixing_distribution_spacing": 5e-4,
     "mixing_nstation": 200,
     "mixing_rf": 0.25,
-    "mixing_rf_ramp": 1,
     "mixing_rf_ramp_nstep": 500,
     "mixing_rf_ramp_st": 0.05,
     "mixing_rf_ramp_en": 0.25,
+    "rot_fac_ramp": 0,
+    "rot_fac_ramp_nstep": 0,
+    "rot_fac_ramp_st": 0,
+    "rot_fac_ramp_en": 1.0,
     "node_ordering_option": 2,
     "nstep": 5000,
     "prandtl_turbulent": 0.9,
@@ -621,17 +643,6 @@ def run(grid, ts4_conf, machine, workdir):
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
     output_file_path = os.path.join(ts4_conf.workdir, "output_ts4.hdf5")
     output_avg_file_path = os.path.join(ts4_conf.workdir, "output_ts4_avg.hdf5")
-    soln_exists = os.path.exists(output_file_path)
-    if ts4_conf.skip:
-        if soln_exists:
-            logger.info("Skipping running, loading previous solution.")
-            _read_flow(grid, output_file_path, output_avg_file_path)
-            # Write out for debugging
-            ts3_conf = turbigen.solvers.ts3.ts3(workdir=ts4_conf.workdir)
-            turbigen.solvers.ts3._write_hdf5(grid, ts3_conf, fname="output_ts3.hdf5")
-        else:
-            logger.info("Skipping running, keeping initial guess.")
-        return
 
     ofp = ts4_conf.to_ofp()
 
@@ -769,14 +780,15 @@ pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
 
     cmd_str = (
         f"source {ts4_conf.environment_script} 2> /dev/null;"
-        f"cd {ts4_conf.workdir}; {convert_cmd}"
+        f"cd {ts4_conf.workdir}; mpirun -np 1 {convert_cmd}"
     )
     try:
-        subprocess.run(cmd_str, shell=True, check=check, stderr=subprocess.PIPE)
+        subprocess.run(cmd_str, shell=True, check=check, capture_output=True)
     except subprocess.CalledProcessError as e:
         raise Exception(
             f"""Running TS3->TS4 conversion failed, exit code {e.returncode}
 COMMAND: {cmd_str}
+STDOUT: {e.stdout.decode(sys.getfilesystemencoding()).strip()}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 """
         ) from None
@@ -813,9 +825,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
                 xyzp.append(patch.get_cut().xyz.squeeze())
         if xyzp:
             xyz = np.stack(xyzp).T
-            xyz = xyz[
-                (0, 2, 1),
-            ]  # Swap y and z for TS4 coord system
+            xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
             _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write logical probes

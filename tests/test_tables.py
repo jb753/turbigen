@@ -6,6 +6,8 @@ from turbigen.tables import make_tables
 from tempfile import mkdtemp
 import pytest
 
+pytestmark = pytest.mark.slow
+
 import matplotlib.pyplot as plt
 
 # Look for test data in a directory at same level as this script

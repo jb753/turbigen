@@ -1,6 +1,6 @@
-# Turbine cascade
+# Turbine cascade with external solver
 #
-# Run a stationary turbine cascade with prescribed flow angles.
+# Run a stationary turbine cascade using the external solver interface.
 #
 
 
@@ -49,11 +49,10 @@ mesh:
 nblade:
   - Co: 0.7
 
-# Configure the built-in flow solver
+# Configure the external solver interface
 solver:
-  type: ember
-  n_step: 2000
-  n_step_avg: 500
+  type: external
+  script_path: test_receiver.py
 
 post_process:
   - type: sections

@@ -64,7 +64,10 @@ class Convergence(BasePost):
 
         # Normalise work and loss as percent
         # changes with respect to averaged value
-        istart = np.where(conv.istep == conv.istep_avg)[0][0]
+        try:
+            istart = np.where(conv.istep == conv.istep_avg)[0][0]
+        except Exception:
+            istart = 0
         dYs = (Ys / Ys[istart:].mean() - 1.0) * 100.0
         if meanline.U.any():
             dCWx = (CWx / CWx[istart:].mean() - 1.0) * 100.0
@@ -453,6 +456,8 @@ class Annulus(BasePost):
         ax.grid("off")
 
         if self.show_blades:
+            config.apply_recamber()
+
             grey = np.ones((3,)) * 0.4
             Npts = 10
             spf = np.linspace(0.0, 1.0, Npts)
@@ -486,6 +491,8 @@ class Annulus(BasePost):
                 # Plot each of LE/TE/diagonals
                 for xri in xr:
                     ax.plot(*xri, "-", color=grey)
+
+            config.undo_recamber()
 
         # Plot the cut planes
         for mi in self.m_cut:

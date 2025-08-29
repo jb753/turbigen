@@ -1,5 +1,6 @@
 """Verify implementatio of emb solver boundary conditions."""
 
+import pytest
 import numpy as np
 
 import turbigen.compflow_native as cf
@@ -138,6 +139,7 @@ def make_grid(use_inlet, use_outlet, use_mixing):
     return g
 
 
+@pytest.mark.slow
 def test_outlet_CFL_0():
     """Without any update from the interior, outlet should force correct values."""
 
@@ -150,6 +152,7 @@ def test_outlet_CFL_0():
     assert np.isclose(C.P.mean(), outlet_patch.Pout)
 
 
+@pytest.mark.slow
 def test_inlet_CFL_0():
     """Without any update from the interior, inlet and outlet should force correct values."""
 
@@ -168,6 +171,7 @@ def test_inlet_CFL_0():
     assert np.allclose(C.Beta, patch.Beta, atol=angtol)
 
 
+@pytest.mark.slow
 def test_CFL():
     """Does it nan immediately with non-zero CFL?"""
     g = make_grid(use_inlet=True, use_outlet=True, use_mixing=False)
@@ -177,6 +181,7 @@ def test_CFL():
     ).run(g)
 
 
+@pytest.mark.slow
 def test_mixer():
     """Does the mixing plane conserve pitchwise-integrated flows?"""
 

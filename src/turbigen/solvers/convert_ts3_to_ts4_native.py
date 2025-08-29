@@ -1,9 +1,15 @@
-#!/usr/bin/env pvpython
+#!/usr/bin/env python
 # Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM
 import os
 import numpy
 import sys
 import vtk
+
+print("Python version:", sys.version)
+print("Python executable:", sys.executable)
+print("Numpy version:", numpy.__version__)
+print("Numpy path:", numpy.__path__)
+
 import ts.process.ts3_reader
 import ts.process.pre.vtk_adaptor
 import ts.process.pre.vtk_util
@@ -15,7 +21,6 @@ if not len(sys.argv) == 3:
 
 
 def select_by_string(vtk_grid, string):
-
     obj_name_key = vtk.vtkCompositeDataSet.NAME()
 
     # Clear selection
@@ -30,7 +35,6 @@ def select_by_string(vtk_grid, string):
     # Loop over things
     found_indices = []
     while not iter.IsDoneWithTraversal():
-
         meta = iter.GetCurrentMetaData()
         flat_index = iter.GetCurrentFlatIndex()
 
@@ -49,10 +53,8 @@ def select_by_string(vtk_grid, string):
 
 
 def set_group(vtk_grid, group_id):
-
     # Loop through selected bcells
     for bcell in ts.process.pre.vtk_util.get_selected_bcells(vtk_grid):
-
         # Copy the bcell and add the group array
         obj_copy = ts.process.pre.vtk_util.copy_bcell(bcell.obj, copy_arrays=False)
         ncell = obj_copy.GetNumberOfCells()

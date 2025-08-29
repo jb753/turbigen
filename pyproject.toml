@@ -1,6 +1,6 @@
 [project]
 name = "turbigen"
-version = "2.5.3"
+version = "2.7.0"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 authors = [
@@ -49,11 +49,8 @@ skip = "pp*"
 manylinux-x86_64-image = "manylinux2014"
 archs = ["x86_64"]
 
-[tool.uv]
-managed = false
-
 [tool.bumpversion]
-current_version = "2.5.3"
+current_version = "2.7.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"
@@ -84,4 +81,7 @@ dev = [
     'pre-commit',
     'twine',
     'bump-my-version',
+    'meson-python',
+    'ninja',
+    'pyqt6',
 ]

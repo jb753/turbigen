@@ -148,6 +148,15 @@ class TurbigenConfig:
         if not self.workdir.exists():
             self.workdir.mkdir(parents=True)
 
+        # Check that the blades are not recambered
+        for row in self.blades:
+            for blade in row:
+                if blade.is_recambered:
+                    raise Exception(
+                        "Cannot write configuration with recambered blades.\n"
+                        "Use `undo_recamber()` to revert the camber parameters to degreeof of recamber."
+                    )
+
         data = self.to_dict()
 
         # Convert grid objects to filenames
@@ -386,15 +395,17 @@ class TurbigenConfig:
             # If solver has convergence history, load it
             if isinstance(self.solver.convergence, str) and not self._fast_init:
                 self.solver.convergence = turbigen.solvers.base.ConvergenceHistory.load(
-                    self.solver.convergence, self.grid[0].empty()
+                    self.solver.convergence, self.inlet.get_inlet()
                 )
 
         # Convert iterator dicts to Config objects
         if self.iterate:
             iters = []
+            iter_cls = []
             for k, v in self.iterate.items():
                 # Find a subclass for this iterator
                 cls = util.get_subclass_by_name(turbigen.iterators.IteratorConfig, k)
+                iter_cls.append(cls)
                 if v:
                     # Pass the dictionary to the subclass
                     iters.append(cls(**v))
@@ -402,6 +413,14 @@ class TurbigenConfig:
                 else:
                     iters.append(cls())
             self.iterate = iters
+
+            # Ensure that incidence is always the first iterator=
+            # This is because any iterators that change geometry
+            # Will make the CFD grid not match the blade geometry
+            if turbigen.iterators.Incidence in iter_cls:
+                index = iter_cls.index(turbigen.iterators.Incidence)
+                self.iterate.insert(0, self.iterate.pop(index))
+                assert self.iterate[0].__class__ == turbigen.iterators.Incidence
 
         # Check the iterators
         for iterator in self.iterate:
@@ -509,10 +528,6 @@ class TurbigenConfig:
             # Set meridional locations
             for blade in row:
                 blade.set_streamsurface(self.annulus.xr_row(irow))
-
-        self.check_pitch_chord()
-        logger.info(f"Nblade: {self.get_nblade()}")
-        logger.info(f"Tip gaps/span: {self.get_gaps()}")
 
     def get_nblade(self):
         Nb = np.full((len(self.blades),), 0, dtype=int)
@@ -627,7 +642,6 @@ class TurbigenConfig:
             # Apply recamber, set meridional locations for
             # main and splitters
             for blade in row:
-                # blade.apply_recamber(self.mean_line.nominal)
                 blade.set_streamsurface(self.annulus.xr_row(irow))
 
         # Choose whether the blocks are real or perfect
@@ -923,6 +937,10 @@ class TurbigenConfig:
         self.get_geometry()
         self.apply_recamber()
 
+        self.check_pitch_chord()
+        logger.info(f"Nblade: {self.get_nblade()}")
+        logger.info(f"Tip gaps/span: {self.get_gaps()}")
+
         # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
@@ -1013,7 +1031,7 @@ class TurbigenConfig:
                 logger.debug(f"Running post function {poster}")
                 try:
                     poster.post(self, pdf)
-                except Exception as e:
+                except Exception:
                     logger.error(f"Failed to run post function {poster}")
                     traceback.print_exc()
         # Ensure all figures are closed

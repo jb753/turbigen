@@ -29,6 +29,12 @@ class BaseThickness(ABC):
         """
         self.q_thick = np.reshape(q_thick, -1)
 
+    def _validate_domain(self, m):
+        """Validate that m is within the valid domain [0, 1]."""
+        m_array = np.asarray(m)
+        if np.any(m_array < 0) or np.any(m_array > 1):
+            raise ValueError("Meridional distance m must be in the range [0, 1]")
+
     @abstractmethod
     def scale(self, fac):
         """Scale the thickness distribution by a factor.
@@ -56,6 +62,29 @@ class BaseThickness(ABC):
         """
         raise NotImplementedError
 
+    @property
+    @abstractmethod
+    def t_max(self):
+        """Maximum thickness of the airfoil."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def R_LE(self):
+        """Leading edge radius of the airfoil."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def t_te(self):
+        """Trailing edge thickness of the airfoil.
+
+        Note that this is the total thickness that would arise from
+        both sides, so self.thick(m) will return half of this value.
+
+        """
+        raise NotImplementedError
+
 
 class Taylor(BaseThickness):
     """After Taylor (2016), two cubic splines in shape space."""
@@ -69,20 +98,8 @@ class Taylor(BaseThickness):
         return self.q_thick[1]
 
     @property
-    def s_tmax(self):
-        return self.q_thick[2]
-
-    @property
-    def kappa_max(self):
-        return self.q_thick[3]
-
-    @property
     def t_te(self):
         return self.q_thick[4]
-
-    @property
-    def tanwedge(self):
-        return self.q_thick[5]
 
     def scale(self, fac):
         self.q_thick[0] *= fac  # Scale LE radius
@@ -94,61 +111,38 @@ class Taylor(BaseThickness):
         # Ignore singularities at leading and trailing edges
         ii = np.abs(x - 0.5) < (0.5 - eps)
         s = np.ones(x.shape) * np.nan
-        if self.t_te < 0.0:
-            s[ii] = t[ii] / np.sqrt(x[ii]) / np.sqrt(1.0 - x[ii])
-        else:
-            s[ii] = (t[ii] - x[ii] * self.t_te / 2.0) / np.sqrt(x[ii]) / (1.0 - x[ii])
+        s[ii] = (t[ii] - x[ii] * self.t_te / 2.0) / np.sqrt(x[ii]) / (1.0 - x[ii])
         return s
 
     def _from_shape(self, x, s):
         """Transform shape space to real coordinates."""
-        if self.t_te < 0.0:
-            return np.sqrt(x) * np.sqrt(1.0 - x) * s
-        else:
-            return np.sqrt(x) * (1.0 - x) * s + x * self.t_te / 2.0
+        return np.sqrt(x) * (1.0 - x) * s + x * self.t_te / 2.0
 
     @property
     def _coeff(self):
         """Coefficients for piecewise polynomials in shape space."""
 
+        m_tmax = self.q_thick[2]
         # Evaluate control points
         sle = np.sqrt(2.0 * self.R_LE)
         t_te = self.t_te
-        if t_te < 0.0:
-            t_te = 0.0
-            smax = self.t_max / np.sqrt(self.s_tmax) / np.sqrt(1.0 - self.s_tmax)
-            dsmax = (
-                smax
-                / 2.0
-                * (2.0 * self.s_tmax - 1.0)
-                / self.s_tmax
-                / (1.0 - self.s_tmax)
+        smax = (self.t_max - m_tmax * t_te / 2.0) / np.sqrt(m_tmax) / (1.0 - m_tmax)
+        dsmax = (
+            (
+                smax * (np.sqrt(m_tmax) - (1.0 - m_tmax) / 2.0 / np.sqrt(m_tmax))
+                - t_te / 2.0
             )
-        else:
-            smax = (
-                (self.t_max - self.s_tmax * t_te / 2.0)
-                / np.sqrt(self.s_tmax)
-                / (1.0 - self.s_tmax)
-            )
-            dsmax = (
-                (
-                    smax
-                    * (
-                        np.sqrt(self.s_tmax)
-                        - (1.0 - self.s_tmax) / 2.0 / np.sqrt(self.s_tmax)
-                    )
-                    - t_te / 2.0
-                )
-                / np.sqrt(self.s_tmax)
-                / (1.0 - self.s_tmax)
-            )
+            / np.sqrt(m_tmax)
+            / (1.0 - m_tmax)
+        )
 
-        ste = t_te + self.tanwedge
+        tanwedge = self.q_thick[5]
+        ste = t_te + tanwedge
 
         # For brevity
-        x3 = self.s_tmax**3.0
-        x2 = self.s_tmax**2.0
-        x1 = self.s_tmax
+        x3 = m_tmax**3.0
+        x2 = m_tmax**2.0
+        x1 = m_tmax
 
         # Fit front cubic
         A = np.zeros((4, 4))
@@ -168,7 +162,8 @@ class Taylor(BaseThickness):
 
         # Curvature at max thickness
         A[3] = [6.0 * x1, 2.0, 0.0, 0.0]
-        b[3] = self.kappa_max
+        kappa_max = self.q_thick[3]
+        b[3] = kappa_max
 
         coeff_front = np.linalg.solve(A, b).reshape(-1)
 
@@ -201,8 +196,9 @@ class Taylor(BaseThickness):
 
         coeff_front, coeff_rear = self._coeff
         tau = np.zeros_like(s)
-        tau[s <= self.s_tmax] = np.polyval(coeff_front, s[s <= self.s_tmax])
-        tau[s > self.s_tmax] = np.polyval(coeff_rear, s[s > self.s_tmax])
+        m_tmax = self.q_thick[2]
+        tau[s <= m_tmax] = np.polyval(coeff_front, s[s <= m_tmax])
+        tau[s > m_tmax] = np.polyval(coeff_rear, s[s > m_tmax])
         return tau
 
     def thick(self, m):
@@ -219,6 +215,19 @@ class Taylor(BaseThickness):
             Samples of thickness distribution at the requested points :math:`t(m)`.
 
         """
-        t = self._from_shape(m, self.tau(m))
-        assert t.max() <= self.t_max, "Thickness exceeds maximum thickness."
-        return t
+        # Validate domain
+        self._validate_domain(m)
+
+        # Convert to array to ensure consistent behavior
+        m_array = np.asarray(m)
+        t = self._from_shape(m_array, self.tau(m_array))
+
+        # Check maximum thickness constraint
+        if np.any(t > self.t_max + 1e-10):  # Small tolerance for numerical errors
+            raise ValueError("Thickness exceeds maximum thickness.")
+
+        # Return scalar for scalar input, array otherwise
+        if np.isscalar(m):
+            return float(t.item())
+        else:
+            return t

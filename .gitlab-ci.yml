@@ -37,7 +37,7 @@ tests:
   stage: test
   script:
     - uv pip install dist/*.whl pytest
-    - pytest
+    - pytest --slow
 
 profile:
   stage: deploy
@@ -56,11 +56,11 @@ doc:
     paths:
       - doc/_build
   script:
-    - apt update && apt install -y pdf2svg
+    - apt update && apt install -y pdf2svg fonts-freefont-ttf
     - uv pip install dist/*.whl sphinx sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
-    - uv run doc/generate_examples.py
-    - uv run doc/generate_meanline.py
-    - uv run doc/generate_data_structures.py
+    - python doc/generate_examples.py
+    - python doc/generate_meanline.py
+    - python doc/generate_data_structures.py
     - sphinx-build -W doc doc/_build
 
 build_all_wheels:
