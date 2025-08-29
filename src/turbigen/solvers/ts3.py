@@ -1787,6 +1787,9 @@ def read_grid(fname_hdf5):
             )
         )
 
+        mu_turb = _unflip(b["trans_dyn_vis_bp"])
+        wdist = _unflip(b["phi_bp"])
+
         # Now read the patches
         patches = []
         for ip in range(npatch):
@@ -1885,6 +1888,8 @@ def read_grid(fname_hdf5):
         block.mu = mu
         block.cp = cp
         block.set_conserved(conserved)
+        block.mu_turb[:] = mu_turb
+        block.w[:] = wdist
 
         blocks.append(block)
 
