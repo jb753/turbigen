@@ -549,6 +549,17 @@ class BaseFlowField(
         D = v[:, 1:, :-1, None]
         return util.dA_Gauss(A, B, C, D)[..., 0]
 
+    def nearest_index(self, xrt):
+        """Get the indices of closest point in a block to a query point."""
+        xrrt = np.copy(xrt)
+        xrrt[2] *= xrrt[1]
+        if self.ndim > 3:
+            xrrt_self = self.xrrt[..., 0]
+        else:
+            xrrt_self = self.xrrt
+        dist = np.sum((xrrt_self - np.reshape(xrrt, (3, 1, 1, 1))) ** 2, axis=0)
+        return np.unravel_index(np.argmin(dist), self.shape[:3]), dist.min()
+
 
 class PerfectFlowField(turbigen.fluid.PerfectState, BaseFlowField):
     """Flow and thermodynamic properties of a perfect gas."""
