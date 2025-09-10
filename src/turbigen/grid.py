@@ -1265,6 +1265,25 @@ class Grid:
 
         return blocks
 
+    def blocks_touching_box(self, xrt_box):
+        """Get blocks inside a bouding box."""
+        xrt_box = np.reshape(xrt_box, (3, 2))
+
+        # Loop over blocks
+        blocks = []
+        for b in self:
+            xmin = (b.x >= xrt_box[0, 0]).any()
+            xmax = (b.x <= xrt_box[0, -1]).any()
+            ymin = (b.r >= xrt_box[1, 0]).any()
+            ymax = (b.r <= xrt_box[1, -1]).any()
+            zmin = (b.t >= xrt_box[2, 0]).any()
+            zmax = (b.t <= xrt_box[2, -1]).any()
+
+            if all((xmin, xmax, ymin, ymax, zmin, zmax)):
+                blocks.append(b)
+
+        return blocks
+
     @property
     def inlet_patches(self):
         return self.find_patches(InletPatch)
