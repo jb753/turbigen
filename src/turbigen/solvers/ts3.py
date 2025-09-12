@@ -156,6 +156,7 @@ class ts3(BaseSolver):
     fac_sa_smth: float = 4.0  # SA smoothing (lower is more stable)
     fac_sa_step: float = 1.0  # SA time step factor
     fac_st0: float = 1.0
+    fac_st3: float = 1.0
     ipout: int = 3
     convert_sliding: bool = False
     precon: int = 0
@@ -1441,7 +1442,7 @@ def read_probe_metadata(dname):
     return {f: probe_meta[b][p] for f, (b, p) in zip(fnames, zip(bid, pid))}
 
 
-def read_probe_dat_dir(dname, label=None):
+def read_probe_dat_dir(dname, label=None, exact=False):
     """Load all probe text files in a directory into one big array.
 
     This function will write out an npz into the directory containing the data
@@ -1468,12 +1469,26 @@ def read_probe_dat_dir(dname, label=None):
     # Load the metadata first and filter on label if specified
     metadata = read_probe_metadata(dname)
     if label:
-        metadata = {f: m for f, m in metadata.items() if label == m["label"]}
-        logger.info(f'Filtered by label "{label}", found {len(metadata)} probes.')
+        original_metadata = metadata.copy()
+        if exact:
+            metadata = {f: m for f, m in metadata.items() if label == m["label"]}
+        else:
+            metadata = {f: m for f, m in metadata.items() if label in m["label"]}
+        logger.info(
+            f'Filtered by label containing "{label}", found {len(metadata)} probes.'
+        )
 
     # Load first file and get the sampling frequency
     fnames = list(metadata.keys())
     if not fnames:
+        if label:
+            # Get unique labels from original metadata
+            available_labels = sorted(
+                set(m["label"] for m in original_metadata.values())
+            )
+            raise ValueError(
+                f'No probes found with label "{label}". Available unique labels: {available_labels}'
+            )
         return [], None
     data0, fs = read_probe_dat(fnames[0])
     data = [data0]
