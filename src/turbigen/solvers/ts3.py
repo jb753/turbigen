@@ -171,6 +171,7 @@ class ts3(BaseSolver):
     free_turb: float = 0.05
     turbvis_lim: float = 3000.0
     rfvis: float = 0.2
+    facsafe: float = 0.2
     use_temperature_sensor: int = 0
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
