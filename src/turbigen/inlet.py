@@ -68,13 +68,3 @@ class RealInletConfig(InletConfig):
         return turbigen.fluid.RealState.from_fluid_name(self.fluid_name).set_P_T(
             self.Po, self.To
         )
-
-
-#
-#
-# # data = turbigen.yaml.read("examples/quad_camber.yaml")
-# if __name__ == "__main__":
-#     inlet_dat = {"Po": 101325, "To": 288.15, "cp": 1000, "gamma": 1.4}
-#     inlet = util.init_subclass_by_signature(InletConfig, inlet_dat)
-#     print(type(inlet))
-#     print(inlet)

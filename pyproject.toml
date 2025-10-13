@@ -65,6 +65,7 @@ filename = "pyproject.toml"
 
 [dependency-groups]
 dev = [
+    'CoolProp',
     'sphinx',
     'sphinx-autobuild',
     'sphinx-argparse',

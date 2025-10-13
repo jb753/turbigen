@@ -98,27 +98,6 @@ def main():
     # Load input data in dictionary format
     d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
 
-    # If we are planning to use emb
-    if d.get("solver", {}).get("type") == "emb":
-        try:
-            # Check our MPI rank
-            from mpi4py import MPI
-
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
-
-            # Jump to solver slave process if not first rank
-            if rank > 0:
-                from turbigen.solvers import emb
-
-                emb.run_slave()
-                sys.exit(0)
-
-        except ImportError:
-            # Just run serially if we cannot import mpi4py
-            print('Failed to import "mpi4py", running serially.')
-            pass
-
     # Ensure that the workdir is always set
     # This is because we might want to edit the input file before loading proper
     if not (workdir := d.get("workdir")):
@@ -128,7 +107,7 @@ def main():
     if "*" in workdir:
         d["workdir"] = workdir = util.next_numbered_dir(workdir)
 
-    # Make workdir if needed
+    # Create the workdir if needed
     workdir = os.path.abspath(workdir)
     if not os.path.exists(workdir):
         os.makedirs(workdir, exist_ok=True)
@@ -169,6 +148,7 @@ def main():
     conf = turbigen.yaml.read_yaml(working_config)
     conf = turbigen.config2.TurbigenConfig(**conf)
     logger.debug("Configuration intialised, writing back...")
+
     # Resave the config so that the internal state and
     # the YAML file are consistent (e.g. if submitting a job)
     # We have not changed grid or guess yet, so do not overwrite those pickles

@@ -51,9 +51,8 @@ nblade:
 
 # Configure the built-in flow solver
 solver:
-  type: ember
-  n_step: 2000
-  n_step_avg: 500
+  type: ts3
+  nstep: 2000
 
 post_process:
   - type: sections
