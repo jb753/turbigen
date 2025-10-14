@@ -12,10 +12,15 @@ REGISTRY = {
 }
 
 
-def find_plugins(plugdir):
+def get_registry():
+    """Return the plugin registry."""
+    return REGISTRY
+
+
+def load_plugins(plugdir):
     """Find and load plugins from the plugdir."""
 
-    logger.warning(f"Importing plugins from directory: {plugdir}")
+    logger.warning(f"Loading plugins from directory: {plugdir}")
 
     # Find all python files recursively in the plugdir
     py_files = list(plugdir.rglob("*.py"))
@@ -31,7 +36,7 @@ def find_plugins(plugdir):
             spec = importlib.util.spec_from_file_location(py_file.stem, py_file)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            logger.warning(f"Loaded plugin: {py_file}")
+            logger.warning(f"Imported plugin module: {py_file}")
         except Exception:
             logger.error(f"Failed to import plugin: '{py_file}'")
             traceback.print_exc()
@@ -59,7 +64,7 @@ def find_plugins(plugdir):
     logger.warning("Mean line types:")
     for mean_line_type in all_types:
         sig = inspect.signature(REGISTRY["mean_line_forward"][mean_line_type])
-        # Remvoe 'mean_line' from signature for clarity
+        # Remove 'mean_line' from signature for clarity
         params = [p.name for p in list(sig.parameters.values())[1:]]
         logger.warning(f"  {mean_line_type}({', '.join(params)})")
 
@@ -84,17 +89,17 @@ def register_mean_line(func):
         # forward signature first arg is meanline
         sig_fwd = inspect.signature(func)
         params_fwd = list(sig_fwd.parameters.values())
-        if len(params_fwd) < 1 or params_fwd[0].name != "mean_line":
+        if len(params_fwd) < 1 or params_fwd[0].name != "ml":
             raise Exception(
-                f"Mean line type '{mean_line_type}' forward function first argument must be 'mean_line', got '{params_fwd[0].name if params_fwd else 'none'}'."
+                f"Mean line type '{mean_line_type}' forward function first argument must be 'ml', got '{params_fwd[0].name if params_fwd else 'none'}'."
             )
     else:
         # backward signature must take a single mean_line argument
         sig_bwd = inspect.signature(func)
         params_bwd = list(sig_bwd.parameters.values())
-        if len(params_bwd) != 1 or params_bwd[0].name != "mean_line":
+        if len(params_bwd) != 1 or params_bwd[0].name != "ml":
             raise Exception(
-                f"Mean line type '{mean_line_type}' backward function must take a single argument 'mean_line', got '{params_bwd[0].name if params_bwd else 'none'}'."
+                f"Mean line type '{mean_line_type}' backward function must take a single argument 'ml', got '{params_bwd[0].name if params_bwd else 'none'}'."
             )
 
     # Add to module registry

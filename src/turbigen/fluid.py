@@ -31,6 +31,12 @@ class FluidConfig(ABC):
         """Subclasses implement this to instantiate their fluid type."""
         raise NotImplementedError()
 
+    def to_dict(self) -> dict:
+        """Convert the FluidConfig to a dictionary."""
+        data = dataclasses.asdict(self)
+        data.pop("fluid")  # Remove the fluid instance
+        return data
+
     @staticmethod
     def from_dict(config_dict: dict) -> "FluidConfig":
         """Create a FluidConfig subclass from a dictionary.

@@ -1,0 +1,27 @@
+# Input test file for config3
+
+# Use a new workdir for each run
+work_dir: runs/*
+
+plug_dir: ./plug
+
+mean_line:
+  type: fan
+  n_row: 1
+  phi: 0.5
+  psi: 0.4
+  eta_tt: 0.9
+  DPo: 2000.
+  mdot: 5.
+  htr: 0.8
+
+
+fluid:
+  type: perfect
+  cp: 1005
+  gamma: 1.4
+  mu: 1e-5
+
+inlet:
+  Po: 1e5
+  To: 300.

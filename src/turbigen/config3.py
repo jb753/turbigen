@@ -8,6 +8,7 @@ import turbigen.dspace
 import turbigen.job
 import turbigen.iterators
 import turbigen.yaml_utils
+import turbigen.meanline_new
 
 from typing import List
 
@@ -22,7 +23,7 @@ class TurbigenConfig:
 
     """
 
-    workdir: Path
+    work_dir: Path
     """Directory in which to store run data."""
 
     fluid: turbigen.fluid.FluidConfig
@@ -31,8 +32,11 @@ class TurbigenConfig:
     inlet: turbigen.inlet.InletConfig
     """Inflow boundary conditions."""
 
-    # mean_line: turbigen.meanline_design.MeanLineDesigner
-    # """Settings for the mean-line designer."""
+    mean_line: turbigen.meanline_new.MeanLineConfig
+    """Settings for the mean-line designer."""
+
+    plug_dir: Path = None
+    """Directory in which to store run data."""
 
     iterate: List[turbigen.iterators.IteratorConfig] = dataclasses.field(
         default_factory=list
@@ -48,13 +52,24 @@ class TurbigenConfig:
     def __post_init__(self):
         """Ensure correct types after init."""
 
-        self.workdir = Path(self.workdir).absolute()
+        self.work_dir = Path(self.work_dir).absolute()
+
+        if self.plug_dir:
+            self.plug_dir = Path(self.plug_dir).absolute()
+
+        self.fluid = turbigen.fluid.FluidConfig.from_dict(self.fluid)
+        self.inlet = turbigen.inlet.InletConfig(**self.inlet)
+        self.mean_line = turbigen.meanline_new.MeanLineConfig.from_dict(self.mean_line)
 
     def to_dict(self):
         """Convert the config to a dictionary."""
 
         # Built-in dataclasses method gets us most of the way there
         data = dataclasses.asdict(self)
+
+        # Now convert any nested objects with to_dict methods
+        data["mean_line"] = self.mean_line.to_dict()
+        data["fluid"] = self.fluid.to_dict()
 
         return data
 

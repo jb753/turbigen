@@ -3,8 +3,87 @@
 import ember.block
 import ember.fluid
 import numpy as np
+import turbigen.plugins
+import inspect
+
 
 f32 = np.float32
+
+
+class MeanLineConfig:
+    """Configuration for a MeanLine object."""
+
+    def __init__(self, mean_line_type, n_row, design_vars):
+        """Initialize the configuration."""
+        self.n_row = n_row
+        self.type = mean_line_type
+        self.design_vars = design_vars
+
+        # Store the forward and backward functions
+        reg = turbigen.plugins.get_registry()
+        self._forward = reg["mean_line_forward"][self.type]
+        self._backward = reg["mean_line_backward"][self.type]
+
+        # Allocate placeholders for nominal and actual mean lines
+        self.nominal = MeanLine(n_row)
+        self.actual = MeanLine(n_row)
+
+        # Check that design_vars match forward function signature
+        sig = inspect.signature(self._forward)
+        params = list(sig.parameters.values())[1:]  # Skip first 'mean_line' param
+        param_names = {p.name for p in params if p.default is p.empty}
+        missing = param_names - set(design_vars.keys())
+        if missing:
+            raise ValueError(
+                f"Missing required design variables for mean_line type '{self.type}': {missing}"
+            )
+
+    @classmethod
+    def from_dict(cls, d):
+        """Initialize from a dictionary."""
+
+        # Extract values from dictionary
+        mean_line_type = d.pop("type")
+        n_row = d.pop("n_row")
+
+        # Get available types from plugin registry
+        reg = turbigen.plugins.get_registry()
+        all_types = set(reg["mean_line_forward"].keys())
+
+        # Validate type
+        if not mean_line_type:
+            raise ValueError(
+                f"mean_line configuration requires a 'type' key. Available types: {all_types}"
+            )
+        if mean_line_type not in all_types:
+            raise ValueError(
+                f"Unknown mean_line type '{mean_line_type}'. Available types: {all_types}"
+            )
+
+        # Validate n_row
+        if n_row is None:
+            raise ValueError("mean_line configuration requires an 'n_row' key.")
+        if n_row < 1:
+            raise ValueError(f"n_row must be >= 1, got {n_row}")
+
+        # Remaining keys are design variables
+        design_vars = d
+
+        return cls(mean_line_type, n_row, design_vars)
+
+    def to_dict(self):
+        """Convert to a dictionary."""
+        return {
+            "type": self.type,
+            "n_row": self.n_row,
+            **self.design_vars,
+        }
+
+    def set_nominal(self, fluid, Po1, To1):
+        """Set the nominal mean-line flow field."""
+        self.nominal.set_fluid(fluid)
+        self.nominal[0].set_P_T(Po1, To1).set_Vxrt(0.0, 0.0, 0.0)
+        self._forward(self.nominal, **self.design_vars)
 
 
 def _make_concat_property(property_name):
@@ -99,15 +178,17 @@ def _make_setter_method(method_name):
 class MeanLine:
     """One-dimensional flow field and geometry along nominal mean line."""
 
-    def __init__(self, n_row, fluid):
+    def __init__(self, n_row):
         """Allocate a meanline given working fluid and number of rows."""
         n_stations = n_row * 2
-        self._stations = []
-        for _ in range(n_stations):
-            station = Station(shape=())
-            station.set_fluid(fluid)
-            self._stations.append(station)
+        self._stations = [Station(shape=()) for _ in range(n_stations)]
         self._n_row = n_row
+
+    def set_fluid(self, fluid):
+        """Set the working fluid for all stations."""
+        for station in self._stations:
+            station.set_fluid(fluid)
+        return self
 
     @property
     def n_row(self):
@@ -120,29 +201,37 @@ class MeanLine:
         return (self._n_row, 2)
 
     Vx = _make_concat_property("Vx")
+    rho = _make_concat_property("rho")
+    halfVsq = _make_concat_property("halfVsq")
+    U = _make_concat_property("U")
+    Vm = _make_concat_property("Vm")
+    ho = _make_concat_property("ho")
+    Ma = _make_concat_property("Ma")
+    mdot = _make_concat_property("mdot")
+    htr = _make_concat_property("htr")
+    eta_tt = _make_concat_property("eta_tt")
+    Po = _make_concat_property("Po")
+    T = _make_concat_property("T")
+    Vr = _make_concat_property("Vr")
+    Vt = _make_concat_property("Vt")
+    h = _make_concat_property("h")
+
     set_Vxrt = _make_setter_method("set_Vxrt")
+    set_Vx = _make_setter_method("set_Vx")
+    set_Vr = _make_setter_method("set_Vr")
+    set_Vt = _make_setter_method("set_Vt")
+    set_h_s = _make_setter_method("set_h_s")
+    set_r_rms = _make_setter_method("set_r_rms")
+    set_Am = _make_setter_method("set_Am")
+    set_Omega = _make_setter_method("set_Omega")
 
     def __getitem__(self, key):
         """Index into the meanline.
-        MeanLine[i,0] returns inlet station of row i (scalar Station)
-        MeanLine[i,1] returns outlet station of row i (scalar Station)
-        MeanLine[i] returns both stations of row i as another MeanLine
+        MeanLine[i] returns station i
         """
-        if isinstance(key, tuple):
-            # A scalar station: MeanLine[row, station]
-            row_idx, station_idx = key
-            if station_idx not in (0, 1):
-                raise IndexError(
-                    f"Station index must be 0 (inlet) or 1 (outlet), got {station_idx}"
-                )
-            return self._stations[row_idx * 2 + station_idx]
-        elif isinstance(key, int):
-            # Two stations as a view of existing MeanLine object
-            row_idx = key
-            out = MeanLine(n_row=1, fluid=self._stations[0].fluid)
-            out._stations = self._stations[row_idx * 2 : row_idx * 2 + 2]
-            return out
-        raise TypeError(f"MeanLine indices must be int or tuple, got {type(key)}")
+        if isinstance(key, int):
+            return self._stations[key]
+        raise TypeError(f"MeanLine index must be int, got {type(key)}")
 
 
 class Station(ember.block.Block):
