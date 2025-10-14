@@ -3,8 +3,9 @@
 import dataclasses
 import re
 import numpy as np
-import turbigen.yaml
-import turbigen.config2
+import turbigen.yaml_utils
+
+# import turbigen.config2
 from scipy.stats.qmc import LatinHypercube
 from pathlib import Path
 from turbigen import util

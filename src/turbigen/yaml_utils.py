@@ -5,7 +5,7 @@ import gzip
 import os
 import re
 import numpy as np
-from pathlib import Path
+from pathlib import Path, PosixPath
 
 
 # Allow dumping of numpy float64 to yaml
@@ -32,6 +32,7 @@ yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
 yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
 yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
 yaml.representer.SafeRepresenter.add_representer(Path, represent_path)
+yaml.representer.SafeRepresenter.add_representer(PosixPath, represent_path)
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -113,10 +114,4 @@ def read_yaml_list(fname):
 def write_yaml(d, fname, mode="w"):
     """Write a dictionary to file."""
     with open(fname, mode) as f:
-        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
-
-
-def write_yaml_compressed(d, fname):
-    """Write a dictionary to compressed file."""
-    with gzip.open(fname, "wt") as f:
         yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
