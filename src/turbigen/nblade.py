@@ -9,6 +9,11 @@ logger = util.make_logger()
 
 
 class BladeNumberConfig(ABC):
+    @classmethod
+    def from_dict(cls, data):
+        # Convert nblade dict to NbladeConfig objects
+        return util.init_subclass_by_signature(cls, data)
+
     @abstractmethod
     def get_blade_number(self, mean_line, blade):
         """Calculate number of blades for a mean line flow field and blade geometry.
@@ -62,16 +67,17 @@ class Co(BladeNumberConfig):
     def get_blade_number(self, mean_line, blade):
         # Calculate pitch to surface length ratio
         VmR = mean_line.Vm[1:] / mean_line.Vm[:-1]
-        centrifugal = (1.0 - mean_line.RR[::2] ** 2.0) * (
-            mean_line.tanAlpha[::2] - mean_line.tanAlpha_rel[::2]
-        )
-        tangential = (
-            mean_line.tanAlpha_rel[::2]
-            - mean_line.RR[::2] * VmR[::2] * mean_line.tanAlpha_rel[1::2]
-        )
-        total_in = mean_line.cosAlpha_rel[::2] * (centrifugal + tangential)
-        total_out = mean_line.cosAlpha_rel[1::2] / VmR[::2] * (centrifugal + tangential)
-        total = np.where(mean_line.ARflow[::2] > 1.0, total_in, total_out)
+        RR = mean_line.r_rms[1:] / mean_line.r_rms[:-1]
+        tanAlpha = util.tand(mean_line.Alpha)
+        tanAlpha_rel = util.tand(mean_line.Alpha_rel)
+        cosAlpha_rel = util.cosd(mean_line.Alpha_rel)
+        A_flow = mean_line.Am * cosAlpha_rel
+        AR_flow = A_flow[1:] / A_flow[:-1]
+        centrifugal = (1.0 - RR[::2] ** 2.0) * (tanAlpha[::2] - tanAlpha_rel[::2])
+        tangential = tanAlpha_rel[::2] - RR[::2] * VmR[::2] * tanAlpha_rel[1::2]
+        total_in = cosAlpha_rel[::2] * (centrifugal + tangential)
+        total_out = cosAlpha_rel[1::2] / VmR[::2] * (centrifugal + tangential)
+        total = np.where(AR_flow[::2] > 1.0, total_in, total_out)
         s_ell = np.abs(self.Co / total)
 
         # Surface length of blade from geometry
@@ -81,7 +87,7 @@ class Co(BladeNumberConfig):
         s = s_ell * ell
 
         # Take reference radius to be mean of LE and TE rrms
-        rref = np.mean(mean_line.rrms)
+        rref = np.mean(mean_line.r_rms)
 
         # Number of blades
         Nb = np.round(2.0 * np.pi * rref / s)

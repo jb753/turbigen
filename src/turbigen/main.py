@@ -200,11 +200,17 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
 
-    conf.mean_line.set_nominal(conf.fluid.fluid, conf.inlet.Po, conf.inlet.To)
-    print(conf.mean_line.nominal)
-    print(conf.mean_line.design_vars)
-    print(conf.mean_line._backward(conf.mean_line.nominal))
+    conf.mean_line.set_nominal(conf.fluid.fluid)
+    conf.mean_line.check_nominal()
 
+    conf.get_geometry()
+
+    conf.apply_recamber()
+
+    logger.info(f"Nblade: {conf.get_nblade()}")
+    logger.info(f"Tip gaps/span: {conf.get_gaps()}")
+
+    conf.check_pitch_chord()
     quit()
 
     # If we are sampling a design space, do that and exit

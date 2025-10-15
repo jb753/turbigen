@@ -3,18 +3,26 @@
 # Use a new workdir for each run
 work_dir: runs/*
 
-plug_dir: ./plug
-
 mean_line:
-  type: fan
+  type: turbine_cascade
   n_row: 1
-  phi: 0.5
-  psi: 0.4
-  eta_tt: 0.9
-  DPo: 2000.
-  mdot: 5.
-  htr: 0.8
+  Ys: 0.
+  Ma2: 0.6
+  Alpha: [-35, 60.]
+  span: [0.1, 0.11]
+  htr: 0.9
 
+annulus:
+  AR_gap: [1.0, 1.0]
+  AR_chord: 2.0
+
+blades:
+    - spf: 0.5
+      thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
+      camber: [10., -2., 0.0]
+
+nblade:
+  - Co: 0.7
 
 fluid:
   type: perfect

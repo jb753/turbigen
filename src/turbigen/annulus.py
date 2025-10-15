@@ -26,6 +26,13 @@ class AnnulusDesigner(util.BaseDesigner):
 
     _supplied_design_vars = ("rmid", "span", "Beta")
 
+    @classmethod
+    def from_dict(cls, data):
+        subclass = util.get_subclass_by_name(
+            AnnulusDesigner, data.pop("type", "smooth")
+        )
+        return subclass(data)
+
     @abstractmethod
     def forward(self, rmid, span, Beta, *args, **kwargs):
         """Set the coordinates of the mean line of the annulus.
@@ -71,7 +78,9 @@ class AnnulusDesigner(util.BaseDesigner):
 
     def setup_annulus(self, mean_line):
         """Setup the annulus using coordinates from a mean line."""
-        self.forward(mean_line.rmid, mean_line.span, mean_line.Beta, **self.design_vars)
+        self.forward(
+            mean_line.r_mid, mean_line.span, mean_line.Beta, **self.design_vars
+        )
 
     @property
     @abstractmethod

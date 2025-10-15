@@ -42,28 +42,34 @@ def load_plugins(plugdir):
             traceback.print_exc()
             sys.exit(1)
 
-    # Need absolute import to ensure we are dealing with the same REGISTRY
-    from turbigen.plugins import REGISTRY
+
+def check_plugins():
+    reg = get_registry()
 
     # Ensure that both forward and backward functions are registered
     # for any mean line type
-    forward_types = set(REGISTRY["mean_line_forward"].keys())
-    backward_types = set(REGISTRY["mean_line_backward"].keys())
+    forward_types = set(reg["mean_line_forward"].keys())
+    backward_types = set(reg["mean_line_backward"].keys())
     all_types = forward_types.union(backward_types)
     for mean_line_type in all_types:
         if mean_line_type not in forward_types:
-            logger.error(f"Mean line type '{mean_line_type}' missing forward function.")
+            logger.error(
+                f"Mean line type '{mean_line_type}' missing forward function. "
+                f"The registry contains: {list(reg['mean_line_forward'].keys())}"
+            )
             sys.exit(1)
         if mean_line_type not in backward_types:
             logger.error(
-                f"Mean line type '{mean_line_type}' missing backward function."
+                f"Mean line type '{mean_line_type}' missing backward function. "
+                f"The registry contains: {list(reg['mean_line_backward'].keys())}"
             )
             sys.exit(1)
 
-    logger.warning("Successfully loaded plugins:")
-    logger.warning("Mean line types:")
+
+def list_plugins():
+    logger.warning("Available mean line types:")
     for mean_line_type in all_types:
-        sig = inspect.signature(REGISTRY["mean_line_forward"][mean_line_type])
+        sig = inspect.signature(reg["mean_line_forward"][mean_line_type])
         # Remove 'mean_line' from signature for clarity
         params = [p.name for p in list(sig.parameters.values())[1:]]
         logger.warning(f"  {mean_line_type}({', '.join(params)})")
@@ -102,20 +108,7 @@ def register_mean_line(func):
                 f"Mean line type '{mean_line_type}' backward function must take a single argument 'ml', got '{params_bwd[0].name if params_bwd else 'none'}'."
             )
 
-    # Add to module registry
-    # Need absolute import to ensure we are dealing with the same REGISTRY
-    from turbigen.plugins import REGISTRY
-
-    REGISTRY[f"mean_line_{direction}"][mean_line_type] = func
+    reg = get_registry()
+    reg[f"mean_line_{direction}"][mean_line_type] = func
 
     return func
-
-
-if __name__ == "__main__":
-    import pathlib
-
-    import turbigen.plugins
-
-    # Example usage
-    plugdir = pathlib.Path("./plug")
-    find_plugins(plugdir)

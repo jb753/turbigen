@@ -4,6 +4,7 @@ import ember.block
 import ember.fluid
 import numpy as np
 import turbigen.plugins
+import turbigen.meanline_design_new
 import inspect
 
 
@@ -38,9 +39,18 @@ class MeanLineConfig:
                 f"Missing required design variables for mean_line type '{self.type}': {missing}"
             )
 
+        # Check for unexpected design_vars
+        unexpected = set(design_vars.keys()) - {p.name for p in params}
+        if unexpected:
+            raise ValueError(
+                f"Unexpected design variables for mean_line type '{self.type}': {unexpected}"
+            )
+
     @classmethod
     def from_dict(cls, d):
         """Initialize from a dictionary."""
+
+        turbigen.plugins.check_plugins()
 
         # Extract values from dictionary
         mean_line_type = d.pop("type")
@@ -79,11 +89,47 @@ class MeanLineConfig:
             **self.design_vars,
         }
 
-    def set_nominal(self, fluid, Po1, To1):
+    def set_nominal(self, fluid):
         """Set the nominal mean-line flow field."""
         self.nominal.set_fluid(fluid)
-        self.nominal[0].set_P_T(Po1, To1).set_Vxrt(0.0, 0.0, 0.0)
         self._forward(self.nominal, **self.design_vars)
+
+    def check_nominal(self):
+        params_inv = self._backward(self.nominal)
+
+        rtol = 1e-3
+
+        # Compare forward and inverse params, check within a tolerance
+        for k, v in self.design_vars.items():
+            if k not in params_inv:
+                raise Exception(
+                    f"Design variable {k} not returned by inverse function."
+                )
+            # Allow uncalculated variables to be None
+            if params_inv[k] is None:
+                continue
+
+            # Compare the value of the design variable to nominal
+            if np.all(v == 0.0):
+                # Absolute tolerance for zero values
+                if np.allclose(v, params_inv[k], atol=0.1):
+                    continue
+            else:
+                # Relative tolerance for non-zero values
+                if np.allclose(v, params_inv[k], rtol=rtol):
+                    continue
+
+            raise Exception(
+                f"Meanline inverted {k}={params_inv[k]} not same as nominal value {v}"
+            )
+
+        # Check mass is conserved
+        mdot = self.nominal.mdot
+        if np.isnan(mdot).any():
+            raise Exception(f"NaN mass flow rate mdot={mdot}")
+
+        if np.ptp(mdot) > (mdot[0] * rtol):
+            raise Exception(f"Mass flow rate not conserved: mdot={mdot}")
 
 
 def _make_concat_property(property_name):
@@ -105,7 +151,11 @@ def _make_concat_property(property_name):
                 value = getattr(station, property_name)
                 # Convert scalar to array for concatenation
                 values.append(np.atleast_1d(value))
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError) as e:
+                # print full traceback for debugging
+                import traceback
+
+                traceback.print_exc()
                 # Station not initialized, use NaN
                 values.append(np.array([np.nan], dtype=f32))
 
@@ -141,36 +191,18 @@ def _make_setter_method(method_name):
         # Determine expected total length (2 stations per row)
         n_stations = self._n_row * 2
 
-        # Check that all array arguments have compatible shapes
-        for arg in args:
-            if isinstance(arg, np.ndarray):
-                if arg.shape[0] != n_stations:
-                    raise ValueError(
-                        f"{method_name} expects arrays of length {n_stations} "
-                        f"(2 stations × {self._n_row} rows), got {arg.shape[0]}"
-                    )
+        # Broadcast all arguments to arrays of correct length
+        broadcasted_args = [np.broadcast_to(arg, (n_stations,)) for arg in args]
 
         # Call setter on each scalar station with its corresponding value
         for i, station in enumerate(self._stations):
-            # Extract scalar value for this station
-            station_args = []
-            for arg in args:
-                if isinstance(arg, np.ndarray):
-                    station_args.append(arg[i])
-                else:
-                    station_args.append(arg)
+            getattr(station, method_name)(*[arg[i] for arg in broadcasted_args])
 
-            # Call the setter method on the station
-            getattr(station, method_name)(*station_args)
+        return
 
-        return self
-
-    # Get docstring from Block's method if available
+    # Get docstring from Block's method
     block_method = getattr(ember.block.Block, method_name, None)
-    if block_method is not None and hasattr(block_method, "__doc__"):
-        setter.__doc__ = block_method.__doc__
-    else:
-        setter.__doc__ = f"{method_name} distributed to all stations."
+    setter.__doc__ = block_method.__doc__
 
     return setter
 
@@ -201,6 +233,8 @@ class MeanLine:
         return (self._n_row, 2)
 
     Vx = _make_concat_property("Vx")
+    s = _make_concat_property("s")
+    Alpha = _make_concat_property("Alpha")
     rho = _make_concat_property("rho")
     halfVsq = _make_concat_property("halfVsq")
     U = _make_concat_property("U")
@@ -215,6 +249,16 @@ class MeanLine:
     Vr = _make_concat_property("Vr")
     Vt = _make_concat_property("Vt")
     h = _make_concat_property("h")
+    span = _make_concat_property("span")
+    rhoVx = _make_concat_property("rhoVx")
+    r_mid = _make_concat_property("r_mid")
+    r_hub = _make_concat_property("r_hub")
+    r_cas = _make_concat_property("r_cas")
+    r_rms = _make_concat_property("r_rms")
+    Omega = _make_concat_property("Omega")
+    Beta = _make_concat_property("Beta")
+    Alpha_rel = _make_concat_property("Alpha_rel")
+    Am = _make_concat_property("Am")
 
     set_Vxrt = _make_setter_method("set_Vxrt")
     set_Vx = _make_setter_method("set_Vx")
@@ -224,6 +268,7 @@ class MeanLine:
     set_r_rms = _make_setter_method("set_r_rms")
     set_Am = _make_setter_method("set_Am")
     set_Omega = _make_setter_method("set_Omega")
+    set_span_htr = _make_setter_method("set_span_htr")
 
     def __getitem__(self, key):
         """Index into the meanline.
@@ -232,6 +277,15 @@ class MeanLine:
         if isinstance(key, int):
             return self._stations[key]
         raise TypeError(f"MeanLine index must be int, got {type(key)}")
+
+    def get_row(self, i_row):
+        """Get the two stations for a given row index."""
+        if i_row < 0 or i_row >= self._n_row:
+            raise IndexError(f"Row index {i_row} out of range for n_row={self._n_row}")
+        _stations = [self._stations[2 * i_row], self._stations[2 * i_row + 1]]
+        out = MeanLine(n_row=1)
+        out._stations = _stations
+        return out
 
 
 class Station(ember.block.Block):
@@ -296,12 +350,39 @@ class Station(ember.block.Block):
         return self
 
     def set_r(self, r):
+        # Block set_r to avoid confusion
         del r
         raise NotImplementedError("Use set_r_rms on a mean-line station.")
 
     def set_r_rms(self, r_rms):
         """Set annulus root-mean-square radius [m]."""
-        self._set_data_by_key("r", r_rms)
+        super().set_r(r_rms)
+        return self
+
+    def set_span_htr(self, span, htr):
+        """Define annulus geometry using span and hub-to-tip ratio."""
+        assert (
+            np.abs(self.Beta) < 1.0
+        ), "Beta must be set zero before calling set_span_htr"
+        r_rms = span * np.sqrt(0.5 * (1.0 + htr**2)) / (1.0 - htr)
+        Am = 2.0 * np.pi * r_rms**2 * (1.0 - htr**2) / (1.0 + htr**2)
+        self.set_r_rms(r_rms)
+        self.set_Am(Am)
+        return self
+
+    def set_span_r_rms(self, span, r_rms):
+        self.set_r_rms(r_rms)
+        dr = span / np.cos(np.radians(self.Beta))
+        r_mid = np.sqrt(r_rms**2 - (dr / 2.0) ** 2)
+        Am = 2.0 * np.pi * r_mid * span
+        self.set_Am(Am)
+        return self
+
+    def set_span_r_mid(self, span, r_mid):
+        Am = 2.0 * np.pi * r_mid * span
+        self.set_Am(Am)
+        r_rms = np.sqrt(r_mid**2 + (span / 2.0) ** 2)
+        self.set_r_rms(r_rms)
         return self
 
 
