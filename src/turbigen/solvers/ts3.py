@@ -719,7 +719,7 @@ def _patch_properties(patch):
     pp = {}
     if isinstance(patch, turbigen.grid.InletPatch):
         x = np.ones_like(patch.get_cut().x)
-        pp["pstag"] = patch.state.P * x
+        pp["pstag"] = patch.Po * x
         # So that the TS3->TS4 converter works for real gases
         pp["tstag"] = patch.state.h / patch.state.cp * x
         pp["pitch"] = patch.Beta * x
@@ -766,28 +766,31 @@ def _write_property(group, name, suffix, val, flat=False):
 
 def _get_wall_rpms(block):
     """Dictionary of block variables describing wall rotations."""
-    keys = [
-        "rpmi1",
-        "rpmj1",
-        "rpmk1",
-        "rpmi2",
-        "rpmj2",
-        "rpmk2",
-    ]
-    vals = np.zeros((6,))
+    rpms = dict(
+        rpmi1=0.0,
+        rpmj1=0.0,
+        rpmk1=0.0,
+        rpmi2=0.0,
+        rpmj2=0.0,
+        rpmk2=0.0,
+    )
     for patch in block.rotating_patches:
-        st_set = np.logical_and(
-            patch.ijk_limits[:, 0] == 0, patch.ijk_limits[:, 1] == 0
-        )
-        en_set = np.logical_and(
-            patch.ijk_limits[:, 0] == -1, patch.ijk_limits[:, 1] == -1
-        )
-        rpm_patch = patch.Omega * 30.0 / np.pi
-        vals[:3][st_set] = rpm_patch
-        vals[3:][en_set] = rpm_patch
-    # assert block.rpm.ptp() == 0.0
-    # vals *= block.rpm.mean()
-    return dict(zip(keys, vals))
+        if patch.const_dim == 0:
+            if patch.ist:
+                rpms["rpmi2"] = patch.rpm
+            else:
+                rpms["rpmi1"] = patch.rpm
+        elif patch.const_dim == 1:
+            if patch.jst:
+                rpms["rpmj2"] = patch.rpm
+            else:
+                rpms["rpmj1"] = patch.rpm
+        elif patch.const_dim == 2:
+            if patch.kst:
+                rpms["rpmk2"] = patch.rpm
+            else:
+                rpms["rpmk1"] = patch.rpm
+    return rpms
 
 
 def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
