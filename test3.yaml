@@ -33,3 +33,9 @@ fluid:
 inlet:
   Po: 1e5
   To: 300.
+
+mesh:
+  type: h
+  yplus: 30.
+  resolution_factor: 0.5
+  # plot: (1,1,1)

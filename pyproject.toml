@@ -23,7 +23,7 @@ dependencies = [
     'h5py~=3.14.0',
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
-    'ember @ git+ssh://git@gitlab.developers.cam.ac.uk/jb753/ember.git@a4f4245e3c43e61517db303691f04daea1bcf0f5',
+    'ember @ git+ssh://git@gitlab.developers.cam.ac.uk/jb753/ember.git@master',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"

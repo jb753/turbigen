@@ -1,11 +1,16 @@
 import numpy as np
 from turbigen import util
-import turbigen.grid
+
+# import turbigen.grid
 import turbigen.geometry
 from turbigen import clusterfunc
 import turbigen.mesh
 import dataclasses
 import matplotlib.pyplot as plt
+
+import ember.patch
+import ember.block
+import ember.grid
 
 logger = util.make_logger()
 
@@ -444,8 +449,8 @@ class H(turbigen.mesh.Mesher):
             # Make periodic patches
             if unbladed[irow]:
                 patches = [
-                    turbigen.grid.PeriodicPatch(i=(0, -1), k=0, label="per_k0"),
-                    turbigen.grid.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
+                    ember.patch.PeriodicPatch(i=(0, -1), k=0, label="per_k0"),
+                    ember.patch.PeriodicPatch(i=(0, -1), k=-1, label="per_nk"),
                 ]
             else:
                 if mesh_config.ni_cusp:
@@ -454,18 +459,18 @@ class H(turbigen.mesh.Mesher):
                 else:
                     icusp = ite
                 patches = [
-                    turbigen.grid.PeriodicPatch(i=(0, ile), k=0),
-                    turbigen.grid.PeriodicPatch(i=(0, ile), k=-1),
-                    turbigen.grid.PeriodicPatch(i=(icusp, -1), k=0),
-                    turbigen.grid.PeriodicPatch(i=(icusp, -1), k=-1),
+                    ember.patch.PeriodicPatch(i=(0, ile), k=0),
+                    ember.patch.PeriodicPatch(i=(0, ile), k=-1),
+                    ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
+                    ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
                 if mesh_config.AR_cusp:
                     logger.info("Adding cusps")
                     assert mesh_config.ni_cusp > 0
                     cusp_type = (
-                        turbigen.grid.InviscidPatch
+                        ember.patch.InviscidPatch
                         if mesh_config.slip_cusp
-                        else turbigen.grid.CuspPatch
+                        else ember.patch.CuspPatch
                     )
                     patches.extend(
                         [
@@ -476,47 +481,48 @@ class H(turbigen.mesh.Mesher):
 
             # Inlet or mixing
             if irow == 0:
-                patches.append(turbigen.grid.InletPatch(i=0))
+                patches.append(ember.patch.InletPatch(i=0))
             else:
-                patches.append(turbigen.grid.MixingPatch(i=0))
+                patches.append(ember.patch.MixingPatch(i=0))
 
             # Outlet or mixing
             if irow == (nrow - 1):
-                patches.append(turbigen.grid.OutletPatch(i=-1))
+                patches.append(ember.patch.OutletPatch(i=-1))
             else:
-                patches.append(turbigen.grid.MixingPatch(i=-1))
+                patches.append(ember.patch.MixingPatch(i=-1))
 
             # Tip gap
             if njtip:
                 patches.extend(
                     [
-                        turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=0),
-                        turbigen.grid.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=-1),
+                        ember.patch.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=0),
+                        ember.patch.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=-1),
                     ]
                 )
 
-            blocks.append(
-                turbigen.grid.BaseBlock.from_coordinates(
-                    xrt_now, mac.Nb[irow].astype(int), patches
-                )
-            )
+            blk = ember.block.Block(shape=(ni, nj, nk), label=f"row{irow}")
+            blk.patches.extend(patches)
+            blk.set_Nb(mac.Nb[irow])
+            blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
+
+            blocks.append(blk)
 
         if mesh_config.slip_annulus:
             for b in blocks:
-                b.add_patch(turbigen.grid.InviscidPatch(j=0))
-                b.add_patch(turbigen.grid.InviscidPatch(j=-1))
+                b.add_patch(ember.patch.InviscidPatch(j=0))
+                b.add_patch(ember.patch.InviscidPatch(j=-1))
 
-        g = turbigen.grid.Grid(blocks)
+        g = ember.grid.Grid(blocks)
 
         # Ensure xr coordinates match exactly at mixing plane
         for irow in range(0, nrow - 1):
-            xr0 = g[irow].xr[:, -1, :, 0]
-            xr1 = g[irow + 1].xr[:, 0, :, 0]
+            xr0 = g[irow].xrt[-1, :, 0, :2]
+            xr1 = g[irow + 1].xrt[0, :, 0, :2]
             xrav = 0.5 * (xr0 + xr1)
-            g[irow].xr[:, -1, :, :] = xrav[..., None]
-            g[irow + 1].xr[:, 0, :, :] = xrav[..., None]
+            g[irow][-1].set_xrt(xrav)
+            g[irow + 1][0].set_xrt(xrav)
 
-        g.match_patches()
+        g.connectivity.periodic.pair()
 
         if mesh_config.plot:
             import matplotlib.pyplot as plt
@@ -529,30 +535,6 @@ class H(turbigen.mesh.Mesher):
             for b in g:
                 ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
                 ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
-
-            fig, ax = plt.subplots()
-            for ib, b in enumerate(g):
-                ARi = b.cell_ARi[:, jplot, 0]
-                ARj = b.cell_ARj[:, jplot, 0]
-                ARk = b.cell_ARk[:, jplot, 0]
-                xc = util.node_to_cell(b.x)[:, jplot, 0]
-                x = b.x[:, jplot, 0]
-                ax.plot(x, ARi, color="C0", label="i")
-                ax.plot(xc, ARj, color="C1", label="j")
-                ax.plot(xc, ARk, color="C2", label="k")
-                logger.info(
-                    f"Block {ib}: ARi={ARi.max():.3f}, ARj={ARj.max():.3f}, ARk={ARk.max():.3f}"
-                )
-
-            iplot, jplot, kplot = mesh_config.plot
-            fig, ax = plt.subplots()
-            ax.axis("equal")
-            for ib, b in enumerate(g):
-                x = b.x[:, jplot, :]
-                rt = b.rt[:, jplot, :]
-                ax.plot(x, rt, "k-", lw=0.5)
-                ax.plot(x[iplot, kplot], rt[iplot, kplot], "b*", lw=0.5)
-                ax.plot(x.T, rt.T, "k-", lw=0.5)
 
             plt.show()
 

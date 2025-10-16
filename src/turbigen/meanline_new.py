@@ -252,7 +252,7 @@ class MeanLine:
     @property
     def shape(self):
         """Number of stations."""
-        return (self._n_row, 2)
+        return (self._n_row * 2,)
 
     Vx = _make_concat_property("Vx")
     s = _make_concat_property("s")

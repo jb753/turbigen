@@ -32,6 +32,8 @@ from typing import List
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 
+import ember.grid
+
 logger = util.make_logger()
 
 
@@ -92,7 +94,7 @@ class TurbigenConfig:
 
     """Settings for blade number selection."""
     # grid: turbigen.grid.Grid = None
-    # guess: turbigen.grid.Grid = None
+    guess: ember.grid.Grid = None
 
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
@@ -619,7 +621,7 @@ class TurbigenConfig:
         # plt.show()
         #
         self.grid.check_coordinates()
-        self.grid.calculate_wall_distance()
+        self.grid.calculate_wdist()
 
         # Reset camber
         for irow, row in enumerate(self.blades):
@@ -627,15 +629,6 @@ class TurbigenConfig:
             # main and splitters
             for blade in row:
                 blade.set_streamsurface(self.annulus.xr_row(irow))
-
-        # Choose whether the blocks are real or perfect
-        So1 = self.inlet.get_inlet()
-        if isinstance(So1, turbigen.fluid.PerfectState):
-            self.grid = turbigen.grid.Grid([b.to_perfect() for b in self.grid])
-        elif isinstance(So1, turbigen.fluid.RealState):
-            self.grid = turbigen.grid.Grid([b.to_real() for b in self.grid])
-        else:
-            raise Exception("Unrecognised inlet state type")
 
     def get_machine(self):
         return turbigen.geometry.Machine(
@@ -711,9 +704,7 @@ class TurbigenConfig:
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
-            self.grid.apply_guess_meridional(
-                self.mean_line.nominal.interpolate_guess(self.annulus)
-            )
+            self.grid.apply_guess_meridional(self.mean_line.nominal, refine_factor=50)
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case
