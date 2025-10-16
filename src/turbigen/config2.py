@@ -10,17 +10,15 @@ import sys
 import importlib
 from pathlib import Path
 import turbigen.fluid
-import turbigen.flowfield
-import turbigen.meanline_design
+import turbigen.meanline_new
 import turbigen.solvers.base
 import turbigen.base
 import turbigen.iterators
 import turbigen.average
 import turbigen.op_point
-import turbigen.grid
+
 import turbigen.post
 import turbigen.geometry
-import turbigen.yaml
 import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
@@ -44,13 +42,16 @@ class TurbigenConfig:
 
     """
 
-    workdir: Path
+    work_dir: Path
     """Directory in which to store run data."""
+
+    fluid: turbigen.fluid.FluidConfig
+    """Equation of state."""
 
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
 
-    mean_line: turbigen.meanline_design.MeanLineDesigner
+    mean_line: turbigen.meanline_new.MeanLineConfig
     """Settings for the mean-line designer."""
 
     annulus: turbigen.annulus.AnnulusDesigner = None
@@ -89,8 +90,8 @@ class TurbigenConfig:
     """Multiplier on nstep for the first run of iterating case."""
 
     """Settings for blade number selection."""
-    grid: turbigen.grid.Grid = None
-    guess: turbigen.grid.Grid = None
+    # grid: turbigen.grid.Grid = None
+    # guess: turbigen.grid.Grid = None
 
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
@@ -124,20 +125,20 @@ class TurbigenConfig:
 
     @property
     def fname(self):
-        return self.workdir / self.basename
+        return self.work_dir / self.basename
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
 
     save_iteration_grids: bool = False
-    """Save grid and guess at each iteration to workdir."""
+    """Save grid and guess at each iteration to work_dir."""
 
     @property
     def nrow(self):
         return len(self.blades)
 
     def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=True):
-        """Save the configuration to a YAML file inside workdir.
+        """Save the configuration to a YAML file inside work_dir.
 
         The working directory will be created if it does not exist.
         """
@@ -145,8 +146,8 @@ class TurbigenConfig:
         if fname is None:
             fname = self.fname
 
-        if not self.workdir.exists():
-            self.workdir.mkdir(parents=True)
+        if not self.work_dir.exists():
+            self.work_dir.mkdir(parents=True)
 
         # Check that the blades are not recambered
         for row in self.blades:
@@ -159,40 +160,39 @@ class TurbigenConfig:
 
         data = self.to_dict()
 
-        # Convert grid objects to filenames
-        for k in ["grid", "guess"]:
-            val = getattr(self, k)
-            # If not there remove the key
-            if val is None or not write_grids:
-                del data[k]
-            else:
-                # Otherwise, save the grid to a separate pickle
-                # and replace the grid with the filename in yaml
-                fname_pkl = self.workdir / f"{k}.pkl.gz"
-                data[k] = str(fname_pkl)
+        # # Convert grid objects to filenames
+        # for k in ["grid", "guess"]:
+        #     val = getattr(self, k)
+        #     # If not there remove the key
+        #     if val is None or not write_grids:
+        #         del data[k]
+        #     else:
+        #         # Otherwise, save the grid to a separate pickle
+        #         # and replace the grid with the filename in yaml
+        #         fname_pkl = self.work_dir / f"{k}.pkl.gz"
+        #         data[k] = str(fname_pkl)
+        #         if fname_pkl.exists() and not overwrite_pkl:
+        #             logger.debug(f"Not overwriting existing {fname_pkl}")
+        #             continue
+        #         else:
+        #             logger.debug(f"Saving {k} to {fname_pkl}")
+        #             util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
 
-                if fname_pkl.exists() and not overwrite_pkl:
-                    logger.debug(f"Not overwriting existing {fname_pkl}")
-                    continue
-                else:
-                    logger.debug(f"Saving {k} to {fname_pkl}")
-                    util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
+        # if hasattr(self.mean_line, "actual"):
+        #     data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
+        # if not data["mixed_out_flowfield"]:
+        #     del data["mixed_out_flowfield"]
 
-        if hasattr(self.mean_line, "actual"):
-            data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
-        if not data["mixed_out_flowfield"]:
-            del data["mixed_out_flowfield"]
+        # # Convert convergence history to a filename
+        # if self.solver and (conv := self.solver.convergence):
+        #     fname_conv = self.work_dir / "convergence.npz"
+        #     conv.save(fname_conv)
+        #     data["solver"]["convergence"] = str(fname_conv)
 
-        # Convert convergence history to a filename
-        if self.solver and (conv := self.solver.convergence):
-            fname_conv = self.workdir / "convergence.npz"
-            conv.save(fname_conv)
-            data["solver"]["convergence"] = str(fname_conv)
-
-        conf_fname = self.workdir / fname
+        conf_fname = self.work_dir / fname
         logger.debug(f"Saving configuration to {conf_fname}")
         try:
-            turbigen.yaml.write_yaml(data, conf_fname)
+            turbigen.yaml_utils.write_yaml(data, conf_fname)
         except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
             logger.error(data)
@@ -208,16 +208,16 @@ class TurbigenConfig:
         data = dataclasses.asdict(self)
 
         # Put work and plug dir into a string
-        data["workdir"] = str(data["workdir"])
+        data["work_dir"] = str(data["work_dir"])
         if data["plugdir"]:
             data["plugdir"] = str(data["plugdir"])
 
-        # Convert the meanline designer to a dictionary
-        data["mean_line"] = self.mean_line.to_dict()
-
-        # Convert the annulus designer to a dictionary
-        if self.annulus:
-            data["annulus"] = self.annulus.to_dict()
+        # Now convert any nested objects with to_dict methods
+        for k in ["mean_line", "fluid", "annulus"]:
+            obj = getattr(self, k)
+            if not obj:
+                continue
+            data[k] = obj.to_dict()
 
         # Convert the blade designer to a dictionary
         data["blades"] = []
@@ -309,8 +309,10 @@ class TurbigenConfig:
     def __post_init__(self):
         """Convert input basic types to our desired types."""
 
-        # Convert workdir str to Path object
-        self.workdir = Path(self.workdir).absolute()
+        # Convert work_dir str to Path object
+        self.work_dir = Path(self.work_dir).absolute()
+
+        self.fluid = turbigen.fluid.FluidConfig.from_dict(self.fluid)
 
         # Convert plugdir str to Path object
         # And look for plugins
@@ -318,28 +320,23 @@ class TurbigenConfig:
             self.plugdir = Path(self.plugdir).absolute()
             self.find_plugins()
 
-        # If grid or guess is a filename, load and unpickle it
-        for k in ["grid", "guess"]:
-            val = getattr(self, k)
-            if isinstance(val, str) and not self._fast_init:
-                try:
-                    with gzip.open(Path(val), "rb") as f:
-                        setattr(self, k, pickle.load(f))
-                except gzip.BadGzipFile:
-                    # If gzip fails, try loading without it
-                    with open(Path(val), "rb") as f:
-                        setattr(self, k, pickle.load(f))
+        # # If grid or guess is a filename, load and unpickle it
+        # for k in ["grid", "guess"]:
+        #     val = getattr(self, k)
+        #     if isinstance(val, str) and not self._fast_init:
+        #         try:
+        #             with gzip.open(Path(val), "rb") as f:
+        #                 setattr(self, k, pickle.load(f))
+        #         except gzip.BadGzipFile:
+        #             # If gzip fails, try loading without it
+        #             with open(Path(val), "rb") as f:
+        #                 setattr(self, k, pickle.load(f))
 
         # Convert inlet dict to InletConfig object
-        self.inlet = util.init_subclass_by_signature(
-            turbigen.inlet.InletConfig, self.inlet
-        )
+        self.inlet = turbigen.inlet.InletConfig(**self.inlet)
 
         # Set up the meanline designer
-        MeanLineDesigner = util.get_subclass_by_name(
-            turbigen.meanline_design.MeanLineDesigner, self.mean_line.pop("type")
-        )
-        self.mean_line = MeanLineDesigner(self.mean_line)
+        self.mean_line = turbigen.meanline_new.MeanLineConfig.from_dict(self.mean_line)
 
         if isinstance(self.mixed_out_flowfield, dict):
             self.mean_line.actual = turbigen.meanline_data.meanline_from_dump(
@@ -478,7 +475,7 @@ class TurbigenConfig:
             if isinstance(self.design_space, dict):
                 self.design_space = turbigen.dspace.DesignSpace(**self.design_space)
                 if not self.design_space.basedir:
-                    self.design_space.basedir = Path(self.workdir)
+                    self.design_space.basedir = Path(self.work_dir)
                 else:
                     self.design_space.basedir = Path(self.design_space.basedir)
             self.design_space.setup()
@@ -486,23 +483,15 @@ class TurbigenConfig:
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
 
-        So1 = self.inlet.get_inlet()
-        logger.info(f"Inlet: {So1}")
-
         # Mean-line design
-        self.mean_line.setup_mean_line(So1)
+        self.mean_line.set_nominal(self.fluid.fluid)
         logger.info(self.mean_line.nominal)
 
         # Check mean-line design for problems
-        logger.debug("Checking mean-line conservation...")
-        if not self.mean_line.nominal.check():
-            self.mean_line.nominal.show_debug()
-            raise Exception(
-                "Mean-line conservation checks failed, have printed debugging information"
-            ) from None
-        logger.debug("Checking mean-line inversion...")
-        self.mean_line.check_backward(self.mean_line.nominal)
-        self.mean_line.nominal.warn()
+        logger.debug("Checking mean-line...")
+        self.mean_line.check_nominal()
+
+        self.mean_line.warn()
 
     def get_geometry(self):
         """Get the annulus and blade geometry."""
@@ -543,7 +532,7 @@ class TurbigenConfig:
     def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
         # Warn if blade spacings are too narrow or wide
         rref = 0.5 * (
-            self.mean_line.nominal.rrms[::2] + self.mean_line.nominal.rrms[1::2]
+            self.mean_line.nominal.r_rms[::2] + self.mean_line.nominal.r_rms[1::2]
         )
         s = 2.0 * np.pi * rref / self.get_nblade()
         s_cm = s / self.annulus.chords(0.5)[1:-1:2]
@@ -617,7 +606,7 @@ class TurbigenConfig:
         # Hub and casing wall distances are row means
         dhub = dcas = np.mean(dsurf)
 
-        mesh_dir = self.workdir / self.mesh.meshdir
+        mesh_dir = self.work_dir / self.mesh.meshdir
         Omega = self.mean_line.nominal.Omega[::2]
         self.grid = self.mesh.make_grid(
             mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
@@ -740,7 +729,7 @@ class TurbigenConfig:
             logger.error("No solver configured, quitting.")
             sys.exit(0)
 
-        run_args = self.grid, self.get_machine, self.workdir / "solve"
+        run_args = self.grid, self.get_machine, self.work_dir / "solve"
 
         if self.solver.soft_start:
             logger.info("Soft start...")
@@ -902,6 +891,7 @@ class TurbigenConfig:
         return table_pad
 
     def set_mu_from_Re_surf(self):
+        raise NotImplementedError("set_mu_from_Re_surf is not implemented yet.")
         ell = self.get_ell()
         ml = self.mean_line.nominal
         mu = (ml.rho_ref * ml.V_ref * ell)[0] / self.Re_surf
@@ -930,28 +920,29 @@ class TurbigenConfig:
 
         self.get_mean_line_nominal()
 
-        # Print real gas table limits
-        if isinstance(self.mean_line.nominal, turbigen.fluid.RealState):
-            self.show_table_limits()
-
         self.get_geometry()
         self.apply_recamber()
 
         self.check_pitch_chord()
+
         logger.info(f"Nblade: {self.get_nblade()}")
         logger.info(f"Tip gaps/span: {self.get_gaps()}")
 
-        # Handle restarts
-        if self.grid:
-            # If we already have a grid, use it as the guess
-            self.guess = self.grid
-            # Change CFD settings to resume the simulation
-            self.solver = self.solver.restart()
+        # # Handle restarts
+        # if self.grid:
+        #     # If we already have a grid, use it as the guess
+        #     self.guess = self.grid
+        #     # Change CFD settings to resume the simulation
+        #     self.solver = self.solver.restart()
 
         # Set viscosity from Reynolds number if given
         if self.Re_surf:
             self.set_mu_from_Re_surf()
-        Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
+
+        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
+        L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
+        ell = self.get_ell()
+        Re_surf = ell / L_visc
         logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
         # We are now ready to generate mesh and run CFD
@@ -1026,7 +1017,7 @@ class TurbigenConfig:
 
     def post_process_all(self):
         # Initialise the pdf
-        with PdfPages(self.workdir / "post.pdf") as pdf:
+        with PdfPages(self.work_dir / "post.pdf") as pdf:
             for poster in self.post_process:
                 logger.debug(f"Running post function {poster}")
                 try:

@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import sys
 import os
-import turbigen.config3
+import turbigen.config2
 import datetime
 import argparse
 
@@ -185,7 +185,7 @@ def main():
         turbigen.plugins.load_plugins(Path(plug_dir))
 
     logger.debug("Parsing into configuration object...")
-    conf = turbigen.config3.TurbigenConfig(**conf)
+    conf = turbigen.config2.TurbigenConfig(**conf)
 
     # Resave the config so that the internal state and
     # the YAML file are consistent (e.g. if submitting a job)
@@ -200,17 +200,8 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
 
-    conf.mean_line.set_nominal(conf.fluid.fluid)
-    conf.mean_line.check_nominal()
+    conf.design_and_run(args.no_solve)
 
-    conf.get_geometry()
-
-    conf.apply_recamber()
-
-    logger.info(f"Nblade: {conf.get_nblade()}")
-    logger.info(f"Tip gaps/span: {conf.get_gaps()}")
-
-    conf.check_pitch_chord()
     quit()
 
     # If we are sampling a design space, do that and exit

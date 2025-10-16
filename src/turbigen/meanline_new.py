@@ -131,6 +131,28 @@ class MeanLineConfig:
         if np.ptp(mdot) > (mdot[0] * rtol):
             raise Exception(f"Mass flow rate not conserved: mdot={mdot}")
 
+    def warn(self):
+        """Print a warning if there are any suspicious values."""
+
+        # Warn for very high flow angles
+        if np.abs(self.nominal.Alpha_rel).max() > 85.0:
+            logger.warning(
+                """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+            )
+
+        # Warn for wobbly annulus
+        is_radial = np.abs(self.nominal.Beta).max() > 10.0
+        is_multirow = self.nominal.n_row > 2
+        if is_radial and is_multirow:
+            if np.diff(np.sign(np.diff(self.r_rms))).any():
+                logger.warning(
+                    """WARNING: Radii do not vary monotonically.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+                )
+
 
 def _make_concat_property(property_name):
     """Factory method to create a property that concatenates values from all stations.
@@ -286,6 +308,13 @@ class MeanLine:
         out = MeanLine(n_row=1)
         out._stations = _stations
         return out
+
+    def get_ref(self, i_row):
+        """Reference station at inlet/exit of rows, for compressor/turbine."""
+        row = self.get_row(i_row)
+        A_flow = row.Am / np.cos(np.radians(row.Beta))
+        AR_flow = A_flow[1] / A_flow[0]
+        return row[0] if AR_flow >= 1.0 else row[1]
 
 
 class Station(ember.block.Block):
