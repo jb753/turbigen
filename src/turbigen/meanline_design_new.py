@@ -40,8 +40,8 @@ def turbine_cascade_forward(
     ml[1].set_span_htr(span[1], htr)
 
     # Now conserve mass to set inlet state
-    rhoVx1 = ml[1].rhoVx * span[1] / span[0] / np.cos(np.radians(Alpha[0]))
-    ml[0].set_ho_s_rhoV_Alpha_Beta(ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
+    rhoVx1 = ml[1].rhoVx * span[1] / span[0]
+    ml[0].set_ho_s_rhoVm_Alpha_Beta(ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
 
     # Set inlet annulus geometry (htr may vary, same r_mid)
     ml[0].set_span_r_mid(span[0], ml[1].r_mid)

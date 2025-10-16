@@ -188,7 +188,6 @@ class BladeDesigner:
         self.is_recambered = False
 
     def set_streamsurface(self, streamsurface):
-        print("beans")
         self.streamsurface = streamsurface
         # Calculate reference lengths for thickness
         mq = spfq = np.linspace(0.0, 1.0)
