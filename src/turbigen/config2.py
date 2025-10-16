@@ -957,6 +957,8 @@ class TurbigenConfig:
 
         self.get_mean_line_nominal()
 
+        logger.info(self.mean_line.nominal.to_string())
+
         self.get_geometry()
         self.apply_recamber()
 

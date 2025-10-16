@@ -263,10 +263,12 @@ class MeanLine:
     Vm = _make_concat_property("Vm")
     ho = _make_concat_property("ho")
     Ma = _make_concat_property("Ma")
+    Ma_rel = _make_concat_property("Ma_rel")
     mdot = _make_concat_property("mdot")
     htr = _make_concat_property("htr")
     eta_tt = _make_concat_property("eta_tt")
     Po = _make_concat_property("Po")
+    To = _make_concat_property("To")
     T = _make_concat_property("T")
     Vr = _make_concat_property("Vr")
     Vt = _make_concat_property("Vt")
@@ -315,6 +317,41 @@ class MeanLine:
         A_flow = row.Am / np.cos(np.radians(row.Beta))
         AR_flow = A_flow[1] / A_flow[0]
         return row[0] if AR_flow >= 1.0 else row[1]
+
+    def __repr__(self):
+        """Return a string representation of the MeanLine object."""
+        return f"MeanLine(n_row={self.n_row}, id={id(self)})"
+
+    def to_string(self):
+        """Provide a concise string representation of MeanLine properties."""
+        # Define the properties to display
+        properties = [
+            ("Po", self.Po / 1e5, "[bar]"),
+            ("To", self.To, "[K]"),
+            ("Ma", self.Ma, ""),
+            ("Ma_rel", self.Ma_rel, ""),
+            ("Alpha", self.Alpha, "[deg]"),
+            ("Alpha_rel", self.Alpha_rel, "[deg]"),
+        ]
+
+        # Build the table
+        table_str = ""
+        for name, values, unit in properties:
+            # Format the property row
+            row = f"{name + ' ' + unit:<15}"
+            for val in values:
+                # Special formatting for different properties
+                if name == "Po":
+                    row += f"{val:>12.3f}"
+                elif name == "To":
+                    row += f"{val:>12.2f}"
+                elif name in ["Ma", "Ma_rel"]:
+                    row += f"{val:>12.3f}"
+                elif name in ["Alpha", "Alpha_rel"]:
+                    row += f"{val:>12.1f}"
+            table_str += row + "\n"
+
+        return table_str
 
 
 class Station(ember.block.Block):
