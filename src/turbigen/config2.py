@@ -3,9 +3,7 @@
 import dataclasses
 import traceback
 from copy import deepcopy
-import gzip
 import numpy as np
-import pickle
 import sys
 import importlib
 from pathlib import Path
@@ -22,6 +20,9 @@ import turbigen.geometry
 import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
+import turbigen.hmesh
+
+# import turbigen.ohmesh
 import turbigen.blade
 import turbigen.dspace
 import turbigen.nblade
@@ -376,9 +377,11 @@ class TurbigenConfig:
 
         # Set up the mesher
         if self.mesh:
-            Mesher = util.get_subclass_by_name(
-                turbigen.mesh.Mesher, self.mesh.pop("type", "h")
-            )
+            mesh_type = self.mesh.pop("type", "h")
+            if mesh_type == "h":
+                Mesher = turbigen.hmesh.H
+            elif mesh_type == "oh":
+                Mesher = turbigen.ohmesh.OH
             self.mesh = Mesher(**self.mesh)
 
         # Lazy import the solver
@@ -593,15 +596,7 @@ class TurbigenConfig:
             sys.exit(0)
 
         # Find wall distances for each row
-        dsurf = np.array(
-            [
-                self.mesh.get_dwall(
-                    self.mean_line.nominal.get_row(irow),
-                    self.blades[irow][0].surface_length(0.5),
-                )
-                for irow in range(len(self.blades))
-            ]
-        )
+        dsurf = self.calculate_d_wall()
 
         # Hub and casing wall distances are row means
         dhub = dcas = np.mean(dsurf)
@@ -612,7 +607,7 @@ class TurbigenConfig:
             mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
         )
 
-        logger.info(f"ncell/1e6={self.grid.ncell / 1e6:.1f}")
+        logger.info(f"n_cell/1e6={self.grid.size / 1e6:.1f}")
 
         # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
@@ -890,6 +885,57 @@ class TurbigenConfig:
 
         return table_pad
 
+    def calculate_Re_surf(self):
+        """Calculate surface Reynolds number for all rows.
+
+        Returns
+        -------
+        Re_surf : (nrow,) ndarray
+            Surface Reynolds number for each blade row.
+        """
+        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
+        L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
+        ell = self.get_ell()
+        return ell / L_visc
+
+    def calculate_d_wall(self):
+        """Calculate wall cell spacing for all rows using flat plate correlations.
+
+        Uses the viscous length scale from local flow properties and yplus
+        setting to estimate the wall-normal cell spacing required for
+        resolving the boundary layer.
+
+        Returns
+        -------
+        d_wall : (nrow,) ndarray
+            Wall cell spacing for each blade row [m].
+        """
+        Re_surf = self.calculate_Re_surf()
+        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
+
+        # Flat plate skin friction correlation
+        Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
+
+        # Shear stress at wall
+        tauw = (
+            Cf
+            * 0.5
+            * np.array([row.rho for row in row_ref])
+            * np.array([row.V_rel**2 for row in row_ref])
+        )
+
+        # Friction velocity
+        Vtau = np.sqrt(tauw / np.array([row.rho for row in row_ref]))
+
+        # Viscous length scale
+        Lvisc = (
+            np.array([row.mu for row in row_ref])
+            / np.array([row.rho for row in row_ref])
+            / Vtau
+        )
+
+        return self.mesh.yplus * Lvisc
+
     def set_mu_from_Re_surf(self):
         raise NotImplementedError("set_mu_from_Re_surf is not implemented yet.")
         ell = self.get_ell()
@@ -939,10 +985,7 @@ class TurbigenConfig:
         if self.Re_surf:
             self.set_mu_from_Re_surf()
 
-        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
-        L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
-        ell = self.get_ell()
-        Re_surf = ell / L_visc
+        Re_surf = self.calculate_Re_surf()
         logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
         # We are now ready to generate mesh and run CFD
