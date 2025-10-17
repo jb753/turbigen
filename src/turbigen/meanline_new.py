@@ -280,6 +280,21 @@ class MeanLine:
         """Equation of state."""
         return self._stations[0].fluid
 
+    def copy(self):
+        """Create a deep copy of the MeanLine."""
+        new_ml = MeanLine(self.n_row)
+        for i in range(self.n_row * 2):
+            new_ml._stations[i] = self._stations[i].copy()
+        return new_ml
+
+    @property
+    def eta_tt(self):
+        return np.nan
+
+    @property
+    def eta_ts(self):
+        return np.nan
+
     # Coordinates
     x = _make_concat_property("x")
     r = _make_concat_property("r")
@@ -402,9 +417,6 @@ class MeanLine:
 
     # Rotation
     Omega = _make_concat_property("Omega")
-
-    # Efficiency (if defined)
-    eta_tt = _make_concat_property("eta_tt")
 
     set_Vxrt = _make_setter_method("set_Vxrt")
     set_Vx = _make_setter_method("set_Vx")

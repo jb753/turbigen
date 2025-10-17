@@ -33,6 +33,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 
 import ember.grid
+import ember.cut
+import ember.average
+import ember.util
 
 logger = util.make_logger()
 
@@ -736,36 +739,20 @@ class TurbigenConfig:
         # Find meridional coordinates of the cut planes
         xr_cut = self.annulus.get_offset_planes(self.cut_offset)
 
-        # Take the cuts, form a list of [(Cmix, Amix, Dsmix)]
-        cuts = [
-            turbigen.average.mix_out_unstructured(
-                self.grid.unstructured_cut_marching(xri)
-            )
-            for xri in xr_cut
-        ]
+        # Take the cuts
+        cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
-        # Unpack the list
-        Cmix, Amix, Dsmix = zip(*cuts)
+        # Mix out and assemble into actual mean-line flow field
+        self.mean_line.actual = self.mean_line.nominal.copy()
+        for i, C in enumerate(cuts):
+            Cm = ember.average.mix_out(C)
+            self.mean_line.actual[i].set_r_rms(Cm.r)
+            self.mean_line.actual[i].set_conserved(Cm.conserved)
 
-        # Stack the cuts to form a mean-line flow field
-        Call = turbigen.base.stack(Cmix)
-
-        # Copy Omega and Nb from nominal
-        Call.Omega = np.concatenate(
-            [g[0].Omega.flat[0] * np.ones((2,)) for g in self.grid.row_blocks]
-        )
-        Nb = np.concatenate(
-            [g[0].Nb * np.ones((2,)) for g in self.grid.row_blocks]
-        ).astype(int)
-
-        # Assemble the meanline flowfield
-        self.mean_line.actual = turbigen.meanline_data.make_mean_line_from_flowfield(
-            Amix, Call, Dsmix
-        )
-        self.mean_line.actual.Nb = self.mean_line.nominal.Nb = Nb
+        print(self.mean_line.actual.to_string())
 
         # Back-calculate the design variables
-        self.mean_line_actual = self.mean_line.backward(self.mean_line.actual)
+        self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)
 
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""

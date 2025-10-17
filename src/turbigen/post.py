@@ -146,7 +146,7 @@ class Metadata(BasePost):
         ax.axis("off")
         left = 0.05
         ax.set_title("Metadata:")
-        ax.text(left, 0.95, f"workdir={str(config.workdir)}")
+        ax.text(left, 0.95, f"work_dir={str(config.work_dir)}")
         pdf.savefig()
         plt.close()
 
@@ -253,6 +253,8 @@ class SurfaceDistribution(BasePost):
         # Default to plotting on the designed sections
         if self.spf is not None:
             spf = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
+
+        return
 
         # Loop over rows
         for irow, spfrow in spf.items():

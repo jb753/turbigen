@@ -179,7 +179,11 @@ class BladeDesigner:
 
     def undo_recamber(self, mean_line):
         """Convert the stored tanchi back to recamber angles."""
-        Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+
+        # Calculate the local flow angles
+        vortex = VortexDistribution(mean_line, self.vortex_expon)
+        Alpha_rel = vortex.Alpha_rel(self.spf)
+
         if not self.is_recambered:
             raise ValueError("The blade is not recambered, cannot undo recambering.")
         # Subtract the local flow angles to get the recamber angles
