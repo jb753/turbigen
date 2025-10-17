@@ -283,11 +283,13 @@ class MeanLine:
     Beta = _make_concat_property("Beta")
     Alpha_rel = _make_concat_property("Alpha_rel")
     Am = _make_concat_property("Am")
+    x = _make_concat_property("x")
 
     set_Vxrt = _make_setter_method("set_Vxrt")
     set_Vx = _make_setter_method("set_Vx")
     set_Vr = _make_setter_method("set_Vr")
     set_Vt = _make_setter_method("set_Vt")
+    set_x = _make_setter_method("set_x")
     set_h_s = _make_setter_method("set_h_s")
     set_r_rms = _make_setter_method("set_r_rms")
     set_Am = _make_setter_method("set_Am")

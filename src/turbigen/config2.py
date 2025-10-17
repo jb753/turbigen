@@ -511,6 +511,9 @@ class TurbigenConfig:
         self.annulus.setup_annulus(self.mean_line.nominal)
         logger.info(f"{self.annulus}")
 
+        # Copy annulus x-coords into the mean-line
+        self.mean_line.nominal.set_x(self.annulus.x)
+
         # Blade design
         logger.info("Designing blades...")
 
