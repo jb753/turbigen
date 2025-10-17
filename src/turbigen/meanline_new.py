@@ -280,40 +280,131 @@ class MeanLine:
         """Equation of state."""
         return self._stations[0].fluid
 
-    Vx = _make_concat_property("Vx")
-    s = _make_concat_property("s")
-    Alpha = _make_concat_property("Alpha")
+    # Coordinates
+    x = _make_concat_property("x")
+    r = _make_concat_property("r")
+    t = _make_concat_property("t")
+    xrt = _make_concat_property("xrt")
+    xyz = _make_concat_property("xyz")
+    xrrt = _make_concat_property("xrrt")
+    y = _make_concat_property("y")
+    z = _make_concat_property("z")
+
+    # Conserved variables
     rho = _make_concat_property("rho")
-    halfVsq = _make_concat_property("halfVsq")
-    U = _make_concat_property("U")
-    Vm = _make_concat_property("Vm")
-    ho = _make_concat_property("ho")
-    mu = _make_concat_property("mu")
-    P = _make_concat_property("P")
-    Ma = _make_concat_property("Ma")
-    Ma_rel = _make_concat_property("Ma_rel")
-    mdot = _make_concat_property("mdot")
-    htr = _make_concat_property("htr")
-    eta_tt = _make_concat_property("eta_tt")
-    Po = _make_concat_property("Po")
-    To = _make_concat_property("To")
-    T = _make_concat_property("T")
+    rhoVx = _make_concat_property("rhoVx")
+    rhoVr = _make_concat_property("rhoVr")
+    rhorVt = _make_concat_property("rhorVt")
+    rhoe = _make_concat_property("rhoe")
+    conserved = _make_concat_property("conserved")
+
+    # Velocity components
+    Vx = _make_concat_property("Vx")
     Vr = _make_concat_property("Vr")
     Vt = _make_concat_property("Vt")
+    Vxrt = _make_concat_property("Vxrt")
+    Vxyz = _make_concat_property("Vxyz")
+    Vy = _make_concat_property("Vy")
+    Vz = _make_concat_property("Vz")
+
+    # Velocity magnitudes and derived
+    V = _make_concat_property("V")
+    Vm = _make_concat_property("Vm")
+    U = _make_concat_property("U")
+    V_rel = _make_concat_property("V_rel")
+    Vt_rel = _make_concat_property("Vt_rel")
+    rhoVm = _make_concat_property("rhoVm")
+
+    # Energy
+    e = _make_concat_property("e")
+    u = _make_concat_property("u")
+    halfVsq = _make_concat_property("halfVsq")
+    halfVsq_rel = _make_concat_property("halfVsq_rel")
+
+    # Flow angles
+    Alpha = _make_concat_property("Alpha")
+    Beta = _make_concat_property("Beta")
+    Alpha_rel = _make_concat_property("Alpha_rel")
+    tanAlpha = _make_concat_property("tanAlpha")
+    tanAlpha_rel = _make_concat_property("tanAlpha_rel")
+    tanBeta = _make_concat_property("tanBeta")
+    sinBeta = _make_concat_property("sinBeta")
+
+    # Thermodynamic properties
+    P = _make_concat_property("P")
+    T = _make_concat_property("T")
+    s = _make_concat_property("s")
     h = _make_concat_property("h")
-    span = _make_concat_property("span")
-    rhoVx = _make_concat_property("rhoVx")
-    r = _make_concat_property("r")
-    conserved = _make_concat_property("conserved")
+    a = _make_concat_property("a")
+    cp = _make_concat_property("cp")
+    cv = _make_concat_property("cv")
+    gamma = _make_concat_property("gamma")
+    rgas = _make_concat_property("rgas")
+
+    # Stagnation properties
+    ho = _make_concat_property("ho")
+    Po = _make_concat_property("Po")
+    To = _make_concat_property("To")
+    rhoo = _make_concat_property("rhoo")
+    uo = _make_concat_property("uo")
+
+    # Relative frame stagnation
+    ho_rel = _make_concat_property("ho_rel")
+    Po_rel = _make_concat_property("Po_rel")
+    To_rel = _make_concat_property("To_rel")
+    rhoo_rel = _make_concat_property("rhoo_rel")
+    uo_rel = _make_concat_property("uo_rel")
+    I = _make_concat_property("I")
+
+    # Non-dimensional numbers
+    Ma = _make_concat_property("Ma")
+    Ma_rel = _make_concat_property("Ma_rel")
+
+    # Transport properties
+    mu = _make_concat_property("mu")
+    Pr = _make_concat_property("Pr")
+
+    # Thermodynamic derivatives
+    dhdP_rho = _make_concat_property("dhdP_rho")
+    dhdrho_P = _make_concat_property("dhdrho_P")
+    dsdP_rho = _make_concat_property("dsdP_rho")
+    dsdrho_P = _make_concat_property("dsdrho_P")
+    dudP_rho = _make_concat_property("dudP_rho")
+    dudrho_P = _make_concat_property("dudrho_P")
+
+    # Variable sets
+    primitive = _make_concat_property("primitive")
+    bcond = _make_concat_property("bcond")
+
+    # Jacobians
+    J_prim_to_cons = _make_concat_property("J_prim_to_cons")
+    J_cons_to_prim = _make_concat_property("J_cons_to_prim")
+    J_prim_to_chic = _make_concat_property("J_prim_to_chic")
+    J_chic_to_prim = _make_concat_property("J_chic_to_prim")
+    J_prim_to_flux = _make_concat_property("J_prim_to_flux")
+    J_flux_to_prim = _make_concat_property("J_flux_to_prim")
+    J_prim_to_bcond = _make_concat_property("J_prim_to_bcond")
+    J_bcond_to_prim = _make_concat_property("J_bcond_to_prim")
+    J_flux_to_cons = _make_concat_property("J_flux_to_cons")
+    J_cons_to_flux = _make_concat_property("J_cons_to_flux")
+    J_bcond_to_cons = _make_concat_property("J_bcond_to_cons")
+    J_cons_to_bcond = _make_concat_property("J_cons_to_bcond")
+
+    # Annulus geometry (Station-specific)
+    Am = _make_concat_property("Am")
+    r_rms = _make_concat_property("r_rms")
     r_mid = _make_concat_property("r_mid")
     r_hub = _make_concat_property("r_hub")
     r_cas = _make_concat_property("r_cas")
-    r_rms = _make_concat_property("r_rms")
+    span = _make_concat_property("span")
+    htr = _make_concat_property("htr")
+    mdot = _make_concat_property("mdot")
+
+    # Rotation
     Omega = _make_concat_property("Omega")
-    Beta = _make_concat_property("Beta")
-    Alpha_rel = _make_concat_property("Alpha_rel")
-    Am = _make_concat_property("Am")
-    x = _make_concat_property("x")
+
+    # Efficiency (if defined)
+    eta_tt = _make_concat_property("eta_tt")
 
     set_Vxrt = _make_setter_method("set_Vxrt")
     set_Vx = _make_setter_method("set_Vx")
@@ -325,6 +416,7 @@ class MeanLine:
     set_Am = _make_setter_method("set_Am")
     set_Omega = _make_setter_method("set_Omega")
     set_span_htr = _make_setter_method("set_span_htr")
+    set_conserved = _make_setter_method("set_conserved")
 
     def __getitem__(self, key):
         """Index into the meanline.
