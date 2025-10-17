@@ -98,6 +98,42 @@ class AnnulusDesigner(util.BaseDesigner):
         """Maximum value of normalised meridional coordinate."""
         return float(self.nseg)
 
+    @property
+    def r_rms(self):
+        """Root-mean-square radii at all row inlet/exit stations [m]."""
+        # Generate m values for all row stations (LE and TE)
+        m = np.arange(1, 2 * self.nrow + 1)
+
+        # Evaluate hub and casing coordinates
+        xr_hub = self.evaluate_xr(m, spf=0.0)
+        xr_cas = self.evaluate_xr(m, spf=1.0)
+
+        # Calculate RMS radii: r_rms = sqrt(0.5 * (r_hub^2 + r_cas^2))
+        r_rms = np.sqrt(0.5 * (xr_hub[1] ** 2 + xr_cas[1] ** 2))
+
+        return r_rms
+
+    @property
+    def x_rms(self):
+        """Axial coordinates at RMS radius for all row inlet/exit stations [m]."""
+        # Generate m values for all row stations (LE and TE)
+        m = np.arange(1, 2 * self.nrow + 1)
+
+        # Evaluate hub and casing coordinates
+        xr_hub = self.evaluate_xr(m, spf=0.0)
+        xr_cas = self.evaluate_xr(m, spf=1.0)
+
+        # Reuse r_rms property
+        r_rms = self.r_rms
+
+        # Calculate span fraction at RMS radius
+        spf_rms = (r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
+
+        # Linearly interpolate x coordinates
+        x_rms = xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
+
+        return x_rms
+
     def chords(self, spf):
         """Meridional chords of rows and row gaps.
 

@@ -119,5 +119,52 @@ def test_smooth_pitch_angle(smooth_annulus_two_row):
     np.testing.assert_allclose(Beta_evaluated, Beta_expected, atol=0.1)
 
 
+def test_smooth_r_rms_property(smooth_annulus_two_row):
+    """Test that r_rms property returns correct RMS radii."""
+    ann, rmid, span, Beta = smooth_annulus_two_row
+
+    # Get r_rms from property
+    r_rms = ann.r_rms
+
+    # Verify shape: should be (nrow*2,) = (4,)
+    assert r_rms.shape == (4,), f"Expected shape (4,), got {r_rms.shape}"
+
+    # Verify calculation: r_rms = sqrt(0.5 * (r_hub^2 + r_cas^2))
+    m_values = np.array([1.0, 2.0, 3.0, 4.0])
+    xr_hub = ann.evaluate_xr(m_values, spf=0.0)
+    xr_cas = ann.evaluate_xr(m_values, spf=1.0)
+
+    r_rms_expected = np.sqrt(0.5 * (xr_hub[1]**2 + xr_cas[1]**2))
+
+    np.testing.assert_allclose(r_rms, r_rms_expected, rtol=1e-10)
+
+
+def test_smooth_x_rms_property(smooth_annulus_two_row):
+    """Test that x_rms property returns correct axial coordinates at RMS radius."""
+    ann, rmid, span, Beta = smooth_annulus_two_row
+
+    # Get x_rms from property
+    x_rms = ann.x_rms
+
+    # Verify shape: should be (nrow*2,) = (4,)
+    assert x_rms.shape == (4,), f"Expected shape (4,), got {x_rms.shape}"
+
+    # Verify that x_rms is between x_hub and x_cas
+    m_values = np.array([1.0, 2.0, 3.0, 4.0])
+    xr_hub = ann.evaluate_xr(m_values, spf=0.0)
+    xr_cas = ann.evaluate_xr(m_values, spf=1.0)
+
+    # x_rms should be between x_hub and x_cas
+    assert np.all(x_rms >= np.minimum(xr_hub[0], xr_cas[0]))
+    assert np.all(x_rms <= np.maximum(xr_hub[0], xr_cas[0]))
+
+    # Verify the interpolation formula
+    r_rms = ann.r_rms
+    spf_rms = (r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
+    x_rms_expected = xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
+
+    np.testing.assert_allclose(x_rms, x_rms_expected, rtol=1e-10)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
