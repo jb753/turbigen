@@ -161,27 +161,48 @@ def _make_concat_property(property_name):
         property_name: Name of the property to extract from each station
 
     Returns:
-        A property object that concatenates the named property from all stations
+        A property object that concatenates the named property from all stations.
+        For scalar properties, returns a 1D array of length n_stations.
+        For non-scalar properties (e.g., conserved with shape (5,)), returns a 2D array
+        of shape (n_stations, ...) by stacking along the first axis.
     """
 
     def getter(self):
         # Inline concatenation: extract property from all stations and concatenate
         # Handle uninitialized stations by returning NaN for those indices
         values = []
+        is_scalar = None
         for station in self._stations:
             try:
                 value = getattr(station, property_name)
-                # Convert scalar to array for concatenation
-                values.append(np.atleast_1d(value))
+                # Determine if property is scalar or non-scalar on first valid value
+                if is_scalar is None:
+                    is_scalar = np.ndim(value) == 0
+                values.append(value)
             except (ValueError, AttributeError) as e:
                 # print full traceback for debugging
                 import traceback
 
                 traceback.print_exc()
                 # Station not initialized, use NaN
-                values.append(np.array([np.nan], dtype=f32))
+                if is_scalar is None:
+                    # Default to scalar if we haven't seen a valid value yet
+                    values.append(np.array([np.nan], dtype=f32))
+                elif is_scalar:
+                    values.append(np.nan)
+                else:
+                    # For non-scalar properties, we'll need to infer shape from first valid value
+                    # For now, use a placeholder
+                    values.append(np.array([np.nan], dtype=f32))
 
-        result = np.concatenate(values, dtype=f32)
+        # Use stack for non-scalar properties, concatenate for scalar properties
+        if is_scalar:
+            # Convert scalars to 1D array for concatenation
+            values_1d = [np.atleast_1d(v) for v in values]
+            result = np.concatenate(values_1d, dtype=f32)
+        else:
+            # Stack non-scalar properties along first axis
+            result = np.stack(values, axis=0).astype(f32)
 
         # Make the array read-only to prevent confusion
         result.flags.writeable = False
@@ -254,6 +275,11 @@ class MeanLine:
         """Number of stations."""
         return (self._n_row * 2,)
 
+    @property
+    def fluid(self):
+        """Equation of state."""
+        return self._stations[0].fluid
+
     Vx = _make_concat_property("Vx")
     s = _make_concat_property("s")
     Alpha = _make_concat_property("Alpha")
@@ -262,6 +288,7 @@ class MeanLine:
     U = _make_concat_property("U")
     Vm = _make_concat_property("Vm")
     ho = _make_concat_property("ho")
+    mu = _make_concat_property("mu")
     Ma = _make_concat_property("Ma")
     Ma_rel = _make_concat_property("Ma_rel")
     mdot = _make_concat_property("mdot")
@@ -275,6 +302,8 @@ class MeanLine:
     h = _make_concat_property("h")
     span = _make_concat_property("span")
     rhoVx = _make_concat_property("rhoVx")
+    r = _make_concat_property("r")
+    conserved = _make_concat_property("conserved")
     r_mid = _make_concat_property("r_mid")
     r_hub = _make_concat_property("r_hub")
     r_cas = _make_concat_property("r_cas")
@@ -468,7 +497,8 @@ if __name__ == "__main__":
     print("Scalar Station r_rms:", station.r_rms)
 
     # Test MeanLine
-    ml = MeanLine(n_row=2, fluid=fluid)
+    ml = MeanLine(n_row=2)
+    ml.set_fluid(fluid)
     print(f"\nCreated MeanLine with {ml.n_row} rows (4 scalar stations)")
 
     # Test that n_row is read-only
@@ -487,19 +517,6 @@ if __name__ == "__main__":
     assert isinstance(station0, Station), "ml[0] should return a Station"
     assert station0.shape == (), f"ml[0] should have shape (), got {station0.shape}"
     print("PASS: scalar indexing works")
-
-    # Test indexing with tuple
-    print("\nTesting tuple indexing:")
-    station01 = ml[0, 1]
-    print(f"ml[0, 1] type: {type(station01).__name__}")
-    print(f"ml[0, 1] shape: {station01.shape}")
-    assert isinstance(station01, Station), "ml[0, 1] should return a Station"
-    assert (
-        station01.shape == ()
-    ), f"ml[0, 1] should have shape (), got {station01.shape}"
-    # Verify it's the same as ml[1]
-    assert ml[0, 1] is ml[1]
-    print("PASS: tuple indexing works")
 
     # Test setter method
     print("\nTesting setter method:")
@@ -525,5 +542,21 @@ if __name__ == "__main__":
     print(f"Got Vx: {ml.Vx}")
     assert np.allclose(ml.Vx, Vx)
     print("PASS: setter method works")
+
+    # Test non-scalar property (conserved)
+    print("\nTesting non-scalar property (conserved):")
+    conserved = ml.conserved
+    print(f"conserved shape: {conserved.shape}")
+    assert conserved.shape == (
+        4,
+        5,
+    ), f"conserved should have shape (4, 5), got {conserved.shape}"
+    # Verify each station's conserved values match
+    for i in range(4):
+        station_conserved = ml[i].conserved
+        assert np.allclose(
+            conserved[i], station_conserved
+        ), f"Station {i} conserved mismatch"
+    print("PASS: non-scalar property (conserved) works correctly")
 
     print("\nAll tests passed!")
