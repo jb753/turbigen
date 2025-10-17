@@ -711,7 +711,7 @@ class TurbigenConfig:
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case
-        self.grid.update_outlet()
+        self.grid.update_P_out()
 
     def run_solver(self):
         if not self.solver:

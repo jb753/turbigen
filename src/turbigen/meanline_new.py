@@ -289,6 +289,7 @@ class MeanLine:
     Vm = _make_concat_property("Vm")
     ho = _make_concat_property("ho")
     mu = _make_concat_property("mu")
+    P = _make_concat_property("P")
     Ma = _make_concat_property("Ma")
     Ma_rel = _make_concat_property("Ma_rel")
     mdot = _make_concat_property("mdot")
