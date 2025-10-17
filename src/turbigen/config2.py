@@ -643,6 +643,10 @@ class TurbigenConfig:
         Omega = self.mean_line.nominal.Omega[::2].copy()
         Pout = self.mean_line.nominal.P[-1]
         mdot = self.mean_line.nominal.mdot[-1]
+        Po1 = self.mean_line.nominal.Po[0]
+        To1 = self.mean_line.nominal.To[0]
+        Alpha1 = self.mean_line.nominal.Alpha[0]
+        Beta1 = self.mean_line.nominal.Beta[0]
 
         # Alter the operating point if needed
         if self.operating_point:
@@ -679,14 +683,15 @@ class TurbigenConfig:
                 rot_types.append("stationary")
         self.grid.apply_rotation(rot_types, Omega)
 
-        # Inlet boundary condition
-        # Set inlet pitch angle using orientation of
-        # the inlet patch grid (assuming on a constant i face)
-        # This allow the annulus lines to differ from mean-line pitch angle
-        Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
-        Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
-        Alpha1 = self.mean_line.nominal.Alpha[0]
-        self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
+        # # Inlet boundary condition
+        # # Set inlet pitch angle using orientation of
+        # # the inlet patch grid (assuming on a constant i face)
+        # # This allow the annulus lines to differ from mean-line pitch angle
+        # Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
+        # Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
+        # Alpha1 = self.mean_line.nominal.Alpha[0]
+
+        self.grid.patches.inlet[0].set_inlet(Po1, To1, Alpha1, Beta1)
 
         # Apply profile if available
         if self.inlet.profiles is not None:
@@ -697,7 +702,7 @@ class TurbigenConfig:
             )
 
         # Outlet boundary condition
-        self.grid.apply_outlet(Pout)
+        self.grid.patches.outlet[0].set_P(Pout)
 
     def apply_guess(self):
         # Apply 3D guess if available
