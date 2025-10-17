@@ -537,7 +537,7 @@ class TurbigenConfig:
                 self.nblade[irow].get_blade_number(
                     self.mean_line.nominal.get_row(irow), row[0]
                 )
-            )
+            ).item()
         return Nb
 
     def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
@@ -731,6 +731,7 @@ class TurbigenConfig:
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(*run_args)
+        logger.info("Running solver")
         self.solver.run(*run_args)
 
     def get_mean_line_actual(self):
@@ -742,10 +743,31 @@ class TurbigenConfig:
         # Take the cuts
         cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        ax.axis("equal")
+        ax.plot(cuts[0].y, cuts[0].z, "kx")
+        plt.show()
+
         # Mix out and assemble into actual mean-line flow field
         self.mean_line.actual = self.mean_line.nominal.copy()
         for i, C in enumerate(cuts):
-            Cm = ember.average.mix_out(C)
+            try:
+                Cm = ember.average.mix_out(C)
+            except Exception as e:
+                print("Failed to mix out row", i)
+                print(C.conserved.mean(axis=(0, 1)))
+                print(C.xrt.mean(axis=(0, 1)))
+                print(C.shape)
+                print(f"{C.dA.shape=}")
+                print(f"{C.dA_tri.shape=}")
+                print(f"{C.dA_quad.shape=}")
+                print(C.dA[..., 0].min(), C.dA[..., 0].max())
+                print("t", C.t.min(), C.t.max())
+                print(ember.average.total_area(C))
+                print(ember.average.flow_conserved(C))
+                quit()
             self.mean_line.actual[i].set_r_rms(Cm.r)
             self.mean_line.actual[i].set_conserved(Cm.conserved)
 
