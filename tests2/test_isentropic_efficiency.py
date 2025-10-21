@@ -69,9 +69,7 @@ class TestIsentropicEfficiencyBasics:
         """
         eta_tt = simple_turbine.eta_tt
         eta_ts = simple_turbine.eta_ts
-        assert eta_tt >= eta_ts, (
-            f"eta_tt ({eta_tt}) must be >= eta_ts ({eta_ts})"
-        )
+        assert eta_tt >= eta_ts, f"eta_tt ({eta_tt}) must be >= eta_ts ({eta_ts})"
 
     def test_empty_meanline_raises_error(self):
         """Test that empty MeanLine raises IndexError (no stations)."""
@@ -143,7 +141,9 @@ class TestIsentropicEfficiencyAnalytical:
         T_out_ideal = T_in * (P_out / P_in) ** r
 
         # Create turbine with isentropic process
-        ml = self.create_turbine(perfect_air, P_in, T_in, 100.0, P_out, T_out_ideal, 110.0)
+        ml = self.create_turbine(
+            perfect_air, P_in, T_in, 100.0, P_out, T_out_ideal, 110.0
+        )
 
         eta_tt = ml.eta_tt
         eta_ts = ml.eta_ts
@@ -167,7 +167,9 @@ class TestIsentropicEfficiencyAnalytical:
         eta_ideal = 0.90
         T_out_actual = T_in - eta_ideal * (T_in - T_out_ideal)
 
-        ml = self.create_turbine(perfect_air, P_in, T_in, V_in, P_out, T_out_actual, V_out)
+        ml = self.create_turbine(
+            perfect_air, P_in, T_in, V_in, P_out, T_out_actual, V_out
+        )
 
         eta_tt = ml.eta_tt
         eta_ts = ml.eta_ts
@@ -187,13 +189,15 @@ class TestIsentropicEfficiencyAnalytical:
         for pr in pressure_ratios:
             P_out = P_in * pr
             r = (gamma - 1) / gamma
-            T_out_ideal = T_in * pr ** r
+            T_out_ideal = T_in * pr**r
 
             # Assume 85% efficiency
             target_eta = 0.85
             T_out_actual = T_in - target_eta * (T_in - T_out_ideal)
 
-            ml = self.create_turbine(perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0)
+            ml = self.create_turbine(
+                perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0
+            )
 
             eta_tt = ml.eta_tt
             eta_ts = ml.eta_ts
@@ -272,6 +276,7 @@ class TestIsentropicEfficiencyConsistency:
 
     def test_efficiency_finite_different_velocities(self, perfect_air):
         """Test that efficiency is finite for different velocities."""
+
         def create_and_compute_eta(V_scale):
             ml = turbigen.meanline_new.MeanLine(n_row=1)
             ml.set_fluid(perfect_air)
@@ -293,8 +298,12 @@ class TestIsentropicEfficiencyConsistency:
         # Test with different velocity scales
         for scale in [0.5, 1.0, 2.0]:
             eta_tt, eta_ts = create_and_compute_eta(scale)
-            assert np.isfinite(eta_tt), f"eta_tt {eta_tt} should be finite for scale {scale}"
-            assert np.isfinite(eta_ts), f"eta_ts {eta_ts} should be finite for scale {scale}"
+            assert np.isfinite(
+                eta_tt
+            ), f"eta_tt {eta_tt} should be finite for scale {scale}"
+            assert np.isfinite(
+                eta_ts
+            ), f"eta_ts {eta_ts} should be finite for scale {scale}"
 
     def test_efficiency_for_different_gases(self):
         """Test efficiencies for different gas properties (different gamma)."""
@@ -378,12 +387,14 @@ class TestEtaTtGreaterThanEtaTs:
         for pr in pressure_ratios:
             P_out = P_in * pr
             r = (gamma - 1) / gamma
-            T_out_ideal = T_in * pr ** r
+            T_out_ideal = T_in * pr**r
 
             # Test both high efficiency (close to ideal) and lower efficiency cases
             for target_eta in [0.95, 0.85, 0.75, 0.65]:
                 T_out_actual = T_in - target_eta * (T_in - T_out_ideal)
-                ml = self.create_turbine(perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0)
+                ml = self.create_turbine(
+                    perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0
+                )
 
                 eta_tt = ml.eta_tt
                 eta_ts = ml.eta_ts
@@ -400,10 +411,10 @@ class TestEtaTtGreaterThanEtaTs:
 
         # Test various inlet temperatures and pressures
         test_cases = [
-            (1e5, 300.0),   # Standard conditions
-            (2e5, 400.0),   # High pressure, high temperature
-            (0.5e5, 250.0), # Low pressure, low temperature
-            (1.5e5, 350.0), # Medium-high conditions
+            (1e5, 300.0),  # Standard conditions
+            (2e5, 400.0),  # High pressure, high temperature
+            (0.5e5, 250.0),  # Low pressure, low temperature
+            (1.5e5, 350.0),  # Medium-high conditions
         ]
 
         for P_in, T_in in test_cases:
@@ -414,7 +425,9 @@ class TestEtaTtGreaterThanEtaTs:
             # 85% efficient expansion
             T_out_actual = T_in - 0.85 * (T_in - T_out_ideal)
 
-            ml = self.create_turbine(perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0)
+            ml = self.create_turbine(
+                perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 120.0
+            )
 
             eta_tt = ml.eta_tt
             eta_ts = ml.eta_ts
@@ -443,7 +456,9 @@ class TestEtaTtGreaterThanEtaTs:
         ]
 
         for V_in, V_out in velocity_pairs:
-            ml = self.create_turbine(perfect_air, P_in, T_in, V_in, P_out, T_out_actual, V_out)
+            ml = self.create_turbine(
+                perfect_air, P_in, T_in, V_in, P_out, T_out_actual, V_out
+            )
 
             eta_tt = ml.eta_tt
             eta_ts = ml.eta_ts
@@ -464,7 +479,9 @@ class TestEtaTtGreaterThanEtaTs:
         # Near-isentropic cases (high efficiencies)
         for target_eta in [0.99, 0.98, 0.97, 0.96]:
             T_out_actual = T_in - target_eta * (T_in - T_out_ideal)
-            ml = self.create_turbine(perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 110.0)
+            ml = self.create_turbine(
+                perfect_air, P_in, T_in, 100.0, P_out, T_out_actual, 110.0
+            )
 
             eta_tt = ml.eta_tt
             eta_ts = ml.eta_ts
@@ -599,7 +616,9 @@ class TestIsentropicEfficiencyMultiRow:
         eta_ts_multi = ml_multi.eta_ts
 
         # Both should be in valid range
-        assert 0.0 <= eta_tt_single <= 1.0, f"eta_tt_single {eta_tt_single} out of range"
+        assert (
+            0.0 <= eta_tt_single <= 1.0
+        ), f"eta_tt_single {eta_tt_single} out of range"
         assert 0.0 <= eta_tt_multi <= 1.0, f"eta_tt_multi {eta_tt_multi} out of range"
         assert 0.0 <= eta_ts_single <= 1.0
         assert 0.0 <= eta_ts_multi <= 1.0

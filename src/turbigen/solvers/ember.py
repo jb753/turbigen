@@ -29,18 +29,18 @@ class Ember(BaseSolver):
         return self
 
     def run(self, grid, machine, workdir):
-
-        logger.info("Ember solver placeholder - no action taken.")
-
         config = ember.config.SolverConfig(
             order=3,
             n_levels=3,
             n_step_avg=250,
-            n_step=100,
+            n_step=500,
+            n_step_ramp=1000,
             cfl_min=0.5,
-            cfl_max=1.5,
+            cfl_max=4.0,
             sf4=0.01,
             sf2_adapt=2.0,
+            # rf_inlet=1.0,
+            # rtol_conserved=1e-12,
         )
         self.conv = ember.loop.multigrid(grid, config)
         # self.convergence = run(grid, self, machine, workdir)
@@ -54,6 +54,9 @@ class Ember(BaseSolver):
         cm = ax.contourf(C.x, C.r * C.t, C.Ma, lev, cmap="cubehelix")
         plt.colorbar(cm)
         ax.axis("equal")
+
+        fig, ax = plt.subplots()
+        ax.plot(b.x[:, b.nj // 2, b.nk // 2], b.Ma[:, b.nj // 2, b.nk // 2])
 
         fig, ax = plt.subplots()
         b = grid[0]

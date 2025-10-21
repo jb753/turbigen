@@ -294,7 +294,7 @@ class MeanLine:
         ho2 = self[-1].ho
         ho2s = self[0].empty().set_P_s(self[-1].Po, self[0].s).h
 
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             eta = (ho1 - ho2) / (ho1 - ho2s)
 
         if np.isnan(eta):
@@ -312,7 +312,7 @@ class MeanLine:
         ho2 = self[-1].ho
         h2s = self[0].empty().set_P_s(self[-1].P, self[0].s).h
 
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             eta = (ho1 - ho2) / (ho1 - h2s)
 
         if np.isnan(eta):
