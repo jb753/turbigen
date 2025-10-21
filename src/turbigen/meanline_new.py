@@ -289,11 +289,39 @@ class MeanLine:
 
     @property
     def eta_tt(self):
-        return np.nan
+        """Total-to-total isentropic efficiency: (ho1 - ho2) / (ho1 - ho2s)."""
+        ho1 = self[0].ho
+        ho2 = self[-1].ho
+        ho2s = self[0].empty().set_P_s(self[-1].Po, self[0].s).h
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            eta = (ho1 - ho2) / (ho1 - ho2s)
+
+        if np.isnan(eta):
+            return np.inf
+
+        if eta > 1.0:
+            eta = 1.0 / eta
+
+        return float(eta)
 
     @property
     def eta_ts(self):
-        return np.nan
+        """Total-to-static isentropic efficiency: (ho1 - ho2) / (ho1 - h2s)."""
+        ho1 = self[0].ho
+        ho2 = self[-1].ho
+        h2s = self[0].empty().set_P_s(self[-1].P, self[0].s).h
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            eta = (ho1 - ho2) / (ho1 - h2s)
+
+        if np.isnan(eta):
+            return np.inf
+
+        if eta > 1.0:
+            eta = 1.0 / eta
+
+        return float(eta)
 
     # Coordinates
     x = _make_concat_property("x")
