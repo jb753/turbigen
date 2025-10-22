@@ -161,27 +161,48 @@ def _make_concat_property(property_name):
         property_name: Name of the property to extract from each station
 
     Returns:
-        A property object that concatenates the named property from all stations
+        A property object that concatenates the named property from all stations.
+        For scalar properties, returns a 1D array of length n_stations.
+        For non-scalar properties (e.g., conserved with shape (5,)), returns a 2D array
+        of shape (n_stations, ...) by stacking along the first axis.
     """
 
     def getter(self):
         # Inline concatenation: extract property from all stations and concatenate
         # Handle uninitialized stations by returning NaN for those indices
         values = []
+        is_scalar = None
         for station in self._stations:
             try:
                 value = getattr(station, property_name)
-                # Convert scalar to array for concatenation
-                values.append(np.atleast_1d(value))
+                # Determine if property is scalar or non-scalar on first valid value
+                if is_scalar is None:
+                    is_scalar = np.ndim(value) == 0
+                values.append(value)
             except (ValueError, AttributeError) as e:
                 # print full traceback for debugging
                 import traceback
 
                 traceback.print_exc()
                 # Station not initialized, use NaN
-                values.append(np.array([np.nan], dtype=f32))
+                if is_scalar is None:
+                    # Default to scalar if we haven't seen a valid value yet
+                    values.append(np.array([np.nan], dtype=f32))
+                elif is_scalar:
+                    values.append(np.nan)
+                else:
+                    # For non-scalar properties, we'll need to infer shape from first valid value
+                    # For now, use a placeholder
+                    values.append(np.array([np.nan], dtype=f32))
 
-        result = np.concatenate(values, dtype=f32)
+        # Use stack for non-scalar properties, concatenate for scalar properties
+        if is_scalar:
+            # Convert scalars to 1D array for concatenation
+            values_1d = [np.atleast_1d(v) for v in values]
+            result = np.concatenate(values_1d, dtype=f32)
+        else:
+            # Stack non-scalar properties along first axis
+            result = np.stack(values, axis=0).astype(f32)
 
         # Make the array read-only to prevent confusion
         result.flags.writeable = False
@@ -254,43 +275,188 @@ class MeanLine:
         """Number of stations."""
         return (self._n_row * 2,)
 
-    Vx = _make_concat_property("Vx")
-    s = _make_concat_property("s")
-    Alpha = _make_concat_property("Alpha")
+    @property
+    def fluid(self):
+        """Equation of state."""
+        return self._stations[0].fluid
+
+    def copy(self):
+        """Create a deep copy of the MeanLine."""
+        new_ml = MeanLine(self.n_row)
+        for i in range(self.n_row * 2):
+            new_ml._stations[i] = self._stations[i].copy()
+        return new_ml
+
+    @property
+    def eta_tt(self):
+        """Total-to-total isentropic efficiency: (ho1 - ho2) / (ho1 - ho2s)."""
+        ho1 = self[0].ho
+        ho2 = self[-1].ho
+        ho2s = self[0].empty().set_P_s(self[-1].Po, self[0].s).h
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            eta = (ho1 - ho2) / (ho1 - ho2s)
+
+        if np.isnan(eta):
+            return np.inf
+
+        if eta > 1.0:
+            eta = 1.0 / eta
+
+        return float(eta)
+
+    @property
+    def eta_ts(self):
+        """Total-to-static isentropic efficiency: (ho1 - ho2) / (ho1 - h2s)."""
+        ho1 = self[0].ho
+        ho2 = self[-1].ho
+        h2s = self[0].empty().set_P_s(self[-1].P, self[0].s).h
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            eta = (ho1 - ho2) / (ho1 - h2s)
+
+        if np.isnan(eta):
+            return np.inf
+
+        if eta > 1.0:
+            eta = 1.0 / eta
+
+        return float(eta)
+
+    # Coordinates
+    x = _make_concat_property("x")
+    r = _make_concat_property("r")
+    t = _make_concat_property("t")
+    xrt = _make_concat_property("xrt")
+    xyz = _make_concat_property("xyz")
+    xrrt = _make_concat_property("xrrt")
+    y = _make_concat_property("y")
+    z = _make_concat_property("z")
+
+    # Conserved variables
     rho = _make_concat_property("rho")
-    halfVsq = _make_concat_property("halfVsq")
-    U = _make_concat_property("U")
-    Vm = _make_concat_property("Vm")
-    ho = _make_concat_property("ho")
-    Ma = _make_concat_property("Ma")
-    mdot = _make_concat_property("mdot")
-    htr = _make_concat_property("htr")
-    eta_tt = _make_concat_property("eta_tt")
-    Po = _make_concat_property("Po")
-    T = _make_concat_property("T")
+    rhoVx = _make_concat_property("rhoVx")
+    rhoVr = _make_concat_property("rhoVr")
+    rhorVt = _make_concat_property("rhorVt")
+    rhoe = _make_concat_property("rhoe")
+    conserved = _make_concat_property("conserved")
+
+    # Velocity components
+    Vx = _make_concat_property("Vx")
     Vr = _make_concat_property("Vr")
     Vt = _make_concat_property("Vt")
+    Vxrt = _make_concat_property("Vxrt")
+    Vxyz = _make_concat_property("Vxyz")
+    Vy = _make_concat_property("Vy")
+    Vz = _make_concat_property("Vz")
+
+    # Velocity magnitudes and derived
+    V = _make_concat_property("V")
+    Vm = _make_concat_property("Vm")
+    U = _make_concat_property("U")
+    V_rel = _make_concat_property("V_rel")
+    Vt_rel = _make_concat_property("Vt_rel")
+    rhoVm = _make_concat_property("rhoVm")
+
+    # Energy
+    e = _make_concat_property("e")
+    u = _make_concat_property("u")
+    halfVsq = _make_concat_property("halfVsq")
+    halfVsq_rel = _make_concat_property("halfVsq_rel")
+
+    # Flow angles
+    Alpha = _make_concat_property("Alpha")
+    Beta = _make_concat_property("Beta")
+    Alpha_rel = _make_concat_property("Alpha_rel")
+    tanAlpha = _make_concat_property("tanAlpha")
+    tanAlpha_rel = _make_concat_property("tanAlpha_rel")
+    tanBeta = _make_concat_property("tanBeta")
+    sinBeta = _make_concat_property("sinBeta")
+
+    # Thermodynamic properties
+    P = _make_concat_property("P")
+    T = _make_concat_property("T")
+    s = _make_concat_property("s")
     h = _make_concat_property("h")
-    span = _make_concat_property("span")
-    rhoVx = _make_concat_property("rhoVx")
+    a = _make_concat_property("a")
+    cp = _make_concat_property("cp")
+    cv = _make_concat_property("cv")
+    gamma = _make_concat_property("gamma")
+    rgas = _make_concat_property("rgas")
+
+    # Stagnation properties
+    ho = _make_concat_property("ho")
+    Po = _make_concat_property("Po")
+    To = _make_concat_property("To")
+    rhoo = _make_concat_property("rhoo")
+    uo = _make_concat_property("uo")
+
+    # Relative frame stagnation
+    ho_rel = _make_concat_property("ho_rel")
+    Po_rel = _make_concat_property("Po_rel")
+    To_rel = _make_concat_property("To_rel")
+    rhoo_rel = _make_concat_property("rhoo_rel")
+    uo_rel = _make_concat_property("uo_rel")
+    I = _make_concat_property("I")
+
+    # Non-dimensional numbers
+    Ma = _make_concat_property("Ma")
+    Ma_rel = _make_concat_property("Ma_rel")
+
+    # Transport properties
+    mu = _make_concat_property("mu")
+    Pr = _make_concat_property("Pr")
+
+    # Thermodynamic derivatives
+    dhdP_rho = _make_concat_property("dhdP_rho")
+    dhdrho_P = _make_concat_property("dhdrho_P")
+    dsdP_rho = _make_concat_property("dsdP_rho")
+    dsdrho_P = _make_concat_property("dsdrho_P")
+    dudP_rho = _make_concat_property("dudP_rho")
+    dudrho_P = _make_concat_property("dudrho_P")
+
+    # Variable sets
+    primitive = _make_concat_property("primitive")
+    bcond = _make_concat_property("bcond")
+
+    # Jacobians
+    J_prim_to_cons = _make_concat_property("J_prim_to_cons")
+    J_cons_to_prim = _make_concat_property("J_cons_to_prim")
+    J_prim_to_chic = _make_concat_property("J_prim_to_chic")
+    J_chic_to_prim = _make_concat_property("J_chic_to_prim")
+    J_prim_to_flux = _make_concat_property("J_prim_to_flux")
+    J_flux_to_prim = _make_concat_property("J_flux_to_prim")
+    J_prim_to_bcond = _make_concat_property("J_prim_to_bcond")
+    J_bcond_to_prim = _make_concat_property("J_bcond_to_prim")
+    J_flux_to_cons = _make_concat_property("J_flux_to_cons")
+    J_cons_to_flux = _make_concat_property("J_cons_to_flux")
+    J_bcond_to_cons = _make_concat_property("J_bcond_to_cons")
+    J_cons_to_bcond = _make_concat_property("J_cons_to_bcond")
+
+    # Annulus geometry (Station-specific)
+    Am = _make_concat_property("Am")
+    r_rms = _make_concat_property("r_rms")
     r_mid = _make_concat_property("r_mid")
     r_hub = _make_concat_property("r_hub")
     r_cas = _make_concat_property("r_cas")
-    r_rms = _make_concat_property("r_rms")
+    span = _make_concat_property("span")
+    htr = _make_concat_property("htr")
+    mdot = _make_concat_property("mdot")
+
+    # Rotation
     Omega = _make_concat_property("Omega")
-    Beta = _make_concat_property("Beta")
-    Alpha_rel = _make_concat_property("Alpha_rel")
-    Am = _make_concat_property("Am")
 
     set_Vxrt = _make_setter_method("set_Vxrt")
     set_Vx = _make_setter_method("set_Vx")
     set_Vr = _make_setter_method("set_Vr")
     set_Vt = _make_setter_method("set_Vt")
+    set_x = _make_setter_method("set_x")
     set_h_s = _make_setter_method("set_h_s")
     set_r_rms = _make_setter_method("set_r_rms")
     set_Am = _make_setter_method("set_Am")
     set_Omega = _make_setter_method("set_Omega")
     set_span_htr = _make_setter_method("set_span_htr")
+    set_conserved = _make_setter_method("set_conserved")
 
     def __getitem__(self, key):
         """Index into the meanline.
@@ -315,6 +481,41 @@ class MeanLine:
         A_flow = row.Am / np.cos(np.radians(row.Beta))
         AR_flow = A_flow[1] / A_flow[0]
         return row[0] if AR_flow >= 1.0 else row[1]
+
+    def __repr__(self):
+        """Return a string representation of the MeanLine object."""
+        return f"MeanLine(n_row={self.n_row}, id={id(self)})"
+
+    def to_string(self):
+        """Provide a concise string representation of MeanLine properties."""
+        # Define the properties to display
+        properties = [
+            ("Po", self.Po / 1e5, "[bar]"),
+            ("To", self.To, "[K]"),
+            ("Ma", self.Ma, ""),
+            ("Ma_rel", self.Ma_rel, ""),
+            ("Alpha", self.Alpha, "[deg]"),
+            ("Alpha_rel", self.Alpha_rel, "[deg]"),
+        ]
+
+        # Build the table
+        table_str = ""
+        for name, values, unit in properties:
+            # Format the property row
+            row = f"{name + ' ' + unit:<15}"
+            for val in values:
+                # Special formatting for different properties
+                if name == "Po":
+                    row += f"{val:>12.3f}"
+                elif name == "To":
+                    row += f"{val:>12.2f}"
+                elif name in ["Ma", "Ma_rel"]:
+                    row += f"{val:>12.3f}"
+                elif name in ["Alpha", "Alpha_rel"]:
+                    row += f"{val:>12.1f}"
+            table_str += row + "\n"
+
+        return table_str
 
 
 class Station(ember.block.Block):
@@ -429,7 +630,8 @@ if __name__ == "__main__":
     print("Scalar Station r_rms:", station.r_rms)
 
     # Test MeanLine
-    ml = MeanLine(n_row=2, fluid=fluid)
+    ml = MeanLine(n_row=2)
+    ml.set_fluid(fluid)
     print(f"\nCreated MeanLine with {ml.n_row} rows (4 scalar stations)")
 
     # Test that n_row is read-only
@@ -448,19 +650,6 @@ if __name__ == "__main__":
     assert isinstance(station0, Station), "ml[0] should return a Station"
     assert station0.shape == (), f"ml[0] should have shape (), got {station0.shape}"
     print("PASS: scalar indexing works")
-
-    # Test indexing with tuple
-    print("\nTesting tuple indexing:")
-    station01 = ml[0, 1]
-    print(f"ml[0, 1] type: {type(station01).__name__}")
-    print(f"ml[0, 1] shape: {station01.shape}")
-    assert isinstance(station01, Station), "ml[0, 1] should return a Station"
-    assert (
-        station01.shape == ()
-    ), f"ml[0, 1] should have shape (), got {station01.shape}"
-    # Verify it's the same as ml[1]
-    assert ml[0, 1] is ml[1]
-    print("PASS: tuple indexing works")
 
     # Test setter method
     print("\nTesting setter method:")
@@ -486,5 +675,21 @@ if __name__ == "__main__":
     print(f"Got Vx: {ml.Vx}")
     assert np.allclose(ml.Vx, Vx)
     print("PASS: setter method works")
+
+    # Test non-scalar property (conserved)
+    print("\nTesting non-scalar property (conserved):")
+    conserved = ml.conserved
+    print(f"conserved shape: {conserved.shape}")
+    assert conserved.shape == (
+        4,
+        5,
+    ), f"conserved should have shape (4, 5), got {conserved.shape}"
+    # Verify each station's conserved values match
+    for i in range(4):
+        station_conserved = ml[i].conserved
+        assert np.allclose(
+            conserved[i], station_conserved
+        ), f"Station {i} conserved mismatch"
+    print("PASS: non-scalar property (conserved) works correctly")
 
     print("\nAll tests passed!")

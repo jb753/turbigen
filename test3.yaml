@@ -39,3 +39,6 @@ mesh:
   yplus: 30.
   resolution_factor: 0.5
   # plot: (1,1,1)
+  #
+solver:
+  type: ember

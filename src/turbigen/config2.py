@@ -33,6 +33,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 
 import ember.grid
+import ember.cut
+import ember.average
+import ember.util
 
 logger = util.make_logger()
 
@@ -511,6 +514,9 @@ class TurbigenConfig:
         self.annulus.setup_annulus(self.mean_line.nominal)
         logger.info(f"{self.annulus}")
 
+        # Copy annulus x-coords into the mean-line
+        self.mean_line.nominal.set_x(self.annulus.x_rms)
+
         # Blade design
         logger.info("Designing blades...")
 
@@ -531,7 +537,7 @@ class TurbigenConfig:
                 self.nblade[irow].get_blade_number(
                     self.mean_line.nominal.get_row(irow), row[0]
                 )
-            )
+            ).item()
         return Nb
 
     def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
@@ -640,6 +646,10 @@ class TurbigenConfig:
         Omega = self.mean_line.nominal.Omega[::2].copy()
         Pout = self.mean_line.nominal.P[-1]
         mdot = self.mean_line.nominal.mdot[-1]
+        Po1 = self.mean_line.nominal.Po[0]
+        To1 = self.mean_line.nominal.To[0]
+        Alpha1 = self.mean_line.nominal.Alpha[0]
+        Beta1 = self.mean_line.nominal.Beta[0]
 
         # Alter the operating point if needed
         if self.operating_point:
@@ -676,14 +686,15 @@ class TurbigenConfig:
                 rot_types.append("stationary")
         self.grid.apply_rotation(rot_types, Omega)
 
-        # Inlet boundary condition
-        # Set inlet pitch angle using orientation of
-        # the inlet patch grid (assuming on a constant i face)
-        # This allow the annulus lines to differ from mean-line pitch angle
-        Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
-        Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
-        Alpha1 = self.mean_line.nominal.Alpha[0]
-        self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
+        # # Inlet boundary condition
+        # # Set inlet pitch angle using orientation of
+        # # the inlet patch grid (assuming on a constant i face)
+        # # This allow the annulus lines to differ from mean-line pitch angle
+        # Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
+        # Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
+        # Alpha1 = self.mean_line.nominal.Alpha[0]
+
+        self.grid.patches.inlet[0].set_inlet(Po1, To1, Alpha1, Beta1)
 
         # Apply profile if available
         if self.inlet.profiles is not None:
@@ -694,7 +705,7 @@ class TurbigenConfig:
             )
 
         # Outlet boundary condition
-        self.grid.apply_outlet(Pout)
+        self.grid.patches.outlet[0].set_P(Pout)
 
     def apply_guess(self):
         # Apply 3D guess if available
@@ -708,7 +719,7 @@ class TurbigenConfig:
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case
-        self.grid.update_outlet()
+        self.grid.update_P_out()
 
     def run_solver(self):
         if not self.solver:
@@ -720,6 +731,7 @@ class TurbigenConfig:
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(*run_args)
+        logger.info("Running solver")
         self.solver.run(*run_args)
 
     def get_mean_line_actual(self):
@@ -728,36 +740,41 @@ class TurbigenConfig:
         # Find meridional coordinates of the cut planes
         xr_cut = self.annulus.get_offset_planes(self.cut_offset)
 
-        # Take the cuts, form a list of [(Cmix, Amix, Dsmix)]
-        cuts = [
-            turbigen.average.mix_out_unstructured(
-                self.grid.unstructured_cut_marching(xri)
-            )
-            for xri in xr_cut
-        ]
+        # Take the cuts
+        cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
-        # Unpack the list
-        Cmix, Amix, Dsmix = zip(*cuts)
+        import matplotlib.pyplot as plt
 
-        # Stack the cuts to form a mean-line flow field
-        Call = turbigen.base.stack(Cmix)
+        fig, ax = plt.subplots()
+        ax.axis("equal")
+        ax.plot(cuts[0].y, cuts[0].z, "kx")
+        plt.show()
 
-        # Copy Omega and Nb from nominal
-        Call.Omega = np.concatenate(
-            [g[0].Omega.flat[0] * np.ones((2,)) for g in self.grid.row_blocks]
-        )
-        Nb = np.concatenate(
-            [g[0].Nb * np.ones((2,)) for g in self.grid.row_blocks]
-        ).astype(int)
+        # Mix out and assemble into actual mean-line flow field
+        self.mean_line.actual = self.mean_line.nominal.copy()
+        for i, C in enumerate(cuts):
+            try:
+                Cm = ember.average.mix_out(C)
+            except Exception as e:
+                print("Failed to mix out row", i)
+                print(C.conserved.mean(axis=(0, 1)))
+                print(C.xrt.mean(axis=(0, 1)))
+                print(C.shape)
+                print(f"{C.dA.shape=}")
+                print(f"{C.dA_tri.shape=}")
+                print(f"{C.dA_quad.shape=}")
+                print(C.dA[..., 0].min(), C.dA[..., 0].max())
+                print("t", C.t.min(), C.t.max())
+                print(ember.average.total_area(C))
+                print(ember.average.flow_conserved(C))
+                quit()
+            self.mean_line.actual[i].set_r_rms(Cm.r)
+            self.mean_line.actual[i].set_conserved(Cm.conserved)
 
-        # Assemble the meanline flowfield
-        self.mean_line.actual = turbigen.meanline_data.make_mean_line_from_flowfield(
-            Amix, Call, Dsmix
-        )
-        self.mean_line.actual.Nb = self.mean_line.nominal.Nb = Nb
+        print(self.mean_line.actual.to_string())
 
         # Back-calculate the design variables
-        self.mean_line_actual = self.mean_line.backward(self.mean_line.actual)
+        self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)
 
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
@@ -956,6 +973,8 @@ class TurbigenConfig:
         """
 
         self.get_mean_line_nominal()
+
+        logger.info(self.mean_line.nominal.to_string())
 
         self.get_geometry()
         self.apply_recamber()

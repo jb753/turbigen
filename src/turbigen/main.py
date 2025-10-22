@@ -202,7 +202,13 @@ def main():
 
     conf.design_and_run(args.no_solve)
 
-    quit()
+    logger.iter(conf.format_design_vars_table())
+
+    logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
+
+    logger.iter(f"Working directory was: {work_dir}")
+
+    sys.exit(0)
 
     # If we are sampling a design space, do that and exit
     if conf.design_space and not args.no_job:
