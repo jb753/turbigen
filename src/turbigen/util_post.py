@@ -5,6 +5,52 @@ import ember.block
 import ember.patch
 
 
+def get_zeta(block):
+    """Calculate arc length along i-gridlines.
+
+    Computes cumulative arc length along the i-direction (axis 0) for each
+    j-k gridline. The arc length starts at zero at i=0 and increases along
+    the i-direction.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        Block with initialized x, r, t coordinates
+
+    Returns
+    -------
+    ndarray, shape (ni, nj, nk)
+        Cumulative arc length along each i-gridline, with zeta=0 at i=0
+
+    Notes
+    -----
+    Arc length is calculated in Cartesian (x, y, z) coordinates where:
+    - y = r * sin(t)
+    - z = r * cos(t)
+    """
+    # Convert cylindrical to Cartesian coordinates
+    x = block.x
+    y = block.r * np.sin(block.t)
+    z = block.r * np.cos(block.t)
+
+    # Stack coordinates: shape (3, ni, nj, nk)
+    xyz = np.stack((x, y, z))
+
+    # Calculate differences along i-direction (axis=1 in xyz array)
+    dxyz = np.diff(xyz, n=1, axis=1) ** 2.0
+
+    # Sum squared differences and take sqrt to get segment lengths
+    # Shape: (1, ni-1, nj, nk)
+    ds = np.sqrt(np.sum(dxyz, axis=0, keepdims=True))
+
+    # Cumulative sum with initial zero
+    # Insert 0 at beginning along i-direction, shape: (1, ni, nj, nk)
+    zeta = np.insert(np.cumsum(ds, axis=1), 0, 0.0, axis=1)
+
+    # Remove leading dimension and return: shape (ni, nj, nk)
+    return zeta[0]
+
+
 def get_isen_mach(
     grid,
     machine,
