@@ -1,6 +1,8 @@
 """Functions for post processing, without plotting."""
 
 import numpy as np
+import ember.block
+import ember.patch
 
 
 def get_isen_mach(
@@ -246,3 +248,129 @@ def separate_waves(F, fs):
     W = np.flip(Pwav, axis=0)
 
     return W, err, f
+
+
+def cut_blade_sides(grid, offset=0):
+    """Nested list of pressure/suction side cuts in each row.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        Grid object containing the turbomachinery geometry
+    offset : int
+        Number of cells away from blade surface (default 0)
+
+    Returns
+    -------
+    list
+        Nested list where each element corresponds to a row.
+        For each row, returns [Ck0, Cnk] (pressure/suction sides) or None if not found.
+    """
+
+    # Assuming a H-mesh
+    cuts = []
+
+    for i in range(len(grid.rows)):
+        # Check periodics first
+        ile = None
+        ite = None
+
+        # Iterate over blocks in this row
+        for block in grid.rows[i]:
+            # Check periodic patches on this block
+            for patch in block.patches.periodic:
+                # Check if this is a same-block periodic (pitch-wise)
+                # For H-mesh, we look for periodics at k boundary that span j but not i
+                lim = patch.ijk_lim_abs
+                spans_j = np.allclose(lim[1], [0, block.shape[1] - 1])
+                spans_i = np.allclose(lim[0], [0, block.shape[0] - 1])
+                # Check if at k=0 or k=-1 boundary (single plane)
+                at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
+                    lim[2, 0] == 0 or lim[2, 0] == block.shape[2] - 1
+                )
+
+                if spans_j and at_k_boundary and not spans_i:
+                    if lim[0, 0] == 0:
+                        ile = lim[0, 1]
+                    elif lim[0, 1] == block.shape[0] - 1:
+                        ite = lim[0, 0]
+
+            # Now check cusps and inviscid patches
+            for patch in block.patches:
+                if isinstance(
+                    patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
+                ):
+                    ite = patch.ijk_lim_abs[0, 0]
+
+        if not ile or not ite:
+            cuts.append(None)
+            continue
+
+        # Get both sides
+        Ck0 = grid[i][ile : (ite + 1), :, None, 0 + offset].copy()
+        Cnk = grid[i][ile : (ite + 1), :, None, -1 - offset].copy()
+
+        # Clear patches as they are no longer valid for sliced blocks
+        Ck0.patches.clear()
+        Cnk.patches.clear()
+
+        C = [Ck0, Cnk]
+
+        # Find the side at highest theta and adjust by pitch
+        iu = np.argmax([Ci.t.max() for Ci in C])
+        C[iu].set_t(C[iu].t - grid[i].pitch)
+
+        cuts.append(C)
+
+    return cuts
+
+
+def cut_blade_surfs(grid, offset=0):
+    """O-mesh style cuts for the blades in each row.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        Grid object containing the turbomachinery geometry
+    offset : int
+        Number of cells away from blade surface (default 0)
+
+    Returns
+    -------
+    list
+        Nested list where each element corresponds to a row.
+        For each row, returns a list of blade surface cuts (FlowField objects).
+    """
+
+    surfs = []
+
+    # Check if this is an H-mesh (one block per row)
+    is_hmesh = len(grid) == len(grid.rows)
+
+    if is_hmesh:
+        row_sides = cut_blade_sides(grid, offset)
+        for sides in row_sides:
+            if sides is None:
+                surfs.append(None)
+            else:
+                cut_now = ember.block.concatenate(
+                    sides[0].flip(axis=0), sides[1][1:, ...], axis=0
+                )
+                surfs.append([cut_now])
+    else:
+        for row_block in grid.rows:
+            # Preallocate list for this row
+            surfs.append([])
+
+            # Determine full span nj as the modal nj in this row
+            nj_vals, nj_counts = np.unique(
+                [b.shape[1] for b in row_block], return_counts=True
+            )
+            nj = nj_vals[np.argmax(nj_counts)]
+
+            # Loop over blocks and find o-meshes
+            for b in row_block:
+                if np.allclose(b[0, :, 0].xrt, b[-1, :, 0].xrt) and b.shape[1] == nj:
+                    surfs[-1].append(b[:, :, None, offset])
+
+    return surfs
