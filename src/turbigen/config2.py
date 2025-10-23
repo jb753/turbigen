@@ -96,7 +96,7 @@ class TurbigenConfig:
     """Multiplier on nstep for the first run of iterating case."""
 
     """Settings for blade number selection."""
-    # grid: turbigen.grid.Grid = None
+    grid: ember.grid.Grid = None
     guess: ember.grid.Grid = None
 
     cut_offset: float = 0.02
@@ -985,11 +985,11 @@ class TurbigenConfig:
         logger.info(f"Tip gaps/span: {self.get_gaps()}")
 
         # # Handle restarts
-        # if self.grid:
-        #     # If we already have a grid, use it as the guess
-        #     self.guess = self.grid
-        #     # Change CFD settings to resume the simulation
-        #     self.solver = self.solver.restart()
+        if self.grid:
+            # If we already have a grid, use it as the guess
+            self.guess = self.grid
+            # Change CFD settings to resume the simulation
+            self.solver = self.solver.restart()
 
         # Set viscosity from Reynolds number if given
         if self.Re_surf:
@@ -1020,6 +1020,7 @@ class TurbigenConfig:
         # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()
         self.undo_recamber()
+
         logger.info("Post-processing...")
         if not skip_post:
             self.post_process_all()

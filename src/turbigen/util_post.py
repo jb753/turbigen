@@ -51,6 +51,77 @@ def get_zeta(block):
     return zeta[0]
 
 
+def get_i_stag(block):
+    """Find i-index of stagnation point for each j-line in a 2D block.
+
+    Locates the stagnation point by finding pressure maxima near the leading
+    edge of each spanwise (j) gridline. Uses rotary static pressure to account
+    for centrifugal pressure gradients in rotating frames.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        2D block (shape (ni, nj)) with initialized flow field
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        i-index of stagnation point for each j-line
+
+    Raises
+    ------
+    ValueError
+        If block is not 2D (ndim != 2)
+        If no valid stagnation point found on any j-line
+
+    Notes
+    -----
+    Algorithm:
+    1. Uses rotary static pressure (P_rot) to remove centrifugal effects
+    2. Normalizes arc length to [-1, 1] on each j-line
+    3. Finds pressure maxima (downward zero crossings of dP/dzeta)
+    4. Filters to keep only maxima near LE (|zeta_normalized| < 0.2)
+    5. Selects candidate with highest pressure
+    """
+    if block.ndim != 2:
+        raise ValueError(
+            f"Can only find stagnation point on 2D cuts; "
+            f"this block has shape {block.shape}"
+        )
+
+    # Use rotary static pressure to remove centrifugal pressure gradient
+    P = block.P_rot
+
+    # Get arc length and normalize to [-1, 1] on each j-line
+    zeta = get_zeta(block)
+    z = zeta / np.ptp(zeta, axis=0) * 2.0 - 1.0
+
+    # Find pressure maxima on each j-line
+    _, nj = block.shape[:2]
+    i_stag = np.full((nj,), 0, dtype=int)
+
+    for j in range(nj):
+        # Calculate pressure gradient
+        dP = np.diff(P[:, j])
+
+        # Find indices of downward zero crossings (pressure maxima)
+        # Looking for where gradient changes from positive to negative
+        izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
+
+        # Only keep maxima close to leading edge
+        izj = izj[np.abs(z[izj, j]) < 0.2]
+
+        # Select the candidate with maximum pressure
+        if len(izj):
+            # Take the point with highest pressure among candidates
+            i_stag[j] = izj[np.argmax(P[izj, j])]
+        else:
+            # Take highest pressure anywhere if none near LE
+            i_stag[j] = np.argmax(P[:, j])
+
+    return i_stag
+
+
 def get_isen_mach(
     grid,
     machine,

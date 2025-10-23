@@ -29,41 +29,27 @@ class Ember(BaseSolver):
         return self
 
     def run(self, grid, machine, workdir):
+        r_ref = grid.get_r_ref()
+        Nb = np.array([row[0].Nb for row in grid.rows])
+        pitch_ref = 2.0 * np.pi * r_ref / Nb
+        print(f"r_ref: {r_ref}")
+        print(f"Nb: {Nb}")
+        print(f"pitch_ref: {pitch_ref}")
+        xllim = 0.03 * pitch_ref
+        print(f"xllim: {xllim}")
+
         config = ember.config.SolverConfig(
             order=3,
             n_levels=3,
             n_step_avg=250,
-            n_step=500,
-            n_step_ramp=1000,
+            n_step=1000,
+            n_step_ramp=500,
             cfl_min=0.5,
-            cfl_max=4.0,
+            cfl_max=8.0,
+            rf_inlet=0.2,
+            sf2_adapt=1.0,
             sf4=0.01,
-            sf2_adapt=2.0,
-            # rf_inlet=1.0,
-            # rtol_conserved=1e-12,
+            Ki=0.6,
+            xllim=xllim,
         )
-        self.conv = ember.loop.multigrid(grid, config)
-        # self.convergence = run(grid, self, machine, workdir)
-
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-        b = grid[0]
-        C = b[:, b.nj // 2, :]
-        lev = np.linspace(0, 1, 11)
-        cm = ax.contourf(C.x, C.r * C.t, C.Ma, lev, cmap="cubehelix")
-        plt.colorbar(cm)
-        ax.axis("equal")
-
-        fig, ax = plt.subplots()
-        ax.plot(b.x[:, b.nj // 2, b.nk // 2], b.Ma[:, b.nj // 2, b.nk // 2])
-
-        fig, ax = plt.subplots()
-        b = grid[0]
-        C = b[:, b.nj // 2, :]
-        cm = ax.contourf(C.x, C.r * C.t, C.Alpha, cmap="cubehelix")
-        plt.colorbar(cm)
-        ax.axis("equal")
-
-        print(b.rho.min(), b.rho.max())
-        plt.show()
+        self.convergence = ember.loop.multigrid(grid, config)
