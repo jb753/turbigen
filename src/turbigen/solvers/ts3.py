@@ -1903,6 +1903,7 @@ def read_grid(fname_hdf5):
         block.gamma = ga
         block.mu = mu
         block.cp = cp
+        block.set_Tu0(0.0)
         block.set_conserved(conserved)
         block.mu_turb[:] = mu_turb
         block.w[:] = wdist
