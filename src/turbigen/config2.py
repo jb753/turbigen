@@ -743,13 +743,6 @@ class TurbigenConfig:
         # Take the cuts
         cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        ax.plot(cuts[0].y, cuts[0].z, "kx")
-        plt.show()
-
         # Mix out and assemble into actual mean-line flow field
         self.mean_line.actual = self.mean_line.nominal.copy()
         for i, C in enumerate(cuts):

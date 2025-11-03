@@ -42,19 +42,29 @@ class Ember(BaseSolver):
             order=3,
             n_levels=2,
             n_step_avg=500,
-            n_step_log=100,
-            n_step=4000,
-            overlap_fraction=0.0,
+            n_step_log=50,
+            n_step=3000,
+            overlap_fraction=0.5,
             n_step_ramp=500,
-            cfl_min=0.25,
+            cfl_min=0.1,
             cfl_max=4.0,
             xllim=xllim,
-            fmgrid=0.0,
-            sf4=0.01,
-            sf2_adapt=1.0,
-            rtol_conserved=(1e-3, 1e-3, 1e-3, 1e-3, 1e-3),
+            fmgrid=0.5,
+            sf4=0.005,
+            sf2_adapt=0.5,
+            rtol_conserved=(1e-2, 1e-2, 1e-2, 1e-2, 1e-2),
         )
+
         try:
             self.convergence = ember.loop.multiloop(grid, config)
         except SystemExit:
             pass
+
+        # import matplotlib.pyplot as plt
+
+        # fig, ax = plt.subplots()
+        # b = grid[0]
+        # C = b[:, b.nj // 2, :]
+        # ax.contourf(C.x, C.r * C.t, C.Ma_rel)
+        # ax.axis("equal")
+        # plt.show()

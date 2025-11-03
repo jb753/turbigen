@@ -79,3 +79,6 @@ dev = [
     'bump-my-version',
     'pyqt6',
 ]
+
+[tool.uv]
+managed = false
