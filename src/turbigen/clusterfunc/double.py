@@ -96,6 +96,9 @@ def free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
     Dxa = np.abs(Dx)
     x = x0 + Dx * _unit_free(dx0 / Dxa, dx1 / Dxa, dmax / Dxa, ERmax, mult)
 
+    # Check mult
+    assert not (len(x) - 1) % mult
+
     return x
 
 

@@ -40,16 +40,21 @@ class Ember(BaseSolver):
 
         config = ember.config.SolverConfig(
             order=3,
-            n_levels=3,
-            n_step_avg=250,
-            n_step=1000,
+            n_levels=2,
+            n_step_avg=500,
+            n_step_log=100,
+            n_step=4000,
+            overlap_fraction=0.0,
             n_step_ramp=500,
-            cfl_min=0.5,
-            cfl_max=8.0,
-            rf_inlet=0.2,
-            sf2_adapt=1.0,
-            sf4=0.01,
-            Ki=0.6,
+            cfl_min=0.25,
+            cfl_max=4.0,
             xllim=xllim,
+            fmgrid=0.0,
+            sf4=0.01,
+            sf2_adapt=1.0,
+            rtol_conserved=(1e-3, 1e-3, 1e-3, 1e-3, 1e-3),
         )
-        self.convergence = ember.loop.multigrid(grid, config)
+        try:
+            self.convergence = ember.loop.multiloop(grid, config)
+        except SystemExit:
+            pass

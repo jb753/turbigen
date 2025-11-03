@@ -162,6 +162,8 @@ class H(turbigen.mesh.Mesher):
                 )
                 nk_not_resampled = len(pitch_frac_not_resampled)
             nk = len(pitch_frac_nom)
+            # Check divisibility for 3 MG levels
+            assert not (nk - 1) % 8, f"nk-1={nk - 1} not divisible by 8"
             logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
 
             # Spanwise grid
@@ -215,6 +217,7 @@ class H(turbigen.mesh.Mesher):
             stream_frac_cas = stream_frac  # + delta_cas
 
             ni = len(stream_frac)
+            assert not ((ni - 1) % 8), f"ni-1={ni - 1} not divisible by 8"
 
             # No repeated grid points
             assert len(np.unique(stream_frac)) == ni
@@ -505,6 +508,12 @@ class H(turbigen.mesh.Mesher):
             blk.set_Nb(mac.Nb[irow])
             blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
 
+            # Check MG
+            nic, njc, nkc = blk.shape
+            assert not (nic - 1) % 8, f"nic-1={nic - 1} not divisible by 8"
+            assert not (njc - 1) % 8, f"njc-1={njc - 1} not divisible by 8"
+            assert not (nkc - 1) % 8, f"nkc-1={nkc - 1} not divisible by 8"
+
             blocks.append(blk)
 
         if mesh_config.slip_annulus:
@@ -565,8 +574,8 @@ class H(turbigen.mesh.Mesher):
                     dspf_tip, dspf_tip, njtip_min, Lmain, 1.0
                 )
 
-            spf_main = util.resample(spf_main, self.resolution_factor)
-            spf_tip = util.resample(spf_tip, self.resolution_factor)
+            spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
+            spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
             spf = np.concatenate((spf_main[:-1], spf_tip))
 
             assert spf[0] == 0.0
@@ -581,6 +590,7 @@ class H(turbigen.mesh.Mesher):
                     dspf_hub, dspf_casing, self.dspf_mid, self.ER_span
                 ),
                 self.resolution_factor,
+                mult=8,
             )
 
     def pitchwise_grid(self, drt_row, pitch_chord, AR_row, resample=True):
@@ -609,6 +619,7 @@ class H(turbigen.mesh.Mesher):
             x = util.resample(
                 x,
                 self.resolution_factor,
+                mult=8,
             )
 
         return x
@@ -678,9 +689,9 @@ class H(turbigen.mesh.Mesher):
             t_chord = np.linspace(0.0, 1.0, npts[1])
             t_downstream = np.linspace(0.0, L[1], npts[2]) + 1.0
 
-            t_upstream = util.resample(t_upstream, self.resolution_factor)
-            t_downstream = util.resample(t_downstream, self.resolution_factor)
-            t_chord = util.resample(t_chord, self.resolution_factor)
+            t_upstream = util.resample(t_upstream, self.resolution_facto, mult=8)
+            t_downstream = util.resample(t_downstream, self.resolution_factor, mult=8)
+            t_chord = util.resample(t_chord, self.resolution_facto, mult=8)
 
             t = np.concatenate([t_upstream, t_chord[1:], t_downstream[1:]])
             ile = len(t_upstream) - 1
@@ -737,10 +748,10 @@ class H(turbigen.mesh.Mesher):
             #         dm_boundary[-1] *= 0.8
             #         continue
 
-            t_upstream = util.resample(t_upstream, self.resolution_factor)
-            t_downstream = util.resample(t_downstream, self.resolution_factor)
-            t_te = util.resample(t_te, self.resolution_factor, mult=2)
-            t_chord = util.resample(t_chord, self.resolution_factor)
+            t_upstream = util.resample(t_upstream, self.resolution_factor, mult=8)
+            t_downstream = util.resample(t_downstream, self.resolution_factor, mult=8)
+            t_te = util.resample(t_te, self.resolution_factor, mult=8)
+            t_chord = util.resample(t_chord, self.resolution_factor, mult=8)
 
             t = np.concatenate(
                 [t_upstream - 1.0, t_chord[1:], t_te[1:], t_downstream[1:] + 1.0]
