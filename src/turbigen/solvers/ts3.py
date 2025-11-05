@@ -175,6 +175,7 @@ class ts3(BaseSolver):
     use_temperature_sensor: int = 0
     sa_ch1: float = 0.71
     sa_ch2: float = 0.6
+    turb_intensity: float = 5.0
     bv: dict = None  # nested dict bv[bid][bv_name] = bv_value
 
     def __post_init__(self):
