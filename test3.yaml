@@ -38,8 +38,10 @@ mesh:
   type: h
   yplus: 30.
   resolution_factor: 0.5
-  # dm_LE: 0.002
-  # plot: (1,1,1)
+  dm_LE: 0.005
+  dm_TE: 0.09
+  ni_TE: 9
+  # plot: [1,1,1]
   #
 solver:
   type: ember

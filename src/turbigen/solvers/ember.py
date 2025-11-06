@@ -41,17 +41,16 @@ class Ember(BaseSolver):
         config = ember.config.SolverConfig(
             order=3,
             n_levels=2,
-            n_step_avg=500,
+            n_step_avg=1000,
             n_step_log=50,
-            n_step=3000,
-            overlap_fraction=0.5,
-            n_step_ramp=500,
+            n_step=4000,
+            n_step_ramp=0,
             cfl_min=0.1,
             cfl_max=4.0,
             xllim=xllim,
-            fmgrid=0.5,
             sf4=0.005,
             sf2_adapt=0.5,
+            end_stagger=0.0,
             rtol_conserved=(1e-2, 1e-2, 1e-2, 1e-2, 1e-2),
         )
 
@@ -60,7 +59,7 @@ class Ember(BaseSolver):
         except SystemExit:
             pass
 
-        # import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt
 
         # fig, ax = plt.subplots()
         # b = grid[0]
