@@ -1540,6 +1540,52 @@ def read_inlet(fname):
     return pstag_all
 
 
+def _parse_log_params(dname):
+    """Parse ncycle, nstep_cycle, and nstep_save_probe from log.txt.
+
+    Parameters
+    ----------
+    dname : str
+        Directory containing log.txt
+
+    Returns
+    -------
+    tuple
+        (ncycle, nstep_cycle, nstep_save_probe) as integers
+
+    Raises
+    ------
+    FileNotFoundError
+        If log.txt does not exist
+    ValueError
+        If parameters cannot be found in log.txt
+    """
+    import re
+
+    log_path = os.path.join(dname, "log.txt")
+    if not os.path.exists(log_path):
+        raise FileNotFoundError(f"log.txt not found in {dname}")
+
+    params = {}
+    pattern = re.compile(r'^\s*(ncycle|nstep_cycle|nstep_save_probe):\s*(\d+)')
+
+    with open(log_path, 'r') as f:
+        for line in f:
+            match = pattern.match(line)
+            if match:
+                key = match.group(1)
+                value = int(match.group(2))
+                params[key] = value
+
+    # Check that all required parameters were found
+    required = ['ncycle', 'nstep_cycle', 'nstep_save_probe']
+    missing = [k for k in required if k not in params]
+    if missing:
+        raise ValueError(f"Could not find required parameters in log.txt: {missing}")
+
+    return params['ncycle'], params['nstep_cycle'], params['nstep_save_probe']
+
+
 def read_probe_dat(fname, point=False):
     """Load a probe text file into a flow field.
 
@@ -1619,6 +1665,29 @@ def read_probe_dat(fname, point=False):
         # finished and we can delete the raw dat files
         if (time.time() - dat_mtime) > 48 * 3600:
             os.remove(fname)
+
+    # Validate time dimension against log.txt parameters
+    try:
+        ncycle_log, nstep_cycle_log, nstep_save_probe_log = _parse_log_params(dname)
+        expected_nstep = ncycle_log * nstep_cycle_log // nstep_save_probe_log
+        actual_nstep = conserved.shape[-1]
+
+        if actual_nstep != expected_nstep:
+            raise ValueError(
+                f"Time dimension mismatch in probe data from {fname}:\n"
+                f"  Expected: {expected_nstep} time steps\n"
+                f"  Actual:   {actual_nstep} time steps\n"
+                f"  Log parameters: ncycle={ncycle_log}, "
+                f"nstep_cycle={nstep_cycle_log}, nstep_save_probe={nstep_save_probe_log}"
+            )
+    except FileNotFoundError:
+        logger.warning(f"log.txt not found in {dname}, skipping time dimension validation")
+    except ValueError as e:
+        if "Could not find required parameters" in str(e):
+            logger.warning(f"Could not parse parameters from log.txt in {dname}: {e}")
+        else:
+            # Re-raise if it's the time dimension mismatch error
+            raise
 
     # Split up the conserved vars
     x, r, rt, ro, rovx, rovr, rorvt, roe = conserved
