@@ -1567,9 +1567,9 @@ def _parse_log_params(dname):
         raise FileNotFoundError(f"log.txt not found in {dname}")
 
     params = {}
-    pattern = re.compile(r'^\s*(ncycle|nstep_cycle|nstep_save_probe):\s*(\d+)')
+    pattern = re.compile(r"^\s*(ncycle|nstep_cycle|nstep_save_probe):\s*(\d+)")
 
-    with open(log_path, 'r') as f:
+    with open(log_path, "r") as f:
         for line in f:
             match = pattern.match(line)
             if match:
@@ -1578,12 +1578,12 @@ def _parse_log_params(dname):
                 params[key] = value
 
     # Check that all required parameters were found
-    required = ['ncycle', 'nstep_cycle', 'nstep_save_probe']
+    required = ["ncycle", "nstep_cycle", "nstep_save_probe"]
     missing = [k for k in required if k not in params]
     if missing:
         raise ValueError(f"Could not find required parameters in log.txt: {missing}")
 
-    return params['ncycle'], params['nstep_cycle'], params['nstep_save_probe']
+    return params["ncycle"], params["nstep_cycle"], params["nstep_save_probe"]
 
 
 def read_probe_dat(fname, point=False):
@@ -1681,7 +1681,9 @@ def read_probe_dat(fname, point=False):
                 f"nstep_cycle={nstep_cycle_log}, nstep_save_probe={nstep_save_probe_log}"
             )
     except FileNotFoundError:
-        logger.warning(f"log.txt not found in {dname}, skipping time dimension validation")
+        logger.warning(
+            f"log.txt not found in {dname}, skipping time dimension validation"
+        )
     except ValueError as e:
         if "Could not find required parameters" in str(e):
             logger.warning(f"Could not parse parameters from log.txt in {dname}: {e}")
@@ -1693,7 +1695,10 @@ def read_probe_dat(fname, point=False):
     x, r, rt, ro, rovx, rovr, rorvt, roe = conserved
 
     # Read gas properties from hdf5 file
-    fname_hdf5 = os.path.join(dname, "input.hdf5")
+    for fnames in ("input.hdf5", "output_avg.hdf5", "output.hdf5"):
+        fname_hdf5 = os.path.join(dname, fnames)
+        if os.path.exists(fname_hdf5):
+            break
     with h5py.File(fname_hdf5, "r") as f:
         # Get gas properties from application vars and initialise a state
         # These are data items of the root group
