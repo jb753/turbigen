@@ -1319,7 +1319,7 @@ class Grid:
 
     @property
     def inviscid_patches(self):
-        return self.find_patches(CuspPatch)
+        return self.find_patches(InviscidPatch)
 
     def match_patches(self, raise_fail=True):
         """Connect all pairs of patches that should match together."""
