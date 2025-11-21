@@ -909,7 +909,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                 # Make boundary conditions unsteady if needed
                 if isinstance(patch, turbigen.grid.InletPatch):
                     if patch.force and ts3_config.dts:
-                        fac_Po, fac_ho = patch.get_unsteady_multipliers(
+                        fac_ho, fac_Po = patch.get_unsteady_multipliers(
                             ts3_config.frequency,
                             ts3_config.nstep_cycle,
                             ts3_config.ncycle,
@@ -1516,6 +1516,7 @@ def read_inlet(fname):
     nb = f.attrs["nb"]
 
     pstag_all = []
+    tstag_all = []
 
     # Loop over blocks and patches until we find an inlet
     for ib in range(nb):
@@ -1535,9 +1536,13 @@ def read_inlet(fname):
                 shape = (ien - ist, jen - jst, ken - kst, nt)[::-1]
                 pstag = np.array(pgrp["pstag_pp"])
                 pstag = np.transpose(pstag.reshape(shape))
-                pstag_all.append(pstag)
+                tstag = np.array(pgrp["tstag_pp"])
+                tstag = np.transpose(tstag.reshape(shape))
+                return pstag, tstag
+                # pstag_all.append(pstag)
+                # tstag_all.append(tstag)
 
-    return pstag_all
+    return pstag_all, tstag_all
 
 
 def _parse_log_params(dname):
@@ -1651,6 +1656,10 @@ def read_probe_dat(fname, point=False):
                 conserved = d["conserved"]
                 if conserved.shape != (8,) + shape:
                     conserved = d["conserved"].reshape((8,) + shape, order="F")
+            # On successful npz load we know the dat is redundant
+            # So delete the dat file if present
+            if os.path.exists(fname):
+                os.remove(fname)
         except Exception as e:
             logger.error(f"Failed to load {npz_fname}: {e}")
             conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")
