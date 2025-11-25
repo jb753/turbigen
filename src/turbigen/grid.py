@@ -2185,6 +2185,13 @@ class InletPatch(Patch):
         else:
             raise Exception(f"Unknown inlet forcing type {self.force}")
 
+        assert np.abs(np.mean(fac_Po) - 1) < 1e-3, (
+            f"Mean inlet Po factor {np.mean(fac_Po)} is not unity!"
+        )
+        assert np.abs(np.mean(fac_ho) - 1) < 1e-3, (
+            f"Mean inlet ho factor {np.mean(fac_ho)} is not unity!"
+        )
+
         return fac_ho, fac_Po
 
     def set_profile(self, spf, profiles):

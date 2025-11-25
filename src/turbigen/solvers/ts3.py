@@ -929,6 +929,8 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
                             'Forcing unsteady inlet patch "%s" with %d time steps.'
                             % (name, nt)
                         )
+                        print(f"  Po factor ptp: {np.ptp(fac_Po)}")
+                        print(f"  ho factor ptp: {np.ptp(fac_ho)}")
 
                         pa["nt"] = nt
 
@@ -1572,7 +1574,9 @@ def _parse_log_params(dname):
         raise FileNotFoundError(f"log.txt not found in {dname}")
 
     params = {}
-    pattern = re.compile(r"^\s*(ncycle|nstep_cycle|nstep_save_probe):\s*(\d+)")
+    pattern = re.compile(
+        r"^\s*(ncycle|nstep_cycle|nstep_save_probe|nstep_save_start_probe):\s*(\d+)"
+    )
 
     with open(log_path, "r") as f:
         for line in f:
@@ -1583,12 +1587,22 @@ def _parse_log_params(dname):
                 params[key] = value
 
     # Check that all required parameters were found
-    required = ["ncycle", "nstep_cycle", "nstep_save_probe"]
+    required = [
+        "ncycle",
+        "nstep_cycle",
+        "nstep_save_probe",
+        "nstep_save_start_probe",
+    ]
     missing = [k for k in required if k not in params]
     if missing:
         raise ValueError(f"Could not find required parameters in log.txt: {missing}")
 
-    return params["ncycle"], params["nstep_cycle"], params["nstep_save_probe"]
+    return (
+        params["ncycle"],
+        params["nstep_cycle"],
+        params["nstep_save_probe"],
+        params["nstep_save_start_probe"],
+    )
 
 
 def read_probe_dat(fname, point=False):
@@ -1677,8 +1691,15 @@ def read_probe_dat(fname, point=False):
 
     # Validate time dimension against log.txt parameters
     try:
-        ncycle_log, nstep_cycle_log, nstep_save_probe_log = _parse_log_params(dname)
-        expected_nstep = ncycle_log * nstep_cycle_log // nstep_save_probe_log
+        (
+            ncycle_log,
+            nstep_cycle_log,
+            nstep_save_probe_log,
+            nstep_save_start_probe_log,
+        ) = _parse_log_params(dname)
+        expected_nstep = (
+            ncycle_log * nstep_cycle_log - nstep_save_start_probe_log
+        ) // nstep_save_probe_log
         actual_nstep = conserved.shape[-1]
 
         if actual_nstep != expected_nstep:
