@@ -114,6 +114,9 @@ class ts3(BaseSolver):
     nchange: int = 2000
     """At start of simulation, ramp smoothing and damping over this many time steps."""
 
+    viscosity_law: int = 0
+    """Number of time steps."""
+
     nstep: int = 10000
     """Number of time steps."""
 
