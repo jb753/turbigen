@@ -1052,17 +1052,11 @@ and then back in to refresh your access permissions.
     nnode = ts3_config.nnode
     npernode = ngpu // nnode
     logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
-    if ngpu == 1 and False:
-        cmd_str = (
-            f". {ts3_config.environment_script};"
-            "turbostream input.hdf5 output 1 > log.txt"
-        )
-    else:
-        cmd_str = (
-            f". {ts3_config.environment_script};"
-            f" mpirun -npernode {npernode} -np {ngpu} turbostream"
-            f" input.hdf5 output {npernode} > log.txt"
-        )
+    cmd_str = (
+        f". {ts3_config.environment_script};"
+        f" mpirun -npernode {npernode} -np {ngpu} turbostream"
+        f" input.hdf5 output {npernode} > log.txt"
+    )
 
     # Remove old probe data
     probe_dat = glob("output_probe_*.dat")
@@ -1112,7 +1106,7 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
             ) from None
 
     # Delete extraneous files
-    for f in ("stopit", "output_avg.xdmf", "output.xdmf"):
+    for f in ("stopit", "output_avg.xdmf", "output.xdmf", "input.hdf5"):
         try:
             os.remove(f)
         except FileNotFoundError:
@@ -1436,7 +1430,11 @@ def read_probe_metadata(dname):
     """
 
     # Get all dat files and their modification times
-    fnames = glob(os.path.join(dname, "*.npz")) + glob(os.path.join(dname, "*.dat"))
+    fnames = (
+        glob(os.path.join(dname, "*_probe_*_*.hdf5"))
+        + glob(os.path.join(dname, "*.npz"))
+        + glob(os.path.join(dname, "*.dat"))
+    )
 
     # Strip fnames with duplicate prefix but different suffixes
     fnames = set(os.path.splitext(f)[0] + ".dat" for f in fnames)
@@ -1629,20 +1627,22 @@ def _load_npz(fname):
 
 def _save_h5(fname, conserved):
     """Save conserved variables to HDF5 format."""
-    with h5py.File(fname, 'w') as f:
-        f.create_dataset('conserved', data=conserved, compression='gzip', compression_opts=9)
+    with h5py.File(fname, "w") as f:
+        f.create_dataset(
+            "conserved", data=conserved, compression="gzip", compression_opts=9
+        )
 
 
 def _load_h5(fname):
     """Load conserved variables from HDF5 format."""
-    with h5py.File(fname, 'r') as f:
-        return f['conserved'][:]
+    with h5py.File(fname, "r") as f:
+        return f["conserved"][:]
 
 
 # Cache format configuration: (extension, save_func, load_func)
 CACHE_FORMATS = {
-    'npz': ('.npz', _save_npz, _load_npz),
-    'hdf5': ('.hdf5', _save_h5, _load_h5),
+    "npz": (".npz", _save_npz, _load_npz),
+    "hdf5": (".hdf5", _save_h5, _load_h5),
 }
 
 
@@ -1803,8 +1803,15 @@ def _validate_time_dimension(conserved, dname, fname):
             raise
 
 
-def _load_conserved_data(fname, cache_fname, shape, dat_mtime, cache_mtime,
-                         skip_age_check=False, cache_format='npz'):
+def _load_conserved_data(
+    fname,
+    cache_fname,
+    shape,
+    dat_mtime,
+    cache_mtime,
+    skip_age_check=False,
+    cache_format="npz",
+):
     """Load conserved variables from cache or .dat file.
 
     Parameters
@@ -1862,7 +1869,9 @@ def _load_conserved_data(fname, cache_fname, shape, dat_mtime, cache_mtime,
 
                     # Save to new format
                     save_func(cache_fname, conserved)
-                    logger.info(f"Migrated cache from {fmt_name} to {cache_format}: {cache_fname}")
+                    logger.info(
+                        f"Migrated cache from {fmt_name} to {cache_format}: {cache_fname}"
+                    )
 
                     # Delete old format
                     os.remove(old_cache_fname)
@@ -1944,7 +1953,7 @@ def _get_probe_metadata(fname, dname, point):
     return shape, Omega
 
 
-def read_probe_dat(fname, point=False, skip_age_check=False, cache_format='npz'):
+def read_probe_dat(fname, point=False, skip_age_check=False, cache_format="hdf5"):
     """Load a probe text file into a flow field.
 
     Note that this returns flattened arrays, i.e. the shape of the probe patch
@@ -1970,7 +1979,9 @@ def read_probe_dat(fname, point=False, skip_age_check=False, cache_format='npz')
     """
 
     # Normalize input - strip any cache extension
-    fname = fname.replace(".npz", ".dat").replace(".hdf5", ".dat").replace(".h5", ".dat")
+    fname = (
+        fname.replace(".npz", ".dat").replace(".hdf5", ".dat").replace(".h5", ".dat")
+    )
     dname = os.path.dirname(fname)
 
     # Get metadata
@@ -1982,8 +1993,9 @@ def read_probe_dat(fname, point=False, skip_age_check=False, cache_format='npz')
     dat_mtime, cache_mtime = _get_file_mtimes(fname, cache_fname)
 
     # Load conserved data
-    conserved = _load_conserved_data(fname, cache_fname, shape, dat_mtime, cache_mtime,
-                                      skip_age_check, cache_format)
+    conserved = _load_conserved_data(
+        fname, cache_fname, shape, dat_mtime, cache_mtime, skip_age_check, cache_format
+    )
 
     # Validate time dimension
     _validate_time_dimension(conserved, dname, fname)
