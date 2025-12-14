@@ -1616,100 +1616,161 @@ def _parse_log_params(dname):
     )
 
 
-def read_probe_dat(fname, point=False):
-    """Load a probe text file into a flow field.
+def _save_npz(fname, conserved):
+    """Save conserved variables to NPZ format with compression."""
+    np.savez_compressed(fname, conserved=conserved)
 
-    Note that this returns flattened arrays, i.e. the shape of the probe patch
-    is lost
+
+def _load_npz(fname):
+    """Load conserved variables from NPZ format."""
+    with np.load(fname) as d:
+        return d["conserved"]
+
+
+def _save_h5(fname, conserved):
+    """Save conserved variables to HDF5 format."""
+    with h5py.File(fname, 'w') as f:
+        f.create_dataset('conserved', data=conserved, compression='gzip', compression_opts=9)
+
+
+def _load_h5(fname):
+    """Load conserved variables from HDF5 format."""
+    with h5py.File(fname, 'r') as f:
+        return f['conserved'][:]
+
+
+# Cache format configuration: (extension, save_func, load_func)
+CACHE_FORMATS = {
+    'npz': ('.npz', _save_npz, _load_npz),
+    'hdf5': ('.hdf5', _save_h5, _load_h5),
+}
+
+
+def _get_file_mtimes(fname, npz_fname):
+    """Get modification times for .dat and .npz files.
 
     Parameters
     ----------
-    fname: string
-        File name of a Turbostream 3 probe dat file.
+    fname : str
+        Path to .dat file
+    npz_fname : str
+        Path to .npz file
 
-    Returns:
-    --------
-    data: (8, nstep) array
-        Columns are x, r, rt, ro, rovx, rovr, rorvt, roe.
-        Rows are time steps.
-
+    Returns
+    -------
+    dat_mtime : float
+        Modification time of .dat file, or 0 if doesn't exist
+    npz_mtime : float
+        Modification time of .npz file, or 0 if doesn't exist
     """
+    dat_mtime = os.path.getmtime(fname) if os.path.exists(fname) else 0
+    npz_mtime = os.path.getmtime(npz_fname) if os.path.exists(npz_fname) else 0
+    return dat_mtime, npz_mtime
 
-    fname = fname.replace(".npz", ".dat")
 
-    dname = os.path.dirname(fname)
+def _build_flowfield(conserved, cp, ga, mu, Omega):
+    """Build flowfield object from conserved variables.
 
-    # Look for a probe metadata file in same directory
-    probe_meta_path = os.path.join(dname, "probe_meta.yaml")
-    if os.path.exists(probe_meta_path):
-        # Parse the bid and pid from the file name
-        bid, pid = (int(x) for x in os.path.basename(fname)[:-4].split("_")[-2:])
+    Parameters
+    ----------
+    conserved : ndarray
+        Conserved variables array (8, ...)
+    cp : float
+        Specific heat capacity
+    ga : float
+        Gamma (ratio of specific heats)
+    mu : float
+        Viscosity
+    Omega : float
+        Rotation rate
 
-        # Extract shape from metadata
-        probe_meta = yaml.read_yaml(probe_meta_path)
-        shape = tuple(probe_meta[bid][pid]["shape"])
-        Omega = float(probe_meta[bid][pid]["Omega"])
+    Returns
+    -------
+    F : PerfectFlowField
+        Flow field object with coordinates, velocities, and thermodynamic state
+    """
+    # Split up the conserved vars
+    x, r, rt, ro, rovx, rovr, rorvt, roe = conserved
 
-    elif point:
-        # Default to a point probe
-        shape = (1,)
-        Omega = 0.0
+    # Create flowfield
+    F = turbigen.flowfield.PerfectFlowField(x.shape)
+    F.Tu0 = 0.0
+    F.cp = cp
+    F.gamma = ga
+    F.mu = mu
+    F.Omega = Omega
 
-    else:
-        raise Exception("No probe metadata found, cannot determine probe shape.")
+    # Insert coordinates and velocities
+    F.xrt = np.stack((x, r, rt / r))
+    F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro
 
-    # Add time dimension
-    shape = shape + (-1,)
+    # Insert thermodynamic state
+    u = roe / ro - 0.5 * F.V**2.0
+    F.set_rho_u(ro, u)
 
-    # Check for npz file and modification time
-    npz_fname = fname.replace(".dat", ".npz")
-    if os.path.exists(npz_fname):
-        npz_mtime = os.path.getmtime(npz_fname)
-    else:
-        npz_mtime = 0
+    return F
 
-    # Get dat files and modification time
-    if os.path.exists(fname):
-        dat_mtime = os.path.getmtime(fname)
-    else:
-        dat_mtime = 0
 
-    # Load the npz if it exists and is newer than dat file
-    if os.path.exists(npz_fname) and npz_mtime > dat_mtime:
-        try:
-            with np.load(npz_fname) as d:
-                conserved = d["conserved"]
-                if conserved.shape != (8,) + shape:
-                    conserved = d["conserved"].reshape((8,) + shape, order="F")
-            # On successful npz load we know the dat is redundant
-            # So delete the dat file if present
-            if os.path.exists(fname):
-                os.remove(fname)
-        except Exception as e:
-            logger.error(f"Failed to load {npz_fname}: {e}")
-            conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")
-            np.savez(npz_fname, conserved=conserved)
+def _load_gas_properties(dname):
+    """Load gas properties from HDF5 file.
 
-    # Otherwise load the dat file
-    else:
-        # Turbostream is single precision so we can save memory by casting
-        conserved = (
-            np.loadtxt(fname, skiprows=1)
-            .T.reshape((8,) + shape, order="F")
-            .astype(np.float32)
+    Parameters
+    ----------
+    dname : str
+        Directory containing HDF5 files
+
+    Returns
+    -------
+    cp : float
+        Specific heat capacity
+    ga : float
+        Gamma (ratio of specific heats)
+    mu : float
+        Viscosity
+    fs : float
+        Sampling frequency
+    """
+    # Find HDF5 file
+    for hdf5_name in ("input.hdf5", "output_avg.hdf5", "output.hdf5"):
+        fname_hdf5 = os.path.join(dname, hdf5_name)
+        if os.path.exists(fname_hdf5):
+            break
+
+    # Load gas properties
+    with h5py.File(fname_hdf5, "r") as f:
+        cp, ga, mu, frequency, nstep_cycle, nstep_save_probe = (
+            scalar(f[f"{k}_av"])
+            for k in (
+                "cp",
+                "ga",
+                "viscosity",
+                "frequency",
+                "nstep_cycle",
+                "nstep_save_probe",
+            )
         )
-        np.savez(npz_fname, conserved=conserved)
 
-        # If the probes are more than 48 hours old, then the calculation has
-        # finished and we can delete the raw dat files
-        age = (time.time() - dat_mtime) / 3600
-        if age > 48:
-            os.remove(fname)
-        else:
-            print("Not deleting raw probe dat file")
-            print(f"  File age: {age} hours")
+    fs = frequency * nstep_cycle / nstep_save_probe
+    return cp, ga, mu, fs
 
-    # Validate time dimension against log.txt parameters
+
+def _validate_time_dimension(conserved, dname, fname):
+    """Validate time dimension against log.txt parameters.
+
+    Parameters
+    ----------
+    conserved : ndarray
+        Conserved variables array
+    dname : str
+        Directory containing log.txt
+    fname : str
+        Original probe filename (for error messages)
+
+    Raises
+    ------
+    ValueError
+        If time dimension doesn't match expected value from log.txt
+    """
     try:
         (
             ncycle_log,
@@ -1741,46 +1802,197 @@ def read_probe_dat(fname, point=False):
             # Re-raise if it's the time dimension mismatch error
             raise
 
-    # Split up the conserved vars
-    x, r, rt, ro, rovx, rovr, rorvt, roe = conserved
 
-    # Read gas properties from hdf5 file
-    for fnames in ("input.hdf5", "output_avg.hdf5", "output.hdf5"):
-        fname_hdf5 = os.path.join(dname, fnames)
-        if os.path.exists(fname_hdf5):
-            break
-    with h5py.File(fname_hdf5, "r") as f:
-        # Get gas properties from application vars and initialise a state
-        # These are data items of the root group
-        cp, ga, mu, frequency, nstep_cycle, nstep_save_probe = (
-            scalar(f[f"{k}_av"])
-            for k in (
-                "cp",
-                "ga",
-                "viscosity",
-                "frequency",
-                "nstep_cycle",
-                "nstep_save_probe",
-            )
-        )
+def _load_conserved_data(fname, cache_fname, shape, dat_mtime, cache_mtime,
+                         skip_age_check=False, cache_format='npz'):
+    """Load conserved variables from cache or .dat file.
 
-    fs = frequency * nstep_cycle / nstep_save_probe
+    Parameters
+    ----------
+    fname : str
+        Path to .dat file
+    cache_fname : str
+        Path to cache file
+    shape : tuple
+        Expected shape including time dimension
+    dat_mtime : float
+        Modification time of .dat file
+    cache_mtime : float
+        Modification time of cache file
+    skip_age_check : bool, optional
+        If True, always delete .dat after caching regardless of age (default: False)
+    cache_format : str, optional
+        Cache format to use: 'npz' or 'hdf5' (default: 'npz')
 
-    F = turbigen.flowfield.PerfectFlowField(x.shape)
-    F.Tu0 = 0.0
-    F.cp = cp
-    F.gamma = ga
-    F.mu = mu
-    F.Omega = Omega
+    Returns
+    -------
+    conserved : ndarray
+        Conserved variables array of shape (8,) + shape
+    """
+    cache_ext, save_func, load_func = CACHE_FORMATS[cache_format]
 
-    # Insert the coordinates and velocities
-    F.xrt = np.stack((x, r, rt / r))
-    F.Vxrt = np.stack((rovx, rovr, rorvt / r)) / ro
+    # Load from cache if it exists and is newer than dat file
+    if os.path.exists(cache_fname) and cache_mtime > dat_mtime:
+        try:
+            conserved = load_func(cache_fname)
+            if conserved.shape != (8,) + shape:
+                conserved = conserved.reshape((8,) + shape, order="F")
+            # On successful load, delete redundant dat file if present
+            if os.path.exists(fname):
+                os.remove(fname)
+            return conserved
+        except Exception as e:
+            logger.error(f"Failed to load {cache_fname}: {e}")
+            # Fall through to load from dat or migrate from other format
 
-    # Insert the thermodynamic state
-    u = roe / ro - 0.5 * F.V**2.0
-    F.set_rho_u(ro, u)
+    # If dat file doesn't exist, check for caches in other formats
+    if dat_mtime == 0:
+        base_fname = fname.replace(".dat", "")
+        for fmt_name, (fmt_ext, fmt_save, fmt_load) in CACHE_FORMATS.items():
+            if fmt_name == cache_format:
+                continue  # Already tried this format above
 
+            old_cache_fname = base_fname + fmt_ext
+            if os.path.exists(old_cache_fname):
+                try:
+                    # Load from old format
+                    conserved = fmt_load(old_cache_fname)
+                    if conserved.shape != (8,) + shape:
+                        conserved = conserved.reshape((8,) + shape, order="F")
+
+                    # Save to new format
+                    save_func(cache_fname, conserved)
+                    logger.info(f"Migrated cache from {fmt_name} to {cache_format}: {cache_fname}")
+
+                    # Delete old format
+                    os.remove(old_cache_fname)
+                    logger.debug(f"Deleted old cache: {old_cache_fname}")
+
+                    return conserved
+                except Exception as e:
+                    logger.error(f"Failed to migrate from {old_cache_fname}: {e}")
+                    # Continue to check other formats
+
+    # Load from dat file
+    conserved = (
+        np.loadtxt(fname, skiprows=1)
+        .T.reshape((8,) + shape, order="F")
+        .astype(np.float32)
+    )
+    save_func(cache_fname, conserved)
+
+    # Delete dat file based on age or flag
+    if skip_age_check:
+        os.remove(fname)
+        logger.debug("Deleted raw probe dat file (skip_age_check=True)")
+    else:
+        age = (time.time() - dat_mtime) / 3600
+        if age > 48:
+            os.remove(fname)
+        else:
+            logger.debug(f"Not deleting raw probe dat file (age: {age:.1f} hours)")
+
+    return conserved
+
+
+def _get_probe_metadata(fname, dname, point):
+    """Extract probe metadata from YAML file.
+
+    Parameters
+    ----------
+    fname : str
+        Probe data file path
+    dname : str
+        Directory containing probe files
+    point : bool
+        If True, use default point probe shape when metadata not found
+
+    Returns
+    -------
+    shape : tuple
+        Spatial shape of probe with time dimension appended
+    Omega : float
+        Rotation rate
+
+    Raises
+    ------
+    Exception
+        If metadata not found and point=False
+    """
+    probe_meta_path = os.path.join(dname, "probe_meta.yaml")
+
+    if os.path.exists(probe_meta_path):
+        # Parse the bid and pid from the file name
+        bid, pid = (int(x) for x in os.path.basename(fname)[:-4].split("_")[-2:])
+
+        # Extract shape from metadata
+        probe_meta = yaml.read_yaml(probe_meta_path)
+        shape = tuple(probe_meta[bid][pid]["shape"])
+        Omega = float(probe_meta[bid][pid]["Omega"])
+
+    elif point:
+        # Default to a point probe
+        shape = (1,)
+        Omega = 0.0
+
+    else:
+        raise Exception("No probe metadata found, cannot determine probe shape.")
+
+    # Add time dimension
+    shape = shape + (-1,)
+
+    return shape, Omega
+
+
+def read_probe_dat(fname, point=False, skip_age_check=False, cache_format='npz'):
+    """Load a probe text file into a flow field.
+
+    Note that this returns flattened arrays, i.e. the shape of the probe patch
+    is lost
+
+    Parameters
+    ----------
+    fname: string
+        File name of a Turbostream 3 probe dat file.
+    point: bool, optional
+        If True, use default point probe shape when metadata not found (default: False)
+    skip_age_check: bool, optional
+        If True, always delete .dat after caching regardless of age (default: False)
+    cache_format: str, optional
+        Cache format to use: 'npz' or 'hdf5' (default: 'npz')
+
+    Returns:
+    --------
+    data: (8, nstep) array
+        Columns are x, r, rt, ro, rovx, rovr, rorvt, roe.
+        Rows are time steps.
+
+    """
+
+    # Normalize input - strip any cache extension
+    fname = fname.replace(".npz", ".dat").replace(".hdf5", ".dat").replace(".h5", ".dat")
+    dname = os.path.dirname(fname)
+
+    # Get metadata
+    shape, Omega = _get_probe_metadata(fname, dname, point)
+
+    # Get cache file path and modification times
+    cache_ext, _, _ = CACHE_FORMATS[cache_format]
+    cache_fname = fname.replace(".dat", cache_ext)
+    dat_mtime, cache_mtime = _get_file_mtimes(fname, cache_fname)
+
+    # Load conserved data
+    conserved = _load_conserved_data(fname, cache_fname, shape, dat_mtime, cache_mtime,
+                                      skip_age_check, cache_format)
+
+    # Validate time dimension
+    _validate_time_dimension(conserved, dname, fname)
+
+    # Load gas properties
+    cp, ga, mu, fs = _load_gas_properties(dname)
+
+    # Build and return flowfield
+    F = _build_flowfield(conserved, cp, ga, mu, Omega)
     return F, fs
 
 

@@ -351,3 +351,135 @@ Application variables
     # Should raise ValueError with informative message
     with pytest.raises(ValueError, match="Time dimension mismatch"):
         read_probe_dat(str(dat_file_wrong))
+
+
+def test_skip_age_check(tmp_path):
+    """Test 5: skip_age_check flag bypasses 48-hour age check."""
+    # Setup
+    shape = [2, 2]
+    nsteps = 10
+    bid, pid = 80, 21
+
+    # Create metadata and HDF5
+    probe_meta = {
+        bid: {
+            pid: {
+                'Nb': 10,
+                'Omega': 0.0,
+                'label': 'skip_age_test',
+                'shape': shape
+            }
+        }
+    }
+    yaml.write_yaml(probe_meta, tmp_path / "probe_meta.yaml")
+    create_minimal_hdf5(tmp_path / "input.hdf5")
+
+    # Create probe .dat file
+    dat_file = tmp_path / f"output_probe_{bid}_{pid}.dat"
+    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
+    create_probe_dat(dat_file, shape, nsteps)
+
+    # First call with skip_age_check=True (file is recent, normally wouldn't delete)
+    # Don't mock time - file will be fresh
+    F1, fs1 = read_probe_dat(str(dat_file), skip_age_check=True)
+
+    # Verify .dat was deleted despite being fresh (< 48 hours old)
+    assert not dat_file.exists(), ".dat should be deleted when skip_age_check=True"
+
+    # Verify .npz exists
+    assert npz_file.exists(), ".npz should exist"
+
+    # Second call should still work (loading from cache)
+    F2, fs2 = read_probe_dat(str(dat_file), skip_age_check=True)
+
+    # Verify data is identical
+    assert F1.shape == F2.shape, "Shape should be identical"
+    assert fs1 == fs2, "Sampling frequency should be identical"
+    np.testing.assert_allclose(F1.x, F2.x, rtol=1e-6, err_msg="Data should match")
+
+
+def test_skip_age_check_default_false(tmp_path):
+    """Test 6: Default behavior (skip_age_check=False) preserves recent files."""
+    # Setup
+    shape = [2, 2]
+    nsteps = 10
+    bid, pid = 81, 22
+
+    # Create metadata and HDF5
+    probe_meta = {
+        bid: {
+            pid: {
+                'Nb': 10,
+                'Omega': 0.0,
+                'label': 'default_age_test',
+                'shape': shape
+            }
+        }
+    }
+    yaml.write_yaml(probe_meta, tmp_path / "probe_meta.yaml")
+    create_minimal_hdf5(tmp_path / "input.hdf5")
+
+    # Create probe .dat file
+    dat_file = tmp_path / f"output_probe_{bid}_{pid}.dat"
+    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
+    create_probe_dat(dat_file, shape, nsteps)
+
+    # First call with default skip_age_check=False
+    # File is fresh, should NOT be deleted
+    F1, fs1 = read_probe_dat(str(dat_file))
+
+    # Verify .dat was NOT deleted (file is fresh, < 48 hours)
+    assert dat_file.exists(), ".dat should be preserved when file is recent and skip_age_check=False"
+
+    # Verify .npz exists
+    assert npz_file.exists(), ".npz should exist"
+
+
+def test_hdf5_cache_format(tmp_path):
+    """Test 7: HDF5 cache format works correctly."""
+    # Setup
+    shape = [3, 3]
+    nsteps = 10
+    bid, pid = 82, 23
+
+    # Create metadata and HDF5
+    probe_meta = {
+        bid: {
+            pid: {
+                'Nb': 10,
+                'Omega': 0.0,
+                'label': 'hdf5_test',
+                'shape': shape
+            }
+        }
+    }
+    yaml.write_yaml(probe_meta, tmp_path / "probe_meta.yaml")
+    create_minimal_hdf5(tmp_path / "input.hdf5")
+
+    # Create probe .dat file
+    dat_file = tmp_path / f"output_probe_{bid}_{pid}.dat"
+    hdf5_file = tmp_path / f"output_probe_{bid}_{pid}.hdf5"
+    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
+    create_probe_dat(dat_file, shape, nsteps)
+
+    # Mock file to be old so it gets deleted
+    old_time = time.time() - (49 * 3600)
+
+    with patch('os.path.getmtime', return_value=old_time):
+        # First call with cache_format='hdf5'
+        F1, fs1 = read_probe_dat(str(dat_file), cache_format='hdf5')
+
+    # Verify .hdf5 was created and .dat was deleted
+    assert hdf5_file.exists(), ".hdf5 cache file should be created"
+    assert not dat_file.exists(), ".dat should be deleted when old"
+    assert not npz_file.exists(), ".npz should not be created when using hdf5 format"
+
+    # Second call should load from .h5 cache
+    F2, fs2 = read_probe_dat(str(dat_file), cache_format='hdf5')
+
+    # Verify data is identical
+    assert F1.shape == F2.shape, "Shape should be identical"
+    assert fs1 == fs2, "Sampling frequency should be identical"
+    np.testing.assert_allclose(F1.x, F2.x, rtol=1e-6, err_msg="x-coordinates should match")
+    np.testing.assert_allclose(F1.rho, F2.rho, rtol=1e-6, err_msg="Density should match")
+    np.testing.assert_allclose(F1.Vx, F2.Vx, rtol=1e-6, err_msg="Vx should match")
