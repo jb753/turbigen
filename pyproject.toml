@@ -83,5 +83,4 @@ dev = [
     'bump-my-version',
     'meson-python',
     'ninja',
-    'pyqt6',
 ]

@@ -19,6 +19,7 @@ import grp
 import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 import time
+import multiprocessing
 
 import turbigen.util
 
@@ -1201,6 +1202,13 @@ def _run(grid, ts3_config):
     _execute(ts3_config)
     _read_hdf5(grid, ts3_config)
 
+    # If there were probes, process them in parallel
+    if ts3_config.nstep_save_probe:
+        probe_fnames = list(read_probe_metadata(ts3_config.workdir).keys())
+        # Use multiprocessing to read and save compressed probes in parallel
+        with multiprocessing.Pool(processes=8) as pool:
+            pool.map(read_probe_dat, probe_fnames)
+
 
 def run(grid, ts3_conf, machine, workdir):
     """Write, run, and read TS3 results for a grid object, specifying some settings.
@@ -1684,13 +1692,22 @@ def read_probe_dat(fname, point=False):
 
     # Otherwise load the dat file
     else:
-        conserved = np.loadtxt(fname, skiprows=1).T.reshape((8,) + shape, order="F")
+        # Turbostream is single precision so we can save memory by casting
+        conserved = (
+            np.loadtxt(fname, skiprows=1)
+            .T.reshape((8,) + shape, order="F")
+            .astype(np.float32)
+        )
         np.savez(npz_fname, conserved=conserved)
 
         # If the probes are more than 48 hours old, then the calculation has
         # finished and we can delete the raw dat files
-        if (time.time() - dat_mtime) > 48 * 3600:
+        age = (time.time() - dat_mtime) / 3600
+        if age > 48:
             os.remove(fname)
+        else:
+            print("Not deleting raw probe dat file")
+            print(f"  File age: {age} hours")
 
     # Validate time dimension against log.txt parameters
     try:
