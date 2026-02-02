@@ -78,6 +78,16 @@ class H(turbigen.mesh.Mesher):
 
         dsurf = np.tile(dsurf, (2, 1))
 
+        # Dimensional gaps
+        span_all = np.array(
+            [
+                np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
+                for irow in range(mac.Nrow)
+            ]
+        )
+        tip_abs_all = np.array(mac.tip)
+        tip_span_all = tip_abs_all / span_all
+
         # Spanwise grid vector
         # From hub/casing spacings and ER
         span_ref = mac.ann.get_span(1)
@@ -160,7 +170,7 @@ class H(turbigen.mesh.Mesher):
             logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
 
             # Spanwise grid
-            tip_ref = np.max(mac.tip)
+            tip_ref = np.max(tip_span_all)
             span_frac = mesh_config.spanwise_grid(dspf_hub, dspf_casing, tip_ref)
 
             if mesh_config.slip_annulus:
@@ -314,13 +324,13 @@ class H(turbigen.mesh.Mesher):
                             drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
                             try:
-                                pitch_frac_clust[
-                                    i, j, :
-                                ] = mesh_config.pitchwise_grid_fixed_npts(
-                                    drt_norm_now,
-                                    pitch_chord_ref[1],
-                                    AR_row,
-                                    nk_not_resampled,
+                                pitch_frac_clust[i, j, :] = (
+                                    mesh_config.pitchwise_grid_fixed_npts(
+                                        drt_norm_now,
+                                        pitch_chord_ref[1],
+                                        AR_row,
+                                        nk_not_resampled,
+                                    )
                                 )
                             except ValueError:
                                 raise Exception(
@@ -364,9 +374,7 @@ class H(turbigen.mesh.Mesher):
                         xrt_l,
                         mlim_now,
                         Theta,
-                        chord_mid[
-                            (0, -1),
-                        ],
+                        chord_mid[(0, -1),],
                         Theta_max=mesh_config.skew_max,
                     )[:2]
 
@@ -422,17 +430,8 @@ class H(turbigen.mesh.Mesher):
 
             # Evaluate the angular coordinates and assemble
             theta = np.flip(
-                pfr3
-                * theta_lim3[
-                    (0,),
-                ]
-                + (1.0 - pfr3)
-                * (
-                    theta_lim3[
-                        (1,),
-                    ]
-                    + pitch_theta
-                ),
+                pfr3 * theta_lim3[(0,),]
+                + (1.0 - pfr3) * (theta_lim3[(1,),] + pitch_theta),
                 axis=-1,
             )
 
@@ -775,12 +774,7 @@ class H(turbigen.mesh.Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         # Relax clustering towards a uniform distribution at inlet and exit
         dt_relax = (
-            np.ones((2,))
-            * self.nchord_relax
-            * pitch_chord[
-                (0, -1),
-            ]
-            / pitch_chord[1]
+            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])

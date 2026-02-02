@@ -51,7 +51,6 @@ blades:
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
       camber: [0., 0., 0.0]
-      tip: 0.01
 
 # Circulation coefficient to set blade loadings
 nblade:

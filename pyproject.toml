@@ -68,6 +68,9 @@ commit_args = ""
 [[tool.bumpversion.files ]]
 filename = "pyproject.toml"
 
+[tool.uv]
+managed = false
+
 [dependency-groups]
 dev = [
     'sphinx',
