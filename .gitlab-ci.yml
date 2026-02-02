@@ -16,6 +16,7 @@ before_script:
 variables:
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_API_VERSION: 1.41
   DOCKER_TLS_CERTDIR: ""
 
 build_test_wheel:
