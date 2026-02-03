@@ -146,9 +146,9 @@ def test_basic_dat_loading(tmp_path):
     # Check shape: (5, 2, 10)
     assert F.shape == tuple(shape + [nsteps]), f"Expected shape {tuple(shape + [nsteps])}, got {F.shape}"
 
-    # Check that .npz was created
-    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
-    assert npz_file.exists(), ".npz file should be created"
+    # Check that .hdf5 cache was created (default cache_format)
+    hdf5_file = tmp_path / f"output_probe_{bid}_{pid}.hdf5"
+    assert hdf5_file.exists(), ".hdf5 file should be created"
 
     # Verify some data values
     # x-coordinate should be recognizable pattern
@@ -376,7 +376,7 @@ def test_skip_age_check(tmp_path):
 
     # Create probe .dat file
     dat_file = tmp_path / f"output_probe_{bid}_{pid}.dat"
-    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
+    hdf5_file = tmp_path / f"output_probe_{bid}_{pid}.hdf5"
     create_probe_dat(dat_file, shape, nsteps)
 
     # First call with skip_age_check=True (file is recent, normally wouldn't delete)
@@ -386,8 +386,8 @@ def test_skip_age_check(tmp_path):
     # Verify .dat was deleted despite being fresh (< 48 hours old)
     assert not dat_file.exists(), ".dat should be deleted when skip_age_check=True"
 
-    # Verify .npz exists
-    assert npz_file.exists(), ".npz should exist"
+    # Verify .hdf5 cache exists (default cache_format)
+    assert hdf5_file.exists(), ".hdf5 should exist"
 
     # Second call should still work (loading from cache)
     F2, fs2 = read_probe_dat(str(dat_file), skip_age_check=True)
@@ -421,7 +421,7 @@ def test_skip_age_check_default_false(tmp_path):
 
     # Create probe .dat file
     dat_file = tmp_path / f"output_probe_{bid}_{pid}.dat"
-    npz_file = tmp_path / f"output_probe_{bid}_{pid}.npz"
+    hdf5_file = tmp_path / f"output_probe_{bid}_{pid}.hdf5"
     create_probe_dat(dat_file, shape, nsteps)
 
     # First call with default skip_age_check=False
@@ -431,8 +431,8 @@ def test_skip_age_check_default_false(tmp_path):
     # Verify .dat was NOT deleted (file is fresh, < 48 hours)
     assert dat_file.exists(), ".dat should be preserved when file is recent and skip_age_check=False"
 
-    # Verify .npz exists
-    assert npz_file.exists(), ".npz should exist"
+    # Verify .hdf5 cache exists (default cache_format)
+    assert hdf5_file.exists(), ".hdf5 should exist"
 
 
 def test_hdf5_cache_format(tmp_path):

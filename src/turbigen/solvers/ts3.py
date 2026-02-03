@@ -1968,7 +1968,7 @@ def read_probe_dat(fname, point=False, skip_age_check=False, cache_format="hdf5"
     skip_age_check: bool, optional
         If True, always delete .dat after caching regardless of age (default: False)
     cache_format: str, optional
-        Cache format to use: 'npz' or 'hdf5' (default: 'npz')
+        Cache format to use: 'npz' or 'hdf5' (default: 'hdf5')
 
     Returns:
     --------
@@ -2175,7 +2175,6 @@ def read_grid(fname_hdf5):
             dj = jen - jst
             dk = ken - kst
             pshape = (di, dj, dk)
-            psize = di * dj * dk
 
             # Subtract 1 to make the end indices inclusive
             ien -= 1
