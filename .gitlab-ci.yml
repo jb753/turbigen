@@ -58,7 +58,7 @@ doc:
       - doc/_build
   script:
     - apt update && apt install -y pdf2svg fonts-freefont-ttf
-    - uv pip install dist/*.whl sphinx sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
+    - uv pip install dist/*.whl sphinx~=8.0.0 sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
     - python doc/generate_examples.py
     - python doc/generate_meanline.py
     - python doc/generate_data_structures.py
