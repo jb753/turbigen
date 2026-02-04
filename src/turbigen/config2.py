@@ -533,10 +533,11 @@ class TurbigenConfig:
         Nb = np.full((len(self.blades),), 0, dtype=int)
         for irow, row in enumerate(self.blades):
             # Set number of blades using main blade
+
             Nb[irow] = np.round(
-                self.nblade[irow].get_blade_number(
-                    self.mean_line.nominal.get_row(irow), row[0]
-                )
+                self.nblade[irow]
+                .get_blade_number(self.mean_line.nominal.get_row(irow), row[0])
+                .item()
             )
         return Nb
 
@@ -557,7 +558,7 @@ class TurbigenConfig:
             )
 
     def get_gaps(self):
-        """Return non-dimensional tip gaps as fraction of span."""
+        """Return dimensional tip gaps."""
 
         # Relative gaps from blade definition
         gap_span = np.full((self.nrow,), 0.0)
@@ -578,7 +579,8 @@ class TurbigenConfig:
                 )
                 sys.exit(1)
 
-        return gap_span
+        gap = gap_span * span
+        return gap
 
     def apply_recamber(self):
         # Apply recamber to the blades
@@ -939,7 +941,7 @@ class TurbigenConfig:
 
         self.check_pitch_chord()
         logger.info(f"Nblade: {self.get_nblade()}")
-        logger.info(f"Tip gaps/span: {self.get_gaps()}")
+        logger.info(f"Tip gaps [m]: {self.get_gaps()}")
 
         # Handle restarts
         if self.grid:
