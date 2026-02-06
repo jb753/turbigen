@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "turbigen"
-version = "2.7.3"
+version = "3.0.0"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 authors = [
@@ -12,23 +16,19 @@ classifiers = [
   "Operating System :: POSIX :: Linux"
 ]
 dependencies = [
-    'CoolProp~=6.7.0',
     'matplotlib~=3.10.0',
     "numpy~=2.2.4",
+    "CoolProp~=6.7.0",
     'PyYAML~=6.0.0',
     'scipy~=1.15.0',
-    'h5py~=3.13.0',
+    'h5py~=3.14.0',
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
+    # 'ember @ git+ssh://git@gitlab.developers.cam.ac.uk/jb753/ember.git',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
 keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "turbine"]
-
-[project.optional-dependencies]
-parallel = [
-    'mpi4py~=3.1.6',
-]
 
 [project.urls]
 Homepage = "https://turbigen.org"
@@ -38,10 +38,6 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 turbigen = "turbigen.main:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
 turbigen-local-queue= "turbigen.job_server:main"
-
-[build-system]
-requires = ["meson-python", "numpy", "ninja", "cibuildwheel"]
-build-backend = "mesonpy"
 
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-*"
@@ -68,9 +64,6 @@ commit_args = ""
 [[tool.bumpversion.files ]]
 filename = "pyproject.toml"
 
-[tool.uv]
-managed = false
-
 [dependency-groups]
 dev = [
     'sphinx~=8.0.0',
@@ -84,6 +77,8 @@ dev = [
     'pre-commit',
     'twine',
     'bump-my-version',
-    'meson-python',
-    'ninja',
+    'pyqt6',
 ]
+
+[tool.uv]
+managed = false
