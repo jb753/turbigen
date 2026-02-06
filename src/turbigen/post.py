@@ -4,10 +4,13 @@ from abc import ABC, abstractmethod
 import dataclasses
 import numpy as np
 from turbigen import util
+import turbigen.util_post
 import turbigen.base
 import turbigen.average
 import warnings
 import matplotlib.pyplot as plt
+import ember.cut
+import ember.convergence_history
 
 logger = util.make_logger()
 
@@ -30,107 +33,71 @@ class BasePost(ABC):
 
 @dataclasses.dataclass
 class Convergence(BasePost):
-    dn_smooth: int = 49
-    """Smoothing window for the time series."""
-
-    rtol_loss: float = 0.01
-
-    """Smoothing window for the time series."""
+    """Plot convergence history from ember ConvergenceHistory object."""
 
     def post(self, config, pdf):
-        """Make a plot of convergence history of the CFD run."""
+        """Make plots of convergence history from the CFD run."""
 
-        meanline = config.mean_line.nominal
         conv = config.solver.convergence
 
         if conv is None:
             logger.info("No simulation log returned, skipping convergence plot.")
             return
 
-        # Choose type of machine
-        if meanline.P[-1] > meanline.P[0]:
-            # Is compressor, reference to inlet velocity
-            Vref = meanline.V_rel[0]
-        else:
-            # Is turbine, reference to exit velocity
-            Vref = meanline.V_rel[-1]
-        dhref = 0.5 * Vref**2
+        # Find valid timesteps
+        time_mask = conv.time[:, 0] > 0
+        n_steps = np.sum(time_mask)
 
-        # Get non-dimensionals
-        Texit = meanline.T[-1]
-        state = conv.state
-        Ys = (state.s[1] - state.s[0]) * Texit / dhref
-        CWx = (state.h[1] - state.h[0]) / dhref
+        if n_steps == 0:
+            logger.info("No convergence data to plot.")
+            return
 
-        # Normalise work and loss as percent
-        # changes with respect to averaged value
-        try:
-            istart = np.where(conv.istep == conv.istep_avg)[0][0]
-        except Exception:
-            istart = 0
-        dYs = (Ys / Ys[istart:].mean() - 1.0) * 100.0
-        if meanline.U.any():
-            dCWx = (CWx / CWx[istart:].mean() - 1.0) * 100.0
-        else:
-            # Fall back to absolute in a cascade
-            dCWx = CWx * 100.0
-        ylim = np.array([-10.0, 10.0])
-        ytick = [-8, -4, -2, -1, 0, 1, 2, 4, 8]
+        # Page 1: Residual plot
+        residuals = conv.residual[:n_steps, : conv.n_block]
+        avg_residuals = np.mean(residuals, axis=1)
+        normalized_residuals = avg_residuals / conv.conserved_ref[None, :]
 
-        if self.dn_smooth:
-            conv.resid = util.moving_average_1d(conv.resid, self.dn_smooth)
-            dCWx = util.moving_average_1d(dCWx, self.dn_smooth)
-            dYs = util.moving_average_1d(dYs, self.dn_smooth)
+        _, ax = plt.subplots(layout="constrained")
+        for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
+            ax.semilogy(normalized_residuals[:, i_var], label=var_name)
+        ax.set_ylabel("Normalized Residual")
+        ax.set_xlabel("Iteration")
+        ax.set_title("Convergence History")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        pdf.savefig()
+        plt.close()
 
-        dYs_reversed = np.flip(dYs)
-        istep_conv = np.flip(conv.istep)[
-            np.argmax(np.abs(dYs_reversed) > self.rtol_loss * 100.0)
-        ]
+        # Page 2: CFL plot
+        cfl_data = conv.cfl[:n_steps, : conv.n_block]
+        avg_cfl = np.mean(cfl_data, axis=1)
 
-        # Do the plotting
-        _, ax = plt.subplots(1, 3, layout="constrained")
-        ax[0].plot(conv.istep, np.log10(conv.resid), marker="")
-        ax[0].set_title("log(Residual)")
-        ax[1].plot(conv.istep, dCWx, marker="")
-        ax[1].set_title("dWork/percent")
-        ax[1].set_ylim(ylim)
-        ax[1].set_yticks(ytick)
-        ax[2].plot(conv.istep, dYs, marker="")
-        ax[2].set_ylim(ylim)
-        ax[2].set_yticks(ytick)
-        ax[2].set_title("dLoss/percent")
+        _, ax = plt.subplots(layout="constrained")
+        for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
+            ax.plot(avg_cfl[:, i_var], label=var_name)
+        ax.set_ylabel("CFL")
+        ax.set_xlabel("Iteration")
+        ax.set_title("CFL History")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        pdf.savefig()
+        plt.close()
 
-        ax[0].annotate(
-            f"istep_conv={istep_conv}",
-            xy=(1.0, 1.0),
-            xytext=(-5.0, -5.0),
-            xycoords="axes fraction",
-            textcoords="offset points",
-            ha="right",
-            va="top",
-            backgroundcolor="w",
-            color="C1",
-        )
-        ax[0].annotate(
-            f"istep_avg={conv.istep_avg}",
-            xy=(1.0, 1.0),
-            xytext=(-5.0, -25.0),
-            xycoords="axes fraction",
-            textcoords="offset points",
-            ha="right",
-            va="top",
-            backgroundcolor="w",
-            color="C2",
-        )
+        # Page 3: Work coefficient and efficiency plot
+        valid = np.where(conv.rho[:n_steps, 0] > 0)[0]
+        psi_history = np.array([conv[i, :2].psi for i in valid])
+        eta_history = np.array([conv[i, :2].eta for i in valid])
 
-        for axi in ax:
-            axi.set_xlabel("nstep")
-            axi.set_xticks(())
-            distep = conv.istep[1] - conv.istep[0]
-            axi.set_xlim(conv.istep[0], conv.istep[-1] + distep)
-            axi.axvline(conv.istep_avg, color="C2", linestyle="--")
-            axi.axvline(istep_conv, color="C1", linestyle=":")
+        _, ax = plt.subplots(2, 1, layout="constrained", sharex=True)
+        ax[0].plot(valid, psi_history)
+        ax[0].set_ylabel("Work Coefficient, psi")
+        ax[0].set_title("Work and Efficiency History")
+        ax[0].grid(True, alpha=0.3)
 
+        ax[1].plot(valid, eta_history)
+        ax[1].set_ylabel("Efficiency, eta")
+        ax[1].set_xlabel("Iteration")
+        ax[1].grid(True, alpha=0.3)
         pdf.savefig()
         plt.close()
 
@@ -146,7 +113,7 @@ class Metadata(BasePost):
         ax.axis("off")
         left = 0.05
         ax.set_title("Metadata:")
-        ax.text(left, 0.95, f"workdir={str(config.workdir)}")
+        ax.text(left, 0.95, f"work_dir={str(config.work_dir)}")
         pdf.savefig()
         plt.close()
 
@@ -269,13 +236,14 @@ class SurfaceDistribution(BasePost):
             ax.set_ylabel(label)
 
             # Cut the entire blade
-            C = config.grid.cut_blade_surfs(self.offset)[irow][0]
+            C = turbigen.util_post.cut_blade_surfs(config.grid, self.offset)[irow][0]
 
             # Loop over span fractions
             for spfi in spfrow:
                 # Slice at required span fractions
                 xrc = config.annulus.get_span_curve(spfi)
-                Ci = C.meridional_slice(xrc)
+
+                Ci = ember.cut.structured_meridional(C, xrc.T)[0]
 
                 # Get the variable
                 y = calculate_nondim(
@@ -283,7 +251,9 @@ class SurfaceDistribution(BasePost):
                 )
 
                 # Extract surface distance and normalise
-                zeta_stag = Ci.zeta_stag
+                i_stag = turbigen.util_post.get_i_stag(Ci)
+                zeta = turbigen.util_post.get_zeta(Ci)
+                zeta_stag = zeta - zeta[i_stag]
                 # Shift zeta=0 to minimum Mas
                 if self.variable == "Mas":
                     zeta_stag -= zeta_stag[np.argmin(y)]

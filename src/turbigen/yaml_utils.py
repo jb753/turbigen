@@ -115,9 +115,3 @@ def write_yaml(d, fname, mode="w"):
     """Write a dictionary to file."""
     with open(fname, mode) as f:
         yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)
-
-
-def write_yaml_compressed(d, fname):
-    """Write a dictionary to compressed file."""
-    with gzip.open(fname, "wt") as f:
-        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)

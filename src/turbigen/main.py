@@ -1,11 +1,12 @@
 """Entry point for running turbigen from the shell."""
 
 import logging
-import numpy as np
-import subprocess
 from turbigen import util
-import turbigen.yaml
+import turbigen.yaml_utils
+import turbigen.plugins
+import subprocess
 from timeit import default_timer as timer
+from pathlib import Path
 import shutil
 import sys
 import os
@@ -13,7 +14,7 @@ import turbigen.config2
 import datetime
 import argparse
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 # Record all exceptions in the logger
@@ -89,6 +90,50 @@ def _make_argparser():
     return parser
 
 
+def _setup_work_dir(work_dir):
+    """Validate and create the working directory for a run."""
+
+    # Cannot continue without a working directory
+    # We need to know where to save things
+    if not work_dir:
+        raise Exception("No working directory specified, set YAML key 'work_dir'.")
+
+    # Automatically number work_dir if it contains placeholder
+    if "*" in work_dir:
+        work_dir = util.next_numbered_dir(work_dir)
+
+    # Convert to absolute path
+    # So that subsequent usage of the config does not need
+    # to stay in same working directory
+    work_dir = Path(work_dir).absolute()
+
+    # Create the work_dir if needed
+    if not work_dir.exists():
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+    return work_dir
+
+
+def _setup_logging(work_dir, log_level):
+    """Initialise logging to file and stderr, add a custom level."""
+
+    logging.ITER = 25
+    logging.raiseExceptions = True
+    logging.addLevelName(logging.ITER, "ITER")
+    logging.basicConfig(format="%(message)s")
+
+    def _log_iter(message, *args, **kwargs):
+        logger.log(logging.ITER, message, *args, **kwargs)
+
+    logger.iter = _log_iter
+
+    log_path = work_dir / "log_turbigen.txt"
+    fh = logging.FileHandler(log_path)
+    logger.addHandler(fh)
+    logger.setLevel(level=log_level)
+    fh.setLevel(log_level)
+
+
 def main():
     """Parse command-line arguments and call turbigen appropriately."""
 
@@ -96,106 +141,79 @@ def main():
     args = _make_argparser().parse_args()
 
     # Load input data in dictionary format
-    d = turbigen.yaml.read_yaml(args.CONFIG_YAML)
+    d = turbigen.yaml_utils.read_yaml(args.CONFIG_YAML)
 
-    # If we are planning to use emb
-    if d.get("solver", {}).get("type") == "emb":
-        try:
-            # Check our MPI rank
-            from mpi4py import MPI
+    # Validate and create working directory if needed
+    d["work_dir"] = work_dir = _setup_work_dir(d.get("work_dir"))
 
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
+    # Determine if we are going to iterate or not
+    iterating = d.get("iterate") and not args.no_iteration
 
-            # Jump to solver slave process if not first rank
-            if rank > 0:
-                from turbigen.solvers import emb
-
-                emb.run_slave()
-                sys.exit(0)
-
-        except ImportError:
-            # Just run serially if we cannot import mpi4py
-            print('Failed to import "mpi4py", running serially.')
-            pass
-
-    # Ensure that the workdir is always set
-    # This is because we might want to edit the input file before loading proper
-    if not (workdir := d.get("workdir")):
-        raise Exception(f"No working directory specified in {args.CONFIG_YAML}")
-
-    # Automatically number workdir if it contains placeholder
-    if "*" in workdir:
-        d["workdir"] = workdir = util.next_numbered_dir(workdir)
-
-    # Make workdir if needed
-    workdir = os.path.abspath(workdir)
-    if not os.path.exists(workdir):
-        os.makedirs(workdir, exist_ok=True)
-
-    # Set up loud logging initially
-    log_path = os.path.join(workdir, "log_turbigen.txt")
-    log_level = logging.ITER
-    fh = logging.FileHandler(log_path)
-    logger.addHandler(fh)
-    logger.setLevel(level=log_level)
-    fh.setLevel(log_level)
+    # Choose verbosity of output
+    log_level = (
+        logging.DEBUG if args.verbose else logging.ITER if iterating else logging.INFO
+    )
+    _setup_logging(work_dir, log_level)
 
     # Print banner
+    time_now = datetime.datetime.now().replace(microsecond=0).isoformat()
     logger.iter(f"*** TURBIGEN v{turbigen.__version__} ***")
-    logger.iter(
-        f"Starting at {datetime.datetime.now().replace(microsecond=0).isoformat()}"
-    )
+    logger.iter(f"Starting at {time_now}")
+    logger.iter(f"Working directory: {work_dir}")
 
-    logger.iter(f"Working directory: {workdir}")
-
-    # Write config file into the working directory
-    working_config = os.path.join(workdir, "config.yaml")
-    turbigen.yaml.write_yaml(d, working_config)
+    # Write back config file into the working directory
+    working_config = work_dir / "config.yaml"
+    turbigen.yaml_utils.write_yaml(d, working_config)
 
     # Edit the config file if requested
     if args.edit:
-        editor = os.environ.get("EDITOR")
-        subprocess.run([f"{editor}", f"{working_config}"])
+        subprocess.run([f"{os.environ.get('EDITOR')}", f"{working_config}"])
 
     start_tic = timer()
 
-    # From this point we can assume the workdir exists
+    # From this point we can assume the work_dir exists
     # and the config file is in the working directory
 
-    # Now read back into a configuration object proper
-    # to ensure that all the defaults are set,
+    # Now after possible editing, read back into a configuration
+    # object proper to ensure that all the defaults are set,
     # the config is valid, and pathnames are absolute
-    conf = turbigen.yaml.read_yaml(working_config)
+    logger.debug("Reading configuration file...")
+    conf = turbigen.yaml_utils.read_yaml(working_config)
+
+    # Load plugins from specified directory if needed
+    if plug_dir := conf.get("plug_dir"):
+        turbigen.plugins.load_plugins(Path(plug_dir))
+
+    logger.debug("Parsing into configuration object...")
     conf = turbigen.config2.TurbigenConfig(**conf)
-    logger.debug("Configuration intialised, writing back...")
+
     # Resave the config so that the internal state and
     # the YAML file are consistent (e.g. if submitting a job)
     # We have not changed grid or guess yet, so do not overwrite those pickles
-    conf.save(overwrite_pkl=False)
+    logger.debug("Writing back to ensure consistency...")
+    conf.save(working_config)
     logger.debug("Done.")
 
-    # Determine if we are overriding iteration
-    iterate_flag = conf.iterate and not args.no_iteration
-
-    # Set up logging to file
-    if args.verbose:
-        log_level = logging.DEBUG
-    else:
-        if iterate_flag:
-            log_level = logging.ITER
-        else:
-            log_level = logging.INFO
-    logger.setLevel(level=log_level)
-    fh.setLevel(log_level)
+    # Check again if iterating (editing the config could have changed value)
+    iterating = conf.iterate and not args.no_iteration
 
     # Backup the source files for later reproduction
-    util.save_source_tar_gz(conf.workdir / "src.tar.gz")
+    util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
+
+    conf.design_and_run(args.no_solve)
+
+    logger.iter(conf.format_design_vars_table())
+
+    logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
+
+    logger.iter(f"Working directory was: {work_dir}")
+
+    sys.exit(0)
 
     # If we are sampling a design space, do that and exit
     if conf.design_space and not args.no_job:
         # Put datum in non-numbered directory
-        # conf.workdir = conf.workdir / "datum"
+        # conf.work_dir = conf.work_dir / "datum"
         # conf.save()
         # If datum not ran yet, run it first
         # if not conf.mean_line_actual:
@@ -221,13 +239,13 @@ def main():
         sys.exit(0)
 
     # Iterate if requested
-    if not iterate_flag:
+    if not iterating:
         conf.design_and_run(args.no_solve)
         # Write back the config with actual meanline and grid
         conf.converged = converged = not args.no_solve
         conf.save()
     else:
-        basedir = conf.workdir
+        basedir = conf.work_dir
 
         if conf.design_space and conf.design_space.configs:
             logger.info("Initialising iterators with fitted design space.")
@@ -236,8 +254,8 @@ def main():
         logger.iter(f"Iterating for max {conf.max_iter} iterations...")
 
         for iiter in range(conf.max_iter):
-            # Set a numbered iteration workdir
-            conf.workdir = basedir / f"{iiter:03d}"
+            # Set a numbered iteration work_dir
+            conf.work_dir = basedir / f"{iiter:03d}"
 
             if conf.fac_nstep_initial != 1.0:
                 if iiter == 0:
@@ -252,9 +270,9 @@ def main():
 
             # Ensure that the iteration directory is empty
             # Do not want to pick up old meshes etc.
-            if conf.workdir.exists():
-                shutil.rmtree(conf.workdir)
-            conf.workdir.mkdir(parents=True)
+            if conf.work_dir.exists():
+                shutil.rmtree(conf.work_dir)
+            conf.work_dir.mkdir(parents=True)
 
             # Write out the config before we begin
             conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
@@ -298,7 +316,7 @@ def main():
             if converged:
                 # Copy everything from the final iteration
                 # up to the base directory
-                shutil.copytree(conf.workdir, basedir, dirs_exist_ok=True)
+                shutil.copytree(conf.work_dir, basedir, dirs_exist_ok=True)
 
                 # Move iteration configs to a subdirectory
                 # But delete the solutions and postprocessing
@@ -313,8 +331,8 @@ def main():
                         # of the one that gets copied up to the basedir
                         shutil.move(iter_dir / conf.basename, iter_conf_dest)
                     shutil.rmtree(iter_dir)
-                # Reset the workdir to the final one
-                conf.workdir = basedir
+                # Reset the work_dir to the final one
+                conf.work_dir = basedir
                 # Save the final config
                 conf.save()
                 break
@@ -324,7 +342,7 @@ def main():
 
     logger.iter(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
 
-    logger.iter(f"Working directory was: {workdir}")
+    logger.iter(f"Working directory was: {work_dir}")
 
     if not converged:
         sys.exit(1)

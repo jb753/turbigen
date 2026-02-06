@@ -3,27 +3,26 @@
 import dataclasses
 import traceback
 from copy import deepcopy
-import gzip
 import numpy as np
-import pickle
 import sys
 import importlib
 from pathlib import Path
 import turbigen.fluid
-import turbigen.flowfield
-import turbigen.meanline_design
+import turbigen.meanline_new
 import turbigen.solvers.base
 import turbigen.base
 import turbigen.iterators
 import turbigen.average
 import turbigen.op_point
-import turbigen.grid
+
 import turbigen.post
 import turbigen.geometry
-import turbigen.yaml
 import turbigen.annulus
 import turbigen.inlet
 import turbigen.mesh
+import turbigen.hmesh
+
+# import turbigen.ohmesh
 import turbigen.blade
 import turbigen.dspace
 import turbigen.nblade
@@ -32,6 +31,11 @@ from turbigen import util
 from typing import List
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
+
+import ember.grid
+import ember.cut
+import ember.average
+import ember.util
 
 logger = util.make_logger()
 
@@ -44,13 +48,16 @@ class TurbigenConfig:
 
     """
 
-    workdir: Path
+    work_dir: Path
     """Directory in which to store run data."""
+
+    fluid: turbigen.fluid.FluidConfig
+    """Equation of state."""
 
     inlet: turbigen.inlet.InletConfig
     """Settings for the inlet boundary condition."""
 
-    mean_line: turbigen.meanline_design.MeanLineDesigner
+    mean_line: turbigen.meanline_new.MeanLineConfig
     """Settings for the mean-line designer."""
 
     annulus: turbigen.annulus.AnnulusDesigner = None
@@ -89,8 +96,8 @@ class TurbigenConfig:
     """Multiplier on nstep for the first run of iterating case."""
 
     """Settings for blade number selection."""
-    grid: turbigen.grid.Grid = None
-    guess: turbigen.grid.Grid = None
+    grid: ember.grid.Grid = None
+    guess: ember.grid.Grid = None
 
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
@@ -124,20 +131,20 @@ class TurbigenConfig:
 
     @property
     def fname(self):
-        return self.workdir / self.basename
+        return self.work_dir / self.basename
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
 
     save_iteration_grids: bool = False
-    """Save grid and guess at each iteration to workdir."""
+    """Save grid and guess at each iteration to work_dir."""
 
     @property
     def nrow(self):
         return len(self.blades)
 
     def save(self, fname=None, overwrite_pkl=True, use_gzip=True, write_grids=True):
-        """Save the configuration to a YAML file inside workdir.
+        """Save the configuration to a YAML file inside work_dir.
 
         The working directory will be created if it does not exist.
         """
@@ -145,8 +152,8 @@ class TurbigenConfig:
         if fname is None:
             fname = self.fname
 
-        if not self.workdir.exists():
-            self.workdir.mkdir(parents=True)
+        if not self.work_dir.exists():
+            self.work_dir.mkdir(parents=True)
 
         # Check that the blades are not recambered
         for row in self.blades:
@@ -159,40 +166,39 @@ class TurbigenConfig:
 
         data = self.to_dict()
 
-        # Convert grid objects to filenames
-        for k in ["grid", "guess"]:
-            val = getattr(self, k)
-            # If not there remove the key
-            if val is None or not write_grids:
-                del data[k]
-            else:
-                # Otherwise, save the grid to a separate pickle
-                # and replace the grid with the filename in yaml
-                fname_pkl = self.workdir / f"{k}.pkl.gz"
-                data[k] = str(fname_pkl)
+        # # Convert grid objects to filenames
+        # for k in ["grid", "guess"]:
+        #     val = getattr(self, k)
+        #     # If not there remove the key
+        #     if val is None or not write_grids:
+        #         del data[k]
+        #     else:
+        #         # Otherwise, save the grid to a separate pickle
+        #         # and replace the grid with the filename in yaml
+        #         fname_pkl = self.work_dir / f"{k}.pkl.gz"
+        #         data[k] = str(fname_pkl)
+        #         if fname_pkl.exists() and not overwrite_pkl:
+        #             logger.debug(f"Not overwriting existing {fname_pkl}")
+        #             continue
+        #         else:
+        #             logger.debug(f"Saving {k} to {fname_pkl}")
+        #             util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
 
-                if fname_pkl.exists() and not overwrite_pkl:
-                    logger.debug(f"Not overwriting existing {fname_pkl}")
-                    continue
-                else:
-                    logger.debug(f"Saving {k} to {fname_pkl}")
-                    util.safe_pickle_dump(val, fname_pkl, zip=use_gzip)
+        # if hasattr(self.mean_line, "actual"):
+        #     data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
+        # if not data["mixed_out_flowfield"]:
+        #     del data["mixed_out_flowfield"]
 
-        if hasattr(self.mean_line, "actual"):
-            data["mixed_out_flowfield"] = self.mean_line.actual.to_dump()
-        if not data["mixed_out_flowfield"]:
-            del data["mixed_out_flowfield"]
+        # # Convert convergence history to a filename
+        # if self.solver and (conv := self.solver.convergence):
+        #     fname_conv = self.work_dir / "convergence.npz"
+        #     conv.save(fname_conv)
+        #     data["solver"]["convergence"] = str(fname_conv)
 
-        # Convert convergence history to a filename
-        if self.solver and (conv := self.solver.convergence):
-            fname_conv = self.workdir / "convergence.npz"
-            conv.save(fname_conv)
-            data["solver"]["convergence"] = str(fname_conv)
-
-        conf_fname = self.workdir / fname
+        conf_fname = self.work_dir / fname
         logger.debug(f"Saving configuration to {conf_fname}")
         try:
-            turbigen.yaml.write_yaml(data, conf_fname)
+            turbigen.yaml_utils.write_yaml(data, conf_fname)
         except Exception as e:
             logger.error(f"Failed to save configuration to {conf_fname}")
             logger.error(data)
@@ -208,16 +214,16 @@ class TurbigenConfig:
         data = dataclasses.asdict(self)
 
         # Put work and plug dir into a string
-        data["workdir"] = str(data["workdir"])
+        data["work_dir"] = str(data["work_dir"])
         if data["plugdir"]:
             data["plugdir"] = str(data["plugdir"])
 
-        # Convert the meanline designer to a dictionary
-        data["mean_line"] = self.mean_line.to_dict()
-
-        # Convert the annulus designer to a dictionary
-        if self.annulus:
-            data["annulus"] = self.annulus.to_dict()
+        # Now convert any nested objects with to_dict methods
+        for k in ["mean_line", "fluid", "annulus"]:
+            obj = getattr(self, k)
+            if not obj:
+                continue
+            data[k] = obj.to_dict()
 
         # Convert the blade designer to a dictionary
         data["blades"] = []
@@ -309,8 +315,10 @@ class TurbigenConfig:
     def __post_init__(self):
         """Convert input basic types to our desired types."""
 
-        # Convert workdir str to Path object
-        self.workdir = Path(self.workdir).absolute()
+        # Convert work_dir str to Path object
+        self.work_dir = Path(self.work_dir).absolute()
+
+        self.fluid = turbigen.fluid.FluidConfig.from_dict(self.fluid)
 
         # Convert plugdir str to Path object
         # And look for plugins
@@ -318,28 +326,23 @@ class TurbigenConfig:
             self.plugdir = Path(self.plugdir).absolute()
             self.find_plugins()
 
-        # If grid or guess is a filename, load and unpickle it
-        for k in ["grid", "guess"]:
-            val = getattr(self, k)
-            if isinstance(val, str) and not self._fast_init:
-                try:
-                    with gzip.open(Path(val), "rb") as f:
-                        setattr(self, k, pickle.load(f))
-                except gzip.BadGzipFile:
-                    # If gzip fails, try loading without it
-                    with open(Path(val), "rb") as f:
-                        setattr(self, k, pickle.load(f))
+        # # If grid or guess is a filename, load and unpickle it
+        # for k in ["grid", "guess"]:
+        #     val = getattr(self, k)
+        #     if isinstance(val, str) and not self._fast_init:
+        #         try:
+        #             with gzip.open(Path(val), "rb") as f:
+        #                 setattr(self, k, pickle.load(f))
+        #         except gzip.BadGzipFile:
+        #             # If gzip fails, try loading without it
+        #             with open(Path(val), "rb") as f:
+        #                 setattr(self, k, pickle.load(f))
 
         # Convert inlet dict to InletConfig object
-        self.inlet = util.init_subclass_by_signature(
-            turbigen.inlet.InletConfig, self.inlet
-        )
+        self.inlet = turbigen.inlet.InletConfig(**self.inlet)
 
         # Set up the meanline designer
-        MeanLineDesigner = util.get_subclass_by_name(
-            turbigen.meanline_design.MeanLineDesigner, self.mean_line.pop("type")
-        )
-        self.mean_line = MeanLineDesigner(self.mean_line)
+        self.mean_line = turbigen.meanline_new.MeanLineConfig.from_dict(self.mean_line)
 
         if isinstance(self.mixed_out_flowfield, dict):
             self.mean_line.actual = turbigen.meanline_data.meanline_from_dump(
@@ -379,9 +382,11 @@ class TurbigenConfig:
 
         # Set up the mesher
         if self.mesh:
-            Mesher = util.get_subclass_by_name(
-                turbigen.mesh.Mesher, self.mesh.pop("type", "h")
-            )
+            mesh_type = self.mesh.pop("type", "h")
+            if mesh_type == "h":
+                Mesher = turbigen.hmesh.H
+            elif mesh_type == "oh":
+                Mesher = turbigen.ohmesh.OH
             self.mesh = Mesher(**self.mesh)
 
         # Lazy import the solver
@@ -478,7 +483,7 @@ class TurbigenConfig:
             if isinstance(self.design_space, dict):
                 self.design_space = turbigen.dspace.DesignSpace(**self.design_space)
                 if not self.design_space.basedir:
-                    self.design_space.basedir = Path(self.workdir)
+                    self.design_space.basedir = Path(self.work_dir)
                 else:
                     self.design_space.basedir = Path(self.design_space.basedir)
             self.design_space.setup()
@@ -486,23 +491,15 @@ class TurbigenConfig:
     def get_mean_line_nominal(self):
         """Calculate the nominal mean-line flow field."""
 
-        So1 = self.inlet.get_inlet()
-        logger.info(f"Inlet: {So1}")
-
         # Mean-line design
-        self.mean_line.setup_mean_line(So1)
+        self.mean_line.set_nominal(self.fluid.fluid)
         logger.info(self.mean_line.nominal)
 
         # Check mean-line design for problems
-        logger.debug("Checking mean-line conservation...")
-        if not self.mean_line.nominal.check():
-            self.mean_line.nominal.show_debug()
-            raise Exception(
-                "Mean-line conservation checks failed, have printed debugging information"
-            ) from None
-        logger.debug("Checking mean-line inversion...")
-        self.mean_line.check_backward(self.mean_line.nominal)
-        self.mean_line.nominal.warn()
+        logger.debug("Checking mean-line...")
+        self.mean_line.check_nominal()
+
+        self.mean_line.warn()
 
     def get_geometry(self):
         """Get the annulus and blade geometry."""
@@ -516,6 +513,9 @@ class TurbigenConfig:
 
         self.annulus.setup_annulus(self.mean_line.nominal)
         logger.info(f"{self.annulus}")
+
+        # Copy annulus x-coords into the mean-line
+        self.mean_line.nominal.set_x(self.annulus.x_rms)
 
         # Blade design
         logger.info("Designing blades...")
@@ -544,7 +544,7 @@ class TurbigenConfig:
     def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
         # Warn if blade spacings are too narrow or wide
         rref = 0.5 * (
-            self.mean_line.nominal.rrms[::2] + self.mean_line.nominal.rrms[1::2]
+            self.mean_line.nominal.r_rms[::2] + self.mean_line.nominal.r_rms[1::2]
         )
         s = 2.0 * np.pi * rref / self.get_nblade()
         s_cm = s / self.annulus.chords(0.5)[1:-1:2]
@@ -606,26 +606,18 @@ class TurbigenConfig:
             sys.exit(0)
 
         # Find wall distances for each row
-        dsurf = np.array(
-            [
-                self.mesh.get_dwall(
-                    self.mean_line.nominal.get_row(irow),
-                    self.blades[irow][0].surface_length(0.5),
-                )
-                for irow in range(len(self.blades))
-            ]
-        )
+        dsurf = self.calculate_d_wall()
 
         # Hub and casing wall distances are row means
         dhub = dcas = np.mean(dsurf)
 
-        mesh_dir = self.workdir / self.mesh.meshdir
+        mesh_dir = self.work_dir / self.mesh.meshdir
         Omega = self.mean_line.nominal.Omega[::2]
         self.grid = self.mesh.make_grid(
             mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
         )
 
-        logger.info(f"ncell/1e6={self.grid.ncell / 1e6:.1f}")
+        logger.info(f"n_cell/1e6={self.grid.size / 1e6:.1f}")
 
         # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
@@ -637,7 +629,7 @@ class TurbigenConfig:
         # plt.show()
         #
         self.grid.check_coordinates()
-        self.grid.calculate_wall_distance()
+        self.grid.calculate_wdist()
 
         # Reset camber
         for irow, row in enumerate(self.blades):
@@ -645,15 +637,6 @@ class TurbigenConfig:
             # main and splitters
             for blade in row:
                 blade.set_streamsurface(self.annulus.xr_row(irow))
-
-        # Choose whether the blocks are real or perfect
-        So1 = self.inlet.get_inlet()
-        if isinstance(So1, turbigen.fluid.PerfectState):
-            self.grid = turbigen.grid.Grid([b.to_perfect() for b in self.grid])
-        elif isinstance(So1, turbigen.fluid.RealState):
-            self.grid = turbigen.grid.Grid([b.to_real() for b in self.grid])
-        else:
-            raise Exception("Unrecognised inlet state type")
 
     def get_machine(self):
         return turbigen.geometry.Machine(
@@ -665,6 +648,10 @@ class TurbigenConfig:
         Omega = self.mean_line.nominal.Omega[::2].copy()
         Pout = self.mean_line.nominal.P[-1]
         mdot = self.mean_line.nominal.mdot[-1]
+        Po1 = self.mean_line.nominal.Po[0]
+        To1 = self.mean_line.nominal.To[0]
+        Alpha1 = self.mean_line.nominal.Alpha[0]
+        Beta1 = self.mean_line.nominal.Beta[0]
 
         # Alter the operating point if needed
         if self.operating_point:
@@ -701,14 +688,15 @@ class TurbigenConfig:
                 rot_types.append("stationary")
         self.grid.apply_rotation(rot_types, Omega)
 
-        # Inlet boundary condition
-        # Set inlet pitch angle using orientation of
-        # the inlet patch grid (assuming on a constant i face)
-        # This allow the annulus lines to differ from mean-line pitch angle
-        Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
-        Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
-        Alpha1 = self.mean_line.nominal.Alpha[0]
-        self.grid.apply_inlet(self.inlet.get_inlet(), Alpha1, Beta1)
+        # # Inlet boundary condition
+        # # Set inlet pitch angle using orientation of
+        # # the inlet patch grid (assuming on a constant i face)
+        # # This allow the annulus lines to differ from mean-line pitch angle
+        # Ain = self.grid.inlet_patches[0].get_cut().dAi.sum(axis=(-1, -2, -3))
+        # Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
+        # Alpha1 = self.mean_line.nominal.Alpha[0]
+
+        self.grid.patches.inlet[0].set_inlet(Po1, To1, Alpha1, Beta1)
 
         # Apply profile if available
         if self.inlet.profiles is not None:
@@ -719,7 +707,7 @@ class TurbigenConfig:
             )
 
         # Outlet boundary condition
-        self.grid.apply_outlet(Pout)
+        self.grid.patches.outlet[0].set_P(Pout)
 
     def apply_guess(self):
         # Apply 3D guess if available
@@ -729,24 +717,23 @@ class TurbigenConfig:
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
-            self.grid.apply_guess_meridional(
-                self.mean_line.nominal.interpolate_guess(self.annulus)
-            )
+            self.grid.apply_guess_meridional(self.mean_line.nominal, refine_factor=50)
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case
-        self.grid.update_outlet()
+        self.grid.update_P_out()
 
     def run_solver(self):
         if not self.solver:
             logger.error("No solver configured, quitting.")
             sys.exit(0)
 
-        run_args = self.grid, self.get_machine, self.workdir / "solve"
+        run_args = self.grid, self.get_machine, self.work_dir / "solve"
 
         if self.solver.soft_start:
             logger.info("Soft start...")
             self.solver.robust().run(*run_args)
+        logger.info("Running solver")
         self.solver.run(*run_args)
 
     def get_mean_line_actual(self):
@@ -755,36 +742,34 @@ class TurbigenConfig:
         # Find meridional coordinates of the cut planes
         xr_cut = self.annulus.get_offset_planes(self.cut_offset)
 
-        # Take the cuts, form a list of [(Cmix, Amix, Dsmix)]
-        cuts = [
-            turbigen.average.mix_out_unstructured(
-                self.grid.unstructured_cut_marching(xri)
-            )
-            for xri in xr_cut
-        ]
+        # Take the cuts
+        cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
-        # Unpack the list
-        Cmix, Amix, Dsmix = zip(*cuts)
+        # Mix out and assemble into actual mean-line flow field
+        self.mean_line.actual = self.mean_line.nominal.copy()
+        for i, C in enumerate(cuts):
+            try:
+                Cm = ember.average.mix_out(C)
+            except Exception:
+                print("Failed to mix out row", i)
+                print(C.conserved.mean(axis=(0, 1)))
+                print(C.xrt.mean(axis=(0, 1)))
+                print(C.shape)
+                print(f"{C.dA.shape=}")
+                print(f"{C.dA_tri.shape=}")
+                print(f"{C.dA_quad.shape=}")
+                print(C.dA[..., 0].min(), C.dA[..., 0].max())
+                print("t", C.t.min(), C.t.max())
+                print(ember.average.total_area(C))
+                print(ember.average.flow_conserved(C))
+                quit()
+            self.mean_line.actual[i].set_r_rms(Cm.r)
+            self.mean_line.actual[i].set_conserved(Cm.conserved)
 
-        # Stack the cuts to form a mean-line flow field
-        Call = turbigen.base.stack(Cmix)
-
-        # Copy Omega and Nb from nominal
-        Call.Omega = np.concatenate(
-            [g[0].Omega.flat[0] * np.ones((2,)) for g in self.grid.row_blocks]
-        )
-        Nb = np.concatenate(
-            [g[0].Nb * np.ones((2,)) for g in self.grid.row_blocks]
-        ).astype(int)
-
-        # Assemble the meanline flowfield
-        self.mean_line.actual = turbigen.meanline_data.make_mean_line_from_flowfield(
-            Amix, Call, Dsmix
-        )
-        self.mean_line.actual.Nb = self.mean_line.nominal.Nb = Nb
+        print(self.mean_line.actual.to_string())
 
         # Back-calculate the design variables
-        self.mean_line_actual = self.mean_line.backward(self.mean_line.actual)
+        self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)
 
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
@@ -903,7 +888,59 @@ class TurbigenConfig:
 
         return table_pad
 
+    def calculate_Re_surf(self):
+        """Calculate surface Reynolds number for all rows.
+
+        Returns
+        -------
+        Re_surf : (nrow,) ndarray
+            Surface Reynolds number for each blade row.
+        """
+        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
+        L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
+        ell = self.get_ell()
+        return ell / L_visc
+
+    def calculate_d_wall(self):
+        """Calculate wall cell spacing for all rows using flat plate correlations.
+
+        Uses the viscous length scale from local flow properties and yplus
+        setting to estimate the wall-normal cell spacing required for
+        resolving the boundary layer.
+
+        Returns
+        -------
+        d_wall : (nrow,) ndarray
+            Wall cell spacing for each blade row [m].
+        """
+        Re_surf = self.calculate_Re_surf()
+        row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
+
+        # Flat plate skin friction correlation
+        Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
+
+        # Shear stress at wall
+        tauw = (
+            Cf
+            * 0.5
+            * np.array([row.rho for row in row_ref])
+            * np.array([row.V_rel**2 for row in row_ref])
+        )
+
+        # Friction velocity
+        Vtau = np.sqrt(tauw / np.array([row.rho for row in row_ref]))
+
+        # Viscous length scale
+        Lvisc = (
+            np.array([row.mu for row in row_ref])
+            / np.array([row.rho for row in row_ref])
+            / Vtau
+        )
+
+        return self.mesh.yplus * Lvisc
+
     def set_mu_from_Re_surf(self):
+        raise NotImplementedError("set_mu_from_Re_surf is not implemented yet.")
         ell = self.get_ell()
         ml = self.mean_line.nominal
         mu = (ml.rho_ref * ml.V_ref * ell)[0] / self.Re_surf
@@ -932,18 +969,17 @@ class TurbigenConfig:
 
         self.get_mean_line_nominal()
 
-        # Print real gas table limits
-        if isinstance(self.mean_line.nominal, turbigen.fluid.RealState):
-            self.show_table_limits()
+        logger.info(self.mean_line.nominal.to_string())
 
         self.get_geometry()
         self.apply_recamber()
 
         self.check_pitch_chord()
+
         logger.info(f"Nblade: {self.get_nblade()}")
         logger.info(f"Tip gaps [m]: {self.get_gaps()}")
 
-        # Handle restarts
+        # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
             self.guess = self.grid
@@ -953,7 +989,8 @@ class TurbigenConfig:
         # Set viscosity from Reynolds number if given
         if self.Re_surf:
             self.set_mu_from_Re_surf()
-        Re_surf = self.get_ell() / self.mean_line.nominal.L_visc
+
+        Re_surf = self.calculate_Re_surf()
         logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
         # We are now ready to generate mesh and run CFD
@@ -978,6 +1015,7 @@ class TurbigenConfig:
         # The flow field is ready in grid, post-process it
         self.get_mean_line_actual()
         self.undo_recamber()
+
         logger.info("Post-processing...")
         if not skip_post:
             self.post_process_all()
@@ -1028,7 +1066,7 @@ class TurbigenConfig:
 
     def post_process_all(self):
         # Initialise the pdf
-        with PdfPages(self.workdir / "post.pdf") as pdf:
+        with PdfPages(self.work_dir / "post.pdf") as pdf:
             for poster in self.post_process:
                 logger.debug(f"Running post function {poster}")
                 try:

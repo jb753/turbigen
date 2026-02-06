@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 import dataclasses
-import numpy as np
 
 
 @dataclasses.dataclass
@@ -29,15 +28,3 @@ class Mesher(ABC):
             Wall cell sizes on each blade surface [m].
         """
         raise NotImplementedError
-
-    def get_dwall(self, mean_line, ell):
-        """Estimate wall spacing for a single blade row."""
-
-        # Use flat plate correlations to get viscous length scale
-        Re_surf = ell / mean_line.L_visc
-        Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
-        tauw = Cf * 0.5 * (mean_line.rho_ref * mean_line.V_ref**2)
-        Vtau = np.sqrt(tauw / mean_line.rho_ref)
-        Lvisc = (mean_line.mu_ref / mean_line.rho_ref) / Vtau
-
-        return (self.yplus * Lvisc).squeeze()

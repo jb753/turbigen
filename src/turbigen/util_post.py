@@ -1,6 +1,125 @@
 """Functions for post processing, without plotting."""
 
 import numpy as np
+import ember.block
+import ember.patch
+
+
+def get_zeta(block):
+    """Calculate arc length along i-gridlines.
+
+    Computes cumulative arc length along the i-direction (axis 0) for each
+    j-k gridline. The arc length starts at zero at i=0 and increases along
+    the i-direction.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        Block with initialized x, r, t coordinates
+
+    Returns
+    -------
+    ndarray, shape (ni, nj, nk)
+        Cumulative arc length along each i-gridline, with zeta=0 at i=0
+
+    Notes
+    -----
+    Arc length is calculated in Cartesian (x, y, z) coordinates where:
+    - y = r * sin(t)
+    - z = r * cos(t)
+    """
+    # Convert cylindrical to Cartesian coordinates
+    x = block.x
+    y = block.r * np.sin(block.t)
+    z = block.r * np.cos(block.t)
+
+    # Stack coordinates: shape (3, ni, nj, nk)
+    xyz = np.stack((x, y, z))
+
+    # Calculate differences along i-direction (axis=1 in xyz array)
+    dxyz = np.diff(xyz, n=1, axis=1) ** 2.0
+
+    # Sum squared differences and take sqrt to get segment lengths
+    # Shape: (1, ni-1, nj, nk)
+    ds = np.sqrt(np.sum(dxyz, axis=0, keepdims=True))
+
+    # Cumulative sum with initial zero
+    # Insert 0 at beginning along i-direction, shape: (1, ni, nj, nk)
+    zeta = np.insert(np.cumsum(ds, axis=1), 0, 0.0, axis=1)
+
+    # Remove leading dimension and return: shape (ni, nj, nk)
+    return zeta[0]
+
+
+def get_i_stag(block):
+    """Find i-index of stagnation point for each j-line in a 2D block.
+
+    Locates the stagnation point by finding pressure maxima near the leading
+    edge of each spanwise (j) gridline. Uses rotary static pressure to account
+    for centrifugal pressure gradients in rotating frames.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        2D block (shape (ni, nj)) with initialized flow field
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        i-index of stagnation point for each j-line
+
+    Raises
+    ------
+    ValueError
+        If block is not 2D (ndim != 2)
+        If no valid stagnation point found on any j-line
+
+    Notes
+    -----
+    Algorithm:
+    1. Uses rotary static pressure (P_rot) to remove centrifugal effects
+    2. Normalizes arc length to [-1, 1] on each j-line
+    3. Finds pressure maxima (downward zero crossings of dP/dzeta)
+    4. Filters to keep only maxima near LE (|zeta_normalized| < 0.2)
+    5. Selects candidate with highest pressure
+    """
+    if block.ndim != 2:
+        raise ValueError(
+            f"Can only find stagnation point on 2D cuts; "
+            f"this block has shape {block.shape}"
+        )
+
+    # Use rotary static pressure to remove centrifugal pressure gradient
+    P = block.P_rot
+
+    # Get arc length and normalize to [-1, 1] on each j-line
+    zeta = get_zeta(block)
+    z = zeta / np.ptp(zeta, axis=0) * 2.0 - 1.0
+
+    # Find pressure maxima on each j-line
+    _, nj = block.shape[:2]
+    i_stag = np.full((nj,), 0, dtype=int)
+
+    for j in range(nj):
+        # Calculate pressure gradient
+        dP = np.diff(P[:, j])
+
+        # Find indices of downward zero crossings (pressure maxima)
+        # Looking for where gradient changes from positive to negative
+        izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
+
+        # Only keep maxima close to leading edge
+        izj = izj[np.abs(z[izj, j]) < 0.2]
+
+        # Select the candidate with maximum pressure
+        if len(izj):
+            # Take the point with highest pressure among candidates
+            i_stag[j] = izj[np.argmax(P[izj, j])]
+        else:
+            # Take highest pressure anywhere if none near LE
+            i_stag[j] = np.argmax(P[:, j])
+
+    return i_stag
 
 
 def get_isen_mach(
@@ -246,3 +365,129 @@ def separate_waves(F, fs):
     W = np.flip(Pwav, axis=0)
 
     return W, err, f
+
+
+def cut_blade_sides(grid, offset=0):
+    """Nested list of pressure/suction side cuts in each row.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        Grid object containing the turbomachinery geometry
+    offset : int
+        Number of cells away from blade surface (default 0)
+
+    Returns
+    -------
+    list
+        Nested list where each element corresponds to a row.
+        For each row, returns [Ck0, Cnk] (pressure/suction sides) or None if not found.
+    """
+
+    # Assuming a H-mesh
+    cuts = []
+
+    for i in range(len(grid.rows)):
+        # Check periodics first
+        ile = None
+        ite = None
+
+        # Iterate over blocks in this row
+        for block in grid.rows[i]:
+            # Check periodic patches on this block
+            for patch in block.patches.periodic:
+                # Check if this is a same-block periodic (pitch-wise)
+                # For H-mesh, we look for periodics at k boundary that span j but not i
+                lim = patch.ijk_lim_abs
+                spans_j = np.allclose(lim[1], [0, block.shape[1] - 1])
+                spans_i = np.allclose(lim[0], [0, block.shape[0] - 1])
+                # Check if at k=0 or k=-1 boundary (single plane)
+                at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
+                    lim[2, 0] == 0 or lim[2, 0] == block.shape[2] - 1
+                )
+
+                if spans_j and at_k_boundary and not spans_i:
+                    if lim[0, 0] == 0:
+                        ile = lim[0, 1]
+                    elif lim[0, 1] == block.shape[0] - 1:
+                        ite = lim[0, 0]
+
+            # Now check cusps and inviscid patches
+            for patch in block.patches:
+                if isinstance(
+                    patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
+                ):
+                    ite = patch.ijk_lim_abs[0, 0]
+
+        if not ile or not ite:
+            cuts.append(None)
+            continue
+
+        # Get both sides
+        Ck0 = grid[i][ile : (ite + 1), :, None, 0 + offset].copy()
+        Cnk = grid[i][ile : (ite + 1), :, None, -1 - offset].copy()
+
+        # Clear patches as they are no longer valid for sliced blocks
+        Ck0.patches.clear()
+        Cnk.patches.clear()
+
+        C = [Ck0, Cnk]
+
+        # Find the side at highest theta and adjust by pitch
+        iu = np.argmax([Ci.t.max() for Ci in C])
+        C[iu].set_t(C[iu].t - grid[i].pitch)
+
+        cuts.append(C)
+
+    return cuts
+
+
+def cut_blade_surfs(grid, offset=0):
+    """O-mesh style cuts for the blades in each row.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        Grid object containing the turbomachinery geometry
+    offset : int
+        Number of cells away from blade surface (default 0)
+
+    Returns
+    -------
+    list
+        Nested list where each element corresponds to a row.
+        For each row, returns a list of blade surface cuts (FlowField objects).
+    """
+
+    surfs = []
+
+    # Check if this is an H-mesh (one block per row)
+    is_hmesh = len(grid) == len(grid.rows)
+
+    if is_hmesh:
+        row_sides = cut_blade_sides(grid, offset)
+        for sides in row_sides:
+            if sides is None:
+                surfs.append(None)
+            else:
+                cut_now = ember.block.concatenate(
+                    sides[0].flip(axis=0), sides[1][1:, ...], axis=0
+                )
+                surfs.append([cut_now])
+    else:
+        for row_block in grid.rows:
+            # Preallocate list for this row
+            surfs.append([])
+
+            # Determine full span nj as the modal nj in this row
+            nj_vals, nj_counts = np.unique(
+                [b.shape[1] for b in row_block], return_counts=True
+            )
+            nj = nj_vals[np.argmax(nj_counts)]
+
+            # Loop over blocks and find o-meshes
+            for b in row_block:
+                if np.allclose(b[0, :, 0].xrt, b[-1, :, 0].xrt) and b.shape[1] == nj:
+                    surfs[-1].append(b[:, :, None, offset])
+
+    return surfs
