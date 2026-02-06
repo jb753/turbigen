@@ -8,10 +8,6 @@ fluid:
   gamma: 1.4
   mu: 1e-5
 
-inlet:
-  Po: 1e5
-  To: 300.
-
 mean_line:
   type: custom
   n_row: 1

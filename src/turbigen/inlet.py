@@ -15,12 +15,6 @@ class InletConfig:
 
     """
 
-    Po: float
-    """Inlet stagnation pressure [Pa]."""
-
-    To: float
-    """Inlet stagnation temperature [K]."""
-
     spf: list = None
     """Span fraction of some radial stations running 0 to 1."""
 

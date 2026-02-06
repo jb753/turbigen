@@ -11,6 +11,12 @@ import inspect
 f32 = np.float32
 
 
+# Configure pdoc to show inherited members for Station class
+__pdoc__ = {
+    "Station": True,
+}
+
+
 class MeanLineConfig:
     """Configuration for a MeanLine object."""
 

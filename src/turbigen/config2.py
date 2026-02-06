@@ -54,11 +54,11 @@ class TurbigenConfig:
     fluid: turbigen.fluid.FluidConfig
     """Equation of state."""
 
-    inlet: turbigen.inlet.InletConfig
-    """Settings for the inlet boundary condition."""
-
     mean_line: turbigen.meanline_new.MeanLineConfig
     """Settings for the mean-line designer."""
+
+    inlet: turbigen.inlet.InletConfig = None
+    """Settings for the inlet boundary condition."""
 
     annulus: turbigen.annulus.AnnulusDesigner = None
     """Settings for the annulus designer."""
@@ -339,7 +339,8 @@ class TurbigenConfig:
         #                 setattr(self, k, pickle.load(f))
 
         # Convert inlet dict to InletConfig object
-        self.inlet = turbigen.inlet.InletConfig(**self.inlet)
+        if self.inlet:
+            self.inlet = turbigen.inlet.InletConfig(**self.inlet)
 
         # Set up the meanline designer
         self.mean_line = turbigen.meanline_new.MeanLineConfig.from_dict(self.mean_line)

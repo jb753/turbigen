@@ -78,6 +78,7 @@ dev = [
     'twine',
     'bump-my-version',
     'pyqt6',
+    'pdoc',
 ]
 
 [tool.uv]
