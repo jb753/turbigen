@@ -45,3 +45,4 @@ tests/*.log
 tests/bench.dat
 src/ember/*wrapper*
 src/ember/embercmodule.c
+.gitlab-ci-local/
