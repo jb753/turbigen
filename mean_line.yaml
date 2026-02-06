@@ -1,0 +1,22 @@
+plug_dir: plug
+
+work_dir: test_run
+
+fluid:
+  type: perfect
+  cp: 1005
+  gamma: 1.4
+  mu: 1e-5
+
+inlet:
+  Po: 1e5
+  To: 300.
+
+mean_line:
+  type: custom
+  n_row: 1
+  Ys: 0.
+  Ma2: 0.6
+  Alpha: [-35, 60.]
+  span: [0.1, 0.11]
+  htr: 0.9

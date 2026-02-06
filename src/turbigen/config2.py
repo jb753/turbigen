@@ -79,7 +79,7 @@ class TurbigenConfig:
     solver: turbigen.solvers.base.BaseSolver = None
     """Settings for flow solution."""
 
-    plugdir: Path = None
+    plug_dir: Path = None
     """Directory to search for custom plugins."""
 
     operating_point: turbigen.op_point.OperatingPoint = None
@@ -215,8 +215,8 @@ class TurbigenConfig:
 
         # Put work and plug dir into a string
         data["work_dir"] = str(data["work_dir"])
-        if data["plugdir"]:
-            data["plugdir"] = str(data["plugdir"])
+        if data["plug_dir"]:
+            data["plug_dir"] = str(data["plug_dir"])
 
         # Now convert any nested objects with to_dict methods
         for k in ["mean_line", "fluid", "annulus"]:
@@ -289,9 +289,9 @@ class TurbigenConfig:
     def find_plugins(self):
         """Find and load plugins from the plugdir."""
 
-        logger.iter(f"Importing plugins from {self.plugdir}")
+        logger.iter(f"Importing plugins from {self.plug_dir}")
         # Find all python files recursively in the plugdir
-        py_files = list(self.plugdir.rglob("*.py"))
+        py_files = list(self.plug_dir.rglob("*.py"))
         for py_file in py_files:
             # Exclude hidden files and directories
             if any(part.startswith(".") for part in py_file.parts):
@@ -322,8 +322,8 @@ class TurbigenConfig:
 
         # Convert plugdir str to Path object
         # And look for plugins
-        if self.plugdir:
-            self.plugdir = Path(self.plugdir).absolute()
+        if self.plug_dir:
+            self.plug_dir = Path(self.plug_dir).absolute()
             self.find_plugins()
 
         # # If grid or guess is a filename, load and unpickle it
