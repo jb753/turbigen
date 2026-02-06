@@ -8,6 +8,37 @@ import turbigen.thickness
 logger = util.make_logger()
 
 
+class VortexDistribution:
+    """Evaluate spanwise vortex distribution."""
+
+    def __init__(self, ml, vortex_expon):
+        """Store a mean-line station and vortex exponent."""
+        self.ml = ml
+        self.vortex_expon = vortex_expon
+
+    def r(self, spf):
+        """Radius at a given span fraction. [m]"""
+        if not np.shape(spf) == ():
+            spf = spf.reshape(-1, 1)
+        return self.ml.r_hub * (1.0 - spf) + self.ml.r_cas * spf
+
+    def Vt(self, spf):
+        """Tangential velocity at a given span fraction. [m/s]"""
+        return self.ml.Vt * (self.r(spf) / self.ml.r_rms) ** self.vortex_expon
+
+    def Vt_rel(self, spf):
+        """Relative tangential velocity at a given span fraction. [m/s]"""
+        return self.Vt(spf) - self.ml.Omega * self.r(spf)
+
+    def Alpha(self, spf):
+        """Flow angle at a given span fraction. [deg]"""
+        return np.degrees(np.arctan(self.Vt(spf) / self.ml.Vm))
+
+    def Alpha_rel(self, spf):
+        """Relative flow angle at a given span fraction. [deg]"""
+        return np.degrees(np.arctan(self.Vt_rel(spf) / self.ml.Vm))
+
+
 @dataclasses.dataclass
 class BladeDesigner:
     """Store design variables for a blade."""
@@ -64,12 +95,12 @@ class BladeDesigner:
         nsect = len(self.spf)
         self.thick = np.atleast_2d(self.thick)
         self.camber = np.atleast_2d(self.camber)
-        assert self.thick.shape[0] == nsect, (
-            f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
-        )
-        assert self.camber.shape[0] == nsect, (
-            f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
-        )
+        assert (
+            self.thick.shape[0] == nsect
+        ), f"Wrong number of sections for thickness, expected {nsect}, got {self.thick.shape[0]}"
+        assert (
+            self.camber.shape[0] == nsect
+        ), f"Wrong number of sections for camber, expected {nsect}, got {self.camber.shape[0]}"
 
     def to_dict(self):
         # Built-in dataclasses method gets us most of the way there
@@ -98,7 +129,8 @@ class BladeDesigner:
         if self.is_recambered:
             raise ValueError("The blade is already recambered, cannot recamber again.")
         # Calculate the local flow angles
-        Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+        vortex = VortexDistribution(mean_line, self.vortex_expon)
+        Alpha_rel = vortex.Alpha_rel(self.spf)
         # Add the recamber angles to get the local angle
         dchi = self.camber[:, :2]
         logger.debug(
@@ -147,7 +179,11 @@ class BladeDesigner:
 
     def undo_recamber(self, mean_line):
         """Convert the stored tanchi back to recamber angles."""
-        Alpha_rel = mean_line.Alpha_rel_free_vortex(self.spf, self.vortex_expon)
+
+        # Calculate the local flow angles
+        vortex = VortexDistribution(mean_line, self.vortex_expon)
+        Alpha_rel = vortex.Alpha_rel(self.spf)
+
         if not self.is_recambered:
             raise ValueError("The blade is not recambered, cannot undo recambering.")
         # Subtract the local flow angles to get the recamber angles
@@ -161,9 +197,9 @@ class BladeDesigner:
         mq = spfq = np.linspace(0.0, 1.0)
         chord = util.arc_length(self.streamsurface(0.5, mq))
         span = util.arc_length(self.streamsurface(spfq, 0.5))
+        logger.debug(f"Setting thick_ref={self.thick_ref}, chord={chord}, span={span}")
         if self.thick_ref == "span":
             self._thick_scale = span / chord
-            print(self._thick_scale, span, chord)
         elif self.thick_ref == "absolute":
             self._thick_scale = 1.0 / chord
         elif self.thick_ref == "chord":
