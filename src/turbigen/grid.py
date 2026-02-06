@@ -4,7 +4,6 @@ import numpy as np
 from copy import copy
 from turbigen.base import dependent_property, concatenate
 from turbigen import util
-import turbigen.yaml
 import turbigen.fluid
 import turbigen.base
 import turbigen.flowfield
@@ -1552,10 +1551,9 @@ class Grid:
         for block in self:
             # wmax = 2.0 * np.pi * block.r.max() / block.Nb * 0.1
 
-            block.w = kdtree.query(
-                block.flatten().xrrt.T,
-                workers=-1,
-            )[0].reshape(block.shape)
+            block.w = kdtree.query(block.flatten().xrrt.T, workers=-1,)[
+                0
+            ].reshape(block.shape)
 
     def apply_guess_uniform(self, F):
         for b in self:
@@ -2154,9 +2152,9 @@ class InletPatch(Patch):
 
         if self.force_factor is not None:
             fac = self.force_factor
-            assert np.shape(fac) == (nt,), (
-                f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
-            )
+            assert np.shape(fac) == (
+                nt,
+            ), f"Force factor shape {np.shape(fac)} does not match (nt,)=({nt},)"
             print("Using pre-defined force factor for inlet patch")
         else:
             # Start with a steady unity factor
@@ -2185,12 +2183,12 @@ class InletPatch(Patch):
         else:
             raise Exception(f"Unknown inlet forcing type {self.force}")
 
-        assert np.abs(np.mean(fac_Po) - 1) < 1e-3, (
-            f"Mean inlet Po factor {np.mean(fac_Po)} is not unity!"
-        )
-        assert np.abs(np.mean(fac_ho) - 1) < 1e-3, (
-            f"Mean inlet ho factor {np.mean(fac_ho)} is not unity!"
-        )
+        assert (
+            np.abs(np.mean(fac_Po) - 1) < 1e-3
+        ), f"Mean inlet Po factor {np.mean(fac_Po)} is not unity!"
+        assert (
+            np.abs(np.mean(fac_ho) - 1) < 1e-3
+        ), f"Mean inlet ho factor {np.mean(fac_ho)} is not unity!"
 
         return fac_ho, fac_Po
 

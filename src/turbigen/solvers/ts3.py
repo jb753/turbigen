@@ -10,7 +10,7 @@ import turbigen.grid
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
-from turbigen import yaml
+from turbigen import yaml_utils
 from pathlib import Path
 import signal
 import sys
@@ -978,7 +978,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
             if bmeta:
                 probe_metadata[ib] = bmeta
 
-        yaml.write_yaml(probe_metadata, probe_shape_path)
+        yaml_utils.write_yaml(probe_metadata, probe_shape_path)
 
     # Now check that patch and block ids are consistent
     logger.debug("Checking np")
@@ -1444,7 +1444,7 @@ def read_probe_metadata(dname):
 
     # Read the metadata yaml
     probe_meta_path = os.path.join(dname, "probe_meta.yaml")
-    probe_meta = yaml.read_yaml(probe_meta_path)
+    probe_meta = yaml_utils.read_yaml(probe_meta_path)
 
     # Parse the bid and pid from the file names
     bid, pid = zip(
@@ -1938,7 +1938,7 @@ def _get_probe_metadata(fname, dname, point):
         bid, pid = (int(x) for x in os.path.basename(fname)[:-4].split("_")[-2:])
 
         # Extract shape from metadata
-        probe_meta = yaml.read_yaml(probe_meta_path)
+        probe_meta = yaml_utils.read_yaml(probe_meta_path)
         shape = tuple(probe_meta[bid][pid]["shape"])
         Omega = float(probe_meta[bid][pid]["Omega"])
 
