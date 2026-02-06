@@ -22,8 +22,6 @@ variables:
 build_test_wheel:
   stage: build
   script:
-    - apt update && apt install -y gfortran
-    - ./scripts/generate_meson.sh
     - curl -sSL https://get.docker.com/ | sh
     - uv pip install cibuildwheel
     - cibuildwheel --only cp311-manylinux_x86_64 --output-dir dist .
@@ -40,35 +38,22 @@ tests:
     - uv pip install dist/*.whl pytest
     - pytest --slow
 
-profile:
-  stage: deploy
-  script:
-    - apt update && apt install -y gfortran libopenmpi-dev
-    - uv pip install mpi4py line_profiler==4.2.0 dist/*.whl
-    # Serial profiling.
-    - OMP_NUM_THREADS=1 LINE_PROFILE=1 turbigen examples/axial_turbine.yaml -I
-    - cat profile_output.txt
-    # Now parallel benchmarking
-    - ./scripts/benchmark.sh
-
-doc:
-  stage: deploy
-  artifacts:
-    paths:
-      - doc/_build
-  script:
-    - apt update && apt install -y pdf2svg fonts-freefont-ttf
-    - uv pip install dist/*.whl sphinx~=8.0.0 sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
-    - python doc/generate_examples.py
-    - python doc/generate_meanline.py
-    - python doc/generate_data_structures.py
-    - sphinx-build -W doc doc/_build
+# doc:
+#   stage: deploy
+#   artifacts:
+#     paths:
+#       - doc/_build
+#   script:
+#     - apt update && apt install -y pdf2svg fonts-freefont-ttf
+#     - uv pip install dist/*.whl sphinx~=8.0.0 sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
+#     # - python doc/generate_examples.py
+#     - python doc/generate_meanline.py
+#     - python doc/generate_data_structures.py
+#     - sphinx-build -W doc doc/_build
 
 build_all_wheels:
   stage: deploy
   script:
-    - apt update && apt install -y gfortran
-    - ./scripts/generate_meson.sh
     - curl -sSL https://get.docker.com/ | sh
     - uv pip install cibuildwheel
     - cibuildwheel --platform linux --output-dir dist .
@@ -79,22 +64,22 @@ build_all_wheels:
     paths:
       - dist
 
-pypi:
-  stage: publish
-  script:
-    - uv pip install twine
-    - ls -l dist
-    - twine upload dist/*
-  only:
-    - master
+# pypi:
+#   stage: publish
+#   script:
+#     - uv pip install twine
+#     - ls -l dist
+#     - twine upload dist/*
+#   only:
+#     - master
 
 
-pages:
-  stage: publish
-  script:
-    - mv doc/_build public
-  artifacts:
-    paths:
-      - public
-  only:
-  - master
+# pages:
+#   stage: publish
+#   script:
+#     - mv doc/_build public
+#   artifacts:
+#     paths:
+#       - public
+#   only:
+#   - master
