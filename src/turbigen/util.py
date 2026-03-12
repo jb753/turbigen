@@ -1013,6 +1013,57 @@ def format_array(x, precision=3):
     return "[" + ", ".join(format_sf(xi, precision) for xi in x) + "]"
 
 
+def format_table(title, nrow, properties, col_w=8, paired=True):
+    """Format a turbomachinery data table with per-row column groups.
+
+    Parameters
+    ----------
+    title : str
+        Label for the top-left cell.
+    nrow : int
+        Number of blade rows (column groups).
+    properties : list of (label, values, spec)
+        Each entry is a row label, a values array, and a format spec string.
+        If paired=True and len(values) == 2*nrow, values fill Inlet/Outlet columns.
+        If paired=True and len(values) == nrow, each value is centred over its pair.
+        If paired=False, one column per row with no Inlet/Outlet subheader.
+    col_w : int
+        Width of each value column.
+    paired : bool
+        If True, columns are grouped in Inlet/Outlet pairs per row.
+        If False, one column per row.
+    """
+    label_w = 14
+    rows = []
+    if paired:
+        pair_w = col_w * 2
+        header = f"{title:<{label_w}}"
+        for i in range(nrow):
+            header += f"{'  Row ' + str(i):^{pair_w}}"
+        subheader = " " * label_w + f"{'Inlet':>{col_w}}{'Outlet':>{col_w}}" * nrow
+        rows = [header, subheader]
+        for label, values, spec in properties:
+            row = f"{label:<{label_w}}"
+            if len(values) == 2 * nrow:
+                for val in values:
+                    row += f"{val:{col_w}{spec}}"
+            else:
+                for val in values:
+                    row += f"{val:^{pair_w}{spec}}"
+            rows.append(row)
+    else:
+        header = f"{title:<{label_w}}"
+        for i in range(nrow):
+            header += f"{'Row ' + str(i):>{col_w}}"
+        rows = [header]
+        for label, values, spec in properties:
+            row = f"{label:<{label_w}}"
+            for val in values:
+                row += f"{val:{col_w}{spec}}"
+            rows.append(row)
+    return "\n".join(rows)
+
+
 class Warper:
     def __init__(self, xrt, dxrt, rref, neighbours=10, power=2):
         """Initialise the warper with control points and decay radius."""

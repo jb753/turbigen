@@ -8,7 +8,7 @@ logger = turbigen.util.make_logger()
 
 import numpy as np
 
-import ember.loop
+import ember.run
 import ember.config
 
 
@@ -38,32 +38,72 @@ class Ember(BaseSolver):
         xllim = 0.03 * pitch_ref
         print(f"xllim: {xllim}")
 
+        for patch in grid.patches.outlet:
+            patch.set_radial_equilibrium(rf=0.1)
+            patch.set_P(patch.P * 0.9)
+
+        print("beans")
+
         config = ember.config.SolverConfig(
-            order=3,
-            n_levels=3,
-            n_step_avg=1000,
+            n_step=4195,
+            n_step_avg=500,
             n_step_log=50,
-            n_step=4000,
-            n_step_ramp=0,
+            n_levels=3,
             cfl_min=0.1,
             cfl_max=4.0,
-            xllim=xllim,
-            sf4=0.001,
-            sf2_adapt=0.5,
-            end_stagger=0.0,
-            rtol_conserved=(1e-2, 1e-2, 1e-2, 1e-2, 1e-2),
+            rtol=1e-6,
+            full_mgrid=True,
+            fac_mgrid=0.0,
+            i_level_stop=2,
+            sf4=0.01,
+            sf2_adapt=1.0,
         )
 
         try:
-            self.convergence = ember.loop.multiloop(grid, config)
+            self.convergence = ember.run.loop(grid, config)
         except SystemExit:
             pass
 
         import matplotlib.pyplot as plt
 
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # ax.contourf(C.x, C.r * C.t, C.Ma_rel)
-        # ax.axis("equal")
-        # plt.show()
+        fig, ax = plt.subplots()
+        b = grid[0]
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.Ma_rel)
+        ax.axis("equal")
+        ax.set_title("Relative Mach number")
+        plt.colorbar(cm, ax=ax)
+
+        fig, ax = plt.subplots()
+        b = grid[0]
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.Alpha_rel)
+        ax.axis("equal")
+        ax.set_title("Relative flow angle")
+        plt.colorbar(cm, ax=ax)
+
+        fig, ax = plt.subplots()
+        b = grid[0]
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.Alpha)
+        ax.axis("equal")
+        ax.set_title("Absolute flow angle")
+        plt.colorbar(cm, ax=ax)
+
+        fig, ax = plt.subplots()
+        b = grid[0]
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.Vx)
+        ax.axis("equal")
+        ax.set_title("Axial velocity")
+        plt.colorbar(cm, ax=ax)
+
+        fig, ax = plt.subplots()
+        b = grid[0]
+        C = b[:, b.nj // 2, :]
+        cm = ax.contourf(C.x, C.rt, C.To)
+        ax.axis("equal")
+        ax.set_title("Stagnation temp")
+        plt.colorbar(cm, ax=ax)
+
+        plt.show()

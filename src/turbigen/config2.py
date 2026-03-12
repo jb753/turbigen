@@ -392,7 +392,7 @@ class TurbigenConfig:
 
         # Lazy import the solver
         if self.solver:
-            solver_name = self.solver.pop("type")
+            solver_name = self.solver.pop("type", "ember")
             importlib.import_module(f".{solver_name}", package="turbigen.solvers")
             Solver = util.get_subclass_by_name(
                 turbigen.solvers.base.BaseSolver, solver_name
@@ -493,11 +493,11 @@ class TurbigenConfig:
         """Calculate the nominal mean-line flow field."""
 
         # Mean-line design
+        logger.info("Designing mean line...")
         self.mean_line.set_nominal(self.fluid.fluid)
-        logger.info(self.mean_line.nominal)
 
         # Check mean-line design for problems
-        logger.debug("Checking mean-line...")
+        logger.debug("Checking mean line...")
         self.mean_line.check_nominal()
 
         self.mean_line.warn()
@@ -513,7 +513,7 @@ class TurbigenConfig:
             sys.exit(0)
 
         self.annulus.setup_annulus(self.mean_line.nominal)
-        logger.info(f"{self.annulus}")
+        logger.info(self.annulus.to_string())
 
         # Copy annulus x-coords into the mean-line
         self.mean_line.nominal.set_x(self.annulus.x_rms)
@@ -530,11 +530,29 @@ class TurbigenConfig:
             for blade in row:
                 blade.set_streamsurface(self.annulus.xr_row(irow))
 
+    def blade_table(self):
+        """Tabular string of per-row blade properties."""
+        Nb = self.get_nblade()
+        gaps = self.get_gaps()
+        Re_surf = self.calculate_Re_surf()
+        s_cm = self.get_pitch_chord()
+        properties = [
+            ("N_blade", Nb, "d"),
+            ("Gap/m", gaps, ".4f"),
+            ("s/cm", s_cm, ".3f"),
+            ("Re_surf/1e5", Re_surf / 1e5, ".3f"),
+        ]
+        return util.format_table("Blades:", self.nrow, properties, paired=False)
+
     def get_nblade(self):
         Nb = np.full((len(self.blades),), 0, dtype=int)
         for irow, row in enumerate(self.blades):
             # Set number of blades using main blade
-
+            if irow >= len(self.nblade):
+                logger.error(
+                    f"Missing 'nblade' entry for row {irow} in the input file."
+                )
+                sys.exit(1)
             Nb[irow] = np.round(
                 self.nblade[irow]
                 .get_blade_number(self.mean_line.nominal.get_row(irow), row[0])
@@ -542,13 +560,17 @@ class TurbigenConfig:
             )
         return Nb
 
-    def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
-        # Warn if blade spacings are too narrow or wide
+    def get_pitch_chord(self):
+        """Pitch-to-chord ratio at mid-span for each row."""
         rref = 0.5 * (
             self.mean_line.nominal.r_rms[::2] + self.mean_line.nominal.r_rms[1::2]
         )
         s = 2.0 * np.pi * rref / self.get_nblade()
-        s_cm = s / self.annulus.chords(0.5)[1:-1:2]
+        return s / self.annulus.chords(0.5)[1:-1:2]
+
+    def check_pitch_chord(self, s_cm_lim=(0.2, 4.0)):
+        # Warn if blade spacings are too narrow or wide
+        s_cm = self.get_pitch_chord()
         if np.any(s_cm < s_cm_lim[0]):
             logger.warning(
                 "WARNING: narrow blade spacings may cause problems with meshing"
@@ -632,6 +654,21 @@ class TurbigenConfig:
         self.grid.check_coordinates()
         self.grid.calculate_wdist()
 
+    def plot_mesh(self, spf=0.5):
+        """Plot the structured mesh at a span cut and show interactively."""
+        import turbigen.util_post
+
+        blocks = turbigen.util_post.cut_span(self.grid, self.annulus, spf)
+        blocks = ember.util.pitchwise_repeat(blocks, n=2)
+        fig, ax = plt.subplots()
+        ax.set_aspect("equal")
+        ax.axis("off")
+        for b in blocks:
+            ax.plot(b.x, b.rt, "k-", lw=0.5)
+            ax.plot(b.x.T, b.rt.T, "k-", lw=0.5)
+        plt.tight_layout()
+        plt.show()
+
         # Reset camber
         for irow, row in enumerate(self.blades):
             # Apply recamber, set meridional locations for
@@ -700,7 +737,7 @@ class TurbigenConfig:
         self.grid.patches.inlet[0].set_inlet(Po1, To1, Alpha1, Beta1)
 
         # Apply profile if available
-        if self.inlet.profiles is not None:
+        if self.inlet is not None and self.inlet.profiles is not None:
             logger.info("Applying inlet profile...")
             self.grid.inlet_patches[0].set_profile(
                 self.inlet.spf,
@@ -722,7 +759,7 @@ class TurbigenConfig:
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case
-        self.grid.update_P_out()
+        self.grid.update_throttle()
 
     def run_solver(self):
         if not self.solver:
@@ -775,10 +812,11 @@ class TurbigenConfig:
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
 
-        # Absolute error (dict comprehension)
+        # Absolute error (dict comprehension), skip None actual values
         err = {
             k: v - self.mean_line_actual[k]
             for k, v in self.mean_line.design_vars.items()
+            if self.mean_line_actual.get(k) is not None
         }
 
         # Relative error (dict comprehension, checking for zero nominal values)
@@ -786,6 +824,7 @@ class TurbigenConfig:
             rel_err = {
                 k: (v - self.mean_line_actual[k]) / v * 100.0
                 for k, v in self.mean_line.design_vars.items()
+                if self.mean_line_actual.get(k) is not None
             }
 
         # Make very small values zero
@@ -816,13 +855,16 @@ class TurbigenConfig:
         err, rel_err = self.calculate_design_var_errors()
 
         for k, v in self.mean_line.design_vars.items():
+            actual = self.mean_line_actual.get(k)
+            if actual is None:
+                continue
             # Make very small values zero
             if np.isscalar(v):
                 table.append(
                     [
                         k,
                         f"{v:.3g}",
-                        f"{self.mean_line_actual[k]:.3g}",
+                        f"{actual:.3g}",
                         f"{err[k]:.2g}",
                         f"{rel_err[k]:.1f}",
                     ]
@@ -834,7 +876,7 @@ class TurbigenConfig:
                         [
                             f"{k}[{i}]",
                             f"{vi:.3g}",
-                            f"{self.mean_line_actual[k][i]:.3g}",
+                            f"{actual[i]:.3g}",
                             f"{err[k][i]:.2g}",
                             f"{rel_err[k][i]:.2g}",
                         ]
@@ -843,7 +885,7 @@ class TurbigenConfig:
         # Additional vars not in nominal
         for k, v in self.mean_line_actual.items():
             if k not in self.mean_line.design_vars:
-                if np.isscalar(v):
+                if np.isscalar(v) or np.ndim(v) == 0:
                     table.append(
                         [
                             k,
@@ -953,7 +995,7 @@ class TurbigenConfig:
                 "Cannot set Reynolds number by changing viscosity of a real gas."
             )
 
-    def design_and_run(self, skip, skip_post=False):
+    def design_and_run(self, skip, skip_post=False, plot_mesh=None):
         """Run a configuration file through the CFD solver.
 
         This will do the following:
@@ -977,8 +1019,7 @@ class TurbigenConfig:
 
         self.check_pitch_chord()
 
-        logger.info(f"Nblade: {self.get_nblade()}")
-        logger.info(f"Tip gaps [m]: {self.get_gaps()}")
+        logger.info(self.blade_table())
 
         # # Handle restarts
         if self.grid:
@@ -992,7 +1033,6 @@ class TurbigenConfig:
             self.set_mu_from_Re_surf()
 
         Re_surf = self.calculate_Re_surf()
-        logger.info(f"Re_surf={util.format_array(Re_surf)}")
 
         # We are now ready to generate mesh and run CFD
         # There are three cases to consider
@@ -1002,8 +1042,11 @@ class TurbigenConfig:
 
         # Generate mesh in cases (2) and (3)
         if not (skip and self.grid):
-            logger.info("Generating mesh...")
+            logger.info(f"Generating {self.mesh.__class__.__name__} mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
+            if plot_mesh is not None:
+                self.plot_mesh(plot_mesh)
+                sys.exit(0)
             self.apply_guess()
             self.apply_bconds()
         else:
@@ -1011,13 +1054,16 @@ class TurbigenConfig:
 
         # In case (3), run the CFD solver
         if not skip:
+            logger.info(f"Running solver {self.solver.__class__.__name__}...")
             self.run_solver()
+        else:
+            logger.info("Skipping solver run.")
 
         # The flow field is ready in grid, post-process it
+        logger.info("Post-processing...")
         self.get_mean_line_actual()
         self.undo_recamber()
 
-        logger.info("Post-processing...")
         if not skip_post:
             self.post_process_all()
         logger.info("Done post-processing.")

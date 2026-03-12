@@ -98,41 +98,59 @@ class AnnulusDesigner(util.BaseDesigner):
         """Maximum value of normalised meridional coordinate."""
         return float(self.nseg)
 
+    def _xr_stations(self):
+        """Hub and casing xr coords at all row inlet/exit stations."""
+        m = np.arange(1, 2 * self.nrow + 1, dtype=float)
+        return self.evaluate_xr(m, spf=0.0), self.evaluate_xr(m, spf=1.0)
+
+    @property
+    def r_hub(self):
+        """Hub radii at all row inlet/exit stations [m]."""
+        return self._xr_stations()[0][1]
+
+    @property
+    def r_tip(self):
+        """Casing radii at all row inlet/exit stations [m]."""
+        return self._xr_stations()[1][1]
+
+    @property
+    def r_mid(self):
+        """Mid-span radii at all row inlet/exit stations [m]."""
+        return 0.5 * (self.r_hub + self.r_tip)
+
     @property
     def r_rms(self):
         """Root-mean-square radii at all row inlet/exit stations [m]."""
-        # Generate m values for all row stations (LE and TE)
-        m = np.arange(1, 2 * self.nrow + 1)
+        return np.sqrt(0.5 * (self.r_hub**2 + self.r_tip**2))
 
-        # Evaluate hub and casing coordinates
-        xr_hub = self.evaluate_xr(m, spf=0.0)
-        xr_cas = self.evaluate_xr(m, spf=1.0)
+    @property
+    def htr(self):
+        """Hub-to-tip ratio at all row inlet/exit stations."""
+        return self.r_hub / self.r_tip
 
-        # Calculate RMS radii: r_rms = sqrt(0.5 * (r_hub^2 + r_cas^2))
-        r_rms = np.sqrt(0.5 * (xr_hub[1] ** 2 + xr_cas[1] ** 2))
-
-        return r_rms
+    @property
+    def Am(self):
+        """Annular flow area at all row inlet/exit stations [m2]."""
+        return np.pi * (self.r_tip**2 - self.r_hub**2)
 
     @property
     def x_rms(self):
         """Axial coordinates at RMS radius for all row inlet/exit stations [m]."""
-        # Generate m values for all row stations (LE and TE)
-        m = np.arange(1, 2 * self.nrow + 1)
+        xr_hub, xr_cas = self._xr_stations()
+        spf_rms = (self.r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
+        return xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
 
-        # Evaluate hub and casing coordinates
-        xr_hub = self.evaluate_xr(m, spf=0.0)
-        xr_cas = self.evaluate_xr(m, spf=1.0)
-
-        # Reuse r_rms property
-        r_rms = self.r_rms
-
-        # Calculate span fraction at RMS radius
-        spf_rms = (r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
-
-        # Linearly interpolate x coordinates
-        x_rms = xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
-
-        return x_rms
+    def to_string(self):
+        """Tabular string representation of annulus geometry at row stations."""
+        properties = [
+            ("r_rms/m", self.r_rms, ".4f"),
+            ("r_hub/m", self.r_hub, ".4f"),
+            ("r_tip/m", self.r_tip, ".4f"),
+            ("Am/m2", self.Am, ".4f"),
+            ("htr", self.htr, ".4f"),
+            ("cx/m", self.chords(0.5)[1::2], ".4f"),
+        ]
+        return util.format_table("Annulus:", self.nrow, properties)
 
     def chords(self, spf):
         """Meridional chords of rows and row gaps.
@@ -416,23 +434,7 @@ class FixedAxialChord(AnnulusDesigner):
         self._cas = MeridionalLine(xcas, rcas, Beta).smooth()
 
     def __repr__(self):
-        try:
-            cm = self.chords(0.5)[1::2]
-            mq = np.arange(1.5, self.nrow + 1.50001, 2.0)
-            span = self.get_span(mq)
-            xrhub = self.evaluate_xr(mq, 0.0)
-            xrcas = self.evaluate_xr(mq, 0.0)
-            xrrms = np.sqrt(0.5 * (xrhub**2 + xrcas**2))
-            return (
-                "FixedAxialChord(\n"
-                f"    x={util.format_array(xrrms[1])} m,\n"
-                f"    r_rms={util.format_array(xrrms[1])} m,\n"
-                f"    span={util.format_array(span)} m,\n"
-                f"    AR={util.format_array(span / cm)}\n"
-                ")"
-            )
-        except Exception:
-            return "FixedAxialChord()"
+        return "FixedAxialChord()"
 
     @property
     def nrow(self):

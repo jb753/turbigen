@@ -87,6 +87,14 @@ def _make_argparser():
         help="run on an edited copy of the configuration file (using $EDITOR)",
         action="store_true",
     )
+    parser.add_argument(
+        "--mesh",
+        nargs="?",
+        const=0.5,
+        type=float,
+        metavar="SPF",
+        help="plot mesh at span fraction SPF and exit (default 0.5)",
+    )
     return parser
 
 
@@ -200,7 +208,7 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
 
-    conf.design_and_run(args.no_solve)
+    conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
 
     logger.iter(conf.format_design_vars_table())
 

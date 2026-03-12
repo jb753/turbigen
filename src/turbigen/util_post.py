@@ -2,6 +2,7 @@
 
 import numpy as np
 import ember.block
+import ember.cut
 import ember.patch
 
 
@@ -491,3 +492,25 @@ def cut_blade_surfs(grid, offset=0):
                     surfs[-1].append(b[:, :, None, offset])
 
     return surfs
+
+
+def cut_span(grid, annulus, spf):
+    """Cut the grid at a constant span fraction.
+
+    Parameters
+    ----------
+    grid : ember Grid
+        The 3D CFD grid to cut.
+    annulus : AnnulusDesigner
+        Annulus object used to define the cut surface geometry.
+    spf : float
+        Span fraction at which to cut, 0 is hub, 1 is casing.
+
+    Returns
+    -------
+    list of ember.block.Block
+        2D structured blocks along the cut surface.
+    """
+    xr_cut = annulus.get_span_curve(spf)
+    cuts = ember.cut.structured_meridional(grid, xr_cut.T)
+    return list(cuts)

@@ -11,8 +11,31 @@ fluid:
 mean_line:
   type: custom
   n_row: 1
-  Ys: 0.
-  Ma2: 0.6
-  Alpha: [-35, 60.]
-  span: [0.1, 0.11]
+  phi: 0.6
+  psi: 0.6
+  Ma1_rel: 0.6
+  Lam: 0.5
+  span: 0.1
   htr: 0.9
+
+annulus:
+  type: fixed_axial_chord
+  cx_gap: [0.1, 0.1]
+  cx_row: [0.1]
+
+blades:
+    - spf: 0.5
+      thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
+      camber: [0., 0., -1.0]
+
+nblade:
+  - Co: 0.4
+
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+# Configure the RANS solver
+solver:
+  type: ember

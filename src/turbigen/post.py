@@ -44,23 +44,21 @@ class Convergence(BasePost):
             logger.info("No simulation log returned, skipping convergence plot.")
             return
 
-        # Find valid timesteps
-        time_mask = conv.time[:, 0] > 0
-        n_steps = np.sum(time_mask)
+        n_steps = conv.i_log + 1
 
         if n_steps == 0:
             logger.info("No convergence data to plot.")
             return
 
+        steps = conv.i_step[:n_steps]
+
         # Page 1: Residual plot
-        residuals = conv.residual[:n_steps, : conv.n_block]
-        avg_residuals = np.mean(residuals, axis=1)
-        normalized_residuals = avg_residuals / conv.conserved_ref[None, :]
+        residuals = conv.residual[:n_steps]  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
-            ax.semilogy(normalized_residuals[:, i_var], label=var_name)
-        ax.set_ylabel("Normalized Residual")
+            ax.semilogy(steps, residuals[:, i_var], label=var_name)
+        ax.set_ylabel("Residual")
         ax.set_xlabel("Iteration")
         ax.set_title("Convergence History")
         ax.legend()
@@ -69,12 +67,11 @@ class Convergence(BasePost):
         plt.close()
 
         # Page 2: CFL plot
-        cfl_data = conv.cfl[:n_steps, : conv.n_block]
-        avg_cfl = np.mean(cfl_data, axis=1)
+        cfl_data = conv.cfl[:n_steps]  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
-            ax.plot(avg_cfl[:, i_var], label=var_name)
+            ax.plot(steps, cfl_data[:, i_var], label=var_name)
         ax.set_ylabel("CFL")
         ax.set_xlabel("Iteration")
         ax.set_title("CFL History")
@@ -83,19 +80,15 @@ class Convergence(BasePost):
         pdf.savefig()
         plt.close()
 
-        # Page 3: Work coefficient and efficiency plot
-        valid = np.where(conv.rho[:n_steps, 0] > 0)[0]
-        psi_history = np.array([conv[i, :2].psi for i in valid])
-        eta_history = np.array([conv[i, :2].eta for i in valid])
-
+        # Page 3: Work coefficient and loss coefficient
         _, ax = plt.subplots(2, 1, layout="constrained", sharex=True)
-        ax[0].plot(valid, psi_history)
+        ax[0].plot(steps, conv.psi[:n_steps])
         ax[0].set_ylabel("Work Coefficient, psi")
-        ax[0].set_title("Work and Efficiency History")
+        ax[0].set_title("Work and Loss History")
         ax[0].grid(True, alpha=0.3)
 
-        ax[1].plot(valid, eta_history)
-        ax[1].set_ylabel("Efficiency, eta")
+        ax[1].plot(steps, conv.zeta[:n_steps])
+        ax[1].set_ylabel("Loss Coefficient, zeta")
         ax[1].set_xlabel("Iteration")
         ax[1].grid(True, alpha=0.3)
         pdf.savefig()

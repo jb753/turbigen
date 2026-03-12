@@ -2,18 +2,21 @@
 
 # Need this decorator so that turbigen can find your functions
 from turbigen.plugins import register_mean_line
+import numpy as np
 
 
 @register_mean_line
 def custom_forward(
     ml,
     span,
-    Alpha,
-    Ma2,
-    Ys,
     htr,
+    phi,
+    psi,
+    Lam,
+    Ma1_rel=0.6,
     To1=300.0,
     Po1=1e5,
+    Ds=0.0,
 ):
     """Calculate turbine cascade geometry from aerodynamic design variables."""
 
@@ -31,34 +34,59 @@ def custom_forward(
 
     # Check inputs
     assert ml.n_row == 1
-    assert len(span) == 2
-    assert len(Alpha) == 2
+    # assert len(Alpha) == 2
 
-    # Get the inlet stagnation state
-    inlet_stag = ml[0].copy().set_P_T(Po1, To1)
-    V_ref = inlet_stag.a
-    T_ref = inlet_stag.T
-    s1 = inlet_stag.s
-    ho1 = inlet_stag.h
+    # Use inlet conditions to evaluate EOS for state (01)
+    fluid = ml[0].fluid
+    rhoo1, uo1 = fluid.set_P_T(Po1, To1)
+    ho1 = fluid.get_h(rhoo1, uo1)
+    s1 = fluid.get_s(rhoo1, uo1)
 
-    # Entropy from pseudo loss coefficient
-    s2 = s1 + Ys * (0.5 * V_ref**2) / T_ref
+    # Get flow angles from phi, psi, Lam assuming repeating stage
+    Alpha1 = np.arctan((1 - Lam - psi / 2) / phi)
+    Alpha2 = np.arctan(psi / phi + np.tan(Alpha1))
+    Alpha_rel1 = np.arctan(np.tan(Alpha1) - 1 / phi)
+    Alpha_rel2 = np.arctan(np.tan(Alpha2) - 1 / phi)
 
-    # Outlet state from known ho, s, Ma, angles
-    ml[1].set_ho_s_Ma_Alpha_Beta(ho1, s2, Ma2, Alpha[1], Beta=0.0)
+    # We are going to iterate Vx1 to satisfy Ma1_rel and Alpha1
+    # Initial guess for static state (1)
+    ml[0].set_rho_s(rhoo1, s1)  # initial guess
 
-    # Set exit annulus geometry
-    ml[1].set_span_htr(span[1], htr)
+    for _ in range(20):
+        # Use current static state to eval a and hence V1_rel
+        V1_rel = Ma1_rel * ml[0].a
 
-    # Now conserve mass to set inlet state
-    rhoVx1 = ml[1].rhoVx * span[1] / span[0]
-    ml[0].set_ho_s_rhoVm_Alpha_Beta(ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
+        Vx1 = V1_rel * np.cos(Alpha_rel1)
+        V1 = Vx1 / np.cos(Alpha1)
 
+        # With V1 abs, set new guess for static state (1)
+        h1 = ho1 - 0.5 * V1**2
+        ml[0].set_h_s(h1, s1)
+
+    # Apply velocities
+    Vx = V1 * np.cos(Alpha1)
+    Vt1 = V1 * np.sin(Alpha1)
+    Vt2 = Vx * np.tan(Alpha2)
+    ml[0].set_Vxrt(Vx, 0.0, Vt1)
+    ml[1].set_Vxrt(Vx, 0.0, Vt2)
+
+    # Set annulus geometry
+    ml[0].set_span_htr(span, htr)
+
+    # Find exit static enthalpy from psi and V2
+    U = Vx / phi
+    ho2 = ho1 + psi * U**2
+    V2 = Vx / np.cos(Alpha2)
+    h2 = ho2 - 0.5 * V2**2
+    ml[1].set_h_s(h2, s1 + Ds)
+
+    # Use cons of mass to get exit span
+    span2 = span * ml[0].rhoVx / ml[1].rhoVx
     # Set inlet annulus geometry (htr may vary, same r_mid)
-    ml[0].set_span_r_mid(span[0], ml[1].r_mid)
+    ml[1].set_span_r_mid(span2, ml[0].r_mid)
 
-    # Can print the mean-line to check
-    print("Vx=", ml.Vx)
+    Omega = U / ml[0].r_mid
+    ml.set_Omega(Omega)
 
 
 @register_mean_line
@@ -77,18 +105,20 @@ def custom_backward(ml):
         fields as args to :func:`custom_forward`,
     """
 
-    # Pseudo loss coefficient
-    V_ref = ml[0].a
-    Ys = (ml[-1].s - ml[0].s) / ml[0].To * (0.5 * V_ref**2)
+    # # Pseudo loss coefficient
+    # V_ref = ml[0].a
+    # Ys = (ml[-1].s - ml[0].s) / ml[0].To * (0.5 * V_ref**2)
 
     out = {
-        "span": ml.span,
-        "Alpha": ml.Alpha,
-        "Ma2": ml.Ma[1],
-        "Ys": Ys,
-        "htr": ml.htr[-1],
+        "span": ml.span[0],
+        "htr": ml.htr[0],
+        "phi": ml[0].Vx / ml[0].U,
+        "psi": (ml[-1].ho - ml[0].ho) / (ml[0].U ** 2),
+        "Lam": None,
+        "Ma1": ml.Ma[0],
         "To1": ml[0].To,
         "Po1": ml[0].Po,
+        "Ma1_rel": ml[0].Ma_rel,
     }
 
     return out

@@ -144,7 +144,7 @@ class DFL(BladeNumberConfig):
         s = blade.chord(self.spf) * s_cx
 
         # Number of blades
-        rrms = np.mean(mean_line.rrms)
+        rrms = np.mean(mean_line.r_rms)
         Nb = np.round(2.0 * np.pi * rrms / s).astype(int)
 
         return Nb

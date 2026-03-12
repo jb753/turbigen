@@ -5,6 +5,7 @@ import ember.fluid
 import numpy as np
 import turbigen.plugins
 import turbigen.meanline_design_new
+import turbigen.util
 import inspect
 
 
@@ -103,7 +104,7 @@ class MeanLineConfig:
     def check_nominal(self):
         params_inv = self._backward(self.nominal)
 
-        rtol = 1e-3
+        rtol = 0.5e-2
 
         # Compare forward and inverse params, check within a tolerance
         for k, v in self.design_vars.items():
@@ -490,38 +491,19 @@ class MeanLine:
 
     def __repr__(self):
         """Return a string representation of the MeanLine object."""
-        return f"MeanLine(n_row={self.n_row}, id={id(self)})"
+        return f"MeanLine(n_row={self.n_row})"
 
     def to_string(self):
         """Provide a concise string representation of MeanLine properties."""
-        # Define the properties to display
         properties = [
-            ("Po", self.Po / 1e5, "[bar]"),
-            ("To", self.To, "[K]"),
-            ("Ma", self.Ma, ""),
-            ("Ma_rel", self.Ma_rel, ""),
-            ("Alpha", self.Alpha, "[deg]"),
-            ("Alpha_rel", self.Alpha_rel, "[deg]"),
+            ("Po/bar", self.Po / 1e5, ".3f"),
+            ("To/K", self.To, ".2f"),
+            ("Ma", self.Ma, ".3f"),
+            ("Ma_rel", self.Ma_rel, ".3f"),
+            ("Alpha/deg", self.Alpha, ".1f"),
+            ("Alpha_rel/deg", self.Alpha_rel, ".1f"),
         ]
-
-        # Build the table
-        table_str = ""
-        for name, values, unit in properties:
-            # Format the property row
-            row = f"{name + ' ' + unit:<15}"
-            for val in values:
-                # Special formatting for different properties
-                if name == "Po":
-                    row += f"{val:>12.3f}"
-                elif name == "To":
-                    row += f"{val:>12.2f}"
-                elif name in ["Ma", "Ma_rel"]:
-                    row += f"{val:>12.3f}"
-                elif name in ["Alpha", "Alpha_rel"]:
-                    row += f"{val:>12.1f}"
-            table_str += row + "\n"
-
-        return table_str
+        return turbigen.util.format_table("Mean line:", self.n_row, properties)
 
 
 class Station(ember.block.Block):
@@ -538,7 +520,7 @@ class Station(ember.block.Block):
     @property
     def Am(self):
         """Annulus area projected in meridional direction [m^2]."""
-        return self._get_data_by_key("Am")
+        return self._get_data_by_keys(("Am",))
 
     @property
     def mdot(self):
@@ -548,7 +530,7 @@ class Station(ember.block.Block):
     @property
     def r_rms(self):
         """Annulus root-mean-square radius [m]."""
-        return self._get_data_by_key("r")
+        return self._get_data_by_keys(("r",))
 
     @property
     def cosBeta(self):
@@ -582,7 +564,7 @@ class Station(ember.block.Block):
 
     def set_Am(self, Am):
         """Set annulus area projected in meridional direction."""
-        self._set_data_by_key("Am", Am)
+        self._set_data_by_keys(("Am",), Am)
         return self
 
     def set_r(self, r):

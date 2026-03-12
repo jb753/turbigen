@@ -76,8 +76,6 @@ class H(turbigen.mesh.Mesher):
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
-        logger.info("Making an H-mesh...")
-
         mesh_config = self
         unbladed = [False for _ in range(mac.Nrow)]
 
@@ -106,8 +104,6 @@ class H(turbigen.mesh.Mesher):
         assert dsurf.shape == (2, nrow)
         theta_lim = None
         for irow in range(nrow):
-            logger.debug(f"irow={irow}")
-
             # Angular pitch
             pitch_theta = 2.0 * np.pi / float(mac.Nb[irow])
 
@@ -187,7 +183,6 @@ class H(turbigen.mesh.Mesher):
                 )
 
             nj = len(span_frac)
-            logger.info(f"irow={irow}, nj={nj}")
 
             # Streamwise grid
             # From LE/TE/bcond spacings and ER
@@ -514,9 +509,9 @@ class H(turbigen.mesh.Mesher):
                 )
 
             blk = ember.block.Block(shape=(ni, nj, nk), label=f"row{irow}")
-            blk.patches.extend(patches)
             blk.set_Nb(mac.Nb[irow])
             blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
+            blk.patches.extend(patches)
 
             # Check MG
             nic, njc, nkc = blk.shape
