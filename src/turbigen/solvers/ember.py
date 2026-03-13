@@ -42,47 +42,13 @@ class Ember(BaseSolver):
 
         for patch in grid.patches.outlet:
             # patch.set_radial_equilibrium(rf=0.1)
-            patch.set_P(patch.P * 0.9)
-
-        print("beans")
-        rotp = [p for p in grid[0].patches.rotating]
-        for p in rotp:
-            grid[0].patches.remove(p)
-            print(f"removed rotating patch: {p}")
-
-        # Omega = rotp[0].Omega
-        # ilte = []
-        # for p in grid[0].patches.periodic:
-        #     if p.ien > 0 and p.ien < grid[0].ni - 1:
-        #         ilte.append(p.ien)
-        #     if p.ist > 0 and p.ist < grid[0].ni - 1:
-        #         ilte.append(p.ist)
-        # ile, ite = np.unique(ilte)
-        # ile = int(ile)
-        # ite = int(ite)
-        # print(ile)
-        # print(ite)
-        # b = grid[0]
-        # b.patches.append(ember.patch.RotatingPatch(i=(ile, ite), k=0))
-        # b.patches.append(ember.patch.RotatingPatch(i=(ile, ite), k=-1))
-        # # b.patches.append(ember.patch.RotatingPatch(j=0))
-        # # b.patches.append(ember.patch.RotatingPatch(j=-1))
+            patch.set_P(patch.P * 0.95)
 
         import matplotlib.pyplot as plt
 
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-
-        # C = b[b.ni // 2, :, :]
-        # cm = ax.contourf(C.z, C.y, C.wdist)
-        # ax.axis("equal")
-        # ax.set_title("Dwall")
-        # plt.colorbar(cm, ax=ax)
-        # plt.show()
-
         config = ember.config.SolverConfig(
             n_step=5000,
-            n_step_avg=500,
+            n_step_avg=1,
             n_step_log=50,
             n_levels=3,
             cfl_min=0.1,
@@ -102,32 +68,32 @@ class Ember(BaseSolver):
         except SystemExit:
             pass
 
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # cm = ax.contourf(C.x, C.rt, C.wdist)
-        # ax.axis("equal")
-        # ax.set_title("Dwall")
-        # plt.colorbar(cm, ax=ax)
-        # plt.show()
-        # quit()
+        b = grid[0]
+        C = b[:, b.nj // 2, b.nk // 2]
 
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, b.nk // 2]
-        # ax.plot(C.x, C.cfl_cell)
-        # plt.show()
-        # quit()
+        fig, ax = plt.subplots()
+        ax.plot(C.x, C.cfl_cell)
+        ax.set_ylabel("CFL number")
+
+        fig, ax = plt.subplots()
+        ax.plot(C.x, C.Alpha_rel)
+        ax.set_ylabel("Relative flow angle")
+
+        fig, ax = plt.subplots()
+        ax.plot(C.x, C.Alpha)
+        ax.set_ylabel("Absolute flow angle")
+
+        print(C.U.mean())
 
         fig, ax = plt.subplots()
         b = grid[0]
-        C = b[:, b.nj // 2, :]
-        cm = ax.contourf(C.x, C.rt, C.wdist)
+        C = b[:, 10, :]
+        lev = np.arange(0.0, 1.001, 0.1)
+        cm = ax.contourf(C.x, C.rt, C.Ma_rel, levels=lev)
         ax.axis("equal")
-        ax.set_title("Dwall")
         plt.colorbar(cm, ax=ax)
+
         plt.show()
-        quit()
 
         fig, ax = plt.subplots()
         b = grid[0]

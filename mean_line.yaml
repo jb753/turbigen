@@ -6,7 +6,7 @@ fluid:
   type: perfect
   cp: 1005
   gamma: 1.4
-  mu: 5e-4
+  mu: 1.8e-4
 
 mean_line:
   type: custom

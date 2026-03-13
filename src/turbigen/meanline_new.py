@@ -503,7 +503,7 @@ class MeanLine:
             1D block with shape (n_stations,).
         """
         n = self.n_row * 2
-        xr = ann.evaluate_xr(np.linspace(0.0, ann.mmax, n), 0.5)
+        xr = np.array(ann._xr_stations()).mean(0).T
         b = ember.block.Block(shape=(n,))
         b.set_fluid(self.fluid)
         b.set_xrt(xr[:, 0], xr[:, 1], np.zeros(n))
