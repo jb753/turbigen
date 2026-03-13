@@ -1559,38 +1559,6 @@ class Grid:
         for b in self:
             b.apply_guess_uniform(F)
 
-    def apply_guess_meridional(self, Fg):
-        """Apply meridional guess from a mean-line object."""
-
-        # Ensure the guess flow field is sane
-        Fg.check_flow()
-
-        # Initialise a kdtree of guess points
-        xrgT = Fg.xr.T
-        kdtree = KDTree(xrgT)
-
-        # Loop over all blocks
-        for block in self:
-            # Copy fluid props etc.
-            block._metadata.update(Fg._metadata)
-
-            # Find indices of nearest guess point to all block points
-            xri = block.flatten().xr.T
-            ind_nearest = kdtree.query(
-                xri,
-                workers=-1,
-            )[1]
-
-            # Set thermodynamic properties
-            rob = Fg.rho[ind_nearest].reshape(block.shape)
-            ub = Fg.u[ind_nearest].reshape(block.shape)
-            block.set_rho_u(rob, ub)
-
-            # Set velocities
-            block.Vxrt = Fg.Vxrt[:, ind_nearest].reshape(block.Vxrt.shape)
-
-            block.mu_turb = np.full_like(block.mu_turb, np.mean(Fg.mu))
-
     def apply_guess_3d(self, g):
         for block, block_other in zip(self, g):
             block.interp_from(block_other)

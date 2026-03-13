@@ -755,7 +755,8 @@ class TurbigenConfig:
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
-            self.grid.apply_guess_meridional(self.mean_line.nominal, refine_factor=50)
+            block_guess = self.mean_line.nominal.to_block(self.annulus)
+            self.grid.apply_guess_meridional(block_guess, refine_factor=50)
 
         # Update the outlet static pressure based on the guess
         # This helps running multiple iterations of a throttled case

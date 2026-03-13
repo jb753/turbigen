@@ -9,7 +9,9 @@ logger = turbigen.util.make_logger()
 import numpy as np
 
 import ember.run
+import ember.patch
 import ember.config
+import ember.fortran
 
 
 @dataclass
@@ -39,13 +41,47 @@ class Ember(BaseSolver):
         print(f"xllim: {xllim}")
 
         for patch in grid.patches.outlet:
-            patch.set_radial_equilibrium(rf=0.1)
+            # patch.set_radial_equilibrium(rf=0.1)
             patch.set_P(patch.P * 0.9)
 
         print("beans")
+        rotp = [p for p in grid[0].patches.rotating]
+        for p in rotp:
+            grid[0].patches.remove(p)
+            print(f"removed rotating patch: {p}")
+
+        # Omega = rotp[0].Omega
+        # ilte = []
+        # for p in grid[0].patches.periodic:
+        #     if p.ien > 0 and p.ien < grid[0].ni - 1:
+        #         ilte.append(p.ien)
+        #     if p.ist > 0 and p.ist < grid[0].ni - 1:
+        #         ilte.append(p.ist)
+        # ile, ite = np.unique(ilte)
+        # ile = int(ile)
+        # ite = int(ite)
+        # print(ile)
+        # print(ite)
+        # b = grid[0]
+        # b.patches.append(ember.patch.RotatingPatch(i=(ile, ite), k=0))
+        # b.patches.append(ember.patch.RotatingPatch(i=(ile, ite), k=-1))
+        # # b.patches.append(ember.patch.RotatingPatch(j=0))
+        # # b.patches.append(ember.patch.RotatingPatch(j=-1))
+
+        import matplotlib.pyplot as plt
+
+        # fig, ax = plt.subplots()
+        # b = grid[0]
+
+        # C = b[b.ni // 2, :, :]
+        # cm = ax.contourf(C.z, C.y, C.wdist)
+        # ax.axis("equal")
+        # ax.set_title("Dwall")
+        # plt.colorbar(cm, ax=ax)
+        # plt.show()
 
         config = ember.config.SolverConfig(
-            n_step=4195,
+            n_step=5000,
             n_step_avg=500,
             n_step_log=50,
             n_levels=3,
@@ -53,10 +89,12 @@ class Ember(BaseSolver):
             cfl_max=4.0,
             rtol=1e-6,
             full_mgrid=True,
-            fac_mgrid=0.0,
-            i_level_stop=2,
-            sf4=0.01,
+            fac_mgrid=0.5,
+            # i_level_stop=2,
+            xllim=xllim,
+            sf4=0.02,
             sf2_adapt=1.0,
+            const_smoothing=False,
         )
 
         try:
@@ -64,15 +102,32 @@ class Ember(BaseSolver):
         except SystemExit:
             pass
 
-        import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # b = grid[0]
+        # C = b[:, b.nj // 2, :]
+        # cm = ax.contourf(C.x, C.rt, C.wdist)
+        # ax.axis("equal")
+        # ax.set_title("Dwall")
+        # plt.colorbar(cm, ax=ax)
+        # plt.show()
+        # quit()
+
+        # fig, ax = plt.subplots()
+        # b = grid[0]
+        # C = b[:, b.nj // 2, b.nk // 2]
+        # ax.plot(C.x, C.cfl_cell)
+        # plt.show()
+        # quit()
 
         fig, ax = plt.subplots()
         b = grid[0]
         C = b[:, b.nj // 2, :]
-        cm = ax.contourf(C.x, C.rt, C.Ma_rel)
+        cm = ax.contourf(C.x, C.rt, C.wdist)
         ax.axis("equal")
-        ax.set_title("Relative Mach number")
+        ax.set_title("Dwall")
         plt.colorbar(cm, ax=ax)
+        plt.show()
+        quit()
 
         fig, ax = plt.subplots()
         b = grid[0]

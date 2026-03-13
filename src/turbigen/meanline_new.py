@@ -489,6 +489,28 @@ class MeanLine:
         AR_flow = A_flow[1] / A_flow[0]
         return row[0] if AR_flow >= 1.0 else row[1]
 
+    def to_block(self, ann):
+        """Convert mean-line stations to a 1D Block along the annulus midspan.
+
+        Parameters
+        ----------
+        ann : Annulus
+            Annulus geometry for evaluating (x, r) coordinates.
+
+        Returns
+        -------
+        ember.block.Block
+            1D block with shape (n_stations,).
+        """
+        n = self.n_row * 2
+        xr = ann.evaluate_xr(np.linspace(0.0, ann.mmax, n), 0.5)
+        b = ember.block.Block(shape=(n,))
+        b.set_fluid(self.fluid)
+        b.set_xrt(xr[:, 0], xr[:, 1], np.zeros(n))
+        b.set_conserved(self.conserved)
+        b.set_mu_turb(np.full(n, np.mean(self.mu)))
+        return b
+
     def __repr__(self):
         """Return a string representation of the MeanLine object."""
         return f"MeanLine(n_row={self.n_row})"
