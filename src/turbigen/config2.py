@@ -502,6 +502,23 @@ class TurbigenConfig:
 
         self.mean_line.warn()
 
+    def adjust_Tu0(self):
+        """Set Tu0 so that mean stagnation enthalpy of nominal mean line is zero."""
+        import dataclasses
+
+        ml = self.mean_line.nominal
+        Tu0_new = float(ml.fluid.get_Tu0()) - float(ml.ho.mean()) / float(ml.cv.mean())
+
+        for station in ml._stations:
+            station.set_Tu0(Tu0_new)
+
+        if self.guess is not None:
+            for block in self.guess:
+                block.set_Tu0(Tu0_new)
+
+        self.fluid = dataclasses.replace(self.fluid, Tu0=Tu0_new)
+        logger.info(f"Adjusted Tu0 to {Tu0_new:.4f} K")
+
     def get_geometry(self):
         """Get the annulus and blade geometry."""
 
@@ -1012,6 +1029,7 @@ class TurbigenConfig:
         """
 
         self.get_mean_line_nominal()
+        self.adjust_Tu0()
 
         logger.info(self.mean_line.nominal.to_string())
 

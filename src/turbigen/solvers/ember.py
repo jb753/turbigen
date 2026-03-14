@@ -47,13 +47,16 @@ class Ember(BaseSolver):
         import matplotlib.pyplot as plt
 
         config = ember.config.SolverConfig(
-            n_step=5000,
+            n_step=10000,
             n_step_avg=1,
             n_step_log=50,
             n_levels=3,
             cfl_min=0.1,
+            debug=True,
             cfl_max=4.0,
             rtol=1e-6,
+            inviscid=True,
+            # shear_work=False,
             full_mgrid=True,
             fac_mgrid=0.5,
             # i_level_stop=2,
