@@ -36,7 +36,7 @@ mesh:
   type: h
   yplus: 30.0
   # resolution_factor: 0.7
-  dm_LE: 0.004
+  dm_LE: 0.002
   dm_TE: 0.2
   ni_TE: 9
 
