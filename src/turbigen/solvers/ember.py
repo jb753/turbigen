@@ -47,7 +47,7 @@ class Ember(BaseSolver):
 
         import matplotlib.pyplot as plt
 
-        # xllim = 0.0
+        xllim = 0.0
 
         # b = grid[0]
         # C = b[:, b.nj // 2, :]
@@ -59,12 +59,12 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=2000,
-            n_step_avg=1,
+            n_step=4000,
+            n_step_avg=1000,
             n_step_log=50,
             n_levels=3,
-            cfl_min=0.1,
-            # debug=True,
+            cfl_min=0.2,
+            debug=True,
             cfl_max=4.0,
             rtol=1e-6,
             inviscid=False,
@@ -72,11 +72,12 @@ class Ember(BaseSolver):
             full_mgrid=True,
             # n_step_ramp=1000,
             fac_mgrid=0.5,
-            rf_inlet=4.0,
-            rf_outlet=4.0,
-            # i_level_stop=1,
+            rf_inlet=2.0,
+            rf_outlet=2.0,
+            # rf_visc=0.2,
+            # i_level_stop=2,
             xllim=xllim,
-            sf4=0.01,
+            sf4=0.005,
             sf2_adapt=1.0,
             # cfl_smooth_floor=0.2,
             const_smoothing=False,
@@ -98,7 +99,6 @@ class Ember(BaseSolver):
         fig, ax = plt.subplots()
         ax.plot(C.P[:, 0], C.r[:, 0])
         ax.set_title("Pressure distribution ")
-        plt.show()
 
         fig, ax = plt.subplots()
         C = b[:, b.nj // 2, :]
@@ -118,6 +118,5 @@ class Ember(BaseSolver):
         cm = ax.contourf(C.x, C.rt, C.cfl_cell[..., -1], levels=10)
         plt.colorbar(cm, ax=ax)
         ax.axis("equal")
-        plt.show()
 
         plt.show()
