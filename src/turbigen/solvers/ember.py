@@ -58,24 +58,26 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=1000,
+            n_step=4000,
             n_step_avg=1,
             n_step_log=50,
             n_levels=3,
-            cfl_min=0.1,
+            cfl_min=0.05,
             # debug=True,
             cfl_max=4.0,
             rtol=1e-6,
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
+            # n_step_ramp=1000,
             fac_mgrid=0.5,
             rf_inlet=0.5,
             rf_outlet=0.5,
             i_level_stop=2,
             xllim=xllim,
             sf4=0.01,
-            sf2_adapt=0.5,
+            sf2_adapt=1.0,
+            cfl_smooth_floor=1.0,
             const_smoothing=False,
         )
 
