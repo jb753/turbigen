@@ -41,8 +41,8 @@ class Ember(BaseSolver):
         print(f"xllim: {xllim}")
 
         for patch in grid.patches.outlet:
-            # patch.set_radial_equilibrium(rf=0.1)
-            patch.set_P(patch.P * 0.95)
+            patch.set_radial_equilibrium(rf=0.5)
+            # patch.set_P(patch.P * 0.9)
 
         import matplotlib.pyplot as plt
 
@@ -58,24 +58,24 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=1000,
+            n_step=249,
             n_step_avg=1,
             n_step_log=50,
             n_levels=3,
-            cfl_min=0.1,
-            # debug=True,
+            cfl_min=0.05,
+            debug=True,
             cfl_max=4.0,
             rtol=1e-6,
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
             fac_mgrid=0.5,
-            rf_inlet=0.5,
-            rf_outlet=0.5,
-            i_level_stop=2,
+            rf_inlet=4.0,
+            rf_outlet=4.0,
+            i_level_stop=1,
             xllim=xllim,
             sf4=0.01,
-            sf2_adapt=0.5,
+            sf2_adapt=1.0,
             const_smoothing=False,
         )
 
@@ -85,82 +85,36 @@ class Ember(BaseSolver):
             pass
 
         b = grid[0]
-        C = b[:, b.nj // 2, :]
-
         print(b.shape)
-        C = b[:, b.nj // 2, b.nk // 2]
+
+        C = b[-1, :, :]
+        fig, ax = plt.subplots()
+        ax.contourf(C.rt, C.r, C.Vx, levels=10)
+        fig, ax = plt.subplots()
+        ax.contourf(C.rt, C.r, C.Vt, levels=10)
+        fig, ax = plt.subplots()
+        ax.plot(C.P[:, 0], C.r[:, 0])
+        ax.set_title("Pressure distribution ")
+        plt.show()
 
         fig, ax = plt.subplots()
         C = b[:, b.nj // 2, :]
+        iplot = 116
+        kplot = 72 // 2
         ax.plot(C.x, C.rt, "k-", lw=0.5)
         ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
-        ax.plot(C.x[90 * 2, 12], C.rt[90 * 2, 12], "r*")
-
-        b = grid[0]
-        C = b[:, b.nj // 2, :]
-        fig, ax = plt.subplots()
-        ax.contourf(C.x, C.rt, C.wdist)
+        ax.plot(C.x[iplot, kplot], C.rt[iplot, kplot], "r*")
         ax.axis("equal")
-        print(C.wdist.min(), C.wdist.max())
-        plt.show()
-        quit()
 
-        C = b[:, b.nj // 2, b.nk // 2]
         fig, ax = plt.subplots()
-        ax.plot(C.x, C.cfl_cell)
-        ax.set_ylabel("CFL number")
-
-        #
-        # fig, ax = plt.subplots()
-        # ax.plot(C.x, C.Alpha_rel)
-        # ax.set_ylabel("Relative flow angle")
-        #
-        # fig, ax = plt.subplots()
-        # ax.plot(C.x, C.Alpha)
-        # ax.set_ylabel("Absolute flow angle")
-        #
-        # print(C.U.mean())
-        #
-        fig, ax = plt.subplots()
-        b = grid[0]
-        C = b[:, 10, :]
-        lev = np.arange(0.0, 1.001, 0.1)
-        cm = ax.contourf(C.x, C.rt, C.Ma_rel, levels=lev)
+        ax.contourf(C.x, C.rt, C.Ma_rel, levels=10)
         ax.axis("equal")
+
+        fig, ax = plt.subplots()
+        C.cfl_cell[-1, -1, :] = np.nan
+        cm = ax.contourf(C.x, C.rt, C.cfl_cell[..., -1], levels=10)
         plt.colorbar(cm, ax=ax)
-        #
-        # plt.show()
-        #
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # cm = ax.contourf(C.x, C.rt, C.Alpha_rel)
-        # ax.axis("equal")
-        # ax.set_title("Relative flow angle")
-        # plt.colorbar(cm, ax=ax)
-        #
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # cm = ax.contourf(C.x, C.rt, C.Alpha)
-        # ax.axis("equal")
-        # ax.set_title("Absolute flow angle")
-        # plt.colorbar(cm, ax=ax)
-        #
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # cm = ax.contourf(C.x, C.rt, C.Vx)
-        # ax.axis("equal")
-        # ax.set_title("Axial velocity")
-        # plt.colorbar(cm, ax=ax)
-        #
-        # fig, ax = plt.subplots()
-        # b = grid[0]
-        # C = b[:, b.nj // 2, :]
-        # cm = ax.contourf(C.x, C.rt, C.To)
-        # ax.axis("equal")
-        # ax.set_title("Stagnation temp")
-        # plt.colorbar(cm, ax=ax)
-        #
+        ax.axis("equal")
+        plt.show()
+
         plt.show()

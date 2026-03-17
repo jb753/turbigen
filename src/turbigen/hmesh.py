@@ -466,11 +466,12 @@ class H(turbigen.mesh.Mesher):
                     ite -= 1
                 else:
                     icusp = ite
+                ptyp = ember.patch.InviscidPatch
                 patches = [
-                    ember.patch.PeriodicPatch(i=(0, ile), k=0),
-                    ember.patch.PeriodicPatch(i=(0, ile), k=-1),
-                    ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
-                    ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
+                    ptyp(i=(0, ile), k=0),
+                    ptyp(i=(0, ile), k=-1),
+                    ptyp(i=(icusp, -1), k=0),
+                    ptyp(i=(icusp, -1), k=-1),
                 ]
                 if mesh_config.AR_cusp:
                     logger.info("Adding cusps")

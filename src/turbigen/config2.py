@@ -724,11 +724,9 @@ class TurbigenConfig:
                 pid = self.operating_point.pid
                 # Constants are scaled by meanline Delta P / mdot
                 logger.info(f"Exit PID constants={pid}")
-                scale = (
-                    np.ptp(self.mean_line.nominal.P) / self.mean_line.nominal.mdot[-1]
-                )
-                Kpid = np.array(pid) * scale
-                self.grid.apply_throttle(mdot, Kpid)
+                # self.grid.apply_throttle(mdot, Kpid)
+                outlet = self.grid.patches.outlet[0]
+                outlet.set_throttle(mdot / outlet.Nb, (pid[0], 0, 0))
 
         # Set the rotation types
         gaps = self.get_gaps()

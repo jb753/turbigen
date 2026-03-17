@@ -37,8 +37,12 @@ mesh:
   yplus: 30.0
   # resolution_factor: 0.7
   dm_LE: 0.002
-  dm_TE: 0.2
+  dm_TE: 0.1
   ni_TE: 9
+
+operating_point:
+  throttle: true
+  pid: [0.01, 0.0, 0.0]
 
 # Configure the RANS solver
 solver:
