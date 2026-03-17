@@ -327,13 +327,13 @@ class H(turbigen.mesh.Mesher):
                             drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
                             try:
-                                pitch_frac_clust[
-                                    i, j, :
-                                ] = mesh_config.pitchwise_grid_fixed_npts(
-                                    drt_norm_now,
-                                    pitch_chord_ref[1],
-                                    AR_row,
-                                    nk_not_resampled,
+                                pitch_frac_clust[i, j, :] = (
+                                    mesh_config.pitchwise_grid_fixed_npts(
+                                        drt_norm_now,
+                                        pitch_chord_ref[1],
+                                        AR_row,
+                                        nk_not_resampled,
+                                    )
                                 )
                             except ValueError:
                                 raise Exception(
@@ -377,9 +377,7 @@ class H(turbigen.mesh.Mesher):
                         xrt_l,
                         mlim_now,
                         Theta,
-                        chord_mid[
-                            (0, -1),
-                        ],
+                        chord_mid[(0, -1),],
                         Theta_max=mesh_config.skew_max,
                     )[:2]
 
@@ -435,17 +433,8 @@ class H(turbigen.mesh.Mesher):
 
             # Evaluate the angular coordinates and assemble
             theta = np.flip(
-                pfr3
-                * theta_lim3[
-                    (0,),
-                ]
-                + (1.0 - pfr3)
-                * (
-                    theta_lim3[
-                        (1,),
-                    ]
-                    + pitch_theta
-                ),
+                pfr3 * theta_lim3[(0,),]
+                + (1.0 - pfr3) * (theta_lim3[(1,),] + pitch_theta),
                 axis=-1,
             )
 
@@ -466,12 +455,11 @@ class H(turbigen.mesh.Mesher):
                     ite -= 1
                 else:
                     icusp = ite
-                ptyp = ember.patch.InviscidPatch
                 patches = [
-                    ptyp(i=(0, ile), k=0),
-                    ptyp(i=(0, ile), k=-1),
-                    ptyp(i=(icusp, -1), k=0),
-                    ptyp(i=(icusp, -1), k=-1),
+                    ember.patch.PeriodicPatch(i=(0, ile), k=0),
+                    ember.patch.PeriodicPatch(i=(0, ile), k=-1),
+                    ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
+                    ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
                 if mesh_config.AR_cusp:
                     logger.info("Adding cusps")
@@ -773,12 +761,7 @@ class H(turbigen.mesh.Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         # Relax clustering towards a uniform distribution at inlet and exit
         dt_relax = (
-            np.ones((2,))
-            * self.nchord_relax
-            * pitch_chord[
-                (0, -1),
-            ]
-            / pitch_chord[1]
+            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])
