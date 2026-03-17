@@ -40,8 +40,8 @@ class Ember(BaseSolver):
         xllim = 0.03 * pitch_ref[0]
         print(f"xllim: {xllim}")
 
-        for patch in grid.patches.outlet:
-            patch.set_radial_equilibrium(rf=0.5)
+        # for patch in grid.patches.outlet:
+        #     patch.set_radial_equilibrium(rf=0.5)
 
         import matplotlib.pyplot as plt
 
@@ -58,22 +58,22 @@ class Ember(BaseSolver):
 
         config = ember.config.SolverConfig(
             n_step=1000,
-            n_step_avg=500,
+            n_step_avg=1,
             n_step_log=50,
-            n_levels=3,
+            n_levels=2,
             cfl_min=0.1,
             # debug=True,
             cfl_max=4.0,
             rtol=1e-6,
-            inviscid=True,
-            shear_work=False,
+            inviscid=False,
+            shear_work=True,
             full_mgrid=True,
             # n_step_ramp=1000,
             fac_mgrid=0.5,
             rf_inlet=2.0,
             rf_outlet=2.0,
             # rf_visc=0.2,
-            # i_level_stop=2,
+            # i_level_stop=1,
             xllim=xllim,
             sf4=0.01,
             sf2_adapt=1.0,
@@ -87,19 +87,17 @@ class Ember(BaseSolver):
         except SystemExit:
             pass
 
-        return
-
         b = grid[0]
         print(b.shape)
 
-        # C = b[-1, :, :]
-        # fig, ax = plt.subplots()
-        # ax.contourf(C.rt, C.r, C.Vx, levels=10)
-        # fig, ax = plt.subplots()
-        # ax.contourf(C.rt, C.r, C.Vt, levels=10)
-        # fig, ax = plt.subplots()
-        # ax.plot(C.P[:, 0], C.r[:, 0])
-        # ax.set_title("Pressure distribution ")
+        C = b[-1, :, :]
+        fig, ax = plt.subplots()
+        ax.contourf(C.rt, C.r, C.Vx, levels=10)
+        fig, ax = plt.subplots()
+        ax.contourf(C.rt, C.r, C.Vt, levels=10)
+        fig, ax = plt.subplots()
+        ax.plot(C.P[:, 0], C.r[:, 0])
+        ax.set_title("Pressure distribution ")
 
         fig, ax = plt.subplots()
         ax.axis("equal")
@@ -123,47 +121,47 @@ class Ember(BaseSolver):
         #         C.x[:-1, :-1], C.rt[:-1, :-1], C.cfl_cell[:-1, :-1, 0], levels=lev
         #     )
 
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        ax.set_title("fx")
-        for b in grid:
-            C = b[:, 72, :].squeeze()
-            f_body = b.f_body[1, :, 72, :].squeeze()
-            print(f_body.min(), f_body.max())
-            ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
+        # fig, ax = plt.subplots()
+        # ax.axis("equal")
+        # ax.set_title("fx")
+        # for b in grid:
+        #     C = b[:, 72, :].squeeze()
+        #     f_body = b.f_body[1, :, 72, :].squeeze()
+        #     print(f_body.min(), f_body.max())
+        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
 
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        ax.set_title("fr")
-        for b in grid:
-            C = b[:, 72, :].squeeze()
-            f_body = b.f_body[2, :, 72, :].squeeze()
-            print(f_body.min(), f_body.max())
-            ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
+        # fig, ax = plt.subplots()
+        # ax.axis("equal")
+        # ax.set_title("fr")
+        # for b in grid:
+        #     C = b[:, 72, :].squeeze()
+        #     f_body = b.f_body[2, :, 72, :].squeeze()
+        #     print(f_body.min(), f_body.max())
+        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
 
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        ax.set_title("ft")
-        for b in grid:
-            C = b[:, 72, :].squeeze()
-            f_body = b.f_body[3, :, 72, :].squeeze()
-            print(f_body.min(), f_body.max())
-            ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
+        # fig, ax = plt.subplots()
+        # ax.axis("equal")
+        # ax.set_title("ft")
+        # for b in grid:
+        #     C = b[:, 72, :].squeeze()
+        #     f_body = b.f_body[3, :, 72, :].squeeze()
+        #     print(f_body.min(), f_body.max())
+        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
 
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        ax.set_title("fe")
-        for b in grid:
-            C = b[:, 72, :].squeeze()
-            f_body = b.f_body[4, :, 72, :].squeeze()
-            print(f_body.min(), f_body.max())
-            ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
+        # fig, ax = plt.subplots()
+        # ax.axis("equal")
+        # ax.set_title("fe")
+        # for b in grid:
+        #     C = b[:, 72, :].squeeze()
+        #     f_body = b.f_body[4, :, 72, :].squeeze()
+        #     print(f_body.min(), f_body.max())
+        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
 
         fig, ax = plt.subplots()
         lev = np.arange(0.0, 1.1, 0.1)
         ax.axis("equal")
         for b in grid:
-            C = b[:, 72, :]
+            C = b[:, b.nj // 2, :]
             ax.contourf(C.x, C.rt, C.Ma_rel, levels=lev)
 
         # fig, ax = plt.subplots()
