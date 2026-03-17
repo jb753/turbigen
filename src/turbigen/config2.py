@@ -22,7 +22,7 @@ import turbigen.inlet
 import turbigen.mesh
 import turbigen.hmesh
 
-# import turbigen.ohmesh
+import turbigen.ohmesh
 import turbigen.blade
 import turbigen.dspace
 import turbigen.nblade
@@ -1027,7 +1027,7 @@ class TurbigenConfig:
         """
 
         self.get_mean_line_nominal()
-        self.adjust_Tu0()
+        # self.adjust_Tu0()
 
         logger.info(self.mean_line.nominal.to_string())
 

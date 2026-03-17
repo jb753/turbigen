@@ -3,6 +3,7 @@ import turbigen.autogrid
 import os
 import turbigen.util
 import turbigen.mesh
+import turbigen.autogrid.reader
 import dataclasses
 
 logger = turbigen.util.make_logger()
@@ -217,10 +218,10 @@ class OH(turbigen.mesh.Mesher):
 
         g = turbigen.autogrid.reader.read(g_path, bcs_path)
 
-        if rf := mesh_config.resolution_factor:
-            for b in g:
-                b.subsample(rf)
-            g.match_patches()
+        # if rf := mesh_config.resolution_factor:
+        #     for b in g:
+        #         b.subsample(rf)
+        #     g.match_patches()
 
         return g
 

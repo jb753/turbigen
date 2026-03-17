@@ -37,7 +37,7 @@ class Ember(BaseSolver):
         print(f"r_ref: {r_ref}")
         print(f"Nb: {Nb}")
         print(f"pitch_ref: {pitch_ref}")
-        xllim = 0.03 * pitch_ref
+        xllim = 0.03 * pitch_ref[0]
         print(f"xllim: {xllim}")
 
         for patch in grid[0].patches.outlet:
@@ -47,7 +47,7 @@ class Ember(BaseSolver):
 
         import matplotlib.pyplot as plt
 
-        xllim = 0.0
+        # xllim = 0.0
 
         # b = grid[0]
         # C = b[:, b.nj // 2, :]
@@ -59,12 +59,12 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=4000,
-            n_step_avg=1000,
+            n_step=2500,
+            n_step_avg=500,
             n_step_log=50,
             n_levels=3,
-            cfl_min=0.2,
-            debug=True,
+            cfl_min=0.1,
+            # debug=True,
             cfl_max=4.0,
             rtol=1e-6,
             inviscid=False,
@@ -75,11 +75,12 @@ class Ember(BaseSolver):
             rf_inlet=2.0,
             rf_outlet=2.0,
             # rf_visc=0.2,
-            # i_level_stop=2,
+            i_level_stop=2,
             xllim=xllim,
-            sf4=0.005,
+            sf4=0.01,
             sf2_adapt=1.0,
-            # cfl_smooth_floor=0.2,
+            rf_visc=0.2,
+            # cfl_smooth_floor=1.0,
             const_smoothing=False,
         )
 
@@ -91,32 +92,32 @@ class Ember(BaseSolver):
         b = grid[0]
         print(b.shape)
 
-        C = b[-1, :, :]
-        fig, ax = plt.subplots()
-        ax.contourf(C.rt, C.r, C.Vx, levels=10)
-        fig, ax = plt.subplots()
-        ax.contourf(C.rt, C.r, C.Vt, levels=10)
-        fig, ax = plt.subplots()
-        ax.plot(C.P[:, 0], C.r[:, 0])
-        ax.set_title("Pressure distribution ")
+        # C = b[-1, :, :]
+        # fig, ax = plt.subplots()
+        # ax.contourf(C.rt, C.r, C.Vx, levels=10)
+        # fig, ax = plt.subplots()
+        # ax.contourf(C.rt, C.r, C.Vt, levels=10)
+        # fig, ax = plt.subplots()
+        # ax.plot(C.P[:, 0], C.r[:, 0])
+        # ax.set_title("Pressure distribution ")
 
         fig, ax = plt.subplots()
-        C = b[:, b.nj // 2, :]
-        iplot = 116
-        kplot = 72 // 2
-        ax.plot(C.x, C.rt, "k-", lw=0.5)
-        ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
-        ax.plot(C.x[iplot, kplot], C.rt[iplot, kplot], "r*")
         ax.axis("equal")
+        for b in grid:
+            C = b[:, b.nj // 2, :]
+            ax.plot(C.x, C.rt, "k-", lw=0.5)
+            ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
 
         fig, ax = plt.subplots()
-        ax.contourf(C.x, C.rt, C.Ma_rel, levels=10)
         ax.axis("equal")
+        for b in grid:
+            C = b[:, b.nj // 2, :]
+            ax.contourf(C.x, C.rt, C.Ma_rel, levels=10)
 
-        fig, ax = plt.subplots()
-        C.cfl_cell[-1, -1, :] = np.nan
-        cm = ax.contourf(C.x, C.rt, C.cfl_cell[..., -1], levels=10)
-        plt.colorbar(cm, ax=ax)
-        ax.axis("equal")
+        # fig, ax = plt.subplots()
+        # C.cfl_cell[-1, -1, :] = np.nan
+        # cm = ax.contourf(C.x, C.rt, C.cfl_cell[..., -1], levels=10)
+        # plt.colorbar(cm, ax=ax)
+        # ax.axis("equal")
 
         plt.show()

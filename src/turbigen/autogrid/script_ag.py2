@@ -137,6 +137,8 @@ for n in range(nrow):
             row(n1).blade(iib).set_blend_treatment_at_trailing_edge(0)
             row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(1)
 
+        # row(n1).blade(iib).set_b2b_default_topology_cell_width_at_trailing_edge(float(conf["drt_row"][n]*4.0))
+
 
         row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
 

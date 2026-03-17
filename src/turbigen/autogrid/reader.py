@@ -1,5 +1,7 @@
 import numpy as np
-import turbigen.grid
+import ember.grid
+import ember.block
+import ember.patch
 
 
 def _read_coord(f, nijkb):
@@ -92,15 +94,15 @@ def read(g_file, bcs_file, Lref=1.0):
 
                 # Choose patch kind
                 if ptype in ("PER", "CON"):
-                    patch_now = turbigen.grid.PeriodicPatch(isten, jsten, ksten)
+                    patch_now = ember.patch.PeriodicPatch(isten, jsten, ksten)
                 elif ptype == "INL":
-                    patch_now = turbigen.grid.InletPatch(isten, jsten, ksten)
+                    patch_now = ember.patch.InletPatch(isten, jsten, ksten)
                 elif ptype == "OUT":
-                    patch_now = turbigen.grid.OutletPatch(isten, jsten, ksten)
+                    patch_now = ember.patch.OutletPatch(isten, jsten, ksten)
                 elif ptype == "ROT":
-                    patch_now = turbigen.grid.MixingPatch(isten, jsten, ksten)
+                    patch_now = ember.patch.MixingPatch(isten, jsten, ksten)
                 elif ptype == "NMB":
-                    patch_now = turbigen.grid.NonMatchPatch(isten, jsten, ksten)
+                    patch_now = ember.patch.NonMatchPatch(isten, jsten, ksten)
                 else:
                     raise Exception(f"Unrecognised IGG patch type {ptype}")
 
@@ -143,21 +145,15 @@ def read(g_file, bcs_file, Lref=1.0):
         tb = np.arctan2(zb, yb)
 
         # Make a block
-        xrtb = np.stack((xb, rb, tb))
-        blocks.append(
-            turbigen.grid.BaseBlock.from_coordinates(xrtb, nblade[ib], patches[ib])
-        )
+        xrtb = np.stack((xb, rb, tb), axis=-1)
+        blk = ember.block.Block(shape=nijk[ib])
+        blk.set_xrt(xrtb)
+        blk.set_Nb(nblade[ib])
+        blk.patches.extend(patches[ib])
+        blocks.append(blk)
 
     f.close()
 
-    g = turbigen.grid.Grid(blocks)
-
-    # Verify that the patch indices are valid
-    for p in g.periodic_patches:
-        ijk = p.ijk_limits
-        nijk = np.reshape(p.block.shape, (3, 1))
-        assert (ijk < nijk).all()
-
-    g.match_patches()
+    g = ember.grid.Grid(blocks)
 
     return g
