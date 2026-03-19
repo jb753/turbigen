@@ -327,13 +327,13 @@ class H(turbigen.mesh.Mesher):
                             drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
 
                             try:
-                                pitch_frac_clust[i, j, :] = (
-                                    mesh_config.pitchwise_grid_fixed_npts(
-                                        drt_norm_now,
-                                        pitch_chord_ref[1],
-                                        AR_row,
-                                        nk_not_resampled,
-                                    )
+                                pitch_frac_clust[
+                                    i, j, :
+                                ] = mesh_config.pitchwise_grid_fixed_npts(
+                                    drt_norm_now,
+                                    pitch_chord_ref[1],
+                                    AR_row,
+                                    nk_not_resampled,
                                 )
                             except ValueError:
                                 raise Exception(
@@ -377,7 +377,9 @@ class H(turbigen.mesh.Mesher):
                         xrt_l,
                         mlim_now,
                         Theta,
-                        chord_mid[(0, -1),],
+                        chord_mid[
+                            (0, -1),
+                        ],
                         Theta_max=mesh_config.skew_max,
                     )[:2]
 
@@ -433,8 +435,17 @@ class H(turbigen.mesh.Mesher):
 
             # Evaluate the angular coordinates and assemble
             theta = np.flip(
-                pfr3 * theta_lim3[(0,),]
-                + (1.0 - pfr3) * (theta_lim3[(1,),] + pitch_theta),
+                pfr3
+                * theta_lim3[
+                    (0,),
+                ]
+                + (1.0 - pfr3)
+                * (
+                    theta_lim3[
+                        (1,),
+                    ]
+                    + pitch_theta
+                ),
                 axis=-1,
             )
 
@@ -761,7 +772,12 @@ class H(turbigen.mesh.Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         # Relax clustering towards a uniform distribution at inlet and exit
         dt_relax = (
-            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
+            np.ones((2,))
+            * self.nchord_relax
+            * pitch_chord[
+                (0, -1),
+            ]
+            / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])
@@ -860,7 +876,15 @@ def _theta_limits(
     dtheta_skew = np.zeros_like(theta_u)
     ind_up = tq < mlim[0]
     ind_dn = tq >= mlim[1]
-    Theta_now = np.clip(Theta, -Theta_max, Theta_max)
+    if Theta_max >= 0.0:
+        Theta_now = np.clip(Theta, -Theta_max, Theta_max)
+    else:
+        thresh = -Theta_max
+        Theta_now = np.where(
+            np.abs(Theta) <= thresh,
+            Theta,
+            np.asarray(Theta) - np.sign(Theta) * 90.0,
+        )
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():
         dtheta_skew[ind_up] = (

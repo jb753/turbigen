@@ -74,7 +74,7 @@ class Ember(BaseSolver):
             full_mgrid=True,
             fac_mgrid=0.5,
             rf_visc=0.2,
-            # i_level_stop=2,
+            # i_level_stop=1,
             # debug=True,
         )
 
