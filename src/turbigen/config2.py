@@ -1027,7 +1027,7 @@ class TurbigenConfig:
         """
 
         self.get_mean_line_nominal()
-        # self.adjust_Tu0()
+        self.adjust_Tu0()
 
         logger.info(self.mean_line.nominal.to_string())
 

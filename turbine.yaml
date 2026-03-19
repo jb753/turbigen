@@ -1,6 +1,4 @@
-plug_dir: plug
-
-work_dir: test_run/0664
+work_dir: test_run/*
 
 fluid:
   type: perfect
@@ -34,7 +32,7 @@ nblade:
 mesh:
   type: h
   yplus: 30.0
-  dm_TE: 0.2
+  dm_TE: 0.1
   ni_TE: 9
   # remote_host: gp-111
   # remote_workdir: /mnt/data/jb753/meshing
