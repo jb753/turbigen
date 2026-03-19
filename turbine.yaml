@@ -34,6 +34,7 @@ mesh:
   yplus: 30.0
   dm_TE: 0.1
   ni_TE: 9
+  skew_max: 50.0
   # remote_host: gp-111
   # remote_workdir: /mnt/data/jb753/meshing
 

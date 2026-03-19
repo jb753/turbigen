@@ -57,11 +57,11 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=2500,
+            n_step=4000,
             n_step_avg=500,
             n_step_log=100,
             n_levels=3,
-            cfl_min=0.1,
+            cfl_min=0.2,
             cfl_max=4.0,
             rtol=1e-6,
             xllim=xllim,
@@ -75,7 +75,7 @@ class Ember(BaseSolver):
             fac_mgrid=0.5,
             rf_visc=0.2,
             # i_level_stop=2,
-            debug=True,
+            # debug=True,
         )
 
         try:
