@@ -47,7 +47,7 @@ class Ember(BaseSolver):
 
         # xllim = 0.0
 
-        # b = grid[0]
+        # b = gridwe[0]
         # C = b[:, b.nj // 2, :]
         # fig, ax = plt.subplots()
         # ax.contourf(C.x, C.rt, C.wdist)
