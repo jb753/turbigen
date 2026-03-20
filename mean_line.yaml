@@ -21,13 +21,13 @@ mean_line:
 
 annulus:
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.2]
+  cx_gap: [0.1, 0.3]
   cx_row: [0.1]
 
 blades:
     - spf: 0.5
       thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
-      camber: [-2., 0., -1.2]
+      camber: [0., 0., -1.2]
 
 nblade:
   - Co: 0.4
@@ -36,13 +36,14 @@ mesh:
   type: h
   yplus: 30.0
   # resolution_factor: 0.7
-  dm_LE: 0.002
+  skew_max: 45
   dm_TE: 0.1
   ni_TE: 9
 
 operating_point:
   throttle: true
-  pid: [0.01, 0.0, 0.0]
+  pid: [0.0, 5.0, 0.0]
+  # PR_ts_adjust: -0.2
 
 # Configure the RANS solver
 solver:
