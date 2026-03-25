@@ -509,8 +509,9 @@ class TurbigenConfig:
         ml = self.mean_line.nominal
 
         # Set zero level for internal energy and entropy to mean
+        # Adjust T_dtm so that mean ho is approximately zero: T_dtm = T_mean + ho_mean/cp_mean
         P_dtm = ml.P.mean()
-        T_dtm = ml.T.mean()
+        T_dtm = ml.T.mean() + ml.ho.mean() / ml.cp.mean()
 
         # Calculate reference scales
         rho_ref = ml.rho.mean()

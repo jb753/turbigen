@@ -41,7 +41,7 @@ class Ember(BaseSolver):
         print(f"xllim: {xllim}")
 
         for patch in grid.patches.outlet:
-            patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
+            patch.set_adjustment("dynamic_head", K=1.0, rf=0.5)
 
         import matplotlib.pyplot as plt
 
@@ -60,8 +60,8 @@ class Ember(BaseSolver):
         print(b.L_ref, b.fluid.rho_ref, b.fluid.V_ref)
 
         config = ember.config.SolverConfig(
-            n_step=3200,
-            n_step_avg=800,
+            n_step=4000,
+            n_step_avg=1000,
             n_step_log=100,
             n_levels=3,
             cfl_min=0.2,
@@ -75,8 +75,8 @@ class Ember(BaseSolver):
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
-            fac_mgrid=0.5,
-            i_level_stop=2,
+            fac_mgrid=1.0,
+            # i_level_stop=2,
             # debug=True,
         )
 
