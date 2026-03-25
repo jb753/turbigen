@@ -90,8 +90,7 @@ def get_i_stag(block):
             f"this block has shape {block.shape}"
         )
 
-    # Use rotary static pressure to remove centrifugal pressure gradient
-    P = block.P_rot
+    P = block.P
 
     # Get arc length and normalize to [-1, 1] on each j-line
     zeta = get_zeta(block)
@@ -242,10 +241,10 @@ def get_pressure_distribution(
     # Extract reference pressures
     meanline_row = meanline.get_row(irow)
     Po1 = meanline_row.Po_rel[0]
-    if use_rot:
-        P1, P2 = meanline_row.P_rot
-    else:
-        P1, P2 = meanline_row.P
+    # if use_rot:
+    #     P1, P2 = meanline_row.P_rot
+    # else:
+    P1, P2 = meanline_row.P
 
     # Get blade surface and slice at span fraction
     surf = grid.cut_blade_surfs(offset)[irow][0]
@@ -253,10 +252,10 @@ def get_pressure_distribution(
     surf = surf.meridional_slice(xr_spf)
 
     # Get surface distance and pressure
-    if use_rot:
-        P = surf.P_rot
-    else:
-        P = surf.P
+    # if use_rot:
+    #     P = surf.P_rot
+    # else:
+    P = surf.P
 
     # Extract surface distance and normalise to [-1, 1]
     zeta_stag = surf.zeta_stag

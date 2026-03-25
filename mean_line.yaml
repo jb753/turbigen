@@ -37,7 +37,7 @@ mesh:
   yplus: 30.0
   # resolution_factor: 0.7
   skew_max: 45
-  dm_TE: 0.2
+  dm_TE: 0.1
   ni_TE: 9
 
 operating_point:

@@ -502,22 +502,46 @@ class TurbigenConfig:
 
         self.mean_line.warn()
 
-    def adjust_Tu0(self):
-        """Set Tu0 so that mean stagnation enthalpy of nominal mean line is zero."""
+    def adjust_ref(self):
+        """Set thermodynamic datum and reference scales from nominal mean line."""
         import dataclasses
 
         ml = self.mean_line.nominal
-        Tu0_new = float(ml.fluid.get_Tu0()) - float(ml.ho.mean()) / float(ml.cv.mean())
 
-        for station in ml._stations:
-            station.set_Tu0(Tu0_new)
+        # Set zero level for internal energy and entropy to mean
+        P_dtm = ml.P.mean()
+        T_dtm = ml.T.mean()
+
+        # Calculate reference scales
+        rho_ref = ml.rho.mean()
+        V_ref = ml.V.mean()
+        L_ref = ml.span.mean()
+        Rgas_ref = ml.rgas.mean()
+
+        # Update the fluid config with the new datum
+        self.fluid = dataclasses.replace(
+            self.fluid,
+            P_dtm=P_dtm,
+            T_dtm=T_dtm,
+            rho_ref=rho_ref,
+            V_ref=V_ref,
+            rgas_ref=Rgas_ref,
+        )
+        f = self.fluid.fluid
+
+        ml.set_fluid(f)
+        ml.set_L_ref(L_ref=L_ref)
 
         if self.guess is not None:
             for block in self.guess:
-                block.set_Tu0(Tu0_new)
+                block.set_fluid(f)
+                block.set_L_ref(L_ref=L_ref)
 
-        self.fluid = dataclasses.replace(self.fluid, Tu0=Tu0_new)
-        logger.info(f"Adjusted Tu0 to {Tu0_new:.4f} K")
+        logger.info("Adjusting reference scales from mean line:")
+        logger.info(f"  P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
+        logger.info(
+            f"  rho_ref={rho_ref:.2f} kg/m^3, V_ref={V_ref:.1f} m/s, L_ref={L_ref:.2f} m, Rgas_ref={Rgas_ref:.1f} J/kg/K"
+        )
 
     def get_geometry(self):
         """Get the annulus and blade geometry."""
@@ -657,6 +681,8 @@ class TurbigenConfig:
             mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
         )
 
+        self.grid.set_L_ref(self.mean_line.nominal.L_ref)
+
         logger.info(f"n_cell/1e6={self.grid.size / 1e6:.1f}")
 
         # import matplotlib.pyplot as plt
@@ -753,7 +779,7 @@ class TurbigenConfig:
         # Beta1 = np.degrees(np.arctan2(Ain[1], Ain[0]))
         # Alpha1 = self.mean_line.nominal.Alpha[0]
 
-        self.grid.patches.inlet[0].set_inlet(Po1, To1, Alpha1, Beta1)
+        self.grid.patches.inlet[0].set_Po_To_Alpha_Beta(Po1, To1, Alpha1, Beta1)
 
         # Apply profile if available
         if self.inlet is not None and self.inlet.profiles is not None:
@@ -959,6 +985,7 @@ class TurbigenConfig:
         Re_surf : (nrow,) ndarray
             Surface Reynolds number for each blade row.
         """
+        ml = self.mean_line.nominal
         row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
         L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
         ell = self.get_ell()
@@ -977,10 +1004,13 @@ class TurbigenConfig:
             Wall cell spacing for each blade row [m].
         """
         Re_surf = self.calculate_Re_surf()
+        logger.debug("Calculating wall cell spacing using flat plate correlations...")
+        logger.debug(f"Surface Reynolds numbers: {Re_surf}")
         row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
 
         # Flat plate skin friction correlation
         Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3
+        logger.debug(f"Skin friction coefficients: {Cf}")
 
         # Shear stress at wall
         tauw = (
@@ -989,9 +1019,11 @@ class TurbigenConfig:
             * np.array([row.rho for row in row_ref])
             * np.array([row.V_rel**2 for row in row_ref])
         )
+        logger.debug(f"Wall shear stresses: {tauw}")
 
         # Friction velocity
         Vtau = np.sqrt(tauw / np.array([row.rho for row in row_ref]))
+        logger.debug(f"Friction velocities: {Vtau}")
 
         # Viscous length scale
         Lvisc = (
@@ -999,8 +1031,13 @@ class TurbigenConfig:
             / np.array([row.rho for row in row_ref])
             / Vtau
         )
+        logger.debug(f"Viscous length scales: {Lvisc}")
+        logger.debug(f"yplus setting: {self.mesh.yplus}")
 
-        return self.mesh.yplus * Lvisc
+        dwall = self.mesh.yplus * Lvisc
+        logger.debug(f"Calculated wall cell spacings: {dwall}")
+
+        return dwall
 
     def set_mu_from_Re_surf(self):
         raise NotImplementedError("set_mu_from_Re_surf is not implemented yet.")
@@ -1030,8 +1067,11 @@ class TurbigenConfig:
 
         """
 
+        # Calculate the nominal mean-line flow
         self.get_mean_line_nominal()
-        self.adjust_Tu0()
+
+        # Use the mean-line to adjust reference scales
+        self.adjust_ref()
 
         logger.info(self.mean_line.nominal.to_string())
 
@@ -1052,8 +1092,6 @@ class TurbigenConfig:
         # Set viscosity from Reynolds number if given
         if self.Re_surf:
             self.set_mu_from_Re_surf()
-
-        Re_surf = self.calculate_Re_surf()
 
         # We are now ready to generate mesh and run CFD
         # There are three cases to consider

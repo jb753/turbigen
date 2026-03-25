@@ -56,9 +56,12 @@ class Ember(BaseSolver):
         # plt.show()
         # quit()
 
+        b = grid[0]
+        print(b.L_ref, b.fluid.rho_ref, b.fluid.V_ref)
+
         config = ember.config.SolverConfig(
-            n_step=4000,
-            n_step_avg=1000,
+            n_step=3200,
+            n_step_avg=800,
             n_step_log=100,
             n_levels=3,
             cfl_min=0.2,
@@ -66,16 +69,14 @@ class Ember(BaseSolver):
             rtol=1e-6,
             xllim=xllim,
             sf4=0.01,
-            sf2_adapt=2.0,
-            rf_inlet=4.0,
-            rf_outlet=2.0,
+            sf2_adapt=1.0,
+            rf_inlet=2.0,
+            rf_outlet=1.0,
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
             fac_mgrid=0.5,
-            rf_visc=0.2,
-            # cfl_smooth_floor=0.2,
-            # i_level_stop=2,
+            i_level_stop=2,
             # debug=True,
         )
 
@@ -84,87 +85,6 @@ class Ember(BaseSolver):
         except SystemExit:
             pass
 
-        b = grid[0]
-        print(b.shape)
-
-        C = b[-1, :, :]
-        fig, ax = plt.subplots()
-        ax.contourf(C.rt, C.r, C.Vx, levels=10)
-        fig, ax = plt.subplots()
-        ax.contourf(C.rt, C.r, C.Vt, levels=10)
-        fig, ax = plt.subplots()
-        ax.plot(C.P[:, 0], C.r[:, 0])
-        ax.set_title("Pressure distribution ")
-
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        for b in grid:
-            C = b[:, b.nj // 2, :]
-            ax.plot(C.x, C.rt, "k-", lw=0.5)
-            ax.plot(C.x.T, C.rt.T, "k-", lw=0.5)
-
-        fig, ax = plt.subplots()
-        ax.axis("equal")
-        C = grid.patches.outlet[0].get_cut().squeeze()
-        ax.contourf(C.z, C.y, C.Vx)
-        ax.contour(C.z, C.y, C.Vx, levels=(0,))
-
-        # fig, ax = plt.subplots()
-        # lev = np.arange(0.0, 4.0, 0.05)
-        # ax.axis("equal")
-        # for b in grid:
-        #     C = b[:, 72, :]
-        #     ax.contourf(
-        #         C.x[:-1, :-1], C.rt[:-1, :-1], C.cfl_cell[:-1, :-1, 0], levels=lev
-        #     )
-
-        # fig, ax = plt.subplots()
-        # ax.axis("equal")
-        # ax.set_title("fx")
-        # for b in grid:
-        #     C = b[:, 72, :].squeeze()
-        #     f_body = b.f_body[1, :, 72, :].squeeze()
-        #     print(f_body.min(), f_body.max())
-        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
-
-        # fig, ax = plt.subplots()
-        # ax.axis("equal")
-        # ax.set_title("fr")
-        # for b in grid:
-        #     C = b[:, 72, :].squeeze()
-        #     f_body = b.f_body[2, :, 72, :].squeeze()
-        #     print(f_body.min(), f_body.max())
-        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
-
-        # fig, ax = plt.subplots()
-        # ax.axis("equal")
-        # ax.set_title("ft")
-        # for b in grid:
-        #     C = b[:, 72, :].squeeze()
-        #     f_body = b.f_body[3, :, 72, :].squeeze()
-        #     print(f_body.min(), f_body.max())
-        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
-
-        # fig, ax = plt.subplots()
-        # ax.axis("equal")
-        # ax.set_title("fe")
-        # for b in grid:
-        #     C = b[:, 72, :].squeeze()
-        #     f_body = b.f_body[4, :, 72, :].squeeze()
-        #     print(f_body.min(), f_body.max())
-        #     ax.contourf(C.x[:-1, :-1].squeeze(), C.rt[:-1, :-1].squeeze(), f_body)
-
-        fig, ax = plt.subplots()
-        lev = np.arange(0.0, 1.1, 0.1)
-        ax.axis("equal")
-        for b in grid:
-            C = b[:, b.nj // 2, :]
-            ax.contourf(C.x, C.rt, C.Ma_rel, levels=lev)
-
-        # fig, ax = plt.subplots()
-        # C.cfl_cell[-1, -1, :] = np.nan
-        # cm = ax.contourf(C.x, C.rt, C.cfl_cell[..., -1], levels=10)
-        # plt.colorbar(cm, ax=ax)
-        # ax.axis("equal")
-
-        plt.show()
+        fname_out = workdir.parent / "soln.pkl"
+        logger.info(f"Saving solution to {fname_out}")
+        grid.write_emb(fname_out, compress=False)

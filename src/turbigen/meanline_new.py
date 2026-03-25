@@ -272,6 +272,12 @@ class MeanLine:
             station.set_fluid(fluid)
         return self
 
+    def set_L_ref(self, L_ref):
+        """Set the reference length scale."""
+        for station in self._stations:
+            station.set_L_ref(L_ref)
+        return self
+
     @property
     def n_row(self):
         """Number of blade rows."""
@@ -286,6 +292,11 @@ class MeanLine:
     def fluid(self):
         """Equation of state."""
         return self._stations[0].fluid
+
+    @property
+    def L_ref(self):
+        """Reference length scale [m]."""
+        return self._stations[0].L_ref
 
     def copy(self):
         """Create a deep copy of the MeanLine."""
@@ -539,10 +550,18 @@ class Station(ember.block.Block):
             raise ValueError(f"Station must be a scalar, got shape {self.shape}")
         super().__post_init__()
 
+    def set_L_ref(self, L_ref):
+        """Set the reference length scale."""
+        fac_L = L_ref / self.L_ref
+        Am = self._get_data_by_keys(("Am",))
+        self._set_data_by_keys(("Am",), Am / fac_L**2, store_init=False)
+        super().set_L_ref(L_ref)
+        return self
+
     @property
     def Am(self):
         """Annulus area projected in meridional direction [m^2]."""
-        return self._get_data_by_keys(("Am",))
+        return self._get_data_by_keys(("Am",)) * self.L_ref**2
 
     @property
     def mdot(self):
@@ -552,7 +571,7 @@ class Station(ember.block.Block):
     @property
     def r_rms(self):
         """Annulus root-mean-square radius [m]."""
-        return self._get_data_by_keys(("r",))
+        return self._get_data_by_keys(("r",)) * self.L_ref
 
     @property
     def cosBeta(self):
@@ -586,7 +605,7 @@ class Station(ember.block.Block):
 
     def set_Am(self, Am):
         """Set annulus area projected in meridional direction."""
-        self._set_data_by_keys(("Am",), Am)
+        self._set_data_by_keys(("Am",), Am / self.L_ref**2)
         return self
 
     def set_r(self, r):

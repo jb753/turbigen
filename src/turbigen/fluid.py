@@ -86,11 +86,15 @@ class PerfectFluidConfig(FluidConfig):
     mu: float
     """Dynamic viscosity [kg/m/s]"""
 
-    Pr: float = 1.0
+    Pr: float = 0.7
     """Prandtl number [--]"""
 
-    Tu0: float = 300.0
-    """Temperature datum for internal energy [K]"""
+    # Location of entropy and internal energy tables (for tabulated fluids)
+    P_dtm: float = 1e5
+    T_dtm: float = 300.0
+    V_ref: float = 1.0
+    rho_ref: float = 1.0
+    rgas_ref: float = 1.0
 
     def __post_init__(self):
         # Validate that type is correct
@@ -107,5 +111,9 @@ class PerfectFluidConfig(FluidConfig):
             gamma=self.gamma,
             mu=self.mu,
             Pr=self.Pr,
-            Tu0=self.Tu0,
+            P_dtm=self.P_dtm,
+            T_dtm=self.T_dtm,
+            V_ref=self.V_ref,
+            rho_ref=self.rho_ref,
+            Rgas_ref=self.rgas_ref,
         )
