@@ -75,7 +75,7 @@ class Ember(BaseSolver):
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
-            fac_mgrid=1.0,
+            fac_mgrid=0.5,
             # i_level_stop=2,
             # debug=True,
         )
