@@ -7,7 +7,7 @@ import numpy as np
 # and then change file name below
 
 # Load the solution file into a Grid object
-fname = "test_run/0409/soln.pkl"
+fname = "test_run/0482/soln.pkl"
 g = ember.grid.Grid.read_emb(fname)
 
 # Rotor only has a single block, extract it by indexing into grid
@@ -52,5 +52,9 @@ ax.axis("equal")
 # Pressure on the blade
 fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-")
+
+# Pressure on the blade
+fig, ax = plt.subplots()
+ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-")
 
 plt.show()

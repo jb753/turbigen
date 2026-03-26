@@ -41,7 +41,7 @@ class Ember(BaseSolver):
         print(f"xllim: {xllim}")
 
         for patch in grid.patches.outlet:
-            patch.set_adjustment("dynamic_head", K=1.0, rf=0.5)
+            patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         import matplotlib.pyplot as plt
 
@@ -68,8 +68,8 @@ class Ember(BaseSolver):
             cfl_max=4.0,
             rtol=1e-6,
             xllim=xllim,
-            sf4=0.01,
-            sf2_adapt=1.0,
+            sf4=0.02,
+            sf2_adapt=2.0,
             rf_inlet=2.0,
             rf_outlet=1.0,
             inviscid=False,

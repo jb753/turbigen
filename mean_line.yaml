@@ -7,7 +7,6 @@ fluid:
   cp: 1005
   gamma: 1.4
   mu: 1.8e-4
-  Tu0: 500.0
 
 mean_line:
   type: custom
@@ -42,7 +41,7 @@ mesh:
 
 operating_point:
   throttle: true
-  pid: [0.0, 5.0, 0.0]
+  pid: [100.0, 5.0, 0.0]
   # PR_ts_adjust: -0.2
 
 # Configure the RANS solver
