@@ -7,7 +7,7 @@ import numpy as np
 # and then change file name below
 
 # Load the solution file into a Grid object
-fname = "test_run/0482/soln.pkl"
+fname = "test_run/0495/soln.pkl"
 g = ember.grid.Grid.read_emb(fname)
 
 # Rotor only has a single block, extract it by indexing into grid
@@ -41,7 +41,9 @@ ax.axis("equal")
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 1.0, 0.1)
-ax.contourf(Cjm.x, Cjm.rt, Cjm.Ma_rel, lev_Ma, cmap="cubehelix")
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
 ax.axis("equal")
 
 # Contours of Ma downstream of blade

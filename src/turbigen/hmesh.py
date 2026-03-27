@@ -533,8 +533,12 @@ class H(turbigen.mesh.Mesher):
             xr0 = g[irow].xrt[-1, :, 0, :2]
             xr1 = g[irow + 1].xrt[0, :, 0, :2]
             xrav = 0.5 * (xr0 + xr1)
-            g[irow][-1].set_xrt(xrav)
-            g[irow + 1][0].set_xrt(xrav)
+            xav = xrav[..., 0, None]
+            rav = xrav[..., 1, None]
+            g[irow][-1].set_x(xav)
+            g[irow + 1][0].set_x(xav)
+            g[irow][-1].set_r(rav)
+            g[irow + 1][0].set_r(rav)
 
         g.connectivity.periodic.pair()
 
