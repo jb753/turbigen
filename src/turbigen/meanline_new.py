@@ -278,6 +278,34 @@ class MeanLine:
             station.set_L_ref(L_ref)
         return self
 
+    def adjust_ref(self):
+        """Set fluid references and L_ref from the current design.
+
+        -------
+        fluid_ref : Fluid
+            The new fluid object set on all blocks.
+        L_ref : float
+            The reference length set on all blocks.
+        """
+
+        rho_ref = self.rho.mean()
+        V_ref = self.V.mean()
+        Rgas_ref = self.rgas.mean()
+        P_dtm = self.P.mean()
+        T_dtm = (self.T + (self.P / self.rho + self.halfVsq) / self.cv).mean()
+
+        fluid_ref = self.fluid.change_ref(
+            rho_ref=rho_ref,
+            V_ref=V_ref,
+            Rgas_ref=Rgas_ref,
+        ).change_datum(P_dtm=P_dtm, T_dtm=T_dtm)
+
+        L_ref = self.span.mean()
+        self.set_L_ref(L_ref)
+        self.set_fluid(fluid_ref)
+
+        return fluid_ref, L_ref
+
     @property
     def n_row(self):
         """Number of blade rows."""

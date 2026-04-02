@@ -504,44 +504,22 @@ class TurbigenConfig:
 
     def adjust_ref(self):
         """Set thermodynamic datum and reference scales from nominal mean line."""
-        import dataclasses
 
-        ml = self.mean_line.nominal
-
-        # Set zero level for internal energy and entropy to mean
-        # Adjust T_dtm so that mean ho is approximately zero: T_dtm = T_mean + ho_mean/cp_mean
-        P_dtm = ml.P.mean()
-        T_dtm = ml.T.mean() + ml.ho.mean() / ml.cp.mean()
-
-        # Calculate reference scales
-        rho_ref = ml.rho.mean()
-        V_ref = ml.V.mean()
-        L_ref = ml.span.mean()
-        Rgas_ref = ml.rgas.mean()
-
-        # Update the fluid config with the new datum
-        self.fluid = dataclasses.replace(
-            self.fluid,
-            P_dtm=P_dtm,
-            T_dtm=T_dtm,
-            rho_ref=rho_ref,
-            V_ref=V_ref,
-            rgas_ref=Rgas_ref,
-        )
-        f = self.fluid.fluid
-
-        ml.set_fluid(f)
-        ml.set_L_ref(L_ref=L_ref)
+        fluid, L_ref = self.mean_line.nominal.adjust_ref()
 
         if self.guess is not None:
             for block in self.guess:
-                block.set_fluid(f)
-                block.set_L_ref(L_ref=L_ref)
+                block.set_fluid(fluid)
+                block.set_L_ref(L_ref)
 
+        P_dtm, T_dtm = fluid.get_datum()
         logger.info("Adjusting reference scales from mean line:")
         logger.info(f"  P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
         logger.info(
-            f"  rho_ref={rho_ref:.2f} kg/m^3, V_ref={V_ref:.1f} m/s, L_ref={L_ref:.2f} m, Rgas_ref={Rgas_ref:.1f} J/kg/K"
+            f"  rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s, L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
+        )
+        logger.info(
+            f"  Mean ho/V_ref^2 now = {self.mean_line.nominal.ho.mean() / fluid.V_ref**2:.3f}"
         )
 
     def get_geometry(self):

@@ -57,21 +57,21 @@ class Ember(BaseSolver):
         # quit()
 
         b = grid[0]
-        print(b.L_ref, b.fluid.rho_ref, b.fluid.V_ref)
 
         config = ember.config.SolverConfig(
-            n_step=4000,
+            n_step=5000,
             n_step_avg=1000,
             n_step_log=100,
             n_levels=3,
             cfl_min=0.2,
-            cfl_max=4.0,
+            cfl_max=3.0,
             rtol=1e-6,
             xllim=xllim,
             sf4=0.02,
             sf2_adapt=2.0,
             rf_inlet=2.0,
             rf_outlet=1.0,
+            rf_mixing=1.0,
             inviscid=False,
             shear_work=True,
             full_mgrid=True,
