@@ -7,7 +7,9 @@ import numpy as np
 # and then change file name below
 
 # Load the solution file into a Grid object
-fname = "test_run/0555/soln.pkl"
+import sys
+
+fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
 
 # Rotor only has a single block, extract it by indexing into grid
