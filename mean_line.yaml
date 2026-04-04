@@ -41,7 +41,7 @@ mesh:
 
 operating_point:
   throttle: true
-  pid: [100.0, 5.0, 0.0]
+  pid: [100.0, 1.0, 0.0]
   # PR_ts_adjust: -0.2
 
 # Configure the RANS solver
