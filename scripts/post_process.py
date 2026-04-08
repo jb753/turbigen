@@ -25,7 +25,7 @@ print(f"Block shape: ni={ni}, nj={nj}, nk={nk}")
 # Take planes at mid-span and mid-pitch and downstream of blade
 Cjm = b[:, nj // 2, :]
 Cmk = b[:, :, nk // 2]
-C2 = b[-33, :, :]
+C2 = b[-1, :, :]
 
 # Plot the mid-span grid lines in x/rt blade-to-blade plane
 fig, ax = plt.subplots()
@@ -50,15 +50,26 @@ ax.axis("equal")
 
 # Contours of Ma downstream of blade
 fig, ax = plt.subplots()
-ax.contourf(C2.z, C2.y, C2.Ma, lev_Ma, cmap="cubehelix")
+lev_Ma = np.arange(-1.0, 0.8, 0.1)
+cm = ax.contourf(C2.z, C2.y, C2.Max, lev_Ma, cmap="cubehelix")
+plt.colorbar(cm)
+ax.contour(
+    C2.z,
+    C2.y,
+    C2.Max,
+    [
+        1,
+    ],
+    colors="k",
+)
 ax.axis("equal")
 
 # Pressure on the blade
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-")
+ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
 
 # Pressure on the blade
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-")
+ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
 
 plt.show()
