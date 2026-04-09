@@ -20,7 +20,7 @@ mean_line:
 
 annulus:
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.1]
+  cx_gap: [0.1, 0.2]
   cx_row: [0.1]
 
 blades:

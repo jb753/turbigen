@@ -11,25 +11,25 @@ fluid:
 mean_line:
   type: stator
   n_row: 2
-  span: 0.16
+  span: 0.2
   htr: 0.9
   phi: 0.6
-  psi: 0.6
+  psi: 0.5
   Lam: 0.5
   Ma1_rel: 0.6
 
 annulus:
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.1, 0.1]
+  cx_gap: [0.1, 0.1, 0.15]
   cx_row: [0.1, 0.1]
 
 blades:
     - spf: 0.5
       thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
-      camber: [2., 0., -1.2]
+      camber: [2., 2., -0.8]
     - spf: 0.5
       thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
-      camber: [-2., 0., -1.2]
+      camber: [-2., 0., -0.8]
 
 nblade:
   - Co: 0.4
