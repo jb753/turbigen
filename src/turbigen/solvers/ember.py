@@ -62,9 +62,11 @@ class Ember(BaseSolver):
         config = ember.config.SolverConfig(
             n_step=5000,
             n_step_avg=1000,
-            n_step_log=500,
+            n_step_log=100,
             n_levels=4,
             xllim=xllim,
+            sf4=1 / 64,
+            sf2_adapt=1 / 2,
             full_mgrid=True,
             # i_level_stop=1,
             # debug=True,
