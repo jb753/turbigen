@@ -60,7 +60,7 @@ class Ember(BaseSolver):
         b = grid[0]
 
         config = ember.config.SolverConfig(
-            n_step=4000,
+            n_step=5000,
             n_step_avg=1000,
             n_step_log=200,
             n_levels=4,
