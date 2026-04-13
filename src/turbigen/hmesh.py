@@ -73,6 +73,8 @@ class H(turbigen.mesh.Mesher):
 
     plot: bool = False
 
+    gap_contraction: float = 0.6
+
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
@@ -174,9 +176,13 @@ class H(turbigen.mesh.Mesher):
 
             # Spanwise grid
             tip_ref = np.max(tip_span_all)
-            span_frac = mesh_config.spanwise_grid(dspf_hub, dspf_casing, tip_ref)
+            span_frac = mesh_config.spanwise_grid(
+                dspf_hub, dspf_casing, tip_ref * self.gap_contraction
+            )
 
             if mesh_config.slip_annulus:
+                quit()
+                print("slip annulus")
                 dspf = mesh_config.dspf_mid
                 span_frac = clusterfunc.symmetric.free(
                     dspf / 2.0, dspf, mesh_config.ER_span
@@ -418,12 +424,29 @@ class H(turbigen.mesh.Mesher):
             # Pinch the tip
             if mac.tip[irow] and not unbladed[irow]:
                 theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
-                tau = mac.tip[irow]
+                spf_pinch = [
+                    1.0 - tip_ref * 2.0,
+                    1.0 - tip_ref * self.gap_contraction,
+                    1.0,
+                ]
+                pinch_pinch = [0.0, 1.0, 1.0]
                 pinch_frac = np.interp(
-                    span_frac, [1.0 - 1.5 * tau, 1.0 - 0.6 * tau, 1.0], [0.0, 1.0, 1.0]
+                    span_frac,
+                    spf_pinch,
+                    pinch_pinch,
                 ).reshape(1, 1, -1)
                 theta_lim = pinch_frac * theta_mid + (1.0 - pinch_frac) * theta_lim
                 njtip = np.sum(pinch_frac == 1.0)
+
+                # import matplotlib.pyplot as plt
+                # fig, ax = plt.subplots()
+                # ax.plot(np.ones_like(span_frac), span_frac, "k-x")
+                # ax.plot(pinch_pinch, spf_pinch, "r-o")
+                # plt.show()
+                # quit()
+                # print(njtip)
+                # quit()
+
             else:
                 njtip = 0
 
@@ -501,10 +524,13 @@ class H(turbigen.mesh.Mesher):
 
             # Tip gap
             if njtip:
+                ilim_tip = (ile, icusp)
+                jlim_tip = (-njtip, -1)
+                print(f"Adding tip patches i={ilim_tip}, j={jlim_tip}")
                 patches.extend(
                     [
-                        ember.patch.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=0),
-                        ember.patch.PeriodicPatch(i=(ile, ite), j=(-njtip, -1), k=-1),
+                        ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=0),
+                        ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=-1),
                     ]
                 )
 
@@ -589,6 +615,7 @@ class H(turbigen.mesh.Mesher):
             assert spf[0] == 0.0
             assert np.isclose(spf[-1], 1.0)
             assert (np.diff(spf) > 0.0).all()
+            assert (spf >= tip).sum() >= njtip_min
 
             return spf
 

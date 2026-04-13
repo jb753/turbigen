@@ -25,51 +25,65 @@ print(f"Block shape: ni={ni}, nj={nj}, nk={nk}")
 # Take planes at mid-span and mid-pitch and downstream of blade
 Cjm = b[:, nj // 2, :]
 Cmk = b[:, :, nk // 2]
-C2 = b[-1, :, :]
+C2 = g[1][-9, :, :]
 
-# Plot the mid-span grid lines in x/rt blade-to-blade plane
 fig, ax = plt.subplots()
-ax.plot(Cjm.x, Cjm.rt, "k-", lw=0.5)
-ax.plot(Cjm.x.T, Cjm.rt.T, "k-", lw=0.5)
-ax.plot(C2[nj // 2, :].x, C2[nj // 2, :].rt, "r-")  # Downstream cut plane
-ax.axis("equal")
+ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
+ax.set_ylabel("P")
 
-# Plot the mid-pitch grid lines in x/r meridional plane
+# fig, ax = plt.subplots()
+# ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
+# ax.set_ylabel("To")
+
 fig, ax = plt.subplots()
-ax.plot(Cmk.x, Cmk.r, "k-", lw=0.5)
-ax.plot(Cmk.x.T, Cmk.r.T, "k-", lw=0.5)
-ax.axis("equal")
+ax.plot(Cjm.x[:, 0], Cjm.conserved_nd[:, 0, :], "-x")
+ax.set_ylabel("conserved")
+
+
+print(C2.shape)
 
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
-lev_Ma = np.arange(0.0, 1.0, 0.1)
+lev_Ma = np.arange(0.0, 0.8, 0.1)
 for bi in g:
     Ci = bi[:, nj // 2, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
 ax.axis("equal")
+plt.show()
 
 # Contours of Ma downstream of blade
 fig, ax = plt.subplots()
-lev_Ma = np.arange(-1.0, 0.8, 0.1)
+lev_Ma = np.arange(0.0, 0.8, 0.05)
 cm = ax.contourf(C2.z, C2.y, C2.Max, lev_Ma, cmap="cubehelix")
 plt.colorbar(cm)
-ax.contour(
-    C2.z,
-    C2.y,
-    C2.Max,
-    [
-        1,
-    ],
-    colors="k",
-)
+ax.contour(C2.z, C2.y, C2.Max, [1], colors="k")
 ax.axis("equal")
 
-# Pressure on the blade
+# Contours of Ma downstream of blade
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
+lev_Ma = np.arange(-0.4, 0.8, 0.05)
+cm = ax.contourf(C2.z, C2.y, C2.Vt / C2.a, lev_Ma, cmap="cubehelix")
+plt.colorbar(cm)
+ax.contour(C2.z, C2.y, C2.Max, [1], colors="k")
+ax.axis("equal")
 
-# Pressure on the blade
+# Contours of Ma downstream of blade
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
+cm = ax.contourf(C2.z, C2.y, C2.P, cmap="cubehelix")
+ax.axis("equal")
+
+fig, ax = plt.subplots()
+ax.plot(C2.t[-1, :], C2.Vt[-1, :], "-x")
+ax.plot(C2.pitch + C2.t[-1, :], C2.Vt[-1, :], "-x")
+plt.show()
+
+
+# pressure on the blade
+fig, ax = plt.subplots()
+ax.plot(cjm.x[:, 0], cjm.p[:, (0, -1)], "k-x")
+
+# pressure on the blade
+fig, ax = plt.subplots()
+ax.plot(cjm.x[:, 0], cjm.to[:, (0, -1)], "k-x")
 
 plt.show()
