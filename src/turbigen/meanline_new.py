@@ -528,6 +528,174 @@ class MeanLine:
         AR_flow = A_flow[1] / A_flow[0]
         return row[0] if AR_flow >= 1.0 else row[1]
 
+    def to_quasi3d(self, ann, Nb, n=101):
+        """Generate a quasi-3D initial guess as a Block of shape (2, n).
+
+        The first index corresponds to the pitchwise direction: index 0 is the
+        low-theta side and index 1 is the high-theta side.
+
+        Inside each blade row, a pressure difference is imposed between the two
+        sides consistent with the meanline angular momentum change.  The balance
+        on a control volume of axial length dx, height span, and pitchwise width
+        pitch = 2*pi*r/Nb gives:
+
+            (p_low - p_high) * span * dx * r = pitch * span * rho * Vm * d(rVt)
+
+        so (r cancels with pitch = 2*pi*r/Nb):
+
+            dp = rho * Vm * d(rVt)/dx * 2*pi / Nb
+
+        Outside blades the two sides have equal pressure.
+
+        Parameters
+        ----------
+        ann : AnnulusDesigner
+            Annulus geometry for evaluating (x, r) coordinates.
+        Nb : array-like, length n_row
+            Number of blades in each row.
+        n : int, optional
+            Number of streamwise grid points.  Default 101.
+
+        Returns
+        -------
+        ember.block.Block
+            Block of shape (2, n) where axis-0 is pitchwise (pressure/suction
+            side) and axis-1 is streamwise.
+        """
+        nrow = self.n_row
+        Nb = np.asarray(Nb, dtype=float).ravel()
+
+        # Normalised meridional coordinates of the meanline stations (m=1..2*nrow)
+        m_stations = np.arange(1, 2 * nrow + 1, dtype=float)
+
+        # Query coordinates uniformly spanning [0, mmax]
+        m_query = np.linspace(0.0, ann.mmax, n)
+
+        # --- midspan (x, r) at query points ----------------------------------
+        xr_query = ann.evaluate_xr(m_query, spf=0.5)  # shape (2, n)
+        x_q = xr_query[0]
+        r_q = xr_query[1]
+
+        # --- interpolate meanline scalars to query points --------------------
+        def interp(vals):
+            return np.interp(m_query, m_stations, vals.astype(float))
+
+        P_q = interp(self.P)
+        s_q = interp(self.s)
+        rho_q = interp(self.rho)
+        Vm_q = interp(self.Vm)
+        span_q = interp(self.span)
+        rVt_q = interp(self.r * self.Vt)
+
+        # --- blade loading shape function ------------------------------------
+        # Smooth trapezoid: quadratic ramps at LE (r1) and TE (r2) with zero
+        # slope at the flat-top junctions, constant in between.
+        # Front: f(0)=0, f(r1)=1, f'(r1)=0  -> f = xi*(2*r1 - xi) / r1**2
+        # Back:  g(1-r2)=1, g'(1-r2)=0, g(1)=0 -> g = (1-xi)*(2*r2-(1-xi)) / r2**2
+        # Normalisation: integral = 1 - r1/3 - r2/3
+        r1, r2 = 0.3, 0.4
+        h = 1.0 / (1.0 - r1 / 3.0 - r2 / 3.0)
+
+        def shape_func(xi):
+            front = h * xi * (2.0 * r1 - xi) / r1**2
+            back = h * (1.0 - xi) * (2.0 * r2 - (1.0 - xi)) / r2**2
+            return np.where(xi < r1, front, np.where(xi > 1.0 - r2, back, h))
+
+        # --- compute blade-loading pressure difference for each row ----------
+        dp_q = np.zeros(n)
+
+        for irow in range(nrow):
+            # Station indices: inlet = 2*irow, exit = 2*irow+1
+            i_in = 2 * irow
+            i_out = 2 * irow + 1
+
+            # Change in rVt across the row
+            delta_rVt = self.r[i_out] * self.Vt[i_out] - self.r[i_in] * self.Vt[i_in]
+
+            # Mask for query points inside this blade row
+            m_in = m_stations[i_in]
+            m_out = m_stations[i_out]
+            mask = (m_query >= m_in) & (m_query <= m_out)
+            if not mask.any():
+                continue
+
+            # Axial chord of the blade row at midspan
+            xr_in = ann.evaluate_xr(np.array([m_in]), spf=0.5)
+            xr_out = ann.evaluate_xr(np.array([m_out]), spf=0.5)
+            x_chord = float(xr_out[0, 0]) - float(xr_in[0, 0])
+            if abs(x_chord) < 1e-12:
+                continue
+
+            # Normalised chord coordinate xi in [0, 1] for blade query points
+            xi = (x_q[mask] - float(xr_in[0, 0])) / x_chord
+
+            # dp_mean is the uniform loading that would satisfy the integral;
+            # the trapezoid shape redistributes it while preserving the integral.
+            dp_mean = (
+                rho_q[mask]
+                * Vm_q[mask]
+                * (delta_rVt / x_chord)
+                * 2.0
+                * np.pi
+                / Nb[irow]
+            )
+            dp_q[mask] = dp_mean * shape_func(xi)
+
+        # --- build Block of shape (2, n) -------------------------------------
+        b = ember.block.Block(shape=(2, n))
+        b.set_fluid(self.fluid)
+
+        # Pitchwise theta: low-theta side at zero, high-theta side offset by a
+        # small token amount so the two sides are geometrically distinguishable.
+        # The caller can adjust t after construction.
+        t_lo = np.zeros(n)
+        t_hi = np.full(n, 1e-6)
+
+        # Stack lo/hi for each coordinate: shape (2, n)
+        x_2 = np.stack([x_q, x_q], axis=0)
+        r_2 = np.stack([r_q, r_q], axis=0)
+        t_2 = np.stack([t_lo, t_hi], axis=0)
+
+        b.set_xrt(x_2, r_2, t_2)
+
+        # --- set thermodynamic state on each side ----------------------------
+        # Low-theta side:  p = P_mean + dp/2
+        # High-theta side: p = P_mean - dp/2
+        # Entropy is kept at the meanline value (isentropic redistribution).
+        P_lo = P_q + 0.5 * dp_q
+        P_hi = P_q - 0.5 * dp_q
+
+        # Clamp to positive pressure
+        P_lo = np.maximum(P_lo, 1e-6 * self.P.mean())
+        P_hi = np.maximum(P_hi, 1e-6 * self.P.mean())
+
+        Vx_q = interp(self.Vx)
+        Vr_q = interp(self.Vr)
+        Vt_q = rVt_q / np.where(r_q > 0, r_q, 1.0)
+
+        b_lo = ember.block.Block(shape=(n,))
+        b_lo.set_fluid(self.fluid)
+        b_lo.set_xrt(x_q, r_q, t_lo)
+        b_lo.set_P_s(P_lo, s_q)
+        b_lo.set_Vxrt(Vx_q, Vr_q, Vt_q)
+
+        b_hi = ember.block.Block(shape=(n,))
+        b_hi.set_fluid(self.fluid)
+        b_hi.set_xrt(x_q, r_q, t_hi)
+        b_hi.set_P_s(P_hi, s_q)
+        b_hi.set_Vxrt(Vx_q, Vr_q, Vt_q)
+
+        # Assemble into shape-(2, n) block
+        cons_lo = b_lo.conserved  # shape (n, 5)
+        cons_hi = b_hi.conserved  # shape (n, 5)
+        cons_2 = np.stack([cons_lo, cons_hi], axis=0)  # (2, n, 5)
+        b.set_conserved(cons_2)
+
+        mu_mean = float(np.mean(self.mu))
+        b.set_mu_turb(np.full((2, n), mu_mean))
+
+        return b
+
     def to_block(self, ann):
         """Convert mean-line stations to a 1D Block along the annulus midspan.
 

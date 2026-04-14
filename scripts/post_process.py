@@ -39,8 +39,30 @@ fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.conserved_nd[:, 0, :], "-x")
 ax.set_ylabel("conserved")
 
+fig, ax = plt.subplots()
+ax.contourf(Cmk.x, Cmk.r, Cmk.Beta)
+ax.axis("equal")
+plt.show()
+quit()
+
 
 print(C2.shape)
+
+# Contours of relative Mach number on mid-span plane
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.Alpha_rel, cmap="cubehelix")
+ax.axis("equal")
+plt.show()
+
+# Contours of relative Mach number on mid-span plane
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.P, cmap="cubehelix")
+ax.axis("equal")
+plt.show()
 
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
