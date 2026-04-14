@@ -60,7 +60,7 @@ class Ember(BaseSolver):
         b = grid[0]
 
         config = ember.config.SolverConfig(
-            n_step=1,
+            n_step=2000,
             # cfl_min=0.01,
             # cfl_max=2.0,
             # sf2_adapt=0.2,
@@ -72,7 +72,7 @@ class Ember(BaseSolver):
             # inviscid=True,
             # fac_mgrid=0.0,
             # gain_filt=10.0,
-            # i_level_stop=1,
+            i_level_stop=1,
             # debug=True,
         )
 

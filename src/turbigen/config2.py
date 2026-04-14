@@ -779,8 +779,10 @@ class TurbigenConfig:
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
+
             # block_guess = self.mean_line.nominal.to_block(self.annulus)
             # self.grid.apply_guess_meridional(block_guess, refine_factor=50)
+
             block_guess = self.mean_line.nominal.to_quasi3d(
                 self.annulus, self.get_nblade()
             )

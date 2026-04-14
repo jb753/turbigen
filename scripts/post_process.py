@@ -42,8 +42,6 @@ ax.set_ylabel("conserved")
 fig, ax = plt.subplots()
 ax.contourf(Cmk.x, Cmk.r, Cmk.Beta)
 ax.axis("equal")
-plt.show()
-quit()
 
 
 print(C2.shape)
