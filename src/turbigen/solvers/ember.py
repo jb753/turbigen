@@ -42,7 +42,7 @@ class Ember(BaseSolver):
 
         for patch in grid.patches.outlet:
             patch.set_adjustment("radial_equilibrium")
-            # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
+        # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         # import matplotlib.pyplot as plt
 

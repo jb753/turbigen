@@ -180,13 +180,13 @@ class H(turbigen.mesh.Mesher):
                 dspf_hub, dspf_casing, tip_ref * self.gap_contraction
             )
 
-            if mesh_config.slip_annulus:
-                quit()
-                print("slip annulus")
-                dspf = mesh_config.dspf_mid
-                span_frac = clusterfunc.symmetric.free(
-                    dspf / 2.0, dspf, mesh_config.ER_span
-                )
+            # if mesh_config.slip_annulus:
+            # quit()
+            # print("slip annulus")
+            # dspf = mesh_config.dspf_mid
+            # span_frac = clusterfunc.symmetric.free(
+            # dspf / 2.0, dspf, mesh_config.ER_span
+            # )
 
             nj = len(span_frac)
 
@@ -547,10 +547,15 @@ class H(turbigen.mesh.Mesher):
 
             blocks.append(blk)
 
-        if mesh_config.slip_annulus:
-            for b in blocks:
-                b.add_patch(ember.patch.InviscidPatch(j=0))
-                b.add_patch(ember.patch.InviscidPatch(j=-1))
+        for b in blocks:
+            if mesh_config.slip_annulus:
+                b.patches.append(ember.patch.InviscidPatch(j=0))
+                b.patches.append(ember.patch.InviscidPatch(j=-1))
+            elif irow == (nrow - 1):
+                di_slip = ni - icusp
+                islip = icusp + int(di_slip * 0.5)
+                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
+                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 
         g = ember.grid.Grid(blocks)
 
