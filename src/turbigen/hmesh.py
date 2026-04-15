@@ -551,11 +551,11 @@ class H(turbigen.mesh.Mesher):
             if mesh_config.slip_annulus:
                 b.patches.append(ember.patch.InviscidPatch(j=0))
                 b.patches.append(ember.patch.InviscidPatch(j=-1))
-            elif irow == (nrow - 1):
-                di_slip = ni - icusp
-                islip = icusp + int(di_slip * 0.5)
-                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
-                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
+            # elif irow == (nrow - 1):
+            #     di_slip = ni - icusp
+            #     islip = icusp + int(di_slip * 0.5)
+            #     b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
+            #     b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 
         g = ember.grid.Grid(blocks)
 

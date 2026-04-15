@@ -20,8 +20,9 @@ mean_line:
 
 annulus:
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.1, 0.1]
+  cx_gap: [0.1, 0.1, 0.2]
   cx_row: [0.1, 0.1]
+  # nozzle_ratio: 0.95
 
 blades:
     - spf: 0.5

@@ -25,7 +25,7 @@ print(f"Block shape: ni={ni}, nj={nj}, nk={nk}")
 # Take planes at mid-span and mid-pitch and downstream of blade
 Cjm = b[:, nj // 2, :]
 Cmk = b[:, :, nk // 2]
-C2 = g[1][-9, :, :]
+C2 = g[-1][-9, :, :]
 
 fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
@@ -53,6 +53,15 @@ for bi in g:
     ax.contourf(Ci.x, Ci.rt, Ci.Alpha_rel, cmap="cubehelix")
 ax.axis("equal")
 plt.show()
+
+# Contours of relative Mach number on mid-span plane
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
+ax.axis("equal")
+plt.show()
+
 
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
