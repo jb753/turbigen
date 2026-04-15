@@ -528,16 +528,18 @@ class MeanLine:
         AR_flow = A_flow[1] / A_flow[0]
         return row[0] if AR_flow >= 1.0 else row[1]
 
-    def to_quasi3d(self, ann, Nb, n=101):
-        """Generate a quasi-3D initial guess as a Block of shape (2, n).
+    def to_quasi3d(self, ann, Nb, n=101, nj=11):
+        """Generate a quasi-3D initial guess as a Block of shape (n, nj, 2).
 
-        The first index corresponds to the pitchwise direction: index 0 is the
-        low-theta side and index 1 is the high-theta side.
+        Axes:
+          - axis 0 (i, streamwise):  n points from inlet to outlet
+          - axis 1 (j, radial):      nj points from hub (spf=0) to tip (spf=1)
+          - axis 2 (k, pitchwise):   2 points — index 0 low-theta, index 1 high-theta
 
-        Inside each blade row, a pressure difference is imposed between the two
-        sides consistent with the meanline angular momentum change.  The balance
-        on a control volume of axial length dx, height span, and pitchwise width
-        pitch = 2*pi*r/Nb gives:
+        Inside each blade row, a pitchwise pressure difference is imposed between
+        the two sides consistent with the meanline angular momentum change.  The
+        balance on a control volume of axial length dx, height span, and pitchwise
+        width pitch = 2*pi*r/Nb gives:
 
             (p_low - p_high) * span * dx * r = pitch * span * rho * Vm * d(rVt)
 
@@ -547,6 +549,13 @@ class MeanLine:
 
         Outside blades the two sides have equal pressure.
 
+        A radial equilibrium correction is also applied.  Integrating
+        dP/dr = rho * Vt**2 / r with Vt uniform over r gives:
+
+            dP_rad(r) = rho * Vt**2 * ln(r / r_mid)
+
+        where r_mid is the midspan radius at each streamwise station.
+
         Parameters
         ----------
         ann : AnnulusDesigner
@@ -555,12 +564,13 @@ class MeanLine:
             Number of blades in each row.
         n : int, optional
             Number of streamwise grid points.  Default 101.
+        nj : int, optional
+            Number of radial grid points (hub to tip).  Default 11.
 
         Returns
         -------
         ember.block.Block
-            Block of shape (2, n) where axis-0 is pitchwise (pressure/suction
-            side) and axis-1 is streamwise.
+            Block of shape (n, nj, 2).
         """
         nrow = self.n_row
         Nb = np.asarray(Nb, dtype=float).ravel()
@@ -569,14 +579,21 @@ class MeanLine:
         m_stations = np.arange(1, 2 * nrow + 1, dtype=float)
 
         # Query coordinates uniformly spanning [0, mmax]
-        m_query = np.linspace(0.0, ann.mmax, n)
+        m_query = np.linspace(0.0, ann.mmax, n)  # (ni,)
+        spf_query = np.linspace(0.0, 1.0, nj)  # (nj,)
 
-        # --- midspan (x, r) at query points ----------------------------------
-        xr_query = ann.evaluate_xr(m_query, spf=0.5)  # shape (2, n)
-        x_q = xr_query[0]
-        r_q = xr_query[1]
+        # --- 2D (nj, ni) coordinate grid via broadcasting --------------------
+        # evaluate_xr broadcasts (1, ni) x (nj, 1) -> (2, nj, ni)
+        xr_2d = ann.evaluate_xr(m_query[np.newaxis, :], spf_query[:, np.newaxis])
+        x_2d = xr_2d[0].T  # (ni, nj)
+        r_2d = xr_2d[1].T  # (ni, nj)
 
-        # --- interpolate meanline scalars to query points --------------------
+        # Midspan row (spf=0.5) for meanline interpolation and radial reference
+        j_mid = nj // 2
+        x_q = x_2d[:, j_mid]  # (ni,)
+        r_q = r_2d[:, j_mid]  # (ni,)
+
+        # --- interpolate meanline scalars to streamwise query points ---------
         def interp(vals):
             return np.interp(m_query, m_stations, vals.astype(float))
 
@@ -584,8 +601,10 @@ class MeanLine:
         s_q = interp(self.s)
         rho_q = interp(self.rho)
         Vm_q = interp(self.Vm)
-        span_q = interp(self.span)
         rVt_q = interp(self.r * self.Vt)
+        Vx_q = interp(self.Vx)
+        Vr_q = interp(self.Vr)
+        Vt_q = rVt_q / np.where(r_q > 0, r_q, 1.0)  # (ni,)
 
         # --- blade loading shape function ------------------------------------
         # Smooth trapezoid: quadratic ramps at LE (r1) and TE (r2) with zero
@@ -602,7 +621,7 @@ class MeanLine:
             return np.where(xi < r1, front, np.where(xi > 1.0 - r2, back, h))
 
         # --- compute blade-loading pressure difference for each row ----------
-        dp_q = np.zeros(n)
+        dp_q = np.zeros(n)  # pitchwise dp at midspan, shape (ni,)
 
         for irow in range(nrow):
             # Station indices: inlet = 2*irow, exit = 2*irow+1
@@ -641,58 +660,57 @@ class MeanLine:
             )
             dp_q[mask] = dp_mean * shape_func(xi)
 
-        # --- build Block of shape (2, n) -------------------------------------
-        b = ember.block.Block(shape=(2, n))
-        b.set_fluid(self.fluid)
+        # --- radial equilibrium pressure correction --------------------------
+        # dP/dr = rho * Vt**2 / r  with Vt uniform over r
+        # => dP_rad(r) = rho * Vt**2 * ln(r / r_mid)
+        # Shape: (ni, nj)
+        dP_rad = (
+            rho_q[:, np.newaxis]
+            * Vt_q[:, np.newaxis] ** 2
+            * np.log(r_2d / r_q[:, np.newaxis])
+        )
 
-        # Pitchwise theta: low-theta side at zero, high-theta side offset by a
-        # small token amount so the two sides are geometrically distinguishable.
-        # The caller can adjust t after construction.
-        t_lo = np.zeros(n)
-        t_hi = np.full(n, 1e-6)
-
-        # Stack lo/hi for each coordinate: shape (2, n)
-        x_2 = np.stack([x_q, x_q], axis=0)
-        r_2 = np.stack([r_q, r_q], axis=0)
-        t_2 = np.stack([t_lo, t_hi], axis=0)
-
-        b.set_xrt(x_2, r_2, t_2)
-
-        # --- set thermodynamic state on each side ----------------------------
-        # Low-theta side:  p = P_mean + dp/2
-        # High-theta side: p = P_mean - dp/2
-        # Entropy is kept at the meanline value (isentropic redistribution).
-        P_lo = P_q + 0.5 * dp_q
-        P_hi = P_q - 0.5 * dp_q
+        # --- assemble (ni, nj) pressure fields -------------------------------
+        # Mean pressure including radial equilibrium correction
+        P_mean = P_q[:, np.newaxis] + dP_rad  # (ni, nj)
+        P_lo = P_mean + 0.5 * dp_q[:, np.newaxis]  # (ni, nj)
+        P_hi = P_mean - 0.5 * dp_q[:, np.newaxis]  # (ni, nj)
 
         # Clamp to positive pressure
-        P_lo = np.maximum(P_lo, 1e-6 * self.P.mean())
-        P_hi = np.maximum(P_hi, 1e-6 * self.P.mean())
+        P_ref = 1e-6 * self.P.mean()
+        P_lo = np.maximum(P_lo, P_ref)
+        P_hi = np.maximum(P_hi, P_ref)
 
-        Vx_q = interp(self.Vx)
-        Vr_q = interp(self.Vr)
-        Vt_q = rVt_q / np.where(r_q > 0, r_q, 1.0)
+        # --- build shape-(n, nj, 2) arrays -----------------------------------
+        # Pitchwise theta: low-theta at zero, high-theta offset by a small
+        # token amount so the two sides are geometrically distinguishable.
+        t_lo = np.zeros((n, nj))
+        t_hi = np.full((n, nj), 1e-6)
 
-        b_lo = ember.block.Block(shape=(n,))
-        b_lo.set_fluid(self.fluid)
-        b_lo.set_xrt(x_q, r_q, t_lo)
-        b_lo.set_P_s(P_lo, s_q)
-        b_lo.set_Vxrt(Vx_q, Vr_q, Vt_q)
+        x_3d = np.stack([x_2d, x_2d], axis=-1)  # (ni, nj, 2)
+        r_3d = np.stack([r_2d, r_2d], axis=-1)  # (ni, nj, 2)
+        t_3d = np.stack([t_lo, t_hi], axis=-1)  # (ni, nj, 2)
+        P_3d = np.stack([P_lo, P_hi], axis=-1)  # (ni, nj, 2)
 
-        b_hi = ember.block.Block(shape=(n,))
-        b_hi.set_fluid(self.fluid)
-        b_hi.set_xrt(x_q, r_q, t_hi)
-        b_hi.set_P_s(P_hi, s_q)
-        b_hi.set_Vxrt(Vx_q, Vr_q, Vt_q)
+        s_2d = np.broadcast_to(s_q[:, np.newaxis], (n, nj))
+        s_3d = np.stack([s_2d, s_2d], axis=-1)  # (ni, nj, 2)
 
-        # Assemble into shape-(2, n) block
-        cons_lo = b_lo.conserved  # shape (n, 5)
-        cons_hi = b_hi.conserved  # shape (n, 5)
-        cons_2 = np.stack([cons_lo, cons_hi], axis=0)  # (2, n, 5)
-        b.set_conserved(cons_2)
+        Vx_2d = np.broadcast_to(Vx_q[:, np.newaxis], (n, nj))
+        Vr_2d = np.broadcast_to(Vr_q[:, np.newaxis], (n, nj))
+        Vt_2d = np.broadcast_to(Vt_q[:, np.newaxis], (n, nj))
+        Vx_3d = np.stack([Vx_2d, Vx_2d], axis=-1)  # (ni, nj, 2)
+        Vr_3d = np.stack([Vr_2d, Vr_2d], axis=-1)  # (ni, nj, 2)
+        Vt_3d = np.stack([Vt_2d, Vt_2d], axis=-1)  # (ni, nj, 2)
+
+        # --- build Block of shape (n, nj, 2) ---------------------------------
+        b = ember.block.Block(shape=(n, nj, 2))
+        b.set_fluid(self.fluid)
+        b.set_xrt(x_3d, r_3d, t_3d)
+        b.set_P_s(P_3d, s_3d)
+        b.set_Vxrt(Vx_3d, Vr_3d, Vt_3d)
 
         mu_mean = float(np.mean(self.mu))
-        b.set_mu_turb(np.full((2, n), mu_mean))
+        b.set_mu_turb(np.full((n, nj, 2), mu_mean))
 
         return b
 

@@ -77,6 +77,7 @@ lev_Ma = np.arange(0.0, 0.8, 0.05)
 cm = ax.contourf(C2.z, C2.y, C2.Max, lev_Ma, cmap="cubehelix")
 plt.colorbar(cm)
 ax.contour(C2.z, C2.y, C2.Max, [1], colors="k")
+ax.set_title("outlet Max")
 ax.axis("equal")
 
 # Contours of Ma downstream of blade
@@ -85,16 +86,22 @@ lev_Ma = np.arange(-0.4, 0.8, 0.05)
 cm = ax.contourf(C2.z, C2.y, C2.Vt / C2.a, lev_Ma, cmap="cubehelix")
 plt.colorbar(cm)
 ax.contour(C2.z, C2.y, C2.Max, [1], colors="k")
+ax.set_title("Vt/a")
 ax.axis("equal")
 
 # Contours of Ma downstream of blade
 fig, ax = plt.subplots()
 cm = ax.contourf(C2.z, C2.y, C2.P, cmap="cubehelix")
+ax.set_title("outlet P")
 ax.axis("equal")
+plt.colorbar(cm)
+plt.show()
+quit()
 
 fig, ax = plt.subplots()
 ax.plot(C2.t[-1, :], C2.Vt[-1, :], "-x")
 ax.plot(C2.pitch + C2.t[-1, :], C2.Vt[-1, :], "-x")
+ax.set_title("Vt")
 plt.show()
 
 

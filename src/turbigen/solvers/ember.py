@@ -40,9 +40,9 @@ class Ember(BaseSolver):
         xllim = 0.03 * pitch_ref[0]
         print(f"xllim: {xllim}")
 
-        # for patch in grid.patches.outlet:
-        # patch.set_adjustment("radial_equilibrium", rf=0.1)
-        # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
+        for patch in grid.patches.outlet:
+            patch.set_adjustment("radial_equilibrium")
+            # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         # import matplotlib.pyplot as plt
 
@@ -60,7 +60,7 @@ class Ember(BaseSolver):
         b = grid[0]
 
         config = ember.config.SolverConfig(
-            n_step=2000,
+            n_step=4000,
             # cfl_min=0.01,
             # cfl_max=2.0,
             # sf2_adapt=0.2,
@@ -72,7 +72,7 @@ class Ember(BaseSolver):
             # inviscid=True,
             # fac_mgrid=0.0,
             # gain_filt=10.0,
-            i_level_stop=1,
+            # i_level_stop=1,
             # debug=True,
         )
 
