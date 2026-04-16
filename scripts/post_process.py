@@ -29,7 +29,17 @@ C2 = g[-1][-9, :, :]
 
 fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
+ii = (127, 132)
+ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.P[ii[0], (1, -2)], "r-o")
+ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.P[ii[1], (1, -2)], "b-^")
 ax.set_ylabel("P")
+
+fig, ax = plt.subplots()
+ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
+ii = (127, 132)
+ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.To[ii[0], (1, -2)], "r-o")
+ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.To[ii[1], (1, -2)], "b-^")
+ax.set_ylabel("To")
 
 # fig, ax = plt.subplots()
 # ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
@@ -39,37 +49,7 @@ fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.conserved_nd[:, 0, :], "-x")
 ax.set_ylabel("conserved")
 
-fig, ax = plt.subplots()
-ax.contourf(Cmk.x, Cmk.r, Cmk.Beta)
-ax.axis("equal")
-
-
 print(C2.shape)
-
-# Contours of relative Mach number on mid-span plane
-fig, ax = plt.subplots()
-for bi in g:
-    Ci = bi[:, nj // 2, :]
-    ax.contourf(Ci.x, Ci.rt, Ci.Alpha_rel, cmap="cubehelix")
-ax.axis("equal")
-plt.show()
-
-# Contours of relative Mach number on mid-span plane
-fig, ax = plt.subplots()
-for bi in g:
-    Ci = bi[:, nj // 2, :]
-    ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
-ax.axis("equal")
-plt.show()
-
-
-# Contours of relative Mach number on mid-span plane
-fig, ax = plt.subplots()
-for bi in g:
-    Ci = bi[:, nj // 2, :]
-    ax.contourf(Ci.x, Ci.rt, Ci.P, cmap="cubehelix")
-ax.axis("equal")
-plt.show()
 
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
@@ -77,8 +57,31 @@ lev_Ma = np.arange(0.0, 0.8, 0.1)
 for bi in g:
     Ci = bi[:, nj // 2, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
+    ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
+ax.axis("equal")
+
+# Contours of relative Mach number on mid-span plane
+fig, ax = plt.subplots()
+lev_ent = np.arange(0.0, 0.8, 0.1)
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    # ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
+    ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, np.exp(Ci.s / Ci.rgas))
+ax.set_title("entropy")
+ax.axis("equal")
+
+# Contours of relative Mach number on mid-span plane
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, nj // 2, :]
+    ax.plot(Ci.x, Ci.rt, "k-", lw=0.5)
+    ax.plot(Ci.x.T, Ci.rt.T, "k-", lw=0.5)
 ax.axis("equal")
 plt.show()
+quit()
+
+
+quit()
 
 # Contours of Ma downstream of blade
 fig, ax = plt.subplots()

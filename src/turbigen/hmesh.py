@@ -496,7 +496,7 @@ class H(turbigen.mesh.Mesher):
                     ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
                 ]
                 if mesh_config.AR_cusp:
-                    logger.info("Adding cusps")
+                    logger.info(f"Adding cusps {ite, icusp}")
                     assert mesh_config.ni_cusp > 0
                     cusp_type = (
                         ember.patch.InviscidPatch

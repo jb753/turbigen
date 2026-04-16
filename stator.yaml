@@ -26,12 +26,12 @@ annulus:
 
 blades:
     - spf: 0.5
-      thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
-      camber: [2., 2., -0.8]
+      thick: [0.015, 0.05, 0.3, 0.0, 0.02, 0.2]
+      camber: [2., 2., -0.5]
       tip: 0.02
     - spf: 0.5
-      thick: [0.015, 0.05, 0.3, 0.0, 0.0, 0.1]
-      camber: [-2., 0., -0.8]
+      thick: [0.015, 0.05, 0.3, 0.0, 0.02, 0.2]
+      camber: [-2., 0., -0.5]
 
 nblade:
   - Co: 0.4
@@ -40,11 +40,11 @@ nblade:
 mesh:
   type: h
   yplus: 30.0
-  # slip_annulus: true
-  # resolution_factor: 0.7
-  skew_max: 45
   dm_TE: 0.1
   ni_TE: 9
+  skew_max: 45.0
+  ni_cusp: 5
+  AR_cusp: 2.0
 
 operating_point:
   throttle: true
