@@ -334,6 +334,16 @@ class MeanLine:
         return new_ml
 
     @property
+    def PR_ts(self):
+        """Total-to-static pressure ratio."""
+        return self.Po[0] / self.P[-1]
+
+    @property
+    def PR_tt(self):
+        """Total-to-total pressure ratio."""
+        return self.Po[0] / self.Po[-1]
+
+    @property
     def eta_tt(self):
         """Total-to-total isentropic efficiency: (ho1 - ho2) / (ho1 - ho2s)."""
         ho1 = self[0].ho
@@ -432,6 +442,7 @@ class MeanLine:
 
     # Stagnation properties
     ho = _make_concat_property("ho")
+    ao = _make_concat_property("ao")
     Po = _make_concat_property("Po")
     To = _make_concat_property("To")
     rhoo = _make_concat_property("rhoo")

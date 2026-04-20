@@ -28,17 +28,32 @@ Cmk = b[:, :, nk // 2]
 C2 = g[-1][-9, :, :]
 
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.P[:, (0, -1)], "k-x")
-ii = (127, 132)
-ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.P[ii[0], (1, -2)], "r-o")
-ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.P[ii[1], (1, -2)], "b-^")
+ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
+plt.show()
+
+fig, ax = plt.subplots()
+ax.plot(g[0].Vx[-1, :, (0, nk // 2, -1)].T, g[0].r[-1, :, 0], "-x")
+plt.show()
+
+fig, ax = plt.subplots()
+lev_Ma = np.arange(0.0, 0.8, 0.1)
+ax.axis("equal")
+for b in g:
+    Ck = b[:, :, nk // 2]
+    ax.contourf(Ck.x, Ck.r, Ck.Max, lev_Ma, cmap="cubehelix")
+plt.show()
+
+
+# ii = (127, 132)
+# ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.P[ii[0], (1, -2)], "r-o")
+# ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.P[ii[1], (1, -2)], "b-^")
 ax.set_ylabel("P")
 
 fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
-ii = (127, 132)
-ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.To[ii[0], (1, -2)], "r-o")
-ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.To[ii[1], (1, -2)], "b-^")
+# ii = (127, 132)
+# ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.To[ii[0], (1, -2)], "r-o")
+# ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.To[ii[1], (1, -2)], "b-^")
 ax.set_ylabel("To")
 
 # fig, ax = plt.subplots()
@@ -54,8 +69,9 @@ print(C2.shape)
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
+jplot = 9
 for bi in g:
-    Ci = bi[:, nj // 2, :]
+    Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
     ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
 ax.axis("equal")

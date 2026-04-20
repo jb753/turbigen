@@ -3,24 +3,24 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-workdir: runs/*
+work_dir: runs/*
 
-# Perfect gas inlet reprensentative of a gas turbine
-inlet:
-  Po: 16.0e5
-  To: 1600.
+fluid:
+  type: perfect
   cp: 1100.
   gamma: 1.33
+  mu: 1.8e-4
 
 # Set viscosity by vane Reynolds number
-Re_surf: 5e5
+# Re_surf: 5e5
 
 # Design variables for an axial turbine
 mean_line:
   type: axial_turbine
+  n_row: 2
   # Duty
   mdot: 500.
-  rrms: 1.0
+  r_rms: 1.0
   # Aerodynamics
   psi: 1.6
   phi2: 0.6
@@ -29,6 +29,8 @@ mean_line:
   zeta: [1.0, 1.0]
   # Guess of loss
   Ys: [0.02, 0.05]
+  Po1: 16.0e5
+  To1: 1600.
 
 # Prescribe the dimensional chords
 annulus:
@@ -40,14 +42,13 @@ annulus:
 mesh:
   type: h
   yplus: 30.0
-  resolution_factor: 0.5
+  plot: true
 
 # Define one mid-span section in stator and rotor
 blades:
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
       camber: [0., 0., 0.0]
-      theta_offset: 0.1
     - spf: 0.5
       thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
       camber: [0., 0., 0.0]
@@ -60,8 +61,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 2000
-  n_step_avg: 1000
+  # n_step: 2000
+  # n_step_avg: 1000
   # smooth2_adapt: 0.5
 
 # Configure iterative updates of the geometry
@@ -75,30 +76,30 @@ iterate:
   # Correct for incidence using leading-edge recamber
   incidence:
 
-# Additional plots to produce
-post_process:
-  # Loss at stator and rotor exits
-  # Non-dimensional meridional coordinate m is defined:
-  #   m=0 at inlet
-  #   m=1 at stator LE
-  #   m=2 at stator TE,
-  #   m=3 at rotor LE
-  #   m=4 at rotor TE
-  #   m=5 at exit
-  - type: contour
-    coord: m
-    value: [2.48, 2.52]
-    variable: Alpha
-  - type: contour
-    coord: m
-    value: [2.48, 2.52]
-    variable: Cho
-  - type: contour
-    coord: m
-    value: [2.48, 2.52]
-    variable: Ys
-  # Mid-span Mach
-  - type: contour
-    coord: spf
-    value: 0.5
-    variable: Ma_rel
+# # Additional plots to produce
+# post_process:
+#   # Loss at stator and rotor exits
+#   # Non-dimensional meridional coordinate m is defined:
+#   #   m=0 at inlet
+#   #   m=1 at stator LE
+#   #   m=2 at stator TE,
+#   #   m=3 at rotor LE
+#   #   m=4 at rotor TE
+#   #   m=5 at exit
+#   - type: contour
+#     coord: m
+#     value: [2.48, 2.52]
+#     variable: Alpha
+#   - type: contour
+#     coord: m
+#     value: [2.48, 2.52]
+#     variable: Cho
+#   - type: contour
+#     coord: m
+#     value: [2.48, 2.52]
+#     variable: Ys
+#   # Mid-span Mach
+#   - type: contour
+#     coord: spf
+#     value: 0.5
+#     variable: Ma_rel
