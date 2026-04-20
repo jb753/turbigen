@@ -44,6 +44,7 @@ mesh:
   ni_TE: 9
   skew_max: 45.0
   ni_cusp: 5
+  #w   slip_cusp: true
   AR_cusp: 2.0
 
 operating_point:
