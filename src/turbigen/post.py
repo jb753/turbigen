@@ -86,11 +86,16 @@ class Convergence(BasePost):
         ax[0].set_ylabel("Work Coefficient, psi")
         ax[0].set_title("Work and Loss History")
         ax[0].grid(True, alpha=0.3)
+        if conv.psi[:n_steps].mean() > 0.05:
+            ax[0].set_ylim(bottom=0)
+        elif conv.psi[:n_steps].mean() < -0.05:
+            ax[0].set_ylim(top=0)
 
         ax[1].plot(steps, conv.zeta[:n_steps], "-")
         ax[1].set_ylabel("Loss Coefficient, zeta")
         ax[1].set_xlabel("Iteration")
         ax[1].grid(True, alpha=0.3)
+        ax[1].set_ylim(bottom=0)
         pdf.savefig()
         plt.close()
 

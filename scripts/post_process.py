@@ -1,6 +1,7 @@
 import ember.grid
 import matplotlib.pyplot as plt
 import numpy as np
+import ember.average
 
 # Run a simulation first using
 #   turbigen mean_line.yaml
@@ -11,6 +12,24 @@ import sys
 
 fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
+
+
+# Mass flow plot
+x = []
+mdot = []
+for b in g:
+    for i in range(b.ni):
+        x.append(b.x[i, 0, 0])
+        mdot.append(ember.average.flow_mass(b[i]) * b.Nb)
+x = np.array(x)
+mdot = np.array(mdot)
+
+fig, ax = plt.subplots()
+ax.plot(x, mdot, "-x")
+ax.set_ylim(bottom=0)
+plt.show()
+quit()
+
 
 # Rotor only has a single block, extract it by indexing into grid
 b = g[0]
@@ -32,7 +51,7 @@ ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
 plt.show()
 
 fig, ax = plt.subplots()
-ax.plot(g[0].Vx[-1, :, (0, nk // 2, -1)].T, g[0].r[-1, :, 0], "-x")
+ax.plot(g[0].rhoVx[-1, :, (0, nk // 2, -1)].T, g[0].r[-1, :, 0], "-x")
 plt.show()
 
 fig, ax = plt.subplots()

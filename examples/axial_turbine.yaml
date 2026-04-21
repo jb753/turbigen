@@ -9,7 +9,7 @@ fluid:
   type: perfect
   cp: 1100.
   gamma: 1.33
-  mu: 1.8e-4
+  mu: 6.0e-4
 
 # Set viscosity by vane Reynolds number
 # Re_surf: 5e5
@@ -42,15 +42,19 @@ annulus:
 mesh:
   type: h
   yplus: 30.0
-  plot: true
+  # plot: true
+  AR_cusp: 2.0
+  ni_cusp: 5
+  ni_TE: 9
+  dm_TE: 0.05
 
 # Define one mid-span section in stator and rotor
 blades:
     - spf: 0.5
-      thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
+      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
       camber: [0., 0., 0.0]
     - spf: 0.5
-      thick: [0.04, 0.12, 0.35, 0.2, 0.0, 0.15]
+      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
       camber: [0., 0., 0.0]
 
 # Circulation coefficient to set blade loadings

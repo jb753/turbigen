@@ -268,7 +268,7 @@ def axial_turbine_backward(ml):
         "Alpha1": ml.Alpha[0],
         "mdot": ml.mdot[0],
         "Lam": Lam,
-        "Ys": tuple(Ys),
+        "Ys": np.array(Ys),
         "htr2": ml.htr[1],
         "r_rms": ml.r_rms[0],
         "eta_tt": ml.eta_tt,
