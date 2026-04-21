@@ -67,6 +67,10 @@ def check_plugins():
 
 
 def list_plugins():
+    reg = get_registry()
+    all_types = set(reg["mean_line_forward"].keys()).union(
+        reg["mean_line_backward"].keys()
+    )
     logger.warning("Available mean line types:")
     for mean_line_type in all_types:
         sig = inspect.signature(reg["mean_line_forward"][mean_line_type])
@@ -96,16 +100,20 @@ def register_mean_line(func):
         sig_fwd = inspect.signature(func)
         params_fwd = list(sig_fwd.parameters.values())
         if len(params_fwd) < 1 or params_fwd[0].name != "ml":
+            first = params_fwd[0].name if params_fwd else "none"
             raise Exception(
-                f"Mean line type '{mean_line_type}' forward function first argument must be 'ml', got '{params_fwd[0].name if params_fwd else 'none'}'."
+                f"Mean line type '{mean_line_type}' forward function first argument"
+                f" must be 'ml', got '{first}'."
             )
     else:
         # backward signature must take a single mean_line argument
         sig_bwd = inspect.signature(func)
         params_bwd = list(sig_bwd.parameters.values())
         if len(params_bwd) != 1 or params_bwd[0].name != "ml":
+            first = params_bwd[0].name if params_bwd else "none"
             raise Exception(
-                f"Mean line type '{mean_line_type}' backward function must take a single argument 'ml', got '{params_bwd[0].name if params_bwd else 'none'}'."
+                f"Mean line type '{mean_line_type}' backward function must take"
+                f" a single argument 'ml', got '{first}'."
             )
 
     reg = get_registry()

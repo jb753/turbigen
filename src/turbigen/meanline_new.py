@@ -8,6 +8,8 @@ import turbigen.meanline_design_new
 import turbigen.util
 import inspect
 
+logger = turbigen.util.make_logger()
+
 
 f32 = np.float32
 
@@ -186,7 +188,7 @@ def _make_concat_property(property_name):
                 if is_scalar is None:
                     is_scalar = np.ndim(value) == 0
                 values.append(value)
-            except (ValueError, AttributeError) as e:
+            except (ValueError, AttributeError):
                 # print full traceback for debugging
                 import traceback
 

@@ -1,19 +1,18 @@
 #!/usr/bin/env python
 # Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM
 import os
-import numpy
 import sys
+import numpy
 import vtk
+import ts.process.ts3_reader
+import ts.process.pre.vtk_adaptor
+import ts.process.pre.vtk_util
+import ts.util
 
 print("Python version:", sys.version)
 print("Python executable:", sys.executable)
 print("Numpy version:", numpy.__version__)
 print("Numpy path:", numpy.__path__)
-
-import ts.process.ts3_reader
-import ts.process.pre.vtk_adaptor
-import ts.process.pre.vtk_util
-import ts.util
 
 if not len(sys.argv) == 3:
     print("Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM")

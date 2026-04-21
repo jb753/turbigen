@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import sys
 import os
+import numpy as np
 import turbigen.config2
 import datetime
 import argparse

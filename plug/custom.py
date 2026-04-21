@@ -46,7 +46,6 @@ def custom_forward(
     Alpha1 = np.arctan((1 - Lam - psi / 2) / phi)
     Alpha2 = np.arctan(psi / phi + np.tan(Alpha1))
     Alpha_rel1 = np.arctan(np.tan(Alpha1) - 1 / phi)
-    Alpha_rel2 = np.arctan(np.tan(Alpha2) - 1 / phi)
 
     # We are going to iterate Vx1 to satisfy Ma1_rel and Alpha1
     # Initial guess for static state (1)

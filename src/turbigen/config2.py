@@ -530,7 +530,8 @@ class TurbigenConfig:
         logger.info("Adjusting reference scales from mean line:")
         logger.info(f"  P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
         logger.info(
-            f"  rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s, L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
+            f"  rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s,"
+            f" L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
         )
         logger.info(
             f"  Mean ho/V_ref^2 now = {self.mean_line.nominal.ho.mean() / fluid.V_ref**2:.3f}"
@@ -990,7 +991,6 @@ class TurbigenConfig:
         Re_surf : (nrow,) ndarray
             Surface Reynolds number for each blade row.
         """
-        ml = self.mean_line.nominal
         row_ref = [self.mean_line.nominal.get_ref(i) for i in range(self.nrow)]
         L_visc = np.array([row.mu / row.rho / row.V_rel for row in row_ref])
         ell = self.get_ell()

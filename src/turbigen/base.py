@@ -172,7 +172,9 @@ class StructuredData:
     def _get_data_by_key(self, key):
         ind = self._lookup_index(key)
         if self._order == "C":
-            return self._data[ind,]
+            return self._data[
+                ind,
+            ]
         else:
             return self._data[..., ind]
 

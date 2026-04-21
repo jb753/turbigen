@@ -825,7 +825,9 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
                 xyzp.append(patch.get_cut().xyz.squeeze())
         if xyzp:
             xyz = np.stack(xyzp).T
-            xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
+            xyz = xyz[
+                (0, 2, 1),
+            ]  # Swap y and z for TS4 coord system
             _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write logical probes

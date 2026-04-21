@@ -1,7 +1,6 @@
 """Test property coverage between Block and MeanLine."""
 
 import numpy as np
-import pytest
 import ember.block
 import ember.fluid
 import turbigen.meanline_new
@@ -48,7 +47,7 @@ def test_meanline_block_property_parity():
     block_properties = []
     for name in dir(ember.block.Block):
         # Skip private/magic methods
-        if name.startswith('_'):
+        if name.startswith("_"):
             continue
         # Check if it's a property
         attr = getattr(ember.block.Block, name, None)
@@ -57,11 +56,19 @@ def test_meanline_block_property_parity():
 
     # Properties that are 3D-specific and not applicable to mean-lines
     skip_properties = {
-        'ri', 'rj', 'rk',  # Face-averaged radii for 3D blocks
-        'dAi', 'dAj', 'dAk',  # Face areas for 3D blocks
-        'dAi_mag', 'dAj_mag', 'dAk_mag',  # Face area magnitudes for 3D blocks
-        'vol', 'dl_min', 'ell',  # Volume and length properties for 3D blocks
-        'r_cell',  # Cell-centered coordinates for 3D blocks
+        "ri",
+        "rj",
+        "rk",  # Face-averaged radii for 3D blocks
+        "dAi",
+        "dAj",
+        "dAk",  # Face areas for 3D blocks
+        "dAi_mag",
+        "dAj_mag",
+        "dAk_mag",  # Face area magnitudes for 3D blocks
+        "vol",
+        "dl_min",
+        "ell",  # Volume and length properties for 3D blocks
+        "r_cell",  # Cell-centered coordinates for 3D blocks
     }
 
     # Track results
@@ -116,9 +123,9 @@ def test_meanline_block_property_parity():
         successful_properties.append(prop_name)
 
     # 6) Print concise summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("PROPERTY COVERAGE SUMMARY")
-    print("="*70)
+    print("=" * 70)
     print(f"Total properties tested: {len(tested_properties)}")
     print(f"Skipped (3D-specific): {len(skipped_properties)}")
     print(f"Successfully accessible on both: {len(successful_properties)}")
@@ -140,10 +147,10 @@ def test_meanline_block_property_parity():
         # Print in columns for compactness
         cols = 4
         for i in range(0, len(successful_properties), cols):
-            props_row = successful_properties[i:i+cols]
+            props_row = successful_properties[i : i + cols]
             print("  " + ", ".join(f"{p:20s}" for p in props_row))
 
-    print("="*70)
+    print("=" * 70)
 
     # Assert that ALL properties are available on MeanLine
     assert len(missing_properties) == 0, (

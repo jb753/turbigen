@@ -1,17 +1,14 @@
 import turbigen.util
-import os
+import numpy as np
+import ember.run
+import ember.patch
+import ember.config
+import ember.fortran
 from pathlib import Path
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
 
 logger = turbigen.util.make_logger()
-
-import numpy as np
-
-import ember.run
-import ember.patch
-import ember.config
-import ember.fortran
 
 
 @dataclass
@@ -56,8 +53,6 @@ class Ember(BaseSolver):
         # print(C.wdist.min(), C.wdist.max())
         # plt.show()
         # quit()
-
-        b = grid[0]
 
         config = ember.config.SolverConfig(
             n_step=2500,

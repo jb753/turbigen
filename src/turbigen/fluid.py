@@ -4,8 +4,6 @@ All equations of state are handled by `ember.fluid` module.
 
 """
 
-import turbigen.util as util
-
 import dataclasses
 from abc import ABC, abstractmethod
 

@@ -1,7 +1,6 @@
 """Functions for reading and writing YAML files."""
 
 import yaml
-import gzip
 import os
 import re
 import numpy as np

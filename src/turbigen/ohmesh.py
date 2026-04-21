@@ -235,6 +235,12 @@ def _get_stagger_topology(Al):
     Al[np.abs(Al) < 45.0] = 0.0
 
     return [
-        np.sign(Al[(irow * 2, irow * 2 + 1),]).astype(int).tolist()
+        np.sign(
+            Al[
+                (irow * 2, irow * 2 + 1),
+            ]
+        )
+        .astype(int)
+        .tolist()
         for irow in range(Nrow)
     ]
