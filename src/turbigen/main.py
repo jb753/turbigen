@@ -208,7 +208,11 @@ def main():
     # Backup the source files for later reproduction
     util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
 
+    # Create geometry, run the solver, and post-process the results
     conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
+
+    # The config object now has the results
+    conf.record_metadata()
 
     logger.iter(conf.format_design_vars_table())
 

@@ -3,7 +3,7 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-work_dir: runs/*
+work_dir: turbines/*
 
 fluid:
   type: perfect
@@ -70,16 +70,16 @@ solver:
   # n_step_avg: 1000
   # smooth2_adapt: 0.5
 
-# Configure iterative updates of the geometry
-iterate:
-  # Make the mean-line loss match CFD
-  mean_line:
-    tolerance:
-      Ys: 0.01
-  # Correct for deviation using trailing-edge recamber
-  deviation:
-  # Correct for incidence using leading-edge recamber
-  incidence:
+# # Configure iterative updates of the geometry
+# iterate:
+#   # Make the mean-line loss match CFD
+#   mean_line:
+#     tolerance:
+#       Ys: 0.01
+#   # Correct for deviation using trailing-edge recamber
+#   deviation:
+#   # Correct for incidence using leading-edge recamber
+#   incidence:
 
 # # Additional plots to produce
 # post_process:

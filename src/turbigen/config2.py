@@ -1,6 +1,8 @@
 """Initial thoughts on an improved config class."""
 
 import dataclasses
+import fcntl
+import json
 import traceback
 from copy import deepcopy
 import numpy as np
@@ -125,6 +127,8 @@ class TurbigenConfig:
     post_3d: dict = dataclasses.field(default_factory=dict)
     """Results post-processed from the full 3D flow field."""
 
+    metadata_file: Path = None
+
     def copy(self):
         """Return a copy of the configuration."""
         return deepcopy(self)
@@ -132,6 +136,16 @@ class TurbigenConfig:
     @property
     def fname(self):
         return self.work_dir / self.basename
+
+    @property
+    def task_id(self):
+        """Integer indentifier for this run, extracted from work_dir."""
+        try:
+            return int(self.work_dir.name.split("_")[-1])
+        except Exception:
+            raise ValueError(
+                "Could not extract task_id from work_dir name, ensure it ends with '_123'."
+            )
 
     Re_surf: float = None
     """Set viscosity using a Reynolds number."""
@@ -840,6 +854,12 @@ class TurbigenConfig:
         # Back-calculate the design variables
         self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)
 
+        # Save the cuts as tm3 files for post-processing
+        for i, C in enumerate(cuts):
+            tm3_fname = self.work_dir / f"cut_{i}.tm3"
+            logger.info(f"Saving cut for row {i} to {tm3_fname}")
+            C.to_tm3(tm3_fname, Ma=C.Ma)
+
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
 
@@ -1167,3 +1187,34 @@ class TurbigenConfig:
                     traceback.print_exc()
         # Ensure all figures are closed
         plt.close("all")
+
+    def record_metadata(self):
+        """Record metadata about the case in a JSON file, safe for concurrent processes."""
+        flat = {}
+        for k, v in self.mean_line_actual.items():
+            if np.isscalar(v) or np.ndim(v) == 0:
+                flat[k] = float(v)
+            else:
+                for i, vi in enumerate(np.asarray(v).ravel()):
+                    flat[f"{k}{i + 1}"] = float(vi)
+        record = {**flat, "label": self.work_dir.name, "taskId": self.task_id}
+
+        path = self.work_dir.parent / "metaData.json"
+        with open(path, "a+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0)
+            content = f.read()
+            if content.strip():
+                payload = json.loads(content)
+                payload["data"].append(record)
+            else:
+                payload = {
+                    "header": {
+                        "continuousProperties": list(flat.keys()),
+                        "categoricalProperties": [],
+                    },
+                    "data": [record],
+                }
+            f.seek(0)
+            f.truncate()
+            json.dump(payload, f, indent=4)
