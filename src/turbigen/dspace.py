@@ -520,7 +520,7 @@ class DesignSpace:
             c = datum.copy()
             self.independent.set_independent(c, x[i])
             # Set a numbered workdir under the datum workdir
-            c.workdir = self.basedir / f"{i + n_current:04d}"
+            c.workdir = self.basedir / f"{i + n_current:d}"
             configs.append(c)
 
         return configs

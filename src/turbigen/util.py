@@ -424,7 +424,7 @@ def next_numbered_dir(basename):
     except StopIteration:
         pass
     next_id = cur_id + 1
-    return os.path.join(base_dir, stem.replace("*", f"{next_id:04d}"))
+    return os.path.join(base_dir, stem.replace("*", f"{next_id:d}"))
 
 
 def node_to_face3(x):
