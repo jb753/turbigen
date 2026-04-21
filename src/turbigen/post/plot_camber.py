@@ -1,3 +1,5 @@
+import logging
+
 """Save plot of camber line."""
 
 import os
@@ -6,7 +8,7 @@ import turbigen.camber
 import matplotlib.pyplot as plt
 
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(grid, machine, meanline, _, postdir, row_spf):

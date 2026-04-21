@@ -1,7 +1,7 @@
+import logging
 import numpy as np
-import turbigen.util
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(

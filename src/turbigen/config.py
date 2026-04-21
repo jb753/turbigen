@@ -1,3 +1,5 @@
+import logging
+
 """Initial thoughts on an improved config class."""
 
 import dataclasses
@@ -39,7 +41,7 @@ import ember.cut
 import ember.average
 import ember.util
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass
@@ -303,7 +305,7 @@ class TurbigenConfig:
     def find_plugins(self):
         """Find and load plugins from the plugdir."""
 
-        logger.iter(f"Importing plugins from {self.plug_dir}")
+        logger.warning(f"Importing plugins from {self.plug_dir}")
         # Find all python files recursively in the plugdir
         py_files = list(self.plug_dir.rglob("*.py"))
         for py_file in py_files:
@@ -320,10 +322,10 @@ class TurbigenConfig:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[f"turbigen.plugin.{module_name}"] = module
                 spec.loader.exec_module(module)
-                logger.iter(f"Loaded plugin: {py_file}")
+                logger.warning(f"Loaded plugin: {py_file}")
             except Exception as e:
-                logger.iter(f"Failed to load {py_file}, error:")
-                logger.iter(e)
+                logger.warning(f"Failed to load {py_file}, error:")
+                logger.warning(e)
                 sys.exit(1)
 
     def __post_init__(self):
@@ -527,14 +529,11 @@ class TurbigenConfig:
                 block.set_L_ref(L_ref)
 
         P_dtm, T_dtm = fluid.get_datum()
-        logger.info("Adjusting reference scales from mean line:")
-        logger.info(f"  P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
+        logger.info("Setting reference scales:")
+        logger.info(f"P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
         logger.info(
-            f"  rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s,"
-            f" L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
-        )
-        logger.info(
-            f"  Mean ho/V_ref^2 now = {self.mean_line.nominal.ho.mean() / fluid.V_ref**2:.3f}"
+            f"rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s, "
+            f"L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
         )
 
     def get_geometry(self):

@@ -1,4 +1,4 @@
-import turbigen.util
+import logging
 import numpy as np
 import ember.run
 import ember.patch
@@ -8,7 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclass

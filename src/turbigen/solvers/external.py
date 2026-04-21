@@ -1,13 +1,13 @@
+import logging
 import subprocess
 import pickle
 import os
 import tempfile
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
-import turbigen.util
 from pathlib import Path
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclass

@@ -1,3 +1,5 @@
+import logging
+
 """Contour loss coefficient over traverse plane."""
 
 import os
@@ -6,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from enum import Enum
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 class PlotVars(Enum):

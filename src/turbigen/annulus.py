@@ -1,3 +1,5 @@
+import logging
+
 r"""Classes to calculate meridional coordinates of an axisymmetric annulus.
 
 The purpose of these objects is to evaluate x/r coordinates over a turbomachine
@@ -18,7 +20,7 @@ from abc import abstractmethod
 
 import numpy as np
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 class AnnulusDesigner(util.BaseDesigner):

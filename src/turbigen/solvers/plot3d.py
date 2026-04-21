@@ -1,3 +1,4 @@
+import logging
 import turbigen.util
 import turbigen.grid
 import os
@@ -5,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclass

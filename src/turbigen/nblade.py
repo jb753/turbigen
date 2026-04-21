@@ -1,3 +1,5 @@
+import logging
+
 """Configuration for setting blade number."""
 
 import dataclasses
@@ -5,7 +7,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from turbigen import util
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 class BladeNumberConfig(ABC):

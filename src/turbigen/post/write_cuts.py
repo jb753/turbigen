@@ -1,9 +1,10 @@
+import logging
+
 """Write traverse plane or blade surface cuts to files."""
 
 import os
-import turbigen.util
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(grid, machine, meanline, _, postdir, mnorm_traverse=(), irow_surf=()):

@@ -19,11 +19,6 @@ from pathlib import Path
 
 import logging
 
-logging.ITER = 25
-logging.raiseExceptions = True
-logging.addLevelName(logging.ITER, "ITER")
-logging.basicConfig(format="%(message)s")
-
 
 def check_scalar(**kwargs):
     """Raise a helpful error message if any of the inputs are not scalar."""
@@ -251,17 +246,6 @@ def node_to_face(var):
     )
 
 
-def make_logger():
-    # Add a special logging level above INFO for iterations
-    logger = logging.getLogger("turbigen")
-
-    def _log_iter(message, *args, **kwargs):
-        logger.log(logging.ITER, message, *args, **kwargs)
-
-    logger.iter = _log_iter
-    return logger
-
-
 def interpolate_transfinite(c, plot=False):
     #         c3
     #     B--->---C
@@ -333,7 +317,7 @@ def interpolate_transfinite(c, plot=False):
     )
 
 
-logger = make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def signed_distance(xrc, xr):
@@ -1179,7 +1163,9 @@ def safe_pickle_dump(obj, filename, zip, max_retries=3):
         except KeyboardInterrupt:
             #
             attempts += 1
-            logger.iter(f"Writing pickle interrupted, retry {attempts}/{max_retries}")
+            logger.warning(
+                f"Writing pickle interrupted, retry {attempts}/{max_retries}"
+            )
 
             # Clean up temp file if it exists
             if tmp_path and tmp_path.exists():

@@ -1,8 +1,9 @@
+import logging
+
 """Save plots of annulus lines."""
 
-import turbigen.util
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(

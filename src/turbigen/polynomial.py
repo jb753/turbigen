@@ -1,3 +1,5 @@
+import logging
+
 """Functions for fitting polynomials to a design space."""
 
 import os
@@ -10,7 +12,7 @@ import turbigen.util
 import turbigen.flowfield
 import turbigen.post_process
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def legcoeff(n):

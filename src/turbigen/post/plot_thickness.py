@@ -1,3 +1,5 @@
+import logging
+
 """Save plot of thickness distribution."""
 
 import os
@@ -5,7 +7,7 @@ import turbigen.util
 import matplotlib.pyplot as plt
 
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(grid, machine, meanline, _, postdir, row_spf):

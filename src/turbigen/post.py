@@ -1,3 +1,5 @@
+import logging
+
 """Generic post-processor class."""
 
 from abc import ABC, abstractmethod
@@ -12,7 +14,7 @@ import matplotlib.pyplot as plt
 import ember.cut
 import ember.convergence_history
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 LABELS = {
     "Mas": r"Isentropic Mach Number, $\mathit{Ma}_s$",

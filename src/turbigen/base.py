@@ -1,7 +1,7 @@
+import logging
 import numpy as np
-from turbigen import util
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def concatenate(sd, axis=0, touching=False):

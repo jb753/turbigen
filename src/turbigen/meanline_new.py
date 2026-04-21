@@ -1,3 +1,5 @@
+import logging
+
 """New meanline data struct using ember base."""
 
 import ember.block
@@ -8,7 +10,7 @@ import turbigen.meanline_design_new
 import turbigen.util
 import inspect
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 f32 = np.float32

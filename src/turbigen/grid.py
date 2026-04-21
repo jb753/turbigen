@@ -1,3 +1,5 @@
+import logging
+
 """A general multiblock structured grid class."""
 
 import numpy as np
@@ -15,7 +17,7 @@ from scipy.interpolate import interpn
 from enum import IntEnum
 
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 class MatchDir(IntEnum):
@@ -938,19 +940,19 @@ class BaseBlock(turbigen.flowfield.BaseFlowField):
         try:
             assert np.isfinite(self.xrt).all()
         except AssertionError:
-            logger.iter(
+            logger.warning(
                 np.nanmean(self.xrt[0]),
                 np.nanmin(self.xrt[0]),
                 np.nanmax(self.xrt[0].max),
                 np.sum(np.isnan(self.xrt[0])),
             )
-            logger.iter(
+            logger.warning(
                 np.nanmean(self.xrt[1]),
                 np.nanmin(self.xrt[1]),
                 np.nanmax(self.xrt[1].max),
                 np.sum(np.isnan(self.xrt[1])),
             )
-            logger.iter(
+            logger.warning(
                 np.nanmean(self.xrt[2]),
                 np.nanmin(self.xrt[2]),
                 np.nanmax(self.xrt[2].max),
@@ -1414,8 +1416,8 @@ class Grid:
             try:
                 b.check_coordinates()
             except Exception as e:
-                logger.iter(f"Block {ib}")
-                logger.iter(e)
+                logger.warning(f"Block {ib}")
+                logger.warning(e)
                 passed = False
         if not passed:
             raise Exception("Coordinate check failed.")
@@ -1509,7 +1511,7 @@ class Grid:
                 C = patch.get_cut()
                 Cm = C.mix_out()[0]
                 if Cm.Mam > 1.0:
-                    logger.iter(
+                    logger.warning(
                         f"Warning: outlet Mam={Cm.Mam:.3f} is choked; this can affect"
                         " mass flow continuity."
                     )

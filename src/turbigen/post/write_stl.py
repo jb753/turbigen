@@ -1,12 +1,13 @@
+import logging
+
 """Write coordinates to an stl file."""
 
 import numpy as np
 import os
-import turbigen.util
 import stl
 
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def get_stl_data(section, close_tip):

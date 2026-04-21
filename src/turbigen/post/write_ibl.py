@@ -1,3 +1,5 @@
+import logging
+
 """Write coordinates to an ibl file.
 
 This is heavily based on bl_write_ibl by James Taylor."""
@@ -7,7 +9,7 @@ import os
 import turbigen.util
 
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def _format_point(xyz):

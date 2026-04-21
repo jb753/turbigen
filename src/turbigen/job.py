@@ -1,3 +1,5 @@
+import logging
+
 """Classes for submitting jobs to a queue."""
 
 import numpy as np
@@ -5,7 +7,6 @@ import sys
 import subprocess
 from abc import ABC, abstractmethod
 import dataclasses
-from turbigen import util
 from pathlib import Path
 
 SBATCH_FILE = "submit.sh"
@@ -28,7 +29,7 @@ handle_error() {
 
 """
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass
@@ -153,13 +154,13 @@ turbigen --no-job {fname}
 
         # Check for errors
         if sbatch_out.returncode != 0:
-            logger.iter(sbatch_out.stderr)
-            logger.iter("Error submitting job, exiting.")
+            logger.warning(sbatch_out.stderr)
+            logger.warning("Error submitting job, exiting.")
             sys.exit(1)
 
         # Extract the job id from the output and print it
         jid = sbatch_out.stdout.strip().split(" ")[-1]
-        logger.iter(f"Submitted SLURM jobid={jid} in {sbatch_path.parent}")
+        logger.warning(f"Submitted SLURM jobid={jid} in {sbatch_path.parent}")
 
     def submit_array(self, fnames):
         """Submit many config files as a SLURM job array.
@@ -244,4 +245,4 @@ class Local(BaseJob):
         with open(self.queue_file, "a") as f:
             f.write(f"{fname}\n")
 
-        logger.iter(f"Submitted local job {fname}")
+        logger.warning(f"Submitted local job {fname}")

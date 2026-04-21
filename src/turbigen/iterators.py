@@ -1,3 +1,5 @@
+import logging
+
 """Classes to update mean-line design using a CFD solution."""
 
 from abc import ABC, abstractmethod
@@ -5,7 +7,7 @@ import dataclasses
 import numpy as np
 from turbigen import util, util_post
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass
@@ -24,7 +26,9 @@ class IteratorConfig(ABC):
 
     def interpolate(self, config):
         """Use a fitted design space to set design variables."""
-        logger.iter(f"interpolate() is not implemented for {self.__class__.__name__}. ")
+        logger.warning(
+            f"interpolate() is not implemented for {self.__class__.__name__}. "
+        )
         del config
 
     def get_independent(self, config):
@@ -125,7 +129,7 @@ class Deviation(IteratorConfig):
     def interpolate(self, config):
         """Correct for deviation using a fitted design space."""
 
-        logger.iter("Interpolating deviation correction")
+        logger.warning("Interpolating deviation correction")
 
         # Function to extract the blade TE recamber
         def extract_camber(config, irow):
@@ -134,14 +138,14 @@ class Deviation(IteratorConfig):
         # Loop over rows
         for irow in range(config.nrow):
             blade = config.blades[irow][0]
-            logger.iter(f"Blade {irow}")
-            logger.iter(f"  Old TE recamber: {blade.camber[:, 1]}")
+            logger.warning(f"Blade {irow}")
+            logger.warning(f"  Old TE recamber: {blade.camber[:, 1]}")
             blade.camber[:, 1] = config.design_space.interpolate(
                 extract_camber,
                 config,
                 irow=irow,
             )
-            logger.iter(f"  New TE recamber: {blade.camber[:, 1]}")
+            logger.warning(f"  New TE recamber: {blade.camber[:, 1]}")
 
 
 @dataclasses.dataclass
@@ -273,7 +277,7 @@ class Incidence(IteratorConfig):
     def interpolate(self, config):
         """Use a fitted design space to set LE recamber."""
 
-        logger.iter("Interpolating incidence correction")
+        logger.warning("Interpolating incidence correction")
 
         # Function to extract the LE recamber
         def extract_camber(config, irow):
@@ -283,14 +287,14 @@ class Incidence(IteratorConfig):
         for irow in range(config.nrow):
             blade = config.blades[irow][0]
 
-            logger.iter(f"Blade {irow}")
-            logger.iter(f"  Old LE recamber: {blade.camber[:, 0]}")
+            logger.warning(f"Blade {irow}")
+            logger.warning(f"  Old LE recamber: {blade.camber[:, 0]}")
             blade.camber[:, 0] = config.design_space.interpolate(
                 extract_camber,
                 config,
                 irow=irow,
             )
-            logger.iter(f"  New LE recamber: {blade.camber[:, 0]}")
+            logger.warning(f"  New LE recamber: {blade.camber[:, 0]}")
 
 
 @dataclasses.dataclass
@@ -380,17 +384,17 @@ class MeanLine(IteratorConfig):
 
         # Loop over the design variables we want to match
         for vname in self.tolerance:
-            logger.iter(f"Interpolating mean-line design variable {vname}")
+            logger.warning(f"Interpolating mean-line design variable {vname}")
 
             # Get nominal value
             var_nom = config.mean_line.design_vars[vname]
-            logger.iter(f"  Nominal value: {var_nom}")
+            logger.warning(f"  Nominal value: {var_nom}")
 
             # Interpolate this variable from the design space
             var_interp = config.design_space.interpolate(
                 extract_mean_line, config, vname=vname
             )
-            logger.iter(f"  New value: {var_interp}")
+            logger.warning(f"  New value: {var_interp}")
 
             # Assign back to the configuration
             # Ensure that the shape matches
@@ -500,9 +504,9 @@ class Repeat(IteratorConfig):
 
     def interpolate(self, config):
         """Use a fitted design space to set repeating profiles."""
-        # logger.iter("NOT interpolating repeating profiles")
+        # logger.warning("NOT interpolating repeating profiles")
         # return
-        logger.iter("Interpolating repeating profiles")
+        logger.warning("Interpolating repeating profiles")
 
         # Define a new span fraction vector
         # Clustered towards the endwalls

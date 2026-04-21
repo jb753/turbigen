@@ -1,3 +1,4 @@
+import logging
 from turbigen import util
 import numpy as np
 import dataclasses
@@ -5,7 +6,7 @@ import turbigen.nblade
 import turbigen.camber
 import turbigen.thickness
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 class VortexDistribution:

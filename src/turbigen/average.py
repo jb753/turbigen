@@ -1,10 +1,12 @@
+import logging
+
 """Functions for mixed-out averaging."""
 
 import numpy as np
 import turbigen.util
 import scipy.optimize
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def face_length(c):

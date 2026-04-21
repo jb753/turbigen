@@ -1,3 +1,5 @@
+import logging
+
 """Functions to write, run, and read for the Turbostream 3 solver."""
 
 import numpy as np
@@ -19,7 +21,7 @@ import json
 import re
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclass
@@ -762,7 +764,7 @@ pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
             f"pvpython {os.path.abspath(pipeline)} input.hdf5 input_ts4 > convert.log"
         )
 
-        logger.iter(f"Converting TS3->TS4 using custom pipeline {pipeline}...")
+        logger.warning(f"Converting TS3->TS4 using custom pipeline {pipeline}...")
 
         # When runing headless, paraview seems to segfault on exit, despite the
         # pipeline completing successfully. So we ignore errors when executing

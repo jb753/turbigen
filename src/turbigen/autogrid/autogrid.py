@@ -1,3 +1,5 @@
+import logging
+
 """Given annulus and blade coordinates, make g/bcs in AutoGrid.
 
 In general, we run AutoGrid on a remote machine, because it is not installed on
@@ -16,7 +18,7 @@ from tempfile import mkdtemp
 from time import sleep
 import turbigen.util
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 # Configuration for remote access by SSH
 # For best reliability, use a ControlMaster in ssh config to reuse connection

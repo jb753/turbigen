@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import turbigen.autogrid
 import os
@@ -6,7 +7,7 @@ import turbigen.mesh
 import turbigen.autogrid.reader
 import dataclasses
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass

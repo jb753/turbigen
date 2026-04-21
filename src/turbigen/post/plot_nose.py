@@ -1,3 +1,5 @@
+import logging
+
 """Save pressure field around the nose."""
 
 import numpy as np
@@ -5,7 +7,7 @@ import os
 import turbigen.util
 import matplotlib.pyplot as plt
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(grid, machine, meanline, _, postdir, row_spf, fac_Rle=1.0):

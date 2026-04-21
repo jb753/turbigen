@@ -1,3 +1,4 @@
+import logging
 from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
@@ -23,7 +24,7 @@ import multiprocessing
 
 import turbigen.util
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 KIND_LOOKUP = {
     0: turbigen.grid.InletPatch,
@@ -1089,12 +1090,12 @@ and then back in to refresh your access permissions.
                         f"TS3 diverged at step {istep_nan}"
                     ) from None
         except KeyboardInterrupt:
-            logger.iter("******")
-            logger.iter("Caught interrupt, killing solver...")
-            logger.iter("******")
+            logger.warning("******")
+            logger.warning("Caught interrupt, killing solver...")
+            logger.warning("******")
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             proc.wait()
-            logger.iter("Killed solver.")
+            logger.warning("Killed solver.")
 
         proc.wait()
 
@@ -1261,8 +1262,8 @@ def run(grid, ts3_conf, machine, workdir):
         state_log.set_P_h(ho, Po)
         conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
     except Exception as e:
-        logger.iter(f"Failed to parse log file {log_path}")
-        logger.iter(f"Exception: {e}")
+        logger.warning(f"Failed to parse log file {log_path}")
+        logger.warning(f"Exception: {e}")
         conv = None
 
     return conv

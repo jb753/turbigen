@@ -1,9 +1,10 @@
+import logging
 import os
 import turbigen.util
 import matplotlib.pyplot as plt
 import numpy as np
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(

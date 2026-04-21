@@ -1,3 +1,5 @@
+import logging
+
 """Save plots of incidence."""
 
 import numpy as np
@@ -5,7 +7,7 @@ import os
 import turbigen.util
 import matplotlib.pyplot as plt
 
-logger = turbigen.util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 def post(grid, machine, meanline, _, postdir, fac_RLE=1.0):

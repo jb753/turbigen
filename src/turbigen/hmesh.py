@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 from turbigen import util
 
@@ -12,7 +13,7 @@ import ember.patch
 import ember.block
 import ember.grid
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass

@@ -1,3 +1,5 @@
+import logging
+
 """Class to encapsulate a design space."""
 
 import dataclasses
@@ -8,9 +10,8 @@ import turbigen.yaml_utils
 # import turbigen.config2
 from scipy.stats.qmc import LatinHypercube
 from pathlib import Path
-from turbigen import util
 
-logger = util.make_logger()
+logger = logging.getLogger("turbigen")
 
 
 @dataclasses.dataclass
@@ -303,7 +304,7 @@ class DesignSpace:
 
         # Search for all configs in subdirs under the base directory
         # Could parallelize this for big datasets
-        logger.iter(f"Loading design space from {self.basedir}")
+        logger.warning(f"Loading design space from {self.basedir}")
         fnames = sorted(self.basedir.glob("**/config*.yaml"))
 
         # Exclude root config
@@ -335,8 +336,8 @@ class DesignSpace:
                 confs.append(c)
 
             except Exception as e:
-                logger.iter(f"Error reading {f}")
-                logger.iter(e)
+                logger.warning(f"Error reading {f}")
+                logger.warning(e)
 
         # Check the ids are in order and consecutive
         # This is so we know how many samples have been taken already
@@ -358,14 +359,14 @@ class DesignSpace:
 
         # Fast forward the sampler by the number of samples already taken
         self._nsampled = len(fnames_done)
-        logger.iter(f"Fast forwarding sampler by {self._nsampled}")
+        logger.warning(f"Fast forwarding sampler by {self._nsampled}")
         self._sampler.fast_forward(self._nsampled)
 
         # Now exclude any configs that have not ran yet or not converged
         nconf = len(confs)
         nconv = sum(c.converged for c in confs)
         self.configs = [c for c in confs if c.mean_line_actual and c.converged]
-        logger.iter(f"Loaded {nconf} config files, {nconv} converged.")
+        logger.warning(f"Loaded {nconf} config files, {nconv} converged.")
 
     @property
     def nsample(self):
@@ -494,7 +495,7 @@ class DesignSpace:
         """
 
         n_current = self._nsampled
-        logger.iter(f"Found {n_current} samples, target {self.nsample_target}.")
+        logger.warning(f"Found {n_current} samples, target {self.nsample_target}.")
         n = self.nsample_target - n_current
         if n <= 0:
             return []
