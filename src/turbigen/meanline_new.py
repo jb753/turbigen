@@ -41,21 +41,33 @@ class MeanLineConfig:
         self.actual = MeanLine(n_row)
 
         # Check that design_vars match forward function signature
-        sig = inspect.signature(self._forward)
-        params = list(sig.parameters.values())[1:]  # Skip first 'mean_line' param
-        param_names = {p.name for p in params if p.default is p.empty}
-        missing = param_names - set(design_vars.keys())
+        required = self.valid_design_params["required"]
+        all_valid = self.valid_design_params["all"]
+        missing = required - set(design_vars.keys())
         if missing:
             raise ValueError(
                 f"Missing required design variables for mean_line type '{self.type}': {missing}"
             )
 
         # Check for unexpected design_vars
-        unexpected = set(design_vars.keys()) - {p.name for p in params}
+        unexpected = set(design_vars.keys()) - all_valid
         if unexpected:
             raise ValueError(
                 f"Unexpected design variables for mean_line type '{self.type}': {unexpected}"
             )
+
+    @property
+    def valid_design_params(self):
+        """Valid design variable names for the mean-line forward function.
+
+        Returns a dict with keys 'required' (no default) and 'all' (all params).
+        """
+        sig = inspect.signature(self._forward)
+        params = list(sig.parameters.values())[1:]  # Skip 'mean_line' arg
+        return {
+            "required": {p.name for p in params if p.default is p.empty},
+            "all": {p.name for p in params},
+        }
 
     @classmethod
     def from_dict(cls, d):

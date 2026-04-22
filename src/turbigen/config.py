@@ -1,10 +1,9 @@
-import logging
-
 """Initial thoughts on an improved config class."""
 
+import logging
+
+
 import dataclasses
-import fcntl
-import json
 import traceback
 from copy import deepcopy
 import numpy as np
@@ -856,9 +855,18 @@ class TurbigenConfig:
 
         # Save the cuts as tm3 files for post-processing
         for i, C in enumerate(cuts):
-            tm3_fname = self.work_dir / f"cut_{i}.tm3"
-            logger.info(f"Saving cut for row {i} to {tm3_fname}")
-            C.to_tm3(tm3_fname, Ma=C.Ma)
+            logger.info(f"Saving tm3 cuts for row {i}")
+            C.to_tm3(self.work_dir / f"cut_{i}_Mam.tm3", Ma=C.Mam)
+
+        for irow in range(self.nrow):
+            # Calculate loss coefficient
+            i_inlet = irow * 2
+            i_exit = irow * 2 + 1
+            Po1 = self.mean_line.actual.Po_rel[i_inlet]
+            P2 = self.mean_line.actual.P[i_exit]
+            C = cuts[i_exit]
+            Yp = (Po1 - C.Po_rel) / (Po1 - P2)
+            C.to_tm3(self.work_dir / f"cut_{i_exit}_Yp.tm3", Yp=Yp)
 
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
@@ -1119,6 +1127,7 @@ class TurbigenConfig:
         if not skip:
             logger.info(f"Running solver {self.solver.__class__.__name__}...")
             self.run_solver()
+            self.solver.convergence.to_json(self.work_dir)
         else:
             logger.info("Skipping solver run.")
 
@@ -1186,34 +1195,3 @@ class TurbigenConfig:
                     traceback.print_exc()
         # Ensure all figures are closed
         plt.close("all")
-
-    def record_metadata(self):
-        """Record metadata about the case in a JSON file, safe for concurrent processes."""
-        flat = {}
-        for k, v in self.mean_line_actual.items():
-            if np.isscalar(v) or np.ndim(v) == 0:
-                flat[k] = float(v)
-            else:
-                for i, vi in enumerate(np.asarray(v).ravel()):
-                    flat[f"{k}{i + 1}"] = float(vi)
-        record = {**flat, "label": self.work_dir.name, "taskId": self.task_id}
-
-        path = self.work_dir.parent / "metaData.json"
-        with open(path, "a+") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            f.seek(0)
-            content = f.read()
-            if content.strip():
-                payload = json.loads(content)
-                payload["data"].append(record)
-            else:
-                payload = {
-                    "header": {
-                        "continuousProperties": list(flat.keys()),
-                        "categoricalProperties": [],
-                    },
-                    "data": [record],
-                }
-            f.seek(0)
-            f.truncate()
-            json.dump(payload, f, indent=4)

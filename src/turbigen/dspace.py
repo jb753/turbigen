@@ -282,6 +282,9 @@ class DesignSpace:
     """Fraction of samples to use for fit error testing."""
 
     def __post_init__(self):
+        if self.nsample_target < 0:
+            raise ValueError(f"nsample_target must be >= 0, got {self.nsample_target}")
+
         # Convert independent dict to an object
         if isinstance(self.independent, dict):
             self.independent = IndependentConfig(**self.independent)
@@ -318,7 +321,7 @@ class DesignSpace:
         for f in fnames:
             try:
                 # Get raw yaml data first
-                data = turbigen.yaml.read_yaml(f)
+                data = turbigen.yaml_utils.read_yaml(f)
 
                 # Don't load the design space info to avoid infinite recursion
                 data.pop("design_space", None)
@@ -327,7 +330,7 @@ class DesignSpace:
                 data["_fast_init"] = self.fast_load
 
                 # Create a config object from the data
-                c = turbigen.config2.TurbigenConfig(**data)
+                c = turbigen.config.TurbigenConfig(**data)
 
                 # If we loaded the 3D solution, we repeat mean-line processing
                 if not self.fast_load:
@@ -344,13 +347,14 @@ class DesignSpace:
         fnames_done = [
             f
             for f in fnames
-            if f.parent.name.isnumeric() and f.parent.parent == self.basedir
+            if f.parent.name.split("_")[-1].isnumeric()
+            and f.parent.parent == self.basedir
         ]
-        ids = [int(f.parent.name) for f in fnames_done]
+        ids = [int(f.parent.name.split("_")[-1]) for f in fnames_done]
         if len(ids) != len(set(ids)):
             raise ValueError("IDs are not unique.")
-        if not np.all(np.diff(ids) == 1):
-            raise ValueError("IDs are not consecutive.")
+        if not np.all(np.diff(np.sort(ids)) == 1):
+            raise ValueError(f"IDs are not consecutive, got {ids}.")
         if len(ids) > 0 and ids[0] != 0:
             raise ValueError("IDs do not start at 0.")
 
@@ -520,7 +524,7 @@ class DesignSpace:
             c = datum.copy()
             self.independent.set_independent(c, x[i])
             # Set a numbered workdir under the datum workdir
-            c.workdir = self.basedir / f"{i + n_current:d}"
+            c.work_dir = self.basedir / f"run_{i + n_current:d}"
             configs.append(c)
 
         return configs

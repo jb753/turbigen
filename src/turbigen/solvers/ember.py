@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
 
 logger = logging.getLogger("turbigen")
+logging.getLogger("ember").parent = logger
 
 
 @dataclass
@@ -18,6 +19,9 @@ class Ember(BaseSolver):
     _name = "ember"
 
     workdir: Path = None
+
+    n_step: int = 2500
+    n_step_avg: int = 500
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -55,12 +59,9 @@ class Ember(BaseSolver):
         # quit()
 
         config = ember.config.SolverConfig(
-            n_step=2500,
-            # cfl_min=0.4,
-            # sf2_adapt=1.0,
-            # sf4=0.02,
-            n_step_avg=500,
-            n_step_log=200,
+            n_step=self.n_step,
+            n_step_avg=self.n_step_avg,
+            n_step_log=500,
             n_levels=3,
             xllim=xllim,
             full_mgrid=True,

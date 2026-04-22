@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 import dataclasses
+import json
+from pathlib import Path
 import numpy as np
 
 
@@ -46,6 +48,10 @@ class ConvergenceHistory:
             "rho": self.state.rho.tolist(),
             "u": self.state.u.tolist(),
         }
+
+    def to_json(self, directory):
+        records = [{"x": int(i), "y": float(r)} for i, r in zip(self.istep, self.resid)]
+        (Path(directory) / "convergence.json").write_text(json.dumps(records))
 
     def save(self, fname):
         """Save the convergence history to a file.

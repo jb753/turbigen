@@ -12,6 +12,7 @@ import sys
 import os
 import numpy as np
 import turbigen.config
+import turbigen.viewer
 import datetime
 import argparse
 
@@ -106,6 +107,11 @@ def _make_sample_parser():
         help="disable submission of cluster job (write configs only)",
         action="store_true",
     )
+    parser.add_argument(
+        "--purge",
+        help="delete all existing run_* directories before sampling",
+        action="store_true",
+    )
     return parser
 
 
@@ -179,7 +185,7 @@ def cmd_run(args):
 
     conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
 
-    conf.record_metadata()
+    turbigen.viewer.record_metadata(conf)
 
     logger.warning(conf.format_design_vars_table())
     logger.warning(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
@@ -282,10 +288,36 @@ def cmd_sample(args):
             f"Got work_dir={work_dir}, config dir={config_path.parent}"
         )
 
+    if args.purge:
+        run_dirs = sorted(work_dir.glob("run_*"))
+        if run_dirs:
+            logger.warning(f"Purging {len(run_dirs)} run directories...")
+            for d in run_dirs:
+                shutil.rmtree(d)
+        for fname in ("metaData.json", "session.json"):
+            f = work_dir / fname
+            if f.exists():
+                f.unlink()
+                logger.warning(f"Purged {fname}")
+
     if plug_dir := conf_dict.get("plug_dir"):
         turbigen.plugins.load_plugins(Path(plug_dir))
 
     conf = turbigen.config.TurbigenConfig(**conf_dict)
+    conf.design_space.base_dir = work_dir
+
+    if conf.design_space and conf.design_space.independent.mean_line:
+        valid = conf.mean_line.valid_design_params["all"]
+        invalid = [
+            k
+            for k in conf.design_space.independent.mean_line
+            if conf.design_space.independent._split_meanline_key(k)[0] not in valid
+        ]
+        if invalid:
+            raise ValueError(
+                f"Invalid mean_line keys in design_space.independent: {invalid}. "
+                f"Valid keys: {sorted(valid)}"
+            )
 
     start_tic = timer()
     logger.warning("Sampling the design space...")
