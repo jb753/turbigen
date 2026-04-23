@@ -22,6 +22,7 @@ class Ember(BaseSolver):
 
     n_step: int = 2500
     n_step_avg: int = 500
+    full_mgrid: bool = True
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -29,7 +30,7 @@ class Ember(BaseSolver):
 
     def restart(self):
         """Restart the simulation from a previous solution."""
-        return self
+        return self.replace(full_mgrid=False)
 
     def run(self, grid, machine, workdir):
         r_ref = grid.get_r_ref()
@@ -42,7 +43,7 @@ class Ember(BaseSolver):
         logger.info(f"xllim: {xllim}")
 
         for patch in grid.patches.outlet:
-            patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.01)
+            patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.1)
         # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         # import matplotlib.pyplot as plt
@@ -61,14 +62,14 @@ class Ember(BaseSolver):
         config = ember.config.SolverConfig(
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
-            n_step_log=500,
+            n_step_log=100,
             n_levels=3,
             xllim=xllim,
-            full_mgrid=True,
+            full_mgrid=self.full_mgrid,
             # inviscid=True,
             # fac_mgrid=0.0,
             # gain_filt=10.0,
-            i_level_stop=2,
+            # i_level_stop=2,
             # debug=True,
         )
 
