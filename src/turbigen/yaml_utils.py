@@ -28,6 +28,7 @@ def represent_path(dumper, data):
 
 
 yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
+yaml.representer.SafeRepresenter.add_representer(np.float32, represent_float)
 yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
 yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
 yaml.representer.SafeRepresenter.add_representer(Path, represent_path)

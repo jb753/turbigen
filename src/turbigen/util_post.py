@@ -4,6 +4,7 @@ import numpy as np
 import ember.block
 import ember.cut
 import ember.patch
+from turbigen import util
 
 
 def get_zeta(block):
@@ -90,7 +91,7 @@ def get_i_stag(block):
             f"this block has shape {block.shape}"
         )
 
-    P = block.P
+    P = block.P_rot
 
     # Get arc length and normalize to [-1, 1] on each j-line
     zeta = get_zeta(block)
@@ -513,3 +514,57 @@ def cut_span(grid, annulus, spf):
     xr_cut = annulus.get_span_curve(spf)
     cuts = ember.cut.structured_meridional(grid, xr_cut.T)
     return list(cuts)
+
+
+def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
+    # Pull out 2D cuts of blades and splitters
+    surfs = cut_blade_surfs(grid)[irow]
+
+    nspf = len(spf)
+
+    # Meridional curves for target span fractions
+    ist = irow * 2 + 1
+    ien = ist + 1
+    m = np.linspace(ist, ien, 101)
+    xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(
+        2, -1, nspf
+    )
+
+    # Meridional velocity vector at inlet to this row
+    Vxrt = ml[irow * 2].Vxrt_rel
+
+    # Loop over main/splitter
+    chi = []
+    for jbld, surfj in enumerate(surfs):
+        surf = surfj.squeeze()
+
+        # Get the current blade object
+        bldnow = machine.bld[irow][jbld]
+
+        # Loop over span fractions
+        # Unstructure cut through current surface along the
+        # target span fraction curves
+        xrt_stag = np.zeros((3, nspf))
+        xrt_nose = np.zeros((3, nspf))
+        xrt_cent = np.zeros((3, nspf))
+        for k in range(len(spf)):
+            # Cut at this span fraction
+            C = ember.cut.structured_meridional(surf[..., None], xr_spf[:, :, k].T)
+
+            # Stag point coordinates
+            istag = get_i_stag(C[0])[0]
+            xrt_stag[:, k] = C[0].xrt[istag, 0, :]
+
+            # Geometric nose coordinates
+            xrt_nose[:, k] = bldnow.get_nose(spf[k])
+
+            # Leading edge centre
+            xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
+
+        # Calculate the angles
+        chi_metal = util.yaw_from_xrt(xrt_nose, xrt_cent, Vxrt)
+        chi_flow = util.yaw_from_xrt(xrt_stag, xrt_cent, Vxrt, yaw_ref=chi_metal)
+
+        chi.append(np.stack((chi_metal, chi_flow)))
+
+    return chi

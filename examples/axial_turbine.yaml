@@ -3,7 +3,7 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-work_dir: turbines/*
+work_dir: runs/*
 
 fluid:
   type: perfect
@@ -66,20 +66,19 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  # n_step: 2000
-  # n_step_avg: 1000
+  n_step: 1000
+  n_step_avg: 200
   # smooth2_adapt: 0.5
 
 # # Configure iterative updates of the geometry
-# iterate:
-#   # Make the mean-line loss match CFD
-#   mean_line:
-#     tolerance:
-#       Ys: 0.01
-#   # Correct for deviation using trailing-edge recamber
-#   deviation:
-#   # Correct for incidence using leading-edge recamber
-#   incidence:
+fac_nstep_initial: 2.0
+iterate:
+  # Make the mean-line loss match CFD
+  mean_line:
+    tolerance:
+      Ys: 0.01
+  deviation:
+  incidence:
 
 # # Additional plots to produce
 # post_process:

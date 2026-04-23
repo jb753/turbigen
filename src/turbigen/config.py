@@ -233,6 +233,9 @@ class TurbigenConfig:
         if data["plug_dir"]:
             data["plug_dir"] = str(data["plug_dir"])
 
+        for k in ["grid", "guess"]:
+            data.pop(k, None)
+
         # Now convert any nested objects with to_dict methods
         for k in ["mean_line", "fluid", "annulus"]:
             obj = getattr(self, k)
@@ -788,13 +791,11 @@ class TurbigenConfig:
         # Apply 3D guess if available
         if self.guess:
             logger.info("Applying 3D guess...")
-            self.grid.apply_guess_3d(self.guess)
+            self.grid.set_fluid(self.mean_line.nominal.fluid)
+            self.grid.interp_from(self.guess)
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
-
-            # block_guess = self.mean_line.nominal.to_block(self.annulus)
-            # self.grid.apply_guess_meridional(block_guess, refine_factor=50)
 
             block_guess = self.mean_line.nominal.to_quasi3d(
                 self.annulus, self.get_nblade()
@@ -848,7 +849,7 @@ class TurbigenConfig:
             self.mean_line.actual[i].set_r_rms(Cm.r)
             self.mean_line.actual[i].set_conserved(Cm.conserved)
 
-        print(self.mean_line.actual.to_string())
+        logger.info(self.mean_line.actual.to_string())
 
         # Back-calculate the design variables
         self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)

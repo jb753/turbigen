@@ -202,8 +202,10 @@ class BaseSolver(ABC):
         # Built in dataclasses.asdict() gets us most of way
         d = dataclasses.asdict(self)
 
-        # Convert the convergence history to a dictionary
+        # # Convert the convergence history to a dictionary
         if self.convergence is not None:
-            d["convergence"] = self.convergence.to_dict()
+            d.pop("convergence")
+
+        #     d["convergence"] = self.convergence.to_dict()
 
         return d

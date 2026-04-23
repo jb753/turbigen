@@ -183,7 +183,76 @@ def cmd_run(args):
 
     start_tic = timer()
 
-    conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
+    if not iterating:
+        conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
+    else:
+        basedir = conf.work_dir
+
+        if conf.design_space and conf.design_space.configs:
+            logger.info("Initialising iterators with fitted design space.")
+            conf.interpolate_all_iterators()
+
+        logger.warning(f"Iterating for max {conf.max_iter} iterations...")
+
+        for iiter in range(conf.max_iter):
+            conf.work_dir = basedir / f"{iiter:03d}"
+
+            if conf.fac_nstep_initial != 1.0:
+                if iiter == 0:
+                    old_nstep = conf.solver.n_step
+                    conf.solver.n_step = int(old_nstep * conf.fac_nstep_initial)
+                    logger.warning(
+                        f"Using initial n_step={conf.fac_nstep_initial}*{old_nstep}"
+                        f"={conf.solver.n_step}"
+                    )
+                elif iiter == 1:
+                    conf.solver.n_step = old_nstep
+
+            if conf.work_dir.exists():
+                shutil.rmtree(conf.work_dir)
+            conf.work_dir.mkdir(parents=True)
+
+            conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
+
+            tic = timer()
+            if conf.grid and iiter == 0:
+                conf.skip = True
+            elif iiter > 0:
+                conf.skip = False
+
+            conf.design_and_run(args.no_solve)
+
+            conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
+
+            conv_all, log_data = conf.step_iterate()
+            toc = timer()
+
+            elapsed = toc - tic
+            log_data = dict(Min=elapsed / 60.0, **log_data)
+
+            reprint = not np.mod(iiter, 5)
+            logger.warning(format_iter_log(log_data, header=reprint))
+
+            conf.solver.soft_start = False
+
+            converged = all(conv_all.values())
+            conf.converged = converged
+            if converged:
+                shutil.copytree(conf.work_dir, basedir, dirs_exist_ok=True)
+
+                all_iter_dir = basedir / "iterations"
+                all_iter_dir.mkdir(exist_ok=True)
+                for i in range(iiter + 1):
+                    iter_dir = basedir / f"{i:03d}"
+                    iter_conf_dest = all_iter_dir / f"config_{i:03d}.yaml"
+                    if not i == iiter:
+                        shutil.move(iter_dir / conf.basename, iter_conf_dest)
+                    shutil.rmtree(iter_dir)
+                conf.work_dir = basedir
+                conf.save()
+                break
+
+        logger.warning(f"Finished iterating, converged={converged}.")
 
     turbigen.viewer.record_metadata(conf)
 

@@ -100,3 +100,50 @@ def test_get_i_stag_multiple_j_lines():
     # Check that each j-line found its own maximum
     expected = np.array([8, 9, 10, 11])
     np.testing.assert_array_equal(i_stag, expected)
+
+
+def test_get_i_stag_rotating():
+    """In a rotating frame, P_rot removes centrifugal gradient so stag is found correctly.
+
+    A centrifugal pressure gradient increases P with radius, which shifts the
+    apparent pressure maximum away from the true stagnation point when using P.
+    get_i_stag must use P_rot to find the correct index.
+    """
+    ni, nj = 21, 5
+    shape = (ni, nj, 1)
+
+    # Radially varying geometry: r increases with j to create centrifugal gradient
+    xrt = ember.util.linmesh3([0, 1], [1.0, 2.0], [0, 0], shape)
+
+    block = ember.block.Block(shape=shape)
+    block.set_xrt(xrt)
+
+    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1e-5, Pr=0.72)
+    block.set_fluid(fluid)
+
+    # True stagnation at i=10; add a centrifugal correction so that raw P peaks
+    # at i=0 (low end) due to the radial gradient introduced by high Omega
+    i_coords = np.arange(ni)
+    r = np.linspace(1.0, 2.0, nj)
+
+    Omega = 1000.0  # rad/s, large enough to dominate the pressure field
+    rho_val = 1.2
+
+    # Build P_rot with Gaussian peak at i=10, uniform across j
+    P_rot_1d = np.exp(-((i_coords - 10) ** 2) / 10.0) * 1e5 + 1e5
+    # Add centrifugal term back to get raw P: P = P_rot + 0.5*rho*Omega^2*r^2
+    P = np.zeros((ni, nj, 1))
+    for j in range(nj):
+        P[:, j, 0] = P_rot_1d + 0.5 * rho_val * Omega**2 * r[j] ** 2
+
+    rho = np.ones((ni, nj, 1)) * rho_val
+    Vx = np.ones((ni, nj, 1)) * 10.0
+    Vr = np.zeros((ni, nj, 1))
+    Vt = r[None, :, None] * Omega * np.ones((ni, 1, 1))  # solid-body rotation
+    block.set_primitive(rho, Vx, Vr, Vt, P)
+    block.set_Omega(Omega)
+
+    i_stag = get_i_stag(block.squeeze())
+
+    assert i_stag.shape == (nj,)
+    np.testing.assert_array_equal(i_stag, 10)

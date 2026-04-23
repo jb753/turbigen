@@ -244,7 +244,7 @@ class Incidence(IteratorConfig):
 
             # Find flow and metal angles
             config.apply_recamber()
-            chi = util.incidence_unstructured(
+            chi = util_post.incidence_unstructured(
                 config.grid,
                 config.get_machine(),
                 config.mean_line.nominal,
