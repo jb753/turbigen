@@ -69,7 +69,7 @@ class Ember(BaseSolver):
             # inviscid=True,
             # fac_mgrid=0.0,
             # gain_filt=10.0,
-            i_level_stop=2,
+            i_level_stop=1,
             # debug=True,
         )
 
