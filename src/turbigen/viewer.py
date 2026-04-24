@@ -196,6 +196,8 @@ def record_metadata(config):
     """Record case metadata into metaData.json, safe for concurrent processes."""
     flat = {}
     for k, v in config.mean_line_actual.items():
+        if v is None:
+            continue
         if np.isscalar(v) or np.ndim(v) == 0:
             flat[k] = float(v)
         else:
