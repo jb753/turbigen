@@ -101,6 +101,34 @@ class Convergence(BasePost):
         pdf.savefig()
         plt.close()
 
+        # Page 4: Convergence of work and loss relative to final value
+        psi = conv.psi[:n_steps]
+        zeta = conv.zeta[:n_steps]
+
+        _, ax = plt.subplots(2, 1, layout="constrained", sharex=True)
+        ax[0].set_title("Work and Loss Convergence")
+
+        labelled_pct = [-12, -8, -4, 0, 4, 8, 12]
+        minor_pct = [p for p in range(-12, 13, 2) if p not in labelled_pct]
+        major_ticks = [np.log10(1 + p / 100) if p != 0 else 0.0 for p in labelled_pct]
+        minor_ticks = [np.log10(1 + p / 100) for p in minor_pct]
+        major_labels = [str(p) for p in labelled_pct]
+        ylim = np.log10(1.12)
+
+        for axi, data, label in zip(ax, (psi, zeta), (r"$\psi$", r"$\zeta$")):
+            axi.plot(steps, np.log10(data / data[-1]), "-")
+            axi.set_ylabel(f"% Error in {label}")
+            axi.set_yticks(major_ticks, major_labels)
+            axi.set_yticks(minor_ticks, minor=True)
+            axi.set_ylim(-ylim, ylim)
+            axi.grid(True, which="major", alpha=0.3, lw=0.8)
+            axi.grid(True, which="minor", alpha=0.15, lw=0.5)
+        ax[1].set_xlabel("Iteration")
+        ax[1].grid(True, alpha=0.3)
+
+        pdf.savefig()
+        plt.close()
+
 
 @dataclasses.dataclass
 class Metadata(BasePost):

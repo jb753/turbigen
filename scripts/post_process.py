@@ -27,8 +27,8 @@ mdot = np.array(mdot)
 fig, ax = plt.subplots()
 ax.plot(x, mdot, "-x")
 ax.set_ylim(bottom=0)
-plt.show()
-quit()
+# plt.show()
+# quit()
 
 
 # Rotor only has a single block, extract it by indexing into grid
