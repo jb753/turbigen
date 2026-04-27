@@ -413,10 +413,13 @@ def cut_blade_sides(grid, offset=0):
                     elif lim[0, 1] == block.shape[0] - 1:
                         ite = lim[0, 0]
 
-            # Now check cusps and inviscid patches
+            # Now check cusps and inviscid patches on k faces
             for patch in block.patches:
-                if isinstance(
-                    patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
+                if (
+                    isinstance(
+                        patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
+                    )
+                    and patch.const_dim == 2
                 ):
                     ite = patch.ijk_lim_abs[0, 0]
 

@@ -45,8 +45,8 @@ mesh:
   # plot: true
   AR_cusp: 2.0
   ni_cusp: 5
-  ni_TE: 9
-  dm_TE: 0.05
+  ni_TE: 3
+  dm_TE: 0.0
 
 # Define one mid-span section in stator and rotor
 blades:

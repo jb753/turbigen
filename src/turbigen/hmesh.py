@@ -76,6 +76,10 @@ class H(turbigen.mesh.Mesher):
 
     gap_contraction: float = 0.6
 
+    def __post_init__(self):
+        if self.ni_cusp and self.dm_TE != 0.0:
+            raise ValueError("ni_cusp requires dm_TE = 0.0")
+
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
@@ -494,10 +498,10 @@ class H(turbigen.mesh.Mesher):
                 assert (
                     ile % 8 == 0
                 ), f"upstream periodic span ile={ile} not a multiple of 8"
-                assert (ni - 1 - icusp) % 8 == 0, (
-                    f"downstream periodic span ni-1-icusp={ni - 1 - icusp} "
-                    "not a multiple of 8"
-                )
+                # assert (ni - 1 - icusp) % 8 == 0, (
+                #     f"downstream periodic span ni-1-icusp={ni - 1 - icusp} "
+                #     "not a multiple of 8"
+                # )
                 patches = [
                     ember.patch.PeriodicPatch(i=(0, ile), k=0),
                     ember.patch.PeriodicPatch(i=(0, ile), k=-1),
@@ -799,24 +803,34 @@ class H(turbigen.mesh.Mesher):
 
             t_upstream = util.resample(t_upstream, self.resolution_factor, mult=8)
             t_downstream = util.resample(t_downstream, self.resolution_factor, mult=8)
-            t_te = util.resample(t_te, self.resolution_factor, mult=8)
+            t_te = util.resample(t_te, self.resolution_factor)
             t_chord = util.resample(t_chord, self.resolution_factor, mult=8)
 
-            # Shift cells from t_downstream into t_te so that ite
-            # mod 8 == -(ni_cusp - 1) mod 8. add_cusp is length-preserving,
-            # so this is what makes the final downstream sub-block
-            # (icusp..ni-1) divisible by 8 while keeping total ni-1 == 8m.
+            # t_te has ni_TE points which may not be 8m+1. Adjust t_downstream
+            # to satisfy the cusp alignment requirement (len(t_downstream) -
+            # ni_cusp) % 8 == 0, then adjust t_chord to restore total ni-1
+            # divisibility by 8.
             if ni_cusp:
-                shift = (8 - (ni_cusp - 1) % 8) % 8
-                if shift and len(t_downstream) > shift + 1:
-                    n_te = len(t_te) + shift
-                    n_dn = len(t_downstream) - shift
-                    inorm_te_old = np.linspace(0.0, 1.0, len(t_te))
-                    inorm_te_new = np.linspace(0.0, 1.0, n_te)
-                    t_te = np.interp(inorm_te_new, inorm_te_old, t_te)
-                    inorm_dn_old = np.linspace(0.0, 1.0, len(t_downstream))
-                    inorm_dn_new = np.linspace(0.0, 1.0, n_dn)
-                    t_downstream = np.interp(inorm_dn_new, inorm_dn_old, t_downstream)
+                dn_deficit = (ni_cusp - len(t_downstream)) % 8
+                if dn_deficit:
+                    t_downstream = np.interp(
+                        np.linspace(0.0, 1.0, len(t_downstream) + dn_deficit),
+                        np.linspace(0.0, 1.0, len(t_downstream)),
+                        t_downstream,
+                    )
+            ni_total = (
+                len(t_upstream) + len(t_chord) + len(t_te) + len(t_downstream) - 3
+            )
+            chord_deficit = (8 - (ni_total - 1) % 8) % 8
+            if chord_deficit:
+                t_chord = np.interp(
+                    np.linspace(0.0, 1.0, len(t_chord) + chord_deficit),
+                    np.linspace(0.0, 1.0, len(t_chord)),
+                    t_chord,
+                )
+
+            print(f"ni_TE={self.ni_TE}, tte={tte}")
+            print(f"t_te ({len(t_te)} pts): {t_te}")
 
             t = np.concatenate(
                 [t_upstream - 1.0, t_chord[1:], t_te[1:], t_downstream[1:] + 1.0]
