@@ -35,7 +35,7 @@ mean_line:
 # Prescribe the dimensional chords
 annulus:
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.06, 0.1]
+  cx_gap: [0.1, 0.06, 0.2]
   cx_row: [0.1, 0.1]
 
 # Coarse H-mesh
@@ -50,12 +50,20 @@ mesh:
 
 # Define one mid-span section in stator and rotor
 blades:
-    - spf: 0.5
-      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
-      camber: [0., 0., 0.0]
-    - spf: 0.5
-      thick: [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]
-      camber: [0., 0., 0.0]
+    - spf: [0.2, 0.5, 0.8]
+      thick: [[0.04, 0.12, 0.35, 0.0, 0.02, 0.15],
+              [0.04, 0.12, 0.35, 0.0, 0.02, 0.15],
+              [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]]
+      camber: [[-8.0, 0., 0.0],
+              [-8.0, 0., 0.0],
+              [-8.0, 0., 0.0]]
+    - spf: [0.2, 0.5, 0.8]
+      thick: [[0.04, 0.12, 0.35, 0.0, 0.02, 0.15],
+              [0.04, 0.12, 0.35, 0.0, 0.02, 0.15],
+              [0.04, 0.12, 0.35, 0.0, 0.02, 0.15]]
+      camber: [[6.0, 0., 0.0],
+              [6.0, 0., 0.0],
+              [6.0, 0., 0.0]]
       tip: 0.01
 
 # Circulation coefficient to set blade loadings
@@ -66,12 +74,12 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 1000
-  n_step_avg: 200
+  n_step: 20000
+  n_step_avg: 1
   # smooth2_adapt: 0.5
 
 # # Configure iterative updates of the geometry
-fac_nstep_initial: 2.0
+fac_nstep_initial: 1.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:
@@ -79,6 +87,8 @@ iterate:
       Ys: 0.01
   deviation:
   incidence:
+    relaxation_factor: 0.02
+    clip: 5.0
 
 # # Additional plots to produce
 # post_process:

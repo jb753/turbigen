@@ -223,6 +223,7 @@ class H(turbigen.mesh.Mesher):
                 AR_row,
                 tte,
                 unbladed_row=unbladed[irow],
+                ni_cusp=0 if unbladed[irow] else mesh_config.ni_cusp,
             )
 
             stream_frac_hub = stream_frac  # + delta_hub
@@ -490,6 +491,13 @@ class H(turbigen.mesh.Mesher):
                     ite -= 1
                 else:
                     icusp = ite
+                assert (
+                    ile % 8 == 0
+                ), f"upstream periodic span ile={ile} not a multiple of 8"
+                assert (ni - 1 - icusp) % 8 == 0, (
+                    f"downstream periodic span ni-1-icusp={ni - 1 - icusp} "
+                    "not a multiple of 8"
+                )
                 patches = [
                     ember.patch.PeriodicPatch(i=(0, ile), k=0),
                     ember.patch.PeriodicPatch(i=(0, ile), k=-1),
@@ -498,7 +506,6 @@ class H(turbigen.mesh.Mesher):
                 ]
                 if mesh_config.AR_cusp:
                     logger.info(f"Adding cusps {ite, icusp}")
-                    assert mesh_config.ni_cusp > 0
                     cusp_type = (
                         ember.patch.InviscidPatch
                         if mesh_config.slip_cusp
@@ -548,15 +555,15 @@ class H(turbigen.mesh.Mesher):
 
             blocks.append(blk)
 
-        for b in blocks:
+        for ib, b in enumerate(blocks):
             if mesh_config.slip_annulus:
                 b.patches.append(ember.patch.InviscidPatch(j=0))
                 b.patches.append(ember.patch.InviscidPatch(j=-1))
-            # elif irow == (nrow - 1):
-            #     di_slip = ni - icusp
-            #     islip = icusp + int(di_slip * 0.5)
-            #     b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
-            #     b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
+            elif ib == (nrow - 1):
+                ni_b = b.shape[0]
+                islip = icusp + int((ni_b - icusp) * 0.5)
+                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
+                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 
         g = ember.grid.Grid(blocks)
 
@@ -701,6 +708,7 @@ class H(turbigen.mesh.Mesher):
         unbladed_row=False,
         chord_factor=1.0,
         ni_chord=None,
+        ni_cusp=0,
     ):
         # """Evaluate streamwise grid vector for a blade row."""
 
@@ -793,6 +801,22 @@ class H(turbigen.mesh.Mesher):
             t_downstream = util.resample(t_downstream, self.resolution_factor, mult=8)
             t_te = util.resample(t_te, self.resolution_factor, mult=8)
             t_chord = util.resample(t_chord, self.resolution_factor, mult=8)
+
+            # Shift cells from t_downstream into t_te so that ite
+            # mod 8 == -(ni_cusp - 1) mod 8. add_cusp is length-preserving,
+            # so this is what makes the final downstream sub-block
+            # (icusp..ni-1) divisible by 8 while keeping total ni-1 == 8m.
+            if ni_cusp:
+                shift = (8 - (ni_cusp - 1) % 8) % 8
+                if shift and len(t_downstream) > shift + 1:
+                    n_te = len(t_te) + shift
+                    n_dn = len(t_downstream) - shift
+                    inorm_te_old = np.linspace(0.0, 1.0, len(t_te))
+                    inorm_te_new = np.linspace(0.0, 1.0, n_te)
+                    t_te = np.interp(inorm_te_new, inorm_te_old, t_te)
+                    inorm_dn_old = np.linspace(0.0, 1.0, len(t_downstream))
+                    inorm_dn_new = np.linspace(0.0, 1.0, n_dn)
+                    t_downstream = np.interp(inorm_dn_new, inorm_dn_old, t_downstream)
 
             t = np.concatenate(
                 [t_upstream - 1.0, t_chord[1:], t_te[1:], t_downstream[1:] + 1.0]

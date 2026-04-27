@@ -786,6 +786,12 @@ class TurbigenConfig:
 
         # Outlet boundary condition
         self.grid.patches.outlet[0].set_P(Pout)
+        self.grid.patches.outlet[0].set_backflow(
+            self.mean_line.nominal.ho[-1],
+            self.mean_line.nominal.s[-1],
+            self.mean_line.nominal.Vr[-1],
+            self.mean_line.nominal.Vt[-1],
+        )
 
     def apply_guess(self):
         # Apply 3D guess if available
