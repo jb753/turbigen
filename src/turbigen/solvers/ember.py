@@ -70,7 +70,7 @@ class Ember(BaseSolver):
             xllim=xllim,
             full_mgrid=self.full_mgrid,
             fac_restart=0.5,
-            fac_mgrid=0.6,
+            fac_mgrid=0.5,
             # conservative_smoothing=True,
             # conservative_smoothing=True,
             # inviscid=True,
