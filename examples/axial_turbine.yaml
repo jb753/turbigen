@@ -76,8 +76,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 1000
-  n_step_avg: 500
+  n_step: 100
+  n_step_avg: 50
   # smooth2_adapt: 0.5
 
 # # Configure iterative updates of the geometry

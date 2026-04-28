@@ -82,31 +82,12 @@ class Convergence(BasePost):
         pdf.savefig()
         plt.close()
 
-        # Page 3: Work coefficient and loss coefficient
-        _, ax = plt.subplots(2, 1, layout="constrained", sharex=True)
-        ax[0].plot(steps, conv.psi[:n_steps], "-")
-        ax[0].set_ylabel("Work Coefficient, psi")
-        ax[0].set_title("Work and Loss History")
-        ax[0].grid(True, alpha=0.3)
-        if conv.psi[:n_steps].mean() > 0.05:
-            ax[0].set_ylim(bottom=0)
-        elif conv.psi[:n_steps].mean() < -0.05:
-            ax[0].set_ylim(top=0)
-
-        ax[1].plot(steps, conv.zeta[:n_steps], "-")
-        ax[1].set_ylabel("Loss Coefficient, zeta")
-        ax[1].set_xlabel("Iteration")
-        ax[1].grid(True, alpha=0.3)
-        ax[1].set_ylim(bottom=0)
-        pdf.savefig()
-        plt.close()
-
-        # Page 4: Convergence of work and loss relative to final value
+        # Page 3: Convergence of mass conservation, work, and loss
         psi = conv.psi[:n_steps]
         zeta = conv.zeta[:n_steps]
+        err_mdot = conv.err_mdot[:n_steps]
 
-        _, ax = plt.subplots(2, 1, layout="constrained", sharex=True)
-        ax[0].set_title("Work and Loss Convergence")
+        _, ax = plt.subplots(1, 3, layout="constrained", sharey=True)
 
         labelled_pct = [-12, -8, -4, 0, 4, 8, 12]
         minor_pct = [p for p in range(-12, 13, 2) if p not in labelled_pct]
@@ -115,16 +96,25 @@ class Convergence(BasePost):
         major_labels = [str(p) for p in labelled_pct]
         ylim = np.log10(1.12)
 
-        for axi, data, label in zip(ax, (psi, zeta), (r"$\psi$", r"$\zeta$")):
-            axi.plot(steps, np.log10(data / data[-1]), "-")
-            axi.set_ylabel(f"% Error in {label}")
+        # Each panel: (y data on log10(1+err) scale, title)
+        # Mass: err_mdot is already fractional, so y = log10(1 + err_mdot)
+        # psi/zeta: y = log10(data / data[-1])
+        panels = [
+            (np.log10(1 + err_mdot), "Mass Conservation"),
+            (np.log10(psi / psi[-1]), r"Work, $\psi$"),
+            (np.log10(zeta / zeta[-1]), r"Loss, $\zeta$"),
+        ]
+
+        for axi, (y, title) in zip(ax, panels):
+            axi.plot(steps, y, "-")
+            axi.set_title(title)
+            axi.set_xlabel("Iteration")
             axi.set_yticks(major_ticks, major_labels)
             axi.set_yticks(minor_ticks, minor=True)
             axi.set_ylim(-ylim, ylim)
             axi.grid(True, which="major", alpha=0.3, lw=0.8)
             axi.grid(True, which="minor", alpha=0.15, lw=0.5)
-        ax[1].set_xlabel("Iteration")
-        ax[1].grid(True, alpha=0.3)
+        ax[0].set_ylabel("% Error")
 
         pdf.savefig()
         plt.close()
