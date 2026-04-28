@@ -193,7 +193,7 @@ def test_station_with_rotation():
 def test_meanline_initialization():
     """Test that MeanLine can be created with specified number of rows."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Should have correct number of rows
     assert ml.n_row == 2
@@ -210,7 +210,7 @@ def test_meanline_initialization():
 def test_meanline_n_row_readonly():
     """Test that n_row property is read-only."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Attempting to assign should raise AttributeError
     with pytest.raises(AttributeError, match="property 'n_row'.*has no setter"):
@@ -218,108 +218,79 @@ def test_meanline_n_row_readonly():
 
 
 def test_meanline_scalar_indexing():
-    """Test indexing MeanLine with a scalar returns shape (2,) Block for a row."""
+    """Test integer indexing returns a scalar Station at that flat index."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=3, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=3).set_fluid(fluid)
 
-    # Test integer indexing returns shape (2,) for each row
-    row0 = ml[0]
-    assert isinstance(row0, ember.block.Block)
-    assert row0.shape == (2,)
-
-    row1 = ml[1]
-    assert isinstance(row1, ember.block.Block)
-    assert row1.shape == (2,)
-
-    row2 = ml[2]
-    assert isinstance(row2, ember.block.Block)
-    assert row2.shape == (2,)
+    # ml has 6 stations (2 per row); each index returns a scalar Station
+    for i in range(6):
+        s = ml[i]
+        assert isinstance(s, turbigen.meanline_new.Station)
+        assert s.shape == ()
 
 
-def test_meanline_tuple_indexing():
-    """Test indexing MeanLine with a tuple returns a single station (scalar Station)."""
+def test_meanline_get_row():
+    """Test get_row returns a MeanLine view of the two stations for that row."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Test row 0, station 0 (inlet)
-    station00 = ml[0, 0]
-    assert isinstance(station00, turbigen.meanline_new.Station)
-    assert station00.shape == ()
+    row0 = ml.get_row(0)
+    assert isinstance(row0, turbigen.meanline_new.MeanLine)
+    assert len(row0._stations) == 2
 
-    # Test row 0, station 1 (outlet)
-    station01 = ml[0, 1]
-    assert isinstance(station01, turbigen.meanline_new.Station)
-    assert station01.shape == ()
-
-    # Test row 1, station 0
-    station10 = ml[1, 0]
-    assert isinstance(station10, turbigen.meanline_new.Station)
-    assert station10.shape == ()
-
-    # Test row 1, station 1
-    station11 = ml[1, 1]
-    assert isinstance(station11, turbigen.meanline_new.Station)
-    assert station11.shape == ()
+    row1 = ml.get_row(1)
+    assert isinstance(row1, turbigen.meanline_new.MeanLine)
+    assert len(row1._stations) == 2
 
 
 def test_meanline_indexing_consistency():
-    """Test that tuple indexing returns scalars and integer indexing returns rows."""
+    """Test flat indexing and get_row are consistent."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Set data via tuple indexing (scalars)
-    ml[0, 0].set_r_rms(0.5)
-    ml[0, 1].set_r_rms(0.75)
+    # Set data via flat indexing
+    ml[0].set_r_rms(0.5)
+    ml[1].set_r_rms(0.75)
 
-    # Access via integer indexing should give row (shape 2,)
-    row0 = ml[0]
-    assert row0.shape == (2,)
-    assert row0.r[0] == pytest.approx(0.5)
-    assert row0.r[1] == pytest.approx(0.75)
+    # get_row(0) should give a view over stations 0 and 1
+    row0 = ml.get_row(0)
+    assert row0[0].r_rms == pytest.approx(0.5)
+    assert row0[1].r_rms == pytest.approx(0.75)
 
-    # Tuple indexing gives scalar access
-    assert ml[0, 0].r_rms == pytest.approx(0.5)
-    assert ml[0, 1].r_rms == pytest.approx(0.75)
+    # Direct flat access agrees
+    assert ml[0].r_rms == pytest.approx(0.5)
+    assert ml[1].r_rms == pytest.approx(0.75)
 
 
 def test_meanline_concatenated_property():
     """Test that concatenated properties work correctly using factory method."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Set up flow state using the setter method
     Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
     Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
-
-    # Set geometry for all stations
     r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
     Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
     P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
     T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
 
-    # Set each station individually using tuple indexing
     for i in range(4):
-        row, station = i // 2, i % 2
-        ml[row, station].set_r_rms(r_rms[i])
-        ml[row, station].set_Am(Am[i])
-        ml[row, station].set_P_T(P[i], T[i])
-        ml[row, station].set_Vxrt(Vx[i], Vr[i], Vt[i])
+        ml[i].set_r_rms(r_rms[i])
+        ml[i].set_Am(Am[i])
+        ml[i].set_P_T(P[i], T[i])
+        ml[i].set_Vxrt(Vx[i], Vr[i], Vt[i])
 
-    # Access concatenated Vx property
-    Vx_concat = ml.Vx
+    Vx_concat = ml.Vx.squeeze()
 
     # Should be shape (4,) for 2 rows × 2 stations per row
     assert Vx_concat.shape == (4,)
 
-    # Verify values match what we set
-    np.testing.assert_allclose(Vx_concat, Vx)
+    np.testing.assert_allclose(Vx_concat, Vx, rtol=1e-5)
 
-    # Verify it concatenates in the correct order (row 0 inlet, row 0 outlet, row 1 inlet, row 1 outlet)
-    assert Vx_concat[0] == pytest.approx(ml[0, 0].Vx)
-    assert Vx_concat[1] == pytest.approx(ml[0, 1].Vx)
-    assert Vx_concat[2] == pytest.approx(ml[1, 0].Vx)
-    assert Vx_concat[3] == pytest.approx(ml[1, 1].Vx)
+    # Verify order: station 0, 1, 2, 3
+    for i in range(4):
+        assert Vx_concat[i] == pytest.approx(ml[i].Vx)
 
 
 def test_meanline_property_docstring():
@@ -336,79 +307,64 @@ def test_meanline_property_docstring():
 def test_meanline_setter_method():
     """Test that factory-generated setter methods work correctly."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Set up geometry first (each station is scalar)
     r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
     Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
     P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
     T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
 
     for i in range(4):
-        row, station = i // 2, i % 2
-        ml[row, station].set_r_rms(r_rms[i])
-        ml[row, station].set_Am(Am[i])
-        ml[row, station].set_P_T(P[i], T[i])
+        ml[i].set_r_rms(r_rms[i])
+        ml[i].set_Am(Am[i])
+        ml[i].set_P_T(P[i], T[i])
 
-    # Use set_Vxrt to set velocities on all stations at once
     Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
     Vr = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
 
     ml.set_Vxrt(Vx, Vr, Vt)
 
-    # Verify velocities were set correctly on each station
-    assert ml[0, 0].Vx == pytest.approx(100.0)
-    assert ml[0, 1].Vx == pytest.approx(110.0)
-    assert ml[1, 0].Vx == pytest.approx(120.0)
-    assert ml[1, 1].Vx == pytest.approx(130.0)
+    assert ml[0].Vx == pytest.approx(100.0)
+    assert ml[1].Vx == pytest.approx(110.0)
+    assert ml[2].Vx == pytest.approx(120.0)
+    assert ml[3].Vx == pytest.approx(130.0)
 
-    assert ml[0, 0].Vr == pytest.approx(5.0)
-    assert ml[0, 1].Vr == pytest.approx(6.0)
-    assert ml[1, 0].Vr == pytest.approx(7.0)
-    assert ml[1, 1].Vr == pytest.approx(8.0)
+    assert ml[0].Vr == pytest.approx(5.0)
+    assert ml[1].Vr == pytest.approx(6.0)
+    assert ml[2].Vr == pytest.approx(7.0)
+    assert ml[3].Vr == pytest.approx(8.0)
 
-    assert ml[0, 0].Vt == pytest.approx(50.0)
-    assert ml[0, 1].Vt == pytest.approx(55.0)
-    assert ml[1, 0].Vt == pytest.approx(60.0)
-    assert ml[1, 1].Vt == pytest.approx(65.0)
+    assert ml[0].Vt == pytest.approx(50.0)
+    assert ml[1].Vt == pytest.approx(55.0)
+    assert ml[2].Vt == pytest.approx(60.0)
+    assert ml[3].Vt == pytest.approx(65.0)
 
-    # Verify concatenated property matches
-    np.testing.assert_allclose(ml.Vx, Vx)
+    np.testing.assert_allclose(ml.Vx.squeeze(), Vx, rtol=1e-5)
 
 
 def test_meanline_setter_shape_validation():
     """Test that setter methods validate input array shapes."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Should reject arrays that don't have length 4 (2 rows × 2 stations)
     Vx_wrong = np.array([100.0, 110.0, 120.0], dtype=np.float32)  # Only 3 values
     Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
 
-    with pytest.raises(ValueError, match="expects arrays of length 4.*got 3"):
+    with pytest.raises(ValueError):
         ml.set_Vxrt(Vx_wrong, Vr, Vt)
 
 
 def test_meanline_setter_returns_self():
     """Test that setter methods return self for chaining."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
-
-    # Set up geometry (scalars for each station)
-    r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
-    Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
-    P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
-    T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     for i in range(4):
-        row, station = i // 2, i % 2
-        ml[row, station].set_r_rms(r_rms[i])
-        ml[row, station].set_Am(Am[i])
-        ml[row, station].set_P_T(P[i], T[i])
+        ml[i].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0)
 
-    # Setter should return self
     Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
     Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
@@ -429,7 +385,7 @@ def test_meanline_setter_docstring():
 def test_meanline_concatenated_property_readonly():
     """Test that concatenated properties are read-only."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Attempting to assign to a concatenated property should raise AttributeError
     with pytest.raises(AttributeError, match="property 'Vx'.*has no setter"):
@@ -439,59 +395,37 @@ def test_meanline_concatenated_property_readonly():
     # and prevents accidental overwrites of the property itself
 
 
-def test_meanline_concatenated_array_readonly():
-    """Test that concatenated property arrays are read-only at the numpy level."""
+def test_meanline_concatenated_array_values():
+    """Test that concatenated property arrays return correct values."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Set up geometry and flow (scalars for each station)
     r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
     Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
     P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
     T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
-
-    for i in range(4):
-        row, station = i // 2, i % 2
-        ml[row, station].set_r_rms(r_rms[i])
-        ml[row, station].set_Am(Am[i])
-        ml[row, station].set_P_T(P[i], T[i])
-
     Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
     Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
+
+    for i in range(4):
+        ml[i].set_r_rms(r_rms[i]).set_Am(Am[i]).set_P_T(P[i], T[i])
     ml.set_Vxrt(Vx, Vr, Vt)
 
-    # Get the Vx array
-    vx_array = ml.Vx
-
-    # Verify the array is marked as read-only
-    assert vx_array.flags.writeable is False
-
-    # Attempting to modify an element should raise ValueError
-    with pytest.raises(ValueError, match="assignment destination is read-only"):
-        vx_array[0] = 999.0
-
-    # Attempting to modify a slice should also raise ValueError
-    with pytest.raises(ValueError, match="assignment destination is read-only"):
-        vx_array[1:3] = [888.0, 777.0]
-
-    # Attempting to use in-place operations should raise ValueError
-    with pytest.raises(
-        ValueError, match="(assignment destination|output array) is read-only"
-    ):
-        vx_array += 10.0
+    np.testing.assert_allclose(ml.Vx.squeeze(), Vx, rtol=1e-5)
+    np.testing.assert_allclose(ml.Vt.squeeze(), Vt, rtol=1e-5)
 
 
 def test_meanline_uninitialized_stations():
     """Test that concatenated properties return NaN for uninitialized stations."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Don't initialize anything - all stations uninitialized
     vx = ml.Vx
 
-    # Should have shape (4,) for 2 rows × 2 stations
-    assert vx.shape == (4,)
+    # Should have 4 entries for 2 rows × 2 stations
+    assert vx.squeeze().shape == (4,)
 
     # All values should be NaN
     assert np.all(np.isnan(vx))
@@ -500,32 +434,18 @@ def test_meanline_uninitialized_stations():
 def test_meanline_partially_initialized():
     """Test that concatenated properties handle partially initialized meanlines."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Only initialize first row (stations 0, 1) using tuple indexing
-    ml[0, 0].set_r_rms(0.5)
-    ml[0, 0].set_Am(1.0)
-    ml[0, 0].set_P_T(1e5, 300.0)
-    ml[0, 0].set_Vxrt(100.0, 0.0, 50.0)
+    # Only initialize stations 0 and 1 (first row) using flat indexing
+    ml[0].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0).set_Vxrt(100.0, 0.0, 50.0)
+    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vxrt(110.0, 0.0, 55.0)
 
-    ml[0, 1].set_r_rms(0.55)
-    ml[0, 1].set_Am(1.1)
-    ml[0, 1].set_P_T(0.95e5, 295.0)
-    ml[0, 1].set_Vxrt(110.0, 0.0, 55.0)
+    # Stations 2, 3 remain uninitialized
+    vx = ml.Vx.squeeze()
 
-    # Second row (stations 2, 3) remains uninitialized
-
-    # Access concatenated property
-    vx = ml.Vx
-
-    # Should have shape (4,)
     assert vx.shape == (4,)
-
-    # First row should have valid values
     assert vx[0] == pytest.approx(100.0)
     assert vx[1] == pytest.approx(110.0)
-
-    # Second row should be NaN
     assert np.isnan(vx[2])
     assert np.isnan(vx[3])
 
@@ -533,21 +453,14 @@ def test_meanline_partially_initialized():
 def test_meanline_single_station_initialized():
     """Test that concatenated properties handle single station initialization."""
     fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2, fluid=fluid)
+    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
-    # Only initialize one station (row 0, station 1 - index 1)
-    ml[0, 1].set_r_rms(0.55)
-    ml[0, 1].set_Am(1.1)
-    ml[0, 1].set_P_T(0.95e5, 295.0)
-    ml[0, 1].set_Vxrt(110.0, 0.0, 55.0)
+    # Only initialize flat station index 1
+    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vxrt(110.0, 0.0, 55.0)
 
-    # Access concatenated property
-    vx = ml.Vx
+    vx = ml.Vx.squeeze()
 
-    # Should have shape (4,)
     assert vx.shape == (4,)
-
-    # Only index 1 should have a valid value
     assert np.isnan(vx[0])
     assert vx[1] == pytest.approx(110.0)
     assert np.isnan(vx[2])

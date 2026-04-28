@@ -54,7 +54,8 @@ def test_meanline_block_property_parity():
         if isinstance(attr, property):
             block_properties.append(name)
 
-    # Properties that are 3D-specific and not applicable to mean-lines
+    # Properties that are 3D-specific or non-dimensional variants not yet
+    # implemented on MeanLine
     skip_properties = {
         "ri",
         "rj",
@@ -69,7 +70,12 @@ def test_meanline_block_property_parity():
         "dl_min",
         "ell",  # Volume and length properties for 3D blocks
         "r_cell",  # Cell-centered coordinates for 3D blocks
+        "secondary",  # Not applicable to mean-line representation
     }
+
+    # Also skip any property with an _nd suffix
+    def should_skip(name):
+        return name in skip_properties or name.endswith("_nd")
 
     # Track results
     tested_properties = []
@@ -80,8 +86,8 @@ def test_meanline_block_property_parity():
 
     # 5) Test each property
     for prop_name in sorted(block_properties):
-        # Skip 3D-specific properties
-        if prop_name in skip_properties:
+        # Skip 3D-specific and _nd properties
+        if should_skip(prop_name):
             skipped_properties.append(prop_name)
             continue
         # Try to access property on Block

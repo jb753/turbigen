@@ -17,8 +17,7 @@ def test_perfect_fluid_config_instantiation():
     assert config.cp == 1005.0
     assert config.gamma == 1.4
     assert config.mu == 1.8e-5
-    assert config.Pr == 1.0
-    assert config.Tu0 == 300.0
+    assert config.Pr == 0.7
 
     # Check that fluid object was created
     assert isinstance(config.fluid, ember.fluid.PerfectFluid)
@@ -101,7 +100,6 @@ def test_from_dict_creates_correct_config():
         "gamma": 1.4,
         "mu": 1.8e-5,
         "Pr": 0.72,
-        "Tu0": 300.0,
     }
 
     config = turbigen.fluid.FluidConfig.from_dict(config_dict)

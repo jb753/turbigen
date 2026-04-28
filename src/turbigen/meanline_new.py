@@ -264,7 +264,7 @@ def _make_setter_method(method_name):
         for i, station in enumerate(self._stations):
             getattr(station, method_name)(*[arg[i] for arg in broadcasted_args])
 
-        return
+        return self
 
     # Get docstring from Block's method
     block_method = getattr(ember.block.Block, method_name, None)
@@ -399,6 +399,8 @@ class MeanLine:
     x = _make_concat_property("x")
     r = _make_concat_property("r")
     t = _make_concat_property("t")
+    rt = _make_concat_property("rt")
+    xr = _make_concat_property("xr")
     xrt = _make_concat_property("xrt")
     xyz = _make_concat_property("xyz")
     xrrt = _make_concat_property("xrrt")
@@ -475,6 +477,8 @@ class MeanLine:
     # Non-dimensional numbers
     Ma = _make_concat_property("Ma")
     Ma_rel = _make_concat_property("Ma_rel")
+    Mam = _make_concat_property("Mam")
+    Max = _make_concat_property("Max")
 
     # Transport properties
     mu = _make_concat_property("mu")
@@ -487,6 +491,12 @@ class MeanLine:
     dsdrho_P = _make_concat_property("dsdrho_P")
     dudP_rho = _make_concat_property("dudP_rho")
     dudrho_P = _make_concat_property("dudrho_P")
+
+    # Relative velocity components
+    Vxrt_rel = _make_concat_property("Vxrt_rel")
+
+    # Rotation-corrected pressure
+    P_rot = _make_concat_property("P_rot")
 
     # Variable sets
     primitive = _make_concat_property("primitive")
