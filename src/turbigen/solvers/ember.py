@@ -66,7 +66,7 @@ class Ember(BaseSolver):
             n_levels=4,
             # cfl_max=1.0,
             cfl_min=0.1,
-            # rf_inlet=4.0,
+            rf_mix=0.2,
             xllim=xllim,
             full_mgrid=self.full_mgrid,
             fac_restart=0.5,

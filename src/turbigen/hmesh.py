@@ -829,8 +829,8 @@ class H(turbigen.mesh.Mesher):
                     t_chord,
                 )
 
-            print(f"ni_TE={self.ni_TE}, tte={tte}")
-            print(f"t_te ({len(t_te)} pts): {t_te}")
+            logger.debug(f"ni_TE={self.ni_TE}, tte={tte}")
+            logger.debug(f"t_te ({len(t_te)} pts): {t_te}")
 
             t = np.concatenate(
                 [t_upstream - 1.0, t_chord[1:], t_te[1:], t_downstream[1:] + 1.0]
