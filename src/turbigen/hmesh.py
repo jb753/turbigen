@@ -15,6 +15,41 @@ import ember.grid
 logger = logging.getLogger("turbigen")
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _RowGeometry:
+    pitch_theta: float
+    chord_mid: np.ndarray
+    pitch_chord_ref: np.ndarray
+    pitch_chord_max: float
+    pitch_rtheta_max: float
+    drt_norm: float
+    AR_row: float
+    ist: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _RowGrids:
+    pitch_frac_nom: np.ndarray
+    nk_not_resampled: int
+    span_frac: np.ndarray
+    stream_frac: np.ndarray
+    ile: int
+    ite: int
+    ni: int
+    nj: int
+    nk: int
+    L: tuple
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _RowCoords:
+    xr: np.ndarray
+    theta_lim: np.ndarray
+    pitch_frac_relax: np.ndarray
+    njtip: int
+    ite: int
+
+
 @dataclasses.dataclass
 class H(turbigen.mesh.Mesher):
     """Generate a mesh using H topology for each row."""
@@ -79,11 +114,34 @@ class H(turbigen.mesh.Mesher):
     def make_grid(self, workdir, mac, dhub, dcas, dsurf, Omega=None):
         """Generate a Grid object for a machine geometry."""
 
-        mesh_config = self
-
         dsurf = np.tile(dsurf, (2, 1))
+        dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(mac, dhub, dcas)
 
-        # Dimensional gaps
+        nrow = mac.Nrow
+        assert dsurf.shape == (2, nrow)
+
+        blocks = []
+        row_meta = []
+        for irow in range(nrow):
+            geom = self._row_geometry(mac, irow, dsurf)
+            grids = self._row_1d_grids(
+                mac, irow, geom, dspf_hub, dspf_casing, tip_ref, nrow
+            )
+            coords = self._row_coords(mac, irow, geom, grids, dsurf, tip_ref)
+            blk, ile, icusp = self._row_block(mac, irow, geom, grids, coords, nrow)
+            blocks.append(blk)
+            row_meta.append((ile, icusp))
+
+        self._add_annulus_patches(blocks, row_meta)
+        g = ember.grid.Grid(blocks)
+        self._stitch_mixing_planes(g)
+        g.connectivity.periodic.pair()
+        if self.plot:
+            _plot_grid(g)
+        return g
+
+    def _normalise_spacings(self, mac, dhub, dcas):
+        """Compute normalised hub/casing spacings and tip_ref."""
         span_all = np.array(
             [
                 np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
@@ -92,381 +150,375 @@ class H(turbigen.mesh.Mesher):
         )
         tip_abs_all = np.array(mac.tip)
         tip_span_all = tip_abs_all / span_all
-
-        # Spanwise grid vector
-        # From hub/casing spacings and ER
+        tip_ref = np.max(tip_span_all)
         span_ref = mac.ann.get_span(1)
         dspf_hub = dhub / span_ref
         dspf_casing = dcas / span_ref
+        return dspf_hub, dspf_casing, tip_ref
 
-        blocks = []
+    def _row_geometry(self, mac, irow, dsurf):
+        """Derive scalar geometry quantities for a single row."""
+        pitch_theta = 2.0 * np.pi / float(mac.Nb[irow])
 
-        # Loop over rows
-        nrow = mac.Nrow
-        assert dsurf.shape == (2, nrow)
-        for irow in range(nrow):
-            # Angular pitch
-            pitch_theta = 2.0 * np.pi / float(mac.Nb[irow])
+        mrow = np.linspace(2.0 * irow + 1.0, 2.0 * irow + 2)
+        xr_hub = mac.ann.evaluate_xr(mrow, 0.0)
+        xr_cas = mac.ann.evaluate_xr(mrow, 1.0)
+        xr_mid = mac.ann.evaluate_xr(mrow, 0.5)
 
-            # Evaluate xr over a uniform grid
-            mrow = np.linspace(2.0 * irow + 1.0, 2.0 * irow + 2)
-            xr_hub = mac.ann.evaluate_xr(mrow, 0.0)
-            xr_cas = mac.ann.evaluate_xr(mrow, 1.0)
-            xr_mid = mac.ann.evaluate_xr(mrow, 0.5)
+        ist = 2 * irow
+        chord_hub = mac.ann.chords(0.0)[ist : ist + 3]
+        chord_mid = mac.ann.chords(0.5)[ist : ist + 3]
+        chord_cas = mac.ann.chords(1.0)[ist : ist + 3]
 
-            # Meridional chord lengths at midspan of gaps and aerofoils
-            ist = 2 * irow
-            ien = ist + 3
-            chord_hub = mac.ann.chords(0.0)[ist:ien]
-            chord_mid = mac.ann.chords(0.5)[ist:ien]
-            chord_cas = mac.ann.chords(1.0)[ist:ien]
+        pitch_rtheta_hub = pitch_theta * xr_hub[1]
+        pitch_rtheta_cas = pitch_theta * xr_cas[1]
 
-            # Circumferential pitches
-            pitch_rtheta_hub = pitch_theta * xr_hub[1]
-            pitch_rtheta_cas = pitch_theta * xr_cas[1]
+        pitch_chord_hub = pitch_rtheta_hub / chord_hub[1]
+        pitch_chord_cas = pitch_rtheta_cas / chord_cas[1]
 
-            # Pitch to chord ratios at hub, mid tip
-            pitch_chord_hub = pitch_rtheta_hub / chord_hub[1]
-            pitch_chord_cas = pitch_rtheta_cas / chord_cas[1]
+        pitch_chord_ref = pitch_theta * xr_mid[1].mean() / chord_mid
+        pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
+        pitch_rtheta_max = np.maximum(pitch_rtheta_hub.max(), pitch_rtheta_cas.max())
 
-            pitch_chord_ref = pitch_theta * xr_mid[1].mean() / chord_mid
+        drt_norm = dsurf[:, irow].min() / pitch_rtheta_max
 
-            pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
-            pitch_rtheta_max = np.maximum(
-                pitch_rtheta_hub.max(), pitch_rtheta_cas.max()
+        span_row = np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
+        AR_row = span_row / chord_mid[1]
+
+        return _RowGeometry(
+            pitch_theta=pitch_theta,
+            chord_mid=chord_mid,
+            pitch_chord_ref=pitch_chord_ref,
+            pitch_chord_max=pitch_chord_max,
+            pitch_rtheta_max=pitch_rtheta_max,
+            drt_norm=drt_norm,
+            AR_row=AR_row,
+            ist=ist,
+        )
+
+    def _row_1d_grids(self, mac, irow, geom, dspf_hub, dspf_casing, tip_ref, nrow):
+        """Generate the three 1-D grid vectors for a row."""
+        # Pitchwise
+        safety_fac = 1.01
+        pitch_frac_nom = self.pitchwise_grid(
+            geom.drt_norm, geom.pitch_chord_max * safety_fac, geom.AR_row
+        )
+        logger.debug(
+            f"Nominal pitchwise grid: {geom.drt_norm}, {geom.pitch_chord_max}, {geom.AR_row}"
+        )
+        logger.debug("Checking we can recluster")
+        pitch_frac_not_resampled = self.pitchwise_grid(
+            geom.drt_norm,
+            geom.pitch_chord_max * safety_fac,
+            geom.AR_row,
+            resample=False,
+        )
+        self.pitchwise_grid_fixed_npts(
+            geom.drt_norm,
+            geom.pitch_chord_max,
+            geom.AR_row,
+            len(pitch_frac_not_resampled),
+        )
+        nk_not_resampled = len(pitch_frac_not_resampled)
+        nk = len(pitch_frac_nom)
+        assert not (nk - 1) % 8, f"nk-1={nk - 1} not divisible by 8"
+        logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
+
+        # Spanwise
+        span_frac = self.spanwise_grid(
+            dspf_hub, dspf_casing, tip_ref * self.gap_contraction
+        )
+        nj = len(span_frac)
+
+        # Streamwise: choose inlet/exit lengths
+        if nrow == 1:
+            L = (1.0, 1.0)
+        elif irow == 0:
+            L = (1.0, 0.5)
+        elif irow == (nrow - 1):
+            L = (0.5, 1.0)
+        else:
+            L = (0.5, 0.5)
+
+        if self.dm_TE:
+            tte = 1.0 - self.dm_TE
+        else:
+            xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(0.5)
+            mlim_now = np.array((0, 1))
+            tq = np.linspace(0.8, 1.0, 500)
+            _, _, tte = _theta_limits(tq, xrt_u, xrt_l, mlim_now)
+
+        stream_frac, ile, ite = self.streamwise_grid(
+            geom.pitch_chord_ref,
+            nk_not_resampled,
+            L,
+            geom.AR_row,
+            tte,
+            ni_cusp=self.ni_cusp,
+        )
+
+        ni = len(stream_frac)
+        assert not ((ni - 1) % 8), f"ni-1={ni - 1} not divisible by 8"
+        assert len(np.unique(stream_frac)) == ni
+        assert (np.diff(stream_frac) > 0.0).all()
+
+        return _RowGrids(
+            pitch_frac_nom=pitch_frac_nom,
+            nk_not_resampled=nk_not_resampled,
+            span_frac=span_frac,
+            stream_frac=stream_frac,
+            ile=ile,
+            ite=ite,
+            ni=ni,
+            nj=nj,
+            nk=nk,
+            L=L,
+        )
+
+    def _row_coords(self, mac, irow, geom, grids, dsurf, tip_ref):
+        """Build 2-D xr, theta_lim and 3-D pitch_frac_relax for a row."""
+        ni, nj, nk = grids.ni, grids.nj, grids.nk
+        span_frac = grids.span_frac
+        stream_frac = grids.stream_frac
+        pitch_frac_nom = grids.pitch_frac_nom
+        ite = grids.ite
+
+        spfr = span_frac.reshape(1, -1)
+
+        # 1. Meridional xr on a (ni, nj) grid
+        stream_frac_span = np.broadcast_to(stream_frac.reshape(-1, 1), (ni, nj)).copy()
+        for j in range(nj):
+            mlim_now = (0, 1)
+            stream_frac_span[:, j] = np.interp(
+                stream_frac_span[:, j],
+                [-1, 0, 1, 2],
+                [-1, mlim_now[0], mlim_now[1], 2],
             )
+        xr = mac.ann.evaluate_xr(stream_frac_span + geom.ist + 1.0, spfr)
 
-            # Normalised wall distance
-            drt_norm = dsurf[:, irow].min() / pitch_rtheta_max
+        # 2. Pitchwise clustering
+        relax = self.pitchwise_relaxation(stream_frac, geom.pitch_chord_ref).reshape(
+            -1, 1, 1
+        )
+        uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
+        assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
 
-            # Row aspect ratios
-            span_row = np.mean(mac.ann.get_span(np.arange(irow * 2, irow * 2 + 2)))
-            AR_row = span_row / chord_mid[1]
+        pitch_frac_clust = np.zeros((ni, nj, nk))
+        Theta = mac.bld[irow][0].get_chi(0.5)
 
-            # Nominal pitch fractions first
-            safety_fac = 1.01
-            pitch_frac_nom = mesh_config.pitchwise_grid(
-                drt_norm, pitch_chord_max * safety_fac, AR_row
-            )
-            logger.debug(
-                f"Nominal pitchwise grid: {drt_norm}, {pitch_chord_max}, {AR_row}"
-            )
-            logger.debug("Checking we can recluster")
-            pitch_frac_not_resampled = mesh_config.pitchwise_grid(
-                drt_norm, pitch_chord_max * safety_fac, AR_row, resample=False
-            )
-            mesh_config.pitchwise_grid_fixed_npts(
-                drt_norm, pitch_chord_max, AR_row, len(pitch_frac_not_resampled)
-            )
-            nk_not_resampled = len(pitch_frac_not_resampled)
-            nk = len(pitch_frac_nom)
-            # Check divisibility for 3 MG levels
-            assert not (nk - 1) % 8, f"nk-1={nk - 1} not divisible by 8"
-            logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
-
-            # Spanwise grid
-            tip_ref = np.max(tip_span_all)
-            span_frac = mesh_config.spanwise_grid(
-                dspf_hub, dspf_casing, tip_ref * self.gap_contraction
-            )
-
-            nj = len(span_frac)
-
-            # Streamwise grid
-            # From LE/TE/bcond spacings and ER
-            # Choose how long to make the inlet/exit
-            if nrow == 1:
-                L = (1.0, 1.0)
-            elif irow == 0:
-                L = (1.0, 0.5)
-            elif irow == (nrow - 1):
-                L = (0.5, 1.0)
-            else:
-                L = (0.5, 0.5)
-
-            # Generate initial streamwise grid vector at midspan
-            # This fixes number of points and roughly distributes points
-            if mesh_config.dm_TE:
-                tte = 1.0 - mesh_config.dm_TE
-            else:
-                xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(0.5)
-                mlim_now = np.array((0, 1))
-                tq = np.linspace(0.8, 1.0, 500)
-                _, _, tte = _theta_limits(tq, xrt_u, xrt_l, mlim_now)
-
-            # Streamwise grid
-            stream_frac, ile, ite = mesh_config.streamwise_grid(
-                pitch_chord_ref,
-                nk_not_resampled,
-                L,
-                AR_row,
-                tte,
-                ni_cusp=mesh_config.ni_cusp,
-            )
-
-            ni = len(stream_frac)
-            assert not ((ni - 1) % 8), f"ni-1={ni - 1} not divisible by 8"
-
-            # No repeated grid points
-            assert len(np.unique(stream_frac)) == ni
-
-            # Grid points should monotonically increase
-            assert (np.diff(stream_frac) > 0.0).all()
-
-            spfr = span_frac.reshape(1, -1)
-            stream_frac_span = np.broadcast_to(
-                stream_frac.reshape(-1, 1), (ni, nj)
-            ).copy()
+        if not self.recluster:
+            pitch_frac_clust = np.tile(pitch_frac_nom.reshape(1, 1, -1), (ni, nj, 1))
+        else:
             for j in range(nj):
-                mlim_now = (0, 1)
-                stream_frac_span[:, j] = np.interp(
-                    stream_frac_span[:, j],
-                    [-1, 0, 1, 2],
-                    [-1, mlim_now[0], mlim_now[1], 2],
-                )
+                for i in range(ni):
+                    rt_pitch_now = xr[1, i, j] * geom.pitch_theta
+                    mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
+                    mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
+                    mfrac = np.array([1.0 - mclip, mclip])
+                    drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
+                    try:
+                        pitch_frac_clust[i, j, :] = self.pitchwise_grid_fixed_npts(
+                            drt_norm_now,
+                            geom.pitch_chord_ref[1],
+                            geom.AR_row,
+                            grids.nk_not_resampled,
+                        )
+                    except ValueError:
+                        raise Exception(
+                            f"Failed to recluster: {drt_norm_now},"
+                            f" {geom.pitch_chord_ref[1]}, {geom.AR_row}"
+                        )
 
-            xr = mac.ann.evaluate_xr(stream_frac_span + ist + 1.0, spfr)
-
-            # Relax the pitchwise clustering away from LE and TE
-            relax = mesh_config.pitchwise_relaxation(
-                stream_frac, pitch_chord_ref
-            ).reshape(-1, 1, 1)
-            uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
-            assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
-
-            pitch_frac_clust = np.zeros((ni, nj, nk))
-
-            # Get skew angles
-            Theta = mac.bld[irow][0].get_chi(0.5)
-
-            # Loop over spans and get the angular limits from blade section
-            theta_lim = np.zeros((2, ni, nj))
-
-            if not mesh_config.recluster:
-                pitch_frac_clust = np.tile(
-                    pitch_frac_nom.reshape(1, 1, -1), (ni, nj, 1)
-                )
-            else:
-                for j in range(nj):
-                    for i in range(ni):
-                        rt_pitch_now = xr[1, i, j] * pitch_theta
-                        # Determine position along blade
-                        mlim_now = mac.bld[irow]._get_mlim(span_frac[j])
-                        mclip = np.interp(stream_frac_span[i, j], mlim_now, [0, 1])
-                        mfrac = np.array([1.0 - mclip, mclip])
-                        drt_norm_now = np.sum(dsurf[:, irow] * mfrac) / rt_pitch_now
-
-                        try:
-                            pitch_frac_clust[
-                                i, j, :
-                            ] = mesh_config.pitchwise_grid_fixed_npts(
-                                drt_norm_now,
-                                pitch_chord_ref[1],
-                                AR_row,
-                                nk_not_resampled,
-                            )
-                        except ValueError:
-                            raise Exception(
-                                f"Failed to recluster: {drt_norm_now},"
-                                f" {pitch_chord_ref[1]}, {AR_row}"
-                            )
-
-                assert np.isfinite(pitch_frac_clust).all()
-
-                # Smooth the pitch fraction in i and j directions
-                for _ in range(5):
-                    pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
-                        pitch_frac_clust[:-2, 1:-1, :]
-                        + pitch_frac_clust[2:, 1:-1, :]
-                        + pitch_frac_clust[1:-1, :-2, :]
-                        + pitch_frac_clust[1:-1, 2:, :]
-                    )
-
-                assert (pitch_frac_clust >= 0.0).all()
-                assert (pitch_frac_clust <= 1.0).all()
-
-            for j in range(nj):
-                nchord = 10000
-                m = util.cluster_cosine(nchord)
-                xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
-
-                assert np.all(xrt_u[2] >= xrt_l[2])
-
-                # Get tte of current section and warp the streamwise grid
-                # vector to locate trailing edge exactly
-                mlim_now = (0, 1)
-
-                stream_frac_now = stream_frac_span[:, j]
-                xr[..., j] = mac.ann.evaluate_xr(
-                    stream_frac_now + ist + 1.0, span_frac[j]
-                )
-
-                theta_lim[..., j] = _theta_limits(
-                    stream_frac_now,
-                    xrt_u,
-                    xrt_l,
-                    mlim_now,
-                    Theta,
-                    chord_mid[
-                        (0, -1),
-                    ],
-                    Theta_max=mesh_config.skew_max,
-                )[:2]
-
-            # At this point we have xrt coords for upper and lower
-            # surfaces all the way to the boundaries
-            # Take the opportunity to add cusps
-            xrt_ul = np.stack(
-                np.broadcast_arrays(
-                    xr[0, ..., None],
-                    xr[1, ..., None],
-                    np.moveaxis(theta_lim, 0, -1),
-                )
-            )
-            if mesh_config.AR_cusp:
-                xrt_cusped = add_cusp(
-                    xrt_ul,
-                    ite,
-                    mesh_config.AR_cusp,
-                    mesh_config.ni_cusp,
-                    plot=mesh_config.plot,
-                )
-                xr = xrt_cusped[:2, ...].mean(axis=-1)
-                theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
-
-            assert np.isfinite(xr).all()
             assert np.isfinite(pitch_frac_clust).all()
-            assert np.isfinite(theta_lim).all()
+            for _ in range(5):
+                pitch_frac_clust[1:-1, 1:-1, :] = 0.25 * (
+                    pitch_frac_clust[:-2, 1:-1, :]
+                    + pitch_frac_clust[2:, 1:-1, :]
+                    + pitch_frac_clust[1:-1, :-2, :]
+                    + pitch_frac_clust[1:-1, 2:, :]
+                )
+            assert (pitch_frac_clust >= 0.0).all()
+            assert (pitch_frac_clust <= 1.0).all()
 
-            assert np.isfinite(relax).all()
-            assert np.isfinite(uniform).all()
-            pitch_frac_relax = (1.0 - relax) * pitch_frac_clust + relax * uniform
-            assert np.isfinite(pitch_frac_relax).all()
-            assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
+        # 3. Theta limits from blade sections
+        theta_lim = np.zeros((2, ni, nj))
+        for j in range(nj):
+            nchord = 10000
+            m = util.cluster_cosine(nchord)
+            xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
+            assert np.all(xrt_u[2] >= xrt_l[2])
 
-            # Pinch the tip
-            if mac.tip[irow]:
-                theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
-                spf_pinch = [
-                    1.0 - tip_ref * 2.0,
-                    1.0 - tip_ref * self.gap_contraction,
-                    1.0,
+            stream_frac_now = stream_frac_span[:, j]
+            xr[..., j] = mac.ann.evaluate_xr(
+                stream_frac_now + geom.ist + 1.0, span_frac[j]
+            )
+            theta_lim[..., j] = _theta_limits(
+                stream_frac_now,
+                xrt_u,
+                xrt_l,
+                (0, 1),
+                Theta,
+                geom.chord_mid[
+                    (0, -1),
+                ],
+                Theta_max=self.skew_max,
+            )[:2]
+
+        # 4. Cusp insertion and tip pinching
+        xrt_ul = np.stack(
+            np.broadcast_arrays(
+                xr[0, ..., None],
+                xr[1, ..., None],
+                np.moveaxis(theta_lim, 0, -1),
+            )
+        )
+        if self.AR_cusp:
+            xrt_cusped = add_cusp(
+                xrt_ul, ite, self.AR_cusp, self.ni_cusp, plot=self.plot
+            )
+            xr = xrt_cusped[:2, ...].mean(axis=-1)
+            theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
+
+        assert np.isfinite(xr).all()
+        assert np.isfinite(pitch_frac_clust).all()
+        assert np.isfinite(theta_lim).all()
+        assert np.isfinite(relax).all()
+        assert np.isfinite(uniform).all()
+
+        pitch_frac_relax = (1.0 - relax) * pitch_frac_clust + relax * uniform
+        assert np.isfinite(pitch_frac_relax).all()
+        assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
+
+        if mac.tip[irow]:
+            theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
+            spf_pinch = [
+                1.0 - tip_ref * 2.0,
+                1.0 - tip_ref * self.gap_contraction,
+                1.0,
+            ]
+            pinch_pinch = [0.0, 1.0, 1.0]
+            pinch_frac = np.interp(span_frac, spf_pinch, pinch_pinch).reshape(1, 1, -1)
+            theta_lim = pinch_frac * theta_mid + (1.0 - pinch_frac) * theta_lim
+            njtip = np.sum(pinch_frac == 1.0)
+        else:
+            njtip = 0
+
+        return _RowCoords(
+            xr=xr,
+            theta_lim=theta_lim,
+            pitch_frac_relax=pitch_frac_relax,
+            njtip=njtip,
+            ite=ite,
+        )
+
+    def _row_block(self, mac, irow, geom, grids, coords, nrow):
+        """Assemble xrt, build patches, and return (Block, ile, icusp)."""
+        ni, nj, nk = grids.ni, grids.nj, grids.nk
+        ile = grids.ile
+        ite = coords.ite
+        njtip = coords.njtip
+
+        # 3-D coordinate arrays
+        xr3 = np.tile(np.expand_dims(coords.xr, 3), (1, 1, 1, nk))
+        pfr3 = np.expand_dims(coords.pitch_frac_relax, 0)
+        theta_lim3 = np.expand_dims(coords.theta_lim, 3)
+        assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
+
+        theta = np.flip(
+            pfr3
+            * theta_lim3[
+                (0,),
+            ]
+            + (1.0 - pfr3)
+            * (
+                theta_lim3[
+                    (1,),
                 ]
-                pinch_pinch = [0.0, 1.0, 1.0]
-                pinch_frac = np.interp(
-                    span_frac,
-                    spf_pinch,
-                    pinch_pinch,
-                ).reshape(1, 1, -1)
-                theta_lim = pinch_frac * theta_mid + (1.0 - pinch_frac) * theta_lim
-                njtip = np.sum(pinch_frac == 1.0)
-            else:
-                njtip = 0
+                + geom.pitch_theta
+            ),
+            axis=-1,
+        )
+        assert np.isfinite(geom.pitch_theta)
+        assert np.isfinite(theta).all()
 
-            # Convert all matrices to 3d
-            xr3 = np.tile(np.expand_dims(xr, 3), (1, 1, 1, nk))  # Add pitchwise index
-            pfr3 = np.expand_dims(pitch_frac_relax, 0)  # Add coord index
-            theta_lim3 = np.expand_dims(theta_lim, 3)  # Add pitchwise index
-            assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
+        xrt_now = np.concatenate([xr3, theta], axis=0)
 
-            # Evaluate the angular coordinates and assemble
-            theta = np.flip(
-                pfr3
-                * theta_lim3[
-                    (0,),
+        # Periodic patches and cusp indices
+        if self.ni_cusp:
+            icusp = ite + self.ni_cusp - 1
+            ite -= 1
+        else:
+            icusp = ite
+        assert ile % 8 == 0, f"upstream periodic span ile={ile} not a multiple of 8"
+        patches = [
+            ember.patch.PeriodicPatch(i=(0, ile), k=0),
+            ember.patch.PeriodicPatch(i=(0, ile), k=-1),
+            ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
+            ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
+        ]
+        if self.AR_cusp:
+            logger.info(f"Adding cusps {ite, icusp}")
+            cusp_type = (
+                ember.patch.InviscidPatch if self.slip_cusp else ember.patch.CuspPatch
+            )
+            patches.extend(
+                [
+                    cusp_type(i=(ite, icusp), k=0, label="cusp_k0"),
+                    cusp_type(i=(ite, icusp), k=-1, label="cusp_nk"),
                 ]
-                + (1.0 - pfr3)
-                * (
-                    theta_lim3[
-                        (1,),
-                    ]
-                    + pitch_theta
-                ),
-                axis=-1,
             )
 
-            assert np.isfinite(pitch_theta)
-            assert np.isfinite(theta).all()
+        # Inlet / mixing / outlet
+        if irow == 0:
+            patches.append(ember.patch.InletPatch(i=0))
+        else:
+            patches.append(ember.patch.MixingPatch(i=0))
+        if irow == (nrow - 1):
+            patches.append(ember.patch.OutletPatch(i=-1))
+        else:
+            patches.append(ember.patch.MixingPatch(i=-1))
 
-            xrt_now = np.concatenate([xr3, theta], axis=0)
+        # Tip gap
+        if njtip:
+            ilim_tip = (ile, icusp)
+            jlim_tip = (-njtip, -1)
+            logger.info(f"Adding tip patches i={ilim_tip}, j={jlim_tip}")
+            patches.extend(
+                [
+                    ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=0),
+                    ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=-1),
+                ]
+            )
 
-            # Make periodic patches
-            if mesh_config.ni_cusp:
-                icusp = ite + mesh_config.ni_cusp - 1
-                ite -= 1
-            else:
-                icusp = ite
-            assert ile % 8 == 0, f"upstream periodic span ile={ile} not a multiple of 8"
-            patches = [
-                ember.patch.PeriodicPatch(i=(0, ile), k=0),
-                ember.patch.PeriodicPatch(i=(0, ile), k=-1),
-                ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
-                ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
-            ]
-            if mesh_config.AR_cusp:
-                logger.info(f"Adding cusps {ite, icusp}")
-                cusp_type = (
-                    ember.patch.InviscidPatch
-                    if mesh_config.slip_cusp
-                    else ember.patch.CuspPatch
-                )
-                patches.extend(
-                    [
-                        cusp_type(i=(ite, icusp), k=0, label="cusp_k0"),
-                        cusp_type(i=(ite, icusp), k=-1, label="cusp_nk"),
-                    ]
-                )
+        blk = ember.block.Block(shape=(ni, nj, nk), label=f"row{irow}")
+        blk.set_Nb(mac.Nb[irow])
+        blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
+        blk.patches.extend(patches)
 
-            # Inlet or mixing
-            if irow == 0:
-                patches.append(ember.patch.InletPatch(i=0))
-            else:
-                patches.append(ember.patch.MixingPatch(i=0))
+        nic, njc, nkc = blk.shape
+        assert not (nic - 1) % 8, f"nic-1={nic - 1} not divisible by 8"
+        assert not (njc - 1) % 8, f"njc-1={njc - 1} not divisible by 8"
+        assert not (nkc - 1) % 8, f"nkc-1={nkc - 1} not divisible by 8"
 
-            # Outlet or mixing
-            if irow == (nrow - 1):
-                patches.append(ember.patch.OutletPatch(i=-1))
-            else:
-                patches.append(ember.patch.MixingPatch(i=-1))
+        return blk, ile, icusp
 
-            # Tip gap
-            if njtip:
-                ilim_tip = (ile, icusp)
-                jlim_tip = (-njtip, -1)
-                logger.info(f"Adding tip patches i={ilim_tip}, j={jlim_tip}")
-                patches.extend(
-                    [
-                        ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=0),
-                        ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=-1),
-                    ]
-                )
-
-            blk = ember.block.Block(shape=(ni, nj, nk), label=f"row{irow}")
-            blk.set_Nb(mac.Nb[irow])
-            blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
-            blk.patches.extend(patches)
-
-            # Check MG
-            nic, njc, nkc = blk.shape
-            assert not (nic - 1) % 8, f"nic-1={nic - 1} not divisible by 8"
-            assert not (njc - 1) % 8, f"njc-1={njc - 1} not divisible by 8"
-            assert not (nkc - 1) % 8, f"nkc-1={nkc - 1} not divisible by 8"
-
-            blocks.append(blk)
-
+    def _add_annulus_patches(self, blocks, row_meta):
+        """Add hub/casing slip or viscous patches after all rows are built."""
+        nrow = len(blocks)
         for ib, b in enumerate(blocks):
-            if mesh_config.slip_annulus:
+            if self.slip_annulus:
                 b.patches.append(ember.patch.InviscidPatch(j=0))
                 b.patches.append(ember.patch.InviscidPatch(j=-1))
             elif ib == (nrow - 1):
+                _, icusp = row_meta[ib]
                 ni_b = b.shape[0]
                 islip = icusp + int((ni_b - icusp) * 0.5)
                 b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
                 b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 
-        g = ember.grid.Grid(blocks)
-
-        # Ensure xr coordinates match exactly at mixing plane
+    def _stitch_mixing_planes(self, g):
+        """Force xr coordinates to match exactly at mixing planes."""
+        nrow = len(g)
         for irow in range(0, nrow - 1):
             xr0 = g[irow].xrt[-1, :, 0, :2]
             xr1 = g[irow + 1].xrt[0, :, 0, :2]
@@ -477,23 +529,6 @@ class H(turbigen.mesh.Mesher):
             g[irow + 1][0].set_x(xav)
             g[irow][-1].set_r(rav)
             g[irow + 1][0].set_r(rav)
-
-        g.connectivity.periodic.pair()
-
-        if mesh_config.plot:
-            import matplotlib.pyplot as plt
-
-            nj = g[0].shape[1]
-
-            fig, ax = plt.subplots()
-            ax.axis("equal")
-            for b in g:
-                ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
-                ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
-
-            plt.show()
-
-        return g
 
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         """Evaluate a spanwise grid vector given hub and casing spacings."""
@@ -697,6 +732,15 @@ class H(turbigen.mesh.Mesher):
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])
         return np.interp(stream_frac, t_ref, relax_ref)
+
+
+def _plot_grid(g):
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    for b in g:
+        ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
+        ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
+    plt.show()
 
 
 def _theta_limits(
