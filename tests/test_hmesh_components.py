@@ -110,23 +110,6 @@ class TestPitchwiseGridFixedNpts:
         assert (np.diff(x) > 0.0).all()
 
 
-class TestPitchwiseGridUnbladed:
-    def test_uniform_distribution(self, mesher):
-        x = mesher.pitchwise_grid_unbladed(AR_row=1.5, pitch_chord=0.7)
-        dx = np.diff(x)
-        np.testing.assert_allclose(dx, dx[0], rtol=1e-10)
-
-    def test_endpoints(self, mesher):
-        x = mesher.pitchwise_grid_unbladed(AR_row=1.5, pitch_chord=0.7)
-        assert x[0] == 0.0
-        assert x[-1] == 1.0
-
-    def test_larger_pitch_chord_gives_more_pts(self, mesher):
-        x1 = mesher.pitchwise_grid_unbladed(AR_row=1.5, pitch_chord=0.5)
-        x2 = mesher.pitchwise_grid_unbladed(AR_row=1.5, pitch_chord=1.0)
-        assert len(x2) > len(x1)
-
-
 class TestStreamwiseGrid:
     PC = np.array([0.5, 0.6, 0.7])
 
@@ -158,15 +141,6 @@ class TestStreamwiseGrid:
         assert np.isclose(t[ite], 1.0)
         assert (np.diff(t) > 0.0).all()
         assert (len(t) - 1) % 8 == 0
-
-    @pytest.mark.xfail(
-        raises=AttributeError,
-        strict=True,
-        reason="'resolution_facto' typo at hmesh.py:745,747",
-    )
-    def test_unbladed_typo_xfail(self, mesher):
-        mesher.streamwise_grid(self.PC, 41, (1.0, 1.0), 1.5, unbladed_row=True)
-
 
 class TestPitchwiseRelaxation:
     PC = np.array([0.5, 0.7, 0.6])

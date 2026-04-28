@@ -51,9 +51,11 @@ def snapshot():
 
 def test_xrt_matches_snapshot(grid, snapshot):
     for i in range(len(grid)):
-        np.testing.assert_array_equal(
+        np.testing.assert_allclose(
             grid[i].xrt,
             snapshot[f"block{i}_xrt"],
+            atol=1e-10,
+            rtol=1e-10,
             err_msg=f"block {i} xrt mismatch",
         )
 
