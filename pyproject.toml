@@ -37,7 +37,6 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 [project.scripts]
 turbigen = "turbigen.main:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
-turbigen-local-queue= "turbigen.job_server:main"
 
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-*"

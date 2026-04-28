@@ -358,6 +358,13 @@ def cmd_sample(args):
         )
 
     if args.purge:
+        from turbigen.job_server import signal_daemon
+
+        if signal_daemon():
+            logger.warning("Sent SIGHUP to queue daemon (cancel-all).")
+        else:
+            logger.warning("No queue daemon running; skipping cancel-all.")
+
         run_dirs = sorted(work_dir.glob("run_*"))
         if run_dirs:
             logger.warning(f"Purging {len(run_dirs)} run directories...")
@@ -413,6 +420,12 @@ def main():
         args = _make_sample_parser().parse_args(sys.argv[2:])
         _setup_logging(logging.DEBUG if args.verbose else logging.INFO)
         cmd_sample(args)
+    elif len(sys.argv) > 1 and sys.argv[1] == "queue":
+        from turbigen.job_server import _make_queue_parser, cmd_queue
+
+        args = _make_queue_parser().parse_args(sys.argv[2:])
+        _setup_logging(logging.DEBUG if args.verbose else logging.INFO)
+        cmd_queue(args)
     else:
         args = _make_run_parser().parse_args()
         _setup_logging(logging.DEBUG if args.verbose else logging.INFO)
