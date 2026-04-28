@@ -1,6 +1,7 @@
 """Initial thoughts on an improved config class."""
 
 import logging
+import resource
 
 
 import dataclasses
@@ -41,6 +42,11 @@ import ember.average
 import ember.util
 
 logger = logging.getLogger("turbigen")
+
+
+def _log_ram(label):
+    rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
 
 
 @dataclasses.dataclass
@@ -1086,8 +1092,11 @@ class TurbigenConfig:
 
         """
 
+        _log_ram("start")
+
         # Calculate the nominal mean-line flow
         self.get_mean_line_nominal()
+        _log_ram("after mean-line nominal")
 
         # Use the mean-line to adjust reference scales
         self.adjust_ref()
@@ -1096,6 +1105,7 @@ class TurbigenConfig:
 
         self.get_geometry()
         self.apply_recamber()
+        _log_ram("after geometry")
 
         self.check_pitch_chord()
 
@@ -1122,11 +1132,14 @@ class TurbigenConfig:
         if not (skip and self.grid):
             logger.info(f"Generating {self.mesh.__class__.__name__} mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
+            _log_ram("after mesh generation")
             if plot_mesh is not None:
                 self.plot_mesh(plot_mesh)
                 sys.exit(0)
             self.apply_guess()
+            _log_ram("after apply guess")
             self.apply_bconds()
+            _log_ram("after apply bconds")
         else:
             logger.info("Skipping and already have a guess, not generating mesh...")
 
@@ -1134,6 +1147,7 @@ class TurbigenConfig:
         if not skip:
             logger.info(f"Running solver {self.solver.__class__.__name__}...")
             self.run_solver()
+            _log_ram("after solver")
             self.solver.convergence.to_json(self.work_dir)
         else:
             logger.info("Skipping solver run.")
@@ -1141,10 +1155,12 @@ class TurbigenConfig:
         # The flow field is ready in grid, post-process it
         logger.info("Post-processing...")
         self.get_mean_line_actual()
+        _log_ram("after mean-line actual")
         self.undo_recamber()
 
         if not skip_post:
             self.post_process_all()
+        _log_ram("after post-processing")
         logger.info("Done post-processing.")
 
     def interpolate_all_iterators(self):
