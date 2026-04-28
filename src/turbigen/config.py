@@ -531,11 +531,6 @@ class TurbigenConfig:
 
         fluid, L_ref = self.mean_line.nominal.adjust_ref()
 
-        if self.guess is not None:
-            for block in self.guess:
-                block.set_fluid(fluid)
-                block.set_L_ref(L_ref)
-
         P_dtm, T_dtm = fluid.get_datum()
         logger.info("Setting reference scales:")
         logger.info(f"P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
@@ -681,6 +676,7 @@ class TurbigenConfig:
         self.grid = self.mesh.make_grid(
             mesh_dir, self.get_machine(), dhub, dcas, dsurf, Omega
         )
+        _log_ram("after make_grid")
 
         self.grid.set_L_ref(self.mean_line.nominal.L_ref)
 
@@ -695,8 +691,11 @@ class TurbigenConfig:
         # ax.axis("equal")
         # plt.show()
         #
+        _log_ram("after set L_ref")
         self.grid.check_coordinates()
+        _log_ram("after check_coords")
         self.grid.calculate_wdist()
+        _log_ram("after wdst calc")
 
     def plot_mesh(self, spf=0.5):
         """Plot the structured mesh at a span cut and show interactively."""
@@ -804,7 +803,7 @@ class TurbigenConfig:
         if self.guess:
             logger.info("Applying 3D guess...")
             self.grid.set_fluid(self.mean_line.nominal.fluid)
-            self.grid.interp_from(self.guess)
+            self.grid.interp_conserved(self.guess)
         else:
             # Apply crude guess from mean_line
             logger.info("Applying 2D guess...")
@@ -880,6 +879,8 @@ class TurbigenConfig:
             C = cuts[i_exit]
             Yp = (Po1 - C.Po_rel) / (Po1 - P2)
             C.to_tm3(self.work_dir / f"cut_{i_exit}_Yp.tm3", Yp=Yp)
+
+        del cuts
 
     def calculate_design_var_errors(self):
         """Calculate differences between nominal and actual design variables."""
@@ -1114,7 +1115,7 @@ class TurbigenConfig:
         # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
-            self.guess = self.grid
+            self.guess = [b.conserved.copy() for b in self.grid]
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()
 
@@ -1158,11 +1159,6 @@ class TurbigenConfig:
         _log_ram("after mean-line actual")
         self.undo_recamber()
 
-        if not skip_post:
-            self.post_process_all()
-        _log_ram("after post-processing")
-        logger.info("Done post-processing.")
-
     def interpolate_all_iterators(self):
         """Use fitted design space to set values for all iterated variables."""
 
@@ -1177,6 +1173,7 @@ class TurbigenConfig:
 
         for iterator in self.iterate:
             conv_now, log_data_now = iterator.update(self)
+            _log_ram(f"after iterator {iterator}")
 
             # Update the overall convergence flag and log data
             name = util.camel_to_snake(iterator.__class__.__name__)
@@ -1216,5 +1213,6 @@ class TurbigenConfig:
                 except Exception:
                     logger.error(f"Failed to run post function {poster}")
                     traceback.print_exc()
+                _log_ram(f"after post {poster}")
         # Ensure all figures are closed
         plt.close("all")

@@ -1,6 +1,7 @@
 """Entry point for running turbigen from the shell."""
 
 import logging
+import gc
 from turbigen import util
 import turbigen.yaml_utils
 import turbigen.plugins
@@ -15,8 +16,14 @@ import turbigen.config
 import turbigen.viewer
 import datetime
 import argparse
+import resource
 
 logger = logging.getLogger("turbigen")
+
+
+def _log_ram(label):
+    rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
 
 
 def my_excepthook(excType, excValue, traceback):
@@ -222,10 +229,15 @@ def cmd_run(args):
 
             conf.design_and_run(args.no_solve)
 
+            _log_ram("after design_and_run")
+
             conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
+
+            _log_ram("after save")
 
             conv_all, log_data = conf.step_iterate()
             toc = timer()
+            _log_ram("after step_iterate")
 
             elapsed = toc - tic
             log_data = dict(Min=elapsed / 60.0, **log_data)
@@ -252,7 +264,14 @@ def cmd_run(args):
                 conf.save()
                 break
 
+            gc.collect()
+
         logger.warning(f"Finished iterating, converged={converged}.")
+
+    logger.info("Post-processing...")
+    conf.post_process_all()
+    _log_ram("after post-processing")
+    logger.info("Done post-processing.")
 
     turbigen.viewer.record_metadata(conf)
 

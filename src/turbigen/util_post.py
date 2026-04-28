@@ -6,6 +6,16 @@ import ember.cut
 import ember.patch
 from turbigen import util
 
+import resource
+import logging
+
+logger = logging.getLogger("turbigen")
+
+
+def _log_ram(label):
+    rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
+
 
 def get_zeta(block):
     """Calculate arc length along i-gridlines.
@@ -182,7 +192,6 @@ def get_isen_mach(
     # Ensure that minimum Mach number is not negative
     zeta_stag = C.zeta_stag.copy()
     zeta_stag -= zeta_stag[np.argmin(Mas)]
-    print("beans")
 
     # Normalise to [-1, 1]
     zeta_max = zeta_stag.max(axis=0)
@@ -392,6 +401,7 @@ def cut_blade_sides(grid, offset=0):
         # Check periodics first
         ile = None
         ite = None
+        _log_ram(f"Row {i}: checking periodics for blade sides")
 
         # Iterate over blocks in this row
         for block in grid.rows[i]:
@@ -428,8 +438,10 @@ def cut_blade_sides(grid, offset=0):
             continue
 
         # Get both sides
-        Ck0 = grid[i][ile : (ite + 1), :, None, 0 + offset].copy()
-        Cnk = grid[i][ile : (ite + 1), :, None, -1 - offset].copy()
+        _log_ram(f"Row {i}: found blade sides at i={ile} and i={ite}, cutting")
+        Ck0 = grid[i][ile : (ite + 1), :, None, 0 + offset].copy(keep_patches=False)
+        Cnk = grid[i][ile : (ite + 1), :, None, -1 - offset].copy(keep_patches=False)
+        _log_ram(f"Row {i}: cut blade sides, now clearing patches")
 
         # Clear patches as they are no longer valid for sliced blocks
         Ck0.patches.clear()
@@ -443,6 +455,8 @@ def cut_blade_sides(grid, offset=0):
 
         cuts.append(C)
 
+    assert len(cuts) == len(grid.rows)
+    assert all(len(c) == 2 for c in cuts)
     return cuts
 
 
@@ -469,7 +483,9 @@ def cut_blade_surfs(grid, offset=0):
     is_hmesh = len(grid) == len(grid.rows)
 
     if is_hmesh:
+        _log_ram("Before cutting blade sides")
         row_sides = cut_blade_sides(grid, offset)
+        _log_ram(f"After cutting blade sides length {len(row_sides)}")
         for sides in row_sides:
             if sides is None:
                 surfs.append(None)
@@ -478,6 +494,7 @@ def cut_blade_surfs(grid, offset=0):
                     sides[0].flip(axis=0), sides[1][1:, ...], axis=0
                 )
                 surfs.append([cut_now])
+        _log_ram("After cutting blade surfaces from sides")
     else:
         for row_block in grid.rows:
             # Preallocate list for this row
@@ -521,7 +538,10 @@ def cut_span(grid, annulus, spf):
 
 def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     # Pull out 2D cuts of blades and splitters
+    _log_ram("Start incidence_unstructured")
+
     surfs = cut_blade_surfs(grid)[irow]
+    _log_ram("Cut blade surfaces")
 
     nspf = len(spf)
 
@@ -532,17 +552,22 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
     xr_spf = machine.ann.evaluate_xr(m.reshape(-1, 1), spf.reshape(1, -1)).reshape(
         2, -1, nspf
     )
+    _log_ram("Prepared meridional curves")
 
     # Meridional velocity vector at inlet to this row
     Vxrt = ml[irow * 2].Vxrt_rel
+    _log_ram("Extracted inlet velocity")
 
     # Loop over main/splitter
     chi = []
     for jbld, surfj in enumerate(surfs):
+        _log_ram(f"Processing blade {jbld}")
         surf = surfj.squeeze()
+        _log_ram("Squeezed surface")
 
         # Get the current blade object
         bldnow = machine.bld[irow][jbld]
+        _log_ram("Got blade object")
 
         # Loop over span fractions
         # Unstructure cut through current surface along the
@@ -552,17 +577,21 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
         xrt_cent = np.zeros((3, nspf))
         for k in range(len(spf)):
             # Cut at this span fraction
+            _log_ram(f"Cutting blade {jbld} at spf {spf[k]:.2f}")
             C = ember.cut.structured_meridional(surf[..., None], xr_spf[:, :, k].T)
 
             # Stag point coordinates
             istag = get_i_stag(C[0])[0]
+            _log_ram(f"Found stagnation point at i={istag}")
             xrt_stag[:, k] = C[0].xrt[istag, 0, :]
 
             # Geometric nose coordinates
             xrt_nose[:, k] = bldnow.get_nose(spf[k])
+            _log_ram("Got geometric nose coordinates")
 
             # Leading edge centre
             xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
+            _log_ram("Got leading edge centre coordinates")
 
         # Calculate the angles
         chi_metal = util.yaw_from_xrt(xrt_nose, xrt_cent, Vxrt)

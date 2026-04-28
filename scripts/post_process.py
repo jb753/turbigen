@@ -55,6 +55,23 @@ ax.plot(g[0].rhoVx[-1, :, (0, nk // 2, -1)].T, g[0].r[-1, :, 0], "-x")
 plt.show()
 
 fig, ax = plt.subplots()
+lev_Ma = np.linspace(0.0, 0.5, 11) * g[0].pitch
+ax.axis("equal")
+for b in g:
+    Ck = b[:, :, nk // 2]
+    ax.contourf(Ck.x, Ck.r, Ck.wdist, lev_Ma, cmap="cubehelix")
+fig, ax = plt.subplots()
+ax.axis("equal")
+for b in g:
+    Cj = b[:, nj // 2, :]
+    ax.contourf(Cj.x, Cj.rt, Cj.wdist, lev_Ma, cmap="cubehelix")
+
+
+plt.show()
+quit()
+
+
+fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
 ax.axis("equal")
 for b in g:

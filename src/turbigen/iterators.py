@@ -10,6 +10,14 @@ from turbigen import util, util_post
 logger = logging.getLogger("turbigen")
 
 
+import resource
+
+
+def _log_ram(label):
+    rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
+
+
 @dataclasses.dataclass
 class IteratorConfig(ABC):
     """Define the interface for an iterator."""
@@ -237,21 +245,29 @@ class Incidence(IteratorConfig):
         log_data = {}
         converged = True
 
+        _log_ram("Incidence start")
         for irow, row in enumerate(config.blades):
             # Skip unbladed rows
             if not row:
                 continue
+            _log_ram(f"Incidence row {irow} start")
 
             # Find flow and metal angles
             config.apply_recamber()
-            chi = util_post.incidence_unstructured(
+            _log_ram(f"Incidence row {irow} recambered")
+
+            args = (
                 config.grid,
                 config.get_machine(),
                 config.mean_line.nominal,
                 irow,
                 row[0].spf,
             )
+            _log_ram(f"Incidence row {irow} args")
+            chi = util_post.incidence_unstructured(*args)
+            _log_ram(f"Incidence row {irow} chi calculated")
             config.undo_recamber()
+            _log_ram(f"Incidence row {irow} recamber undone")
 
             # Calculate the incidence angle wrt target
             inc = np.atleast_1d(np.diff(chi[0], axis=0).squeeze())
@@ -271,6 +287,7 @@ class Incidence(IteratorConfig):
             imax = np.argmax(np.abs(inc))
             log_data[f"Inc[{irow}]"] = inc[imax]
             log_data[f"DInc[{irow}]"] = dinc[imax]
+            _log_ram(f"Incidence row {irow} end")
 
         return converged, log_data
 

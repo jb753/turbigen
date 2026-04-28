@@ -1,4 +1,5 @@
 import logging
+import resource
 import numpy as np
 from turbigen import util
 
@@ -13,6 +14,11 @@ import ember.block
 import ember.grid
 
 logger = logging.getLogger("turbigen")
+
+
+def _log_ram(label):
+    rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -123,12 +129,18 @@ class H(turbigen.mesh.Mesher):
         blocks = []
         row_meta = []
         for irow in range(nrow):
+            _log_ram(f"row{irow} start")
             geom = self._row_geometry(mac, irow, dsurf)
             grids = self._row_1d_grids(
                 mac, irow, geom, dspf_hub, dspf_casing, tip_ref, nrow
             )
+            _log_ram(f"row{irow} after 1d grids")
             coords = self._row_coords(mac, irow, geom, grids, dsurf, tip_ref)
+            _log_ram(f"row{irow} after coords")
             blk, ile, icusp = self._row_block(mac, irow, geom, grids, coords, nrow)
+            _log_ram(f"row{irow} after block")
+            del coords
+            _log_ram(f"row{irow} after del coords")
             blocks.append(blk)
             row_meta.append((ile, icusp))
 
@@ -304,6 +316,7 @@ class H(turbigen.mesh.Mesher):
         assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
 
         pitch_frac_clust = np.zeros((ni, nj, nk))
+        _log_ram(f"row{irow} after pitch_frac_clust alloc ({ni}x{nj}x{nk})")
         Theta = mac.bld[irow][0].get_chi(0.5)
 
         if not self.recluster:
@@ -342,9 +355,8 @@ class H(turbigen.mesh.Mesher):
 
         # 3. Theta limits from blade sections
         theta_lim = np.zeros((2, ni, nj))
+        m = util.cluster_cosine(10000)
         for j in range(nj):
-            nchord = 10000
-            m = util.cluster_cosine(nchord)
             xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
             assert np.all(xrt_u[2] >= xrt_l[2])
 
@@ -385,7 +397,10 @@ class H(turbigen.mesh.Mesher):
         assert np.isfinite(relax).all()
         assert np.isfinite(uniform).all()
 
-        pitch_frac_relax = (1.0 - relax) * pitch_frac_clust + relax * uniform
+        np.multiply(pitch_frac_clust, 1.0 - relax, out=pitch_frac_clust)
+        np.add(pitch_frac_clust, relax * uniform, out=pitch_frac_clust)
+        pitch_frac_relax = pitch_frac_clust
+        _log_ram(f"row{irow} after pitch_frac_relax (in-place)")
         assert np.isfinite(pitch_frac_relax).all()
         assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
 
@@ -418,30 +433,34 @@ class H(turbigen.mesh.Mesher):
         ite = coords.ite
         njtip = coords.njtip
 
-        # 3-D coordinate arrays
-        xr3 = np.tile(np.expand_dims(coords.xr, 3), (1, 1, 1, nk))
+        # 3-D coordinate array — single allocation, filled in-place
+        xrt_now = np.empty((3, ni, nj, nk))
+
+        # x and r: broadcast (2, ni, nj) -> (2, ni, nj, nk)
+        xrt_now[:2] = coords.xr[..., np.newaxis]
+
+        # theta: interpolate between upper/lower angular limits then flip pitchwise.
+        # Compute unflipped into xrt_now[2], then copy reversed into place.
         pfr3 = np.expand_dims(coords.pitch_frac_relax, 0)
         theta_lim3 = np.expand_dims(coords.theta_lim, 3)
         assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
-
-        theta = np.flip(
+        np.add(
             pfr3
             * theta_lim3[
                 (0,),
-            ]
-            + (1.0 - pfr3)
+            ],
+            (1.0 - pfr3)
             * (
                 theta_lim3[
                     (1,),
                 ]
                 + geom.pitch_theta
             ),
-            axis=-1,
+            out=xrt_now[2:3],
         )
+        xrt_now[2] = xrt_now[2, :, :, ::-1]
         assert np.isfinite(geom.pitch_theta)
-        assert np.isfinite(theta).all()
-
-        xrt_now = np.concatenate([xr3, theta], axis=0)
+        assert np.isfinite(xrt_now[2]).all()
 
         # Periodic patches and cusp indices
         if self.ni_cusp:
