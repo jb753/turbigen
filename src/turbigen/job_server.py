@@ -222,12 +222,22 @@ def _make_queue_parser():
         "--workers", type=int, default=4, help="Maximum number of parallel workers."
     )
     p.add_argument(
-        "--purge", action="store_true", help="Truncate the queue file before serving."
+        "--purge",
+        action="store_true",
+        help="Cancel-all and exit: signal a running daemon (SIGHUP) "
+        "or, if none is running, truncate the queue file directly.",
     )
     p.add_argument(
         "--print-unit",
         action="store_true",
         help="Print a systemd user unit file to stdout and exit.",
+    )
+    p.add_argument(
+        "--follow",
+        "-f",
+        action="store_true",
+        help="Tail the daemon's systemd journal "
+        "(execs `journalctl --user -u turbigen-queue -f`).",
     )
     p.add_argument(
         "--verbose",
@@ -240,6 +250,15 @@ def _make_queue_parser():
 
 def cmd_queue(args):
     queue_file = Path(args.queue_file).expanduser()
+
+    if args.follow:
+        import shutil
+
+        journalctl = shutil.which("journalctl")
+        if journalctl is None:
+            sys.stderr.write("journalctl not found on PATH.\n")
+            sys.exit(1)
+        os.execv(journalctl, [journalctl, "--user", "-u", "turbigen-queue", "-f"])
 
     if args.print_unit:
         import shutil
@@ -262,12 +281,22 @@ def cmd_queue(args):
         )
         return
 
+    if args.purge:
+        if signal_daemon():
+            print("Sent SIGHUP to queue daemon (cancel-all).", flush=True)
+        else:
+            if queue_file.exists():
+                queue_file.write_text("")
+                print(f"Truncated {queue_file} (no daemon running).", flush=True)
+            else:
+                print(
+                    "No daemon running and no queue file; nothing to purge.", flush=True
+                )
+        return
+
     if not queue_file.exists():
         queue_file.parent.mkdir(parents=True, exist_ok=True)
         queue_file.touch()
         print(f"Created queue file at {queue_file}", flush=True)
-    elif args.purge:
-        print(f"Purging queue file at {queue_file}", flush=True)
-        queue_file.write_text("")
 
     serve(queue_file, args.workers)
