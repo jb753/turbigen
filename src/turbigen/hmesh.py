@@ -100,7 +100,11 @@ class H(turbigen.mesh.Mesher):
     resolution_factor: float = 1.0
     """Multiply the number of points in each direction, keeping relative spacings."""
 
-    skew_max: float = 30.0
+    skew_max: float = 45.0
+
+    nchord_axial: float = 0.0
+    """Number of chords over which skew blends to axial at inlet/exit boundaries.
+    Zero means constant skew (old behaviour)."""
 
     slip_annulus: bool = False
 
@@ -374,6 +378,7 @@ class H(turbigen.mesh.Mesher):
                     (0, -1),
                 ],
                 Theta_max=self.skew_max,
+                nchord_axial=self.nchord_axial,
             )[:2]
 
         # 4. Cusp insertion and tip pinching
@@ -763,7 +768,14 @@ def _plot_grid(g):
 
 
 def _theta_limits(
-    tq, xrt_u, xrt_l, mlim, Theta=(0.0, 0.0), c=(1.0, 1.0), Theta_max=30.0
+    tq,
+    xrt_u,
+    xrt_l,
+    mlim,
+    Theta=(0.0, 0.0),
+    c=(1.0, 1.0),
+    Theta_max=30.0,
+    nchord_axial=0.0,
 ):
     """Evaluate pitchwise limits given upper/lower surface section coordinates."""
 
@@ -862,13 +874,27 @@ def _theta_limits(
         )
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():
+        tq_up = tq[ind_up]
+        if nchord_axial > 0.0:
+            # Distance from LE, normalised by blend length; clamp to [0,1]
+            dist_norm = (mlim[0] - tq_up) / (nchord_axial * c[0])
+            blend = np.clip(1.0 - dist_norm, 0.0, 1.0)
+        else:
+            blend = np.ones_like(tq_up)
         dtheta_skew[ind_up] = (
-            tanTheta[0] * c[0] * util.cumtrapz0(1.0 / rref[ind_up], tq[ind_up])
+            tanTheta[0] * c[0] * util.cumtrapz0(blend / rref[ind_up], tq_up)
         )
         dtheta_skew[ind_up] -= dtheta_skew[ind_up][-1]
     if ind_dn.any():
+        tq_dn = tq[ind_dn]
+        if nchord_axial > 0.0:
+            # Distance from TE, normalised by blend length; clamp to [0,1]
+            dist_norm = (tq_dn - mlim[1]) / (nchord_axial * c[1])
+            blend = np.clip(1.0 - dist_norm, 0.0, 1.0)
+        else:
+            blend = np.ones_like(tq_dn)
         dtheta_skew[ind_dn] = (
-            tanTheta[1] * c[1] * util.cumtrapz0(1.0 / rref[ind_dn], tq[ind_dn])
+            tanTheta[1] * c[1] * util.cumtrapz0(blend / rref[ind_dn], tq_dn)
         )
     theta_u += dtheta_skew
     theta_l += dtheta_skew

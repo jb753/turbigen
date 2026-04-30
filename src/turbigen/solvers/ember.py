@@ -23,6 +23,8 @@ class Ember(BaseSolver):
     n_step: int = 2500
     n_step_avg: int = 500
     full_mgrid: bool = True
+    i_level_stop: int = 0
+    rf_mix: float = 0.1
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -66,7 +68,7 @@ class Ember(BaseSolver):
             n_levels=4,
             # cfl_max=1.0,
             cfl_min=0.1,
-            rf_mix=0.2,
+            rf_mix=self.rf_mix,
             xllim=xllim,
             full_mgrid=self.full_mgrid,
             fac_restart=0.5,
@@ -75,8 +77,12 @@ class Ember(BaseSolver):
             # conservative_smoothing=True,
             # inviscid=True,
             # fac_mgrid=0.0,
-            gain_filt=10.0,
-            # i_level_stop=1,
+            sf2_adapt=1.0,
+            sf4=1 / 128,
+            # delta_filt=1.0,
+            # gain_filt=20.0,
+            i_level_stop=self.i_level_stop,
+            # debug=True,
             # debug=True,
         )
 

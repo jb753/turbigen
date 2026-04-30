@@ -47,6 +47,8 @@ mesh:
   ni_cusp: 5
   ni_TE: 3
   dm_TE: 0.0
+  skew_max: 90.0
+  nchord_axial: 1
 
 # Define one mid-span section in stator and rotor
 blades:
@@ -76,7 +78,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 10
+  rf_mix: 0.1
+  n_step: 20
   n_step_avg: 5
   # smooth2_adapt: 0.5
 
@@ -89,8 +92,9 @@ iterate:
       Ys: 0.01
   deviation:
   incidence:
-    relaxation_factor: 0.02
-    clip: 5.0
+    relaxation_factor: 0.05
+    tolerance: 0.1
+    clip: 2.0
 
 
 design_space:

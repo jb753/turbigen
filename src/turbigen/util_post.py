@@ -133,6 +133,55 @@ def get_i_stag(block):
     return i_stag
 
 
+def get_zeta_stag(block, i_stag):
+    """Sub-cell stagnation arc-length via parabolic fit in zeta.
+
+    Refines the integer stagnation index from ``get_i_stag`` to a
+    continuous arc-length coordinate by fitting a parabola through the
+    three points ``(i-1, i, i+1)`` of rotary static pressure versus
+    arc-length on each j-line, and locating its vertex.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        2D block (shape (ni, nj)) with initialized flow field.
+    i_stag : ndarray, shape (nj,)
+        Integer stagnation index per j-line, as returned by ``get_i_stag``.
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        Sub-cell stagnation arc-length per j-line, in the same units as
+        ``get_zeta(block)``.
+    """
+    P = block.P_rot
+    zeta = get_zeta(block)
+    ni, nj = block.shape[:2]
+
+    # Clamp so i-1, i+1 stay in range
+    i = np.clip(i_stag, 1, ni - 2)
+    j = np.arange(nj)
+
+    z0, z1, z2 = zeta[i - 1, j], zeta[i, j], zeta[i + 1, j]
+    p0, p1, p2 = P[i - 1, j], P[i, j], P[i + 1, j]
+
+    d01 = z1 - z0
+    d12 = z2 - z1
+    s01 = (p1 - p0) / d01
+    s12 = (p2 - p1) / d12
+    curv = (s12 - s01) / (z2 - z0)
+    slope_mid = 0.5 * (s01 + s12)
+
+    # Fall back to the node when the triple is not concave-down
+    bad = curv >= 0.0
+    delta = np.where(bad, 0.0, -slope_mid / (2.0 * curv))
+
+    # Keep the vertex inside the bracket
+    delta = np.clip(delta, -d01, d12)
+
+    return z1 + delta
+
+
 def get_isen_mach(
     grid,
     machine,
@@ -580,10 +629,18 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
             _log_ram(f"Cutting blade {jbld} at spf {spf[k]:.2f}")
             C = ember.cut.structured_meridional(surf[..., None], xr_spf[:, :, k].T)
 
-            # Stag point coordinates
-            istag = get_i_stag(C[0])[0]
-            _log_ram(f"Found stagnation point at i={istag}")
-            xrt_stag[:, k] = C[0].xrt[istag, 0, :]
+            # Stag point coordinates with sub-cell parabolic refinement
+            # in arc-length space, so that small flow changes produce a
+            # continuous stagnation location instead of jumping between
+            # neighbouring grid points.
+            istag = get_i_stag(C[0])
+            zeta_s = get_zeta_stag(C[0], istag)[0]
+            _log_ram(f"Found stagnation point at i={istag[0]}")
+            zeta_line = get_zeta(C[0])[:, 0]
+            xrt_line = C[0].xrt[:, 0, :]
+            xrt_stag[:, k] = [
+                np.interp(zeta_s, zeta_line, xrt_line[:, c]) for c in range(3)
+            ]
 
             # Geometric nose coordinates
             xrt_nose[:, k] = bldnow.get_nose(spf[k])

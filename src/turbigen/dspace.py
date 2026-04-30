@@ -361,8 +361,9 @@ class DesignSpace:
         # Shuffle the samples from sorted order using the seed
         np.random.shuffle(confs)
 
-        # Fast forward the sampler by the number of samples already taken
-        self._nsampled = len(fnames_done)
+        # Fast forward the sampler by LHS samples already taken (run_0 is datum, not LHS)
+        n_lhs_done = max(0, len(fnames_done) - 1)
+        self._nsampled = n_lhs_done
         logger.warning(f"Fast forwarding sampler by {self._nsampled}")
         self._sampler.fast_forward(self._nsampled)
 
@@ -499,10 +500,18 @@ class DesignSpace:
         """
 
         n_current = self._nsampled
-        logger.warning(f"Found {n_current} samples, target {self.nsample_target}.")
+        logger.warning(f"Found {n_current} LHS samples, target {self.nsample_target}.")
         n = self.nsample_target - n_current
+        configs = []
+
+        # run_0 is always the datum; add it on a fresh start
+        if n_current == 0:
+            c = datum.copy()
+            c.work_dir = self.basedir / "run_0"
+            configs.append(c)
+
         if n <= 0:
-            return []
+            return configs
 
         # Sample n points in the normalised design space
         xnorm = self._sampler.random(n)
@@ -518,13 +527,11 @@ class DesignSpace:
         # De-normalize the samples
         x = xlim[0] * (1.0 - xnorm) + xlim[1] * xnorm
 
-        # Create a list of new configurations
-        configs = []
+        # LHS runs are offset by 1 to reserve run_0 for the datum
         for i in range(n):
             c = datum.copy()
             self.independent.set_independent(c, x[i])
-            # Set a numbered workdir under the datum workdir
-            c.work_dir = self.basedir / f"run_{i + n_current:d}"
+            c.work_dir = self.basedir / f"run_{i + n_current + 1:d}"
             configs.append(c)
 
         return configs

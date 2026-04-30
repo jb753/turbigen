@@ -160,6 +160,9 @@ class TurbigenConfig:
     save_iteration_grids: bool = False
     """Save grid and guess at each iteration to work_dir."""
 
+    ignore_guess: bool = False
+    """Always use quasi-3D mean-line guess, even if a 3D guess is available."""
+
     @property
     def nrow(self):
         return len(self.blades)
@@ -799,14 +802,17 @@ class TurbigenConfig:
         )
 
     def apply_guess(self):
-        # Apply 3D guess if available
-        if self.guess:
+        # Apply 3D guess if available, unless ignore_guess is set
+        if self.guess and not self.ignore_guess:
             logger.info("Applying 3D guess...")
             self.grid.set_fluid(self.mean_line.nominal.fluid)
             self.grid.interp_conserved(self.guess)
         else:
             # Apply crude guess from mean_line
-            logger.info("Applying 2D guess...")
+            if self.ignore_guess and self.guess:
+                logger.info("Ignoring 3D guess, applying quasi-3D mean-line guess...")
+            else:
+                logger.info("Applying 2D guess...")
 
             block_guess = self.mean_line.nominal.to_quasi3d(
                 self.annulus, self.get_nblade()
@@ -1118,6 +1124,7 @@ class TurbigenConfig:
             self.guess = [b.conserved.copy() for b in self.grid]
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()
+            logger.warning("Restarting from existing grid and solution...")
 
         # Set viscosity from Reynolds number if given
         if self.Re_surf:

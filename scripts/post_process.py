@@ -68,7 +68,6 @@ for b in g:
 
 
 plt.show()
-quit()
 
 
 fig, ax = plt.subplots()
