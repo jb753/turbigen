@@ -24,7 +24,7 @@ class Ember(BaseSolver):
     n_step_avg: int = 500
     full_mgrid: bool = True
     i_level_stop: int = 0
-    rf_mix: float = 0.1
+    rf_mix: float = 0.01
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -72,32 +72,21 @@ class Ember(BaseSolver):
             xllim=xllim,
             full_mgrid=self.full_mgrid,
             fac_restart=0.5,
-            fac_mgrid=0.5,
-            # conservative_smoothing=True,
-            # conservative_smoothing=True,
-            # inviscid=True,
-            # fac_mgrid=0.0,
+            fac_mgrid=0.8,
+            fac_mg_smooth=0.0,
             sf2_adapt=1.0,
             sf4=0.01,
             # delta_filt=1.0,
             # gain_filt=20.0,
             i_level_stop=self.i_level_stop,
-            # debug=True,
+            v_cycle=True,
             # debug=True,
         )
-
-        cons_copy = [b.conserved.copy() for b in grid]
 
         try:
             self.convergence = ember.run.loop(grid, config)
         except SystemExit:
             pass
-
-        logger.warning("Second run try")
-        for b, cons in zip(grid, cons_copy):
-            b.set_conserved(cons)
-        self.convergence = ember.run.loop(grid, config)
-        logger.warning("Second run success")
 
         fname_out = workdir.parent / "soln.pkl"
         logger.info(f"Saving solution to {fname_out}")

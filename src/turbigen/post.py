@@ -99,6 +99,8 @@ class Convergence(BasePost):
         # Each panel: (y data on log10(1+err) scale, title)
         # Mass: err_mdot is already fractional, so y = log10(1 + err_mdot)
         # psi/zeta: y = log10(data / data[-1])
+        zeta_rat = zeta / zeta[-1]
+        zeta_rat[zeta_rat == 0] = 1e-10  # Avoid log of zero
         panels = [
             (np.log10(1 + err_mdot), "Mass Conservation"),
             (np.log10(psi / psi[-1]), r"Work, $\psi$"),

@@ -269,7 +269,9 @@ def _write_Mas_json(config):
             zeta_norm[zeta_norm > 0.0] /= zeta_max
             x = np.abs(zeta_norm)
 
-            records = [{"x": float(xi), "y": float(yi)} for xi, yi in zip(x, y)]
+            records = [
+                {"x": float(xi), "y": float(yi)} for xi, yi in zip(x.ravel(), y.ravel())
+            ]
             fname = config.work_dir / f"Mas_row_{irow}_spf_{spfi}.json"
             fname.write_text(json.dumps(records))
             logger.info(f"Written {fname.name}")

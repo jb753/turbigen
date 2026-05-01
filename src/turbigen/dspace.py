@@ -352,7 +352,7 @@ class DesignSpace:
         ]
         ids = [int(f.parent.name.split("_")[-1]) for f in fnames_done]
         if len(ids) != len(set(ids)):
-            raise ValueError("IDs are not unique.")
+            raise ValueError(f"IDs are not unique, got {ids}.")
         if not np.all(np.diff(np.sort(ids)) == 1):
             raise ValueError(f"IDs are not consecutive, got {ids}.")
         if len(ids) > 0 and ids[0] != 0:
