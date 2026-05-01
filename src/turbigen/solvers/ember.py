@@ -78,7 +78,7 @@ class Ember(BaseSolver):
             # inviscid=True,
             # fac_mgrid=0.0,
             sf2_adapt=1.0,
-            sf4=1 / 128,
+            sf4=0.01,
             # delta_filt=1.0,
             # gain_filt=20.0,
             i_level_stop=self.i_level_stop,
@@ -86,10 +86,18 @@ class Ember(BaseSolver):
             # debug=True,
         )
 
+        cons_copy = [b.conserved.copy() for b in grid]
+
         try:
             self.convergence = ember.run.loop(grid, config)
         except SystemExit:
             pass
+
+        logger.warning("Second run try")
+        for b, cons in zip(grid, cons_copy):
+            b.set_conserved(cons)
+        self.convergence = ember.run.loop(grid, config)
+        logger.warning("Second run success")
 
         fname_out = workdir.parent / "soln.pkl"
         logger.info(f"Saving solution to {fname_out}")

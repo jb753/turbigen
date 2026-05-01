@@ -192,6 +192,12 @@ def cmd_run(args):
 
     if not iterating:
         conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
+
+        logger.info("Post-processing...")
+        conf.post_process_all()
+        _log_ram("after post-processing")
+        logger.info("Done post-processing.")
+
     else:
         basedir = conf.work_dir
 
@@ -247,6 +253,11 @@ def cmd_run(args):
 
             conf.solver.soft_start = False
 
+            logger.info("Post-processing...")
+            conf.post_process_all()
+            _log_ram("after post-processing")
+            logger.info("Done post-processing.")
+
             converged = all(conv_all.values())
             conf.converged = converged
             if converged:
@@ -267,11 +278,6 @@ def cmd_run(args):
             gc.collect()
 
         logger.warning(f"Finished iterating, converged={converged}.")
-
-    logger.info("Post-processing...")
-    conf.post_process_all()
-    _log_ram("after post-processing")
-    logger.info("Done post-processing.")
 
     turbigen.viewer.record_metadata(conf)
 

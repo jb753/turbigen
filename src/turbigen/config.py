@@ -810,7 +810,9 @@ class TurbigenConfig:
         else:
             # Apply crude guess from mean_line
             if self.ignore_guess and self.guess:
-                logger.info("Ignoring 3D guess, applying quasi-3D mean-line guess...")
+                logger.warning(
+                    "Ignoring 3D guess, applying quasi-3D mean-line guess..."
+                )
             else:
                 logger.info("Applying 2D guess...")
 
