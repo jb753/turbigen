@@ -51,6 +51,11 @@ class IteratorConfig(ABC):
         """Get the nominal value of target variables."""
         raise NotImplementedError
 
+    def get_tolerances(self, config):
+        """Return per-log-key absolute tolerances. Empty by default."""
+        del config
+        return {}
+
 
 @dataclasses.dataclass
 class Deviation(IteratorConfig):
@@ -133,6 +138,9 @@ class Deviation(IteratorConfig):
             log_data[f"DDev[{irow}]"] = ddev[irow]
 
         return converged, log_data
+
+    def get_tolerances(self, config):
+        return {f"Dev[{irow}]": self.tolerance for irow in range(config.nrow)}
 
     def interpolate(self, config):
         """Correct for deviation using a fitted design space."""
@@ -220,6 +228,10 @@ class DiffusionFactor(IteratorConfig):
 
         return converged, log_data
 
+    def get_tolerances(self, config):
+        del config
+        return {f"DNb_rel[{irow}]": self.tolerance for irow in self.target}
+
 
 @dataclasses.dataclass
 class Incidence(IteratorConfig):
@@ -290,6 +302,13 @@ class Incidence(IteratorConfig):
             _log_ram(f"Incidence row {irow} end")
 
         return converged, log_data
+
+    def get_tolerances(self, config):
+        return {
+            f"Inc[{irow}]": self.tolerance
+            for irow, row in enumerate(config.blades)
+            if row
+        }
 
     def interpolate(self, config):
         """Use a fitted design space to set LE recamber."""
@@ -386,6 +405,17 @@ class MeanLine(IteratorConfig):
                 log_data["D" + vname] = dvar  # Change
 
         return converged, log_data
+
+    def get_tolerances(self, config):
+        out = {}
+        for vname, vtol in self.tolerance.items():
+            var_nom = np.atleast_1d(config.mean_line.design_vars[vname])
+            if var_nom.size == 1:
+                out[vname] = vtol
+            else:
+                for iv in range(var_nom.size):
+                    out[f"{vname}[{iv}]"] = vtol
+        return out
 
     def interpolate(self, config):
         """Use a fitted design space to set loss guess."""
@@ -518,6 +548,10 @@ class Repeat(IteratorConfig):
         inlet.spf = spf
 
         return bool(err < self.rtol), {"Repeat_dTo": err}
+
+    def get_tolerances(self, config):
+        del config
+        return {"Repeat_dTo": self.rtol}
 
     def interpolate(self, config):
         """Use a fitted design space to set repeating profiles."""

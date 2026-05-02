@@ -206,6 +206,7 @@ def cmd_run(args):
             conf.interpolate_all_iterators()
 
         logger.warning(f"Iterating for max {conf.max_iter} iterations...")
+        logger.warning("Status: ✓ = within tol, ✗ = not yet converged")
 
         for iiter in range(conf.max_iter):
             conf.work_dir = basedir / f"{iiter:03d}"
@@ -241,15 +242,14 @@ def cmd_run(args):
 
             _log_ram("after save")
 
-            conv_all, log_data = conf.step_iterate()
+            conv_all, log_data, tol = conf.step_iterate()
             toc = timer()
             _log_ram("after step_iterate")
 
             elapsed = toc - tic
             log_data = dict(Min=elapsed / 60.0, **log_data)
 
-            reprint = not np.mod(iiter, 5)
-            logger.warning(format_iter_log(log_data, header=reprint))
+            logger.warning(format_iter_log(log_data, tol=tol, header=(iiter == 0)))
 
             conf.solver.soft_start = False
 
@@ -300,6 +300,7 @@ def cmd_run(args):
             conf.interpolate_all_iterators()
 
         logger.warning(f"Iterating for max {conf.max_iter} iterations...")
+        logger.warning("Status: ✓ = within tol, ✗ = not yet converged")
 
         for iiter in range(conf.max_iter):
             conf.work_dir = basedir / f"{iiter:03d}"
@@ -331,14 +332,13 @@ def cmd_run(args):
 
             conf.save(use_gzip=False, write_grids=conf.save_iteration_grids)
 
-            conv_all, log_data = conf.step_iterate()
+            conv_all, log_data, tol = conf.step_iterate()
             toc = timer()
 
             elapsed = toc - tic
             log_data = dict(Min=elapsed / 60.0, **log_data)
 
-            reprint = not np.mod(iiter, 5)
-            logger.warning(format_iter_log(log_data, header=reprint))
+            logger.warning(format_iter_log(log_data, tol=tol, header=(iiter == 0)))
 
             conf.solver.soft_start = False
 
@@ -457,11 +457,56 @@ def main():
         cmd_run(args)
 
 
-def format_iter_log(log_data, header=False):
-    col_widths = [max(len(k), 5) for k in log_data.keys()]
-    header_str = " ".join(f"{k:>{w}}" for k, w in zip(log_data.keys(), col_widths))
-    value_strs = [f"{util.asscalar(v):.3g}"[:5] for v in log_data.values()]
-    value_strs = " ".join([f"{v:>{w}}" for v, w in zip(value_strs, col_widths)])
+def _fmt_iter_cell(k, val, signed=True):
+    """Per-variable value formatter for the iteration log."""
+    if k.startswith("Inc") or k.startswith("Dev"):
+        return f"{val:+.1f}" if signed else f"{val:.1f}"
+    if k == "Min":
+        return f"{val:.0f}"
+    return f"{val:.3g}"
+
+
+def format_iter_log(log_data, tol=None, header=False):
+    """Format one iteration row.
+
+    Drops delta columns (D*) silently. Each tracked variable gets a value
+    column with a trailing '✓'/'✗' status marker against `tol`. When
+    `header=True`, the result includes a header line, a tolerance row, and a
+    separator before the values.
+    """
+    tol = tol or {}
+    # Drop delta columns: keys starting with 'D' but not 'Dev['.
+    keys = [
+        k
+        for k in log_data.keys()
+        if not (k.startswith("D") and not k.startswith("Dev["))
+    ]
+
+    value_strs = [_fmt_iter_cell(k, util.asscalar(log_data[k])) for k in keys]
+    statuses = [
+        ("✓" if abs(util.asscalar(log_data[k])) <= tol[k] else "✗") if k in tol else " "
+        for k in keys
+    ]
+    tol_strs = [
+        _fmt_iter_cell(k, tol[k], signed=False) if k in tol else "" for k in keys
+    ]
+
+    widths = [
+        max(len(k), len(vs) + 1, len(ts))
+        for k, vs, ts in zip(keys, value_strs, tol_strs)
+    ]
+
+    header_cells = [f"{k:>{w}}" for k, w in zip(keys, widths)]
+    value_cells = [
+        f"{vs:>{w - 1}}{status}" for vs, status, w in zip(value_strs, statuses, widths)
+    ]
+    tol_cells = [f"{ts:>{w}}" for ts, w in zip(tol_strs, widths)]
+
+    header_str = " ".join(header_cells)
+    value_str = " ".join(value_cells)
+    tol_str = " ".join(tol_cells)
+
     if header:
-        return header_str + "\n" + "-" * len(header_str) + "\n" + value_strs
-    return value_strs
+        sep = "-" * len(header_str)
+        return f"{header_str}\n{tol_str}\n{sep}\n{value_str}"
+    return value_str

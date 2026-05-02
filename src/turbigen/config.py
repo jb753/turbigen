@@ -1126,7 +1126,7 @@ class TurbigenConfig:
             self.guess = [b.conserved.copy() for b in self.grid]
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()
-            logger.warning("Restarting from existing grid and solution...")
+            logger.info("Restarting from existing grid and solution...")
 
         # Set viscosity from Reynolds number if given
         if self.Re_surf:
@@ -1179,6 +1179,7 @@ class TurbigenConfig:
 
         log_data = {}
         converged = {}
+        tol = {}
 
         for iterator in self.iterate:
             conv_now, log_data_now = iterator.update(self)
@@ -1188,8 +1189,9 @@ class TurbigenConfig:
             name = util.camel_to_snake(iterator.__class__.__name__)
             converged[name] = conv_now
             log_data.update(log_data_now)
+            tol.update(iterator.get_tolerances(self))
 
-        return converged, log_data
+        return converged, log_data, tol
 
     def show_table_limits(self):
         # """Return limiting property values and deltas for gas table generation."""
