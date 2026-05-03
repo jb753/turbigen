@@ -400,9 +400,11 @@ class MeanLine(IteratorConfig):
                     kiv = f"{vname}[{iv}]"
                     log_data[kiv] = var_cfd[iv]
                     log_data["D" + kiv] = dvar[iv]  # Change
+                    log_data["E" + kiv] = var_cfd[iv] - var_nom[iv]  # Convergence error
             except TypeError:
                 log_data[vname] = var_cfd  # Value
                 log_data["D" + vname] = dvar  # Change
+                log_data["E" + vname] = var_cfd - var_nom  # Convergence error
 
         return converged, log_data
 

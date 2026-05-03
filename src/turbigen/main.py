@@ -475,16 +475,28 @@ def format_iter_log(log_data, tol=None, header=False):
     separator before the values.
     """
     tol = tol or {}
-    # Drop delta columns: keys starting with 'D' but not 'Dev['.
+    # Drop delta columns (D*, except 'Dev[' which is itself a tracked value)
+    # and error columns (E*) used only for status checks.
     keys = [
         k
         for k in log_data.keys()
         if not (k.startswith("D") and not k.startswith("Dev["))
+        and not k.startswith("E")
     ]
 
     value_strs = [_fmt_iter_cell(k, util.asscalar(log_data[k])) for k in keys]
+    # Status compares the iterator-reported error (E<key>) against tolerance
+    # when present, since the displayed value may be the absolute CFD reading
+    # rather than the convergence error. Falls back to the displayed value
+    # for iterators (Inc/Dev) where the value itself is the error.
+    def _status_value(k):
+        ek = "E" + k
+        if ek in log_data:
+            return util.asscalar(log_data[ek])
+        return util.asscalar(log_data[k])
+
     statuses = [
-        ("✓" if abs(util.asscalar(log_data[k])) <= tol[k] else "✗") if k in tol else " "
+        ("✓" if abs(_status_value(k)) <= tol[k] else "✗") if k in tol else " "
         for k in keys
     ]
     tol_strs = [

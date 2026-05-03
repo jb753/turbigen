@@ -51,8 +51,19 @@ ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
 plt.show()
 
 fig, ax = plt.subplots()
-ax.plot(g[0].rhoVx[-1, :, (0, nk // 2, -1)].T, g[0].r[-1, :, 0], "-x")
+ax.set_title("mixer")
+ax.plot(g[0].rhoVx[-1, :, nk // 2].T, g[0].r[-1, :, 0], "-x")
+ax.plot(g[1].rhoVx[0, :, nk // 2].T, g[1].r[0, :, 0], "--o")
+fig, ax = plt.subplots()
+ax.set_title("inlet")
+ax.plot(g[0].rhoVx[0, :, (0, nk // 2, -1)].T, g[0].r[0, :, 0], "-x")
+fig, ax = plt.subplots()
+ax.set_title("outlet")
+ax.plot(g[1].rhoVx[-1, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
 plt.show()
+
+plt.show()
+quit()
 
 fig, ax = plt.subplots()
 lev_Ma = np.linspace(0.0, 0.5, 11) * g[0].pitch

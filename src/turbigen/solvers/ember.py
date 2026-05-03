@@ -27,6 +27,9 @@ class Ember(BaseSolver):
     rf_mix: float = 0.05
     delta_filt: float = 1.0
     gain_filt: float = 20.0
+    fac_mgrid: float = 0.8
+    v_cycle: bool = False
+    restrict_avg: bool = False
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -74,14 +77,15 @@ class Ember(BaseSolver):
             xllim=xllim,
             full_mgrid=self.full_mgrid,
             fac_restart=0.5,
-            fac_mgrid=0.8,
+            fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
-            sf2_adapt=0.5,
-            sf4=0.01,
+            sf2_adapt=1.0,
+            sf4=0.02,
             delta_filt=self.delta_filt,
             gain_filt=self.gain_filt,
             i_level_stop=self.i_level_stop,
-            v_cycle=False,
+            v_cycle=self.v_cycle,
+            restrict_avg=self.restrict_avg,
             # debug=True,
         )
 
