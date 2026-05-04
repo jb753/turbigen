@@ -184,6 +184,10 @@ def cmd_run(args):
     conf.save(working_config)
     logger.debug("Done.")
 
+    if conf.job and not args.no_job:
+        conf.job.submit(working_config)
+        sys.exit(0)
+
     iterating = conf.iterate and not args.no_iteration
 
     util.save_source_tar_gz(conf.work_dir / "src.tar.gz")
