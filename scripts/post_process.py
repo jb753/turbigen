@@ -63,7 +63,6 @@ ax.plot(g[1].rhoVx[-1, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
 plt.show()
 
 plt.show()
-quit()
 
 fig, ax = plt.subplots()
 lev_Ma = np.linspace(0.0, 0.5, 11) * g[0].pitch

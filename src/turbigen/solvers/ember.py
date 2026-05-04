@@ -30,6 +30,7 @@ class Ember(BaseSolver):
     fac_mgrid: float = 0.8
     v_cycle: bool = False
     restrict_avg: bool = False
+    radial_equilibrium: bool = True
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -49,8 +50,9 @@ class Ember(BaseSolver):
         xllim = 0.03 * pitch_ref[0]
         logger.info(f"xllim: {xllim}")
 
-        for patch in grid.patches.outlet:
-            patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.1)
+        if self.radial_equilibrium:
+            for patch in grid.patches.outlet:
+                patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.1)
         # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         # import matplotlib.pyplot as plt
