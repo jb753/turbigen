@@ -4,6 +4,7 @@
 
 # New working directory for each invocation
 work_dir: runs/*
+# work_dir: turbines
 
 fluid:
   type: perfect
@@ -78,13 +79,14 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 1000
+  n_step: 1500
   n_step_avg: 500
   fac_mgrid: 0.5
   delta_filt: 0.5
   gain_filt: 8.0
   rf_mix: 0.1
   v_cycle: false
+  radial_equilibrium: false
   # fac_mgrid: 0.0
   # smooth2_adapt: 0.5
 
@@ -93,11 +95,13 @@ fac_nstep_initial: 1.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:
+    relaxation_factor: 0.0
     tolerance:
       Ys: 0.001
   deviation:
+    relaxation_factor: 0.0
   incidence:
-    relaxation_factor: 0.05
+    relaxation_factor: 0.0
     clip: 5.0
 
 
@@ -106,7 +110,7 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [1.0, 2.4]
-  nsample_target: 8
+  nsample_target: 64
 
 job:
   type: local
