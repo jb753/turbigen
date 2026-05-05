@@ -51,9 +51,10 @@ ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
 plt.show()
 
 fig, ax = plt.subplots()
-ax.set_title("mixer")
-ax.plot(g[0].rhoVx[-1, :, nk // 2].T, g[0].r[-1, :, 0], "-x")
-ax.plot(g[1].rhoVx[0, :, nk // 2].T, g[1].r[0, :, 0], "--o")
+Max_mix = g[1].Ma[0, :, nk // 2].mean()
+ax.set_title(f"mixer Max = {Max_mix:.3f}")
+ax.plot(g[0].rhoVx[-1, :, nk // 2].T, g[0].r[-1, :, 0], "-x", label="upstream")
+ax.plot(g[1].rhoVx[0, :, nk // 2].T, g[1].r[0, :, 0], "--o", label="downstream")
 fig, ax = plt.subplots()
 ax.set_title("inlet")
 ax.plot(g[0].rhoVx[0, :, (0, nk // 2, -1)].T, g[0].r[0, :, 0], "-x")
@@ -81,11 +82,12 @@ plt.show()
 
 
 fig, ax = plt.subplots()
-lev_Ma = np.arange(0.0, 0.8, 0.1)
+lev_Ma = np.arange(0.0, 1.3, 0.1)
 ax.axis("equal")
 for b in g:
     Ck = b[:, :, nk // 2]
     ax.contourf(Ck.x, Ck.r, Ck.Max, lev_Ma, cmap="cubehelix")
+    ax.contour(Ck.x, Ck.r, Ck.Max, [1.0], linestyles="--", colors="k")
 plt.show()
 
 
