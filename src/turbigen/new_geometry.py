@@ -316,6 +316,7 @@ class Annulus:
                 f"Annulus arc-length iteration failed to converge: err={err:.2e}"
             )
 
+        # Assign interpolators to frozen fields
         object.__setattr__(self, "_s", s)
         object.__setattr__(self, "_pchip_xhub", pchip_xhub)
         object.__setattr__(self, "_pchip_rhub", pchip_rhub)
