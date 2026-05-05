@@ -48,7 +48,7 @@ mesh:
   ni_cusp: 5
   ni_TE: 3
   dm_TE: 0.0
-  skew_max: 30.0
+  skew_max: 90.0
   # nchord_axial: 4.0
 
 # Define one mid-span section in stator and rotor

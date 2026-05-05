@@ -72,7 +72,7 @@ class H(turbigen.mesh.Mesher):
     AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
-    AR_merid: float = 1.0
+    AR_merid: float = 0.8
     """Aspect ratio of mid-chord cells in meridional plane."""
 
     ER_span: float = 1.2
@@ -270,7 +270,7 @@ class H(turbigen.mesh.Mesher):
             L,
             geom.AR_row,
             tte,
-            ni_cusp=self.ni_cusp,
+            ni_cusp=self.ni_cusp + 8,
         )
 
         ni = len(stream_frac)
@@ -712,7 +712,8 @@ class H(turbigen.mesh.Mesher):
         # ni_cusp) % 8 == 0, then adjust t_chord to restore total ni-1
         # divisibility by 8.
         if ni_cusp:
-            dn_deficit = (ni_cusp - len(t_downstream)) % 8
+            # Less 8 further points to coarsen grids downstream of cusp a bit
+            dn_deficit = (ni_cusp - len(t_downstream)) % 8 - 8
             if dn_deficit:
                 t_downstream = np.interp(
                     np.linspace(0.0, 1.0, len(t_downstream) + dn_deficit),
@@ -764,6 +765,11 @@ def _plot_grid(g):
     for b in g:
         ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
         ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
+    fig, ax = plt.subplots()
+    ax.axis("equal")
+    for b in g:
+        ax.plot(b.x[:, b.nj // 2, :], b.rt[:, b.nj // 2, :], "k-", lw=0.5)
+        ax.plot(b.x[:, b.nj // 2, :].T, b.rt[:, b.nj // 2, :].T, "k-", lw=0.5)
     plt.show()
 
 

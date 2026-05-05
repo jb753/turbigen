@@ -82,41 +82,42 @@ class Convergence(BasePost):
         pdf.savefig()
         plt.close()
 
-        # Page 3: Convergence of mass conservation, work, and loss
+        # Page 3: Absolute difference from converged (final) value, in %.
+        # Mass: 100 * err_mdot (already a fractional imbalance).
+        # Work, loss: 100 * (q - q[-1]) / q[-1].
         psi = conv.psi[:n_steps]
         zeta = conv.zeta[:n_steps]
         err_mdot = conv.err_mdot[:n_steps]
 
-        _, ax = plt.subplots(1, 3, layout="constrained", sharey=True)
+        def rel_pct(q):
+            ref = np.abs(q[-1])
+            if ref == 0:
+                return 100.0 * np.abs(q - q[-1])
+            return 100.0 * np.abs(q - q[-1]) / ref
 
-        labelled_pct = [-12, -8, -4, 0, 4, 8, 12]
-        minor_pct = [p for p in range(-12, 13, 2) if p not in labelled_pct]
-        major_ticks = [np.log10(1 + p / 100) if p != 0 else 0.0 for p in labelled_pct]
-        minor_ticks = [np.log10(1 + p / 100) for p in minor_pct]
-        major_labels = [str(p) for p in labelled_pct]
-        ylim = np.log10(1.12)
-
-        # Each panel: (y data on log10(1+err) scale, title)
-        # Mass: err_mdot is already fractional, so y = log10(1 + err_mdot)
-        # psi/zeta: y = log10(data / data[-1])
-        zeta_rat = zeta / zeta[-1]
-        zeta_rat[zeta_rat == 0] = 1e-10  # Avoid log of zero
         panels = [
-            (np.log10(1 + err_mdot), "Mass Conservation"),
-            (np.log10(psi / psi[-1]), r"Work, $\psi$"),
-            (np.log10(zeta / zeta[-1]), r"Loss, $\zeta$"),
+            (100.0 * np.abs(err_mdot), "Mass Conservation"),
+            (rel_pct(psi), r"Work, $\psi$"),
+            (rel_pct(zeta), r"Loss, $\zeta$"),
         ]
 
+        linthresh = 1.0
+        major_ticks = [0, 1, 2, 4, 8, 16]
+        major_labels = [str(t) for t in major_ticks]
+        ylim_top = 16.0
+
+        _, ax = plt.subplots(1, 3, layout="constrained", sharey=True)
         for axi, (y, title) in zip(ax, panels):
             axi.plot(steps, y, "-")
             axi.set_title(title)
             axi.set_xlabel("Iteration")
+            axi.set_yscale("symlog", linthresh=linthresh, linscale=np.log10(2))
             axi.set_yticks(major_ticks, major_labels)
-            axi.set_yticks(minor_ticks, minor=True)
-            axi.set_ylim(-ylim, ylim)
+            axi.set_yticks([], minor=True)
+            axi.set_ylim(0, ylim_top)
+            axi.set_xlim(steps[0], steps[-1])
             axi.grid(True, which="major", alpha=0.3, lw=0.8)
-            axi.grid(True, which="minor", alpha=0.15, lw=0.5)
-        ax[0].set_ylabel("% Error")
+        ax[0].set_ylabel("|Error| from final value [%]")
 
         pdf.savefig()
         plt.close()

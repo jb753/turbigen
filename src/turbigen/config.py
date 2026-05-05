@@ -805,8 +805,7 @@ class TurbigenConfig:
         # Apply 3D guess if available, unless ignore_guess is set
         if self.guess and not self.ignore_guess:
             logger.info("Applying 3D guess...")
-            self.grid.set_fluid(self.mean_line.nominal.fluid)
-            self.grid.interp_conserved(self.guess)
+            self.grid.apply_guess_restart(self.guess)
         else:
             # Apply crude guess from mean_line
             if self.ignore_guess and self.guess:
@@ -1123,7 +1122,8 @@ class TurbigenConfig:
         # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
-            self.guess = [b.conserved.copy() for b in self.grid]
+            self.guess = [b.get_restart() for b in self.grid]
+            del self.grid
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()
             logger.info("Restarting from existing grid and solution...")
@@ -1142,14 +1142,15 @@ class TurbigenConfig:
         if not (skip and self.grid):
             logger.info(f"Generating {self.mesh.__class__.__name__} mesh...")
             self.setup_mesh()  # Overwrite self.grid with a new mesh
+            self.grid.set_fluid(self.mean_line.nominal.fluid)
             _log_ram("after mesh generation")
             if plot_mesh is not None:
                 self.plot_mesh(plot_mesh)
                 sys.exit(0)
-            self.apply_guess()
-            _log_ram("after apply guess")
             self.apply_bconds()
             _log_ram("after apply bconds")
+            self.apply_guess()
+            _log_ram("after apply guess")
         else:
             logger.info("Skipping and already have a guess, not generating mesh...")
 

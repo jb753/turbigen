@@ -15,6 +15,45 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 
+def _monocubic(R_LE, m_tmax, t_max, t_TE, wedge):
+    """Find single cubic shape-space polynomial given geometric constraints.
+
+    Returns coefficients [a, b, c, d] for use with np.polyval.
+    """
+
+    # We define TE thickness as total due to both sides,
+    # so each side contributes half of this value.
+    t_TE2 = t_TE / 2.0
+
+    # Evaluate max thickness point in shape space
+    tau_max = (t_max - m_tmax * t_TE2) / np.sqrt(m_tmax) / (1.0 - m_tmax)
+    num = np.sqrt(m_tmax) - 0.5 * (1.0 - m_tmax) / np.sqrt(m_tmax)
+    dtau_max = (tau_max * num - t_TE2) / np.sqrt(m_tmax) / (1.0 - m_tmax)
+
+    # LE and TE values in shape space
+    tau0 = 2.0 * np.sqrt(R_LE)
+    tau1 = t_TE2 + np.tan(np.radians(wedge))
+
+    # Coefficients for cubic polynomial in shape space
+    # tau(0) = tau0, tau(m_tmax) = tau_max, tau'(m_tmax) = dtau_max, tau(1) = tau1
+    A = np.array(
+        [
+            [0.0, 0.0, 0.0, 1.0],
+            [m_tmax**3, m_tmax**2, m_tmax, 1.0],
+            [3 * m_tmax**2, 2 * m_tmax, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+        ]
+    )
+    b = np.array([tau0, tau_max, dtau_max, tau1])
+    coeff = np.linalg.solve(A, b)
+
+    # Closure for thickness distribution in real space
+    def thick(m):
+        return np.polyval(coeff, m) * np.sqrt(m) * (1.0 - m) + m * t_TE2
+
+    return thick
+
+
 class BaseThickness(ABC):
     """Define the interface for a thickness distribution."""
 
