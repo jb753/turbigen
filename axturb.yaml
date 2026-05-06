@@ -3,8 +3,8 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-work_dir: runs/*
-# work_dir: turbines
+# work_dir: runs/*
+work_dir: turbines
 
 fluid:
   type: perfect
@@ -95,13 +95,14 @@ fac_nstep_initial: 1.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:
-    relaxation_factor: 0.0
+    # relaxation_factor: 0.0
+    relaxation_factor: 1.0
     tolerance:
-      Ys: 0.001
+      Ys: 0.002
   deviation:
-    relaxation_factor: 0.0
+    # relaxation_factor: 0.0
   incidence:
-    relaxation_factor: 0.0
+    # relaxation_factor: 0.0
     clip: 5.0
 
 
@@ -110,7 +111,7 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [1.0, 2.4]
-  nsample_target: 64
+  nsample_target: 8
 
 job:
   type: local

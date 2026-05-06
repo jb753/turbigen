@@ -162,16 +162,17 @@ def axial_turbine_forward(
 
             # New guess for blade speed
             U_new = np.sqrt((ho1 - ho3) / psi)
-            ml.set_Omega(U_new / r_rms * np.array([0, 0, 1, 1]))
 
             # Check convergence
             dU = U_new - U
             err_rel_U = np.abs(dU) / U
             if err_rel_U < 1e-4:
+                ml.set_Omega(U_new / r_rms * np.array([0, 0, 1, 1]))
                 conv_U = True
                 break
             else:
                 U = U_new * rf + U * (1.0 - rf)
+                ml.set_Omega(U / r_rms * np.array([0, 0, 1, 1]))
 
         if not conv_U:
             raise ValueError(f"U iteration did not converge: {U} -> {U_new}")

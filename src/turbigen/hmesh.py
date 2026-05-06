@@ -72,7 +72,7 @@ class H(turbigen.mesh.Mesher):
     AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
-    AR_merid: float = 0.8
+    AR_merid: float = 1.0
     """Aspect ratio of mid-chord cells in meridional plane."""
 
     ER_span: float = 1.2

@@ -47,6 +47,7 @@ Cmk = b[:, :, nk // 2]
 C2 = g[-1][-9, :, :]
 
 fig, ax = plt.subplots()
+ax.set_title("i=ni, j=9 Vx vs t")
 ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
 plt.show()
 

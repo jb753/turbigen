@@ -120,7 +120,7 @@ def get_i_stag(block):
         izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
 
         # Only keep maxima close to leading edge
-        izj = izj[np.abs(z[izj, j]) < 0.2]
+        izj = izj[np.abs(z[izj, j]) < 0.25]
 
         # Select the candidate with maximum pressure
         if len(izj):

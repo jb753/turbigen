@@ -74,6 +74,7 @@ class Ember(BaseSolver):
             n_step_log=50,
             n_levels=4,
             # cfl_max=1.0,
+            cfl_bnd_max=0.5,
             cfl_min=0.1,
             rf_mix=self.rf_mix,
             xllim=xllim,
