@@ -306,7 +306,7 @@ class MeanLine:
 
         rho_ref = self.rho.mean()
         V_ref = self.V.mean()
-        Rgas_ref = self.rgas.mean()
+        Rgas_ref = self.Rgas.mean()
         P_dtm = self.P.mean()
         T_dtm = (self.T + (self.P / self.rho + self.halfVsq) / self.cv).mean()
 
@@ -456,7 +456,7 @@ class MeanLine:
     cp = _make_concat_property("cp")
     cv = _make_concat_property("cv")
     gamma = _make_concat_property("gamma")
-    rgas = _make_concat_property("rgas")
+    Rgas = _make_concat_property("Rgas")
 
     # Stagnation properties
     ho = _make_concat_property("ho")

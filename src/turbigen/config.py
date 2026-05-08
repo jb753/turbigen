@@ -695,7 +695,10 @@ class TurbigenConfig:
         # plt.show()
         #
         _log_ram("after set L_ref")
-        self.grid.check_coordinates()
+        for ib, b in enumerate(self.grid):
+            if (b.vol_nd <= 0.0).any():
+                logger.error(f"Negative or zero cell volume found in block {ib}")
+                sys.exit(1)
         _log_ram("after check_coords")
         self.grid.calculate_wdist()
         _log_ram("after wdst calc")
