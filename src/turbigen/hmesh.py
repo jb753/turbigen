@@ -514,9 +514,12 @@ class H(turbigen.mesh.Mesher):
                 ]
             )
 
-        blk = ember.block.Block(shape=(ni, nj, nk), label=f"row{irow}")
+        blk = ember.block.Block(shape=(ni, nj, nk))
+        blk.set_label(f"row{irow}")
         blk.set_Nb(mac.Nb[irow])
-        blk.set_xrt(np.moveaxis(xrt_now, 0, -1))
+        blk.set_x(xrt_now[0])
+        blk.set_r(xrt_now[1])
+        blk.set_t(xrt_now[2])
         blk.patches.extend(patches)
 
         nic, njc, nkc = blk.shape

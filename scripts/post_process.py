@@ -17,15 +17,21 @@ g = ember.grid.Grid.read_emb(fname)
 # Mass flow plot
 x = []
 mdot = []
+rVt = []
 for b in g:
     for i in range(b.ni):
         x.append(b.x[i, 0, 0])
-        mdot.append(ember.average.flow_mass(b[i]) * b.Nb)
+        flow = ember.average.flow_conserved(b[i]) * b.Nb
+        mdot.append(flow[0])
+        rVt.append(flow[3])
+
 x = np.array(x)
 mdot = np.array(mdot)
+rVt = np.array(rVt)
 
 fig, ax = plt.subplots()
-ax.plot(x, mdot, "-x")
+ax.plot(x, mdot / mdot[0], "-x", label="mass")
+ax.plot(x, rVt / rVt[0], "-x", label="mass")
 ax.set_ylim(bottom=0)
 # plt.show()
 # quit()
@@ -117,13 +123,27 @@ print(C2.shape)
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
-jplot = 9
+jplot = -17 - 8
 for bi in g:
     Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
     ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
 ax.axis("equal")
 
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, jplot, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.Max, lev_Ma, cmap="cubehelix")
+    ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.Max, lev_Ma, cmap="cubehelix")
+    ax.contourf(Ci.x, Ci.rt + 2 * Ci.r * Ci.pitch, Ci.Max, lev_Ma, cmap="cubehelix")
+ax.axis("equal")
+
+fig, ax = plt.subplots()
+for bi in g:
+    Ci = bi[:, jplot, :]
+    ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
+    ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.To, cmap="cubehelix")
+ax.axis("equal")
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_ent = np.arange(0.0, 0.8, 0.1)

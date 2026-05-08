@@ -534,7 +534,7 @@ class TurbigenConfig:
 
         fluid, L_ref = self.mean_line.nominal.adjust_ref()
 
-        P_dtm, T_dtm = fluid.get_datum()
+        P_dtm, T_dtm = fluid.P_dtm, fluid.T_dtm
         logger.info("Setting reference scales:")
         logger.info(f"P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
         logger.info(

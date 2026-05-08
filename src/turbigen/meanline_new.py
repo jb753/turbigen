@@ -742,9 +742,9 @@ class MeanLine:
         # --- build Block of shape (n, nj, 2) ---------------------------------
         b = ember.block.Block(shape=(n, nj, 2))
         b.set_fluid(self.fluid)
-        b.set_xrt(x_3d, r_3d, t_3d)
+        b.set_x(x_3d).set_r(r_3d).set_t(t_3d)
         b.set_P_s(P_3d, s_3d)
-        b.set_Vxrt(Vx_3d, Vr_3d, Vt_3d)
+        b.set_Vx(Vx_3d).set_Vr(Vr_3d).set_Vt(Vt_3d)
 
         mu_mean = float(np.mean(self.mu))
         b.set_mu_turb(np.full((n, nj, 2), mu_mean))

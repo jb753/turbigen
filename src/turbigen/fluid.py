@@ -17,7 +17,7 @@ class FluidConfig(ABC):
     type: str
     """Which equation of state: {'perfect'}"""
 
-    fluid: ember.fluid.Fluid = dataclasses.field(init=False, repr=False)
+    fluid: ember.fluid._Fluid = dataclasses.field(init=False, repr=False)
     """Instance of the fluid class."""
 
     def __post_init__(self):
@@ -25,7 +25,7 @@ class FluidConfig(ABC):
         object.__setattr__(self, "fluid", self._create_fluid())
 
     @abstractmethod
-    def _create_fluid(self) -> ember.fluid.Fluid:
+    def _create_fluid(self) -> ember.fluid._Fluid:
         """Subclasses implement this to instantiate their fluid type."""
         raise NotImplementedError()
 

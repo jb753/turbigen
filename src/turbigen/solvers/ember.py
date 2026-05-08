@@ -28,9 +28,14 @@ class Ember(BaseSolver):
     delta_filt: float = 1.0
     gain_filt: float = 20.0
     fac_mgrid: float = 0.8
+    inviscid: bool = False
     v_cycle: bool = False
     restrict_avg: bool = False
     radial_equilibrium: bool = True
+    cfl_bnd_max: float = 0.5
+    debug: bool = False
+    sf2: float = 0.5
+    sf4: float = 0.01
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -74,7 +79,7 @@ class Ember(BaseSolver):
             n_step_log=50,
             n_levels=4,
             # cfl_max=1.0,
-            cfl_bnd_max=0.5,
+            cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=0.1,
             rf_mix=self.rf_mix,
             xllim=xllim,
@@ -82,14 +87,15 @@ class Ember(BaseSolver):
             fac_restart=0.8,
             fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
-            sf2_adapt=0.5,
-            sf4=0.01,
+            inviscid=self.inviscid,
+            sf2_adapt=self.sf2,
+            sf4=self.sf4,
             delta_filt=self.delta_filt,
             gain_filt=self.gain_filt,
             i_level_stop=self.i_level_stop,
             v_cycle=self.v_cycle,
             restrict_avg=self.restrict_avg,
-            # debug=True,
+            debug=self.debug,
         )
 
         try:
