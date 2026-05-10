@@ -39,7 +39,9 @@ import matplotlib.pyplot as plt
 import ember.grid
 import ember.cut
 import ember.average
+import ember.block_util
 import ember.util
+from ember.block_restart import make_restart
 
 logger = logging.getLogger("turbigen")
 
@@ -823,9 +825,14 @@ class TurbigenConfig:
             )
             self.grid.apply_guess_quasi3d(block_guess)
 
-        # Update the outlet static pressure based on the guess
-        # This helps running multiple iterations of a throttled case
-        self.grid.update_throttle()
+        for block in self.grid:
+            for patch in block.patches.outlet:
+                if patch.mdot_target > 0:
+                    P_span = np.sum(
+                        patch.block_view.P * patch.weight_pitch, axis=patch.pitch_dim
+                    ).squeeze()
+                    dA = patch.dA_node
+                    patch.set_P(np.float32(np.sum(P_span * dA) / np.sum(dA)))
 
     def run_solver(self):
         if not self.solver:
@@ -878,7 +885,7 @@ class TurbigenConfig:
         # Save the cuts as tm3 files for post-processing
         for i, C in enumerate(cuts):
             logger.info(f"Saving tm3 cuts for row {i}")
-            C.to_tm3(self.work_dir / f"cut_{i}_Mam.tm3", Ma=C.Mam)
+            ember.block_util.to_tm3(C, self.work_dir / f"cut_{i}_Mam.tm3", Ma=C.Mam)
 
         for irow in range(self.nrow):
             # Calculate loss coefficient
@@ -888,7 +895,7 @@ class TurbigenConfig:
             P2 = self.mean_line.actual.P[i_exit]
             C = cuts[i_exit]
             Yp = (Po1 - C.Po_rel) / (Po1 - P2)
-            C.to_tm3(self.work_dir / f"cut_{i_exit}_Yp.tm3", Yp=Yp)
+            ember.block_util.to_tm3(C, self.work_dir / f"cut_{i_exit}_Yp.tm3", Yp=Yp)
 
         del cuts
 
@@ -1125,7 +1132,7 @@ class TurbigenConfig:
         # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
-            self.guess = [b.get_restart() for b in self.grid]
+            self.guess = [make_restart(b) for b in self.grid]
             del self.grid
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()

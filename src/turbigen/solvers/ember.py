@@ -34,7 +34,7 @@ class Ember(BaseSolver):
     radial_equilibrium: bool = True
     cfl_bnd_max: float = 0.5
     debug: bool = False
-    sf2: float = 0.5
+    sf2: float = 1.0
     sf4: float = 0.01
 
     def robust(self):
@@ -52,7 +52,7 @@ class Ember(BaseSolver):
         logger.info(f"r_ref: {r_ref}")
         logger.info(f"Nb: {Nb}")
         logger.info(f"pitch_ref: {pitch_ref}")
-        xllim = 0.03 * pitch_ref[0]
+        xllim = 0.04 * pitch_ref[0]
         logger.info(f"xllim: {xllim}")
 
         if self.radial_equilibrium:
@@ -84,7 +84,7 @@ class Ember(BaseSolver):
             rf_mix=self.rf_mix,
             xllim=xllim,
             full_mgrid=self.full_mgrid,
-            fac_restart=0.8,
+            fac_restart=1.0,
             fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
             inviscid=self.inviscid,
