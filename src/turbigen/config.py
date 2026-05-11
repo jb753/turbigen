@@ -1132,7 +1132,7 @@ class TurbigenConfig:
         # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
-            self.guess = [make_restart(b) for b in self.grid]
+            self.guess = make_restart(self.grid)
             del self.grid
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()
