@@ -2,6 +2,7 @@
 
 import numpy as np
 import ember.block
+import ember.block_util
 import ember.cut
 import ember.patch
 from turbigen import util
@@ -539,7 +540,7 @@ def cut_blade_surfs(grid, offset=0):
             if sides is None:
                 surfs.append(None)
             else:
-                cut_now = ember.block.concatenate(
+                cut_now = ember.block_util.concatenate(
                     sides[0].flip(axis=0), sides[1][1:, ...], axis=0
                 )
                 surfs.append([cut_now])
