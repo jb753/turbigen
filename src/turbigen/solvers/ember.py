@@ -4,6 +4,7 @@ import ember.run
 import ember.patch
 import ember.config
 import ember.fortran
+import ember.body_force
 from pathlib import Path
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
@@ -36,6 +37,7 @@ class Ember(BaseSolver):
     debug: bool = False
     sf2: float = 1.0
     sf4: float = 0.01
+    deswirl: bool = False
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -58,6 +60,18 @@ class Ember(BaseSolver):
         if self.radial_equilibrium:
             for patch in grid.patches.outlet:
                 patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.1)
+
+        body_forces = ()
+        if self.deswirl:
+            mmax = machine.annulus.mmax
+            m_ramp = np.linspace(mmax - 0.5, mmax, 73)
+            spf = np.linspace(0.0, 1.0, 65)
+            m_grid, spf_grid = np.meshgrid(m_ramp, spf, indexing="ij")
+            xr_arr = machine.annulus.evaluate_xr(m_grid, spf_grid)
+            xr = np.stack([xr_arr[0].ravel(), xr_arr[1].ravel()], axis=-1)
+            gain = ((m_grid - (mmax - 0.5)) / 0.5).ravel()
+            bf = ember.body_force.DeswirlBodyForce(grid, xr=xr, gain=gain)
+            body_forces = (bf,)
         # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
         # import matplotlib.pyplot as plt
@@ -96,6 +110,7 @@ class Ember(BaseSolver):
             v_cycle=self.v_cycle,
             restrict_avg=self.restrict_avg,
             debug=self.debug,
+            body_forces=body_forces,
         )
 
         try:

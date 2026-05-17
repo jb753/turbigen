@@ -435,8 +435,14 @@ class MeanLine:
     # Energy
     e = _make_concat_property("e")
     u = _make_concat_property("u")
-    halfVsq = _make_concat_property("halfVsq")
-    halfVsq_rel = _make_concat_property("halfVsq_rel")
+
+    @property
+    def halfVsq(self):
+        return 0.5 * self.V**2
+
+    @property
+    def halfVsq_rel(self):
+        return 0.5 * self.V_rel**2
 
     # Flow angles
     Alpha = _make_concat_property("Alpha")
