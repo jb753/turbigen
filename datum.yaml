@@ -4,7 +4,7 @@
 
 # New working directory for each invocation
 work_dir: runs/*
-# work_dir: turb2
+# work_dir: turb3
 
 fluid:
   type: perfect
@@ -79,17 +79,17 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 500
-  n_step_avg: 125
+  n_step: 2000
+  n_step_avg: 500
   fac_mgrid: 0.8
   delta_filt: 0.5
-  gain_filt: 8.0
+  gain_filt: 10.0
   rf_mix: 0.1
   v_cycle: false
   radial_equilibrium: false
   cfl_bnd_max: 0.5
   # debug: true
-  restrict_avg: false
+  restrict_avg: true
   deswirl: 5.0
   # i_level_stop: 0
 
