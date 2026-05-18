@@ -79,14 +79,14 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 2000
+  n_step: 1000
   n_step_avg: 500
   fac_mgrid: 0.8
   delta_filt: 0.5
   gain_filt: 10.0
   rf_mix: 0.1
   v_cycle: false
-  radial_equilibrium: false
+  radial_equilibrium: true
   cfl_bnd_max: 0.5
   # debug: true
   restrict_avg: true
@@ -94,7 +94,7 @@ solver:
   # i_level_stop: 0
 
 # # Configure iterative updates of the geometry
-fac_nstep_initial: 1.0
+fac_nstep_initial: 2.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:

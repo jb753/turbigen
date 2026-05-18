@@ -79,7 +79,7 @@ class Convergence(BasePost):
             return out
 
         # Page 1: Residual plot
-        residuals = smooth(conv.residual[:n_steps])  # (n_steps, 5)
+        residuals = conv.residual[:n_steps]  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
@@ -93,7 +93,7 @@ class Convergence(BasePost):
         plt.close()
 
         # Page 2: CFL plot
-        cfl_data = smooth(conv.cfl[:n_steps])  # (n_steps, 5)
+        cfl_data = conv.cfl[:n_steps]  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
