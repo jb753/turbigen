@@ -3,8 +3,8 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-# work_dir: runs/*
-work_dir: turb2
+work_dir: runs/*
+# work_dir: turb2
 
 fluid:
   type: perfect
@@ -81,17 +81,17 @@ solver:
   type: ember
   n_step: 4000
   n_step_avg: 500
-  fac_mgrid: 1.0
+  fac_mgrid: 0.8
   delta_filt: 0.5
   gain_filt: 8.0
   rf_mix: 0.1
   v_cycle: false
-  radial_equilibrium: true
+  radial_equilibrium: false
   cfl_bnd_max: 0.5
   # debug: true
   restrict_avg: false
   deswirl: 5.0
-  sf4: 0.015625
+  # i_level_stop: 0
 
 # # Configure iterative updates of the geometry
 fac_nstep_initial: 1.0
