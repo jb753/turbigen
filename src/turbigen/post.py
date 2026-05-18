@@ -54,8 +54,32 @@ class Convergence(BasePost):
 
         steps = conv.i_step[:n_steps]
 
+        # Moving-average window, scaled from solver iteration count to log
+        # samples (i_step records the iteration index at each log entry).
+        n_step_avg = int(getattr(config.solver, "n_step_avg", 1) or 1)
+        if n_steps >= 2:
+            n_step_log = max(int(steps[1] - steps[0]), 1)
+        else:
+            n_step_log = 1
+        window = max(n_step_avg // n_step_log, 1)
+
+        def smooth(y):
+            if window <= 1 or y.shape[0] < 2:
+                return y
+            w = min(window, y.shape[0])
+            kernel = np.ones(w)
+            # Normalize by the count of samples actually inside the window at
+            # each position, so the edges aren't biased toward zero.
+            norm = np.convolve(np.ones(y.shape[0]), kernel, mode="same")
+            if y.ndim == 1:
+                return np.convolve(y, kernel, mode="same") / norm
+            out = np.empty_like(y, dtype=float)
+            for j in range(y.shape[1]):
+                out[:, j] = np.convolve(y[:, j], kernel, mode="same") / norm
+            return out
+
         # Page 1: Residual plot
-        residuals = conv.residual[:n_steps]  # (n_steps, 5)
+        residuals = smooth(conv.residual[:n_steps])  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
@@ -69,7 +93,7 @@ class Convergence(BasePost):
         plt.close()
 
         # Page 2: CFL plot
-        cfl_data = conv.cfl[:n_steps]  # (n_steps, 5)
+        cfl_data = smooth(conv.cfl[:n_steps])  # (n_steps, 5)
 
         _, ax = plt.subplots(layout="constrained")
         for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
@@ -85,9 +109,9 @@ class Convergence(BasePost):
         # Page 3: Absolute difference from converged (final) value, in %.
         # Mass: 100 * err_mdot (already a fractional imbalance).
         # Work, loss: 100 * (q - q[-1]) / q[-1].
-        psi = conv.psi[:n_steps]
-        zeta = conv.zeta[:n_steps]
-        err_mdot = conv.err_mdot[:n_steps]
+        psi = smooth(conv.psi[:n_steps])
+        zeta = smooth(conv.zeta[:n_steps])
+        err_mdot = smooth(conv.err_mdot[:n_steps])
 
         def rel_pct(q):
             ref = np.abs(q[-1])

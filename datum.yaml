@@ -79,8 +79,8 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  n_step: 4000
-  n_step_avg: 500
+  n_step: 500
+  n_step_avg: 125
   fac_mgrid: 0.8
   delta_filt: 0.5
   gain_filt: 8.0
