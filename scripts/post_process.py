@@ -33,7 +33,9 @@ fig, ax = plt.subplots()
 ax.plot(x, mdot / mdot[0], "-x", label="mass")
 ax.plot(x, rVt / rVt[0], "-x", label="mass")
 ax.set_ylim(bottom=0)
-# plt.show()
+ax.axhline(0.0)
+ax.set_ylim(bottom=-0.5)
+plt.show()
 # quit()
 
 
@@ -51,6 +53,7 @@ print(f"Block shape: ni={ni}, nj={nj}, nk={nk}")
 Cjm = b[:, nj // 2, :]
 Cmk = b[:, :, nk // 2]
 C2 = g[-1][-9, :, :]
+Cjm2 = g[-1][:, nj // 2, :]
 
 fig, ax = plt.subplots()
 ax.set_title("i=ni, j=9 Vx vs t")
@@ -73,6 +76,9 @@ ax.plot(g[0].rhoVx[0, :, (0, nk // 2, -1)].T, g[0].r[0, :, 0], "-x")
 fig, ax = plt.subplots()
 ax.set_title("outlet")
 ax.plot(g[1].rhoVx[-1, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
+fig, ax = plt.subplots()
+ax.set_title("outlet P")
+ax.plot(g[1].P[-1, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
 plt.show()
 
 plt.show()
@@ -120,10 +126,22 @@ ax.set_ylabel("To")
 # ax.set_ylabel("To")
 
 fig, ax = plt.subplots()
-ax.plot(Cjm.x[:, 0], Cjm.conserved_nd[:, 0, :], "-x")
+for ii, lab in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoE"]):
+    ax.plot(Cjm.x[:, 0], Cjm.conserved_nd[:, 0, ii], "-x", label=lab)
 ax.set_ylabel("conserved")
+ax.set_title("stator")
+ax.legend()
+
+fig, ax = plt.subplots()
+for ii, lab in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoE"]):
+    ax.plot(Cjm2.x[:, 0], Cjm2.conserved_nd[:, 0, ii], "-x", label=lab)
+ax.set_ylabel("conserved")
+ax.set_title("rotor")
+ax.legend()
 
 print(C2.shape)
+plt.show()
+# quit()
 
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()

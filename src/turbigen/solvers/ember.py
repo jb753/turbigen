@@ -59,15 +59,15 @@ class Ember(BaseSolver):
 
         if self.radial_equilibrium:
             for patch in grid.patches.outlet:
-                patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.1)
+                patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.01)
 
         body_forces = ()
         if self.deswirl > 0.0:
-            mmax = machine.annulus.mmax
+            mmax = machine.ann.mmax
             m_ramp = np.linspace(mmax - 0.5, mmax, 73)
             spf = np.linspace(0.0, 1.0, 65)
             m_grid, spf_grid = np.meshgrid(m_ramp, spf, indexing="ij")
-            xr_arr = machine.annulus.evaluate_xr(m_grid, spf_grid)
+            xr_arr = machine.ann.evaluate_xr(m_grid, spf_grid)
             xr = np.stack([xr_arr[0].ravel(), xr_arr[1].ravel()], axis=-1)
             gain = (self.deswirl * (m_grid - (mmax - 0.5)) / 0.5).ravel()
             bf = ember.body_force.DeswirlBodyForce(grid, xr=xr, gain=gain)

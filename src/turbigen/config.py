@@ -534,14 +534,15 @@ class TurbigenConfig:
     def adjust_ref(self):
         """Set thermodynamic datum and reference scales from nominal mean line."""
 
-        fluid, L_ref = self.mean_line.nominal.adjust_ref()
+        L_ref = self.annulus.chords(0.5)[1:-1:2].max()
+        fluid = self.mean_line.nominal.adjust_ref(L_ref)
 
         P_dtm, T_dtm = fluid.P_dtm, fluid.T_dtm
         logger.info("Setting reference scales:")
         logger.info(f"P_dtm={P_dtm:.2e} Pa, T_dtm={T_dtm:.1f} K")
         logger.info(
             f"rho_ref={fluid.rho_ref:.2f} kg/m^3, V_ref={fluid.V_ref:.1f} m/s, "
-            f"L_ref={L_ref:.2f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
+            f"L_ref={L_ref:.4f} m, Rgas_ref={fluid.Rgas_ref:.1f} J/kg/K"
         )
 
     def get_geometry(self):
@@ -839,7 +840,7 @@ class TurbigenConfig:
             logger.error("No solver configured, quitting.")
             sys.exit(0)
 
-        run_args = self.grid, self.get_machine, self.work_dir / "solve"
+        run_args = self.grid, self.get_machine(), self.work_dir / "solve"
 
         if self.solver.soft_start:
             logger.info("Soft start...")
@@ -1116,12 +1117,13 @@ class TurbigenConfig:
         self.get_mean_line_nominal()
         _log_ram("after mean-line nominal")
 
-        # Use the mean-line to adjust reference scales
+        self.get_geometry()
+
+        # Set reference scales using longest midspan chord (requires annulus)
         self.adjust_ref()
 
         logger.info(self.mean_line.nominal.to_string())
 
-        self.get_geometry()
         self.apply_recamber()
         _log_ram("after geometry")
 

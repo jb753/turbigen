@@ -17,8 +17,8 @@ def _build_grid(inputs):
         conf_dict["work_dir"] = tmp
         conf = turbigen.config.TurbigenConfig(**conf_dict)
         conf.get_mean_line_nominal()
-        conf.adjust_ref()
         conf.get_geometry()
+        conf.adjust_ref()
         conf.apply_recamber()
         mac = conf.get_machine()
         return inputs["mesh_cfg"].make_grid(

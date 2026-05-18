@@ -294,14 +294,18 @@ class MeanLine:
             station.set_L_ref(L_ref)
         return self
 
-    def adjust_ref(self):
+    def adjust_ref(self, L_ref):
         """Set fluid references and L_ref from the current design.
 
+        Parameters
+        ----------
+        L_ref : float
+            Reference length to use for non-dimensionalisation [m].
+
+        Returns
         -------
         fluid_ref : Fluid
             The new fluid object set on all blocks.
-        L_ref : float
-            The reference length set on all blocks.
         """
 
         rho_ref = self.rho.mean()
@@ -316,11 +320,10 @@ class MeanLine:
             Rgas_ref=Rgas_ref,
         ).change_datum(P_dtm=P_dtm, T_dtm=T_dtm)
 
-        L_ref = self.span.mean()
         self.set_L_ref(L_ref)
         self.set_fluid(fluid_ref)
 
-        return fluid_ref, L_ref
+        return fluid_ref
 
     @property
     def n_row(self):

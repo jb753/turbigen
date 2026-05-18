@@ -3,7 +3,8 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-work_dir: runs/*
+# work_dir: runs/*
+work_dir: turb2
 
 fluid:
   type: perfect
@@ -19,12 +20,12 @@ mean_line:
   type: axial_turbine
   n_row: 2
   # Duty
-  mdot: 500.
-  r_rms: 1.0
+  mdot: 1000.
+  r_rms: 2.0
   # Aerodynamics
   psi: 1.6
-  phi2: 0.6
-  Ma2: 0.7
+  phi2: 0.8
+  Ma2: 0.6
   fac_Ma3_rel: 1.0
   zeta: [1.0, 1.0]
   # Guess of loss
@@ -47,8 +48,8 @@ mesh:
   ni_cusp: 5
   ni_TE: 3
   dm_TE: 0.0
-  skew_max: 90.0
-  nchord_axial: 1
+  skew_max: 60.0
+  # nchord_axial: 4.0
 
 # Define one mid-span section in stator and rotor
 blades:
@@ -59,7 +60,7 @@ blades:
       camber: [[-8.0, 0., 0.0],
               [-8.0, 0., 0.0],
               [-8.0, 0., 0.0]]
-      vortex_expon: -0.6
+      vortex_expon: -1.0
     - spf: [0.2, 0.5, 0.8]
       thick: [[0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
               [0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
@@ -67,7 +68,7 @@ blades:
       camber: [[6.0, 0., 0.0],
               [6.0, 0., 0.0],
               [6.0, 0., 0.0]]
-      vortex_expon: -0.6
+      vortex_expon: -1.0
       tip: 0.01
 
 # Circulation coefficient to set blade loadings
@@ -78,39 +79,40 @@ nblade:
 # Configure the RANS solver
 solver:
   type: ember
-  fac_mgrid: 0.9
-  rf_mix: 0.3
-  # restrict_avg: true
-  # v_cycle: true
-
-  n_step: 2000
+  n_step: 4000
   n_step_avg: 500
-  # smooth2_adapt: 0.5
+  fac_mgrid: 1.0
+  delta_filt: 0.5
+  gain_filt: 8.0
+  rf_mix: 0.1
+  v_cycle: false
+  radial_equilibrium: true
+  cfl_bnd_max: 0.5
+  # debug: true
+  restrict_avg: false
+  deswirl: 5.0
+  sf4: 0.015625
 
 # # Configure iterative updates of the geometry
 fac_nstep_initial: 1.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:
+    relaxation_factor: 1.0
     tolerance:
-      Ys: 0.01
+      Ys: 0.001
   deviation:
+    # relaxation_factor: 0.0
   incidence:
-    relaxation_factor: 0.05
-    tolerance: 0.1
-    clip: 2.0
-
+    # relaxation_factor: 0.0
+    clip: 5.0
 
 design_space:
   independent:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [1.0, 2.4]
-  nsample_target: 9
-
-  # n_step: 2000
-  # n_step_avg: 1000
-  # smooth2_adapt: 0.5
+  nsample_target: 8
 
 job:
   type: local
