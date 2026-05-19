@@ -68,14 +68,19 @@ class Convergence(BasePost):
                 return y
             w = min(window, y.shape[0])
             kernel = np.ones(w)
-            # Normalize by the count of samples actually inside the window at
-            # each position, so the edges aren't biased toward zero.
-            norm = np.convolve(np.ones(y.shape[0]), kernel, mode="same")
+            n = y.shape[0]
+            # Trailing average: output[i] = mean(y[i-w+1 : i+1]).
+            # convolve(..., "full") has length n+w-1; taking [w-1 : n+w-1]
+            # gives the causal slice. Normalise by min(i+1, w) to handle the
+            # ramp-up at the start where fewer than w samples are available.
+            norm = np.minimum(np.arange(1, n + 1), w).astype(float)
             if y.ndim == 1:
-                return np.convolve(y, kernel, mode="same") / norm
+                return np.convolve(y, kernel, mode="full")[w - 1 : n + w - 1] / norm
             out = np.empty_like(y, dtype=float)
             for j in range(y.shape[1]):
-                out[:, j] = np.convolve(y[:, j], kernel, mode="same") / norm
+                out[:, j] = (
+                    np.convolve(y[:, j], kernel, mode="full")[w - 1 : n + w - 1] / norm
+                )
             return out
 
         # Page 1: Residual plot

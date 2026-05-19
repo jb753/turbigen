@@ -3,8 +3,8 @@
 # A repeating-stage axial turbine with two blade rows.
 
 # New working directory for each invocation
-work_dir: runs/*
-# work_dir: turb3
+# work_dir: runs/*
+work_dir: turb4
 
 fluid:
   type: perfect
@@ -76,25 +76,33 @@ nblade:
   - Co: 0.6
   - Co: 0.6
 
-# Configure the RANS solver
 solver:
-  type: ember
-  n_step: 1000
-  n_step_avg: 500
-  fac_mgrid: 0.8
-  delta_filt: 0.5
-  gain_filt: 10.0
-  rf_mix: 0.1
-  v_cycle: false
-  radial_equilibrium: true
   cfl_bnd_max: 0.5
-  # debug: true
-  restrict_avg: true
+  cfl_min: 0.1
+  convergence: null
+  debug: false
+  delta_filt: 0.5
   deswirl: 5.0
-  # i_level_stop: 0
+  fac_mgrid: 0.8
+  full_mgrid: true
+  gain_filt: 8.0
+  i_level_stop: 0
+  inviscid: false
+  n_step: 2000
+  n_step_avg: 1000
+  radial_equilibrium: true
+  restrict_avg: false
+  rf_mix: 0.1
+  sf2: 1.0
+  sf4: 0.01
+  soft_start: false
+  type: ember
+  v_cycle: false
+  workdir: null
+  outlet_extrap_blend: 1.0
 
 # # Configure iterative updates of the geometry
-fac_nstep_initial: 2.0
+fac_nstep_initial: 1.0
 iterate:
   # Make the mean-line loss match CFD
   mean_line:
@@ -112,7 +120,7 @@ design_space:
     mean_line:
       phi2: [0.4, 1.2]
       psi: [1.0, 2.4]
-  nsample_target: 8
+  nsample_target: 16
 
 job:
   type: local
