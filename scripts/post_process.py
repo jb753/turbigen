@@ -61,6 +61,11 @@ ax.plot(g[0].Vx[-1, 9], g[0].t[-1, 9], "-x")
 plt.show()
 
 fig, ax = plt.subplots()
+ax.set_title("i=ni, j=nj//2 To vs t")
+ax.plot(g[0].To[-9, -25], g[0].t[-9, -25], "-x")
+plt.show()
+
+fig, ax = plt.subplots()
 Max_mix = g[1].Ma[0, :, nk // 2].mean()
 ax.set_title(f"mixer Max = {Max_mix:.3f}")
 ax.plot(g[0].rhoVx[-1, :, nk // 2].T, g[0].r[-1, :, 0], "-x", label="upstream")
@@ -116,6 +121,7 @@ ax.set_ylabel("P")
 
 fig, ax = plt.subplots()
 ax.plot(Cjm.x[:, 0], Cjm.To[:, (0, -1)], "k-x")
+ax.plot(Cjm.x[:, 0], Cjm.To[:, (4, -4)], "r-o")
 # ii = (127, 132)
 # ax.plot(Cjm.x[ii[0], (0, 0)], Cjm.To[ii[0], (1, -2)], "r-o")
 # ax.plot(Cjm.x[ii[1], (0, 0)], Cjm.To[ii[1], (1, -2)], "b-^")
@@ -146,7 +152,7 @@ plt.show()
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
-jplot = -17 - 8
+jplot = g[0].nj // 2
 for bi in g:
     Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
@@ -167,6 +173,7 @@ for bi in g:
     ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
     ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.To, cmap="cubehelix")
 ax.axis("equal")
+ax.set_title("To")
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_ent = np.arange(0.0, 0.8, 0.1)

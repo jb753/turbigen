@@ -114,6 +114,7 @@ class Ember(BaseSolver):
             restrict_avg=self.restrict_avg,
             debug=self.debug,
             body_forces=body_forces,
+            cusp_f_body_mode="zero",
         )
 
         try:

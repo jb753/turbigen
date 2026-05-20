@@ -1,84 +1,225 @@
-# Axial turbine
-#
-# A repeating-stage axial turbine with two blade rows.
-
-# New working directory for each invocation
-# work_dir: runs/*
-work_dir: turb4
-
-fluid:
-  type: perfect
-  cp: 1100.
-  gamma: 1.33
-  mu: 6.0e-4
-
-# Set viscosity by vane Reynolds number
-# Re_surf: 5e5
-
-# Design variables for an axial turbine
-mean_line:
-  type: axial_turbine
-  n_row: 2
-  # Duty
-  mdot: 1000.
-  r_rms: 2.0
-  # Aerodynamics
-  psi: 1.6
-  phi2: 0.8
-  Ma2: 0.6
-  fac_Ma3_rel: 1.0
-  zeta: [1.0, 1.0]
-  # Guess of loss
-  Ys: [0.02, 0.05]
-  Po1: 16.0e5
-  To1: 1600.
-
-# Prescribe the dimensional chords
+---
+Re_surf: null
 annulus:
+  cx_gap:
+  - 0.1
+  - 0.06
+  - 0.2
+  cx_row:
+  - 0.1
+  - 0.1
   type: fixed_axial_chord
-  cx_gap: [0.1, 0.06, 0.2]
-  cx_row: [0.1, 0.1]
-
-# Coarse H-mesh
+basename: config.yaml
+blades:
+- camber:
+  - - -7.9999999999999964
+    - 0.0
+    - 0.0
+  - - -8.000000000000004
+    - 0.0
+    - 0.0
+  - - -8.0
+    - 0.0
+    - 0.0
+  camber_type: quadratic
+  mstack: 0.5
+  spf:
+  - 0.2
+  - 0.5
+  - 0.8
+  theta_offset: 0.0
+  thick:
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  thick_ref: chord
+  thick_type: taylor
+  tip: 0.0
+  tip_ref: span
+  vortex_expon: -1.0
+- camber:
+  - - 6.0000000000000036
+    - 0.0
+    - 0.0
+  - - 6.0
+    - 0.0
+    - 0.0
+  - - 6.0000000000000036
+    - 0.0
+    - 0.0
+  camber_type: quadratic
+  mstack: 0.5
+  spf:
+  - 0.2
+  - 0.5
+  - 0.8
+  theta_offset: 0.0
+  thick:
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.00
+    - 0.18
+  thick_ref: chord
+  thick_type: taylor
+  tip: 0.01
+  tip_ref: span
+  vortex_expon: -1.0
+converged: false
+cut_offset: 0.02
+fac_nstep_initial: 2.0
+iterate:
+  mean_line:
+    relaxation_factor: 0.5
+    tolerance:
+      Ys: 0.001
+  deviation:
+    # relaxation_factor: 1.0
+  incidence:
+    relaxation_factor: 0.1
+    clip: 5.0
+design_space:
+  independent:
+    mean_line:
+      phi2: [0.4, 1.2]
+      psi: [1.0, 2.4]
+  nsample_target: 32
+fluid:
+  P_dtm: 100000.0
+  Pr: 0.7
+  T_dtm: 300.0
+  V_ref: 1.0
+  cp: 1100.0
+  gamma: 1.33
+  mu: 0.0006
+  rgas_ref: 1.0
+  rho_ref: 1.0
+  type: perfect
+ignore_guess: false
+inlet: null
+job:
+  queue_file: /home/jb753/.turbigen/queue.txt
+  type: local
+max_iter: 20
+mean_line:
+  Ma2: 0.6
+  Po1: 1600000.0
+  To1: 1600.0
+  Ys:
+  - 0.02
+  - 0.05
+  fac_Ma3_rel: 1.0
+  mdot: 1000.0
+  n_row: 2
+  phi2: 1.1571297861706213
+  psi: 1.9388936625456612
+  r_rms: 2.0
+  type: axial_turbine
+  zeta:
+  - 1.0
+  - 1.0
+mean_line_actual:
+  Alpha1: -21.092058
+  Lam: 0.53578717
+  Ma2: 0.592177
+  Ma3_rel: 0.59046465
+  Omega: 117.827705
+  PR_ts: 1.4791338
+  PR_tt: 1.3259215
+  Po1: 1597235.9
+  To1: 1599.9966
+  Ys:
+  - 0.021918173879384995
+  - 0.0703965574502945
+  eta_ts: 0.6126777529716492
+  eta_tt: 0.8388617634773254
+  fac_Ma3_rel: 0.98544705
+  htr2: 0.9603619
+  mdot: 1024.7942
+  phi2: 1.1866044
+  psi: 1.7972744
+  r_rms: 2.0
+  zeta:
+  - 1.0056836605072021
+  - 1.0174018144607544
 mesh:
+  AR_cusp: 0.0
+  AR_merid: 1.0
+  AR_passage: 1.0
+  AR_stream: 2.0
+  ER_pitch: 1.2
+  ER_span: 1.2
+  ER_stream: 1.2
+  dm_LE: 0.001
+  dm_TE: 0.0
+  dspf_mid: 0.03
+  gap_contraction: 0.6
+  meshdir: mesh
+  nchord_axial: 0.0
+  nchord_relax: 1.0
+  ni_TE: 3
+  ni_cusp: 0
+  plot: false
+  recluster: false
+  resolution_factor: 1.0
+  skew_max: 60.0
+  slip_annulus: false
+  slip_cusp: false
   type: h
   yplus: 30.0
-  # plot: true
-  AR_cusp: 2.0
-  ni_cusp: 5
-  ni_TE: 3
-  dm_TE: 0.0
-  skew_max: 60.0
-  # nchord_axial: 4.0
-
-# Define one mid-span section in stator and rotor
-blades:
-    - spf: [0.2, 0.5, 0.8]
-      thick: [[0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
-              [0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
-              [0.04, 0.12, 0.35, 0.0, 0.02, 0.18]]
-      camber: [[-8.0, 0., 0.0],
-              [-8.0, 0., 0.0],
-              [-8.0, 0., 0.0]]
-      vortex_expon: -1.0
-    - spf: [0.2, 0.5, 0.8]
-      thick: [[0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
-              [0.04, 0.12, 0.35, 0.0, 0.02, 0.18],
-              [0.04, 0.12, 0.35, 0.0, 0.02, 0.18]]
-      camber: [[6.0, 0., 0.0],
-              [6.0, 0., 0.0],
-              [6.0, 0., 0.0]]
-      vortex_expon: -1.0
-      tip: 0.01
-
-# Circulation coefficient to set blade loadings
+metadata_file: null
+mixed_out_flowfield: null
 nblade:
-  - Co: 0.6
-  - Co: 0.6
-
+- Co: 0.6
+  spf: 0.5
+- Co: 0.6
+  spf: 0.5
+operating_point: null
+plug_dir: null
+post_3d: {}
+post_process:
+- type: metadata
+- m_cut: []
+  show_axis: false
+  show_blades: true
+  type: annulus
+- type: convergence
+- offset: 0
+  spf: {}
+  type: surface_distribution
+  variable: Mas
+save_iteration_grids: false
 solver:
   cfl_bnd_max: 0.5
-  cfl_min: 0.1
+  cfl_min: 0.2
   convergence: null
   debug: false
   delta_filt: 0.5
@@ -90,65 +231,15 @@ solver:
   inviscid: false
   n_step: 2000
   n_step_avg: 1000
+  outlet_extrap_blend: 1.0
   radial_equilibrium: true
   restrict_avg: false
-  rf_mix: 0.1
+  rf_mix: 0.05
   sf2: 1.0
   sf4: 0.01
   soft_start: false
   type: ember
   v_cycle: false
   workdir: null
-  outlet_extrap_blend: 1.0
-
-# # Configure iterative updates of the geometry
-fac_nstep_initial: 1.0
-iterate:
-  # Make the mean-line loss match CFD
-  mean_line:
-    relaxation_factor: 1.0
-    tolerance:
-      Ys: 0.001
-  deviation:
-    # relaxation_factor: 0.0
-  incidence:
-    # relaxation_factor: 0.0
-    clip: 5.0
-
-design_space:
-  independent:
-    mean_line:
-      phi2: [0.4, 1.2]
-      psi: [1.0, 2.4]
-  nsample_target: 16
-
-job:
-  type: local
-
-# # Additional plots to produce
-# post_process:
-#   # Loss at stator and rotor exits
-#   # Non-dimensional meridional coordinate m is defined:
-#   #   m=0 at inlet
-#   #   m=1 at stator LE
-#   #   m=2 at stator TE,
-#   #   m=3 at rotor LE
-#   #   m=4 at rotor TE
-#   #   m=5 at exit
-#   - type: contour
-#     coord: m
-#     value: [2.48, 2.52]
-#     variable: Alpha
-#   - type: contour
-#     coord: m
-#     value: [2.48, 2.52]
-#     variable: Cho
-#   - type: contour
-#     coord: m
-#     value: [2.48, 2.52]
-#     variable: Ys
-#   # Mid-span Mach
-#   - type: contour
-#     coord: spf
-#     value: 0.5
-#     variable: Ma_rel
+work_dir: /home/jb753/python/turbigen-dev/turb7
+...
