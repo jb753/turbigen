@@ -35,7 +35,23 @@ ax.plot(x, rVt / rVt[0], "-x", label="mass")
 ax.set_ylim(bottom=0)
 ax.axhline(0.0)
 ax.set_ylim(bottom=-0.5)
-plt.show()
+
+b = g[0]
+ni, nj, nk = b.shape
+C = b[:-1, nj // 2, :-1]
+
+fig, ax = plt.subplots()
+
+# lev = np.arange(0.0, 4.0, 0.1)
+# cm = ax.contourf(C.x, C.rt, b.working.cfl[:, b.nj // 2, :, 3], cmap="cubehelix")
+# plt.colorbar(cm)
+# # ax.plot(C.rt[-9, :], b.working.cfl[-9, b.nj // 2, :, -1])
+# # fig, ax = plt.subplots()
+# # ax.plot(C.rt[-9, :], C.V[-9, :])
+# plt.show()
+# quit()
+
+
 # quit()
 
 

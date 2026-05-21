@@ -40,6 +40,7 @@ class Ember(BaseSolver):
     sf2: float = 1.0
     sf4: float = 0.01
     deswirl: float = 0.0
+    cfl_max: float = 4.0
 
     def robust(self):
         """Change settings for a more stable simulation."""
@@ -94,7 +95,7 @@ class Ember(BaseSolver):
             n_step_avg=self.n_step_avg,
             n_step_log=50,
             n_levels=4,
-            # cfl_max=1.0,
+            cfl_max=self.cfl_max,
             cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=self.cfl_min,
             rf_mix=self.rf_mix,
@@ -114,7 +115,7 @@ class Ember(BaseSolver):
             restrict_avg=self.restrict_avg,
             debug=self.debug,
             body_forces=body_forces,
-            cusp_f_body_mode="zero",
+            cusp_f_body_mode="avg_per_vol",
         )
 
         try:
