@@ -13,6 +13,9 @@ import sys
 fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
 
+print(g.patches.outlet[0]._adjustment)
+# quit()
+
 
 # Mass flow plot
 x = []
@@ -42,13 +45,13 @@ C = b[:-1, nj // 2, :-1]
 
 fig, ax = plt.subplots()
 
-# lev = np.arange(0.0, 4.0, 0.1)
-# cm = ax.contourf(C.x, C.rt, b.working.cfl[:, b.nj // 2, :, 3], cmap="cubehelix")
-# plt.colorbar(cm)
+lev = np.arange(0.0, 4.0, 0.1)
+cm = ax.contourf(C.x, C.rt, b.working.cfl[:, b.nj // 2, :, 3], cmap="cubehelix")
+plt.colorbar(cm)
 # # ax.plot(C.rt[-9, :], b.working.cfl[-9, b.nj // 2, :, -1])
 # # fig, ax = plt.subplots()
 # # ax.plot(C.rt[-9, :], C.V[-9, :])
-# plt.show()
+plt.show()
 # quit()
 
 

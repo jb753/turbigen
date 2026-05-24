@@ -102,9 +102,10 @@ class H(turbigen.mesh.Mesher):
 
     skew_max: float = 45.0
 
-    nchord_axial: float = 0.0
-    """Number of chords over which skew blends to axial at inlet/exit boundaries.
-    Zero means constant skew (old behaviour)."""
+    deswirl: bool = False
+    """If True, blend skew to axial over the outer 50% of the downstream gap
+    of the last row (fully skewed at TE, fully axial at the domain exit).
+    Only affects the downstream side of the final row."""
 
     slip_annulus: bool = False
 
@@ -139,7 +140,7 @@ class H(turbigen.mesh.Mesher):
                 mac, irow, geom, dspf_hub, dspf_casing, tip_ref, nrow
             )
             _log_ram(f"row{irow} after 1d grids")
-            coords = self._row_coords(mac, irow, geom, grids, dsurf, tip_ref)
+            coords = self._row_coords(mac, irow, geom, grids, dsurf, tip_ref, nrow)
             _log_ram(f"row{irow} after coords")
             blk, ile, icusp = self._row_block(mac, irow, geom, grids, coords, nrow)
             _log_ram(f"row{irow} after block")
@@ -291,7 +292,7 @@ class H(turbigen.mesh.Mesher):
             L=L,
         )
 
-    def _row_coords(self, mac, irow, geom, grids, dsurf, tip_ref):
+    def _row_coords(self, mac, irow, geom, grids, dsurf, tip_ref, nrow):
         """Build 2-D xr, theta_lim and 3-D pitch_frac_relax for a row."""
         ni, nj, nk = grids.ni, grids.nj, grids.nk
         span_frac = grids.span_frac
@@ -378,7 +379,7 @@ class H(turbigen.mesh.Mesher):
                     (0, -1),
                 ],
                 Theta_max=self.skew_max,
-                nchord_axial=self.nchord_axial,
+                deswirl_dn=self.deswirl and (irow == nrow - 1),
             )[:2]
 
         # 4. Cusp insertion and tip pinching
@@ -784,7 +785,7 @@ def _theta_limits(
     Theta=(0.0, 0.0),
     c=(1.0, 1.0),
     Theta_max=30.0,
-    nchord_axial=0.0,
+    deswirl_dn=False,
 ):
     """Evaluate pitchwise limits given upper/lower surface section coordinates."""
 
@@ -884,22 +885,21 @@ def _theta_limits(
     tanTheta = np.tan(np.radians(Theta_now))
     if ind_up.any():
         tq_up = tq[ind_up]
-        if nchord_axial > 0.0:
-            # Distance from LE, normalised by blend length; clamp to [0,1]
-            dist_norm = (mlim[0] - tq_up) / (nchord_axial * c[0])
-            blend = np.clip(1.0 - dist_norm, 0.0, 1.0)
-        else:
-            blend = np.ones_like(tq_up)
+        blend = np.ones_like(tq_up)
         dtheta_skew[ind_up] = (
             tanTheta[0] * c[0] * util.cumtrapz0(blend / rref[ind_up], tq_up)
         )
         dtheta_skew[ind_up] -= dtheta_skew[ind_up][-1]
     if ind_dn.any():
         tq_dn = tq[ind_dn]
-        if nchord_axial > 0.0:
-            # Distance from TE, normalised by blend length; clamp to [0,1]
-            dist_norm = (tq_dn - mlim[1]) / (nchord_axial * c[1])
-            blend = np.clip(1.0 - dist_norm, 0.0, 1.0)
+        if deswirl_dn:
+            # Blend skew->axial over the outer 50% of the downstream gap.
+            # Fully skewed (blend=1) from TE up to halfway across the gap,
+            # then linearly ramp to 0 (axial) at the domain exit.
+            m_exit = tq_dn[-1]
+            gap = m_exit - mlim[1]
+            dist_norm = (tq_dn - mlim[1]) / (0.5 * gap)
+            blend = np.clip(1.0 - (dist_norm - 1.0), 0.0, 1.0)
         else:
             blend = np.ones_like(tq_dn)
         dtheta_skew[ind_dn] = (

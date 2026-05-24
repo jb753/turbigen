@@ -35,6 +35,7 @@ class Ember(BaseSolver):
     restrict_avg: bool = False
     radial_equilibrium: bool = True
     cfl_bnd_max: float = 0.5
+    cfl_bnd_min: float = 0.0
     cfl_min: float = 0.1
     debug: bool = False
     sf2: float = 1.0
@@ -62,7 +63,7 @@ class Ember(BaseSolver):
 
         if self.radial_equilibrium:
             for patch in grid.patches.outlet:
-                patch.set_adjustment(K_dyn=1.0, radial_equilibrium=True, rf=0.01)
+                patch.set_adjustment(K_dyn=2.0, radial_equilibrium=True, rf=0.01)
 
         body_forces = ()
         if self.deswirl > 0.0:
@@ -96,13 +97,14 @@ class Ember(BaseSolver):
             n_step_log=50,
             n_levels=4,
             cfl_max=self.cfl_max,
+            cfl_bnd_min=self.cfl_bnd_min,
             cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=self.cfl_min,
             rf_mix=self.rf_mix,
             outlet_extrap_blend=self.outlet_extrap_blend,
             xllim=xllim,
             full_mgrid=self.full_mgrid,
-            fac_restart=1.0,
+            fac_restart=0.5,
             fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
             inviscid=self.inviscid,
@@ -115,7 +117,6 @@ class Ember(BaseSolver):
             restrict_avg=self.restrict_avg,
             debug=self.debug,
             body_forces=body_forces,
-            cusp_f_body_mode="avg_per_vol",
         )
 
         try:
