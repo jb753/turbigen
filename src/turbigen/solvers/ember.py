@@ -26,7 +26,6 @@ class Ember(BaseSolver):
     full_mgrid: bool = True
     i_level_stop: int = 0
     rf_mix: float = 0.05
-    outlet_extrap_blend: float = 1.0
     delta_filt: float = 1.0
     gain_filt: float = 20.0
     fac_mgrid: float = 0.8
@@ -74,7 +73,7 @@ class Ember(BaseSolver):
             xr_arr = machine.ann.evaluate_xr(m_grid, spf_grid)
             xr = np.stack([xr_arr[0].ravel(), xr_arr[1].ravel()], axis=-1)
             gain = (self.deswirl * (m_grid - (mmax - 0.5)) / 0.5).ravel()
-            bf = ember.body_force.DeswirlBodyForce(grid, xr=xr, gain=gain)
+            bf = ember.body_force.DeswirlBodyForce(grid, xr=xr, gain=gain, k_mult=0.5)
             body_forces = (bf,)
         # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
 
@@ -101,10 +100,9 @@ class Ember(BaseSolver):
             cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=self.cfl_min,
             rf_mix=self.rf_mix,
-            outlet_extrap_blend=self.outlet_extrap_blend,
             xllim=xllim,
             full_mgrid=self.full_mgrid,
-            fac_restart=0.5,
+            fac_restart=0.25,
             fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
             inviscid=self.inviscid,

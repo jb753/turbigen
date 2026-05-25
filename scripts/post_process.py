@@ -172,6 +172,7 @@ plt.show()
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
 jplot = g[0].nj // 2
+jplot = -9
 for bi in g:
     Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")
