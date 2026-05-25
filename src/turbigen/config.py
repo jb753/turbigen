@@ -1074,7 +1074,7 @@ class TurbigenConfig:
             np.array([row.mu for row in row_ref])
             / np.array([row.rho for row in row_ref])
             / Vtau
-        )
+        ) * 2.0  # 'Not a flat plate' fudge factor
         logger.debug(f"Viscous length scales: {Lvisc}")
         logger.debug(f"yplus setting: {self.mesh.yplus}")
 

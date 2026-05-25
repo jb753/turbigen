@@ -144,13 +144,18 @@ class AnnulusDesigner(util.BaseDesigner):
 
     def to_string(self):
         """Tabular string representation of annulus geometry at row stations."""
+        cx_row = self.chords(0.5)[1::2]
+        span_stations = self.r_tip - self.r_hub
+        span_row = 0.5 * (span_stations[::2] + span_stations[1::2])
+        AR_row = span_row / cx_row
         properties = [
             ("r_rms/m", self.r_rms, ".4f"),
             ("r_hub/m", self.r_hub, ".4f"),
             ("r_tip/m", self.r_tip, ".4f"),
             ("Am/m2", self.Am, ".4f"),
             ("htr", self.htr, ".4f"),
-            ("cx/m", self.chords(0.5)[1::2], ".4f"),
+            ("cx/m", cx_row, ".4f"),
+            ("AR", AR_row, ".4f"),
         ]
         return util.format_table("Annulus:", self.nrow, properties)
 
