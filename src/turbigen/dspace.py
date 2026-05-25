@@ -281,6 +281,11 @@ class DesignSpace:
     frac_test: float = 0.2
     """Fraction of samples to use for fit error testing."""
 
+    nsample_min_interp: int = 8
+    """Minimum number of converged samples required to interpolate initial
+    iterator values from the fitted design space. Below this threshold, the
+    guess from the input config is used instead."""
+
     def __post_init__(self):
         if self.nsample_target < 0:
             raise ValueError(f"nsample_target must be >= 0, got {self.nsample_target}")

@@ -11,7 +11,6 @@ from pathlib import Path
 import shutil
 import sys
 import os
-import numpy as np
 import turbigen.config
 import turbigen.viewer
 import datetime
@@ -206,8 +205,19 @@ def cmd_run(args):
         basedir = conf.work_dir
 
         if conf.design_space and conf.design_space.configs:
-            logger.info("Initialising iterators with fitted design space.")
-            conf.interpolate_all_iterators()
+            nsamp = conf.design_space.nsample
+            nmin = conf.design_space.nsample_min_interp
+            if nsamp >= nmin:
+                logger.info(
+                    f"Initialising iterators with fitted design space "
+                    f"({nsamp} converged samples)."
+                )
+                conf.interpolate_all_iterators()
+            else:
+                logger.warning(
+                    f"Only {nsamp} converged samples (< {nmin}); "
+                    f"using initial guess from input config."
+                )
 
         logger.warning(f"Iterating for max {conf.max_iter} iterations...")
         logger.warning("Status: ✓ = within tol, ✗ = not yet converged")
@@ -300,8 +310,19 @@ def cmd_run(args):
         basedir = conf.work_dir
 
         if conf.design_space and conf.design_space.configs:
-            logger.info("Initialising iterators with fitted design space.")
-            conf.interpolate_all_iterators()
+            nsamp = conf.design_space.nsample
+            nmin = conf.design_space.nsample_min_interp
+            if nsamp >= nmin:
+                logger.info(
+                    f"Initialising iterators with fitted design space "
+                    f"({nsamp} converged samples)."
+                )
+                conf.interpolate_all_iterators()
+            else:
+                logger.warning(
+                    f"Only {nsamp} converged samples (< {nmin}); "
+                    f"using initial guess from input config."
+                )
 
         logger.warning(f"Iterating for max {conf.max_iter} iterations...")
         logger.warning("Status: ✓ = within tol, ✗ = not yet converged")
@@ -493,6 +514,7 @@ def format_iter_log(log_data, tol=None, header=False):
     # when present, since the displayed value may be the absolute CFD reading
     # rather than the convergence error. Falls back to the displayed value
     # for iterators (Inc/Dev) where the value itself is the error.
+
     def _status_value(k):
         ek = "E" + k
         if ek in log_data:
