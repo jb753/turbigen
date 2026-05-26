@@ -39,6 +39,8 @@ class Ember(BaseSolver):
     debug: bool = False
     sf2: float = 1.0
     sf4: float = 0.01
+    sf_mix: float = 0.1
+    sf_outlet: float = 0.1
     deswirl: float = 0.0
     cfl_max: float = 4.0
 
