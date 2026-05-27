@@ -471,7 +471,7 @@ class H(turbigen.mesh.Mesher):
         # Periodic patches and cusp indices
         if self.ni_cusp:
             icusp = ite + self.ni_cusp - 1
-            ite -= 1
+            # ite -= 1
         else:
             icusp = ite
         assert ile % 8 == 0, f"upstream periodic span ile={ile} not a multiple of 8"

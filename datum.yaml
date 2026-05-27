@@ -15,13 +15,13 @@ blades:
 - camber:
   - - -7.9999999999999964
     - 0.0
-    - 0.1
+    - 0.2
   - - -8.000000000000004
     - 0.0
-    - 0.1
+    - 0.2
   - - -8.0
     - 0.0
-    - 0.1
+    - 0.2
   camber_type: quadratic
   mstack: 0.5
   spf:
@@ -56,13 +56,13 @@ blades:
 - camber:
   - - 6.0000000000000036
     - 0.0
-    - 0.1
+    - 0.2
   - - 6.0
     - 0.0
-    - 0.1
+    - 0.2
   - - 6.0000000000000036
     - 0.0
-    - 0.1
+    - 0.2
   camber_type: quadratic
   mstack: 0.5
   spf:
@@ -225,12 +225,12 @@ solver:
   debug: false
   delta_filt: 0.5
   deswirl: 8.0
-  fac_mgrid: 0.8
+  fac_mgrid: 0.0
   full_mgrid: true
   gain_filt: 8.0
   i_level_stop: 0
   inviscid: false
-  n_step: 1500
+  n_step: 2500
   n_step_avg: 500
   radial_equilibrium: false
   restrict_avg: false
@@ -241,7 +241,7 @@ solver:
   type: ember
   v_cycle: false
   workdir: null
-  sf_cusp: 1.0
+  sf_cusp: 0.0
 # work_dir: /home/jb753/python/turbigen-dev/turb10
-work_dir: /home/jb753/python/turbigen-dev/runs/*
+work_dir: runs/*
 ...
