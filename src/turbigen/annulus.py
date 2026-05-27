@@ -15,12 +15,19 @@ To make a new annulus, subclass the BaseAnnulus and implement:
 from turbigen import util
 from turbigen.geometry import MeridionalLine
 from scipy.optimize import minimize, root_scalar
+from scipy.interpolate import PchipInterpolator
 import scipy.interpolate
 from abc import abstractmethod
 
 import numpy as np
 
 logger = logging.getLogger("turbigen")
+
+
+def _seg_avg(arr):
+    """Average a (2*nrow,) per-station array to (2*nrow+1,) segment values."""
+    inner = 0.5 * (arr[:-1] + arr[1:])
+    return np.concatenate([[arr[0]], inner, [arr[-1]]])
 
 
 class AnnulusDesigner(util.BaseDesigner):
@@ -709,6 +716,310 @@ class Smooth(AnnulusDesigner):
             return f"FixedAR(nrow={self.nrow}, x={xr_mid[0]}, r={xr_mid[1]}, AR={span / cm}, span={span}, cm={cm})"
         except Exception:
             return "FixedAR()"
+
+
+class Merged(AnnulusDesigner):
+    """Smooth annulus using PCHIP through analytically-placed control points.
+
+    Control points (hub and casing at every gap/row interface) are placed
+    from AR_chord and AR_gap targets, then connected by PCHIP curves fit in
+    true arc-length space via fixed-point iteration.
+
+    `merge_weight` in [0, 1] blends between two PCHIP fits:
+      0 - knots at every station; curvature is confined to gaps.
+      1 - only four knots (inlet, first LE, last TE, outlet); curvature
+          spreads continuously across rows.
+    """
+
+    def forward(
+        self,
+        rmid,
+        span,
+        Beta,
+        AR_chord,
+        AR_gap,
+        nozzle_ratio=1.0,
+        merge_weight=0.0,
+    ):
+        npt = len(rmid)
+        nrow = npt // 2
+        util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
+        util.check_vector((nrow,), AR_chord=AR_chord)
+        util.check_vector((nrow + 1,), AR_gap=AR_gap)
+        util.check_scalar(nozzle_ratio=nozzle_ratio, merge_weight=merge_weight)
+        if not 0.0 <= merge_weight <= 1.0:
+            raise ValueError(f"merge_weight={merge_weight} must lie in [0, 1].")
+
+        self.rmid = np.asarray(rmid, dtype=float).reshape(npt)
+        self.span = np.asarray(span, dtype=float).reshape(npt)
+        self.Beta = np.asarray(Beta, dtype=float).reshape(npt)
+        self.AR_chord = np.asarray(AR_chord, dtype=float).reshape(nrow)
+        self.AR_gap = np.asarray(AR_gap, dtype=float).reshape(nrow + 1)
+        self.nozzle_ratio = float(nozzle_ratio)
+        self.merge_weight = float(merge_weight)
+
+        nseg = 2 * nrow + 1
+
+        # Interleave AR across all segments (even=gaps, odd=rows)
+        AR = np.empty(nseg)
+        AR[::2] = self.AR_gap
+        AR[1::2] = self.AR_chord
+
+        # Segment-averaged span and pitch angle
+        span_avg = _seg_avg(self.span)
+        Beta_avg = _seg_avg(self.Beta)
+        cosBeta_avg = np.cos(np.radians(Beta_avg))
+
+        # Meridional chord and axial length per segment
+        Ds = span_avg / AR
+        Dx = Ds * cosBeta_avg
+
+        # Integrate to get mid-span x-coordinates of control points
+        xmid = util.cumsum0(Dx)
+        xmid -= xmid[1]  # origin at first row LE
+
+        # Edge-pad station arrays to get (nseg+1,) control points
+        span_ext = np.pad(self.span, 1, "edge")
+        Beta_ext = np.pad(self.Beta, 1, "edge")
+        rmid_ext = np.pad(self.rmid, 1, "edge")
+
+        # Overwrite inlet/exit with duct extensions at constant Beta
+        sinBeta0, sinBeta1 = np.sin(np.radians(self.Beta[[0, -1]]))
+        rmid_ext[0] = rmid_ext[1] - Ds[0] * sinBeta0
+        rmid_ext[-1] = rmid_ext[-2] + Ds[-1] * sinBeta1
+
+        # Scale exit span for nozzle area ratio
+        radius_ratio = rmid_ext[-2] / rmid_ext[-1]
+        span_ext[-1] *= self.nozzle_ratio * radius_ratio
+
+        # Hub and casing control point coordinates
+        sinB = np.sin(np.radians(Beta_ext))
+        cosB = np.cos(np.radians(Beta_ext))
+        xhub = xmid + 0.5 * span_ext * sinB
+        rhub = rmid_ext - 0.5 * span_ext * cosB
+        xcas = xmid - 0.5 * span_ext * sinB
+        rcas = rmid_ext + 0.5 * span_ext * cosB
+
+        # Full PCHIP through all nseg+1 control points
+        self._s, (
+            self._pchip_xhub,
+            self._pchip_rhub,
+            self._pchip_xcas,
+            self._pchip_rcas,
+        ) = self._fit_pchips(util.cumsum0(Ds), xhub, rhub, xcas, rcas, Ds)
+
+        # Reduced PCHIP: four knots at [inlet, first row LE, last row TE, outlet].
+        # Curvature is free to spread continuously across the rows because there
+        # are no equal-radius interior knots pinning slopes to zero.
+        if self.merge_weight > 0.0:
+            idx_r = np.array([0, 1, nseg - 1, nseg])
+            s_init_r = util.cumsum0(Ds)[idx_r]
+            _, pchips_r = self._fit_pchips(
+                s_init_r,
+                xhub[idx_r],
+                rhub[idx_r],
+                xcas[idx_r],
+                rcas[idx_r],
+                np.diff(s_init_r),
+            )
+            (
+                self._pchip_xhub_r,
+                self._pchip_rhub_r,
+                self._pchip_xcas_r,
+                self._pchip_rcas_r,
+            ) = pchips_r
+        else:
+            self._pchip_xhub_r = self._pchip_xhub
+            self._pchip_rhub_r = self._pchip_rhub
+            self._pchip_xcas_r = self._pchip_xcas
+            self._pchip_rcas_r = self._pchip_rcas
+
+    @staticmethod
+    def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target):
+        """Arc-length-iterate PCHIPs through the given control points."""
+        s = np.asarray(s_init, dtype=float).copy()
+        nseg = len(s) - 1
+        err = np.inf
+        pchip_xhub = pchip_rhub = pchip_xcas = pchip_rcas = None
+        for _ in range(20):
+            pchip_xhub = PchipInterpolator(s, xhub)
+            pchip_rhub = PchipInterpolator(s, rhub)
+            pchip_xcas = PchipInterpolator(s, xcas)
+            pchip_rcas = PchipInterpolator(s, rcas)
+
+            Ds_actual = np.empty(nseg)
+            for k in range(nseg):
+                sq = np.linspace(s[k], s[k + 1], 50)
+                xm = 0.5 * (pchip_xhub(sq) + pchip_xcas(sq))
+                rm = 0.5 * (pchip_rhub(sq) + pchip_rcas(sq))
+                Ds_actual[k] = util.arc_length(np.stack([xm, rm]))
+
+            Ds_norm = Ds_actual / Ds_actual.sum() * np.asarray(Ds_target).sum()
+            s_new = util.cumsum0(Ds_norm)
+            err = np.max(np.abs(s_new - s)) / s[-1]
+            s = s_new
+            if err < 1e-6:
+                break
+
+        if err >= 1e-6:
+            raise RuntimeError(
+                f"Annulus arc-length iteration failed to converge: err={err:.2e}"
+            )
+
+        return s, (pchip_xhub, pchip_rhub, pchip_xcas, pchip_rcas)
+
+    @property
+    def nrow(self):
+        return self.rmid.size // 2
+
+    def evaluate_xr(self, m, spf):
+        mb, spfb = np.broadcast_arrays(
+            np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
+        )
+        sq = np.interp(mb, np.arange(len(self._s)), self._s)
+
+        w = self.merge_weight
+        if w == 0.0:
+            xhub = self._pchip_xhub(sq)
+            rhub = self._pchip_rhub(sq)
+            xcas = self._pchip_xcas(sq)
+            rcas = self._pchip_rcas(sq)
+        elif w == 1.0:
+            xhub = self._pchip_xhub_r(sq)
+            rhub = self._pchip_rhub_r(sq)
+            xcas = self._pchip_xcas_r(sq)
+            rcas = self._pchip_rcas_r(sq)
+        else:
+            xhub = (1.0 - w) * self._pchip_xhub(sq) + w * self._pchip_xhub_r(sq)
+            rhub = (1.0 - w) * self._pchip_rhub(sq) + w * self._pchip_rhub_r(sq)
+            xcas = (1.0 - w) * self._pchip_xcas(sq) + w * self._pchip_xcas_r(sq)
+            rcas = (1.0 - w) * self._pchip_rcas(sq) + w * self._pchip_rcas_r(sq)
+
+        x = (1.0 - spfb) * xhub + spfb * xcas
+        r = (1.0 - spfb) * rhub + spfb * rcas
+        return np.stack([x, r])
+
+    def __repr__(self):
+        return f"Merged(nrow={self.nrow}, merge_weight={self.merge_weight})"
+
+
+class MergedFixedAxialChord(AnnulusDesigner):
+    """Smooth annulus with prescribed axial chords for each row and gap.
+
+    Like `Merged`, but control-point spacing comes from explicit axial
+    chord inputs (`cx_row`, `cx_gap`) instead of AR targets. The PCHIP
+    fitting and `merge_weight` blending are identical.
+    """
+
+    def forward(
+        self,
+        rmid,
+        span,
+        Beta,
+        cx_row,
+        cx_gap,
+        nozzle_ratio=1.0,
+        merge_weight=0.0,
+    ):
+        npt = len(rmid)
+        nrow = npt // 2
+        util.check_vector((npt,), rmid=rmid, span=span, Beta=Beta)
+        util.check_vector((nrow,), cx_row=cx_row)
+        util.check_vector((nrow + 1,), cx_gap=cx_gap)
+        util.check_scalar(nozzle_ratio=nozzle_ratio, merge_weight=merge_weight)
+        if not 0.0 <= merge_weight <= 1.0:
+            raise ValueError(f"merge_weight={merge_weight} must lie in [0, 1].")
+
+        self.rmid = np.asarray(rmid, dtype=float).reshape(npt)
+        self.span = np.asarray(span, dtype=float).reshape(npt)
+        self.Beta = np.asarray(Beta, dtype=float).reshape(npt)
+        self.cx_row = np.asarray(cx_row, dtype=float).reshape(nrow)
+        self.cx_gap = np.asarray(cx_gap, dtype=float).reshape(nrow + 1)
+        self.nozzle_ratio = float(nozzle_ratio)
+        self.merge_weight = float(merge_weight)
+
+        nseg = 2 * nrow + 1
+
+        # Interleave axial chords across all segments (even=gaps, odd=rows)
+        Dx = np.empty(nseg)
+        Dx[::2] = self.cx_gap
+        Dx[1::2] = self.cx_row
+
+        # Convert to meridional arc-length per segment using avg pitch angle
+        Beta_avg = _seg_avg(self.Beta)
+        cosBeta_avg = np.cos(np.radians(Beta_avg))
+        Ds = Dx / cosBeta_avg
+
+        # Integrate to get mid-span x-coordinates of control points
+        xmid = util.cumsum0(Dx)
+        xmid -= xmid[1]  # origin at first row LE
+
+        # Edge-pad station arrays to get (nseg+1,) control points
+        span_ext = np.pad(self.span, 1, "edge")
+        Beta_ext = np.pad(self.Beta, 1, "edge")
+        rmid_ext = np.pad(self.rmid, 1, "edge")
+
+        # Overwrite inlet/exit with duct extensions at constant Beta
+        sinBeta0, sinBeta1 = np.sin(np.radians(self.Beta[[0, -1]]))
+        rmid_ext[0] = rmid_ext[1] - Ds[0] * sinBeta0
+        rmid_ext[-1] = rmid_ext[-2] + Ds[-1] * sinBeta1
+
+        # Scale exit span for nozzle area ratio
+        radius_ratio = rmid_ext[-2] / rmid_ext[-1]
+        span_ext[-1] *= self.nozzle_ratio * radius_ratio
+
+        # Hub and casing control point coordinates
+        sinB = np.sin(np.radians(Beta_ext))
+        cosB = np.cos(np.radians(Beta_ext))
+        xhub = xmid + 0.5 * span_ext * sinB
+        rhub = rmid_ext - 0.5 * span_ext * cosB
+        xcas = xmid - 0.5 * span_ext * sinB
+        rcas = rmid_ext + 0.5 * span_ext * cosB
+
+        # Full PCHIP through all nseg+1 control points
+        self._s, (
+            self._pchip_xhub,
+            self._pchip_rhub,
+            self._pchip_xcas,
+            self._pchip_rcas,
+        ) = Merged._fit_pchips(util.cumsum0(Ds), xhub, rhub, xcas, rcas, Ds)
+
+        # Reduced PCHIP for curvature smoothing across rows
+        if self.merge_weight > 0.0:
+            idx_r = np.array([0, 1, nseg - 1, nseg])
+            s_init_r = util.cumsum0(Ds)[idx_r]
+            _, pchips_r = Merged._fit_pchips(
+                s_init_r,
+                xhub[idx_r],
+                rhub[idx_r],
+                xcas[idx_r],
+                rcas[idx_r],
+                np.diff(s_init_r),
+            )
+            (
+                self._pchip_xhub_r,
+                self._pchip_rhub_r,
+                self._pchip_xcas_r,
+                self._pchip_rcas_r,
+            ) = pchips_r
+        else:
+            self._pchip_xhub_r = self._pchip_xhub
+            self._pchip_rhub_r = self._pchip_rhub
+            self._pchip_xcas_r = self._pchip_xcas
+            self._pchip_rcas_r = self._pchip_rcas
+
+    @property
+    def nrow(self):
+        return self.rmid.size // 2
+
+    # Reuse Merged.evaluate_xr by aliasing
+    evaluate_xr = Merged.evaluate_xr
+
+    def __repr__(self):
+        return (
+            f"MergedFixedAxialChord(nrow={self.nrow}, "
+            f"merge_weight={self.merge_weight})"
+        )
 
 
 #

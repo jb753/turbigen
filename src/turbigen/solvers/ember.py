@@ -27,6 +27,7 @@ class Ember(BaseSolver):
     i_level_stop: int = 0
     rf_mix: float = 0.05
     delta_filt: float = 1.0
+    sf_cusp: float = 0.0
     gain_filt: float = 20.0
     fac_mgrid: float = 0.8
     inviscid: bool = False
@@ -117,6 +118,7 @@ class Ember(BaseSolver):
             restrict_avg=self.restrict_avg,
             debug=self.debug,
             body_forces=body_forces,
+            sf_cusp=self.sf_cusp,
         )
 
         try:

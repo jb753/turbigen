@@ -227,6 +227,11 @@ class Annulus:
     nozzle_ratio: float = 1.0
     """Exit area ratio (default 1.0 = no contraction)."""
 
+    merge_weight: float = 0.0
+    """Blend toward reduced-knot PCHIP that smooths curvature across blade rows.
+    0 = curvature confined to gaps (duplicate row-LE/TE knots);
+    1 = each row-LE/TE pair collapses to a single knot, curvature spreads freely."""
+
     @property
     def nrow(self) -> int:
         """Number of blade rows."""
@@ -243,7 +248,11 @@ class Annulus:
         util.check_vector((nrow * 2,), r_mid=self.r_mid, span=self.span, Beta=self.Beta)
         util.check_vector((nrow,), AR_chord=self.AR_chord)
         util.check_vector((nrow + 1,), AR_gap=self.AR_gap)
-        util.check_scalar(nozzle_ratio=self.nozzle_ratio)
+        util.check_scalar(
+            nozzle_ratio=self.nozzle_ratio, merge_weight=self.merge_weight
+        )
+        if not 0.0 <= self.merge_weight <= 1.0:
+            raise ValueError(f"merge_weight={self.merge_weight} must lie in [0, 1].")
 
         # Interleave AR across all segments (even=gaps, odd=rows)
         AR = np.empty(nseg)
@@ -285,12 +294,52 @@ class Annulus:
         xcas = xmid - 0.5 * span_ext * sinB
         rcas = rmid_ext + 0.5 * span_ext * cosB
 
-        # Iterative PCHIP fit: refine parameter s so m maps uniformly in arc length.
-        # Normalise Ds_actual to the same total scale as Ds so the iteration
-        # converges the fractions rather than absolute arc lengths (which differ
-        # from Ds for highly curved radial geometries).
-        s = util.cumsum0(Ds)
+        # Full PCHIP through all nseg+1 control points.
+        s_full, pchips_full = self._fit_pchips(
+            util.cumsum0(Ds), xhub, rhub, xcas, rcas, Ds
+        )
+
+        # Reduced PCHIP: four knots at [inlet, first row LE, last row TE, outlet].
+        # Curvature is free to spread continuously across the rows because there
+        # are no equal-radius interior knots pinning slopes to zero.
+        if self.merge_weight > 0.0:
+            idx_r = np.array([0, 1, nseg - 1, nseg])
+            xhub_r = xhub[idx_r]
+            rhub_r = rhub[idx_r]
+            xcas_r = xcas[idx_r]
+            rcas_r = rcas[idx_r]
+            s_full_init = util.cumsum0(Ds)
+            s_init_r = s_full_init[idx_r]
+            Ds_r = np.diff(s_init_r)
+
+            _, pchips_reduced = self._fit_pchips(
+                s_init_r, xhub_r, rhub_r, xcas_r, rcas_r, Ds_r
+            )
+        else:
+            pchips_reduced = pchips_full
+
+        # Assign to frozen fields
+        object.__setattr__(self, "_s", s_full)
+        object.__setattr__(self, "_pchip_xhub", pchips_full[0])
+        object.__setattr__(self, "_pchip_rhub", pchips_full[1])
+        object.__setattr__(self, "_pchip_xcas", pchips_full[2])
+        object.__setattr__(self, "_pchip_rcas", pchips_full[3])
+        object.__setattr__(self, "_pchip_xhub_r", pchips_reduced[0])
+        object.__setattr__(self, "_pchip_rhub_r", pchips_reduced[1])
+        object.__setattr__(self, "_pchip_xcas_r", pchips_reduced[2])
+        object.__setattr__(self, "_pchip_rcas_r", pchips_reduced[3])
+
+    @staticmethod
+    def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target):
+        """Arc-length-iterate PCHIPs through the given control points.
+
+        Returns (s, (pchip_xhub, pchip_rhub, pchip_xcas, pchip_rcas)).
+        Raises RuntimeError if iteration fails to converge.
+        """
+        s = np.asarray(s_init, dtype=float).copy()
+        nseg = len(s) - 1
         err = np.inf
+        pchip_xhub = pchip_rhub = pchip_xcas = pchip_rcas = None
         for _ in range(20):
             pchip_xhub = PchipInterpolator(s, xhub)
             pchip_rhub = PchipInterpolator(s, rhub)
@@ -304,7 +353,7 @@ class Annulus:
                 rm = 0.5 * (pchip_rhub(sq) + pchip_rcas(sq))
                 Ds_actual[k] = util.arc_length(np.stack([xm, rm]))
 
-            Ds_norm = Ds_actual / Ds_actual.sum() * Ds.sum()
+            Ds_norm = Ds_actual / Ds_actual.sum() * np.asarray(Ds_target).sum()
             s_new = util.cumsum0(Ds_norm)
             err = np.max(np.abs(s_new - s)) / s[-1]
             s = s_new
@@ -316,12 +365,7 @@ class Annulus:
                 f"Annulus arc-length iteration failed to converge: err={err:.2e}"
             )
 
-        # Assign interpolators to frozen fields
-        object.__setattr__(self, "_s", s)
-        object.__setattr__(self, "_pchip_xhub", pchip_xhub)
-        object.__setattr__(self, "_pchip_rhub", pchip_rhub)
-        object.__setattr__(self, "_pchip_xcas", pchip_xcas)
-        object.__setattr__(self, "_pchip_rcas", pchip_rcas)
+        return s, (pchip_xhub, pchip_rhub, pchip_xcas, pchip_rcas)
 
     def evaluate(self, m, spf) -> np.ndarray:
         """Evaluate annulus coordinates.
@@ -344,10 +388,22 @@ class Annulus:
         )
         sq = np.interp(mb, np.arange(len(self._s)), self._s)
 
-        xhub = self._pchip_xhub(sq)
-        rhub = self._pchip_rhub(sq)
-        xcas = self._pchip_xcas(sq)
-        rcas = self._pchip_rcas(sq)
+        w = self.merge_weight
+        if w == 0.0:
+            xhub = self._pchip_xhub(sq)
+            rhub = self._pchip_rhub(sq)
+            xcas = self._pchip_xcas(sq)
+            rcas = self._pchip_rcas(sq)
+        elif w == 1.0:
+            xhub = self._pchip_xhub_r(sq)
+            rhub = self._pchip_rhub_r(sq)
+            xcas = self._pchip_xcas_r(sq)
+            rcas = self._pchip_rcas_r(sq)
+        else:
+            xhub = (1.0 - w) * self._pchip_xhub(sq) + w * self._pchip_xhub_r(sq)
+            rhub = (1.0 - w) * self._pchip_rhub(sq) + w * self._pchip_rhub_r(sq)
+            xcas = (1.0 - w) * self._pchip_xcas(sq) + w * self._pchip_xcas_r(sq)
+            rcas = (1.0 - w) * self._pchip_rcas(sq) + w * self._pchip_rcas_r(sq)
 
         x = (1.0 - spfb) * xhub + spfb * xcas
         r = (1.0 - spfb) * rhub + spfb * rcas

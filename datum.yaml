@@ -8,19 +8,20 @@ annulus:
   cx_row:
   - 0.1
   - 0.1
-  type: fixed_axial_chord
+  type: merged_fixed_axial_chord
+  merge_weight: 1.0
 basename: config.yaml
 blades:
 - camber:
   - - -7.9999999999999964
     - 0.0
-    - 0.0
+    - 0.1
   - - -8.000000000000004
     - 0.0
-    - 0.0
+    - 0.1
   - - -8.0
     - 0.0
-    - 0.0
+    - 0.1
   camber_type: quadratic
   mstack: 0.5
   spf:
@@ -55,13 +56,13 @@ blades:
 - camber:
   - - 6.0000000000000036
     - 0.0
-    - 0.0
+    - 0.1
   - - 6.0
     - 0.0
-    - 0.0
+    - 0.1
   - - 6.0000000000000036
     - 0.0
-    - 0.0
+    - 0.1
   camber_type: quadratic
   mstack: 0.5
   spf:
@@ -137,7 +138,7 @@ mean_line:
   - 0.02
   - 0.05
   fac_Ma3_rel: 1.0
-  mdot: 1000.0
+  mdot: 900.0
   n_row: 2
   phi2: 0.8
   psi: 1.6
@@ -219,11 +220,11 @@ post_process:
 save_iteration_grids: false
 solver:
   cfl_bnd_max: 0.5
-  cfl_min: 0.1
+  cfl_min: 0.2
   convergence: null
   debug: false
   delta_filt: 0.5
-  deswirl: 2.0
+  deswirl: 8.0
   fac_mgrid: 0.8
   full_mgrid: true
   gain_filt: 8.0
@@ -231,15 +232,16 @@ solver:
   inviscid: false
   n_step: 1500
   n_step_avg: 500
-  radial_equilibrium: true
+  radial_equilibrium: false
   restrict_avg: false
   rf_mix: 0.01
-  sf2: 1.0
-  sf4: 0.02
+  sf2: 2.0
+  sf4: 0.04
   soft_start: false
   type: ember
   v_cycle: false
   workdir: null
-work_dir: /home/jb753/python/turbigen-dev/turb10
-# work_dir: /home/jb753/python/turbigen-dev/runs/*
+  sf_cusp: 1.0
+# work_dir: /home/jb753/python/turbigen-dev/turb10
+work_dir: /home/jb753/python/turbigen-dev/runs/*
 ...
