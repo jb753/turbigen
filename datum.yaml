@@ -225,13 +225,13 @@ solver:
   debug: false
   delta_filt: 0.5
   deswirl: 8.0
-  fac_mgrid: 0.0
+  fac_mgrid: 0.5
   full_mgrid: true
   gain_filt: 8.0
   i_level_stop: 0
   inviscid: false
-  n_step: 2500
-  n_step_avg: 500
+  n_step: 1000
+  n_step_avg: 250
   radial_equilibrium: false
   restrict_avg: false
   rf_mix: 0.01

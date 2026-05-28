@@ -52,7 +52,13 @@ plt.colorbar(cm)
 # # fig, ax = plt.subplots()
 # # ax.plot(C.rt[-9, :], C.V[-9, :])
 plt.show()
-# quit()
+
+
+C = b[-9, :, :-1]
+fig, ax = plt.subplots()
+cm = ax.contourf(C.y, C.z, C.To, cmap="cubehelix")
+plt.colorbar(cm)
+plt.show()
 
 
 # quit()
@@ -191,9 +197,10 @@ fig, ax = plt.subplots()
 for bi in g:
     Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
-    ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.To, cmap="cubehelix")
+    cm = ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.To, cmap="cubehelix")
 ax.axis("equal")
 ax.set_title("To")
+plt.colorbar(cm)
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_ent = np.arange(0.0, 0.8, 0.1)

@@ -109,7 +109,7 @@ class Ember(BaseSolver):
             fac_mgrid=self.fac_mgrid,
             fac_mg_smooth=0.0,
             inviscid=self.inviscid,
-            sf2_adapt=self.sf2,
+            sf2P=self.sf2,
             sf4=self.sf4,
             delta_filt=self.delta_filt,
             gain_filt=self.gain_filt,
