@@ -64,7 +64,7 @@ def get_zeta(block):
     return zeta[0]
 
 
-def get_i_stag(block):
+def get_i_stag(block, xrt_LE=None):
     """Find i-index of stagnation point for each j-line in a 2D block.
 
     Locates the stagnation point by finding pressure maxima near the leading
@@ -75,6 +75,11 @@ def get_i_stag(block):
     ----------
     block : ember.block.Block
         2D block (shape (ni, nj)) with initialized flow field
+    xrt_LE : ndarray, shape (3,), optional
+        Geometric leading-edge coordinates ``[x, r, t]``. When supplied,
+        the LE search window is centred on the grid index nearest this
+        point (per j-line), instead of on the arc-length midpoint of the
+        cut. This is more robust on blades with strong PS/SS asymmetry.
 
     Returns
     -------
@@ -85,16 +90,6 @@ def get_i_stag(block):
     ------
     ValueError
         If block is not 2D (ndim != 2)
-        If no valid stagnation point found on any j-line
-
-    Notes
-    -----
-    Algorithm:
-    1. Uses rotary static pressure (P_rot) to remove centrifugal effects
-    2. Normalizes arc length to [-1, 1] on each j-line
-    3. Finds pressure maxima (downward zero crossings of dP/dzeta)
-    4. Filters to keep only maxima near LE (|zeta_normalized| < 0.2)
-    5. Selects candidate with highest pressure
     """
     if block.ndim != 2:
         raise ValueError(
@@ -108,27 +103,44 @@ def get_i_stag(block):
     zeta = get_zeta(block)
     z = zeta / np.ptp(zeta, axis=0) * 2.0 - 1.0
 
-    # Find pressure maxima on each j-line
     _, nj = block.shape[:2]
-    i_stag = np.full((nj,), 0, dtype=int)
 
+    # Per-j-line window centre in normalised arc length
+    if xrt_LE is not None:
+        dx = block.xrt[:, :, 0] - xrt_LE[0]
+        dr = block.xrt[:, :, 1] - xrt_LE[1]
+        dt = block.xrt[:, :, 2] - xrt_LE[2]
+        # r-weight the angular component since xrt third coord is angle
+        r_avg = 0.5 * (block.xrt[:, :, 1] + xrt_LE[1])
+        d2 = dx**2 + dr**2 + (r_avg * dt) ** 2
+        i_nose = np.argmin(d2, axis=0)
+        z_nose = z[i_nose, np.arange(nj)]
+    else:
+        z_nose = np.zeros((nj,))
+
+    half_window = 0.1
+
+    i_stag = np.full((nj,), 0, dtype=int)
     for j in range(nj):
+        z_centre = z_nose[j]
+
         # Calculate pressure gradient
         dP = np.diff(P[:, j])
 
         # Find indices of downward zero crossings (pressure maxima)
-        # Looking for where gradient changes from positive to negative
         izj = np.where(np.diff(np.sign(dP[:-2])) < 0.0)[0] + 1
 
         # Only keep maxima close to leading edge
-        izj = izj[np.abs(z[izj, j]) < 0.25]
+        izj = izj[np.abs(z[izj, j] - z_centre) < half_window]
 
-        # Select the candidate with maximum pressure
         if len(izj):
-            # Take the point with highest pressure among candidates
             i_stag[j] = izj[np.argmax(P[izj, j])]
+        elif xrt_LE is not None:
+            # Restrict fallback to the same window when nose is supplied
+            mask = np.abs(z[:, j] - z_centre) < half_window
+            idx = np.where(mask)[0]
+            i_stag[j] = idx[np.argmax(P[idx, j])]
         else:
-            # Take highest pressure anywhere if none near LE
             i_stag[j] = np.argmax(P[:, j])
 
     return i_stag
@@ -630,11 +642,15 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
             _log_ram(f"Cutting blade {jbld} at spf {spf[k]:.2f}")
             C = ember.cut.structured_meridional(surf[..., None], xr_spf[:, :, k].T)
 
+            # Geometric nose coordinates (used to anchor the stag search)
+            xrt_nose[:, k] = bldnow.get_nose(spf[k])
+            _log_ram("Got geometric nose coordinates")
+
             # Stag point coordinates with sub-cell parabolic refinement
             # in arc-length space, so that small flow changes produce a
             # continuous stagnation location instead of jumping between
             # neighbouring grid points.
-            istag = get_i_stag(C[0])
+            istag = get_i_stag(C[0], xrt_LE=xrt_nose[:, k])
             zeta_s = get_zeta_stag(C[0], istag)[0]
             _log_ram(f"Found stagnation point at i={istag[0]}")
             zeta_line = get_zeta(C[0])[:, 0]
@@ -642,10 +658,6 @@ def incidence_unstructured(grid, machine, ml, irow, spf, plot=False):
             xrt_stag[:, k] = [
                 np.interp(zeta_s, zeta_line, xrt_line[:, c]) for c in range(3)
             ]
-
-            # Geometric nose coordinates
-            xrt_nose[:, k] = bldnow.get_nose(spf[k])
-            _log_ram("Got geometric nose coordinates")
 
             # Leading edge centre
             xrt_cent[:, k] = bldnow.get_LE_cent(spf[k], 5.0)
