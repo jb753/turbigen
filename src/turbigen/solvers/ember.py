@@ -111,6 +111,7 @@ class Ember(BaseSolver):
             inviscid=self.inviscid,
             sf2P=self.sf2,
             sf4=self.sf4,
+            vort_absolute=False,
             delta_filt=self.delta_filt,
             gain_filt=self.gain_filt,
             i_level_stop=self.i_level_stop,

@@ -227,11 +227,11 @@ solver:
   deswirl: 8.0
   fac_mgrid: 0.5
   full_mgrid: true
-  gain_filt: 8.0
+  gain_filt: 4.0
   i_level_stop: 0
   inviscid: false
-  n_step: 1000
-  n_step_avg: 250
+  n_step: 2000
+  n_step_avg: 1000
   radial_equilibrium: false
   restrict_avg: false
   rf_mix: 0.01

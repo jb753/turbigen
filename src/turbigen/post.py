@@ -190,7 +190,11 @@ def calculate_nondim(C, ml, vname):
     # Isentropic from inlet entropy to local static
     Cs = C.copy().set_P_s(C.P, ml.s[0])
     hs = Cs.h
-    ho = C.ho_rel
+    # Fix ho_rel and a to surface-mean values so that only local static P
+    # drives Mas; otherwise radial redistribution of ho_rel or variations in
+    # a split the PS/SS curves at the TE.
+    ho = np.mean(C.ho_rel)
+    a_ref = np.mean(Cs.a)
 
     # Ensure ho > hs
     dh = ho - hs
@@ -198,7 +202,7 @@ def calculate_nondim(C, ml, vname):
 
     # Evaluate velocity and Mach
     Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
-    Mas = Vs / C.a
+    Mas = Vs / a_ref
 
     is_compressor = ml.P[1] > ml.P[0]
 
