@@ -860,21 +860,42 @@ class TurbigenConfig:
         # Mix out and assemble into actual mean-line flow field
         self.mean_line.actual = self.mean_line.nominal.copy()
         for i, C in enumerate(cuts):
+            # Contract the mixed-out state from the actual cut area to the
+            # nominal mean-line meridional area. The cut's total area generally
+            # differs from the design annulus area (offset planes, mesh
+            # resolution), so apply AR = Am_nominal / A_cut to report the
+            # mean-line state at the design area.
+            # The unstructured cut spans a single blade passage (one pitch), so
+            # scale its area by the blade count to compare with the full-annulus
+            # nominal meridional area Am.
+            A_cut = np.linalg.norm(ember.average.total_area(C)[:2]) * C.Nb
+            Am_nom = self.mean_line.nominal[i].Am
+            AR = Am_nom / A_cut
+            logger.debug(
+                f"Row {i} mix-out: A_cut={A_cut:.6g} (Nb={C.Nb}), "
+                f"Am_nom={Am_nom:.6g}, AR={AR:.6g}"
+            )
             try:
-                Cm = ember.average.mix_out(C)
+                # Inspect the constant-area mixed-out state before contracting,
+                # so we can see whether the contraction or the mix-out is the
+                # source of any failure.
+                Cm0 = ember.average.mix_out(C)
+                logger.debug(
+                    f"Row {i} mixed (AR=1): ho={Cm0.ho:.6g}, s={Cm0.s:.6g}, "
+                    f"V={Cm0.V:.6g}, Vm={Cm0.Vm:.6g}, Vt={Cm0.Vt:.6g}, "
+                    f"a={Cm0.a:.6g}, Ma={Cm0.Ma:.6g}, Mam={Cm0.Vm / Cm0.a:.6g}, "
+                    f"rho={Cm0.rho:.6g}, P={Cm0.P:.6g}, r={Cm0.r:.6g}, "
+                    f"0.5*Vt^2={0.5 * Cm0.Vt**2:.6g}"
+                )
+                Cm = ember.average.mix_out(C, AR=AR)
             except Exception:
-                print("Failed to mix out row", i)
-                print(C.conserved.mean(axis=(0, 1)))
-                print(C.xrt.mean(axis=(0, 1)))
-                print(C.shape)
-                print(f"{C.dA.shape=}")
-                print(f"{C.dA_tri.shape=}")
-                print(f"{C.dA_quad.shape=}")
-                print(C.dA[..., 0].min(), C.dA[..., 0].max())
-                print("t", C.t.min(), C.t.max())
-                print(ember.average.total_area(C))
-                print(ember.average.flow_conserved(C))
-                quit()
+                logger.debug(f"Failed to mix out row {i}", exc_info=True)
+                logger.debug(f"conserved mean: {C.conserved.mean(axis=0)}")
+                logger.debug(f"xrt mean: {C.xrt.mean(axis=0)}")
+                logger.debug(f"shape: {C.shape}")
+                logger.debug(f"total_area: {ember.average.total_area(C)}")
+                logger.debug(f"flow_conserved: {ember.average.flow_conserved(C)}")
+                raise
             self.mean_line.actual[i].set_r_rms(Cm.r)
             self.mean_line.actual[i].set_conserved(Cm.conserved)
 

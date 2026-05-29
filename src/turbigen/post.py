@@ -290,6 +290,10 @@ class SurfaceDistribution(BasePost):
             # Cut the entire blade
             C = turbigen.util_post.cut_blade_surfs(config.grid, self.offset)[irow][0]
 
+            # Main blade object, used to anchor the stag search on the
+            # geometric nose
+            bldnow = config.blades[irow][0]
+
             # Loop over span fractions
             for spfi in spfrow:
                 # Slice at required span fractions
@@ -302,8 +306,21 @@ class SurfaceDistribution(BasePost):
                     Ci, config.mean_line.actual.get_row(irow), self.variable
                 )
 
+                # Geometric nose coordinates anchor the stag search window,
+                # which is more robust on blades with strong PS/SS asymmetry.
+                # get_nose evaluates the section, which requires the blade to
+                # be recambered; recamber and revert around the call so the
+                # stored config blades are left untouched.
+                ml_nom = config.mean_line.nominal.get_row(irow)
+                already_recambered = bldnow.is_recambered
+                if not already_recambered:
+                    bldnow.apply_recamber(ml_nom)
+                xrt_nose = bldnow.get_nose(spfi)
+                if not already_recambered:
+                    bldnow.undo_recamber(ml_nom)
+
                 # Extract surface distance and normalise
-                i_stag = turbigen.util_post.get_i_stag(Ci)
+                i_stag = turbigen.util_post.get_i_stag(Ci, xrt_LE=xrt_nose)
                 zeta = turbigen.util_post.get_zeta(Ci)
                 zeta_stag = zeta - zeta[i_stag]
                 # Shift zeta=0 to minimum Mas

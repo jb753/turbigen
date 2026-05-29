@@ -52,7 +52,7 @@ blades:
   thick_type: taylor
   tip: 0.0
   tip_ref: span
-  vortex_expon: -1.0
+  vortex_expon: 0.6
 - camber:
   - - 6.0000000000000036
     - 0.0
@@ -93,7 +93,7 @@ blades:
   thick_type: taylor
   tip: 0.01
   tip_ref: span
-  vortex_expon: -1.0
+  vortex_expon: 0.6
 converged: false
 cut_offset: 0.02
 fac_nstep_initial: 2.0
@@ -223,25 +223,26 @@ solver:
   cfl_min: 0.2
   convergence: null
   debug: false
-  delta_filt: 0.5
-  deswirl: 8.0
+  delta_filt: 0.25
+  deswirl: 2.0
   fac_mgrid: 0.5
   full_mgrid: true
-  gain_filt: 4.0
+  gain_filt: 16.0
   i_level_stop: 0
   inviscid: false
   n_step: 2000
   n_step_avg: 1000
-  radial_equilibrium: false
+  radial_equilibrium: true
   restrict_avg: false
-  rf_mix: 0.01
-  sf2: 2.0
+  rf_mix: 0.02
+  sf2P: 2.0
+  sf2T: 2.0
   sf4: 0.04
   soft_start: false
   type: ember
   v_cycle: false
   workdir: null
   sf_cusp: 0.0
-# work_dir: /home/jb753/python/turbigen-dev/turb10
-work_dir: runs/*
+work_dir: /home/jb753/python/turbigen-dev/turb11
+# work_dir: runs/*
 ...

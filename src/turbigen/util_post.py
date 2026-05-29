@@ -118,7 +118,7 @@ def get_i_stag(block, xrt_LE=None):
     else:
         z_nose = np.zeros((nj,))
 
-    half_window = 0.1
+    half_window = 0.05
 
     i_stag = np.full((nj,), 0, dtype=int)
     for j in range(nj):
