@@ -55,13 +55,7 @@ class Ember(BaseSolver):
         return self.replace(full_mgrid=False)
 
     def run(self, grid, machine, workdir):
-        r_ref = grid.get_r_ref()
-        Nb = np.array([row[0].Nb for row in grid.rows])
-        pitch_ref = 2.0 * np.pi * r_ref / Nb
-        logger.info(f"r_ref: {r_ref}")
-        logger.info(f"Nb: {Nb}")
-        logger.info(f"pitch_ref: {pitch_ref}")
-        xllim = 0.03 * pitch_ref[0]
+        xllim = grid.get_xllim()[0]
         logger.info(f"xllim: {xllim}")
 
         if self.radial_equilibrium:
