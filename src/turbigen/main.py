@@ -195,6 +195,7 @@ def cmd_run(args):
 
     if not iterating:
         conf.design_and_run(args.no_solve, plot_mesh=args.mesh)
+        converged = not args.no_solve
 
         logger.info("Post-processing...")
         conf.post_process_all()
@@ -222,6 +223,7 @@ def cmd_run(args):
         logger.warning(f"Iterating for max {conf.max_iter} iterations...")
         logger.warning("Status: ✓ = within tol, ✗ = not yet converged")
 
+        converged = False
         for iiter in range(conf.max_iter):
             conf.work_dir = basedir / f"{iiter:03d}"
 
@@ -299,7 +301,7 @@ def cmd_run(args):
     logger.warning(f"Total time: {(timer() - start_tic) / 60.0:.2f} min")
     logger.warning(f"Working directory was: {work_dir}")
 
-    sys.exit(0)
+    sys.exit(0 if converged else 1)
 
     # Iterate if requested
     if not iterating:
