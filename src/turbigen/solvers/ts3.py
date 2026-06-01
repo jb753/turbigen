@@ -2,16 +2,12 @@ import logging
 from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
-import turbigen.fluid
-import turbigen.flowfield
 from glob import glob
 import h5py
 import numpy as np
-import turbigen.grid
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
-from turbigen import yaml_utils
 from pathlib import Path
 import signal
 import sys
@@ -19,25 +15,8 @@ import re
 import grp
 import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
-import multiprocessing
-
-import turbigen.util
 
 logger = logging.getLogger("turbigen")
-
-KIND_LOOKUP = {
-    0: turbigen.grid.InletPatch,
-    1: turbigen.grid.OutletPatch,
-    19: turbigen.grid.OutletPatch,  # outlet2d
-    2: turbigen.grid.MixingPatch,
-    17: turbigen.grid.PorousPatch,
-    16: turbigen.grid.PeriodicPatch,  # periodic_cartesian
-    5: turbigen.grid.PeriodicPatch,
-    7: turbigen.grid.InviscidPatch,
-    8: turbigen.grid.ProbePatch,
-    15: turbigen.grid.NonMatchPatch,
-    6: turbigen.grid.CoolingPatch,
-}
 
 
 def _unflip(x, shape=None):
@@ -83,6 +62,8 @@ class ts3(BaseSolver):
     # Override base attributes
     _name = "ts3"
 
+    soft_start: bool = False
+
     workdir: Path = None
     """Working directory to run the simulation in."""
 
@@ -91,9 +72,6 @@ class ts3(BaseSolver):
     )
     """Setup environment shell script to be sourced before running."""
 
-    atol_eta: float = 0.005
-    """Absolute tolerance on drift in isentropic efficiency."""
-
     cfl: float = 0.4
     """Courant--Friedrichs--Lewy number, reduce for more stability."""
 
@@ -101,7 +79,7 @@ class ts3(BaseSolver):
     """Negative feedback factor, reduce for more stability."""
 
     facsecin: float = 0.005
-    """Fourth-order smoothing feedback factor, increase for more stability."""
+    """Fourth-order smoothing factor, increase for more stability."""
 
     fmgrid: float = 0.2
     """Multigrid factor, reduce for more stability."""
@@ -116,7 +94,7 @@ class ts3(BaseSolver):
     """At start of simulation, ramp smoothing and damping over this many time steps."""
 
     viscosity_law: int = 0
-    """Number of time steps."""
+    """Variation of viscosity with temperature, 0 for constant, 1 for 0.62 power law."""
 
     nstep: int = 10000
     """Number of time steps."""
@@ -126,9 +104,6 @@ class ts3(BaseSolver):
 
     rfmix: float = 0.0
     """Mixing plane relaxation factor."""
-
-    rtol_mdot: float = 0.01
-    """Relative tolerance on mass flow conservation error and drift."""
 
     sfin: float = 0.5
     """Proportion of second-order smoothing, increase for more stability."""
@@ -145,41 +120,6 @@ class ts3(BaseSolver):
     nstep_soft: int = 0
     """Number of steps for soft start precursor simulation."""
 
-    sa_helicity_option: int = 0
-    """Spalart--Allmaras turbulence model helicity correction."""
-
-    smooth_scale_dts_option: int = 0
-    smooth_scale_directional_option: int = 0
-
-    show_yplus: bool = False
-
-    # Enable laminar boundary layers on all walls.
-    laminar: bool = False
-
-    if_no_mg: int = 0  # Disable multigrid for SA
-    fac_sa_smth: float = 4.0  # SA smoothing (lower is more stable)
-    fac_sa_step: float = 1.0  # SA time step factor
-    fac_st0: float = 1.0
-    fac_st3: float = 1.0
-    ipout: int = 3
-    convert_sliding: bool = False
-    precon: int = 0
-    dts: int = 0
-    nstep_cycle: int = 72
-    nstep_inner: int = 200
-    ncycle: int = 0
-    frequency: float = 0.0
-    nstep_save_probe: int = 0
-    nstep_save_start_probe: int = 0
-    xllim_free: float = 0.1
-    free_turb: float = 0.05
-    turbvis_lim: float = 3000.0
-    rfvis: float = 0.2
-    facsafe: float = 0.2
-    use_temperature_sensor: int = 0
-    sa_ch1: float = 0.71
-    sa_ch2: float = 0.6
-    turb_intensity: float = 5.0
     bv: dict = None  # nested dict bv[bid][bv_name] = bv_value
 
     def __post_init__(self):
@@ -195,87 +135,6 @@ class ts3(BaseSolver):
         config["environment_script"] = str(self.environment_script)
         return config
 
-    def application_variables(self, ga, cp, mu):
-        # """Make a complete set of applications variables, with defaults overriden
-        av = DEFAULT_AV.copy()
-        for k in av:
-            if hasattr(self, k):
-                av[k] = getattr(self, k)
-        av["ga"] = ga
-        av["cp"] = cp
-        av["viscosity"] = mu
-
-        # Never use the built-in guesses
-        # Always restart from our own flow field
-        av["restart"] = 1
-
-        if av["dts"]:
-            av["nstep_save_start"] = av["ncycle"] * av["nstep_cycle"] - self.nstep_avg
-        else:
-            if av["nstep"] < 0:
-                av["nstep"] = int(2 * self.nstep_avg)
-            av["nstep_save_start"] = av["nstep"] - self.nstep_avg
-
-        # Raise error if averaging not OK
-        nstep = av["nstep"]
-        nstep_save_start = av["nstep_save_start"]
-        if nstep_save_start >= nstep and nstep > 0 and not av["dts"]:
-            raise Exception(f"nstep_save_start={nstep_save_start} is > nstep={nstep}")
-        if nstep_save_start < 0:
-            raise Exception(f"nstep_save_start={nstep_save_start} is < 0")
-
-        return av
-
-    def block_variables(self, block, rref, laminar):
-        # """Make a dictionary of block variables, with defaults overriden as needed."""
-        bv = DEFAULT_BV.copy()
-        for k in bv:
-            if hasattr(self, k):
-                bv[k] = getattr(self, k)
-        # Set some block variables using the block data
-        bv["nblade"] = block.Nb
-        bv["fblade"] = float(block.Nb)
-
-        assert np.ptp(block.rpm) == 0.0
-        rpm = block.rpm.mean()
-        if self.convert_sliding and rpm == 0.0:
-            for patch in block.patches:
-                if isinstance(patch, turbigen.grid.MixingPatch):
-                    assert np.ptp(patch.match.block.rpm) == 0.0
-                    rpm = patch.match.block.rpm.mean()
-                    break
-        bv["rpm"] = rpm
-        bv["fracann"] = 1.0 / float(block.Nb)
-        if self.Lref_xllim == "pitch":
-            bv["xllim"] = 2.0 * np.pi * rref / float(block.Nb) * self.xllim
-        elif self.Lref_xllim == "span":
-            span = np.ptp(block.r)
-            bv["xllim"] = span * self.xllim
-        elif self.Lref_xllim == "fix":
-            bv["xllim"] = self.xllim
-        else:
-            raise Exception(f"Unrecognised Lref_xllim={self.Lref_xllim}")
-        bv.update(_get_wall_rpms(block))
-
-        if laminar:
-            # Set laminar from i=0 to i=ni on every block
-            ni1 = block.ni - 1
-            bv["itrans"] = -1
-            bv["itrans_j1_st"] = 0
-            bv["itrans_j1_en"] = ni1
-            bv["itrans_j2_st"] = 0
-            bv["itrans_j2_en"] = ni1
-            bv["itrans_k1_st"] = 0
-            bv["itrans_k1_en"] = ni1
-            bv["itrans_k2_st"] = 0
-            bv["itrans_k2_en"] = ni1
-            bv["itrans_j1_frac"] = 0.1
-            bv["itrans_j2_frac"] = 0.1
-            bv["itrans_k1_frac"] = 0.1
-            bv["itrans_k2_frac"] = 0.1
-
-        return bv
-
     def robust(self):
         """Increase damping and smoothing, lower CFL, and use mixing-length model."""
         return self.replace(
@@ -286,8 +145,6 @@ class ts3(BaseSolver):
             cfl=0.3,
             fmgrid=0.0,
             soft_start=False,
-            precon=0,
-            dts=0,
         )
 
     def restart(self):
@@ -300,738 +157,6 @@ class ts3(BaseSolver):
         if not workdir.exists():
             workdir.mkdir(parents=True, exist_ok=True)
         self.convergence = run(grid, self, machine, workdir)
-
-
-# Block attributes that must be present
-# Where we should not set a default, use None
-DEFAULT_BA = {
-    "bid": None,
-    "nc": 0,
-    "np": None,
-    "ncl": 0,
-    "ni": None,
-    "nj": None,
-    "nk": None,
-    "procid": 0,
-    "threadid": 0,
-}
-
-# Patch attributes that must be present
-# Where we should not set a default, use None
-DEFAULT_PA = {
-    "pid": None,
-    "bid": None,
-    "ist": None,
-    "jst": None,
-    "kst": None,
-    "ien": None,
-    "jen": None,
-    "ken": None,
-    "idir": None,
-    "jdir": None,
-    "kdir": None,
-    "kind": None,
-    "nface": 0,
-    "nt": 1,
-    "nxbid": None,
-    "nxpid": None,
-}
-
-# Application variables that must be present
-# Where we should not set a default, use None
-DEFAULT_AV = {
-    "adaptive_smoothing": 1,
-    "cfl": 0.4,
-    "cfl_en_ko": 0.4,
-    "cfl_ko": 0.4,
-    "cfl_st_ko": 0.01,
-    "cp": None,
-    "cp0_0": 1005.0,
-    "cp0_1": 1005.0,
-    "cp1_0": 0.0,
-    "cp1_1": 0.0,
-    "cp2_0": 0.0,
-    "cp2_1": 0.0,
-    "cp3_0": 0.0,
-    "cp3_1": 0.0,
-    "cp4_0": 0.0,
-    "cp4_1": 0.0,
-    "cp5_0": 0.0,
-    "cp5_1": 0.0,
-    "dampin": 25.0,
-    "dts": 0,
-    "dts_conv": 0.0,
-    "fac_sa_smth": 4.0,
-    "fac_sa_step": 1.0,
-    "fac_st0": 1.0,
-    "fac_st0_option": 0,
-    "fac_st1": 1.0,
-    "fac_st2": 1.0,
-    "fac_st3": 1.0,
-    "fac_stmix": 0.0,
-    "fac_wall": 1.0,
-    "facsafe": 0.2,
-    "facsecin": 0.005,
-    "frequency": 0.0,
-    "ga": None,
-    "if_ale": 0,
-    "if_no_mg": 0,
-    "ifgas": 0,
-    "ifsuperfac": 0,
-    "ilos": 2,
-    "ko_dist": 1e-4,
-    "ko_restart": 0,
-    "nchange": 1000,
-    "ncycle": 0,
-    "nlos": 5,
-    "nomatch_int": 1,
-    "nspecies": 1,
-    "nstep": 10000,
-    "nstep_cycle": 0,
-    "nstep_inner": 0,
-    "nstep_save": 0,
-    "nstep_save_probe": 0,
-    "nstep_save_start": 0,
-    "nstep_save_start_probe": 0,
-    "poisson_cfl": 0.7,
-    "poisson_limit": 0,
-    "poisson_nsmooth": 10,
-    "poisson_nstep": 0,
-    "poisson_restart": 2,
-    "poisson_sfin": 0.02,
-    "prandtl": 1.0,
-    "precon": 0,
-    "pref": 1e5,
-    "rfmix": 0.0,
-    "rfvis": 0.2,
-    "rg_cp0": 1005.0,
-    "rg_cp1": 0.0,
-    "rg_cp2": 0.0,
-    "rg_cp3": 0.0,
-    "rg_cp4": 0.0,
-    "rg_cp5": 0.0,
-    "rg_rgas": 287.15,
-    "rgas_0": 287.15,
-    "rgas_1": 287.15,
-    "sa_ch1": 1.0,
-    "sa_ch2": 1.0,
-    "sa_helicity_option": 0,
-    "schmidt_0": 1.0,
-    "schmidt_1": 1.0,
-    "sf_scalar": 0.05,
-    "sfin": 0.5,
-    "sfin_ko": 0.05,
-    "sfin_sa": 0.05,
-    "smooth_scale_directional_option": 0,
-    "smooth_scale_dts_option": 0,
-    "smooth_scale_precon_option": 0,
-    "tref": 300.0,
-    "turb_vis_damp": 1.0,
-    "turbvis_lim": 3000.0,
-    "use_temperature_sensor": 0,
-    "viscosity": None,
-    "viscosity_a1": 0.0,
-    "viscosity_a2": 0.0,
-    "viscosity_a3": 0.0,
-    "viscosity_a4": 0.0,
-    "viscosity_a5": 0.0,
-    "viscosity_law": 0,
-    "wall_law": 0,
-    "write_egen": 0,
-    "write_force": 0,
-    "write_tdamp": 0,
-    "write_yplus": 1,
-}
-
-# Block variables that must be present
-# Where we should not set a default, use None
-DEFAULT_BV = {
-    "dampin_mul": 1.0,
-    "fac_st0": 1.0,
-    "facsecin_mul": 1.0,
-    "fblade": None,
-    "fl_ibpa": 0.0,
-    "fmgrid": 0.2,
-    "fracann": None,
-    "free_turb": 0.05,
-    "fsturb": 1.0,
-    "ftype": 0,
-    "itrans": 0,
-    "itrans_j1_en": 0,
-    "itrans_j1_frac": 0.0,
-    "itrans_j1_st": 0,
-    "itrans_j2_en": 0,
-    "itrans_j2_frac": 0.0,
-    "itrans_j2_st": 0,
-    "itrans_k1_en": 0,
-    "itrans_k1_frac": 0.0,
-    "itrans_k1_st": 0,
-    "itrans_k2_en": 0,
-    "itrans_k2_frac": 0.0,
-    "itrans_k2_st": 0,
-    "jtrans": 0,
-    "jtrans_i1_en": 0,
-    "jtrans_i1_frac": 0.0,
-    "jtrans_i1_st": 0,
-    "jtrans_i2_en": 0,
-    "jtrans_i2_frac": 0.0,
-    "jtrans_i2_st": 0,
-    "jtrans_k1_en": 0,
-    "jtrans_k1_frac": 0.0,
-    "jtrans_k1_st": 0,
-    "jtrans_k2_en": 0,
-    "jtrans_k2_frac": 0.0,
-    "jtrans_k2_st": 0,
-    "ktrans": 0,
-    "ktrans_i1_en": 0,
-    "ktrans_i1_frac": 0.0,
-    "ktrans_i1_st": 0,
-    "ktrans_i2_en": 0,
-    "ktrans_i2_frac": 0.0,
-    "ktrans_i2_st": 0,
-    "ktrans_j1_en": 0,
-    "ktrans_j1_frac": 0.0,
-    "ktrans_j1_st": 0,
-    "ktrans_j2_en": 0,
-    "ktrans_j2_frac": 0.0,
-    "ktrans_j2_st": 0,
-    "nblade": None,
-    "ndup_phaselag": 1,
-    "nimixl": 0,
-    "poisson_fmgrid": 0.0,
-    "pstatin": 800000.0,
-    "pstatout": 800000.0,
-    "rpm": None,
-    "rpmi1": None,
-    "rpmi2": None,
-    "rpmj1": None,
-    "rpmj2": None,
-    "rpmk1": None,
-    "rpmk2": None,
-    "sfin_mul": 1.0,
-    "srough_i0": 0.0,
-    "srough_i1": 0.0,
-    "srough_j0": 0.0,
-    "srough_j1": 0.0,
-    "srough_k0": 0.0,
-    "srough_k1": 0.0,
-    "superfac": 0.0,
-    "tstagin": 1200.0,
-    "tstagout": 1200.0,
-    "turb_intensity": 5.0,
-    "vgridin": 50.0,
-    "vgridout": 50.0,
-    "xllim": None,
-    "xllim_free": 0.1,
-}
-
-# Patch variables that must be present on inlet patches
-# Where we should not set a default, use None
-DEFAULT_INLET_PV = {
-    "rfin": 0.5,
-    "sfinlet": 0.0,
-}
-
-
-# Patch variables that must be present on outlet patches
-# Where we should not set a default, use None
-DEFAULT_OUTLET_PV = {
-    "ipout": 3,
-    "throttle_type": 0,
-    "throttle_target": 0.0,
-    "throttle_k0": 0.0,
-    "throttle_k1": 0.0,
-    "throttle_k2": 0.0,
-    "fthrottle": 0.0,
-    "pout": None,
-    "pout_st": 0.0,
-    "pout_en": 0.0,
-    "pout_nchange": 0,
-}
-
-# Patch variables that must be present on outlet patches
-# Where we should not set a default, use None
-DEFAULT_POROUS_PV = {"porous_fac_loss": 1.0, "porous_rf": 0.9}
-
-
-def _get_patch_kind(patch):
-    """Choose TS3 patch kind integer based on patch class."""
-    if isinstance(patch, turbigen.grid.InletPatch):
-        return 0
-    elif isinstance(patch, turbigen.grid.OutletPatch):
-        if patch.force:
-            return 19  # for 'outlet2d'
-        else:
-            return 1
-    elif isinstance(patch, turbigen.grid.MixingPatch):
-        return 2
-    elif isinstance(patch, turbigen.grid.PorousPatch):
-        return 17
-    elif isinstance(patch, turbigen.grid.PeriodicPatch):
-        if patch.cartesian:
-            return 16
-        else:
-            return 5
-    elif isinstance(patch, turbigen.grid.InviscidPatch):
-        return 7
-    elif isinstance(patch, turbigen.grid.CuspPatch):
-        # The real TS3 cusp patch appears broken
-        # approximate using inviscid patch
-        return 7
-    elif isinstance(patch, turbigen.grid.ProbePatch):
-        return 8
-    elif isinstance(patch, turbigen.grid.NonMatchPatch):
-        return 15
-    elif isinstance(patch, turbigen.grid.CoolingPatch):
-        return 6
-    else:
-        raise Exception(f"No TS3 patch kind defined for {patch}")
-
-
-def _get_patch_sten(patch):
-    """Patch attributes describing patch start and end indices."""
-    # Convert negative indices to zero indexed
-    ijk_lim = patch.ijk_limits.copy()
-    nijk = np.reshape(patch.block.shape, (3, 1))
-    ijk_lim[ijk_lim < 0] = (nijk + ijk_lim)[ijk_lim < 0]
-    # Add one to end indices to make them exclusive
-    ijk_lim[:, 1] += 1
-    # Return as a dictionary of patch attributes
-    keys = ["ist", "ien", "jst", "jen", "kst", "ken"]
-    return dict(zip(keys, ijk_lim.flat))
-
-
-def _get_patch_connectivity(patch, rtol=1e-4):
-    """Patch attributes describing periodic or mixing connectivity."""
-
-    # Deal with mixing patches
-    if isinstance(patch, turbigen.grid.MixingPatch):
-        pm = patch.match
-        # Find ids for the connected block and patch
-        nxbid = pm.block.grid.index(pm.block)
-        not_rot = [
-            p
-            for p in pm.block.patches
-            if not isinstance(p, turbigen.grid.RotatingPatch)
-        ]
-        nxpid = not_rot.index(pm)
-
-        if not patch.slide:
-            return {"idir": 0, "jdir": 0, "kdir": 0, "nxbid": nxbid, "nxpid": nxpid}
-        else:
-            return {
-                "kind": 3,
-                "idir": 0,
-                "jdir": 0,
-                "kdir": 0,
-                "nface": 1,
-                "nxbid": nxbid,
-                "nxpid": nxpid,
-                "slide_nxbid": nxbid,
-                "slide_nxpid": nxpid,
-            }
-
-    is_periodic = isinstance(patch, turbigen.grid.PeriodicPatch)
-    is_nonmatch = isinstance(patch, turbigen.grid.NonMatchPatch)
-    is_porous = isinstance(patch, turbigen.grid.PorousPatch)
-    if is_periodic or is_nonmatch or is_porous:
-        pm = patch.match
-        # Find ids for the connected block and patch
-        nxbid = pm.block.grid.index(pm.block)
-        not_rot = [
-            p
-            for p in pm.block.patches
-            if not isinstance(p, turbigen.grid.RotatingPatch)
-        ]
-        nxpid = not_rot.index(pm)
-
-        return {
-            "idir": patch.idir,
-            "jdir": patch.jdir,
-            "kdir": patch.kdir,
-            "nxbid": nxbid,
-            "nxpid": nxpid,
-        }
-
-    else:
-        # If the patch is not mixing and not periodic, set dummy values
-        return {"idir": 0, "jdir": 0, "kdir": 0, "nxbid": 0, "nxpid": 0}
-
-
-def _block_attributes(block, bid):
-    """Make a dictionary of block attributes."""
-    ba = DEFAULT_BA.copy()
-    ba["bid"] = bid
-    ba["ni"], ba["nj"], ba["nk"] = block.shape
-    ba["np"] = len(
-        [p for p in block.patches if not isinstance(p, turbigen.grid.RotatingPatch)]
-    )
-    return ba
-
-
-def _patch_attributes(patch, bid, pid):
-    """Make a dictionary of patch attributes."""
-    pa = DEFAULT_PA.copy()
-    pa["pid"] = pid
-    pa["bid"] = bid
-    pa["kind"] = _get_patch_kind(patch)
-    pa.update(_get_patch_sten(patch))
-    pa.update(_get_patch_connectivity(patch))
-    return pa
-
-
-def _patch_variables(patch, ts3_config):
-    """Make a dictionary of patch attributes."""
-    pv = {}
-    if isinstance(patch, turbigen.grid.InletPatch):
-        pv.update(DEFAULT_INLET_PV)
-        pv["rfin"] = float(patch.rfin)
-    elif isinstance(patch, turbigen.grid.PorousPatch):
-        pv.update(DEFAULT_POROUS_PV)
-        pv["porous_fac_loss"] = float(patch.porous_fac_loss)
-    elif isinstance(patch, turbigen.grid.ProbePatch):
-        pv["probe_append"] = 1
-    elif isinstance(patch, turbigen.grid.OutletPatch):
-        pv.update(DEFAULT_OUTLET_PV)
-        pv["pout"] = float(patch.Pout)
-        pv["ipout"] = ts3_config.ipout
-        if patch.mdot_target:
-            pv["throttle_type"] = 1
-            pv["throttle_target"] = float(patch.mdot_target)
-            # Turbostream uses 'PDI' control, not 'PID'
-            pv["throttle_k0"], pv["throttle_k2"], pv["throttle_k1"] = patch.Kpid
-        if patch.force:
-            pv.pop("pout")
-    elif isinstance(patch, turbigen.grid.CoolingPatch):
-        patch.check()
-        pv.update(
-            {
-                "cool_mass": patch.cool_mass,
-                "cool_pstag": patch.cool_pstag,
-                "cool_tstag": patch.cool_tstag,
-                "cool_type": patch.cool_type,
-                "cool_angle_def": patch.cool_angle_def,
-                "cool_sangle": patch.cool_sangle,
-                "cool_xangle": patch.cool_xangle,
-                "cool_frac_area": 1.0,
-                "cool_mach": patch.cool_mach,
-            }
-        )
-
-    return pv
-
-
-def _patch_properties(patch):
-    """Make a dictionary of patch properties."""
-    pp = {}
-    if isinstance(patch, turbigen.grid.InletPatch):
-        x = np.ones_like(patch.get_cut().x)
-        pp["pstag"] = patch.Po * x
-        # So that the TS3->TS4 converter works for real gases
-        pp["tstag"] = patch.state.h / patch.state.cp * x
-        pp["pitch"] = patch.Beta * x
-        pp["yaw"] = patch.Alpha * x
-        pp["fsturb_mul"] = x
-    elif isinstance(patch, turbigen.grid.OutletPatch):
-        if patch.force:
-            pp["pout"] = patch.Pout * np.ones_like(patch.get_cut().x)
-    return pp
-
-
-def _write_variable(group, name, suffix, val):
-    """Save a scalar to an hdf5 file."""
-    key = name + suffix
-    if isinstance(val, int):
-        dtype = np.dtype("i4")
-    else:
-        dtype = np.dtype("f4")
-    if val is None:
-        raise Exception(f"Unspecified value for variable {name}")
-    try:
-        group.create_dataset(key, data=np.reshape(val, (1,)), dtype=dtype)
-    except Exception:
-        raise Exception(f"Could not write key={key}, val={val}")
-
-
-def _write_property(group, name, suffix, val, flat=False):
-    """Save an array to an hdf5 file."""
-    key = name + suffix
-    dtype = np.dtype("f4")
-    if val is None:
-        raise Exception(f"Unspecified value for variable {name}")
-    if np.isnan(val).any():
-        raise Exception(f"NaN in variable {name}")
-
-    val_out = np.ones(val.shape, dtype=np.float32)
-    val_out.flat = val.transpose().flat
-
-    if flat:
-        val_out = val_out.flatten()
-
-    group.create_dataset(key, data=val_out, dtype=dtype)
-
-
-def _get_wall_rpms(block):
-    """Dictionary of block variables describing wall rotations."""
-    rpms = dict(
-        rpmi1=0.0,
-        rpmj1=0.0,
-        rpmk1=0.0,
-        rpmi2=0.0,
-        rpmj2=0.0,
-        rpmk2=0.0,
-    )
-    for patch in block.rotating_patches:
-        if patch.const_dim == 0:
-            if patch.ist:
-                rpms["rpmi2"] = patch.rpm
-            else:
-                rpms["rpmi1"] = patch.rpm
-        elif patch.const_dim == 1:
-            if patch.jst:
-                rpms["rpmj2"] = patch.rpm
-            else:
-                rpms["rpmj1"] = patch.rpm
-        elif patch.const_dim == 2:
-            if patch.kst:
-                rpms["rpmk2"] = patch.rpm
-            else:
-                rpms["rpmk1"] = patch.rpm
-    return rpms
-
-
-def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
-    """Using a given configuration, write grid object to an hdf5."""
-
-    # Store old internal energy datum
-    # Then set to zero as assumed by TS
-    Tu0_old = grid[0].Tu0 + 0.0
-    for b in grid:
-        b.set_Tu0(0.0)
-    for p in grid.inlet_patches:
-        p.state.set_Tu0(0.0)
-
-    # Determine reference radii for mixing length limit
-    rref = np.empty((grid.nrow,))
-    for irow, row_block in enumerate(grid.row_blocks):
-        rref[irow] = np.mean([0.5 * (b.r.max() + b.r.min()) for b in row_block])
-
-    input_file_path = os.path.join(ts3_config.workdir, fname)
-    if not os.path.exists(ts3_config.workdir):
-        raise Exception(f"Working directory {ts3_config.workdir} does not exist.")
-    f = h5py.File(input_file_path, "w")
-
-    # Get gas properties from the inlet
-    So1 = grid.inlet_patches[0].state
-    cp = float(So1.cp)
-    ga = float(So1.gamma)
-    mu = float(So1.mu)
-
-    grid.inlet_patches[0].rfin = ts3_config.rfin
-
-    # Grid attributes
-    nb = len(grid)
-    f.attrs["nb"] = nb
-    f.attrs["ntb"] = 0
-
-    # Application variables
-    for name, val in ts3_config.application_variables(ga, cp, mu).items():
-        _write_variable(f, name, "_av", val)
-
-    procids = grid.partition(ts3_config.ntask)
-
-    # Loop over blocks
-    for ib in range(nb):
-        key = f"block{ib}"
-        block = grid[ib]
-
-        # Make group to hold block data
-        block_group = f.create_group(key)
-
-        # Block attributes
-        block_group.attrs.update(_block_attributes(block, ib))
-        block_group.attrs["procid"] = procids[ib]
-
-        # Block variables
-        if ts3_config.Lref_xllim == "pitch":
-            rref_block = rref[grid.row_index(block)]
-        else:
-            rref_block = np.nan
-        for name, val in ts3_config.block_variables(
-            block, rref_block, ts3_config.laminar
-        ).items():
-            # Apply block variables overrides
-            if ts3_config.bv and ib in ts3_config.bv and name in ts3_config.bv[ib]:
-                val = ts3_config.bv[ib][name]
-                print(f"Overriding block variable {name}={val} for block {ib}")
-
-            _write_variable(block_group, name, "_bv", val)
-
-        # Block properties
-        _write_property(block_group, "x", "_bp", block.x)
-        _write_property(block_group, "r", "_bp", block.r)
-        _write_property(block_group, "rt", "_bp", block.rt)
-        _write_property(block_group, "ro", "_bp", block.rho)
-        _write_property(block_group, "rovx", "_bp", block.rhoVx)
-        _write_property(block_group, "rovr", "_bp", block.rhoVr)
-        _write_property(block_group, "rorvt", "_bp", block.rhorVt)
-        _write_property(block_group, "roe", "_bp", block.rhoe)
-        _write_property(block_group, "phi", "_bp", block.w)
-        if np.isnan(block.mu_turb).all():
-            turb_visc = ts3_config.tvr * np.ones_like(block.x) * mu
-            _write_property(block_group, "trans_dyn_vis", "_bp", turb_visc)
-        else:
-            _write_property(block_group, "trans_dyn_vis", "_bp", block.mu_turb)
-
-        # Loop over patches
-        ip = 0
-        for patch in block.patches:
-            # Skip rotating patches - set wall rpms using block variables
-            if isinstance(patch, turbigen.grid.RotatingPatch):
-                logger.debug(f"Skipping patch {patch}, ip={ip}")
-                continue
-            else:
-                logger.debug(f"Writing patch {patch}, ip={ip}")
-
-            # Make group to hold patch data
-            patch_key = f"patch{ip}"
-            patch_group = block_group.create_group(patch_key)
-
-            # Patch attributes
-            pa = _patch_attributes(patch, ib, ip)
-            if "slide_nxbid" in pa:
-                pv_slide = {k: pa.pop(k) for k in ("slide_nxbid", "slide_nxpid")}
-                if ts3_config.convert_sliding:
-                    for name, val in pv_slide.items():
-                        _write_variable(patch_group, name, "", val)
-                else:
-                    pa["kind"] = 2
-
-            # Patch variables
-            for name, val in _patch_variables(patch, ts3_config).items():
-                _write_variable(patch_group, name, "_pv", val)
-
-            # Patch properties
-            for name, val in _patch_properties(patch).items():
-                # Make boundary conditions unsteady if needed
-                if isinstance(patch, turbigen.grid.InletPatch):
-                    if patch.force and ts3_config.dts:
-                        fac_ho, fac_Po = patch.get_unsteady_multipliers(
-                            ts3_config.frequency,
-                            ts3_config.nstep_cycle,
-                            ts3_config.ncycle,
-                        )
-                        nt = len(fac_Po)
-                        ga = patch.state.gamma
-
-                        val = np.expand_dims(val, 3)
-                        if name == "pstag":
-                            val = val * fac_Po.reshape(1, 1, 1, nt)
-                        elif name == "tstag":
-                            val = val * fac_ho.reshape(1, 1, 1, nt)
-                        else:
-                            val = np.tile(val, (1, 1, 1, nt))
-
-                        print(
-                            'Forcing unsteady inlet patch "%s" with %d time steps.'
-                            % (name, nt)
-                        )
-                        print(f"  Po factor ptp: {np.ptp(fac_Po)}")
-                        print(f"  ho factor ptp: {np.ptp(fac_ho)}")
-
-                        pa["nt"] = nt
-
-                if isinstance(patch, turbigen.grid.OutletPatch):
-                    if patch.force and ts3_config.dts:
-                        raise NotImplementedError()
-                        t = _get_time_vector(ts3_config)
-                        F = 1.0 + patch.amplitude * np.sin(
-                            2.0 * np.pi * ts3_config.frequency * t
-                        ).reshape(1, 1, 1, -1)
-                        val = np.expand_dims(val, 3) * F
-                        pa["nt"] = len(t)
-
-                _write_property(patch_group, name, "_pp", val, flat=True)
-
-            patch_group.attrs.update(pa)
-
-            ip += 1
-
-        assert ip == block_group.attrs["np"]
-
-    # Write out a probe metadata file with shapes of the patches
-    if grid.probe_patches:
-        probe_shape_path = os.path.join(ts3_config.workdir, "probe_meta.yaml")
-        probe_metadata = {}
-        for ib, b in enumerate(grid):
-            bmeta = {}
-            for ip, p in enumerate(b.patches):
-                if isinstance(p, turbigen.grid.ProbePatch):
-                    C = p.get_cut()
-                    bmeta[ip] = {
-                        "shape": C.shape,
-                        "Omega": C.Omega.mean(),
-                        "Nb": C.Nb,
-                        "label": p.label,
-                    }
-
-            if bmeta:
-                probe_metadata[ib] = bmeta
-
-        yaml_utils.write_yaml(probe_metadata, probe_shape_path)
-
-    # Now check that patch and block ids are consistent
-    logger.debug("Checking np")
-    for ib in range(nb):
-        blk = f[f"block{ib}"]
-        nptch = blk.attrs["np"]
-        logger.debug(f"bid={ib}, np={nptch}, len(patches)={len(grid[ib].patches)}")
-        for ip in range(nptch):
-            pch = blk[f"patch{ip}"]
-            bid = pch.attrs["bid"]
-            pid = pch.attrs["pid"]
-            nxbid = pch.attrs["nxbid"]
-            nxblk = f[f"block{nxbid}/"]
-            nxpid = pch.attrs["nxpid"]
-            logger.debug(
-                f"ip={ip}, kind={pch.attrs['kind']}, "
-                f"bid={bid}, pid={pid}, "
-                f"nxbid={nxbid}, nxpid={nxpid}, nxnp={nxblk.attrs['np']}"
-            )
-            ni = blk.attrs["ni"]
-            nj = blk.attrs["nj"]
-            nk = blk.attrs["nk"]
-            ist = pch.attrs["ist"]
-            jst = pch.attrs["jst"]
-            kst = pch.attrs["kst"]
-            ien = pch.attrs["ien"]
-            jen = pch.attrs["jen"]
-            ken = pch.attrs["ken"]
-
-            try:
-                assert ist < ni
-                assert ien < (ni + 1)
-                assert jst < nj
-                assert jen < (nj + 1)
-                assert kst < nk
-                assert ken < (nk + 1)
-            except AssertionError:
-                raise Exception(
-                    f"Patch {pch} has invalid indices: "
-                    f"ist={ist}, ien={ien}, jst={jst}, jen={jen}, "
-                    f"kst={kst}, ken={ken}, ni={ni}, nj={nj}, nk={nk}"
-                )
-
-            assert nxbid < nb
-            assert nxpid < nxblk.attrs["np"]
-
-    f.close()
-
-    # Reset the internal energy datum
-    for b in grid:
-        b.set_Tu0(Tu0_old)
-    for p in grid.inlet_patches:
-        p.state.set_Tu0(Tu0_old)
 
 
 def _execute(ts3_config):
@@ -1181,13 +306,6 @@ def _read_hdf5(grid, ts3_config):
         # Set turbulent viscosity
         block.mu_turb = trans_dyn_vis
 
-        # Print yplus if requested
-        if ts3_config.show_yplus:
-            yplus = _unflip(block_group["yplus_bp"])
-            # Remove not-wall nodes
-            yplus = yplus[yplus > 0.0]
-            logger.info(f"Block {ib} ({block.label}): mean yplus={yplus.mean():.1f}")
-
     f.close()
     fi.close()
 
@@ -1195,7 +313,10 @@ def _read_hdf5(grid, ts3_config):
 def _run(grid, ts3_config):
     """Perform all steps on a grid and config."""
 
-    _write_hdf5(grid, ts3_config)
+    # TODO: migrate input-file writing to the ember.ts3 API. The hand-rolled
+    # _write_hdf5 and its helpers were removed; wire up
+    # grid.write_ts3(...) / ember.ts3.TS3Writer here.
+    raise NotImplementedError("TS3 input writing not yet migrated to the ember.ts3 API")
     _execute(ts3_config)
     _read_hdf5(grid, ts3_config)
 
@@ -1254,7 +375,7 @@ def run(grid, ts3_conf, machine, workdir):
     _run(grid, ts3_conf)
 
     # Parse the log file
-    istep_save_start = ts3_conf.application_variables(0.0, 0.0, 0.0)["nstep_save_start"]
+    istep_save_start = ts3_conf.nstep - ts3_conf.nstep_avg
 
     try:
         istep, mdot, ho, Po, resid = parse_log(log_path)
@@ -1418,43 +539,6 @@ def parse_log(fname):
     return istep, mdot, To * cp, Po, resid
 
 
-def read_inlet(fname):
-    """Get inlet data from an hdf5 file."""
-
-    # Open the file
-    f = h5py.File(fname, "r")
-    nb = f.attrs["nb"]
-
-    pstag_all = []
-    tstag_all = []
-
-    # Loop over blocks and patches until we find an inlet
-    for ib in range(nb):
-        bgrp = f[f"block{ib}"]
-        npatch = bgrp.attrs["np"]
-        for ip in range(npatch):
-            pgrp = bgrp[f"patch{ip}"]
-            ptype = KIND_LOOKUP[pgrp.attrs["kind"]]
-            if ptype == turbigen.grid.InletPatch:
-                ist = int(pgrp.attrs["ist"])
-                ien = int(pgrp.attrs["ien"])
-                jst = int(pgrp.attrs["jst"])
-                jen = int(pgrp.attrs["jen"])
-                kst = int(pgrp.attrs["kst"])
-                ken = int(pgrp.attrs["ken"])
-                nt = int(pgrp.attrs["nt"])
-                shape = (ien - ist, jen - jst, ken - kst, nt)[::-1]
-                pstag = np.array(pgrp["pstag_pp"])
-                pstag = np.transpose(pstag.reshape(shape))
-                tstag = np.array(pgrp["tstag_pp"])
-                tstag = np.transpose(tstag.reshape(shape))
-                return pstag, tstag
-                # pstag_all.append(pstag)
-                # tstag_all.append(tstag)
-
-    return pstag_all, tstag_all
-
-
 def _check_nan(fname):
     """Return step number of divergence from TS3 log, or zero if no NANs found."""
     NBYTES = 2048
@@ -1466,197 +550,3 @@ def _check_nan(fname):
                 except Exception:
                     return -1
     return 0
-
-
-def _get_time_vector(ts3_config):
-    freq = ts3_config.frequency
-    nstep_cycle = ts3_config.nstep_cycle
-    nt = nstep_cycle * ts3_config.ncycle
-    it = np.arange(nt)
-    dt = 1.0 / freq / nstep_cycle
-    t = it * dt
-    return t
-
-
-def scalar(x):
-    return np.squeeze(x).item()
-
-
-def read_grid(fname_hdf5):
-    """Read a Turbostream 3 input file and return a Grid object.
-
-    This function loads not only the flow field, but also coordinates
-    and patch information from the file.
-
-    Parameters
-    ----------
-    fname : str
-        The name of the hdf5 file to read.
-
-    Returns
-    -------
-    g : turbigen.grid.Grid
-        The Grid object containing the data from the file.
-    """
-
-    f = h5py.File(fname_hdf5, "r")
-    logger.info(f"Reading TS3 input file {fname_hdf5}")
-
-    # Get gas properties from application vars and initialise a state
-    # These are data items of the root group
-    cp, ga, mu = (scalar(f[f"{k}_av"]) for k in ("cp", "ga", "viscosity"))
-    logger.info(f"Fluid properties: cp = {cp:.0f}, ga = {ga:.3f}, mu = {mu:.3g}")
-    Sref = turbigen.fluid.PerfectState.from_properties(cp=cp, gamma=ga, mu=mu)
-
-    # Get number of blocks from root group
-    nb = int(scalar(f.attrs["nb"]))
-    logger.info(f"Number of blocks: {nb}")
-
-    # Loop over blocks
-    blocks = []
-    for ib in range(nb):
-        b = f[f"block{ib}"]
-
-        # Shape from attributes
-        ni, nj, nk = [int(scalar(b.attrs[k])) for k in ("ni", "nj", "nk")]
-        npatch = int(scalar(b.attrs["np"]))
-
-        # Now read the block variables we need
-        rpm = scalar(b["rpm_bv"])
-        Nb = int(scalar(b["nblade_bv"]))
-        logger.info(
-            f"bid {ib}: shape={ni}x{nj}x{nk}, rpm={rpm:.0f}, Nb={Nb:.0f}, np={npatch}"
-        )
-        Omega = 2 * np.pi * rpm / 60.0
-
-        # Read block properties at all nodes
-
-        # Coordinates
-        xrt = np.full((3, ni, nj, nk), np.nan)
-        xrt[0] = _unflip(b["x_bp"])
-        xrt[1] = _unflip(b["r_bp"])
-        xrt[2] = _unflip(b["rt_bp"]) / xrt[1]
-
-        # Conserved variables
-        conserved = np.stack(
-            (
-                _unflip(b["ro_bp"]),
-                _unflip(b["rovx_bp"]),
-                _unflip(b["rovr_bp"]),
-                _unflip(b["rorvt_bp"]),
-                _unflip(b["roe_bp"]),
-            )
-        )
-
-        mu_turb = _unflip(b["trans_dyn_vis_bp"])
-        wdist = _unflip(b["phi_bp"])
-
-        # Now read the patches
-        patches = []
-        for ip in range(npatch):
-            p = b[f"patch{ip}"]
-
-            # Check bid and pid
-            assert p.attrs["bid"] == ib
-            assert p.attrs["pid"] == ip
-
-            # Start and end indices of the patch
-            ist, ien, jst, jen, kst, ken = (
-                p.attrs[k] for k in ("ist", "ien", "jst", "jen", "kst", "ken")
-            )
-            nt = int(p.attrs["nt"])
-
-            # Patch shape
-            di = ien - ist
-            dj = jen - jst
-            dk = ken - kst
-            pshape = (di, dj, dk)
-
-            # Subtract 1 to make the end indices inclusive
-            ien -= 1
-            jen -= 1
-            ken -= 1
-
-            # Select what subclass of Patch to use
-            kind = p.attrs["kind"]
-            if kind not in KIND_LOOKUP:
-                raise ValueError(f"Unknown patch kind {kind} in block {ib}, patch {ip}")
-            patch = KIND_LOOKUP[kind](i=(ist, ien), j=(jst, jen), k=(kst, ken))
-
-            # Now process the patch variables and properties according to sublcass
-
-            # Inlet
-            if isinstance(patch, turbigen.grid.InletPatch):
-                if nt > 1:
-                    tshape = (*pshape, nt)
-                else:
-                    tshape = pshape
-                pstag = _unflip(p["pstag_pp"], tshape)
-                tstag = _unflip(p["tstag_pp"], tshape)
-                yaw = _unflip(p["yaw_pp"], tshape)
-                pitch = _unflip(p["pitch_pp"], tshape)
-                patch.state = Sref.empty(shape=(di, dj, dk))
-                patch.state.set_P_T(pstag, tstag)
-                patch.Alpha = yaw
-                patch.Beta = pitch
-
-            # Outlet
-            elif isinstance(patch, turbigen.grid.OutletPatch):
-                patch.Pout = float(p["pout_pv"][0])
-
-            # Cooling
-            elif isinstance(patch, turbigen.grid.CoolingPatch):
-                patch.cool_type = int(p["cool_type_pv"][0])
-                patch.cool_mass = float(p["cool_mass_pv"][0])
-                patch.cool_pstag = float(p["cool_pstag_pv"][0])
-                patch.cool_tstag = float(p["cool_tstag_pv"][0])
-                patch.cool_sangle = float(p["cool_sangle_pv"][0])
-                patch.cool_xangle = float(p["cool_xangle_pv"][0])
-                patch.cool_mach = float(p["cool_mach_pv"][0])
-                patch.cool_angle_def = 1
-
-            patches.append(patch)
-
-        # Convert rpm block variables to RotatingPatch
-
-        if rpmi1 := b["rpmi1_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(i=0))
-            patches[-1].Omega = rpmi1 * 2 * np.pi / 60.0
-        if rpmi2 := b["rpmi2_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(i=1))
-            patches[-1].Omega = rpmi2 * 2 * np.pi / 60.0
-
-        if rpmj1 := b["rpmj1_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(j=0))
-            patches[-1].Omega = rpmj1 * 2 * np.pi / 60.0
-        if rpmj2 := b["rpmj2_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(j=-1))
-            patches[-1].Omega = rpmj2 * 2 * np.pi / 60.0
-
-        if rpmk1 := b["rpmk1_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(k=0))
-            patches[-1].Omega = rpmk1 * 2 * np.pi / 60.0
-        if rpmk2 := b["rpmk2_bv"][0]:
-            patches.append(turbigen.grid.RotatingPatch(k=-1))
-            patches[-1].Omega = rpmk2 * 2 * np.pi / 60.0
-
-        # Initialise the block object
-        block = turbigen.grid.PerfectBlock.from_coordinates(
-            xrt, Nb, patches, Omega=Omega, label=str(ib)
-        )
-        block.gamma = ga
-        block.mu = mu
-        block.cp = cp
-        block.set_Tu0(0.0)
-        block.set_conserved(conserved)
-        block.mu_turb[:] = mu_turb
-        block.w[:] = wdist
-
-        blocks.append(block)
-
-    # Create the grid object
-    g = turbigen.grid.Grid(blocks)
-
-    logger.info("Finished reading TS3 grid.")
-
-    return g
