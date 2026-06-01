@@ -34,7 +34,7 @@ def test_perfect_fluid_config_creates_working_fluid():
     rho, u = config.fluid.set_P_T(P, T)
 
     # Check basic perfect gas relation
-    rgas = config.fluid.get_rgas(rho, u)
+    rgas = config.fluid.get_Rgas(rho, u)
     P_check = config.fluid.get_P(rho, u)
     T_check = config.fluid.get_T(rho, u)
 

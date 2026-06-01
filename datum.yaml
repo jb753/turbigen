@@ -105,7 +105,7 @@ iterate:
   deviation:
     # relaxation_factor: 1.0
   incidence:
-    relaxation_factor: 0.05
+    relaxation_factor: 0.04
     clip: 5.0
 design_space:
   independent:
@@ -230,7 +230,7 @@ solver:
   gain_filt: 16.0
   i_level_stop: 0
   inviscid: false
-  n_step: 2000
+  n_step: 2500
   n_step_avg: 1000
   radial_equilibrium: true
   restrict_avg: false
@@ -243,6 +243,6 @@ solver:
   v_cycle: false
   workdir: null
   sf_cusp: 0.0
-work_dir: /home/jb753/python/turbigen-dev/turb11
+work_dir: /home/jb753/python/turbigen-dev/turb12
 # work_dir: runs/*
 ...

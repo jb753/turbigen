@@ -33,7 +33,7 @@ def test_get_i_stag_simple_2d():
     Vx = np.ones((ni, nj, 1)) * 50.0  # m/s
     Vr = np.zeros((ni, nj, 1))
     Vt = np.zeros((ni, nj, 1))
-    block.set_primitive(rho, Vx, Vr, Vt, P * 1e5)
+    block.set_P_rho(P * 1e5, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
     block.set_Omega(0.0)  # Non-rotating, so P_rot = P
 
     # Squeeze to 2D before calling get_i_stag
@@ -92,7 +92,7 @@ def test_get_i_stag_multiple_j_lines():
     Vx = np.ones((ni, nj, 1)) * 50.0
     Vr = np.zeros((ni, nj, 1))
     Vt = np.zeros((ni, nj, 1))
-    block.set_primitive(rho, Vx, Vr, Vt, P * 1e5)
+    block.set_P_rho(P * 1e5, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
     block.set_Omega(0.0)
 
     i_stag = get_i_stag(block.squeeze())
@@ -140,7 +140,7 @@ def test_get_i_stag_rotating():
     Vx = np.ones((ni, nj, 1)) * 10.0
     Vr = np.zeros((ni, nj, 1))
     Vt = r[None, :, None] * Omega * np.ones((ni, 1, 1))  # solid-body rotation
-    block.set_primitive(rho, Vx, Vr, Vt, P)
+    block.set_P_rho(P, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
     block.set_Omega(Omega)
 
     i_stag = get_i_stag(block.squeeze())

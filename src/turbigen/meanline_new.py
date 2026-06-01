@@ -257,8 +257,15 @@ def _make_setter_method(method_name):
         # Determine expected total length (2 stations per row)
         n_stations = self._n_row * 2
 
-        # Broadcast all arguments to arrays of correct length
-        broadcasted_args = [np.broadcast_to(arg, (n_stations,)) for arg in args]
+        # Broadcast each argument so its leading axis indexes the stations,
+        # preserving any trailing component axes. Scalar/1-D arguments map to
+        # one value per station as before; vectorised setters such as
+        # set_conserved/set_Vxrt receive their (..., K) array sliced per row.
+        broadcasted_args = []
+        for arg in args:
+            arr = np.asarray(arg)
+            target = (n_stations,) + arr.shape[1:] if arr.ndim else (n_stations,)
+            broadcasted_args.append(np.broadcast_to(arr, target))
 
         # Call setter on each scalar station with its corresponding value
         for i, station in enumerate(self._stations):

@@ -29,14 +29,14 @@ class TestIsentropicEfficiencyBasics:
         inlet.set_r_rms(0.5)
         inlet.set_Am(1.0)
         inlet.set_P_T(1e5, 300.0)  # 1 bar, 300 K static
-        inlet.set_Vxrt(100.0, 0.0, 0.0)  # 100 m/s axial velocity
+        inlet.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)  # 100 m/s axial velocity
 
         # Outlet: after expansion
         outlet = ml[1]
         outlet.set_r_rms(0.5)
         outlet.set_Am(1.0)
         outlet.set_P_T(0.8e5, 290.0)  # 0.8 bar, 290 K static
-        outlet.set_Vxrt(110.0, 0.0, 0.0)
+        outlet.set_Vx(110.0).set_Vr(0.0).set_Vt(0.0)
 
         return ml
 
@@ -94,7 +94,7 @@ class TestIsentropicEfficiencyBasics:
             ml[i].set_r_rms(0.5)
             ml[i].set_Am(1.0)
             ml[i].set_P_T(1e5, 300.0)
-            ml[i].set_Vxrt(100.0, 0.0, 0.0)
+            ml[i].set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
         # With no work, denominator will be ~0, returning inf
         eta_tt = ml.eta_tt
@@ -120,13 +120,13 @@ class TestIsentropicEfficiencyAnalytical:
         inlet.set_r_rms(0.5)
         inlet.set_Am(1.0)
         inlet.set_P_T(P_in, T_in)
-        inlet.set_Vxrt(V_in, 0.0, 0.0)
+        inlet.set_Vx(V_in).set_Vr(0.0).set_Vt(0.0)
 
         outlet = ml[1]
         outlet.set_r_rms(0.5)
         outlet.set_Am(1.0)
         outlet.set_P_T(P_out, T_out)
-        outlet.set_Vxrt(V_out, 0.0, 0.0)
+        outlet.set_Vx(V_out).set_Vr(0.0).set_Vt(0.0)
 
         return ml
 
@@ -223,14 +223,14 @@ class TestIsentropicEfficiencyEdgeCases:
         inlet.set_r_rms(0.5)
         inlet.set_Am(1.0)
         inlet.set_P_T(1e5, 300.0)
-        inlet.set_Vxrt(100.0, 0.0, 0.0)
+        inlet.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
         # Same pressure and temperature at outlet (no expansion)
         outlet = ml[1]
         outlet.set_r_rms(0.5)
         outlet.set_Am(1.0)
         outlet.set_P_T(1e5, 300.0)  # Same P and T
-        outlet.set_Vxrt(100.0, 0.0, 0.0)
+        outlet.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
         eta_tt = ml.eta_tt
         eta_ts = ml.eta_ts
@@ -249,14 +249,14 @@ class TestIsentropicEfficiencyEdgeCases:
         inlet.set_r_rms(0.5)
         inlet.set_Am(1.0)
         inlet.set_P_T(1e5, 300.0)
-        inlet.set_Vxrt(100.0, 0.0, 0.0)
+        inlet.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
         # Small temperature drop at lower pressure
         outlet = ml[1]
         outlet.set_r_rms(0.5)
         outlet.set_Am(1.0)
         outlet.set_P_T(0.95e5, 299.5)  # Only 0.5 K drop
-        outlet.set_Vxrt(101.0, 0.0, 0.0)
+        outlet.set_Vx(101.0).set_Vr(0.0).set_Vt(0.0)
 
         eta_tt = ml.eta_tt
         eta_ts = ml.eta_ts
@@ -285,13 +285,13 @@ class TestIsentropicEfficiencyConsistency:
             inlet.set_r_rms(0.5)
             inlet.set_Am(1.0)
             inlet.set_P_T(1e5, 300.0)
-            inlet.set_Vxrt(100.0 * V_scale, 0.0, 0.0)
+            inlet.set_Vx(100.0 * V_scale).set_Vr(0.0).set_Vt(0.0)
 
             outlet = ml[1]
             outlet.set_r_rms(0.5)
             outlet.set_Am(1.0)
             outlet.set_P_T(0.8e5, 290.0)
-            outlet.set_Vxrt(130.0 * V_scale, 0.0, 0.0)
+            outlet.set_Vx(130.0 * V_scale).set_Vr(0.0).set_Vt(0.0)
 
             return ml.eta_tt, ml.eta_ts
 
@@ -324,13 +324,13 @@ class TestIsentropicEfficiencyConsistency:
             inlet.set_r_rms(0.5)
             inlet.set_Am(1.0)
             inlet.set_P_T(P_in, T_in)
-            inlet.set_Vxrt(100.0, 0.0, 0.0)
+            inlet.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
             outlet = ml[1]
             outlet.set_r_rms(0.5)
             outlet.set_Am(1.0)
             outlet.set_P_T(P_out, T_out_actual)
-            outlet.set_Vxrt(110.0, 0.0, 0.0)
+            outlet.set_Vx(110.0).set_Vr(0.0).set_Vt(0.0)
 
             return ml.eta_tt, ml.eta_ts
 
@@ -365,13 +365,13 @@ class TestEtaTtGreaterThanEtaTs:
         inlet.set_r_rms(0.5)
         inlet.set_Am(1.0)
         inlet.set_P_T(P_in, T_in)
-        inlet.set_Vxrt(V_in, 0.0, 0.0)
+        inlet.set_Vx(V_in).set_Vr(0.0).set_Vt(0.0)
 
         outlet = ml[1]
         outlet.set_r_rms(0.5)
         outlet.set_Am(1.0)
         outlet.set_P_T(P_out, T_out)
-        outlet.set_Vxrt(V_out, 0.0, 0.0)
+        outlet.set_Vx(V_out).set_Vr(0.0).set_Vt(0.0)
 
         return ml
 
@@ -525,7 +525,7 @@ class TestIsentropicEfficiencyMultiRow:
         ml[0].set_r_rms(0.5)
         ml[0].set_Am(1.0)
         ml[0].set_P_T(P_in, T_in)
-        ml[0].set_Vxrt(80.0, 0.0, 0.0)
+        ml[0].set_Vx(80.0).set_Vr(0.0).set_Vt(0.0)
 
         # First row outlet (station 1) - intermediate expansion
         T_mid = 0.5 * (T_in + T_out_actual)
@@ -533,19 +533,19 @@ class TestIsentropicEfficiencyMultiRow:
         ml[1].set_r_rms(0.5)
         ml[1].set_Am(1.0)
         ml[1].set_P_T(P_mid, T_mid)
-        ml[1].set_Vxrt(90.0, 0.0, 0.0)
+        ml[1].set_Vx(90.0).set_Vr(0.0).set_Vt(0.0)
 
         # Second row inlet (station 2) - same as row 1 outlet
         ml[2].set_r_rms(0.5)
         ml[2].set_Am(1.0)
         ml[2].set_P_T(P_mid, T_mid)
-        ml[2].set_Vxrt(90.0, 0.0, 0.0)
+        ml[2].set_Vx(90.0).set_Vr(0.0).set_Vt(0.0)
 
         # Second row outlet (station 3)
         ml[3].set_r_rms(0.5)
         ml[3].set_Am(1.0)
         ml[3].set_P_T(P_out, T_out_actual)
-        ml[3].set_Vxrt(110.0, 0.0, 0.0)
+        ml[3].set_Vx(110.0).set_Vr(0.0).set_Vt(0.0)
 
         eta_tt = ml.eta_tt
         eta_ts = ml.eta_ts
@@ -574,12 +574,12 @@ class TestIsentropicEfficiencyMultiRow:
         ml_single[0].set_r_rms(0.5)
         ml_single[0].set_Am(1.0)
         ml_single[0].set_P_T(P_in, T_in)
-        ml_single[0].set_Vxrt(80.0, 0.0, 0.0)
+        ml_single[0].set_Vx(80.0).set_Vr(0.0).set_Vt(0.0)
 
         ml_single[1].set_r_rms(0.5)
         ml_single[1].set_Am(1.0)
         ml_single[1].set_P_T(P_out, T_out_actual)
-        ml_single[1].set_Vxrt(110.0, 0.0, 0.0)
+        ml_single[1].set_Vx(110.0).set_Vr(0.0).set_Vt(0.0)
 
         eta_tt_single = ml_single.eta_tt
         eta_ts_single = ml_single.eta_ts
@@ -595,22 +595,22 @@ class TestIsentropicEfficiencyMultiRow:
         ml_multi[0].set_r_rms(0.5)
         ml_multi[0].set_Am(1.0)
         ml_multi[0].set_P_T(P_in, T_in)
-        ml_multi[0].set_Vxrt(80.0, 0.0, 0.0)
+        ml_multi[0].set_Vx(80.0).set_Vr(0.0).set_Vt(0.0)
 
         ml_multi[1].set_r_rms(0.5)
         ml_multi[1].set_Am(1.0)
         ml_multi[1].set_P_T(P_mid, T_mid)
-        ml_multi[1].set_Vxrt(95.0, 0.0, 0.0)
+        ml_multi[1].set_Vx(95.0).set_Vr(0.0).set_Vt(0.0)
 
         ml_multi[2].set_r_rms(0.5)
         ml_multi[2].set_Am(1.0)
         ml_multi[2].set_P_T(P_mid, T_mid)
-        ml_multi[2].set_Vxrt(95.0, 0.0, 0.0)
+        ml_multi[2].set_Vx(95.0).set_Vr(0.0).set_Vt(0.0)
 
         ml_multi[3].set_r_rms(0.5)
         ml_multi[3].set_Am(1.0)
         ml_multi[3].set_P_T(P_out, T_out_actual)
-        ml_multi[3].set_Vxrt(110.0, 0.0, 0.0)
+        ml_multi[3].set_Vx(110.0).set_Vr(0.0).set_Vt(0.0)
 
         eta_tt_multi = ml_multi.eta_tt
         eta_ts_multi = ml_multi.eta_ts

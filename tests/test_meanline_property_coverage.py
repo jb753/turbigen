@@ -24,7 +24,7 @@ def test_meanline_block_property_parity():
     r_values = np.array([0.5, 0.55], dtype=np.float32)
     t_values = np.array([0.0, 0.0], dtype=np.float32)
 
-    block.set_xrt(x_values, r_values, t_values)
+    block.set_x(x_values).set_r(r_values).set_t(t_values)
 
     # Set coordinates on each MeanLine station individually
     for i in range(2):
@@ -39,8 +39,9 @@ def test_meanline_block_property_parity():
     rhorVt = np.array([30.0, 31.625], dtype=np.float32)  # rho * r * Vt
     rhoe = np.array([300000.0, 295000.0], dtype=np.float32)
 
-    block.set_conserved(rho, rhoVx, rhoVr, rhorVt, rhoe)
-    meanline.set_conserved(rho, rhoVx, rhoVr, rhorVt, rhoe)
+    conserved = np.stack([rho, rhoVx, rhoVr, rhorVt, rhoe], axis=-1)
+    block.set_conserved(conserved)
+    meanline.set_conserved(conserved)
 
     # 4) Loop over all properties of Block
     # Discover all properties by inspecting the Block class

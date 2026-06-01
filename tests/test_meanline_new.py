@@ -62,7 +62,7 @@ def test_station_computed_geometry_properties():
     station.set_Am(Am).set_r_rms(r_rms)
 
     # Set velocity to compute cosBeta
-    station.set_Vxrt(100.0, 0.0, 0.0)  # Axial flow only
+    station.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)  # Axial flow only
     station.set_P_T(1e5, 300.0)
 
     # Compute cosBeta from Beta angle
@@ -98,7 +98,7 @@ def test_station_mass_flow_rate():
 
     # Set velocity
     Vx, Vr = 100.0, 0.0
-    station.set_Vxrt(Vx, Vr, 0.0)
+    station.set_Vx(Vx).set_Vr(Vr).set_Vt(0.0)
 
     # Compute mass flow rate
     # mdot = rho * Vm * Am
@@ -127,7 +127,7 @@ def test_station_with_thermodynamics():
     station.set_P_T(P, T)
 
     # Set velocity
-    station.set_Vxrt(150.0, 0.0, 50.0)
+    station.set_Vx(150.0).set_Vr(0.0).set_Vt(50.0)
 
     # Verify we can access thermodynamic properties
     assert station.P == pytest.approx(P)
@@ -156,7 +156,7 @@ def test_station_inherits_block_setters():
     # Should be able to chain Block's setters (but set coords separately)
     station.set_x(1.0).set_r_rms(0.5).set_t(0.1).set_Am(1.5).set_P_T(
         1e5, 300.0
-    ).set_Vxrt(100.0, 0.0, 0.0)
+    ).set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
 
     # Verify values were set
     assert station.x == pytest.approx(1.0)
@@ -179,7 +179,7 @@ def test_station_with_rotation():
     station.set_rpm(rpm).set_r_rms(0.5).set_Am(1.0)
 
     # Set thermodynamic state and velocity
-    station.set_P_T(1e5, 300.0).set_Vxrt(100.0, 0.0, 50.0)
+    station.set_P_T(1e5, 300.0).set_Vx(100.0).set_Vr(0.0).set_Vt(50.0)
 
     # Verify rotation was set
     Omega_expected = rpm / 30.0 * np.pi  # Convert RPM to rad/s
@@ -279,7 +279,7 @@ def test_meanline_concatenated_property():
         ml[i].set_r_rms(r_rms[i])
         ml[i].set_Am(Am[i])
         ml[i].set_P_T(P[i], T[i])
-        ml[i].set_Vxrt(Vx[i], Vr[i], Vt[i])
+        ml[i].set_Vx(Vx[i]).set_Vr(Vr[i]).set_Vt(Vt[i])
 
     Vx_concat = ml.Vx.squeeze()
 
@@ -323,7 +323,7 @@ def test_meanline_setter_method():
     Vr = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
 
-    ml.set_Vxrt(Vx, Vr, Vt)
+    ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
 
     assert ml[0].Vx == pytest.approx(100.0)
     assert ml[1].Vx == pytest.approx(110.0)
@@ -354,7 +354,7 @@ def test_meanline_setter_shape_validation():
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
 
     with pytest.raises(ValueError):
-        ml.set_Vxrt(Vx_wrong, Vr, Vt)
+        ml.set_Vx(Vx_wrong).set_Vr(Vr).set_Vt(Vt)
 
 
 def test_meanline_setter_returns_self():
@@ -369,7 +369,7 @@ def test_meanline_setter_returns_self():
     Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
 
-    result = ml.set_Vxrt(Vx, Vr, Vt)
+    result = ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
     assert result is ml
 
 
@@ -410,7 +410,7 @@ def test_meanline_concatenated_array_values():
 
     for i in range(4):
         ml[i].set_r_rms(r_rms[i]).set_Am(Am[i]).set_P_T(P[i], T[i])
-    ml.set_Vxrt(Vx, Vr, Vt)
+    ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
 
     np.testing.assert_allclose(ml.Vx.squeeze(), Vx, rtol=1e-5)
     np.testing.assert_allclose(ml.Vt.squeeze(), Vt, rtol=1e-5)
@@ -437,8 +437,8 @@ def test_meanline_partially_initialized():
     ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Only initialize stations 0 and 1 (first row) using flat indexing
-    ml[0].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0).set_Vxrt(100.0, 0.0, 50.0)
-    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vxrt(110.0, 0.0, 55.0)
+    ml[0].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0).set_Vx(100.0).set_Vr(0.0).set_Vt(50.0)
+    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vx(110.0).set_Vr(0.0).set_Vt(55.0)
 
     # Stations 2, 3 remain uninitialized
     vx = ml.Vx.squeeze()
@@ -456,7 +456,7 @@ def test_meanline_single_station_initialized():
     ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
 
     # Only initialize flat station index 1
-    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vxrt(110.0, 0.0, 55.0)
+    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vx(110.0).set_Vr(0.0).set_Vt(55.0)
 
     vx = ml.Vx.squeeze()
 

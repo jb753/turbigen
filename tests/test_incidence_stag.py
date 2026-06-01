@@ -31,7 +31,7 @@ def make_blade_surf(ni=41, nj=11, i_stag_true=20):
     Vx = np.ones(shape) * 50.0
     Vr = np.zeros(shape)
     Vt = np.zeros(shape)
-    block.set_primitive(rho, Vx, Vr, Vt, P)
+    block.set_P_rho(P, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
     return block
 
 
@@ -77,7 +77,7 @@ def test_get_zeta_stag_subcell_recovery():
     Vx = np.ones((ni, nj, 1)) * 50.0
     Vr = np.zeros((ni, nj, 1))
     Vt = np.zeros((ni, nj, 1))
-    surf.set_primitive(rho, Vx, Vr, Vt, P)
+    surf.set_P_rho(P, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
 
     r_mid = 0.5 * (surf.r.min() + surf.r.max())
     xr_cut = np.array([[surf.x.min(), r_mid], [surf.x.max(), r_mid]])
