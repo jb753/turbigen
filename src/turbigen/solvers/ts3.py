@@ -3,8 +3,8 @@ from time import sleep
 from dataclasses import dataclass
 from timeit import default_timer as timer
 from glob import glob
-import h5py
 import numpy as np
+import ember.ts3
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
@@ -17,23 +17,6 @@ import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
 logger = logging.getLogger("turbigen")
-
-
-def _unflip(x, shape=None):
-    """Make the shape of a TS3 hdf5 array [ni, nj, nk]
-
-    Although the TS3 hdf5 reports the shape of the data as ni x nj x nk,
-    this is not actually true and the underlying data is stored in nk x nj x
-    ni order. So we reshape and swap the axes back."""
-    if shape and len(shape) == 4:
-        ni, nj, nk, nt = shape
-        return np.transpose(np.reshape(x, (nt, nk, nj, ni)))[..., 0]
-    else:
-        if not shape:
-            ni, nj, nk = x.shape
-        else:
-            ni, nj, nk = shape
-        return np.swapaxes(np.reshape(x, (nk, nj, ni)), 0, 2)
 
 
 @dataclass
@@ -249,65 +232,27 @@ Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
 
 
 def _read_hdf5(grid, ts3_config):
-    """Using a given configuration, load flow solution and insert into grid."""
+    """Using a given configuration, load flow solution and insert into grid.
+
+    The averaged flow field is read from ``output_avg.hdf5`` and the turbulent
+    viscosity from the instantaneous ``output.hdf5`` (Turbostream only writes
+    ``trans_dyn_vis`` to the latter). A diverged solution surfaces as a
+    :class:`~turbigen.exceptions.ConvergenceError`.
+    """
 
     output_file_path = os.path.join(ts3_config.workdir, "output_avg.hdf5")
     output_inst_file_path = os.path.join(ts3_config.workdir, "output.hdf5")
     if not os.path.exists(output_file_path):
         raise Exception(f"""No Turbostream output file found at: {output_file_path}""")
 
-    f = h5py.File(output_file_path, "r")
-    fi = h5py.File(output_inst_file_path, "r")
-
-    # Although the TS3 hdf5 reports the shape of the data as ni x nj x nk, this
-    # is not correct and actually the underlying data is stored in nk x nj x ni order.
-
-    # Loop over blocks
-    nb = len(grid)
-    for ib in range(nb):
-        block = grid[ib]
-        block_group = f[f"block{ib}"]
-
-        # Pull some properties first
-        rho = _unflip(block_group["ro_bp"])
-        roe = _unflip(block_group["roe_bp"])
-        trans_dyn_vis = _unflip(fi[f"block{ib}"]["trans_dyn_vis_bp"])
-
-        # Check for divergence
-        if not np.isfinite(rho).all():
-            raise ConvergenceError("TS3 solution has NAN density.")
-        if (rho < 0.0).any():
-            raise ConvergenceError("TS3 solution has negative density.")
-        if not np.isfinite(roe).all():
-            raise ConvergenceError("TS3 solution has NAN total energy.")
-        if (roe < 0.0).any():
-            raise ConvergenceError("TS3 solution has negative total energy.")
-        if not np.isfinite(trans_dyn_vis).all():
-            raise ConvergenceError("TS3 solution has NAN turbulent viscosity.")
-
-        # Set the velocities
-        block.Vx = _unflip(block_group["rovx_bp"]) / rho
-        block.Vr = _unflip(block_group["rovr_bp"]) / rho
-        block.Vt = _unflip(block_group["rorvt_bp"]) / rho / block.r
-
-        # Convert total energy to internal energy
-        u = roe / rho - 0.5 * block.V**2.0
-
-        # Make sure that u is positive
-        if not (u > 0.0).all():
-            raise ConvergenceError("TS3 solution has negative internal energy.")
-
-        # Set the thermodynamic state
-        Tu0_old = block.Tu0 + 0.0
-        block.Tu0 = 0.0
-        block.set_rho_u(rho, u)
-        block.set_Tu0(Tu0_old)
-
-        # Set turbulent viscosity
-        block.mu_turb = trans_dyn_vis
-
-    f.close()
-    fi.close()
+    # ember.ts3 owns the datum-correct read into the existing grid; a diverged
+    # solution (negative/NaN density, etc.) is raised as ValueError there and
+    # translated to ConvergenceError for the iterator.
+    try:
+        ember.ts3.read_conserved(grid, output_file_path)
+        ember.ts3.read_mu_turb(grid, output_inst_file_path)
+    except ValueError as e:
+        raise ConvergenceError(f"TS3 solution diverged: {e}") from e
 
 
 def _run(grid, ts3_config):
