@@ -5,6 +5,7 @@ from timeit import default_timer as timer
 from glob import glob
 import numpy as np
 import ember.ts3
+from ember.convergence_history import ConvergenceHistory
 from turbigen.exceptions import ConvergenceError
 import subprocess
 import os
@@ -14,7 +15,7 @@ import sys
 import re
 import grp
 import getpass
-from turbigen.solvers.base import BaseSolver, ConvergenceHistory
+from turbigen.solvers.base import BaseSolver
 
 logger = logging.getLogger("turbigen")
 
@@ -425,15 +426,11 @@ def run(grid, ts3_conf, machine, workdir):
 
     _run(grid, ts3_conf)
 
-    # Parse the log file
-    istep_save_start = ts3_conf.nstep - ts3_conf.nstep_avg
-
+    # Build the convergence history from the log. ember.ts3 owns the parsing;
+    # the reference scales (V_ref, T_ref, areas) are derived from the solved
+    # grid, which the log itself does not record.
     try:
-        istep, mdot, ho, Po, resid = parse_log(log_path)
-        state_log = grid.inlet_patches[0].state.copy().empty(shape=mdot.shape)
-        state_log.set_Tu0(0.0)
-        state_log.set_P_h(ho, Po)
-        conv = ConvergenceHistory(istep, istep_save_start, resid, mdot, state_log)
+        conv = ConvergenceHistory.from_ts3(log_path, grid)
     except Exception as e:
         logger.warning(f"Failed to parse log file {log_path}")
         logger.warning(f"Exception: {e}")
@@ -442,152 +439,10 @@ def run(grid, ts3_conf, machine, workdir):
     return conv
 
 
-re_nstep = re.compile(r"nstep\s*:\s*(\d*)$")
-re_cp = re.compile(r"cp\s*:\s*(\d*\.\d*)$")
-re_dts = re.compile(r"dts\s*:\s*(\d*)$")
-re_ncycle = re.compile(r"ncycle\s*:\s*(\d*)$")
-re_davg = re.compile(r"TOTAL DAVG \s*(\d*\.\d*)E([+-]\d*)")
-re_nstep_cycle = re.compile(r"nstep_cycle\s*:\s*(\d*)$")
-re_nstep_save_start = re.compile(r"nstep_save_start\s*:\s*(\d*)$")
-re_mdot = re.compile(r"^INLET FLOW =\s*(-?\d*\.\d*)\s*OUTLET FLOW =\s*(-?\d*\.\d*)$")
-re_Po = re.compile(
-    r"^AVG INLET STAG P =\s*(-?\d*\.\d*)\s*AVG OUTLET STAG P =\s*(-?\d*\.\d*)$"
-)
-re_To = re.compile(
-    r"^AVG INLET STAG T =\s*(-?\d*\.\d*)\s*AVG OUTLET STAG T =\s*(-?\d*\.\d*)$"
-)
-re_eta = re.compile(r"EFFICIENCY\s*=\s*(-?\d*.\d*)$")
+# Live-divergence detection during a run reads only these two patterns;
+# full log parsing for the convergence history lives in ember.ts3.
 re_nan = re.compile(r".*NAN.*")
 re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
-
-
-def parse_log(fname):
-    """Read residuals and boundary properties from log file.
-
-    Parameters
-    ----------
-    fname: string
-        File name of a Turbostream 3 log.
-
-    Returns
-    -------
-    istep: (nlog) array
-    mdot: (2, nlog) array
-    ho: (2, nlog) array
-    Po: (2, nlog) array
-    resid: (nlog) array
-
-
-    """
-
-    logger.debug(f"Opening log file {fname}...")
-
-    # Loop over lines in the file
-    with open(fname, "r") as f:
-        # Look for cp
-        for line in f:
-            match = re_cp.search(line)
-            if match:
-                cp = float(match.group(1))
-                break
-
-        # Look for number of steps
-        for line in f:
-            match = re_nstep.search(line)
-            if match:
-                nstep = int(match.group(1))
-                break
-
-        # Look for number of steps
-        for line in f:
-            match = re_dts.search(line)
-            if match:
-                dts = int(match.group(1))
-                break
-
-        # Preallocate
-        step_now = 0
-        dn = 1 if dts else 50
-        nlog = nstep // dn
-        istep = np.arange(nlog) * dn
-        mdot = np.zeros((2, nlog))
-        Po = np.zeros((2, nlog))
-        To = np.zeros((2, nlog))
-        resid = np.zeros((nlog,))
-
-        for ilog in range(nlog):
-            logger.debug(f"* Parsing istep={istep[ilog]}")
-
-            # Look for residual
-            if ilog > 0:
-                for line in f:
-                    if davg_match := re_davg.search(line):
-                        logger.debug(f'Found: "{line.strip()}"')
-                        sig = float(davg_match.group(1))
-                        expon = int(davg_match.group(2))
-                        resid[ilog] = sig * 10 ** (expon)
-                        break
-            else:
-                resid[ilog] = np.nan
-
-            try:
-                if not dts:
-                    # Loop over lines until we find mdot
-                    logger.debug("Finding mass flow rate...")
-
-                    for line in f:
-                        if mdot_match := re_mdot.search(line):
-                            logger.debug(f'Found: "{line.strip()}"')
-                            mdot[:, ilog] = [float(m) for m in mdot_match.group(1, 2)]
-                            break
-
-                else:
-                    for line in f:
-                        if re_nstep.search(line):
-                            logger.debug(f'Found: "{line.strip()}"')
-                            break
-
-                # Skip flow ratio
-                _ = f.readline()
-
-                # Stagnation pressures
-                ln = f.readline()
-                logger.debug(f'Reading Po from "{ln.strip()}"')
-                match_Po = re_Po.search(ln)
-                Po[:, ilog] = [float(m) for m in match_Po.group(1, 2)]
-
-                # Stagnation temperatures
-                ln = f.readline()
-                logger.debug(f'Reading To from "{ln.strip()}"')
-                match_To = re_To.search(ln)
-                To[:, ilog] = [float(m) for m in match_To.group(1, 2)]
-
-                # Skip power and effy
-                _ = f.readline()
-                _ = f.readline()
-                _ = f.readline()
-
-                # Next step number
-                if ilog < nlog - 1:
-                    logger.debug("Finding next step No...")
-                    step_next = None
-                    for line in f:
-                        if step_match := re_current_step.search(line):
-                            step_next = int(step_match.group(1))
-                            if step_next > step_now:
-                                logger.debug(f" Found next istep={step_next}")
-                                step_now = step_next
-                                break
-                            else:
-                                continue
-                    if not step_next == istep[ilog + 1]:
-                        raise Exception(f"Log step mismatch at {step_now}, {step_next}")
-
-            except AttributeError:
-                logger.debug("Failed to parse, breaking")
-                break
-
-    return istep, mdot, To * cp, Po, resid
 
 
 def _check_nan(fname):

@@ -6,10 +6,13 @@ through the same dynamic-dispatch path that ``config.py`` uses for ``type: ts3``
 """
 
 import importlib
+from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
+
+from ember.convergence_history import ConvergenceHistory
 
 import ember.util
 from ember.block import Block
@@ -21,6 +24,8 @@ import turbigen.solvers.base
 import turbigen.solvers.ts3 as ts3_mod
 import turbigen.util as util
 from turbigen.exceptions import ConvergenceError
+
+_DATA = Path(__file__).parent / "data"
 
 
 def _make_solved_grid(T_dtm=300.0):
@@ -240,3 +245,17 @@ def test_read_hdf5_missing_output_raises(tmp_path):
     cfg.workdir = tmp_path
     with pytest.raises(Exception, match="No Turbostream output file"):
         ts3_mod._read_hdf5(_make_solved_grid(), cfg)
+
+
+def test_convergence_history_from_log():
+    """run() builds an ember ConvergenceHistory from the TS3 log + grid.
+
+    Exercises the exact post-run call run() makes — log parsing lives in
+    ember.ts3; the grid supplies the reference scales the log lacks.
+    """
+    conv = ConvergenceHistory.from_ts3(_DATA / "log_duct.txt", _make_grid_with_inlet())
+    assert isinstance(conv, ConvergenceHistory)
+    # All 399 step blocks parsed, with the grid-derived reference scales finite.
+    assert conv.i_log + 1 == 399
+    assert np.isfinite(conv._get_metadata_by_key("V_ref"))
+    assert np.isfinite(conv._get_metadata_by_key("T_ref"))
