@@ -251,9 +251,13 @@ def test_convergence_history_from_log():
     """run() builds an ember ConvergenceHistory from the TS3 log + grid.
 
     Exercises the exact post-run call run() makes — log parsing lives in
-    ember.ts3; the grid supplies the reference scales the log lacks.
+    ember.ts3; the grid supplies the reference scales the log lacks and is
+    checked for gas-property consistency against the log header.
     """
-    conv = ConvergenceHistory.from_ts3(_DATA / "log_duct.txt", _make_grid_with_inlet())
+    grid = _make_grid_with_inlet()
+    # Match the log_duct.txt header so from_ts3's consistency check passes.
+    grid[0].set_fluid(PerfectFluid(cp=1005.0, gamma=1.4, mu=1.0e-3, Pr=0.72))
+    conv = ConvergenceHistory.from_ts3(_DATA / "log_duct.txt", grid)
     assert isinstance(conv, ConvergenceHistory)
     # All 399 step blocks parsed, with the grid-derived reference scales finite.
     assert conv.i_log + 1 == 399
