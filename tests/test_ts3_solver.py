@@ -15,6 +15,7 @@ import ember.util
 from ember.block import Block
 from ember.fluid import PerfectFluid
 from ember.grid import Grid
+from ember.patch import InletPatch, OutletPatch
 
 import turbigen.solvers.base
 import turbigen.solvers.ts3 as ts3_mod
@@ -42,10 +43,28 @@ def _make_solved_grid(T_dtm=300.0):
     return Grid([block])
 
 
+def _make_grid_with_inlet():
+    """Solved single-block grid with an inlet and outlet patch attached."""
+    grid = _make_solved_grid()
+    block = grid[0]
+    inlet = InletPatch(i=0, j=(0, -1), k=(0, -1), label="inlet")
+    outlet = OutletPatch(i=-1, j=(0, -1), k=(0, -1), label="outlet")
+    block.patches.append(inlet)
+    block.patches.append(outlet)
+    inlet.set_Po_To_Alpha_Beta(
+        Po=np.full(inlet.shape, 1.2e5),
+        To=np.full(inlet.shape, 320.0),
+        Alpha=np.zeros(inlet.shape),
+        Beta=np.zeros(inlet.shape),
+    )
+    outlet.set_P(1.1e5)
+    return grid
+
+
 def _write_outputs(grid, workdir):
     """Write the grid as the two TS3 output files _read_hdf5 expects."""
-    grid.write_ts3(str(workdir / "output_avg.hdf5"), zero_datum=True)
-    grid.write_ts3(str(workdir / "output.hdf5"), zero_datum=True)
+    grid.write_ts3(str(workdir / "output_avg.hdf5"))
+    grid.write_ts3(str(workdir / "output.hdf5"))
 
 
 def test_module_imports():
@@ -60,7 +79,6 @@ def test_config_instantiation_defaults():
     assert cfg.cfl == 0.4
     assert cfg.ilos == 2
     assert cfg.nstep == 10000
-    assert cfg.Lref_xllim == "pitch"
 
 
 def test_robust_returns_more_stable_config():
@@ -87,10 +105,96 @@ def test_solver_resolves_via_dynamic_dispatch():
     assert cls is ts3_mod.ts3
 
 
-def test_input_writing_not_yet_migrated():
-    """Until the write side is ported to ember.ts3, _run raises clearly."""
-    with pytest.raises(NotImplementedError):
-        ts3_mod._run(grid=None, ts3_config=ts3_mod.ts3())
+def _av(f, name):
+    """Read a scalar application variable from an open TS3 hdf5 file."""
+    return float(np.squeeze(f[f"{name}_av"][...]))
+
+
+def _bv(f, bid, name):
+    """Read a scalar block variable from an open TS3 hdf5 file."""
+    return float(np.squeeze(f[f"block{bid}"][f"{name}_bv"][...]))
+
+
+def test_write_input_av_bv_roundtrip(tmp_path):
+    """_write_input forwards typed and derived av/bv into input.hdf5."""
+    cfg = ts3_mod.ts3(nstep=8000, nstep_avg=2000, cfl=0.35, fmgrid=0.15)
+    cfg.workdir = tmp_path
+    ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+    with h5py.File(tmp_path / "input.hdf5", "r") as f:
+        assert _av(f, "cfl") == pytest.approx(0.35)
+        assert _av(f, "nstep") == pytest.approx(8000)
+        assert _av(f, "nstep_save_start") == pytest.approx(6000)
+        assert _av(f, "restart") == pytest.approx(1)
+        assert _bv(f, 0, "fmgrid") == pytest.approx(0.15)
+
+
+def test_write_input_rfin_pv(tmp_path):
+    """rfin is applied to inlet patches as a patch variable."""
+    cfg = ts3_mod.ts3(rfin=0.25)
+    cfg.workdir = tmp_path
+    ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+    with h5py.File(tmp_path / "input.hdf5", "r") as f:
+        # Inlet is patch0 (rotating patches excluded; none here).
+        rfin = float(np.squeeze(f["block0"]["patch0"]["rfin_pv"][...]))
+    assert rfin == pytest.approx(0.25)
+
+
+def test_write_input_raw_av_override(tmp_path):
+    """A raw av override with no typed field lands in the file."""
+    cfg = ts3_mod.ts3(av={"sfin_sa": 0.1})
+    cfg.workdir = tmp_path
+    ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+    with h5py.File(tmp_path / "input.hdf5", "r") as f:
+        assert _av(f, "sfin_sa") == pytest.approx(0.1)
+
+
+def test_write_input_raw_bv_override(tmp_path):
+    """A raw bv override with no typed field lands in the file."""
+    cfg = ts3_mod.ts3(bv={0: {"free_turb": 0.02}})
+    cfg.workdir = tmp_path
+    ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+    with h5py.File(tmp_path / "input.hdf5", "r") as f:
+        assert _bv(f, 0, "free_turb") == pytest.approx(0.02)
+
+
+def test_write_input_av_overlap_errors(tmp_path):
+    """A raw av override colliding with a non-default typed field errors."""
+    cfg = ts3_mod.ts3(cfl=0.2, av={"cfl": 0.3})
+    cfg.workdir = tmp_path
+    with pytest.raises(ValueError, match="cfl"):
+        ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+
+def test_write_input_bv_overlap_errors(tmp_path):
+    """A raw bv override colliding with a non-default typed field errors."""
+    cfg = ts3_mod.ts3(fmgrid=0.1, bv={0: {"fmgrid": 0.0}})
+    cfg.workdir = tmp_path
+    with pytest.raises(ValueError, match="fmgrid"):
+        ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+
+
+def test_write_input_av_overlap_ok_when_default(tmp_path):
+    """An av override matching a typed field at its default is allowed."""
+    # cfl left at its default, so the av dict is the sole source.
+    cfg = ts3_mod.ts3(av={"cfl": 0.3})
+    cfg.workdir = tmp_path
+    ts3_mod._write_input(_make_grid_with_inlet(), cfg)
+    with h5py.File(tmp_path / "input.hdf5", "r") as f:
+        assert _av(f, "cfl") == pytest.approx(0.3)
+
+
+def test_run_writes_input(tmp_path, monkeypatch):
+    """_run writes input.hdf5 (no longer raising NotImplementedError)."""
+    monkeypatch.setattr(ts3_mod, "_execute", lambda cfg: None)
+    monkeypatch.setattr(ts3_mod, "_read_hdf5", lambda grid, cfg: None)
+    cfg = ts3_mod.ts3()
+    cfg.workdir = tmp_path
+    ts3_mod._run(_make_grid_with_inlet(), cfg)
+    assert (tmp_path / "input.hdf5").exists()
 
 
 def test_read_hdf5_roundtrip(tmp_path):

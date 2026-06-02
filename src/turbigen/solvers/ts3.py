@@ -1,6 +1,6 @@
 import logging
 from time import sleep
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from timeit import default_timer as timer
 from glob import glob
 import numpy as np
@@ -17,6 +17,24 @@ import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
 logger = logging.getLogger("turbigen")
+
+# Typed config fields that map to TS3 application/block variables of the same
+# name, forwarded via writer.set_av / writer.set_bv. Used both to forward the
+# values and to detect overlap with the raw av/bv override dicts.
+_AV_FIELDS = frozenset(
+    {
+        "cfl",
+        "dampin",
+        "facsecin",
+        "ilos",
+        "nchange",
+        "viscosity_law",
+        "nstep",
+        "rfmix",
+        "sfin",
+    }
+)
+_BV_FIELDS = frozenset({"fmgrid"})
 
 
 @dataclass
@@ -70,9 +88,6 @@ class ts3(BaseSolver):
     ilos: int = 2
     """Viscous model, 0 for inviscid, 1 for mixing-length, 2 for Spalart-Allmaras."""
 
-    Lref_xllim: str = "pitch"
-    """Mixing length characteristic dimension, "pitch" or "span"."""
-
     nchange: int = 2000
     """At start of simulation, ramp smoothing and damping over this many time steps."""
 
@@ -91,19 +106,21 @@ class ts3(BaseSolver):
     sfin: float = 0.5
     """Proportion of second-order smoothing, increase for more stability."""
 
-    tvr: float = 10.0
-    """Initial guess of turbulent viscosity ratio."""
-
-    xllim: float = 0.03
-    """Mixing length limit as a fraction of characteristic dimension."""
-
     rfin: float = 0.5
     """Inlet relaxation factor, reduce for low-Mach flows."""
 
     nstep_soft: int = 0
     """Number of steps for soft start precursor simulation."""
 
-    bv: dict = None  # nested dict bv[bid][bv_name] = bv_value
+    av: dict = None
+    """Raw application-variable overrides, ``av[name] = value``, for any TS3
+    variable without a typed field. Applied after the typed fields; setting a
+    name that is also driven by a non-default typed field is an error."""
+
+    bv: dict = None
+    """Raw block-variable overrides, ``bv[bid][name] = value``, for any TS3
+    variable without a typed field. Applied after the typed fields; setting a
+    name that is also driven by a non-default typed field is an error."""
 
     def __post_init__(self):
         if isinstance(self.workdir, str):
@@ -255,13 +272,102 @@ def _read_hdf5(grid, ts3_config):
         raise ConvergenceError(f"TS3 solution diverged: {e}") from e
 
 
+def _non_default_fields(ts3_config, names):
+    """Return the subset of `names` whose config value differs from the default.
+
+    Used to decide which typed fields actively drive a TS3 variable, so the
+    raw av/bv override dicts can be rejected when they would compete with one.
+    """
+    defaults = {f.name: f.default for f in fields(ts3_config)}
+    return {name for name in names if getattr(ts3_config, name) != defaults[name]}
+
+
+def _check_overlap(ts3_config):
+    """Reject raw av/bv overrides that collide with a non-default typed field.
+
+    A TS3 variable must have a single source. The typed fields and the raw
+    override dicts can each set the same name; forbid that when the typed field
+    has been moved off its default (so e.g. `robust()` setting cfl and an `av`
+    dict also setting cfl will correctly error).
+    """
+    av = ts3_config.av or {}
+    bv = ts3_config.bv or {}
+
+    av_clash = _non_default_fields(ts3_config, _AV_FIELDS) & av.keys()
+    if av_clash:
+        raise ValueError(
+            f"av override(s) {sorted(av_clash)} also set by a non-default typed "
+            "field; remove one of the two competing sources."
+        )
+
+    bv_fields = _non_default_fields(ts3_config, _BV_FIELDS)
+    for bid, block_bv in bv.items():
+        bv_clash = bv_fields & block_bv.keys()
+        if bv_clash:
+            raise ValueError(
+                f"bv override(s) {sorted(bv_clash)} for block {bid} also set by a "
+                "non-default typed field; remove one of the two competing sources."
+            )
+
+
+def _write_input(grid, ts3_config):
+    """Write the TS3 input file from an ember grid + config via the writer.
+
+    Drives ``ember.ts3.TS3Writer`` so turbigen can layer its typed fields and
+    raw av/bv override dicts on top of the grid-derived defaults. Mirrors
+    ``ember.ts3.write_ts3`` but with the extra config surface.
+
+    The grid must already carry ``wdist`` (it holds the baked-in mixing-length
+    limit); ``get_blocks`` reads it and also writes total energy on
+    Turbostream's zero datum internally, so no datum handling is needed here.
+    """
+    # Forbid two competing sources for one variable before writing anything.
+    _check_overlap(ts3_config)
+
+    # strict=True: turbigen's contract is to hand TS3 a complete, runnable grid,
+    # so a missing flow field, fluid, or periodic connectivity is a bug here and
+    # must fail at write time rather than silently omitting variables.
+    writer = ember.ts3.TS3Writer()
+    writer.get(grid, strict=True)
+
+    # Typed application variables (forwarded by matching name).
+    writer.set_av(**{name: getattr(ts3_config, name) for name in _AV_FIELDS})
+
+    # Derived application variables.
+    writer.set_av(
+        nstep_save_start=ts3_config.nstep - ts3_config.nstep_avg,
+        restart=1,
+    )
+
+    # Typed block variables, per block. xllim is left at the writer's
+    # non-clamping default since the limit is already baked into wdist.
+    for bid in range(len(grid)):
+        writer.set_bv(bid, fmgrid=ts3_config.fmgrid)
+
+    # Inlet relaxation factor, applied to each inlet patch as a patch variable.
+    # Iterate the writer's own pv (keyed by its renumbered pid, rotating patches
+    # excluded); inlets are the patches carrying an rfin variable.
+    for bid, block_pv in enumerate(writer.pv):
+        for pid, pv in block_pv.items():
+            if "rfin" in pv:
+                writer.set_pv(bid, pid, rfin=ts3_config.rfin)
+
+    # Raw overrides last (validated for overlap above). set_av/set_bv validate
+    # unknown names, type-cast, and reject NaN.
+    writer.set_av(**(ts3_config.av or {}))
+    for bid, block_bv in (ts3_config.bv or {}).items():
+        writer.set_bv(bid, **block_bv)
+
+    writer.check()
+    input_path = os.path.join(ts3_config.workdir, "input.hdf5")
+    writer.write(input_path)
+    writer.write_probe_meta(input_path)
+
+
 def _run(grid, ts3_config):
     """Perform all steps on a grid and config."""
 
-    # TODO: migrate input-file writing to the ember.ts3 API. The hand-rolled
-    # _write_hdf5 and its helpers were removed; wire up
-    # grid.write_ts3(...) / ember.ts3.TS3Writer here.
-    raise NotImplementedError("TS3 input writing not yet migrated to the ember.ts3 API")
+    _write_input(grid, ts3_config)
     _execute(ts3_config)
     _read_hdf5(grid, ts3_config)
 
