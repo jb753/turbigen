@@ -16,8 +16,6 @@ from pathlib import Path
 import signal
 import sys
 import re
-import grp
-import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
 
 import turbigen.util
@@ -1038,12 +1036,15 @@ def _execute(ts3_config):
     old_workdir = os.getcwd()
     os.chdir(ts3_config.workdir)
 
-    if not os.path.exists(ts3_config.environment_script):
+    if not os.access(ts3_config.environment_script, os.R_OK):
         raise Exception(
-            f"""Could not locate TS3 env script {ts3_config.environment_script}
-Are you on a HPC compute node gpu-q-* (not a login node)?
-If you have recently been added to the turbostream user group, log out
-and then back in to refresh your access permissions.
+            f"""Could not read TS3 env script {ts3_config.environment_script}
+Possible causes:
+  - You are not on a HPC compute node (gpu-q-*, not a login node).
+  - You are not a member of the turbostream user group. If you have
+    recently been added, log out and back in to refresh your access.
+  - The environment_script path is wrong for this machine; override it
+    in the solver config if your Turbostream install lives elsewhere.
 """
         )
 
@@ -1216,17 +1217,6 @@ def run(grid, ts3_conf, machine, workdir):
     del machine
 
     ts3_conf.workdir = workdir
-
-    # Check that the user is a member of the turbostream group
-    try:
-        ts_users = grp.getgrnam("turbostream").gr_mem
-        current_user = getpass.getuser()
-        if current_user not in ts_users:
-            raise Exception(
-                f"Current user {current_user} is not a member of the turbostream group"
-            )
-    except KeyError:
-        raise Exception("Cannot locate turbostream - are you on the HPC?") from None
 
     # Keep old log file if it exists (e.g. after a soft start)
     log_path = os.path.join(ts3_conf.workdir, "log.txt")
