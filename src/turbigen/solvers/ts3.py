@@ -19,7 +19,6 @@ import re
 import grp
 import getpass
 from turbigen.solvers.base import BaseSolver, ConvergenceHistory
-import multiprocessing
 
 import turbigen.util
 
@@ -838,8 +837,6 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
     for name, val in ts3_config.application_variables(ga, cp, mu).items():
         _write_variable(f, name, "_av", val)
 
-    procids = grid.partition(ts3_config.ntask)
-
     # Loop over blocks
     for ib in range(nb):
         key = f"block{ib}"
@@ -850,7 +847,7 @@ def _write_hdf5(grid, ts3_config, fname="input.hdf5"):
 
         # Block attributes
         block_group.attrs.update(_block_attributes(block, ib))
-        block_group.attrs["procid"] = procids[ib]
+        block_group.attrs["procid"] = 0
 
         # Block variables
         if ts3_config.Lref_xllim == "pitch":
@@ -1050,15 +1047,12 @@ and then back in to refresh your access permissions.
 """
         )
 
-    # Open a subshell, source the environment and run the solver
-    ngpu = ts3_config.ntask
-    nnode = ts3_config.nnode
-    npernode = ngpu // nnode
-    logger.info(f"Using {ngpu} GPUs on {nnode} nodes, {npernode} per node.")
+    # Open a subshell, source the environment and run the solver (serial, 1 GPU)
+    logger.info("Using 1 GPU.")
     cmd_str = (
         f". {ts3_config.environment_script};"
-        f" mpirun -npernode {npernode} -np {ngpu} turbostream"
-        f" input.hdf5 output {npernode} > log.txt"
+        f" mpirun -npernode 1 -np 1 turbostream"
+        f" input.hdf5 output 1 > log.txt"
     )
 
     # Remove old probe data
@@ -1233,18 +1227,6 @@ def run(grid, ts3_conf, machine, workdir):
             )
     except KeyError:
         raise Exception("Cannot locate turbostream - are you on the HPC?") from None
-
-    # Load balancing
-    try:
-        ts3_conf.ntask = int(np.minimum(int(os.environ["SLURM_NTASKS"]), len(grid)))
-        ts3_conf.nnode = int(os.environ["SLURM_NNODES"])
-    except KeyError:
-        ts3_conf.ntask = 1
-        ts3_conf.nnode = 1
-        logger.info(
-            "Could not establish number of GPUs, assuming serial "
-            "(are you on a compute node?)"
-        )
 
     # Keep old log file if it exists (e.g. after a soft start)
     log_path = os.path.join(ts3_conf.workdir, "log.txt")
