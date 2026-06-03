@@ -6,6 +6,10 @@ through the same dynamic-dispatch path that ``config.py`` uses for ``type: ts3``
 """
 
 import importlib
+import os
+import stat
+import sys
+import textwrap
 from pathlib import Path
 
 import h5py
@@ -263,3 +267,129 @@ def test_convergence_history_from_log():
     assert conv.i_log + 1 == 399
     assert np.isfinite(conv._get_metadata_by_key("V_ref"))
     assert np.isfinite(conv._get_metadata_by_key("T_ref"))
+
+
+# ----------------------------------------------------------------------------
+# End-to-end tests through the real _execute subprocess, using a mock
+# Turbostream environment in place of the binary. The only OS coupling in the
+# TS3 path is the sourced command
+# ". {env}; mpirun ... turbostream input.hdf5 output 1 > log.txt", so faking
+# mpirun/turbostream on PATH exercises _write_input -> _execute -> _read_hdf5
+# unchanged. See plan: quizzical-swimming-gem.
+# ----------------------------------------------------------------------------
+
+# Behaviour of the mock turbostream, switched per test. Runs under the test's
+# own interpreter (sys.executable) so h5py is available for the diverged case.
+# CWD is the work directory (ts3._execute chdir's there before launching).
+_TURBOSTREAM_BODY = {
+    # Pretend to converge: echo a normal log line and copy the input we were
+    # handed straight to the two output files (an identity "solution").
+    "happy": """
+        print("OUTER STEP No. 1", flush=True)
+        print("mock run complete", flush=True)
+        shutil.copy(sys.argv[1], "output_avg.hdf5")
+        shutil.copy(sys.argv[1], "output.hdf5")
+    """,
+    # Diverge mid-run: "NAN" must be the first line of the log for _check_nan's
+    # anchored regex to match, and the step line must be visible in the same read
+    # (write both in one flush to avoid a partial-read race), so the reported step
+    # is deterministic. Stay alive so the parent's monitor catches it.
+    "nan": """
+        print("NAN\\nOUTER STEP No. 5", flush=True)
+        time.sleep(30)
+    """,
+    # Exit cleanly but write a non-physical (negative-density) solution, which
+    # ember.ts3.read_conserved rejects on the way back in.
+    "diverged": """
+        shutil.copy(sys.argv[1], "output_avg.hdf5")
+        shutil.copy(sys.argv[1], "output.hdf5")
+        with h5py.File("output_avg.hdf5", "r+") as f:
+            ro = f["block0"]["ro_bp"]
+            ro[...] = -np.abs(ro[...]) - 1.0
+    """,
+}
+
+
+def _write_mock_env(tmp_path, mode):
+    """Write a mock TS3 environment script and return its path.
+
+    Sourcing the returned script prepends a ``bin/`` holding fake ``mpirun`` and
+    ``turbostream`` programs to ``PATH``; ``mode`` selects the turbostream
+    behaviour (``"happy"``, ``"nan"`` or ``"diverged"``).
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+
+    # mpirun: drop "-npernode N -np N" style flags, then exec the rest.
+    mpirun = bindir / "mpirun"
+    mpirun.write_text(
+        '#!/bin/sh\nwhile [ "${1#-}" != "$1" ]; do shift 2; done\nexec "$@"\n'
+    )
+
+    # The real work lives in a Python script run under this interpreter.
+    script = tmp_path / "_turbostream.py"
+    script.write_text(
+        "import shutil, sys, time\n"
+        "import numpy as np\n"
+        "import h5py\n" + textwrap.dedent(_TURBOSTREAM_BODY[mode])
+    )
+    turbostream = bindir / "turbostream"
+    turbostream.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n')
+
+    for f in (mpirun, turbostream):
+        f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    env = tmp_path / "env.sh"
+    env.write_text(f'export PATH="{bindir}:$PATH"\n')
+    return env
+
+
+def test_run_end_to_end_via_mock_env(tmp_path):
+    """_run drives write -> _execute(mock) -> read and round-trips the flow."""
+    grid = _make_grid_with_inlet()
+    P, T, Vx = grid[0].P.copy(), grid[0].T.copy(), grid[0].Vx.copy()
+
+    cfg = ts3_mod.ts3(nstep=8000, nstep_avg=2000)
+    cfg.environment_script = _write_mock_env(tmp_path, "happy")
+    cfg.workdir = tmp_path
+
+    ts3_mod._run(grid, cfg)
+
+    # The real subprocess ran: it produced the output and _execute removed input.
+    assert (tmp_path / "log.txt").exists()
+    assert (tmp_path / "output_avg.hdf5").exists()
+    assert not (tmp_path / "input.hdf5").exists()
+
+    # Identity "solution" copied input to output, so the grid is unchanged.
+    np.testing.assert_allclose(grid[0].P, P, rtol=1e-4)
+    np.testing.assert_allclose(grid[0].T, T, rtol=1e-4)
+    np.testing.assert_allclose(grid[0].Vx, Vx, rtol=1e-4, atol=1e-3)
+
+
+def test_execute_nan_raises_convergence_error(tmp_path, monkeypatch):
+    """A NAN in the log mid-run surfaces as ConvergenceError, naming the step."""
+    # The mock stays alive after printing NAN, so poll it fast instead of the 10s
+    # production interval (the real loop, including proc.wait, is still exercised).
+    monkeypatch.setattr(ts3_mod, "_POLL_INTERVAL_S", 0.02)
+
+    cfg = ts3_mod.ts3()
+    cfg.environment_script = _write_mock_env(tmp_path, "nan")
+    cfg.workdir = tmp_path
+
+    cwd_before = os.getcwd()
+    with pytest.raises(ConvergenceError, match="step 5"):
+        ts3_mod._execute(cfg)
+    # The try/finally in _execute restores the working directory on the error path.
+    assert os.getcwd() == cwd_before
+
+
+def test_run_diverged_solution_raises(tmp_path):
+    """A clean exit with a non-physical output raises ConvergenceError on read."""
+    cfg = ts3_mod.ts3()
+    cfg.environment_script = _write_mock_env(tmp_path, "diverged")
+    cfg.workdir = tmp_path
+
+    cwd_before = os.getcwd()
+    with pytest.raises(ConvergenceError):
+        ts3_mod._run(_make_grid_with_inlet(), cfg)
+    assert os.getcwd() == cwd_before

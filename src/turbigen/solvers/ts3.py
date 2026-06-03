@@ -1,5 +1,4 @@
 import logging
-from time import sleep
 from dataclasses import dataclass, fields
 from timeit import default_timer as timer
 from glob import glob
@@ -157,90 +156,105 @@ class ts3(BaseSolver):
         self.convergence = run(grid, self, machine, workdir)
 
 
+# How long to wait for the solver to create its log file before giving up, and
+# how often to poll the running solver for divergence, in seconds.
+_LOG_TIMEOUT_S = 60
+_POLL_INTERVAL_S = 10
+
+
 def _execute(ts3_config):
     """Using a given configuration, execute TS3."""
 
-    # Store old working directory and change to this config's
+    # Store old working directory and change to this config's. The finally below
+    # restores it on every exit path (timeout, divergence, non-zero return code),
+    # so a failed run does not leave the process stranded in the work directory.
     old_workdir = os.getcwd()
     os.chdir(ts3_config.workdir)
 
-    if not os.path.exists(ts3_config.environment_script):
-        raise Exception(
-            f"""Could not locate TS3 env script {ts3_config.environment_script}
+    try:
+        if not os.path.exists(ts3_config.environment_script):
+            raise Exception(
+                f"""Could not locate TS3 env script {ts3_config.environment_script}
 Are you on a HPC compute node gpu-q-* (not a login node)?
 If you have recently been added to the turbostream user group, log out
 and then back in to refresh your access permissions.
 """
+            )
+
+        # Open a subshell, source the environment and run the solver (serial, 1 GPU)
+        logger.info("Using 1 GPU.")
+        cmd_str = (
+            f". {ts3_config.environment_script};"
+            f" mpirun -npernode 1 -np 1 turbostream"
+            f" input.hdf5 output 1 > log.txt"
         )
 
-    # Open a subshell, source the environment and run the solver (serial, 1 GPU)
-    logger.info("Using 1 GPU.")
-    cmd_str = (
-        f". {ts3_config.environment_script};"
-        f" mpirun -npernode 1 -np 1 turbostream"
-        f" input.hdf5 output 1 > log.txt"
-    )
+        # Remove old probe data
+        probe_dat = glob("output_probe_*.dat")
+        for fname in probe_dat:
+            os.remove(fname)
 
-    # Remove old probe data
-    probe_dat = glob("output_probe_*.dat")
-    for fname in probe_dat:
-        os.remove(fname)
-
-    # Start the Turbostream process
-    with subprocess.Popen(
-        cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
-    ) as proc:
-        # Until process has finished, check regularly for divergence
-        try:
-            while proc.poll() is None:
-                timeout = 60
+        # Start the Turbostream process
+        with subprocess.Popen(
+            cmd_str, shell=True, stderr=subprocess.PIPE, preexec_fn=os.setsid
+        ) as proc:
+            # Wait for the log to appear, then watch it for divergence until the
+            # solver exits. proc.wait(timeout=...) returns the instant the solver
+            # finishes, so a fast run is not held up by the polling interval, and
+            # the divergence check happens before each wait rather than after a
+            # blind sleep.
+            try:
                 start = timer()
-                while (timer() - start) < timeout:
-                    sleep(10)
-                    if os.path.isfile("log.txt"):
-                        break
-                if not os.path.isfile("log.txt"):
-                    raise Exception(
-                        f"Timed out after {timeout}s waiting for TS3 log file to appear"
-                    )
-                if istep_nan := _check_nan("log.txt"):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    raise ConvergenceError(
-                        f"TS3 diverged at step {istep_nan}"
-                    ) from None
-        except KeyboardInterrupt:
-            logger.warning("******")
-            logger.warning("Caught interrupt, killing solver...")
-            logger.warning("******")
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                while proc.poll() is None:
+                    have_log = os.path.isfile("log.txt")
+                    if not have_log and (timer() - start) > _LOG_TIMEOUT_S:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        raise Exception(
+                            f"Timed out after {_LOG_TIMEOUT_S}s waiting for TS3 "
+                            "log file to appear"
+                        )
+                    if have_log and (istep_nan := _check_nan("log.txt")):
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        raise ConvergenceError(
+                            f"TS3 diverged at step {istep_nan}"
+                        ) from None
+                    try:
+                        proc.wait(timeout=_POLL_INTERVAL_S)
+                    except subprocess.TimeoutExpired:
+                        pass
+            except KeyboardInterrupt:
+                logger.warning("******")
+                logger.warning("Caught interrupt, killing solver...")
+                logger.warning("******")
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait()
+                logger.warning("Killed solver.")
+
             proc.wait()
-            logger.warning("Killed solver.")
 
-        proc.wait()
-
-        # If we have an error code, prind debugging info
-        if proc.returncode:
-            raise Exception(
-                f"""TS3 failed, exit code {proc.returncode}
+            # If we have an error code, prind debugging info
+            if proc.returncode:
+                raise Exception(
+                    f"""TS3 failed, exit code {proc.returncode}
 COMMAND: {cmd_str}
 STDERR: {proc.stderr.read().decode(sys.getfilesystemencoding()).strip()}
 
 Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
-            ) from None
+                ) from None
 
-    # Delete extraneous files
-    for f in ("stopit", "output_avg.xdmf", "output.xdmf", "input.hdf5"):
-        try:
-            os.remove(f)
-        except FileNotFoundError:
-            pass
+        # Delete extraneous files
+        for f in ("stopit", "output_avg.xdmf", "output.xdmf", "input.hdf5"):
+            try:
+                os.remove(f)
+            except FileNotFoundError:
+                pass
 
-    # Remove empty hdf5 probes (we don't use them)
-    probe_hdf5 = glob("output_probe_*.hdf5")
-    for fname in probe_hdf5:
-        os.remove(fname)
-
-    os.chdir(old_workdir)
+        # Remove empty hdf5 probes (we don't use them)
+        probe_hdf5 = glob("output_probe_*.hdf5")
+        for fname in probe_hdf5:
+            os.remove(fname)
+    finally:
+        os.chdir(old_workdir)
 
 
 def _read_hdf5(grid, ts3_config):
@@ -412,18 +426,23 @@ def run(grid, ts3_conf, machine, workdir):
 
 # Live-divergence detection during a run reads only these two patterns;
 # full log parsing for the convergence history lives in ember.ts3.
-re_nan = re.compile(r".*NAN.*")
+re_nan = re.compile(r"NAN")
 re_current_step = re.compile(r"^O?U?T?E?R? ?STEP No\.\s*(\d*)", flags=re.MULTILINE)
 
 
 def _check_nan(fname):
-    """Return step number of divergence from TS3 log, or zero if no NANs found."""
-    NBYTES = 2048
+    """Return step number of divergence from TS3 log, or zero if no NANs found.
+
+    The whole log is read and searched, so detection does not depend on where in
+    the file the NAN lands (the previous chunked, anchored scan missed NANs that
+    were not at the start of a 2048-byte block or straddled a block boundary). The
+    log is small relative to the polling interval, so reading it whole is cheap.
+    When a NAN is present the most recently logged step number is returned, or -1
+    if no step has been logged yet.
+    """
     with open(fname, "r") as f:
-        while chunk := f.read(NBYTES):
-            if re_nan.match(chunk):
-                try:
-                    return int(re_current_step.findall(chunk)[-1])
-                except Exception:
-                    return -1
-    return 0
+        content = f.read()
+    if not re_nan.search(content):
+        return 0
+    steps = re_current_step.findall(content)
+    return int(steps[-1]) if steps else -1
