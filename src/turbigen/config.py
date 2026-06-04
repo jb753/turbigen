@@ -703,7 +703,7 @@ class TurbigenConfig:
                 logger.error(f"Negative or zero cell volume found in block {ib}")
                 sys.exit(1)
         _log_ram("after check_coords")
-        self.grid.calculate_wdist()
+        self.grid.calculate_wdist(limit_pitch=0.03)
         _log_ram("after wdst calc")
 
     def plot_mesh(self, spf=0.5):
@@ -821,10 +821,13 @@ class TurbigenConfig:
             else:
                 logger.info("Applying 2D guess...")
 
-            block_guess = self.mean_line.nominal.to_quasi3d(
-                self.annulus, self.get_nblade()
-            )
-            self.grid.apply_guess_quasi3d(block_guess)
+            # block_guess = self.mean_line.nominal.to_quasi3d(
+            # self.annulus, self.get_nblade()
+            # )
+            # self.grid.apply_guess_quasi3d(block_guess)
+
+            block_guess = self.mean_line.nominal.to_block(self.annulus)
+            self.grid.apply_guess_meridional(block_guess, refine_factor=50)
 
         for block in self.grid:
             for patch in block.patches.outlet:

@@ -782,9 +782,10 @@ class MeanLine:
         """
         n = self.n_row * 2
         xr = np.array(ann._xr_stations()).mean(0).T
+        xrt = np.append(xr, np.zeros((n, 1)), axis=1)
         b = ember.block.Block(shape=(n,))
         b.set_fluid(self.fluid)
-        b.set_xrt(xr[:, 0], xr[:, 1], np.zeros(n))
+        b.set_xrt(xrt)
         b.set_conserved(self.conserved)
         b.set_mu_turb(np.full(n, np.mean(self.mu)))
         return b
@@ -887,9 +888,9 @@ class Station(ember.block.Block):
 
     def set_span_htr(self, span, htr):
         """Define annulus geometry using span and hub-to-tip ratio."""
-        assert (
-            np.abs(self.Beta) < 1.0
-        ), "Beta must be set zero before calling set_span_htr"
+        assert np.abs(self.Beta) < 1.0, (
+            "Beta must be set zero before calling set_span_htr"
+        )
         r_rms = span * np.sqrt(0.5 * (1.0 + htr**2)) / (1.0 - htr)
         Am = 2.0 * np.pi * r_rms**2 * (1.0 - htr**2) / (1.0 + htr**2)
         self.set_r_rms(r_rms)
@@ -983,9 +984,9 @@ if __name__ == "__main__":
     # Verify each station's conserved values match
     for i in range(4):
         station_conserved = ml[i].conserved
-        assert np.allclose(
-            conserved[i], station_conserved
-        ), f"Station {i} conserved mismatch"
+        assert np.allclose(conserved[i], station_conserved), (
+            f"Station {i} conserved mismatch"
+        )
     print("PASS: non-scalar property (conserved) works correctly")
 
     print("\nAll tests passed!")
