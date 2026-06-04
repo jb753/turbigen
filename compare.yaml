@@ -52,7 +52,7 @@ blades:
   thick_type: taylor
   tip: 0.0
   tip_ref: span
-  vortex_expon: 0.6
+  vortex_expon: -1.0
 - camber:
   - - 6.0000000000000036
     - 0.0
@@ -93,26 +93,26 @@ blades:
   thick_type: taylor
   tip: 0.01
   tip_ref: span
-  vortex_expon: 0.6
+  vortex_expon: -1.0
 converged: false
 cut_offset: 0.02
 fac_nstep_initial: 2.0
-iterate:
-  mean_line:
-    relaxation_factor: 0.5
-    tolerance:
-      Ys: 0.001
-  deviation:
-    # relaxation_factor: 1.0
-  incidence:
-    relaxation_factor: 0.04
-    clip: 5.0
-design_space:
-  independent:
-    mean_line:
-      phi2: [0.4, 1.2]
-      psi: [1.0, 2.4]
-  nsample_target: 32
+# iterate:
+#   mean_line:
+#     relaxation_factor: 0.5
+#     tolerance:
+#       Ys: 0.001
+#   deviation:
+#     # relaxation_factor: 1.0
+#   incidence:
+#     relaxation_factor: 0.04
+#     clip: 5.0
+# design_space:
+#   independent:
+#     mean_line:
+#       phi2: [0.4, 1.2]
+#       psi: [1.0, 2.4]
+#   nsample_target: 32
 fluid:
   P_dtm: 100000.0
   Pr: 0.7
@@ -126,9 +126,9 @@ fluid:
   type: perfect
 ignore_guess: false
 inlet: null
-job:
-  queue_file: /home/jb753/.turbigen/queue.txt
-  type: local
+# job:
+#   queue_file: /home/jb753/.turbigen/queue.txt
+#   type: local
 max_iter: 20
 mean_line:
   Ma2: 0.6
@@ -193,7 +193,7 @@ mesh:
   skew_max: 90.0
   slip_annulus: false
   slip_cusp: true
-  deswirl: true
+  deswirl: false
   type: h
   yplus: 30.0
 metadata_file: null
@@ -218,37 +218,39 @@ post_process:
   type: surface_distribution
   variable: Mas
 save_iteration_grids: false
-solver:
-  type: ts3
-  nstep: 20000
-  nstep_avg: 5000
-  ilos: 1
-  # soft_start: true
+
 # solver:
-#   cfl_bnd_max: 0.5
-#   cfl_min: 0.2
-#   convergence: null
-#   debug: false
-#   delta_filt: 0.25
-#   deswirl: 2.0
-#   fac_mgrid: 0.5
-#   full_mgrid: true
-#   gain_filt: 16.0
-#   i_level_stop: 0
-#   inviscid: false
-#   n_step: 2500
-#   n_step_avg: 1000
-#   radial_equilibrium: true
-#   restrict_avg: false
-#   rf_mix: 0.02
-#   sf2P: 2.0
-#   sf2T: 2.0
-#   sf4: 0.04
-#   soft_start: false
-#   type: ember
-#   v_cycle: false
-#   workdir: null
-#   sf_cusp: 0.0
+#   type: ts3
+#   nstep: 20000
+#   nstep_avg: 5000
+#   ilos: 1
+
+  # soft_start: true
+solver:
+  cfl_bnd_max: 0.5
+  cfl_min: 0.2
+  convergence: null
+  debug: false
+  delta_filt: 0.25
+  deswirl: 0.0
+  fac_mgrid: 0.5
+  full_mgrid: true
+  gain_filt: 16.0
+  i_level_stop: 0
+  inviscid: true
+  n_step: 2000
+  n_step_avg: 500
+  radial_equilibrium: true
+  restrict_avg: false
+  rf_mix: 0.02
+  sf2P: 2.0
+  sf2T: 2.0
+  sf4: 0.04
+  soft_start: false
+  type: ember
+  v_cycle: false
+  workdir: null
+  sf_cusp: 0.0
 # work_dir: /home/jb753/python/turbigen-dev/turb12
 work_dir: runs/*
 ...

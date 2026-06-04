@@ -12,8 +12,22 @@ import sys
 
 fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
-
 print(g.patches.outlet[0]._adjustment)
+
+b = g[1]
+C = b[-9, :, :]
+
+fig, ax = plt.subplots()
+lev = np.arange(0.0, 0.50001, 0.05)
+print(lev)
+lev = np.arange(0.2, 0.4001, 0.02)
+print(C.x.mean())
+cm = ax.contourf(C.r * C.t, C.r, C.Vx, cmap="cubehelix")
+ax.axis("equal")
+plt.colorbar(cm)
+plt.show()
+# quit()
+
 # quit()
 
 
@@ -38,6 +52,7 @@ ax.plot(x, rVt / rVt[0], "-x", label="mass")
 ax.set_ylim(bottom=0)
 ax.axhline(0.0)
 ax.set_ylim(bottom=-0.5)
+
 
 b = g[0]
 ni, nj, nk = b.shape
@@ -197,7 +212,7 @@ plt.show()
 fig, ax = plt.subplots()
 lev_Ma = np.arange(0.0, 0.8, 0.1)
 jplot = g[0].nj // 2
-jplot = -9
+# jplot = -9
 for bi in g:
     Ci = bi[:, jplot, :]
     ax.contourf(Ci.x, Ci.rt, Ci.Ma_rel, lev_Ma, cmap="cubehelix")

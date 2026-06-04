@@ -541,8 +541,8 @@ class H(turbigen.mesh.Mesher):
                 _, icusp = row_meta[ib]
                 ni_b = b.shape[0]
                 islip = icusp + int((ni_b - icusp) * 0.5)
-                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
-                b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
+                # b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
+                # b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 
     def _stitch_mixing_planes(self, g):
         """Force xr coordinates to match exactly at mixing planes."""
