@@ -231,17 +231,17 @@ solver:
   cfl_min: 0.2
   convergence: null
   debug: false
-  delta_filt: 0.25
+  delta_filt: 0.1
   deswirl: 0.0
   fac_mgrid: 1.0
   full_mgrid: true
-  gain_filt: 0.0
+  gain_filt: 1.0
   i_level_stop: 0
   inviscid: false
-  n_step: 5
-  n_step_avg: 1
+  n_step: 5000
+  n_step_avg: 1000
   radial_equilibrium: true
-  restrict_avg: false
+  restrict_avg: true
   rf_mix: 0.2
   sf2P: 2.0
   sf2T: 2.0
