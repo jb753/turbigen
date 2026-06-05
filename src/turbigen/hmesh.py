@@ -94,6 +94,9 @@ class H(turbigen.mesh.Mesher):
     ER_pitch: float = 1.2
     """Expansion ratio away from aerofoil surfaces."""
 
+    nk_min: int = 49
+    """Minimum number of pitchwise grid points per row."""
+
     nchord_relax: float = 1.0
     """Number of meridional chords over which pitchwise clustering is relaxed."""
 
@@ -628,6 +631,9 @@ class H(turbigen.mesh.Mesher):
                 self.resolution_factor,
                 mult=8,
             )
+            if len(x) < self.nk_min:
+                npts = int(8 * np.ceil((self.nk_min - 1) / 8)) + 1
+                x = clusterfunc.symmetric.fixed(drt_row, npts)
 
         return x
 

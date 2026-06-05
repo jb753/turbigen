@@ -238,8 +238,8 @@ solver:
   gain_filt: 0.0
   i_level_stop: 0
   inviscid: false
-  n_step: 5000
-  n_step_avg: 1000
+  n_step: 5
+  n_step_avg: 1
   radial_equilibrium: true
   restrict_avg: false
   rf_mix: 0.2

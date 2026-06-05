@@ -92,7 +92,7 @@ class Ember(BaseSolver):
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
             n_step_log=50,
-            n_levels=3,
+            n_levels=4,
             cfl_max=self.cfl_max,
             cfl_bnd_min=self.cfl_bnd_min,
             cfl_bnd_max=self.cfl_bnd_max,
