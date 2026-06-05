@@ -14,6 +14,11 @@ fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
 print(g.patches.outlet[0]._adjustment)
 
+fig, ax = plt.subplots()
+ni, nj, nk = g[1].shape
+ax.plot(g[0].Vx[-2, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
+plt.show()
+# quit()
 b = g[1]
 C = b[-9, :, :]
 
