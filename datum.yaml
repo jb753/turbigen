@@ -52,7 +52,7 @@ blades:
   thick_type: taylor
   tip: 0.0
   tip_ref: span
-  vortex_expon: 0.6
+  vortex_expon: -1.0
 - camber:
   - - 6.0000000000000036
     - 0.0
@@ -93,7 +93,7 @@ blades:
   thick_type: taylor
   tip: 0.01
   tip_ref: span
-  vortex_expon: 0.6
+  vortex_expon: -1.0
 converged: false
 cut_offset: 0.02
 fac_nstep_initial: 2.0
@@ -179,6 +179,7 @@ mesh:
   ER_pitch: 1.2
   ER_span: 1.2
   ER_stream: 1.2
+  nk_min: 49
   dm_LE: 0.001
   dm_TE: 0.0
   dspf_mid: 0.03
@@ -193,7 +194,7 @@ mesh:
   skew_max: 90.0
   slip_annulus: false
   slip_cusp: false
-  deswirl: true
+  deswirl: false
   type: h
   yplus: 30.0
 metadata_file: null
@@ -218,23 +219,26 @@ post_process:
   type: surface_distribution
   variable: Mas
 save_iteration_grids: false
+
+  # soft_start: true
 solver:
   cfl_bnd_max: 0.5
-  cfl_min: 0.2
+  cfl_min: 0.1
   convergence: null
   debug: false
-  delta_filt: 0.25
-  deswirl: 2.0
-  fac_mgrid: 0.5
+  delta_filt: 0.1
+  deswirl: 0.0
+  fac_mgrid: 0.8
   full_mgrid: true
-  gain_filt: 16.0
+  gain_filt: 1.0
   i_level_stop: 0
   inviscid: false
-  n_step: 2500
-  n_step_avg: 1000
+  n_levels: 4
+  n_step: 5000
+  n_step_avg: 1
   radial_equilibrium: true
   restrict_avg: false
-  rf_mix: 0.02
+  rf_mix: 0.1
   sf2P: 2.0
   sf2T: 2.0
   sf4: 0.04
@@ -242,7 +246,6 @@ solver:
   type: ember
   v_cycle: false
   workdir: null
-  sf_cusp: 0.0
-work_dir: /home/jb753/python/turbigen-dev/turb12
-# work_dir: runs/*
+# work_dir: /home/jb753/python/turbigen-dev/turb13
+work_dir: runs/*
 ...

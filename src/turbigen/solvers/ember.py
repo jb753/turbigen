@@ -40,6 +40,7 @@ class Ember(BaseSolver):
     debug: bool = False
     sf2P: float = 1.0
     sf2T: float = 1.0
+    n_levels: float = 3
     sf4: float = 0.01
     sf_mix: float = 0.1
     sf_outlet: float = 0.1
@@ -88,11 +89,16 @@ class Ember(BaseSolver):
         # plt.show()
         # quit()
 
+        # Write out a guess pickle
+        guess_file = workdir.parent / "guess.pkl"
+        logger.info(f"Writing guess solution to {guess_file}")
+        grid.write_emb(guess_file, compress=False)
+
         config = ember.config.SolverConfig(
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
             n_step_log=50,
-            n_levels=4,
+            n_levels=self.n_levels,
             cfl_max=self.cfl_max,
             cfl_bnd_min=self.cfl_bnd_min,
             cfl_bnd_max=self.cfl_bnd_max,
@@ -117,11 +123,15 @@ class Ember(BaseSolver):
             restrict_avg=self.restrict_avg,
             debug=self.debug,
             body_forces=body_forces,
-            sf_cusp=self.sf_cusp,
         )
 
         try:
             self.convergence = ember.run.loop(grid, config)
+
+            # Remove guess file if the simulation completed successfully
+            if guess_file.exists():
+                guess_file.unlink()
+
         except SystemExit:
             pass
 

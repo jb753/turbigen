@@ -14,6 +14,17 @@ fname = sys.argv[1]
 g = ember.grid.Grid.read_emb(fname)
 print(g.patches.outlet[0]._adjustment)
 
+b = g[0]
+ni, nj, nk = b.shape
+
+fig, ax = plt.subplots()
+jplot = nj // 2
+C = b[:, jplot, :]
+ax.plot(C.x[:, 0], C.To[:, (1, nk // 2, -2)], "-.")
+ax.set_title("To")
+
+# plt.show()
+# quit()
 fig, ax = plt.subplots()
 ni, nj, nk = g[1].shape
 ax.plot(g[0].Vx[-2, :, (0, nk // 2, -1)].T, g[1].r[-1, :, 0], "-x")
@@ -232,14 +243,6 @@ for bi in g:
     ax.contourf(Ci.x, Ci.rt + 2 * Ci.r * Ci.pitch, Ci.Max, lev_Ma, cmap="cubehelix")
 ax.axis("equal")
 
-fig, ax = plt.subplots()
-for bi in g:
-    Ci = bi[:, jplot, :]
-    ax.contourf(Ci.x, Ci.rt, Ci.To, cmap="cubehelix")
-    cm = ax.contourf(Ci.x, Ci.rt + Ci.r * Ci.pitch, Ci.To, cmap="cubehelix")
-ax.axis("equal")
-ax.set_title("To")
-plt.colorbar(cm)
 # Contours of relative Mach number on mid-span plane
 fig, ax = plt.subplots()
 lev_ent = np.arange(0.0, 0.8, 0.1)

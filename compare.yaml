@@ -227,7 +227,7 @@ save_iteration_grids: false
 
   # soft_start: true
 solver:
-  cfl_bnd_max: 0.5
+  cfl_bnd_max: 1.0
   cfl_min: 0.2
   convergence: null
   debug: false
@@ -241,7 +241,7 @@ solver:
   n_step: 5000
   n_step_avg: 1000
   radial_equilibrium: true
-  restrict_avg: true
+  restrict_avg: false
   rf_mix: 0.2
   sf2P: 2.0
   sf2T: 2.0

@@ -94,7 +94,7 @@ class H(turbigen.mesh.Mesher):
     ER_pitch: float = 1.2
     """Expansion ratio away from aerofoil surfaces."""
 
-    nk_min: int = 49
+    nk_min: int = 37
     """Minimum number of pitchwise grid points per row."""
 
     nchord_relax: float = 1.0
