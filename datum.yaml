@@ -13,14 +13,14 @@ annulus:
 basename: config.yaml
 blades:
 - camber:
-  - - -7.9999999999999964
-    - 0.0
+  - - -2.802961195488642
+    - -0.4735298156737997
     - 0.2
-  - - -8.000000000000004
-    - 0.0
+  - - -3.614425499035761
+    - -0.4735298156738139
     - 0.2
-  - - -8.0
-    - 0.0
+  - - -4.412538057782282
+    - -0.4735298156738281
     - 0.2
   camber_type: quadratic
   mstack: 0.5
@@ -54,14 +54,14 @@ blades:
   tip_ref: span
   vortex_expon: -1.0
 - camber:
-  - - 6.0000000000000036
-    - 0.0
+  - - 4.130653930496617
+    - -1.4921073913574077
     - 0.2
-  - - 6.0
-    - 0.0
+  - - 7.1346797476617425
+    - -1.4921073913574503
     - 0.2
-  - - 6.0000000000000036
-    - 0.0
+  - - 5.71340551596421
+    - -1.4921073913574432
     - 0.2
   camber_type: quadratic
   mstack: 0.5
@@ -105,7 +105,7 @@ iterate:
   deviation:
     # relaxation_factor: 1.0
   incidence:
-    relaxation_factor: 0.04
+    relaxation_factor: 0.1
     clip: 5.0
 design_space:
   independent:
@@ -135,9 +135,8 @@ mean_line:
   Po1: 1600000.0
   To1: 1600.0
   Ys:
-  - 0.02
-  - 0.05
-  fac_Ma3_rel: 1.0
+  - 0.023244259194470943
+  - 0.04664287550840527
   mdot: 900.0
   n_row: 2
   phi2: 0.8
@@ -222,6 +221,7 @@ save_iteration_grids: false
 
   # soft_start: true
 solver:
+  mg_mode: jameson
   cfl_bnd_max: 0.5
   cfl_min: 0.1
   convergence: null
@@ -234,11 +234,12 @@ solver:
   i_level_stop: 0
   inviscid: false
   n_levels: 4
-  n_step: 5000
-  n_step_avg: 1
+  n_step: 2000
+  n_step_avg: 500
   radial_equilibrium: true
   restrict_avg: false
   rf_mix: 0.1
+  sf_mix: 0.0
   sf2P: 2.0
   sf2T: 2.0
   sf4: 0.04
@@ -246,6 +247,6 @@ solver:
   type: ember
   v_cycle: false
   workdir: null
-# work_dir: /home/jb753/python/turbigen-dev/turb13
-work_dir: runs/*
+work_dir: /home/jb753/python/turbigen-dev/turbines2
+# work_dir: runs/*
 ...

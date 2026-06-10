@@ -30,6 +30,7 @@ class Ember(BaseSolver):
     sf_cusp: float = 0.0
     gain_filt: float = 20.0
     fac_mgrid: float = 0.8
+    mg_mode: str = "jameson"
     inviscid: bool = False
     v_cycle: bool = False
     restrict_avg: bool = False
@@ -108,6 +109,7 @@ class Ember(BaseSolver):
             full_mgrid=self.full_mgrid,
             fac_restart=0.25,
             fac_mgrid=self.fac_mgrid,
+            mg_mode=self.mg_mode,
             fac_mg_smooth=0.0,
             inviscid=self.inviscid,
             sf2P=self.sf2P,
