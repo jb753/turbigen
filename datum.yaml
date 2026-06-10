@@ -134,6 +134,7 @@ mean_line:
   Ma2: 0.6
   Po1: 1600000.0
   To1: 1600.0
+  fac_Ma3_rel: 1.0
   Ys:
   - 0.023244259194470943
   - 0.04664287550840527
@@ -222,13 +223,13 @@ save_iteration_grids: false
   # soft_start: true
 solver:
   mg_mode: jameson
-  cfl_bnd_max: 0.5
+  cfl_bnd_max: 10.0
   cfl_min: 0.1
   convergence: null
   debug: false
   delta_filt: 0.1
   deswirl: 0.0
-  fac_mgrid: 0.8
+  fac_mgrid: 1.0
   full_mgrid: true
   gain_filt: 1.0
   i_level_stop: 0
@@ -238,7 +239,7 @@ solver:
   n_step_avg: 500
   radial_equilibrium: true
   restrict_avg: false
-  rf_mix: 0.1
+  rf_mix: 0.2
   sf_mix: 0.0
   sf2P: 2.0
   sf2T: 2.0
@@ -247,6 +248,6 @@ solver:
   type: ember
   v_cycle: false
   workdir: null
-work_dir: /home/jb753/python/turbigen-dev/turbines2
-# work_dir: runs/*
+# work_dir: /home/jb753/python/turbigen-dev/turbines2
+work_dir: runs/*
 ...
