@@ -223,24 +223,24 @@ save_iteration_grids: false
   # soft_start: true
 solver:
   mg_mode: jameson
-  cfl_bnd_max: 10.0
-  cfl_min: 0.1
+  cfl_bnd_max: 0.5
+  cfl_min: 0.2
   convergence: null
   debug: false
   delta_filt: 0.1
   deswirl: 0.0
-  fac_mgrid: 1.0
+  fac_mgrid: 0.8
   full_mgrid: true
   gain_filt: 1.0
   i_level_stop: 0
   inviscid: false
   n_levels: 4
-  n_step: 2000
-  n_step_avg: 500
+  n_step: 2500
+  n_step_avg: 50
   radial_equilibrium: true
   restrict_avg: false
-  rf_mix: 0.2
-  sf_mix: 0.0
+  rf_mix: 0.01
+  sf_mix: 0.1
   sf2P: 2.0
   sf2T: 2.0
   sf4: 0.04

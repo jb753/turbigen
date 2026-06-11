@@ -95,6 +95,14 @@ class Ember(BaseSolver):
         logger.info(f"Writing guess solution to {guess_file}")
         grid.write_emb(guess_file, compress=False)
 
+        # PID gains for the mixing-plane static-pressure controller.
+        # rf_mix is the overall gain; Kp and Kd are tuned as ratios of it.
+        rp_mix = 0.0
+        rd_mix = 0.0
+        Ki = self.rf_mix
+        Kp = rp_mix * self.rf_mix
+        Kd = rd_mix * self.rf_mix
+
         config = ember.config.SolverConfig(
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
@@ -105,6 +113,7 @@ class Ember(BaseSolver):
             cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=self.cfl_min,
             rf_mix=self.rf_mix,
+            mixer_log_path=workdir.parent / "mixer.csv",
             # xllim=1e6,
             full_mgrid=self.full_mgrid,
             fac_restart=0.25,
@@ -129,6 +138,11 @@ class Ember(BaseSolver):
 
         try:
             self.convergence = ember.run.loop(grid, config)
+
+            # Write out convergence history
+            hist_file = workdir.parent / "conv.cnv"
+            logger.info(f"Writing convergence history to {hist_file}")
+            self.convergence.write_cnv(hist_file)
 
             # Remove guess file if the simulation completed successfully
             if guess_file.exists():
