@@ -97,22 +97,25 @@ blades:
 converged: false
 cut_offset: 0.02
 fac_nstep_initial: 2.0
-iterate:
-  mean_line:
-    relaxation_factor: 0.5
-    tolerance:
-      Ys: 0.001
-  deviation:
-    # relaxation_factor: 1.0
-  incidence:
-    relaxation_factor: 0.1
-    clip: 5.0
-design_space:
-  independent:
-    mean_line:
-      phi2: [0.4, 1.2]
-      psi: [1.0, 2.4]
-  nsample_target: 32
+
+# iterate:
+#   mean_line:
+#     relaxation_factor: 0.5
+#     tolerance:
+#       Ys: 0.001
+#   deviation:
+#     # relaxation_factor: 1.0
+#   incidence:
+#     relaxation_factor: 0.1
+#     clip: 5.0
+
+# design_space:
+#   independent:
+#     mean_line:
+#       phi2: [0.4, 1.2]
+#       psi: [1.0, 2.4]
+#   nsample_target: 32
+
 fluid:
   P_dtm: 100000.0
   Pr: 0.7
@@ -223,7 +226,7 @@ save_iteration_grids: false
   # soft_start: true
 solver:
   mg_mode: jameson
-  cfl_bnd_max: 0.5
+  cfl_bnd_max: 0.2
   cfl_min: 0.2
   convergence: null
   debug: false
@@ -235,8 +238,8 @@ solver:
   i_level_stop: 0
   inviscid: false
   n_levels: 4
-  n_step: 2500
-  n_step_avg: 50
+  n_step: 10000
+  n_step_avg: 1000
   radial_equilibrium: true
   restrict_avg: false
   rf_mix: 0.01
