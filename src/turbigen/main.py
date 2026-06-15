@@ -16,6 +16,7 @@ import turbigen.viewer
 import datetime
 import argparse
 import resource
+import yaml
 
 logger = logging.getLogger("turbigen")
 
@@ -91,6 +92,20 @@ def _make_run_parser():
         metavar="SPF",
         help="plot mesh at span fraction SPF and exit (default 0.5)",
     )
+    parser.add_argument(
+        "-s",
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "override a config value, overriding the config file; the value is "
+            "parsed as YAML and the key is dotted, with integer segments indexing "
+            "into lists, e.g. -s mean_line.phi=0.7 -s blades.0.1.streamwise=[0,1]"
+            " (repeatable)"
+        ),
+    )
     return parser
 
 
@@ -138,6 +153,56 @@ def _setup_work_dir(work_dir):
     return work_dir
 
 
+def _seg(s):
+    """Parse a dotted-key segment: integer-like segments index into lists."""
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
+
+def _get_child(node, seg):
+    """Return node[seg] if present, else None, tolerating type mismatches."""
+    if isinstance(seg, int):
+        return node[seg] if isinstance(node, list) and seg < len(node) else None
+    return node.get(seg) if isinstance(node, dict) else None
+
+
+def _set_child(node, seg, value):
+    """Assign node[seg] = value, growing lists with None as needed."""
+    if isinstance(seg, int):
+        if not isinstance(node, list):
+            raise ValueError(f"cannot index non-list with integer key {seg}")
+        node.extend([None] * (seg + 1 - len(node)))
+        node[seg] = value
+    else:
+        if not isinstance(node, dict):
+            raise ValueError(f"cannot set string key '{seg}' on non-mapping")
+        node[seg] = value
+
+
+def _apply_overrides(d, overrides):
+    """Apply --set KEY=VALUE overrides in place on the config dict `d`.
+
+    Keys are dotted paths; integer segments index into lists. Values are
+    parsed as YAML so types, lists, and mappings are handled.
+    """
+    for item in overrides:
+        key, sep, raw = item.partition("=")
+        if not sep:
+            raise ValueError(f"override '{item}' is not in KEY=VALUE form")
+        value = yaml.safe_load(raw)
+        segs = [_seg(s) for s in key.split(".")]
+        node = d
+        for seg, nxt in zip(segs[:-1], segs[1:]):
+            child = _get_child(node, seg)
+            if not isinstance(child, (dict, list)):
+                child = [] if isinstance(nxt, int) else {}
+                _set_child(node, seg, child)
+            node = child
+        _set_child(node, segs[-1], value)
+
+
 def _setup_logging(log_level):
     """Initialise stderr logging."""
     logging.raiseExceptions = True
@@ -149,6 +214,7 @@ def cmd_run(args):
     """Run mean-line design, meshing, CFD, and optional iteration."""
 
     d = turbigen.yaml_utils.read_yaml(args.CONFIG_YAML)
+    _apply_overrides(d, args.overrides)
     d["work_dir"] = work_dir = _setup_work_dir(d.get("work_dir"))
 
     fh = logging.FileHandler(work_dir / "log_turbigen.txt")

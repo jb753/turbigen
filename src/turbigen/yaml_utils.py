@@ -87,7 +87,11 @@ def read_yaml(fname):
         config_include.update(inc_config)
 
     for k, v in config.items():
-        if k in config_include:
+        if (
+            k in config_include
+            and isinstance(config_include[k], dict)
+            and isinstance(v, dict)
+        ):
             config_include[k].update(v)
         else:
             config_include[k] = v

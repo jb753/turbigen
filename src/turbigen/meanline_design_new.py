@@ -3,6 +3,7 @@
 import numpy as np
 
 from turbigen.plugins import register_mean_line
+import ember.set_iter
 
 
 @register_mean_line
@@ -34,14 +35,14 @@ def turbine_cascade_forward(
     s2 = s1 + Ys * (0.5 * V_ref**2) / T_ref
 
     # Outlet state from known ho, s, Ma, angles
-    ml[1].set_ho_s_Ma_Alpha_Beta(ho1, s2, Ma2, Alpha[1], Beta=0.0)
+    ember.set_iter.set_ho_s_Ma_Alpha_Beta(ml[1], ho1, s2, Ma2, Alpha[1], Beta=0.0)
 
     # Set exit annulus geometry
     ml[1].set_span_htr(span[1], htr)
 
     # Now conserve mass to set inlet state
     rhoVx1 = ml[1].rhoVx * span[1] / span[0]
-    ml[0].set_ho_s_rhoVm_Alpha_Beta(ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
+    ember.set_iter.set_ho_s_rhoVm_Alpha_Beta(ml[0], ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
 
     # Set inlet annulus geometry (htr may vary, same r_mid)
     ml[0].set_span_r_mid(span[0], ml[1].r_mid)

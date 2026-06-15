@@ -128,6 +128,9 @@ class TurbigenConfig:
 
     basename: str = "config.yaml"
 
+    remark: str = ""
+    """Free-text remark describing this run; set in YAML or via --remark."""
+
     _fast_init: bool = False
     """Flag to not read large object from file on init."""
 

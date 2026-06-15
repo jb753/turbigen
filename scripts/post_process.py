@@ -64,10 +64,7 @@ rVt = np.array(rVt)
 
 fig, ax = plt.subplots()
 ax.plot(x, mdot / mdot[0], "-x", label="mass")
-ax.plot(x, rVt / rVt[0], "-x", label="mass")
-ax.set_ylim(bottom=0)
-ax.axhline(0.0)
-ax.set_ylim(bottom=-0.5)
+ax.set_ylim(0.98, 1.02)
 
 
 b = g[0]
