@@ -45,6 +45,7 @@ class _RowGrids:
     nj: int
     nk: int
     L: tuple
+    tte: float
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -293,6 +294,7 @@ class H(turbigen.mesh.Mesher):
             nj=nj,
             nk=nk,
             L=L,
+            tte=tte,
         )
 
     def _row_coords(self, mac, irow, geom, grids, dsurf, tip_ref, nrow):
@@ -304,6 +306,19 @@ class H(turbigen.mesh.Mesher):
         ite = grids.ite
 
         spfr = span_frac.reshape(1, -1)
+        # tte = grids.tte  # used by the per-span corner warp (disabled below)
+
+        # Per-span TE corner warp (disabled for now). When enabled, this finds
+        # the true TE corner per span and warps the chord mapping so grid t = tte
+        # always lands on the corner, keeping ite coincident with the TE corner
+        # at every span.
+        # tte_span = np.full(nj, tte)
+        # tq_te = np.linspace(0.8, 1.0, 500)
+        # for j in range(nj):
+        #     xrt_u_j, xrt_l_j = mac.bld[irow][0].evaluate_section(span_frac[j])
+        #     _, _, tte_j = _theta_limits(tq_te, xrt_u_j, xrt_l_j, np.array((0, 1)))
+        #     if tte_j is not None:
+        #         tte_span[j] = tte_j
 
         # 1. Meridional xr on a (ni, nj) grid
         stream_frac_span = np.broadcast_to(stream_frac.reshape(-1, 1), (ni, nj)).copy()
@@ -314,6 +329,14 @@ class H(turbigen.mesh.Mesher):
                 [-1, 0, 1, 2],
                 [-1, mlim_now[0], mlim_now[1], 2],
             )
+            # Warp so grid breakpoints [-1, 0, tte, 1, 2] map to section
+            # [-1, mlim0, corner_j, mlim1, 2]; with mlim=(0,1) the only moving
+            # interior knot is the corner at grid t = tte -> tte_span[j].
+            # stream_frac_span[:, j] = np.interp(
+            #     stream_frac_span[:, j],
+            #     [-1, 0, tte, 1, 2],
+            #     [-1, 0, tte_span[j], 1, 2],
+            # )
         xr = mac.ann.evaluate_xr(stream_frac_span + geom.ist + 1.0, spfr)
 
         # 2. Pitchwise clustering
@@ -363,7 +386,7 @@ class H(turbigen.mesh.Mesher):
 
         # 3. Theta limits from blade sections
         theta_lim = np.zeros((2, ni, nj))
-        m = util.cluster_cosine(10000)
+        m = util.cluster_cosine(20000)
         for j in range(nj):
             xrt_u, xrt_l = mac.bld[irow][0].evaluate_section(span_frac[j], m=m)
             assert np.all(xrt_u[2] >= xrt_l[2])
@@ -378,9 +401,7 @@ class H(turbigen.mesh.Mesher):
                 xrt_l,
                 (0, 1),
                 Theta,
-                geom.chord_mid[
-                    (0, -1),
-                ],
+                geom.chord_mid[(0, -1),],
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (irow == nrow - 1),
             )[:2]
@@ -395,7 +416,7 @@ class H(turbigen.mesh.Mesher):
         )
         if self.AR_cusp:
             xrt_cusped = add_cusp(
-                xrt_ul, ite, self.AR_cusp, self.ni_cusp, plot=self.plot
+                xrt_ul, ite, self.AR_cusp, self.ni_cusp, self.ni_TE, plot=self.plot
             )
             xr = xrt_cusped[:2, ...].mean(axis=-1)
             theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
@@ -454,17 +475,8 @@ class H(turbigen.mesh.Mesher):
         theta_lim3 = np.expand_dims(coords.theta_lim, 3)
         assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
         np.add(
-            pfr3
-            * theta_lim3[
-                (0,),
-            ],
-            (1.0 - pfr3)
-            * (
-                theta_lim3[
-                    (1,),
-                ]
-                + geom.pitch_theta
-            ),
+            pfr3 * theta_lim3[(0,),],
+            (1.0 - pfr3) * (theta_lim3[(1,),] + geom.pitch_theta),
             out=xrt_now[2:3],
         )
         xrt_now[2] = xrt_now[2, :, :, ::-1]
@@ -757,12 +769,7 @@ class H(turbigen.mesh.Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         """Relax clustering towards a uniform distribution at inlet and exit."""
         dt_relax = (
-            np.ones((2,))
-            * self.nchord_relax
-            * pitch_chord[
-                (0, -1),
-            ]
-            / pitch_chord[1]
+            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])
@@ -781,6 +788,42 @@ def _plot_grid(g):
         ax.plot(b.x[:, b.nj // 2, :], b.rt[:, b.nj // 2, :], "k-", lw=0.5)
         ax.plot(b.x[:, b.nj // 2, :].T, b.rt[:, b.nj // 2, :].T, "k-", lw=0.5)
     plt.show()
+
+
+def _te_corner_curvature(tq, theta, m_lo):
+    """Locate the TE corner as the peak curvature of theta(m), sub-sample.
+
+    The corner is the sharpest turning point of the surface theta distribution
+    near the TE. On the uniform tq grid the discrete second difference is
+    proportional to curvature; the peak is refined to sub-sample resolution by
+    a parabolic fit through the three points about the discrete maximum. This
+    is a single continuous criterion (no zero-crossing set membership, no grid
+    quantisation), so the returned location varies smoothly with span unless the
+    underlying geometry genuinely has a spanwise step.
+
+    Returns (tte, strength) or (None, 0.0) if no interior peak is found in the
+    window tq > m_lo. strength is the peak |curvature|, for picking a surface.
+    """
+    # Second difference ~ curvature (uniform tq spacing)
+    d2 = theta[:-2] - 2.0 * theta[1:-1] + theta[2:]
+    m_c = tq[1:-1]  # centres of the second-difference stencil
+    win = m_c > m_lo
+    if not win.any():
+        return None, 0.0
+    idx_win = np.flatnonzero(win)
+    a2 = np.abs(d2)
+    ipk = idx_win[np.argmax(a2[idx_win])]
+    # Need interior neighbours for the parabolic refinement
+    if ipk == 0 or ipk == len(d2) - 1:
+        return tq[ipk + 1], a2[ipk]
+    # Parabolic vertex offset in [-0.5, 0.5] from the three |curvature| samples
+    yl, y0, yr = a2[ipk - 1], a2[ipk], a2[ipk + 1]
+    denom = yl - 2.0 * y0 + yr
+    delta = 0.5 * (yl - yr) / denom if denom != 0.0 else 0.0
+    delta = float(np.clip(delta, -0.5, 0.5))
+    dtq = tq[1] - tq[0]
+    tte = tq[ipk + 1] + delta * dtq
+    return tte, a2[ipk]
 
 
 def _theta_limits(
@@ -848,25 +891,20 @@ def _theta_limits(
     theta_u = np.interp(tq, m_u, xrt_u[2])
     theta_l = np.interp(tq, m_l, xrt_l[2])
 
-    # Look for any turning points in last 5% chord
-    # These correspond to TE corner
-    dtheta_u = np.diff(theta_u, n=1)
-    dtheta_l = np.diff(theta_l, n=1)
-
-    ind_l_up, ind_l_dn = util.zero_crossings(dtheta_l)
-    ind_u_up, ind_u_dn = util.zero_crossings(dtheta_u)
-    ind_l_te = ind_l_up[tq[ind_l_up] > mlim[1] - 0.2]
-    ind_u_te = ind_u_dn[tq[ind_u_dn] > mlim[1] - 0.2]
-
-    # If the process for setting tte does not work, then
-    # arbitrarily cluster grid over last 1.0% chord
-    tte = None
-    if ind_l_te.size > 0:
-        tte = tq[ind_l_te[-1]]
-    elif ind_u_te.size > 0:
-        tte = tq[ind_u_te[-1]]
-    else:
+    # TE corner = sharpest turning point (peak curvature) of theta(m) in the
+    # last ~20% chord, found on each surface and refined to sub-sample. Pick the
+    # surface with the stronger corner. Single continuous criterion, so tte
+    # varies smoothly with span unless the geometry has a real spanwise step.
+    m_lo = mlim[1] - 0.2
+    tte_l, str_l = _te_corner_curvature(tq, theta_l, m_lo)
+    tte_u, str_u = _te_corner_curvature(tq, theta_u, m_lo)
+    if tte_l is None and tte_u is None:
+        # Fallback: cluster grid over last 1.0% chord
         tte = mlim[1] - 0.01
+    elif tte_u is None or (tte_l is not None and str_l >= str_u):
+        tte = tte_l
+    else:
+        tte = tte_u
 
     if np.any(theta_u < theta_l):
         raise Exception("Blade is thicker than calculated pitch!")
@@ -917,7 +955,37 @@ def _theta_limits(
     return theta_u, theta_l, tte
 
 
-def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
+def _blend_te_corner(xrrt, iTE, ni_TE, k):
+    """Blend the corner-side surface towards a straight line approaching the cusp.
+
+    On the cusp corner side, the window [iTE-2*ni_TE, iTE] holds the original
+    blade points (upstream half) and the new loaded points (downstream half).
+    Draw one straight line between the two window endpoints and blend the
+    interior points towards it, with weight ramping linearly from 0 at the
+    upstream end (iTE-2*ni_TE) to 1 at the cusp start (iTE). Endpoints are
+    pinned; this removes the kink between the blade and the loaded cusp points.
+    """
+    i0 = iTE - 2 * ni_TE
+    if i0 < 0:
+        return
+    n = iTE - i0  # number of intervals across the window
+    # Quadratic weight u**2: 0 -> 1 with zero slope at the upstream blade edge,
+    # so the blend leaves the original surface curvature-continuously.
+    w = ((np.arange(n + 1) / n) ** 2).reshape(-1, 1)  # 0 -> 1, indexed [i, j]
+    # Blend only theta (rt); leave x and r untouched so points keep their
+    # streamwise/spanwise positions and only the tangential coordinate relaxes
+    # towards the straight line. The target is theta linear in physical x
+    # between the two window endpoints.
+    x = xrrt[0, i0 : iTE + 1, :, k]
+    t = xrrt[2, i0 : iTE + 1, :, k]
+    x0, x1 = x[0], x[-1]
+    t0, t1 = t[0], t[-1]
+    frac = (x - x0[None, :]) / (x1 - x0)[None, :]
+    line = t0[None, :] + frac * (t1 - t0)[None, :]
+    xrrt[2, i0 : iTE + 1, :, k] = (1.0 - w) * t + w * line
+
+
+def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, plot=True):
     """Change block coordinates from square TE to cusped TE.
 
     This assumes that the trailing edge is located exactly
@@ -972,6 +1040,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
             xrrt[2, ilower + 1 : iTE + 1, :, 0] = xrrt[2, ilower, :, 0] + grad * (
                 xrrt[0, ilower + 1 : iTE + 1, :, 0] - xrrt[0, ilower, :, 0]
             )
+            _blend_te_corner(xrrt, iTE, ni_TE, 0)
 
         else:
             raise NotImplementedError()
@@ -988,6 +1057,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
             xrrt[2, ilower : iTE + 1, :, -1] = xrrt[2, ilower, :, -1] + grad * (
                 xrrt[0, ilower : iTE + 1, :, -1] - xrrt[0, ilower, :, -1]
             )
+            _blend_te_corner(xrrt, iTE, ni_TE, -1)
 
         else:
             raise NotImplementedError()
@@ -1004,33 +1074,76 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
     # Centre of trailing edge
     xrrt_cent = np.mean(xrrt_TE[:, :, -1], axis=0)
 
-    # Vectors across TE and along camber line
+    # Vectors across TE and along each surface
     # xrrt_TE is indexed[side, coord, i, j]
     vec_TE = xrrt_TE[0, :, -1] - xrrt_TE[1, :, -1]
     logger.info(vec_TE.shape)
     W_TE = util.vecnorm(vec_TE)
     vec_TE /= W_TE
-    vec_cam = np.mean(np.diff(xrrt_TE[:, :, -2:, :], axis=2), axis=0).squeeze()
+
+    # Slope of each surface over its last TE segment, indexed [side, coord, j].
+    # vecnorm contracts the leading axis, so norm each side's [coord, j] vector.
+    vec_side = np.diff(xrrt_TE[:, :, -2:, :], axis=2).squeeze(axis=2)
+    vec_side = np.stack([vs / util.vecnorm(vs) for vs in vec_side])
+
+    # Mean camber direction (used below to pick the in-plane interpolation axis)
+    vec_cam = vec_side.mean(axis=0)
     vec_cam /= util.vecnorm(vec_cam)
     logger.info(f"{W_TE[jmid]=}")
 
-    # Find cusp point
+    # The cusp tip is the intersection of the two surface tangent lines, so that
+    # each side continues its own TE slope (a true wedge with no kink). Solve in
+    # the two in-plane coordinates: (x, rt) if axial, else (r, rt).
+    ip = (0, 2) if is_axial else (1, 2)
     L_cusp = AR_cusp * W_TE
     logger.info(f"L_cusp={L_cusp.mean():.3g}")
-    xrrt_point = xrrt_cent + L_cusp * vec_cam
+
+    # Per-span intersection of P0 + s*v0 == P1 + t*v1 in the in-plane coords.
+    P0 = xrrt_TE[0, :, -1]  # [coord, j]
+    P1 = xrrt_TE[1, :, -1]
+    v0 = vec_side[0]
+    v1 = vec_side[1]
+    a0, a1 = ip
+    # det of [v0  -v1]
+    det = v0[a0] * (-v1[a1]) - v0[a1] * (-v1[a0])
+    rhs0 = P1[a0] - P0[a0]
+    rhs1 = P1[a1] - P0[a1]
+    s = (rhs0 * (-v1[a1]) - rhs1 * (-v1[a0])) / det
+
+    xrrt_point = P0 + s[None, :] * v0
+    # Fall back to the camber-line placement where the tangents are near-parallel
+    # (det -> 0) or the intersection falls upstream of the TE (s <= 0).
+    bad = ~np.isfinite(s) | (np.abs(det) < 1e-12) | (s <= 0.0)
+    if bad.any():
+        cam_point = xrrt_cent + L_cusp * vec_cam
+        xrrt_point[:, bad] = cam_point[:, bad]
 
     if plot:
         ax.plot(xrrt_cent[0, jmid], xrrt_cent[2, jmid], "g^")
         ax.plot(xrrt_point[0, jmid], xrrt_point[2, jmid], "r*")
         plt.axis("equal")
 
-    # Now get the coordinates to be added
-    f_cusp = np.linspace(0.0, 1.0, ni_cusp).reshape(1, -1, 1)
-
-    xrrt_cusp = (
-        f_cusp * xrrt_point[None, :, None, :]
-        + (1.0 - f_cusp) * xrrt_TE[:, :, None, -1, :]
-    )
+    # Now get the coordinates to be added. Distribute the ni_cusp points along
+    # the cusp so the first cell matches the blade's last cell at the TE, then
+    # expand smoothly towards the tip, avoiding a spacing jump at the join.
+    xrrt_cusp = np.zeros((2, 3, ni_cusp, nj))
+    for j in range(nj):
+        # Blade's last cell into the TE on this side (arc length)
+        dm_blade = util.cum_arc_length(xrrt_TE[0, :, -2:, j])[-1]
+        # Cusp length (straight tangent line from TE point to tip) on this side
+        for side in range(2):
+            L_side = util.vecnorm(xrrt_point[:, j] - xrrt_TE[side, :, -1, j])
+            try:
+                f = clusterfunc.single.fixed(
+                    dm_blade, L_side, 1.4, ni_cusp, 0.0, L_side
+                )
+            except clusterfunc.exceptions.ClusteringException:
+                f = np.linspace(0.0, L_side, ni_cusp)
+            f = (f / L_side).reshape(-1, 1)
+            xrrt_cusp[side, :, :, j] = (
+                f.T * xrrt_point[:, j, None]
+                + (1.0 - f.T) * xrrt_TE[side, :, -1, j, None]
+            )
     if plot:
         for xrrtci in xrrt_cusp:
             ax.plot(xrrtci[0, :, jmid], xrrtci[2, :, jmid], "g^-")
@@ -1086,6 +1199,9 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, plot=True):
 
             L = m_extra[-1, j] - m_point
 
+            # Cusp's last cell in the meridional (x, r) metric, matching the
+            # m_extra axis the downstream block is clustered on, so the first
+            # downstream cell equals the cusp's last cell in the same metric.
             dm_start = util.cum_arc_length(xrrt_new[:2, -2:, j, 0])[-1]
             dm_end = m_extra[-1, j] - m_extra[-2, j]
             clu = clusterfunc.double.fixed(
