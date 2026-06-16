@@ -1,24 +1,26 @@
 #### MATPLOTLIBRC FORMAT
 
-# text.usetex : True
+text.usetex : True
 # font.family : 'Computer Modern Roman'
-backend: qtagg
-figure.figsize : 7., 4.0
-# figure.figsize : 5.0, 4.0
+backend: qt5agg
+# figure.figsize : 5.8, 3.58  # Full JSV width
+figure.figsize : 5.22, 3.22  # 90% of full JSV width
 axes.linewidth : 1.5
 lines.linewidth : 2
 lines.markeredgewidth : 1.5
 xtick.major.width : 1.5
 ytick.major.width : 1.5
-legend.fontsize : 12
-font.size : 14
-font.family : serif
-font.serif : FreeSerif
-mathtext.fontset : stix
+legend.fontsize : 10
+legend.labelspacing : 0.2
+font.size : 12
+# Latex preamble
+text.latex.preamble : \usepackage{amsmath} \usepackage{helvet} \newcommand{\StL}{\mathit{St_L}} \newcommand{\StD}{\mathit{St_D}}
+# font.serif : FreeSans
+# mathtext.fontset : stix
 axes.grid : False
 axes.titlesize : medium
 grid.alpha : 0.15
 grid.color : (0.15,0.15,0.15)
 grid.linewidth : 1.5
 figure.dpi : 200
-axes.prop_cycle: cycler(color=['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown',]) + cycler(marker=['x', 'o', '+', '^', '*', 's']) + cycler(linestyle=['-', '--', '-', '--', '-', '--'])
+axes.prop_cycle: cycler(color=['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown',]) + cycler(marker=['x', 'o', '+', '^', '*', 's']) + cycler(linestyle=['-', '--', ':', '--', '-', '--'])

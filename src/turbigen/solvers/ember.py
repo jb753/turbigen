@@ -23,6 +23,7 @@ class Ember(BaseSolver):
 
     n_step: int = 2500
     n_step_avg: int = 500
+    avg_cfl: bool = False
     full_mgrid: bool = True
     i_level_stop: int = 0
     rf_mix: float = 0.05
@@ -106,6 +107,7 @@ class Ember(BaseSolver):
         config = ember.config.SolverConfig(
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
+            avg_cfl=self.avg_cfl,
             n_step_log=50,
             n_levels=self.n_levels,
             cfl_max=self.cfl_max,
