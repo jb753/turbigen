@@ -1,0 +1,257 @@
+---
+Re_surf: null
+annulus:
+  cx_gap:
+  - 0.1
+  - 0.06
+  - 0.2
+  cx_row:
+  - 0.1
+  - 0.1
+  type: merged_fixed_axial_chord
+  merge_weight: 1.0
+basename: config.yaml
+blades:
+- camber:
+  - - -2.802961195488642
+    - -0.4735298156737997
+    - 0.2
+  - - -3.614425499035761
+    - -0.4735298156738139
+    - 0.2
+  - - -4.412538057782282
+    - -0.4735298156738281
+    - 0.2
+  camber_type: quadratic
+  mstack: 0.5
+  spf:
+  - 0.2
+  - 0.5
+  - 0.8
+  theta_offset: 0.0
+  thick:
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  thick_ref: chord
+  thick_type: taylor
+  tip: 0.0
+  tip_ref: span
+  vortex_expon: -1.0
+- camber:
+  - - 4.130653930496617
+    - -1.4921073913574077
+    - 0.2
+  - - 7.1346797476617425
+    - -1.4921073913574503
+    - 0.2
+  - - 5.71340551596421
+    - -1.4921073913574432
+    - 0.2
+  camber_type: quadratic
+  mstack: 0.5
+  spf:
+  - 0.2
+  - 0.5
+  - 0.8
+  theta_offset: 0.0
+  thick:
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  - - 0.04
+    - 0.12
+    - 0.35
+    - 0.0
+    - 0.02
+    - 0.25
+  thick_ref: chord
+  thick_type: taylor
+  tip: 0.01
+  tip_ref: span
+  vortex_expon: -1.0
+converged: false
+cut_offset: 0.02
+fac_nstep_initial: 2.0
+
+# iterate:
+#   mean_line:
+#     relaxation_factor: 0.5
+#     tolerance:
+#       Ys: 0.001
+#   deviation:
+#     # relaxation_factor: 1.0
+#   incidence:
+#     relaxation_factor: 0.1
+#     clip: 5.0
+
+# design_space:
+#   independent:
+#     mean_line:
+#       phi2: [0.4, 1.2]
+#       psi: [1.0, 2.4]
+#   nsample_target: 32
+
+fluid:
+  P_dtm: 100000.0
+  Pr: 0.7
+  T_dtm: 300.0
+  V_ref: 1.0
+  cp: 1100.0
+  gamma: 1.33
+  mu: 0.0006
+  rgas_ref: 1.0
+  rho_ref: 1.0
+  type: perfect
+ignore_guess: false
+inlet: null
+job:
+  queue_file: /home/jb753/.turbigen/queue.txt
+  type: local
+max_iter: 20
+mean_line:
+  Ma2: 0.6
+  Po1: 1600000.0
+  To1: 1600.0
+  fac_Ma3_rel: 1.0
+  Ys:
+  - 0.023244259194470943
+  - 0.04664287550840527
+  mdot: 900.0
+  n_row: 2
+  phi2: 0.8
+  psi: 1.6
+  r_rms: 1.0
+  type: axial_turbine
+  zeta:
+  - 1.0
+  - 1.0
+mean_line_actual:
+  Alpha1: -21.092058
+  Lam: 0.53578717
+  Ma2: 0.592177
+  Ma3_rel: 0.59046465
+  Omega: 117.827705
+  PR_ts: 1.4791338
+  PR_tt: 1.3259215
+  Po1: 1597235.9
+  To1: 1599.9966
+  Ys:
+  - 0.021918173879384995
+  - 0.0703965574502945
+  eta_ts: 0.6126777529716492
+  eta_tt: 0.8388617634773254
+  fac_Ma3_rel: 0.98544705
+  htr2: 0.9603619
+  mdot: 1024.7942
+  phi2: 1.1866044
+  psi: 1.7972744
+  r_rms: 2.0
+  zeta:
+  - 1.0056836605072021
+  - 1.0174018144607544
+mesh:
+  AR_cusp: 2.0
+  AR_merid: 1.0
+  AR_passage: 1.0
+  AR_stream: 2.0
+  ER_pitch: 1.2
+  ER_span: 1.2
+  ER_stream: 1.2
+  nk_min: 49
+  dm_LE: 0.001
+  dm_TE: 0.0
+  dspf_mid: 0.03
+  gap_contraction: 0.6
+  meshdir: mesh
+  nchord_relax: 1.0
+  ni_TE: 5
+  ni_cusp: 5
+  plot: false
+  recluster: false
+  resolution_factor: 1.0
+  skew_max: 90.0
+  slip_annulus: false
+  slip_cusp: false
+  deswirl: false
+  type: h
+  yplus: 30.0
+metadata_file: null
+mixed_out_flowfield: null
+nblade:
+- Co: 0.6
+  spf: 0.5
+- Co: 0.6
+  spf: 0.5
+operating_point: null
+plug_dir: null
+post_3d: {}
+post_process:
+- type: metadata
+- m_cut: []
+  show_axis: false
+  show_blades: true
+  type: annulus
+- type: convergence
+- offset: 0
+  spf: {}
+  type: surface_distribution
+  variable: Mas
+save_iteration_grids: false
+
+solver:
+  avg_cfl: true
+  mg_mode: jameson
+  cfl_bnd_max: 10.0
+  cfl_min: 0.1
+  convergence: null
+  debug: false
+  delta_filt: 0.1
+  deswirl: 0.0
+  fac_mgrid: 0.8
+  full_mgrid: true
+  gain_filt: 1.0
+  i_level_stop: 0
+  inviscid: false
+  n_levels: 4
+  n_step: 5000
+  n_step_avg: 1000
+  radial_equilibrium: true
+  restrict_avg: false
+  rf_mix: 0.01
+  sf_mix: 0.0
+  sf2P: 1.0
+  sf2T: 1.0
+  sf4: 0.01
+  soft_start: false
+  type: ember
+  v_cycle: false
+  workdir: null
+
+# work_dir: /home/jb753/python/turbigen-dev/turbines2
+work_dir: runs/*
+...
