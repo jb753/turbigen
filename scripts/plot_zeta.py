@@ -24,9 +24,10 @@ def main(argv):
         conv = ConvergenceHistory.read_cnv(filename)
         n = conv.i_log + 1
         zeta = conv.zeta[:n]
-        # Normalise by the final zeta of the first run.
+        i_step = conv.i_step[:n]
+        # Normalise by the mean zeta over the last 1000 steps of the first run.
         if zeta_ref is None:
-            zeta_ref = zeta[-1]
+            zeta_ref = zeta[i_step > i_step[-1] - 1000].mean()
         # Cumulative wall time [s], scaled by the run's cost factor.
         t = factor * conv.time[:n] * conv._TIME_SCALE
         zeta_norm = zeta / zeta_ref
