@@ -416,6 +416,7 @@ def run(grid, ts3_conf, machine, workdir):
     # grid, which the log itself does not record.
     try:
         conv = ConvergenceHistory.from_ts3(log_path, grid)
+        conv.write_cnv(os.path.join(ts3_conf.workdir.parent, "conv.cnv"))
     except Exception as e:
         logger.warning(f"Failed to parse log file {log_path}")
         logger.warning(f"Exception: {e}")

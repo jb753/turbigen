@@ -196,7 +196,7 @@ mesh:
   resolution_factor: 1.0
   skew_max: 90.0
   slip_annulus: false
-  slip_cusp: false
+  slip_cusp: true
   deswirl: false
   type: h
   yplus: 30.0
@@ -230,23 +230,23 @@ solver:
   cfl_min: 0.1
   convergence: null
   debug: false
-  delta_filt: 0.1
+  delta_filt: 0.2
   deswirl: 0.0
-  fac_mgrid: 0.8
+  fac_mgrid: 1.0
   full_mgrid: true
-  gain_filt: 1.0
+  gain_filt: 2.0
   i_level_stop: 0
   inviscid: false
-  n_levels: 4
-  n_step: 5000
-  n_step_avg: 1000
+  n_levels: 3
+  n_step: 2500
+  n_step_avg: 500
   radial_equilibrium: true
   restrict_avg: false
   rf_mix: 0.01
   sf_mix: 0.0
-  sf2P: 1.0
-  sf2T: 1.0
-  sf4: 0.01
+  sf2P: 2.0
+  sf2T: 2.0
+  sf4: 0.02
   soft_start: false
   type: ember
   v_cycle: false
