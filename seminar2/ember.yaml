@@ -4,22 +4,22 @@ include:
 solver:
   avg_cfl: true
   mg_mode: jameson
-  cfl_bnd_max: 1.0
+  cfl_bnd_max: 10.0
   cfl_min: 0.1
   convergence: null
   debug: false
-  delta_filt: 0.2
+  delta_filt: 0.05
   deswirl: 0.0
   fac_mgrid: 0.8
   full_mgrid: true
-  gain_filt: 2.0
+  gain_filt: 16.0
   i_level_stop: 0
   inviscid: false
-  n_levels: 3
-  n_step: 2000
+  n_levels: 4
+  n_step: 10000
   n_step_avg: 1000
   radial_equilibrium: true
-  restrict_avg: false
+  restrict_avg: true
   rf_mix: 0.01
   sf_mix: 0.0
   sf2P: 2.0

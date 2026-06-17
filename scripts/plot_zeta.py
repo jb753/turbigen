@@ -3,6 +3,7 @@
 
 Usage: plot_zeta.py A/conv.cnv B/conv.cnv ...
 """
+
 import sys
 
 import numpy as np
@@ -17,6 +18,7 @@ def main(argv):
 
     # Cost factor per run: the second run's wall time is scaled by 55.
     cost = (1.0, 55.0)
+    cost = (1.0, 1.0)
 
     zeta_ref = None
     fig, ax = plt.subplots()
@@ -39,7 +41,10 @@ def main(argv):
         # First index from which all subsequent points are within 1%.
         i_conv = n - np.argmin(within[::-1]) if not within.all() else 0
         ax.plot(
-            t[i_conv], zeta_norm[i_conv], marker="o", linestyle="",
+            t[i_conv],
+            zeta_norm[i_conv],
+            marker="o",
+            linestyle="",
             color=line.get_color(),
         )
 
