@@ -23,6 +23,7 @@ class Ember(BaseSolver):
 
     n_step: int = 2500
     n_step_avg: int = 500
+    n_step_freeze: int = 0
     avg_cfl: bool = False
     full_mgrid: bool = True
     i_level_stop: int = 0
@@ -96,17 +97,10 @@ class Ember(BaseSolver):
         logger.info(f"Writing guess solution to {guess_file}")
         grid.write_emb(guess_file, compress=False)
 
-        # PID gains for the mixing-plane static-pressure controller.
-        # rf_mix is the overall gain; Kp and Kd are tuned as ratios of it.
-        rp_mix = 0.0
-        rd_mix = 0.0
-        Ki = self.rf_mix
-        Kp = rp_mix * self.rf_mix
-        Kd = rd_mix * self.rf_mix
-
         config = ember.config.SolverConfig(
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
+            n_step_freeze=self.n_step_freeze,
             avg_cfl=self.avg_cfl,
             n_step_log=50,
             n_levels=self.n_levels,
