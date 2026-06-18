@@ -24,7 +24,6 @@ class Ember(BaseSolver):
     n_step: int = 2500
     n_step_avg: int = 500
     n_step_freeze: int = 0
-    avg_cfl: bool = False
     full_mgrid: bool = True
     i_level_stop: int = 0
     rf_mix: float = 0.05
@@ -40,7 +39,6 @@ class Ember(BaseSolver):
     cfl_bnd_max: float = 0.5
     cfl_bnd_min: float = 0.0
     cfl_min: float = 0.1
-    debug: bool = False
     sf2P: float = 1.0
     sf2T: float = 1.0
     n_levels: float = 3
@@ -102,7 +100,6 @@ class Ember(BaseSolver):
             n_step=self.n_step,
             n_step_avg=self.n_step_avg,
             n_step_freeze=self.n_step_freeze,
-            avg_cfl=self.avg_cfl,
             n_step_log=50,
             n_levels=self.n_levels,
             cfl_max=self.cfl_max,
@@ -129,7 +126,6 @@ class Ember(BaseSolver):
             rf_inlet_P=0.05,
             v_cycle=self.v_cycle,
             restrict_avg=self.restrict_avg,
-            debug=self.debug,
             body_forces=body_forces,
             rtol=self.rtol,
         )
