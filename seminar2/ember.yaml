@@ -8,7 +8,7 @@ solver:
   cfl_min: 0.1
   convergence: null
   debug: false
-  delta_filt: 0.05
+  delta_filt: 0.1
   deswirl: 0.0
   fac_mgrid: 0.8
   full_mgrid: true
@@ -18,6 +18,7 @@ solver:
   n_levels: 4
   n_step: 10000
   n_step_avg: 1000
+  n_step_freeze: 0
   radial_equilibrium: true
   restrict_avg: true
   rf_mix: 0.01
