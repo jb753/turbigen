@@ -33,7 +33,6 @@ class Ember(BaseSolver):
     fac_mgrid: float = 0.8
     mg_mode: str = "jameson"
     inviscid: bool = False
-    v_cycle: bool = False
     restrict_avg: bool = False
     radial_equilibrium: bool = True
     cfl_bnd_max: float = 0.5
@@ -124,7 +123,6 @@ class Ember(BaseSolver):
             # rf_inlet_P=0.0,
             i_level_stop=self.i_level_stop,
             rf_inlet_P=0.05,
-            v_cycle=self.v_cycle,
             restrict_avg=self.restrict_avg,
             body_forces=body_forces,
             rtol=self.rtol,
