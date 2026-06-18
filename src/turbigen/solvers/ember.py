@@ -106,7 +106,6 @@ class Ember(BaseSolver):
             cfl_bnd_max=self.cfl_bnd_max,
             cfl_min=self.cfl_min,
             rf_mix=self.rf_mix,
-            # mixer_log_path=workdir.parent / "mixer.csv",
             # xllim=1e6,
             full_mgrid=self.full_mgrid,
             fac_restart=0.25,
