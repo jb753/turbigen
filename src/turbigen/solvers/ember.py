@@ -4,7 +4,6 @@ import ember.run
 import ember.patch
 import ember.config
 import ember.fortran
-import ember.body_force
 from pathlib import Path
 from dataclasses import dataclass
 from turbigen.solvers.base import BaseSolver
@@ -64,19 +63,6 @@ class Ember(BaseSolver):
             for patch in grid.patches.outlet:
                 patch.set_adjustment(K_dyn=0.0, radial_equilibrium=True, rf=0.01)
 
-        body_forces = ()
-        if self.deswirl > 0.0:
-            mmax = machine.ann.mmax
-            m_ramp = np.linspace(mmax - 0.5, mmax, 73)
-            spf = np.linspace(0.0, 1.0, 65)
-            m_grid, spf_grid = np.meshgrid(m_ramp, spf, indexing="ij")
-            xr_arr = machine.ann.evaluate_xr(m_grid, spf_grid)
-            xr = np.stack([xr_arr[0].ravel(), xr_arr[1].ravel()], axis=-1)
-            gain = (self.deswirl * (m_grid - (mmax - 0.5)) / 0.5).ravel()
-            bf = ember.body_force.DeswirlBodyForce(grid, xr=xr, gain=gain, k_mult=0.5)
-            body_forces = (bf,)
-        # patch.set_adjustment("dynamic_head", K=2.0, rf=1.0)
-
         # import matplotlib.pyplot as plt
 
         # xllim = 0.0
@@ -116,14 +102,12 @@ class Ember(BaseSolver):
             sf2P=self.sf2P,
             sf2T=self.sf2T,
             sf4=self.sf4,
-            vort_absolute=False,
             delta_filt=self.delta_filt,
             gain_filt=self.gain_filt,
             # rf_inlet_P=0.0,
             i_level_stop=self.i_level_stop,
             rf_inlet_P=0.05,
             restrict_avg=self.restrict_avg,
-            body_forces=body_forces,
             rtol=self.rtol,
         )
 
