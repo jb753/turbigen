@@ -1,10 +1,13 @@
 """Functions for reading and writing YAML files."""
 
+import logging
 import yaml
 import os
 import re
 import numpy as np
 from pathlib import Path, PosixPath
+
+logger = logging.getLogger("turbigen")
 
 
 # Allow dumping of numpy float64 to yaml
@@ -77,9 +80,19 @@ def read_yaml(fname):
     # Look for top-level include key
     config_include = {}
     for fname_inc in config.pop("include", []):
-        # If fname does not exist, use as a relative path
-        if not os.path.exists(fname_inc):
-            fname_inc = os.path.join(os.path.dirname(fname), fname_inc)
+        # Resolve include path: prefer cwd, fall back to a path relative to
+        # the including config file.
+        fname_rel = os.path.join(os.path.dirname(fname), fname_inc)
+        if os.path.exists(fname_inc):
+            if os.path.exists(fname_rel) and not os.path.samefile(fname_inc, fname_rel):
+                logger.warning(
+                    f"Include '{fname_inc}' resolved to '{os.path.abspath(fname_inc)}' "
+                    f"(relative to cwd), shadowing '{os.path.abspath(fname_rel)}' "
+                    f"(relative to {fname})"
+                )
+        else:
+            fname_inc = fname_rel
+        logger.info(f"Including '{fname_inc}' from {fname}")
 
         # Read the included file
         with open(fname_inc, "r") as f:

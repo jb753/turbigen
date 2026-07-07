@@ -5,7 +5,7 @@ solver:
   mg_mode: jameson
   cfl_bnd_max: 10.0
   cfl_min: 0.1
-  cfl_max: 2.6
+  cfl_max: 4.0
   convergence: null
   delta_filt: 0.1
   deswirl: 0.0
