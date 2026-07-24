@@ -306,37 +306,35 @@ class H(turbigen.mesh.Mesher):
         ite = grids.ite
 
         spfr = span_frac.reshape(1, -1)
-        # tte = grids.tte  # used by the per-span corner warp (disabled below)
+        tte = grids.tte  # midspan TE-corner fraction the streamwise grid was built on
 
-        # Per-span TE corner warp (disabled for now). When enabled, this finds
-        # the true TE corner per span and warps the chord mapping so grid t = tte
-        # always lands on the corner, keeping ite coincident with the TE corner
-        # at every span.
-        # tte_span = np.full(nj, tte)
-        # tq_te = np.linspace(0.8, 1.0, 500)
-        # for j in range(nj):
-        #     xrt_u_j, xrt_l_j = mac.bld[irow][0].evaluate_section(span_frac[j])
-        #     _, _, tte_j = _theta_limits(tq_te, xrt_u_j, xrt_l_j, np.array((0, 1)))
-        #     if tte_j is not None:
-        #         tte_span[j] = tte_j
+        # Per-span TE corner alignment. The grid's TE breakpoint t = tte is fixed
+        # at the midspan corner, but the true squared-TE corner fraction drifts
+        # with span, so off-midspan the corner falls between streamwise nodes.
+        # Find the corner fraction at each span and warp the chord mapping so the
+        # grid knot t = tte lands on that span's corner -- keeping ite coincident
+        # with the TE corner at every span. Without this the corner is only
+        # resolved at midspan, forcing add_cusp to detect and re-square it, which
+        # is fragile and sensitive to the spanwise node count.
+        tte_span = np.full(nj, tte)
+        tq_te = np.linspace(0.8, 1.0, 500)
+        for j in range(nj):
+            xrt_u_j, xrt_l_j = mac.bld[irow][0].evaluate_section(span_frac[j])
+            _, _, tte_j = _theta_limits(tq_te, xrt_u_j, xrt_l_j, np.array((0, 1)))
+            if tte_j is not None:
+                tte_span[j] = tte_j
 
         # 1. Meridional xr on a (ni, nj) grid
         stream_frac_span = np.broadcast_to(stream_frac.reshape(-1, 1), (ni, nj)).copy()
         for j in range(nj):
-            mlim_now = (0, 1)
+            # Warp so grid breakpoints [-1, 0, tte, 1, 2] map to section
+            # [-1, 0, tte_span[j], 1, 2]; with mlim = (0, 1) the only moving
+            # interior knot is the corner at grid t = tte -> tte_span[j].
             stream_frac_span[:, j] = np.interp(
                 stream_frac_span[:, j],
-                [-1, 0, 1, 2],
-                [-1, mlim_now[0], mlim_now[1], 2],
+                [-1, 0, tte, 1, 2],
+                [-1, 0, tte_span[j], 1, 2],
             )
-            # Warp so grid breakpoints [-1, 0, tte, 1, 2] map to section
-            # [-1, mlim0, corner_j, mlim1, 2]; with mlim=(0,1) the only moving
-            # interior knot is the corner at grid t = tte -> tte_span[j].
-            # stream_frac_span[:, j] = np.interp(
-            #     stream_frac_span[:, j],
-            #     [-1, 0, tte, 1, 2],
-            #     [-1, 0, tte_span[j], 1, 2],
-            # )
         xr = mac.ann.evaluate_xr(stream_frac_span + geom.ist + 1.0, spfr)
 
         # 2. Pitchwise clustering
@@ -1027,36 +1025,46 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, plot=True):
     )
     logger.info(f"{is_axial=}")
 
-    # Find both corners of the trailing edge
+    # Find the trailing-edge corner and extrapolate the corner-side surface
+    # straight to the TE. The corner index is detected independently at each
+    # spanwise station from that station's own theta profile, rather than once
+    # at midspan and reused span-wide: the corner shifts in the streamwise
+    # index with span, so a single midspan choice ties the re-squaring to the
+    # spanwise node count -- at some resolutions the reused index overshoots
+    # and collapses the hub TE to zero thickness (breaking the cusp below).
     istlook = iTE - 12
     if plus_exit:
-        # Look for turning point on lower surface
-        ilower = istlook + np.argmax(xrrt[2, istlook:iTE, jmid, 0]).item()
+        # Turning point on the lower surface (side 0), per station.
+        ilower = istlook + np.argmax(xrrt[2, istlook:iTE, :, 0], axis=0)
         # Extrapolate lower surface to TE
         if is_axial:
-            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, 0], axis=0)
-            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, 0], axis=0)
-            grad = dt / dx
-            xrrt[2, ilower + 1 : iTE + 1, :, 0] = xrrt[2, ilower, :, 0] + grad * (
-                xrrt[0, ilower + 1 : iTE + 1, :, 0] - xrrt[0, ilower, :, 0]
-            )
+            for j in range(nj):
+                il = int(ilower[j])
+                grad = (xrrt[2, il, j, 0] - xrrt[2, il - 1, j, 0]) / (
+                    xrrt[0, il, j, 0] - xrrt[0, il - 1, j, 0]
+                )
+                xrrt[2, il + 1 : iTE + 1, j, 0] = xrrt[2, il, j, 0] + grad * (
+                    xrrt[0, il + 1 : iTE + 1, j, 0] - xrrt[0, il, j, 0]
+                )
             _blend_te_corner(xrrt, iTE, ni_TE, 0)
 
         else:
             raise NotImplementedError()
-        logger.debug(f"{ilower=}, iTE={iTE}")
+        logger.debug(f"ilower={ilower}, iTE={iTE}")
         xrrt_TE = np.moveaxis(xrrt[:, iTE - 10 : iTE + 1, :, :], -1, 0)
     else:
-        # Look for turning point on upper surface
-        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, jmid, -1]).item()
-        # Extrapolate lower surface to TE
+        # Turning point on the upper surface (side -1), per station.
+        ilower = istlook + np.argmin(xrrt[2, istlook:iTE, :, -1], axis=0)
+        # Extrapolate upper surface to TE
         if is_axial:
-            dt = np.diff(xrrt[2, ilower - 1 : ilower + 1, :, -1], axis=0)
-            dx = np.diff(xrrt[0, ilower - 1 : ilower + 1, :, -1], axis=0)
-            grad = dt / dx
-            xrrt[2, ilower : iTE + 1, :, -1] = xrrt[2, ilower, :, -1] + grad * (
-                xrrt[0, ilower : iTE + 1, :, -1] - xrrt[0, ilower, :, -1]
-            )
+            for j in range(nj):
+                il = int(ilower[j])
+                grad = (xrrt[2, il, j, -1] - xrrt[2, il - 1, j, -1]) / (
+                    xrrt[0, il, j, -1] - xrrt[0, il - 1, j, -1]
+                )
+                xrrt[2, il : iTE + 1, j, -1] = xrrt[2, il, j, -1] + grad * (
+                    xrrt[0, il : iTE + 1, j, -1] - xrrt[0, il, j, -1]
+                )
             _blend_te_corner(xrrt, iTE, ni_TE, -1)
 
         else:
