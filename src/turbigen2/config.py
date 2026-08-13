@@ -16,6 +16,7 @@ from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
 from turbigen2.machine import Machine
 from turbigen2.node import Node
+from turbigen2.post import Post
 
 
 class Config(Node):
@@ -29,6 +30,10 @@ class Config(Node):
 
     annulus: AnnulusDesign = None
     """Annulus design. Omit it to design the mean line alone."""
+
+    post_process: tuple[Post, ...] = ()
+    """Post-processors to run. Nothing is added implicitly: what the config
+    asks for is what runs."""
 
     @classmethod
     def from_file(cls, path):

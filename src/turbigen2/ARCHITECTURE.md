@@ -134,8 +134,211 @@ check that the reserved-name promotion in `Node` is not over-applied.
 
 The mesh-facing helpers on the old designer — `get_cut_plane`,
 `get_offset_planes`, `get_interfaces`, `get_mp_from_xr`, `xr_row`,
-`get_span_curve` — are deliberately not ported yet. They exist to serve
-meshing, and belong with the `mesh` verb.
+`get_span_curve` — are deliberately not ported. They exist to serve meshing,
+and belong with the `mesh` verb.
+
+### A result class exposes the minimal complete interface
+
+For `Annulus` that is `evaluate_xr(m, spf)`, plus the station geometry read off
+it. Shapes wanted by one consumer belong in that consumer.
+
+This is easy to breach without noticing. Porting the annulus plot first added
+`get_cut_plane` and `get_coords` back onto `Annulus`, and both turned out to be
+pure reshapes of `evaluate_xr` returning byte-identical values — adding no
+knowledge, only a layout. Worse, `get_coords` was shaped "in AutoGrid format"
+by its own docstring, so a mesh writer's data layout was pulled into the
+geometry class for a line plot to transpose back. The plot is shorter without
+them.
+
+The test for whether a helper belongs: does it *compute* something, or only
+re-lay-out something already computed? `chords()` integrates arc length per
+segment, so it belongs. Those two did not. This is how the old
+`AnnulusDesigner` reached 1035 lines: each consumer added the view it wanted,
+and none of them were the annulus's business.
+
+## Restart guesses
+
+A converged flow field is carried into the next run as an initial guess. The
+package this replaces pickles the conserved arrays to a `.pkl.gz` beside the
+config, which is version-brittle, opaque, and separable from the config it
+belongs to.
+
+Instead the guess goes **in the config file**, as base64 of a compressed,
+decimated conserved array. Measured on a 1M-node block with realistic
+small-scale content, 19.2 MB raw:
+
+| scheme | in YAML | of full | RMS err | max err | wall err |
+|---|---|---|---|---|---|
+| full float32 | 14.8 MB | 100% | — | — | — |
+| **decimate x2 in i, j and k** | **1.9 MB** | **13%** | 2.6e-3 | 2.8e-2 | 1.1e-2 |
+| decimate x3 | 0.6 MB | 4% | 3.6e-3 | 4.0e-2 | 1.2e-2 |
+| full, scaled float16 | 5.3 MB | 36% | 1.6e-4 | 3.8e-4 | 2.9e-4 |
+
+Three decisions come out of that.
+
+**Decimate by two in all three directions.** It is what takes the blob from
+disqualifying to tolerable. A quarter of a percent RMS error is immaterial in
+something the solver is about to iterate away, and the errors barely worsen
+from x2 to x4 while the size drops sevenfold, so x2 is the conservative end of
+a shallow curve.
+
+**Byte-shuffle before gzip.** Transposing so that byte 0 of every float sits
+together, then byte 1, puts exponents and high mantissa bytes where they
+compress. It is about fifteen lines, lossless, 21% smaller than plain gzip and
+2.5x faster to encode.
+
+**Use `resample` and `interp_from`; write no interpolation.** Both halves
+already exist in ember. `Grid.resample(0.5)` decimates, and
+`Grid.interp_from(src)` restores onto the current grid, wrapping the Fortran
+kernel `ember.fortran.map_coordinates_3d`.
+
+Neither should be reimplemented, and the reason is `_interp_coords`: it is not
+a linspace. It collects critical indices --- patch boundaries *as well as*
+endpoints --- from both the source and the target, requires the counts to
+match, and maps between each consecutive pair separately so those locations
+land exactly. That is what keeps a mixing plane at a mixing plane and a
+periodic boundary at a periodic boundary through an interpolation. A
+hand-rolled `linspace(0, n_src - 1, n_tgt)` is correct only for a single block
+with no interior patches, and silently smears patch boundaries otherwise.
+`resample` preserves the same critical indices on the way down, and updates
+the patch indices on the block it returns.
+
+`interp_from` also packs `mu_turb` alongside the five conserved variables into
+one kernel call, asserts that trilinear interpolation created no new extrema,
+asserts the result has finite positive temperature, and works in dimensional
+form so that differing reference scales between source and target are handled
+--- which matters here, because `adjust_ref` resets `V_ref` and `rho_ref` from
+each design, so a guess from the previous iteration is non-dimensionalised
+differently.
+
+Two things follow that shrink the scheme further. Because interpolation is in
+**index space**, no coordinates need storing: the guess is conserved variables
+and `mu_turb`, nothing else. And index space maps leading edge to leading edge,
+which is the right behaviour for a design iteration that has recambered a blade
+while keeping the topology --- exactly when a restart guess is worth having.
+
+So the only genuinely new code is the byte shuffle and the base64 encode and
+decode. On the way out: `grid.resample(0.5)`, then shuffle, gzip, base64. On
+the way back: decode into a `Block` at the decimated shape with the fluid set,
+then `grid.interp_from(...)`.
+
+Full arrays stay in memory and in `to_dict`; decimation happens only on the way
+to a file, so nothing in the object model knows about it.
+
+Two things to keep in view. Wall error is about four times the RMS error and
+does not improve with gentler decimation, because dropping every other
+wall-normal point on a stretched mesh loses the near-wall profile regardless.
+If preserving a converged boundary layer turns out to matter, resample `i` and
+`k` only and keep `j` intact: a quarter rather than an eighth, still under
+4 MB, with the wall exact.
+
+Note also that plain float16 is *not* an option for conserved variables:
+`rhoe` reaches 3.8e5 against a float16 maximum of 65504 and silently becomes
+`inf`. It only works with a per-variable scale factor stored alongside.
+
+### YAML implementation
+
+Use `ember.yaml_util`, not `turbigen.yaml_utils`. It exposes the same
+`read_yaml`/`write_yaml`, but is backed by libyaml's `CSafeLoader`/
+`CSafeDumper` where the turbigen one still uses the pure-Python loaders. On a
+multi-megabyte scalar that is the difference between 7.7 s and 0.15 s to dump.
+It also carries the numpy and `Path` representers already, so switching drops a
+dependency on the old package rather than adding one.
+
+## Result, and nominal against actual
+
+Running a machine produces a `Result`:
+
+```python
+@dataclass(frozen=True)
+class Result:
+    machine: Machine                 # geometry, and the flow it was designed for
+    actual: MeanLine | None = None   # mixed out from the CFD solution
+    grid: Grid | None = None
+    converged: bool = False
+
+    @property
+    def nominal(self) -> MeanLine:
+        return self.machine.mean_line
+```
+
+**Only the flow has a nominal and an actual.** There is no actual annulus: the
+annulus you designed is the annulus, and CFD does not produce a different one.
+The same holds for blades --- the deviation iterator changes a blade, but that
+yields a new *design* for the next iteration, not an actual version of the
+current one. So geometry appears once and the mean line appears twice, which is
+what the data actually looks like.
+
+**There are two states, not three.** It is tempting to distinguish what was
+requested (`config.mean_line`'s fields) from what the design achieved
+(`backward(nominal)`), since `check_round_trip` only asserts they agree to
+0.5%. They do not need separating: `solve_for` raises if it cannot hit its
+targets and `check_round_trip` raises if the round trip fails, so a nominal
+mean line that exists *is* the requested design. The gap is an assertion
+threshold, not something to plot. It is the designer's job to refuse a design
+it cannot achieve.
+
+Note that this is also the naming trap the old config fell into. There,
+`config.mean_line_actual` (a dict) sat alongside `config.mean_line.actual` (a
+MeanLine), because "actual" was attached to a config object rather than kept
+beside the design it is compared with. Here `result.nominal` and
+`result.actual` sit at the same level, one step away from the `Machine`.
+
+## Post-processing
+
+A post-processor is a `Node` like any other config object, so `type:` dispatch,
+defaults and round-tripping come free, and the four processors the old config
+inserts imperatively into `post_process` in `__post_init__` are simply
+configured.
+
+```python
+class Post(Node):
+    def report(self, config, result) -> Iterable[Figure]
+```
+
+**It takes the config as well as the result**, because the most valuable plot
+in the system compares design intent against reality, and intent lives in the
+config. That is safe here in a way it is not today: the hazard in the existing
+`post(config, pdf)` is not reading the config but that `post.py` calls
+`config.apply_recamber()` and `config.undo_recamber()` --- a plot mutating the
+geometry and putting it back. Against a frozen `Config` that cannot happen.
+
+What a post-processor has no business with is the plumbing: `work_dir` (the CLI
+decides where output goes), `solver`, `job`, `cut_offset`. Those describe how
+the run was executed, not what was intended.
+
+**It returns figures rather than drawing into a shared PDF.** In the old code
+`pdf` is threaded through every processor, appearing 21 times, so none can be
+run alone, output cannot be redirected, and nothing can be tested without a
+`PdfPages`. Returning figures means one processor can be run in a notebook, the
+CLI decides whether they become a PDF, and a test can assert on a figure
+without touching the filesystem --- which is also what makes plotting work in
+the ephemeral mode where nothing is written.
+
+Failures should raise, with a `--keep-going` opt-out. Today
+`post_process_all` catches everything, prints a traceback to stderr rather than
+the log, and carries on, so a broken plot leaves a silently incomplete PDF.
+
+Two things to settle before porting. **Exports are not plots**: `Metadata`,
+`write_cuts`, `write_ibl` and `write_stl` produce files, not figures, and
+probably want their own verb rather than a `report` that returns nothing. And
+**the recamber toggling** inside the current post-processors needs
+understanding before it is removed --- if a plot genuinely needs recambered
+geometry then `Machine` should carry both forms rather than have plots switch
+between them.
+
+### The post/ directory
+
+`src/turbigen/post/` holds thirteen modules, about 1200 lines, that **cannot be
+imported**. There is no `__init__.py` and `post.py` shadows the directory, so
+`import turbigen.post` resolves to the module and `turbigen.post.spanwise`
+raises `ModuleNotFoundError`. All thirteen are tracked in git, and some were
+written against a live API --- `spanwise.py` and `plot_nose.py` use
+`mean_line.get_row(irow)` and `[::2]` indexing.
+
+Establish whether these are abandoned or a half-finished refactor before
+porting anything. Otherwise they will either be ported by accident or block the
+port while someone works out whether they matter.
 
 ## What dies with this
 

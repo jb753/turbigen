@@ -24,6 +24,7 @@ import turbigen.util
 import turbigen.yaml_utils
 from turbigen2 import plugins
 from turbigen2.config import Config
+from turbigen2.result import Result
 
 # The modules in this package log under the turbigen logger, so configure that
 # one rather than introducing a second hierarchy for the same distribution.
@@ -172,6 +173,7 @@ def cmd_design(args):
         logger.info(f"Output directory: {out_dir}")
 
     machine = config.design()
+    result = Result(machine=machine)
 
     if not args.quiet:
         print(machine.to_string())
@@ -180,8 +182,41 @@ def cmd_design(args):
         config_path = out_dir / "config.yaml"
         config.to_file(config_path)
         logger.info(f"Wrote resolved configuration to {config_path}")
+        write_report(config, result, out_dir)
+    elif config.post_process:
+        logger.info("No output directory given, so no report was written.")
 
     return 0
+
+
+def write_report(config, result, out_dir):
+    """Run the configured post-processors and collect their figures.
+
+    Nothing is produced without an output directory, so the figures are only
+    made when there is somewhere to put them.
+    """
+    if not config.post_process:
+        return None
+
+    # Imported here so that the CLI does not pay for matplotlib on a run with
+    # no post-processing configured.
+    import matplotlib  # noqa: PLC0415
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    from matplotlib.backends.backend_pdf import PdfPages  # noqa: PLC0415
+
+    path = out_dir / "post.pdf"
+    with PdfPages(path) as pdf:
+        for post in config.post_process:
+            logger.debug(f"Running post-processor {post}")
+            figures = post.report(config, result)
+            for figure in figures:
+                pdf.savefig(figure)
+                plt.close(figure)
+
+    logger.info(f"Wrote report to {path}")
+    return path
 
 
 #

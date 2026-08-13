@@ -12,6 +12,8 @@ from turbigen2.design import DesignError, MeanLineDesign, check_round_trip
 from turbigen2.fluid import Fluid, PerfectFluid
 from turbigen2.machine import Machine
 from turbigen2.meanline import MeanLine
+from turbigen2.post import AnnulusPlot, Post
+from turbigen2.result import Result
 from turbigen2.node import Node
 
 __all__ = [
@@ -25,6 +27,9 @@ __all__ = [
     "MeanLine",
     "MeanLineDesign",
     "Node",
+    "AnnulusPlot",
+    "Post",
+    "Result",
     "PerfectFluid",
     "check_round_trip",
 ]

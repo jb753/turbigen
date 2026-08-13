@@ -27,15 +27,15 @@ Writing a new alternative is therefore one class::
         mu: float
         Pr: float = 0.7
 
-Note that only scalar Node-valued fields are followed when loading and
-dumping. A field holding a list of Nodes is not supported yet; nothing in the
-current scope needs one.
+Fields holding a Node are followed when loading and dumping, as are fields
+holding a sequence of them, written ``tuple[Post, ...]``.
 """
 
 import dataclasses
 from typing import (
     ClassVar,
     dataclass_transform,
+    get_args,
     get_origin,
     get_type_hints,
 )
@@ -69,10 +69,25 @@ def _to_config(value):
     """Convert a field value into something a config file can hold."""
     if isinstance(value, Node):
         return value.to_dict()
-    if isinstance(value, tuple):
+    if isinstance(value, (tuple, list)):
         # YAML has no tuple; store as a list and restore on the way back in.
-        return list(value)
+        # Recurse, so that a sequence of Nodes dumps its members properly.
+        return [_to_config(item) for item in value]
     return value
+
+
+def _node_member(annotation):
+    """Return the Node subclass a sequence annotation holds, if it holds one.
+
+    Recognises ``tuple[Post, ...]`` and ``list[Post]``, which is how a config
+    holds a list of alternatives such as the post-processors.
+    """
+    if get_origin(annotation) not in (tuple, list):
+        return None
+    for arg in get_args(annotation):
+        if isinstance(arg, type) and issubclass(arg, Node):
+            return arg
+    return None
 
 
 def _from_config(annotation, value):
@@ -82,8 +97,14 @@ def _from_config(annotation, value):
         # read back as None, so the round trip holds for a config that omits
         # part of the pipeline.
         return None
+
     if isinstance(annotation, type) and issubclass(annotation, Node):
         return annotation.from_dict(value)
+
+    member = _node_member(annotation)
+    if member is not None:
+        return tuple(member.from_dict(item) for item in value)
+
     if isinstance(value, list):
         # Sequences are held as tuples so that a Node stays hashable and
         # compares equal whether it was built from a file or by hand.
