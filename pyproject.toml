@@ -36,6 +36,7 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 
 [project.scripts]
 turbigen = "turbigen.main:main"
+turbigen2 = "turbigen2.cli:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
 
 [tool.cibuildwheel]

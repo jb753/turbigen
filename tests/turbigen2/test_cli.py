@@ -1,0 +1,283 @@
+"""Tests for plugin discovery and the command line interface.
+
+The work underneath the CLI is covered elsewhere, so these target what is
+unique to the command line: that an ephemeral run really writes nothing, that
+overrides reach the design, that a user's design is found without being told
+where it is, and that a bad config reads as a message rather than a traceback.
+"""
+
+import textwrap
+
+import pytest
+
+from turbigen2 import cli, plugins
+
+CASE = """
+fluid:
+  type: perfect
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-5
+mean_line:
+  type: axial_turbine
+  psi: 1.6
+  phi2: 0.8
+  Ma2: 0.9
+  fac_Ma3_rel: 0.8
+  mdot: 10.0
+  Ys: [0.05, 0.05]
+  r_rms: 0.3
+"""
+
+PLUGIN_CASE = """
+fluid:
+  type: perfect
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-5
+mean_line:
+  type: {name}
+  Ma: 0.6
+"""
+
+
+def plugin_source(name, class_name):
+    """A minimal one-row design, as a user would write it in a scratch file."""
+    return textwrap.dedent(f'''
+        from typing import ClassVar
+        from turbigen2.design import MeanLineDesign
+
+        class {class_name}(MeanLineDesign):
+            type: ClassVar[str] = "{name}"
+            n_row: ClassVar[int] = 1
+
+            Ma: float
+            P1: float = 1e5
+            T1: float = 300.0
+
+            def forward(self, fluid):
+                ml = self.allocate(fluid)
+
+                def build(Vx):
+                    ml.set_r(0.5)
+                    ml.set_Am(1.0)
+                    ml.set_P_T(self.P1, self.T1)
+                    ml.set_Vx(Vx)
+                    ml.set_Vr(0.0)
+                    ml.set_Vt(0.0)
+
+                self.solve_for(
+                    ml, build, unknowns={{"Vx": 50.0}}, targets={{"Ma": self.Ma}}
+                )
+                return ml
+
+            def backward(self, ml):
+                return {{"Ma": ml.outlet.Ma, "P1": ml.inlet.P, "T1": ml.inlet.T}}
+    ''')
+
+
+@pytest.fixture
+def case(tmp_path):
+    """A config file in a directory of its own."""
+    path = tmp_path / "case.yaml"
+    path.write_text(CASE)
+    return path
+
+
+@pytest.fixture
+def clean_registry():
+    """Restore the design registry after a test loads a plugin into it."""
+    from turbigen2.design import MeanLineDesign
+    from turbigen2.node import _REGISTRY
+
+    before = dict(_REGISTRY.get(MeanLineDesign, {}))
+    yield
+    _REGISTRY[MeanLineDesign].clear()
+    _REGISTRY[MeanLineDesign].update(before)
+
+
+#
+# DISCOVERY
+#
+
+
+def test_finds_plugin_dir_beside_the_config(tmp_path):
+    (tmp_path / plugins.PLUGIN_DIR_NAME).mkdir()
+
+    assert plugins.find_plugin_dir(tmp_path) == tmp_path / plugins.PLUGIN_DIR_NAME
+
+
+def test_walks_up_to_find_plugin_dir(tmp_path):
+    """Discovery searches ancestors, so one directory can serve many cases."""
+    wanted = tmp_path / plugins.PLUGIN_DIR_NAME
+    wanted.mkdir()
+    deep = tmp_path / "cases" / "family" / "one"
+    deep.mkdir(parents=True)
+
+    assert plugins.find_plugin_dir(deep) == wanted
+
+
+def test_nearest_plugin_dir_wins(tmp_path):
+    (tmp_path / plugins.PLUGIN_DIR_NAME).mkdir()
+    near = tmp_path / "cases"
+    near.mkdir()
+    nearest = near / plugins.PLUGIN_DIR_NAME
+    nearest.mkdir()
+
+    assert plugins.find_plugin_dir(near) == nearest
+
+
+def test_no_plugin_dir_is_not_an_error(tmp_path):
+    assert plugins.find_plugin_dir(tmp_path) is None
+    assert plugins.discover(tmp_path) is None
+
+
+def test_load_plugins_skips_private_and_hidden_files(tmp_path, clean_registry):
+    from turbigen2.design import MeanLineDesign
+
+    plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
+    (plug_dir / ".hidden").mkdir(parents=True)
+    (plug_dir / "good.py").write_text(plugin_source("_t_good", "Good"))
+    (plug_dir / "_private.py").write_text(plugin_source("_t_private", "Private"))
+    (plug_dir / ".hidden" / "nested.py").write_text(
+        plugin_source("_t_hidden", "Hidden")
+    )
+
+    plugins.load_plugins(plug_dir)
+
+    registered = MeanLineDesign.options()
+    assert "_t_good" in registered
+    assert "_t_private" not in registered
+    assert "_t_hidden" not in registered
+
+
+def test_load_plugins_reports_a_broken_plugin(tmp_path):
+    plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
+    plug_dir.mkdir()
+    (plug_dir / "broken.py").write_text("this is not python\n")
+
+    with pytest.raises(RuntimeError, match="Failed to import plugin"):
+        plugins.load_plugins(plug_dir)
+
+
+#
+# THE design VERB
+#
+
+
+def test_design_writes_nothing_without_out(case, capsys):
+    before = set(case.parent.iterdir())
+
+    assert cli.main(["design", str(case)]) == 0
+
+    assert set(case.parent.iterdir()) == before
+    assert "Mean line:" in capsys.readouterr().out
+
+
+def test_design_writes_a_config_that_reads_back_equal(case, tmp_path):
+    from turbigen2 import Config
+
+    out = tmp_path / "out"
+    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+
+    assert (out / "config.yaml").is_file()
+    assert (out / "log_turbigen2.txt").is_file()
+    assert Config.from_file(out / "config.yaml") == Config.from_file(case)
+
+
+def test_out_star_takes_the_next_free_number(case, tmp_path):
+    pattern = str(tmp_path / "run_*")
+
+    cli.main(["design", str(case), "-o", pattern, "-q"])
+    cli.main(["design", str(case), "-o", pattern, "-q"])
+
+    assert (tmp_path / "run_0").is_dir()
+    assert (tmp_path / "run_1").is_dir()
+
+
+def test_set_override_reaches_the_design(case, capsys):
+    cli.main(["design", str(case)])
+    baseline = capsys.readouterr().out
+
+    cli.main(["design", str(case), "-s", "mean_line.psi=1.2"])
+    changed = capsys.readouterr().out
+
+    assert baseline != changed
+
+
+def test_mistyped_override_key_is_rejected(case, capsys):
+    assert cli.main(["design", str(case), "-s", "mean_line.psii=1.2"]) == 1
+
+    assert "psii" in capsys.readouterr().err
+
+
+def test_malformed_override_is_rejected(case, capsys):
+    assert cli.main(["design", str(case), "-s", "no_equals_sign"]) == 1
+
+    assert "KEY=VALUE" in capsys.readouterr().err
+
+
+def test_quiet_suppresses_results_but_not_the_exit_code(case, capsys):
+    assert cli.main(["design", str(case), "-q"]) == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_missing_config_file_is_a_message_not_a_traceback(tmp_path, capsys):
+    assert cli.main(["design", str(tmp_path / "nope.yaml")]) == 1
+
+    captured = capsys.readouterr()
+    assert "FileNotFoundError" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_verbose_shows_the_traceback(tmp_path, capsys):
+    assert cli.main(["design", str(tmp_path / "nope.yaml"), "-v"]) == 1
+
+    assert "Traceback" in capsys.readouterr().err
+
+
+def test_unknown_verb_exits_two(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["frobnicate", "case.yaml"])
+
+    assert excinfo.value.code == 2
+
+
+#
+# DISCOVERY THROUGH THE CLI
+#
+
+
+def test_design_finds_a_plugin_without_being_told(tmp_path, clean_registry, capsys):
+    """The point of discovery: a user's design works with no flag and no key."""
+    plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
+    plug_dir.mkdir()
+    (plug_dir / "mine.py").write_text(plugin_source("_t_cli", "CliStage"))
+
+    cases = tmp_path / "cases"
+    cases.mkdir()
+    case = cases / "stage.yaml"
+    case.write_text(PLUGIN_CASE.format(name="_t_cli"))
+
+    assert cli.main(["design", str(case)]) == 0
+    assert "Mean line:" in capsys.readouterr().out
+
+
+def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_registry):
+    """An archived config still finds the plugins the original run used.
+
+    This is why no plugin path is recorded anywhere: the output directory sits
+    under the case directory, so walking up from it reaches the same place.
+    """
+    plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
+    plug_dir.mkdir()
+    (plug_dir / "mine.py").write_text(plugin_source("_t_rerun", "RerunStage"))
+
+    case = tmp_path / "stage.yaml"
+    case.write_text(PLUGIN_CASE.format(name="_t_rerun"))
+
+    out = tmp_path / "out"
+    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+
+    assert cli.main(["design", str(out / "config.yaml"), "-q"]) == 0
