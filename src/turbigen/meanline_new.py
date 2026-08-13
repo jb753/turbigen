@@ -1,305 +1,243 @@
+"""Mean-line flow field and annulus geometry, built on the ember Block.
+
+A :class:`MeanLine` is an :class:`ember.block.Block` of shape ``(2, n_row)``:
+
+* axis 0 indexes the two stations of a blade row, inlet (0) and outlet (1);
+* axis 1 indexes the blade rows.
+
+Because it *is* a Block, every flow property ember defines --- ``Po``, ``Ma``,
+``Ma_rel``, the Jacobians, and so on --- is available directly and vectorised
+over both axes, with no forwarding layer to keep in sync.
+
+Indexing follows numpy and returns views that share storage, so writes
+propagate back to the parent:
+
+* ``ml[0]`` and ``ml[1]`` are the inlet and outlet planes of *every* row, each of
+  shape ``(n_row,)``;
+* ``ml[:, i]`` --- equivalently ``ml.row(i)`` --- is row ``i``, of shape
+  ``(2,)``;
+* ``ml[0, i]`` and ``ml[1, i]`` are that row's inlet and outlet stations.
+
+The station axis comes first so that :py:attr:`ember.block.Block.flat` runs in
+streamwise order, ``ml.flat`` giving the ``2 * n_row`` stations from machine
+inlet to machine outlet. Ember flattens column-major, and the fastest-varying
+axis in memory is the one that varies fastest in the flat sequence, so putting
+the station axis first is what makes streamwise flattening a writeable view
+rather than a copy. That is the interface to everything indexed by station
+rather than by row --- the annulus in particular, whose meridional stations run
+``m = 1 .. 2 * n_row``.
+
+Two quantities are stored beyond ember's own variables. ``Am``, the meridional
+annulus area, from which the rest of the annulus geometry (span, radii,
+hub-to-tip ratio) is derived. And ``Omega``, which ember holds as a scalar per
+block but which must vary from row to row here; it is stored as nodal data so
+that row views carry their own blade speed. Storing it as metadata could never
+work, because :py:meth:`ember.block.Block.view` shares the metadata dict with
+the parent.
+
+Note that the block radius ``r`` *is* the annulus root-mean-square radius: a
+mean line carries one radius per station, and that is the one it carries.
+"""
+
 import logging
 
-"""New meanline data struct using ember base."""
-
+import numpy as np
 import ember.block
 import ember.fluid
-import numpy as np
+
+import turbigen.designer
 import turbigen.plugins
-import turbigen.meanline_design_new
 import turbigen.util
-import inspect
 
 logger = logging.getLogger("turbigen")
-
 
 f32 = np.float32
 
 
-# Configure pdoc to show inherited members for Station class
-__pdoc__ = {
-    "Station": True,
-}
+class MeanLine(ember.block.Block):
+    """One-dimensional flow field and annulus geometry along the mean line.
 
+    See the module docstring for the layout of the ``(2, n_row)`` shape and for
+    the meaning of the block radius.
+    """
 
-class MeanLineConfig:
-    """Configuration for a MeanLine object."""
+    _data_keys = ember.block.Block._data_keys + ("Am", "Omega")
 
-    def __init__(self, mean_line_type, n_row, design_vars):
-        """Initialize the configuration."""
-        self.n_row = n_row
-        self.type = mean_line_type
-        self.design_vars = design_vars
+    def __init__(self, n_row=None, shape=None):
+        """Allocate a mean line.
 
-        # Store the forward and backward functions
-        reg = turbigen.plugins.get_registry()
-        self._forward = reg["mean_line_forward"][self.type]
-        self._backward = reg["mean_line_backward"][self.type]
+        Parameters
+        ----------
+        n_row : int, optional
+            Number of blade rows, giving shape ``(2, n_row)``.
+        shape : tuple, optional
+            Explicit shape, used by ember's ``empty``/``view`` machinery to
+            build scalar and row-sized instances. Takes precedence over
+            `n_row`.
 
-        # Allocate placeholders for nominal and actual mean lines
-        self.nominal = MeanLine(n_row)
-        self.actual = MeanLine(n_row)
+        """
+        if shape is None:
+            if n_row is None:
+                shape = ()
+            elif n_row < 1:
+                raise ValueError(f"n_row must be >= 1, got {n_row}")
+            else:
+                shape = (2, n_row)
+        super().__init__(shape=shape)
 
-        # Check that design_vars match forward function signature
-        required = self.valid_design_params["required"]
-        all_valid = self.valid_design_params["all"]
-        missing = required - set(design_vars.keys())
-        if missing:
-            raise ValueError(
-                f"Missing required design variables for mean_line type '{self.type}': {missing}"
-            )
+    def __post_init__(self):
+        """Initialise the mean-line-specific variables."""
+        super().__post_init__()
+        # Omega defaults to zero, mirroring ember's metadata default, and is
+        # marked initialised so the relative-frame properties are readable on a
+        # stationary row without an explicit set_Omega call.
+        self._set_data_by_keys(("Omega",), 0.0)
+        # Am has no sensible default: leave it uninitialised so that reading
+        # annulus geometry before it is set raises rather than returning junk.
+        self._set_data_by_keys(("Am",), np.nan, store_init=False)
 
-        # Check for unexpected design_vars
-        unexpected = set(design_vars.keys()) - all_valid
-        if unexpected:
-            raise ValueError(
-                f"Unexpected design variables for mean_line type '{self.type}': {unexpected}"
-            )
+    def __repr__(self):
+        """Return a string representation of the MeanLine object."""
+        return f"MeanLine(shape={self.shape})"
+
+    #
+    # STRUCTURE
+    #
+
+    def row(self, i_row):
+        """Return blade row `i_row` as a shape-(2,) view of inlet and outlet."""
+        return self[:, i_row]
 
     @property
-    def valid_design_params(self):
-        """Valid design variable names for the mean-line forward function.
+    def n_row(self):
+        """Number of blade rows."""
+        return self.shape[1] if self.ndim == 2 else 1
 
-        Returns a dict with keys 'required' (no default) and 'all' (all params).
+    @property
+    def inlet(self):
+        """Machine inlet, the first station in streamwise order.
+
+        Not to be confused with ``ml[0]``, which is the inlet station of
+        every row.
         """
-        sig = inspect.signature(self._forward)
-        params = list(sig.parameters.values())[1:]  # Skip 'mean_line' arg
-        return {
-            "required": {p.name for p in params if p.default is p.empty},
-            "all": {p.name for p in params},
-        }
+        return self.flat[0]
 
-    @classmethod
-    def from_dict(cls, d):
-        """Initialize from a dictionary."""
+    @property
+    def outlet(self):
+        """Machine outlet, the last station in streamwise order.
 
-        turbigen.plugins.check_plugins()
+        Not to be confused with ``ml[1]``, which is the outlet station of
+        every row.
+        """
+        return self.flat[-1]
 
-        # Extract values from dictionary
-        mean_line_type = d.pop("type")
-        n_row = d.pop("n_row")
+    #
+    # ROTATION
+    #
+    # Omega is nodal data here, not block metadata as in ember, so that each
+    # row can spin at its own speed and keep it under slicing. The property and
+    # setter below shadow Block's metadata-backed versions; everything derived
+    # from Omega (U, Vt_rel, Po_rel, Ma_rel, I, ...) is a plain numpy
+    # expression over Omega_nd and so becomes elementwise for free.
+    #
 
-        # Get available types from plugin registry
-        reg = turbigen.plugins.get_registry()
-        all_types = set(reg["mean_line_forward"].keys())
+    @property
+    def Omega(self):
+        r"""Reference frame angular velocity :math:`\Omega` [rad/s], per station."""
+        return self._get_data_by_keys(("Omega",))
 
-        # Validate type
-        if not mean_line_type:
-            raise ValueError(
-                f"mean_line configuration requires a 'type' key. Available types: {all_types}"
-            )
-        if mean_line_type not in all_types:
-            raise ValueError(
-                f"Unknown mean_line type '{mean_line_type}'. Available types: {all_types}"
-            )
+    @property
+    def Omega_nd(self):
+        r"""Nondimensional angular velocity :math:`\Omega L_\mathrm{ref}/V_\mathrm{ref}` [--]."""
+        return self.Omega * self.L_ref / self.fluid.V_ref
 
-        # Validate n_row
-        if n_row is None:
-            raise ValueError("mean_line configuration requires an 'n_row' key.")
-        if n_row < 1:
-            raise ValueError(f"n_row must be >= 1, got {n_row}")
+    def set_Omega(self, Omega):
+        """Set reference frame angular velocity [rad/s], broadcast over stations."""
+        self._set_data_by_keys(("Omega",), np.broadcast_to(Omega, self.shape))
 
-        # Remaining keys are design variables
-        design_vars = d
+    def set_Omega_row(self, Omega_row):
+        """Set one angular velocity per blade row [rad/s]."""
+        if self.ndim != 2:
+            raise ValueError("set_Omega_row requires a full (2, n_row) mean line")
+        self.set_Omega(np.asarray(Omega_row).reshape(1, -1))
 
-        return cls(mean_line_type, n_row, design_vars)
+    #
+    # ANNULUS GEOMETRY
+    #
 
-    def to_dict(self):
-        """Convert to a dictionary."""
-        return {
-            "type": self.type,
-            "n_row": self.n_row,
-            **self.design_vars,
-        }
+    @property
+    def Am(self):
+        """Annulus area projected in the meridional direction [m^2]."""
+        return self._get_data_by_keys(("Am",)) * self.L_ref**2
 
-    def set_nominal(self, fluid):
-        """Set the nominal mean-line flow field."""
-        self.nominal.set_fluid(fluid)
-        self._forward(self.nominal, **self.design_vars)
+    def set_Am(self, Am):
+        """Set annulus area projected in the meridional direction [m^2]."""
+        self._set_data_by_keys(("Am",), np.asarray(Am) / self.L_ref**2)
 
-    def check_nominal(self):
-        params_inv = self._backward(self.nominal)
+    @property
+    def cosBeta(self):
+        """Cosine of the pitch angle [--]."""
+        return np.cos(np.radians(self.Beta))
 
-        rtol = 0.5e-2
+    @property
+    def r_cas(self):
+        """Annulus casing radius [m]."""
+        return np.sqrt(self.Am * self.cosBeta / 2.0 / np.pi + self.r**2.0)
 
-        # Compare forward and inverse params, check within a tolerance
-        for k, v in self.design_vars.items():
-            if k not in params_inv:
-                raise Exception(
-                    f"Design variable {k} not returned by inverse function."
-                )
-            # Allow uncalculated variables to be None
-            if params_inv[k] is None:
-                continue
+    @property
+    def r_hub(self):
+        """Annulus hub radius [m]."""
+        return np.sqrt(self.r**2.0 - self.Am * self.cosBeta / 2.0 / np.pi)
 
-            # Compare the value of the design variable to nominal
-            if np.all(v == 0.0):
-                # Absolute tolerance for zero values
-                if np.allclose(v, params_inv[k], atol=0.1):
-                    continue
-            else:
-                # Relative tolerance for non-zero values
-                if np.allclose(v, params_inv[k], rtol=rtol):
-                    continue
+    @property
+    def r_mid(self):
+        """Annulus mid radius [m]."""
+        return 0.5 * (self.r_hub + self.r_cas)
 
-            raise Exception(
-                f"Meanline inverted {k}={params_inv[k]} not same as nominal value {v}"
-            )
+    @property
+    def span(self):
+        """Annulus span [m]."""
+        return self.Am / 2.0 / np.pi / self.r_mid
 
-        # Check mass is conserved
-        mdot = self.nominal.mdot
-        if np.isnan(mdot).any():
-            raise Exception(f"NaN mass flow rate mdot={mdot}")
+    @property
+    def htr(self):
+        """Annulus hub-to-tip ratio [--]."""
+        return self.r_hub / self.r_cas
 
-        if np.ptp(mdot) > (mdot[0] * rtol):
-            raise Exception(f"Mass flow rate not conserved: mdot={mdot}")
+    @property
+    def mdot(self):
+        """Annulus mass flow rate [kg/s]."""
+        return self.rho * self.Vm * self.Am
 
-    def warn(self):
-        """Print a warning if there are any suspicious values."""
+    def set_span_htr(self, span, htr):
+        """Define annulus geometry using span and hub-to-tip ratio."""
+        if not np.all(np.abs(self.Beta) < 1.0):
+            raise ValueError("Beta must be set zero before calling set_span_htr")
+        self.set_r(span * np.sqrt(0.5 * (1.0 + htr**2)) / (1.0 - htr))
+        self.set_Am(2.0 * np.pi * self.r**2 * (1.0 - htr**2) / (1.0 + htr**2))
 
-        # Warn for very high flow angles
-        if np.abs(self.nominal.Alpha_rel).max() > 85.0:
-            logger.warning(
-                """WARNING: Relative flow angles are approaching 90 degrees.
-This suggests a physically-consistent but suboptimal mean-line design
-and will cause problems with meshing and solving for the flow field."""
-            )
+    def set_span_r_rms(self, span, r_rms):
+        """Define annulus geometry using span and root-mean-square radius."""
+        self.set_r(r_rms)
+        dr = span / self.cosBeta
+        r_mid = np.sqrt(np.asarray(r_rms) ** 2 - (dr / 2.0) ** 2)
+        self.set_Am(2.0 * np.pi * r_mid * span)
 
-        # Warn for wobbly annulus
-        is_radial = np.abs(self.nominal.Beta).max() > 10.0
-        is_multirow = self.nominal.n_row > 2
-        if is_radial and is_multirow:
-            if np.diff(np.sign(np.diff(self.r_rms))).any():
-                logger.warning(
-                    """WARNING: Radii do not vary monotonically.
-This suggests a physically-consistent but suboptimal mean-line design
-and will cause problems with meshing and solving for the flow field."""
-                )
+    def set_span_r_mid(self, span, r_mid):
+        """Define annulus geometry using span and mid-span radius."""
+        self.set_Am(2.0 * np.pi * np.asarray(r_mid) * span)
+        self.set_r(np.sqrt(np.asarray(r_mid) ** 2 + (np.asarray(span) / 2.0) ** 2))
 
-
-def _make_concat_property(property_name):
-    """Factory method to create a property that concatenates values from all stations.
-
-    Args:
-        property_name: Name of the property to extract from each station
-
-    Returns:
-        A property object that concatenates the named property from all stations.
-        For scalar properties, returns a 1D array of length n_stations.
-        For non-scalar properties (e.g., conserved with shape (5,)), returns a 2D array
-        of shape (n_stations, ...) by stacking along the first axis.
-    """
-
-    def getter(self):
-        # Inline concatenation: extract property from all stations and concatenate
-        # Handle uninitialized stations by returning NaN for those indices
-        values = []
-        is_scalar = None
-        for station in self._stations:
-            try:
-                value = getattr(station, property_name)
-                # Determine if property is scalar or non-scalar on first valid value
-                if is_scalar is None:
-                    is_scalar = np.ndim(value) == 0
-                values.append(value)
-            except (ValueError, AttributeError):
-                # print full traceback for debugging
-                import traceback
-
-                traceback.print_exc()
-                # Station not initialized, use NaN
-                if is_scalar is None:
-                    # Default to scalar if we haven't seen a valid value yet
-                    values.append(np.array([np.nan], dtype=f32))
-                elif is_scalar:
-                    values.append(np.nan)
-                else:
-                    # For non-scalar properties, we'll need to infer shape from first valid value
-                    # For now, use a placeholder
-                    values.append(np.array([np.nan], dtype=f32))
-
-        # Use stack for non-scalar properties, concatenate for scalar properties
-        if is_scalar:
-            # Convert scalars to 1D array for concatenation
-            values_1d = [np.atleast_1d(v) for v in values]
-            result = np.concatenate(values_1d, dtype=f32)
-        else:
-            # Stack non-scalar properties along first axis
-            result = np.stack(values, axis=0).astype(f32)
-
-        # Make the array read-only to prevent confusion
-        result.flags.writeable = False
-
-        return result
-
-    # Get docstring from Block's property if available
-    block_property = getattr(ember.block.Block, property_name, None)
-    if block_property is not None and hasattr(block_property, "__doc__"):
-        getter.__doc__ = block_property.__doc__
-    else:
-        getter.__doc__ = f"{property_name} concatenated from all stations."
-
-    return property(getter)
-
-
-def _make_setter_method(method_name):
-    """Factory method to create a setter that distributes calls to all stations.
-
-    Args:
-        method_name: Name of the setter method (e.g., 'set_Vxrt')
-
-    Returns:
-        A method that splits input arrays and calls the setter on each station
-    """
-
-    def setter(self, *args):
-        """Distribute setter call to all stations with shape checking."""
-        # Determine expected total length (2 stations per row)
-        n_stations = self._n_row * 2
-
-        # Broadcast each argument so its leading axis indexes the stations,
-        # preserving any trailing component axes. Scalar/1-D arguments map to
-        # one value per station as before; vectorised setters such as
-        # set_conserved/set_Vxrt receive their (..., K) array sliced per row.
-        broadcasted_args = []
-        for arg in args:
-            arr = np.asarray(arg)
-            target = (n_stations,) + arr.shape[1:] if arr.ndim else (n_stations,)
-            broadcasted_args.append(np.broadcast_to(arr, target))
-
-        # Call setter on each scalar station with its corresponding value
-        for i, station in enumerate(self._stations):
-            getattr(station, method_name)(*[arg[i] for arg in broadcasted_args])
-
-        return self
-
-    # Get docstring from Block's method
-    block_method = getattr(ember.block.Block, method_name, None)
-    setter.__doc__ = block_method.__doc__
-
-    return setter
-
-
-class MeanLine:
-    """One-dimensional flow field and geometry along nominal mean line."""
-
-    def __init__(self, n_row):
-        """Allocate a meanline given working fluid and number of rows."""
-        n_stations = n_row * 2
-        self._stations = [Station(shape=()) for _ in range(n_stations)]
-        self._n_row = n_row
-
-    def set_fluid(self, fluid):
-        """Set the working fluid for all stations."""
-        for station in self._stations:
-            station.set_fluid(fluid)
-        return self
+    #
+    # REFERENCE SCALES
+    #
 
     def set_L_ref(self, L_ref):
-        """Set the reference length scale."""
-        for station in self._stations:
-            station.set_L_ref(L_ref)
-        return self
+        """Set the reference length scale [m], rescaling the stored area."""
+        fac_L = L_ref / self.L_ref
+        Am = self._get_data_by_keys(("Am",), raise_uninit=False)
+        self._set_data_by_keys(("Am",), Am / fac_L**2, store_init=False)
+        super().set_L_ref(L_ref)
 
     def adjust_ref(self, L_ref):
         """Set fluid references and L_ref from the current design.
@@ -312,274 +250,109 @@ class MeanLine:
         Returns
         -------
         fluid_ref : Fluid
-            The new fluid object set on all blocks.
+            The new fluid object set on the mean line.
+
         """
-
-        rho_ref = self.rho.mean()
-        V_ref = self.V.mean()
-        Rgas_ref = self.Rgas.mean()
-        P_dtm = self.P.mean()
-        T_dtm = (self.T + (self.P / self.rho + self.halfVsq) / self.cv).mean()
-
         fluid_ref = self.fluid.change_ref(
-            rho_ref=rho_ref,
-            V_ref=V_ref,
-            Rgas_ref=Rgas_ref,
-        ).change_datum(P_dtm=P_dtm, T_dtm=T_dtm)
+            rho_ref=self.rho.mean(),
+            V_ref=self.V.mean(),
+            Rgas_ref=self.Rgas.mean(),
+        ).change_datum(
+            P_dtm=self.P.mean(),
+            T_dtm=(self.T + (self.P / self.rho + self.halfVsq) / self.cv).mean(),
+        )
 
         self.set_L_ref(L_ref)
         self.set_fluid(fluid_ref)
 
         return fluid_ref
 
-    @property
-    def n_row(self):
-        """Number of blade rows."""
-        return self._n_row
-
-    @property
-    def shape(self):
-        """Number of stations."""
-        return (self._n_row * 2,)
-
-    @property
-    def fluid(self):
-        """Equation of state."""
-        return self._stations[0].fluid
-
-    @property
-    def L_ref(self):
-        """Reference length scale [m]."""
-        return self._stations[0].L_ref
-
-    def copy(self):
-        """Create a deep copy of the MeanLine."""
-        new_ml = MeanLine(self.n_row)
-        for i in range(self.n_row * 2):
-            new_ml._stations[i] = self._stations[i].copy()
-        return new_ml
-
-    @property
-    def PR_ts(self):
-        """Total-to-static pressure ratio."""
-        return self.Po[0] / self.P[-1]
-
-    @property
-    def PR_tt(self):
-        """Total-to-total pressure ratio."""
-        return self.Po[0] / self.Po[-1]
-
-    @property
-    def eta_tt(self):
-        """Total-to-total isentropic efficiency: (ho1 - ho2) / (ho1 - ho2s)."""
-        ho1 = self[0].ho
-        ho2 = self[-1].ho
-        ho2s = self[0].empty().set_P_s(self[-1].Po, self[0].s).h
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            eta = (ho1 - ho2) / (ho1 - ho2s)
-
-        if np.isnan(eta):
-            return np.inf
-
-        if eta > 1.0:
-            eta = 1.0 / eta
-
-        return float(eta)
-
-    @property
-    def eta_ts(self):
-        """Total-to-static isentropic efficiency: (ho1 - ho2) / (ho1 - h2s)."""
-        ho1 = self[0].ho
-        ho2 = self[-1].ho
-        h2s = self[0].empty().set_P_s(self[-1].P, self[0].s).h
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            eta = (ho1 - ho2) / (ho1 - h2s)
-
-        if np.isnan(eta):
-            return np.inf
-
-        if eta > 1.0:
-            eta = 1.0 / eta
-
-        return float(eta)
-
-    # Coordinates
-    x = _make_concat_property("x")
-    r = _make_concat_property("r")
-    t = _make_concat_property("t")
-    rt = _make_concat_property("rt")
-    xr = _make_concat_property("xr")
-    xrt = _make_concat_property("xrt")
-    xyz = _make_concat_property("xyz")
-    xrrt = _make_concat_property("xrrt")
-    y = _make_concat_property("y")
-    z = _make_concat_property("z")
-
-    # Conserved variables
-    rho = _make_concat_property("rho")
-    rhoVx = _make_concat_property("rhoVx")
-    rhoVr = _make_concat_property("rhoVr")
-    rhorVt = _make_concat_property("rhorVt")
-    rhoe = _make_concat_property("rhoe")
-    conserved = _make_concat_property("conserved")
-
-    # Velocity components
-    Vx = _make_concat_property("Vx")
-    Vr = _make_concat_property("Vr")
-    Vt = _make_concat_property("Vt")
-    Vxrt = _make_concat_property("Vxrt")
-    Vxyz = _make_concat_property("Vxyz")
-    Vy = _make_concat_property("Vy")
-    Vz = _make_concat_property("Vz")
-
-    # Velocity magnitudes and derived
-    V = _make_concat_property("V")
-    Vm = _make_concat_property("Vm")
-    U = _make_concat_property("U")
-    V_rel = _make_concat_property("V_rel")
-    Vt_rel = _make_concat_property("Vt_rel")
-    rhoVm = _make_concat_property("rhoVm")
-
-    # Energy
-    e = _make_concat_property("e")
-    u = _make_concat_property("u")
+    #
+    # OVERALL PERFORMANCE
+    #
 
     @property
     def halfVsq(self):
+        """Specific kinetic energy in the stationary frame [J/kg]."""
         return 0.5 * self.V**2
 
     @property
     def halfVsq_rel(self):
+        """Specific kinetic energy in the rotating frame [J/kg]."""
         return 0.5 * self.V_rel**2
 
-    # Flow angles
-    Alpha = _make_concat_property("Alpha")
-    Beta = _make_concat_property("Beta")
-    Alpha_rel = _make_concat_property("Alpha_rel")
-    tanAlpha = _make_concat_property("tanAlpha")
-    tanAlpha_rel = _make_concat_property("tanAlpha_rel")
-    tanBeta = _make_concat_property("tanBeta")
-    sinBeta = _make_concat_property("sinBeta")
+    @property
+    def PR_ts(self):
+        """Total-to-static pressure ratio."""
+        return self.inlet.Po / self.outlet.P
 
-    # Thermodynamic properties
-    P = _make_concat_property("P")
-    T = _make_concat_property("T")
-    s = _make_concat_property("s")
-    h = _make_concat_property("h")
-    a = _make_concat_property("a")
-    cp = _make_concat_property("cp")
-    cv = _make_concat_property("cv")
-    gamma = _make_concat_property("gamma")
-    Rgas = _make_concat_property("Rgas")
+    @property
+    def PR_tt(self):
+        """Total-to-total pressure ratio."""
+        return self.inlet.Po / self.outlet.Po
 
-    # Stagnation properties
-    ho = _make_concat_property("ho")
-    ao = _make_concat_property("ao")
-    Po = _make_concat_property("Po")
-    To = _make_concat_property("To")
-    rhoo = _make_concat_property("rhoo")
-    uo = _make_concat_property("uo")
+    def _eta(self, P_ideal):
+        """Isentropic efficiency for an ideal outlet at the given pressure.
 
-    # Relative frame stagnation
-    ho_rel = _make_concat_property("ho_rel")
-    Po_rel = _make_concat_property("Po_rel")
-    To_rel = _make_concat_property("To_rel")
-    rhoo_rel = _make_concat_property("rhoo_rel")
-    uo_rel = _make_concat_property("uo_rel")
-    I = _make_concat_property("I")
-
-    # Non-dimensional numbers
-    Ma = _make_concat_property("Ma")
-    Ma_rel = _make_concat_property("Ma_rel")
-    Mam = _make_concat_property("Mam")
-    Max = _make_concat_property("Max")
-
-    # Transport properties
-    mu = _make_concat_property("mu")
-    Pr = _make_concat_property("Pr")
-
-    # Thermodynamic derivatives
-    dhdP_rho = _make_concat_property("dhdP_rho")
-    dhdrho_P = _make_concat_property("dhdrho_P")
-    dsdP_rho = _make_concat_property("dsdP_rho")
-    dsdrho_P = _make_concat_property("dsdrho_P")
-    dudP_rho = _make_concat_property("dudP_rho")
-    dudrho_P = _make_concat_property("dudrho_P")
-
-    # Relative velocity components
-    Vxrt_rel = _make_concat_property("Vxrt_rel")
-
-    # Rotation-corrected pressure
-    P_rot = _make_concat_property("P_rot")
-
-    # Variable sets
-    primitive = _make_concat_property("primitive")
-    bcond = _make_concat_property("bcond")
-
-    # Jacobians
-    J_prim_to_cons = _make_concat_property("J_prim_to_cons")
-    J_cons_to_prim = _make_concat_property("J_cons_to_prim")
-    J_prim_to_chic = _make_concat_property("J_prim_to_chic")
-    J_chic_to_prim = _make_concat_property("J_chic_to_prim")
-    J_prim_to_flux = _make_concat_property("J_prim_to_flux")
-    J_flux_to_prim = _make_concat_property("J_flux_to_prim")
-    J_prim_to_bcond = _make_concat_property("J_prim_to_bcond")
-    J_bcond_to_prim = _make_concat_property("J_bcond_to_prim")
-    J_flux_to_cons = _make_concat_property("J_flux_to_cons")
-    J_cons_to_flux = _make_concat_property("J_cons_to_flux")
-    J_bcond_to_cons = _make_concat_property("J_bcond_to_cons")
-    J_cons_to_bcond = _make_concat_property("J_cons_to_bcond")
-
-    # Annulus geometry (Station-specific)
-    Am = _make_concat_property("Am")
-    r_rms = _make_concat_property("r_rms")
-    r_mid = _make_concat_property("r_mid")
-    r_hub = _make_concat_property("r_hub")
-    r_cas = _make_concat_property("r_cas")
-    span = _make_concat_property("span")
-    htr = _make_concat_property("htr")
-    mdot = _make_concat_property("mdot")
-
-    # Rotation
-    Omega = _make_concat_property("Omega")
-
-    set_Vxrt = _make_setter_method("set_Vxrt")
-    set_Vx = _make_setter_method("set_Vx")
-    set_Vr = _make_setter_method("set_Vr")
-    set_Vt = _make_setter_method("set_Vt")
-    set_x = _make_setter_method("set_x")
-    set_h_s = _make_setter_method("set_h_s")
-    set_r_rms = _make_setter_method("set_r_rms")
-    set_Am = _make_setter_method("set_Am")
-    set_Omega = _make_setter_method("set_Omega")
-    set_span_htr = _make_setter_method("set_span_htr")
-    set_conserved = _make_setter_method("set_conserved")
-
-    def __getitem__(self, key):
-        """Index into the meanline.
-        MeanLine[i] returns station i
+        Dispatches on the sign of the stagnation enthalpy change, so
+        compressors get ideal/actual work and turbines actual/ideal, rather
+        than computing one and inverting it whenever it exceeds unity.
         """
-        if isinstance(key, int):
-            return self._stations[key]
-        raise TypeError(f"MeanLine index must be int, got {type(key)}")
+        inlet, outlet = self.inlet, self.outlet
 
-    def get_row(self, i_row):
-        """Get the two stations for a given row index."""
-        if i_row < 0 or i_row >= self._n_row:
-            raise IndexError(f"Row index {i_row} out of range for n_row={self._n_row}")
-        _stations = [self._stations[2 * i_row], self._stations[2 * i_row + 1]]
-        out = MeanLine(n_row=1)
-        out._stations = _stations
-        return out
+        ideal = inlet.empty()
+        ideal.set_P_s(P_ideal, inlet.s)
 
-    def get_ref(self, i_row):
-        """Reference station at inlet/exit of rows, for compressor/turbine."""
-        row = self.get_row(i_row)
-        A_flow = row.Am / np.cos(np.radians(row.Beta))
-        AR_flow = A_flow[1] / A_flow[0]
-        return row[0] if AR_flow >= 1.0 else row[1]
+        dho = outlet.ho - inlet.ho
+        dho_ideal = ideal.h - inlet.ho
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            # Work in: the ideal work is the smaller. Work out: the larger.
+            eta = dho_ideal / dho if dho > 0.0 else dho / dho_ideal
+
+        if np.isnan(eta):
+            return np.inf
+
+        return float(eta)
+
+    @property
+    def eta_tt(self):
+        """Total-to-total isentropic efficiency."""
+        return self._eta(self.outlet.Po)
+
+    @property
+    def eta_ts(self):
+        """Total-to-static isentropic efficiency."""
+        return self._eta(self.outlet.P)
+
+    #
+    # CONVERSION
+    #
+
+    def to_block(self, ann):
+        """Convert mean-line stations to a 1D Block along the annulus midspan.
+
+        Parameters
+        ----------
+        ann : Annulus
+            Annulus geometry for evaluating (x, r) coordinates.
+
+        Returns
+        -------
+        ember.block.Block
+            1D block with shape ``(2 * n_row,)`` in streamwise station order.
+
+        """
+        flat = self.flat
+        n = flat.size
+        xr = np.array(ann._xr_stations()).mean(0).T
+        xrt = np.append(xr, np.zeros((n, 1)), axis=1)
+        b = ember.block.Block(shape=(n,))
+        b.set_fluid(self.fluid)
+        b.set_xrt(xrt)
+        b.set_conserved(flat.conserved)
+        b.set_mu_turb(np.full(n, np.mean(self.mu)))
+        return b
 
     def to_quasi3d(self, ann, Nb, n=101, nj=11):
         """Generate a quasi-3D initial guess as a Block of shape (n, nj, 2).
@@ -587,7 +360,7 @@ class MeanLine:
         Axes:
           - axis 0 (i, streamwise):  n points from inlet to outlet
           - axis 1 (j, radial):      nj points from hub (spf=0) to tip (spf=1)
-          - axis 2 (k, pitchwise):   2 points — index 0 low-theta, index 1 high-theta
+          - axis 2 (k, pitchwise):   2 points -- index 0 low-theta, index 1 high-theta
 
         Inside each blade row, a pitchwise pressure difference is imposed between
         the two sides consistent with the meanline angular momentum change.  The
@@ -628,6 +401,9 @@ class MeanLine:
         nrow = self.n_row
         Nb = np.asarray(Nb, dtype=float).ravel()
 
+        # Station quantities in streamwise order, matching the annulus
+        ml = self.flat
+
         # Normalised meridional coordinates of the meanline stations (m=1..2*nrow)
         m_stations = np.arange(1, 2 * nrow + 1, dtype=float)
 
@@ -650,13 +426,13 @@ class MeanLine:
         def interp(vals):
             return np.interp(m_query, m_stations, vals.astype(float))
 
-        P_q = interp(self.P)
-        s_q = interp(self.s)
-        rho_q = interp(self.rho)
-        Vm_q = interp(self.Vm)
-        rVt_q = interp(self.r * self.Vt)
-        Vx_q = interp(self.Vx)
-        Vr_q = interp(self.Vr)
+        P_q = interp(ml.P)
+        s_q = interp(ml.s)
+        rho_q = interp(ml.rho)
+        Vm_q = interp(ml.Vm)
+        rVt_q = interp(ml.r * ml.Vt)
+        Vx_q = interp(ml.Vx)
+        Vr_q = interp(ml.Vr)
         Vt_q = rVt_q / np.where(r_q > 0, r_q, 1.0)  # (ni,)
 
         # --- blade loading shape function ------------------------------------
@@ -677,12 +453,12 @@ class MeanLine:
         dp_q = np.zeros(n)  # pitchwise dp at midspan, shape (ni,)
 
         for irow in range(nrow):
-            # Station indices: inlet = 2*irow, exit = 2*irow+1
+            # Station indices in streamwise order: inlet = 2*irow, outlet = +1
             i_in = 2 * irow
             i_out = 2 * irow + 1
 
             # Change in rVt across the row
-            delta_rVt = self.r[i_out] * self.Vt[i_out] - self.r[i_in] * self.Vt[i_in]
+            delta_rVt = ml.r[i_out] * ml.Vt[i_out] - ml.r[i_in] * ml.Vt[i_in]
 
             # Mask for query points inside this blade row
             m_in = m_stations[i_in]
@@ -730,7 +506,7 @@ class MeanLine:
         P_hi = P_mean - 0.5 * dp_q[:, np.newaxis]  # (ni, nj)
 
         # Clamp to positive pressure
-        P_ref = 1e-6 * self.P.mean()
+        P_ref = 1e-6 * ml.P.mean()
         P_lo = np.maximum(P_lo, P_ref)
         P_hi = np.maximum(P_hi, P_ref)
 
@@ -758,235 +534,151 @@ class MeanLine:
         # --- build Block of shape (n, nj, 2) ---------------------------------
         b = ember.block.Block(shape=(n, nj, 2))
         b.set_fluid(self.fluid)
-        b.set_x(x_3d).set_r(r_3d).set_t(t_3d)
+        b.set_x(x_3d)
+        b.set_r(r_3d)
+        b.set_t(t_3d)
         b.set_P_s(P_3d, s_3d)
-        b.set_Vx(Vx_3d).set_Vr(Vr_3d).set_Vt(Vt_3d)
+        b.set_Vx(Vx_3d)
+        b.set_Vr(Vr_3d)
+        b.set_Vt(Vt_3d)
 
-        mu_mean = float(np.mean(self.mu))
-        b.set_mu_turb(np.full((n, nj, 2), mu_mean))
+        b.set_mu_turb(np.full((n, nj, 2), float(np.mean(self.mu))))
 
         return b
-
-    def to_block(self, ann):
-        """Convert mean-line stations to a 1D Block along the annulus midspan.
-
-        Parameters
-        ----------
-        ann : Annulus
-            Annulus geometry for evaluating (x, r) coordinates.
-
-        Returns
-        -------
-        ember.block.Block
-            1D block with shape (n_stations,).
-        """
-        n = self.n_row * 2
-        xr = np.array(ann._xr_stations()).mean(0).T
-        xrt = np.append(xr, np.zeros((n, 1)), axis=1)
-        b = ember.block.Block(shape=(n,))
-        b.set_fluid(self.fluid)
-        b.set_xrt(xrt)
-        b.set_conserved(self.conserved)
-        b.set_mu_turb(np.full(n, np.mean(self.mu)))
-        return b
-
-    def __repr__(self):
-        """Return a string representation of the MeanLine object."""
-        return f"MeanLine(n_row={self.n_row})"
 
     def to_string(self):
         """Provide a concise string representation of MeanLine properties."""
+        ml = self.flat
         properties = [
-            ("Po/bar", self.Po / 1e5, ".3f"),
-            ("To/K", self.To, ".2f"),
-            ("Ma", self.Ma, ".3f"),
-            ("Ma_rel", self.Ma_rel, ".3f"),
-            ("Alpha/deg", self.Alpha, ".1f"),
-            ("Alpha_rel/deg", self.Alpha_rel, ".1f"),
+            ("Po/bar", ml.Po / 1e5, ".3f"),
+            ("To/K", ml.To, ".2f"),
+            ("Ma", ml.Ma, ".3f"),
+            ("Ma_rel", ml.Ma_rel, ".3f"),
+            ("Alpha/deg", ml.Alpha, ".1f"),
+            ("Alpha_rel/deg", ml.Alpha_rel, ".1f"),
         ]
         return turbigen.util.format_table("Mean line:", self.n_row, properties)
 
 
-class Station(ember.block.Block):
-    """A single station in a mean-line flow path."""
+class MeanLineConfig:
+    """Configuration for a MeanLine object.
 
-    _data_keys = ember.block.Block._data_keys + ("Am",)
+    Holds the design variables read from the config file, the designer selected
+    by `type`, and the nominal and actual mean lines produced from them.
+    """
 
-    def __post_init__(self):
-        """Initialize Station and verify it is scalar."""
-        if self.shape != ():
-            raise ValueError(f"Station must be a scalar, got shape {self.shape}")
-        super().__post_init__()
+    def __init__(self, mean_line_type, n_row, design_vars):
+        """Initialize the configuration."""
+        self.type = mean_line_type
 
-    def set_L_ref(self, L_ref):
-        """Set the reference length scale."""
-        fac_L = L_ref / self.L_ref
-        Am = self._get_data_by_keys(("Am",))
-        self._set_data_by_keys(("Am",), Am / fac_L**2, store_init=False)
-        super().set_L_ref(L_ref)
-        return self
+        reg = turbigen.plugins.get_registry()
+        try:
+            self.designer = reg["designer"][mean_line_type]
+        except KeyError:
+            raise ValueError(
+                f"Unknown mean_line type '{mean_line_type}'. "
+                f"Available types: {sorted(reg['designer'])}"
+            ) from None
 
-    @property
-    def Am(self):
-        """Annulus area projected in meridional direction [m^2]."""
-        return self._get_data_by_keys(("Am",)) * self.L_ref**2
+        if n_row != self.designer.n_row:
+            raise ValueError(
+                f"mean_line type '{mean_line_type}' designs {self.designer.n_row} "
+                f"row(s), but the configuration asks for n_row={n_row}."
+            )
+        self.n_row = n_row
 
-    @property
-    def mdot(self):
-        """Annulus mass flow rate [kg/s]"""
-        return self.rho * self.Vm * self.Am
-
-    @property
-    def r_rms(self):
-        """Annulus root-mean-square radius [m]."""
-        return self._get_data_by_keys(("r",)) * self.L_ref
-
-    @property
-    def cosBeta(self):
-        """Cosine of pitch angle [-]."""
-        return np.cos(self.Beta)
-
-    @property
-    def r_cas(self):
-        """Annulus casing radius [m]."""
-        return np.sqrt(self.Am * self.cosBeta / 2.0 / np.pi + self.r_rms**2.0)
-
-    @property
-    def r_hub(self):
-        """Annulus hub radius [m]."""
-        return np.sqrt(self.r_rms**2.0 - self.Am * self.cosBeta / 2.0 / np.pi)
-
-    @property
-    def r_mid(self):
-        """Annulus mid radius [m]."""
-        return 0.5 * (self.r_hub + self.r_cas)
-
-    @property
-    def span(self):
-        """Annulus span [m]."""
-        return self.Am / 2.0 / np.pi / self.r_mid
-
-    @property
-    def htr(self):
-        """Annulus hub-to-tip ratio [--]."""
-        return self.r_hub / self.r_cas
-
-    def set_Am(self, Am):
-        """Set annulus area projected in meridional direction."""
-        self._set_data_by_keys(("Am",), Am / self.L_ref**2)
-        return self
-
-    def set_r(self, r):
-        # Block set_r to avoid confusion
-        del r
-        raise NotImplementedError("Use set_r_rms on a mean-line station.")
-
-    def set_r_rms(self, r_rms):
-        """Set annulus root-mean-square radius [m]."""
-        super().set_r(r_rms)
-        return self
-
-    def set_span_htr(self, span, htr):
-        """Define annulus geometry using span and hub-to-tip ratio."""
-        assert np.abs(self.Beta) < 1.0, (
-            "Beta must be set zero before calling set_span_htr"
+        # Store the design variables with defaults filled in, so that a config
+        # written back out records every value the design actually used.
+        self.design_vars = turbigen.designer.resolve_defaults(
+            self.designer, design_vars
         )
-        r_rms = span * np.sqrt(0.5 * (1.0 + htr**2)) / (1.0 - htr)
-        Am = 2.0 * np.pi * r_rms**2 * (1.0 - htr**2) / (1.0 + htr**2)
-        self.set_r_rms(r_rms)
-        self.set_Am(Am)
-        return self
 
-    def set_span_r_rms(self, span, r_rms):
-        self.set_r_rms(r_rms)
-        dr = span / np.cos(np.radians(self.Beta))
-        r_mid = np.sqrt(r_rms**2 - (dr / 2.0) ** 2)
-        Am = 2.0 * np.pi * r_mid * span
-        self.set_Am(Am)
-        return self
+        # Allocate placeholders for nominal and actual mean lines
+        self.nominal = MeanLine(n_row)
+        self.actual = MeanLine(n_row)
 
-    def set_span_r_mid(self, span, r_mid):
-        Am = 2.0 * np.pi * r_mid * span
-        self.set_Am(Am)
-        r_rms = np.sqrt(r_mid**2 + (span / 2.0) ** 2)
-        self.set_r_rms(r_rms)
-        return self
+    @property
+    def valid_design_params(self):
+        """Valid design variable names, as ``{'required': ..., 'all': ...}``."""
+        params = turbigen.designer.design_params(self.designer)
+        return {
+            "required": {
+                k for k, v in params.items() if v is turbigen.designer.REQUIRED
+            },
+            "all": set(params),
+        }
 
+    @classmethod
+    def from_dict(cls, d):
+        """Initialize from a dictionary, which is not modified."""
 
-if __name__ == "__main__":
-    fluid = ember.fluid.PerfectFluid(cp=1005, gamma=1.4, mu=1.8e-5, Pr=1.0)
+        turbigen.plugins.check_plugins()
 
-    # Test scalar Station
-    station = Station(shape=())
-    station.set_fluid(fluid)
-    station.set_r_rms(3.0)
-    station.set_Am(3.0)
-    station.set_Vxrt(100.0, 0.0, 50.0)
-    station.set_P_T(1e5, 300.0)
-    print("Scalar Station mdot:", station.mdot)
-    print("Scalar Station r_rms:", station.r_rms)
+        d = dict(d)
+        mean_line_type = d.pop("type", None)
+        n_row = d.pop("n_row", None)
 
-    # Test MeanLine
-    ml = MeanLine(n_row=2)
-    ml.set_fluid(fluid)
-    print(f"\nCreated MeanLine with {ml.n_row} rows (4 scalar stations)")
+        reg = turbigen.plugins.get_registry()
+        all_types = sorted(reg["designer"])
 
-    # Test that n_row is read-only
-    print("\nTesting n_row is read-only:")
-    try:
-        ml.n_row = 5
-        print("ERROR: n_row should not be assignable!")
-    except AttributeError as e:
-        print(f"PASS: n_row is read-only - {e}")
+        if not mean_line_type:
+            raise ValueError(
+                f"mean_line configuration requires a 'type' key. "
+                f"Available types: {all_types}"
+            )
+        if mean_line_type not in reg["designer"]:
+            raise ValueError(
+                f"Unknown mean_line type '{mean_line_type}'. "
+                f"Available types: {all_types}"
+            )
 
-    # Test indexing with scalar
-    print("\nTesting scalar indexing:")
-    station0 = ml[0]
-    print(f"ml[0] type: {type(station0).__name__}")
-    print(f"ml[0] shape: {station0.shape}")
-    assert isinstance(station0, Station), "ml[0] should return a Station"
-    assert station0.shape == (), f"ml[0] should have shape (), got {station0.shape}"
-    print("PASS: scalar indexing works")
+        if n_row is None:
+            raise ValueError("mean_line configuration requires an 'n_row' key.")
+        if n_row < 1:
+            raise ValueError(f"n_row must be >= 1, got {n_row}")
 
-    # Test setter method
-    print("\nTesting setter method:")
-    # Set geometry for all 4 stations
-    r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=f32)
-    Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=f32)
-    P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=f32)
-    T = np.array([300.0, 295.0, 290.0, 285.0], dtype=f32)
+        # Remaining keys are design variables
+        return cls(mean_line_type, n_row, d)
 
-    for i in range(4):
-        ml[i].set_r_rms(r_rms[i])
-        ml[i].set_Am(Am[i])
-        ml[i].set_P_T(P[i], T[i])
+    def to_dict(self):
+        """Convert to a dictionary, including resolved defaults."""
+        return {
+            "type": self.type,
+            "n_row": self.n_row,
+            **self.design_vars,
+        }
 
-    # Use set_Vxrt to set all velocities at once
-    Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=f32)
-    Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=f32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=f32)
-    ml.set_Vxrt(Vx, Vr, Vt)
+    def set_nominal(self, fluid):
+        """Set the nominal mean-line flow field."""
+        self.nominal.set_fluid(fluid)
+        self.designer.forward(self.nominal, **self.design_vars)
 
-    # Verify using concatenated property
-    print(f"Set Vx: {Vx}")
-    print(f"Got Vx: {ml.Vx}")
-    assert np.allclose(ml.Vx, Vx)
-    print("PASS: setter method works")
-
-    # Test non-scalar property (conserved)
-    print("\nTesting non-scalar property (conserved):")
-    conserved = ml.conserved
-    print(f"conserved shape: {conserved.shape}")
-    assert conserved.shape == (
-        4,
-        5,
-    ), f"conserved should have shape (4, 5), got {conserved.shape}"
-    # Verify each station's conserved values match
-    for i in range(4):
-        station_conserved = ml[i].conserved
-        assert np.allclose(conserved[i], station_conserved), (
-            f"Station {i} conserved mismatch"
+    def check_nominal(self):
+        """Verify the nominal mean line reproduces its design variables."""
+        turbigen.designer.check_round_trip(
+            self.designer, self.nominal, self.design_vars
         )
-    print("PASS: non-scalar property (conserved) works correctly")
 
-    print("\nAll tests passed!")
+    def warn(self):
+        """Print a warning if there are any suspicious values."""
+
+        ml = self.nominal
+
+        # Warn for very high flow angles
+        if np.abs(ml.Alpha_rel).max() > 85.0:
+            logger.warning(
+                """WARNING: Relative flow angles are approaching 90 degrees.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+            )
+
+        # Warn for wobbly annulus
+        is_radial = np.abs(ml.Beta).max() > 10.0
+        is_multirow = ml.n_row > 2
+        if is_radial and is_multirow:
+            if np.diff(np.sign(np.diff(ml.flat.r))).any():
+                logger.warning(
+                    """WARNING: Radii do not vary monotonically.
+This suggests a physically-consistent but suboptimal mean-line design
+and will cause problems with meshing and solving for the flow field."""
+                )

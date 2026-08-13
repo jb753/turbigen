@@ -136,8 +136,8 @@ class IndependentConfig:
             name, ind = self._split_meanline_key(key)
 
             # Get variable by name
-            if name in config.mean_line_actual:
-                var = config.mean_line_actual[name]
+            if name in config.design_vars_actual:
+                var = config.design_vars_actual[name]
             else:
                 var = config.mean_line.design_vars[name]
 
@@ -375,7 +375,7 @@ class DesignSpace:
         # Now exclude any configs that have not ran yet or not converged
         nconf = len(confs)
         nconv = sum(c.converged for c in confs)
-        self.configs = [c for c in confs if c.mean_line_actual and c.converged]
+        self.configs = [c for c in confs if c.design_vars_actual and c.converged]
         logger.warning(f"Loaded {nconf} config files, {nconv} converged.")
 
     @property

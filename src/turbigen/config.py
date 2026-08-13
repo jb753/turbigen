@@ -41,7 +41,6 @@ import ember.cut
 import ember.average
 import ember.block_util
 import ember.util
-from ember.block_restart import make_restart
 
 logger = logging.getLogger("turbigen")
 
@@ -113,7 +112,13 @@ class TurbigenConfig:
     cut_offset: float = 0.02
     """Spacing of CFD solution cuts away from blade edges, as fraction of chord."""
 
-    mean_line_actual: dict = dataclasses.field(default_factory=dict)
+    design_vars_actual: dict = dataclasses.field(default_factory=dict)
+    """Design variables back-calculated from the CFD solution."""
+
+    mean_line_actual: dict = None
+    """Deprecated name for `design_vars_actual`, accepted when reading old
+    config files. It was too easily confused with `mean_line.actual`, which is
+    a MeanLine rather than a dict of design variables."""
 
     post_process: list = dataclasses.field(default_factory=list)
 
@@ -276,9 +281,12 @@ class TurbigenConfig:
             data["solver"] = self.solver.to_dict()
             data["solver"]["type"] = util.camel_to_snake(self.solver.__class__.__name__)
 
+        # Never write the deprecated alias back out
+        data.pop("mean_line_actual", None)
+
         # If no acutal meanline, remove it
-        if not self.mean_line_actual:
-            del data["mean_line_actual"]
+        if not self.design_vars_actual:
+            del data["design_vars_actual"]
 
         # If no job, remove it
         if not self.job:
@@ -346,6 +354,17 @@ class TurbigenConfig:
 
     def __post_init__(self):
         """Convert input basic types to our desired types."""
+
+        # Accept the old name for design_vars_actual so that config files
+        # written by earlier versions still load.
+        if self.mean_line_actual:
+            if not self.design_vars_actual:
+                self.design_vars_actual = self.mean_line_actual
+            logger.debug(
+                "Config uses the old key 'mean_line_actual'; it is now called "
+                "'design_vars_actual'."
+            )
+        self.mean_line_actual = None
 
         # Convert work_dir str to Path object
         self.work_dir = Path(self.work_dir).absolute()
@@ -814,7 +833,7 @@ class TurbigenConfig:
         # Apply 3D guess if available, unless ignore_guess is set
         if self.guess and not self.ignore_guess:
             logger.info("Applying 3D guess...")
-            self.grid.apply_guess_restart(self.guess)
+            self.grid.interp_from(self.guess)
         else:
             # Apply crude guess from mean_line
             if self.ignore_guess and self.guess:
@@ -863,8 +882,12 @@ class TurbigenConfig:
         # Take the cuts
         cuts = [ember.cut.unstructured(self.grid, xri.T) for xri in xr_cut]
 
-        # Mix out and assemble into actual mean-line flow field
+        # Mix out and assemble into actual mean-line flow field. The cuts run
+        # in streamwise order, and so does the flat view of a mean line, which
+        # is a writeable view -- so the cut index is the station index.
         self.mean_line.actual = self.mean_line.nominal.copy()
+        actual = self.mean_line.actual.flat
+        nominal = self.mean_line.nominal.flat
         for i, C in enumerate(cuts):
             # Contract the mixed-out state from the actual cut area to the
             # nominal mean-line meridional area. The cut's total area generally
@@ -875,7 +898,7 @@ class TurbigenConfig:
             # scale its area by the blade count to compare with the full-annulus
             # nominal meridional area Am.
             A_cut = np.linalg.norm(ember.average.total_area(C)[:2]) * C.Nb
-            Am_nom = self.mean_line.nominal[i].Am
+            Am_nom = nominal[i].Am
             AR = Am_nom / A_cut
             logger.debug(
                 f"Row {i} mix-out: A_cut={A_cut:.6g} (Nb={C.Nb}), "
@@ -902,13 +925,15 @@ class TurbigenConfig:
                 logger.debug(f"total_area: {ember.average.total_area(C)}")
                 logger.debug(f"flow_conserved: {ember.average.flow_conserved(C)}")
                 raise
-            self.mean_line.actual[i].set_r_rms(Cm.r)
-            self.mean_line.actual[i].set_conserved(Cm.conserved)
+            actual[i].set_r(Cm.r)
+            actual[i].set_conserved(Cm.conserved)
 
         logger.info(self.mean_line.actual.to_string())
 
         # Back-calculate the design variables
-        self.mean_line_actual = self.mean_line._backward(self.mean_line.actual)
+        self.design_vars_actual = self.mean_line.designer.backward(
+            self.mean_line.actual
+        )
 
         # Save the cuts as tm3 files for post-processing
         for i, C in enumerate(cuts):
@@ -932,17 +957,17 @@ class TurbigenConfig:
 
         # Absolute error (dict comprehension), skip None actual values
         err = {
-            k: v - self.mean_line_actual[k]
+            k: v - self.design_vars_actual[k]
             for k, v in self.mean_line.design_vars.items()
-            if self.mean_line_actual.get(k) is not None
+            if self.design_vars_actual.get(k) is not None
         }
 
         # Relative error (dict comprehension, checking for zero nominal values)
         with np.errstate(divide="ignore", invalid="ignore"):
             rel_err = {
-                k: (v - self.mean_line_actual[k]) / v * 100.0
+                k: (v - self.design_vars_actual[k]) / v * 100.0
                 for k, v in self.mean_line.design_vars.items()
-                if self.mean_line_actual.get(k) is not None
+                if self.design_vars_actual.get(k) is not None
             }
 
         # Make very small values zero
@@ -973,7 +998,7 @@ class TurbigenConfig:
         err, rel_err = self.calculate_design_var_errors()
 
         for k, v in self.mean_line.design_vars.items():
-            actual = self.mean_line_actual.get(k)
+            actual = self.design_vars_actual.get(k)
             if actual is None:
                 continue
             # Make very small values zero
@@ -1001,14 +1026,14 @@ class TurbigenConfig:
                     )
 
         # Additional vars not in nominal
-        for k, v in self.mean_line_actual.items():
+        for k, v in self.design_vars_actual.items():
             if k not in self.mean_line.design_vars:
                 if np.isscalar(v) or np.ndim(v) == 0:
                     table.append(
                         [
                             k,
                             "",
-                            f"{self.mean_line_actual[k]:.3g}",
+                            f"{self.design_vars_actual[k]:.3g}",
                             "",
                             "",
                         ]
@@ -1020,7 +1045,7 @@ class TurbigenConfig:
                             [
                                 f"{k}[{i}]",
                                 "",
-                                f"{self.mean_line_actual[k][i]:.3g}",
+                                f"{self.design_vars_actual[k][i]:.3g}",
                                 "",
                                 "",
                             ]
@@ -1161,7 +1186,7 @@ class TurbigenConfig:
         # # Handle restarts
         if self.grid:
             # If we already have a grid, use it as the guess
-            self.guess = make_restart(self.grid)
+            self.guess = self.grid
             del self.grid
             # Change CFD settings to resume the simulation
             self.solver = self.solver.restart()

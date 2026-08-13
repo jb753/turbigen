@@ -1,172 +1,85 @@
-"""Test property coverage between Block and MeanLine."""
+"""Guard what MeanLine takes over from ember's Block.
 
-import numpy as np
+MeanLine used to mirror Block's API by hand, one forwarding property per
+quantity, and this file checked the mirror was complete. MeanLine now *is* a
+Block, so that coverage is automatic and the old check is meaningless.
+
+What is worth pinning instead is the opposite risk. Because every ember
+property is inherited, a name defined here silently takes precedence over
+ember's. That is deliberate for four members and would be a bug for any other:
+a future ember release adding, say, a `span` or `mdot` property would be
+shadowed by ours without a word. This test fails when the overridden set
+changes, so the collision has to be looked at rather than absorbed.
+"""
+
 import ember.block
-import ember.fluid
+
 import turbigen.meanline_new
 
+# Members of Block that MeanLine deliberately replaces.
+EXPECTED_OVERRIDES = {
+    # The added Am and Omega storage.
+    "_data_keys",
+    # Omega is nodal data here, not scalar block metadata, so that each row
+    # carries its own blade speed through slicing.
+    "Omega",
+    "Omega_nd",
+    "set_Omega",
+    # set_L_ref additionally rescales the non-dimensionally stored area.
+    "set_L_ref",
+}
 
-def test_meanline_block_property_parity():
-    """Verify MeanLine properties match Block properties for numpy array outputs."""
 
-    # 1) Initialize Block of shape (2,)
-    block = ember.block.Block(shape=(2,))
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    block.set_fluid(fluid)
-
-    # 2) Initialize MeanLine(nrow=1) - creates 2 stations
-    meanline = turbigen.meanline_new.MeanLine(n_row=1)
-    meanline.set_fluid(fluid)
-
-    # 3) Set flow field using set_xrt and set_conserved
-    # Set coordinates (x, r, t)
-    x_values = np.array([0.0, 0.1], dtype=np.float32)
-    r_values = np.array([0.5, 0.55], dtype=np.float32)
-    t_values = np.array([0.0, 0.0], dtype=np.float32)
-
-    block.set_x(x_values).set_r(r_values).set_t(t_values)
-
-    # Set coordinates on each MeanLine station individually
-    for i in range(2):
-        meanline[i].set_x(x_values[i])
-        meanline[i].set_r_rms(r_values[i])
-        meanline[i].set_t(t_values[i])
-
-    # Set conserved variables (rho, rhoVx, rhoVr, rhorVt, rhoe)
-    rho = np.array([1.2, 1.15], dtype=np.float32)
-    rhoVx = np.array([120.0, 115.0], dtype=np.float32)
-    rhoVr = np.array([0.0, 0.0], dtype=np.float32)
-    rhorVt = np.array([30.0, 31.625], dtype=np.float32)  # rho * r * Vt
-    rhoe = np.array([300000.0, 295000.0], dtype=np.float32)
-
-    conserved = np.stack([rho, rhoVx, rhoVr, rhorVt, rhoe], axis=-1)
-    block.set_conserved(conserved)
-    meanline.set_conserved(conserved)
-
-    # 4) Loop over all properties of Block
-    # Discover all properties by inspecting the Block class
-    block_properties = []
-    for name in dir(ember.block.Block):
-        # Skip private/magic methods
-        if name.startswith("_"):
-            continue
-        # Check if it's a property
-        attr = getattr(ember.block.Block, name, None)
-        if isinstance(attr, property):
-            block_properties.append(name)
-
-    # Properties that are 3D-specific or non-dimensional variants not yet
-    # implemented on MeanLine
-    skip_properties = {
-        "ri",
-        "rj",
-        "rk",  # Face-averaged radii for 3D blocks
-        "dAi",
-        "dAj",
-        "dAk",  # Face areas for 3D blocks
-        "dAi_mag",
-        "dAj_mag",
-        "dAk_mag",  # Face area magnitudes for 3D blocks
-        "vol",
-        "dl_min",
-        "ell",  # Volume and length properties for 3D blocks
-        "r_cell",  # Cell-centered coordinates for 3D blocks
-        "secondary",  # Not applicable to mean-line representation
+def _overridden_members():
+    """Names defined on MeanLine that also exist on Block."""
+    return {
+        name
+        for name in vars(turbigen.meanline_new.MeanLine)
+        if not name.startswith("__")
+        and hasattr(ember.block.Block, name)
     }
 
-    # Also skip any property with an _nd suffix
-    def should_skip(name):
-        return name in skip_properties or name.endswith("_nd")
 
-    # Track results
-    tested_properties = []
-    successful_properties = []
-    missing_properties = []
-    shape_mismatch_properties = []
-    skipped_properties = []
+def test_meanline_overrides_only_what_it_means_to():
+    """No MeanLine member shadows a Block member by accident."""
+    actual = _overridden_members()
 
-    # 5) Test each property
-    for prop_name in sorted(block_properties):
-        # Skip 3D-specific and _nd properties
-        if should_skip(prop_name):
-            skipped_properties.append(prop_name)
-            continue
-        # Try to access property on Block
-        try:
-            block_value = getattr(block, prop_name)
-        except Exception:
-            # Skip properties that raise errors on Block access
-            continue
-
-        # Only consider properties that return numpy arrays
-        if not isinstance(block_value, np.ndarray):
-            continue
-
-        tested_properties.append(prop_name)
-
-        # Try to access same property on MeanLine
-        try:
-            meanline_value = getattr(meanline, prop_name)
-        except (AttributeError, NotImplementedError):
-            missing_properties.append(prop_name)
-            continue
-        except Exception as e:
-            # Some other error occurred
-            missing_properties.append(f"{prop_name} (error: {type(e).__name__})")
-            continue
-
-        # Verify it returns a numpy array
-        if not isinstance(meanline_value, np.ndarray):
-            missing_properties.append(f"{prop_name} (not array)")
-            continue
-
-        # Check shapes match
-        if block_value.shape != meanline_value.shape:
-            shape_mismatch_properties.append(
-                f"{prop_name} (Block: {block_value.shape}, MeanLine: {meanline_value.shape})"
-            )
-            continue
-
-        successful_properties.append(prop_name)
-
-    # 6) Print concise summary
-    print("\n" + "=" * 70)
-    print("PROPERTY COVERAGE SUMMARY")
-    print("=" * 70)
-    print(f"Total properties tested: {len(tested_properties)}")
-    print(f"Skipped (3D-specific): {len(skipped_properties)}")
-    print(f"Successfully accessible on both: {len(successful_properties)}")
-    print(f"Missing from MeanLine: {len(missing_properties)}")
-    print(f"Shape mismatches: {len(shape_mismatch_properties)}")
-
-    if missing_properties:
-        print("\nMISSING PROPERTIES:")
-        for prop in missing_properties:
-            print(f"  - {prop}")
-
-    if shape_mismatch_properties:
-        print("\nSHAPE MISMATCHES:")
-        for prop in shape_mismatch_properties:
-            print(f"  - {prop}")
-
-    if successful_properties:
-        print(f"\nSUCCESSFUL PROPERTIES ({len(successful_properties)}):")
-        # Print in columns for compactness
-        cols = 4
-        for i in range(0, len(successful_properties), cols):
-            props_row = successful_properties[i : i + cols]
-            print("  " + ", ".join(f"{p:20s}" for p in props_row))
-
-    print("=" * 70)
-
-    # Assert that ALL properties are available on MeanLine
-    assert len(missing_properties) == 0, (
-        f"MeanLine is missing {len(missing_properties)} properties that are available on Block. "
-        f"Missing: {missing_properties}"
+    unexpected = actual - EXPECTED_OVERRIDES
+    assert not unexpected, (
+        f"MeanLine shadows Block members that are not declared intentional: "
+        f"{sorted(unexpected)}. Either rename the MeanLine member or add it to "
+        f"EXPECTED_OVERRIDES with a note on why the override is correct."
     )
 
-    # Assert that there are no shape mismatches
-    assert len(shape_mismatch_properties) == 0, (
-        f"Found {len(shape_mismatch_properties)} properties with shape mismatches. "
-        f"Mismatches: {shape_mismatch_properties}"
+    stale = EXPECTED_OVERRIDES - actual
+    assert not stale, (
+        f"EXPECTED_OVERRIDES lists members MeanLine no longer overrides: "
+        f"{sorted(stale)}. Drop them from the list."
     )
+
+
+def test_inherited_block_properties_are_not_reimplemented():
+    """The flow-field API comes straight from Block, not from a copy of it."""
+    for name in (
+        "Po",
+        "To",
+        "Ma",
+        "Ma_rel",
+        "Alpha",
+        "Alpha_rel",
+        "Beta",
+        "s",
+        "h",
+        "ho",
+        "ho_rel",
+        "Po_rel",
+        "V",
+        "V_rel",
+        "Vm",
+        "U",
+        "rho",
+        "conserved",
+    ):
+        assert getattr(turbigen.meanline_new.MeanLine, name) is getattr(
+            ember.block.Block, name
+        ), f"{name} is reimplemented on MeanLine rather than inherited"

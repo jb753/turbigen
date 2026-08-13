@@ -1,467 +1,469 @@
-"""Tests for meanline_new.py Station class."""
+"""Tests for the MeanLine class in meanline_new.py.
 
-import pytest
+MeanLine is an ember Block of shape (2, n_row): axis 0 is the station within a
+row (0 inlet, 1 outlet), axis 1 is the row. Views and write-through are covered
+separately in test_meanline_views.py; this file covers construction, the
+annulus geometry built on the added Am data key, nodal Omega, and the overall
+performance properties.
+"""
+
 import numpy as np
-import turbigen.meanline_new
-import ember.fluid
+import pytest
+
 import ember.block
+import ember.fluid
+import turbigen.meanline_new
 
 
-def test_station_initialization():
-    """Test that Station can be created and inherits from Block."""
-    station = turbigen.meanline_new.Station(shape=())
-
-    # Should be an instance of both Station and Block
-    assert isinstance(station, turbigen.meanline_new.Station)
-    assert isinstance(station, ember.block.Block)
-
-    # Should have the Am data key
-    assert "Am" in station._data_keys
+@pytest.fixture
+def fluid():
+    return ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
 
 
-def test_station_must_be_scalar():
-    """Test that Station must be initialized with scalar shape."""
-    # Scalar shape should work
-    station = turbigen.meanline_new.Station(shape=())
-    assert station.shape == ()
-
-    # Non-scalar shapes should raise ValueError
-    with pytest.raises(ValueError, match="Station must be a scalar"):
-        turbigen.meanline_new.Station(shape=(5,))
-
-    with pytest.raises(ValueError, match="Station must be a scalar"):
-        turbigen.meanline_new.Station(shape=(3, 4))
+@pytest.fixture
+def station(fluid):
+    """A single scalar station, taken as a view of a one-row mean line."""
+    ml = turbigen.meanline_new.MeanLine(1)
+    ml.set_fluid(fluid)
+    return ml[0, 0]
 
 
-def test_station_set_geometry():
-    """Test setting annulus area and radius."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
-
-    # Set annulus geometry
-    Am = 1.0  # 1 m^2 meridional area
-    r_rms = 0.5  # 0.5 m RMS radius
-
-    station.set_Am(Am)
-    station.set_r_rms(r_rms)
-
-    assert station.Am == pytest.approx(Am)
-    assert station.r_rms == pytest.approx(r_rms)
+#
+# CONSTRUCTION
+#
 
 
-def test_station_computed_geometry_properties():
-    """Test computed annulus geometry properties."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
+def test_meanline_is_a_block(fluid):
+    """MeanLine inherits Block, adding only the Am and Omega data keys."""
+    ml = turbigen.meanline_new.MeanLine(2)
 
-    # Set geometry
-    Am = 1.0
-    r_rms = 0.5
-    station.set_Am(Am).set_r_rms(r_rms)
+    assert isinstance(ml, ember.block.Block)
+    assert "Am" in ml._data_keys
+    assert "Omega" in ml._data_keys
 
-    # Set velocity to compute cosBeta
-    station.set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)  # Axial flow only
-    station.set_P_T(1e5, 300.0)
-
-    # Compute cosBeta from Beta angle
-    # For pure axial flow (Vr=0), Beta=0, so cosBeta=1
-    cosBeta = np.cos(station.Beta)
-
-    expected_r_cas = np.sqrt(Am * cosBeta / 2.0 / np.pi + r_rms**2.0)
-    expected_r_hub = np.sqrt(r_rms**2.0 - Am * cosBeta / 2.0 / np.pi)
-    expected_r_mid = 0.5 * (expected_r_hub + expected_r_cas)
-    expected_span = Am / 2.0 / np.pi / expected_r_mid
-    expected_htr = expected_r_hub / expected_r_cas
-
-    assert station.r_cas == pytest.approx(expected_r_cas)
-    assert station.r_hub == pytest.approx(expected_r_hub)
-    assert station.r_mid == pytest.approx(expected_r_mid)
-    assert station.span == pytest.approx(expected_span)
-    assert station.htr == pytest.approx(expected_htr)
+    # Everything ember defines is inherited rather than forwarded. Look the
+    # names up on the class, so the descriptors are not evaluated here.
+    for name in ("Po", "Ma", "Ma_rel", "s", "ho_rel", "conserved"):
+        assert hasattr(turbigen.meanline_new.MeanLine, name)
+        assert getattr(turbigen.meanline_new.MeanLine, name) is getattr(
+            ember.block.Block, name
+        )
 
 
-def test_station_mass_flow_rate():
-    """Test mass flow rate calculation."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
-
-    # Set geometry
-    Am = 1.0  # 1 m^2
-    station.set_Am(Am).set_r_rms(0.5)
-
-    # Set thermodynamic state
-    P, T = 1e5, 300.0
-    station.set_P_T(P, T)
-
-    # Set velocity
-    Vx, Vr = 100.0, 0.0
-    station.set_Vx(Vx).set_Vr(Vr).set_Vt(0.0)
-
-    # Compute mass flow rate
-    # mdot = rho * Vm * Am
-    # For axial flow with small radial velocity, Vm ≈ Vx
-    rho = station.rho
-    Vm = station.Vm
-    expected_mdot = rho * Vm * Am
-
-    assert station.mdot == pytest.approx(expected_mdot)
+def test_meanline_shape_is_station_by_row(fluid):
+    """n_row rows give shape (2, n_row), station axis first."""
+    for n_row in (1, 2, 5):
+        ml = turbigen.meanline_new.MeanLine(n_row)
+        assert ml.shape == (2, n_row)
+        assert ml.n_row == n_row
+        assert ml.size == 2 * n_row
 
 
-def test_station_with_thermodynamics():
-    """Test Station with full thermodynamic state."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
-
-    # Set coordinates (must set x, r_rms, t separately since set_xrt calls set_r)
-    station.set_x(0.0).set_r_rms(0.5).set_t(0.0)
-
-    # Set annulus area
-    station.set_Am(1.0)
-
-    # Set thermodynamic state
-    P, T = 2e5, 400.0
-    station.set_P_T(P, T)
-
-    # Set velocity
-    station.set_Vx(150.0).set_Vr(0.0).set_Vt(50.0)
-
-    # Verify we can access thermodynamic properties
-    assert station.P == pytest.approx(P)
-    assert station.T == pytest.approx(T)
-    assert station.Vx == pytest.approx(150.0)
-    assert station.Vt == pytest.approx(50.0)
-
-    # Verify mass flow is computed
-    assert station.mdot > 0
+def test_meanline_rejects_zero_rows():
+    with pytest.raises(ValueError, match="n_row must be >= 1"):
+        turbigen.meanline_new.MeanLine(0)
 
 
-def test_station_set_r_blocked():
-    """Verify that set_r() raises NotImplementedError."""
-    station = turbigen.meanline_new.Station(shape=())
+def test_meanline_n_row_readonly(fluid):
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
 
-    with pytest.raises(NotImplementedError, match="Use set_r_rms"):
-        station.set_r(0.5)
-
-
-def test_station_inherits_block_setters():
-    """Verify Station can use Block's setter methods."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
-
-    # Should be able to chain Block's setters (but set coords separately)
-    station.set_x(1.0).set_r_rms(0.5).set_t(0.1).set_Am(1.5).set_P_T(
-        1e5, 300.0
-    ).set_Vx(100.0).set_Vr(0.0).set_Vt(0.0)
-
-    # Verify values were set
-    assert station.x == pytest.approx(1.0)
-    assert station.r_rms == pytest.approx(0.5)
-    assert station.t == pytest.approx(0.1)
-    assert station.Am == pytest.approx(1.5)
-    assert station.P == pytest.approx(1e5)
-    assert station.T == pytest.approx(300.0)
-    assert station.Vx == pytest.approx(100.0)
-
-
-def test_station_with_rotation():
-    """Test Station with rotating frame."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    station = turbigen.meanline_new.Station(shape=())
-    station.set_fluid(fluid)
-
-    # Set up rotating station
-    rpm = 3000.0
-    station.set_rpm(rpm).set_r_rms(0.5).set_Am(1.0)
-
-    # Set thermodynamic state and velocity
-    station.set_P_T(1e5, 300.0).set_Vx(100.0).set_Vr(0.0).set_Vt(50.0)
-
-    # Verify rotation was set
-    Omega_expected = rpm / 30.0 * np.pi  # Convert RPM to rad/s
-    assert station.Omega == pytest.approx(Omega_expected)
-
-    # Verify we can compute relative velocities
-    U = station.U
-    assert U > 0  # Blade speed should be non-zero
-
-
-def test_meanline_initialization():
-    """Test that MeanLine can be created with specified number of rows."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    # Should have correct number of rows
-    assert ml.n_row == 2
-
-    # Should have 4 scalar stations (2 per row)
-    assert len(ml._stations) == 4
-
-    # Each station should be scalar
-    for station in ml._stations:
-        assert isinstance(station, turbigen.meanline_new.Station)
-        assert station.shape == ()
-
-
-def test_meanline_n_row_readonly():
-    """Test that n_row property is read-only."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    # Attempting to assign should raise AttributeError
     with pytest.raises(AttributeError, match="property 'n_row'.*has no setter"):
         ml.n_row = 5
 
 
-def test_meanline_scalar_indexing():
-    """Test integer indexing returns a scalar Station at that flat index."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=3).set_fluid(fluid)
+def test_row_view_reports_one_row(fluid):
+    """A row view is a shape-(2,) mean line of one row."""
+    ml = turbigen.meanline_new.MeanLine(3)
+    ml.set_fluid(fluid)
 
-    # ml has 6 stations (2 per row); each index returns a scalar Station
-    for i in range(6):
-        s = ml[i]
-        assert isinstance(s, turbigen.meanline_new.Station)
-        assert s.shape == ()
-
-
-def test_meanline_get_row():
-    """Test get_row returns a MeanLine view of the two stations for that row."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    row0 = ml.get_row(0)
-    assert isinstance(row0, turbigen.meanline_new.MeanLine)
-    assert len(row0._stations) == 2
-
-    row1 = ml.get_row(1)
-    assert isinstance(row1, turbigen.meanline_new.MeanLine)
-    assert len(row1._stations) == 2
+    row = ml.row(1)
+    assert isinstance(row, turbigen.meanline_new.MeanLine)
+    assert row.shape == (2,)
+    assert row.n_row == 1
 
 
-def test_meanline_indexing_consistency():
-    """Test flat indexing and get_row are consistent."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_station_view_is_scalar(fluid):
+    ml = turbigen.meanline_new.MeanLine(3)
+    ml.set_fluid(fluid)
 
-    # Set data via flat indexing
-    ml[0].set_r_rms(0.5)
-    ml[1].set_r_rms(0.75)
-
-    # get_row(0) should give a view over stations 0 and 1
-    row0 = ml.get_row(0)
-    assert row0[0].r_rms == pytest.approx(0.5)
-    assert row0[1].r_rms == pytest.approx(0.75)
-
-    # Direct flat access agrees
-    assert ml[0].r_rms == pytest.approx(0.5)
-    assert ml[1].r_rms == pytest.approx(0.75)
+    for i_row in range(3):
+        for j in (0, 1):
+            st = ml[j, i_row]
+            assert isinstance(st, turbigen.meanline_new.MeanLine)
+            assert st.shape == ()
 
 
-def test_meanline_concatenated_property():
-    """Test that concatenated properties work correctly using factory method."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
-    Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
-    r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
-    Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
-    P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
-    T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
-
-    for i in range(4):
-        ml[i].set_r_rms(r_rms[i])
-        ml[i].set_Am(Am[i])
-        ml[i].set_P_T(P[i], T[i])
-        ml[i].set_Vx(Vx[i]).set_Vr(Vr[i]).set_Vt(Vt[i])
-
-    Vx_concat = ml.Vx.squeeze()
-
-    # Should be shape (4,) for 2 rows × 2 stations per row
-    assert Vx_concat.shape == (4,)
-
-    np.testing.assert_allclose(Vx_concat, Vx, rtol=1e-5)
-
-    # Verify order: station 0, 1, 2, 3
-    for i in range(4):
-        assert Vx_concat[i] == pytest.approx(ml[i].Vx)
+#
+# API CONVENTIONS
+#
 
 
-def test_meanline_property_docstring():
-    """Test that factory-generated properties inherit docstrings from Block."""
-    # Check that Vx has the docstring from Block
-    vx_doc = turbigen.meanline_new.MeanLine.Vx.__doc__
-    block_vx_doc = ember.block.Block.Vx.__doc__
+def test_setters_return_none(fluid):
+    """Setters follow ember and return None; they are not chainable."""
+    ml = turbigen.meanline_new.MeanLine(1)
+    ml.set_fluid(fluid)
 
-    # Should inherit the Block's docstring
-    assert vx_doc == block_vx_doc
-    assert "Axial velocity" in vx_doc
-
-
-def test_meanline_setter_method():
-    """Test that factory-generated setter methods work correctly."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
-    Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
-    P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
-    T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
-
-    for i in range(4):
-        ml[i].set_r_rms(r_rms[i])
-        ml[i].set_Am(Am[i])
-        ml[i].set_P_T(P[i], T[i])
-
-    Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
-    Vr = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
-
-    ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
-
-    assert ml[0].Vx == pytest.approx(100.0)
-    assert ml[1].Vx == pytest.approx(110.0)
-    assert ml[2].Vx == pytest.approx(120.0)
-    assert ml[3].Vx == pytest.approx(130.0)
-
-    assert ml[0].Vr == pytest.approx(5.0)
-    assert ml[1].Vr == pytest.approx(6.0)
-    assert ml[2].Vr == pytest.approx(7.0)
-    assert ml[3].Vr == pytest.approx(8.0)
-
-    assert ml[0].Vt == pytest.approx(50.0)
-    assert ml[1].Vt == pytest.approx(55.0)
-    assert ml[2].Vt == pytest.approx(60.0)
-    assert ml[3].Vt == pytest.approx(65.0)
-
-    np.testing.assert_allclose(ml.Vx.squeeze(), Vx, rtol=1e-5)
+    assert ml.set_r(0.5) is None
+    assert ml.set_Am(1.0) is None
+    assert ml.set_Omega(0.0) is None
 
 
-def test_meanline_setter_shape_validation():
-    """Test that setter methods validate input array shapes."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_properties_are_not_assignable(fluid):
+    """Derived properties have no setter, so state changes go through set_*."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
 
-    # Should reject arrays that don't have length 4 (2 rows × 2 stations)
-    Vx_wrong = np.array([100.0, 110.0, 120.0], dtype=np.float32)  # Only 3 values
-    Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
+    with pytest.raises(AttributeError, match="property 'Vx'.*has no setter"):
+        ml.Vx = np.zeros((2, 2))
+
+
+def test_setter_rejects_wrong_shape(fluid):
+    """An array that does not broadcast to (2, n_row) is refused."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+    ml.set_r(0.5)
+    ml.set_P_T(1e5, 300.0)
 
     with pytest.raises(ValueError):
-        ml.set_Vx(Vx_wrong).set_Vr(Vr).set_Vt(Vt)
+        ml.set_Vx(np.array([100.0, 110.0, 120.0]))
 
 
-def test_meanline_setter_returns_self():
-    """Test that setter methods return self for chaining."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_reading_uninitialised_data_raises(fluid):
+    """An unset variable raises rather than quietly returning NaN."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
 
-    for i in range(4):
-        ml[i].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0)
-
-    Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
-    Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
-
-    result = ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
-    assert result is ml
+    for name in ("Vx", "Am", "P"):
+        with pytest.raises(ValueError, match="not been initialised"):
+            getattr(ml, name)
 
 
-def test_meanline_setter_docstring():
-    """Test that factory-generated setters inherit docstrings from Block."""
-    set_vxrt_doc = turbigen.meanline_new.MeanLine.set_Vxrt.__doc__
-    block_set_vxrt_doc = ember.block.Block.set_Vxrt.__doc__
-
-    # Should inherit the Block's docstring
-    assert set_vxrt_doc == block_set_vxrt_doc
+def test_r_is_the_rms_radius(station):
+    """The block radius is the annulus RMS radius; there is no separate name."""
+    station.set_r(0.5)
+    assert station.r == pytest.approx(0.5)
+    assert not hasattr(station, "r_rms")
 
 
-def test_meanline_concatenated_property_readonly():
-    """Test that concatenated properties are read-only."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    # Attempting to assign to a concatenated property should raise AttributeError
-    with pytest.raises(AttributeError, match="property 'Vx'.*has no setter"):
-        ml.Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
-
-    # This ensures users must use the setter methods (set_Vxrt, etc.)
-    # and prevents accidental overwrites of the property itself
+#
+# ANNULUS GEOMETRY
+#
 
 
-def test_meanline_concatenated_array_values():
-    """Test that concatenated property arrays return correct values."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_set_and_get_annulus_area(station):
+    station.set_Am(1.0)
+    station.set_r(0.5)
 
-    r_rms = np.array([0.5, 0.55, 0.6, 0.65], dtype=np.float32)
-    Am = np.array([1.0, 1.1, 1.2, 1.3], dtype=np.float32)
-    P = np.array([1e5, 0.95e5, 0.9e5, 0.85e5], dtype=np.float32)
-    T = np.array([300.0, 295.0, 290.0, 285.0], dtype=np.float32)
-    Vx = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
-    Vr = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    Vt = np.array([50.0, 55.0, 60.0, 65.0], dtype=np.float32)
-
-    for i in range(4):
-        ml[i].set_r_rms(r_rms[i]).set_Am(Am[i]).set_P_T(P[i], T[i])
-    ml.set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
-
-    np.testing.assert_allclose(ml.Vx.squeeze(), Vx, rtol=1e-5)
-    np.testing.assert_allclose(ml.Vt.squeeze(), Vt, rtol=1e-5)
+    assert station.Am == pytest.approx(1.0)
+    assert station.r == pytest.approx(0.5)
 
 
-def test_meanline_uninitialized_stations():
-    """Test that concatenated properties return NaN for uninitialized stations."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_computed_annulus_geometry(station):
+    """Hub, casing, mid radius, span and hub-to-tip follow from Am and r."""
+    Am, r_rms = 1.0, 0.5
+    station.set_Am(Am)
+    station.set_r(r_rms)
 
-    # Don't initialize anything - all stations uninitialized
-    vx = ml.Vx
+    # Pure axial flow, so the pitch angle Beta is zero and cosBeta is one.
+    station.set_Vx(100.0)
+    station.set_Vr(0.0)
+    station.set_Vt(0.0)
+    station.set_P_T(1e5, 300.0)
 
-    # Should have 4 entries for 2 rows × 2 stations
-    assert vx.squeeze().shape == (4,)
+    assert station.Beta == pytest.approx(0.0)
+    cosBeta = np.cos(np.radians(station.Beta))
+    assert station.cosBeta == pytest.approx(cosBeta)
 
-    # All values should be NaN
-    assert np.all(np.isnan(vx))
+    expected_r_cas = np.sqrt(Am * cosBeta / 2.0 / np.pi + r_rms**2.0)
+    expected_r_hub = np.sqrt(r_rms**2.0 - Am * cosBeta / 2.0 / np.pi)
+    expected_r_mid = 0.5 * (expected_r_hub + expected_r_cas)
 
-
-def test_meanline_partially_initialized():
-    """Test that concatenated properties handle partially initialized meanlines."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
-
-    # Only initialize stations 0 and 1 (first row) using flat indexing
-    ml[0].set_r_rms(0.5).set_Am(1.0).set_P_T(1e5, 300.0).set_Vx(100.0).set_Vr(0.0).set_Vt(50.0)
-    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vx(110.0).set_Vr(0.0).set_Vt(55.0)
-
-    # Stations 2, 3 remain uninitialized
-    vx = ml.Vx.squeeze()
-
-    assert vx.shape == (4,)
-    assert vx[0] == pytest.approx(100.0)
-    assert vx[1] == pytest.approx(110.0)
-    assert np.isnan(vx[2])
-    assert np.isnan(vx[3])
+    assert station.r_cas == pytest.approx(expected_r_cas)
+    assert station.r_hub == pytest.approx(expected_r_hub)
+    assert station.r_mid == pytest.approx(expected_r_mid)
+    assert station.span == pytest.approx(Am / 2.0 / np.pi / expected_r_mid)
+    assert station.htr == pytest.approx(expected_r_hub / expected_r_cas)
 
 
-def test_meanline_single_station_initialized():
-    """Test that concatenated properties handle single station initialization."""
-    fluid = ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5, Pr=0.72)
-    ml = turbigen.meanline_new.MeanLine(n_row=2).set_fluid(fluid)
+def test_annulus_geometry_is_vectorised(fluid):
+    """Geometry properties evaluate over the whole (2, n_row) block at once."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+    ml.set_r(0.5)
+    ml.set_P_T(1e5, 300.0)
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(0.0)
 
-    # Only initialize flat station index 1
-    ml[1].set_r_rms(0.55).set_Am(1.1).set_P_T(0.95e5, 295.0).set_Vx(110.0).set_Vr(0.0).set_Vt(55.0)
+    Am = np.array([[1.0, 1.2], [1.1, 1.3]])
+    ml.set_Am(Am)
 
-    vx = ml.Vx.squeeze()
+    assert ml.span.shape == (2, 2)
+    np.testing.assert_allclose(ml.Am, Am, rtol=1e-5)
 
-    assert vx.shape == (4,)
-    assert np.isnan(vx[0])
-    assert vx[1] == pytest.approx(110.0)
-    assert np.isnan(vx[2])
-    assert np.isnan(vx[3])
+    # Each station agrees with the same quantity computed on its own view.
+    for j in (0, 1):
+        for i in range(2):
+            assert ml.span[j, i] == pytest.approx(ml[j, i].span, rel=1e-5)
+
+
+def test_set_span_htr_round_trip(station):
+    """set_span_htr reproduces the span and hub-to-tip ratio it was given."""
+    station.set_P_T(1e5, 300.0)
+    station.set_Vx(100.0)
+    station.set_Vr(0.0)
+    station.set_Vt(0.0)
+
+    span, htr = 0.1, 0.6
+    station.set_span_htr(span, htr)
+
+    assert station.span == pytest.approx(span, rel=1e-5)
+    assert station.htr == pytest.approx(htr, rel=1e-5)
+
+
+def test_set_span_htr_requires_zero_pitch_angle(station):
+    """Radial flow invalidates the span/htr relation, so it is refused."""
+    station.set_P_T(1e5, 300.0)
+    station.set_Vx(100.0)
+    station.set_Vr(100.0)  # Beta = 45 degrees
+    station.set_Vt(0.0)
+
+    with pytest.raises(ValueError, match="Beta must be set zero"):
+        station.set_span_htr(0.1, 0.6)
+
+
+def test_set_span_r_mid_round_trip(station):
+    station.set_P_T(1e5, 300.0)
+    station.set_Vx(100.0)
+    station.set_Vr(0.0)
+    station.set_Vt(0.0)
+
+    span, r_mid = 0.1, 0.5
+    station.set_span_r_mid(span, r_mid)
+
+    assert station.span == pytest.approx(span, rel=1e-5)
+    assert station.r_mid == pytest.approx(r_mid, rel=1e-5)
+
+
+def test_mass_flow_rate(station):
+    """mdot is rho * Vm * Am."""
+    Am = 1.0
+    station.set_Am(Am)
+    station.set_r(0.5)
+    station.set_P_T(1e5, 300.0)
+    station.set_Vx(100.0)
+    station.set_Vr(0.0)
+    station.set_Vt(0.0)
+
+    assert station.mdot == pytest.approx(station.rho * station.Vm * Am)
+    assert station.mdot > 0.0
+
+
+def test_area_rescales_with_reference_length(station):
+    """Am is stored non-dimensionally, so it survives a change of L_ref."""
+    station.set_r(0.5)
+    station.set_Am(2.0)
+
+    station.set_L_ref(0.3)
+
+    assert station.Am == pytest.approx(2.0, rel=1e-5)
+
+
+#
+# THERMODYNAMIC AND KINEMATIC STATE
+#
+
+
+def test_station_holds_full_state(station):
+    """Coordinates, thermodynamic state and velocity all round-trip."""
+    station.set_x(0.0)
+    station.set_r(0.5)
+    station.set_t(0.0)
+    station.set_Am(1.0)
+    station.set_P_T(2e5, 400.0)
+    station.set_Vx(150.0)
+    station.set_Vr(0.0)
+    station.set_Vt(50.0)
+
+    assert station.x == pytest.approx(0.0)
+    assert station.r == pytest.approx(0.5)
+    assert station.P == pytest.approx(2e5)
+    assert station.T == pytest.approx(400.0)
+    assert station.Vx == pytest.approx(150.0)
+    assert station.Vt == pytest.approx(50.0)
+    assert station.mdot > 0.0
+
+
+def test_vectorised_velocity_setters(fluid):
+    """Setters take a (2, n_row) array, one value per station."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+    ml.set_r(np.array([[0.5, 0.6], [0.55, 0.65]]))
+    ml.set_Am(np.array([[1.0, 1.2], [1.1, 1.3]]))
+    ml.set_P_T(
+        np.array([[1e5, 0.9e5], [0.95e5, 0.85e5]]),
+        np.array([[300.0, 290.0], [295.0, 285.0]]),
+    )
+
+    Vx = np.array([[100.0, 120.0], [110.0, 130.0]])
+    Vr = np.array([[5.0, 7.0], [6.0, 8.0]])
+    Vt = np.array([[50.0, 60.0], [55.0, 65.0]])
+    ml.set_Vx(Vx)
+    ml.set_Vr(Vr)
+    ml.set_Vt(Vt)
+
+    np.testing.assert_allclose(ml.Vx, Vx, rtol=1e-5)
+    np.testing.assert_allclose(ml.Vr, Vr, rtol=1e-5)
+    np.testing.assert_allclose(ml.Vt, Vt, rtol=1e-5)
+
+    # And the same values appear in streamwise order through the flat view.
+    np.testing.assert_allclose(ml.flat.Vx, [100.0, 110.0, 120.0, 130.0], rtol=1e-5)
+
+
+def test_unset_stations_read_as_nan_for_area(fluid):
+    """Am is allocated NaN, so a station left unset reads NaN rather than junk.
+
+    Note that ember tracks initialisation per variable, not per station: once
+    any station sets a variable the whole block counts as initialised, so a
+    partially built mean line no longer raises. Am is the one added variable
+    where the unset value is a well-defined NaN.
+    """
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+
+    ml[0, 0].set_Am(1.0)
+
+    assert ml.Am[0, 0] == pytest.approx(1.0)
+    assert np.isnan(ml.Am[1, 0])
+    assert np.isnan(ml.Am[0, 1])
+    assert np.isnan(ml.Am[1, 1])
+
+
+#
+# ROTATION
+#
+
+
+def test_omega_is_nodal_and_defaults_to_zero(fluid):
+    """Omega is stored per station, unlike ember's scalar block metadata."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+
+    assert ml.Omega.shape == (2, 2)
+    np.testing.assert_allclose(ml.Omega, 0.0)
+
+
+def test_set_omega_row(fluid):
+    """One angular velocity per row, applied to both of its stations."""
+    ml = turbigen.meanline_new.MeanLine(3)
+    ml.set_fluid(fluid)
+
+    ml.set_Omega_row([0.0, 1000.0, 2000.0])
+
+    np.testing.assert_allclose(ml.Omega[0], [0.0, 1000.0, 2000.0])
+    np.testing.assert_allclose(ml.Omega[1], [0.0, 1000.0, 2000.0])
+
+
+def test_set_omega_row_needs_a_full_mean_line(fluid):
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+
+    with pytest.raises(ValueError, match="requires a full"):
+        ml.row(0).set_Omega_row([1.0])
+
+
+def test_rotation_gives_blade_speed_and_relative_frame(fluid):
+    """set_rpm on a row view sets that row's blade speed only."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+    ml.set_r(0.5)
+    ml.set_Am(1.0)
+    ml.set_P_T(1e5, 300.0)
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(50.0)
+
+    rpm = 3000.0
+    ml.row(1).set_rpm(rpm)
+
+    Omega_expected = rpm * np.pi / 30.0
+    np.testing.assert_allclose(ml.row(1).Omega, Omega_expected, rtol=1e-5)
+    np.testing.assert_allclose(ml.row(0).Omega, 0.0)
+
+    # Blade speed and the relative frame follow Omega per row.
+    np.testing.assert_allclose(ml.row(1).U, Omega_expected * 0.5, rtol=1e-5)
+    np.testing.assert_allclose(ml.row(0).U, 0.0)
+
+    # With no rotation the relative frame coincides with the absolute one.
+    np.testing.assert_allclose(ml.row(0).Ma_rel, ml.row(0).Ma, rtol=1e-5)
+    assert np.all(ml.row(1).Ma_rel != ml.row(1).Ma)
+
+
+#
+# OVERALL PERFORMANCE
+#
+
+
+@pytest.fixture
+def expansion(fluid):
+    """A two-row mean line expanding from 1 bar to 0.85 bar."""
+    ml = turbigen.meanline_new.MeanLine(2)
+    ml.set_fluid(fluid)
+    ml.set_r(0.5)
+    ml.set_Am(1.0)
+    ml.flat.set_P_T(
+        np.array([1e5, 0.95e5, 0.9e5, 0.85e5]),
+        np.array([400.0, 395.0, 390.0, 385.0]),
+    )
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(0.0)
+    return ml
+
+
+def test_pressure_ratios_use_the_machine_endpoints(expansion):
+    ml = expansion
+
+    assert ml.PR_tt == pytest.approx(ml.inlet.Po / ml.outlet.Po, rel=1e-5)
+    assert ml.PR_ts == pytest.approx(ml.inlet.Po / ml.outlet.P, rel=1e-5)
+
+    # The endpoints are the first and last stations in streamwise order.
+    assert ml.inlet.P == pytest.approx(ml.flat.P[0], rel=1e-5)
+    assert ml.outlet.P == pytest.approx(ml.flat.P[-1], rel=1e-5)
+
+
+def test_efficiencies_are_physical_for_an_expansion(expansion):
+    ml = expansion
+
+    assert 0.0 < ml.eta_tt <= 1.0
+    assert 0.0 < ml.eta_ts <= 1.0
+
+    # A total-to-static efficiency charges the exit kinetic energy as a loss,
+    # so it can never exceed the total-to-total value.
+    assert ml.eta_tt >= ml.eta_ts
+
+
+#
+# REPRESENTATION
+#
+
+
+def test_to_string_tabulates_stations_in_streamwise_order(expansion):
+    out = expansion.to_string()
+
+    assert "Mean line:" in out
+    assert "Row 0" in out and "Row 1" in out
+    assert "Inlet" in out and "Outlet" in out
+
+    # Stagnation pressure falls monotonically through the machine, and the
+    # table should read in that order.
+    Po_bar = expansion.flat.Po / 1e5
+    assert np.all(np.diff(Po_bar) < 0.0)
+    for value in Po_bar:
+        assert f"{value:.3f}" in out
+
+
+def test_repr_reports_the_shape(fluid):
+    ml = turbigen.meanline_new.MeanLine(3)
+    assert repr(ml) == "MeanLine(shape=(2, 3))"

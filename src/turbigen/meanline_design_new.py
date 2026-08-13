@@ -1,283 +1,319 @@
-"""Define the interface for mean-line designers."""
+"""Mean-line designers shipped with turbigen.
+
+Each designer is a :class:`turbigen.designer.Designer` subclass registered under
+a name that a config file can select with ``mean_line: {type: ...}``.
+
+Note the use of ``ml.flat`` throughout. A mean line is stored as ``(2, n_row)``,
+station by row, but the physics of a machine reads naturally in streamwise
+order, so these designers take the flat view once and index it ``0, 1, 2, 3``
+from machine inlet to machine outlet. That view shares storage with `ml`, so
+writes through it land in the mean line being designed.
+"""
 
 import numpy as np
 
-from turbigen.plugins import register_mean_line
-import ember.set_iter
+import ember.set_iterative
+from turbigen.designer import Designer
+from turbigen.plugins import register_designer
 
 
-@register_mean_line
-def turbine_cascade_forward(
-    ml,
-    span,
-    Alpha,
-    Ma2,
-    Ys,
-    htr=0.95,
-    Po1=1e5,
-    To1=300.0,
-):
-    """Calculate turbine cascade geometry from aerodynamic design variables."""
+@register_designer("turbine_cascade")
+class TurbineCascade(Designer):
+    """A single turbine blade row at fixed inlet stagnation conditions."""
 
-    # Check inputs
-    assert ml.n_row == 1
-    assert len(span) == 2
-    assert len(Alpha) == 2
+    n_row = 1
 
-    # Get the inlet stagnation state
-    inlet_stag = ml[0].copy().set_P_T(Po1, To1)
-    V_ref = inlet_stag.a
-    T_ref = inlet_stag.T
-    s1 = inlet_stag.s
-    ho1 = inlet_stag.h
+    #
+    # SHARED DEFINITIONS
+    #
+    # Written once and used by both directions. Anything needed by forward and
+    # backward alike belongs here: a formula duplicated between them is free to
+    # drift, and has.
+    #
 
-    # Entropy from pseudo loss coefficient
-    s2 = s1 + Ys * (0.5 * V_ref**2) / T_ref
+    @staticmethod
+    def entropy_rise(Ys, ao1, To1):
+        """Entropy rise implied by a pseudo loss coefficient.
 
-    # Outlet state from known ho, s, Ma, angles
-    ember.set_iter.set_ho_s_Ma_Alpha_Beta(ml[1], ho1, s2, Ma2, Alpha[1], Beta=0.0)
+        The inverse of :meth:`Ys`.
+        """
+        return Ys * (0.5 * ao1**2) / To1
 
-    # Set exit annulus geometry
-    ml[1].set_span_htr(span[1], htr)
+    def Ys(self, ml):
+        """Pseudo entropy loss coefficient of a mean line.
 
-    # Now conserve mass to set inlet state
-    rhoVx1 = ml[1].rhoVx * span[1] / span[0]
-    ember.set_iter.set_ho_s_rhoVm_Alpha_Beta(ml[0], ho1, s1, rhoVx1, Alpha[0], Beta=0.0)
+        Non-dimensionalised on inlet stagnation conditions,
+        ``Ys = (s2 - s1) * To1 / (0.5 * ao1**2)``. The inverse of
+        :meth:`entropy_rise`.
+        """
+        inlet = ml.inlet
+        return (ml.outlet.s - inlet.s) * inlet.To / (0.5 * inlet.ao**2)
 
-    # Set inlet annulus geometry (htr may vary, same r_mid)
-    ml[0].set_span_r_mid(span[0], ml[1].r_mid)
+    #
+    # DESIGN
+    #
+
+    def forward(self, ml, span, Alpha, Ma2, Ys, htr=0.95, Po1=1e5, To1=300.0):
+        """Build a turbine cascade from aerodynamic design variables.
+
+        Parameters
+        ----------
+        span : (2,) array
+            Annulus span at inlet and outlet [m].
+        Alpha : (2,) array
+            Yaw angle at inlet and outlet [deg].
+        Ma2 : float
+            Outlet Mach number [--].
+        Ys : float
+            Pseudo entropy loss coefficient [--], see :meth:`Ys`.
+        htr : float
+            Outlet hub-to-tip ratio [--].
+        Po1, To1 : float
+            Inlet stagnation pressure [Pa] and temperature [K].
+
+        """
+        span = np.asarray(span, dtype=float)
+        Alpha = np.asarray(Alpha, dtype=float)
+        if span.shape != (2,) or Alpha.shape != (2,):
+            raise ValueError(
+                f"turbine_cascade needs span and Alpha of length 2, got "
+                f"{span.shape} and {Alpha.shape}."
+            )
+
+        # Inlet stagnation state, on a scratch station so the mean line itself
+        # is untouched until we have something to write.
+        stag = ml.inlet.empty()
+        stag.set_P_T(Po1, To1)
+        ho1, s1, ao1 = stag.h, stag.s, stag.a
+
+        s2 = s1 + self.entropy_rise(Ys, ao1, To1)
+
+        # Outlet state from stagnation enthalpy, entropy, Mach and angles
+        ember.set_iterative.set_ho_s_Ma_Alpha_Beta(
+            ml.outlet, ho1, s2, Ma2, Alpha[1], Beta=0.0
+        )
+        ml.outlet.set_span_htr(span[1], htr)
+
+        # Conserve mass to fix the inlet state
+        rhoVx1 = ml.outlet.rhoVx * span[1] / span[0]
+        ember.set_iterative.set_ho_s_rhoVm_Alpha_Beta(
+            ml.inlet, ho1, s1, rhoVx1, Alpha[0], Beta=0.0
+        )
+
+        # Inlet annulus shares the outlet mid radius; hub-to-tip may differ
+        ml.inlet.set_span_r_mid(span[0], ml.outlet.r_mid)
+
+    def backward(self, ml):
+        """Return the design variables represented by a cascade mean line."""
+        flat = ml.flat
+        return {
+            "span": flat.span,
+            "Alpha": flat.Alpha,
+            "Ma2": ml.outlet.Ma,
+            "Ys": self.Ys(ml),
+            "htr": ml.outlet.htr,
+            "Po1": ml.inlet.Po,
+            "To1": ml.inlet.To,
+            # Diagnostics, not design variables
+            "PR_ts": ml.PR_ts,
+            "eta_ts": ml.eta_ts,
+        }
 
 
-@register_mean_line
-def turbine_cascade_backward(ml):
-    """Reverse a cascade mean-line to design variables.
+@register_designer("axial_turbine")
+class AxialTurbine(Designer):
+    """An axial turbine stage: a stator row followed by a rotor row."""
 
-    Parameters
-    ----------
-    ml: MeanLine
-        A mean-line object specifying the flow in a cascade.
+    n_row = 2
 
-    Returns
-    -------
-    out : dict
-        Dictionary of aerodynamic design parameters with fields:
-        `span1`, `span2`, `Alpha1`, `Alpha2`, `Ma2`, `Yh`, `htr`, `RR`, `Beta`.
-        The fields have the same meanings as in :func:`forward`.
-    """
+    #
+    # SHARED DEFINITIONS
+    #
 
-    # Pseudo loss coefficient
-    V_ref = ml[0].a
-    Ys = (ml[-1].s - ml[0].s) / ml[0].To * (0.5 * V_ref**2)
+    @staticmethod
+    def entropy_rise(Ys, ao1, To1):
+        """Entropy rise at each row exit from the pseudo loss coefficients.
 
-    out = {
-        "span": ml.span,
-        "Alpha": ml.Alpha,
-        "Ma2": ml.Ma[1],
-        "Ys": Ys,
-        "htr": ml.htr[-1],
-    }
+        The inverse of :meth:`Ys`.
+        """
+        return np.asarray(Ys, dtype=float) * (0.5 * ao1**2) / To1
 
-    return out
+    def Ys(self, ml):
+        """Pseudo entropy loss coefficient at each row exit.
 
+        Non-dimensionalised on inlet stagnation conditions. The inverse of
+        :meth:`entropy_rise`.
+        """
+        inlet = ml.inlet
+        # ml[1] is the outlet station of every row
+        return (ml[1].s - inlet.s) * inlet.To / (0.5 * inlet.ao**2)
 
-@register_mean_line
-def axial_turbine_forward(
-    ml,
-    psi,
-    phi2,
-    Ma2,
-    fac_Ma3_rel,
-    mdot,
-    Ys,
-    r_rms,
-    zeta=(1.0, 1.0),
-    Po1=1e5,
-    To1=300.0,
-):
-    # Calculate some reference values for the iteration
-    # Stagnation inlet speed of sound as reference velocity
-    rhoo1, uo1 = ml.fluid.set_P_T(Po1, To1)
-    ao1 = ml.fluid.get_a(rhoo1, uo1)
-    s1 = ml.fluid.get_s(rhoo1, uo1)
-    ho1 = ml.fluid.get_h(rhoo1, uo1)
+    def psi(self, ml):
+        """Stage loading coefficient, the work done per unit blade speed squared."""
+        return (ml.inlet.ho - ml.outlet.ho) / self.U(ml) ** 2
 
-    # Use pseudo entropy loss coefficient to set entropy
-    # throughout the machine (update later based on CFD solution)
-    # This is fixed during iteration for Alpha1 and U
-    # Ys = To1*(s-s1)/(0.5*a01^2)
-    dhead_ref = 0.5 * ao1**2
-    s = np.concatenate(((0.0,), (Ys[0],), Ys)) * dhead_ref / To1 + s1
+    def phi(self, ml):
+        """Flow coefficient at rotor inlet."""
+        return ml.flat.Vx[2] / self.U(ml)
 
-    # Define rotor Mach as offset from stator Mach
-    Ma3_rel = fac_Ma3_rel * Ma2
+    def U(self, ml):
+        """Rotor blade speed at the mean radius."""
+        return ml.flat.U[2]
 
-    # Guesses for Alpha1 and blade speed U
-    U_guess = ao1 * Ma2 * 0.5
-    Alpha1 = 0.0
-    Alpha3 = np.nan
-    atol_Alpha = 0.1
+    def zeta(self, ml):
+        """Axial velocity at inlet and outlet, relative to rotor inlet."""
+        Vx = ml.flat.Vx
+        return (
+            Vx[
+                (0, 3),
+            ]
+            / Vx[2]
+        )
 
-    # Intialise the mean-line guess
-    ml.set_h_s(ho1, s)
-    ml.set_r_rms(r_rms)
-    ml.set_Vr(0.0)
-    ml.set_Omega(U_guess / r_rms * np.array([0, 0, 1, 1]))
+    #
+    # DESIGN
+    #
 
-    # Closure function to iterate U for a fixed Alpha1
-    # Takes vars from outer scope
-    def iter_U(
-        Alpha1,
+    def forward(
+        self,
+        ml,
+        psi,
+        phi2,
+        Ma2,
+        fac_Ma3_rel,
+        mdot,
+        Ys,
+        r_rms,
+        zeta=(1.0, 1.0),
+        Po1=1e5,
+        To1=300.0,
     ):
-        # Preallocate and loop
-        rf = 0.5
-        conv_U = False
-        for _ in range(500):
-            #
-            # Extract current blade speed
-            U = ml.U[-1]
-            #
-            # Axial velocities
+        """Build an axial turbine stage from aerodynamic design variables.
+
+        Parameters
+        ----------
+        psi : float
+            Stage loading coefficient [--].
+        phi2 : float
+            Flow coefficient at rotor inlet [--].
+        Ma2 : float
+            Stator exit Mach number [--].
+        fac_Ma3_rel : float
+            Rotor exit relative Mach number, as a multiple of `Ma2` [--].
+        mdot : float
+            Mass flow rate [kg/s].
+        Ys : (2,) array
+            Pseudo entropy loss coefficient at each row exit [--].
+        r_rms : float
+            Mean radius, constant through the stage [m].
+        zeta : (2,) array
+            Axial velocity at stage inlet and outlet, relative to rotor
+            inlet [--].
+        Po1, To1 : float
+            Inlet stagnation pressure [Pa] and temperature [K].
+
+        """
+        Ys = np.asarray(Ys, dtype=float)
+        zeta = np.asarray(zeta, dtype=float)
+
+        # Reference state from the inlet stagnation conditions. This is the
+        # Fluid interface, which returns the state rather than storing it --
+        # not to be confused with Block.set_P_T, which mutates and returns None.
+        rhoo1, uo1 = ml.fluid.set_P_T(Po1, To1)
+        ao1 = ml.fluid.get_a(rhoo1, uo1)
+        s1 = ml.fluid.get_s(rhoo1, uo1)
+        ho1 = ml.fluid.get_h(rhoo1, uo1)
+
+        # Entropy is fixed by the loss coefficients and does not iterate.
+        # Streamwise: inlet, stator exit, rotor inlet, rotor exit.
+        ds = self.entropy_rise(Ys, ao1, To1)
+        s = s1 + np.array([0.0, ds[0], ds[0], ds[1]])
+
+        flat = ml.flat
+        ml.set_r(r_rms)
+
+        def build(U, Vt1, Vt2, Vt3_rel):
+            """Construct the stage for one trial set of unknowns.
+
+            Every unknown is a velocity. Parametrising by tangential velocity
+            rather than by velocity magnitude means no combination of the
+            unknowns can ask for the square root of a negative number, and
+            using Vt1 rather than the inlet angle keeps the residual smooth:
+            an angle unknown wraps at +-90 degrees, which puts a discontinuity
+            in the middle of the search.
+            """
             Vx = np.array([zeta[0], 1.0, 1.0, zeta[1]]) * U * phi2
-
-            # Inlet flow angle sets inlet tangential velocity
-            Vt1 = Vx[0] * np.tan(np.radians(Alpha1))
-
-            # Stator exit velocity from Mach
-            V2 = Ma2 * ml.a[1]
-            assert V2 > Vx[1]
-            Vt2 = np.sqrt(V2**2 - Vx[1] ** 2)
-
-            # Rotor exit relative velocity from rel Mach
-            V3_rel = Ma3_rel * ml.a[3]
-            Vt3_rel = -np.sqrt(V3_rel**2 - Vx[3] ** 2)
             Vt3 = Vt3_rel + U
-
-            # Stagnation enthalpy using Euler work equation
             Vt = np.array([Vt1, Vt2, Vt2, Vt3])
+
+            # Euler work equation across the rotor
             ho3 = ho1 + U * (Vt3 - Vt2)
             ho = np.array([ho1, ho1, ho1, ho3])
             h = ho - 0.5 * (Vx**2 + Vt**2)
 
-            # Update the states
-            ml.set_h_s(h, s)
+            flat.set_h_s(h, s)
+            flat.set_Vx(Vx)
+            flat.set_Vr(0.0)
+            flat.set_Vt(Vt)
 
-            # New guess for blade speed
-            U_new = np.sqrt((ho1 - ho3) / psi)
+            # Conservation of mass sets the annulus areas
+            flat.set_Am(mdot / flat.rho / Vx)
 
-            # Check convergence
-            dU = U_new - U
-            err_rel_U = np.abs(dU) / U
-            if err_rel_U < 1e-4:
-                ml.set_Omega(U_new / r_rms * np.array([0, 0, 1, 1]))
-                conv_U = True
-                break
-            else:
-                U = U_new * rf + U * (1.0 - rf)
-                ml.set_Omega(U / r_rms * np.array([0, 0, 1, 1]))
+            # Stator is stationary, rotor turns
+            ml.set_Omega_row([0.0, U / r_rms])
 
-        if not conv_U:
-            raise ValueError(f"U iteration did not converge: {U} -> {U_new}")
+        # Guesses. The rotor exit swirl is negative for a turbine.
+        U0 = ao1 * Ma2 * 0.5
+        Vx0 = U0 * phi2
+        Vt2_0 = np.sqrt(max((Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2))
+        Vt3_rel_0 = -np.sqrt(
+            max((fac_Ma3_rel * Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2)
+        )
 
-        # Conservation of mass to get areas
-        ml.set_Am(mdot / ml.rho / Vx)
+        self.solve_for(
+            ml,
+            build,
+            unknowns={
+                "U": U0,
+                "Vt1": 0.0,
+                "Vt2": Vt2_0,
+                "Vt3_rel": Vt3_rel_0,
+            },
+            targets={
+                "psi": psi,
+                "Ma2": Ma2,
+                "fac_Ma3_rel": fac_Ma3_rel,
+                # Repeating stage: the flow leaves as it entered
+                "Alpha1": "Alpha3",
+            },
+            name="stage",
+        )
 
-        # Assemble velocity components
-        ml.set_Vx(Vx)
-        ml.set_Vt(Vt)
+    def backward(self, ml):
+        """Return the design variables represented by a stage mean line."""
+        flat = ml.flat
+        h = flat.h
 
-        return ml.Alpha[3]
-
-    # Iterate on Alpha1 to match the desired Ma2 and fac_Ma3_rel
-    converged = False
-    for _ in range(100):
-        # Calculate and store next trial in ml
-        Alpha3 = iter_U(Alpha1)
-        err = np.abs(Alpha3 - Alpha1)
-
-        if err < atol_Alpha:
-            converged = True
-            break
-        else:
-            Alpha1 = Alpha3
-
-    if not converged:
-        raise ValueError(f"Alpha1 iteration did not converge: {Alpha1} -> {Alpha3}")
-
-
-@register_mean_line
-def axial_turbine_backward(ml):
-    """Reverse a turbine stage mean-line to design variables.
-
-    Parameters
-    ----------
-    mean_line: MeanLine
-        A mean-line object specifying the flow in an axial turbine.
-
-    Returns
-    -------
-    out : dict
-        Dictionary of aerodynamic design parameters with fields:
-            - So1: State
-            - PRtt: float
-            - psi: float
-            - phi2: float
-            - zeta: float
-            - Ma2: float
-            - DMa3_rel: float
-            - Alpha1: float
-            - mdot: float
-            - Ys: (float, float, float)
-
-    """
-
-    U2 = ml.U[2]
-    Vx2 = ml.Vx[2]
-    Ma2 = ml.Ma[2]
-
-    # Calculate pseudo entropy loss coefficient
-    Tref = ml.To[0]
-    dhead_ref = 0.5 * ml.ao[0] ** 2
-    sref = ml.s[0]
-    s = ml.s[
-        (1, 3),
-    ]
-    Ys = (s - sref) * Tref / dhead_ref
-
-    # Calculate axial velocity ratios
-    zeta = (
-        ml.Vx[
-            (0, 3),
-        ]
-        / Vx2
-    )
-
-    # Reaction
-    h = ml.h
-    Lam = (h[1] - h[0]) / (h[3] - h[0])
-
-    phi2 = Vx2 / U2
-
-    # Assemble the dict
-    out = {
-        "PR_ts": ml.PR_ts,
-        "PR_tt": ml.PR_tt,
-        "psi": (ml.ho[0] - ml.ho[3]) / U2**2,
-        "phi2": phi2,
-        "zeta": zeta,
-        "Ma2": Ma2,
-        "fac_Ma3_rel": ml.Ma_rel[3] / ml.Ma[1],
-        "Ma3_rel": ml.Ma_rel[3],
-        "Alpha1": ml.Alpha[0],
-        "mdot": ml.mdot[0],
-        "Lam": Lam,
-        "Ys": np.array(Ys),
-        "htr2": ml.htr[1],
-        "r_rms": ml.r_rms[0],
-        "eta_tt": ml.eta_tt,
-        "eta_ts": ml.eta_ts,
-        "Omega": ml.Omega[-1],
-        "Po1": ml.Po[0],
-        "To1": ml.To[0],
-    }
-
-    return out
+        return {
+            # Design variables
+            "psi": self.psi(ml),
+            "phi2": self.phi(ml),
+            "Ma2": flat.Ma[1],
+            "fac_Ma3_rel": flat.Ma_rel[3] / flat.Ma[1],
+            "mdot": ml.inlet.mdot,
+            "Ys": self.Ys(ml),
+            "r_rms": ml.inlet.r,
+            "zeta": self.zeta(ml),
+            "Po1": ml.inlet.Po,
+            "To1": ml.inlet.To,
+            # Diagnostics
+            "Alpha1": ml.inlet.Alpha,
+            "Alpha3": ml.outlet.Alpha,
+            "Ma3_rel": flat.Ma_rel[3],
+            "Lam": (h[1] - h[0]) / (h[3] - h[0]),
+            "PR_ts": ml.PR_ts,
+            "PR_tt": ml.PR_tt,
+            "eta_tt": ml.eta_tt,
+            "eta_ts": ml.eta_ts,
+            "Omega": ml.outlet.Omega,
+        }

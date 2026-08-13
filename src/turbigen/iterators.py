@@ -4,13 +4,11 @@ import logging
 
 from abc import ABC, abstractmethod
 import dataclasses
+import resource
 import numpy as np
 from turbigen import util, util_post
 
 logger = logging.getLogger("turbigen")
-
-
-import resource
 
 
 def _log_ram(label):
@@ -367,7 +365,7 @@ class MeanLine(IteratorConfig):
         for vname, vtol in self.tolerance.items():
             # Get the nominal and CFD values for this design variable
             var_nom = np.atleast_1d(config.mean_line.design_vars[vname])
-            var_cfd = np.atleast_1d(config.mean_line_actual[vname])
+            var_cfd = np.atleast_1d(config.design_vars_actual[vname])
 
             # Calculate the error and new value
             var_new = (
@@ -427,7 +425,7 @@ class MeanLine(IteratorConfig):
         # the query config does not have actual mean line yet.
         # So fall back to the nominal value if actual is unavailable
         def extract_mean_line(config, vname):
-            v_actual = config.mean_line_actual.get(vname)
+            v_actual = config.design_vars_actual.get(vname)
             v_nom = config.mean_line.design_vars[vname]
             return v_actual if v_actual is not None else v_nom
 

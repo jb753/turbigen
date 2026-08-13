@@ -195,7 +195,7 @@ def _bootstrap_viewer(directory: Path, config=None):
 def record_metadata(config):
     """Record case metadata into metaData.json, safe for concurrent processes."""
     flat = {}
-    for k, v in config.mean_line_actual.items():
+    for k, v in config.design_vars_actual.items():
         if v is None:
             continue
         if np.isscalar(v) or np.ndim(v) == 0:

@@ -1,122 +1,149 @@
-import logging
-import traceback
-import sys
+"""Registry of mean-line designers, including user-supplied plugins."""
+
 import importlib.util
 import inspect
+import logging
 
 logger = logging.getLogger("turbigen")
 
 REGISTRY = {
-    "mean_line_forward": {},
-    "mean_line_backward": {},
+    "designer": {},
 }
+
+_BUILTINS_LOADED = False
+
+
+def _load_builtin_designers():
+    """Import the designers shipped with turbigen, once.
+
+    Deferred rather than a module-level import because the built-in designers
+    import this module to reach :func:`register_designer`. Called from
+    :func:`get_registry` so that registration cannot depend on some unrelated
+    module happening to be imported first, which is how the built-ins were
+    previously reaching the registry.
+    """
+    global _BUILTINS_LOADED
+    if _BUILTINS_LOADED:
+        return
+    # Set before importing: the import triggers register_designer, which calls
+    # get_registry, which would otherwise recurse back into here.
+    _BUILTINS_LOADED = True
+    import turbigen.meanline_design_new  # noqa: F401
 
 
 def get_registry():
-    """Return the plugin registry."""
+    """Return the plugin registry, with built-in designers loaded."""
+    _load_builtin_designers()
     return REGISTRY
 
 
 def load_plugins(plugdir):
     """Find and load plugins from the plugdir."""
 
-    logger.warning(f"Loading plugins from directory: {plugdir}")
+    logger.info(f"Loading plugins from directory: {plugdir}")
 
-    # Find all python files recursively in the plugdir
-    py_files = list(plugdir.rglob("*.py"))
+    # Make sure the built-ins are in place before user code can override them
+    get_registry()
 
-    for py_file in py_files:
-        #
+    for py_file in plugdir.rglob("*.py"):
         # Exclude hidden files and directories
         if any(part.startswith(".") for part in py_file.parts):
             continue
 
-        # Attempt to import the module
         try:
             spec = importlib.util.spec_from_file_location(py_file.stem, py_file)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            logger.warning(f"Imported plugin module: {py_file}")
-        except Exception:
-            logger.error(f"Failed to import plugin: '{py_file}'")
-            traceback.print_exc()
-            sys.exit(1)
+            logger.info(f"Imported plugin module: {py_file}")
+        except Exception as err:
+            logger.error(f"Failed to import plugin: '{py_file}'", exc_info=True)
+            raise RuntimeError(f"Failed to import plugin '{py_file}': {err}") from err
 
 
 def check_plugins():
+    """Verify the registry is usable."""
     reg = get_registry()
-
-    # Ensure that both forward and backward functions are registered
-    # for any mean line type
-    forward_types = set(reg["mean_line_forward"].keys())
-    backward_types = set(reg["mean_line_backward"].keys())
-    all_types = forward_types.union(backward_types)
-    for mean_line_type in all_types:
-        if mean_line_type not in forward_types:
-            logger.error(
-                f"Mean line type '{mean_line_type}' missing forward function. "
-                f"The registry contains: {list(reg['mean_line_forward'].keys())}"
-            )
-            sys.exit(1)
-        if mean_line_type not in backward_types:
-            logger.error(
-                f"Mean line type '{mean_line_type}' missing backward function. "
-                f"The registry contains: {list(reg['mean_line_backward'].keys())}"
-            )
-            sys.exit(1)
+    if not reg["designer"]:
+        raise RuntimeError(
+            "No mean-line designers are registered. The built-in designers "
+            "failed to load, and no plugin directory supplied any."
+        )
 
 
 def list_plugins():
+    """Log the available mean-line types and their design variables."""
     reg = get_registry()
-    all_types = set(reg["mean_line_forward"].keys()).union(
-        reg["mean_line_backward"].keys()
-    )
-    logger.warning("Available mean line types:")
-    for mean_line_type in all_types:
-        sig = inspect.signature(reg["mean_line_forward"][mean_line_type])
-        # Remove 'mean_line' from signature for clarity
-        params = [p.name for p in list(sig.parameters.values())[1:]]
-        logger.warning(f"  {mean_line_type}({', '.join(params)})")
+    logger.info("Available mean line types:")
+    for name, designer in sorted(reg["designer"].items()):
+        import turbigen.designer  # noqa: PLC0415 - avoid a circular import
 
-
-def register_mean_line(func):
-    """Add a mean line plugin to the registry."""
-
-    # Check the name ends with _forward or _backward
-    name = func.__name__
-    parts = name.rsplit("_", 1)
-    if len(parts) != 2:
-        raise ValueError(
-            f"Mean-line function name must end in '_forward' or '_backward', got {name}"
+        params = turbigen.designer.design_params(designer)
+        shown = ", ".join(
+            k if v is turbigen.designer.REQUIRED else f"{k}={v!r}"
+            for k, v in params.items()
         )
-    mean_line_type, direction = parts
-    if direction not in ("forward", "backward"):
-        raise ValueError(
-            f"Mean-line function name must end in '_forward' or '_backward', got {name}"
-        )
+        logger.info(f"  {name}(n_row={designer.n_row}): {shown}")
 
-    if direction == "forward":
-        # forward signature first arg is meanline
-        sig_fwd = inspect.signature(func)
-        params_fwd = list(sig_fwd.parameters.values())
-        if len(params_fwd) < 1 or params_fwd[0].name != "ml":
-            first = params_fwd[0].name if params_fwd else "none"
-            raise Exception(
-                f"Mean line type '{mean_line_type}' forward function first argument"
-                f" must be 'ml', got '{first}'."
-            )
-    else:
-        # backward signature must take a single mean_line argument
-        sig_bwd = inspect.signature(func)
-        params_bwd = list(sig_bwd.parameters.values())
-        if len(params_bwd) != 1 or params_bwd[0].name != "ml":
-            first = params_bwd[0].name if params_bwd else "none"
-            raise Exception(
-                f"Mean line type '{mean_line_type}' backward function must take"
-                f" a single argument 'ml', got '{first}'."
+
+def register_designer(name):
+    """Register a :class:`turbigen.designer.Designer` subclass under `name`.
+
+    Used as a decorator on the class::
+
+        @register_designer("axial_turbine")
+        class AxialTurbine(Designer):
+            n_row = 2
+            ...
+
+    The registered object is an *instance*, so a designer may hold whatever
+    state its methods need.
+    """
+
+    def decorator(cls):
+        import turbigen.designer  # noqa: PLC0415 - avoid a circular import
+
+        if not (inspect.isclass(cls) and issubclass(cls, turbigen.designer.Designer)):
+            raise TypeError(
+                f"register_designer('{name}') must decorate a subclass of "
+                f"turbigen.designer.Designer, got {cls!r}."
             )
 
-    reg = get_registry()
-    reg[f"mean_line_{direction}"][mean_line_type] = func
+        if not isinstance(cls.n_row, int) or cls.n_row < 1:
+            raise ValueError(
+                f"Designer '{name}' must set n_row to a positive integer, "
+                f"got {cls.n_row!r}."
+            )
 
-    return func
+        for method in ("forward", "backward"):
+            if method not in vars(cls) and getattr(cls, method) is getattr(
+                turbigen.designer.Designer, method
+            ):
+                raise TypeError(f"Designer '{name}' does not implement {method}().")
+
+        fwd = list(inspect.signature(cls.forward).parameters.values())
+        if len(fwd) < 2 or fwd[1].name != "ml":
+            got = fwd[1].name if len(fwd) > 1 else "none"
+            raise TypeError(
+                f"Designer '{name}': forward()'s first argument after self must "
+                f"be named 'ml', got '{got}'."
+            )
+
+        bwd = list(inspect.signature(cls.backward).parameters.values())
+        if len(bwd) != 2 or bwd[1].name != "ml":
+            raise TypeError(
+                f"Designer '{name}': backward() must take exactly one argument "
+                f"after self, named 'ml'."
+            )
+
+        if name in REGISTRY["designer"]:
+            existing = type(REGISTRY["designer"][name]).__name__
+            raise ValueError(
+                f"Designer name '{name}' is already registered by {existing}."
+            )
+
+        cls.name = name
+        REGISTRY["designer"][name] = cls()
+
+        return cls
+
+    return decorator
