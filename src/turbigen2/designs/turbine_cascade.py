@@ -64,7 +64,9 @@ class TurbineCascade(MeanLineDesign):
     # DESIGN
     #
 
-    def forward(self, ml):
+    def forward(self, fluid):
+        ml = self.allocate(fluid)
+
         span = np.asarray(self.span, dtype=float)
         Alpha = np.asarray(self.Alpha, dtype=float)
         if span.shape != (2,) or Alpha.shape != (2,):
@@ -95,6 +97,8 @@ class TurbineCascade(MeanLineDesign):
 
         # Inlet annulus shares the outlet mid radius; hub-to-tip may differ
         ml.inlet.set_span_r_mid(span[0], ml.outlet.r_mid)
+
+        return ml
 
     def backward(self, ml):
         flat = ml.flat

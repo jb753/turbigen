@@ -77,6 +77,11 @@ def _to_config(value):
 
 def _from_config(annotation, value):
     """Convert a value out of a config file into a field value."""
+    if value is None:
+        # An optional stage that was not configured. Written out as null and
+        # read back as None, so the round trip holds for a config that omits
+        # part of the pipeline.
+        return None
     if isinstance(annotation, type) and issubclass(annotation, Node):
         return annotation.from_dict(value)
     if isinstance(value, list):

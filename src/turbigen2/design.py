@@ -13,7 +13,11 @@ they serialise themselves. Writing one is a single class::
         phi: float
         Po1: float = 1e5
 
-        def forward(self, ml): ...
+        def forward(self, fluid):
+            ml = self.allocate(fluid)
+            ...
+            return ml
+
         def backward(self, ml): ...
 
 ``backward`` is the single definition of what each design variable *means*. It
@@ -55,10 +59,14 @@ class MeanLineDesign(Node):
     # TO BE IMPLEMENTED BY A DESIGN
     #
 
-    def forward(self, ml):
-        """Build the mean line `ml` from this design's variables, in place."""
+    def forward(self, fluid):
+        """Return a mean line built from this design's variables.
+
+        Use :meth:`allocate` for the empty mean line, fill it in, and return
+        it.
+        """
         raise NotImplementedError(
-            f"{type(self).__name__} must implement forward(self, ml)"
+            f"{type(self).__name__} must implement forward(self, fluid)"
         )
 
     def backward(self, ml):
@@ -71,14 +79,14 @@ class MeanLineDesign(Node):
     # PROVIDED
     #
 
-    def design(self, fluid) -> MeanLine:
-        """Return a new mean line built from this design.
+    def allocate(self, fluid) -> MeanLine:
+        """Return an empty mean line of the right size, ready to fill in.
 
         Parameters
         ----------
         fluid : Fluid
             The working fluid node. Its equation of state is created here, so
-            callers never handle an ember object.
+            a design never handles an ember object itself.
 
         """
         if not isinstance(self.n_row, int) or self.n_row < 1:
@@ -89,8 +97,11 @@ class MeanLineDesign(Node):
 
         ml = MeanLine(self.n_row)
         ml.set_fluid(fluid.eos())
-        self.forward(ml)
         return ml
+
+    def design(self, fluid) -> MeanLine:
+        """Return a mean line built from this design."""
+        return self.forward(fluid)
 
     def solve_for(
         self, ml, build, unknowns, targets, *, rtol=1e-4, max_iter=100, name=""

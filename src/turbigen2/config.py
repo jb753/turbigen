@@ -10,8 +10,11 @@ from pathlib import Path
 
 import turbigen.yaml_utils
 
+from turbigen2 import plugins
+from turbigen2.annulus import AnnulusDesign
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
+from turbigen2.machine import Machine
 from turbigen2.node import Node
 
 
@@ -24,15 +27,38 @@ class Config(Node):
     mean_line: MeanLineDesign
     """Mean-line design."""
 
+    annulus: AnnulusDesign = None
+    """Annulus design. Omit it to design the mean line alone."""
+
     @classmethod
     def from_file(cls, path):
-        """Read a config from a YAML file."""
-        return cls.from_dict(turbigen.yaml_utils.read_yaml(Path(path)))
+        """Read a config from a YAML file.
+
+        User-defined designs are discovered relative to the file, since
+        resolving the ``type:`` keys it contains is exactly what needs the
+        registry populated. `from_dict` does no discovery: it has no path to
+        anchor a search on, and a caller working from a dict is already in
+        Python and can import whatever it needs.
+        """
+        path = Path(path)
+        plugins.discover(path.parent)
+        return cls.from_dict(turbigen.yaml_utils.read_yaml(path))
 
     def to_file(self, path):
         """Write this config to a YAML file, defaults included."""
         turbigen.yaml_utils.write_yaml(self.to_dict(), Path(path))
 
-    def design(self):
-        """Return the mean line this config describes."""
-        return self.mean_line.design(self.fluid)
+    def design(self) -> Machine:
+        """Return the machine this config describes.
+
+        Every configured stage runs. There is no stop point to pass: the depth
+        of a design is set by what the config contains, so a config with no
+        annulus designs only a mean line.
+        """
+        mean_line = self.mean_line.design(self.fluid)
+
+        annulus = None
+        if self.annulus is not None:
+            annulus = self.annulus.design(mean_line)
+
+        return Machine(mean_line=mean_line, annulus=annulus)

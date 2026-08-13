@@ -53,7 +53,8 @@ class Uniform(MeanLineDesign):
 
         return build
 
-    def forward(self, ml):
+    def forward(self, fluid):
+        ml = self.allocate(fluid)
         self.solve_for(
             ml,
             self._build(ml),
@@ -61,6 +62,7 @@ class Uniform(MeanLineDesign):
             targets={"Ma": self.Ma},
             name="uniform",
         )
+        return ml
 
     def backward(self, ml):
         return {"Ma": ml.outlet.Ma, "P1": ml.inlet.P, "T1": ml.inlet.T}
@@ -103,7 +105,9 @@ def test_solve_for_rejects_an_underdetermined_system(air):
     class TwoUnknownsOneTarget(Uniform):
         type: ClassVar[str] = "_test_underdetermined"
 
-        def forward(self, ml):
+        def forward(self, fluid):
+            ml = self.allocate(fluid)
+
             def build(Vx, Vt):
                 ml.set_r(0.5)
                 ml.set_Am(1.0)
@@ -115,6 +119,7 @@ def test_solve_for_rejects_an_underdetermined_system(air):
             self.solve_for(
                 ml, build, unknowns={"Vx": 100.0, "Vt": 10.0}, targets={"Ma": self.Ma}
             )
+            return ml
 
     with pytest.raises(DesignError, match="underdetermined"):
         TwoUnknownsOneTarget(Ma=0.6).design(air)
@@ -124,7 +129,9 @@ def test_solve_for_reports_an_unreachable_target(air):
     class FixedVx(Uniform):
         type: ClassVar[str] = "_test_unreachable"
 
-        def forward(self, ml):
+        def forward(self, fluid):
+            ml = self.allocate(fluid)
+
             def build(unused):
                 ml.set_r(0.5)
                 ml.set_Am(1.0)
@@ -136,6 +143,7 @@ def test_solve_for_reports_an_unreachable_target(air):
             self.solve_for(
                 ml, build, unknowns={"unused": 1.0}, targets={"Ma": self.Ma}
             )
+            return ml
 
     with pytest.raises(DesignError, match="did not converge") as excinfo:
         FixedVx(Ma=0.9).design(air)
@@ -147,13 +155,15 @@ def test_solve_for_rejects_an_unknown_target_key(air):
     class BadTarget(Uniform):
         type: ClassVar[str] = "_test_bad_target"
 
-        def forward(self, ml):
+        def forward(self, fluid):
+            ml = self.allocate(fluid)
             self.solve_for(
                 ml,
                 self._build(ml),
                 unknowns={"Vx": 100.0},
                 targets={"nonexistent": 1.0},
             )
+            return ml
 
     with pytest.raises(DesignError, match="not returned by backward"):
         BadTarget(Ma=0.6).design(air)
@@ -231,7 +241,7 @@ def build_config(name):
 def designed(request):
     """A designed mean line for each built-in design."""
     config = build_config(request.param)
-    return request.param, config, config.design()
+    return request.param, config, config.design().mean_line
 
 
 def test_builtin_design_round_trips(designed):
@@ -277,7 +287,7 @@ def test_builtin_design_is_physical(designed):
 
 def test_axial_turbine_is_a_repeating_stage():
     config = build_config("axial_turbine")
-    inverted = config.mean_line.backward(config.design())
+    inverted = config.mean_line.backward(config.design().mean_line)
 
     assert float(inverted["Alpha1"]) == pytest.approx(
         float(inverted["Alpha3"]), abs=1e-2
@@ -285,7 +295,7 @@ def test_axial_turbine_is_a_repeating_stage():
 
 
 def test_axial_turbine_stator_is_stationary():
-    ml = build_config("axial_turbine").design()
+    ml = build_config("axial_turbine").design().mean_line
 
     assert np.all(ml.row(0).Omega == 0.0)
     assert np.all(ml.row(1).Omega > 0.0)
@@ -299,7 +309,7 @@ def test_axial_turbine_stator_is_stationary():
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_matches_the_turbigen_implementation(name):
     """turbigen2 must design the same machine as the package it replaces."""
-    new = build_config(name).design()
+    new = build_config(name).design().mean_line
 
     old_config = turbigen.meanline_new.MeanLineConfig.from_dict(
         {"type": name, "n_row": new.n_row, **CASES[name]}

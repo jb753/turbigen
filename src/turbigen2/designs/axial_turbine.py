@@ -98,7 +98,9 @@ class AxialTurbine(MeanLineDesign):
     # DESIGN
     #
 
-    def forward(self, ml):
+    def forward(self, fluid):
+        ml = self.allocate(fluid)
+
         Ys = np.asarray(self.Ys, dtype=float)
         zeta = np.asarray(self.zeta, dtype=float)
         phi2, mdot, r_rms = self.phi2, self.mdot, self.r_rms
@@ -175,6 +177,8 @@ class AxialTurbine(MeanLineDesign):
             },
             name="stage",
         )
+
+        return ml
 
     def backward(self, ml):
         flat = ml.flat
