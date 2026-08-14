@@ -62,8 +62,8 @@ def old_grid(machine, mesh, spacing):
     mac = turbigen.geometry.Machine(
         annulus,
         blades,
-        np.array([bld.n_blade for bld in machine.blades]),
-        np.array([bld.tip_gap for bld in machine.blades]),
+        np.array([r.n_blade for r in machine.rows]),
+        np.array([r.tip_gap for r in machine.rows]),
         None,
     )
 
@@ -103,9 +103,9 @@ def test_surface_reynolds_number_matches_its_definition(machine):
 
     Re_surf = mesher.Re_surf(machine)
 
-    for i_row, blade_now in enumerate(machine.blades):
+    for i_row, row in enumerate(machine.rows):
         ref = machine.mean_line.ref(i_row)
-        expected = blade_now.surface_length(0.5) * ref.rho * ref.V_rel / ref.mu
+        expected = row.blade.surface_length(0.5) * ref.rho * ref.V_rel / ref.mu
         assert Re_surf[i_row] == pytest.approx(expected)
 
 
@@ -212,10 +212,10 @@ def test_negative_volumes_are_raised_not_exited(grid):
 
 
 def test_one_block_per_row_with_meshable_sizes(machine, grid):
-    assert len(grid) == len(machine.blades)
+    assert len(grid) == len(machine.rows)
 
     for block in grid:
-        assert block.Nb in [bld.n_blade for bld in machine.blades]
+        assert block.Nb in [r.n_blade for r in machine.rows]
         for n in block.shape:
             # Multigrid needs each direction to coarsen three times
             assert (n - 1) % 8 == 0

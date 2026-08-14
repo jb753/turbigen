@@ -159,7 +159,7 @@ and none of them were the annulus's business.
 ## Blades
 
 A `BladeDesign` describes one row; designing it against a row of the mean line
-and a row of the annulus produces a `Blade`.
+and a row of the annulus produces a `Row`, holding the `Blade` it is a row of.
 
 ```python
 class BladeDesign(Node):
@@ -172,7 +172,7 @@ class BladeDesign(Node):
     theta_offset: float = 0.0
     m_stack: float = 0.5
 
-    def forward(self, mean_line_row, stream_surface) -> Blade
+    def forward(self, mean_line_row, stream_surface) -> Row
 ```
 
 This is the stage where the config-as-its-own-result problem is worst. The old
@@ -221,17 +221,40 @@ leading edge to 1 at the trailing edge, plus the meridional chord --- which
 `set_streamsurface` used to recompute by arc length even though
 `Annulus.chords` already had it.
 
-### Blade number lives on the blade
+### Blade number is paired with the blade, not merged into it
 
-`nblade` was a second top-level list indexed by row, so a row and its count
-could get out of step; `config.get_nblade()` calls `sys.exit(1)` when they do.
-As a `count` field there is nothing to keep in step.
+Two separate questions, and the old package got one right and one wrong.
 
-Counting needs the geometry, because a circulation coefficient is set against
-surface length. So `forward` builds the blade, counts it, and builds it again
-holding the count, rather than writing a count onto a finished object --- the
-same "compute fully, then hand the finished thing over" shape as the annulus's
-`_fit_pchips`.
+**In the config**, `nblade` was a second top-level list indexed by row, so a row
+and its count could get out of step; `config.get_nblade()` calls `sys.exit(1)`
+when they do. Here it is a `count` field on the row's design, so there is
+nothing to keep in step.
+
+**In the result**, though, the old package was right that a count is not part of
+a shape. How a blade is shaped says nothing about how many of them there are,
+and no consumer wants both: the mesher reads `evaluate_section` and `chi` off
+the shape, and `n_blade` and `tip_gap` off the row, never both from one object.
+So designing a row gives a `Row` holding a `Blade`:
+
+```python
+class Row:
+    blade: Blade      # the shape of one blade
+    n_blade: int
+    tip_gap: float    # how it sits in the annulus, not what it looks like
+```
+
+Paired rather than parallel is what keeps the old package's insight without its
+failure mode. There is no second list to fall out of step, and a different count
+over the same geometry is `dataclasses.replace(row, n_blade=...)` rather than a
+redesign.
+
+It also removes a half-built object. Counting needs the geometry, because a
+circulation coefficient is set against surface length --- but the geometry never
+needs the count, so the shape can be finished first and the count read off it.
+An earlier version built the blade twice, passing one with `n_blade=None` into
+the counting rule; that intermediate was the same "cannot be used until
+something else has happened" defect as `set_streamsurface`, and it disappears
+once the two concerns are separate objects.
 
 ### Tip clearance is one number and its reference
 
@@ -244,9 +267,10 @@ is four classes to choose a divisor.
 
 ### What a Blade exposes
 
-`evaluate_section`, `chi`, `surface_length`, `chord`, and the `n_blade`,
-`tip_gap`, `m_stack` and `theta_offset` fixed at design time. By the test the
-annulus set, three things stay with their consumers: `get_coords` is an
+`evaluate_section`, `chi`, `surface_length`, `chord`, and the `m_stack` and
+`theta_offset` fixed at design time. `n_blade` and `tip_gap` are on the `Row`,
+not here, for the reason above. By the test the annulus set, three things stay
+with their consumers: `get_coords` is an
 AutoGrid-format reshape and belongs with the mesher, `get_nose` and
 `get_LE_cent` are used only by `post/plot_nose.py`, and `get_pitch_chord` and
 `blade_table` are a report.
@@ -306,9 +330,10 @@ written to a file.
 
 `turbigen.geometry.Machine` is not ported. It exists only to hand five
 attributes to a mesher, and `turbigen2.Machine` already carries all of them ---
-`blade.n_blade` and `blade.tip_gap` were the two the blade port moved onto the
-blade itself. The mesher reads the annulus through `evaluate_xr`, `chords` and
-`span`, and the blades through `evaluate_section` and `chi`, and nothing else.
+`row.n_blade` and `row.tip_gap` were the two the blade port moved off their own
+parallel arrays and onto the row. The mesher reads the annulus through
+`evaluate_xr`, `chords` and `span`, and the rows through `evaluate_section` and
+`chi` on their blades, and nothing else.
 `Annulus.span(m)` is the one method the mesh verb turned out to need; the five
 mesh-facing helpers deferred when the annulus was ported are still unused.
 

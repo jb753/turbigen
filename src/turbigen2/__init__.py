@@ -13,6 +13,7 @@ from turbigen2.blade import (
     BladeDesign,
     Circulation,
     FixedCount,
+    Row,
     Section,
 )
 from turbigen2.camber import CamberDesign, CamberLine, Quadratic
@@ -43,6 +44,7 @@ __all__ = [
     "H",
     "Mesher",
     "Quadratic",
+    "Row",
     "Section",
     "StreamSurface",
     "Taylor",

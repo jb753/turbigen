@@ -85,7 +85,7 @@ class Mesher(Node):
 
     def mesh(self, machine):
         """Return a finished grid for `machine`."""
-        if not machine.blades:
+        if not machine.rows:
             raise ValueError("A machine needs blades before it can be meshed.")
 
         spacing = self.wall_spacing(machine)
@@ -133,9 +133,9 @@ class Mesher(Node):
 
     def Re_surf(self, machine):
         """Return the surface Reynolds number of each row [--]."""
-        ell = np.array([blade.surface_length(0.5) for blade in machine.blades])
-        ref = [machine.mean_line.ref(i) for i in range(len(machine.blades))]
-        L_visc = np.array([row.mu / row.rho / row.V_rel for row in ref])
+        ell = np.array([row.blade.surface_length(0.5) for row in machine.rows])
+        ref = [machine.mean_line.ref(i) for i in range(len(machine.rows))]
+        L_visc = np.array([st.mu / st.rho / st.V_rel for st in ref])
         return ell / L_visc
 
     def wall_spacing(self, machine):
@@ -148,10 +148,10 @@ class Mesher(Node):
         Re_surf = self.Re_surf(machine)
         logger.debug(f"Surface Reynolds numbers: {Re_surf}")
 
-        ref = [machine.mean_line.ref(i) for i in range(len(machine.blades))]
-        rho = np.array([row.rho for row in ref])
-        mu = np.array([row.mu for row in ref])
-        V_rel = np.array([row.V_rel for row in ref])
+        ref = [machine.mean_line.ref(i) for i in range(len(machine.rows))]
+        rho = np.array([st.rho for st in ref])
+        mu = np.array([st.mu for st in ref])
+        V_rel = np.array([st.V_rel for st in ref])
 
         # Flat plate skin friction correlation
         Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3

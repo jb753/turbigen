@@ -21,6 +21,7 @@ from turbigen2 import (
     BladeDesign,
     Config,
     Quadratic,
+    Row,
     Section,
     Taylor,
 )
@@ -151,8 +152,9 @@ def old_blade(machine, i_row, dchi_LE=-8.0, dchi_TE=0.0):
 
 
 def test_design_returns_a_machine_holding_every_stage(machine):
-    assert len(machine.blades) == machine.mean_line.n_row
-    assert all(isinstance(bld, Blade) for bld in machine.blades)
+    assert len(machine.rows) == machine.mean_line.n_row
+    assert all(isinstance(r, Row) for r in machine.rows)
+    assert all(isinstance(r.blade, Blade) for r in machine.rows)
 
 
 def test_a_config_without_blades_designs_the_annulus_alone():
@@ -162,7 +164,7 @@ def test_a_config_without_blades_designs_the_annulus_alone():
 
     machine = config.design()
 
-    assert machine.blades == ()
+    assert machine.rows == ()
     assert machine.annulus is not None
 
 
@@ -191,7 +193,7 @@ def test_designing_twice_gives_two_independent_blades():
     second = config.blades[0].design(mean_line.row(0), annulus.row(0))
 
     assert first is not second
-    np.testing.assert_allclose(first.chi(0.5), second.chi(0.5))
+    np.testing.assert_allclose(first.blade.chi(0.5), second.blade.chi(0.5))
 
 
 def test_wrong_number_of_blades_is_rejected():
@@ -216,7 +218,7 @@ def test_blades_without_an_annulus_are_rejected():
 def test_recamber_is_measured_from_the_local_flow_angle(machine):
     """Metal angle is flow angle plus recamber, resolved once at design time."""
     mean_line = machine.mean_line.row(0)
-    chi = machine.blades[0].chi(0.5)
+    chi = machine.rows[0].blade.chi(0.5)
 
     # At mid-span of a free vortex the radius is not the rms radius, so this
     # is only approximately the mean-line angle, but it is much closer to it
@@ -236,15 +238,15 @@ def test_sections_are_stacked_at_the_stacking_point():
 
     m = np.linspace(0.0, 1.0, 101)
     for spf in (0.0, 0.5, 1.0):
-        xrtu, xrtl = machine.blades[0].evaluate_section(spf, m=m)
+        xrtu, xrtl = machine.rows[0].blade.evaluate_section(spf, m=m)
         theta_camber = 0.5 * (xrtu[2] + xrtl[2])
         assert abs(np.interp(0.25, m, theta_camber)) < 1e-3
 
 
 def test_theta_offset_rotates_the_whole_blade():
     offset = 0.1
-    plain = build().design().blades[0]
-    rotated = build(blades=[blade(theta_offset=offset), blade()]).design().blades[0]
+    plain = build().design().rows[0].blade
+    rotated = build(blades=[blade(theta_offset=offset), blade()]).design().rows[0].blade
 
     for spf in (0.0, 1.0):
         for turned, still in zip(
@@ -273,7 +275,7 @@ def test_a_single_section_blade_is_constant_in_span():
         ]
     )
 
-    bld = config.design().blades[0]
+    bld = config.design().rows[0].blade
 
     np.testing.assert_allclose(bld.chi(0.0), bld.chi(1.0), atol=1e-12)
 
@@ -316,7 +318,7 @@ def test_fixed_count_returns_what_it_was_given():
         blades=[blade(count={"type": "Nb", "Nb": 37}), blade()]
     ).design()
 
-    assert machine.blades[0].n_blade == 37
+    assert machine.rows[0].n_blade == 37
 
 
 def test_circulation_count_matches_the_turbigen_implementation(machine):
@@ -327,7 +329,7 @@ def test_circulation_count_matches_the_turbigen_implementation(machine):
             old_blade(machine, i_row, dchi_LE=dchi_LE),
         )
 
-        assert machine.blades[i_row].n_blade == int(np.round(expected).item())
+        assert machine.rows[i_row].n_blade == int(np.round(expected).item())
 
 
 @pytest.mark.parametrize(
@@ -348,11 +350,11 @@ def test_each_tip_reference_gives_the_expected_gap(field, expected):
         "metre": 1.0,
     }[expected]
 
-    assert machine.blades[0].tip_gap == pytest.approx(0.02 * reference)
+    assert machine.rows[0].tip_gap == pytest.approx(0.02 * reference)
 
 
 def test_no_tip_clearance_by_default(machine):
-    assert machine.blades[0].tip_gap == 0.0
+    assert machine.rows[0].tip_gap == 0.0
 
 
 def test_two_tip_references_at_once_are_rejected():
@@ -407,7 +409,7 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
     everywhere.
     """
     old = old_blade(machine, i_row, dchi_LE=dchi_LE)
-    new = machine.blades[i_row]
+    new = machine.rows[i_row].blade
 
     for spf in (0.0, 0.5, 1.0):
         for surface_new, surface_old in zip(
@@ -457,7 +459,7 @@ def test_blade_cannot_be_rebound():
     """A result is frozen, so the mutation the old designer relied on -- writing
     a stream surface and then metal angles onto itself -- has nowhere to happen.
     """
-    bld = build().design().blades[0]
+    bld = build().design().rows[0].blade
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         bld.n_blade = 1
@@ -467,7 +469,7 @@ def test_blade_cannot_be_rebound():
 
 
 def test_camber_line_cannot_be_rebound():
-    camber, _ = build().design().blades[0].section(0.5)
+    camber, _ = build().design().rows[0].blade.section(0.5)
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         camber.tanchi_LE = 0.0
@@ -476,7 +478,51 @@ def test_camber_line_cannot_be_rebound():
 def test_repr_stays_readable():
     """The bulky fields are kept out of the generated repr, which would
     otherwise print every section, both arrays and the whole annulus."""
-    bld = build().design().blades[0]
+    bld = build().design().rows[0].blade
 
     assert repr(bld).startswith("Blade(m_stack=")
     assert "PchipInterpolator" not in repr(bld)
+
+
+#
+# SHAPE AND COUNT ARE SEPARATE
+#
+
+
+def test_a_shape_carries_no_count():
+    """How a blade is shaped says nothing about how many of them there are.
+
+    That independence is what lets the shape be built in one go: counting reads
+    a shape, but a shape never reads a count, so there is no point at which a
+    half-built object has to exist. The old code built the blade twice, passing
+    one with `n_blade=None` to the counting rule.
+    """
+    row = build().design().rows[0]
+
+    assert not hasattr(row.blade, "n_blade")
+    assert not hasattr(row.blade, "tip_gap")
+    assert isinstance(row.n_blade, int)
+
+
+def test_a_count_cannot_get_out_of_step_with_its_shape():
+    """Separate concerns, but held together rather than indexed apart.
+
+    The package this replaces keeps counts in a second list indexed by row, so
+    the two can disagree; `config.get_nblade()` calls `sys.exit(1)` when they
+    do. There is no second list here to disagree with.
+    """
+    machine = build().design()
+
+    assert len(machine.rows) == machine.mean_line.n_row
+    assert all(isinstance(r.blade, Blade) for r in machine.rows)
+
+
+def test_recounting_reuses_the_shape():
+    """A different count over the same geometry is a field replacement, not a
+    redesign -- which is the practical benefit of keeping the two apart."""
+    row = build().design().rows[0]
+
+    recounted = dataclasses.replace(row, n_blade=row.n_blade + 4)
+
+    assert recounted.blade is row.blade
+    assert recounted.n_blade == row.n_blade + 4

@@ -15,7 +15,7 @@ import numpy as np
 
 import turbigen.util
 from turbigen2.annulus import Annulus
-from turbigen2.blade import Blade
+from turbigen2.blade import Row
 from turbigen2.meanline import MeanLine
 
 
@@ -35,21 +35,22 @@ class Machine:
     annulus: Annulus | None = None
     """Annulus geometry, if the config asked for one."""
 
-    blades: tuple[Blade, ...] = ()
-    """Blade geometry, one per row, if the config asked for any."""
+    rows: tuple[Row, ...] = ()
+    """Blade rows, if the config asked for any: a shape, a count and a
+    clearance each."""
 
     def blade_string(self):
-        """Tabular string representation of the blades."""
+        """Tabular string representation of the blade rows."""
         r_ref = 0.5 * (self.mean_line.r[0] + self.mean_line.r[1])
-        n_blade = np.array([blade.n_blade for blade in self.blades])
-        chord = np.array([blade.chord(0.5) for blade in self.blades])
+        n_blade = np.array([row.n_blade for row in self.rows])
+        chord = np.array([row.blade.chord(0.5) for row in self.rows])
         properties = [
             ("N_blade", n_blade, "d"),
-            ("Gap/m", np.array([blade.tip_gap for blade in self.blades]), ".4f"),
+            ("Gap/m", np.array([row.tip_gap for row in self.rows]), ".4f"),
             ("s/cm", 2.0 * np.pi * r_ref / n_blade / chord, ".3f"),
         ]
         return turbigen.util.format_table(
-            "Blades:", len(self.blades), properties, paired=False
+            "Blades:", len(self.rows), properties, paired=False
         )
 
     def to_string(self):
@@ -57,6 +58,6 @@ class Machine:
         parts = [self.mean_line.to_string()]
         if self.annulus is not None:
             parts.append(self.annulus.to_string())
-        if self.blades:
+        if self.rows:
             parts.append(self.blade_string())
         return "\n".join(parts)

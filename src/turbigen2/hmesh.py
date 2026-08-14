@@ -133,7 +133,7 @@ class H(Mesher):
 
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
-        n_row = len(machine.blades)
+        n_row = len(machine.rows)
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
 
         blocks = []
@@ -157,10 +157,10 @@ class H(Mesher):
         span_all = np.array(
             [
                 np.mean(annulus.span(np.arange(i_row * 2, i_row * 2 + 2)))
-                for i_row in range(len(machine.blades))
+                for i_row in range(len(machine.rows))
             ]
         )
-        tip_all = np.array([blade.tip_gap for blade in machine.blades])
+        tip_all = np.array([row.tip_gap for row in machine.rows])
         tip_ref = np.max(tip_all / span_all)
         span_ref = annulus.span(1)
         return spacing.hub / span_ref, spacing.casing / span_ref, tip_ref
@@ -168,7 +168,7 @@ class H(Mesher):
     def _row_geometry(self, machine, i_row, spacing):
         """Derive scalar geometry quantities for a single row."""
         annulus = machine.annulus
-        pitch_theta = 2.0 * np.pi / float(machine.blades[i_row].n_blade)
+        pitch_theta = 2.0 * np.pi / float(machine.rows[i_row].n_blade)
 
         mrow = np.linspace(2.0 * i_row + 1.0, 2.0 * i_row + 2)
         xr_hub = annulus.evaluate_xr(mrow, 0.0)
@@ -255,7 +255,7 @@ class H(Mesher):
         if self.dm_TE:
             tte = 1.0 - self.dm_TE
         else:
-            xrt_u, xrt_l = machine.blades[i_row].evaluate_section(0.5)
+            xrt_u, xrt_l = machine.rows[i_row].blade.evaluate_section(0.5)
             tq = np.linspace(0.8, 1.0, 500)
             _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
 
@@ -290,7 +290,8 @@ class H(Mesher):
     def _row_coords(self, machine, i_row, geom, grids, tip_ref, n_row):
         """Build 2-D xr, theta_lim and 3-D pitch_frac_relax for a row."""
         annulus = machine.annulus
-        blade = machine.blades[i_row]
+        row = machine.rows[i_row]
+        blade = row.blade
         ni, nj, nk = grids.ni, grids.nj, grids.nk
         span_frac = grids.span_frac
         stream_frac = grids.stream_frac
@@ -387,7 +388,7 @@ class H(Mesher):
         assert np.isfinite(pitch_frac_relax).all()
         assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
 
-        if blade.tip_gap:
+        if row.tip_gap:
             theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
             spf_pinch = [
                 1.0 - tip_ref * 2.0,
@@ -487,7 +488,7 @@ class H(Mesher):
 
         block = ember.block.Block(shape=(ni, nj, nk))
         block.set_label(f"row{i_row}")
-        block.set_Nb(machine.blades[i_row].n_blade)
+        block.set_Nb(machine.rows[i_row].n_blade)
         block.set_x(xrt_now[0])
         block.set_r(xrt_now[1])
         block.set_t(xrt_now[2])

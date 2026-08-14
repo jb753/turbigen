@@ -261,7 +261,7 @@ class BladeDesign(Node):
             + self.tip_metre
         )
 
-        parts = dict(
+        blade = Blade(
             stream_surface=stream_surface,
             spf=spf,
             tanchi=tanchi,
@@ -269,24 +269,53 @@ class BladeDesign(Node):
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
             theta_offset=self.theta_offset,
+        )
+
+        # The shape is complete before anything is counted, which is what lets
+        # the count be read off it rather than written onto it. A circulation
+        # coefficient is set against surface length, so counting needs a shape
+        # -- but a shape never needs a count.
+        return Row(
+            blade=blade,
+            n_blade=self.count.count(mean_line_row, blade),
             tip_gap=tip_gap,
         )
 
-        # Counting blades needs the geometry, because a circulation coefficient
-        # is set against surface length. So the blade is built, counted, then
-        # built again holding its count, rather than having a count written
-        # onto it afterwards.
-        n_blade = self.count.count(mean_line_row, Blade(n_blade=None, **parts))
-        return Blade(n_blade=n_blade, **parts)
-
     def design(self, mean_line_row, stream_surface):
-        """Return the blade this design describes."""
+        """Return the row this design describes."""
         return self.forward(mean_line_row, stream_surface)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
+class Row:
+    """A number of blades installed in an annulus.
+
+    Separate from the shape it holds, because the two are independent: how a
+    blade is shaped says nothing about how many of them there are, and every
+    consumer wants one or the other, never both. That separation is also what
+    makes the shape constructible in one go, since counting reads a shape but a
+    shape never reads a count.
+
+    Paired rather than parallel, though. The package this replaces kept the
+    counts in a second list indexed by row, so a row and its count could get out
+    of step -- `config.get_nblade()` calls `sys.exit(1)` when they do. Held
+    together like this there is nothing to keep in step.
+    """
+
+    blade: "Blade" = dataclasses.field(repr=False)
+    """Shape of one blade."""
+
+    n_blade: int
+    """Number of blades in this row [--]."""
+
+    tip_gap: float
+    """Tip clearance [m]. A property of how the blade sits in its annulus,
+    rather than of its shape."""
+
+
+@dataclasses.dataclass(frozen=True, eq=False)
 class Blade:
-    """A designed blade row.
+    """The shape of one blade.
 
     Frozen, like every other result. The package this replaces reaches its
     geometry by mutating the designer three times over; here there is nothing
@@ -313,12 +342,6 @@ class Blade:
 
     theta_offset: float
     """Angle the whole blade is rotated through [rad]."""
-
-    tip_gap: float
-    """Tip clearance [m]."""
-
-    n_blade: int
-    """Number of blades in this row [--]."""
 
     @property
     def n_section(self):

@@ -74,7 +74,7 @@ class Config(Node):
         if self.annulus is not None:
             annulus = self.annulus.design(mean_line)
 
-        blades = ()
+        rows = ()
         if self.blades:
             if annulus is None:
                 raise ValueError("Blades need an annulus to sit in.")
@@ -83,12 +83,12 @@ class Config(Node):
                     f"Expected one blade per row, but got {len(self.blades)} "
                     f"blades for {mean_line.n_row} rows."
                 )
-            blades = tuple(
+            rows = tuple(
                 blade.design(mean_line.row(i_row), annulus.row(i_row))
                 for i_row, blade in enumerate(self.blades)
             )
 
-        return Machine(mean_line=mean_line, annulus=annulus, blades=blades)
+        return Machine(mean_line=mean_line, annulus=annulus, rows=rows)
 
     def make_grid(self, machine):
         """Return a grid for `machine`, using the configured mesher."""
