@@ -44,6 +44,18 @@ class Result:
     that a post-processor still takes only a config and a result.
     """
 
+    error: dict = dataclasses.field(default_factory=dict)
+    """What each configured iterator measured, by name.
+
+    Every run records these, iterating or not: the exit angle a row achieved
+    and the incidence its leading edge saw are observations of the flow, worth
+    keeping for their own sake, and a design that iterates is only a design
+    that acts on them. Stored, unlike the grid and the history, because a
+    handful of scalars describing the answer is exactly what a result file is
+    for --- and because a run archived today is a sample for whatever fits
+    these errors later.
+    """
+
     @property
     def nominal(self) -> MeanLine:
         """The mean line as designed."""
@@ -86,6 +98,7 @@ class Result:
             machine=machine,
             actual=MeanLine.from_dict(actual, fluid) if actual else None,
             converged=bool(data.get("converged", False)),
+            error=dict(data.get("error", {})),
         )
 
     def to_dict(self):
@@ -93,4 +106,8 @@ class Result:
         data = {"converged": bool(self.converged)}
         if self.actual is not None:
             data["actual"] = self.actual.to_dict()
+        if self.error:
+            # Floats, not numpy scalars, so the file reads as YAML rather than
+            # as a pickle of array types.
+            data["error"] = {name: float(value) for name, value in self.error.items()}
         return data

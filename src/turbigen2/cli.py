@@ -22,6 +22,7 @@ behind.
 """
 
 import argparse
+import dataclasses
 import datetime
 import logging
 import sys
@@ -34,7 +35,7 @@ import turbigen
 import turbigen.util
 import ember.convergence_history
 import ember.yaml_util
-from turbigen2 import bconds, case, guess, mixout, plugins, post, restart
+from turbigen2 import bconds, case, guess, iterate, mixout, plugins, post, restart
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -350,20 +351,14 @@ def cmd_mesh(args):
     return 0
 
 
-def cmd_run(args):
-    """Design, mesh and solve, then report."""
-    config = load_config(args)
+def solve(config, out_dir, restart_path=None):
+    """Design, mesh and solve `config`, writing everything into `out_dir`.
 
-    if config.solver is None:
-        raise ValueError(
-            "The 'run' command needs a solver: section in the config file."
-        )
-    if not args.out:
-        raise ValueError("The 'run' command writes results, so it needs --out.")
-
-    out_dir = _open_output(args)
-
-    machine, grid = prepare(config, resolve_restart(args, out_dir))
+    The whole of a run, so that `iterate` composes runs rather than writing a
+    second copy of one -- which is how `turbigen.main` came to hold the same
+    pipeline three times over, two of them unreachable and already drifted.
+    """
+    machine, grid = prepare(config, restart_path)
 
     history = config.solver.solve(grid)
     converged = config.solver.converged(history)
@@ -385,6 +380,11 @@ def cmd_run(args):
         history=history,
     )
 
+    # Measured whether or not anything is iterating: the exit angle a row
+    # achieved and the incidence its leading edge saw are observations of the
+    # flow, and they can only be taken while the grid is in memory.
+    result = dataclasses.replace(result, error=iterate.errors(config, result))
+
     logger.info(convergence_string(history, converged))
     if actual is not None:
         logger.info(actual.to_string())
@@ -404,10 +404,91 @@ def cmd_run(args):
 
     _write_output(config, result, out_dir)
 
+    return result
+
+
+def cmd_run(args):
+    """Design, mesh and solve, then report."""
+    config = load_config(args)
+
+    if config.solver is None:
+        raise ValueError(
+            "The 'run' command needs a solver: section in the config file."
+        )
+    if not args.out:
+        raise ValueError("The 'run' command writes results, so it needs --out.")
+
+    out_dir = _open_output(args)
+    result = solve(config, out_dir, resolve_restart(args, out_dir))
+
     # Non-zero on a failed solve, so a script driving a sweep can tell without
     # parsing the log. Everything written above is still written: a diverged
     # run is exactly the one whose output someone needs to look at.
+    return 0 if result.converged else 2
+
+
+def cmd_iterate(args):
+    """Run repeatedly, moving the design onto its own solution."""
+    config = load_config(args)
+
+    if config.solver is None:
+        raise ValueError(
+            "The 'iterate' command needs a solver: section in the config file."
+        )
+    if not config.iterate:
+        raise ValueError(
+            "The 'iterate' command needs an iterate: section saying what to "
+            "correct; without one, use 'run'."
+        )
+    if not args.out:
+        raise ValueError("The 'iterate' command writes results, so it needs --out.")
+
+    out_dir = _open_output(args)
+    previous = resolve_restart(args, out_dir)
+
+    def run(config_now, i_iter):
+        """Solve one iteration into a directory of its own."""
+        nonlocal previous
+
+        iter_dir = out_dir / f"iter_{i_iter:04d}"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # Chained: each iteration starts from the field the last one reached,
+        # which is most of the saving. Index-space interpolation covers the
+        # mesh moving with the design.
+        result = solve(config_now, iter_dir, previous)
+        previous = iter_dir / RESTART_NAME
+
+        return result
+
+    config, result, converged = iterate.converge(config, run, args.max_iter)
+
+    _link_final(out_dir, previous.parent)
+
     return 0 if converged else 2
+
+
+def _link_final(out_dir, iter_dir):
+    """Point `final` at the last iteration, replacing any earlier link.
+
+    A symlink rather than a copy of the answer: the iterations are the record
+    of how the design got where it did, and duplicating megabytes to name one
+    of them would only invite the two to disagree.
+    """
+    link = out_dir / "final"
+
+    try:
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(iter_dir.name, target_is_directory=True)
+    except OSError as err:
+        # A filesystem without symlinks is a reason to say so, not to lose a
+        # finished set of iterations.
+        logger.warning(f"Could not link {link} to {iter_dir.name}: {err}")
+        return
+
+    logger.info(f"Linked {link} to {iter_dir.name}")
 
 
 def convergence_string(history, converged):
@@ -653,6 +734,29 @@ def _make_parser():
     )
     _add_restart_argument(run)
     run.set_defaults(func=cmd_run)
+
+    iterate_ = commands.add_parser(
+        "iterate",
+        parents=[common],
+        help="run repeatedly, moving the design onto its own solution",
+        description=(
+            "Solve the machine, measure how far its design is from what the "
+            "flow actually did, correct the design, and solve again. Each "
+            "iteration is an ordinary run in a directory of its own, with "
+            "'final' linked to the last; every iteration is kept. Requires "
+            "--out and an iterate: section. Exits 2 if the design had not "
+            "converged by --max-iter."
+        ),
+    )
+    iterate_.add_argument(
+        "--max-iter",
+        type=int,
+        default=10,
+        metavar="N",
+        help="most iterations to run before giving up (default 10)",
+    )
+    _add_restart_argument(iterate_)
+    iterate_.set_defaults(func=cmd_iterate)
 
     return parser
 

@@ -10,7 +10,7 @@ import textwrap
 
 import pytest
 
-from turbigen2 import cli, plugins
+from turbigen2 import cli, iterate, plugins
 
 CASE = """
 fluid:
@@ -471,6 +471,89 @@ def test_mesh_restart_replots_a_previous_run(run_case, tmp_path):
 
     assert code == 0
     assert (replot / "post.pdf").is_file()
+
+
+#
+# THE ITERATE VERB
+#
+
+
+ITERATE_CASE = (
+    RUN_CASE
+    + """
+iterate:
+  - type: deviation
+  - type: incidence
+"""
+)
+
+
+@pytest.fixture
+def iterate_case(tmp_path):
+    path = tmp_path / "iterate.yaml"
+    path.write_text(ITERATE_CASE)
+    return path
+
+
+def test_every_run_records_what_the_iterators_measured(iterate_case, tmp_path):
+    """Iterating or not: these are observations of the flow, and only a solved
+    grid holds them."""
+    from turbigen2 import case  # noqa: PLC0415
+
+    out = tmp_path / "out"
+    assert cli.main(["run", str(iterate_case), "-o", str(out), "-q"]) == 0
+
+    _, result = case.read(out / "config.yaml", design=False)
+
+    assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0]"}
+    assert all(isinstance(value, float) for value in result.error.values())
+
+
+def test_iterate_keeps_every_iteration(iterate_case, tmp_path):
+    """The directories are the archive, so none of them is deleted."""
+    out = tmp_path / "out"
+
+    cli.main(["iterate", str(iterate_case), "-o", str(out), "--max-iter", "2", "-q"])
+
+    for i_iter in range(2):
+        iter_dir = out / f"iter_{i_iter:04d}"
+        assert (iter_dir / "config.yaml").is_file()
+        assert (iter_dir / "restart.npz").is_file()
+        assert (iter_dir / "post.pdf").is_file()
+
+    assert (out / "final").is_symlink()
+    assert (out / "final").resolve() == (out / "iter_0001").resolve()
+
+
+def test_iterate_moves_the_design_and_records_why(iterate_case, tmp_path):
+    """Each iteration archives the config it ran and the error it measured.
+
+    Together those are one sample of "this design gave that mismatch", which is
+    what any later fit over an archive of runs would be built from.
+    """
+    from turbigen2 import case  # noqa: PLC0415
+
+    out = tmp_path / "out"
+    cli.main(["iterate", str(iterate_case), "-o", str(out), "--max-iter", "2", "-q"])
+
+    first, first_result = case.read(out / "iter_0000" / "config.yaml", design=False)
+    second, _ = case.read(out / "iter_0001" / "config.yaml", design=False)
+
+    # The case recambers its leading edge 10 degrees off the flow, so the
+    # incidence is measured well below the target and the knob has to come
+    # down -- by the clip, since the error is larger than one step is allowed
+    # to correct.
+    assert first_result.error["dchi_LE[0]"] < -1.0
+
+    before = first.blades[0].sections[0].dchi_LE
+    after = second.blades[0].sections[0].dchi_LE
+    assert after == pytest.approx(before - iterate.Incidence().clip)
+
+
+def test_iterate_without_iterators_says_to_use_run(run_case, tmp_path, capsys):
+    assert cli.main(["iterate", str(run_case), "-o", str(tmp_path / "out")]) == 1
+
+    assert "use 'run'" in capsys.readouterr().err
 
 
 def test_bare_restart_replots_a_run_in_place(run_case, tmp_path):

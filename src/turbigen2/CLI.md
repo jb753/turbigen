@@ -1,8 +1,7 @@
 # turbigen2 command-line interface
 
-Plan for the CLI. **`design`, `mesh` and `run` are implemented.** The other verbs are
-specified here so the shape is settled before they are written; each is marked
-with its status.
+Plan for the CLI, now that every verb it specifies is implemented: `design`,
+`mesh`, `run` and `iterate`.
 
 ## Why it looks like this
 
@@ -49,7 +48,7 @@ alone, so quietening a run does not also blank its record.
 | `design` | mean line, then annulus and blade geometry | optional | **implemented** |
 | `mesh` | `design` + grid generation | optional | **implemented** |
 | `run` | `mesh` + CFD + mix-out | **required** | **implemented** |
-| `iterate` | repeated `run`, updating the design between calls | **required** | deferred |
+| `iterate` | repeated `run`, updating the design between calls | **required** | **implemented** |
 
 The cut between `design` and `mesh` is where external tools and side effects
 begin: everything up to and including blade geometry is pure computation on
@@ -228,35 +227,108 @@ written into the same `config.yaml` under a `result:` key. A failed mix-out is
 logged and the run still writes everything else: a march that will not reduce
 to a mean line is exactly the one whose output someone needs to look at.
 
-## `iterate` — deferred
+## `iterate` — implemented
 
-Specified only enough to keep the shape honest.
-
-`iterate` owns only the loop, the numbered subdirectories, the convergence
-table, and the collapse of intermediate directories at the end:
-
-```python
-guess = None
-for i in range(max_iter):
-    result = run(config, base / f"{i:03d}", guess=guess)
-    guess = result.grid
-    config, converged = update_all(config, result)
-    if converged:
-        break
+```
+turbigen2 iterate case.yaml -o iter_* --max-iter 6
 ```
 
-Because `Config` is frozen, this is a fold: each iteration's config is a
-distinct value that can be serialised and diffed for free, rather than the
-current arrangement where iterators mutate one config in place and the CLI
-copies `config.yaml` out of each numbered directory afterwards to reconstruct
-the history.
+A mean line is a set of assumptions the CFD then contradicts: flow leaves a
+blade less turned than the metal, arrives at an incidence, and loses more than
+was allowed for. `iterate` measures each mismatch, corrects the design, and
+solves again.
 
-That also changes what an iterator is. Today `iterator.update(config)` mutates
-— `Deviation.set_independent` writes into `config.blades[i][0].camber` — and
-`config.py:477` has to force `Incidence` to the front of the iterator list
-because iterators that change geometry invalidate the grid for those that
-follow. Against a frozen config an iterator becomes
-`update(config, result) -> config`, and the ordering hazard goes with it.
+It owns only the loop. Each iteration is an ordinary `run` in a directory of
+its own, chained so that iteration *k+1* starts from *k*'s flow field:
+
+```
+iter_0000/  config.yaml (with result: and its errors), restart.npz, conv.cnv, post.pdf
+iter_0001/  ...
+final -> iter_0001
+```
+
+**Every iteration is kept**, and `final` is a symlink to the last. The
+alternative — the existing `main.py` copies the converged iteration over the
+base directory and deletes the rest — destroys exactly the data that would let
+a later fit predict these corrections instead of iterating for them.
+
+### What an iterator is
+
+Three layers, so that the physics, the arithmetic and any future learning stay
+apart:
+
+- an **iterator** declares the design variables it owns
+  (`unknowns`/`with_unknowns`), measures the error they should null (`error`),
+  and carries `gain`, `clip` and `tolerance`;
+- the **stepper** assembles every iterator's knobs into one flat table, solves
+  `B dx = -e` for the step, clips it, and decides convergence against the
+  declared tolerances;
+- an **estimator**, not built, would own the features and the fit.
+
+Because the iterators disappear into that table, a better step rule replaces
+`iterate.step` alone and touches no iterator. That has already happened once:
+the rule began as `u -= gain * e`.
+
+`B` starts as the diagonal the gains already assert — `u -= gain * e` is a
+Newton step under exactly that assumption — and gains a rank-one **Broyden**
+update for every move the run has already paid for, so the off-diagonal terms
+are learned from the trajectory rather than assumed away. With no history the
+step is arithmetically identical to the old rule, so a first iteration is never
+worse than it was; on a lower-triangular system of two knobs, which is the
+structure a row feeding the next produces, twelve iterations become four.
+
+The work is done in units of each knob's own tolerance. Degrees of recamber and
+a loss coefficient otherwise share one Euclidean norm in the update, and a
+least-change update in that norm would spend itself entirely on whichever
+variable carried the larger numbers.
+
+Only numbers are remembered: `converge` keeps each iterate's knobs and errors,
+never the `Result`, which holds a live grid — gigabytes on a real machine, to
+read a few dozen floats.
+
+Three guards, each earning its place from something measured. An update is
+skipped when the knob moved less than a quarter of a tolerance-equivalent step,
+because the slope a secant infers has error of order `noise/du` and the same
+deviation slope read +1.27 from a 200-step march and +0.3 from a 50-step one. An
+ill-conditioned `B` falls back to the gains rather than propagating a NaN into a
+design. And the clip stays, as the trust bound: a flat response — incidence
+against leading-edge recamber is known to go flat and then flip — makes `B`
+singular and the step large, and the clip reduces that to the old behaviour
+rather than a wild excursion. There is no line search, because a rejected step
+would cost a whole CFD solve.
+
+`gain` carries the sign of the local sensitivity as well as its size: it is
+negative for `incidence`, whose error falls as its knob rises. Both signs are
+checked against CFD rather than assumed.
+
+Knobs are disjoint by construction, so two iterators claiming one design
+variable is refused at assembly, and applying them in any order gives the same
+config. Because `Config` is frozen, each iteration's config is a distinct value
+that serialises and diffs for free — where the existing `Deviation.
+set_independent` writes into `config.blades[i][0].camber` in place, and
+`config.py:477` has to force `Incidence` to the front of the list because
+iterators that change geometry invalidate the grid for those that follow. That
+ordering hazard does not exist here.
+
+### Errors are recorded by every run
+
+`error()` reads a solved grid, so it is measured inside `run` — always, whether
+or not anything is iterating — and stored under `result: error:`. The incidence
+onto a row and the exit angle it achieved are observations of the flow worth
+keeping for their own sake, and recording them from the first run is what makes
+an archive of design-and-mismatch pairs accumulate before anything reads it.
+
+### The three ported
+
+| name | knob | error |
+|---|---|---|
+| `deviation` | mean `dchi_TE` of each row | achieved exit `Alpha_rel` minus design |
+| `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
+| `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
+
+`DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
+moves blade count, which changes the mesh; the second's knob is a spanwise
+profile.
 
 ## Entry point
 

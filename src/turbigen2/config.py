@@ -15,6 +15,7 @@ from turbigen2.annulus import AnnulusDesign
 from turbigen2.blade import BladeDesign
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
+from turbigen2.iterate import Iterator
 from turbigen2.machine import Machine
 from turbigen2.mesh import Mesher
 from turbigen2.node import Node
@@ -42,6 +43,11 @@ class Config(Node):
 
     solver: Solver | None = None
     """Flow solver. Only needed by the verbs that solve."""
+
+    iterate: tuple[Iterator, ...] = ()
+    """Design iterators, closing the loop between the design and its CFD. Only
+    needed by the verb that iterates, but their errors are measured by every
+    run that solves."""
 
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config
