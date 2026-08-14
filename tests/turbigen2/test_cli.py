@@ -420,3 +420,27 @@ def test_run_without_a_solver_section_is_a_message(run_case, tmp_path, capsys):
     assert cli.main(["run", str(run_case), "-o", str(tmp_path / "out")]) == 1
 
     assert "solver: section" in capsys.readouterr().err
+
+
+def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
+    """The point of the whole arrangement: one file, loaded once.
+
+    A run's mixed-out mean line goes into the same file under `result:`, so
+    comparing what was achieved against what was asked for needs no second
+    artefact and no repeat of the CFD.
+    """
+    from turbigen2 import case  # noqa: PLC0415
+
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+
+    config, result = case.read(out / "config.yaml")
+
+    assert result.converged is True
+    assert result.actual is not None
+    assert result.actual.shape == result.nominal.shape
+
+    # The achieved design variables come back in the design's own vocabulary,
+    # recomputed from the stored state rather than stored themselves.
+    achieved = config.mean_line.backward(result.actual)
+    assert 0.0 < float(achieved["Ma2"]) < 1.0

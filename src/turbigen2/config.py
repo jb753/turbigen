@@ -59,7 +59,13 @@ class Config(Node):
         """
         path = Path(path)
         plugins.discover(path.parent)
-        return cls.from_dict(turbigen.yaml_utils.read_yaml(path))
+
+        data = turbigen.yaml_utils.read_yaml(path)
+        # A run writes its answer into the same file under `result:`. Ignore it
+        # here: this returns a config. `turbigen2.case.read` returns both.
+        data.pop("result", None)
+
+        return cls.from_dict(data)
 
     def to_file(self, path):
         """Write this config to a YAML file, defaults included."""

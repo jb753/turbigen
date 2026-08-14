@@ -41,7 +41,7 @@ indistinguishable from the startup banner.
 |---|---|---|---|
 | `design` | mean line, then annulus and blade geometry | optional | **implemented** |
 | `mesh` | `design` + grid generation | optional | **implemented** |
-| `run` | `mesh` + CFD | **required** | **implemented**, mix-out deferred |
+| `run` | `mesh` + CFD + mix-out | **required** | **implemented** |
 | `iterate` | repeated `run`, updating the design between calls | **required** | deferred |
 
 The cut between `design` and `mesh` is where external tools and side effects
@@ -187,9 +187,10 @@ disables its residual-decay and residual-slope criteria at their defaults and
 always checks divergence, so calling it bare is exactly that, and is the call
 that grows thresholds later without a signature change.
 
-**Still to add: mix-out into `Result.actual`.** A run currently reports whether
-it converged and leaves the grid in memory, but does not reduce it to a mean
-line, so nominal-against-actual post-processing is not yet possible.
+The solution is then mixed out at each design station into `Result.actual`, and
+written into the same `config.yaml` under a `result:` key. A failed mix-out is
+logged and the run still writes everything else: a march that will not reduce
+to a mean line is exactly the one whose output someone needs to look at.
 
 ## `iterate` — deferred
 

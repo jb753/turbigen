@@ -9,9 +9,13 @@ top of this.
 from `Node`, they appear in the YAML file, and they serialise both ways. A
 `Fluid`, a `MeanLineDesign`, an `AnnulusDesign`.
 
-**Results** are what building produces. They are not `Node`s: they never appear
-in a config file, have no `type`, and need no serialisation. A `MeanLine`, an
+**Results** are what building produces. They are not `Node`s: they have no
+`type`, and they never appear among a config's own keys. A `MeanLine`, an
 `Annulus`, and the `Machine` that collects them.
+
+Most of them need no serialisation at all, being reproducible from the config
+that made them. The exception is a run's answer, which is not --- see
+[Storing what a run achieved](#storing-what-a-run-achieved).
 
 Keeping these apart is the point of the whole design. The old config conflated
 them — `TurbigenConfig` held `nominal` and `actual` mean lines alongside the
@@ -390,6 +394,59 @@ replaces (`config.py:846-849`) and its ember counterpart
 `Grid.apply_guess_quasi3d` has never been called either. Two hundred lines that
 have never run are not a port, they are a rewrite; worth revisiting once there
 is a solver to time it against.
+
+## Storing what a run achieved
+
+A design is reproducible from its config; a CFD answer is not. So the mixed-out
+mean line is written into the **same file** as the config, under one `result:`
+key beside the config's own:
+
+```yaml
+mean_line: {...}
+solver: {...}
+result:
+  converged: true
+  actual:
+    P: [95185., 76842.]
+    T: [295.6, 287.4]
+    ...
+```
+
+One file, because comparing an achieved efficiency against the design that
+asked for it should be one load and not two. One *document*, because a second
+YAML document breaks `yaml.safe_load` and everything built on it, and the file
+is read far more often by scripts than by us.
+
+This does not put results back on the config. `Config` stays frozen and unaware
+of them; it is `case.read` that returns two objects from one file. A file is not
+an object, and that distinction is what the old config lost.
+
+**State is stored, never derived quantities.** `eta_tt`, `PR_tt` and the whole
+`backward()` dict are recomputed from the reconstructed mean line, so an
+archived file cannot hold a number that no longer matches the definition that
+produced it. The package this replaces stored the derived `design_vars_actual`
+dict instead.
+
+**And dimensionally.** `MeanLine.STATE` is eight quantities --- `P`, `T`, the
+three velocity components, `r`, `Am` and `Omega`. Not the conserved variables,
+whose energy is measured from a fluid's datum: rebuilt against a different one
+they are silently reinterpreted, which on a realistic design is a hundred
+kelvin. The same trap caught the initial guess, and is why `MeanLine.to_dict`
+and `from_dict(data, fluid)` live on the mean line rather than on whatever
+writes one --- both the choice of quantities and the datum rule are its own
+knowledge. Four of the twelve data keys it inherits are deliberately never set
+and raise on read, so this is not something a caller can work out by looking.
+
+### Why not store the flow field and re-derive
+
+Tempting, since the restart guess already carries one. But it is lossy in
+exactly the quantity of interest: the guess is decimated by two per direction,
+and the table below puts the wall error at 1.1e-2, while mixed-out efficiency is
+an entropy flux dominated by the near-wall profile. It is also not free ---
+re-deriving means re-meshing, interpolating, cutting and mixing, every time
+someone wants to plot. The stored state is about 2 KB against the restart's
+1.9 MB, and it is exact. They are complements: a restart is an *input* to the
+next run, `actual` is *this* run's answer.
 
 ## Restart guesses
 

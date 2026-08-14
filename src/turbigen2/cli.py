@@ -23,7 +23,7 @@ import yaml
 import turbigen
 import turbigen.util
 import turbigen.yaml_utils
-from turbigen2 import bconds, guess, plugins
+from turbigen2 import bconds, case, guess, mixout, plugins
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -154,6 +154,11 @@ def load_config(args):
     plugins.discover(config_path.parent)
 
     data = turbigen.yaml_utils.read_yaml(config_path)
+
+    # Dropped before the overrides are applied, so that `-s result.x=1` cannot
+    # reach into a previous run's answer. Re-running a case rewrites it anyway.
+    data.pop(case.RESULT_KEY, None)
+
     apply_overrides(data, args.overrides)
 
     return Config.from_dict(data)
@@ -240,10 +245,21 @@ def cmd_run(args):
     history = config.solver.solve(grid)
     converged = config.solver.converged(history)
 
-    result = Result(machine=machine, grid=grid, converged=converged)
+    # Reduce the solution to a mean line. A diverged grid has nothing to mix
+    # out, and even a converged one can refuse, so this must not cost the run
+    # the output it has already earned.
+    actual = None
+    try:
+        actual = mixout.mean_line(grid, machine)
+    except Exception as err:
+        logger.warning(f"Could not mix out the solution: {err}")
+
+    result = Result(machine=machine, grid=grid, actual=actual, converged=converged)
 
     if not args.quiet:
         print(convergence_string(history, converged))
+        if actual is not None:
+            print(actual.to_string())
 
     _write_output(config, result, out_dir)
 
@@ -284,7 +300,7 @@ def _write_output(config, result, out_dir):
         return
 
     config_path = out_dir / "config.yaml"
-    config.to_file(config_path)
+    case.write(config_path, config, result)
     logger.info(f"Wrote resolved configuration to {config_path}")
     write_report(config, result, out_dir)
 

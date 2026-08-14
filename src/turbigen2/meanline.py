@@ -347,6 +347,79 @@ class MeanLine(ember.block.Block):
         """Total-to-static isentropic efficiency."""
         return self._eta(self.outlet.P)
 
+    #
+    # SERIALISATION
+    #
+    # A mean line is a result, not a config node, so it has no `type` and never
+    # appears among a config's own keys. It does serialise, though: a run's
+    # answer has to be readable back without repeating the CFD that produced
+    # it.
+    #
+
+    STATE = ("P", "T", "Vx", "Vr", "Vt", "r", "Am", "Omega")
+    """The quantities that make up a complete mean line.
+
+    Not obvious from the data keys, which is why the pair below lives here
+    rather than on whatever wants to write one. A mean line inherits twelve
+    keys from :class:`ember.block.Block` and deliberately leaves four of them
+    unset --- ``x``, ``t``, ``mu_turb`` and ``wdist`` all raise on read --- so
+    the complete state is these eight and no others.
+
+    Pressure and temperature rather than the conserved variables, because
+    conserved energy is measured from its fluid's datum: copied into a block
+    whose fluid has a different one it is silently reinterpreted, which on a
+    realistic design is a hundred kelvin. Everything here is dimensional and
+    so crosses a fluid boundary unchanged.
+    """
+
+    @classmethod
+    def from_dict(cls, data, fluid):
+        """Build a mean line from `data` and an equation of state.
+
+        Parameters
+        ----------
+        data : dict
+            As produced by :meth:`to_dict`.
+        fluid : Fluid
+            Equation of state to read the stored state against. Required, and
+            an argument rather than stored, because the numbers in `data` are
+            dimensional and mean nothing without one.
+
+        """
+        missing = [key for key in cls.STATE if key not in data]
+        if missing:
+            raise ValueError(f"Mean line state is missing {missing}.")
+
+        values = {key: np.asarray(data[key], dtype=float) for key in cls.STATE}
+        n_station = values["P"].size
+        if n_station % 2:
+            raise ValueError(
+                f"A mean line has two stations per row, so an even number of "
+                f"them; got {n_station}."
+            )
+
+        ml = cls(n_row=n_station // 2)
+        ml.set_fluid(fluid)
+
+        flat = ml.flat
+        flat.set_r(values["r"])
+        flat.set_P_T(values["P"], values["T"])
+        flat.set_Vx(values["Vx"])
+        flat.set_Vr(values["Vr"])
+        flat.set_Vt(values["Vt"])
+        flat.set_Am(values["Am"])
+        flat.set_Omega(values["Omega"])
+
+        return ml
+
+    def to_dict(self):
+        """Return this mean line's complete state, in streamwise order."""
+        flat = self.flat
+        return {
+            key: np.asarray(getattr(flat, key), dtype=float).tolist()
+            for key in self.STATE
+        }
+
     def to_string(self):
         """Provide a concise string representation of MeanLine properties."""
         ml = self.flat
