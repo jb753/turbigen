@@ -338,12 +338,9 @@ class SurfacePlot(Post):
         # below: the cut is the expensive part and does not depend on span.
         surfaces = turbigen.util_post.cut_blade_surfs(result.grid, self.offset)
 
-        # A grid that has not been marched still holds the initial guess, and
-        # plotting that is a legitimate way to look at a mesh. It must not be
-        # mistaken for a solution, so it is labelled as what it is.
-        guess = result.history is None
-        suffix = " (Initial Guess)" if guess else ""
-
+        # Whatever field the grid holds is what gets drawn: a solution, a
+        # restored one, or the meridional guess a mesh starts with, which is a
+        # legitimate way to look at a mesh.
         figures = []
         for i_row, row in enumerate(rows):
             if surfaces[i_row] is None:
@@ -359,7 +356,7 @@ class SurfacePlot(Post):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_xlabel(r"Normalised Surface Distance, $|\zeta|$")
             ax.set_ylabel(r"Isentropic Mach Number, $\mathit{Ma}_s$")
-            ax.set_title(f"Row {i_row} Surface Distribution{suffix}")
+            ax.set_title(f"Row {i_row} Surface Distribution")
             ax.set_xlim(0.0, 1.0)
 
             for spf in _span_fractions(self.spf, row.blade):
@@ -420,9 +417,6 @@ class ContourPlot(Post):
 
         import matplotlib.pyplot as plt  # noqa: PLC0415
 
-        guess = result.history is None
-        suffix = " (Initial Guess)" if guess else ""
-
         figures = []
         for spf in self.spf:
             # One curve spanning the whole machine, used twice: once to place
@@ -457,9 +451,7 @@ class ContourPlot(Post):
             )
 
             for window, title in self._windows(annulus, xr_curve, spf):
-                figures.append(
-                    self._draw(plt, passages, levels, window, f"{title}{suffix}")
-                )
+                figures.append(self._draw(plt, passages, levels, window, title))
 
         return figures
 

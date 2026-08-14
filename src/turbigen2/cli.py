@@ -48,6 +48,9 @@ logger = logging.getLogger("turbigen")
 # notebook or another tool leaves ember's logger exactly as that caller set it.
 LOGGER_NAMES = ("turbigen", "ember")
 
+RESTART_NAME = "restart.npz"
+"""What a run calls the flow field it leaves behind, and `--restart` looks for."""
+
 
 #
 # CONFIG OVERRIDES
@@ -260,12 +263,43 @@ def prepare(config, restart_path=None):
     return machine, grid
 
 
+def resolve_restart(args, out_dir):
+    """Return the flow field to start from, if one was asked for.
+
+    Bare `--restart` means the field a run left in its own output directory,
+    which is what makes re-plotting one in place a flag rather than a path to
+    type. A named file still wins, so a field can come from anywhere.
+    """
+    if not args.restart:
+        return None
+
+    if args.restart is not True:
+        return Path(args.restart)
+
+    if out_dir is None:
+        raise ValueError(
+            "--restart with no file reads it from the output directory, so it "
+            "needs --out; name a file instead to read one from anywhere."
+        )
+
+    restart_path = out_dir / RESTART_NAME
+    if not restart_path.is_file():
+        raise ValueError(
+            f"No {RESTART_NAME} in {out_dir} to restart from. Point --out at a "
+            "directory a run has written, or name a file to read."
+        )
+    return restart_path
+
+
 def cmd_mesh(args):
     """Design the machine, mesh it, and report both."""
     config = load_config(args)
     out_dir = _open_output(args)
 
-    machine, grid = prepare(config)
+    # With a stored field this is a re-plot: the grid comes back carrying a
+    # solution some previous run paid for, and re-meshing to get there costs
+    # seconds against the minutes of the march it stands in for.
+    machine, grid = prepare(config, resolve_restart(args, out_dir))
 
     result = Result(machine=machine, grid=grid)
 
@@ -286,7 +320,7 @@ def cmd_run(args):
 
     out_dir = _open_output(args)
 
-    machine, grid = prepare(config, args.restart)
+    machine, grid = prepare(config, resolve_restart(args, out_dir))
 
     history = config.solver.solve(grid)
     converged = config.solver.converged(history)
@@ -317,7 +351,7 @@ def cmd_run(args):
     # withholding its field would be exactly backwards -- and a post-processor
     # that raises must not be able to discard a solution the CFD has already
     # been paid for.
-    restart_path = out_dir / "restart.npz"
+    restart_path = out_dir / RESTART_NAME
     restart.save(restart_path, grid)
     logger.info(f"Wrote the flow field to {restart_path}")
 
@@ -366,9 +400,39 @@ def _write_output(config, result, out_dir):
         return
 
     config_path = out_dir / "config.yaml"
-    case.write(config_path, config, result)
-    logger.info(f"Wrote resolved configuration to {config_path}")
+    if _already_archived(config_path, config):
+        # Re-plotting a run writes its report back into the run's own
+        # directory, over the config it came from. Rewriting that file would
+        # replace the answer stored under `result:` -- the mixed-out mean line,
+        # and whether it converged -- with this verb's empty one, so a
+        # re-plotted run would come back claiming it had never converged.
+        # Identical configs have nothing to write anyway.
+        logger.info(f"Configuration at {config_path} is unchanged, so left alone")
+    else:
+        case.write(config_path, config, result)
+        logger.info(f"Wrote resolved configuration to {config_path}")
+
     write_report(config, result, out_dir)
+
+
+def _already_archived(config_path, config):
+    """Return whether `config_path` already holds exactly `config`.
+
+    Only the config half is compared: a file carrying a result is still the
+    same config, and it is precisely that result which must survive.
+    """
+    if not config_path.is_file():
+        return False
+
+    try:
+        archived, _ = case.read(config_path, design=False)
+    except Exception as err:
+        # A file we cannot read is one we should not silently keep, so say why
+        # and let the write go ahead.
+        logger.debug(f"Could not read the config already at {config_path}: {err}")
+        return False
+
+    return archived == config
 
 
 def grid_string(grid):
@@ -521,9 +585,12 @@ def _make_parser():
             "Design the machine from a configuration file, mesh it, and print "
             "the result. Nothing is written and no directory is created unless "
             "--out is given; the grid itself is not written, because how a mesh "
-            "is serialised is a property of the solver that will read it."
+            "is serialised is a property of the solver that will read it. With "
+            "--restart, this re-plots a previous run: the stored field is put "
+            "back on the grid and reported without solving anything."
         ),
     )
+    _add_restart_argument(mesh)
     mesh.set_defaults(func=cmd_mesh)
 
     run = commands.add_parser(
@@ -537,18 +604,31 @@ def _make_parser():
             "the solver did not converge, having written its output anyway."
         ),
     )
-    run.add_argument(
-        "--restart",
-        metavar="NPZ",
-        help=(
-            "start from the flow field in NPZ, as written by a previous run, "
-            "instead of the meridional guess; interpolated in index space if "
-            "the mesh resolution has changed"
-        ),
-    )
+    _add_restart_argument(run)
     run.set_defaults(func=cmd_run)
 
     return parser
+
+
+def _add_restart_argument(parser):
+    """Add --restart, which every verb that builds a grid can use.
+
+    Not on the common parent, because `design` never makes a grid to put a
+    field on and should not advertise a flag it would ignore.
+    """
+    parser.add_argument(
+        "--restart",
+        metavar="NPZ",
+        nargs="?",
+        const=True,
+        help=(
+            "load the flow field in NPZ, as written by a previous run, "
+            "instead of the meridional guess; interpolated in index space if "
+            "the mesh resolution has changed. With no NPZ given, reads "
+            f"{RESTART_NAME} from the --out directory, which re-plots a run "
+            "in place"
+        ),
+    )
 
 
 def _format_elapsed(seconds):

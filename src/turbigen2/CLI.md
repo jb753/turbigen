@@ -167,6 +167,28 @@ The grid itself is **not** written. How a mesh is serialised is a property of
 the solver that will read it, so it belongs to `run`; until then `mesh` is for
 checking that a design meshes and for seeing how large it comes out.
 
+`--restart` re-plots a previous run:
+
+```
+turbigen2 mesh out_0000/config.yaml --restart -o out_0000        # in place
+turbigen2 mesh case.yaml --restart out_0000/restart.npz -o replot_*
+```
+
+The stored field goes back onto the grid and the standard plots describe it,
+with no solve. Nothing needs to be kept beyond the config and the restart file
+that `run` already writes, because re-designing and re-meshing costs seconds
+against the minutes of the march it stands in for --- which is also why the
+grid is not worth serialising.
+
+Bare `--restart` reads `restart.npz` from the `--out` directory, which makes
+re-plotting a run in place a flag rather than a path to type. Naming a file
+still wins, so a field can come from anywhere.
+
+Writing a report back into a run's own directory must not cost that run its
+answer, so the resolved config is left alone when the file already holds
+exactly it. Rewriting would replace the `result:` block --- the mixed-out mean
+line, and whether it converged --- with the empty one a `mesh` produces.
+
 Still to add: `--plot SPF`, to render the mesh at a span fraction rather than
 the old `--mesh SPF` flag that exits from inside the pipeline. It draws from
 the returned grid, so it is a flag on the verb and not a field on the mesher.

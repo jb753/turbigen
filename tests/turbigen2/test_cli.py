@@ -446,6 +446,81 @@ def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
     assert 0.0 < float(achieved["Ma2"]) < 1.0
 
 
+def test_mesh_restart_replots_a_previous_run(run_case, tmp_path):
+    """Re-plotting needs no more than the config and the restart file.
+
+    The grid is not serialised, so a re-plot re-designs and re-meshes to put
+    the stored field back -- seconds against the minutes of the march it
+    stands in for.
+    """
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+
+    replot = tmp_path / "replot"
+    code = cli.main(
+        [
+            "mesh",
+            str(out / "config.yaml"),
+            "--restart",
+            str(out / "restart.npz"),
+            "-o",
+            str(replot),
+            "-q",
+        ]
+    )
+
+    assert code == 0
+    assert (replot / "post.pdf").is_file()
+
+
+def test_bare_restart_replots_a_run_in_place(run_case, tmp_path):
+    """The common case: redo the plots for a run that is already there."""
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+    (out / "post.pdf").unlink()
+
+    code = cli.main(
+        ["mesh", str(out / "config.yaml"), "--restart", "-o", str(out), "-q"]
+    )
+
+    assert code == 0
+    assert (out / "post.pdf").is_file()
+
+
+def test_replotting_in_place_keeps_the_recorded_answer(run_case, tmp_path):
+    """A verb that computed no answer must not erase the one already there.
+
+    Rewriting the archived config with this verb's empty result would leave a
+    converged run claiming it had never converged, and lose the mean line it
+    mixed out to.
+    """
+    from turbigen2 import case  # noqa: PLC0415
+
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+    _, before = case.read(out / "config.yaml", design=False)
+
+    cli.main(["mesh", str(out / "config.yaml"), "--restart", "-o", str(out), "-q"])
+
+    _, after = case.read(out / "config.yaml", design=False)
+    assert after.converged is before.converged is True
+    assert after.actual is not None
+
+
+def test_bare_restart_needs_somewhere_to_look(run_case, capsys):
+    assert cli.main(["mesh", str(run_case), "--restart"]) == 1
+
+    assert "needs --out" in capsys.readouterr().err
+
+
+def test_bare_restart_says_when_there_is_nothing_to_read(run_case, tmp_path, capsys):
+    out = tmp_path / "new"
+
+    assert cli.main(["mesh", str(run_case), "--restart", "-o", str(out)]) == 1
+
+    assert "No restart.npz" in capsys.readouterr().err
+
+
 def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch):
     """The flow field is written before the report, not after.
 

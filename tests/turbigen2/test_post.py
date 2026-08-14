@@ -10,13 +10,16 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
 
+import ember.util  # noqa: E402
 from test_cli import RUN_CASE  # noqa: E402
 from turbigen2 import (  # noqa: E402
     AnnulusPlot,
     Config,
+    ContourPlot,
     ConvergencePlot,
     Post,
     Result,
@@ -257,16 +260,11 @@ def test_surface_plot_draws_a_physical_distribution(bladed, solved):
     assert 0.3 < mas.max() < 1.5
 
 
-def test_surface_plot_says_when_it_is_drawing_a_guess(bladed, meshed):
-    """Plotting an unmarched grid is a way to look at a mesh, not a mistake.
-
-    It must not be mistaken for a solution, so the one thing that has to hold
-    is that the figure says which it is.
-    """
+def test_surface_plot_draws_an_unmarched_grid(bladed, meshed):
+    """Plotting the initial guess is a way to look at a mesh, not a mistake."""
     figures = SurfacePlot().report(bladed, meshed)
 
     assert len(figures) == 1
-    assert "Guess" in figures[0].axes[0].get_title()
 
 
 def test_surface_plot_without_a_grid_is_empty(config, result):
@@ -287,6 +285,51 @@ def test_surface_plot_skips_a_diverged_march(bladed, solved):
     diverged = dataclasses.replace(solved, history=history)
 
     assert SurfacePlot().report(bladed, diverged) == []
+
+
+def test_contour_plot_draws_a_blade_to_blade_view(bladed, solved):
+    figures = ContourPlot().report(bladed, solved)
+
+    assert len(figures) == len(solved.machine.rows)
+    ax = figures[0].axes[0]
+
+    # One filled set per block per passage, all on one colour scale.
+    assert len(ax.collections) == ContourPlot().n_passage
+    # The conformal plane is only conformal if both axes are scaled alike.
+    assert ax.get_aspect() == 1.0
+
+
+def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
+    """A machine-wide view is mostly duct, and the row a few pixels of it."""
+    figures = ContourPlot().report(bladed, solved)
+    lo, hi = figures[0].axes[0].get_xlim()
+
+    annulus = solved.machine.annulus
+    curve = annulus.evaluate_xr(np.linspace(0.0, annulus.mmax, 101), 0.5).T
+    edges = annulus.evaluate_xr([1, 2], 0.5).T
+    m_LE, m_TE = ember.util.unwrap_meridional(curve, edges)
+
+    # The row, and a margin of it either side -- not the whole curve.
+    assert lo < m_LE
+    assert hi > m_TE
+    assert hi - lo < ember.util.unwrap_meridional(curve, curve[-1])
+
+
+def test_contour_plot_repeats_passages(bladed, solved):
+    single = ContourPlot(n_passage=1).report(bladed, solved)[0]
+    double = ContourPlot(n_passage=2).report(bladed, solved)[0]
+
+    span = np.ptp(single.axes[0].get_ylim())
+    assert np.ptp(double.axes[0].get_ylim()) > 1.5 * span
+
+
+def test_contour_plot_without_a_grid_is_empty(config, result):
+    assert ContourPlot().report(config, result) == []
+
+
+def test_contour_plot_rejects_a_variable_no_block_carries(bladed, solved):
+    with pytest.raises(ValueError, match="no property 'Wobble'"):
+        ContourPlot(variable="Wobble").report(bladed, solved)
 
 
 #
