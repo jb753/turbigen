@@ -12,9 +12,11 @@ import turbigen.yaml_utils
 
 from turbigen2 import plugins
 from turbigen2.annulus import AnnulusDesign
+from turbigen2.blade import BladeDesign
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
 from turbigen2.machine import Machine
+from turbigen2.mesh import Mesher
 from turbigen2.node import Node
 from turbigen2.post import Post
 
@@ -30,6 +32,12 @@ class Config(Node):
 
     annulus: AnnulusDesign = None
     """Annulus design. Omit it to design the mean line alone."""
+
+    blades: tuple[BladeDesign, ...] = ()
+    """Blade designs, one per row. Omit them to design the annulus alone."""
+
+    mesh: Mesher = None
+    """Mesh generation. Only needed by the verbs that make a grid."""
 
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config
@@ -66,4 +74,24 @@ class Config(Node):
         if self.annulus is not None:
             annulus = self.annulus.design(mean_line)
 
-        return Machine(mean_line=mean_line, annulus=annulus)
+        blades = ()
+        if self.blades:
+            if annulus is None:
+                raise ValueError("Blades need an annulus to sit in.")
+            if len(self.blades) != mean_line.n_row:
+                raise ValueError(
+                    f"Expected one blade per row, but got {len(self.blades)} "
+                    f"blades for {mean_line.n_row} rows."
+                )
+            blades = tuple(
+                blade.design(mean_line.row(i_row), annulus.row(i_row))
+                for i_row, blade in enumerate(self.blades)
+            )
+
+        return Machine(mean_line=mean_line, annulus=annulus, blades=blades)
+
+    def make_grid(self, machine):
+        """Return a grid for `machine`, using the configured mesher."""
+        if self.mesh is None:
+            raise ValueError("This config has no mesh, so no grid can be made.")
+        return self.mesh.mesh(machine)

@@ -70,6 +70,45 @@ def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=2
     return s, curves
 
 
+class StreamSurface:
+    """The annulus within one blade row.
+
+    Addressed by a normalised meridional coordinate running 0 at the leading
+    edge to 1 at the trailing edge, and a span fraction. A blade design is
+    handed one of these rather than the whole annulus and a row index, so that
+    the convention mapping a row onto the annulus coordinate stays inside
+    :class:`Annulus`, which is the only thing that defines it.
+    """
+
+    def __init__(self, evaluate_xr, m_LE, chord):
+        self._evaluate_xr = evaluate_xr
+        self._m_LE = float(m_LE)
+        self.chord = float(chord)
+        """Meridional chord of the row at mid-span [m]."""
+
+    def __repr__(self):
+        return f"StreamSurface(m_LE={self._m_LE:g}, chord={self.chord:.4g})"
+
+    def xr(self, spf, m):
+        """Return meridional coordinates within the row.
+
+        Parameters
+        ----------
+        spf : array_like
+            Span fraction, 0 at the hub and 1 at the casing.
+        m : array_like
+            Normalised meridional distance, 0 at the leading edge and 1 at the
+            trailing edge. Broadcast against `spf`.
+
+        Returns
+        -------
+        xr : ndarray, shape (2, ...)
+            Axial and radial coordinates, stacked on the first axis.
+
+        """
+        return self._evaluate_xr(self._m_LE + np.asarray(m, dtype=float), spf)
+
+
 class Annulus:
     """Hub and casing lines of a designed annulus.
 
@@ -193,6 +232,24 @@ class Annulus:
         spf_rms = (self.r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
         return xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
 
+    def span(self, m):
+        """Return the hub-to-casing distance at meridional position(s) `m` [m].
+
+        Parameters
+        ----------
+        m : array_like
+            Normalised meridional distance.
+
+        Returns
+        -------
+        span : ndarray
+            Distance from hub to casing at each position [m].
+
+        """
+        xr_hub = self.evaluate_xr(m, 0.0)
+        xr_cas = self.evaluate_xr(m, 1.0)
+        return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
+
     def chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.
 
@@ -204,6 +261,24 @@ class Annulus:
             mq = np.linspace(i, i + 1, 100)
             chords[i] = turbigen.util.arc_length(self.evaluate_xr(mq, spf))
         return chords
+
+    def row(self, i_row):
+        """Return the stream surfaces within blade row `i_row`.
+
+        Rows occupy the odd segments, so this is where the mapping from a row
+        index onto the annulus meridional coordinate lives, and the only place
+        it does.
+        """
+        if not 0 <= i_row < self.n_row:
+            raise IndexError(
+                f"Blade row {i_row} is out of range for an annulus with "
+                f"{self.n_row} rows."
+            )
+        return StreamSurface(
+            self.evaluate_xr,
+            m_LE=2 * i_row + 1,
+            chord=self.chords(0.5)[2 * i_row + 1],
+        )
 
     def to_string(self):
         """Tabular string representation of the annulus at row stations."""

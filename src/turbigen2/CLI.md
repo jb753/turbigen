@@ -1,6 +1,6 @@
 # turbigen2 command-line interface
 
-Plan for the CLI. **Only `design` is implemented.** The other verbs are
+Plan for the CLI. **`design` and `mesh` are implemented.** The other verbs are
 specified here so the shape is settled before they are written; each is marked
 with its status.
 
@@ -39,8 +39,8 @@ indistinguishable from the startup banner.
 
 | verb | does | output dir | status |
 |---|---|---|---|
-| `design` | mean line, then annulus and blade geometry | optional | **implemented** (mean line only) |
-| `mesh` | `design` + grid generation | optional | deferred |
+| `design` | mean line, then annulus and blade geometry | optional | **implemented** |
+| `mesh` | `design` + grid generation | optional | **implemented** |
 | `run` | `mesh` + boundary conditions, CFD, mix-out, post-processing | **required** | deferred |
 | `iterate` | repeated `run`, updating the design between calls | **required** | deferred |
 
@@ -134,8 +134,8 @@ turbigen2 design case.yaml -o run_* -s mean_line.psi=1.8
 2. Read the YAML into a dict.
 3. Apply `--set` overrides.
 4. Build the `Config` (strict: unknown keys and missing required fields raise).
-5. `config.design()` — returns a `MeanLine`, stores nothing.
-6. Print the mean-line table to stdout.
+5. `config.design()` — returns a `Machine`, stores nothing.
+6. Print the machine tables to stdout.
 7. If `-o` was given: create the directory, write the resolved config to
    `config.yaml`, and tee diagnostics to `log_turbigen2.txt`.
 8. Exit 0.
@@ -144,16 +144,28 @@ Nothing is written and no directory is created without `-o`. The resolved
 config includes every default, so an archived file reproduces its machine even
 if a default later changes.
 
-Annulus and blade geometry join step 5 when they are ported; the verb does not
-change.
+## `mesh` — implemented
 
-## `mesh`, `run`, `iterate` — deferred
+```
+turbigen2 mesh case.yaml
+turbigen2 mesh case.yaml -o run_* -s mesh.resolution_factor=0.5
+```
+
+`design`, then `config.make_grid(machine)`, then the machine tables and a block
+summary. The steps and the `-o` behaviour are otherwise identical, and the same
+config file serves both verbs: a `mesh:` section is simply ignored by `design`.
+
+The grid itself is **not** written. How a mesh is serialised is a property of
+the solver that will read it, so it belongs to `run`; until then `mesh` is for
+checking that a design meshes and for seeing how large it comes out.
+
+Still to add: `--plot SPF`, to render the mesh at a span fraction rather than
+the old `--mesh SPF` flag that exits from inside the pipeline. It draws from
+the returned grid, so it is a flag on the verb and not a field on the mesher.
+
+## `run`, `iterate` — deferred
 
 Specified only enough to keep the shape honest.
-
-`mesh` adds grid generation and takes `--plot SPF` to render the mesh at a span
-fraction instead of the current `--mesh SPF` flag that exits from inside the
-pipeline.
 
 `run` needs a real signature rather than a branch:
 

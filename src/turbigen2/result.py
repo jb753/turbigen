@@ -24,6 +24,9 @@ class Result:
     actual: MeanLine = None
     """Mean line mixed out from the CFD solution, once there is one."""
 
+    grid: object = None
+    """Computational grid, once the machine has been meshed."""
+
     converged: bool = False
     """Whether the run met its convergence criteria."""
 

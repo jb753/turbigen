@@ -156,6 +156,181 @@ segment, so it belongs. Those two did not. This is how the old
 `AnnulusDesigner` reached 1035 lines: each consumer added the view it wanted,
 and none of them were the annulus's business.
 
+## Blades
+
+A `BladeDesign` describes one row; designing it against a row of the mean line
+and a row of the annulus produces a `Blade`.
+
+```python
+class BladeDesign(Node):
+    sections: tuple[Section, ...]
+    count: BladeCount
+    tip_span: float = 0.0
+    tip_chord: float = 0.0
+    tip_metre: float = 0.0
+    vortex_exponent: float = -1.0
+    theta_offset: float = 0.0
+    m_stack: float = 0.5
+
+    def forward(self, mean_line_row, stream_surface) -> Blade
+```
+
+This is the stage where the config-as-its-own-result problem is worst. The old
+`BladeDesigner` gets to its geometry by mutating itself three times:
+`set_streamsurface` writes the annulus and a derived thickness scale onto it,
+so nothing can be evaluated before it has been called; `apply_recamber`
+overwrites the first two columns of the camber array in place, turning recamber
+angles into metal angles; and an `is_recambered` flag guards the second, which
+post-processors toggle on and off around plots. All three disappear here for
+the same reason: a metal angle, a tip gap in metres and a stream surface are
+functions of the design *and* the mean line, so they belong to the result.
+
+### Named fields, and one more config/result split
+
+`q_camber` and `q_thick` are positional vectors --- `q_thick[3]` is
+`kappa_max`, `q_camber[2]` is the aft-loading factor --- dispatched by
+`util.get_subclass_by_name`, the third string-dispatch scheme that `Node`
+retires. As fields they document themselves, and the shape assertions in
+`__post_init__` go away, because a `Section` carries its own parameters and so
+cannot disagree in length with a parallel array.
+
+Camber splits the same way the rest of the package does, one level down. A
+`CamberDesign` is the *shape* between the end angles, `chi_hat(m)`; a
+`CamberLine` is that shape placed between metal angles it learned from the mean
+line. The recamber angles sit on the `Section`, not on the camber, because they
+are what is added to the flow angle rather than anything about the curve.
+
+Thickness needs no such split: it is always normalised by meridional chord, so
+`thick_ref`, the `_thick_scale` it produced and `BaseThickness.scale` are all
+gone. No YAML in the repo ever set it to anything else.
+
+### The stage takes a row, not an index
+
+```python
+blades = tuple(
+    design.design(mean_line.row(i), annulus.row(i))
+    for i, design in enumerate(self.blades)
+)
+```
+
+Passing an `Annulus` and a row index would copy the convention that row `i`
+occupies `m = 2i + 1 ... 2i + 2` into every blade design anyone writes, when it
+is the annulus that defines what `m` means. So `Annulus.row` returns a
+`StreamSurface`: the coordinate map restricted to one row, `m` running 0 at the
+leading edge to 1 at the trailing edge, plus the meridional chord --- which
+`set_streamsurface` used to recompute by arc length even though
+`Annulus.chords` already had it.
+
+### Blade number lives on the blade
+
+`nblade` was a second top-level list indexed by row, so a row and its count
+could get out of step; `config.get_nblade()` calls `sys.exit(1)` when they do.
+As a `count` field there is nothing to keep in step.
+
+Counting needs the geometry, because a circulation coefficient is set against
+surface length. So `forward` builds the blade, counts it, and builds it again
+holding the count, rather than writing a count onto a finished object --- the
+same "compute fully, then hand the finished thing over" shape as the annulus's
+`_fit_pchips`.
+
+### Tip clearance is one number and its reference
+
+`tip: 0.01` with `tip_ref: span` becomes `tip_span: 0.01`. Three fields, all
+defaulting to zero, at most one set --- so the reference is named by which
+field carries the number, and there is no second field to contradict the first.
+Resolution is one line of `forward` instead of `get_gaps`'s three-way branch
+and its `sys.exit`. A family of `TipGap` nodes was considered and rejected: it
+is four classes to choose a divisor.
+
+### What a Blade exposes
+
+`evaluate_section`, `chi`, `surface_length`, `chord`, and the `n_blade`,
+`tip_gap`, `m_stack` and `theta_offset` fixed at design time. By the test the
+annulus set, three things stay with their consumers: `get_coords` is an
+AutoGrid-format reshape and belongs with the mesher, `get_nose` and
+`get_LE_cent` are used only by `post/plot_nose.py`, and `get_pitch_chord` and
+`blade_table` are a report.
+
+Only the camber and thickness types in use are ported --- every YAML in the
+repo uses `quadratic` and `taylor`, and the three `thick_type: Impeller` uses
+name a class that does not exist in the package. `Quartic`, `Taylor` and
+`TaylorQuadratic` camber, the `DFL` blade count and splitters (which appear
+only in `old-examples/`) are additions, not blockers, exactly as `AR_chord` is
+for the annulus.
+
+## Meshing
+
+A `Mesher` turns a `Machine` into an ember `Grid`. The result is ember's, not
+ours, so there is no `Mesh` class for a `...Design` suffix to pair with and the
+family keeps the name the class it replaces already had.
+
+```python
+class Mesher(Node):
+    yplus: float = 30.0
+
+    def mesh(self, machine) -> Grid       # framework
+    def forward(self, machine, spacing)   # the author writes this
+```
+
+### The framework method earns its keep here
+
+For a pure design stage, `design` only validates and delegates. `mesh` does
+real work at both ends, and all of it is shared:
+
+* **on the way in**, the wall spacings implied by `yplus` --- a surface
+  Reynolds number per row, a flat-plate skin friction, a friction velocity and
+  hence a viscous length, returned as a `WallSpacing` of hub, casing and
+  per-row surface sizes in metres;
+* **on the way out**, the four steps that make a fresh grid usable: set the
+  reference length, check every cell volume, compute wall distance, report the
+  size.
+
+In the package this replaces every one of those sits in `config.setup_mesh`,
+which then calls `make_grid(workdir, machine, dhub, dcas, dsurf, Omega)` --- six
+arguments, five of them derivable from the machine. A second mesher would have
+to be handed the same five, and any caller can forget the finishing steps or
+get them out of order. Here a mesher author writes `forward` and gets the rest.
+
+Two things follow from putting the spacings on the base. The `yplus`
+calculation is no longer on the *config*, where it had no business being, and
+it is no longer broken: it needs `MeanLine.ref`, which was deleted in 948516a,
+so `config.calculate_d_wall` has been raising `AttributeError` for anything
+that called it. `ref` is restored here, unchanged --- note that it is an *area*
+criterion, and so picks the inlet of a row whose annulus opens out even when
+the flow accelerates through it.
+
+`WallSpacing` is a result, not a `Node`: computed from the machine, never
+written to a file.
+
+### H needs no adapter
+
+`turbigen.geometry.Machine` is not ported. It exists only to hand five
+attributes to a mesher, and `turbigen2.Machine` already carries all of them ---
+`blade.n_blade` and `blade.tip_gap` were the two the blade port moved onto the
+blade itself. The mesher reads the annulus through `evaluate_xr`, `chords` and
+`span`, and the blades through `evaluate_section` and `chi`, and nothing else.
+`Annulus.span(m)` is the one method the mesh verb turned out to need; the five
+mesh-facing helpers deferred when the annulus was ported are still unused.
+
+### What did not come across
+
+The mesh mathematics is carried over unchanged --- it never knew about the
+config --- but four things are dropped:
+
+* **Plotting.** A `plot` field that called `plt.show()` from inside a mesh
+  routine, a `_plot_grid` helper, a module-level matplotlib import, and a
+  `plot=` argument threaded down into `add_cusp`. Mesh figures belong to a
+  post-processor and to the verb's `--plot`, not to the mesher.
+* **`_log_ram`**, at seven call sites.
+* **`recluster`**, which no configuration sets and which cannot work: its
+  branch calls `_get_mlim` on a *list* of blades, so it raises `AttributeError`
+  if it is ever reached.
+* **`slip_cusp` and `slip_annulus`**, patch-type swaps that no configuration
+  sets. With `slip_annulus` gone, `_add_annulus_patches` turned out to be a
+  no-op --- its only other branch computes an index and then has its two
+  statements commented out --- so it went too, and with it the `row_meta` that
+  existed to feed it.
+
 ## Restart guesses
 
 A converged flow field is carried into the next run as an initial guess. The

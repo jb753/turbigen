@@ -1,7 +1,7 @@
 """Command line interface.
 
-See CLI.md in this package for the full plan. Only the `design` verb is
-implemented; `mesh`, `run` and `iterate` are specified there.
+See CLI.md in this package for the full plan. The `design` and `mesh` verbs are
+implemented; `run` and `iterate` are specified there.
 
 Two conventions are worth stating because the existing turbigen CLI does the
 opposite of both. Results go to stdout and diagnostics go to stderr, so
@@ -17,6 +17,7 @@ import logging
 import sys
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 import turbigen
@@ -164,13 +165,9 @@ def load_config(args):
 
 
 def cmd_design(args):
-    """Design the mean line and report it."""
+    """Design the machine and report it."""
     config = load_config(args)
-
-    out_dir = resolve_out_dir(args.out) if args.out else None
-    if out_dir is not None:
-        _add_handler(logging.FileHandler(out_dir / "log_turbigen2.txt"))
-        logger.info(f"Output directory: {out_dir}")
+    out_dir = _open_output(args)
 
     machine = config.design()
     result = Result(machine=machine)
@@ -178,15 +175,60 @@ def cmd_design(args):
     if not args.quiet:
         print(machine.to_string())
 
-    if out_dir is not None:
-        config_path = out_dir / "config.yaml"
-        config.to_file(config_path)
-        logger.info(f"Wrote resolved configuration to {config_path}")
-        write_report(config, result, out_dir)
-    elif config.post_process:
-        logger.info("No output directory given, so no report was written.")
-
+    _write_output(config, result, out_dir)
     return 0
+
+
+def cmd_mesh(args):
+    """Design the machine, mesh it, and report both."""
+    config = load_config(args)
+    out_dir = _open_output(args)
+
+    machine = config.design()
+    grid = config.make_grid(machine)
+    result = Result(machine=machine, grid=grid)
+
+    if not args.quiet:
+        print(machine.to_string())
+        print(grid_string(grid))
+
+    _write_output(config, result, out_dir)
+    return 0
+
+
+def _open_output(args):
+    """Return the output directory, if one was asked for, logging into it."""
+    if not args.out:
+        return None
+    out_dir = resolve_out_dir(args.out)
+    _add_handler(logging.FileHandler(out_dir / "log_turbigen2.txt"))
+    logger.info(f"Output directory: {out_dir}")
+    return out_dir
+
+
+def _write_output(config, result, out_dir):
+    """Write the resolved config and the report, if there is anywhere to."""
+    if out_dir is None:
+        if config.post_process:
+            logger.info("No output directory given, so no report was written.")
+        return
+
+    config_path = out_dir / "config.yaml"
+    config.to_file(config_path)
+    logger.info(f"Wrote resolved configuration to {config_path}")
+    write_report(config, result, out_dir)
+
+
+def grid_string(grid):
+    """Tabular string representation of a grid, one column per block."""
+    properties = [
+        ("ni", np.array([block.shape[0] for block in grid]), "d"),
+        ("nj", np.array([block.shape[1] for block in grid]), "d"),
+        ("nk", np.array([block.shape[2] for block in grid]), "d"),
+        ("n_cell/1e3", np.array([block.size for block in grid]) / 1e3, ".1f"),
+    ]
+    table = turbigen.util.format_table("Mesh:", len(grid), properties, paired=False)
+    return f"{table}\nTotal cells: {grid.size / 1e6:.2f}e6"
 
 
 def write_report(config, result, out_dir):
@@ -267,7 +309,7 @@ def _make_parser():
         description=(
             "turbigen2 is an experimental rebuild of the turbigen design "
             "system. Each command carries the design one stage further through "
-            "the pipeline; only 'design' is implemented so far."
+            "the pipeline; 'design' and 'mesh' are implemented so far."
         ),
     )
     parser.add_argument(
@@ -289,6 +331,19 @@ def _make_parser():
         ),
     )
     design.set_defaults(func=cmd_design)
+
+    mesh = commands.add_parser(
+        "mesh",
+        parents=[common],
+        help="design the machine, generate a grid, and report both",
+        description=(
+            "Design the machine from a configuration file, mesh it, and print "
+            "the result. Nothing is written and no directory is created unless "
+            "--out is given; the grid itself is not written, because how a mesh "
+            "is serialised is a property of the solver that will read it."
+        ),
+    )
+    mesh.set_defaults(func=cmd_mesh)
 
     return parser
 

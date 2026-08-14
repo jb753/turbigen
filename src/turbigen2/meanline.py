@@ -105,6 +105,18 @@ class MeanLine(ember.block.Block):
         """Return blade row `i_row` as a shape-(2,) view of inlet and outlet."""
         return self[:, i_row]
 
+    def ref(self, i_row):
+        """Return the reference station of blade row `i_row`.
+
+        The end with the smaller meridional flow area, taken as representative
+        of the row for wall spacings and Reynolds numbers. Note that this is an
+        area criterion, not a velocity one: it picks the inlet of a row whose
+        annulus opens out, even where the flow accelerates through it.
+        """
+        row = self.row(i_row)
+        A_flow = row.Am / row.cosBeta
+        return row[0] if A_flow[1] >= A_flow[0] else row[1]
+
     @property
     def n_row(self):
         """Number of blade rows."""
