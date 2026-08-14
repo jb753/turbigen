@@ -41,10 +41,12 @@ class PerfectFluid(Fluid):
 
     # The non-dimensionalisation reference scales and the entropy datum
     # (V_ref, rho_ref, Rgas_ref, P_dtm, T_dtm) are deliberately absent. They
-    # are not inputs: MeanLine.adjust_ref derives them from the design once it
-    # exists and applies them with change_ref/change_datum. Declaring them here
-    # would put five values in every config file that a user cannot usefully
-    # set and that are overwritten before they are ever read.
+    # are not inputs: MeanLine.referenced_fluid derives them from the design
+    # once it exists, and the mesher applies them to the grid, which is the
+    # object whose conditioning matters. Declaring them here would put five
+    # values in every config file that a user cannot usefully set and that are
+    # replaced before they are ever read -- which is what the package this
+    # replaces does, defaulting all five to 1.0 and overwriting every one.
 
     def eos(self) -> ember.fluid.PerfectFluid:
         return ember.fluid.PerfectFluid(

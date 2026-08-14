@@ -382,9 +382,9 @@ the patch indices on the block it returns.
 one kernel call, asserts that trilinear interpolation created no new extrema,
 asserts the result has finite positive temperature, and works in dimensional
 form so that differing reference scales between source and target are handled
---- which matters here, because `adjust_ref` resets `V_ref` and `rho_ref` from
-each design, so a guess from the previous iteration is non-dimensionalised
-differently.
+--- which matters here, because the mesher sets `V_ref` and `rho_ref` on the
+grid from each design, so a guess from the previous iteration is
+non-dimensionalised differently.
 
 Two things follow that shrink the scheme further. Because interpolation is in
 **index space**, no coordinates need storing: the guess is conserved variables

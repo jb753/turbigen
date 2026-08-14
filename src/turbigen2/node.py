@@ -8,8 +8,15 @@ Subclassing does three things automatically:
 
 * reserved names (``type``, ``n_row``) become class variables rather than
   fields, so they never reach ``__init__`` or the config file;
-* the class becomes a frozen dataclass, so no decorator is needed;
+* the class becomes a frozen, keyword-only dataclass, so no decorator is
+  needed;
 * declaring a ``type`` registers the class, so no registration call is needed.
+
+Fields are keyword-only because a config file is a mapping, so nothing is ever
+built positionally. That also means a family base may carry a defaulted field
+without preventing its members from declaring required ones: with positional
+fields, ``Mesher.yplus = 30.0`` would make every later ``forward`` parameter
+default-only.
 
 A *family* is a direct subclass of Node with alternatives of its own --- a
 :class:`~turbigen2.fluid.Fluid` or a
@@ -28,10 +35,19 @@ Writing a new alternative is therefore one class::
         Pr: float = 0.7
 
 Fields holding a Node are followed when loading and dumping, as are fields
-holding a sequence of them, written ``tuple[Post, ...]``.
+holding a sequence of them, written ``tuple[Post, ...]``. An optional stage is
+written ``Mesher | None``, and ``tuple[float, ...]`` gets its elements
+converted like a scalar field.
+
+A field annotation is used, not just documented: a value out of a config file
+is converted to the annotated type and rejected if it cannot be. So ``cp`` is a
+float even when the file quoted it, and ``mu: null`` is an error rather than a
+``None`` that surfaces as an ``AttributeError`` several stages later.
 """
 
 import dataclasses
+import types
+import typing
 from typing import (
     ClassVar,
     dataclass_transform,
@@ -76,23 +92,113 @@ def _to_config(value):
     return value
 
 
-def _node_member(annotation):
-    """Return the Node subclass a sequence annotation holds, if it holds one.
+def _type_name(annotation):
+    """Return a readable name for an annotation, for an error message."""
+    return getattr(annotation, "__name__", None) or str(annotation)
 
-    Recognises ``tuple[Post, ...]`` and ``list[Post]``, which is how a config
-    holds a list of alternatives such as the post-processors.
+
+def _strip_none(annotation):
+    """Split ``X | None`` into ``(X, True)``; anything else is ``(it, False)``.
+
+    A union is not a class, so it fails every ``issubclass`` test below: left
+    alone, a field annotated ``Mesher | None`` would take a raw dict straight
+    out of the file and hand it on as though it were a Node. Stripping the
+    ``None`` first is what makes the honest annotation for an optional stage
+    behave exactly like the bare class.
+    """
+    if get_origin(annotation) not in (typing.Union, types.UnionType):
+        return annotation, False
+
+    args = get_args(annotation)
+    rest = tuple(arg for arg in args if arg is not type(None))
+    allows_none = len(rest) < len(args)
+
+    # Only a two-member union collapses to a single annotation. A wider one is
+    # left alone, so its values pass through unconverted rather than being
+    # forced into whichever member happened to come first.
+    return (rest[0] if len(rest) == 1 else annotation), allows_none
+
+
+def _sequence_member(annotation):
+    """Return the element annotation of ``tuple[X, ...]`` or ``list[X]``.
+
+    ``tuple[X, Y]`` is recognised only when every member is the same, since
+    there is one annotation to convert each element against. A bare ``tuple``
+    has no element type and so returns None, leaving its contents untouched.
     """
     if get_origin(annotation) not in (tuple, list):
         return None
-    for arg in get_args(annotation):
-        if isinstance(arg, type) and issubclass(arg, Node):
-            return arg
+
+    args = [arg for arg in get_args(annotation) if arg is not Ellipsis]
+    if args and all(arg is args[0] for arg in args):
+        return args[0]
     return None
 
 
-def _from_config(annotation, value):
+SCALARS = (bool, int, float, str)
+"""Scalar annotations a value out of a config file is converted against."""
+
+
+def _to_scalar(annotation, value, where):
+    """Convert `value` to the scalar type `annotation` names.
+
+    Only the types a YAML file yields are handled, and the caller has already
+    checked that `annotation` is one of them.
+    """
+    if annotation is bool:
+        # Checked first, and excluded everywhere below, because bool is a
+        # subclass of int -- so `gamma: true` would otherwise become 1.0.
+        if isinstance(value, bool):
+            return value
+    elif annotation is int:
+        if isinstance(value, bool):
+            pass
+        elif isinstance(value, int):
+            return value
+        elif isinstance(value, float) and value.is_integer():
+            return int(value)
+        elif isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                pass
+    elif annotation is float:
+        if isinstance(value, bool):
+            pass
+        elif isinstance(value, (int, float)):
+            return float(value)
+        elif isinstance(value, str):
+            # A quoted number in a config file is a slip, not a different
+            # intention, so accept it rather than failing on a rendering detail.
+            try:
+                return float(value)
+            except ValueError:
+                pass
+    elif annotation is str:
+        if isinstance(value, str):
+            return value
+
+    raise ValueError(
+        f"{where} must be {_type_name(annotation)}, got {value!r} "
+        f"({type(value).__name__})."
+    )
+
+
+def _from_config(annotation, value, where):
     """Convert a value out of a config file into a field value."""
+    annotation, allows_none = _strip_none(annotation)
+
     if value is None:
+        if not allows_none:
+            # Only a field whose type admits None may be null. Omitting the key
+            # is how a default is taken; writing null is how an optional stage
+            # is turned off, and it is an error anywhere else. Catching it here
+            # is the difference between naming the field and an AttributeError
+            # from inside forward().
+            raise ValueError(
+                f"{where} is null, but its type {_type_name(annotation)} does "
+                f"not allow it. Omit the key to take the default."
+            )
         # An optional stage that was not configured. Written out as null and
         # read back as None, so the round trip holds for a config that omits
         # part of the pipeline.
@@ -101,18 +207,33 @@ def _from_config(annotation, value):
     if isinstance(annotation, type) and issubclass(annotation, Node):
         return annotation.from_dict(value)
 
-    member = _node_member(annotation)
+    member = _sequence_member(annotation)
     if member is not None:
-        return tuple(member.from_dict(item) for item in value)
+        if isinstance(value, str) or not isinstance(value, (list, tuple)):
+            raise ValueError(
+                f"{where} must be a sequence of {_type_name(member)}, got "
+                f"{value!r} ({type(value).__name__})."
+            )
+        # Sequences are held as tuples so that a Node stays hashable and
+        # compares equal whether it was built from a file or by hand.
+        return tuple(
+            _from_config(member, item, f"{where}[{i}]") for i, item in enumerate(value)
+        )
+
+    if annotation in SCALARS:
+        # Checked before the sequence fallback below, so that a list handed to
+        # a scalar field is an error rather than silently becoming a tuple.
+        return _to_scalar(annotation, value, where)
 
     if isinstance(value, list):
+        # An annotation this module does not understand, such as a bare `tuple`.
         # Sequences are held as tuples so that a Node stays hashable and
         # compares equal whether it was built from a file or by hand.
         return tuple(value)
     return value
 
 
-@dataclass_transform(frozen_default=True)
+@dataclass_transform(frozen_default=True, kw_only_default=True)
 class Node:
     """Base for every mapping that can appear in a config file."""
 
@@ -131,7 +252,11 @@ class Node:
                 if name in annotations:
                     annotations[name] = _as_classvar(annotations[name])
 
-        dataclasses.dataclass(frozen=True)(cls)
+        # Keyword-only, because everything is built from a mapping. It also
+        # frees a family base to carry a defaulted field -- with positional
+        # fields, Mesher.yplus would forbid a required field on every mesher
+        # written afterwards.
+        dataclasses.dataclass(frozen=True, kw_only=True)(cls)
 
         # Registering here rather than in a decorator means a plugin author
         # writes one class and nothing else.
@@ -201,7 +326,9 @@ class Node:
         for field in fields:
             if field.name in data:
                 kwargs[field.name] = _from_config(
-                    hints.get(field.name), data.pop(field.name)
+                    hints.get(field.name),
+                    data.pop(field.name),
+                    f"{cls.__name__}.{field.name}",
                 )
 
         if data:

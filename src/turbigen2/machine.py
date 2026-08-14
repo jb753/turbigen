@@ -32,7 +32,7 @@ class Machine:
     mean_line: MeanLine
     """Flow field and annulus areas along the mean line."""
 
-    annulus: Annulus = None
+    annulus: Annulus | None = None
     """Annulus geometry, if the config asked for one."""
 
     blades: tuple[Blade, ...] = ()

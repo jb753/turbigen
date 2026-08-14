@@ -14,10 +14,10 @@ class TurbineCascade(MeanLineDesign):
     type: ClassVar[str] = "turbine_cascade"
     n_row: ClassVar[int] = 1
 
-    span: tuple
+    span: tuple[float, float]
     """Annulus span at inlet and outlet [m]."""
 
-    Alpha: tuple
+    Alpha: tuple[float, float]
     """Yaw angle at inlet and outlet [deg]."""
 
     Ma2: float

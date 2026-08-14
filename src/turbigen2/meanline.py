@@ -176,11 +176,22 @@ class MeanLine(ember.block.Block):
 
     @property
     def Am(self):
-        """Annulus area projected in the meridional direction [m^2]."""
+        """Annulus area normal to the meridional direction [m^2].
+
+        The true area of the annular surface the flow crosses, ``2 pi r_mid
+        span``, not a projection of it: ``mdot = rho Vm Am`` exactly. At a pitch
+        angle the surface is inclined to the axis, so it is larger than the
+        ``pi (r_cas**2 - r_hub**2)`` an axial view of the annulus would give, by
+        one over ``cos(Beta)``.
+        """
         return self._get_data_by_keys(("Am",)) * self.L_ref**2
 
     def set_Am(self, Am):
-        """Set annulus area projected in the meridional direction [m^2]."""
+        """Set annulus area normal to the meridional direction [m^2].
+
+        Note that this is ``mdot / rho / Vm``. A design that writes
+        ``mdot / rho / Vx`` is correct only where the flow is axial.
+        """
         self._set_data_by_keys(("Am",), np.asarray(Am) / self.L_ref**2)
 
     @property
@@ -248,21 +259,28 @@ class MeanLine(ember.block.Block):
         self._set_data_by_keys(("Am",), Am / fac_L**2, store_init=False)
         super().set_L_ref(L_ref)
 
-    def adjust_ref(self, L_ref):
-        """Set fluid references and L_ref from the current design.
+    def referenced_fluid(self):
+        """Return an equation of state scaled and datumed to this mean line.
 
-        Parameters
-        ----------
-        L_ref : float
-            Reference length to use for non-dimensionalisation [m].
+        The scales come from the design itself: mean density, velocity and gas
+        constant, with the datum placed near the mean thermodynamic state so
+        that internal energy and kinetic energy are comparable rather than one
+        being lost in the rounding of the other.
+
+        This *returns* rather than applies, which is what lets it work on a
+        frozen mean line, and it takes no reference length, which is what frees
+        it from needing any geometry. The caller decides what to put it on --
+        in practice the grid, since that is the object a solver iterates on. A
+        mean line is only ever read dimensionally, so its own scales do not
+        matter.
 
         Returns
         -------
-        fluid_ref : Fluid
-            The new fluid object set on the mean line.
+        fluid : Fluid
+            A new equation of state; this mean line is left unchanged.
 
         """
-        fluid_ref = self.fluid.change_ref(
+        return self.fluid.change_ref(
             rho_ref=self.rho.mean(),
             V_ref=self.V.mean(),
             Rgas_ref=self.Rgas.mean(),
@@ -270,11 +288,6 @@ class MeanLine(ember.block.Block):
             P_dtm=self.P.mean(),
             T_dtm=(self.T + (self.P / self.rho + self.halfVsq) / self.cv).mean(),
         )
-
-        self.set_L_ref(L_ref)
-        self.set_fluid(fluid_ref)
-
-        return fluid_ref
 
     #
     # OVERALL PERFORMANCE

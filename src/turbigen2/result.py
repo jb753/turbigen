@@ -21,10 +21,10 @@ class Result:
     machine: Machine
     """Geometry, and the flow it was designed for."""
 
-    actual: MeanLine = None
+    actual: MeanLine | None = None
     """Mean line mixed out from the CFD solution, once there is one."""
 
-    grid: object = None
+    grid: object | None = None
     """Computational grid, once the machine has been meshed."""
 
     converged: bool = False

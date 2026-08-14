@@ -30,13 +30,13 @@ class Config(Node):
     mean_line: MeanLineDesign
     """Mean-line design."""
 
-    annulus: AnnulusDesign = None
+    annulus: AnnulusDesign | None = None
     """Annulus design. Omit it to design the mean line alone."""
 
     blades: tuple[BladeDesign, ...] = ()
     """Blade designs, one per row. Omit them to design the annulus alone."""
 
-    mesh: Mesher = None
+    mesh: Mesher | None = None
     """Mesh generation. Only needed by the verbs that make a grid."""
 
     post_process: tuple[Post, ...] = ()

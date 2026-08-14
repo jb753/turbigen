@@ -221,11 +221,6 @@ class Annulus:
         return self.r_hub / self.r_tip
 
     @property
-    def Am(self):
-        """Annular flow area at all row inlet and outlet stations [m^2]."""
-        return np.pi * (self.r_tip**2 - self.r_hub**2)
-
-    @property
     def x_rms(self):
         """Axial coordinates at the RMS radius, at all stations [m]."""
         xr_hub, xr_cas = self._xr_stations()
@@ -282,14 +277,20 @@ class Annulus:
 
     def to_string(self):
         """Tabular string representation of the annulus at row stations."""
+        m = np.arange(1, 2 * self.n_row + 1, dtype=float)
+        span = self.span(m)
         cx_row = self.chords(0.5)[1::2]
-        span_stations = self.r_tip - self.r_hub
-        span_row = 0.5 * (span_stations[::2] + span_stations[1::2])
+        span_row = 0.5 * (span[::2] + span[1::2])
         properties = [
             ("r_rms/m", self.r_rms, ".4f"),
             ("r_hub/m", self.r_hub, ".4f"),
             ("r_tip/m", self.r_tip, ".4f"),
-            ("Am/m2", self.Am, ".4f"),
+            # Both of these are the true distance and the true area, normal to
+            # the meridional flow, so that they agree with MeanLine.span and
+            # MeanLine.Am. A radial difference r_tip - r_hub is the span
+            # projected onto the axis, shorter by cos(Beta), and
+            # pi * (r_tip**2 - r_hub**2) is the area projected the same way.
+            ("Am/m2", 2.0 * np.pi * self.r_mid * span, ".4f"),
             ("htr", self.htr, ".4f"),
             ("cx/m", cx_row, ".4f"),
             ("AR", span_row / cx_row, ".4f"),
@@ -320,10 +321,10 @@ class FixedAxialChord(AnnulusDesign):
 
     type: ClassVar[str] = "fixed_axial_chord"
 
-    cx_row: tuple
+    cx_row: tuple[float, ...]
     """Axial chord of each blade row [m], length n_row."""
 
-    cx_gap: tuple
+    cx_gap: tuple[float, ...]
     """Axial chord of each gap, including the inlet and exit ducts [m],
     length n_row + 1."""
 

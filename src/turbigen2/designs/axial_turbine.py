@@ -35,13 +35,13 @@ class AxialTurbine(MeanLineDesign):
     mdot: float
     """Mass flow rate [kg/s]."""
 
-    Ys: tuple
+    Ys: tuple[float, ...]
     """Pseudo entropy loss coefficient at each row exit [--]."""
 
     r_rms: float
     """Mean radius, constant through the stage [m]."""
 
-    zeta: tuple = (1.0, 1.0)
+    zeta: tuple[float, float] = (1.0, 1.0)
     """Axial velocity at stage inlet and outlet, relative to rotor inlet [--]."""
 
     Po1: float = 1e5

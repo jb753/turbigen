@@ -25,6 +25,22 @@ reports the design a CFD solution actually achieved, and it also supplies the
 residual that :meth:`MeanLineDesign.solve_for` drives when ``forward`` cannot
 hit a target directly. Writing a formula once and calling it from both
 directions is what stops them drifting apart.
+
+A mean line stores its state as float32 against the entropy and internal-energy
+datum of its fluid, which defaults to 1 bar and 300 K. That is fine for air near
+ambient, but a machine running hot enough or high enough pressure will store a
+large internal energy with the kinetic energy as a small correction on top of
+it, and lose the latter to rounding. A design that expects such conditions
+should move the datum, before it solves, from the inlet conditions it already
+knows::
+
+    ml.set_fluid(ml.fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
+
+Note that the *reference scales* are a separate matter and not worth setting
+here: floating-point precision is invariant under scaling, so dividing the
+stored variables through by a density and a velocity changes their exponents
+and nothing else. Scales matter to the grid, which a solver iterates on, and
+:meth:`turbigen2.meanline.MeanLine.referenced_fluid` supplies them there.
 """
 
 import logging
@@ -52,7 +68,7 @@ class DesignError(Exception):
 class MeanLineDesign(Node):
     """Base for mean-line designers."""
 
-    n_row: ClassVar[int] = None
+    n_row: ClassVar[int | None] = None
     """Number of blade rows this design describes."""
 
     #
@@ -100,8 +116,20 @@ class MeanLineDesign(Node):
         return ml
 
     def design(self, fluid) -> MeanLine:
-        """Return a mean line built from this design."""
-        return self.forward(fluid)
+        """Return a mean line built from this design.
+
+        Checks that the result inverts back to the design variables that asked
+        for it, then freezes it at the earliest opportunity, so that every
+        stage which follows -- annulus, blades, mesher, post-processing --
+        reads the mean line and cannot write to it.
+
+        Because the check runs here, a nominal mean line that exists *is* the
+        requested design, and there is no third state between what was asked
+        for and what was achieved.
+        """
+        ml = self.forward(fluid)
+        check_round_trip(self, ml)
+        return ml.freeze()
 
     def solve_for(
         self, ml, build, unknowns, targets, *, rtol=1e-4, max_iter=100, name=""

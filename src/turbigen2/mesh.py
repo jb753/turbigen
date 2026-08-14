@@ -91,16 +91,32 @@ class Mesher(Node):
         spacing = self.wall_spacing(machine)
         grid = self.forward(machine, spacing)
 
-        # A grid straight out of a mesher is not yet usable: it carries no
-        # length scale, has not been checked, and has no wall distance. Doing
-        # it here means a mesher cannot forget, and a caller need not know.
-        grid.set_L_ref(machine.mean_line.L_ref)
+        # A grid straight out of a mesher is not yet usable: it is bare
+        # geometry, with no scales, no equation of state, no check and no wall
+        # distance. Doing it here means a mesher cannot forget, and a caller
+        # need not know.
+        #
+        # The scales are set before any flow state exists, so the initial guess
+        # and everything the solver writes afterwards are stored against them.
+        # Set them later and the whole field would have to be rescaled.
+        grid.set_L_ref(self.L_ref(machine))
+        grid.set_fluid(machine.mean_line.referenced_fluid())
         self.check_volumes(grid)
         grid.calculate_wdist(limit_pitch=WDIST_LIMIT_PITCH)
 
         logger.info(f"n_cell/1e6={grid.size / 1e6:.1f}")
 
         return grid
+
+    def L_ref(self, machine):
+        """Return the reference length for the grid [m].
+
+        The longest row chord at mid-span, so that the largest blade in the
+        machine is order one. Taken from the annulus rather than from the mean
+        line, which carries no meaningful length: a chord is a property of the
+        geometry, and the mean line is a flow field.
+        """
+        return float(machine.annulus.chords(0.5)[1::2].max())
 
     def check_volumes(self, grid):
         """Raise if any cell in `grid` has a non-positive volume."""

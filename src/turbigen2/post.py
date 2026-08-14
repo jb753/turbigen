@@ -61,7 +61,7 @@ class AnnulusPlot(Post):
 
     type: ClassVar[str] = "annulus"
 
-    m_cut: tuple = ()
+    m_cut: tuple[float, ...] = ()
     """Normalised meridional positions at which to draw a cut plane."""
 
     show_axis: bool = False

@@ -161,8 +161,27 @@ def test_geometry_is_self_consistent(machine):
     np.testing.assert_allclose(
         annulus.r_mid, 0.5 * (annulus.r_hub + annulus.r_tip), atol=1e-12
     )
+
+
+def test_geometry_matches_the_mean_line_it_was_designed_from(machine):
+    """The fit passes through the stations, so the two agree station by station.
+
+    Area is the one worth stating explicitly. A mean line's `Am` is the true
+    area normal to the meridional flow, `2 pi r_mid span`, whereas
+    `pi (r_tip**2 - r_hub**2)` is that area projected onto the axis, smaller by
+    cos(Beta). The two coincide only in axial flow, so comparing the annulus
+    against the projection would hide the difference rather than pin it down.
+    """
+    annulus, flat = machine.annulus, machine.mean_line.flat
+    m = np.arange(1, 2 * annulus.n_row + 1, dtype=float)
+    span = annulus.span(m)
+
+    # Loose tolerances throughout: a mean line stores its state as float32.
+    np.testing.assert_allclose(annulus.r_mid, flat.r_mid, rtol=1e-6)
+    np.testing.assert_allclose(annulus.r_rms, flat.r, rtol=1e-6)
+    np.testing.assert_allclose(span, flat.span, rtol=1e-6)
     np.testing.assert_allclose(
-        annulus.Am, np.pi * (annulus.r_tip**2 - annulus.r_hub**2), rtol=1e-12
+        2.0 * np.pi * annulus.r_mid * span, flat.Am, rtol=1e-6
     )
 
 

@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pytest
 
-from turbigen2 import Config, Fluid, MeanLineDesign, PerfectFluid
+from turbigen2 import Config, Fluid, MeanLineDesign, Mesher, PerfectFluid
 from turbigen2.node import Node
 
 CASE = {
@@ -80,6 +80,136 @@ def test_nested_nodes_are_built_and_dumped_recursively():
     assert isinstance(config.fluid, PerfectFluid)
     assert isinstance(config.mean_line, MeanLineDesign)
     assert config.to_dict()["fluid"]["type"] == "perfect"
+
+
+#
+# OPTIONAL FIELDS
+#
+# An annotation like `Mesher | None` is a union, not a class, so it fails every
+# issubclass test in the protocol. Left unhandled it does not raise: the raw
+# dict out of the file lands in the field, and the failure surfaces stages later
+# as a dict with no methods. So the honest annotation for an optional stage has
+# to be tested, not just the bare one.
+#
+
+
+class WithOptional(Node):
+    fluid: Fluid | None = None
+    fluids: tuple[Fluid, ...] = ()
+
+
+def test_optional_node_field_is_built():
+    node = WithOptional.from_dict({"fluid": CASE["fluid"]})
+
+    assert isinstance(node.fluid, PerfectFluid)
+
+
+def test_optional_node_field_accepts_null():
+    """Writing null is how an omitted stage round-trips through a file."""
+    assert WithOptional.from_dict({"fluid": None}).fluid is None
+    assert WithOptional.from_dict(WithOptional().to_dict()) == WithOptional()
+
+
+def test_null_is_refused_where_the_type_does_not_allow_it():
+    """`mu: null` names the field, rather than failing inside forward()."""
+    bad = dict(CASE["fluid"], mu=None)
+
+    with pytest.raises(ValueError, match="PerfectFluid.mu is null"):
+        Fluid.from_dict(bad)
+
+
+def test_config_optional_stages_round_trip():
+    """The stages Config declares optional really are optional."""
+    config = Config.from_dict(CASE)
+
+    assert config.annulus is None
+    assert config.mesh is None
+    assert Config.from_dict(config.to_dict()) == config
+
+
+#
+# VALUE CONVERSION
+#
+# The annotations are used, not merely documented. Without this a field holds
+# whatever the file happened to contain: `cp: '1005'` gives a string, and
+# `cp * 2` silently returns '10051005'.
+#
+
+
+class Scalars(Node):
+    x: float = 0.0
+    n: int = 0
+    flag: bool = False
+    name: str = ""
+    xs: tuple[float, ...] = ()
+
+
+@pytest.mark.parametrize(
+    "given,expect",
+    [
+        ({"x": 1}, 1.0),
+        ({"x": "1.5"}, 1.5),
+        ({"x": 1.5}, 1.5),
+    ],
+)
+def test_a_float_field_holds_a_float(given, expect):
+    value = Scalars.from_dict(given).x
+
+    assert isinstance(value, float)
+    assert value == expect
+
+
+def test_an_int_field_accepts_a_whole_float():
+    assert Scalars.from_dict({"n": 4.0}).n == 4
+
+
+def test_sequence_elements_are_converted():
+    assert Scalars.from_dict({"xs": [1, "2", 3.0]}).xs == (1.0, 2.0, 3.0)
+
+
+@pytest.mark.parametrize(
+    "given,match",
+    [
+        ({"x": "lots"}, "Scalars.x must be float"),
+        # bool is a subclass of int, so `flag: true` for a number has to be
+        # excluded deliberately rather than by isinstance.
+        ({"x": True}, "Scalars.x must be float"),
+        ({"n": 1.5}, "Scalars.n must be int"),
+        ({"flag": 1}, "Scalars.flag must be bool"),
+        ({"name": 3}, "Scalars.name must be str"),
+        # A list for a scalar field must not fall through the tuple conversion.
+        ({"x": [1.0, 2.0]}, "Scalars.x must be float"),
+        ({"xs": 1.0}, r"Scalars.xs must be a sequence"),
+        ({"xs": [1.0, "x"]}, r"Scalars.xs\[1\] must be float"),
+    ],
+)
+def test_a_value_of_the_wrong_type_names_the_field(given, match):
+    with pytest.raises(ValueError, match=match):
+        Scalars.from_dict(given)
+
+
+#
+# KEYWORD-ONLY FIELDS
+#
+
+
+def test_a_family_member_may_require_a_field_after_an_inherited_default():
+    """Mesher.yplus has a default; a mesher must still be able to require one.
+
+    With positional fields this is a TypeError at class definition, so the first
+    defaulted field on any family base would forbid required fields in every
+    member written afterwards -- which is every mesher after the first.
+    """
+
+    class Layered(Mesher):
+        type: ClassVar[str] = "layered"
+        n_layer: int
+
+    built = Layered.from_dict({"type": "layered", "n_layer": 4})
+    assert (built.n_layer, built.yplus) == (4, 30.0)
+
+    with pytest.raises(TypeError, match="n_layer"):
+        Layered()
 
 
 #

@@ -17,6 +17,7 @@ import turbigen.meanline_new
 import turbigen.plugins
 from turbigen2 import Config, DesignError, MeanLineDesign, PerfectFluid
 from turbigen2.design import check_round_trip
+from turbigen2.designs.axial_turbine import AxialTurbine
 
 GAMMA, CP = 1.4, 1005.0
 RGAS = CP * (GAMMA - 1.0) / GAMMA
@@ -327,3 +328,77 @@ def test_matches_the_turbigen_implementation(name):
             err_msg=f"{name}: {prop} differs from the turbigen implementation",
         )
     assert new.eta_tt == pytest.approx(old.eta_tt, rel=1e-3)
+
+
+#
+# THE FRAMEWORK METHOD
+#
+# `design` validates and freezes; `forward` is the part an author writes. The
+# two are separate so that every design gets the check and the freeze without
+# having to remember them.
+#
+
+
+def test_design_freezes_what_it_returns(designed):
+    """Frozen at the earliest opportunity, so no later stage can write to it."""
+    _, _, ml = designed
+
+    assert ml.frozen
+    assert ml.flat.frozen and ml.row(0).frozen
+
+    with pytest.raises(ValueError, match="frozen"):
+        ml.flat.set_Vx(10.0)
+
+
+def test_design_refuses_a_mean_line_that_does_not_invert():
+    """The check runs inside design(), not only when a test calls it.
+
+    That is what lets the rest of the package treat a nominal mean line that
+    exists as the design that was asked for, with no third state in between.
+    """
+
+    class Wrong(AxialTurbine):
+        type: ClassVar[str] = "wrong_backward"
+
+        def backward(self, ml):
+            # Deliberately misreport a variable that `forward` sets directly.
+            # A solve_for *target* such as psi would not do: backward is the
+            # single definition of what a variable means, so corrupting one
+            # consistently just changes what the design asks for, and the
+            # solver hits the new meaning. The round trip catches forward and
+            # backward disagreeing, not backward being wrong.
+            out = super().backward(ml)
+            return {**out, "mdot": out["mdot"] * 1.5}
+
+    config = build_config("axial_turbine")
+    design = Wrong(**CASES["axial_turbine"])
+
+    with pytest.raises(DesignError, match="mdot"):
+        design.design(config.fluid)
+
+
+#
+# REFERENCE SCALES
+#
+
+
+def test_referenced_fluid_does_not_touch_the_mean_line(designed):
+    """It returns a fluid rather than applying one, which is what lets it run
+    on a frozen mean line and lets the caller choose what to put it on."""
+    _, _, ml = designed
+    before = ml.fluid
+
+    referenced = ml.referenced_fluid()
+
+    assert ml.fluid is before
+    assert referenced is not before
+
+
+def test_referenced_fluid_scales_from_the_design(designed):
+    _, _, ml = designed
+    flat = ml.flat
+
+    referenced = ml.referenced_fluid()
+
+    assert referenced.rho_ref == pytest.approx(float(flat.rho.mean()), rel=1e-6)
+    assert referenced.V_ref == pytest.approx(float(flat.V.mean()), rel=1e-6)
