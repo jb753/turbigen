@@ -367,7 +367,7 @@ class MeanLine(ember.block.Block):
         """
         flat = self.flat
         n = flat.size
-        xr = np.array(ann._xr_stations()).mean(0).T
+        xr = np.array(ann._xr_stations).mean(0).T
         xrt = np.append(xr, np.zeros((n, 1)), axis=1)
         b = ember.block.Block(shape=(n,))
         b.set_fluid(self.fluid)

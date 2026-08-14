@@ -7,6 +7,8 @@ produces an Annulus and stores nothing on itself, and a config with no annulus
 designs a mean line alone.
 """
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -288,3 +290,42 @@ def test_machine_reports_only_what_was_designed():
 
     assert "Mean line:" in out
     assert "Annulus:" not in out
+
+
+#
+# IMMUTABILITY
+#
+# Freezing the mean line closed only a third of the problem: an Annulus was a
+# plain class, so anything holding one could rebind its merge weight or its
+# fitted curves. Results are now uniformly frozen dataclasses, like Machine and
+# Result already were.
+#
+
+
+def test_annulus_cannot_be_rebound(machine):
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        machine.annulus.merge_weight = 0.9
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        machine.annulus.curves = ()
+
+
+def test_stream_surface_cannot_be_rebound(machine):
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        machine.annulus.row(0).chord = 1.0
+
+
+def test_station_coordinates_are_cached(machine):
+    """Every station property reads them, so they were evaluated ten times over
+    to print five rows of a table. Caching is only safe because it is frozen."""
+    annulus = machine.annulus
+
+    assert annulus._xr_stations is annulus._xr_stations
+
+
+def test_repr_stays_readable(machine):
+    """A generated repr would dump the spline objects and the whole knot array,
+    so the bulky fields are excluded from it."""
+    text = repr(machine.annulus)
+
+    assert text == f"Annulus(merge_weight=0.0, n_row={machine.annulus.n_row})"

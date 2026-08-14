@@ -446,3 +446,37 @@ def test_machine_reports_only_what_was_designed():
     ).design()
 
     assert "Blades:" not in machine.to_string()
+
+
+#
+# IMMUTABILITY
+#
+
+
+def test_blade_cannot_be_rebound():
+    """A result is frozen, so the mutation the old designer relied on -- writing
+    a stream surface and then metal angles onto itself -- has nowhere to happen.
+    """
+    bld = build().design().blades[0]
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        bld.n_blade = 1
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        bld.tanchi = None
+
+
+def test_camber_line_cannot_be_rebound():
+    camber, _ = build().design().blades[0].section(0.5)
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        camber.tanchi_LE = 0.0
+
+
+def test_repr_stays_readable():
+    """The bulky fields are kept out of the generated repr, which would
+    otherwise print every section, both arrays and the whole annulus."""
+    bld = build().design().blades[0]
+
+    assert repr(bld).startswith("Blade(m_stack=")
+    assert "PchipInterpolator" not in repr(bld)

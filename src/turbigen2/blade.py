@@ -23,6 +23,7 @@ from typing import ClassVar
 import numpy as np
 
 import turbigen.util
+from turbigen2.annulus import StreamSurface
 from turbigen2.camber import CamberDesign, CamberLine
 from turbigen2.node import Node
 from turbigen2.thickness import ThicknessDesign
@@ -283,42 +284,46 @@ class BladeDesign(Node):
         return self.forward(mean_line_row, stream_surface)
 
 
+@dataclasses.dataclass(frozen=True, eq=False)
 class Blade:
-    """A designed blade row."""
+    """A designed blade row.
 
-    def __init__(
-        self,
-        stream_surface,
-        spf,
-        tanchi,
-        cambers,
-        thicknesses,
-        m_stack,
-        theta_offset,
-        tip_gap,
-        n_blade,
-    ):
-        self._surface = stream_surface
-        self._spf = np.asarray(spf, dtype=float)
-        self._tanchi = np.asarray(tanchi, dtype=float)
-        self._cambers = tuple(cambers)
-        self._thicknesses = tuple(thicknesses)
-        self.m_stack = float(m_stack)
-        """Normalised meridional position the sections are stacked at [--]."""
-        self.theta_offset = float(theta_offset)
-        """Angle the whole blade is rotated through [rad]."""
-        self.tip_gap = float(tip_gap)
-        """Tip clearance [m]."""
-        self.n_blade = n_blade
-        """Number of blades in this row [--]."""
+    Frozen, like every other result. The package this replaces reaches its
+    geometry by mutating the designer three times over; here there is nothing
+    to mutate, on the design or on the result.
+    """
 
-    def __repr__(self):
-        return f"Blade(n_section={len(self._spf)}, n_blade={self.n_blade})"
+    stream_surface: StreamSurface = dataclasses.field(repr=False)
+    """The annulus within this row."""
+
+    spf: np.ndarray = dataclasses.field(repr=False)
+    """Span fraction of each section, shape (n_section,)."""
+
+    tanchi: np.ndarray = dataclasses.field(repr=False)
+    """Tangent of the metal angles, shape (n_section, 2)."""
+
+    cambers: tuple = dataclasses.field(repr=False)
+    """Camber shape of each section."""
+
+    thicknesses: tuple = dataclasses.field(repr=False)
+    """Thickness distribution of each section."""
+
+    m_stack: float
+    """Normalised meridional position the sections are stacked at [--]."""
+
+    theta_offset: float
+    """Angle the whole blade is rotated through [rad]."""
+
+    tip_gap: float
+    """Tip clearance [m]."""
+
+    n_blade: int
+    """Number of blades in this row [--]."""
 
     @property
     def n_section(self):
         """Number of sections this blade was defined by."""
-        return len(self._spf)
+        return len(self.spf)
 
     def section(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
@@ -326,13 +331,13 @@ class Blade:
         Interpolated linearly between the sections, extrapolating beyond the
         end ones.
         """
-        camber = _interpolate(self._cambers, self._spf, spf)
-        thickness = _interpolate(self._thicknesses, self._spf, spf)
+        camber = _interpolate(self.cambers, self.spf, spf)
+        thickness = _interpolate(self.thicknesses, self.spf, spf)
 
         if self.n_section == 1:
-            tanchi = self._tanchi[0]
+            tanchi = self.tanchi[0]
         else:
-            tanchi = turbigen.util.interp1d_linear_extrap(self._spf, self._tanchi)(
+            tanchi = turbigen.util.interp1d_linear_extrap(self.spf, self.tanchi)(
                 spf
             ).reshape(-1)
 
@@ -387,12 +392,12 @@ class Blade:
         mu_LTE = (mu - mcam_LE) / mcam_ptp
         ml_LTE = (ml - mcam_LE) / mcam_ptp
         mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self._surface.xr(0.5, mcam))
+        chord = turbigen.util.arc_length(self.stream_surface.xr(mcam, 0.5))
 
         # Meridional coordinates of the upper, lower and camber lines
-        xru = self._surface.xr(spf, mu_LTE)
-        xrl = self._surface.xr(spf, ml_LTE)
-        xr = self._surface.xr(spf, mcam)
+        xru = self.stream_surface.xr(mu_LTE, spf)
+        xrl = self.stream_surface.xr(ml_LTE, spf)
+        xr = self.stream_surface.xr(mcam, spf)
 
         # Project the camber angle onto the stream surface
         theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)

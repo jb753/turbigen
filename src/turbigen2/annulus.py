@@ -11,6 +11,8 @@ why: the four classes it replaces are a 2x2 of chord specification against
 merged-or-not, and merging is a continuous parameter rather than a type.
 """
 
+import dataclasses
+import functools
 import logging
 from typing import ClassVar
 
@@ -70,6 +72,7 @@ def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=2
     return s, curves
 
 
+@dataclasses.dataclass(frozen=True, eq=False)
 class StreamSurface:
     """The annulus within one blade row.
 
@@ -80,25 +83,29 @@ class StreamSurface:
     :class:`Annulus`, which is the only thing that defines it.
     """
 
-    def __init__(self, evaluate_xr, m_LE, chord):
-        self._evaluate_xr = evaluate_xr
-        self._m_LE = float(m_LE)
-        self.chord = float(chord)
-        """Meridional chord of the row at mid-span [m]."""
+    evaluate_xr: object = dataclasses.field(repr=False)
+    """The annulus coordinate map this is a restriction of."""
 
-    def __repr__(self):
-        return f"StreamSurface(m_LE={self._m_LE:g}, chord={self.chord:.4g})"
+    m_LE: float
+    """Annulus meridional coordinate of this row's leading edge."""
 
-    def xr(self, spf, m):
+    chord: float
+    """Meridional chord of the row at mid-span [m]."""
+
+    def xr(self, m, spf):
         """Return meridional coordinates within the row.
+
+        Takes its arguments in the same order as
+        :meth:`Annulus.evaluate_xr`, which it is a restriction of. Both take
+        two broadcastable array-likes, so a transposed call would be silent.
 
         Parameters
         ----------
-        spf : array_like
-            Span fraction, 0 at the hub and 1 at the casing.
         m : array_like
             Normalised meridional distance, 0 at the leading edge and 1 at the
             trailing edge. Broadcast against `spf`.
+        spf : array_like
+            Span fraction, 0 at the hub and 1 at the casing.
 
         Returns
         -------
@@ -106,40 +113,47 @@ class StreamSurface:
             Axial and radial coordinates, stacked on the first axis.
 
         """
-        return self._evaluate_xr(self._m_LE + np.asarray(m, dtype=float), spf)
+        return self.evaluate_xr(self.m_LE + np.asarray(m, dtype=float), spf)
 
 
+@dataclasses.dataclass(frozen=True, eq=False)
 class Annulus:
     """Hub and casing lines of a designed annulus.
 
     Coordinates are addressed by a normalised meridional coordinate ``m``,
     where 0 is the inlet, 1 the first row leading edge, 2 its trailing edge and
     so on, and a span fraction ``spf`` running 0 at the hub to 1 at the casing.
+
+    Frozen, like every other result: an annulus is what the design produced and
+    nothing downstream has any business changing it. `eq=False` because the
+    fields hold arrays and spline objects, so a generated `__eq__` would raise
+    on the first comparison -- and unlike a config Node, whose round trip is
+    checked by value, nothing ever compares two annuli.
     """
 
-    def __init__(self, s, curves, curves_merged, merge_weight, n_row):
-        self._s = s
-        self._curves = curves
-        self._curves_merged = curves_merged
-        self._merge_weight = float(merge_weight)
-        self._n_row = int(n_row)
+    s: np.ndarray = dataclasses.field(repr=False)
+    """Arc-length parameter of each control point."""
 
-    def __repr__(self):
-        return f"Annulus(n_row={self.n_row}, merge_weight={self._merge_weight:.3g})"
+    curves: tuple = dataclasses.field(repr=False)
+    """Fitted hub and casing curves, (x_hub, r_hub, x_cas, r_cas)."""
+
+    curves_merged: tuple = dataclasses.field(repr=False)
+    """The same, fitted through the end segments only, for the merge blend."""
+
+    merge_weight: float
+    """Blend between `curves` at 0 and `curves_merged` at 1 [--]."""
+
+    n_row: int
+    """Number of blade rows."""
 
     #
     # STRUCTURE
     #
 
     @property
-    def n_row(self):
-        """Number of blade rows."""
-        return self._n_row
-
-    @property
     def n_segment(self):
         """Number of segments, being the rows and the gaps between them."""
-        return 2 * self._n_row + 1
+        return 2 * self.n_row + 1
 
     @property
     def mmax(self):
@@ -169,25 +183,33 @@ class Annulus:
         mb, spfb = np.broadcast_arrays(
             np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
         )
-        sq = np.interp(mb, np.arange(len(self._s)), self._s)
+        sq = np.interp(mb, np.arange(len(self.s)), self.s)
 
-        weight = self._merge_weight
+        weight = self.merge_weight
         if weight == 0.0:
-            xhub, rhub, xcas, rcas = (curve(sq) for curve in self._curves)
+            xhub, rhub, xcas, rcas = (curve(sq) for curve in self.curves)
         elif weight == 1.0:
-            xhub, rhub, xcas, rcas = (curve(sq) for curve in self._curves_merged)
+            xhub, rhub, xcas, rcas = (curve(sq) for curve in self.curves_merged)
         else:
             xhub, rhub, xcas, rcas = (
                 (1.0 - weight) * plain(sq) + weight * merged(sq)
-                for plain, merged in zip(self._curves, self._curves_merged)
+                for plain, merged in zip(self.curves, self.curves_merged)
             )
 
         x = (1.0 - spfb) * xhub + spfb * xcas
         r = (1.0 - spfb) * rhub + spfb * rcas
         return np.stack([x, r])
 
+    @functools.cached_property
     def _xr_stations(self):
-        """Hub and casing coordinates at every row inlet and outlet."""
+        """Hub and casing coordinates at every row inlet and outlet.
+
+        Cached: every station property below reads it, so printing the annulus
+        table used to evaluate the splines ten times over for five rows of
+        numbers. Caching is safe because the annulus is frozen, and possible
+        because `cached_property` writes the instance dict directly rather than
+        going through the `__setattr__` that freezing blocks.
+        """
         m = np.arange(1, 2 * self.n_row + 1, dtype=float)
         return self.evaluate_xr(m, spf=0.0), self.evaluate_xr(m, spf=1.0)
 
@@ -198,12 +220,12 @@ class Annulus:
     @property
     def r_hub(self):
         """Hub radii at all row inlet and outlet stations [m]."""
-        return self._xr_stations()[0][1]
+        return self._xr_stations[0][1]
 
     @property
     def r_tip(self):
         """Casing radii at all row inlet and outlet stations [m]."""
-        return self._xr_stations()[1][1]
+        return self._xr_stations[1][1]
 
     @property
     def r_mid(self):
@@ -223,7 +245,7 @@ class Annulus:
     @property
     def x_rms(self):
         """Axial coordinates at the RMS radius, at all stations [m]."""
-        xr_hub, xr_cas = self._xr_stations()
+        xr_hub, xr_cas = self._xr_stations
         spf_rms = (self.r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
         return xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
 

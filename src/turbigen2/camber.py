@@ -15,6 +15,7 @@ toggle on and off. Here the two live in different objects and a metal angle is
 computed once.
 """
 
+import dataclasses
 import logging
 from typing import ClassVar
 
@@ -65,24 +66,23 @@ class Quadratic(CamberDesign):
         return m * (a * m + (1.0 - a))
 
 
+@dataclasses.dataclass(frozen=True, eq=False)
 class CamberLine:
     """A camber shape placed between known metal angles.
 
     Not a :class:`~turbigen2.node.Node`: the end angles come from the mean line
     handed to a blade design, so a camber line is a result and never appears in
-    a config file.
+    a config file. Frozen for the same reason every result is.
     """
 
-    def __init__(self, shape, tanchi_LE, tanchi_TE):
-        self.shape = shape
-        self.tanchi_LE = float(tanchi_LE)
-        self.tanchi_TE = float(tanchi_TE)
+    shape: CamberDesign
+    """Normalised camber distribution between the end angles."""
 
-    def __repr__(self):
-        return (
-            f"CamberLine({self.shape!r}, chi_LE={self.chi_LE:.2f}, "
-            f"chi_TE={self.chi_TE:.2f})"
-        )
+    tanchi_LE: float
+    """Tangent of the metal angle at the leading edge."""
+
+    tanchi_TE: float
+    """Tangent of the metal angle at the trailing edge."""
 
     @property
     def chi_LE(self):
