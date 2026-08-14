@@ -507,6 +507,42 @@ def test_replotting_in_place_keeps_the_recorded_answer(run_case, tmp_path):
     assert after.actual is not None
 
 
+def test_run_writes_its_convergence_history(run_case, tmp_path):
+    """Beside the field, so a re-plot can draw the page the run had."""
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+
+    assert (out / cli.HISTORY_NAME).is_file()
+
+
+def test_a_replot_recovers_the_convergence_history(run_case, tmp_path):
+    out = tmp_path / "out"
+    cli.main(["run", str(run_case), "-o", str(out), "-q"])
+
+    history = cli.read_history(out / cli.HISTORY_NAME)
+
+    assert history is not None
+    assert history.i_log >= 0
+    # The residuals are what the convergence plot needs and what the JSON
+    # export ember offers instead would have dropped.
+    assert float(history.residual.min()) > 0.0
+
+
+def test_a_history_that_will_not_load_is_not_fatal(tmp_path):
+    """A re-plot minus its convergence page beats a re-plot that refuses.
+
+    CNV is a pickle, so a file written by another version may not come back.
+    """
+    path = tmp_path / cli.HISTORY_NAME
+    path.write_text("not a pickle")
+
+    assert cli.read_history(path) is None
+
+
+def test_no_history_beside_a_restart_is_not_fatal(tmp_path):
+    assert cli.read_history(tmp_path / cli.HISTORY_NAME) is None
+
+
 def test_bare_restart_needs_somewhere_to_look(run_case, capsys):
     assert cli.main(["mesh", str(run_case), "--restart"]) == 1
 

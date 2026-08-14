@@ -32,6 +32,7 @@ import yaml
 
 import turbigen
 import turbigen.util
+import ember.convergence_history
 import ember.yaml_util
 from turbigen2 import bconds, case, guess, mixout, plugins, post, restart
 from turbigen2.config import Config
@@ -50,6 +51,15 @@ LOGGER_NAMES = ("turbigen", "ember")
 
 RESTART_NAME = "restart.npz"
 """What a run calls the flow field it leaves behind, and `--restart` looks for."""
+
+HISTORY_NAME = "conv.cnv"
+"""What a run calls its convergence history, written beside the flow field.
+
+ember's own CNV format, which is a pickle: its `to_json` writes three files of
+plotting points, drops the residuals and the divergence flag, and has no
+reader, so it cannot bring a history back. The consequence of the format is
+handled where it is read rather than avoided here --- see `read_history`.
+"""
 
 
 #
@@ -291,6 +301,31 @@ def resolve_restart(args, out_dir):
     return restart_path
 
 
+def save_history(path, history):
+    """Write `history` beside the flow field it belongs to."""
+    history.write_cnv(path)
+    logger.debug(f"Wrote the convergence history to {path}")
+
+
+def read_history(path):
+    """Return the convergence history at `path`, or None if there is not one.
+
+    A history is a bonus rather than a requirement, so nothing here raises: a
+    re-plot without one is the report minus its convergence page, which beats a
+    re-plot that refuses to run because a file an older version wrote will not
+    unpickle. That is the price of ember's CNV format, paid here rather than by
+    the caller.
+    """
+    if not path.is_file():
+        return None
+
+    try:
+        return ember.convergence_history.ConvergenceHistory.read_cnv(path)
+    except Exception as err:
+        logger.warning(f"Could not read the convergence history at {path}: {err}")
+        return None
+
+
 def cmd_mesh(args):
     """Design the machine, mesh it, and report both."""
     config = load_config(args)
@@ -299,9 +334,17 @@ def cmd_mesh(args):
     # With a stored field this is a re-plot: the grid comes back carrying a
     # solution some previous run paid for, and re-meshing to get there costs
     # seconds against the minutes of the march it stands in for.
-    machine, grid = prepare(config, resolve_restart(args, out_dir))
+    restart_path = resolve_restart(args, out_dir)
+    machine, grid = prepare(config, restart_path)
 
-    result = Result(machine=machine, grid=grid)
+    # The history is looked for beside the field rather than in the output
+    # directory, so a restart named from somewhere else brings its own, and
+    # a re-plot gets the convergence page the run it is re-plotting had.
+    history = None
+    if restart_path is not None:
+        history = read_history(restart_path.parent / HISTORY_NAME)
+
+    result = Result(machine=machine, grid=grid, history=history)
 
     _write_output(config, result, out_dir)
     return 0
@@ -354,6 +397,10 @@ def cmd_run(args):
     restart_path = out_dir / RESTART_NAME
     restart.save(restart_path, grid)
     logger.info(f"Wrote the flow field to {restart_path}")
+
+    # Beside the field, and for the same reason: it is what a re-plot needs to
+    # draw the convergence page, and it costs a few kilobytes.
+    save_history(out_dir / HISTORY_NAME, history)
 
     _write_output(config, result, out_dir)
 

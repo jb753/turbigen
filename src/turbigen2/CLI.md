@@ -184,6 +184,12 @@ Bare `--restart` reads `restart.npz` from the `--out` directory, which makes
 re-plotting a run in place a flag rather than a path to type. Naming a file
 still wins, so a field can come from anywhere.
 
+The convergence history is looked for beside the *field*, not in the output
+directory, so a restart named from elsewhere brings its own and a re-plot draws
+the same pages the run did. A run writes it to `conv.cnv` --- ember's own
+format, which is a pickle, so reading it is guarded: a history that will not
+load costs the report its convergence page and nothing else.
+
 Writing a report back into a run's own directory must not cost that run its
 answer, so the resolved config is left alone when the file already holds
 exactly it. Rewriting would replace the `result:` block --- the mixed-out mean
