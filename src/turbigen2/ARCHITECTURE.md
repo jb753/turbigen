@@ -356,6 +356,41 @@ config --- but four things are dropped:
   statements commented out --- so it went too, and with it the `row_meta` that
   existed to feed it.
 
+## Initial guess
+
+A grid leaves the mesher as geometry with reference scales and no flow in it.
+`guess.apply(grid, machine)` writes one: circumferentially uniform, taken from
+the mean line along the annulus mid-span, and applied by ember's
+`apply_guess_meridional`, which is a nearest-neighbour search in the meridional
+plane and so needs no topology matching.
+
+It is a free function, and the `mesh` verb calls it, so the grid that verb
+hands back is the one a solver would start from and plotting it shows what will
+actually be solved. Nothing of ours passes between the two halves --- the guess
+is an ember `Block` and the target an ember `Grid` --- so there is no guess
+class, and no family until a second strategy earns one.
+
+Two things are easy to get wrong here, and both fail silently.
+
+**The guess block must carry the grid's own fluid.** `apply_guess_meridional`
+does `block.set_fluid(block_guess.fluid)` on every block it touches, so a guess
+built with the mean line's fluid replaces the scales and datum the mesher set.
+
+**And its state must be transferred datum-independently.** Conserved energy is
+measured from the datum where internal energy is zero, so copying a mean line's
+conserved variables into a block whose fluid has a different datum reinterprets
+them --- by about a hundred kelvin, for a datum moved as far as
+`referenced_fluid` moves it, while the result looks perfectly well formed.
+Pressure, temperature and velocity carry across; `conserved` does not.
+
+`to_quasi3d` is not ported. It builds a guess with a pitchwise pressure
+difference from the blade loading and a radial-equilibrium correction, and the
+physics is reasonable, but it was **commented out** in the package this
+replaces (`config.py:846-849`) and its ember counterpart
+`Grid.apply_guess_quasi3d` has never been called either. Two hundred lines that
+have never run are not a port, they are a rewrite; worth revisiting once there
+is a solver to time it against.
+
 ## Restart guesses
 
 A converged flow field is carried into the next run as an initial guess. The

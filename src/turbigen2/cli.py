@@ -23,7 +23,7 @@ import yaml
 import turbigen
 import turbigen.util
 import turbigen.yaml_utils
-from turbigen2 import plugins
+from turbigen2 import guess, plugins
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -189,6 +189,12 @@ def cmd_mesh(args):
 
     machine = config.design()
     grid = config.mesh.mesh(machine)
+
+    # Applied here rather than left to `run`, so that the grid this verb hands
+    # back is the one a solver would start from, and plotting it shows what
+    # will actually be solved.
+    guess.apply(grid, machine)
+
     result = Result(machine=machine, grid=grid)
 
     if not args.quiet:

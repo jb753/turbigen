@@ -6,6 +6,7 @@ this package registers the built-in fluids and designs.
 """
 
 from turbigen2 import designs  # noqa: F401 - registers the built-in designs
+from turbigen2 import guess  # noqa: F401 - initial flow field for a new grid
 from turbigen2.annulus import Annulus, AnnulusDesign, FixedAxialChord, StreamSurface
 from turbigen2.blade import (
     Blade,
@@ -41,6 +42,7 @@ __all__ = [
     "Config",
     "FixedAxialChord",
     "FixedCount",
+    "guess",
     "H",
     "Mesher",
     "Quadratic",
