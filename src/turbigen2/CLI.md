@@ -27,13 +27,20 @@ means "build the mesh, plot it, and `sys.exit(0)` from inside the pipeline".
 loop, updating the design between calls. Keeping it separate is what forces
 `run` to be a reusable unit and prevents the duplication above from recurring.
 
-**Output and diagnostics are different channels.** Results go to stdout;
-diagnostics go to stderr and, when there is somewhere to put it, a log file.
-The existing code routes ordinary progress through `logger.warning` so that it
-survives the level being lowered during iteration, which leaves genuine
-warnings — `check_round_trip` reporting that `backward` omits a design
-variable, or a mean line with relative flow angles approaching 90 degrees —
-indistinguishable from the startup banner.
+**Everything a run says is one stream.** Results and diagnostics alike go
+through the logging system, to stderr and, when there is somewhere to put it, a
+log file — so the console and `log_turbigen2.txt` are the same transcript in
+the same order. Nothing here is meant to be piped: the artefacts of a run are
+its files, and stdout is left clean for a machine-readable mode should one ever
+be wanted.
+
+Results are ordinary `INFO` records rather than a level of their own. The
+existing code routes them through `logger.warning` so that they survive the
+level being raised during iteration, which leaves genuine warnings —
+`check_round_trip` reporting that `backward` omits a design variable, or a mean
+line with relative flow angles approaching 90 degrees — indistinguishable from
+the startup banner. Here `--quiet` raises the level of the console handler
+alone, so quietening a run does not also blank its record.
 
 ## Verbs
 
@@ -76,8 +83,9 @@ CONFIG_YAML                 configuration file
 -s, --set KEY=VALUE         override a config value; dotted key, integer
                             segments index into lists, value parsed as YAML;
                             repeatable
--v, --verbose               more diagnostics on stderr
--q, --quiet                 suppress results on stdout
+-v, --verbose               more diagnostics on the console
+-q, --quiet                 console shows warnings and errors only; a log
+                            file written under --out still records it all
 -V, --version               print version and exit
 ```
 
@@ -135,7 +143,7 @@ turbigen2 design case.yaml -o run_* -s mean_line.psi=1.8
 3. Apply `--set` overrides.
 4. Build the `Config` (strict: unknown keys and missing required fields raise).
 5. `config.design()` — returns a `Machine`, stores nothing.
-6. Print the machine tables to stdout.
+6. Log the machine tables, as every other stage logs what it produced.
 7. If `-o` was given: create the directory, write the resolved config to
    `config.yaml`, and tee diagnostics to `log_turbigen2.txt`.
 8. Exit 0.
@@ -249,4 +257,5 @@ target the parts unique to the command line:
 - `--set` reaches the design, and a mistyped `--set` key fails;
 - an unknown verb, a missing file, and a bad config each exit non-zero with a
   message on stderr rather than a traceback;
-- `-q` silences stdout while leaving the exit code intact.
+- `-q` silences the console while leaving the exit code, and the log file,
+  intact.

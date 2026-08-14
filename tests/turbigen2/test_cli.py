@@ -171,7 +171,7 @@ def test_design_writes_nothing_without_out(case, capsys):
     assert cli.main(["design", str(case)]) == 0
 
     assert set(case.parent.iterdir()) == before
-    assert "Mean line:" in capsys.readouterr().out
+    assert "Mean line:" in capsys.readouterr().err
 
 
 def test_design_writes_a_config_that_reads_back_equal(case, tmp_path):
@@ -191,16 +191,16 @@ def test_out_star_takes_the_next_free_number(case, tmp_path):
     cli.main(["design", str(case), "-o", pattern, "-q"])
     cli.main(["design", str(case), "-o", pattern, "-q"])
 
-    assert (tmp_path / "run_0").is_dir()
-    assert (tmp_path / "run_1").is_dir()
+    assert (tmp_path / "run_0000").is_dir()
+    assert (tmp_path / "run_0001").is_dir()
 
 
 def test_set_override_reaches_the_design(case, capsys):
     cli.main(["design", str(case)])
-    baseline = capsys.readouterr().out
+    baseline = capsys.readouterr().err
 
     cli.main(["design", str(case), "-s", "mean_line.psi=1.2"])
-    changed = capsys.readouterr().out
+    changed = capsys.readouterr().err
 
     assert baseline != changed
 
@@ -261,7 +261,7 @@ def test_design_finds_a_plugin_without_being_told(tmp_path, clean_registry, caps
     case.write_text(PLUGIN_CASE.format(name="_t_cli"))
 
     assert cli.main(["design", str(case)]) == 0
-    assert "Mean line:" in capsys.readouterr().out
+    assert "Mean line:" in capsys.readouterr().err
 
 
 def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_registry):
@@ -360,7 +360,7 @@ def test_run_solves_a_case_end_to_end(run_case, tmp_path, capsys):
 
     assert cli.main(["run", str(run_case), "-o", str(out)]) == 0
 
-    printed = capsys.readouterr().out
+    printed = capsys.readouterr().err
     assert "Mean line:" in printed
     assert "Mesh:" in printed
     assert "Solver: converged" in printed
@@ -444,3 +444,23 @@ def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
     # recomputed from the stored state rather than stored themselves.
     achieved = config.mean_line.backward(result.actual)
     assert 0.0 < float(achieved["Ma2"]) < 1.0
+
+
+def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch):
+    """The flow field is written before the report, not after.
+
+    Post-processing raises by design, and the standard plots run whether or not
+    a config asks for them -- so with the two the other way round, a plot that
+    fell over would throw away a march that had already been paid for.
+    """
+    from turbigen2 import SectionsPlot  # noqa: PLC0415
+
+    def boom(self, config, result):
+        raise RuntimeError("plot exploded")
+
+    monkeypatch.setattr(SectionsPlot, "report", boom)
+
+    out = tmp_path / "out"
+    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 1
+
+    assert (out / "restart.npz").is_file()

@@ -456,7 +456,7 @@ class H(Mesher):
             ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
         ]
         if self.AR_cusp:
-            logger.info(f"Adding cusps {ite, icusp}")
+            logger.debug(f"Adding cusps {ite, icusp}")
             patches.extend(
                 [
                     ember.patch.CuspPatch(i=(ite, icusp), k=0, label="cusp_k0"),

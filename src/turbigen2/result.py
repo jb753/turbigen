@@ -34,6 +34,16 @@ class Result:
     converged: bool = False
     """Whether the run met its convergence criteria."""
 
+    history: object | None = None
+    """Convergence history of the march, once there has been one.
+
+    In memory only, like the grid: it is one record every `n_step_log` steps of
+    residuals and station quantities, which is far more than a result file
+    should carry, and it is worthless without the run it came from. The
+    convergence plot reads it here rather than being handed it separately, so
+    that a post-processor still takes only a config and a result.
+    """
+
     @property
     def nominal(self) -> MeanLine:
         """The mean line as designed."""
@@ -57,7 +67,11 @@ class Result:
     # decimated one instead and re-deriving `actual` from it was considered and
     # rejected: it costs a re-mesh and an interpolation, and decimation error
     # lands hardest at the wall, which is exactly where mixed-out efficiency
-    # comes from.
+    # comes from. The convergence history is left out on the same grounds: it
+    # describes how the answer was reached, not what it is.
+    #
+    # `to_dict` names what it writes rather than dumping the fields, so a field
+    # added above stays out of the file until someone decides it belongs there.
     #
     # Nothing derived is stored either. `eta_tt`, `PR_tt` and the whole
     # `backward()` dict are recomputed from the mean line, so an archived file

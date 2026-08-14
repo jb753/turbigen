@@ -424,7 +424,10 @@ def next_numbered_dir(basename):
     except StopIteration:
         pass
     next_id = cur_id + 1
-    return os.path.join(base_dir, stem.replace("*", f"{next_id:d}"))
+    # Zero-padded so that the directories sort in creation order, whether in a
+    # shell glob or a file browser. Existing unpadded names still parse above,
+    # so numbering carries on from them.
+    return os.path.join(base_dir, stem.replace("*", f"{next_id:04d}"))
 
 
 def node_to_face3(x):

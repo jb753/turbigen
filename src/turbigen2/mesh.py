@@ -104,8 +104,6 @@ class Mesher(Node):
         self.check_volumes(grid)
         grid.calculate_wdist(limit_pitch=WDIST_LIMIT_PITCH)
 
-        logger.info(f"n_cell/1e6={grid.size / 1e6:.1f}")
-
         return grid
 
     def L_ref(self, machine):

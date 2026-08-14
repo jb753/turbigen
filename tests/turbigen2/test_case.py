@@ -99,6 +99,24 @@ def test_result_is_one_key_beside_the_config(config, result, tmp_path):
     assert raw["mean_line"] == config.to_dict()["mean_line"]
 
 
+def test_the_convergence_history_stays_out_of_the_file(config, result, tmp_path):
+    """It describes how the answer was reached, not what it is.
+
+    One record every `n_step_log` steps of residuals and station quantities is
+    far more than a result file should carry, and it is worthless without the
+    run that produced it.
+    """
+    import dataclasses  # noqa: PLC0415
+
+    path = tmp_path / "case.yaml"
+    case.write(path, config, dataclasses.replace(result, history=object()))
+
+    _, read_result = case.read(path)
+
+    assert read_result.history is None
+    assert "history" not in path.read_text()
+
+
 def test_reading_without_designing_skips_the_machine(config, result, tmp_path):
     """Designing every file is a cost a script scraping many need not pay."""
     path = tmp_path / "case.yaml"
