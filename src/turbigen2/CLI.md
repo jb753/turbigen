@@ -151,7 +151,7 @@ turbigen2 mesh case.yaml
 turbigen2 mesh case.yaml -o run_* -s mesh.resolution_factor=0.5
 ```
 
-`design`, then `config.make_grid(machine)`, then the machine tables and a block
+`design`, then `config.mesh.mesh(machine)`, then the machine tables and a block
 summary. The steps and the `-o` behaviour are otherwise identical, and the same
 config file serves both verbs: a `mesh:` section is simply ignored by `design`.
 

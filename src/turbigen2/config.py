@@ -67,6 +67,12 @@ class Config(Node):
         Every configured stage runs. There is no stop point to pass: the depth
         of a design is set by what the config contains, so a config with no
         annulus designs only a mean line.
+
+        This is the only verb that lives here, because it is the only one that
+        is a property of the config alone. Anything combining a config with a
+        result -- meshing a machine, running a grid -- is a function of both,
+        and `config.mesh.mesh(machine)` already says it without a second
+        spelling on `Config`.
         """
         mean_line = self.mean_line.design(self.fluid)
 
@@ -89,9 +95,3 @@ class Config(Node):
             )
 
         return Machine(mean_line=mean_line, annulus=annulus, rows=rows)
-
-    def make_grid(self, machine):
-        """Return a grid for `machine`, using the configured mesher."""
-        if self.mesh is None:
-            raise ValueError("This config has no mesh, so no grid can be made.")
-        return self.mesh.mesh(machine)

@@ -35,7 +35,7 @@ def machine():
 
 @pytest.fixture(scope="module")
 def grid(machine):
-    return build(mesh=MESH).make_grid(machine)
+    return build(mesh=MESH).mesh.mesh(machine)
 
 
 def old_grid(machine, mesh, spacing):
@@ -179,11 +179,6 @@ def test_a_machine_without_blades_cannot_be_meshed():
         config.mesh.mesh(machine_no_blades)
 
 
-def test_a_config_without_a_mesh_refuses_to_make_a_grid():
-    config = build()
-
-    with pytest.raises(ValueError, match="no mesh"):
-        config.make_grid(config.design())
 
 
 def test_negative_volumes_are_raised_not_exited(grid):
@@ -271,7 +266,7 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades):
     config = build(blades=blades, mesh=mesh)
     machine = config.design()
 
-    grid = config.make_grid(machine)
+    grid = config.mesh.mesh(machine)
     reference = old_grid(machine, mesh, config.mesh.wall_spacing(machine))
 
     for block, block_ref in zip(grid, reference):

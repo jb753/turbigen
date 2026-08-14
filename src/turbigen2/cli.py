@@ -184,8 +184,11 @@ def cmd_mesh(args):
     config = load_config(args)
     out_dir = _open_output(args)
 
+    if config.mesh is None:
+        raise ValueError("The 'mesh' command needs a mesh: section in the config file.")
+
     machine = config.design()
-    grid = config.make_grid(machine)
+    grid = config.mesh.mesh(machine)
     result = Result(machine=machine, grid=grid)
 
     if not args.quiet:

@@ -281,3 +281,17 @@ def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_regist
     assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
 
     assert cli.main(["design", str(out / "config.yaml"), "-q"]) == 0
+
+
+def test_mesh_without_a_mesh_section_is_a_message_not_a_traceback(case, capsys):
+    """`Config` has no make_grid to hold this check, so the verb holds it.
+
+    A missing `mesh:` section is a fact about the command the user typed, not
+    about the config in the abstract -- a `design` run of the same file is
+    perfectly valid. Without the check `config.mesh.mesh(...)` would raise
+    AttributeError on None, which is the unhelpful failure the strict config
+    validation exists to avoid.
+    """
+    assert cli.main(["mesh", str(case)]) == 1
+
+    assert "mesh: section" in capsys.readouterr().err
