@@ -14,7 +14,7 @@ two objects from one file. A file is not an object.
 import logging
 from pathlib import Path
 
-import turbigen.yaml_utils
+import ember.yaml_util
 
 from turbigen2 import plugins
 from turbigen2.config import Config
@@ -50,7 +50,7 @@ def read(path, design=True):
     path = Path(path)
     plugins.discover(path.parent)
 
-    data = turbigen.yaml_utils.read_yaml(path)
+    data = ember.yaml_util.read_yaml(path)
     result_data = data.pop(RESULT_KEY, None)
 
     config = Config.from_dict(data)
@@ -72,4 +72,4 @@ def write(path, config, result=None):
     if result is not None:
         data[RESULT_KEY] = result.to_dict()
 
-    turbigen.yaml_utils.write_yaml(data, path)
+    ember.yaml_util.write_yaml(data, path)

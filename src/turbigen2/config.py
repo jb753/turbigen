@@ -8,7 +8,7 @@ config never accumulates state from a run.
 
 from pathlib import Path
 
-import turbigen.yaml_utils
+import ember.yaml_util
 
 from turbigen2 import plugins
 from turbigen2.annulus import AnnulusDesign
@@ -60,7 +60,7 @@ class Config(Node):
         path = Path(path)
         plugins.discover(path.parent)
 
-        data = turbigen.yaml_utils.read_yaml(path)
+        data = ember.yaml_util.read_yaml(path)
         # A run writes its answer into the same file under `result:`. Ignore it
         # here: this returns a config. `turbigen2.case.read` returns both.
         data.pop("result", None)
@@ -69,7 +69,7 @@ class Config(Node):
 
     def to_file(self, path):
         """Write this config to a YAML file, defaults included."""
-        turbigen.yaml_utils.write_yaml(self.to_dict(), Path(path))
+        ember.yaml_util.write_yaml(self.to_dict(), Path(path))
 
     def design(self) -> Machine:
         """Return the machine this config describes.

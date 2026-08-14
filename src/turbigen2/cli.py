@@ -22,7 +22,7 @@ import yaml
 
 import turbigen
 import turbigen.util
-import turbigen.yaml_utils
+import ember.yaml_util
 from turbigen2 import bconds, case, guess, mixout, plugins
 from turbigen2.config import Config
 from turbigen2.result import Result
@@ -153,7 +153,7 @@ def load_config(args):
     # keys it names can be resolved.
     plugins.discover(config_path.parent)
 
-    data = turbigen.yaml_utils.read_yaml(config_path)
+    data = ember.yaml_util.read_yaml(config_path)
 
     # Dropped before the overrides are applied, so that `-s result.x=1` cannot
     # reach into a previous run's answer. Re-running a case rewrites it anyway.

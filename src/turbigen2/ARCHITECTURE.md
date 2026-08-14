@@ -530,12 +530,20 @@ Note also that plain float16 is *not* an option for conserved variables:
 
 ### YAML implementation
 
-Use `ember.yaml_util`, not `turbigen.yaml_utils`. It exposes the same
-`read_yaml`/`write_yaml`, but is backed by libyaml's `CSafeLoader`/
-`CSafeDumper` where the turbigen one still uses the pure-Python loaders. On a
-multi-megabyte scalar that is the difference between 7.7 s and 0.15 s to dump.
-It also carries the numpy and `Path` representers already, so switching drops a
-dependency on the old package rather than adding one.
+`ember.yaml_util` is used throughout, not `turbigen.yaml_utils`. The two are
+interchangeable --- same `read_yaml`/`write_yaml`, same numpy and `Path`
+representers, same patched resolver so that `1e5` reads as a float rather than
+a string --- and they were checked to read and write byte-identical results on
+a real config before the switch.
+
+The difference is that ember's is backed by libyaml's
+`CSafeLoader`/`CSafeDumper` where the turbigen one still uses the pure-Python
+loaders, and that using it drops a dependency on the old package rather than
+adding one. `turbigen.util` is now the only part of it turbigen2 still needs.
+
+Speed was the original argument --- 7.7 s against 0.15 s to dump a
+multi-megabyte scalar --- but that measurement is what settled where the
+restart field goes, rather than which loader to use: see below.
 
 ## Result, and nominal against actual
 
