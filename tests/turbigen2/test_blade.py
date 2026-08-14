@@ -16,6 +16,7 @@ import pytest
 import turbigen.annulus
 import turbigen.blade
 import turbigen.nblade
+from turbigen2.blade import _interpolate
 from turbigen2 import (
     Blade,
     BladeDesign,
@@ -526,3 +527,64 @@ def test_recounting_reuses_the_shape():
 
     assert recounted.blade is row.blade
     assert recounted.n_blade == row.n_blade + 4
+
+
+#
+# THICKNESS VALIDITY
+#
+
+
+def test_an_overshooting_thickness_is_refused_when_it_is_built():
+    """A distribution that exceeds its own t_max is invalid on construction.
+
+    The parameters decide it, not the points anyone later evaluates, so it is
+    settled once here rather than checked inside thick() -- where it could only
+    ever cover the samples a caller happened to ask for, and would surface
+    part-way through meshing a blade.
+    """
+    # A nose blunter than the blade is thick: the cubic has to bulge above
+    # t_max to get from the leading edge radius down to the declared peak.
+    with pytest.raises(ValueError, match="peaks at"):
+        Taylor(R_LE=0.02, t_max=0.03, m_tmax=0.35)
+
+
+def test_a_valid_thickness_evaluates_without_bound_checks():
+    """thick() is pure evaluation, so a caller may sample it however it likes."""
+    thickness = Taylor(**{k: v for k, v in THICKNESS.items() if k != "type"})
+
+    t = thickness.thick(np.linspace(0.0, 1.0, 501))
+
+    assert t.max() <= thickness.t_max + 1e-10
+    assert thickness.peak() == pytest.approx(t.max(), abs=1e-6)
+
+
+def test_the_peak_is_found_exactly_not_sampled():
+    """`peak()` substitutes m = u**2 to get a polynomial, so it is exact.
+
+    Dense sampling is the reference here; the point is that `peak` matches it
+    without anyone having chosen a sample count.
+    """
+    thickness = Taylor(**{k: v for k, v in THICKNESS.items() if k != "type"})
+
+    dense = thickness.thick(np.linspace(0.0, 1.0, 200001)).max()
+
+    assert thickness.peak() == pytest.approx(dense, abs=1e-9)
+    # Built to hit t_max at m_tmax, so the peak is the declared one.
+    assert thickness.peak() == pytest.approx(thickness.t_max, abs=1e-9)
+
+
+def test_an_invalid_interpolated_section_names_the_span_fraction():
+    """Two valid sections can interpolate to an invalid one in between.
+
+    Nothing constrains the path between them, so the failure has to name where
+    it happened -- the offending parameters appear in no config file.
+    """
+    # Both ends are valid; their midpoint is a blunter nose on a thinner
+    # blade than either, which is not.
+    ends = [
+        Taylor(R_LE=0.002, t_max=0.03, m_tmax=0.35),
+        Taylor(R_LE=0.080, t_max=0.08, m_tmax=0.35),
+    ]
+
+    with pytest.raises(ValueError, match=r"spf=0\.5"):
+        _interpolate(ends, np.array([0.0, 1.0]), 0.5)

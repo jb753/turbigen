@@ -78,7 +78,17 @@ def _interpolate(nodes, spf_sections, spf):
 
     values = np.array([[getattr(node, name) for name in names] for node in nodes])
     interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
-    return cls(**dict(zip(names, interpolated.reshape(-1))))
+
+    try:
+        return cls(**dict(zip(names, interpolated.reshape(-1))))
+    except ValueError as err:
+        # Interpolating between two valid sections can land on an invalid one,
+        # since nothing constrains the path between them. Say where, or the
+        # message describes parameters that appear nowhere in the config file.
+        raise ValueError(
+            f"Interpolating the {cls.__name__} sections onto spf={spf} gives a "
+            f"section that is not valid: {err}"
+        ) from err
 
 
 class Section(Node):

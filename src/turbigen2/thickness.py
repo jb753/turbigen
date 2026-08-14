@@ -19,6 +19,12 @@ from turbigen2.node import Node
 
 logger = logging.getLogger("turbigen")
 
+_PEAK_TOL = 1e-10
+"""Slack on the peak thickness check, for round-off in the cubic fit."""
+
+_ROOT_TOL = 1e-9
+"""Largest imaginary part for a root to count as real."""
+
 
 def _validate_domain(m):
     """Check that a normalised meridional coordinate lies in [0, 1]."""
@@ -105,6 +111,60 @@ class Taylor(ThicknessDesign):
 
         return coeff_front, coeff_rear
 
+    def __post_init__(self):
+        peak = self.peak()
+        if peak > self.t_max + _PEAK_TOL:
+            raise ValueError(
+                f"This thickness distribution peaks at {peak:.4g}, above the "
+                f"t_max={self.t_max} it declares. Its cubic bulges between the "
+                f"leading edge and the point of maximum thickness; try a "
+                f"smaller R_LE, a larger m_tmax, or a different kappa_max."
+            )
+
+    def peak(self):
+        """Return the largest half-thickness anywhere in ``0 <= m <= 1`` [--].
+
+        Exact rather than sampled. The square root in :meth:`thick` is what
+        makes it awkward, and substituting ``m = u**2`` removes it: for a cubic
+        ``tau = a m^3 + b m^2 + c m + d`` the half-thickness becomes a
+        polynomial in ``u``,
+
+            t(u) = -a u^9 + (a-b) u^7 + (b-c) u^5 + (c-d) u^3
+                   + (t_TE/2) u^2 + d u
+
+        so the stationary points are the real roots of a degree-8 derivative
+        and the maximum is the largest of ``t`` at those and at the ends of the
+        interval. Sampling instead would need a point count chosen by taste: a
+        coarse grid misses shallow excursions, and there is no density that is
+        obviously enough.
+
+        The ends are always included, so the peak location can never be missed
+        outright; and because ``m_tmax`` is an end of both pieces, ``t_max``
+        itself is always a candidate. The comparison is therefore always
+        "does it exceed its declared peak", never "did we happen to find it".
+        """
+        coeff_front, coeff_rear = self._coeff
+
+        best = -np.inf
+        for coeff, m_lim in (
+            (coeff_front, (0.0, self.m_tmax)),
+            (coeff_rear, (self.m_tmax, 1.0)),
+        ):
+            a, b, c, d = coeff
+            poly = np.array(
+                [-a, 0.0, a - b, 0.0, b - c, 0.0, c - d, self.t_TE / 2.0, d, 0.0]
+            )
+
+            u_lo, u_hi = np.sqrt(m_lim[0]), np.sqrt(m_lim[1])
+            roots = np.roots(np.polyder(poly))
+            real = roots[np.abs(roots.imag) < _ROOT_TOL].real
+            candidates = np.concatenate(
+                [real[(real >= u_lo) & (real <= u_hi)], [u_lo, u_hi]]
+            )
+            best = max(best, np.polyval(poly, candidates).max())
+
+        return float(best)
+
     def tau(self, m):
         """Return thickness in shape space at normalised meridional distance `m`."""
         m = np.asarray(m, dtype=float)
@@ -128,9 +188,8 @@ class Taylor(ThicknessDesign):
             m_array * self.t_TE / 2.0
         )
 
-        if np.any(t > self.t_max + 1e-10):
-            raise ValueError(
-                f"Thickness exceeds the maximum thickness t_max={self.t_max}."
-            )
-
+        # No bound check here. Whether the distribution stays under its own
+        # t_max is a property of the parameters, not of the points asked for,
+        # so `__post_init__` settles it once -- and settles it for the whole
+        # domain, where checking here could only ever cover the samples given.
         return float(t.item()) if np.isscalar(m) else t
