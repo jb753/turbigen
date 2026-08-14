@@ -1,6 +1,6 @@
 # turbigen2 command-line interface
 
-Plan for the CLI. **`design` and `mesh` are implemented.** The other verbs are
+Plan for the CLI. **`design`, `mesh` and `run` are implemented.** The other verbs are
 specified here so the shape is settled before they are written; each is marked
 with its status.
 
@@ -41,7 +41,7 @@ indistinguishable from the startup banner.
 |---|---|---|---|
 | `design` | mean line, then annulus and blade geometry | optional | **implemented** |
 | `mesh` | `design` + grid generation | optional | **implemented** |
-| `run` | `mesh` + boundary conditions, CFD, mix-out, post-processing | **required** | deferred |
+| `run` | `mesh` + CFD | **required** | **implemented**, mix-out deferred |
 | `iterate` | repeated `run`, updating the design between calls | **required** | deferred |
 
 The cut between `design` and `mesh` is where external tools and side effects
@@ -163,15 +163,37 @@ Still to add: `--plot SPF`, to render the mesh at a span fraction rather than
 the old `--mesh SPF` flag that exits from inside the pipeline. It draws from
 the returned grid, so it is a flag on the verb and not a field on the mesher.
 
-## `run`, `iterate` — deferred
+## `run` — implemented
+
+```
+turbigen2 run case.yaml -o run_*
+```
+
+`prepare(config)` -- design, mesh, boundary conditions, initial guess -- then
+solve. `prepare` is shared with `mesh` rather than written out again, so the
+grid `mesh` hands back for inspection is the one `run` actually solves. The two
+drifting apart is precisely what happened to `turbigen.main`.
+
+`--out` is required, because a run produces artefacts worth keeping.
+
+**Exit 2 when the solver did not converge**, with everything written anyway: a
+diverged run is exactly the one whose output someone needs to look at, so
+failing must not also discard the evidence. A separate code from 1 lets a
+script driving a sweep tell "the solver did not converge" from "the config was
+wrong" without parsing the log.
+
+Convergence is divergence only for now. `ConvergenceHistory.check_convergence`
+disables its residual-decay and residual-slope criteria at their defaults and
+always checks divergence, so calling it bare is exactly that, and is the call
+that grows thresholds later without a signature change.
+
+**Still to add: mix-out into `Result.actual`.** A run currently reports whether
+it converged and leaves the grid in memory, but does not reduce it to a mean
+line, so nominal-against-actual post-processing is not yet possible.
+
+## `iterate` — deferred
 
 Specified only enough to keep the shape honest.
-
-`run` needs a real signature rather than a branch:
-
-```python
-run(config, out_dir, guess=None) -> Result   # grid, mean line, converged
-```
 
 `iterate` owns only the loop, the numbered subdirectories, the convergence
 table, and the collapse of intermediate directories at the end:

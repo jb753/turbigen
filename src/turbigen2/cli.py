@@ -23,7 +23,7 @@ import yaml
 import turbigen
 import turbigen.util
 import turbigen.yaml_utils
-from turbigen2 import guess, plugins
+from turbigen2 import bconds, guess, plugins
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -179,21 +179,34 @@ def cmd_design(args):
     return 0
 
 
+def prepare(config):
+    """Return the machine and a grid ready to solve.
+
+    Shared by every verb that needs a grid, so there is one definition of
+    "ready to solve" rather than one per verb. `mesh` stops here and `run`
+    carries on, which is what makes plotting the output of `mesh` show the grid
+    `run` would actually solve. Written out twice instead, the two would drift
+    -- which is what happened to `turbigen.main`, where the pipeline appears in
+    both branches of one `if` and again in ninety-three unreachable lines that
+    no longer match either.
+    """
+    if config.mesh is None:
+        raise ValueError("This command needs a mesh: section in the config file.")
+
+    machine = config.design()
+    grid = config.mesh.mesh(machine)
+    bconds.apply(grid, machine)
+    guess.apply(grid, machine)
+
+    return machine, grid
+
+
 def cmd_mesh(args):
     """Design the machine, mesh it, and report both."""
     config = load_config(args)
     out_dir = _open_output(args)
 
-    if config.mesh is None:
-        raise ValueError("The 'mesh' command needs a mesh: section in the config file.")
-
-    machine = config.design()
-    grid = config.mesh.mesh(machine)
-
-    # Applied here rather than left to `run`, so that the grid this verb hands
-    # back is the one a solver would start from, and plotting it shows what
-    # will actually be solved.
-    guess.apply(grid, machine)
+    machine, grid = prepare(config)
 
     result = Result(machine=machine, grid=grid)
 
@@ -203,6 +216,54 @@ def cmd_mesh(args):
 
     _write_output(config, result, out_dir)
     return 0
+
+
+def cmd_run(args):
+    """Design, mesh and solve, then report."""
+    config = load_config(args)
+
+    if config.solver is None:
+        raise ValueError(
+            "The 'run' command needs a solver: section in the config file."
+        )
+    if not args.out:
+        raise ValueError("The 'run' command writes results, so it needs --out.")
+
+    out_dir = _open_output(args)
+
+    machine, grid = prepare(config)
+
+    if not args.quiet:
+        print(machine.to_string())
+        print(grid_string(grid))
+
+    history = config.solver.solve(grid)
+    converged = config.solver.converged(history)
+
+    result = Result(machine=machine, grid=grid, converged=converged)
+
+    if not args.quiet:
+        print(convergence_string(history, converged))
+
+    _write_output(config, result, out_dir)
+
+    # Non-zero on a failed solve, so a script driving a sweep can tell without
+    # parsing the log. Everything written above is still written: a diverged
+    # run is exactly the one whose output someone needs to look at.
+    return 0 if converged else 2
+
+
+def convergence_string(history, converged):
+    """Report how a march ended, using ember's own summary of the last record.
+
+    The verdict is ours; the numbers underneath it are ember's, because a
+    history knows how to describe itself and a second formatter here would be
+    one more thing to keep in step. Note that no step count is quoted: records
+    are written every `n_step_log` steps, so the last record is not in general
+    the last step marched, and reporting it as one would be wrong.
+    """
+    verdict = "converged" if converged else "NOT converged"
+    return f"Solver: {verdict}\n{history.format_message()}"
 
 
 def _open_output(args):
@@ -353,6 +414,19 @@ def _make_parser():
         ),
     )
     mesh.set_defaults(func=cmd_mesh)
+
+    run = commands.add_parser(
+        "run",
+        parents=[common],
+        help="design, mesh and solve, then report",
+        description=(
+            "Design the machine from a configuration file, mesh it, apply "
+            "boundary conditions and an initial guess, and solve. Requires "
+            "--out, because a run produces artefacts worth keeping. Exits 2 if "
+            "the solver did not converge, having written its output anyway."
+        ),
+    )
+    run.set_defaults(func=cmd_run)
 
     return parser
 

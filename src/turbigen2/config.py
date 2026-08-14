@@ -19,6 +19,7 @@ from turbigen2.machine import Machine
 from turbigen2.mesh import Mesher
 from turbigen2.node import Node
 from turbigen2.post import Post
+from turbigen2.solver import Solver
 
 
 class Config(Node):
@@ -38,6 +39,9 @@ class Config(Node):
 
     mesh: Mesher | None = None
     """Mesh generation. Only needed by the verbs that make a grid."""
+
+    solver: Solver | None = None
+    """Flow solver. Only needed by the verbs that solve."""
 
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config

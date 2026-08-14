@@ -295,3 +295,128 @@ def test_mesh_without_a_mesh_section_is_a_message_not_a_traceback(case, capsys):
     assert cli.main(["mesh", str(case)]) == 1
 
     assert "mesh: section" in capsys.readouterr().err
+
+
+#
+# THE RUN VERB
+#
+# An integration test in the literal sense: the only one that takes a config
+# file all the way to a solved grid, through design, meshing, boundary
+# conditions, the initial guess and the solver. Everything below it is covered
+# in isolation elsewhere, so what these check is that the stages compose.
+#
+
+RUN_CASE = """
+fluid: {type: perfect, cp: 1005.0, gamma: 1.4, mu: 1.8e-5}
+mean_line:
+  type: turbine_cascade
+  span: [0.01, 0.011]
+  Alpha: [40.0, -65.0]
+  Ma2: 0.6
+  Ys: 0.029
+  htr: 0.99
+annulus:
+  type: fixed_axial_chord
+  cx_row: [0.00525]
+  cx_gap: [0.0105, 0.0105]
+blades:
+  - count: {type: Co, Co: 0.7}
+    sections:
+      - spf: 0.5
+        dchi_LE: 10.0
+        dchi_TE: -2.0
+        camber: {type: quadratic}
+        thickness:
+          type: taylor
+          R_LE: 0.05
+          t_max: 0.12
+          m_tmax: 0.3
+          t_TE: 0.03
+          tanwedge: 0.18
+mesh:
+  type: h
+  resolution_factor: 0.25
+  dm_TE: 0.0
+  AR_cusp: 2.0
+  ni_cusp: 5
+solver: {type: ember, n_step: 10, n_step_log: 10, n_stage: 4}
+"""
+"""A single stationary row, adapted from examples/turbine_cascade.yaml.
+
+One row means no mixing planes, and the coarsest mesh that still passes the
+multigrid divisibility check, so the whole thing runs in about a second.
+"""
+
+
+@pytest.fixture
+def run_case(tmp_path):
+    path = tmp_path / "cascade.yaml"
+    path.write_text(RUN_CASE)
+    return path
+
+
+def test_run_solves_a_case_end_to_end(run_case, tmp_path, capsys):
+    out = tmp_path / "out"
+
+    assert cli.main(["run", str(run_case), "-o", str(out)]) == 0
+
+    printed = capsys.readouterr().out
+    assert "Mean line:" in printed
+    assert "Mesh:" in printed
+    assert "Solver: converged" in printed
+
+
+def test_run_writes_a_config_that_reads_back(run_case, tmp_path):
+    """The archived config is the run, defaults and all."""
+    from turbigen2 import Config  # noqa: PLC0415
+
+    out = tmp_path / "out"
+    cli.main(["run", str(run_case), "-o", str(out), "-q"])
+
+    written = out / "config.yaml"
+    assert written.exists()
+    assert (out / "log_turbigen2.txt").exists()
+    assert Config.from_file(written) == Config.from_file(run_case)
+
+
+# The march is driven unstable on purpose, so ember's warning that the outlet
+# has gone supersonic is the expected behaviour rather than a problem. Without
+# this the suite's `filterwarnings = error` turns it into an exception, and the
+# verb reports a config error (1) instead of a failed solve (2).
+@pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
+@pytest.mark.filterwarnings("ignore:invalid value")
+@pytest.mark.filterwarnings("ignore:divide by zero")
+def test_run_reports_a_failed_solve_in_its_exit_code(run_case, tmp_path):
+    """Exit 2, and the output is still written.
+
+    A diverged run is exactly the one whose output someone needs to look at, so
+    failing must not also throw away the evidence. A distinct code from 1 keeps
+    "the solver did not converge" apart from "the config was wrong", which a
+    script driving a sweep has to tell apart without parsing the log.
+    """
+    out = tmp_path / "out"
+
+    # A CFL far past the stability limit, so it diverges within a few steps.
+    code = cli.main(["run", str(run_case), "-o", str(out), "-q", "-s", "solver.cfl=50.0"])
+
+    assert code == 2
+    assert (out / "config.yaml").exists()
+
+
+def test_run_requires_an_output_directory(run_case, capsys):
+    """Unlike design and mesh, a run produces artefacts worth keeping."""
+    assert cli.main(["run", str(run_case)]) == 1
+
+    assert "--out" in capsys.readouterr().err
+
+
+def test_run_without_a_solver_section_is_a_message(run_case, tmp_path, capsys):
+    text = run_case.read_text()
+    trimmed = "\n".join(
+        line for line in text.splitlines() if not line.startswith("solver:")
+    )
+    run_case.write_text(trimmed)
+
+    assert cli.main(["run", str(run_case), "-o", str(tmp_path / "out")]) == 1
+
+    assert "solver: section" in capsys.readouterr().err

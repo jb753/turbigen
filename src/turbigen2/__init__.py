@@ -6,6 +6,7 @@ this package registers the built-in fluids and designs.
 """
 
 from turbigen2 import designs  # noqa: F401 - registers the built-in designs
+from turbigen2 import bconds  # noqa: F401 - boundary conditions for a new grid
 from turbigen2 import guess  # noqa: F401 - initial flow field for a new grid
 from turbigen2.annulus import Annulus, AnnulusDesign, FixedAxialChord, StreamSurface
 from turbigen2.blade import (
@@ -28,6 +29,7 @@ from turbigen2.machine import Machine
 from turbigen2.meanline import MeanLine
 from turbigen2.post import AnnulusPlot, Post
 from turbigen2.result import Result
+from turbigen2.solver import Ember, Solver
 from turbigen2.node import Node
 
 __all__ = [
@@ -42,7 +44,10 @@ __all__ = [
     "Config",
     "FixedAxialChord",
     "FixedCount",
+    "bconds",
+    "Ember",
     "guess",
+    "Solver",
     "H",
     "Mesher",
     "Quadratic",
