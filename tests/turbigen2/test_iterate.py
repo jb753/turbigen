@@ -17,6 +17,7 @@ Test cases:
 - test_step_leaves_unmeasured_knobs_alone: a failed run is not a reason to move
 - test_unmeasured_knobs_are_not_converged: nor a reason to stop
 - test_converge_reaches_the_answer: the loop, on an analytic error
+- test_converge_stops_on_a_diverged_march: a blown-up run measures nothing
 - test_converge_gives_up: and stops when it cannot
 - test_no_history_is_the_declared_gain: a first iteration is what it always was
 - test_a_coupled_system_converges_faster: the claim of Broyden, on a stage-like
@@ -262,6 +263,28 @@ def test_converge_reaches_the_answer():
     # which from psi = 1.6 is about ten of them. The secant learns the slope
     # from the first move and steps straight to the root.
     assert len(seen) <= 4
+
+
+def test_converge_stops_on_a_diverged_march():
+    """A blown-up march measures nothing, so its numbers must not be stepped on.
+
+    Its mixed-out mean line is whatever the NaNs averaged to, and correcting
+    towards that would move the design somewhere arbitrary and call it an
+    iteration.
+    """
+    config = dataclasses.replace(build(), iterate=(Fixed(slope=1.0, target=3.0),))
+    seen = []
+
+    def run(config_now, i_iter):
+        seen.append(i_iter)
+        # A history is what says a march happened at all; without one there is
+        # nothing to have diverged.
+        return Result(history=object(), converged=False)
+
+    _, _, converged = iterate.converge(config, run, max_iter=5)
+
+    assert not converged
+    assert seen == [0]
 
 
 def test_converge_gives_up():

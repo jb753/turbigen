@@ -50,6 +50,16 @@ logger = logging.getLogger("turbigen")
 # notebook or another tool leaves ember's logger exactly as that caller set it.
 LOGGER_NAMES = ("turbigen", "ember")
 
+run_log = logging.getLogger("turbigen.run")
+"""What one run produced: its tables, its verdict, the files it wrote.
+
+Separated from the session's own messages by name rather than by level, so that
+`iterate` can quieten the console for a hundred runs while the log file still
+records every one of them in full. The package this replaces gets the same
+effect by raising the level and emitting its results as *warnings*, which is
+why a genuine warning there is indistinguishable from a startup banner.
+"""
+
 RESTART_NAME = "restart.npz"
 """What a run calls the flow field it leaves behind, and `--restart` looks for."""
 
@@ -232,7 +242,7 @@ def cmd_design(args):
     machine = config.design()
     result = Result(machine=machine)
 
-    logger.info(machine.to_string())
+    run_log.info(machine.to_string())
 
     _write_output(config, result, out_dir)
     return 0
@@ -257,10 +267,10 @@ def prepare(config, restart_path=None):
     # the mean line, then the grid it was meshed onto, then where the flow
     # field in that grid came from.
     machine = config.design()
-    logger.info(machine.to_string())
+    run_log.info(machine.to_string())
 
     grid = config.mesh.mesh(machine)
-    logger.info(grid_string(grid))
+    run_log.info(grid_string(grid))
 
     bconds.apply(grid, machine)
     guess.apply(grid, machine)
@@ -385,9 +395,9 @@ def solve(config, out_dir, restart_path=None):
     # flow, and they can only be taken while the grid is in memory.
     result = dataclasses.replace(result, error=iterate.errors(config, result))
 
-    logger.info(convergence_string(history, converged))
+    run_log.info(convergence_string(history, converged))
     if actual is not None:
-        logger.info(actual.to_string())
+        run_log.info(actual.to_string())
 
     # Written whatever happened, and written first. A march that did not
     # converge is the one most likely to be picked up and continued, so
@@ -396,7 +406,7 @@ def solve(config, out_dir, restart_path=None):
     # been paid for.
     restart_path = out_dir / RESTART_NAME
     restart.save(restart_path, grid)
-    logger.info(f"Wrote the flow field to {restart_path}")
+    run_log.info(f"Wrote the flow field to {restart_path}")
 
     # Beside the field, and for the same reason: it is what a re-plot needs to
     # draw the convergence page, and it costs a few kilobytes.
@@ -446,13 +456,16 @@ def cmd_iterate(args):
     out_dir = _open_output(args)
     previous = resolve_restart(args, out_dir)
 
+    if not args.verbose:
+        _quieten_the_runs()
+
     def run(config_now, i_iter):
         """Solve one iteration into a directory of its own."""
         nonlocal previous
 
         iter_dir = out_dir / f"iter_{i_iter:04d}"
         iter_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Iteration {i_iter} in {iter_dir}")
+        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
 
         # Chained: each iteration starts from the field the last one reached,
         # which is most of the saving. Index-space interpolation covers the
@@ -464,9 +477,48 @@ def cmd_iterate(args):
 
     config, result, converged = iterate.converge(config, run, args.max_iter)
 
+    # The answer, on a console that has been shown only the iteration table.
+    # Not for a march that blew up, whose mixed-out mean line is whatever its
+    # NaNs averaged to and would read as a result.
+    if result is not None and result.converged and result.actual is not None:
+        iterate.logger.info(result.actual.to_string())
+
     _link_final(out_dir, previous.parent)
 
     return 0 if converged else 2
+
+
+def _quieten_the_runs():
+    """Keep the per-run tables and the march off the console while iterating.
+
+    An iterate is tens of runs, and printing each one in full buries the few
+    lines that describe the iteration itself. Filtered by logger name on the
+    console handler alone, so `log_turbigen2.txt` still holds every run
+    complete --- where the package this replaces raises the level instead, and
+    loses the detail from its log file as well as from the screen.
+
+    Warnings and errors are never filtered, whoever emits them.
+    """
+
+    def quiet(record):
+        if record.levelno >= logging.WARNING:
+            return True
+        return not record.name.startswith(("turbigen.run", "ember"))
+
+    for handler in _console_handlers():
+        handler.addFilter(quiet)
+
+
+def _console_handlers():
+    """Return the stderr handlers this module attached, without the log file."""
+    seen = {}
+    for name in LOGGER_NAMES:
+        for handler in logging.getLogger(name).handlers:
+            if getattr(handler, _HANDLER_TAG, False) and not isinstance(
+                handler, logging.FileHandler
+            ):
+                seen[id(handler)] = handler
+    return list(seen.values())
 
 
 def _link_final(out_dir, iter_dir):
@@ -535,10 +587,10 @@ def _write_output(config, result, out_dir):
         # and whether it converged -- with this verb's empty one, so a
         # re-plotted run would come back claiming it had never converged.
         # Identical configs have nothing to write anyway.
-        logger.info(f"Configuration at {config_path} is unchanged, so left alone")
+        run_log.info(f"Configuration at {config_path} is unchanged, so left alone")
     else:
         case.write(config_path, config, result)
-        logger.info(f"Wrote resolved configuration to {config_path}")
+        run_log.info(f"Wrote resolved configuration to {config_path}")
 
     write_report(config, result, out_dir)
 
@@ -621,10 +673,10 @@ def write_report(config, result, out_dir):
     # nothing to work with -- and matplotlib writes no file for an empty
     # document, so there is no report to announce and none to find.
     if not n_page:
-        logger.info("No figures were produced, so no report was written.")
+        run_log.info("No figures were produced, so no report was written.")
         return None
 
-    logger.info(f"Wrote report to {path}")
+    run_log.info(f"Wrote report to {path}")
     return path
 
 

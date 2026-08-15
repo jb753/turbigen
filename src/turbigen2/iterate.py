@@ -36,7 +36,12 @@ import numpy as np
 import ember.cut
 from turbigen2.node import Node
 
-logger = logging.getLogger("turbigen")
+logger = logging.getLogger("turbigen.iterate")
+"""Iteration-level messages: the table, the verdict, what the stepper noticed.
+
+Named apart from what one run says so that `iterate` can quieten a hundred runs
+on the console without losing the few lines that describe the iteration itself.
+"""
 
 N_SPAN_CUT = 101
 """Meridional points defining the span curve a blade surface is cut along."""
@@ -410,6 +415,18 @@ def converge(config, run, max_iter=10):
     for i_iter in range(max_iter):
         result = run(config, i_iter)
 
+        # A march that blew up measures nothing: its mixed-out mean line is
+        # whatever the NaNs averaged to, and stepping on that would move the
+        # design somewhere arbitrary and call it a correction. Stopping leaves
+        # the evidence in place -- the iteration that diverged is still on
+        # disk, with its report -- which is what someone needs to see.
+        if result.history is not None and not result.converged:
+            logger.warning(
+                f"Iteration {i_iter} diverged, so there is nothing to correct "
+                "towards. Stopping with the design that produced it."
+            )
+            return config, result, False
+
         logger.info(f"Iteration {i_iter}:\n{format_table(config, result)}")
 
         if converged(config, result):
@@ -529,7 +546,14 @@ class Incidence(Iterator):
 
     # Negative because the metal angle rises with the recamber while the
     # incidence is measured against it, so the error falls as the knob rises.
-    gain: float = -1.0
+    #
+    # Damped an order of magnitude below the measured slope of -0.99, because
+    # incidence against leading-edge recamber is flat over a range and then
+    # flips, and a Newton-sized first step is taken before anything has been
+    # learned about which of those a design is sitting in. The secant recovers
+    # the rate from the second iteration on, so the cost of being timid here is
+    # one gentle step rather than a slow iteration.
+    gain: float = -0.1
     clip: float = 2.0
     tolerance: float = 1.0
     """Permissible error on local incidence [deg]."""

@@ -540,14 +540,17 @@ def test_iterate_moves_the_design_and_records_why(iterate_case, tmp_path):
     second, _ = case.read(out / "iter_0001" / "config.yaml", design=False)
 
     # The case recambers its leading edge 10 degrees off the flow, so the
-    # incidence is measured well below the target and the knob has to come
-    # down -- by the clip, since the error is larger than one step is allowed
-    # to correct.
-    assert first_result.error["dchi_LE[0]"] < -1.0
+    # incidence is measured well below the target and the knob has to come down
+    # to meet it.
+    error = first_result.error["dchi_LE[0]"]
+    assert error < -1.0
 
+    # By the rule the stepper states, from the error this run recorded: the
+    # first iteration has no history to improve on the declared gain.
+    gain = iterate.Incidence().gain
     before = first.blades[0].sections[0].dchi_LE
     after = second.blades[0].sections[0].dchi_LE
-    assert after == pytest.approx(before - iterate.Incidence().clip)
+    assert after == pytest.approx(before - gain * error)
 
 
 def test_iterate_without_iterators_says_to_use_run(run_case, tmp_path, capsys):
