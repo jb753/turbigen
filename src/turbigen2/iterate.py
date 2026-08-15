@@ -116,6 +116,26 @@ class Iterator(Node):
             f"{type(self).__name__} must implement with_unknowns(self, config, values)"
         )
 
+    def paths(self, config):
+        """Return the config leaves this iterator moves, as `node.flatten`
+        spells them.
+
+        The same knobs as :meth:`unknowns`, named the other way round. A knob
+        is often a reduction over several leaves --- ``dchi_TE[0]`` is the mean
+        recamber of a row, spread over ``blades[0].sections[*].dchi_TE`` ---
+        so the two namings cannot be derived from one another, and what reads
+        an archive of designs needs the leaf spelling to tell a design variable
+        from an iterated one.
+
+        Declared rather than inferred: a knob whose leaves went unnamed would
+        be taken for a design variable, and a predictor would then use the
+        recamber it is trying to predict as an input. `test_iterate.py` asserts
+        that what this returns is what `with_unknowns` actually writes.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement paths(self, config)"
+        )
+
     def error(self, config, result):
         """Return what each unknown should null, under the same names.
 
@@ -489,6 +509,19 @@ def _with_recamber(config, field, values):
     return dataclasses.replace(config, blades=tuple(blades))
 
 
+def _recamber_paths(config, field):
+    """Return every section's `field`, as `node.flatten` spells it.
+
+    Every section, although :func:`_recamber_unknowns` reads one number per
+    row: the knob is a row mean, so moving it writes to all of them.
+    """
+    return {
+        f"blades[{i_row}].sections[{i_section}].{field}"
+        for i_row, blade in enumerate(config.blades)
+        for i_section in range(len(blade.sections))
+    }
+
+
 class Deviation(Iterator):
     """Match the exit flow angle to the design by moving the trailing edge.
 
@@ -509,6 +542,9 @@ class Deviation(Iterator):
 
     def with_unknowns(self, config, values):
         return _with_recamber(config, "dchi_TE", values)
+
+    def paths(self, config):
+        return _recamber_paths(config, "dchi_TE")
 
     def error(self, config, result):
         if result.actual is None or result.machine is None:
@@ -563,6 +599,9 @@ class Incidence(Iterator):
 
     def with_unknowns(self, config, values):
         return _with_recamber(config, "dchi_LE", values)
+
+    def paths(self, config):
+        return _recamber_paths(config, "dchi_LE")
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
@@ -681,6 +720,12 @@ class MeanLine(Iterator):
         return dataclasses.replace(
             config, mean_line=dataclasses.replace(design, **replacements)
         )
+
+    def paths(self, config):
+        # Alone among the iterators, this one's knobs *are* leaves of the
+        # config, one apiece, so `_names` already spells them the way
+        # `node.flatten` does and there is nothing to translate.
+        return set(self.unknowns(config))
 
     def error(self, config, result):
         if result.actual is None:

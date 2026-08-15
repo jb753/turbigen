@@ -350,3 +350,42 @@ class Node:
         for field in dataclasses.fields(self):
             data[field.name] = _to_config(getattr(self, field.name))
         return data
+
+
+#
+# PATHS THROUGH A TREE
+#
+
+
+def flatten(node):
+    """Return every leaf of `node`, keyed by the path that reaches it.
+
+    Mappings are joined with a dot and sequences indexed with brackets, so a
+    recamber angle is ``blades[0].sections[1].dchi_TE`` and a loss coefficient
+    ``mean_line.Ys[0]``.
+
+    This is the only definition of how a path is spelled. Anything naming one
+    --- an :class:`~turbigen2.iterate.Iterator` declaring which leaves it owns,
+    a predictor deciding which leaves are design variables --- is written
+    against this function rather than against its own idea of the convention,
+    so the two cannot drift apart in spelling while agreeing in content.
+
+    Every leaf is returned, not only the numeric ones. What counts as a design
+    variable is the caller's business; what the tree contains is this
+    function's.
+    """
+    leaves = {}
+    _leaves(node.to_dict(), "", leaves)
+    return leaves
+
+
+def _leaves(value, prefix, leaves):
+    """Collect the leaves of `value` into `leaves`, under `prefix`."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _leaves(item, f"{prefix}.{key}" if prefix else str(key), leaves)
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _leaves(item, f"{prefix}[{index}]", leaves)
+    else:
+        leaves[prefix] = value

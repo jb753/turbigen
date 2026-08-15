@@ -263,7 +263,8 @@ apart:
 - the **stepper** assembles every iterator's knobs into one flat table, solves
   `B dx = -e` for the step, clips it, and decides convergence against the
   declared tolerances;
-- an **estimator**, not built, would own the features and the fit.
+- an **estimator** owns which designs a knob can be predicted from, and how —
+  see [Starting from designs already run](#starting-from-designs-already-run).
 
 Because the iterators disappear into that table, a better step rule replaces
 `iterate.step` alone and touches no iterator. That has already happened once:
@@ -329,6 +330,34 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise
 profile.
+
+### Starting from designs already run
+
+The knobs start wherever the file leaves them, which is a waste when similar
+machines have already been solved. An optional `database:` key names a glob of
+finished case files, and the iterators start from a blend of the nearest:
+
+```yaml
+database:
+  path: ../runs/**/config.yaml
+```
+
+That is the whole configuration. The design variables to measure distance in
+are not declared but deduced --- whatever the finished runs *differ in*, less
+the knobs themselves, which an iterator names through a third method,
+`paths()`. The blend is inverse distance weighting, so it cannot return a
+recamber no converged design ever used, and it decays to a copy of the single
+nearest run rather than needing a minimum sample count.
+
+It happens once, before iteration 0, and nothing else reads the key: `run` and
+`design` are unaffected, and `converge` and `step` do not know it exists. A
+run is a sample if it converged *and* its stored errors are within tolerance,
+so the per-iteration directories of an earlier `iterate` are matched by the
+glob and correctly ignored.
+
+See [Starting from designs already
+run](ARCHITECTURE.md#starting-from-designs-already-run) for why deduced rather
+than declared, and why not the polynomial surrogate this replaces.
 
 ## Entry point
 

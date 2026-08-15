@@ -13,6 +13,7 @@ import ember.yaml_util
 from turbigen2 import plugins
 from turbigen2.annulus import AnnulusDesign
 from turbigen2.blade import BladeDesign
+from turbigen2.database import Database
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
 from turbigen2.iterate import Iterator
@@ -48,6 +49,10 @@ class Config(Node):
     """Design iterators, closing the loop between the design and its CFD. Only
     needed by the verb that iterates, but their errors are measured by every
     run that solves."""
+
+    database: Database | None = None
+    """Finished runs to start the iterators from, instead of from whatever this
+    file says. Read once, by the verb that iterates."""
 
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config

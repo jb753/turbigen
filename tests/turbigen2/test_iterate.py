@@ -12,6 +12,8 @@ Test cases:
 - test_recamber_shift_keeps_the_spanwise_distribution: the knob is a row mean
 - test_order_of_application_does_not_matter: knobs are disjoint, so they commute
 - test_two_iterators_claiming_one_knob_is_refused: caught at assembly
+- test_paths_match_what_is_moved: declared ownership is real ownership
+- test_paths_are_real_leaves: and every path names a leaf that exists
 - test_step_subtracts_the_error: the rule, exactly
 - test_step_clips: a bad early step cannot throw the design
 - test_step_leaves_unmeasured_knobs_alone: a failed run is not a reason to move
@@ -37,7 +39,7 @@ import numpy as np
 import pytest
 
 from test_blade import build
-from turbigen2 import Config, Result, iterate
+from turbigen2 import Config, Result, iterate, node
 
 
 @pytest.fixture
@@ -203,6 +205,40 @@ def test_two_iterators_claiming_one_knob_is_refused(config):
 
     with pytest.raises(ValueError, match="both claim"):
         iterate.unknowns(doubled)
+
+
+def _probe(iterator, config):
+    """Return the config leaves `with_unknowns` actually writes."""
+    before = node.flatten(config)
+    shifted = {name: value + 1.0 for name, value in iterator.unknowns(config).items()}
+    after = node.flatten(iterator.with_unknowns(config, shifted))
+    return {path for path, value in before.items() if after.get(path) != value}
+
+
+def test_paths_match_what_is_moved(config):
+    """What an iterator declares it owns is what it writes.
+
+    The two are separate methods because a knob is a reduction --- one number
+    per row, spread over its sections --- so neither naming can be derived from
+    the other. That leaves them free to disagree, which is what this refuses:
+    a knob whose leaves went unnamed would be read as a design variable, and
+    `database` would use the recamber it is predicting as an input.
+    """
+    variables = ("psi", "Ys")
+    config = dataclasses.replace(
+        config, iterate=config.iterate + (iterate.MeanLine(variables=variables),)
+    )
+
+    for iterator in config.iterate:
+        assert iterator.paths(config) == _probe(iterator, config)
+
+
+def test_paths_are_real_leaves(config):
+    """A misspelled path would silently exclude nothing at all."""
+    leaves = set(node.flatten(config))
+
+    for iterator in config.iterate:
+        assert iterator.paths(config) <= leaves
 
 
 #

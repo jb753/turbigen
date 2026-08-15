@@ -23,6 +23,7 @@ from turbigen2.blade import (
 )
 from turbigen2.camber import CamberDesign, CamberLine, Quadratic
 from turbigen2.config import Config
+from turbigen2.database import Database
 from turbigen2.hmesh import H
 from turbigen2.mesh import Mesher, WallSpacing
 from turbigen2.thickness import Taylor, ThicknessDesign
@@ -53,6 +54,7 @@ __all__ = [
     "CamberLine",
     "Circulation",
     "Config",
+    "Database",
     "FixedAxialChord",
     "FixedCount",
     "bconds",

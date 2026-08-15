@@ -553,6 +553,42 @@ def test_iterate_moves_the_design_and_records_why(iterate_case, tmp_path):
     assert after == pytest.approx(before - gain * error)
 
 
+def test_iterate_starts_from_the_database(iterate_case, tmp_path):
+    """A design near one already solved starts where that one finished.
+
+    The archive is fabricated rather than solved: what is under test is that
+    the verb reads the key, anchors the glob on the config file and applies the
+    prediction before the first run, none of which needs a march to prove. One
+    sample, so every query sits on top of it and the answer is exact.
+    """
+    from turbigen2 import Config, Result, case  # noqa: PLC0415
+
+    archived = Config.from_file(iterate_case)
+    archived = iterate.Deviation().with_unknowns(archived, {"dchi_TE[0]": 7.5})
+    archived = iterate.Incidence().with_unknowns(archived, {"dchi_LE[0]": -3.25})
+
+    directory = tmp_path / "archive" / "000"
+    directory.mkdir(parents=True)
+    case.write(
+        directory / "config.yaml",
+        archived,
+        Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0]": 0.0}),
+    )
+
+    with_database = tmp_path / "with_database.yaml"
+    with_database.write_text(
+        ITERATE_CASE + '\ndatabase:\n  path: "archive/*/config.yaml"\n'
+    )
+
+    out = tmp_path / "out"
+    cli.main(["iterate", str(with_database), "-o", str(out), "--max-iter", "1", "-q"])
+
+    started, _ = case.read(out / "iter_0000" / "config.yaml", design=False)
+
+    assert iterate.unknowns(started)["dchi_TE[0]"] == pytest.approx(7.5)
+    assert iterate.unknowns(started)["dchi_LE[0]"] == pytest.approx(-3.25)
+
+
 def test_iterate_without_iterators_says_to_use_run(run_case, tmp_path, capsys):
     assert cli.main(["iterate", str(run_case), "-o", str(tmp_path / "out")]) == 1
 

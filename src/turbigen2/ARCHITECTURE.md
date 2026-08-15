@@ -584,6 +584,91 @@ MeanLine), because "actual" was attached to a config object rather than kept
 beside the design it is compared with. Here `result.nominal` and
 `result.actual` sit at the same level, one step away from the `Machine`.
 
+## Starting from designs already run
+
+An iteration begins wherever the file leaves its knobs, and then spends CFD on
+walking them to the answer. When similar machines have already been solved that
+is wasteful, so a `database:` key names a glob of finished case files and the
+iterators start from a blend of the nearest.
+
+```yaml
+database:
+  path: ../runs/**/config.yaml
+```
+
+Three things are different from `dspace.py`, which does this today.
+
+**Nothing is declared.** The old `IndependentConfig` asks for the independent
+variables in the file, with limits for each. Here they are deduced: flatten
+every sample with `node.flatten`, and a design variable is any leaf they
+*differ in*. The range to normalise by is the range they cover, so there are no
+limits to state either, and a leaf they all agree on drops out rather than
+dividing by zero.
+
+Two guards make that safe. The candidates are restricted to the design subtree
+--- `fluid`, `mean_line`, `annulus`, `blades` --- so a machine run at a finer
+mesh is the same design rather than a different one. And the knobs themselves
+are excluded, because a recamber is what the blend *predicts* and using it as
+an input would place a query by the number it is trying to supply.
+
+**An iterator declares what it owns.** That exclusion cannot be done by name:
+`unknowns` calls a knob `dchi_TE[0]`, a mean over sections, while its leaves
+are `blades[0].sections[*].dchi_TE`. So `Iterator` has a third method beside
+the two an author already writes:
+
+```python
+def paths(self, config) -> set[str]   # config leaves this iterator moves
+```
+
+It raises like its siblings rather than defaulting to nothing, because an
+iterator whose leaves went unnamed would have its knobs silently read as design
+variables. The obvious alternative --- perturbing every knob through
+`with_unknowns` and seeing which leaves move --- infers ownership from side
+effects and assumes the perturbation is always a real change. It survives as
+the *test* that a declaration matches what is written, which is where an
+inference of that kind belongs.
+
+`node.flatten` is the single definition of how a path is spelled, so the
+declaration and the candidate set cannot drift apart in spelling while agreeing
+in content.
+
+**Inverse distance weighting, not a polynomial surrogate.** The sample count is
+the binding constraint: a total-order cubic in eight design variables is 165
+terms against perhaps fifteen finished runs, which is why the old fit needed
+`order_max`, `frac_dof` and a train/test split to stop it overfitting, and why
+it could still return an unmeshable blade outside the sample hull. IDW has no
+order, no basis and no conditioning, and it *cannot* leave the hull: the answer
+is a convex combination of knobs that converged, so no clip is needed to keep a
+warm start meshable.
+
+It also decays gracefully, which is why there is no minimum sample count to
+configure --- the old `nsample_min_interp: 8` guarded against the polynomial,
+not against this. Two samples is a blend of two converged designs; one is a
+copy of it, reached through the same code path, because a lone sample makes
+every column's range zero and so puts every query on top of it. Repeats of one
+design are averaged rather than resolved by whichever the glob sorted first.
+
+The price is that IDW carries no trend: its gradient is zero at every sample,
+and far from all of them it decays to their mean. It interpolates between
+designs already run rather than extrapolating beyond them. For a starting point
+that Broyden then refines, bounded beats accurate.
+
+**What makes a run a sample** is read from its `result:`, not from where it
+sits. It must have converged, and `iterate.converged` must hold on the errors
+it stored --- an intermediate iteration is a converged march whose recambers
+are still on their way somewhere. The old code filters by directory depth
+instead (`dspace.py:322`), counting parents to exclude per-iteration
+subdirectories, which never checks whether a run finished and breaks under any
+other layout. Filtering on the data is what makes a bare `**` glob correct.
+
+The run being started is excluded explicitly, or a design whose own output is
+under the glob would be started from itself and predict its own answer.
+
+Sampling a design space is **not** here. The old `DesignSpace` also owns
+`nsample_target`, a Latin hypercube and a seed; choosing what to run next is a
+separate question from reading what has been run, and only the second is needed
+to warm-start.
+
 ## Post-processing
 
 A post-processor is a `Node` like any other config object, so `type:` dispatch,

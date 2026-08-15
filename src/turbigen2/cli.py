@@ -35,7 +35,17 @@ import turbigen
 import turbigen.util
 import ember.convergence_history
 import ember.yaml_util
-from turbigen2 import bconds, case, guess, iterate, mixout, plugins, post, restart
+from turbigen2 import (
+    bconds,
+    case,
+    database,
+    guess,
+    iterate,
+    mixout,
+    plugins,
+    post,
+    restart,
+)
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -458,6 +468,14 @@ def cmd_iterate(args):
 
     if not args.verbose:
         _quieten_the_runs()
+
+    # Iteration -1: where the knobs start. Anchored on the config file's own
+    # directory rather than the working directory, because a config is often
+    # run from somewhere else, and excluding this run's output because it will
+    # fill with iterations of the very design being started.
+    config = database.warm_start(
+        config, Path(args.CONFIG_YAML).parent, exclude=(out_dir,)
+    )
 
     def run(config_now, i_iter):
         """Solve one iteration into a directory of its own."""

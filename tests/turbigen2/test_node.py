@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pytest
 
-from turbigen2 import Config, Fluid, MeanLineDesign, Mesher, PerfectFluid
+from turbigen2 import Config, Fluid, MeanLineDesign, Mesher, PerfectFluid, node
 from turbigen2.node import Node
 
 CASE = {
@@ -340,3 +340,41 @@ def test_config_round_trips_through_a_file(tmp_path):
     config.to_file(path)
 
     assert Config.from_file(path) == config
+
+
+#
+# PATHS THROUGH A TREE
+#
+# One spelling, shared by everything that names a leaf: an iterator declaring
+# what it owns, and a predictor deciding what is a design variable.
+#
+
+
+def test_flatten_spells_a_nested_leaf():
+    leaves = node.flatten(Config.from_dict(CASE))
+
+    assert leaves["fluid.cp"] == 1005.0
+    assert leaves["mean_line.psi"] == 1.6
+
+
+def test_flatten_indexes_a_sequence():
+    leaves = node.flatten(Config.from_dict(CASE))
+
+    assert leaves["mean_line.Ys[0]"] == 0.05
+    assert leaves["mean_line.Ys[1]"] == 0.05
+
+
+def test_flatten_keeps_no_branches():
+    """Only leaves, so a path never names something with children."""
+    leaves = node.flatten(Config.from_dict(CASE))
+
+    assert "mean_line" not in leaves
+    assert "mean_line.Ys" not in leaves
+    assert not any(isinstance(value, (dict, list)) for value in leaves.values())
+
+
+def test_flatten_reaches_every_leaf_of_a_file():
+    """A round trip through a file changes nothing about what is in the tree."""
+    config = Config.from_dict(CASE)
+
+    assert node.flatten(Config.from_dict(config.to_dict())) == node.flatten(config)
