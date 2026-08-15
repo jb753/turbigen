@@ -340,6 +340,108 @@ def test_a_submitted_invocation_carries_every_override(batch):
 
 
 #
+# SAMPLE
+#
+
+
+SAMPLE_CASE = CASE + """
+sample:
+  seed: 0
+  bounds:
+    mean_line.psi: [1.4, 1.8]
+"""
+
+
+@pytest.fixture
+def datum(tmp_path):
+    """A datum config in a directory of its own, for its batches to sit in."""
+
+    def make(iterating):
+        directory = tmp_path / ("iter" if iterating else "plain")
+        directory.mkdir()
+        path = directory / "input.yaml"
+        text = SAMPLE_CASE
+        if iterating:
+            text += "iterate:\n  - type: deviation\n"
+        path.write_text(text)
+        return path
+
+    return make
+
+
+def test_sample_writes_a_batch_and_submits_it(datum, calls):
+    path = datum(iterating=False)
+
+    assert cli.main(["sample", str(path), "-n", "2", "--queue"]) == 0
+
+    # Written first, so a submission that fails still leaves the batch.
+    members = sorted((path.parent / "batch_0000").glob("*/input.yaml"))
+    assert len(members) == 2
+
+    ((argv, cwd),) = calls
+    assert argv[0].endswith("sbatch")
+    assert argv[1] == "--array=1-2"
+
+    written = (path.parent / "batch_0000" / job.TASKS_NAME).read_text().splitlines()
+    assert written == [str(member.resolve()) for member in members]
+
+
+def test_a_batch_is_submitted_as_run_without_an_iterate_section(datum, calls):
+    path = datum(iterating=False)
+
+    cli.main(["sample", str(path), "-n", "2", "--queue"])
+
+    assert " run " in (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
+
+
+def test_a_batch_is_submitted_as_iterate_when_the_datum_iterates(datum, calls):
+    """Inferred from the section, and it matters which way it goes.
+
+    A batch submitted as `run` builds an archive `database` reads back as
+    empty: a sample must have converged *and* have its errors inside their
+    tolerances, and closing that gap is what iterating is for.
+    """
+    path = datum(iterating=True)
+
+    cli.main(["sample", str(path), "-n", "2", "--queue"])
+
+    assert " iterate " in (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
+
+
+def test_a_submitted_batch_carries_no_options(datum, calls):
+    """The members already hold the overrides, having been written with them.
+
+    Unlike `run --queue`, where the submitted job re-reads the file the parent
+    read and would otherwise lose them.
+    """
+    path = datum(iterating=False)
+
+    cli.main(["sample", str(path), "-n", "2", "-s", "mean_line.mdot=17.0", "--queue"])
+
+    script = (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
+    assert "-s" not in script
+
+    member = next((path.parent / "batch_0000").glob("*/input.yaml"))
+    assert "mdot: 17.0" in member.read_text()
+
+
+def test_sampling_without_a_job_section_says_so(tmp_path, capsys):
+    directory = tmp_path / "datum"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    # Everything but the job: section, which sits between the two halves.
+    path.write_text(CASE.split("job:")[0] + SAMPLE_CASE.split(CASE)[1])
+
+    assert cli.main(["sample", str(path), "-n", "2", "--queue"]) == 1
+
+    assert "job: section" in capsys.readouterr().err
+
+    # The batch is still there: writing happens before submitting, so a queue
+    # that will not take it has not cost the designs.
+    assert list((path.parent / "batch_0000").glob("*/input.yaml"))
+
+
+#
 # CLOBBERING
 #
 

@@ -462,6 +462,7 @@ job:
 turbigen2 run batch_0000/*/input.yaml -Q
 turbigen2 run batch_0000/*/input.yaml -Q -s job.hours=12
 turbigen2 iterate hiload/input.yaml -Q -s job.type=tsp
+turbigen2 sample datum/input.yaml -n 32 -Q
 ```
 
 **The key says how, the flag says whether.** That is the whole difference from
@@ -474,7 +475,12 @@ same mechanism as every other override, so there are no queue flags beyond
 `-Q` itself and nothing new to remember.
 
 `type: slurm` submits every target as one array; `type: tsp` queues them
-through task-spooler. A third backend is a plugin class registering its own
+through task-spooler.
+
+On `run` and `iterate`, `-Q` submits the targets you named, as the verb you
+typed, carrying this invocation's options. On `sample` it submits the members
+it has just written, as the verb the datum implies, carrying none — see
+[`sample`](#sample--implemented). A third backend is a plugin class registering its own
 `type:`, needing no change here. See [Where a run
 executes](ARCHITECTURE.md#where-a-run-executes).
 
@@ -504,13 +510,33 @@ Paths are spelled as `node.flatten` writes them, the same as
 appears. `-n` and `--continue` are properties of the invocation and so are flags;
 `seed` describes the space and so lives in the file.
 
-**Nothing is run.** A verb that both chose designs and executed them would be
-a scheduler, and the package this replaces already has two of those. Running
-them is a second command over the batch it printed:
+**Nothing is run unless you ask.** Bare `sample` writes configs and stops, so
+inspecting a batch before spending cluster hours on it costs nothing. `-Q`
+submits it:
 
 ```
-BATCH=$(turbigen2 sample datum/input.yaml -n 32)
-turbigen2 run $BATCH/*/input.yaml --queue
+turbigen2 sample datum/input.yaml -n 32            # write only
+turbigen2 sample datum/input.yaml -n 32 -Q         # write, then submit
+```
+
+**The verb is inferred**: `iterate` when the datum has an `iterate:` section,
+`run` when it does not, logged either way. Inferred rather than asked for,
+because the depth of a design is already set by what the config contains — and
+because getting it wrong is quiet. A batch submitted as `run` builds an archive
+`database` reads back as **empty**: `_sample` takes a run only if it converged
+*and* `iterate.converged` holds on its stored errors, and a single solve of a
+freshly drawn design will not put those inside their tolerances. Closing that
+gap is what iterating is for.
+
+The submitted jobs carry **no options**, unlike `run -Q` and `iterate -Q`. The
+members are new files written from the already-overridden datum, so a `-s` is
+in them; forwarding it again would be redundant, and a `-s sample.*` would
+re-create on each member the key `_strip` deliberately removed.
+
+The two-step still works, and is what to use when you want the other verb:
+
+```
+turbigen2 run $(turbigen2 sample datum/input.yaml -n 32)/*/input.yaml -Q
 ```
 
 ### Sobol', not Latin hypercube

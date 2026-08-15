@@ -292,7 +292,7 @@ def each(args, one):
     check_clobber(args, paths)
 
     if getattr(args, "queue", False):
-        return submit(args, paths)
+        return submit_targets(args, paths)
 
     status = 0
     for path in paths:
@@ -308,19 +308,14 @@ def each(args, one):
 #
 
 
-def submit(args, paths):
-    """Send every target to the queue the config names, and run none of them.
+def submit(config, paths, verb, options=()):
+    """Send every path to the queue `config` names, and run none of them.
 
     The `job:` section says *how* to submit and `--queue` says *whether*, so
     submission is never implied by a config file. The package this replaces
     submits whenever the key is present, which makes a run re-exec itself and
     obliges every entry point to carry a `--no-job` escape hatch.
     """
-    # Read from the first target only. Which queue to use is a property of
-    # where you are, so a batch whose members disagreed about it would be
-    # describing something that cannot happen.
-    config = load_config(paths[0], args)
-
     if config.job is None:
         raise ValueError(
             "--queue needs a job: section saying where to submit, as in "
@@ -331,9 +326,38 @@ def submit(args, paths):
         job.Task(config=path, name=Path(path).resolve().parent.name) for path in paths
     ]
 
-    config.job.submit(tasks, args.command, task_options(args))
+    config.job.submit(tasks, verb, options)
 
     return 0
+
+
+def submit_targets(args, paths):
+    """Submit this invocation's own targets, as the verb that was typed."""
+    # The queue is read from the first target only. Which one to use is a
+    # property of where you are, so a batch whose members disagreed about it
+    # would be describing something that cannot happen.
+    return submit(load_config(paths[0], args), paths, args.command, task_options(args))
+
+
+def sample_verb(config):
+    """Return the verb a submitted batch should be run as.
+
+    `iterate` when the datum says how to iterate, `run` otherwise. Inferred
+    from the section rather than asked for, the same way the depth of a design
+    is set by what the config contains --- and the inference matters, because
+    a batch submitted as `run` builds an archive `database` reads back as
+    empty: a sample must have converged *and* have its errors inside their
+    tolerances, which is what iterating is for.
+
+    Logged, so that "why did this iterate" and "why did this not" are both
+    answerable from the batch's own log file.
+    """
+    verb = "iterate" if config.iterate else "run"
+
+    reason = "an iterate: section" if config.iterate else "no iterate: section"
+    sample.logger.info(f"Submitting as '{verb}': the datum has {reason}.")
+
+    return verb
 
 
 def task_options(args):
@@ -707,14 +731,19 @@ def cmd_sample(args):
 
     out_dir = _open_batch(args, datum_dir)
 
+    members = []
     for index, member in sample.generate(config, args.number, start):
         member_path = out_dir / sample.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
         member_path.parent.mkdir(parents=True, exist_ok=True)
         member.to_file(member_path)
+        members.append(member_path)
 
     sample.logger.info(f"Wrote {args.number} design(s) to {out_dir}")
+
+    if args.queue:
+        submit(config, members, sample_verb(config))
 
     # The one thing this verb puts on stdout, everything else being on stderr.
     # A numbered batch cannot be named in advance, so without it a script has
@@ -1050,7 +1079,7 @@ def _make_parser():
             "sample: section and write one config per point, named by its "
             "index in the sequence. Points that cannot be designed are "
             "skipped, so no cluster time is spent finding that out. Nothing "
-            "is run: what to do with the configs is yours to decide. The batch "
+            "is run unless --queue asks for it. The batch "
             "is written beside the datum config, in the next free batch_NNNN, "
             "whose path is printed on stdout."
         ),
@@ -1066,6 +1095,7 @@ def _make_parser():
             "powers of two)"
         ),
     )
+    _add_queue_argument(sample_)
     sample_.add_argument(
         "--continue",
         dest="carry_on",
@@ -1105,7 +1135,7 @@ def _add_queue_argument(parser):
         action="store_true",
         help=(
             "submit to the queue named by the job: section instead of running "
-            "here; several config files become one submission"
+            "here; every config becomes one submission"
         ),
     )
 
