@@ -43,7 +43,7 @@ mean_line:
 
 def plugin_source(name, class_name):
     """A minimal one-row design, as a user would write it in a scratch file."""
-    return textwrap.dedent(f'''
+    return textwrap.dedent(f"""
         from typing import ClassVar
         from turbigen2.design import MeanLineDesign
 
@@ -73,13 +73,15 @@ def plugin_source(name, class_name):
 
             def backward(self, ml):
                 return {{"Ma": ml.outlet.Ma, "P1": ml.inlet.P, "T1": ml.inlet.T}}
-    ''')
+    """)
 
 
 @pytest.fixture
 def case(tmp_path):
-    """A config file in a directory of its own."""
-    path = tmp_path / "case.yaml"
+    """A config file in a directory of its own, one directory being one run."""
+    directory = tmp_path / "case"
+    directory.mkdir()
+    path = directory / "input.yaml"
     path.write_text(CASE)
     return path
 
@@ -165,7 +167,7 @@ def test_load_plugins_reports_a_broken_plugin(tmp_path):
 #
 
 
-def test_design_writes_nothing_without_out(case, capsys):
+def test_design_writes_nothing_at_all(case, capsys):
     before = set(case.parent.iterdir())
 
     assert cli.main(["design", str(case)]) == 0
@@ -174,25 +176,55 @@ def test_design_writes_nothing_without_out(case, capsys):
     assert "Mean line:" in capsys.readouterr().err
 
 
-def test_design_writes_a_config_that_reads_back_equal(case, tmp_path):
-    from turbigen2 import Config
+def test_report_of_a_mean_line_design_is_not_an_error(case):
+    """Every standard plot needs geometry this case does not have.
 
-    out = tmp_path / "out"
-    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+    Each processor degrades to no figures when what it needs is missing, which
+    is what lets one verb cover every depth of case without a mode to select --
+    and an empty document is not a report, so no file appears.
+    """
+    assert cli.main(["report", str(case)]) == 0
 
-    assert (out / "config.yaml").is_file()
-    assert (out / "log_turbigen2.txt").is_file()
-    assert Config.from_file(out / "config.yaml") == Config.from_file(case)
+    assert (case.parent / cli.LOG_NAME).is_file()
+    assert not (case.parent / "post.pdf").exists()
+
+    # The answer belongs to whoever has one: a report has nothing to put under
+    # `result:`, so it does not write a config at all.
+    assert not (case.parent / cli.OUTPUT_NAME).exists()
 
 
-def test_out_star_takes_the_next_free_number(case, tmp_path):
-    pattern = str(tmp_path / "run_*")
+def test_a_batch_is_written_beside_its_datum(sample_case):
+    """No directory to name: a batch goes where the design it came from is.
 
-    cli.main(["design", str(case), "-o", pattern, "-q"])
-    cli.main(["design", str(case), "-o", pattern, "-q"])
+    Which also makes the layout record the provenance that nothing else does --
+    `--continue` cannot tell that the datum or its bounds changed between
+    batches, and no file at the batch root says what generated it.
+    """
+    cli.main(["sample", str(sample_case), "-n", "2"])
+    cli.main(["sample", str(sample_case), "-n", "2"])
 
-    assert (tmp_path / "run_0000").is_dir()
-    assert (tmp_path / "run_0001").is_dir()
+    assert (sample_case.parent / "batch_0000").is_dir()
+    assert (sample_case.parent / "batch_0001").is_dir()
+
+
+def test_batch_numbering_carries_on_past_a_deleted_batch(tmp_path):
+    """Counted from the highest that exists, not from how many there are."""
+    (tmp_path / "batch_0000").mkdir()
+    (tmp_path / "batch_0007").mkdir()
+
+    assert cli.next_batch_dir(tmp_path) == tmp_path / "batch_0008"
+
+
+def test_batch_numbering_ignores_what_is_not_a_batch(tmp_path):
+    (tmp_path / "batch_0000").mkdir()
+    (tmp_path / "batch_notes").mkdir()
+    (tmp_path / "batch_0001.txt").write_text("")
+
+    assert cli.next_batch_dir(tmp_path) == tmp_path / "batch_0001"
+
+
+def test_the_first_batch_is_zero(tmp_path):
+    assert cli.next_batch_dir(tmp_path) == tmp_path / "batch_0000"
 
 
 def test_set_override_reaches_the_design(case, capsys):
@@ -217,8 +249,13 @@ def test_malformed_override_is_rejected(case, capsys):
     assert "KEY=VALUE" in capsys.readouterr().err
 
 
-def test_quiet_suppresses_results_but_not_the_exit_code(case, capsys):
-    assert cli.main(["design", str(case), "-q"]) == 0
+def test_nothing_but_sample_writes_to_stdout(case, capsys):
+    """One stream for everything a run says, and it is stderr.
+
+    stdout is reserved for the one machine-readable thing there is: the batch
+    directory `sample` cannot name in advance.
+    """
+    assert cli.main(["design", str(case)]) == 0
 
     assert capsys.readouterr().out == ""
 
@@ -235,6 +272,21 @@ def test_verbose_shows_the_traceback(tmp_path, capsys):
     assert cli.main(["design", str(tmp_path / "nope.yaml"), "-v"]) == 1
 
     assert "Traceback" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("verb", ["design", "report", "run", "iterate", "sample"])
+def test_every_verb_can_print_its_help(verb, capsys):
+    """argparse percent-formats help strings, so a bare `%` in one raises.
+
+    The placeholder is a `%`, and describing it in the `--out` help without
+    doubling it made `sample --help` fail with a ValueError from inside
+    argparse rather than print anything.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main([verb, "--help"])
+
+    assert excinfo.value.code == 0
+    assert "usage:" in capsys.readouterr().out
 
 
 def test_unknown_verb_exits_two(capsys):
@@ -267,32 +319,39 @@ def test_design_finds_a_plugin_without_being_told(tmp_path, clean_registry, caps
 def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_registry):
     """An archived config still finds the plugins the original run used.
 
-    This is why no plugin path is recorded anywhere: the output directory sits
-    under the case directory, so walking up from it reaches the same place.
+    This is why no plugin path is recorded anywhere: the output sits beside the
+    case, so walking up from it reaches the same place.
     """
     plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
     plug_dir.mkdir()
     (plug_dir / "mine.py").write_text(plugin_source("_t_rerun", "RerunStage"))
 
-    case = tmp_path / "stage.yaml"
+    directory = tmp_path / "stage"
+    directory.mkdir()
+    case = directory / "input.yaml"
     case.write_text(PLUGIN_CASE.format(name="_t_rerun"))
 
-    out = tmp_path / "out"
-    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["design", str(case)]) == 0
 
-    assert cli.main(["design", str(out / "config.yaml"), "-q"]) == 0
+    # As a run would leave it: the resolved config, in the case's directory.
+    from turbigen2 import Config  # noqa: PLC0415
+
+    archived = directory / cli.OUTPUT_NAME
+    Config.from_file(case).to_file(archived)
+
+    assert cli.main(["design", str(archived)]) == 0
 
 
-def test_mesh_without_a_mesh_section_is_a_message_not_a_traceback(case, capsys):
+def test_run_without_a_mesh_section_is_a_message_not_a_traceback(run_case, capsys):
     """`Config` has no make_grid to hold this check, so the verb holds it.
 
     A missing `mesh:` section is a fact about the command the user typed, not
-    about the config in the abstract -- a `design` run of the same file is
-    perfectly valid. Without the check `config.mesh.mesh(...)` would raise
+    about the config in the abstract -- `design` and `report` are both happy
+    with the same file. Without the check `config.mesh.mesh(...)` would raise
     AttributeError on None, which is the unhelpful failure the strict config
     validation exists to avoid.
     """
-    assert cli.main(["mesh", str(case)]) == 1
+    assert cli.main(["run", str(run_case), "-s", "mesh=null"]) == 1
 
     assert "mesh: section" in capsys.readouterr().err
 
@@ -350,15 +409,15 @@ multigrid divisibility check, so the whole thing runs in about a second.
 
 @pytest.fixture
 def run_case(tmp_path):
-    path = tmp_path / "cascade.yaml"
+    directory = tmp_path / "cascade"
+    directory.mkdir()
+    path = directory / "input.yaml"
     path.write_text(RUN_CASE)
     return path
 
 
-def test_run_solves_a_case_end_to_end(run_case, tmp_path, capsys):
-    out = tmp_path / "out"
-
-    assert cli.main(["run", str(run_case), "-o", str(out)]) == 0
+def test_run_solves_a_case_end_to_end(run_case, capsys):
+    assert cli.main(["run", str(run_case)]) == 0
 
     printed = capsys.readouterr().err
     assert "Mean line:" in printed
@@ -366,16 +425,29 @@ def test_run_solves_a_case_end_to_end(run_case, tmp_path, capsys):
     assert "Solver: converged" in printed
 
 
-def test_run_writes_a_config_that_reads_back(run_case, tmp_path):
+def test_a_run_never_overwrites_its_input(run_case):
+    """The whole reason the written name is not a name we were given.
+
+    What a run writes is the resolved config, every default expanded, so
+    writing it over a hand-kept file would lose the file's comments to the safe
+    loader. Guaranteed by the naming rather than by a check.
+    """
+    before = run_case.read_text()
+
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert run_case.read_text() == before
+
+
+def test_run_writes_a_config_that_reads_back(run_case):
     """The archived config is the run, defaults and all."""
     from turbigen2 import Config  # noqa: PLC0415
 
-    out = tmp_path / "out"
-    cli.main(["run", str(run_case), "-o", str(out), "-q"])
+    cli.main(["run", str(run_case)])
 
-    written = out / "config.yaml"
+    written = run_case.parent / cli.OUTPUT_NAME
     assert written.exists()
-    assert (out / "log_turbigen2.txt").exists()
+    assert (run_case.parent / cli.LOG_NAME).exists()
     assert Config.from_file(written) == Config.from_file(run_case)
 
 
@@ -386,7 +458,7 @@ def test_run_writes_a_config_that_reads_back(run_case, tmp_path):
 @pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
 @pytest.mark.filterwarnings("ignore:invalid value")
 @pytest.mark.filterwarnings("ignore:divide by zero")
-def test_run_reports_a_failed_solve_in_its_exit_code(run_case, tmp_path):
+def test_run_reports_a_failed_solve_in_its_exit_code(run_case):
     """Exit 2, and the output is still written.
 
     A diverged run is exactly the one whose output someone needs to look at, so
@@ -394,35 +466,26 @@ def test_run_reports_a_failed_solve_in_its_exit_code(run_case, tmp_path):
     "the solver did not converge" apart from "the config was wrong", which a
     script driving a sweep has to tell apart without parsing the log.
     """
-    out = tmp_path / "out"
-
     # A CFL far past the stability limit, so it diverges within a few steps.
-    code = cli.main(["run", str(run_case), "-o", str(out), "-q", "-s", "solver.cfl=50.0"])
+    code = cli.main(["run", str(run_case), "-s", "solver.cfl=50.0"])
 
     assert code == 2
-    assert (out / "config.yaml").exists()
+    assert (run_case.parent / cli.OUTPUT_NAME).exists()
 
 
-def test_run_requires_an_output_directory(run_case, capsys):
-    """Unlike design and mesh, a run produces artefacts worth keeping."""
-    assert cli.main(["run", str(run_case)]) == 1
-
-    assert "--out" in capsys.readouterr().err
-
-
-def test_run_without_a_solver_section_is_a_message(run_case, tmp_path, capsys):
+def test_run_without_a_solver_section_is_a_message(run_case, capsys):
     text = run_case.read_text()
     trimmed = "\n".join(
         line for line in text.splitlines() if not line.startswith("solver:")
     )
     run_case.write_text(trimmed)
 
-    assert cli.main(["run", str(run_case), "-o", str(tmp_path / "out")]) == 1
+    assert cli.main(["run", str(run_case)]) == 1
 
     assert "solver: section" in capsys.readouterr().err
 
 
-def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
+def test_run_writes_its_answer_beside_the_config(run_case):
     """The point of the whole arrangement: one file, loaded once.
 
     A run's mixed-out mean line goes into the same file under `result:`, so
@@ -431,10 +494,9 @@ def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
     """
     from turbigen2 import case  # noqa: PLC0415
 
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["run", str(run_case)]) == 0
 
-    config, result = case.read(out / "config.yaml")
+    config, result = case.read(run_case.parent / cli.OUTPUT_NAME)
 
     assert result.converged is True
     assert result.actual is not None
@@ -446,31 +508,24 @@ def test_run_writes_its_answer_beside_the_config(run_case, tmp_path):
     assert 0.0 < float(achieved["Ma2"]) < 1.0
 
 
-def test_mesh_restart_replots_a_previous_run(run_case, tmp_path):
-    """Re-plotting needs no more than the config and the restart file.
+def test_report_picks_up_the_field_a_run_left(run_case):
+    """Re-plotting needs no more than the config, and no flag at all.
 
-    The grid is not serialised, so a re-plot re-designs and re-meshes to put
-    the stored field back -- seconds against the minutes of the march it
-    stands in for.
+    The grid is not serialised, so a report re-designs and re-meshes to put the
+    stored field back -- seconds against the minutes of the march it stands in
+    for, which is why serialising it would not be worth the trouble.
     """
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+    out = run_case.parent
+    assert cli.main(["run", str(run_case)]) == 0
 
-    replot = tmp_path / "replot"
-    code = cli.main(
-        [
-            "mesh",
-            str(out / "config.yaml"),
-            "--restart",
-            str(out / "restart.npz"),
-            "-o",
-            str(replot),
-            "-q",
-        ]
-    )
+    before = (out / "post.pdf").read_bytes()
+    (out / "post.pdf").unlink()
 
-    assert code == 0
-    assert (replot / "post.pdf").is_file()
+    assert cli.main(["report", str(out / cli.OUTPUT_NAME)]) == 0
+
+    # The same pages as the run drew, from the field it left behind.
+    assert (out / "post.pdf").is_file()
+    assert len((out / "post.pdf").read_bytes()) == pytest.approx(len(before), rel=0.05)
 
 
 #
@@ -478,46 +533,44 @@ def test_mesh_restart_replots_a_previous_run(run_case, tmp_path):
 #
 
 
-ITERATE_CASE = (
-    RUN_CASE
-    + """
+ITERATE_CASE = RUN_CASE + """
 iterate:
   - type: deviation
   - type: incidence
 """
-)
 
 
 @pytest.fixture
 def iterate_case(tmp_path):
-    path = tmp_path / "iterate.yaml"
+    directory = tmp_path / "iterate"
+    directory.mkdir()
+    path = directory / "input.yaml"
     path.write_text(ITERATE_CASE)
     return path
 
 
-def test_every_run_records_what_the_iterators_measured(iterate_case, tmp_path):
+def test_every_run_records_what_the_iterators_measured(iterate_case):
     """Iterating or not: these are observations of the flow, and only a solved
     grid holds them."""
     from turbigen2 import case  # noqa: PLC0415
 
-    out = tmp_path / "out"
-    assert cli.main(["run", str(iterate_case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["run", str(iterate_case)]) == 0
 
-    _, result = case.read(out / "config.yaml", design=False)
+    _, result = case.read(iterate_case.parent / cli.OUTPUT_NAME, design=False)
 
     assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0]"}
     assert all(isinstance(value, float) for value in result.error.values())
 
 
-def test_iterate_keeps_every_iteration(iterate_case, tmp_path):
+def test_iterate_keeps_every_iteration(iterate_case):
     """The directories are the archive, so none of them is deleted."""
-    out = tmp_path / "out"
+    out = iterate_case.parent
 
-    cli.main(["iterate", str(iterate_case), "-o", str(out), "--max-iter", "2", "-q"])
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
 
     for i_iter in range(2):
         iter_dir = out / f"iter_{i_iter:04d}"
-        assert (iter_dir / "config.yaml").is_file()
+        assert (iter_dir / cli.OUTPUT_NAME).is_file()
         assert (iter_dir / "restart.npz").is_file()
         assert (iter_dir / "post.pdf").is_file()
 
@@ -525,7 +578,20 @@ def test_iterate_keeps_every_iteration(iterate_case, tmp_path):
     assert (out / "final").resolve() == (out / "iter_0001").resolve()
 
 
-def test_iterate_moves_the_design_and_records_why(iterate_case, tmp_path):
+def test_iterate_links_its_answer_where_a_run_would_have_put_it(iterate_case):
+    """`output.yaml` means what this run achieved, whichever verb produced it."""
+    from turbigen2 import case  # noqa: PLC0415
+
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=1"])
+
+    answer = iterate_case.parent / cli.OUTPUT_NAME
+    assert answer.is_symlink()
+
+    _, result = case.read(answer, design=False)
+    assert result is not None
+
+
+def test_iterate_moves_the_design_and_records_why(iterate_case):
     """Each iteration archives the config it ran and the error it measured.
 
     Together those are one sample of "this design gave that mismatch", which is
@@ -533,11 +599,11 @@ def test_iterate_moves_the_design_and_records_why(iterate_case, tmp_path):
     """
     from turbigen2 import case  # noqa: PLC0415
 
-    out = tmp_path / "out"
-    cli.main(["iterate", str(iterate_case), "-o", str(out), "--max-iter", "2", "-q"])
+    out = iterate_case.parent
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
 
-    first, first_result = case.read(out / "iter_0000" / "config.yaml", design=False)
-    second, _ = case.read(out / "iter_0001" / "config.yaml", design=False)
+    first, first_result = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
+    second, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)
 
     # The case recambers its leading edge 10 degrees off the flow, so the
     # incidence is measured well below the target and the knob has to come down
@@ -570,78 +636,200 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
     directory = tmp_path / "archive" / "000"
     directory.mkdir(parents=True)
     case.write(
-        directory / "config.yaml",
+        directory / cli.OUTPUT_NAME,
         archived,
         Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0]": 0.0}),
     )
 
-    with_database = tmp_path / "with_database.yaml"
+    out = tmp_path / "with_database"
+    out.mkdir()
+    with_database = out / "input.yaml"
     with_database.write_text(
-        ITERATE_CASE + '\ndatabase:\n  path: "archive/*/config.yaml"\n'
+        ITERATE_CASE + f'\ndatabase:\n  path: "../archive/*/{cli.OUTPUT_NAME}"\n'
     )
 
-    out = tmp_path / "out"
-    cli.main(["iterate", str(with_database), "-o", str(out), "--max-iter", "1", "-q"])
+    cli.main(["iterate", str(with_database), "-s", "max_iter=1"])
 
-    started, _ = case.read(out / "iter_0000" / "config.yaml", design=False)
+    started, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
 
     assert iterate.unknowns(started)["dchi_TE[0]"] == pytest.approx(7.5)
     assert iterate.unknowns(started)["dchi_LE[0]"] == pytest.approx(-3.25)
 
 
-def test_iterate_without_iterators_says_to_use_run(run_case, tmp_path, capsys):
-    assert cli.main(["iterate", str(run_case), "-o", str(tmp_path / "out")]) == 1
+#
+# THE SAMPLE VERB
+#
+
+
+SAMPLE_CASE = CASE + """
+sample:
+  seed: 0
+  bounds:
+    mean_line.psi: [1.4, 1.8]
+"""
+
+
+@pytest.fixture
+def sample_case(tmp_path):
+    """A datum config, in the directory its batches will be written into."""
+    directory = tmp_path / "datum"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    path.write_text(SAMPLE_CASE)
+    return path
+
+
+def test_sample_writes_a_batch_named_by_sequence_index(sample_case):
+    assert cli.main(["sample", str(sample_case), "-n", "4"]) == 0
+
+    batch = sample_case.parent / "batch_0000"
+
+    # A directory each, because one directory is one run: it is what gives
+    # every member an output.yaml of its own to be run into.
+    assert sorted(p.name for p in batch.glob("*/")) == [
+        "0000",
+        "0001",
+        "0002",
+        "0003",
+    ]
+    assert (batch / "0000" / "input.yaml").is_file()
+
+
+def test_sample_prints_the_batch_directory(sample_case, capsys):
+    """The one thing on stdout: a numbered batch cannot be named in advance."""
+    cli.main(["sample", str(sample_case), "-n", "2"])
+
+    assert capsys.readouterr().out.strip() == str(sample_case.parent / "batch_0000")
+
+
+def test_sample_members_are_runnable_designs(sample_case):
+    from turbigen2 import Config  # noqa: PLC0415
+
+    cli.main(["sample", str(sample_case), "-n", "2"])
+
+    for member in (sample_case.parent / "batch_0000").glob("*/input.yaml"):
+        config = Config.from_file(member)
+        assert config.sample is None
+        assert 1.4 <= config.mean_line.psi <= 1.8
+        config.design()
+
+
+def test_sample_continue_carries_on_into_a_new_batch(sample_case):
+    """Nothing is written into an existing batch, so nothing can be lost."""
+    cli.main(["sample", str(sample_case), "-n", "2"])
+    cli.main(["sample", str(sample_case), "-n", "2", "--continue"])
+
+    datum = sample_case.parent
+    assert sorted(p.name for p in (datum / "batch_0000").glob("*/")) == [
+        "0000",
+        "0001",
+    ]
+    assert sorted(p.name for p in (datum / "batch_0001").glob("*/")) == [
+        "0002",
+        "0003",
+    ]
+
+
+def test_sample_continue_is_the_tail_of_one_batch(tmp_path):
+    """Two batches of two hold what one batch of four would have."""
+    from turbigen2 import Config  # noqa: PLC0415
+
+    def datum(name):
+        directory = tmp_path / name
+        directory.mkdir()
+        path = directory / "input.yaml"
+        path.write_text(SAMPLE_CASE)
+        return path
+
+    split = datum("split")
+    cli.main(["sample", str(split), "-n", "2"])
+    cli.main(["sample", str(split), "-n", "2", "--continue"])
+
+    whole = datum("whole")
+    cli.main(["sample", str(whole), "-n", "4"])
+
+    def psi(root):
+        return [
+            Config.from_file(p).mean_line.psi
+            for p in sorted(
+                root.glob("batch_*/*/input.yaml"), key=lambda p: p.parent.name
+            )
+        ]
+
+    assert psi(split.parent) == psi(whole.parent)
+
+
+def test_sample_without_a_sample_section_says_so(case, capsys):
+    assert cli.main(["sample", str(case)]) == 1
+
+    assert "needs a sample: section" in capsys.readouterr().err
+
+
+def test_sample_takes_one_datum(sample_case, capsys):
+    """One config describes one space, so a second would be a second space."""
+    assert cli.main(["sample", str(sample_case), str(sample_case)]) == 1
+
+    assert "one config file as its datum" in capsys.readouterr().err
+
+
+def test_set_takes_a_bracketed_path(case):
+    """One spelling of a path, whether it comes from a file or the shell."""
+    args = cli._make_parser().parse_args(
+        ["design", str(case), "-s", "mean_line.Ys[1]=0.07"]
+    )
+
+    assert cli.load_config(case, args).mean_line.Ys[1] == pytest.approx(0.07)
+
+
+def test_iterate_without_iterators_says_to_use_run(run_case, capsys):
+    assert cli.main(["iterate", str(run_case)]) == 1
 
     assert "use 'run'" in capsys.readouterr().err
 
 
-def test_bare_restart_replots_a_run_in_place(run_case, tmp_path):
-    """The common case: redo the plots for a run that is already there."""
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
-    (out / "post.pdf").unlink()
+def test_report_on_an_unsolved_case_is_not_an_error(run_case):
+    """No field beside it yet, so the geometry pages and nothing more."""
+    assert cli.main(["report", str(run_case)]) == 0
 
-    code = cli.main(
-        ["mesh", str(out / "config.yaml"), "--restart", "-o", str(out), "-q"]
-    )
-
-    assert code == 0
-    assert (out / "post.pdf").is_file()
+    assert (run_case.parent / "post.pdf").is_file()
+    assert not (run_case.parent / cli.RESTART_NAME).exists()
 
 
-def test_replotting_in_place_keeps_the_recorded_answer(run_case, tmp_path):
-    """A verb that computed no answer must not erase the one already there.
+def test_reporting_in_place_keeps_the_recorded_answer(run_case):
+    """A verb that computed no answer cannot erase the one already there.
 
-    Rewriting the archived config with this verb's empty result would leave a
-    converged run claiming it had never converged, and lose the mean line it
-    mixed out to.
+    True by construction rather than by a guard: only the verbs that solve
+    write `output.yaml`, so a report has no way to replace a converged run's
+    `result:` with an empty one. An earlier arrangement had the report verb
+    writing back over the config it had just read, and needed the two compared
+    to notice.
     """
     from turbigen2 import case  # noqa: PLC0415
 
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
-    _, before = case.read(out / "config.yaml", design=False)
+    out = run_case.parent
+    assert cli.main(["run", str(run_case)]) == 0
+    _, before = case.read(out / cli.OUTPUT_NAME, design=False)
 
-    cli.main(["mesh", str(out / "config.yaml"), "--restart", "-o", str(out), "-q"])
+    # Even with an override, which makes the config differ from the archived
+    # one and so defeats any comparison-based guard.
+    cli.main(["report", str(out / cli.OUTPUT_NAME), "-s", "mesh.yplus=25.0"])
 
-    _, after = case.read(out / "config.yaml", design=False)
+    _, after = case.read(out / cli.OUTPUT_NAME, design=False)
     assert after.converged is before.converged is True
     assert after.actual is not None
 
 
-def test_run_writes_its_convergence_history(run_case, tmp_path):
+def test_run_writes_its_convergence_history(run_case):
     """Beside the field, so a re-plot can draw the page the run had."""
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["run", str(run_case)]) == 0
 
-    assert (out / cli.HISTORY_NAME).is_file()
+    assert (run_case.parent / cli.HISTORY_NAME).is_file()
 
 
-def test_a_replot_recovers_the_convergence_history(run_case, tmp_path):
-    out = tmp_path / "out"
-    cli.main(["run", str(run_case), "-o", str(out), "-q"])
+def test_a_replot_recovers_the_convergence_history(run_case):
+    cli.main(["run", str(run_case)])
 
-    history = cli.read_history(out / cli.HISTORY_NAME)
+    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
 
     assert history is not None
     assert history.i_log >= 0
@@ -665,16 +853,9 @@ def test_no_history_beside_a_restart_is_not_fatal(tmp_path):
     assert cli.read_history(tmp_path / cli.HISTORY_NAME) is None
 
 
-def test_bare_restart_needs_somewhere_to_look(run_case, capsys):
-    assert cli.main(["mesh", str(run_case), "--restart"]) == 1
-
-    assert "needs --out" in capsys.readouterr().err
-
-
-def test_bare_restart_says_when_there_is_nothing_to_read(run_case, tmp_path, capsys):
-    out = tmp_path / "new"
-
-    assert cli.main(["mesh", str(run_case), "--restart", "-o", str(out)]) == 1
+def test_bare_restart_says_when_there_is_nothing_to_read(run_case, capsys):
+    """`run --restart` still names a field explicitly, so it can still miss."""
+    assert cli.main(["run", str(run_case), "--restart"]) == 1
 
     assert "No restart.npz" in capsys.readouterr().err
 
@@ -693,7 +874,6 @@ def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch
 
     monkeypatch.setattr(SectionsPlot, "report", boom)
 
-    out = tmp_path / "out"
-    assert cli.main(["run", str(run_case), "-o", str(out), "-q"]) == 1
+    assert cli.main(["run", str(run_case)]) == 1
 
-    assert (out / "restart.npz").is_file()
+    assert (run_case.parent / "restart.npz").is_file()

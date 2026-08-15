@@ -382,24 +382,23 @@ def test_a_configured_processor_of_a_new_type_is_added(config):
 #
 
 
-def test_pdf_is_written_to_the_output_directory(tmp_path):
+def test_pdf_is_written_beside_the_config(tmp_path):
     case = tmp_path / "case.yaml"
     case.write_text(CASE)
-    out = tmp_path / "out"
 
-    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["report", str(case)]) == 0
 
-    pdf = out / "post.pdf"
+    pdf = tmp_path / "post.pdf"
     assert pdf.is_file()
     assert pdf.read_bytes().startswith(b"%PDF")
 
 
-def test_no_output_directory_means_no_pdf(tmp_path):
+def test_writing_nothing_means_no_pdf(tmp_path):
     case = tmp_path / "case.yaml"
     case.write_text(CASE)
     before = set(tmp_path.iterdir())
 
-    assert cli.main(["design", str(case), "-q"]) == 0
+    assert cli.main(["design", str(case)]) == 0
 
     assert set(tmp_path.iterdir()) == before
 
@@ -412,23 +411,20 @@ def test_a_report_is_written_without_any_post_processors(tmp_path):
     """
     case = tmp_path / "case.yaml"
     case.write_text(f"fluid: {FLUID}\nmean_line: {MEAN_LINE}\nannulus: {ANNULUS}\n")
-    out = tmp_path / "out"
 
-    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["report", str(case)]) == 0
 
-    assert (out / "post.pdf").is_file()
+    assert (tmp_path / "post.pdf").is_file()
 
 
 def test_a_design_with_nothing_to_draw_writes_no_report(tmp_path):
     """An empty document is not a report, and matplotlib writes no file for one."""
     case = tmp_path / "case.yaml"
     case.write_text(f"fluid: {FLUID}\nmean_line: {MEAN_LINE}\n")
-    out = tmp_path / "out"
 
-    assert cli.main(["design", str(case), "-o", str(out), "-q"]) == 0
+    assert cli.main(["report", str(case)]) == 0
 
-    assert (out / "config.yaml").is_file()
-    assert not (out / "post.pdf").exists()
+    assert not (tmp_path / "post.pdf").exists()
 
 
 def test_a_failing_post_processor_is_not_swallowed(tmp_path, monkeypatch):
@@ -446,4 +442,4 @@ def test_a_failing_post_processor_is_not_swallowed(tmp_path, monkeypatch):
     case = tmp_path / "case.yaml"
     case.write_text(CASE)
 
-    assert cli.main(["design", str(case), "-o", str(tmp_path / "out"), "-q"]) == 1
+    assert cli.main(["report", str(case)]) == 1

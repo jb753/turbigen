@@ -17,10 +17,12 @@ from turbigen2.database import Database
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
 from turbigen2.iterate import Iterator
+from turbigen2.job import Job
 from turbigen2.machine import Machine
 from turbigen2.mesh import Mesher
 from turbigen2.node import Node
 from turbigen2.post import Post
+from turbigen2.sample import Sample
 from turbigen2.solver import Solver
 
 
@@ -50,13 +52,27 @@ class Config(Node):
     needed by the verb that iterates, but their errors are measured by every
     run that solves."""
 
+    max_iter: int = 10
+    """Most design iterations before giving up. A value, not an action, so it
+    lives here where `-s max_iter=2` can reach it and an archived case records
+    the budget it was run under beside the tolerances it was judged against."""
+
     database: Database | None = None
     """Finished runs to start the iterators from, instead of from whatever this
     file says. Read once, by the verb that iterates."""
 
+    sample: Sample | None = None
+    """Bounds on design variables, for covering a space with runs. Read only by
+    the verb that samples, and stripped from the configs it emits: a member of
+    a batch is one design, not a design of experiments."""
+
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config
     asks for is what runs."""
+
+    job: Job | None = None
+    """Where to execute, when ``--queue`` asks for it. Read by no design stage:
+    a partition is a property of where you are, not of the machine."""
 
     @classmethod
     def from_file(cls, path):

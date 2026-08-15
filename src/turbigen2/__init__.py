@@ -30,6 +30,7 @@ from turbigen2.thickness import Taylor, ThicknessDesign
 from turbigen2.design import DesignError, MeanLineDesign, check_round_trip
 from turbigen2.fluid import Fluid, PerfectFluid
 from turbigen2.iterate import Iterator
+from turbigen2.job import Job, Slurm, Task, Tsp
 from turbigen2.machine import Machine
 from turbigen2.meanline import MeanLine
 from turbigen2.post import (
@@ -41,6 +42,7 @@ from turbigen2.post import (
     SurfacePlot,
 )
 from turbigen2.result import Result
+from turbigen2.sample import Sample
 from turbigen2.solver import Ember, Solver
 from turbigen2.node import Node
 
@@ -86,6 +88,11 @@ __all__ = [
     "SectionsPlot",
     "SurfacePlot",
     "Result",
+    "Sample",
+    "Job",
+    "Slurm",
+    "Task",
+    "Tsp",
     "PerfectFluid",
     "check_round_trip",
 ]

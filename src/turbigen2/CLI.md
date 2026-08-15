@@ -1,7 +1,7 @@
 # turbigen2 command-line interface
 
 Plan for the CLI, now that every verb it specifies is implemented: `design`,
-`mesh`, `run` and `iterate`.
+`report`, `run`, `iterate` and `sample`.
 
 ## Why it looks like this
 
@@ -38,55 +38,136 @@ existing code routes them through `logger.warning` so that they survive the
 level being raised during iteration, which leaves genuine warnings —
 `check_round_trip` reporting that `backward` omits a design variable, or a mean
 line with relative flow angles approaching 90 degrees — indistinguishable from
-the startup banner. Here `--quiet` raises the level of the console handler
-alone, so quietening a run does not also blank its record.
+the startup banner.
+
+There is no `--quiet`. It was there to make a loud run bearable, but the one
+verb that is genuinely too loud is `iterate` — tens of runs, each printing its
+tables in full — and that quietens the console by *logger name* on its own,
+which is strictly better: it keeps warnings, and it keeps the log file
+complete. Everything else is one run's worth of output, and a shell already
+knows how to redirect it.
 
 ## Verbs
 
-| verb | does | output dir | status |
+| verb | does | writes | status |
 |---|---|---|---|
-| `design` | mean line, then annulus and blade geometry | optional | **implemented** |
-| `mesh` | `design` + grid generation | optional | **implemented** |
-| `run` | `mesh` + CFD + mix-out | **required** | **implemented** |
-| `iterate` | repeated `run`, updating the design between calls | **required** | **implemented** |
+| `design` | mean line, then annulus and blade geometry | **never** | **implemented** |
+| `report` | `design` + grid + any stored field, drawn | `post.pdf` | **implemented** |
+| `run` | `report` + CFD + mix-out | everything | **implemented** |
+| `iterate` | repeated `run`, updating the design between calls | everything | **implemented** |
+| `sample` | write configs covering a design space, running none | a `batch_NNNN` | **implemented** |
 
-The cut between `design` and `mesh` is where external tools and side effects
+The cut between `design` and `report` is where external tools and side effects
 begin: everything up to and including blade geometry is pure computation on
-numpy arrays.
+numpy arrays, and `design` is the verb you can run anywhere without
+consequence.
 
-## Output directories
+**A verb is named for what you get, not for the stage it stops at.** The verb
+before `run` used to be called `mesh`, and could not produce a mesh: the grid is
+never serialised, because how a mesh is serialised is a property of the solver
+that will read it. Its only durable output was a PDF, and its documented main
+use was re-plotting a finished run --- so it was a report verb named after an
+implementation detail of getting there.
 
-An output directory is a property of the *verb*, not of the config file. It
-does not appear in the YAML.
+## Where output goes
 
-`design` and `mesh` are pure enough to run with nowhere to write, which is the
-common case when experimenting with a design or driving it from a notebook.
-`run` and `iterate` produce artefacts and require `-o`.
+**Beside the config it was given, as `output.yaml`.** There is no `-o` on any
+verb but `sample`, nothing to derive and nothing to type:
 
-A *scratch* directory is a separate idea from an output directory: an
-implementation detail of a tool, ephemeral and cleaned up. AutoGrid already
-works this way (`autogrid/autogrid.py:496` calls `mkdtemp`), it is only
-parented on a caller-supplied directory. Policy: scratch goes under
-`<out>/mesh/` when there is an output directory and a temporary directory when
-there is not; on failure, log the path and do not delete it.
+```
+hiload/input.yaml -> hiload/{output.yaml, restart.npz, conv.cnv, post.pdf,
+                             log_turbigen2.txt}
+```
+
+Two rules make that safe, and each removes a check that would otherwise be
+needed.
+
+**The written name is never a name we were given.** A config file is therefore
+never a candidate for being overwritten, by construction rather than by
+inspection. This matters more than it sounds: what a run writes is the
+*resolved* config with every default expanded, so writing it over a hand-kept
+file would turn twenty commented lines into two hundred and lose every comment
+to the safe loader.
+
+**One directory is one run.** Artefact names are fixed, so two configs run in
+one directory would collide; avoiding that is the user's business, and
+`sample` writes a directory per member precisely so that it never happens by
+accident.
+
+`design` never writes and needs no flag saying so; `report` always writes,
+because a report with nowhere to put its figures is not a thing anyone wants.
+There is no `--write`: it was a boolean left over from `-o DIR`, and once the
+location stopped being a choice it carried nothing.
+
+**Only the verbs that solve write `output.yaml`**, which is what makes
+re-plotting safe by construction. When the report verb also wrote configs, a
+re-plot wrote back over the run it had just read and could replace a converged
+`result:` with an empty one; that needed the two configs compared to catch, and
+the guard existed only because the wrong verb was writing.
+
+Clobbering follows from how much you stand to lose, and is therefore a
+question only for `run` and `iterate`. **One target overwrites** — you named
+that directory by naming the file in it, and tweak-and-re-run is the loop `run`
+exists for. **Several refuse**, because a batch is cluster hours whose loss is
+discovered a day later, and `--force` is the honest spelling of "yes, replace
+those answers".
+
+### Batches are numbered, not named
+
+`sample` writes into the next free `batch_NNNN` beside its datum config.
+Numbering carries on from the highest that exists rather than counting how many
+there are, so a deleted batch in the middle does not make the next one
+overwrite a later one, and nothing is ever written into an existing batch.
+
+There is no `-o` and no naming pattern. The rule is the same one every other
+verb follows --- output goes beside the input --- and applying it here removes
+the last output flag, the `%`-versus-`*` placeholder vocabulary, and the
+sending of a batch to a different filesystem. That last is a real loss, and it
+is the constraint `run` already imposes on output a thousand times larger: put
+the config where you want the output.
+
+It also makes the layout record which datum produced which batch. Nothing else
+does: `--continue` cannot tell that the datum or its bounds changed between
+batches, and nothing is written at a batch root to say what generated it.
+
+A *scratch* directory is a separate idea again: an implementation detail of a
+tool, ephemeral and cleaned up. AutoGrid already works this way
+(`autogrid/autogrid.py:496` calls `mkdtemp`), it is only parented on a
+caller-supplied directory. Policy: scratch goes under `<out>/mesh/` when there
+is an output directory and a temporary directory when there is not; on failure,
+log the path and do not delete it.
 
 ## Shared options
 
 Carried by a parent parser so every verb accepts them.
 
 ```
-CONFIG_YAML                 configuration file
--o, --out DIR               write results here; a '*' is replaced by the next
-                            free number, as in run_* -> run_0
-                            (required for run and iterate)
+CONFIG_YAML...              one or more configuration files; several run one
+                            after another, or submit together with --queue
 -s, --set KEY=VALUE         override a config value; dotted key, integer
                             segments index into lists, value parsed as YAML;
                             repeatable
 -v, --verbose               more diagnostics on the console
--q, --quiet                 console shows warnings and errors only; a log
-                            file written under --out still records it all
 -V, --version               print version and exit
 ```
+
+And on `run` and `iterate`, the two that spend real time and can lose real
+answers:
+
+```
+--force                     overwrite an existing output.yaml when several
+                            config files are given
+-Q, --queue                 submit to the queue the job: section names,
+                            instead of running here
+--restart [NPZ]             start the solve from a stored field
+```
+
+Everything else that could be a flag is a *value*, and values live in the
+config where `-s` can reach them: `-s max_iter=6`, `-s job.hours=12`. The
+division is between **actions**, which must be typed deliberately and must
+never be latent in a file, and **values**, which belong in the file so that an
+archived case records what it was run under. `--max-iter` was on the wrong side
+of that line and has moved.
 
 `--set` is applied to the raw dict before `Config.from_dict`, so a mistyped key
 is caught by the strict unknown-key check rather than silently ignored — an
@@ -133,8 +214,8 @@ was changed in the command line, whereas an editor session leaves none unless
 ## `design` — implemented
 
 ```
-turbigen2 design case.yaml
-turbigen2 design case.yaml -o run_* -s mean_line.psi=1.8
+turbigen2 design case/input.yaml
+turbigen2 design case/input.yaml -s mean_line.psi=1.8
 ```
 
 1. Discover and load plugins, walking up from the config file's directory.
@@ -143,73 +224,69 @@ turbigen2 design case.yaml -o run_* -s mean_line.psi=1.8
 4. Build the `Config` (strict: unknown keys and missing required fields raise).
 5. `config.design()` — returns a `Machine`, stores nothing.
 6. Log the machine tables, as every other stage logs what it produced.
-7. If `-o` was given: create the directory, write the resolved config to
-   `config.yaml`, and tee diagnostics to `log_turbigen2.txt`.
-8. Exit 0.
+7. Exit 0.
 
-Nothing is written and no directory is created without `-o`. The resolved
-config includes every default, so an archived file reproduces its machine even
-if a default later changes.
+**Nothing is written, ever.** This is the verb to run while changing a number
+and watching the tables move, so it must be safe to point anywhere. Anything
+worth keeping comes from `report`, whose output is its point.
 
-## `mesh` — implemented
+## `report` — implemented
 
 ```
-turbigen2 mesh case.yaml
-turbigen2 mesh case.yaml -o run_* -s mesh.resolution_factor=0.5
+turbigen2 report case/input.yaml            # draw what the case supports
+turbigen2 report hiload/output.yaml         # re-plot a finished run
 ```
 
-`design`, then `config.mesh.mesh(machine)`, then the machine tables and a block
-summary. The steps and the `-o` behaviour are otherwise identical, and the same
-config file serves both verbs: a `mesh:` section is simply ignored by `design`.
+`design`, then the grid if the config says how, then any `restart.npz` a
+previous run left beside the config, then `post.pdf`. One command, no flags,
+whatever depth of case you point it at:
+
+| the config has | the report has |
+|---|---|
+| a mean line | nothing to draw, so no file |
+| an annulus and blades | the geometry pages |
+| a `mesh:` section | those, plus the grid |
+| a field beside it | those, plus the flow and the convergence page |
+
+Each standard processor draws nothing when what it needs is absent, so there is
+no mode to select. **Re-plotting a finished run is the same command as plotting
+a fresh one** — no `--restart`, because a report of a run that has a field
+always wants it and there is nothing else it could mean.
 
 The grid itself is **not** written. How a mesh is serialised is a property of
-the solver that will read it, so it belongs to `run`; until then `mesh` is for
-checking that a design meshes and for seeing how large it comes out.
+the solver that will read it, so it belongs to `run`. Re-designing and
+re-meshing to put a stored field back costs seconds against the minutes of the
+march it stands in for, which is why serialising it would not repay the
+trouble.
 
-`--restart` re-plots a previous run:
+Neither is `output.yaml`: an answer is written by whoever has one. That is what
+makes re-plotting in place safe by construction rather than by a guard — see
+[Where output goes](#where-output-goes).
 
-```
-turbigen2 mesh out_0000/config.yaml --restart -o out_0000        # in place
-turbigen2 mesh case.yaml --restart out_0000/restart.npz -o replot_*
-```
-
-The stored field goes back onto the grid and the standard plots describe it,
-with no solve. Nothing needs to be kept beyond the config and the restart file
-that `run` already writes, because re-designing and re-meshing costs seconds
-against the minutes of the march it stands in for --- which is also why the
-grid is not worth serialising.
-
-Bare `--restart` reads `restart.npz` from the `--out` directory, which makes
-re-plotting a run in place a flag rather than a path to type. Naming a file
-still wins, so a field can come from anywhere.
-
-The convergence history is looked for beside the *field*, not in the output
-directory, so a restart named from elsewhere brings its own and a re-plot draws
-the same pages the run did. A run writes it to `conv.cnv` --- ember's own
-format, which is a pickle, so reading it is guarded: a history that will not
-load costs the report its convergence page and nothing else.
-
-Writing a report back into a run's own directory must not cost that run its
-answer, so the resolved config is left alone when the file already holds
-exactly it. Rewriting would replace the `result:` block --- the mixed-out mean
-line, and whether it converged --- with the empty one a `mesh` produces.
+The convergence history is looked for beside the field, in `conv.cnv` ---
+ember's own format, which is a pickle, so reading it is guarded: a history that
+will not load costs the report its convergence page and nothing else.
 
 Still to add: `--plot SPF`, to render the mesh at a span fraction rather than
 the old `--mesh SPF` flag that exits from inside the pipeline. It draws from
-the returned grid, so it is a flag on the verb and not a field on the mesher.
+the grid the verb already has.
 
 ## `run` — implemented
 
 ```
-turbigen2 run case.yaml -o run_*
+turbigen2 run hiload/input.yaml
+turbigen2 run batch_0000/*/input.yaml            # serially, here
+turbigen2 run batch_0000/*/input.yaml --queue    # as one submission
 ```
 
 `prepare(config)` -- design, mesh, boundary conditions, initial guess -- then
-solve. `prepare` is shared with `mesh` rather than written out again, so the
-grid `mesh` hands back for inspection is the one `run` actually solves. The two
+solve. `prepare` is shared with `report` rather than written out again, so the
+grid a report draws is the one `run` actually solves. The two
 drifting apart is precisely what happened to `turbigen.main`.
 
-`--out` is required, because a run produces artefacts worth keeping.
+Everything lands beside the config, so there is nothing to name. Several
+config files run one after another, which is the bash loop this saves you
+writing, or become one submission with `--queue`.
 
 **Exit 2 when the solver did not converge**, with everything written anyway: a
 diverged run is exactly the one whose output someone needs to look at, so
@@ -223,14 +300,15 @@ always checks divergence, so calling it bare is exactly that, and is the call
 that grows thresholds later without a signature change.
 
 The solution is then mixed out at each design station into `Result.actual`, and
-written into the same `config.yaml` under a `result:` key. A failed mix-out is
+written into `output.yaml` under a `result:` key. A failed mix-out is
 logged and the run still writes everything else: a march that will not reduce
 to a mean line is exactly the one whose output someone needs to look at.
 
 ## `iterate` — implemented
 
 ```
-turbigen2 iterate case.yaml -o iter_* --max-iter 6
+turbigen2 iterate hiload/input.yaml
+turbigen2 iterate hiload/input.yaml -s max_iter=6
 ```
 
 A mean line is a set of assumptions the CFD then contradicts: flow leaves a
@@ -242,12 +320,18 @@ It owns only the loop. Each iteration is an ordinary `run` in a directory of
 its own, chained so that iteration *k+1* starts from *k*'s flow field:
 
 ```
-iter_0000/  config.yaml (with result: and its errors), restart.npz, conv.cnv, post.pdf
-iter_0001/  ...
-final -> iter_0001
+hiload/input.yaml
+hiload/iter_0000/  output.yaml (with result: and its errors), restart.npz,
+                   conv.cnv, post.pdf
+hiload/iter_0001/  ...
+hiload/final       -> iter_0001
+hiload/output.yaml -> final/output.yaml
 ```
 
-**Every iteration is kept**, and `final` is a symlink to the last. The
+**Every iteration is kept**, and `final` is a symlink to the last. So is
+`output.yaml`, which therefore means "what this run achieved" whichever verb
+produced it: a database glob and a script reading a result need not know
+whether a design took one solve or six. The
 alternative — the existing `main.py` copies the converged iteration over the
 base directory and deletes the rest — destroys exactly the data that would let
 a later fit predict these corrections instead of iterating for them.
@@ -339,7 +423,7 @@ finished case files, and the iterators start from a blend of the nearest:
 
 ```yaml
 database:
-  path: ../runs/**/config.yaml
+  path: ../runs/**/output.yaml
 ```
 
 That is the whole configuration. The design variables to measure distance in
@@ -358,6 +442,161 @@ glob and correctly ignored.
 See [Starting from designs already
 run](ARCHITECTURE.md#starting-from-designs-already-run) for why deduced rather
 than declared, and why not the polynomial surrogate this replaces.
+
+## `--queue` — implemented
+
+Where work executes is orthogonal to how far down the pipeline it goes, so it
+is a flag on `run` and `iterate` rather than a verb of its own. `design <
+report < run < iterate` truncate the pipeline; a queue does not sit anywhere in that
+order.
+
+```yaml
+job:
+  type: slurm
+  hours: 4.0
+  partition: ampere
+  gres: "gpu:1"
+```
+
+```
+turbigen2 run batch_0000/*/input.yaml -Q
+turbigen2 run batch_0000/*/input.yaml -Q -s job.hours=12
+turbigen2 iterate hiload/input.yaml -Q -s job.type=tsp
+```
+
+**The key says how, the flag says whether.** That is the whole difference from
+the package this replaces, which submits whenever a `job:` key is present, so a
+run re-execs itself and every entry point needs `--no-job` to break the
+recursion. Here the escape hatch is not typing `-Q`.
+
+**Per-invocation overrides need no new syntax**, `-s job.hours=12` being the
+same mechanism as every other override, so there are no queue flags beyond
+`-Q` itself and nothing new to remember.
+
+`type: slurm` submits every target as one array; `type: tsp` queues them
+through task-spooler. A third backend is a plugin class registering its own
+`type:`, needing no change here. See [Where a run
+executes](ARCHITECTURE.md#where-a-run-executes).
+
+Nothing wraps `tsp -l`, `squeue` or `scancel`: they are better than anything we
+would put in front of them.
+
+## `sample` — implemented
+
+```
+turbigen2 sample datum/input.yaml -n 32
+```
+
+`database:` warm-starts a design from finished runs; `sample` is where those
+runs come from. Given bounds on some design variables it writes one config per
+point, and runs none of them.
+
+```yaml
+sample:
+  seed: 0
+  bounds:
+    mean_line.psi: [1.2, 2.0]
+    mean_line.phi2: [0.5, 1.0]
+```
+
+Paths are spelled as `node.flatten` writes them, the same as
+`database.variables`, so a design variable is named identically wherever it
+appears. `-n` and `--continue` are properties of the invocation and so are flags;
+`seed` describes the space and so lives in the file.
+
+**Nothing is run.** A verb that both chose designs and executed them would be
+a scheduler, and the package this replaces already has two of those. Running
+them is a second command over the batch it printed:
+
+```
+BATCH=$(turbigen2 sample datum/input.yaml -n 32)
+turbigen2 run $BATCH/*/input.yaml --queue
+```
+
+### Sobol', not Latin hypercube
+
+The old `DesignSpace` uses `LatinHypercube`. An LHS stratifies each axis into N
+equal bins, which gives exact 1-D marginal coverage — but the stratification is
+*defined by N*. A subset is not an LHS and a superset is not an LHS of N+k, so
+growing a database means regenerating it and either discarding runs already
+paid for or abandoning the property.
+
+A Sobol' sequence has a fixed order in which **any prefix is space-filling**.
+The first 32 points are a good design; the first 64 are a good design
+*containing* the first 32. Extending is "take the next 32".
+
+That is what this consumer needs. IDW cares about fill distance — how far a
+query sits from its nearest sample — not marginal uniformity, so the LHS
+advantage is the one `database.py` never uses and the LHS drawback is the one
+it meets on the first extension. Balance properties hold at powers of two, so
+`-n` defaults to 32 and warns otherwise.
+
+### Batches and indices
+
+The batch directory is *when you asked*; the file name is *which point in the
+sequence*:
+
+```
+datum/input.yaml
+datum/batch_0000/0000/input.yaml … 0031/input.yaml
+datum/batch_0001/0032/input.yaml … 0063/input.yaml
+```
+
+Members are numbered by their **global sequence index**, not their position in
+the batch, and each gets a directory of its own, because one directory is one
+run: that is what gives every member an `output.yaml` to be run into, rather
+than thirty-two of them sharing one.
+
+So one glob — `database: {path: ../../batch_*/*/output.yaml}` — sees every batch
+as one archive without knowing there were several, and it matches only the
+members that have finished, an unrun one having an `input.yaml` and nothing
+else. Nothing is ever written into an existing batch.
+
+A batch is many designs and hours of solving to come, so it is numbered
+rather than named and never written into twice. Because the directory cannot
+then be given in advance, `sample` prints it on **stdout** — the
+machine-readable channel this document reserves — so
+`BATCH=$(turbigen2 sample datum/input.yaml)` works. No other verb writes to
+stdout.
+
+### Extending
+
+```
+turbigen2 sample datum/input.yaml -n 32 --continue
+```
+
+`--continue` needs no argument because the datum config already names the
+family: its own directory is where the batches are, so it reads the highest
+member index they hold and carries on. The points it draws are
+bit-identical to the tail of one longer batch, which is the property that made
+this Sobol' and not a Latin hypercube.
+
+There was also a `--from INDEX`, stating the number that `--continue` reads.
+Two mutually exclusive flags for one concept, and the one you would type is the
+one that does not make you look the number up first.
+
+`--continue` reads directory names only, so it cannot tell that `case.yaml` or its
+bounds changed between batches — the datum is yours to keep, and nothing is
+written at the batch root to say what generated it. The resolved bounds are
+logged into each batch's own `log_turbigen2.txt`.
+
+### Points that will not design
+
+A corner of the box will not design: `solve_for` fails to converge, or
+`check_round_trip` refuses. Designing costs no CFD, so each point is screened
+as it is drawn and a failure is skipped — found for nothing now, instead of one
+wasted cluster job at a time.
+
+A skipped index is **never retried**: the point is deterministic given the
+seed, so it would fail identically. That is why the emitted set is not
+contiguous and why members carry their sequence index rather than a count. A
+box that is mostly infeasible stops after a bounded number of attempts rather
+than spinning.
+
+Whole numbers are refused as design variables. Rounding a continuous draw
+collapses neighbours into duplicate designs, which `database._predict` then
+averages as repeat runs; and the obvious integer, blade count, changes the
+mesh.
 
 ## Entry point
 
@@ -380,11 +619,12 @@ scope.
 The CLI is thin and the work underneath it is already covered, so the tests
 target the parts unique to the command line:
 
-- `design` with no `-o` creates nothing — assert the working directory is
-  unchanged;
-- `design -o` writes a config that reads back equal to the one used;
+- `design` creates nothing — assert the config's directory is unchanged;
+- `run` writes a config that reads back equal to the one used, and leaves the
+  input file byte-identical;
+- `report` of a run replaces no answer, even with `--set` making the config
+  differ from the archived one;
 - `--set` reaches the design, and a mistyped `--set` key fails;
 - an unknown verb, a missing file, and a bad config each exit non-zero with a
   message on stderr rather than a traceback;
-- `-q` silences the console while leaving the exit code, and the log file,
-  intact.
+- nothing but `sample` writes to stdout.

@@ -1,7 +1,7 @@
 """Command line interface.
 
-See CLI.md in this package for the full plan. The `design` and `mesh` verbs are
-implemented; `run` and `iterate` are specified there.
+See CLI.md in this package for the full plan. Every verb it specifies is
+implemented: `design`, `report`, `run`, `iterate` and `sample`.
 
 Two conventions are worth stating.
 
@@ -12,16 +12,22 @@ channel to keep in order, and the console and `log_turbigen2.txt` are the same
 transcript. Results are ordinary `INFO` records rather than a level of their
 own: the existing turbigen CLI emits its tables as *warnings*, so that raising
 the level to quieten a run would not also hide them, which leaves a genuine
-warning with nothing to distinguish it. Here `--quiet` raises the level of the
-console handler alone, so the log file records a quiet run in full.
+warning with nothing to distinguish it. There is no `--quiet` here either: the
+one place a run is genuinely too loud is `iterate`, which quietens the console
+by logger name on its own, and a shell already knows how to redirect.
 
-And an output directory is a property of the verb rather than of the config
-file: `design` writes nothing at all unless asked to, so it can be used to
-experiment with a design, or driven from a notebook, without leaving anything
-behind.
+And a run writes `output.yaml` beside the config it was given. The output
+location is therefore never derived and never typed, and an input file is never
+overwritten by the run that reads it -- which matters because the file written
+is the *resolved* config, every default expanded, and writing that over a
+hand-kept file would lose its comments to the safe loader. One directory is one
+run. `design` writes nothing at all, ever, so it can be used to experiment
+with a design, or driven from a notebook, without leaving anything behind;
+everything worth keeping comes from a verb whose output is its point.
 """
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import logging
@@ -32,7 +38,6 @@ from timeit import default_timer as timer
 import yaml
 
 import turbigen
-import turbigen.util
 import ember.convergence_history
 import ember.yaml_util
 from turbigen2 import (
@@ -41,10 +46,13 @@ from turbigen2 import (
     database,
     guess,
     iterate,
+    job,
     mixout,
+    node,
     plugins,
     post,
     restart,
+    sample,
 )
 from turbigen2.config import Config
 from turbigen2.result import Result
@@ -70,6 +78,17 @@ effect by raising the level and emitting its results as *warnings*, which is
 why a genuine warning there is indistinguishable from a startup banner.
 """
 
+OUTPUT_NAME = "output.yaml"
+"""What a run calls the resolved config and the answer it reached.
+
+Deliberately not the name of anything anyone hands us. An input is therefore
+never a candidate for being overwritten, which needs no check and no special
+case: the rule holds by construction rather than by inspection.
+"""
+
+LOG_NAME = "log_turbigen2.txt"
+"""What a run calls its transcript, beside everything else it wrote."""
+
 RESTART_NAME = "restart.npz"
 """What a run calls the flow field it leaves behind, and `--restart` looks for."""
 
@@ -92,58 +111,18 @@ handled where it is read rather than avoided here --- see `read_history`.
 #
 
 
-def _segment(text):
-    """Parse a dotted-key segment; integer-like segments index into lists."""
-    try:
-        return int(text)
-    except ValueError:
-        return text
-
-
-def _get_child(node, segment):
-    """Return node[segment] if present, else None, tolerating type mismatches."""
-    if isinstance(segment, int):
-        if isinstance(node, list) and segment < len(node):
-            return node[segment]
-        return None
-    return node.get(segment) if isinstance(node, dict) else None
-
-
-def _set_child(node, segment, value):
-    """Assign node[segment] = value, growing lists with None as needed."""
-    if isinstance(segment, int):
-        if not isinstance(node, list):
-            raise ValueError(f"cannot index non-list with integer key {segment}")
-        node.extend([None] * (segment + 1 - len(node)))
-        node[segment] = value
-    else:
-        if not isinstance(node, dict):
-            raise ValueError(f"cannot set string key {segment!r} on non-mapping")
-        node[segment] = value
-
-
 def apply_overrides(data, overrides):
     """Apply ``KEY=VALUE`` overrides in place on the config dict `data`.
 
-    Keys are dotted paths, integer segments index into lists, and values are
-    parsed as YAML so that types, lists and mappings all work. Applied before
-    the config is built, so a mistyped key is caught by the strict unknown-key
-    check rather than being silently merged in.
+    Values are parsed as YAML so that types, lists and mappings all work.
+    Applied before the config is built, so a mistyped key is caught by the
+    strict unknown-key check rather than being silently merged in.
     """
     for item in overrides:
         key, separator, raw = item.partition("=")
         if not separator:
             raise ValueError(f"override {item!r} is not in KEY=VALUE form")
-        value = yaml.safe_load(raw)
-        segments = [_segment(s) for s in key.split(".")]
-        node = data
-        for segment, following in zip(segments[:-1], segments[1:]):
-            child = _get_child(node, segment)
-            if not isinstance(child, (dict, list)):
-                child = [] if isinstance(following, int) else {}
-                _set_child(node, segment, child)
-            node = child
-        _set_child(node, segments[-1], value)
+        node.set_by_path(data, key, yaml.safe_load(raw))
 
 
 #
@@ -151,17 +130,48 @@ def apply_overrides(data, overrides):
 #
 
 
-def resolve_out_dir(spec):
-    """Create and return the output directory named by `spec`.
+BATCH_PREFIX = "batch_"
+"""What a batch of samples is called, before its number."""
 
-    A ``*`` in the name is replaced by the next free number, so ``run_*`` gives
-    ``run_0``, ``run_1`` and so on.
+
+def existing_batches(parent):
+    """Return the batch directories already under `parent`."""
+    return [
+        entry
+        for entry in Path(parent).glob(f"{BATCH_PREFIX}*")
+        if entry.is_dir() and _batch_number(entry) is not None
+    ]
+
+
+def next_batch_dir(parent):
+    """Return the batch directory to write next, under `parent`.
+
+    Numbering carries on from the highest that already exists rather than
+    counting how many there are, so a deleted batch in the middle does not
+    cause the next one to overwrite a later one.
+
+    Where a batch goes is not a choice, for the same reason it is not one for a
+    run: it goes beside the datum that generated it. That also makes the layout
+    record which datum a batch came from, which nothing else does --- the
+    resolved bounds are logged, but the provenance was otherwise yours to
+    remember.
     """
-    if "*" in str(spec):
-        spec = turbigen.util.next_numbered_dir(str(spec))
-    out_dir = Path(spec).absolute()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir
+    numbers = [_batch_number(entry) for entry in existing_batches(parent)]
+
+    # Zero-padded so the directories sort in creation order, in a shell glob and
+    # in a file browser alike. Wider numbers still parse below, so a project
+    # that runs past 9999 batches carries on rather than colliding.
+    return Path(parent) / f"{BATCH_PREFIX}{max(numbers, default=-1) + 1:04d}"
+
+
+def _batch_number(entry):
+    """Return the number a batch directory carries, or None if it carries none."""
+    try:
+        return int(entry.name[len(BATCH_PREFIX) :])
+    except ValueError:
+        # Something else living beside the batches, which is not ours to
+        # interpret.
+        return None
 
 
 _HANDLER_TAG = "_turbigen2_handler"
@@ -184,8 +194,8 @@ def _add_handler(handler):
         logging.getLogger(name).addHandler(handler)
 
 
-def setup_logging(verbose, quiet=False):
-    """Send everything to stderr, at a level `verbose` and `quiet` set.
+def setup_logging(verbose):
+    """Send everything to stderr, at a level `verbose` sets.
 
     Handlers this module added are replaced rather than accumulated, so that
     calling main() more than once in a process reconfigures properly.
@@ -207,22 +217,16 @@ def setup_logging(verbose, quiet=False):
         if isinstance(handler, logging.FileHandler):
             handler.close()
 
-    console = logging.StreamHandler(sys.stderr)
-    if quiet:
-        # Quiet is about the console, not about the record. The level goes on
-        # the handler rather than the logger, so a file handler opened later
-        # still writes the tables, and `-q -o` leaves a complete log behind.
-        console.setLevel(logging.WARNING)
-    _add_handler(console)
+    _add_handler(logging.StreamHandler(sys.stderr))
 
 
-def load_config(args):
+def load_config(config_path, args):
     """Read the config file, apply overrides, and build a Config.
 
     Discovery is done here rather than through `Config.from_file` because the
     overrides have to be applied to the raw dict, before it is validated.
     """
-    config_path = Path(args.CONFIG_YAML)
+    config_path = Path(config_path)
 
     # Designs must be registered before the config is built, so that the type
     # keys it names can be resolved.
@@ -240,21 +244,149 @@ def load_config(args):
 
 
 #
+# TARGETS
+#
+# A verb acts on one config file or on many. Many is what a job array and a
+# local queue are made of, and it is also the serial loop that would otherwise
+# be written in bash around every batch.
+#
+
+
+def targets(args):
+    """Return the config files this invocation acts on."""
+    return [Path(name) for name in args.CONFIG_YAML]
+
+
+def check_clobber(args, paths):
+    """Raise if this invocation would destroy answers it cannot show you first.
+
+    One target overwrites: you named that directory by naming the file in it,
+    and re-running a case after a tweak is the loop this verb exists for.
+    Several refuse, because a batch is cluster hours whose loss is discovered a
+    day later, and the check costs a `stat` each.
+    """
+    if len(paths) < 2 or getattr(args, "force", False):
+        return
+
+    existing = [
+        path for path in paths if (Path(path).resolve().parent / OUTPUT_NAME).is_file()
+    ]
+    if not existing:
+        return
+
+    raise ValueError(
+        f"{len(existing)} of {len(paths)} targets have already been run, "
+        f"starting with {existing[0].parent / OUTPUT_NAME}. Re-running would "
+        "replace their answers; pass --force if that is what you want."
+    )
+
+
+def each(args, one):
+    """Run `one(args, config_path)` for every target, or submit them all.
+
+    Returns the worst exit code any of them reached, so a batch reports failure
+    if any member failed, and a script driving one need not parse the log.
+    """
+    paths = targets(args)
+
+    check_clobber(args, paths)
+
+    if getattr(args, "queue", False):
+        return submit(args, paths)
+
+    status = 0
+    for path in paths:
+        if len(paths) > 1:
+            logger.info(f"--- {path}")
+        status = max(status, one(args, path))
+
+    return status
+
+
+#
+# SUBMISSION
+#
+
+
+def submit(args, paths):
+    """Send every target to the queue the config names, and run none of them.
+
+    The `job:` section says *how* to submit and `--queue` says *whether*, so
+    submission is never implied by a config file. The package this replaces
+    submits whenever the key is present, which makes a run re-exec itself and
+    obliges every entry point to carry a `--no-job` escape hatch.
+    """
+    # Read from the first target only. Which queue to use is a property of
+    # where you are, so a batch whose members disagreed about it would be
+    # describing something that cannot happen.
+    config = load_config(paths[0], args)
+
+    if config.job is None:
+        raise ValueError(
+            "--queue needs a job: section saying where to submit, as in "
+            "'job: {type: slurm, hours: 4}'."
+        )
+
+    tasks = [
+        job.Task(config=path, name=Path(path).resolve().parent.name) for path in paths
+    ]
+
+    config.job.submit(tasks, args.command, task_options(args))
+
+    return 0
+
+
+def task_options(args):
+    """Return the flags a submitted invocation must carry, as command line.
+
+    Everything that changes what a run *does*, and nothing that decides where
+    it happens: `--queue` is consumed here, and `--force` has already had its
+    effect, since each submitted job is a single target and single targets
+    overwrite anyway.
+
+    Rebuilt from the parsed arguments rather than by editing `sys.argv`, so an
+    option written any of the ways argparse accepts it comes out in one form.
+    """
+    options = []
+
+    for override in args.overrides:
+        options += ["-s", override]
+
+    if args.verbose:
+        options.append("-v")
+
+    restart = getattr(args, "restart", None)
+    if restart is True:
+        options.append("--restart")
+    elif restart:
+        options += ["--restart", str(Path(restart).resolve())]
+
+    return options
+
+
+#
 # VERBS
 #
 
 
 def cmd_design(args):
     """Design the machine and report it."""
-    config = load_config(args)
-    out_dir = _open_output(args)
+    return each(args, _design_one)
 
-    machine = config.design()
-    result = Result(machine=machine)
 
-    run_log.info(machine.to_string())
+def _design_one(args, config_path):
+    """Design one config file, writing nothing.
 
-    _write_output(config, result, out_dir)
+    The one verb that is pure, always. Everything up to and including blade
+    geometry is computation on numpy arrays, so this is what you run while
+    changing a number and watching the tables move, and it must be safe to run
+    anywhere without leaving anything behind. Anything worth keeping comes from
+    `report`, which is the verb whose output is its point.
+    """
+    config = load_config(config_path, args)
+
+    run_log.info(config.design().to_string())
+
     return 0
 
 
@@ -262,22 +394,26 @@ def prepare(config, restart_path=None):
     """Return the machine and a grid ready to solve.
 
     Shared by every verb that needs a grid, so there is one definition of
-    "ready to solve" rather than one per verb. `mesh` stops here and `run`
-    carries on, which is what makes plotting the output of `mesh` show the grid
-    `run` would actually solve. Written out twice instead, the two would drift
-    -- which is what happened to `turbigen.main`, where the pipeline appears in
-    both branches of one `if` and again in ninety-three unreachable lines that
-    no longer match either.
-    """
-    if config.mesh is None:
-        raise ValueError("This command needs a mesh: section in the config file.")
+    "ready to solve" rather than one per verb. `report` stops here and `run`
+    carries on, which is what makes the grid a report draws the one `run`
+    actually solves. Written out twice instead, the two would drift -- which is
+    what happened to `turbigen.main`, where the pipeline appears in both
+    branches of one `if` and again in ninety-three unreachable lines that no
+    longer match either.
 
+    The grid is None when the config has no `mesh:` section. Whether that is an
+    error belongs to the verb: `run` cannot proceed without one, while a report
+    of a mean-line design is a perfectly good thing to want.
+    """
     # Each stage reports as it finishes rather than the verb reporting them all
     # at the end, so what is read on the way past is in the order it happened:
     # the mean line, then the grid it was meshed onto, then where the flow
     # field in that grid came from.
     machine = config.design()
     run_log.info(machine.to_string())
+
+    if config.mesh is None:
+        return machine, None
 
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
@@ -294,10 +430,28 @@ def prepare(config, restart_path=None):
     return machine, grid
 
 
-def resolve_restart(args, out_dir):
+def stored_field(config_path):
+    """Return the flow field a previous run left beside `config_path`.
+
+    Found rather than named, because a report of a run that has one always
+    wants it, and there is no second thing it could sensibly mean. That is what
+    lets the re-plot be the same command as the plot, with no flag between
+    them. Nothing raises when there is none: a case that has not been solved
+    still has geometry worth drawing.
+    """
+    field = Path(config_path).resolve().parent / RESTART_NAME
+
+    if not field.is_file():
+        return None
+
+    logger.info(f"Using the flow field at {field}")
+    return field
+
+
+def resolve_restart(args, config_path):
     """Return the flow field to start from, if one was asked for.
 
-    Bare `--restart` means the field a run left in its own output directory,
+    Bare `--restart` means the field a run left beside the config it was given,
     which is what makes re-plotting one in place a flag rather than a path to
     type. A named file still wins, so a field can come from anywhere.
     """
@@ -307,17 +461,11 @@ def resolve_restart(args, out_dir):
     if args.restart is not True:
         return Path(args.restart)
 
-    if out_dir is None:
-        raise ValueError(
-            "--restart with no file reads it from the output directory, so it "
-            "needs --out; name a file instead to read one from anywhere."
-        )
-
-    restart_path = out_dir / RESTART_NAME
+    restart_path = Path(config_path).resolve().parent / RESTART_NAME
     if not restart_path.is_file():
         raise ValueError(
-            f"No {RESTART_NAME} in {out_dir} to restart from. Point --out at a "
-            "directory a run has written, or name a file to read."
+            f"No {RESTART_NAME} beside {config_path} to restart from. Point at "
+            "a config a run has written beside, or name a field file to read."
         )
     return restart_path
 
@@ -347,27 +495,38 @@ def read_history(path):
         return None
 
 
-def cmd_mesh(args):
-    """Design the machine, mesh it, and report both."""
-    config = load_config(args)
-    out_dir = _open_output(args)
+def cmd_report(args):
+    """Describe a case as fully as it can be described, and draw it."""
+    return each(args, _report_one)
 
-    # With a stored field this is a re-plot: the grid comes back carrying a
-    # solution some previous run paid for, and re-meshing to get there costs
-    # seconds against the minutes of the march it stands in for.
-    restart_path = resolve_restart(args, out_dir)
-    machine, grid = prepare(config, restart_path)
 
-    # The history is looked for beside the field rather than in the output
-    # directory, so a restart named from somewhere else brings its own, and
-    # a re-plot gets the convergence page the run it is re-plotting had.
-    history = None
-    if restart_path is not None:
-        history = read_history(restart_path.parent / HISTORY_NAME)
+def _report_one(args, config_path):
+    """Draw one config file, using whatever a run has already left beside it.
 
-    result = Result(machine=machine, grid=grid, history=history)
+    Everything the case supports and nothing it does not: a mean line alone
+    gives the geometry pages, a `mesh:` section adds the grid, and a flow field
+    left by a previous run turns those into a picture of the solution. Each
+    standard processor draws nothing when what it needs is absent, so there is
+    no mode to select and no flag to remember.
 
-    _write_output(config, result, out_dir)
+    Re-plotting is therefore the same command as plotting, and re-meshing to
+    get there costs seconds against the minutes of the march it stands in for
+    -- which is why the grid is not worth serialising.
+    """
+    with logging_into(args, config_path) as out_dir:
+        config = load_config(config_path, args)
+
+        machine, grid = prepare(config, stored_field(config_path))
+
+        # Looked for whether or not there is a field to go with it: a history
+        # beside the config means a run happened here, and its convergence page
+        # is worth drawing either way.
+        history = read_history(config_path.parent / HISTORY_NAME)
+
+        result = Result(machine=machine, grid=grid, history=history)
+
+        write_report(config, result, out_dir)
+
     return 0
 
 
@@ -379,6 +538,9 @@ def solve(config, out_dir, restart_path=None):
     pipeline three times over, two of them unreachable and already drifted.
     """
     machine, grid = prepare(config, restart_path)
+
+    if grid is None:
+        raise ValueError("The 'run' command needs a mesh: section in the config file.")
 
     history = config.solver.solve(grid)
     converged = config.solver.converged(history)
@@ -429,17 +591,20 @@ def solve(config, out_dir, restart_path=None):
 
 def cmd_run(args):
     """Design, mesh and solve, then report."""
-    config = load_config(args)
+    return each(args, _run_one)
 
-    if config.solver is None:
-        raise ValueError(
-            "The 'run' command needs a solver: section in the config file."
-        )
-    if not args.out:
-        raise ValueError("The 'run' command writes results, so it needs --out.")
 
-    out_dir = _open_output(args)
-    result = solve(config, out_dir, resolve_restart(args, out_dir))
+def _run_one(args, config_path):
+    """Solve one config file, writing everything beside it."""
+    with logging_into(args, config_path) as out_dir:
+        config = load_config(config_path, args)
+
+        if config.solver is None:
+            raise ValueError(
+                "The 'run' command needs a solver: section in the config file."
+            )
+
+        result = solve(config, out_dir, resolve_restart(args, config_path))
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
     # parsing the log. Everything written above is still written: a diverged
@@ -449,61 +614,114 @@ def cmd_run(args):
 
 def cmd_iterate(args):
     """Run repeatedly, moving the design onto its own solution."""
-    config = load_config(args)
-
-    if config.solver is None:
-        raise ValueError(
-            "The 'iterate' command needs a solver: section in the config file."
-        )
-    if not config.iterate:
-        raise ValueError(
-            "The 'iterate' command needs an iterate: section saying what to "
-            "correct; without one, use 'run'."
-        )
-    if not args.out:
-        raise ValueError("The 'iterate' command writes results, so it needs --out.")
-
-    out_dir = _open_output(args)
-    previous = resolve_restart(args, out_dir)
-
-    if not args.verbose:
+    # Once for the invocation rather than once per target: the filter is added
+    # to the console handler, and adding it again for every config in a batch
+    # would stack a dozen copies of the same test.
+    if not args.verbose and not args.queue:
         _quieten_the_runs()
 
-    # Iteration -1: where the knobs start. Anchored on the config file's own
-    # directory rather than the working directory, because a config is often
-    # run from somewhere else, and excluding this run's output because it will
-    # fill with iterations of the very design being started.
-    config = database.warm_start(
-        config, Path(args.CONFIG_YAML).parent, exclude=(out_dir,)
-    )
+    return each(args, _iterate_one)
 
-    def run(config_now, i_iter):
-        """Solve one iteration into a directory of its own."""
-        nonlocal previous
 
-        iter_dir = out_dir / f"iter_{i_iter:04d}"
-        iter_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+def _iterate_one(args, config_path):
+    """Iterate one config file, keeping every iteration beside it."""
+    with logging_into(args, config_path) as out_dir:
+        config = load_config(config_path, args)
 
-        # Chained: each iteration starts from the field the last one reached,
-        # which is most of the saving. Index-space interpolation covers the
-        # mesh moving with the design.
-        result = solve(config_now, iter_dir, previous)
-        previous = iter_dir / RESTART_NAME
+        if config.solver is None:
+            raise ValueError(
+                "The 'iterate' command needs a solver: section in the config file."
+            )
+        if not config.iterate:
+            raise ValueError(
+                "The 'iterate' command needs an iterate: section saying what to "
+                "correct; without one, use 'run'."
+            )
 
-        return result
+        previous = resolve_restart(args, config_path)
 
-    config, result, converged = iterate.converge(config, run, args.max_iter)
+        # Iteration -1: where the knobs start. Anchored on the config file's
+        # own directory, because a config is often run from somewhere else, and
+        # excluding that same directory because it is where this run's own
+        # iterations will land -- one directory being one run, nothing else of
+        # anyone's is in there to lose.
+        config = database.warm_start(config, out_dir, exclude=(out_dir,))
 
-    # The answer, on a console that has been shown only the iteration table.
-    # Not for a march that blew up, whose mixed-out mean line is whatever its
-    # NaNs averaged to and would read as a result.
-    if result is not None and result.converged and result.actual is not None:
-        iterate.logger.info(result.actual.to_string())
+        def run(config_now, i_iter):
+            """Solve one iteration into a directory of its own."""
+            nonlocal previous
 
-    _link_final(out_dir, previous.parent)
+            iter_dir = out_dir / f"iter_{i_iter:04d}"
+            iter_dir.mkdir(parents=True, exist_ok=True)
+            iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+            # Chained: each iteration starts from the field the last one
+            # reached, which is most of the saving. Index-space interpolation
+            # covers the mesh moving with the design.
+            result = solve(config_now, iter_dir, previous)
+            previous = iter_dir / RESTART_NAME
+
+            return result
+
+        config, result, converged = iterate.converge(config, run, config.max_iter)
+
+        # The answer, on a console that has been shown only the iteration
+        # table. Not for a march that blew up, whose mixed-out mean line is
+        # whatever its NaNs averaged to and would read as a result.
+        if result is not None and result.converged and result.actual is not None:
+            iterate.logger.info(result.actual.to_string())
+
+        _link_final(out_dir, previous.parent)
 
     return 0 if converged else 2
+
+
+def cmd_sample(args):
+    """Write configs covering the design space, ready to be run."""
+    paths = targets(args)
+    if len(paths) > 1:
+        raise ValueError(
+            "The 'sample' command covers one design space, so it takes one "
+            "config file as its datum."
+        )
+
+    config = load_config(paths[0], args)
+
+    if config.sample is None:
+        raise ValueError(
+            "The 'sample' command needs a sample: section saying which design "
+            "variables to vary, and between what bounds."
+        )
+    # Checked before anything is created, so a misspelled bound does not leave
+    # an empty batch behind and burn a number on its way out.
+    config.sample.check(config)
+
+    # Scanned before the new batch directory exists, so it cannot count itself.
+    # A batch is never written into, only beside, so nothing can be lost.
+    datum_dir = paths[0].resolve().parent
+
+    start = 0
+    if args.carry_on:
+        start = sample.next_index(existing_batches(datum_dir))
+        sample.logger.info(f"Carrying on from index {start}.")
+
+    out_dir = _open_batch(args, datum_dir)
+
+    for index, member in sample.generate(config, args.number, start):
+        member_path = out_dir / sample.member_name(index)
+        # A member is a directory, because one directory is one run: it is what
+        # gives every member an `output.yaml` of its own to be run into.
+        member_path.parent.mkdir(parents=True, exist_ok=True)
+        member.to_file(member_path)
+
+    sample.logger.info(f"Wrote {args.number} design(s) to {out_dir}")
+
+    # The one thing this verb puts on stdout, everything else being on stderr.
+    # A numbered batch cannot be named in advance, so without it a script has
+    # no way to find what it just made: BATCH=$(turbigen2 sample case.yaml).
+    print(out_dir, flush=True)
+
+    return 0
 
 
 def _quieten_the_runs():
@@ -540,25 +758,33 @@ def _console_handlers():
 
 
 def _link_final(out_dir, iter_dir):
-    """Point `final` at the last iteration, replacing any earlier link.
+    """Point `final` at the last iteration, and `output.yaml` at its answer.
 
-    A symlink rather than a copy of the answer: the iterations are the record
-    of how the design got where it did, and duplicating megabytes to name one
-    of them would only invite the two to disagree.
+    Symlinks rather than copies of the answer: the iterations are the record of
+    how the design got where it did, and duplicating megabytes to name one of
+    them would only invite the two to disagree.
+
+    The second link is what makes `output.yaml` mean "what this run achieved"
+    whichever verb produced it, so a database glob and a script reading a
+    result need not know whether a design took one solve or six.
     """
-    link = out_dir / "final"
+    _link(out_dir / "final", iter_dir.name, directory=True)
+    _link(out_dir / OUTPUT_NAME, f"final/{OUTPUT_NAME}", directory=False)
 
+
+def _link(link, target, directory):
+    """Point `link` at `target`, replacing whatever was there."""
     try:
         if link.is_symlink() or link.exists():
             link.unlink()
-        link.symlink_to(iter_dir.name, target_is_directory=True)
+        link.symlink_to(target, target_is_directory=directory)
     except OSError as err:
         # A filesystem without symlinks is a reason to say so, not to lose a
         # finished set of iterations.
-        logger.warning(f"Could not link {link} to {iter_dir.name}: {err}")
+        logger.warning(f"Could not link {link} to {target}: {err}")
         return
 
-    logger.info(f"Linked {link} to {iter_dir.name}")
+    logger.info(f"Linked {link} to {target}")
 
 
 def convergence_string(history, converged):
@@ -574,63 +800,65 @@ def convergence_string(history, converged):
     return f"Solver: {verdict}\n{history.format_message()}"
 
 
-def _open_output(args):
-    """Return the output directory, if one was asked for, logging into it."""
-    if not args.out:
-        return None
-    out_dir = resolve_out_dir(args.out)
+@contextlib.contextmanager
+def logging_into(args, config_path):
+    """Yield where this verb writes for `config_path`, teeing the log into it.
+
+    Beside the config, always: the location is never derived and never typed,
+    and a verb that writes has nowhere else it could sensibly put things.
+
+    The handler comes off again at the end, so a batch of targets leaves one
+    complete transcript in each of their directories rather than every run
+    after the first appending to the first one's file.
+    """
+    out_dir = Path(config_path).resolve().parent
+
     # Recorded on the arguments so that main() can name it again at the end,
     # where it is most use: a long run scrolls its first line out of sight.
     args.out_dir = out_dir
-    _add_handler(logging.FileHandler(out_dir / "log_turbigen2.txt"))
+
+    handler = logging.FileHandler(out_dir / LOG_NAME)
+    _add_handler(handler)
+    logger.info(f"Output directory: {out_dir}")
+
+    try:
+        yield out_dir
+    finally:
+        for name in LOGGER_NAMES:
+            logging.getLogger(name).removeHandler(handler)
+        handler.close()
+
+
+def _open_batch(args, datum_dir):
+    """Create and return the directory a batch of samples is written into.
+
+    Numbered rather than named, because a batch is many designs and hours of
+    solving to come: writing into an existing one would destroy work, where a
+    single run written over a single run is a recoverable mistake.
+    """
+    out_dir = next_batch_dir(datum_dir)
+    out_dir.mkdir(parents=True)
+    args.out_dir = out_dir
+    _add_handler(logging.FileHandler(out_dir / LOG_NAME))
     logger.info(f"Output directory: {out_dir}")
     return out_dir
 
 
 def _write_output(config, result, out_dir):
-    """Write the resolved config and the report, if there is anywhere to."""
-    if out_dir is None:
-        # Only mentioned when the config asked for post-processing of its own:
-        # that is a request left unmet. Nobody asked for the standard plots, so
-        # their absence from a run that writes nothing is not news.
-        if config.post_process:
-            logger.info("No output directory given, so no report was written.")
-        return
+    """Write what a run achieved, and draw it.
 
-    config_path = out_dir / "config.yaml"
-    if _already_archived(config_path, config):
-        # Re-plotting a run writes its report back into the run's own
-        # directory, over the config it came from. Rewriting that file would
-        # replace the answer stored under `result:` -- the mixed-out mean line,
-        # and whether it converged -- with this verb's empty one, so a
-        # re-plotted run would come back claiming it had never converged.
-        # Identical configs have nothing to write anyway.
-        run_log.info(f"Configuration at {config_path} is unchanged, so left alone")
-    else:
-        case.write(config_path, config, result)
-        run_log.info(f"Wrote resolved configuration to {config_path}")
+    Only the verbs that solve call this, and that is what makes it safe:
+    `output.yaml` is written by whoever has a real answer to put in it, so no
+    verb can replace a converged run's `result:` with an empty one of its own.
+    An earlier arrangement had `mesh --restart --write` writing back over the
+    config it had just read, guarded by comparing the two -- a guard that only
+    existed because the wrong verb was writing.
+    """
+    config_path = out_dir / OUTPUT_NAME
+    case.write(config_path, config, result)
+    run_log.info(f"Wrote resolved configuration to {config_path}")
 
     write_report(config, result, out_dir)
-
-
-def _already_archived(config_path, config):
-    """Return whether `config_path` already holds exactly `config`.
-
-    Only the config half is compared: a file carrying a result is still the
-    same config, and it is precisely that result which must survive.
-    """
-    if not config_path.is_file():
-        return False
-
-    try:
-        archived, _ = case.read(config_path, design=False)
-    except Exception as err:
-        # A file we cannot read is one we should not silently keep, so say why
-        # and let the write go ahead.
-        logger.debug(f"Could not read the config already at {config_path}: {err}")
-        return False
-
-    return archived == config
 
 
 def grid_string(grid):
@@ -706,16 +934,11 @@ def write_report(config, result, out_dir):
 def _make_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
-        "CONFIG_YAML", help="filename of configuration data in yaml format"
-    )
-    common.add_argument(
-        "-o",
-        "--out",
-        metavar="DIR",
+        "CONFIG_YAML",
+        nargs="+",
         help=(
-            "write results to DIR, creating it if needed; a '*' is replaced by "
-            "the next free number, as in run_* -> run_0. Without this, nothing "
-            "is written"
+            "one or more configuration files in yaml format; several are run "
+            "one after another, or submitted together with --queue"
         ),
     )
     common.add_argument(
@@ -737,22 +960,12 @@ def _make_parser():
         action="store_true",
         help="output more diagnostic information on stderr",
     )
-    common.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help=(
-            "show only warnings and errors on the console; a log file written "
-            "under --out still records the run in full"
-        ),
-    )
-
     parser = argparse.ArgumentParser(
         prog="turbigen2",
         description=(
             "turbigen2 is an experimental rebuild of the turbigen design "
             "system. Each command carries the design one stage further through "
-            "the pipeline; 'design' and 'mesh' are implemented so far."
+            "the pipeline."
         ),
     )
     parser.add_argument(
@@ -766,30 +979,32 @@ def _make_parser():
     design = commands.add_parser(
         "design",
         parents=[common],
-        help="design the mean line and report it",
+        help="design the mean line and print it, writing nothing",
         description=(
-            "Design the mean line from a configuration file and print it. "
-            "Nothing is written and no directory is created unless --out is "
-            "given."
+            "Design the mean line and geometry from a configuration file and "
+            "print them. Nothing is ever written, so this is what to run while "
+            "changing a number and watching the tables move. Use 'report' for "
+            "figures."
         ),
     )
     design.set_defaults(func=cmd_design)
 
-    mesh = commands.add_parser(
-        "mesh",
+    report = commands.add_parser(
+        "report",
         parents=[common],
-        help="design the machine, generate a grid, and report both",
+        help="draw a case, using whatever a run has left beside it",
         description=(
-            "Design the machine from a configuration file, mesh it, and print "
-            "the result. Nothing is written and no directory is created unless "
-            "--out is given; the grid itself is not written, because how a mesh "
-            "is serialised is a property of the solver that will read it. With "
-            "--restart, this re-plots a previous run: the stored field is put "
-            "back on the grid and reported without solving anything."
+            "Design the machine, mesh it if the config says how, pick up any "
+            f"{RESTART_NAME} a previous run left beside the config, and write "
+            "post.pdf. Each standard plot draws nothing when what it needs is "
+            "absent, so a mean-line design gives the geometry pages and a "
+            "solved case gives the flow. Re-plotting a finished run is "
+            "therefore the same command, with no flag between them. The grid "
+            "itself is never written, because how a mesh is serialised is a "
+            "property of the solver that will read it."
         ),
     )
-    _add_restart_argument(mesh)
-    mesh.set_defaults(func=cmd_mesh)
+    report.set_defaults(func=cmd_report)
 
     run = commands.add_parser(
         "run",
@@ -797,11 +1012,14 @@ def _make_parser():
         help="design, mesh and solve, then report",
         description=(
             "Design the machine from a configuration file, mesh it, apply "
-            "boundary conditions and an initial guess, and solve. Requires "
-            "--out, because a run produces artefacts worth keeping. Exits 2 if "
-            "the solver did not converge, having written its output anyway."
+            "boundary conditions and an initial guess, and solve. Everything "
+            f"is written beside the config, in {OUTPUT_NAME} and its "
+            "companions. Exits 2 if the solver did not converge, having "
+            "written its output anyway."
         ),
     )
+    _add_force_argument(run)
+    _add_queue_argument(run)
     _add_restart_argument(run)
     run.set_defaults(func=cmd_run)
 
@@ -812,23 +1030,84 @@ def _make_parser():
         description=(
             "Solve the machine, measure how far its design is from what the "
             "flow actually did, correct the design, and solve again. Each "
-            "iteration is an ordinary run in a directory of its own, with "
-            "'final' linked to the last; every iteration is kept. Requires "
-            "--out and an iterate: section. Exits 2 if the design had not "
-            "converged by --max-iter."
+            "iteration is an ordinary run in a directory of its own beside the "
+            "config, with 'final' linked to the last and every iteration kept. "
+            "Needs an iterate: section. Exits 2 if the design had not "
+            "converged by max_iter."
         ),
     )
-    iterate_.add_argument(
-        "--max-iter",
-        type=int,
-        default=10,
-        metavar="N",
-        help="most iterations to run before giving up (default 10)",
-    )
+    _add_force_argument(iterate_)
+    _add_queue_argument(iterate_)
     _add_restart_argument(iterate_)
     iterate_.set_defaults(func=cmd_iterate)
 
+    sample_ = commands.add_parser(
+        "sample",
+        parents=[common],
+        help="write configs covering a design space, ready to be run",
+        description=(
+            "Draw designs from a Sobol' sequence over the bounds in the "
+            "sample: section and write one config per point, named by its "
+            "index in the sequence. Points that cannot be designed are "
+            "skipped, so no cluster time is spent finding that out. Nothing "
+            "is run: what to do with the configs is yours to decide. The batch "
+            "is written beside the datum config, in the next free batch_NNNN, "
+            "whose path is printed on stdout."
+        ),
+    )
+    sample_.add_argument(
+        "-n",
+        "--number",
+        type=int,
+        default=32,
+        metavar="N",
+        help=(
+            "how many designs to write (default 32; Sobol' balance holds at "
+            "powers of two)"
+        ),
+    )
+    sample_.add_argument(
+        "--continue",
+        dest="carry_on",
+        action="store_true",
+        help=(
+            "extend the batches already beside the datum config, starting "
+            "after the highest member index they hold"
+        ),
+    )
+    sample_.set_defaults(func=cmd_sample)
+
     return parser
+
+
+def _add_force_argument(parser):
+    """Add --force, which allows several targets to overwrite their answers."""
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            f"overwrite an existing {OUTPUT_NAME} when several config files "
+            "are given; one config file on its own always overwrites"
+        ),
+    )
+
+
+def _add_queue_argument(parser):
+    """Add --queue, for the verbs that cost enough time to be worth queueing.
+
+    A flag rather than a config key deciding it, so submission is never implied
+    by a file: the key says how, this says whether. That is what keeps the
+    recursion one level deep and needs no `--no-job` to break it.
+    """
+    parser.add_argument(
+        "-Q",
+        "--queue",
+        action="store_true",
+        help=(
+            "submit to the queue named by the job: section instead of running "
+            "here; several config files become one submission"
+        ),
+    )
 
 
 def _add_restart_argument(parser):
@@ -846,7 +1125,7 @@ def _add_restart_argument(parser):
             "load the flow field in NPZ, as written by a previous run, "
             "instead of the meridional guess; interpolated in index space if "
             "the mesh resolution has changed. With no NPZ given, reads "
-            f"{RESTART_NAME} from the --out directory, which re-plots a run "
+            f"{RESTART_NAME} from beside the config file, which re-plots a run "
             "in place"
         ),
     )
@@ -862,7 +1141,7 @@ def _format_elapsed(seconds):
 def main(argv=None):
     """Parse arguments and run the requested command."""
     args = _make_parser().parse_args(argv)
-    setup_logging(args.verbose, args.quiet)
+    setup_logging(args.verbose)
 
     # The banner says which code ran and when, so that a log file kept beside a
     # set of results still identifies them long after the run.

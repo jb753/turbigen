@@ -389,3 +389,99 @@ def _leaves(value, prefix, leaves):
             _leaves(item, f"{prefix}[{index}]", leaves)
     else:
         leaves[prefix] = value
+
+
+def parse_path(path):
+    """Return the segments of `path`, the inverse of how :func:`flatten` spells one.
+
+    Mapping keys come back as strings and sequence indices as integers, so
+    ``mean_line.Ys[0]`` gives ``("mean_line", "Ys", 0)`` and is ready to walk a
+    raw config dict with.
+
+    Both spellings are accepted. ``Ys[0]`` is what `flatten` writes; ``Ys.0``
+    is what ``--set`` has always taken, and a dotted integer is unambiguous
+    because a mapping key that is a bare number cannot appear in a config ---
+    every one of them is a field name. Accepting both is what lets a design
+    variable be named identically in ``sample:``, in ``database:`` and on the
+    command line, rather than each growing its own translation.
+    """
+    segments = []
+    for part in str(path).split("."):
+        name, _, rest = part.partition("[")
+        if name:
+            segments.append(int(name) if name.lstrip("-").isdigit() else name)
+        elif not rest:
+            raise ValueError(f"The path {path!r} has an empty segment.")
+
+        while rest:
+            index, bracket, rest = rest.partition("]")
+            if not bracket:
+                raise ValueError(f"The path {path!r} has an unclosed bracket.")
+            try:
+                segments.append(int(index))
+            except ValueError:
+                raise ValueError(
+                    f"The path {path!r} indexes with {index!r}, which is not a "
+                    "whole number."
+                ) from None
+            # Whatever follows a closing bracket is another index, so anything
+            # else -- `Ys[0]x` -- is a typo rather than a name.
+            if rest and not rest.startswith("["):
+                raise ValueError(
+                    f"The path {path!r} has {rest!r} after a closing bracket."
+                )
+            rest = rest[1:] if rest else ""
+
+    if not segments:
+        raise ValueError("A path must name at least one segment.")
+
+    return tuple(segments)
+
+
+def set_by_path(data, path, value):
+    """Set `value` at `path` in the raw dict `data`, in place.
+
+    Works on the dict a config is built from rather than on a `Node`, because
+    both callers --- a ``--set`` override and a sampled design variable --- are
+    changing a value on the way *in*, before anything is validated. That is
+    what makes a mistyped key an error from the strict unknown-key check
+    instead of a silent no-op.
+
+    Intermediate containers are created as the next segment implies, so a path
+    may reach into a section the file leaves out entirely.
+    """
+    segments = parse_path(path)
+
+    target = data
+    for segment, following in zip(segments[:-1], segments[1:]):
+        child = _child(target, segment)
+        if not isinstance(child, (dict, list)):
+            child = [] if isinstance(following, int) else {}
+            _set_child(target, segment, child)
+        target = child
+
+    _set_child(target, segments[-1], value)
+
+
+def _child(data, segment):
+    """Return data[segment] if it is there, else None, whatever the types."""
+    if isinstance(segment, int):
+        if isinstance(data, list) and segment < len(data):
+            return data[segment]
+        return None
+    return data.get(segment) if isinstance(data, dict) else None
+
+
+def _set_child(data, segment, value):
+    """Assign data[segment] = value, growing a list with None as needed."""
+    if isinstance(segment, int):
+        if not isinstance(data, list):
+            raise ValueError(f"Cannot index a {type(data).__name__} with {segment}.")
+        data.extend([None] * (segment + 1 - len(data)))
+        data[segment] = value
+    else:
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Cannot set the key {segment!r} on a {type(data).__name__}."
+            )
+        data[segment] = value

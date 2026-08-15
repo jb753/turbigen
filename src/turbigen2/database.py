@@ -57,10 +57,14 @@ class Database(Node):
     path: str = ""
     """Glob matching the case files to read, relative to the config file.
 
-    Recursive patterns are the point: ``../runs/**/config.yaml``. Matching the
+    Recursive patterns are the point: ``../runs/**/output.yaml``. Matching the
     per-iteration subdirectories of an earlier iterate as well as its final
     answer is harmless, because what makes a match a sample is read from its
     `result:` rather than from where it sits.
+
+    ``output.yaml`` is what a run writes, so a glob naming it matches only runs
+    that finished: a sample that has not been run has an ``input.yaml`` and
+    nothing else.
     """
 
     power: float = 2.0

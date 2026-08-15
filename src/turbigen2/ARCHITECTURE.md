@@ -88,7 +88,7 @@ class Config(Node):
 ```
 
 There is no `upto` argument and no per-stage method on `Config`. The CLI verbs
-are separate methods (`design`, later `mesh`, `run`), so there is no stop point
+are separate methods (`design`, later `report`, `run`), so there is no stop point
 to parameterise; and the depth of a design is set by what the config contains,
 since a config with no `annulus` designs only a mean line. Per-stage access for
 debugging already exists through the stage objects themselves —
@@ -139,7 +139,7 @@ check that the reserved-name promotion in `Node` is not over-applied.
 The mesh-facing helpers on the old designer — `get_cut_plane`,
 `get_offset_planes`, `get_interfaces`, `get_mp_from_xr`, `xr_row`,
 `get_span_curve` — are deliberately not ported. They exist to serve meshing,
-and belong with the `mesh` verb.
+and belong with the mesher.
 
 ### A result class exposes the minimal complete interface
 
@@ -368,9 +368,9 @@ the mean line along the annulus mid-span, and applied by ember's
 `apply_guess_meridional`, which is a nearest-neighbour search in the meridional
 plane and so needs no topology matching.
 
-It is a free function, and the `mesh` verb calls it, so the grid that verb
-hands back is the one a solver would start from and plotting it shows what will
-actually be solved. Nothing of ours passes between the two halves --- the guess
+It is a free function, and `prepare` calls it, so the grid a `report` draws is
+the one a solver would start from and plotting it shows what will actually be
+solved. Nothing of ours passes between the two halves --- the guess
 is an ember `Block` and the target an ember `Grid` --- so there is no guess
 class, and no family until a second strategy earns one.
 
@@ -593,7 +593,7 @@ iterators start from a blend of the nearest.
 
 ```yaml
 database:
-  path: ../runs/**/config.yaml
+  path: ../runs/**/output.yaml
 ```
 
 Three things are different from `dspace.py`, which does this today.
@@ -664,10 +664,142 @@ other layout. Filtering on the data is what makes a bare `**` glob correct.
 The run being started is excluded explicitly, or a design whose own output is
 under the glob would be started from itself and predict its own answer.
 
-Sampling a design space is **not** here. The old `DesignSpace` also owns
-`nsample_target`, a Latin hypercube and a seed; choosing what to run next is a
-separate question from reading what has been run, and only the second is needed
-to warm-start.
+Sampling a design space is **not** here. The old `DesignSpace` owns both; they
+are separate questions and separate modules --- see below.
+
+## Choosing what to run next
+
+`database` reads finished runs; `sample` writes the configs that become them.
+The old `DesignSpace` is both at once, which is why it needs a `basedir`, a
+sampler, a seed and a target count alongside the fit.
+
+They point opposite ways, and that is the whole reason to split them.
+**Reading deduces**: the design variables are whatever the runs differ in, the
+ranges whatever they cover. **Writing must be told**, because an empty archive
+differs in nothing. So `sample:` declares bounds, and that is not a relapse
+into `IndependentConfig` --- a design of experiments is a statement of intent,
+where a warm start is an observation.
+
+**Sobol', not a Latin hypercube.** An LHS stratifies each axis into N equal
+bins, and the stratification is *defined by N*: a subset is not an LHS and a
+superset is not an LHS of N+k, so growing an archive means regenerating it and
+discarding runs already paid for. Any prefix of a Sobol' sequence is
+space-filling, so extending is taking the next N. For this consumer that
+settles it, because IDW cares about fill distance rather than marginal
+uniformity --- the LHS advantage is the one `database` never uses, and its
+drawback is the one met on the first extension.
+
+**Points are screened before they are written.** Designing costs no CFD, so a
+corner where `solve_for` cannot converge is found at emit time rather than one
+wasted cluster job at a time. A skipped point is never retried, being
+deterministic given the seed, so the emitted set has gaps --- which is why a
+member carries its *sequence index* rather than a position in the batch, and
+why an extension can pick up in the right place.
+
+**A member carries no `sample:` key.** It is one design, not a space; left in,
+sampling a member would expand one design into another N. Nothing is written to
+record what generated a batch either: the datum config is the user's to keep,
+and turbigen2 accumulating a copy is the sort of state the rebuild exists to
+remove. The resolved bounds are logged into the batch's own log file, and the
+batch sits in the datum's own directory, so the layout says what the file does
+not.
+
+**A member is a directory, not a file.** One directory is one run, which is
+what gives every member an `output.yaml` of its own rather than thirty-two of
+them sharing one set of fixed artefact names. It also makes the glob that reads
+the archive back name `output.yaml`, so it matches only the members that
+finished.
+
+**Whole numbers are refused.** Rounding a continuous draw collapses neighbours
+into duplicate designs, which `_predict` then averages as repeat runs of one
+design --- which is what they are. The obvious integer, blade count, also
+changes the mesh, which is why `DiffusionFactor` was not ported.
+
+## Where a run executes
+
+A `Job` is a config node chosen by `type:`, like everything else:
+
+```yaml
+job:
+  type: slurm
+  hours: 4.0
+  partition: ampere
+  gres: "gpu:1"
+```
+
+```python
+class Job(Node):
+    def submit(self, tasks, verb, options) -> list[str]   # framework
+    def forward(self, tasks, verb, options) -> list[str]  # the author writes this
+```
+
+A family rather than a flag per backend, for the reason every other family
+exists here: `--slurm`, `--tsp` and `-j` would be a second dispatch mechanism
+beside the one the package already has, and a hand-rolled flag set cannot be
+extended by a plugin --- which is exactly what a `type: pbs` needs to be.
+
+### Submission is never implied
+
+The key says *how* to submit; `--queue` says *whether*. The package this
+replaces submits whenever the key is present, so `turbigen config.yaml`
+re-execs itself as `turbigen --no-job config.yaml` inside a job and exits from
+the middle of the pipeline. Every entry point then needs the negative flag to
+break the recursion, and `main.py` carries it three times.
+
+One positive flag makes the recursion one level deep and the escape hatch the
+absence of a flag rather than the presence of one. Per-invocation overrides
+need no new syntax either, `-s job.hours=12` being the same mechanism as every
+other override.
+
+### A task is a config path, and nothing else
+
+The verb and its options are shared by every task in a submission, so only the
+config varies. That is what lets a SLURM array put the varying part in a
+`tasks.txt` and the fixed part in the script once:
+
+```
+CONFIG=$(sed -n "${SLURM_ARRAY_TASK_ID}p" tasks.txt)
+turbigen2 run "$CONFIG" -s mean_line.psi=1.8
+```
+
+**The array indexes lines, not directories.** `job.py:186` requires "a
+consecutive range of numbered directories", which the batches `sample` writes
+are not: a point that will not design is skipped and never retried, so the
+indices have gaps by construction. Indexing a file removes the constraint
+entirely, along with any assumption about what a config is called or where it
+sits.
+
+### Zero or empty means unstated
+
+Every `Slurm` field defaults to zero or empty and is left out of the script
+when it is, so sbatch's own `SBATCH_ACCOUNT`, `SBATCH_PARTITION` and
+`SBATCH_TIMELIMIT` still apply. A cluster that already sets those in a profile
+needs nothing in the file but `type: slurm`, and nothing about the site has to
+be repeated in every case.
+
+`hold_on_fail` is not ported. It traps a failure, starts a detached tmux and
+`sleep 36h` to hold the node for a debug shell; a run already writes its
+evidence and exits 2.
+
+### Local queueing is task-spooler, not ours
+
+`type: tsp` shells to Debian's `task-spooler`: slots, job ids, listing,
+cancellation, and a `-N` that says how many slots one job occupies. The package
+this replaces hand-rolls the same thing in 340 lines --- a flock'd text file, a
+PID file, SIGHUP cancel-all, a systemd unit template and a `--follow` that
+execs `journalctl` --- and still cannot express a job wanting four cores.
+
+Nothing wraps `tsp -l` or `squeue`. They are better than anything we would put
+in front of them, so the turbigen2 surface is `--queue` and the `job:` key.
+
+### A partition is not part of the design
+
+Nothing here is read by any design stage, and `database.SUBTREE` already
+restricts design variables to `fluid`, `mean_line`, `annulus` and `blades`, so
+a `job:` key cannot be mistaken for one. It rides along into an archived
+`output.yaml` and into every sample member, which is useful rather than
+harmful: a member that carries its own `job:` can be submitted without being
+told anything, and re-running an archive elsewhere is `-s job.partition=...`.
 
 ## Post-processing
 

@@ -378,3 +378,36 @@ def test_flatten_reaches_every_leaf_of_a_file():
     config = Config.from_dict(CASE)
 
     assert node.flatten(Config.from_dict(config.to_dict())) == node.flatten(config)
+
+
+def test_parse_path_inverts_flatten():
+    """Every path `flatten` writes walks back to the leaf it came from."""
+    config = Config.from_dict(CASE)
+    data = config.to_dict()
+
+    for path, value in node.flatten(config).items():
+        walked = data
+        for segment in node.parse_path(path):
+            walked = walked[segment]
+        assert walked == value
+
+
+def test_parse_path_takes_both_spellings():
+    """Brackets from `flatten`, dotted integers from `--set`."""
+    assert node.parse_path("mean_line.Ys[0]") == ("mean_line", "Ys", 0)
+    assert node.parse_path("mean_line.Ys.0") == ("mean_line", "Ys", 0)
+
+
+@pytest.mark.parametrize("path", ["", "a..b", "a[0", "a[x]", "a[0]x", "a[]"])
+def test_a_malformed_path_is_refused(path):
+    with pytest.raises(ValueError):
+        node.parse_path(path)
+
+
+def test_set_by_path_builds_what_a_path_implies():
+    """So a value can be set in a section the file leaves out."""
+    data = {}
+
+    node.set_by_path(data, "mean_line.Ys[1]", 0.06)
+
+    assert data == {"mean_line": {"Ys": [None, 0.06]}}
