@@ -206,9 +206,7 @@ def _unit_fixed(dx0, dx1, N, rtol=1e-2):
     dx_in = np.copy(dx)
     for _ in range(maxiter):
         x = _vinokur(dx_in, N)
-        dx_out = np.diff(x)[
-            (0, -1),
-        ]
+        dx_out = np.diff(x)[(0, -1),]
         fac_dx = dx_out / dx
         if (np.abs(fac_dx - 1.0) < rtol).all():
             break

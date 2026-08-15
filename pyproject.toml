@@ -39,6 +39,9 @@ turbigen = "turbigen.main:main"
 turbigen2 = "turbigen2.cli:main"
 turbigen-autogrid-server = "turbigen.autogrid.server:main"
 
+[tool.black]
+target-version = ["py311"]
+
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-*"
 skip = "pp*"

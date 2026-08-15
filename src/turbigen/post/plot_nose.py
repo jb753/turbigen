@@ -21,12 +21,8 @@ def post(grid, machine, meanline, _, postdir, row_spf, fac_Rle=1.0):
         # Extract reference pressure from mean-line
         iin = irow * 2
         iout = iin + 1
-        Po1, Po2 = meanline.Po_rel[
-            (iin, iout),
-        ]
-        P1, P2 = meanline.P[
-            (iin, iout),
-        ]
+        Po1, Po2 = meanline.Po_rel[(iin, iout),]
+        P1, P2 = meanline.P[(iin, iout),]
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):

@@ -409,17 +409,13 @@ def mix_out(F):
         )
 
     if not np.isclose(rtmom_mix, rtmom_tot, atol=mom_tol * r_mix):
-        raise Exception(
-            f"""Mixing out did not converge:
+        raise Exception(f"""Mixing out did not converge:
             rtmom {rtmom_mix, rtmom_tot, mom_tol * r_mix},
-            rel_err={(rtmom_mix - rtmom_tot) / mom_tol / r_mix:.3f}"""
-        )
+            rel_err={(rtmom_mix - rtmom_tot) / mom_tol / r_mix:.3f}""")
 
     if not np.isclose(ho_mix, ho_tot, atol=ho_tol):
-        raise Exception(
-            f"""Mixing out did not converge:
-    energy {ho_mix, ho_tot, ho_tol}, rel_err={(ho_mix - ho_tot) / ho_tol:.3f}"""
-        )
+        raise Exception(f"""Mixing out did not converge:
+    energy {ho_mix, ho_tot, ho_tol}, rel_err={(ho_mix - ho_tot) / ho_tol:.3f}""")
 
     try:
         Nb = F.Nb

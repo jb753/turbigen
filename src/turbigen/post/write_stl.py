@@ -6,7 +6,6 @@ import numpy as np
 import os
 import stl
 
-
 logger = logging.getLogger("turbigen")
 
 
@@ -118,7 +117,8 @@ def post(grid, machine, meanline, _, postdir):
 
     Write machine surface geometry to stl files.
 
-    Generates a triangulated Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud."""
+    Generates a triangulated Cartesian stl for each aerofoil row, and x-r csvs for the hub and shroud.
+    """
 
     # Extract coordinates
     sections, annulus, zcst, Nb, tip, splitters = machine.get_coords()

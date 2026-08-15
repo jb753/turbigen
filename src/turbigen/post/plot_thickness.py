@@ -6,7 +6,6 @@ import os
 import turbigen.util
 import matplotlib.pyplot as plt
 
-
 logger = logging.getLogger("turbigen")
 
 

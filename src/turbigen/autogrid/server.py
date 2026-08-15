@@ -53,7 +53,9 @@ def main():
     # Add args
     args = _make_argparser().parse_args()
     queue_file = os.path.join(args.WORKDIR, "queue.txt")
-    cmd_str = [script_name,] + [
+    cmd_str = [
+        script_name,
+    ] + [
         os.path.expandvars(queue_file),
     ]
 

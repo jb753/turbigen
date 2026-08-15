@@ -59,13 +59,9 @@ def cell_to_node(x):
     """One-dimensional centered values to nodal values."""
     return np.concatenate(
         (
-            x[
-                (0,),
-            ],
+            x[(0,),],
             0.5 * (x[1:] + x[:-1]),
-            x[
-                (-1,),
-            ],
+            x[(-1,),],
         )
     )
 
@@ -188,12 +184,8 @@ def resample(x, f, mult=None):
     xnew = xnorm_new * np.ptp(x) + x[0]
 
     assert np.allclose(
-        xnew[
-            (0, -1),
-        ],
-        x[
-            (0, -1),
-        ],
+        xnew[(0, -1),],
+        x[(0, -1),],
     )
 
     return xnew

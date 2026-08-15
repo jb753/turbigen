@@ -12,7 +12,6 @@ https://paulbourke.net/geometry/polygonise/
 
 import numpy as np
 
-
 # Which edges are cut by the isosurface? 256 possible cases, each corresponding to
 # a 12-bit number, each bit corresponds to an edge
 EDGETABLE = np.array(

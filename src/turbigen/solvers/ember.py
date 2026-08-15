@@ -1,5 +1,4 @@
 import logging
-import numpy as np
 import ember.run
 import ember.patch
 import ember.config

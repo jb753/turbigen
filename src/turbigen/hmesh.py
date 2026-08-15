@@ -553,7 +553,7 @@ class H(turbigen.mesh.Mesher):
             elif ib == (nrow - 1):
                 _, icusp = row_meta[ib]
                 ni_b = b.shape[0]
-                islip = icusp + int((ni_b - icusp) * 0.5)
+                islip = icusp + int((ni_b - icusp) * 0.5)  # noqa: F841
                 # b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=0))
                 # b.patches.append(ember.patch.InviscidPatch(i=(islip, -1), j=-1))
 

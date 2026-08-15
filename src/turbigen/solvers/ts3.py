@@ -234,13 +234,11 @@ and then back in to refresh your access permissions.
 
             # If we have an error code, prind debugging info
             if proc.returncode:
-                raise Exception(
-                    f"""TS3 failed, exit code {proc.returncode}
+                raise Exception(f"""TS3 failed, exit code {proc.returncode}
 COMMAND: {cmd_str}
 STDERR: {proc.stderr.read().decode(sys.getfilesystemencoding()).strip()}
 
-Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?"""
-                ) from None
+Are you on a HPC compute node, i.e. gpu-q-x not login-q-x?""") from None
 
         # Delete extraneous files
         for f in ("stopit", "output_avg.xdmf", "output.xdmf", "input.hdf5"):

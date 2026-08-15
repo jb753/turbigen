@@ -356,9 +356,7 @@ class H(Mesher):
                 xrt_l,
                 (0, 1),
                 Theta,
-                geom.chord_mid[
-                    (0, -1),
-                ],
+                geom.chord_mid[(0, -1),],
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
@@ -429,17 +427,8 @@ class H(Mesher):
         theta_lim3 = np.expand_dims(coords.theta_lim, 3)
         assert (np.diff(theta_lim3, axis=0) <= 0.0).all()
         np.add(
-            pfr3
-            * theta_lim3[
-                (0,),
-            ],
-            (1.0 - pfr3)
-            * (
-                theta_lim3[
-                    (1,),
-                ]
-                + geom.pitch_theta
-            ),
+            pfr3 * theta_lim3[(0,),],
+            (1.0 - pfr3) * (theta_lim3[(1,),] + geom.pitch_theta),
             out=xrt_now[2:3],
         )
         xrt_now[2] = xrt_now[2, :, :, ::-1]
@@ -706,12 +695,7 @@ class H(Mesher):
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         """Relax clustering towards a uniform distribution at inlet and exit."""
         dt_relax = (
-            np.ones((2,))
-            * self.nchord_relax
-            * pitch_chord[
-                (0, -1),
-            ]
-            / pitch_chord[1]
+            np.ones((2,)) * self.nchord_relax * pitch_chord[(0, -1),] / pitch_chord[1]
         )
         relax_ref = np.array([1.0, 0.0, 0.0, 1.0])
         t_ref = np.array([-dt_relax[0], 0.0, 1.0, 1.0 + dt_relax[1]])

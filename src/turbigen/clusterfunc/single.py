@@ -134,12 +134,7 @@ def _unit_fixed(dmin, dmax, ERmax, N, check=True):
 
     def _iter_ER(ERi):
         y = dmin * (1.0 - ERi**Nm1) / (1.0 - ERi) - 1.0
-        dy = (
-            dmin
-            * (Nm2 * ERi**Np1 - Nm1 * ERi**N + ERi**2)
-            / (1.0 - ERi) ** 2
-            / ERi**2
-        )
+        dy = dmin * (Nm2 * ERi**Np1 - Nm1 * ERi**N + ERi**2) / (1.0 - ERi) ** 2 / ERi**2
         return y, dy
 
     # If we cannot reach irregardless of capping, give up

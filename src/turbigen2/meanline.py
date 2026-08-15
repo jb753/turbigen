@@ -38,6 +38,7 @@ the parent.
 Note that the block radius ``r`` *is* the annulus root-mean-square radius: a
 mean line carries one radius per station, and that is the one it carries.
 """
+
 import logging
 
 import numpy as np

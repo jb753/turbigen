@@ -163,12 +163,7 @@ class AxialTurbine(Designer):
     def zeta(self, ml):
         """Axial velocity at inlet and outlet, relative to rotor inlet."""
         Vx = ml.flat.Vx
-        return (
-            Vx[
-                (0, 3),
-            ]
-            / Vx[2]
-        )
+        return Vx[(0, 3),] / Vx[2]
 
     #
     # DESIGN

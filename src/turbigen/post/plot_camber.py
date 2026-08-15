@@ -7,7 +7,6 @@ import turbigen.util
 import turbigen.camber
 import matplotlib.pyplot as plt
 
-
 logger = logging.getLogger("turbigen")
 
 

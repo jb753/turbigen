@@ -666,19 +666,15 @@ class MeanLineConfig:
 
         # Warn for very high flow angles
         if np.abs(ml.Alpha_rel).max() > 85.0:
-            logger.warning(
-                """WARNING: Relative flow angles are approaching 90 degrees.
+            logger.warning("""WARNING: Relative flow angles are approaching 90 degrees.
 This suggests a physically-consistent but suboptimal mean-line design
-and will cause problems with meshing and solving for the flow field."""
-            )
+and will cause problems with meshing and solving for the flow field.""")
 
         # Warn for wobbly annulus
         is_radial = np.abs(ml.Beta).max() > 10.0
         is_multirow = ml.n_row > 2
         if is_radial and is_multirow:
             if np.diff(np.sign(np.diff(ml.flat.r))).any():
-                logger.warning(
-                    """WARNING: Radii do not vary monotonically.
+                logger.warning("""WARNING: Radii do not vary monotonically.
 This suggests a physically-consistent but suboptimal mean-line design
-and will cause problems with meshing and solving for the flow field."""
-                )
+and will cause problems with meshing and solving for the flow field.""")

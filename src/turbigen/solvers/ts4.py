@@ -565,13 +565,11 @@ def _write_probes_ofp(ts4_conf):
     probe_ofp = os.path.join(ts4_conf.workdir, "probes.ofp")
     with open(probe_ofp, "w") as f:
         # Initialise probe list
-        f.write(
-            """
+        f.write("""
 import ts.process.probe.probe_definition
 probe_list = []
 
-"""
-        )
+""")
 
 
 def _check_probes(ts4_conf):
@@ -591,8 +589,7 @@ def _write_point_probe(ts4_conf, xyzp, dom, label):
 
     with open(probe_ofp, "a") as f:
         # Initialise probe list
-        f.write(
-            f"""
+        f.write(f"""
 p = ts.process.probe.probe_definition.ProbeDefinition()
 p.kind = "point"
 p.x = {xyzp[0].tolist()}
@@ -609,8 +606,7 @@ p.nstep_save_2d = {ts4_conf.nstep_save_probe_1d}
 p.time_average = False  # Must be False in a steady calc?
 probe_list.append(p)
 
-"""
-        )
+""")
 
 
 def _write_logical_probe(ts4_conf, tag, label):
@@ -620,8 +616,7 @@ def _write_logical_probe(ts4_conf, tag, label):
 
     with open(probe_ofp, "a") as f:
         # Initialise probe list
-        f.write(
-            f"""
+        f.write(f"""
 p = ts.process.probe.probe_definition.ProbeDefinition()
 p.kind = "logical"
 p.val = "{tag}"
@@ -633,8 +628,7 @@ p.nstep_save_start_2d = 99999
 p.nstep_save_2d = 0
 probe_list.append(p)
 
-"""
-        )
+""")
 
 
 def run(grid, ts4_conf, machine, workdir):
@@ -710,8 +704,7 @@ def run(grid, ts4_conf, machine, workdir):
             # Write out a forcing file
             bcond_path = os.path.join(ts4_conf.workdir, "bcond_unsteady_config.ofp")
             with open(bcond_path, "w") as f:
-                f.write(
-                    """
+                f.write("""
 import numpy
 
 hstag_ramp = {}
@@ -727,8 +720,7 @@ pstag_ramp[0] = data["fac_Po"]
 # outlet
 pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
 
-"""
-                )
+""")
             logger.info("Wrote out unsteady boundary conditions.")
 
     ts3_conf = turbigen.solvers.ts3.ts3(dts=0, workdir=ts4_conf.workdir).robust()
@@ -787,13 +779,11 @@ pstat_ramp[1] = numpy.ones_like(pstag_ramp[0])
     try:
         subprocess.run(cmd_str, shell=True, check=check, capture_output=True)
     except subprocess.CalledProcessError as e:
-        raise Exception(
-            f"""Running TS3->TS4 conversion failed, exit code {e.returncode}
+        raise Exception(f"""Running TS3->TS4 conversion failed, exit code {e.returncode}
 COMMAND: {cmd_str}
 STDOUT: {e.stdout.decode(sys.getfilesystemencoding()).strip()}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
-"""
-        ) from None
+""") from None
 
     input_file_path = os.path.join(ts4_conf.workdir, "input_ts4.hdf5")
 
@@ -827,9 +817,7 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
                 xyzp.append(patch.get_cut().xyz.squeeze())
         if xyzp:
             xyz = np.stack(xyzp).T
-            xyz = xyz[
-                (0, 2, 1),
-            ]  # Swap y and z for TS4 coord system
+            xyz = xyz[(0, 2, 1),]  # Swap y and z for TS4 coord system
             _write_point_probe(ts4_conf, xyz, idomain, label)
 
     # Write logical probes
@@ -857,12 +845,10 @@ STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
 
     # TODO catch keyboard interrupt here
     except subprocess.CalledProcessError as e:
-        raise Exception(
-            f"""Running TS4 failed, exit code {e.returncode}
+        raise Exception(f"""Running TS4 failed, exit code {e.returncode}
 COMMAND: {cmd_str}
 STDERR: {e.stderr.decode(sys.getfilesystemencoding()).strip()}
-"""
-        ) from None
+""") from None
 
     log_path = os.path.join(ts4_conf.workdir, "log_ts4.txt")
     if istep_nan := _check_nan(log_path):
