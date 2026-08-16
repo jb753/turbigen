@@ -97,7 +97,8 @@ spelling of the same operation.
 
 ## Annulus
 
-One design only: **fixed axial chord, with a merge weight.**
+Two designs — **fixed axial chord** and **aspect ratio** — over one body, with
+a merge weight on both.
 
 The existing package has four annulus classes in 1035 lines, which are a 2x2 of
 {chord specification} x {merged or not}. Counting every YAML in the repo:
@@ -114,19 +115,80 @@ noting that the fitting and blending in `MergedFixedAxialChord` are "identical"
 to `Merged`'s, while subclassing `AnnulusDesigner` directly rather than reusing
 them.
 
-That leaves the aspect-ratio chord specification (`AR_chord`/`AR_gap`) as the
-only real casualty. It is genuinely used in the old package, and can be added
-later as a second design if wanted; it is not needed to prove the architecture.
+That leaves the chord specification as the one axis that is a real type, and it
+has two values. `Merged` and `MergedFixedAxialChord` in the old package are the
+*same algorithm*: diff their `forward` methods and the only divergence is how
+one number per segment is arrived at, either
 
 ```python
-class FixedAxialChord(AnnulusDesign):
-    type: ClassVar[str] = "fixed_axial_chord"
+Ds = span_avg / AR          # aspect ratio
+Ds = cx / cos_Beta_avg      # axial chord
+```
 
-    cx_row: tuple       # axial chord of each row [m], (n_row,)
-    cx_gap: tuple       # axial chord of each gap [m], (n_row + 1,)
+after which the control points, the arc-length iteration, the duct extensions,
+the nozzle scaling and both PCHIP fits are identical. So the two designs share
+a body and differ by a method returning that one array:
+
+```python
+class PchipAnnulus(AnnulusDesign):        # no type: not selectable
     nozzle_ratio: float = 1.0
     merge_weight: float = 0.0
+
+    def segment_lengths(self, span_avg, cos_Beta_avg)   # the author writes this
+    def forward(self, mean_line) -> Annulus             # shared, ~50 lines
+
+class FixedAxialChord(PchipAnnulus):
+    type: ClassVar[str] = "fixed_axial_chord"
+    cx_row: tuple       # axial chord of each row [m], (n_row,)
+    cx_gap: tuple       # axial chord of each gap [m], (n_row + 1,)
+
+class AspectRatio(PchipAnnulus):
+    type: ClassVar[str] = "aspect_ratio"
+    AR_row: tuple       # span to meridional chord of each row [--], (n_row,)
+    AR_gap: tuple       # span to meridional chord of each gap [--], (n_row + 1,)
 ```
+
+**The hook returns arc length, not axial length.** Arc length is what both the
+parameterisation and the duct extensions are measured in, so the base takes
+`Dx = Ds * cos_Beta_avg` in one line. `FixedAxialChord` therefore round-trips
+its own chords through a divide and a multiply, which is a one-ulp change, four
+orders below the tolerance the equivalence test against the old package holds
+to.
+
+**Not a field on one class.** `tip_span`/`tip_chord`/`tip_metre` set the
+precedent for naming a unit by which field carries the number, but that works
+because the three are scalars that sum, with zeros elsewhere. These are arrays
+of unequal length that cannot be summed, so one class would mean four optional
+fields and an exactly-one-of-each-pair check, and it would leave a class named
+`fixed_axial_chord` accepting aspect ratios. A second `type:` breaks no
+existing file.
+
+**`AR_row`, not the old `AR_chord`.** It pairs with `cx_row`/`cx_gap`, and the
+old name reads as the aspect ratio of the chord when it means the aspect ratio
+of the row.
+
+### Aspect ratio is the one that works radially
+
+`Ds = span_avg / AR` never divides by `cos(Beta)`, so a segment at 90 degrees
+gives a finite chord and `Dx = 0`. An axial chord cannot describe such a
+segment at all — the arc length it implies is infinite — which is why old
+`Smooth` needed `AR = NaN` as an escape for radial machines, and why nothing
+here does.
+
+`Smooth` itself is not what was ported. Its ninety lines of `root_scalar` and
+`minimize` x-offset iteration, its `rcout_offset`, its `smooth` boolean and its
+negative-AR "choose the length that smooths the curvature" branch all exist
+because it fits through `MeridionalLine.smooth()` rather than in arc-length
+space. `Merged` reaches the same targets by construction. A negative aspect
+ratio is now rejected when the config is read, rather than quietly meaning
+something else.
+
+The arc length a fitted curve actually has agrees with the target to about
+0.1%, not exactly: the fixed-point iteration matches each segment's *share* of
+the total, so a segment's own length is a fixed point of the fit rather than a
+constraint on it. The axial positions of the stations are exact. Both are
+asserted, so the gap is a recorded property rather than something rediscovered
+later as a bug.
 
 Unlike `MeanLineDesign`, an annulus design declares no `n_row`: it is generic
 over row count, which comes from the mean line handed to `forward`. A useful
@@ -669,16 +731,25 @@ are separate questions and separate modules --- see below.
 
 ## Choosing what to run next
 
-`database` reads finished runs; `sample` writes the configs that become them.
+`database` reads finished runs; `batch` writes the configs that become them.
 The old `DesignSpace` is both at once, which is why it needs a `basedir`, a
 sampler, a seed and a target count alongside the fit.
 
 They point opposite ways, and that is the whole reason to split them.
 **Reading deduces**: the design variables are whatever the runs differ in, the
 ranges whatever they cover. **Writing must be told**, because an empty archive
-differs in nothing. So `sample:` declares bounds, and that is not a relapse
-into `IndependentConfig` --- a design of experiments is a statement of intent,
-where a warm start is an observation.
+differs in nothing. So `batch:` declares what varies, and that is not a
+relapse into `IndependentConfig` --- a design of experiments is a statement of
+intent, where a warm start is an observation.
+
+**Two ways of saying what varies, one verb.** `bounds:` fills a box
+quasi-randomly, which is what an archive worth interpolating in needs;
+`values:` names the points and runs every combination of them, which is the
+parameter study. They differ only in how the points are chosen --- everything
+after that, a directory per member with its values baked in, a numbered batch,
+one array submission, is the same --- so they are a field apart rather than a
+verb apart. The section is `batch:` and not `sample:` because sampling names
+only the first of the two; `sweep:` is reserved for blade stacking.
 
 **Sobol', not a Latin hypercube.** An LHS stratifies each axis into N equal
 bins, and the stratification is *defined by N*: a subset is not an LHS and a
@@ -696,8 +767,8 @@ deterministic given the seed, so the emitted set has gaps --- which is why a
 member carries its *sequence index* rather than a position in the batch, and
 why an extension can pick up in the right place.
 
-**A member carries no `sample:` key.** It is one design, not a space; left in,
-sampling a member would expand one design into another N. Nothing is written to
+**A member carries no `batch:` key.** It is one design, not a space; left in,
+batching a member would expand one design into another N. Nothing is written to
 record what generated a batch either: the datum config is the user's to keep,
 and turbigen2 accumulating a copy is the sort of state the rebuild exists to
 remove. The resolved bounds are logged into the batch's own log file, and the
@@ -763,7 +834,7 @@ turbigen2 run "$CONFIG" -s mean_line.psi=1.8
 ```
 
 **The array indexes lines, not directories.** `job.py:186` requires "a
-consecutive range of numbered directories", which the batches `sample` writes
+consecutive range of numbered directories", which the batches `batch` writes
 are not: a point that will not design is skipped and never retried, so the
 indices have gaps by construction. Indexing a file removes the constraint
 entirely, along with any assumption about what a config is called or where it
@@ -797,7 +868,7 @@ in front of them, so the turbigen2 surface is `--queue` and the `job:` key.
 Nothing here is read by any design stage, and `database.SUBTREE` already
 restricts design variables to `fluid`, `mean_line`, `annulus` and `blades`, so
 a `job:` key cannot be mistaken for one. It rides along into an archived
-`output.yaml` and into every sample member, which is useful rather than
+`output.yaml` and into every batch member, which is useful rather than
 harmful: a member that carries its own `job:` can be submitted without being
 told anything, and re-running an archive elsewhere is `-s job.partition=...`.
 

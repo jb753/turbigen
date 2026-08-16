@@ -31,6 +31,11 @@ ANNULUS = {
     "cx_row": [0.04, 0.04],
     "cx_gap": [0.06, 0.02, 0.08],
 }
+ANNULUS_AR = {
+    "type": "aspect_ratio",
+    "AR_row": [1.6, 1.6],
+    "AR_gap": [1.0, 3.0, 0.8],
+}
 
 
 def build(**annulus):
@@ -42,6 +47,23 @@ def build(**annulus):
             "annulus": {**ANNULUS, **annulus},
         }
     )
+
+
+def build_AR(**annulus):
+    """The same two-row config, with the aspect-ratio annulus instead."""
+    return Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": MEAN_LINE,
+            "annulus": {**ANNULUS_AR, **annulus},
+        }
+    )
+
+
+def segment_average(values):
+    """Average a per-station array onto the segments, as the design does."""
+    inner = 0.5 * (values[:-1] + values[1:])
+    return np.concatenate([[values[0]], inner, [values[-1]]])
 
 
 @pytest.fixture
@@ -290,6 +312,207 @@ def test_machine_reports_only_what_was_designed():
 
     assert "Mean line:" in out
     assert "Annulus:" not in out
+
+
+#
+# THE ASPECT-RATIO DESIGN
+#
+# The second way of saying how long a segment is. Everything below the segment
+# lengths is shared with fixed_axial_chord, so these check the specification
+# itself and that the shared half really is shared.
+#
+
+
+def requested_lengths(flat):
+    """Segment arc lengths the test config's aspect ratios ask for [m]."""
+    span_avg = segment_average(np.asarray(flat.span, dtype=float))
+    AR = np.empty(len(span_avg))
+    AR[::2] = ANNULUS_AR["AR_gap"]
+    AR[1::2] = ANNULUS_AR["AR_row"]
+    return span_avg / AR
+
+
+def test_aspect_ratios_place_the_stations():
+    """Each segment gets the length its aspect ratio asked for.
+
+    The span is the one averaged over the segment, which is what the design
+    divides by, so a row's aspect ratio is set by the mean line at both ends of
+    it rather than at either one.
+
+    Checked on the axial coordinates, because those are exact: the control
+    points are placed at the cumulative axial length and the fit passes through
+    them. The counterpart for `fixed_axial_chord` measures the same thing the
+    same way.
+    """
+    machine = build_AR().design()
+    flat = machine.mean_line.flat
+
+    Beta_avg = segment_average(np.asarray(flat.Beta, dtype=float))
+    Dx = requested_lengths(flat) * np.cos(np.radians(Beta_avg))
+
+    m = np.arange(machine.annulus.n_segment + 1, dtype=float)
+    x_mid = machine.annulus.evaluate_xr(m, 0.5)[0]
+
+    np.testing.assert_allclose(np.diff(x_mid), Dx, rtol=1e-6)
+
+
+def test_arc_length_lands_close_to_the_aspect_ratio():
+    """And the arc length the curve actually has agrees to about 0.1%.
+
+    Not exactly, and not a defect: the PCHIP fit iterates the *parameterisation*
+    until each segment's share of arc length matches its share of the target,
+    normalised by the total. A segment's own length is therefore a fixed point
+    of the fit rather than a constraint on it, and the curvature the fit puts in
+    to pass through the stations moves it slightly. Stated here so that the gap
+    is a recorded property rather than something rediscovered as a bug.
+    """
+    machine = build_AR().design()
+
+    np.testing.assert_allclose(
+        machine.annulus.chords(0.5),
+        requested_lengths(machine.mean_line.flat),
+        rtol=1e-3,
+    )
+
+
+def test_aspect_ratio_passes_through_the_mean_line():
+    """The station fit is the shared half, so it holds here too."""
+    machine = build_AR().design()
+    flat = machine.mean_line.flat
+
+    np.testing.assert_allclose(machine.annulus.r_mid, flat.r_mid, atol=1e-9)
+
+
+@pytest.mark.parametrize("weight", [0.25, 1.0])
+def test_aspect_ratio_merges(weight):
+    """merge_weight is on the shared base, so it reaches both designs."""
+    machine = build_AR(merge_weight=weight).design()
+    flat = machine.mean_line.flat
+
+    departure = np.abs(machine.annulus.r_mid - flat.r_mid).max()
+    assert departure > 1e-6, "merging should move the intermediate stations"
+
+
+def test_aspect_ratio_takes_a_nozzle_ratio():
+    narrow = build_AR(nozzle_ratio=1.0).design().annulus
+    wide = build_AR(nozzle_ratio=1.5).design().annulus
+
+    assert (wide.r_tip - wide.r_hub)[-1] > (narrow.r_tip - narrow.r_hub)[-1]
+
+
+def test_the_two_designs_agree_when_they_ask_for_the_same_thing():
+    """Stating a chord and stating its aspect ratio are two spellings of one
+    number, so a design that resolves to the same segment lengths must give
+    back the same annulus --- which is the whole reason there is one body."""
+    chord = build_AR().design().annulus
+
+    flat = build_AR().design().mean_line.flat
+    span_avg = segment_average(np.asarray(flat.span, dtype=float))
+    Beta_avg = segment_average(np.asarray(flat.Beta, dtype=float))
+    AR = np.empty(len(span_avg))
+    AR[::2] = ANNULUS_AR["AR_gap"]
+    AR[1::2] = ANNULUS_AR["AR_row"]
+    cx = span_avg / AR * np.cos(np.radians(Beta_avg))
+
+    equivalent = build(cx_gap=list(cx[::2]), cx_row=list(cx[1::2])).design().annulus
+
+    m = np.linspace(0.0, chord.mmax, 31)
+    np.testing.assert_allclose(
+        equivalent.evaluate_xr(m, 0.5), chord.evaluate_xr(m, 0.5), atol=1e-12
+    )
+
+
+#
+# VALIDATION OF THE ASPECT-RATIO DESIGN
+#
+
+
+def test_wrong_number_of_row_aspect_ratios_is_rejected():
+    with pytest.raises(ValueError, match="AR_row must have one value per row"):
+        build_AR(AR_row=[1.6, 1.6, 1.6]).design()
+
+
+def test_wrong_number_of_gap_aspect_ratios_is_rejected():
+    with pytest.raises(ValueError, match="AR_gap must have one value per gap"):
+        build_AR(AR_gap=[1.0, 3.0]).design()
+
+
+@pytest.mark.parametrize("name", ["AR_row", "AR_gap"])
+@pytest.mark.parametrize("value", [0.0, -0.4])
+def test_non_positive_aspect_ratios_are_rejected_on_reading(name, value):
+    """Rejected by the config, not by the design.
+
+    It needs no mean line to see that it is wrong, and the old package gave a
+    negative value a second meaning --- a segment whose length is chosen to
+    smooth the curvature --- which is not ported, so it must fail rather than
+    be quietly reinterpreted.
+    """
+    values = list(ANNULUS_AR[name])
+    values[0] = value
+
+    with pytest.raises(ValueError, match=f"{name} must be positive"):
+        build_AR(**{name: values})
+
+
+def test_the_shared_body_is_not_selectable():
+    """PchipAnnulus is the shared half of two designs, not a third design, so
+    it declares no type and cannot be named in a file."""
+    with pytest.raises(ValueError, match="Unknown AnnulusDesign type"):
+        build_AR(type="pchip_annulus")
+
+
+#
+# SERIALISATION OF THE ASPECT-RATIO DESIGN
+#
+
+
+def test_config_with_an_aspect_ratio_annulus_round_trips():
+    config = build_AR(merge_weight=0.3)
+
+    assert Config.from_dict(config.to_dict()) == config
+
+
+def test_aspect_ratio_defaults_are_written_out():
+    dumped = build_AR().to_dict()["annulus"]
+
+    assert dumped["type"] == "aspect_ratio"
+    assert dumped["nozzle_ratio"] == 1.0
+    assert dumped["merge_weight"] == 0.0
+    assert "cx_row" not in dumped
+
+
+#
+# EQUIVALENCE OF THE ASPECT-RATIO DESIGN
+#
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.3, 1.0])
+def test_aspect_ratio_matches_the_turbigen_implementation(weight):
+    machine = build_AR(merge_weight=weight).design()
+    flat = machine.mean_line.flat
+
+    AR_chord = np.array(ANNULUS_AR["AR_row"])
+    AR_gap = np.array(ANNULUS_AR["AR_gap"])
+    old = turbigen.annulus.Merged(
+        {"AR_chord": AR_chord, "AR_gap": AR_gap, "merge_weight": weight}
+    )
+    old.forward(
+        np.asarray(flat.r_mid, dtype=float),
+        np.asarray(flat.span, dtype=float),
+        np.asarray(flat.Beta, dtype=float),
+        AR_chord=AR_chord,
+        AR_gap=AR_gap,
+        merge_weight=weight,
+    )
+
+    m = np.linspace(0.0, old.mmax, 37)
+    for spf in (0.0, 0.5, 1.0):
+        np.testing.assert_allclose(
+            machine.annulus.evaluate_xr(m, spf),
+            old.evaluate_xr(m, spf),
+            atol=1e-12,
+            err_msg=f"differs from the turbigen annulus at spf={spf}",
+        )
 
 
 #

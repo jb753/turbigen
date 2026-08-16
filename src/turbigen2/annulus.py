@@ -6,9 +6,11 @@ the geometry read off them. The split matters: the package this replaces stored
 the fitted splines on the designer itself, so the config and the result were one
 object and an un-designed annulus had no defined state.
 
-Only one design is provided, :class:`FixedAxialChord`. See ARCHITECTURE.md for
-why: the four classes it replaces are a 2x2 of chord specification against
-merged-or-not, and merging is a continuous parameter rather than a type.
+Two designs are provided, :class:`FixedAxialChord` and :class:`AspectRatio`,
+and they differ in one number per segment. See ARCHITECTURE.md for why: the
+four classes they replace are a 2x2 of chord specification against
+merged-or-not, merging is a continuous parameter rather than a type, and what
+remains is a single choice of how a segment's length is stated.
 """
 
 import dataclasses
@@ -29,6 +31,35 @@ def _segment_average(values):
     """Average a (2*n_row,) per-station array to (2*n_row+1,) segment values."""
     inner = 0.5 * (values[:-1] + values[1:])
     return np.concatenate([[values[0]], inner, [values[-1]]])
+
+
+def _interleave(row, gap, n_segment, name_row, name_gap):
+    """Lay per-row and per-gap values out over the segments.
+
+    Segments alternate gap, row, gap, ..., gap, so the gaps take the even
+    positions and the rows the odd ones. The two lengths are checked here
+    rather than in each design, because getting them wrong is the same mistake
+    whatever the values mean.
+    """
+    n_row = (n_segment - 1) // 2
+    row = np.asarray(row, dtype=float)
+    gap = np.asarray(gap, dtype=float)
+
+    if row.shape != (n_row,):
+        raise ValueError(
+            f"{name_row} must have one value per row, expected {(n_row,)} "
+            f"but got {row.shape}."
+        )
+    if gap.shape != (n_row + 1,):
+        raise ValueError(
+            f"{name_gap} must have one value per gap, expected {(n_row + 1,)} "
+            f"but got {gap.shape}."
+        )
+
+    values = np.empty(n_segment)
+    values[::2] = gap
+    values[1::2] = row
+    return values
 
 
 def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=20):
@@ -338,17 +369,18 @@ class AnnulusDesign(Node):
         return self.forward(mean_line)
 
 
-class FixedAxialChord(AnnulusDesign):
-    """Smooth annulus with a prescribed axial chord for each row and gap."""
+class PchipAnnulus(AnnulusDesign):
+    """Hub and casing lines fitted as PCHIP curves in arc-length space.
 
-    type: ClassVar[str] = "fixed_axial_chord"
+    Everything about the fit is here: the control points placed from the mean
+    line, the arc-length iteration, the duct extensions, the nozzle scaling and
+    the merge blend. A member supplies one thing, :meth:`segment_lengths`, and
+    that is the whole difference between the designs below.
 
-    cx_row: tuple[float, ...]
-    """Axial chord of each blade row [m], length n_row."""
-
-    cx_gap: tuple[float, ...]
-    """Axial chord of each gap, including the inlet and exit ducts [m],
-    length n_row + 1."""
+    Deliberately not selectable --- it declares no ``type``, so it is not in
+    the registry and cannot appear in a config file. It is the shared body of
+    two designs, not a third one.
+    """
 
     nozzle_ratio: float = 1.0
     """Scaling applied to the exit span, for a nozzle area ratio [--]."""
@@ -362,6 +394,33 @@ class FixedAxialChord(AnnulusDesign):
     stations. Values between blend the two.
     """
 
+    def segment_lengths(self, span_avg, cos_Beta_avg):
+        """Return the meridional arc length of each segment [m].
+
+        Arc length rather than axial length, because it is what both the
+        parameterisation and the duct extensions are measured in; the axial
+        length follows from the pitch angle. A design that states axial chords
+        divides by `cos_Beta_avg` to get here, and one that states aspect
+        ratios never needs it at all.
+
+        Parameters
+        ----------
+        span_avg : ndarray, shape (n_segment,)
+            Annulus span averaged over each segment [m].
+        cos_Beta_avg : ndarray, shape (n_segment,)
+            Cosine of the pitch angle averaged over each segment [--].
+
+        Returns
+        -------
+        Ds : ndarray, shape (n_segment,)
+            Meridional arc length of each segment [m].
+
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement "
+            f"segment_lengths(self, span_avg, cos_Beta_avg)"
+        )
+
     def forward(self, mean_line):
         # The annulus is addressed by station in streamwise order, whereas a
         # mean line is stored (2, n_row) by station and row.
@@ -374,30 +433,20 @@ class FixedAxialChord(AnnulusDesign):
         n_row = n_station // 2
         n_segment = 2 * n_row + 1
 
-        cx_row = np.asarray(self.cx_row, dtype=float)
-        cx_gap = np.asarray(self.cx_gap, dtype=float)
-        if cx_row.shape != (n_row,):
-            raise ValueError(
-                f"cx_row must have one value per row, expected {(n_row,)} "
-                f"but got {cx_row.shape}."
-            )
-        if cx_gap.shape != (n_row + 1,):
-            raise ValueError(
-                f"cx_gap must have one value per gap, expected {(n_row + 1,)} "
-                f"but got {cx_gap.shape}."
-            )
         if not 0.0 <= self.merge_weight <= 1.0:
             raise ValueError(f"merge_weight={self.merge_weight} must lie in [0, 1].")
 
-        # Interleave the axial chords across the segments: gaps are even,
-        # rows are odd.
-        Dx = np.empty(n_segment)
-        Dx[::2] = cx_gap
-        Dx[1::2] = cx_row
-
-        # Convert to meridional arc length using the average pitch angle
+        # Ask the design how long each segment is, and take the axial length
+        # from the pitch angle rather than the other way round.
+        span_avg = _segment_average(span)
         cos_Beta = np.cos(np.radians(_segment_average(Beta)))
-        Ds = Dx / cos_Beta
+        Ds = np.asarray(self.segment_lengths(span_avg, cos_Beta), dtype=float)
+        if Ds.shape != (n_segment,):
+            raise ValueError(
+                f"{type(self).__name__}.segment_lengths must return one length "
+                f"per segment, expected {(n_segment,)} but got {Ds.shape}."
+            )
+        Dx = Ds * cos_Beta
 
         # Integrate for the mid-span axial coordinates, origin at the first
         # row leading edge
@@ -445,3 +494,61 @@ class FixedAxialChord(AnnulusDesign):
             curves_merged = curves
 
         return Annulus(s, curves, curves_merged, self.merge_weight, n_row)
+
+
+class FixedAxialChord(PchipAnnulus):
+    """Annulus with a prescribed axial chord for each row and gap.
+
+    Note that an axial chord cannot describe a segment at 90 degrees pitch
+    angle: the arc length it implies is the chord divided by ``cos(Beta)``, so
+    a radial segment asks for an infinite one. :class:`AspectRatio` states the
+    arc length directly and has no such limit.
+    """
+
+    type: ClassVar[str] = "fixed_axial_chord"
+
+    cx_row: tuple[float, ...]
+    """Axial chord of each blade row [m], length n_row."""
+
+    cx_gap: tuple[float, ...]
+    """Axial chord of each gap, including the inlet and exit ducts [m],
+    length n_row + 1."""
+
+    def segment_lengths(self, span_avg, cos_Beta_avg):
+        Dx = _interleave(self.cx_row, self.cx_gap, len(span_avg), "cx_row", "cx_gap")
+        return Dx / cos_Beta_avg
+
+
+class AspectRatio(PchipAnnulus):
+    """Annulus with a prescribed span-to-chord ratio for each row and gap.
+
+    The chord is meridional, and the span it is measured against is the
+    average over the segment, so a row's aspect ratio is set by the mean line
+    on both sides of it. This is the specification the design correlations are
+    written in --- an aspect ratio is a number a designer carries between
+    machines, where an axial chord in metres is not.
+    """
+
+    type: ClassVar[str] = "aspect_ratio"
+
+    AR_row: tuple[float, ...]
+    """Span-to-meridional-chord ratio of each blade row [--], length n_row."""
+
+    AR_gap: tuple[float, ...]
+    """Span-to-meridional-chord ratio of each gap, including the inlet and
+    exit ducts [--], length n_row + 1."""
+
+    def __post_init__(self):
+        # Checked on the way in rather than at design time, because it needs
+        # no mean line: a non-positive aspect ratio is wrong on sight. The old
+        # package gave a negative value a second meaning, a segment whose
+        # length is chosen to smooth the curvature instead; that is not ported,
+        # so it must fail rather than be quietly reinterpreted.
+        for name in ("AR_row", "AR_gap"):
+            values = np.asarray(getattr(self, name), dtype=float)
+            if np.any(values <= 0.0):
+                raise ValueError(f"{name} must be positive, got {list(values)}.")
+
+    def segment_lengths(self, span_avg, cos_Beta_avg):
+        AR = _interleave(self.AR_row, self.AR_gap, len(span_avg), "AR_row", "AR_gap")
+        return span_avg / AR
