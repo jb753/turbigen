@@ -521,6 +521,56 @@ Nothing is needed in `mixout` for this, unlike shaft speed: exit pressure is
 measured from the cut, so an off-design run already records the pressure it
 actually ran at.
 
+### A non-uniform inlet is the same idea, spanwise
+
+An `operating_point.inlet` is a profile of *perturbations* from the mean line,
+interpolated onto whatever span fractions the inlet patch has. Zero is uniform,
+so an absent section is what the package did before there was one.
+
+```yaml
+operating_point:
+  inlet:
+    spf: [0.0, 0.05, 0.95, 1.0]
+    DPo: [-1.0, 0.0, 0.0, -1.0]      # hub and casing boundary layers
+```
+
+Non-dimensionalised by what vanishes with the flow rather than by the absolute
+level, by the same rule as `DP_adjust`: `DPo` is a fraction of inlet dynamic
+head `(Po - P)` and `DTo` a fraction of `(To - T)`. A boundary layer therefore
+runs from 0 in the free stream to **-1 at the wall**, meaning all of the head
+lost, which is a number that carries between machines where a fraction of `Po`
+is not.
+
+**And the two scales are one scale in disguise.** `(Po-P)/P` is about
+`γMa²/2` and `(To-T)/T` is exactly `(γ-1)Ma²/2`, so equal perturbations in
+`DPo` and `DTo` are *isentropic* — measured, `Δs ≈ 1e-4·cp` at a perturbation
+of 0.2. That makes each physical case a separate statement rather than the same
+one with different numbers: `DPo = DTo` is a clean velocity distortion, `DPo`
+alone is a boundary layer or a wake, `DTo` alone is a hot streak. Scaling `DTo`
+by the machine's temperature *rise* instead — the closer analogue of
+`DP_adjust` — breaks that, needs the machine's duty, and divides by zero for a
+cascade.
+
+It lives on `OperatingPoint` because a distorted inlet *is* a condition the
+machine is run at, so `bconds.apply` needs no new argument and a `chic` sweep
+keeps the profile while only `DP_adjust` moves between points.
+
+A profile must span exactly `[0, 1]`. Interpolation clamps, so one given over
+`[0.1, 0.9]` would silently hold its end values across the rest of the span
+rather than say it was incomplete.
+
+Nothing was needed in ember. `set_Po_To`, `set_Alpha` and `set_Beta` all take
+an array, and `InletPatch.spf` gives the span fraction of each node — so a
+profile is passing an array where a float went before. Old turbigen's
+`set_profile` was never a real method.
+
+One wrinkle is worth recording, because it cost an hour. The documented
+`(nspan,)` form works for three of the four setters but **not** `set_Beta`,
+which subtracts the face angle `chi_node` *before* the shape is checked; that
+is already on the patch's axes, so a spanwise array broadcasts against it into
+a pitchwise-varying one and is then rejected for varying pitchwise. `_spanwise`
+reshapes onto the patch's own axes so all four take the same array.
+
 ### And the actual mean line records the speed that ran
 
 `mixout` copies the nominal to start with, which is right for `Am` --- a

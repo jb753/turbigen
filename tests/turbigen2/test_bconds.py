@@ -331,3 +331,190 @@ def test_the_operating_point_is_not_a_design_variable():
     from turbigen2 import database  # noqa: PLC0415
 
     assert "operating_point" not in database.SUBTREE
+
+
+#
+# A NON-UNIFORM INLET
+#
+# Perturbations from the mean line, so zero is uniform and an absent section is
+# what this package did before there was one. The normalisation is the point:
+# `DPo` is a fraction of inlet dynamic head, which is what a boundary layer is
+# naturally measured in and what stays meaningful as a machine slows down.
+#
+
+
+def entropy(Po, To, cp=1005.0, gamma=1.4):
+    """Specific entropy of a perfect gas, to within a constant [J/kg/K]."""
+    return cp * np.log(To) - cp * (gamma - 1.0) / gamma * np.log(Po)
+
+
+def spanwise(patch, name):
+    """Return one prescribed quantity along the span, hub to casing.
+
+    An inlet patch stores its prescription with the pitch dimension collapsed,
+    since only the pitchwise mean is imposed, so this is a flatten rather than
+    an average.
+    """
+    return np.asarray(getattr(patch, name)).ravel()
+
+
+def with_profile(**profile):
+    """An operating point carrying an inlet profile."""
+    return bconds.OperatingPoint(inlet=bconds.InletProfile(**profile))
+
+
+BOUNDARY_LAYER = {"spf": (0.0, 0.05, 0.95, 1.0), "DPo": (-1.0, 0.0, 0.0, -1.0)}
+"""A hub and casing layer five per cent of span deep, losing all of the head."""
+
+
+def test_no_profile_leaves_the_inlet_uniform(shrouded):
+    """The regression test for the whole change."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine, bconds.OperatingPoint(DP_adjust=0.1))
+
+    for patch in grid.patches.inlet:
+        assert np.ptp(np.asarray(patch.Po)) == pytest.approx(0.0)
+        assert np.ptp(np.asarray(patch.Alpha)) == pytest.approx(0.0, abs=1e-4)
+
+
+def test_a_deficit_of_one_loses_the_whole_dynamic_head(shrouded):
+    """Which is what makes `DPo` a number that carries between machines."""
+    machine, grid = shrouded
+    inlet = machine.mean_line.inlet
+
+    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+
+    Po = spanwise(grid.patches.inlet[0], "Po")
+
+    # At the walls the stagnation pressure has fallen to the static pressure:
+    # all of the dynamic head, which is what a deficit of one means.
+    assert Po[0] == pytest.approx(float(inlet.P), rel=1e-5)
+    assert Po[-1] == pytest.approx(float(inlet.P), rel=1e-5)
+    # And in the free stream it is the design value, untouched.
+    assert Po.max() == pytest.approx(float(inlet.Po), rel=1e-5)
+
+
+def test_an_omitted_column_stays_uniform(shrouded):
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+
+    patch = grid.patches.inlet[0]
+    assert np.ptp(np.asarray(patch.Po)) > 1.0
+    assert np.ptp(np.asarray(patch.To)) == pytest.approx(0.0, abs=1e-4)
+    assert np.ptp(np.asarray(patch.Alpha)) == pytest.approx(0.0, abs=1e-4)
+
+
+def test_an_angle_perturbation_is_added_in_degrees(shrouded):
+    machine, grid = shrouded
+    nominal = float(machine.mean_line.inlet.Alpha)
+
+    bconds.apply(
+        grid, machine, with_profile(spf=(0.0, 1.0), DAlpha=(-2.0, 3.0))
+    )
+
+    Alpha = np.asarray(grid.patches.inlet[0].Alpha)
+    assert Alpha.min() == pytest.approx(nominal - 2.0, abs=1e-3)
+    assert Alpha.max() == pytest.approx(nominal + 3.0, abs=1e-3)
+
+
+def test_equal_perturbations_in_Po_and_To_are_isentropic(shrouded):
+    """The property the normalisation was chosen for.
+
+    `(Po-P)/P` and `(To-T)/T` differ only by a factor of gamma, so perturbing
+    both by the same fraction changes the velocity and not the entropy. It is
+    what makes a clean distortion and a lossy one different statements rather
+    than the same one with different numbers -- and it would rot silently if
+    the two scales were ever changed independently.
+    """
+    machine, grid = shrouded
+    shape = (0.0, -0.3, -0.3, 0.0)
+    spf = (0.0, 0.2, 0.8, 1.0)
+
+    bconds.apply(grid, machine, with_profile(spf=spf, DPo=shape, DTo=shape))
+
+    patch = grid.patches.inlet[0]
+    s = entropy(np.asarray(patch.Po), np.asarray(patch.To))
+
+    # Second order in the perturbation, so small against cp rather than zero.
+    assert np.ptp(s) / 1005.0 < 1e-3
+    # And it really did perturb something.
+    assert np.ptp(np.asarray(patch.Po)) > 100.0
+
+
+def test_a_loss_alone_is_not_isentropic(shrouded):
+    """The counterpart, or the test above would pass on a uniform inlet."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+
+    patch = grid.patches.inlet[0]
+    s = entropy(np.asarray(patch.Po), np.asarray(patch.To))
+
+    assert np.ptp(s) / 1005.0 > 1e-3
+
+
+def test_the_profile_is_interpolated_onto_the_patch(shrouded):
+    """A profile states the annulus, not the mesh, so it is evaluated wherever
+    the patch's own span fractions happen to fall."""
+    machine, grid = shrouded
+    inlet = machine.mean_line.inlet
+    q = float(inlet.Po) - float(inlet.P)
+
+    bconds.apply(grid, machine, with_profile(spf=(0.0, 1.0), DPo=(-1.0, 0.0)))
+
+    patch = grid.patches.inlet[0]
+    expected = float(inlet.Po) + (patch.spf - 1.0) * q
+
+    Po = np.asarray(patch.Po)
+    for i_span, want in enumerate(expected):
+        assert np.mean(Po[..., i_span, :]) == pytest.approx(want, rel=1e-5)
+
+
+#
+# WHAT A PROFILE MAY NOT BE
+#
+
+
+def test_a_profile_must_span_the_whole_annulus():
+    """np.interp clamps, so a partial profile would hold its ends instead of
+    saying it was incomplete."""
+    with pytest.raises(ValueError, match="span the whole annulus"):
+        bconds.InletProfile(spf=(0.1, 0.9), DPo=(0.0, 0.0))
+
+
+def test_a_profile_must_increase_from_hub_to_casing():
+    with pytest.raises(ValueError, match="must increase"):
+        bconds.InletProfile(spf=(0.0, 0.6, 0.4, 1.0), DPo=(0.0,) * 4)
+
+
+def test_a_column_must_match_the_span_fractions():
+    with pytest.raises(ValueError, match="2 value.* against 3 span"):
+        bconds.InletProfile(spf=(0.0, 0.5, 1.0), DPo=(0.0, -1.0))
+
+
+def test_a_profile_that_perturbs_nothing_is_refused():
+    with pytest.raises(ValueError, match="perturbs nothing"):
+        bconds.InletProfile(spf=(0.0, 1.0))
+
+
+def test_one_station_is_not_a_profile():
+    with pytest.raises(ValueError, match="at least two span fractions"):
+        bconds.InletProfile(spf=(0.0,), DPo=(0.0,))
+
+
+def test_the_profile_round_trips():
+    from turbigen2 import Config  # noqa: PLC0415
+
+    config = dataclasses.replace(
+        build(mesh=MESH), operating_point=with_profile(**BOUNDARY_LAYER)
+    )
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["operating_point"]["inlet"]["DPo"] == [
+        -1.0,
+        0.0,
+        0.0,
+        -1.0,
+    ]
