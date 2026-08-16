@@ -39,6 +39,20 @@ class Machine:
     """Blade rows, if the config asked for any: a shape, a count and a
     clearance each."""
 
+    def Re_surf(self):
+        """Return the surface Reynolds number of each blade row [--].
+
+        A property of the design and nothing else: a surface length off the
+        blade, a reference state off the mean line, no grid and no solution.
+        It sat on the mesher until an iterator wanted it too, which is the
+        usual sign that a quantity belongs to the thing it is measured from
+        rather than to its first consumer.
+        """
+        ell = np.array([row.blade.surface_length(0.5) for row in self.rows])
+        ref = [self.mean_line.ref(i) for i in range(len(self.rows))]
+        L_visc = np.array([st.mu / st.rho / st.V_rel for st in ref])
+        return ell / L_visc
+
     def blade_string(self):
         """Tabular string representation of the blade rows."""
         r_ref = 0.5 * (self.mean_line.r[0] + self.mean_line.r[1])

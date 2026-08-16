@@ -26,7 +26,7 @@ from turbigen2.config import Config
 def solved(tmp_path_factory):
     """A short march, and the field it reached written to a file."""
     config = Config.from_dict(CASCADE)
-    machine, grid = cli.prepare(config)
+    _, machine, grid = cli.prepare(config)
     config.solver.solve(grid)
 
     path = tmp_path_factory.mktemp("restart") / "restart.npz"
@@ -36,7 +36,7 @@ def solved(tmp_path_factory):
 
 def test_a_saved_field_comes_back_unchanged(solved):
     config, grid, path = solved
-    _, fresh = cli.prepare(config)
+    *_, fresh = cli.prepare(config)
 
     restart.apply(fresh, path)
 
@@ -59,7 +59,7 @@ def test_a_field_can_be_restarted_onto_a_finer_mesh(solved):
     finer = Config.from_dict(
         {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
     )
-    _, fresh = cli.prepare(finer)
+    *_, fresh = cli.prepare(finer)
     assert fresh[0].shape != grid[0].shape
 
     restart.apply(fresh, path)
@@ -78,7 +78,7 @@ def test_a_field_is_not_reinterpreted_by_a_changed_datum(solved):
     that datum; pressure and temperature are not.
     """
     config, grid, path = solved
-    _, fresh = cli.prepare(config)
+    *_, fresh = cli.prepare(config)
 
     shifted = fresh[0].fluid.change_datum(P_dtm=3.0e5, T_dtm=900.0)
     for block in fresh:
@@ -109,7 +109,7 @@ def test_the_file_holds_primitives_only(solved):
 
 def test_a_field_for_another_machine_is_refused(solved, tmp_path):
     config, grid, path = solved
-    _, fresh = cli.prepare(config)
+    *_, fresh = cli.prepare(config)
 
     # A file claiming two blocks, against a one-block grid.
     data = dict(np.load(path))

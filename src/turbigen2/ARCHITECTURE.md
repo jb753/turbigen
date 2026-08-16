@@ -646,6 +646,79 @@ MeanLine), because "actual" was attached to a config object rather than kept
 beside the design it is compared with. Here `result.nominal` and
 `result.actual` sit at the same level, one step away from the `Machine`.
 
+## Two speeds of iteration
+
+Not every mismatch needs CFD to measure. A surface Reynolds number is a
+property of the design alone --- a blade surface length and a mean-line
+reference state --- but it still cannot be written down, because it needs a
+whole design and a design needs the viscosity it is trying to set. That is a
+fixed point, so it is an `Iterator`, with a knob, an error and a target like
+any other. It just closes in pure numpy.
+
+```yaml
+fluid:
+  mu: 1.8e-5          # the starting guess, and where the answer is written
+iterate:
+  - type: Re_surf
+    target: 4e5
+  - type: deviation
+```
+
+Every direct alternative was worse, and each in the same way. A second `Fluid`
+member cannot work because `eos()` takes no arguments and so would have to
+return a placeholder `mu` for something later to replace --- the half-built
+object this rebuild deletes three times over. A field on the mean-line design
+puts a fluid property on the flow design and has to be repeated on every
+design that wants it. Resolving in the CLI before `Config.from_dict` puts
+physics in the one place that is deliberately empty of it.
+
+Seeing it as an iterate needs almost no new machinery, because the stepper was
+already generic --- "it knows names, numbers and tolerances, and nothing about
+angles, blades or mean lines" --- and `converge` already takes its `run` as an
+argument so a test could drive it with no CFD at all. What was missing was
+only saying which loop an iterator belongs to.
+
+**Declared, not inferred.** `Iterator.from_solution` defaults to `True`, and
+`Re_surf` sets it `False`. The same reasoning as `paths()`: what an error is
+measured from is knowledge only the author has.
+
+**Resolved inside every pass, not once before them.** `resolve` runs in
+`prepare`, so `design`, `report`, `run` and `iterate` all get it. Once before
+the CFD loop would be cheaper and wrong: recambering a blade changes its
+surface length, so the viscosity would drift off target for every iteration
+after the first.
+
+**And the outer loop must not step it.** This is the part that fails silently.
+A resolved knob has an error of ~0 while its *value* has moved --- the resolve
+that moved it happened inside the run --- and that pair is a zero slope. Fed
+to the Broyden update, a least-change correction spends itself explaining a
+knob that needs no explaining, at the expense of the ones that do. So
+`converge` steps a `selected(config, from_solution=True)` view while `run`
+still receives the whole config, which is what lets the nested resolve find its
+own. `errors()` is deliberately left whole: it is the observation record a run
+writes into `result.error`, and the Reynolds number a design achieved belongs
+in the archive whether or not anything stepped towards it.
+
+**The knob is `log(mu)`.** At fixed geometry `Re_surf` is exactly proportional
+to `1/mu`, so in the log the residual is linear with unit slope and `gain =
+-1` is not an approximate Newton step but the exact one --- one move and a
+confirming pass, from any starting viscosity. A scalar gain cannot do that in
+linear `mu`, whose sensitivity scales with its own value. The table key is
+`fluid.log_mu` while `paths()` returns the leaf `fluid.mu`, which is exactly
+the mismatch `paths()` exists to bridge, and it means `database` reads the
+viscosity as an iterated variable rather than a design variable for free.
+
+`Machine.Re_surf` moved off the mesher to make this possible. It never needed
+a mesh; it was there because the mesher was the first thing to want it, which
+is the usual reason a quantity ends up on its consumer rather than on what it
+is measured from.
+
+None of this is a port. `turbigen.config.set_mu_from_Re_surf` raises
+`NotImplementedError` on its first line and is called whenever a config names
+`Re_surf`, so every configuration asking for one --- including both shipped
+examples --- has been dead. The `[0]` in the unreachable line below it is
+where `i_row` defaulting to the first row comes from.
+
 ## Starting from designs already run
 
 An iteration begins wherever the file leaves its knobs, and then spends CFD on

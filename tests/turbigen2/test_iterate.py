@@ -38,7 +38,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from test_blade import build
+from test_blade import FLUID, MEAN_LINE, build
 from turbigen2 import Config, Result, iterate, node
 
 
@@ -226,7 +226,14 @@ def test_paths_match_what_is_moved(config):
     """
     variables = ("psi", "Ys")
     config = dataclasses.replace(
-        config, iterate=config.iterate + (iterate.MeanLine(variables=variables),)
+        config,
+        iterate=config.iterate
+        + (
+            iterate.MeanLine(variables=variables),
+            # The hardest case for this: its knob is log(mu) while its leaf is
+            # mu, so the two namings are not even in the same units.
+            iterate.SurfaceReynolds(target=4e5),
+        ),
     )
 
     for iterator in config.iterate:
@@ -489,3 +496,193 @@ def test_mean_line_restores_a_scalar_as_a_scalar():
     assert moved.mean_line.Ys[1] == pytest.approx(0.06)
     # Round-tripping through a file is what would catch a stray array here.
     assert Config.from_dict(moved.to_dict()) == moved
+
+
+#
+# TWO SPEEDS OF ITERATION
+#
+# `Re_surf` is an iterate like any other -- a knob, an error, a target -- that
+# happens to close without CFD. So it converges inside every pass rather than
+# across them, and the solution iterators never see it.
+#
+
+
+def with_Re(target=4e5, **kwargs):
+    """A bladed two-row config asking for a surface Reynolds number."""
+    return dataclasses.replace(
+        build(), iterate=(iterate.SurfaceReynolds(target=target, **kwargs),)
+    )
+
+
+def test_resolve_reaches_the_target():
+    config = with_Re(target=4e5)
+
+    resolved = iterate.resolve(config)
+
+    Re_surf = resolved.design().Re_surf()
+    assert Re_surf[0] == pytest.approx(4e5, rel=1e-6)
+
+
+def test_resolve_moves_the_viscosity_and_nothing_else():
+    """The knob is log(mu), but the leaf that moves is mu."""
+    config = with_Re()
+
+    resolved = iterate.resolve(config)
+
+    before, after = node.flatten(config), node.flatten(resolved)
+    moved = {path for path, value in before.items() if after.get(path) != value}
+    assert moved == {"fluid.mu"}
+    assert resolved.fluid.mu != config.fluid.mu
+
+
+def test_resolve_is_exact_in_one_move():
+    """Re_surf is exactly proportional to 1/mu at fixed geometry, so in the log
+    the residual is linear with unit slope and gain=-1 is the Newton step.
+
+    Asserted by driving the same design from a viscosity two orders out and
+    checking it still lands: an approximate step would take many passes from
+    there, or overshoot.
+    """
+    config = with_Re(target=4e5)
+    far = dataclasses.replace(
+        config, fluid=dataclasses.replace(config.fluid, mu=1.8e-3)
+    )
+
+    resolved = iterate.resolve(far, max_iter=2)
+
+    assert resolved.design().Re_surf()[0] == pytest.approx(4e5, rel=1e-6)
+
+
+def test_resolve_selects_the_row():
+    """One viscosity cannot place two Reynolds numbers, so i_row says which."""
+    first = iterate.resolve(with_Re(i_row=0)).design().Re_surf()
+    second = iterate.resolve(with_Re(i_row=1)).design().Re_surf()
+
+    assert first[0] == pytest.approx(4e5, rel=1e-6)
+    assert second[1] == pytest.approx(4e5, rel=1e-6)
+    # The other row follows from the design rather than being placed too.
+    assert second[0] != pytest.approx(4e5, rel=1e-3)
+
+
+def test_resolve_without_a_design_only_iterator_is_the_identity():
+    config = dataclasses.replace(build(), iterate=(iterate.Deviation(),))
+
+    assert iterate.resolve(config) is config
+
+
+def test_resolve_keeps_the_whole_iterate_section():
+    """It steps a subset, but what comes back must still carry the iterators
+    the outer loop is about to need."""
+    config = dataclasses.replace(
+        build(), iterate=(iterate.SurfaceReynolds(target=4e5), iterate.Deviation())
+    )
+
+    resolved = iterate.resolve(config)
+
+    assert len(resolved.iterate) == 2
+    assert Config.from_dict(resolved.to_dict()) == resolved
+
+
+def test_resolve_reports_a_target_it_cannot_reach():
+    stuck = with_Re(target=4e5, gain=0.0)
+
+    with pytest.raises(ValueError, match="did not converge"):
+        iterate.resolve(stuck, max_iter=3)
+
+
+def test_the_outer_loop_does_not_step_a_design_only_knob():
+    """The guard that fails silently if it is wrong.
+
+    A resolved knob has ~0 error while its *value* has moved, because `resolve`
+    moved it inside the run. That is a zero slope, and feeding it to the
+    Broyden update spends a least-change correction explaining a knob that
+    needs none -- at the expense of the ones that do.
+    """
+    config = dataclasses.replace(
+        build(),
+        iterate=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0)),
+    )
+
+    stepping = iterate.selected(config, from_solution=True)
+
+    assert set(iterate.unknowns(stepping)) == {"toy"}
+    assert "fluid.log_mu" not in iterate.unknowns(stepping)
+    # And the other way round, so the split is a partition rather than a filter
+    # that could drop an iterator entirely.
+    assert set(iterate.unknowns(iterate.selected(config, from_solution=False))) == {
+        "fluid.log_mu"
+    }
+
+
+def test_a_design_only_error_is_still_recorded():
+    """Stepped by one loop, but observed by both.
+
+    `errors` is the record a run writes into `result.error` for the archive, so
+    the Reynolds number a design achieved belongs in it whether or not anything
+    stepped towards it.
+    """
+    config = with_Re()
+    result = Result(machine=config.design())
+
+    assert "fluid.log_mu" in iterate.errors(config, result)
+
+
+def test_the_outer_loop_leaves_the_viscosity_alone():
+    """End to end on the loop itself: a run whose design-only knob is already
+    resolved must come back with it untouched."""
+    config = dataclasses.replace(
+        iterate.resolve(with_Re()),
+        iterate=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0, gain=0.5)),
+    )
+    mu_resolved = config.fluid.mu
+
+    final, _, converged = iterate.converge(
+        config, lambda c, i: Result(machine=c.design()), max_iter=20
+    )
+
+    assert converged
+    assert final.fluid.mu == pytest.approx(mu_resolved)
+
+
+def test_re_surf_survives_a_design_that_moves_under_it():
+    """Why this is resolved inside every pass rather than once before them.
+
+    Recambering a blade changes its surface length, so a viscosity fixed by a
+    single pre-pass would drift off target for every iteration after the first.
+    """
+    config = iterate.resolve(with_Re())
+    assert config.design().Re_surf()[0] == pytest.approx(4e5, rel=1e-6)
+
+    # Stand in for what a solution iterator does between passes.
+    recambered = iterate._with_recamber(config, "dchi_TE", {"dchi_TE[0]": -4.0})
+    assert recambered.design().Re_surf()[0] != pytest.approx(4e5, rel=1e-4)
+
+    assert iterate.resolve(recambered).design().Re_surf()[0] == pytest.approx(
+        4e5, rel=1e-6
+    )
+
+
+def test_re_surf_needs_blades():
+    """It is measured against a blade surface, so a mean line alone cannot."""
+    config = Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": MEAN_LINE,
+            "iterate": [{"type": "Re_surf", "target": 4e5}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="needs a blades: section"):
+        iterate.resolve(config)
+
+
+def test_re_surf_rejects_a_row_that_is_not_there():
+    with pytest.raises(ValueError, match="i_row=5 is out of range"):
+        iterate.resolve(with_Re(i_row=5))
+
+
+def test_the_iterate_section_round_trips_a_design_only_iterator():
+    config = with_Re(target=4e5, i_row=1)
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["iterate"][0]["type"] == "Re_surf"

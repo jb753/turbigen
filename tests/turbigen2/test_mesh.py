@@ -99,9 +99,9 @@ def test_reference_station_is_the_end_with_the_smaller_flow_area(machine):
 
 
 def test_surface_reynolds_number_matches_its_definition(machine):
-    mesher = H()
-
-    Re_surf = mesher.Re_surf(machine)
+    """On the machine, not the mesher: it needs no mesh to compute, and the
+    Re_surf iterator wants it before there is one."""
+    Re_surf = machine.Re_surf()
 
     for i_row, row in enumerate(machine.rows):
         ref = machine.mean_line.ref(i_row)

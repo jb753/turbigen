@@ -84,7 +84,7 @@ within a handful of steps.
 def solved():
     """A machine and a short march on it, enough to have a valid field."""
     config = Config.from_dict(CASCADE)
-    machine, grid = cli.prepare(config)
+    _, machine, grid = cli.prepare(config)
     config.solver.solve(grid)
     return machine, grid
 

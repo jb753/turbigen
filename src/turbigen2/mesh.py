@@ -129,13 +129,6 @@ class Mesher(Node):
     # WALL SPACING
     #
 
-    def Re_surf(self, machine):
-        """Return the surface Reynolds number of each row [--]."""
-        ell = np.array([row.blade.surface_length(0.5) for row in machine.rows])
-        ref = [machine.mean_line.ref(i) for i in range(len(machine.rows))]
-        L_visc = np.array([st.mu / st.rho / st.V_rel for st in ref])
-        return ell / L_visc
-
     def wall_spacing(self, machine):
         """Return the wall-normal cell sizes implied by `yplus` [m].
 
@@ -143,7 +136,7 @@ class Mesher(Node):
         Reynolds number of each row, which gives a skin friction and hence a
         friction velocity and a viscous length scale.
         """
-        Re_surf = self.Re_surf(machine)
+        Re_surf = machine.Re_surf()
         logger.debug(f"Surface Reynolds numbers: {Re_surf}")
 
         ref = [machine.mean_line.ref(i) for i in range(len(machine.rows))]

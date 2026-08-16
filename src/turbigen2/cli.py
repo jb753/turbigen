@@ -1,7 +1,7 @@
 """Command line interface.
 
 See CLI.md in this package for the full plan. Every verb it specifies is
-implemented: `design`, `report`, `run`, `iterate` and `sample`.
+implemented: `design`, `report`, `run`, `iterate` and `batch`.
 
 Two conventions are worth stating.
 
@@ -41,6 +41,7 @@ import turbigen
 import ember.convergence_history
 import ember.yaml_util
 from turbigen2 import (
+    batch,
     bconds,
     case,
     database,
@@ -52,7 +53,6 @@ from turbigen2 import (
     plugins,
     post,
     restart,
-    sample,
 )
 from turbigen2.config import Config
 from turbigen2.result import Result
@@ -131,7 +131,7 @@ def apply_overrides(data, overrides):
 
 
 BATCH_PREFIX = "batch_"
-"""What a batch of samples is called, before its number."""
+"""What a batch of designs is called, before its number."""
 
 
 def existing_batches(parent):
@@ -339,7 +339,7 @@ def submit_targets(args, paths):
     return submit(load_config(paths[0], args), paths, args.command, task_options(args))
 
 
-def sample_verb(config):
+def batch_verb(config):
     """Return the verb a submitted batch should be run as.
 
     `iterate` when the datum says how to iterate, `run` otherwise. Inferred
@@ -355,7 +355,7 @@ def sample_verb(config):
     verb = "iterate" if config.iterate else "run"
 
     reason = "an iterate: section" if config.iterate else "no iterate: section"
-    sample.logger.info(f"Submitting as '{verb}': the datum has {reason}.")
+    batch.logger.info(f"Submitting as '{verb}': the datum has {reason}.")
 
     return verb
 
@@ -409,13 +409,18 @@ def _design_one(args, config_path):
     """
     config = load_config(config_path, args)
 
+    # Resolved here too, so that the tables `design` prints describe the same
+    # machine `run` would solve. Nothing is written, which is the verb's whole
+    # promise: the resolved config is used and discarded.
+    config = iterate.resolve(config)
+
     run_log.info(config.design().to_string())
 
     return 0
 
 
 def prepare(config, restart_path=None):
-    """Return the machine and a grid ready to solve.
+    """Return the resolved config, the machine, and a grid ready to solve.
 
     Shared by every verb that needs a grid, so there is one definition of
     "ready to solve" rather than one per verb. `report` stops here and `run`
@@ -428,7 +433,15 @@ def prepare(config, restart_path=None):
     The grid is None when the config has no `mesh:` section. Whether that is an
     error belongs to the verb: `run` cannot proceed without one, while a report
     of a mean-line design is a perfectly good thing to want.
+
+    The config comes back because it may not be the one that went in: knobs
+    whose target is a property of the design alone are converged here, so the
+    caller has the viscosity that was actually used rather than the guess it
+    started from. `solve` archives what this returns, which is what makes an
+    `output.yaml` record the design that ran.
     """
+    config = iterate.resolve(config)
+
     # Each stage reports as it finishes rather than the verb reporting them all
     # at the end, so what is read on the way past is in the order it happened:
     # the mean line, then the grid it was meshed onto, then where the flow
@@ -437,7 +450,7 @@ def prepare(config, restart_path=None):
     run_log.info(machine.to_string())
 
     if config.mesh is None:
-        return machine, None
+        return config, machine, None
 
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
@@ -451,7 +464,7 @@ def prepare(config, restart_path=None):
     if restart_path is not None:
         restart.apply(grid, restart_path)
 
-    return machine, grid
+    return config, machine, grid
 
 
 def stored_field(config_path):
@@ -540,7 +553,7 @@ def _report_one(args, config_path):
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        machine, grid = prepare(config, stored_field(config_path))
+        config, machine, grid = prepare(config, stored_field(config_path))
 
         # Looked for whether or not there is a field to go with it: a history
         # beside the config means a run happened here, and its convergence page
@@ -561,7 +574,7 @@ def solve(config, out_dir, restart_path=None):
     second copy of one -- which is how `turbigen.main` came to hold the same
     pipeline three times over, two of them unreachable and already drifted.
     """
-    machine, grid = prepare(config, restart_path)
+    config, machine, grid = prepare(config, restart_path)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
@@ -700,25 +713,26 @@ def _iterate_one(args, config_path):
     return 0 if converged else 2
 
 
-def cmd_sample(args):
+def cmd_batch(args):
     """Write configs covering the design space, ready to be run."""
     paths = targets(args)
     if len(paths) > 1:
         raise ValueError(
-            "The 'sample' command covers one design space, so it takes one "
+            "The 'batch' command covers one design space, so it takes one "
             "config file as its datum."
         )
 
     config = load_config(paths[0], args)
 
-    if config.sample is None:
+    if config.batch is None:
         raise ValueError(
-            "The 'sample' command needs a sample: section saying which design "
-            "variables to vary, and between what bounds."
+            "The 'batch' command needs a batch: section saying which design "
+            "variables to vary, and between what bounds or at what values."
         )
-    # Checked before anything is created, so a misspelled bound does not leave
-    # an empty batch behind and burn a number on its way out.
-    config.sample.check(config)
+    # Checked before anything is created, so a misspelled variable does not
+    # leave an empty batch behind and burn a number on its way out.
+    config.batch.check(config)
+    _check_grid_options(args, config.batch)
 
     # Scanned before the new batch directory exists, so it cannot count itself.
     # A batch is never written into, only beside, so nothing can be lost.
@@ -726,31 +740,56 @@ def cmd_sample(args):
 
     start = 0
     if args.carry_on:
-        start = sample.next_index(existing_batches(datum_dir))
-        sample.logger.info(f"Carrying on from index {start}.")
+        start = batch.next_index(existing_batches(datum_dir))
+        batch.logger.info(f"Carrying on from index {start}.")
 
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in sample.generate(config, args.number, start):
-        member_path = out_dir / sample.member_name(index)
+    for index, member in batch.generate(config, args.number, start):
+        member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
         member_path.parent.mkdir(parents=True, exist_ok=True)
         member.to_file(member_path)
         members.append(member_path)
 
-    sample.logger.info(f"Wrote {args.number} design(s) to {out_dir}")
+    batch.logger.info(f"Wrote {len(members)} design(s) to {out_dir}")
 
     if args.queue:
-        submit(config, members, sample_verb(config))
+        submit(config, members, batch_verb(config))
 
     # The one thing this verb puts on stdout, everything else being on stderr.
     # A numbered batch cannot be named in advance, so without it a script has
-    # no way to find what it just made: BATCH=$(turbigen2 sample case.yaml).
+    # no way to find what it just made: BATCH=$(turbigen2 batch case.yaml).
     print(out_dir, flush=True)
 
     return 0
+
+
+def _check_grid_options(args, spec):
+    """Refuse the options a grid of named values cannot honour.
+
+    Both are properties of a *sequence*, and a grid is not one: its count is
+    the product of what it names, and a finite product has no tail to carry on
+    from. Refused rather than ignored, and refused here rather than inside
+    `generate`, so that a batch number is not burned before the complaint.
+    """
+    if not spec.is_grid():
+        return
+
+    if args.number is not None:
+        raise ValueError(
+            "A batch: section with values: runs every combination of them, so "
+            "there is no -n to choose. Use bounds: to draw a chosen number of "
+            "designs from a box."
+        )
+
+    if args.carry_on:
+        raise ValueError(
+            "A batch: section with values: is already the whole grid, so there "
+            "is nothing to --continue. Widen values: and write another batch."
+        )
 
 
 def _quieten_the_runs():
@@ -859,7 +898,7 @@ def logging_into(args, config_path):
 
 
 def _open_batch(args, datum_dir):
-    """Create and return the directory a batch of samples is written into.
+    """Create and return the directory a batch of designs is written into.
 
     Numbered rather than named, because a batch is many designs and hours of
     solving to come: writing into an existing one would destroy work, where a
@@ -1070,42 +1109,45 @@ def _make_parser():
     _add_restart_argument(iterate_)
     iterate_.set_defaults(func=cmd_iterate)
 
-    sample_ = commands.add_parser(
-        "sample",
+    batch_ = commands.add_parser(
+        "batch",
         parents=[common],
         help="write configs covering a design space, ready to be run",
         description=(
-            "Draw designs from a Sobol' sequence over the bounds in the "
-            "sample: section and write one config per point, named by its "
-            "index in the sequence. Points that cannot be designed are "
-            "skipped, so no cluster time is spent finding that out. Nothing "
-            "is run unless --queue asks for it. The batch "
-            "is written beside the datum config, in the next free batch_NNNN, "
+            "Write one config per design over the design variables the batch: "
+            "section names. With bounds:, designs are drawn from a Sobol' "
+            "sequence over the box; with values:, the batch is every "
+            "combination of the values named, which is the parameter study a "
+            "shell loop over --set cannot write. Points that cannot be "
+            "designed are skipped, so no cluster time is spent finding that "
+            "out. Nothing is run unless --queue asks for it. The batch is "
+            "written beside the datum config, in the next free batch_NNNN, "
             "whose path is printed on stdout."
         ),
     )
-    sample_.add_argument(
+    batch_.add_argument(
         "-n",
         "--number",
         type=int,
-        default=32,
+        default=None,
         metavar="N",
         help=(
-            "how many designs to write (default 32; Sobol' balance holds at "
-            "powers of two)"
+            f"how many designs to draw from bounds: (default "
+            f"{batch.DEFAULT_NUMBER}; Sobol' balance holds at powers of two). "
+            "Not for values:, whose count is the product of what it names"
         ),
     )
-    _add_queue_argument(sample_)
-    sample_.add_argument(
+    _add_queue_argument(batch_)
+    batch_.add_argument(
         "--continue",
         dest="carry_on",
         action="store_true",
         help=(
             "extend the batches already beside the datum config, starting "
-            "after the highest member index they hold"
+            "after the highest member index they hold; bounds: only"
         ),
     )
-    sample_.set_defaults(func=cmd_sample)
+    batch_.set_defaults(func=cmd_batch)
 
     return parser
 

@@ -35,6 +35,7 @@ import numpy as np
 
 import ember.cut
 from turbigen2.node import Node
+from turbigen2.result import Result
 
 logger = logging.getLogger("turbigen.iterate")
 """Iteration-level messages: the table, the verdict, what the stepper noticed.
@@ -70,6 +71,19 @@ class Iterator(Node):
 
     A member declares the knobs it owns, measures the error those knobs should
     null, and leaves every decision about how far to move to :func:`step`.
+    """
+
+    from_solution: ClassVar[bool] = True
+    """Whether this iterator's error is measured from the CFD solution.
+
+    False for one measured from the design alone. Such an iterator converges in
+    pure numpy, so it is run to convergence by :func:`resolve` *inside* every
+    pass rather than across them --- which is what keeps its knob consistent
+    with a blade the solution iterators have since recambered.
+
+    Declared rather than inferred, for the same reason :meth:`paths` is: what
+    an iterator measures its error from is knowledge only its author has, and
+    guessing it wrong fails silently in both directions.
     """
 
     gain: float = 1.0
@@ -167,6 +181,24 @@ class Iterator(Node):
 # Everything below is generic. It knows names, numbers and tolerances, and
 # nothing about angles, blades or mean lines.
 #
+
+
+def selected(config, from_solution):
+    """Return `config` carrying only the iterators of one speed.
+
+    The stepper takes a config and reads `config.iterate` off it, so selecting
+    a subset is done by handing it a config that holds only those --- which
+    keeps every function below generic over *which* iterators it is stepping,
+    without a second argument threaded through all of them.
+    """
+    return dataclasses.replace(
+        config,
+        iterate=tuple(
+            iterator
+            for iterator in config.iterate
+            if iterator.from_solution == from_solution
+        ),
+    )
 
 
 def unknowns(config):
@@ -400,6 +432,66 @@ def format_table(config, result):
     return "\n".join(lines)
 
 
+def resolve(config, max_iter=10):
+    """Return `config` with its design-only knobs converged.
+
+    The same stepper as :func:`converge`, over the iterators whose error comes
+    from the design rather than the solution, against a "run" that designs and
+    nothing else. Pure numpy and typically two passes, so it is cheap enough to
+    repeat --- which is the point: it runs inside every solve rather than once
+    before them, so a knob stays consistent with a design the solution
+    iterators keep moving.
+
+    Written as its own loop rather than as :func:`converge` with a designing
+    `run`, which very nearly works. What does not carry over is the rest of
+    what `converge` is: a divergence guard for a march there has not been, a
+    per-iteration log of directories that do not exist, and a history kept as
+    numbers because a `Result` pins a grid --- when here there is no grid at
+    all. Twelve lines that share every piece of arithmetic beat a callable that
+    has to pretend to solve.
+
+    Parameters
+    ----------
+    config : Config
+        Where to start. Not modified.
+    max_iter : int
+        Most passes before giving up.
+
+    Returns
+    -------
+    config : Config
+        The same config with its design-only knobs moved onto their targets,
+        or `config` itself when there are none to move.
+
+    """
+    inner = selected(config, from_solution=False)
+    if not inner.iterate:
+        return config
+
+    history = []
+    for _ in range(max_iter):
+        # No solver, no grid, no output directory: designing is the whole run.
+        result = Result(machine=inner.design())
+
+        if converged(inner, result):
+            logger.debug(f"Resolved the design-only knobs: {unknowns(inner)}")
+            # The full list goes back on, so what comes out of here is the
+            # config that was handed in with some of its leaves moved, rather
+            # than one that has quietly lost the iterators it will need next.
+            return dataclasses.replace(inner, iterate=config.iterate)
+
+        stepped = step(inner, result, history)
+        history.append((unknowns(inner), measured_errors(inner, result)))
+        inner = stepped
+
+    raise ValueError(
+        f"The design-only knobs {sorted(unknowns(inner))} did not converge in "
+        f"{max_iter} passes. These are solved without CFD, so this is a "
+        f"property of the design rather than of a march: check that the target "
+        f"is reachable."
+    )
+
+
 def converge(config, run, max_iter=10):
     """Iterate `config` until every error is within tolerance.
 
@@ -447,16 +539,32 @@ def converge(config, run, max_iter=10):
             )
             return config, result, False
 
-        logger.info(f"Iteration {i_iter}:\n{format_table(config, result)}")
+        # Only the solution iterators are stepped here. A design-only knob is
+        # already on its target -- `resolve` put it there inside the run that
+        # just finished -- so its error is ~0 while its *value* has moved,
+        # which is a zero slope. Fed to the Broyden update that is a flat
+        # response, and the least-change update spends itself explaining it
+        # rather than the knobs that genuinely need moving. `run` still gets
+        # the whole config, so the nested resolve still sees its own.
+        stepping = selected(config, from_solution=True)
 
-        if converged(config, result):
+        # Tabled from the same view, for the same reason and one more: the
+        # value this config holds for a design-only knob is the one it started
+        # with, since the resolve that moved it happened on a copy inside the
+        # run. Printed here it would sit beside an error measured after the
+        # move, which is two different designs on one row.
+        logger.info(f"Iteration {i_iter}:\n{format_table(stepping, result)}")
+
+        if converged(stepping, result):
             logger.info(f"Converged after {i_iter + 1} iteration(s).")
             return config, result, True
 
         # The stepped config is what the next pass runs, so the one returned
         # alongside a result is always the one that produced it.
-        stepped = step(config, result, history)
-        history.append((unknowns(config), measured_errors(config, result)))
+        stepped = dataclasses.replace(
+            step(stepping, result, history), iterate=config.iterate
+        )
+        history.append((unknowns(stepping), measured_errors(stepping, result)))
         config = stepped
 
     logger.warning(f"Not converged after {max_iter} iteration(s).")
@@ -774,3 +882,124 @@ class MeanLine(Iterator):
         if count == 1:
             return [f"mean_line.{name}"]
         return [f"mean_line.{name}[{i}]" for i in range(count)]
+
+
+NAME_LOG_MU = "fluid.log_mu"
+"""Table key of the viscosity knob. See :class:`SurfaceReynolds`."""
+
+
+class SurfaceReynolds(Iterator):
+    """Set the viscosity to reach a surface Reynolds number.
+
+    A Reynolds number is what a cascade is actually specified at --- it is the
+    number a designer carries between machines, where a viscosity in
+    kg/m/s is not. But it cannot simply be inverted for `mu`: it is measured
+    against a blade surface length and a mean-line reference state, so it needs
+    a whole design, which needs a viscosity to exist first.
+
+    That circularity is what makes this an iterator rather than a formula, and
+    the reason it is *this* kind of iterator is that closing it costs no CFD.
+    Everything it reads --- :meth:`turbigen2.machine.Machine.Re_surf` --- comes
+    off the design, so :func:`resolve` converges it in pure numpy inside every
+    pass, and the solution iterators never see it.
+
+    The package this replaces meant to do this arithmetically and never
+    finished: `turbigen.config.set_mu_from_Re_surf` raises
+    `NotImplementedError` on its first line and is called whenever a config
+    names `Re_surf`, so every configuration that asks for one has been dead.
+    There is accordingly nothing to stay bug-compatible with.
+    """
+
+    type: ClassVar[str] = "Re_surf"
+    from_solution: ClassVar[bool] = False
+
+    target: float
+    """Surface Reynolds number to design for [--]."""
+
+    i_row: int = 0
+    """Index of the blade row whose Reynolds number meets the target.
+
+    There is one viscosity and one Reynolds number per row, so only one row can
+    be placed exactly and the rest follow from the design. The first row by
+    default, which is what the abandoned implementation indexed.
+    """
+
+    gain: float = -1.0
+    """Exactly the Newton step, rather than an approximation to one.
+
+    At fixed geometry `Re_surf` is exactly proportional to `1/mu`, so in the
+    logarithmic knob below the residual is linear with unit slope, and the
+    stepper's `u -= gain * e` at `gain = -1` lands on the answer in one move.
+    Negative because the Reynolds number *falls* as the viscosity rises, which
+    is the sign convention :attr:`Iterator.gain` documents.
+    """
+
+    tolerance: float = 0.01
+    """Converged inside this fractional error on the Reynolds number.
+
+    In log units, so it reads directly as a relative error to within a
+    percent of itself.
+    """
+
+    def unknowns(self, config):
+        # The knob is log(mu), not mu. Viscosity is multiplicative -- the
+        # residual is a ratio and spans orders of magnitude between fluids --
+        # so a step of constant size in mu means nothing, and a *scalar* gain
+        # cannot be the Newton step for a knob whose sensitivity scales with
+        # its own value. In the log it can, exactly. The table shows the log
+        # because that is what is being solved for; the config still holds mu,
+        # which is what `paths` reports.
+        return {NAME_LOG_MU: float(np.log(self._mu(config)))}
+
+    def with_unknowns(self, config, values):
+        if NAME_LOG_MU not in values:
+            return config
+
+        mu = float(np.exp(values[NAME_LOG_MU]))
+        try:
+            fluid = dataclasses.replace(config.fluid, mu=mu)
+        except TypeError as err:
+            raise ValueError(
+                f"Cannot reach a surface Reynolds number by changing the "
+                f"viscosity of a {type(config.fluid).__name__}, which has no "
+                f"mu to change."
+            ) from err
+
+        return dataclasses.replace(config, fluid=fluid)
+
+    def paths(self, config):
+        # The leaf, not the knob. `node.flatten` spells the config's own field,
+        # and it is mu that is written there even though log(mu) is what moves
+        # -- which is exactly the mismatch this method exists to bridge.
+        return {"fluid.mu"}
+
+    def error(self, config, result):
+        if result.machine is None:
+            logger.debug("No machine, so no surface Reynolds number to measure.")
+            return {}
+
+        Re_surf = result.machine.Re_surf()
+        if not len(Re_surf):
+            raise ValueError(
+                "A surface Reynolds number is measured against a blade surface, "
+                "so iterating on one needs a blades: section in the config."
+            )
+        if not 0 <= self.i_row < len(Re_surf):
+            raise ValueError(
+                f"i_row={self.i_row} is out of range for a machine with "
+                f"{len(Re_surf)} blade row(s)."
+            )
+
+        return {NAME_LOG_MU: float(np.log(Re_surf[self.i_row] / self.target))}
+
+    @staticmethod
+    def _mu(config):
+        """Return the viscosity this iterator moves [kg/m/s]."""
+        mu = getattr(config.fluid, "mu", None)
+        if mu is None:
+            raise ValueError(
+                f"Cannot reach a surface Reynolds number by changing the "
+                f"viscosity of a {type(config.fluid).__name__}, which has no "
+                f"mu to change."
+            )
+        return mu

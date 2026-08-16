@@ -81,14 +81,14 @@ def bladed():
 @pytest.fixture(scope="module")
 def meshed(bladed):
     """Meshed and given an initial guess, but never marched."""
-    machine, grid = cli.prepare(bladed)
+    _, machine, grid = cli.prepare(bladed)
     return Result(machine=machine, grid=grid)
 
 
 @pytest.fixture(scope="module")
 def solved(bladed):
     """The same case marched briefly, for a real field and a real history."""
-    machine, grid = cli.prepare(bladed)
+    _, machine, grid = cli.prepare(bladed)
     history = bladed.solver.solve(grid)
     return Result(
         machine=machine,
