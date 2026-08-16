@@ -86,12 +86,23 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
         nominal mean line.
 
     """
-    # A copy of the nominal, so the actual starts with the annulus areas and
-    # blade speeds it was designed for. Those are what the contraction below
-    # reports against, and neither is something a cut can measure.
+    # A copy of the nominal, so the actual starts with the annulus areas it was
+    # designed for. Those are what the contraction below reports against, and a
+    # cut cannot measure them.
     actual = machine.mean_line.copy()
     flat = actual.flat
     nominal = machine.mean_line.flat
+
+    # Shaft speed is the one thing here that comes from the grid rather than
+    # from either the design or a cut. A cut genuinely cannot measure it, but
+    # the blocks were told it, and what they were told is what the solver used
+    # -- so this reports the speed that ran rather than the speed that was
+    # asked for. The two are the same today and will not be as soon as an
+    # operating point adjusts one, and every `_rel` quantity on this mean line
+    # is derived from it: copied from the design, an off-design run would
+    # report its relative Mach numbers in the wrong rotating frame, with
+    # entirely plausible values.
+    actual.set_Omega_row([float(blocks[0].Omega) for blocks in grid.rows])
 
     for i_station, xr in enumerate(cut_planes(machine.annulus, offset)):
         cut = ember.cut.unstructured(grid, xr)

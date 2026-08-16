@@ -15,6 +15,7 @@ Test cases:
 - test_cut_planes_span_hub_to_casing: two points, the shape ember wants
 - test_actual_has_the_shape_of_the_nominal: assembled per station
 - test_actual_keeps_the_design_annulus_area: what the AR contraction is for
+- test_actual_reports_the_speed_the_grid_ran_at: and Omega, which does not
 - test_actual_is_a_plausible_flow: finite, positive, roughly the design
 - test_actual_is_not_reinterpreted_by_the_datum: the P/T/V transfer
 - test_a_cut_that_misses_the_grid_is_reported: names the station
@@ -162,6 +163,32 @@ def test_actual_keeps_the_design_annulus_area(solved):
         np.asarray(machine.mean_line.flat.Am, dtype=float),
         rtol=1e-12,
     )
+
+
+def test_actual_reports_the_speed_the_grid_ran_at(solved):
+    """Shaft speed comes from the grid, not from the design it was meshed from.
+
+    It is the one quantity here that a cut genuinely cannot measure but the
+    blocks were told, and what they were told is what the solver used. Copied
+    from the design instead, an operating point that changed the speed would
+    archive the speed it did *not* run at -- and `Ma_rel`, `Alpha_rel` and
+    `V_rel` are all derived from it, so the whole relative frame would be wrong
+    while every number stayed plausible.
+    """
+    machine, grid = solved
+
+    # Stand in for an operating point: spin the grid after it was meshed.
+    for block in grid:
+        block.set_Omega(100.0)
+
+    actual = mixout.mean_line(grid, machine)
+
+    assert np.all(np.asarray(actual.flat.Omega, dtype=float) == pytest.approx(100.0))
+    # And the design it came from is untouched, this being a cascade at rest.
+    assert np.all(np.asarray(machine.mean_line.flat.Omega, dtype=float) == 0.0)
+
+    for block in grid:
+        block.set_Omega(0.0)
 
 
 def test_actual_is_a_plausible_flow(solved):

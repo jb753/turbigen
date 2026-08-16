@@ -10,6 +10,7 @@ the caller, so these check the framework as well as the mesh.
 import numpy as np
 import pytest
 
+import ember.patch
 import turbigen.annulus
 import turbigen.geometry
 import turbigen.hmesh
@@ -262,7 +263,14 @@ def test_matches_the_turbigen_implementation(machine, grid):
     ids=["cusp", "tip_gap"],
 )
 def test_optional_features_match_the_turbigen_implementation(mesh, blades):
-    """The cusp and the tip gap are the two paths that reshape the block."""
+    """The cusp and the tip gap are the two paths that reshape the block.
+
+    Rotating patches are compared separately, below. The old mesher places
+    none: there, rotation arrives later from `Grid.apply_rotation` at
+    boundary-condition time, which is the arrangement this deliberately
+    departs from. Filtering rather than loosening keeps every patch the old
+    mesher does make pinned exactly.
+    """
     config = build(blades=blades, mesh=mesh)
     machine = config.design()
 
@@ -274,9 +282,31 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades):
         np.testing.assert_allclose(
             block.xrt, block_ref.xrt, rtol=1e-12, atol=1e-12
         )
-        assert [repr(p) for p in block.patches] == [
-            repr(p) for p in block_ref.patches
+        shared = [
+            p
+            for p in block.patches
+            if not isinstance(p, ember.patch.RotatingPatch)
         ]
+        assert [repr(p) for p in shared] == [repr(p) for p in block_ref.patches]
+
+
+def test_a_tip_gap_is_the_one_patch_the_old_mesher_does_not_place(machine):
+    """The deliberate divergence, stated rather than tolerated.
+
+    A wall takes its block's angular velocity unless a rotating patch overrides
+    it, so a casing over a tip gap is the only wall that needs saying, and
+    saying it is placement rather than value -- which is why it belongs to the
+    mesher and its speed does not.
+    """
+    with_gap = build(blades=TIP, mesh=MESH).design()
+    grid = H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(with_gap)
+
+    labels = [p.label for p in grid.patches.rotating]
+    assert labels == ["casing"]
+
+    # And none at all without a gap, the shrouded row needing no override.
+    plain = H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(machine)
+    assert not plain.patches.rotating
 
 
 #

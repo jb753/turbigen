@@ -475,6 +475,27 @@ class H(Mesher):
                 ]
             )
 
+            # A blade with clearance runs against a casing that is not attached
+            # to it, so the casing needs saying separately. Every wall of a
+            # block takes the block's own angular velocity unless a
+            # `RotatingPatch` overrides it, which makes a shrouded row the case
+            # that needs no patch at all and this the case that does.
+            #
+            # Placed here, not valued here: `bconds` sets how fast every
+            # rotating patch turns, so a speedline costs no re-mesh. And the
+            # rule is purely geometric -- a casing override exists exactly when
+            # there is a gap under it -- so the mesher never has to ask whether
+            # the row turns, which is not its business. On a stator the patch
+            # is a no-op, the block being stationary anyway.
+            #
+            # `j=-1` is the casing by this mesher's own convention, the same
+            # one the tip patches above rely on. `ember.grid.Grid
+            # .apply_rotation` assumes it too, of any grid it is handed, which
+            # is why it is not used: it also conflates placement with value,
+            # and its `tip_gap` row type leaves the casing turning with the
+            # blade.
+            patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
+
         block = ember.block.Block(shape=(ni, nj, nk))
         block.set_label(f"row{i_row}")
         block.set_Nb(machine.rows[i_row].n_blade)

@@ -422,6 +422,67 @@ config --- but four things are dropped:
   statements commented out --- so it went too, and with it the `row_meta` that
   existed to feed it.
 
+## Rotation: placed by the mesher, valued by the boundary conditions
+
+Shaft speed divides in two, and the two halves belong to different stages.
+
+**Where a wall is not attached to its row** is geometry. A blade with tip
+clearance runs against a casing that does not turn with it, so `hmesh` places a
+`RotatingPatch` on `j=-1` exactly when there is a gap under it. The rule
+consults no speed at all: a stator with clearance gets the patch too, where it
+is a no-op because the block is stationary anyway, and that is the point ---
+whether a row turns is not the mesher's business.
+
+**How fast everything turns** is the operating point, so `bconds` sets it: the
+block angular velocity per row, and every rotating patch to
+`OMEGA_CASING = 0`. This is what makes a speedline cost no re-mesh, which is
+what `bconds` exists for.
+
+Two pieces of ember's semantics decide the shape, and neither is what its
+naming suggests. `Block.Omega_wall_nd` initialises **all six faces to the
+block's own `Omega`** and lets a `RotatingPatch` *override* one, so a rotor
+needs **no patch at all** to be shrouded, and the only wall that needs saying
+is the one that stands still. And `Grid.apply_rotation`'s `tip_gap` and
+`shroud` row types are **behaviourally identical**: `tip_gap` adds patches at
+the block's own speed to five faces, each redundant, and leaves `j=-1` unpatched
+so the casing defaults to turning. Built both ways, the resulting
+`Omega_wall_nd` arrays are byte-identical on all six faces.
+
+So `apply_rotation` is not used. It conflates placement with value, which is
+what forces the whole question into one stage, and it assumes `j=-1` is the
+casing of any grid it is handed --- an assumption about *H-mesh topology*
+living in a generic `Grid` method. Putting the face index in `hmesh` returns it
+to the only thing that knows it, and leaves a second mesher free to choose
+differently.
+
+There is no check that every rotating patch was reached. `grid.rows` groups by
+periodic and mixing connectivity and puts even a wholly disconnected block in a
+row of its own, so the loop visits every block on the grid; a grid whose rows
+and mean line disagree is caught by count instead. Worth knowing that the gap
+between placing and valuing is loud anyway: `RotatingPatch` defaults to
+`Omega = nan`, not zero, so a grid that skipped `bconds` turns the solution to
+NaN rather than quietly running a rotor as though it were stationary.
+
+That last failure is not hypothetical. Nothing called `set_Omega` at all until
+this went in, so every rotor was meshed and then solved in the stationary frame
+with stationary walls, and every configuration in the tree is an axial turbine.
+
+### And the actual mean line records the speed that ran
+
+`mixout` copies the nominal to start with, which is right for `Am` --- a
+reporting convention, so that every station is comparable at the area it was
+designed for. `Omega` is not the same kind of thing. It is a physical condition
+that was *imposed*, a cut cannot measure it, but the blocks were told it and
+what they were told is what the solver used. So it comes back off
+`grid.rows`.
+
+The distinction only starts to matter when an operating point moves the speed,
+and then it matters a great deal: `Ma_rel`, `Alpha_rel` and `V_rel` are all
+derived from `Omega`, so an actual mean line carrying the design speed would
+report its entire relative frame wrongly while every number on the page stayed
+plausible. Reading it from the grid means there is one source of truth and it
+stays right however the speed was set.
+
 ## Initial guess
 
 A grid leaves the mesher as geometry with reference scales and no flow in it.
