@@ -30,7 +30,7 @@ import numpy as np
 import ember.block_util
 import ember.cut
 import ember.util
-import turbigen.util_post
+import turbigen2.util
 from turbigen2.node import Node
 
 logger = logging.getLogger("turbigen")
@@ -288,12 +288,12 @@ def _normalise_surface_distance(cut, mas, xrt_nose):
     away, but normalising the two sides has to happen while they are still
     told apart.
     """
-    zeta = turbigen.util_post.get_zeta(cut)[:, 0]
+    zeta = turbigen2.util.get_zeta(cut)[:, 0]
 
     # The geometric nose anchors the search window, which is more robust on
     # blades with a strongly asymmetric leading edge than the arc-length
     # midpoint the function falls back on.
-    i_stag = int(turbigen.util_post.get_i_stag(cut, xrt_LE=xrt_nose)[0])
+    i_stag = int(turbigen2.util.get_i_stag(cut, xrt_LE=xrt_nose)[0])
     zeta = zeta - zeta[i_stag]
 
     # Then move the origin onto the lowest Mach number, which is the
@@ -336,7 +336,7 @@ class SurfacePlot(Post):
 
         # One cut of the whole blade per row, sliced at each span fraction
         # below: the cut is the expensive part and does not depend on span.
-        surfaces = turbigen.util_post.cut_blade_surfs(result.grid, self.offset)
+        surfaces = turbigen2.util.cut_blade_surfs(result.grid, self.offset)
 
         # Whatever field the grid holds is what gets drawn: a solution, a
         # restored one, or the meridional guess a mesh starts with, which is a

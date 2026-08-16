@@ -794,7 +794,12 @@ a real config before the switch.
 The difference is that ember's is backed by libyaml's
 `CSafeLoader`/`CSafeDumper` where the turbigen one still uses the pure-Python
 loaders, and that using it drops a dependency on the old package rather than
-adding one. `turbigen.util` is now the only part of it turbigen2 still needs.
+adding one. Nothing of it remains: `turbigen2.util` now carries the dozen numeric
+helpers, the table formatter and the blade-surface cuts that `annulus`,
+`blade`, `machine`, `meanline`, `hmesh` and `post` used to reach across for,
+and `clusterfunc` is copied in beside them. **`turbigen2` imports nothing from
+the package it replaces**, which is what lets that package be kept purely as a
+fixture for the equivalence tests and deleted when they go.
 
 Speed was the original argument --- 7.7 s against 0.15 s to dump a
 multi-megabyte scalar --- but that measurement is what settled where the

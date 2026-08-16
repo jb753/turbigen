@@ -21,7 +21,7 @@ from typing import ClassVar
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
-import turbigen.util
+import turbigen2.util
 from turbigen2.node import Node
 
 logger = logging.getLogger("turbigen")
@@ -85,10 +85,10 @@ def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=2
             sq = np.linspace(s[k], s[k + 1], 50)
             xm = 0.5 * (pchip_xhub(sq) + pchip_xcas(sq))
             rm = 0.5 * (pchip_rhub(sq) + pchip_rcas(sq))
-            Ds_actual[k] = turbigen.util.arc_length(np.stack([xm, rm]))
+            Ds_actual[k] = turbigen2.util.arc_length(np.stack([xm, rm]))
 
         Ds_norm = Ds_actual / Ds_actual.sum() * np.asarray(Ds_target).sum()
-        s_new = turbigen.util.cumsum0(Ds_norm)
+        s_new = turbigen2.util.cumsum0(Ds_norm)
         err = np.max(np.abs(s_new - s)) / s[-1]
         s = s_new
         if err < rtol:
@@ -307,7 +307,7 @@ class Annulus:
         chords = np.zeros(self.n_segment)
         for i in range(self.n_segment):
             mq = np.linspace(i, i + 1, 100)
-            chords[i] = turbigen.util.arc_length(self.evaluate_xr(mq, spf))
+            chords[i] = turbigen2.util.arc_length(self.evaluate_xr(mq, spf))
         return chords
 
     def row(self, i_row):
@@ -348,7 +348,7 @@ class Annulus:
             ("cx/m", cx_row, ".4f"),
             ("AR", span_row / cx_row, ".4f"),
         ]
-        return turbigen.util.format_table("Annulus:", self.n_row, properties)
+        return turbigen2.util.format_table("Annulus:", self.n_row, properties)
 
 
 class AnnulusDesign(Node):
@@ -450,7 +450,7 @@ class PchipAnnulus(AnnulusDesign):
 
         # Integrate for the mid-span axial coordinates, origin at the first
         # row leading edge
-        x_mid = turbigen.util.cumsum0(Dx)
+        x_mid = turbigen2.util.cumsum0(Dx)
         x_mid -= x_mid[1]
 
         # Pad the station arrays out to the n_segment + 1 control points
@@ -474,7 +474,7 @@ class PchipAnnulus(AnnulusDesign):
         xcas = x_mid - 0.5 * span_ext * sin_B
         rcas = r_mid_ext + 0.5 * span_ext * cos_B
 
-        s_init = turbigen.util.cumsum0(Ds)
+        s_init = turbigen2.util.cumsum0(Ds)
         s, curves = _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds)
 
         # A second fit through the endpoints only, for the merged blend. When

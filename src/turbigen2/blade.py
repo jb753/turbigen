@@ -22,7 +22,7 @@ from typing import ClassVar
 
 import numpy as np
 
-import turbigen.util
+import turbigen2.util
 from turbigen2.annulus import StreamSurface
 from turbigen2.camber import CamberDesign, CamberLine
 from turbigen2.node import Node
@@ -77,7 +77,7 @@ def _interpolate(nodes, spf_sections, spf):
         return nodes[0]
 
     values = np.array([[getattr(node, name) for name in names] for node in nodes])
-    interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
+    interpolated = turbigen2.util.interp1d_linear_extrap(spf_sections, values)(spf)
 
     try:
         return cls(**dict(zip(names, interpolated.reshape(-1))))
@@ -150,9 +150,9 @@ class Circulation(BladeCount):
         # Ratios across the row
         VmR = ml.Vm[1] / ml.Vm[0]
         RR = ml.r[1] / ml.r[0]
-        tanAlpha = turbigen.util.tand(ml.Alpha)
-        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
-        cosAlpha_rel = turbigen.util.cosd(ml.Alpha_rel)
+        tanAlpha = turbigen2.util.tand(ml.Alpha)
+        tanAlpha_rel = turbigen2.util.tand(ml.Alpha_rel)
+        cosAlpha_rel = turbigen2.util.cosd(ml.Alpha_rel)
 
         # Circulation from the change in angular momentum, split into the part
         # due to a change in radius and the part due to a change in swirl
@@ -260,7 +260,7 @@ class BladeDesign(Node):
             raise ValueError(f"Cannot set a blade angle over 90 degrees, chi={chi}.")
         if np.any(np.abs(chi) > 80.0):
             logger.warning(f"WARNING: high blade angles may hinder meshing, chi={chi}")
-        tanchi = turbigen.util.tand(chi)
+        tanchi = turbigen2.util.tand(chi)
 
         # Tip clearance in metres. Whichever reference length was used, the
         # other terms are zero, which __post_init__ has already ensured.
@@ -370,7 +370,7 @@ class Blade:
         if self.n_section == 1:
             tanchi = self.tanchi[0]
         else:
-            tanchi = turbigen.util.interp1d_linear_extrap(self.spf, self.tanchi)(
+            tanchi = turbigen2.util.interp1d_linear_extrap(self.spf, self.tanchi)(
                 spf
             ).reshape(-1)
 
@@ -403,7 +403,7 @@ class Blade:
         camber, thickness = self.section(spf)
 
         if m is None:
-            m = turbigen.util.cluster_cosine(nchord)
+            m = turbigen2.util.cluster_cosine(nchord)
 
         dydm = camber.dydm(m)
         chi = np.arctan(dydm)
@@ -425,7 +425,7 @@ class Blade:
         mu_LTE = (mu - mcam_LE) / mcam_ptp
         ml_LTE = (ml - mcam_LE) / mcam_ptp
         mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self.stream_surface.xr(mcam, 0.5))
+        chord = turbigen2.util.arc_length(self.stream_surface.xr(mcam, 0.5))
 
         # Meridional coordinates of the upper, lower and camber lines
         xru = self.stream_surface.xr(mu_LTE, spf)
@@ -433,7 +433,7 @@ class Blade:
         xr = self.stream_surface.xr(mcam, spf)
 
         # Project the camber angle onto the stream surface
-        theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
+        theta = turbigen2.util.cumtrapz0(dydm / xr[1], mcam * chord)
 
         # Stack the sections, then rotate the whole blade
         theta -= np.interp(self.m_stack, mcam, theta)
@@ -454,7 +454,7 @@ class Blade:
         """Return the length of the longer of the two surfaces at `spf` [m]."""
         xrtu, xrtl = self.evaluate_section(spf)
         lengths = [
-            turbigen.util.arc_length(np.stack((*xrt[:2], xrt[1] * xrt[2])))
+            turbigen2.util.arc_length(np.stack((*xrt[:2], xrt[1] * xrt[2])))
             for xrt in (xrtu, xrtl)
         ]
         return np.maximum(*lengths)
@@ -462,4 +462,4 @@ class Blade:
     def chord(self, spf):
         """Return the meridional length of the camber line at `spf` [m]."""
         xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
-        return turbigen.util.arc_length(xr)
+        return turbigen2.util.arc_length(xr)

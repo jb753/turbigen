@@ -13,7 +13,7 @@ import dataclasses
 
 import numpy as np
 
-import turbigen.util
+import turbigen2.util
 from turbigen2.annulus import Annulus
 from turbigen2.blade import Row
 from turbigen2.meanline import MeanLine
@@ -63,7 +63,7 @@ class Machine:
             ("Gap/m", np.array([row.tip_gap for row in self.rows]), ".4f"),
             ("s/cm", 2.0 * np.pi * r_ref / n_blade / chord, ".3f"),
         ]
-        return turbigen.util.format_table(
+        return turbigen2.util.format_table(
             "Blades:", len(self.rows), properties, paired=False
         )
 

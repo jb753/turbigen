@@ -45,7 +45,7 @@ import numpy as np
 import ember.block
 import ember.fluid
 
-import turbigen.util
+import turbigen2.util
 
 logger = logging.getLogger("turbigen")
 
@@ -432,4 +432,4 @@ class MeanLine(ember.block.Block):
             ("Alpha/deg", ml.Alpha, ".1f"),
             ("Alpha_rel/deg", ml.Alpha_rel, ".1f"),
         ]
-        return turbigen.util.format_table("Mean line:", self.n_row, properties)
+        return turbigen2.util.format_table("Mean line:", self.n_row, properties)

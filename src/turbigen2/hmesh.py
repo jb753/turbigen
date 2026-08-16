@@ -22,7 +22,8 @@ import numpy as np
 import ember.block
 import ember.grid
 import ember.patch
-from turbigen import clusterfunc, util
+import turbigen2.util as util
+from turbigen2 import clusterfunc
 from turbigen2.mesh import Mesher
 
 logger = logging.getLogger("turbigen")

@@ -38,7 +38,7 @@ from timeit import default_timer as timer
 import numpy as np
 import yaml
 
-import turbigen
+import turbigen2
 import ember.convergence_history
 import ember.yaml_util
 from turbigen2 import (
@@ -1294,7 +1294,7 @@ def _make_parser():
         "-V",
         "--version",
         action="version",
-        version=f"%(prog)s {turbigen.__version__}",
+        version=f"%(prog)s {turbigen2.__version__}",
     )
 
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
@@ -1493,7 +1493,7 @@ def main(argv=None):
     # set of results still identifies them long after the run.
     started = datetime.datetime.now().replace(microsecond=0).isoformat()
     _banner[:] = [
-        f"*** TURBIGEN2 v{turbigen.__version__} ***",
+        f"*** TURBIGEN2 v{turbigen2.__version__} ***",
         f"Starting at {started}",
     ]
     for line in _banner:

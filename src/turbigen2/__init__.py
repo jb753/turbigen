@@ -5,6 +5,8 @@ dataclass that builds itself from a dict and turns back into one. Importing
 this package registers the built-in fluids and designs.
 """
 
+import importlib.metadata
+
 from turbigen2 import designs  # noqa: F401 - registers the built-in designs
 from turbigen2 import bconds  # noqa: F401 - boundary conditions for a new grid
 from turbigen2 import case  # noqa: F401 - reading and writing a config with its result
@@ -54,6 +56,14 @@ from turbigen2.bconds import InletProfile, Legendre, OperatingPoint, Sampled
 from turbigen2.result import Result
 from turbigen2.solver import Ember, Solver
 from turbigen2.node import Node
+
+__version__ = importlib.metadata.version("turbigen")
+"""Version of the distribution this package ships in.
+
+The distribution is still called `turbigen`, being what is installed, and this
+is one of two packages inside it. Read from the metadata rather than imported
+from the package being replaced, which is on its way out.
+"""
 
 __all__ = [
     "Annulus",
