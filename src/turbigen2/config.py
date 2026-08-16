@@ -13,7 +13,7 @@ import ember.yaml_util
 from turbigen2 import include, plugins
 from turbigen2.annulus import AnnulusDesign
 from turbigen2.batch import Batch
-from turbigen2.bconds import OperatingPoint
+from turbigen2.bconds import InletProfile, OperatingPoint
 from turbigen2.blade import BladeDesign
 from turbigen2.chic import Chic
 from turbigen2.database import Database
@@ -53,6 +53,15 @@ class Config(Node):
     """Where to run the machine, as a departure from its design point. Read by
     no design stage: the same geometry runs at every point of its
     characteristic, so this changes the boundary conditions and nothing else."""
+
+    inlet_profile: InletProfile | None = None
+    """What feeds the machine, if not a uniform flow.
+
+    Beside the operating point rather than inside it, because the same profile
+    applies at every point of a characteristic --- a rig's intake or the stage
+    upstream does not change because you moved along the map. Nested, a `batch`
+    over `operating_point.DP_adjust` would copy the whole profile into every
+    member."""
 
     iterate: tuple[Iterator, ...] = ()
     """Design iterators, closing the loop between the design and its CFD. Only

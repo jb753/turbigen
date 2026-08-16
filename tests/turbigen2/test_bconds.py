@@ -359,8 +359,8 @@ def spanwise(patch, name):
 
 
 def with_profile(**profile):
-    """An operating point carrying an inlet profile."""
-    return bconds.OperatingPoint(inlet=bconds.InletProfile(**profile))
+    """An inlet profile, as `bconds.apply` takes it."""
+    return bconds.InletProfile(**profile)
 
 
 BOUNDARY_LAYER = {"spf": (0.0, 0.05, 0.95, 1.0), "DPo": (-1.0, 0.0, 0.0, -1.0)}
@@ -383,7 +383,7 @@ def test_a_deficit_of_one_loses_the_whole_dynamic_head(shrouded):
     machine, grid = shrouded
     inlet = machine.mean_line.inlet
 
-    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+    bconds.apply(grid, machine, None, with_profile(**BOUNDARY_LAYER))
 
     Po = spanwise(grid.patches.inlet[0], "Po")
 
@@ -398,7 +398,7 @@ def test_a_deficit_of_one_loses_the_whole_dynamic_head(shrouded):
 def test_an_omitted_column_stays_uniform(shrouded):
     machine, grid = shrouded
 
-    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+    bconds.apply(grid, machine, None, with_profile(**BOUNDARY_LAYER))
 
     patch = grid.patches.inlet[0]
     assert np.ptp(np.asarray(patch.Po)) > 1.0
@@ -411,7 +411,7 @@ def test_an_angle_perturbation_is_added_in_degrees(shrouded):
     nominal = float(machine.mean_line.inlet.Alpha)
 
     bconds.apply(
-        grid, machine, with_profile(spf=(0.0, 1.0), DAlpha=(-2.0, 3.0))
+        grid, machine, None, with_profile(spf=(0.0, 1.0), DAlpha=(-2.0, 3.0))
     )
 
     Alpha = np.asarray(grid.patches.inlet[0].Alpha)
@@ -432,7 +432,7 @@ def test_equal_perturbations_in_Po_and_To_are_isentropic(shrouded):
     shape = (0.0, -0.3, -0.3, 0.0)
     spf = (0.0, 0.2, 0.8, 1.0)
 
-    bconds.apply(grid, machine, with_profile(spf=spf, DPo=shape, DTo=shape))
+    bconds.apply(grid, machine, None, with_profile(spf=spf, DPo=shape, DTo=shape))
 
     patch = grid.patches.inlet[0]
     s = entropy(np.asarray(patch.Po), np.asarray(patch.To))
@@ -447,7 +447,7 @@ def test_a_loss_alone_is_not_isentropic(shrouded):
     """The counterpart, or the test above would pass on a uniform inlet."""
     machine, grid = shrouded
 
-    bconds.apply(grid, machine, with_profile(**BOUNDARY_LAYER))
+    bconds.apply(grid, machine, None, with_profile(**BOUNDARY_LAYER))
 
     patch = grid.patches.inlet[0]
     s = entropy(np.asarray(patch.Po), np.asarray(patch.To))
@@ -462,7 +462,7 @@ def test_the_profile_is_interpolated_onto_the_patch(shrouded):
     inlet = machine.mean_line.inlet
     q = float(inlet.Po) - float(inlet.P)
 
-    bconds.apply(grid, machine, with_profile(spf=(0.0, 1.0), DPo=(-1.0, 0.0)))
+    bconds.apply(grid, machine, None, with_profile(spf=(0.0, 1.0), DPo=(-1.0, 0.0)))
 
     patch = grid.patches.inlet[0]
     expected = float(inlet.Po) + (patch.spf - 1.0) * q
@@ -508,13 +508,44 @@ def test_the_profile_round_trips():
     from turbigen2 import Config  # noqa: PLC0415
 
     config = dataclasses.replace(
-        build(mesh=MESH), operating_point=with_profile(**BOUNDARY_LAYER)
+        build(mesh=MESH), inlet_profile=with_profile(**BOUNDARY_LAYER)
     )
 
     assert Config.from_dict(config.to_dict()) == config
-    assert config.to_dict()["operating_point"]["inlet"]["DPo"] == [
-        -1.0,
-        0.0,
-        0.0,
-        -1.0,
-    ]
+    assert config.to_dict()["inlet_profile"]["DPo"] == [-1.0, 0.0, 0.0, -1.0]
+
+
+def test_the_profile_is_not_part_of_the_operating_point():
+    """The same profile applies at every point of a characteristic.
+
+    What feeds a machine --- a rig's intake, the stage upstream --- does not
+    change because you moved along its map, so nesting the profile inside the
+    operating point would say something false, and a `batch` over `DP_adjust`
+    would copy the whole thing into every member.
+    """
+    from turbigen2 import Config  # noqa: PLC0415
+
+    with pytest.raises(ValueError, match="Unknown key"):
+        Config.from_dict(
+            {
+                **build(mesh=MESH).to_dict(),
+                "operating_point": {"DP_adjust": 0.1, "inlet": {"spf": [0.0, 1.0]}},
+            }
+        )
+
+
+def test_a_profile_survives_a_characteristic_sweep():
+    """`chic` replaces the operating point alone, so a top-level profile is
+    carried through untouched -- by design now, rather than by luck."""
+    from turbigen2 import Chic, chic  # noqa: PLC0415
+
+    config = dataclasses.replace(
+        build(mesh=MESH),
+        chic=Chic(),
+        inlet_profile=with_profile(**BOUNDARY_LAYER),
+    )
+
+    moved = chic.at(config, 0.2)
+
+    assert moved.operating_point.DP_adjust == pytest.approx(0.2)
+    assert moved.inlet_profile == config.inlet_profile

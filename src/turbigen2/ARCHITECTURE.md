@@ -521,17 +521,16 @@ Nothing is needed in `mixout` for this, unlike shaft speed: exit pressure is
 measured from the cut, so an off-design run already records the pressure it
 actually ran at.
 
-### A non-uniform inlet is the same idea, spanwise
+## A non-uniform inlet is the same idea, spanwise
 
-An `operating_point.inlet` is a profile of *perturbations* from the mean line,
+An `inlet_profile:` is a profile of *perturbations* from the mean line,
 interpolated onto whatever span fractions the inlet patch has. Zero is uniform,
 so an absent section is what the package did before there was one.
 
 ```yaml
-operating_point:
-  inlet:
-    spf: [0.0, 0.05, 0.95, 1.0]
-    DPo: [-1.0, 0.0, 0.0, -1.0]      # hub and casing boundary layers
+inlet_profile:
+  spf: [0.0, 0.05, 0.95, 1.0]
+  DPo: [-1.0, 0.0, 0.0, -1.0]      # hub and casing boundary layers
 ```
 
 Non-dimensionalised by what vanishes with the flow rather than by the absolute
@@ -551,9 +550,14 @@ by the machine's temperature *rise* instead — the closer analogue of
 `DP_adjust` — breaks that, needs the machine's duty, and divides by zero for a
 cascade.
 
-It lives on `OperatingPoint` because a distorted inlet *is* a condition the
-machine is run at, so `bconds.apply` needs no new argument and a `chic` sweep
-keeps the profile while only `DP_adjust` moves between points.
+**Beside the operating point, not inside it.** The same profile applies at
+every point of a characteristic: what feeds a machine --- a rig's intake, the
+stage upstream --- does not change because you moved along its map. Nested, a
+`batch` over `operating_point.DP_adjust` would copy the whole profile into
+every member, and a `chic` sweep would keep it only by the accident of
+replacing one field rather than the node. Separate, `chic.at` leaves it alone
+because it is not the operating point, which is the same behaviour arrived at
+on purpose.
 
 A profile must span exactly `[0, 1]`. Interpolation clamps, so one given over
 `[0.1, 0.9]` would silently hold its end values across the rest of the span

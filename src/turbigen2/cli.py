@@ -461,7 +461,7 @@ def prepare(config, restart_path=None):
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
 
-    bconds.apply(grid, machine, config.operating_point)
+    bconds.apply(grid, machine, config.operating_point, config.inlet_profile)
     guess.apply(grid, machine)
 
     # A stored field supersedes the meridional guess. Applied after it rather

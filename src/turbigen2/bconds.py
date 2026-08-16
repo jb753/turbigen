@@ -234,15 +234,6 @@ class OperatingPoint(Node):
     variable whose nominal is zero.
     """
 
-    inlet: InletProfile | None = None
-    """Non-uniform inlet, if the machine is not to be fed a uniform one.
-
-    Here rather than beside the design because a distorted inlet *is* a
-    condition the machine is run at, so it belongs with the back pressure and
-    travels with it: a characteristic swept by `chic` keeps whatever profile
-    was configured, since only ``DP_adjust`` is replaced between points.
-    """
-
 
 def _spanwise(patch, values):
     """Return `values` laid out on `patch`'s own axes, spanwise.
@@ -260,7 +251,7 @@ def _spanwise(patch, values):
     return np.asarray(values, dtype=float).reshape(shape)
 
 
-def apply(grid, machine, operating_point=None):
+def apply(grid, machine, operating_point=None, inlet_profile=None):
     """Impose an operating point on `grid`, in place.
 
     Stagnation pressure and temperature and both flow angles go onto every
@@ -276,6 +267,11 @@ def apply(grid, machine, operating_point=None):
     operating_point : OperatingPoint or None
         Where to run it, as a departure from the design point. ``None`` is the
         design point itself, which is what a config that says nothing means.
+    inlet_profile : InletProfile or None
+        What feeds it, if not a uniform flow. A separate argument from the
+        operating point, and not a field of it, because the same profile
+        applies at every point of a characteristic: what feeds a machine does
+        not change because you moved along its map.
 
     """
     inlet = machine.mean_line.inlet
@@ -288,17 +284,15 @@ def apply(grid, machine, operating_point=None):
             f"patches; boundary conditions need at least one of each."
         )
 
-    profile = operating_point.inlet if operating_point is not None else None
-
     for patch in patches_in:
-        if profile is None:
+        if inlet_profile is None:
             patch.set_Po_To(float(inlet.Po), float(inlet.To))
             patch.set_Alpha(float(inlet.Alpha))
             patch.set_Beta(float(inlet.Beta))
         else:
             # Evaluated per patch, on its own span fractions, so a profile is a
             # statement about the annulus rather than about a mesh.
-            state = profile.state(patch.spf, inlet)
+            state = inlet_profile.state(patch.spf, inlet)
             patch.set_Po_To(
                 _spanwise(patch, state["Po"]), _spanwise(patch, state["To"])
             )
