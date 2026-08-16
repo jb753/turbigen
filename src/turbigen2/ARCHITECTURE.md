@@ -646,6 +646,39 @@ MeanLine), because "actual" was attached to a config object rather than kept
 beside the design it is compared with. Here `result.nominal` and
 `result.actual` sit at the same level, one step away from the `Machine`.
 
+### What a run says at the end
+
+`cli.design_variable_string` prints the two side by side --- the intent the
+config stated against what the CFD achieved, in the same units --- and it is
+the last thing a run logs, being the answer to the question the config asked.
+
+**Both columns come from one `backward()`,** applied to `result.nominal` and to
+`result.actual`, rather than reading the nominal off the config's own fields.
+So whatever definition of loss or loading a design uses, both sides are
+measured through it, and a difference is always the flow differing rather than
+the two sides being computed differently.
+
+That also gives the *diagnostics* a nominal column for free. `backward` returns
+reaction, pressure ratio and efficiency alongside the design variables, and
+those are where a mismatch usually shows first. The package this replaces
+reached them through a second loop over "additional vars not in nominal" and
+left their nominal column blank, so the one comparison worth making was the one
+it could not print.
+
+It is sound because there are two states and not three, as above: a nominal
+mean line that exists *is* the requested design, since `solve_for` raises if it
+cannot hit its targets and `check_round_trip` raises if the inverted variables
+disagree with the fields that asked for them.
+
+Design variables are still marked off from diagnostics, by field membership
+rather than by the order `backward` happens to return its keys in --- a
+variable you set and a number you read are different kinds of thing even when
+they print the same way. Errors are `nominal - actual`, the sign
+`iterate.MeanLine.error` already uses, so a row here and a row of the iteration
+table describe one number the same way round. And the whole thing is guarded
+like the mix-out above it: a table is a report of a solution the CFD has
+already been paid for, and must not be able to cost the run its output.
+
 ## Two speeds of iteration
 
 Not every mismatch needs CFD to measure. A surface Reynolds number is a

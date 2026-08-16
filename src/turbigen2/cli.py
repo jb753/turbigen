@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 from timeit import default_timer as timer
 
+import numpy as np
 import yaml
 
 import turbigen
@@ -608,6 +609,16 @@ def solve(config, out_dir, restart_path=None):
     if actual is not None:
         run_log.info(actual.to_string())
 
+        # Last, because it is the answer to the question the config asked, and
+        # what someone reads first when scrolling back. Guarded for the same
+        # reason the mix-out above is: a table is a report of a solution the
+        # CFD has already been paid for, and it must not be able to cost the
+        # run the output written below.
+        try:
+            run_log.info(design_variable_string(config, result))
+        except Exception as err:
+            logger.warning(f"Could not compare the design against its solution: {err}")
+
     # Written whatever happened, and written first. A march that did not
     # converge is the one most likely to be picked up and continued, so
     # withholding its field would be exactly backwards -- and a post-processor
@@ -932,6 +943,100 @@ def _write_output(config, result, out_dir):
 def grid_string(grid):
     """One-line summary of the size of a grid."""
     return f"Mesh: n_block={len(grid)}, n_cell/1e6={grid.size / 1e6:.2f}"
+
+
+def _design_variable_rows(config, result):
+    """Yield ``(name, nominal, actual, is_variable)`` for every inverted key.
+
+    **Both columns come from the same `backward()`**, one applied to the
+    nominal mean line and one to the mixed-out actual, rather than reading the
+    nominal off the config's own fields. Three things follow.
+
+    The comparison is like for like: whatever definition of loss or loading the
+    design uses, both sides are measured through it, so a difference is the
+    flow differing and never the two sides being computed differently.
+
+    Diagnostics get a nominal column for free. `backward` returns reaction,
+    pressure ratio and efficiency alongside the design variables, and those are
+    where a mismatch usually shows first. The package this replaces reached
+    them through a second loop over "additional vars not in nominal" and left
+    the nominal column blank, so the one comparison worth making was the one it
+    could not print.
+
+    And it is sound, because there are two states and not three: `solve_for`
+    raises if it cannot hit its targets and `check_round_trip` raises if the
+    inverted variables disagree with the fields that asked for them, so a
+    nominal mean line that exists *is* the requested design.
+
+    Design variables are still marked, because a variable you set and a number
+    you read are different kinds of thing even when they are printed the same
+    way. That is field membership rather than the order `backward` happens to
+    return its keys in, which is only the author's convention.
+    """
+    variables = {field.name for field in dataclasses.fields(config.mean_line)}
+
+    nominal = config.mean_line.backward(result.nominal)
+    actual = config.mean_line.backward(result.actual)
+
+    for name, value in nominal.items():
+        # A design may declare a variable as not invertible, and it may return
+        # one the other call did not; neither is an error, and neither can be
+        # compared.
+        if value is None or actual.get(name) is None:
+            continue
+
+        was, now = np.atleast_1d(value), np.atleast_1d(actual[name])
+        if was.shape != now.shape:
+            continue
+
+        for i, (one, other) in enumerate(zip(was, now)):
+            label = name if was.size == 1 else f"{name}[{i}]"
+            yield label, float(one), float(other), name in variables
+
+
+def design_variable_string(config, result):
+    """Return a table of what the design asked for against what it achieved.
+
+    The most valuable few lines a run prints: a mean line states an intent, and
+    this is the only place that intent and the CFD are put side by side in the
+    same units.
+
+    Errors are `nominal - actual`, which is the sign
+    :meth:`turbigen2.iterate.MeanLine.error` already uses, so a row here and a
+    row of the iteration table describe one number the same way round.
+    """
+    rows = list(_design_variable_rows(config, result))
+    if not rows:
+        return "Design variables: nothing that backward() returns can be compared."
+
+    width = max(len(name) for name, _, _, _ in rows)
+    header = (
+        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  "
+        f"{'err':>10}  {'err/%':>8}"
+    )
+    lines = ["Design variables:", header, "-" * len(header)]
+
+    # Set variables first, then what was read off the answer, with a rule
+    # between. Within each, the order the design returned them in, which is the
+    # order its author thought about them.
+    for wanted in (True, False):
+        block = [row for row in rows if row[3] is wanted]
+        if not block:
+            continue
+        if not wanted:
+            lines.append("-" * len(header))
+
+        for name, was, now, _ in block:
+            error = was - now
+            # A nominal of zero has nothing to be relative to. Recamber and
+            # swirl angles are routinely zero by design, so this is the common
+            # case rather than a guard against the impossible.
+            relative = f"{error / was * 100.0:8.2f}" if was else f"{'--':>8}"
+            lines.append(
+                f"{name:<{width}}  {was:10.4g}  {now:10.4g}  {error:10.3g}  {relative}"
+            )
+
+    return "\n".join(lines)
 
 
 def processors(config):

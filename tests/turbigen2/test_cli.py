@@ -193,18 +193,18 @@ def test_report_of_a_mean_line_design_is_not_an_error(case):
     assert not (case.parent / cli.OUTPUT_NAME).exists()
 
 
-def test_a_batch_is_written_beside_its_datum(sample_case):
+def test_a_batch_is_written_beside_its_datum(batch_case):
     """No directory to name: a batch goes where the design it came from is.
 
     Which also makes the layout record the provenance that nothing else does --
     `--continue` cannot tell that the datum or its bounds changed between
     batches, and no file at the batch root says what generated it.
     """
-    cli.main(["sample", str(sample_case), "-n", "2"])
-    cli.main(["sample", str(sample_case), "-n", "2"])
+    cli.main(["batch", str(batch_case), "-n", "2"])
+    cli.main(["batch", str(batch_case), "-n", "2"])
 
-    assert (sample_case.parent / "batch_0000").is_dir()
-    assert (sample_case.parent / "batch_0001").is_dir()
+    assert (batch_case.parent / "batch_0000").is_dir()
+    assert (batch_case.parent / "batch_0001").is_dir()
 
 
 def test_batch_numbering_carries_on_past_a_deleted_batch(tmp_path):
@@ -249,11 +249,11 @@ def test_malformed_override_is_rejected(case, capsys):
     assert "KEY=VALUE" in capsys.readouterr().err
 
 
-def test_nothing_but_sample_writes_to_stdout(case, capsys):
+def test_nothing_but_batch_writes_to_stdout(case, capsys):
     """One stream for everything a run says, and it is stderr.
 
     stdout is reserved for the one machine-readable thing there is: the batch
-    directory `sample` cannot name in advance.
+    directory `batch` cannot name in advance.
     """
     assert cli.main(["design", str(case)]) == 0
 
@@ -274,12 +274,12 @@ def test_verbose_shows_the_traceback(tmp_path, capsys):
     assert "Traceback" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("verb", ["design", "report", "run", "iterate", "sample"])
+@pytest.mark.parametrize("verb", ["design", "report", "run", "iterate", "batch"])
 def test_every_verb_can_print_its_help(verb, capsys):
     """argparse percent-formats help strings, so a bare `%` in one raises.
 
     The placeholder is a `%`, and describing it in the `--out` help without
-    doubling it made `sample --help` fail with a ValueError from inside
+    doubling it made `batch --help` fail with a ValueError from inside
     argparse rather than print anything.
     """
     with pytest.raises(SystemExit) as excinfo:
@@ -423,6 +423,8 @@ def test_run_solves_a_case_end_to_end(run_case, capsys):
     assert "Mean line:" in printed
     assert "Mesh:" in printed
     assert "Solver: converged" in printed
+    # The answer to the question the config asked, and the last thing said.
+    assert "Design variables:" in printed
 
 
 def test_a_run_never_overwrites_its_input(run_case):
@@ -657,12 +659,12 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
 
 
 #
-# THE SAMPLE VERB
+# THE BATCH VERB
 #
 
 
-SAMPLE_CASE = CASE + """
-sample:
+BATCH_CASE = CASE + """
+batch:
   seed: 0
   bounds:
     mean_line.psi: [1.4, 1.8]
@@ -670,19 +672,19 @@ sample:
 
 
 @pytest.fixture
-def sample_case(tmp_path):
+def batch_case(tmp_path):
     """A datum config, in the directory its batches will be written into."""
     directory = tmp_path / "datum"
     directory.mkdir()
     path = directory / "input.yaml"
-    path.write_text(SAMPLE_CASE)
+    path.write_text(BATCH_CASE)
     return path
 
 
-def test_sample_writes_a_batch_named_by_sequence_index(sample_case):
-    assert cli.main(["sample", str(sample_case), "-n", "4"]) == 0
+def test_batch_writes_members_named_by_sequence_index(batch_case):
+    assert cli.main(["batch", str(batch_case), "-n", "4"]) == 0
 
-    batch = sample_case.parent / "batch_0000"
+    batch = batch_case.parent / "batch_0000"
 
     # A directory each, because one directory is one run: it is what gives
     # every member an output.yaml of its own to be run into.
@@ -695,31 +697,31 @@ def test_sample_writes_a_batch_named_by_sequence_index(sample_case):
     assert (batch / "0000" / "input.yaml").is_file()
 
 
-def test_sample_prints_the_batch_directory(sample_case, capsys):
+def test_batch_prints_the_batch_directory(batch_case, capsys):
     """The one thing on stdout: a numbered batch cannot be named in advance."""
-    cli.main(["sample", str(sample_case), "-n", "2"])
+    cli.main(["batch", str(batch_case), "-n", "2"])
 
-    assert capsys.readouterr().out.strip() == str(sample_case.parent / "batch_0000")
+    assert capsys.readouterr().out.strip() == str(batch_case.parent / "batch_0000")
 
 
-def test_sample_members_are_runnable_designs(sample_case):
+def test_batch_members_are_runnable_designs(batch_case):
     from turbigen2 import Config  # noqa: PLC0415
 
-    cli.main(["sample", str(sample_case), "-n", "2"])
+    cli.main(["batch", str(batch_case), "-n", "2"])
 
-    for member in (sample_case.parent / "batch_0000").glob("*/input.yaml"):
+    for member in (batch_case.parent / "batch_0000").glob("*/input.yaml"):
         config = Config.from_file(member)
-        assert config.sample is None
+        assert config.batch is None
         assert 1.4 <= config.mean_line.psi <= 1.8
         config.design()
 
 
-def test_sample_continue_carries_on_into_a_new_batch(sample_case):
+def test_batch_continue_carries_on_into_a_new_batch(batch_case):
     """Nothing is written into an existing batch, so nothing can be lost."""
-    cli.main(["sample", str(sample_case), "-n", "2"])
-    cli.main(["sample", str(sample_case), "-n", "2", "--continue"])
+    cli.main(["batch", str(batch_case), "-n", "2"])
+    cli.main(["batch", str(batch_case), "-n", "2", "--continue"])
 
-    datum = sample_case.parent
+    datum = batch_case.parent
     assert sorted(p.name for p in (datum / "batch_0000").glob("*/")) == [
         "0000",
         "0001",
@@ -730,7 +732,7 @@ def test_sample_continue_carries_on_into_a_new_batch(sample_case):
     ]
 
 
-def test_sample_continue_is_the_tail_of_one_batch(tmp_path):
+def test_batch_continue_is_the_tail_of_one_batch(tmp_path):
     """Two batches of two hold what one batch of four would have."""
     from turbigen2 import Config  # noqa: PLC0415
 
@@ -738,15 +740,15 @@ def test_sample_continue_is_the_tail_of_one_batch(tmp_path):
         directory = tmp_path / name
         directory.mkdir()
         path = directory / "input.yaml"
-        path.write_text(SAMPLE_CASE)
+        path.write_text(BATCH_CASE)
         return path
 
     split = datum("split")
-    cli.main(["sample", str(split), "-n", "2"])
-    cli.main(["sample", str(split), "-n", "2", "--continue"])
+    cli.main(["batch", str(split), "-n", "2"])
+    cli.main(["batch", str(split), "-n", "2", "--continue"])
 
     whole = datum("whole")
-    cli.main(["sample", str(whole), "-n", "4"])
+    cli.main(["batch", str(whole), "-n", "4"])
 
     def psi(root):
         return [
@@ -759,17 +761,98 @@ def test_sample_continue_is_the_tail_of_one_batch(tmp_path):
     assert psi(split.parent) == psi(whole.parent)
 
 
-def test_sample_without_a_sample_section_says_so(case, capsys):
-    assert cli.main(["sample", str(case)]) == 1
+def test_batch_without_a_batch_section_says_so(case, capsys):
+    assert cli.main(["batch", str(case)]) == 1
 
-    assert "needs a sample: section" in capsys.readouterr().err
+    assert "needs a batch: section" in capsys.readouterr().err
 
 
-def test_sample_takes_one_datum(sample_case, capsys):
+def test_batch_takes_one_datum(batch_case, capsys):
     """One config describes one space, so a second would be a second space."""
-    assert cli.main(["sample", str(sample_case), str(sample_case)]) == 1
+    assert cli.main(["batch", str(batch_case), str(batch_case)]) == 1
 
     assert "one config file as its datum" in capsys.readouterr().err
+
+
+#
+# THE GRID
+#
+
+
+GRID_CASE = CASE + """
+batch:
+  values:
+    mean_line.psi: [1.4, 1.6, 1.8]
+"""
+
+
+@pytest.fixture
+def grid_case(tmp_path):
+    """A datum naming its points outright, rather than a box to fill."""
+    directory = tmp_path / "datum"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    path.write_text(GRID_CASE)
+    return path
+
+
+def test_a_grid_writes_one_member_per_point(grid_case):
+    """No -n: the count is the product of what the section names."""
+    assert cli.main(["batch", str(grid_case)]) == 0
+
+    members = sorted(p.name for p in (grid_case.parent / "batch_0000").glob("*/"))
+    assert members == ["0000", "0001", "0002"]
+
+
+def test_a_grid_member_carries_its_own_point(grid_case):
+    """The value is in the file, so the study is not only in shell history."""
+    from turbigen2 import Config  # noqa: PLC0415
+
+    cli.main(["batch", str(grid_case)])
+
+    psi = [
+        Config.from_file(member).mean_line.psi
+        for member in sorted((grid_case.parent / "batch_0000").glob("*/input.yaml"))
+    ]
+
+    assert psi == [1.4, 1.6, 1.8]
+
+
+def test_a_grid_refuses_a_number(grid_case, capsys):
+    """The count is the product, so there is nothing for -n to choose."""
+    assert cli.main(["batch", str(grid_case), "-n", "8"]) == 1
+
+    assert "no -n to choose" in capsys.readouterr().err
+    # Refused before the batch is opened, so no number is burned.
+    assert not list(grid_case.parent.glob("batch_*"))
+
+
+def test_a_grid_refuses_to_continue(grid_case, capsys):
+    """A finite product has no tail to carry on from."""
+    assert cli.main(["batch", str(grid_case), "--continue"]) == 1
+
+    assert "nothing to --continue" in capsys.readouterr().err
+    assert not list(grid_case.parent.glob("batch_*"))
+
+
+def test_a_grid_is_reachable_from_the_command_line(batch_case):
+    """The whole mapping is replaced, its keys having dots of their own."""
+    assert (
+        cli.main(
+            [
+                "batch",
+                str(batch_case),
+                "-s",
+                "batch.bounds={}",
+                "-s",
+                "batch.values={mean_line.psi: [1.4, 1.8]}",
+            ]
+        )
+        == 0
+    )
+
+    members = sorted(p.name for p in (batch_case.parent / "batch_0000").glob("*/"))
+    assert members == ["0000", "0001"]
 
 
 def test_set_takes_a_bracketed_path(case):
@@ -877,3 +960,140 @@ def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch
     assert cli.main(["run", str(run_case)]) == 1
 
     assert (run_case.parent / "restart.npz").is_file()
+
+
+#
+# THE DESIGN VARIABLE TABLE
+#
+# What a run says at the end: the intent the config stated, beside what the CFD
+# achieved, in the same units. Both columns come from one `backward()`, so a
+# difference is always the flow differing rather than the two sides being
+# computed differently.
+#
+
+TURBINE = {
+    "fluid": {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5},
+    "mean_line": {
+        "type": "axial_turbine",
+        "psi": 1.6,
+        "phi2": 0.8,
+        "Ma2": 0.9,
+        "fac_Ma3_rel": 0.8,
+        "mdot": 10.0,
+        "Ys": [0.05, 0.05],
+        "r_rms": 0.3,
+    },
+}
+
+
+def _table(nominal_config, actual_config=None):
+    """Format a table comparing one design against another's mean line."""
+    from turbigen2 import Config, Result  # noqa: PLC0415
+
+    config = Config.from_dict(nominal_config)
+    machine = config.design()
+    other = (
+        machine
+        if actual_config is None
+        else Config.from_dict(actual_config).design()
+    )
+    return cli.design_variable_string(
+        config, Result(machine=machine, actual=other.mean_line)
+    )
+
+
+def test_design_variables_are_zero_against_their_own_design():
+    """The datum. A machine compared with itself has no error anywhere, which
+    is what says the two columns are measured through the same definitions."""
+    lines = _table(TURBINE).splitlines()[3:]
+
+    for line in lines:
+        if line.startswith("-"):
+            continue
+        assert float(line.split()[3]) == 0.0, line
+
+
+def test_design_variables_are_separated_from_diagnostics():
+    """A variable you set and a number you read are different kinds of thing.
+
+    The split is field membership, not the order `backward` returns its keys
+    in, which is only the author's convention.
+    """
+    lines = _table(TURBINE).splitlines()
+    rule = [i for i, line in enumerate(lines) if line.startswith("-")][-1]
+
+    names = [line.split()[0] for line in lines[3:] if not line.startswith("-")]
+    above = [line.split()[0] for line in lines[3:rule]]
+
+    assert "psi" in above
+    assert "Ys[0]" in above
+    # Reaction and efficiency are read off the answer, not asked for.
+    assert "eta_tt" in names and "eta_tt" not in above
+    assert "Lam" in names and "Lam" not in above
+
+
+def test_design_variables_expand_element_by_element():
+    """A per-row loss coefficient is two numbers, and a mismatch is usually in
+    one of them."""
+    names = [line.split()[0] for line in _table(TURBINE).splitlines()[3:]]
+
+    assert "Ys[0]" in names and "Ys[1]" in names
+    assert "Ys" not in names
+
+
+def test_a_solution_that_differs_shows_the_error():
+    """Errors are nominal - actual, the sign the mean_line iterator already
+    uses, so a row here and a row of the iteration table read the same way."""
+    hotter = {**TURBINE, "mean_line": {**TURBINE["mean_line"], "psi": 1.8}}
+
+    row = next(
+        line
+        for line in _table(TURBINE, hotter).splitlines()
+        if line.split()[0] == "psi"
+    )
+
+    _, nominal, actual, error, relative = row.split()
+    assert float(nominal) == pytest.approx(1.6)
+    assert float(actual) == pytest.approx(1.8)
+    assert float(error) == pytest.approx(-0.2, abs=1e-3)
+    assert float(relative) == pytest.approx(-12.5, abs=0.1)
+
+
+def test_a_zero_nominal_has_no_relative_error():
+    """Angles and efficiencies are routinely zero by design, so this is the
+    common case rather than a guard against the impossible."""
+    cascade = {
+        "fluid": {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5},
+        "mean_line": {
+            "type": "turbine_cascade",
+            "span": [0.01, 0.011],
+            "Alpha": [40.0, -65.0],
+            "Ma2": 0.6,
+            "Ys": 0.029,
+            "htr": 0.99,
+        },
+    }
+
+    zeroed = [
+        line
+        for line in _table(cascade).splitlines()[3:]
+        if not line.startswith("-") and float(line.split()[1]) == 0.0
+    ]
+
+    assert zeroed, "expected at least one design variable with a zero nominal"
+    for line in zeroed:
+        assert line.split()[-1] == "--", line
+
+
+def test_a_failed_comparison_does_not_cost_the_run_its_output(run_case, monkeypatch):
+    """A table is a report of a solution the CFD has already been paid for."""
+
+    def boom(config, result):
+        raise RuntimeError("table exploded")
+
+    monkeypatch.setattr(cli, "design_variable_string", boom)
+
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert (run_case.parent / "restart.npz").is_file()
+    assert (run_case.parent / "output.yaml").is_file()
