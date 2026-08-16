@@ -945,6 +945,68 @@ None of this is a port. `turbigen.config.set_mu_from_Re_surf` raises
 examples --- has been dead. The `[0]` in the unreachable line below it is
 where `i_row` defaulting to the first row comes from.
 
+## A repeating stage feeds itself
+
+The middle of a multistage machine is fed by its own exit, so its inlet profile
+is not something to state but a fixed point to find. `Repeat` finds it, and
+needs no loop of its own: with the error taken as `inlet - outlet`, the
+stepper's `u -= gain * e` at `gain = 1` gives exactly `u_new = outlet`. **The
+copy is the step rule.** A gain below one is the relaxation the old package
+called `relaxation_factor`.
+
+What travels upstream is Legendre coefficients, not samples. A sampled profile
+would be three columns over as many span stations as the mesh has — a dense
+Broyden Jacobian of that size squared, and a mesh artefact in every
+`output.yaml`.
+
+**Low order is a claim about the physics, not a convenience.** A Legendre fit
+to an endwall boundary layer is pointwise poor and integrally good: order 4
+recovers a third of the wall deficit but the blockage to 4%, and the blockage
+stops improving past order 8 while pointwise error keeps falling. That trade is
+right only if what propagates round the loop is the integrated deficit rather
+than the wall value — which it should be, the near-wall flow being
+re-established by the no-slip wall just downstream of the inlet plane. If that
+proves wrong the answer is a wall-clustered fitting coordinate, not more modes.
+`test_the_fit_recovers_blockage_but_not_the_wall` pins both halves so that
+changing the default is a decision.
+
+### Two scales, so two tolerances
+
+`DPo` and `DTo` are fractions of dynamic head and dynamic temperature; `DAlpha`
+is degrees. One number cannot serve both — 0.01 is slack on a head fraction and
+absurd on an angle — so `Repeat` overrides `tolerances()` and `clips()` with
+`atol_head`/`atol_angle` and `clip_head`/`clip_angle`. The old package had this
+right where it had the normalisation wrong, clipping pressure at 0.1 and angle
+at 16.
+
+Both are *absolute*, which is why neither is `rtol`: normalising by dynamic
+head makes that a fixed scale rather than the value being compared, and `rtol`
+means relative-to-the-value everywhere else here. The inherited `tolerance` and
+`clip` go unused and are ignored outright rather than blended, so setting one
+cannot quietly do half of something.
+
+### Measuring the exit profile
+
+Cut the last station, interpolate to a structured cut, mass-average over the
+pitch, subtract the mixed-out mean, normalise by that station's *own* dynamic
+head — normalising each end by its own is what makes "repeating" mean the shape
+repeats rather than the dimensional deviation.
+
+Two things there are easy to get wrong and were:
+
+* **Span fractions come from arc length, not from index.**
+  `interpolate_to_structured` clusters its nodes cosine-wise, which on a
+  seventeen-point cut differs from uniform by a tenth of the span — and differs
+  most at the endwalls, exactly where the profile is doing something.
+* **`mass_average` reduces over faces**, so it returns one fewer value than
+  there are nodes, and the span fractions must be face centres to match.
+
+`ember.average.mass_average(..., axes=(1,))` does the pitchwise average in one
+call, which it could not until its zero-flux guard was fixed: the reduction
+handled partial axes correctly but the guard `if np.abs(denominator) < 1e-14`
+assumed a scalar, so a partial reduction raised about an ambiguous truth value
+instead of returning a profile.
+
 ## Starting from designs already run
 
 An iteration begins wherever the file leaves its knobs, and then spends CFD on

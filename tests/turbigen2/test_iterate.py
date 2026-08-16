@@ -686,3 +686,169 @@ def test_the_iterate_section_round_trips_a_design_only_iterator():
 
     assert Config.from_dict(config.to_dict()) == config
     assert config.to_dict()["iterate"][0]["type"] == "Re_surf"
+
+
+#
+# THE REPEATING STAGE
+#
+# A stage in the middle of a machine is fed by its own exit, so the inlet
+# profile is a fixed point rather than something to state. The knob is Legendre
+# coefficients, because a sampled profile would be as many unknowns as the mesh
+# has span stations and would archive a mesh artefact into every output.yaml.
+#
+
+
+def repeating(**kwargs):
+    """A config carrying a repeat iterator and nothing that needs solving."""
+    return dataclasses.replace(build(), iterate=(iterate.Repeat(**kwargs),))
+
+
+def test_the_knobs_are_coefficients_not_samples():
+    config = repeating(order=3)
+
+    names = set(iterate.unknowns(config))
+
+    assert len(names) == 9
+    assert "inlet_profile.DPo[0]" in names
+    assert "inlet_profile.DBeta[0]" not in names, "pitch angle is not carried"
+
+
+def test_order_sets_the_number_of_knobs():
+    assert len(iterate.unknowns(repeating(order=2))) == 6
+    assert len(iterate.unknowns(repeating(order=5))) == 15
+
+
+def test_an_absent_profile_reads_as_uniform():
+    """The first iteration: no profile yet means no perturbation."""
+    config = repeating()
+
+    assert config.inlet_profile is None
+    assert set(iterate.unknowns(config).values()) == {0.0}
+
+
+def test_the_knobs_round_trip():
+    config = repeating(order=2)
+    moved = {
+        "inlet_profile.DPo[0]": 0.4,
+        "inlet_profile.DPo[1]": -0.25,
+        "inlet_profile.DAlpha[0]": 1.5,
+    }
+
+    after = config.iterate[0].with_unknowns(config, moved)
+
+    for name, value in moved.items():
+        assert iterate.unknowns(after)[name] == pytest.approx(value)
+    # And it wrote a Legendre profile, not a sampled one.
+    assert after.inlet_profile.type == "legendre"
+
+
+def test_a_written_profile_carries_no_level():
+    """Modes start at 1, so a profile cannot acquire a mean."""
+    config = repeating(order=3)
+
+    after = config.iterate[0].with_unknowns(
+        config, {"inlet_profile.DPo[0]": 0.4, "inlet_profile.DPo[1]": -0.2}
+    )
+
+    spf = np.linspace(0.0, 1.0, 2001)
+    column = after.inlet_profile.column("DPo", spf)
+    assert np.trapezoid(column, spf) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_paths_are_the_knobs_themselves():
+    """The one iterator whose knobs are its leaves one for one."""
+    config = repeating()
+    written = config.iterate[0].with_unknowns(
+        config, {"inlet_profile.DPo[0]": 0.3}
+    )
+
+    assert config.iterate[0].paths(written) == set(iterate.unknowns(written))
+
+
+def test_paths_match_what_repeat_writes():
+    """Through the same probe the other iterators are held to."""
+    config = repeating(order=2)
+    seeded = config.iterate[0].with_unknowns(
+        config, {name: 0.1 for name in iterate.unknowns(config)}
+    )
+
+    assert seeded.iterate[0].paths(seeded) == _probe(seeded.iterate[0], seeded)
+
+
+#
+# TWO SCALES, NOT ONE
+#
+
+
+def test_the_angle_tolerance_is_not_the_pressure_tolerance():
+    """DPo is a fraction of dynamic head and DAlpha is degrees, so one number
+    cannot serve both: 0.01 is slack on the first and absurd on the second."""
+    config = repeating(atol_head=0.02, atol_angle=0.5)
+
+    tolerances = config.iterate[0].tolerances(config)
+
+    assert tolerances["inlet_profile.DPo[0]"] == pytest.approx(0.02)
+    assert tolerances["inlet_profile.DTo[1]"] == pytest.approx(0.02)
+    assert tolerances["inlet_profile.DAlpha[0]"] == pytest.approx(0.5)
+
+
+def test_the_angle_clip_is_not_the_pressure_clip():
+    config = repeating(clip_head=0.1, clip_angle=4.0)
+
+    clips = config.iterate[0].clips(config)
+
+    assert clips["inlet_profile.DPo[0]"] == pytest.approx(0.1)
+    assert clips["inlet_profile.DAlpha[2]"] == pytest.approx(4.0)
+
+
+def test_the_inherited_tolerance_is_ignored():
+    """Setting it cannot quietly do half of something."""
+    config = repeating(tolerance=99.0, clip=99.0, atol_head=0.02, atol_angle=0.5)
+
+    assert config.iterate[0].tolerances(config)["inlet_profile.DPo[0]"] == 0.02
+    assert config.iterate[0].clips(config)["inlet_profile.DAlpha[0]"] == 5.0
+
+
+def test_order_below_one_is_refused():
+    with pytest.raises(ValueError, match="at least 1"):
+        iterate.Repeat(order=0)
+
+
+def test_the_repeat_section_round_trips():
+    config = repeating(order=4, atol_angle=0.25)
+
+    assert Config.from_dict(config.to_dict()) == config
+
+
+#
+# THE FIT
+#
+
+
+def test_the_fit_recovers_blockage_but_not_the_wall():
+    """The trade the default order is chosen under, pinned so that changing it
+    later is a decision rather than an accident.
+
+    A Legendre fit to an endwall boundary layer is pointwise poor and
+    integrally good. Low order is defensible only because what propagates round
+    a repeating loop is the integrated deficit, the near-wall flow being
+    re-established by the no-slip wall just downstream of the inlet plane.
+    """
+    from numpy.polynomial import legendre  # noqa: PLC0415
+
+    spf = np.linspace(0.0, 1.0, 401)
+    delta = 0.05
+    u = np.minimum(np.minimum(spf / delta, 1.0), np.minimum((1 - spf) / delta, 1.0))
+    u = u ** (1 / 7)
+    DPo = u**2 - 1.0
+
+    fit = legendre.legval(2 * spf - 1, legendre.legfit(2 * spf - 1, DPo, 3))
+
+    # Pointwise it misses most of the wall deficit.
+    assert fit[0] > -0.5, "a cubic should not resolve the wall value"
+    assert DPo[0] == pytest.approx(-1.0, abs=1e-6)
+
+    # Integrally it is close, which is what the scheme relies on.
+    blockage = np.trapezoid(1 - u, spf)
+    fitted = np.trapezoid(1 - np.sqrt(np.clip(fit + 1, 0, None)), spf)
+    assert abs(fitted - blockage) / blockage < 0.1

@@ -32,7 +32,9 @@ import logging
 from typing import ClassVar
 
 import numpy as np
+from numpy.polynomial import legendre
 
+import ember.average
 import ember.cut
 from turbigen2.node import Node
 from turbigen2.result import Result
@@ -1003,3 +1005,285 @@ class SurfaceReynolds(Iterator):
                 f"mu to change."
             )
         return mu
+
+
+#
+# THE REPEATING STAGE
+#
+
+
+def span_fractions(cut):
+    """Return the span fraction of each *face* of a structured span cut.
+
+    By arc length along the cut, not by index: `ember.cut
+    .interpolate_to_structured` clusters its nodes cosine-wise, which on a
+    seventeen-point cut differs from uniform by a tenth of the span --- and
+    differs most at the endwalls, which is exactly where a profile is doing
+    something.
+
+    Faces rather than nodes because :func:`ember.average.mass_average` reduces
+    over faces, so a nodal span fraction would be one longer than what it
+    returns.
+    """
+    x = np.asarray(cut.x)[:, 0]
+    r = np.asarray(cut.r)[:, 0]
+    arc = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(x), np.diff(r)))])
+    spf = arc / arc[-1]
+    return 0.5 * (spf[:-1] + spf[1:])
+
+
+def exit_profile(result, order, offset=None):
+    """Return the Legendre coefficients of the profile leaving `result`.
+
+    Cut the last station, mass-average each quantity over the pitch, subtract
+    the mixed-out mean, normalise by that station's own dynamic head and
+    dynamic temperature, and fit.
+
+    Normalising by the *exit* station's own scales rather than the inlet's is
+    what makes "repeating" mean the shape repeats: a stage raises or drops the
+    level, and it is the redistribution about that level which comes round
+    again.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    order : int
+        Highest Legendre mode to fit. Modes start at 1: the constant is
+        dropped, a profile being a redistribution rather than a level.
+    offset : float or None
+        Cut plane offset in blade chords; `mixout.CUT_OFFSET` by default.
+
+    Returns
+    -------
+    dict
+        One tuple of `order` coefficients per column of
+        :data:`turbigen2.bconds.InletProfile.COLUMNS`.
+
+    """
+    from turbigen2 import bconds, mixout  # noqa: PLC0415 - avoids a cycle
+
+    grid, machine = result.grid, result.machine
+    xr = mixout.cut_planes(
+        machine.annulus, mixout.CUT_OFFSET if offset is None else offset
+    )[-1]
+
+    cut = ember.cut.unstructured(grid, xr)
+    if cut is None:
+        raise ValueError(f"The exit cut plane at {xr.tolist()} misses the grid.")
+
+    # Structured so that the pitch is an axis to average over. Sized from the
+    # block it came out of, so the profile is measured at the resolution the
+    # mesh has rather than one chosen here.
+    block = grid[-1]
+    structured = ember.cut.interpolate_to_structured(
+        cut, (block.shape[1], block.shape[2])
+    )
+
+    mean = ember.average.mix_out(cut)
+    spf = span_fractions(structured)
+
+    def pitchwise(name):
+        """Mass-average one quantity over the pitch, leaving the span.
+
+        Mass-weighted rather than area-weighted, so a low-momentum wake cannot
+        pull the profile around --- the same choice `_incidence` makes.
+        """
+        return ember.average.mass_average(
+            getattr(structured, name), structured, axes=(1,)
+        )
+
+    # The scales are the exit station's own, and both vanish with the flow.
+    q = float(mean.Po) - float(mean.P)
+    dT = float(mean.To) - float(mean.T)
+
+    deficit = {
+        "DPo": (pitchwise("Po") - float(mean.Po)) / q,
+        "DTo": (pitchwise("To") - float(mean.To)) / dT,
+        "DAlpha": pitchwise("Alpha") - float(mean.Alpha),
+        "DBeta": pitchwise("Beta") - float(mean.Beta),
+    }
+
+    coefficients = {}
+    for name in bconds.InletProfile.COLUMNS:
+        if name not in Repeat.COLUMNS:
+            continue
+        # legfit returns modes 0 upwards; the constant is dropped rather than
+        # carried, so a measured level cannot leak into a profile that is
+        # defined as a redistribution.
+        fit = legendre.legfit(2.0 * spf - 1.0, deficit[name], order)
+        coefficients[name] = tuple(float(value) for value in fit[1:])
+
+    return coefficients
+
+
+class Repeat(Iterator):
+    """Pass the exit profile back to the inlet, until the stage feeds itself.
+
+    A repeating stage --- the middle of a multistage machine --- is fed by its
+    own exit. So the inlet profile is not something to state but something to
+    find, and finding it is a fixed point.
+
+    **The copy is the existing step rule.** With the error taken as
+    ``inlet - outlet``, :func:`step`'s own ``u -= gain * e`` at ``gain = 1``
+    gives exactly ``u_new = outlet``, so this needs no loop and no stepper of
+    its own; ``gain`` below one is the relaxation the package this replaces
+    called ``relaxation_factor``.
+
+    What is passed upstream is Legendre coefficients rather than a sampled
+    profile. A sampled one is three columns over as many span stations as the
+    mesh has, which would make a dense Broyden Jacobian of that size squared
+    and archive a mesh artefact into every `output.yaml`; the coefficients of a
+    low-order fit are few, independent, smooth over mesh noise, and a
+    resolution somebody chose.
+
+    **Low order is a claim about the physics.** A Legendre fit to an endwall
+    boundary layer is pointwise poor and integrally good: order 4 recovers only
+    a third of the wall deficit but gets the blockage to within 4 per cent, and
+    the blockage stops improving past order 8 while the pointwise error keeps
+    falling. That is the right trade only if what propagates round a repeating
+    loop is the integrated deficit rather than the wall value --- which it
+    should be, the near-wall flow being re-established by the no-slip wall just
+    downstream of the inlet plane. If that turns out to be wrong the answer is
+    a wall-clustered fitting coordinate, not a higher order.
+
+    ``DBeta`` is not carried: pitch angle at a repeating station is essentially
+    zero, and a fourth column would be noise.
+    """
+
+    type: ClassVar[str] = "repeat"
+
+    COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha")
+    """The profile columns this iterator owns."""
+
+    ANGLES: ClassVar[tuple[str, ...]] = ("DAlpha", "DBeta")
+    """Those measured in degrees rather than in fractions of a scale."""
+
+    order: int = 3
+    """Highest Legendre mode passed upstream, the modes starting at 1."""
+
+    offset: float = 0.5
+    """Where to read the exit profile, in blade chords past the trailing edge.
+
+    Far enough that the blade wakes have begun to mix but the plane is still in
+    the machine. The package this replaces reads at the same distance.
+    """
+
+    gain: float = 1.0
+    """One copies the exit profile outright; less under-relaxes it."""
+
+    atol_head: float = 0.01
+    """Converged when ``DPo`` and ``DTo`` are within this [--].
+
+    In fractions of dynamic head and of dynamic temperature, which is what
+    those columns are measured in.
+    """
+
+    atol_angle: float = 0.1
+    """Converged when ``DAlpha`` is within this [deg]."""
+
+    clip_head: float = 0.2
+    """Most ``DPo`` and ``DTo`` may move in one iteration [--]."""
+
+    clip_angle: float = 5.0
+    """Most ``DAlpha`` may move in one iteration [deg]."""
+
+    def __post_init__(self):
+        if self.order < 1:
+            raise ValueError(
+                f"repeat.order must be at least 1, got {self.order}. Mode 0 is "
+                f"the constant, which a profile does not carry."
+            )
+
+    #
+    # THE PROTOCOL
+    #
+
+    def names(self):
+        """Return the table key of every coefficient, in a fixed order."""
+        return [
+            f"inlet_profile.{name}[{mode}]"
+            for name in self.COLUMNS
+            for mode in range(self.order)
+        ]
+
+    def unknowns(self, config):
+        profile = config.inlet_profile
+        stored = {}
+        for name in self.COLUMNS:
+            values = getattr(profile, name, ()) if profile is not None else ()
+            # Zeros where there is no profile yet, or where it is shorter than
+            # this iterator wants: a uniform inlet is the first iteration.
+            stored[name] = tuple(values) + (0.0,) * (self.order - len(values))
+
+        return {
+            f"inlet_profile.{name}[{mode}]": float(stored[name][mode])
+            for name in self.COLUMNS
+            for mode in range(self.order)
+        }
+
+    def with_unknowns(self, config, values):
+        from turbigen2 import bconds  # noqa: PLC0415 - avoids a cycle
+
+        current = self.unknowns(config)
+        moved = {**current, **{k: v for k, v in values.items() if k in current}}
+
+        columns = {
+            name: tuple(
+                moved[f"inlet_profile.{name}[{mode}]"] for mode in range(self.order)
+            )
+            for name in self.COLUMNS
+        }
+
+        return dataclasses.replace(config, inlet_profile=bconds.Legendre(**columns))
+
+    def paths(self, config):
+        # The one iterator whose knobs are its leaves, one for one, so the two
+        # namings coincide rather than needing translation.
+        return set(self.unknowns(config))
+
+    def error(self, config, result):
+        if result.grid is None or result.machine is None:
+            logger.debug("No grid, so no exit profile to pass upstream.")
+            return {}
+
+        measured = exit_profile(result, self.order, self.offset)
+        current = self.unknowns(config)
+
+        # inlet minus outlet, so that `u -= gain * e` at gain one lands on the
+        # outlet exactly.
+        return {
+            f"inlet_profile.{name}[{mode}]": (
+                current[f"inlet_profile.{name}[{mode}]"] - measured[name][mode]
+            )
+            for name in self.COLUMNS
+            for mode in range(self.order)
+        }
+
+    #
+    # TWO SCALES, NOT ONE
+    #
+
+    def _by_column(self, head, angle):
+        """Return `head` or `angle` for each knob, by which column it is in."""
+        return {
+            f"inlet_profile.{name}[{mode}]": (angle if name in self.ANGLES else head)
+            for name in self.COLUMNS
+            for mode in range(self.order)
+        }
+
+    def tolerances(self, config):
+        """Return a tolerance per knob, in that knob's own units.
+
+        The inherited `tolerance` is unused, and so is `clip`. `Iterator`
+        carries one of each because most members want one of each; a member
+        whose columns are measured in different units has no way to say so
+        through them. Ignored outright rather than blended, so setting one
+        cannot quietly do half of something.
+        """
+        del config
+        return self._by_column(self.atol_head, self.atol_angle)
+
+    def clips(self, config):
+        del config
+        return self._by_column(self.clip_head, self.clip_angle)
