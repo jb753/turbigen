@@ -51,7 +51,7 @@ def calls(monkeypatch):
 
 @pytest.fixture
 def batch(tmp_path):
-    """Three members of a batch, laid out as the sample verb writes them."""
+    """Three members of a batch, laid out as the batch verb writes them."""
     paths = []
     for index in range(3):
         directory = tmp_path / "batch_0000" / f"{index:04d}"
@@ -170,7 +170,7 @@ def test_slurm_submits_one_array_over_a_file_of_tasks(batch, calls):
     """One submission, indexing lines rather than directory names.
 
     The package this replaces indexes numbered directories and so refuses
-    anything but a consecutive range, which the batches `sample` writes are
+    anything but a consecutive range, which the batches `batch` writes are
     not: a point that will not design is skipped and never retried.
     """
     base = batch[0].parent.parent
@@ -191,7 +191,7 @@ def test_slurm_submits_one_array_over_a_file_of_tasks(batch, calls):
 
 
 def test_gaps_in_a_batch_do_not_disturb_the_array(tmp_path, calls):
-    """The array indexes lines, so a skipped sample index is not a hole."""
+    """The array indexes lines, so a skipped member index is not a hole."""
     paths = []
     for index in (0, 3, 11):
         directory = tmp_path / "batch_0000" / f"{index:04d}"
@@ -340,12 +340,12 @@ def test_a_submitted_invocation_carries_every_override(batch):
 
 
 #
-# SAMPLE
+# BATCH
 #
 
 
-SAMPLE_CASE = CASE + """
-sample:
+BATCH_CASE = CASE + """
+batch:
   seed: 0
   bounds:
     mean_line.psi: [1.4, 1.8]
@@ -360,7 +360,7 @@ def datum(tmp_path):
         directory = tmp_path / ("iter" if iterating else "plain")
         directory.mkdir()
         path = directory / "input.yaml"
-        text = SAMPLE_CASE
+        text = BATCH_CASE
         if iterating:
             text += "iterate:\n  - type: deviation\n"
         path.write_text(text)
@@ -369,10 +369,10 @@ def datum(tmp_path):
     return make
 
 
-def test_sample_writes_a_batch_and_submits_it(datum, calls):
+def test_batch_writes_members_and_submits_them(datum, calls):
     path = datum(iterating=False)
 
-    assert cli.main(["sample", str(path), "-n", "2", "--queue"]) == 0
+    assert cli.main(["batch", str(path), "-n", "2", "--queue"]) == 0
 
     # Written first, so a submission that fails still leaves the batch.
     members = sorted((path.parent / "batch_0000").glob("*/input.yaml"))
@@ -389,7 +389,7 @@ def test_sample_writes_a_batch_and_submits_it(datum, calls):
 def test_a_batch_is_submitted_as_run_without_an_iterate_section(datum, calls):
     path = datum(iterating=False)
 
-    cli.main(["sample", str(path), "-n", "2", "--queue"])
+    cli.main(["batch", str(path), "-n", "2", "--queue"])
 
     assert " run " in (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
 
@@ -403,7 +403,7 @@ def test_a_batch_is_submitted_as_iterate_when_the_datum_iterates(datum, calls):
     """
     path = datum(iterating=True)
 
-    cli.main(["sample", str(path), "-n", "2", "--queue"])
+    cli.main(["batch", str(path), "-n", "2", "--queue"])
 
     assert " iterate " in (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
 
@@ -416,7 +416,7 @@ def test_a_submitted_batch_carries_no_options(datum, calls):
     """
     path = datum(iterating=False)
 
-    cli.main(["sample", str(path), "-n", "2", "-s", "mean_line.mdot=17.0", "--queue"])
+    cli.main(["batch", str(path), "-n", "2", "-s", "mean_line.mdot=17.0", "--queue"])
 
     script = (path.parent / "batch_0000" / job.SCRIPT_NAME).read_text()
     assert "-s" not in script
@@ -430,9 +430,9 @@ def test_sampling_without_a_job_section_says_so(tmp_path, capsys):
     directory.mkdir()
     path = directory / "input.yaml"
     # Everything but the job: section, which sits between the two halves.
-    path.write_text(CASE.split("job:")[0] + SAMPLE_CASE.split(CASE)[1])
+    path.write_text(CASE.split("job:")[0] + BATCH_CASE.split(CASE)[1])
 
-    assert cli.main(["sample", str(path), "-n", "2", "--queue"]) == 1
+    assert cli.main(["batch", str(path), "-n", "2", "--queue"]) == 1
 
     assert "job: section" in capsys.readouterr().err
 

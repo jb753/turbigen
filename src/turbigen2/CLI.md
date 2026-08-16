@@ -1,7 +1,7 @@
 # turbigen2 command-line interface
 
 Plan for the CLI, now that every verb it specifies is implemented: `design`,
-`report`, `run`, `iterate` and `sample`.
+`report`, `run`, `iterate` and `batch`.
 
 ## Why it looks like this
 
@@ -55,7 +55,7 @@ knows how to redirect it.
 | `report` | `design` + grid + any stored field, drawn | `post.pdf` | **implemented** |
 | `run` | `report` + CFD + mix-out | everything | **implemented** |
 | `iterate` | repeated `run`, updating the design between calls | everything | **implemented** |
-| `sample` | write configs covering a design space, running none | a `batch_NNNN` | **implemented** |
+| `batch` | write configs covering a design space, running none | a `batch_NNNN` | **implemented** |
 
 The cut between `design` and `report` is where external tools and side effects
 begin: everything up to and including blade geometry is pure computation on
@@ -72,7 +72,7 @@ implementation detail of getting there.
 ## Where output goes
 
 **Beside the config it was given, as `output.yaml`.** There is no `-o` on any
-verb but `sample`, nothing to derive and nothing to type:
+verb, nothing to derive and nothing to type:
 
 ```
 hiload/input.yaml -> hiload/{output.yaml, restart.npz, conv.cnv, post.pdf,
@@ -91,7 +91,7 @@ to the safe loader.
 
 **One directory is one run.** Artefact names are fixed, so two configs run in
 one directory would collide; avoiding that is the user's business, and
-`sample` writes a directory per member precisely so that it never happens by
+`batch` writes a directory per member precisely so that it never happens by
 accident.
 
 `design` never writes and needs no flag saying so; `report` always writes,
@@ -114,7 +114,7 @@ those answers".
 
 ### Batches are numbered, not named
 
-`sample` writes into the next free `batch_NNNN` beside its datum config.
+`batch` writes into the next free `batch_NNNN` beside its datum config.
 Numbering carries on from the highest that exists rather than counting how many
 there are, so a deleted batch in the middle does not make the next one
 overwrite a later one, and nothing is ever written into an existing batch.
@@ -462,7 +462,7 @@ job:
 turbigen2 run batch_0000/*/input.yaml -Q
 turbigen2 run batch_0000/*/input.yaml -Q -s job.hours=12
 turbigen2 iterate hiload/input.yaml -Q -s job.type=tsp
-turbigen2 sample datum/input.yaml -n 32 -Q
+turbigen2 batch datum/input.yaml -n 32 -Q
 ```
 
 **The key says how, the flag says whether.** That is the whole difference from
@@ -478,46 +478,97 @@ same mechanism as every other override, so there are no queue flags beyond
 through task-spooler.
 
 On `run` and `iterate`, `-Q` submits the targets you named, as the verb you
-typed, carrying this invocation's options. On `sample` it submits the members
+typed, carrying this invocation's options. On `batch` it submits the members
 it has just written, as the verb the datum implies, carrying none — see
-[`sample`](#sample--implemented). A third backend is a plugin class registering its own
+[`batch`](#batch--implemented). A third backend is a plugin class registering its own
 `type:`, needing no change here. See [Where a run
 executes](ARCHITECTURE.md#where-a-run-executes).
 
 Nothing wraps `tsp -l`, `squeue` or `scancel`: they are better than anything we
 would put in front of them.
 
-## `sample` — implemented
+## `batch` — implemented
 
 ```
-turbigen2 sample datum/input.yaml -n 32
+turbigen2 batch datum/input.yaml -n 32
 ```
 
-`database:` warm-starts a design from finished runs; `sample` is where those
-runs come from. Given bounds on some design variables it writes one config per
-point, and runs none of them.
+One verb for a set of related runs, whichever question you are asking of the
+design. It writes one config per point and runs none of them.
+
+**Two ways to say what varies**, and they are the two questions anyone asks.
+`bounds:` gives a box to fill quasi-randomly, which is what builds an archive
+`database:` can interpolate in:
 
 ```yaml
-sample:
+batch:
   seed: 0
   bounds:
     mean_line.psi: [1.2, 2.0]
     mean_line.phi2: [0.5, 1.0]
 ```
 
+`values:` names the points outright, and the batch is every combination of
+them — the parameter study you run to see a trend:
+
+```yaml
+batch:
+  values:
+    mean_line.psi: [1.2, 1.4, 1.6]
+```
+
+They are mutually exclusive. Mixing a grid over one variable with a fill over
+the rest is a real thing to want, but it makes `-n`, the index space and
+`--continue` all mean something new, so it waits for a case that needs it.
+
 Paths are spelled as `node.flatten` writes them, the same as
 `database.variables`, so a design variable is named identically wherever it
 appears. `-n` and `--continue` are properties of the invocation and so are flags;
-`seed` describes the space and so lives in the file.
+`seed` describes the space and so lives in the file. Both flags are **refused**
+against `values:`: the count is the product of what it names, and a finite
+product has no tail to carry on from.
 
-**Nothing is run unless you ask.** Bare `sample` writes configs and stops, so
-inspecting a batch before spending cluster hours on it costs nothing. `-Q`
-submits it:
+**Why this is a verb and not a shell loop.** Output goes beside the config it
+was given, so `for psi in 1.2 1.4 1.6; do turbigen2 run datum.yaml -s
+mean_line.psi=$psi; done` writes three designs into one directory and keeps the
+last. `check_clobber` cannot catch it either, seeing only the targets of one
+invocation where a loop is N of them. A batch gives each point a directory, and
+bakes its values into the member config, so the study is in the files rather
+than in shell history.
+
+**Nothing is run unless you ask.** Bare `batch` writes configs and stops, so
+inspecting them before spending cluster hours costs nothing. `-Q` submits:
 
 ```
-turbigen2 sample datum/input.yaml -n 32            # write only
-turbigen2 sample datum/input.yaml -n 32 -Q         # write, then submit
+turbigen2 batch datum/input.yaml -n 32            # write only
+turbigen2 batch datum/input.yaml -n 32 -Q         # write, then submit
 ```
+
+**A grid is reachable from the command line**, which is what makes a study a
+one-liner. The whole mapping has to be replaced rather than one entry of it:
+`parse_path` splits a `--set` key on dots and these keys contain their own, so
+`-s batch.values.mean_line.psi=[...]` would build a four-deep nest instead.
+
+```
+turbigen2 batch datum.yaml -s 'batch.values={mean_line.psi: [1.2, 1.4, 1.6]}' -Q
+```
+
+### Why `batch:` and not something else
+
+The section names a set of related runs, however they are chosen, and it is
+also what the verb writes — `batch_NNNN` — so key, verb and artefact are one
+word. It was `sample:` while drawing from a box was all it did; `sample` names
+one of the two modes and cannot cover naming points outright.
+
+`sweep:` reads better and is **reserved**: sweep and lean are blade stacking
+terms, and a config with a study `sweep:` beside a geometry `sweep:` is a
+collision that cannot be undone once files exist. Also rejected: `study:`
+(means examine, not emit, so it fails as a verb), `matrix:`, `plan:`, `vary:`,
+`doe:` and `space:`.
+
+"Sample" keeps its other meaning untouched — in `database:`, a *sample* is a
+finished run that converged and is within tolerance. The rename frees the word
+for that rather than colliding with it.
 
 **The verb is inferred**: `iterate` when the datum has an `iterate:` section,
 `run` when it does not, logged either way. Inferred rather than asked for,
@@ -530,13 +581,13 @@ gap is what iterating is for.
 
 The submitted jobs carry **no options**, unlike `run -Q` and `iterate -Q`. The
 members are new files written from the already-overridden datum, so a `-s` is
-in them; forwarding it again would be redundant, and a `-s sample.*` would
+in them; forwarding it again would be redundant, and a `-s batch.*` would
 re-create on each member the key `_strip` deliberately removed.
 
 The two-step still works, and is what to use when you want the other verb:
 
 ```
-turbigen2 run $(turbigen2 sample datum/input.yaml -n 32)/*/input.yaml -Q
+turbigen2 run $(turbigen2 batch datum/input.yaml -n 32)/*/input.yaml -Q
 ```
 
 ### Sobol', not Latin hypercube
@@ -580,15 +631,15 @@ else. Nothing is ever written into an existing batch.
 
 A batch is many designs and hours of solving to come, so it is numbered
 rather than named and never written into twice. Because the directory cannot
-then be given in advance, `sample` prints it on **stdout** — the
+then be given in advance, `batch` prints it on **stdout** — the
 machine-readable channel this document reserves — so
-`BATCH=$(turbigen2 sample datum/input.yaml)` works. No other verb writes to
+`BATCH=$(turbigen2 batch datum/input.yaml)` works. No other verb writes to
 stdout.
 
 ### Extending
 
 ```
-turbigen2 sample datum/input.yaml -n 32 --continue
+turbigen2 batch datum/input.yaml -n 32 --continue
 ```
 
 `--continue` needs no argument because the datum config already names the
@@ -619,10 +670,15 @@ contiguous and why members carry their sequence index rather than a count. A
 box that is mostly infeasible stops after a bounded number of attempts rather
 than spinning.
 
-Whole numbers are refused as design variables. Rounding a continuous draw
-collapses neighbours into duplicate designs, which `database._predict` then
-averages as repeat runs; and the obvious integer, blade count, changes the
-mesh.
+Whole numbers are refused as `bounds:`. Rounding a continuous draw collapses
+neighbours into duplicate designs, which `database._predict` then averages as
+repeat runs; and the obvious integer, blade count, changes the mesh. `values:`
+allows them, the reason for the ban being a property of drawing: three named
+blade counts cannot collide.
+
+A named point that will not design is **warned** rather than noted, unlike a
+drawn one. You asked for that point by name, so its absence from the batch is
+news; the batch is still written, and only fails if nothing designs at all.
 
 ## Entry point
 
@@ -653,4 +709,4 @@ target the parts unique to the command line:
 - `--set` reaches the design, and a mistyped `--set` key fails;
 - an unknown verb, a missing file, and a bad config each exit non-zero with a
   message on stderr rather than a traceback;
-- nothing but `sample` writes to stdout.
+- nothing but `batch` writes to stdout.

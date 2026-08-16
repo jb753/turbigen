@@ -170,7 +170,7 @@ class Slurm(Job):
     One array rather than one submission per config, and the array indexes
     *lines of a file* rather than directory names. The package this replaces
     indexes numbered directories and so refuses anything but a consecutive
-    range --- which the batches `turbigen2 sample` writes are not, since a point
+    range --- which the batches `turbigen2 batch` writes are not, since a point
     that will not design is skipped and never retried.
     """
 

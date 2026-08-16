@@ -12,6 +12,7 @@ import ember.yaml_util
 
 from turbigen2 import plugins
 from turbigen2.annulus import AnnulusDesign
+from turbigen2.batch import Batch
 from turbigen2.blade import BladeDesign
 from turbigen2.database import Database
 from turbigen2.design import MeanLineDesign
@@ -22,7 +23,6 @@ from turbigen2.machine import Machine
 from turbigen2.mesh import Mesher
 from turbigen2.node import Node
 from turbigen2.post import Post
-from turbigen2.sample import Sample
 from turbigen2.solver import Solver
 
 
@@ -61,10 +61,10 @@ class Config(Node):
     """Finished runs to start the iterators from, instead of from whatever this
     file says. Read once, by the verb that iterates."""
 
-    sample: Sample | None = None
-    """Bounds on design variables, for covering a space with runs. Read only by
-    the verb that samples, and stripped from the configs it emits: a member of
-    a batch is one design, not a design of experiments."""
+    batch: Batch | None = None
+    """Design variables to vary, for covering a space with runs. Read only by
+    the verb that writes a batch, and stripped from the configs it emits: a
+    member is one design, not a design of experiments."""
 
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config

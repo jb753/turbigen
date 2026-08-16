@@ -402,7 +402,7 @@ def parse_path(path):
     is what ``--set`` has always taken, and a dotted integer is unambiguous
     because a mapping key that is a bare number cannot appear in a config ---
     every one of them is a field name. Accepting both is what lets a design
-    variable be named identically in ``sample:``, in ``database:`` and on the
+    variable be named identically in ``batch:``, in ``database:`` and on the
     command line, rather than each growing its own translation.
     """
     segments = []
@@ -442,7 +442,7 @@ def set_by_path(data, path, value):
     """Set `value` at `path` in the raw dict `data`, in place.
 
     Works on the dict a config is built from rather than on a `Node`, because
-    both callers --- a ``--set`` override and a sampled design variable --- are
+    both callers --- a ``--set`` override and a batch design variable --- are
     changing a value on the way *in*, before anything is validated. That is
     what makes a mistyped key an error from the strict unknown-key check
     instead of a silent no-op.
