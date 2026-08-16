@@ -13,7 +13,9 @@ import ember.yaml_util
 from turbigen2 import include, plugins
 from turbigen2.annulus import AnnulusDesign
 from turbigen2.batch import Batch
+from turbigen2.bconds import OperatingPoint
 from turbigen2.blade import BladeDesign
+from turbigen2.chic import Chic
 from turbigen2.database import Database
 from turbigen2.design import MeanLineDesign
 from turbigen2.fluid import Fluid
@@ -47,6 +49,11 @@ class Config(Node):
     solver: Solver | None = None
     """Flow solver. Only needed by the verbs that solve."""
 
+    operating_point: OperatingPoint | None = None
+    """Where to run the machine, as a departure from its design point. Read by
+    no design stage: the same geometry runs at every point of its
+    characteristic, so this changes the boundary conditions and nothing else."""
+
     iterate: tuple[Iterator, ...] = ()
     """Design iterators, closing the loop between the design and its CFD. Only
     needed by the verb that iterates, but their errors are measured by every
@@ -60,6 +67,11 @@ class Config(Node):
     database: Database | None = None
     """Finished runs to start the iterators from, instead of from whatever this
     file says. Read once, by the verb that iterates."""
+
+    chic: Chic | None = None
+    """How to sweep a characteristic to its stability limit. Read only by the
+    verb that sweeps, which holds the geometry fixed and moves the operating
+    point alone."""
 
     batch: Batch | None = None
     """Design variables to vary, for covering a space with runs. Read only by

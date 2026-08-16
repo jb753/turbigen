@@ -467,6 +467,60 @@ That last failure is not hypothetical. Nothing called `set_Omega` at all until
 this went in, so every rotor was meshed and then solved in the stationary frame
 with stationary walls, and every configuration in the tree is an axial turbine.
 
+### Where a fixed machine is run
+
+A design states one condition; a machine has a whole characteristic. An
+`operating_point:` reaches the rest of it, changing the boundary conditions and
+nothing else --- no design stage reads it, and it sits outside
+`database.SUBTREE` so that two runs of one machine at different back pressures
+are one design run twice rather than two designs.
+
+```yaml
+operating_point:
+  DP_adjust: 0.1        # 10% more pressure change than the design asked for
+```
+
+**A pressure change, not a pressure ratio,** and this is the whole point of the
+field. The rule generalises: **adjust what vanishes when there is no machine,
+never what goes to one.** `Omega` and `DP` both measure from zero, so a
+fraction of them is a fraction of something physical. A pressure *ratio*
+measures from one, so scaling it is not a relative change to anything, and the
+discrepancy grows without limit as a machine gets slower. On one cascade,
+"5 per cent" applied through the ratio --- which is all the package this
+replaces offers --- gives:
+
+| Ma2 | PR_ts | via `PR_ts_adjust` | via `DP_adjust` |
+|---|---|---|---|
+| 0.6 | 1.302 | 1.16x the design pressure change | 1.05x |
+| 0.3 | 1.086 | 1.55x | 1.05x |
+| 0.1 | 1.028 | 2.72x | 1.05x |
+| 0.05 | 1.022 | **3.14x** | 1.05x |
+
+It is the same trap `iterate.MeanLine.tolerances` already guards against, where
+a relative tolerance on a design variable whose nominal is zero falls back to
+an absolute one.
+
+**One formula covers both machine types**, because the design's own pressure
+change carries the sign:
+
+```
+DP = (Po_in - P_out) * (1 + DP_adjust)      # negative for a compressor
+P_out = Po_in - DP
+```
+
+so `DP_adjust > 0` always means *more* pressure change --- more throttled for a
+compressor, more expanded for a turbine --- and neither a sign convention nor a
+machine type appears in the file. Zero reproduces the design exactly, which is
+what an absent section means.
+
+`PR_ts_adjust` is deliberately not offered alongside it. Two spellings of one
+knob is what the tip-clearance decision rejected, and the ratio is recomputed
+from `result:` anyway, `backward()` already returning it.
+
+Nothing is needed in `mixout` for this, unlike shaft speed: exit pressure is
+measured from the cut, so an off-design run already records the pressure it
+actually ran at.
+
 ### And the actual mean line records the speed that ran
 
 `mixout` copies the nominal to start with, which is right for `Am` --- a

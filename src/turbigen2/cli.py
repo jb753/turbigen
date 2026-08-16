@@ -45,6 +45,7 @@ from turbigen2 import (
     batch,
     bconds,
     case,
+    chic,
     database,
     guess,
     include,
@@ -460,7 +461,7 @@ def prepare(config, restart_path=None):
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
 
-    bconds.apply(grid, machine)
+    bconds.apply(grid, machine, config.operating_point)
     guess.apply(grid, machine)
 
     # A stored field supersedes the meridional guess. Applied after it rather
@@ -690,32 +691,9 @@ def _iterate_one(args, config_path):
                 "correct; without one, use 'run'."
             )
 
-        previous = resolve_restart(args, config_path)
-
-        # Iteration -1: where the knobs start. Anchored on the config file's
-        # own directory, because a config is often run from somewhere else, and
-        # excluding that same directory because it is where this run's own
-        # iterations will land -- one directory being one run, nothing else of
-        # anyone's is in there to lose.
-        config = database.warm_start(config, out_dir, exclude=(out_dir,))
-
-        def run(config_now, i_iter):
-            """Solve one iteration into a directory of its own."""
-            nonlocal previous
-
-            iter_dir = out_dir / f"iter_{i_iter:04d}"
-            iter_dir.mkdir(parents=True, exist_ok=True)
-            iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
-
-            # Chained: each iteration starts from the field the last one
-            # reached, which is most of the saving. Index-space interpolation
-            # covers the mesh moving with the design.
-            result = solve(config_now, iter_dir, previous)
-            previous = iter_dir / RESTART_NAME
-
-            return result
-
-        config, result, converged = iterate.converge(config, run, config.max_iter)
+        _, result, converged, _ = converge_design(
+            config, out_dir, resolve_restart(args, config_path)
+        )
 
         # The answer, on a console that has been shown only the iteration
         # table. Not for a march that blew up, whose mixed-out mean line is
@@ -723,9 +701,172 @@ def _iterate_one(args, config_path):
         if result is not None and result.converged and result.actual is not None:
             iterate.logger.info(result.actual.to_string())
 
-        _link_final(out_dir, previous.parent)
-
     return 0 if converged else 2
+
+
+def cmd_chic(args):
+    """Converge the design, then sweep it to its stability limit."""
+    if not args.verbose and not args.queue:
+        _quieten_the_runs()
+
+    return each(args, _chic_one)
+
+
+def design_is_settled(config_path, config):
+    """Return whether the design at `config_path` has already converged.
+
+    The same two-part test `database` uses to decide whether a finished run
+    counts as a sample (`database.py:236`): the march reached an answer, *and*
+    the iterators it was judged by are inside their tolerances. One definition
+    of "this design is finished" for the whole package rather than a second one
+    here.
+
+    Logged with its reason, as `batch_verb` logs its choice, so "why did this
+    iterate" and "why did this not" are both answerable from the log file. That
+    matters more than usual because the test cannot see an override: `-s
+    mean_line.psi=1.8` invalidates the stored result and this will not notice.
+    """
+    try:
+        _, result = case.read(config_path, design=False)
+    except Exception as err:
+        logger.debug(f"No usable result beside {config_path}: {err}")
+        result = None
+
+    if result is None or not result.converged:
+        logger.info("Converging the design first: this case has no converged run.")
+        return False
+
+    if not iterate.converged(config, result):
+        logger.info(
+            "Converging the design first: the stored run finished, but its "
+            "design errors are outside their tolerances."
+        )
+        return False
+
+    logger.info(
+        "Sweeping straight away: the stored run converged with its design "
+        "errors inside their tolerances."
+    )
+    return True
+
+
+def _chic_one(args, config_path):
+    """Sweep one config file, keeping every point beside it."""
+    with logging_into(args, config_path) as out_dir:
+        config = load_config(config_path, args)
+
+        if config.solver is None:
+            raise ValueError(
+                "The 'chic' command needs a solver: section in the config file."
+            )
+        if config.chic is None:
+            raise ValueError(
+                "The 'chic' command needs a chic: section saying how far to "
+                "step and how finely to pin the limit."
+            )
+
+        previous = resolve_restart(args, config_path)
+
+        # The design first, unless it is already done. Every verb implies the
+        # ones before it, and a characteristic of a machine still being
+        # redesigned is a characteristic of no machine in particular.
+        if not design_is_settled(config_path, config):
+            config, _, converged, previous = converge_design(config, out_dir, previous)
+            if not converged:
+                raise ValueError(
+                    "The design did not converge, so there is no machine to "
+                    "sweep a characteristic of. Fix that with 'iterate' first."
+                )
+
+        def run(config_now, i_point):
+            """Solve one point of the characteristic, in a directory of its own."""
+            nonlocal previous
+
+            point_dir = out_dir / f"chic_{i_point:04d}"
+            point_dir.mkdir(parents=True, exist_ok=True)
+            chic.logger.info(f"Point {i_point} in {point_dir}")
+
+            # Chained, and near the limit this is what keeps a point converging
+            # at all: the smallest perturbation from a field that worked.
+            result = solve(config_now, point_dir, previous)
+            if result.converged:
+                # A diverged point is not somewhere to start the next one from,
+                # and the next one is a bisection back towards what did work.
+                previous = point_dir / RESTART_NAME
+
+            return result
+
+        points, bracket = chic.sweep(config, run)
+
+        chic.logger.info(chic.format_table(points, bracket))
+
+    # The sweep did its job whenever it bracketed something, which is what the
+    # verb is for -- a point that refused to converge is the answer here rather
+    # than a failure, unlike every other verb.
+    return 0 if any(point.converged for point in points) else 2
+
+
+def converge_design(config, out_dir, previous=None):
+    """Iterate `config` to convergence, keeping every iteration under `out_dir`.
+
+    The whole of an iteration, so that `chic` composes it rather than writing a
+    second copy --- the same reason `solve` is one function that `iterate` calls
+    repeatedly. Written out twice, the two would drift, which is what happened
+    to `turbigen.main`.
+
+    A config with no `iterate:` section still gets its design point solved
+    once, because the sweep that follows needs a field to start from and an
+    answer to be a departure from.
+
+    Returns
+    -------
+    config : Config
+        The design that produced `result`.
+    result : Result
+        What the last iteration achieved.
+    converged : bool
+    field : Path
+        The flow field it reached, for whatever runs next.
+
+    """
+    if not config.iterate:
+        design_dir = out_dir / "iter_0000"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        iterate.logger.info(f"Design point in {design_dir}")
+
+        result = solve(config, design_dir, previous)
+        _link_final(out_dir, design_dir)
+
+        return config, result, result.converged, design_dir / RESTART_NAME
+
+    # Iteration -1: where the knobs start. Anchored on the config file's own
+    # directory, because a config is often run from somewhere else, and
+    # excluding that same directory because it is where this run's own
+    # iterations will land -- one directory being one run, nothing else of
+    # anyone's is in there to lose.
+    config = database.warm_start(config, out_dir, exclude=(out_dir,))
+
+    def run(config_now, i_iter):
+        """Solve one iteration into a directory of its own."""
+        nonlocal previous
+
+        iter_dir = out_dir / f"iter_{i_iter:04d}"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # Chained: each iteration starts from the field the last one reached,
+        # which is most of the saving. Index-space interpolation covers the
+        # mesh moving with the design.
+        result = solve(config_now, iter_dir, previous)
+        previous = iter_dir / RESTART_NAME
+
+        return result
+
+    config, result, converged = iterate.converge(config, run, config.max_iter)
+
+    _link_final(out_dir, previous.parent)
+
+    return config, result, converged, previous
 
 
 def cmd_batch(args):
@@ -841,18 +982,22 @@ def _console_handlers():
 
 
 def _link_final(out_dir, iter_dir):
-    """Point `final` at the last iteration, and `output.yaml` at its answer.
+    """Point `final`, `output.yaml` and `restart.npz` at the last iteration.
 
     Symlinks rather than copies of the answer: the iterations are the record of
     how the design got where it did, and duplicating megabytes to name one of
     them would only invite the two to disagree.
 
-    The second link is what makes `output.yaml` mean "what this run achieved"
-    whichever verb produced it, so a database glob and a script reading a
-    result need not know whether a design took one solve or six.
+    The other two links are what make an artefact name mean the same thing
+    whichever verb produced it, so a database glob, a script reading a result
+    and a `--restart` need not know whether a design took one solve or six.
+    `run` leaves both beside the config it was given; without these, `iterate`
+    left neither, and `iterate` followed by `--restart` failed on a case that
+    plainly had a field.
     """
     _link(out_dir / "final", iter_dir.name, directory=True)
     _link(out_dir / OUTPUT_NAME, f"final/{OUTPUT_NAME}", directory=False)
+    _link(out_dir / RESTART_NAME, f"final/{RESTART_NAME}", directory=False)
 
 
 def _link(link, target, directory):
@@ -1217,6 +1362,26 @@ def _make_parser():
     _add_queue_argument(iterate_)
     _add_restart_argument(iterate_)
     iterate_.set_defaults(func=cmd_iterate)
+
+    chic_ = commands.add_parser(
+        "chic",
+        parents=[common],
+        help="sweep a characteristic until the solution will not stand up",
+        description=(
+            "Converge the design, then hold its geometry fixed and step the "
+            "back pressure until a point will not converge, halving the step "
+            "and coming back at it from the last good field until the limit "
+            "is pinned to chic.step_min. Each point is an ordinary run in a "
+            "directory of its own. A case whose stored result says the design "
+            "has already settled skips straight to the sweep. Needs a chic: "
+            "section. What it finds is where a steady solver stops "
+            "converging, which is not the surge line."
+        ),
+    )
+    _add_force_argument(chic_)
+    _add_queue_argument(chic_)
+    _add_restart_argument(chic_)
+    chic_.set_defaults(func=cmd_chic)
 
     batch_ = commands.add_parser(
         "batch",

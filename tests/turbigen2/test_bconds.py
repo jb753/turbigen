@@ -20,8 +20,16 @@ Test cases:
 - test_a_tip_gap_leaves_the_casing_standing_still: five walls turn, not six
 - test_a_stator_turns_nothing: including its casing patch, if it has one
 - test_speed_can_be_changed_without_re-meshing: what bconds is for
-- test_an_unvalued_rotating_patch_is_refused: nan reaches the solver otherwise
+- test_a_placed_patch_is_unvalued_until_bconds_runs: nan, not a silent zero
 - test_the_row_count_must_match: a mean line and a grid that disagree
+- test_no_operating_point_is_the_design_point: what an absent section means
+- test_the_pressure_change_scales_linearly: what DP_adjust exists for
+- test_a_machine_that_raises_pressure_gets_more_rise: the sign convention
+- test_a_turbine_and_a_compressor_move_oppositely: in pressure, not in duty
+- test_an_adjustment_past_vacuum_is_refused: an exit pressure that is not one
+- test_the_operating_point_reaches_the_outlet_patches: and nothing else moves
+- test_the_operating_point_round_trips: an ordinary config node
+- test_the_operating_point_is_not_a_design_variable: outside database.SUBTREE
 """
 
 import dataclasses
@@ -205,3 +213,121 @@ def test_the_row_count_must_match(shrouded):
 
     with pytest.raises(ValueError, match="one speed per row"):
         bconds.apply_rotation(grid, dataclasses.replace(machine, mean_line=one_row))
+
+
+#
+# THE OPERATING POINT
+#
+# A design states one condition; a machine has a whole characteristic. Reaching
+# the rest of it changes the boundary conditions and nothing else, which is why
+# this lives here and not in any design stage.
+#
+
+
+class Stub:
+    """The two numbers `exit_pressure` reads, and nothing else.
+
+    Lets the compressor case be tested without a compressor design: only the
+    *sign* of the design pressure change distinguishes one, and that is exactly
+    what the formula turns on.
+    """
+
+    def __init__(self, Po_in, P_out):
+        end = lambda value: type("S", (), {"Po": value, "P": value})()  # noqa: E731
+        self.mean_line = type(
+            "M", (), {"inlet": end(Po_in), "outlet": end(P_out)}
+        )()
+
+
+def test_no_operating_point_is_the_design_point(shrouded):
+    machine, _ = shrouded
+
+    assert bconds.exit_pressure(machine, None) == pytest.approx(
+        float(machine.mean_line.outlet.P)
+    )
+    assert bconds.exit_pressure(
+        machine, bconds.OperatingPoint()
+    ) == pytest.approx(float(machine.mean_line.outlet.P))
+
+
+@pytest.mark.parametrize("adjust", [0.05, -0.1, 0.5])
+def test_the_pressure_change_scales_linearly(shrouded, adjust):
+    """The property the field exists for, and the one a pressure ratio does not
+    have: the same number means the same fractional change at any Mach number.
+    """
+    machine, _ = shrouded
+    Po_in = float(machine.mean_line.inlet.Po)
+    DP_design = Po_in - float(machine.mean_line.outlet.P)
+
+    P_out = bconds.exit_pressure(
+        machine, bconds.OperatingPoint(DP_adjust=adjust)
+    )
+
+    assert (Po_in - P_out) / DP_design == pytest.approx(1.0 + adjust)
+
+
+def test_a_machine_that_raises_pressure_gets_more_rise():
+    """The sign convention, which is the subtle half.
+
+    A compressor's design pressure change is negative, so scaling it makes it
+    more negative and the exit pressure higher. One formula, both machine
+    types, and no machine type named anywhere.
+    """
+    compressor = Stub(Po_in=1.0e5, P_out=1.3e5)
+
+    raised = bconds.exit_pressure(
+        compressor, bconds.OperatingPoint(DP_adjust=0.5)
+    )
+
+    assert raised > 1.3e5
+    assert (1.0e5 - raised) / (1.0e5 - 1.3e5) == pytest.approx(1.5)
+
+
+def test_a_turbine_and_a_compressor_move_oppositely():
+    """Positive always means *more* pressure change, which is opposite
+    directions in exit pressure and the same direction in duty."""
+    turbine = bconds.exit_pressure(Stub(1.0e5, 0.7e5), bconds.OperatingPoint(DP_adjust=0.1))
+    compressor = bconds.exit_pressure(Stub(1.0e5, 1.3e5), bconds.OperatingPoint(DP_adjust=0.1))
+
+    assert turbine < 0.7e5
+    assert compressor > 1.3e5
+
+
+def test_an_adjustment_past_vacuum_is_refused():
+    with pytest.raises(ValueError, match="not a pressure"):
+        bconds.exit_pressure(Stub(1.0e5, 0.7e5), bconds.OperatingPoint(DP_adjust=3.0))
+
+
+def test_the_operating_point_reaches_the_outlet_patches(shrouded):
+    machine, grid = shrouded
+    point = bconds.OperatingPoint(DP_adjust=0.1)
+
+    bconds.apply(grid, machine, point)
+
+    expected = bconds.exit_pressure(machine, point)
+    for patch in grid.patches.outlet:
+        assert patch.P == pytest.approx(expected, rel=1e-6)
+
+    # And nothing else moved: the inlet is the design's whatever the exit does.
+    for patch in grid.patches.inlet:
+        assert patch.Po == pytest.approx(float(machine.mean_line.inlet.Po), rel=1e-6)
+
+
+def test_the_operating_point_round_trips():
+    from turbigen2 import Config  # noqa: PLC0415
+
+    config = build(mesh=MESH)
+    config = dataclasses.replace(
+        config, operating_point=bconds.OperatingPoint(DP_adjust=0.05)
+    )
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["operating_point"]["DP_adjust"] == 0.05
+
+
+def test_the_operating_point_is_not_a_design_variable():
+    """Outside `database.SUBTREE`, so two runs of one machine at different back
+    pressures are one design run twice rather than two designs."""
+    from turbigen2 import database  # noqa: PLC0415
+
+    assert "operating_point" not in database.SUBTREE

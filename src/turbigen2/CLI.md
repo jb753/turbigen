@@ -55,6 +55,7 @@ knows how to redirect it.
 | `report` | `design` + grid + any stored field, drawn | `post.pdf` | **implemented** |
 | `run` | `report` + CFD + mix-out | everything | **implemented** |
 | `iterate` | repeated `run`, updating the design between calls | everything | **implemented** |
+| `chic` | `iterate`, then repeated `run` off design to the limit | everything | **implemented** |
 | `batch` | write configs covering a design space, running none | a `batch_NNNN` | **implemented** |
 
 The cut between `design` and `report` is where external tools and side effects
@@ -540,6 +541,81 @@ executes](ARCHITECTURE.md#where-a-run-executes).
 
 Nothing wraps `tsp -l`, `squeue` or `scancel`: they are better than anything we
 would put in front of them.
+
+## `chic` — implemented
+
+```
+turbigen2 chic case/input.yaml
+```
+
+Converge the design, then hold its geometry fixed and step the back pressure
+until a point will not converge — halving the step and coming back at it from
+the last good field, until the limit is pinned to `chic.step_min`.
+
+```yaml
+chic:
+  step: 0.05        # DP_adjust per point
+  step_min: 0.01    # the resolution of the answer
+  max_points: 20
+```
+
+**Whether it iterates first is inferred, never asked for.** A case whose stored
+`result:` says the design has converged *and* its iterators are inside their
+tolerances sweeps straight away; anything else gets the design converged first.
+That is the same two-part test `database` uses to decide whether a finished run
+counts as a sample, so "this design is finished" means one thing package-wide.
+Both branches are logged with their reason.
+
+`--restart` keeps meaning only *here is the field*. Overloading it to also
+truncate the pipeline would make one flag mean two things depending on the verb,
+where `run --restart` truncates nothing.
+
+### Sweeping a design converged earlier
+
+```
+mkdir chic && cp case/final/output.yaml chic/input.yaml
+turbigen2 chic chic/input.yaml --restart case/final/restart.npz
+```
+
+A directory of its own because one directory is one run. The copied config
+carries the converged `result:`, so the design phase is skipped.
+
+Two things to know. `DP_adjust` scales the **converged** design's pressure
+change, not the original file's — `iterate` relaxes `Ys` onto what the CFD
+achieved, so the two differ, and the same `DP_adjust` under `chic` and under a
+bare `run` of the file you first wrote are not the same back pressure. And the
+inference cannot see an override: `-s mean_line.psi=1.8` invalidates the stored
+result, and the logged reason is the only warning you get.
+
+### The geometry cannot move
+
+The sweep calls `run` once per point and never enters the iterate loop, so
+nothing calls `with_unknowns` and no recamber can happen — by construction, not
+by a rule about which iterators are allowed. Their errors are still *measured*
+at every point, because that is what `solve` does whether anything is iterating
+or not, so watching incidence grow as the machine is throttled costs nothing.
+
+### What it finds
+
+Where a **steady solver** stops converging. That is not the surge line: real
+stall is unsteady. The report says so rather than leaving it to be assumed.
+
+Near the peak of a characteristic `dPR/dmdot` tends to zero, so a pressure
+bracket of a given width spans a wide range of mass flow — the limiting
+*pressure* is resolved to `step_min` and the limiting *mass flow* it implies
+rather less, which is unfortunate given the mass flow is the number of
+interest.
+
+The stable side of the characteristic needs no feedback and is already a batch:
+
+```yaml
+batch:
+  values:
+    operating_point.DP_adjust: [-0.10, -0.05, 0.0]
+```
+
+so `chic` covers exactly the part that cannot be written that way. Exits 0 if
+any point converged — a point that refused is the answer here, not a failure.
 
 ## `batch` — implemented
 

@@ -49,6 +49,8 @@ from turbigen2.post import (
     SurfacePlot,
 )
 from turbigen2.batch import Batch
+from turbigen2.chic import Chic
+from turbigen2.bconds import OperatingPoint
 from turbigen2.result import Result
 from turbigen2.solver import Ember, Solver
 from turbigen2.node import Node
@@ -89,7 +91,9 @@ __all__ = [
     "Iterator",
     "MeanLine",
     "MeanLineDesign",
+    "Chic",
     "Node",
+    "OperatingPoint",
     "AnnulusPlot",
     "ContourPlot",
     "ConvergencePlot",

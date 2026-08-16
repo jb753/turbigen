@@ -1178,3 +1178,131 @@ def test_a_run_writes_its_includes_out_expanded(run_case):
     # The included value is there in full, not as a pointer to a file that may
     # since have changed.
     assert "cp: 1005" in written
+
+
+#
+# THE chic VERB
+#
+# The characteristic sweep. What is worth checking here rather than in
+# test_chic.py is the composition: that a restart resolves after an iterate,
+# that a converged design is not re-iterated, and that the points land where
+# the layout says they do.
+#
+
+SWEEP = """
+chic:
+  step: 0.4
+  step_min: 0.2
+  max_points: 3
+"""
+"""Deliberately coarse, so a sweep is three short runs rather than ten.
+
+A cascade does not stall, so the steps are large enough to push the exit
+pressure somewhere the solver will refuse.
+"""
+
+CHIC_CASE = RUN_CASE + SWEEP
+"""No iterators, so the design phase is a single solve of the design point."""
+
+CHIC_ITERATE_CASE = ITERATE_CASE.replace(
+    "  - type: deviation\n", "  - type: deviation\n    tolerance: 20.0\n"
+).replace("  - type: incidence\n", "  - type: incidence\n    tolerance: 20.0\n") + SWEEP
+"""And with iterators, loose enough that one pass settles the design.
+
+The tolerances are absurd on purpose: what this checks is that the two phases
+compose, and paying for a genuine convergence would be minutes of CFD to learn
+nothing more.
+"""
+
+
+@pytest.fixture
+def chic_case(tmp_path):
+    directory = tmp_path / "chic"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    path.write_text(CHIC_CASE)
+    return path
+
+
+@pytest.fixture
+def chic_iterate_case(tmp_path):
+    directory = tmp_path / "chic_iterate"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    path.write_text(CHIC_ITERATE_CASE)
+    return path
+
+
+def test_iterate_leaves_a_field_where_restart_looks_for_it(iterate_case):
+    """`run` left one beside the config and `iterate` did not, so `iterate`
+    followed by `--restart` failed on a case that plainly had a field."""
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=1"])
+
+    field = iterate_case.parent / cli.RESTART_NAME
+    assert field.is_symlink()
+    assert field.resolve().is_file()
+
+    # Which is exactly what the flag resolves, so the two agree by test rather
+    # than by inspection.
+    args = type("A", (), {"restart": True})()
+    assert cli.resolve_restart(args, iterate_case) == field
+
+
+def test_chic_solves_the_design_point_then_sweeps(chic_case):
+    """With no iterators the design phase is a single solve, because the sweep
+    still needs a field to start from and an answer to depart from."""
+    out = chic_case.parent
+
+    assert cli.main(["chic", str(chic_case)]) == 0
+
+    assert (out / "iter_0000" / cli.OUTPUT_NAME).is_file()
+    assert (out / "chic_0000" / cli.OUTPUT_NAME).is_file()
+    assert (out / "final").resolve() == (out / "iter_0000").resolve()
+
+
+def test_chic_iterates_the_design_first_when_it_can(chic_iterate_case, capsys):
+    """The composition the verb exists for: converge, then sweep what settled."""
+    out = chic_iterate_case.parent
+
+    assert cli.main(["chic", str(chic_iterate_case), "-s", "max_iter=2"]) == 0
+
+    assert "Converging the design first" in capsys.readouterr().err
+    assert (out / "iter_0000" / cli.OUTPUT_NAME).is_file()
+    assert (out / "chic_0000" / cli.OUTPUT_NAME).is_file()
+
+
+def test_chic_refuses_to_sweep_a_design_that_did_not_settle(iterate_case, capsys):
+    """A characteristic of a machine still being redesigned is a
+    characteristic of no machine in particular."""
+    unsettled = iterate_case.parent / "input.yaml"
+    unsettled.write_text(ITERATE_CASE + SWEEP)
+
+    assert cli.main(["chic", str(unsettled), "-s", "max_iter=1"]) == 1
+
+    assert "no machine to sweep" in capsys.readouterr().err
+
+
+def test_chic_skips_a_design_that_has_already_settled(chic_case, capsys):
+    """The inference: a stored result that converged, with its design errors
+    inside their tolerances, means the design phase is done."""
+    cli.main(["chic", str(chic_case)])
+    capsys.readouterr()
+
+    # Run again in a directory carrying the answer the first one reached.
+    settled = chic_case.parent / "settled"
+    settled.mkdir()
+    answer = (chic_case.parent / cli.OUTPUT_NAME).resolve()
+    (settled / "input.yaml").write_text(answer.read_text())
+
+    cli.main(["chic", str(settled / "input.yaml")])
+    printed = capsys.readouterr().err
+
+    assert "Sweeping straight away" in printed
+    assert not (settled / "iter_0000").exists()
+    assert (settled / "chic_0000").is_dir()
+
+
+def test_chic_without_a_chic_section_says_so(iterate_case, capsys):
+    assert cli.main(["chic", str(iterate_case)]) == 1
+
+    assert "needs a chic: section" in capsys.readouterr().err
