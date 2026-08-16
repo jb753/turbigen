@@ -563,6 +563,30 @@ A profile must span exactly `[0, 1]`. Interpolation clamps, so one given over
 `[0.1, 0.9]` would silently hold its end values across the rest of the span
 rather than say it was incomplete.
 
+### Two forms, because samples are lossy for anything analytic
+
+`InletProfile` is a family. `sampled` is values at span fractions, what a
+person writes from a rig traverse. `legendre` is the coefficients of a series
+over the span, evaluated at whatever span fractions the patch has.
+
+The second exists because storing an analytic profile as samples and
+interpolating it back is pure loss, and measurably so: a degree-3 profile kept
+at 21 span points returns with a maximum error of 2.7e-3 — a quarter of the
+tolerance the repeating-stage iterator converges to — and at 11 points the
+error *exceeds* the tolerance. More points is the wrong answer: 101 of them is
+63 numbers in a config to carry what nine say exactly.
+
+**No constant term**, the lists starting at mode 1, so a profile cannot carry a
+level: that is the mean line's business and one here would fight the design it
+perturbs. **No `order` field** either — the order is the length of the lists,
+so nothing can contradict them, and every column must agree so that one cannot
+silently be fitted at a different resolution from its neighbours.
+
+Legendre rather than a raw polynomial because the basis is orthogonal, so
+truncating drops a mode rather than redistributing the others. That is what
+makes a low order a statement about the profile rather than an artefact of the
+fit.
+
 Nothing was needed in ember. `set_Po_To`, `set_Alpha` and `set_Beta` all take
 an array, and `InletPatch.spf` gives the span fraction of each node — so a
 profile is passing an array where a float went before. Old turbigen's

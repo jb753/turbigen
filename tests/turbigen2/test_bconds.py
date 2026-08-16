@@ -359,8 +359,8 @@ def spanwise(patch, name):
 
 
 def with_profile(**profile):
-    """An inlet profile, as `bconds.apply` takes it."""
-    return bconds.InletProfile(**profile)
+    """A sampled inlet profile, as `bconds.apply` takes it."""
+    return bconds.Sampled(**profile)
 
 
 BOUNDARY_LAYER = {"spf": (0.0, 0.05, 0.95, 1.0), "DPo": (-1.0, 0.0, 0.0, -1.0)}
@@ -481,27 +481,27 @@ def test_a_profile_must_span_the_whole_annulus():
     """np.interp clamps, so a partial profile would hold its ends instead of
     saying it was incomplete."""
     with pytest.raises(ValueError, match="span the whole annulus"):
-        bconds.InletProfile(spf=(0.1, 0.9), DPo=(0.0, 0.0))
+        bconds.Sampled(spf=(0.1, 0.9), DPo=(0.0, 0.0))
 
 
 def test_a_profile_must_increase_from_hub_to_casing():
     with pytest.raises(ValueError, match="must increase"):
-        bconds.InletProfile(spf=(0.0, 0.6, 0.4, 1.0), DPo=(0.0,) * 4)
+        bconds.Sampled(spf=(0.0, 0.6, 0.4, 1.0), DPo=(0.0,) * 4)
 
 
 def test_a_column_must_match_the_span_fractions():
     with pytest.raises(ValueError, match="2 value.* against 3 span"):
-        bconds.InletProfile(spf=(0.0, 0.5, 1.0), DPo=(0.0, -1.0))
+        bconds.Sampled(spf=(0.0, 0.5, 1.0), DPo=(0.0, -1.0))
 
 
 def test_a_profile_that_perturbs_nothing_is_refused():
     with pytest.raises(ValueError, match="perturbs nothing"):
-        bconds.InletProfile(spf=(0.0, 1.0))
+        bconds.Sampled(spf=(0.0, 1.0))
 
 
 def test_one_station_is_not_a_profile():
     with pytest.raises(ValueError, match="at least two span fractions"):
-        bconds.InletProfile(spf=(0.0,), DPo=(0.0,))
+        bconds.Sampled(spf=(0.0,), DPo=(0.0,))
 
 
 def test_the_profile_round_trips():
@@ -549,3 +549,100 @@ def test_a_profile_survives_a_characteristic_sweep():
 
     assert moved.operating_point.DP_adjust == pytest.approx(0.2)
     assert moved.inlet_profile == config.inlet_profile
+
+
+#
+# THE LEGENDRE FORM
+#
+# The same profile written as a series rather than as samples. It exists so
+# that anything producing a profile analytically -- the repeating-stage
+# iterator above all -- need not write it out as samples and lose accuracy
+# doing so.
+#
+
+
+def test_a_legendre_profile_is_the_series_it_says():
+    """Evaluated, not interpolated, so the patch's own resolution is what it
+    is applied at."""
+    from numpy.polynomial import legendre  # noqa: PLC0415
+
+    profile = bconds.Legendre(DPo=(0.4, -0.25, 0.10))
+    spf = np.linspace(0.0, 1.0, 37)
+
+    # The leading zero is the constant term this node refuses to carry.
+    expected = legendre.legval(2.0 * spf - 1.0, [0.0, 0.4, -0.25, 0.10])
+
+    assert profile.column("DPo", spf) == pytest.approx(expected)
+    assert profile.order == 3
+
+
+def test_a_legendre_profile_carries_no_level():
+    """A profile redistributes; a level is the mean line's business, and one
+    here would fight the design it is meant to perturb."""
+    profile = bconds.Legendre(DPo=(0.4, -0.25, 0.10))
+    spf = np.linspace(0.0, 1.0, 2001)
+
+    # Legendre modes 1 upwards are orthogonal to the constant, so the span
+    # average of any of them is zero.
+    assert np.trapezoid(profile.column("DPo", spf), spf) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_an_omitted_legendre_column_is_zero():
+    profile = bconds.Legendre(DAlpha=(1.0, 0.5))
+    spf = np.linspace(0.0, 1.0, 11)
+
+    assert profile.column("DPo", spf) == pytest.approx(np.zeros(11))
+    assert np.ptp(profile.column("DAlpha", spf)) > 0.1
+
+
+def test_the_two_forms_are_one_idea(shrouded):
+    """A Legendre profile sampled densely and handed over as `sampled` gives
+    the same boundary condition, which is what makes them a family rather than
+    two features."""
+    machine, grid = shrouded
+    series = bconds.Legendre(DPo=(0.3, -0.2, 0.05))
+
+    spf = np.linspace(0.0, 1.0, 401)
+    samples = bconds.Sampled(spf=tuple(spf), DPo=tuple(series.column("DPo", spf)))
+
+    bconds.apply(grid, machine, None, series)
+    from_series = spanwise(grid.patches.inlet[0], "Po").copy()
+
+    bconds.apply(grid, machine, None, samples)
+    from_samples = spanwise(grid.patches.inlet[0], "Po")
+
+    assert from_series == pytest.approx(from_samples, rel=1e-5)
+
+
+def test_columns_of_different_order_are_refused():
+    """One order for the whole profile, so a column cannot silently be fitted
+    at a different resolution from its neighbours."""
+    with pytest.raises(ValueError, match="same number of coefficients"):
+        bconds.Legendre(DPo=(0.1, 0.2, 0.3), DAlpha=(1.0,))
+
+
+def test_a_legendre_profile_that_perturbs_nothing_is_refused():
+    with pytest.raises(ValueError, match="perturbs nothing"):
+        bconds.Legendre()
+
+
+def test_the_legendre_profile_round_trips():
+    from turbigen2 import Config  # noqa: PLC0415
+
+    config = dataclasses.replace(
+        build(mesh=MESH), inlet_profile=bconds.Legendre(DPo=(0.4, -0.25, 0.10))
+    )
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["inlet_profile"]["type"] == "legendre"
+
+
+def test_a_profile_must_name_its_form():
+    """A family, so `type:` chooses; there is no default form because neither
+    is more obviously right than the other."""
+    from turbigen2 import Config  # noqa: PLC0415
+
+    with pytest.raises(ValueError, match="type"):
+        Config.from_dict(
+            {**build(mesh=MESH).to_dict(), "inlet_profile": {"DPo": [0.1, 0.2]}}
+        )

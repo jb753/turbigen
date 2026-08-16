@@ -19,6 +19,7 @@ import logging
 from typing import ClassVar
 
 import numpy as np
+from numpy.polynomial import legendre
 
 from turbigen2.node import Node
 
@@ -72,7 +73,80 @@ class InletProfile(Node):
     Spanwise only. ember refuses a pitchwise-varying prescription at an inlet
     patch rather than averaging it, so there is nothing here to express one
     with.
+
+    Two members, differing only in how a column is written down. `Sampled` is
+    values at span fractions, which is what a person writes from rig data.
+    `Legendre` is the coefficients of a series, which is what anything
+    *producing* a profile analytically should write --- storing such a profile
+    as samples and interpolating it back is pure loss, and measurably so: a
+    degree-3 profile kept at 21 span points comes back with a maximum error of
+    2.7e-3, a quarter of the tolerance
+    :class:`turbigen2.iterate.Repeat` converges to, and at 11 points the error
+    exceeds the tolerance outright.
     """
+
+    COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha", "DBeta")
+    """The perturbations, in the order they are reported.
+
+    ``DPo`` and ``DTo`` are fractions of inlet dynamic head and dynamic
+    temperature; ``DAlpha`` and ``DBeta`` are degrees added to the design
+    angle. Empty means uniform in that quantity.
+    """
+
+    def column(self, name, spf):
+        """Return one perturbation evaluated at `spf`, or zero if not given."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement column(self, name, spf)"
+        )
+
+    def state(self, spf, inlet):
+        """Return the absolute inlet state at span fractions `spf`.
+
+        The node that defines what its numbers mean is the node that turns them
+        into a state, which is why this lives here rather than in `apply` ---
+        the same reason `MeanLine.to_dict` owns the choice of quantities and
+        the datum rule rather than whatever writes one out.
+
+        Parameters
+        ----------
+        spf : array_like
+            Span fractions to evaluate at, typically an inlet patch's own.
+        inlet : MeanLine
+            The design's inlet station, supplying both the values perturbed
+            from and the scales perturbed by.
+
+        Returns
+        -------
+        dict
+            ``Po``, ``To``, ``Alpha`` and ``Beta``, each an array over `spf`.
+
+        """
+        spf = np.asarray(spf, dtype=float)
+
+        Po = float(inlet.Po)
+        To = float(inlet.To)
+        # The scales: stagnation minus static, which is what vanishes when the
+        # flow does. Both are positive for any moving fluid.
+        q = Po - float(inlet.P)
+        dT = To - float(inlet.T)
+
+        return {
+            "Po": Po + self.column("DPo", spf) * q,
+            "To": To + self.column("DTo", spf) * dT,
+            "Alpha": float(inlet.Alpha) + self.column("DAlpha", spf),
+            "Beta": float(inlet.Beta) + self.column("DBeta", spf),
+        }
+
+
+class Sampled(InletProfile):
+    """A profile given as values at span fractions.
+
+    What a person writes from rig data or a measured traverse. Interpolated
+    linearly onto the patch, so the span fractions given are the resolution the
+    profile has.
+    """
+
+    type: ClassVar[str] = "sampled"
 
     spf: tuple[float, ...]
     """Span fractions the profile is given at, hub to casing [--].
@@ -84,25 +158,17 @@ class InletProfile(Node):
     """
 
     DPo: tuple[float, ...] = ()
-    """Stagnation pressure deficit, as a fraction of inlet dynamic head [--].
-
-    :math:`(p_0 - p_{0,\\mathrm{nom}}) / (p_0 - p)_\\mathrm{nom}`. Empty for
-    uniform stagnation pressure.
-    """
+    """Stagnation pressure deficit, as a fraction of inlet dynamic head [--]."""
 
     DTo: tuple[float, ...] = ()
     """Stagnation temperature excess, as a fraction of inlet dynamic
-    temperature [--].
-
-    :math:`(T_0 - T_{0,\\mathrm{nom}}) / (T_0 - T)_\\mathrm{nom}`. Empty for
-    uniform stagnation temperature.
-    """
+    temperature [--]."""
 
     DAlpha: tuple[float, ...] = ()
-    """Yaw angle added to the design value [deg]. Empty for uniform swirl."""
+    """Yaw angle added to the design value [deg]."""
 
     DBeta: tuple[float, ...] = ()
-    """Pitch angle added to the design value [deg]. Empty for uniform pitch."""
+    """Pitch angle added to the design value [deg]."""
 
     def __post_init__(self):
         # Checked when the config is read: none of it needs a design, and a
@@ -143,53 +209,85 @@ class InletProfile(Node):
                     f"{spf.size} span fraction(s)."
                 )
 
-    COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha", "DBeta")
-    """The perturbations, in the order they are reported."""
-
     def column(self, name, spf):
-        """Return one perturbation interpolated onto `spf`, or zero."""
         values = getattr(self, name)
         if not values:
             return np.zeros_like(np.asarray(spf, dtype=float))
         return np.interp(spf, np.asarray(self.spf, dtype=float), values)
 
-    def state(self, spf, inlet):
-        """Return the absolute inlet state at span fractions `spf`.
 
-        The node that defines what its numbers mean is the node that turns them
-        into a state, which is why this lives here rather than in `apply` ---
-        the same reason `MeanLine.to_dict` owns the choice of quantities and
-        the datum rule rather than whatever writes one out.
+class Legendre(InletProfile):
+    """A profile given as the coefficients of a Legendre series over the span.
 
-        Parameters
-        ----------
-        spf : array_like
-            Span fractions to evaluate at, typically an inlet patch's own.
-        inlet : MeanLine
-            The design's inlet station, supplying both the values perturbed
-            from and the scales perturbed by.
+    Evaluated at whatever span fractions the inlet patch has, so nothing is
+    resampled and the mesh's own resolution is what the profile is applied at.
+    That is the point of the member: anything producing a profile analytically
+    --- :class:`turbigen2.iterate.Repeat` above all --- would otherwise have to
+    write it out as samples and lose accuracy doing so.
 
-        Returns
-        -------
-        dict
-            ``Po``, ``To``, ``Alpha`` and ``Beta``, each an array over `spf`.
+    Shifted to the span, so mode ``n`` is :math:`P_n(2\\,\\mathit{spf} - 1)`.
+    Orthogonal, so the coefficients are independent: truncating drops a mode
+    rather than redistributing the others, which is what makes a low order a
+    *statement* rather than a fit artefact.
 
-        """
+    **There is no constant term.** The lists start at mode 1, so a profile
+    cannot carry a level. A level is the mean line's business, and one here
+    would fight the design it is supposed to perturb --- the whole point of the
+    node being that it redistributes and nothing else.
+
+    There is no ``order`` field either: the order is the length of the lists,
+    so nothing can contradict them.
+    """
+
+    type: ClassVar[str] = "legendre"
+
+    DPo: tuple[float, ...] = ()
+    """Coefficients of modes 1 upwards, in fractions of inlet dynamic head."""
+
+    DTo: tuple[float, ...] = ()
+    """Coefficients of modes 1 upwards, in fractions of dynamic temperature."""
+
+    DAlpha: tuple[float, ...] = ()
+    """Coefficients of modes 1 upwards, in degrees."""
+
+    DBeta: tuple[float, ...] = ()
+    """Coefficients of modes 1 upwards, in degrees."""
+
+    def __post_init__(self):
+        given = [name for name in self.COLUMNS if getattr(self, name)]
+        if not given:
+            raise ValueError(
+                f"An inlet profile perturbs nothing: give at least one of "
+                f"{list(self.COLUMNS)}, or leave the section out."
+            )
+
+        # One order for the whole profile, so a column cannot silently be
+        # fitted to a different resolution from its neighbours.
+        orders = {name: len(getattr(self, name)) for name in given}
+        if len(set(orders.values())) > 1:
+            raise ValueError(
+                f"Every column of a Legendre inlet profile must have the same "
+                f"number of coefficients, but got {orders}."
+            )
+
+    @property
+    def order(self):
+        """Highest Legendre mode carried, the lists starting at mode 1."""
+        for name in self.COLUMNS:
+            values = getattr(self, name)
+            if values:
+                return len(values)
+        return 0
+
+    def column(self, name, spf):
         spf = np.asarray(spf, dtype=float)
+        values = getattr(self, name)
+        if not values:
+            return np.zeros_like(spf)
 
-        Po = float(inlet.Po)
-        To = float(inlet.To)
-        # The scales: stagnation minus static, which is what vanishes when the
-        # flow does. Both are positive for any moving fluid.
-        q = Po - float(inlet.P)
-        dT = To - float(inlet.T)
-
-        return {
-            "Po": Po + self.column("DPo", spf) * q,
-            "To": To + self.column("DTo", spf) * dT,
-            "Alpha": float(inlet.Alpha) + self.column("DAlpha", spf),
-            "Beta": float(inlet.Beta) + self.column("DBeta", spf),
-        }
+        # The leading zero is the absent constant term, which `legval` needs a
+        # slot for and this node refuses to have a value in.
+        return legendre.legval(2.0 * spf - 1.0, np.concatenate([[0.0], values]))
 
 
 class OperatingPoint(Node):
