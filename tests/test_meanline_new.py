@@ -12,7 +12,7 @@ import pytest
 
 import ember.block
 import ember.fluid
-import turbigen.meanline_new
+import turbigen_ref.meanline_new
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def fluid():
 @pytest.fixture
 def station(fluid):
     """A single scalar station, taken as a view of a one-row mean line."""
-    ml = turbigen.meanline_new.MeanLine(1)
+    ml = turbigen_ref.meanline_new.MeanLine(1)
     ml.set_fluid(fluid)
     return ml[0, 0]
 
@@ -35,7 +35,7 @@ def station(fluid):
 
 def test_meanline_is_a_block(fluid):
     """MeanLine inherits Block, adding only the Am and Omega data keys."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
 
     assert isinstance(ml, ember.block.Block)
     assert "Am" in ml._data_keys
@@ -44,8 +44,8 @@ def test_meanline_is_a_block(fluid):
     # Everything ember defines is inherited rather than forwarded. Look the
     # names up on the class, so the descriptors are not evaluated here.
     for name in ("Po", "Ma", "Ma_rel", "s", "ho_rel", "conserved"):
-        assert hasattr(turbigen.meanline_new.MeanLine, name)
-        assert getattr(turbigen.meanline_new.MeanLine, name) is getattr(
+        assert hasattr(turbigen_ref.meanline_new.MeanLine, name)
+        assert getattr(turbigen_ref.meanline_new.MeanLine, name) is getattr(
             ember.block.Block, name
         )
 
@@ -53,7 +53,7 @@ def test_meanline_is_a_block(fluid):
 def test_meanline_shape_is_station_by_row(fluid):
     """n_row rows give shape (2, n_row), station axis first."""
     for n_row in (1, 2, 5):
-        ml = turbigen.meanline_new.MeanLine(n_row)
+        ml = turbigen_ref.meanline_new.MeanLine(n_row)
         assert ml.shape == (2, n_row)
         assert ml.n_row == n_row
         assert ml.size == 2 * n_row
@@ -61,11 +61,11 @@ def test_meanline_shape_is_station_by_row(fluid):
 
 def test_meanline_rejects_zero_rows():
     with pytest.raises(ValueError, match="n_row must be >= 1"):
-        turbigen.meanline_new.MeanLine(0)
+        turbigen_ref.meanline_new.MeanLine(0)
 
 
 def test_meanline_n_row_readonly(fluid):
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     with pytest.raises(AttributeError, match="property 'n_row'.*has no setter"):
@@ -74,23 +74,23 @@ def test_meanline_n_row_readonly(fluid):
 
 def test_row_view_reports_one_row(fluid):
     """A row view is a shape-(2,) mean line of one row."""
-    ml = turbigen.meanline_new.MeanLine(3)
+    ml = turbigen_ref.meanline_new.MeanLine(3)
     ml.set_fluid(fluid)
 
     row = ml.row(1)
-    assert isinstance(row, turbigen.meanline_new.MeanLine)
+    assert isinstance(row, turbigen_ref.meanline_new.MeanLine)
     assert row.shape == (2,)
     assert row.n_row == 1
 
 
 def test_station_view_is_scalar(fluid):
-    ml = turbigen.meanline_new.MeanLine(3)
+    ml = turbigen_ref.meanline_new.MeanLine(3)
     ml.set_fluid(fluid)
 
     for i_row in range(3):
         for j in (0, 1):
             st = ml[j, i_row]
-            assert isinstance(st, turbigen.meanline_new.MeanLine)
+            assert isinstance(st, turbigen_ref.meanline_new.MeanLine)
             assert st.shape == ()
 
 
@@ -101,7 +101,7 @@ def test_station_view_is_scalar(fluid):
 
 def test_setters_return_none(fluid):
     """Setters follow ember and return None; they are not chainable."""
-    ml = turbigen.meanline_new.MeanLine(1)
+    ml = turbigen_ref.meanline_new.MeanLine(1)
     ml.set_fluid(fluid)
 
     assert ml.set_r(0.5) is None
@@ -111,7 +111,7 @@ def test_setters_return_none(fluid):
 
 def test_properties_are_not_assignable(fluid):
     """Derived properties have no setter, so state changes go through set_*."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     with pytest.raises(AttributeError, match="property 'Vx'.*has no setter"):
@@ -120,7 +120,7 @@ def test_properties_are_not_assignable(fluid):
 
 def test_setter_rejects_wrong_shape(fluid):
     """An array that does not broadcast to (2, n_row) is refused."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
     ml.set_r(0.5)
     ml.set_P_T(1e5, 300.0)
@@ -131,7 +131,7 @@ def test_setter_rejects_wrong_shape(fluid):
 
 def test_reading_uninitialised_data_raises(fluid):
     """An unset variable raises rather than quietly returning NaN."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     for name in ("Vx", "Am", "P"):
@@ -188,7 +188,7 @@ def test_computed_annulus_geometry(station):
 
 def test_annulus_geometry_is_vectorised(fluid):
     """Geometry properties evaluate over the whole (2, n_row) block at once."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
     ml.set_r(0.5)
     ml.set_P_T(1e5, 300.0)
@@ -297,7 +297,7 @@ def test_station_holds_full_state(station):
 
 def test_vectorised_velocity_setters(fluid):
     """Setters take a (2, n_row) array, one value per station."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
     ml.set_r(np.array([[0.5, 0.6], [0.55, 0.65]]))
     ml.set_Am(np.array([[1.0, 1.2], [1.1, 1.3]]))
@@ -329,7 +329,7 @@ def test_unset_stations_read_as_nan_for_area(fluid):
     partially built mean line no longer raises. Am is the one added variable
     where the unset value is a well-defined NaN.
     """
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     ml[0, 0].set_Am(1.0)
@@ -347,7 +347,7 @@ def test_unset_stations_read_as_nan_for_area(fluid):
 
 def test_omega_is_nodal_and_defaults_to_zero(fluid):
     """Omega is stored per station, unlike ember's scalar block metadata."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     assert ml.Omega.shape == (2, 2)
@@ -356,7 +356,7 @@ def test_omega_is_nodal_and_defaults_to_zero(fluid):
 
 def test_set_omega_row(fluid):
     """One angular velocity per row, applied to both of its stations."""
-    ml = turbigen.meanline_new.MeanLine(3)
+    ml = turbigen_ref.meanline_new.MeanLine(3)
     ml.set_fluid(fluid)
 
     ml.set_Omega_row([0.0, 1000.0, 2000.0])
@@ -366,7 +366,7 @@ def test_set_omega_row(fluid):
 
 
 def test_set_omega_row_needs_a_full_mean_line(fluid):
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
 
     with pytest.raises(ValueError, match="requires a full"):
@@ -375,7 +375,7 @@ def test_set_omega_row_needs_a_full_mean_line(fluid):
 
 def test_rotation_gives_blade_speed_and_relative_frame(fluid):
     """set_rpm on a row view sets that row's blade speed only."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
     ml.set_r(0.5)
     ml.set_Am(1.0)
@@ -408,7 +408,7 @@ def test_rotation_gives_blade_speed_and_relative_frame(fluid):
 @pytest.fixture
 def expansion(fluid):
     """A two-row mean line expanding from 1 bar to 0.85 bar."""
-    ml = turbigen.meanline_new.MeanLine(2)
+    ml = turbigen_ref.meanline_new.MeanLine(2)
     ml.set_fluid(fluid)
     ml.set_r(0.5)
     ml.set_Am(1.0)
@@ -465,5 +465,5 @@ def test_to_string_tabulates_stations_in_streamwise_order(expansion):
 
 
 def test_repr_reports_the_shape(fluid):
-    ml = turbigen.meanline_new.MeanLine(3)
+    ml = turbigen_ref.meanline_new.MeanLine(3)
     assert repr(ml) == "MeanLine(shape=(2, 3))"

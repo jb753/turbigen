@@ -1,0 +1,551 @@
+"""Post-processing.
+
+A post-processor is a :class:`~turbigen.node.Node`, so it is configured like
+any other part of the file and needs no registration or bespoke serialisation.
+It *returns* figures rather than drawing into a shared document:
+
+```python
+class Post(Node):
+    def report(self, config, result) -> list[Figure]
+```
+
+That is what lets one be run alone in a notebook, lets the caller decide
+whether the figures become a PDF, and lets a test assert on a figure without
+touching the filesystem. The package this replaces threads a `PdfPages` through
+every processor, so none of those are possible.
+
+It takes the config as well as the result, because the most useful plots
+compare design intent against what was achieved, and intent lives in the
+config. That is safe here only because a `Config` is frozen: the hazard in the
+old interface is not reading the config but that its post-processors call
+`config.apply_recamber()` and `config.undo_recamber()`, mutating the geometry
+from inside a plot.
+"""
+
+import logging
+from typing import ClassVar
+
+import numpy as np
+
+import ember.block_util
+import ember.cut
+import ember.util
+import turbigen.util
+from turbigen.node import Node
+
+logger = logging.getLogger("turbigen")
+
+N_CHORD_PLOT = 501
+"""Chordwise points to draw a blade section with.
+
+Far fewer than the ten thousand `evaluate_section` defaults to, which is a
+resolution for geometry and not for a line on a page.
+"""
+
+N_SPAN_CUT = 101
+"""Meridional points defining the span curve a blade surface is cut along.
+
+Only the placement of the cut surface depends on this: `structured_meridional`
+walks the grid's own gridlines, so the resolution of what comes back is the
+mesh's, not the curve's.
+"""
+
+N_SEGMENT_CUT = 50
+"""Meridional points per annulus segment when cutting the whole machine."""
+
+LABELS = {
+    "Ma": r"Mach Number, $\mathit{Ma}$",
+    "Ma_rel": r"Relative Mach Number, $\mathit{Ma}^\mathrm{rel}$",
+    "P": r"Static Pressure, $p$/Pa",
+    "Po": r"Stagnation Pressure, $p_0$/Pa",
+    "T": r"Static Temperature, $T$/K",
+    "s": r"Specific Entropy, $s$/J kg$^{-1}$K$^{-1}$",
+}
+"""Axis labels for the block properties worth contouring, by attribute name."""
+
+
+class Post(Node):
+    """Base for post-processors."""
+
+    def report(self, config, result):
+        """Return figures describing `result`.
+
+        Parameters
+        ----------
+        config : Config
+            The configuration that was run, for design intent.
+        result : Result
+            What designing and running produced.
+
+        Returns
+        -------
+        list of matplotlib.figure.Figure
+            Empty if there was nothing to plot, which is not an error.
+
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement report(self, config, result)"
+        )
+
+
+class AnnulusPlot(Post):
+    """Meridional view of the annulus."""
+
+    type: ClassVar[str] = "annulus"
+
+    m_cut: tuple[float, ...] = ()
+    """Normalised meridional positions at which to draw a cut plane."""
+
+    show_axis: bool = False
+    """Draw the axis of rotation."""
+
+    def report(self, config, result):
+        annulus = result.machine.annulus
+        if annulus is None:
+            logger.info("No annulus was designed, skipping the annulus plot.")
+            return []
+
+        # Imported here so that turbigen can be used without a display, and
+        # without paying for matplotlib when nothing is being plotted.
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        fig, ax = plt.subplots(layout="constrained")
+        ax.axis("off")
+        ax.axis("equal")
+
+        # Sample the hub and casing straight from the annulus. Everything a
+        # meridional view needs is a view on evaluate_xr, so nothing is added
+        # to Annulus to support this: shapes wanted by one consumer belong in
+        # that consumer.
+        m = np.linspace(0.0, annulus.mmax, annulus.n_segment * 50 + 1)
+        xr_hub = annulus.evaluate_xr(m, 0.0)
+        xr_cas = annulus.evaluate_xr(m, 1.0)
+
+        # A cut plane is the hub-to-casing line at one meridional position
+        for m_cut in self.m_cut:
+            ax.plot(*annulus.evaluate_xr(m_cut, [0.0, 1.0]), "-", color="C0")
+
+        ax.plot(*xr_hub, "k-")
+        ax.plot(*xr_cas, "k-")
+
+        if self.show_axis:
+            ax.plot(xr_hub[0, (0, -1)], np.zeros(2), "k-.")
+
+        ax.set_title("Annulus")
+        return [fig]
+
+
+def _span_fractions(spf, blade):
+    """Return span fractions to plot at, defaulting to the designed sections.
+
+    Empty means "wherever this blade was defined", which is the only choice
+    that needs no knowledge of the machine: a section the designer named is a
+    section worth looking at.
+    """
+    return tuple(spf) if spf else tuple(float(s) for s in blade.spf)
+
+
+class SectionsPlot(Post):
+    """Blade-to-blade sections of each row."""
+
+    type: ClassVar[str] = "sections"
+
+    spf: tuple[float, ...] = ()
+    """Span fractions to draw. Empty for the designed sections."""
+
+    def report(self, config, result):
+        rows = result.machine.rows if result.machine else ()
+        if not rows:
+            logger.info("No blades were designed, skipping the sections plot.")
+            return []
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        figures = []
+        for i_row, row in enumerate(rows):
+            fig, ax = plt.subplots(layout="constrained")
+            ax.axis("equal")
+            ax.set_xlabel(r"Axial Coordinate, $x$/m")
+            ax.set_ylabel(r"Circumferential Coordinate, $r\theta$/m")
+            ax.set_title(f"Row {i_row} Sections")
+
+            # The geometry is drawn as it stands. The package this replaces has
+            # to recamber the blade before it can plot one, and put it back
+            # afterwards, because its sections are stored in an intermediate
+            # form; here a Blade is already what it will be meshed as.
+            for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+                surfaces = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)
+                for i_surf, (x, r, t) in enumerate(surfaces):
+                    ax.plot(
+                        x,
+                        r * t,
+                        color=f"C{i_spf}",
+                        label=f"spf={spf:.2f}" if i_surf == 0 else None,
+                    )
+
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
+class ConvergencePlot(Post):
+    """Residuals and integral errors over the course of a march."""
+
+    type: ClassVar[str] = "convergence"
+
+    def report(self, config, result):
+        history = result.history
+        if history is None:
+            logger.info("No solution was marched, skipping the convergence plot.")
+            return []
+        if history.i_log < 0:
+            logger.info("The march logged no records, skipping the convergence plot.")
+            return []
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        # A history arrives trimmed to the records actually written, so there
+        # is no NaN tail to slice off here.
+        steps = history.i_step
+
+        fig_resid, ax = plt.subplots(layout="constrained")
+        names = ("rho", "rhoVx", "rhoVr", "rhorVt", "rhoe")
+        for i_var, name in enumerate(names):
+            ax.semilogy(steps, history.residual[:, i_var], label=name)
+        ax.set_xlabel("Step")
+        ax.set_ylabel("Residual")
+        ax.set_title("Convergence History")
+        ax.legend()
+
+        # The quantities themselves, as they settle -- not their distance from
+        # the final value. Read against a known design intent, the value is
+        # what says whether the answer is right; the deviation only says the
+        # march has stopped moving, which the residuals already show. Work and
+        # loss arrive already scaled by the fluid reference state (`ho_nd` by
+        # u_ref, `s_nd` by Rgas_ref), so they are comparable between cases as
+        # they stand and need no further normalisation. The mass error is a
+        # fraction of the mean flow through the machine, so it is the one that
+        # is genuinely a percentage.
+        panels = (
+            (100.0 * history.err_mdot, r"Mass, $\varepsilon$", r"$\varepsilon$ [$\%$]"),
+            (history.psi, r"Work, $\psi$", r"$\psi$ [-]"),
+            (history.zeta, r"Loss, $\zeta$", r"$\zeta$ [-]"),
+        )
+
+        # Each panel scales to, and is labelled in, its own units: only the
+        # mass error is a percentage. The percent sign goes through mathtext,
+        # which renders it in both modes -- written bare it survives the
+        # default rc and then vanishes under text.usetex, where it opens a
+        # LaTeX comment and swallows the rest of the label.
+        fig_error, axs = plt.subplots(1, 3, layout="constrained")
+        for axi, (y, title, ylabel) in zip(axs, panels):
+            axi.plot(steps, y)
+            axi.set_title(title)
+            axi.set_xlabel("Step")
+            axi.set_ylabel(ylabel)
+            # A march short enough to log once has nothing to span, and asking
+            # for a zero-width axis is an error rather than an empty plot.
+            if steps[-1] > steps[0]:
+                axi.set_xlim(steps[0], steps[-1])
+
+        return [fig_resid, fig_error]
+
+
+def _isentropic_mach(cut, s_ref):
+    """Return isentropic Mach number over `cut`, referred to entropy `s_ref`.
+
+    Expanded isentropically from the row inlet entropy to the local static
+    pressure, so the result reads as the Mach number the blade would see with
+    no loss upstream of the point in question.
+    """
+    # Set in place on a copy, not chained off one: ember's setters return
+    # nothing, whatever the idiom in the package this is ported from suggests.
+    isen = cut.copy()
+    isen.set_P_s(cut.P, s_ref)
+
+    # Stagnation enthalpy and sound speed are taken as surface means so that
+    # only local static pressure drives the distribution. Left local, radial
+    # redistribution of ho_rel and variation in a split the two surfaces apart
+    # at the trailing edge, where they must meet.
+    ho = np.mean(cut.ho_rel)
+    a_ref = np.mean(isen.a)
+
+    # Shift so the lowest point sits exactly at rest rather than slightly
+    # below it, which the discrete field can otherwise produce.
+    hs = isen.h
+    hs = hs + np.min(ho - hs)
+
+    return np.sqrt(2.0 * np.maximum(ho - hs, 0.0)) / a_ref
+
+
+def _normalise_surface_distance(cut, mas, xrt_nose):
+    """Return surface distance in [-1, 1], zero at the stagnation point.
+
+    Each surface is normalised by its own length, so both reach one at the
+    trailing edge however asymmetric the blade is. The sign says which surface
+    a point is on, following the direction the cut loops in; the plot folds it
+    away, but normalising the two sides has to happen while they are still
+    told apart.
+    """
+    zeta = turbigen.util.get_zeta(cut)[:, 0]
+
+    # The geometric nose anchors the search window, which is more robust on
+    # blades with a strongly asymmetric leading edge than the arc-length
+    # midpoint the function falls back on.
+    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0])
+    zeta = zeta - zeta[i_stag]
+
+    # Then move the origin onto the lowest Mach number, which is the
+    # stagnation point of the flow rather than of the grid.
+    zeta = zeta - zeta[np.argmin(mas)]
+
+    upper = zeta.max()
+    lower = np.abs(zeta.min())
+    return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
+
+
+class SurfacePlot(Post):
+    """Isentropic Mach number around the blade surfaces."""
+
+    type: ClassVar[str] = "surface"
+
+    spf: tuple[float, ...] = ()
+    """Span fractions to plot at. Empty for the designed sections."""
+
+    offset: int = 0
+    """Cells away from the wall to take the distribution at."""
+
+    def report(self, config, result):
+        rows = result.machine.rows if result.machine else ()
+        annulus = result.machine.annulus if result.machine else None
+        if result.grid is None or not rows or annulus is None:
+            logger.info("No solved grid, skipping the surface distribution plot.")
+            return []
+
+        # A march that blew up leaves a field full of NaN, which no isentropic
+        # state can be evaluated from. Skipped on the solver's own verdict
+        # rather than by inspecting the numbers: divergence is what the history
+        # records. The convergence plot still draws -- a diverged run is
+        # exactly the one whose residuals someone needs to look at.
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the surface distribution plot.")
+            return []
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        # One cut of the whole blade per row, sliced at each span fraction
+        # below: the cut is the expensive part and does not depend on span.
+        surfaces = turbigen.util.cut_blade_surfs(result.grid, self.offset)
+
+        # Whatever field the grid holds is what gets drawn: a solution, a
+        # restored one, or the meridional guess a mesh starts with, which is a
+        # legitimate way to look at a mesh.
+        figures = []
+        for i_row, row in enumerate(rows):
+            if surfaces[i_row] is None:
+                logger.info(
+                    f"Could not cut the blade surface of row {i_row}, "
+                    "skipping its surface distribution."
+                )
+                continue
+
+            surface = surfaces[i_row][0]
+            s_ref = result.machine.mean_line.row(i_row).s[0]
+
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_xlabel(r"Normalised Surface Distance, $|\zeta|$")
+            ax.set_ylabel(r"Isentropic Mach Number, $\mathit{Ma}_s$")
+            ax.set_title(f"Row {i_row} Surface Distribution")
+            ax.set_xlim(0.0, 1.0)
+
+            for spf in _span_fractions(self.spf, row.blade):
+                # Rows occupy the odd meridional segments of the annulus, so
+                # row i spans m from 2i+1 to 2i+2.
+                m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
+                xr = annulus.evaluate_xr(m, spf)
+                cut = ember.cut.structured_meridional(surface, xr.T)[0]
+
+                mas = _isentropic_mach(cut, s_ref)[:, 0]
+                xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
+                zeta = _normalise_surface_distance(cut, mas, xrt_nose)
+
+                # Folded onto the positive axis, so both surfaces run from the
+                # stagnation point at zero out to the trailing edge at one and
+                # can be read against each other directly.
+                ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
+class ContourPlot(Post):
+    """Contours of a flow variable on a constant-span surface."""
+
+    type: ClassVar[str] = "contour"
+
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions to cut at."""
+
+    variable: str = "Ma_rel"
+    """Block property to contour, e.g. ``Ma_rel``, ``P``, ``s``."""
+
+    n_passage: int = 2
+    """Passages to draw, repeated pitchwise."""
+
+    n_level: int = 21
+    """Number of filled contour levels."""
+
+    cmap: str = "viridis"
+    """Colour map to fill with."""
+
+    margin: float = 0.25
+    """How far to look either side of a row, as a fraction of its own length."""
+
+    def report(self, config, result):
+        machine = result.machine
+        annulus = machine.annulus if machine else None
+        if result.grid is None or annulus is None:
+            logger.info("No grid to cut, skipping the contour plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the contour plot.")
+            return []
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        figures = []
+        for spf in self.spf:
+            # One curve spanning the whole machine, used twice: once to place
+            # the cut surface, and once as the datum for the conformal
+            # coordinate. Sharing it is what puts every row on a single
+            # meridional scale, with no per-block offsets to reconcile.
+            m = np.linspace(0.0, annulus.mmax, annulus.n_segment * N_SEGMENT_CUT + 1)
+            xr_curve = annulus.evaluate_xr(m, spf).T
+
+            cut = ember.cut.structured_meridional(result.grid, xr_curve)
+            if not len(cut):
+                logger.info(f"No block reaches spf={spf}, skipping its contour plot.")
+                continue
+
+            # Gathered before anything is drawn, so that every block and every
+            # repeated passage shares one set of levels. Contoured as they came
+            # they would each get their own, and the colours either side of a
+            # mixing plane would mean different things.
+            passages = []
+            for block in cut:
+                mp = ember.util.unwrap_meridional(xr_curve, block.xrt[..., :2])
+                values = self._values(block)
+                # Only theta moves between passages, so the conformal
+                # coordinate and the field are computed once and reused.
+                for passage in ember.block_util.repeat_pitchwise(block, self.n_passage):
+                    passages.append((mp, passage.t, values))
+
+            levels = np.linspace(
+                min(values.min() for _, _, values in passages),
+                max(values.max() for _, _, values in passages),
+                self.n_level,
+            )
+
+            for window, title in self._windows(annulus, xr_curve, spf):
+                figures.append(self._draw(plt, passages, levels, window, title))
+
+        return figures
+
+    def _windows(self, annulus, xr_curve, spf):
+        """Return the meridional window and title of each figure.
+
+        One figure per row, framed on the row itself: a machine-wide view is
+        mostly inlet and outlet duct, and on a multi-stage machine the rows
+        would be a few pixels each. Rows occupy the odd annulus segments, so
+        the leading and trailing edges are at integer meridional stations, and
+        `unwrap_meridional` puts them on the same scale as the cut.
+        """
+        if not annulus.n_row:
+            return [(None, f"spf={spf:.2f}")]
+
+        windows = []
+        for i_row in range(annulus.n_row):
+            edges = annulus.evaluate_xr([2 * i_row + 1, 2 * i_row + 2], spf).T
+            m_LE, m_TE = ember.util.unwrap_meridional(xr_curve, edges)
+            margin = self.margin * (m_TE - m_LE)
+            windows.append(
+                ((m_LE - margin, m_TE + margin), f"Row {i_row}, spf={spf:.2f}")
+            )
+        return windows
+
+    def _draw(self, plt, passages, levels, window, title):
+        """Contour every passage that shows through `window`."""
+        fig, ax = plt.subplots(layout="constrained")
+
+        theta = []
+        for mp, passage_theta, values in passages:
+            # Blocks outside the window are skipped rather than drawn and
+            # clipped: on a multi-stage machine that is most of them, every
+            # time.
+            if window is not None and (mp.min() > window[1] or mp.max() < window[0]):
+                continue
+
+            filled = ax.contourf(
+                mp, passage_theta, values, levels=levels, cmap=self.cmap
+            )
+
+            # Filled bands are drawn as separate polygons, so a vector backend
+            # leaves a hairline of background between them. Giving each band an
+            # edge in its own colour closes the seam.
+            filled.set_edgecolor("face")
+            filled.set_linewidth(0.05)
+
+            visible = passage_theta[
+                (mp >= window[0]) & (mp <= window[1]) if window else ...
+            ]
+            if visible.size:
+                theta.append((visible.min(), visible.max()))
+
+        # Equal aspect is not decoration: m' and theta are both dimensionless,
+        # and scaling them alike is what makes the plane conformal, so a
+        # section keeps the shape it has in the machine. It also means the
+        # limits have to be set from the visible data, or the aspect ratio
+        # pads the figure out with empty duct.
+        ax.set_aspect("equal")
+        if window is not None:
+            ax.set_xlim(*window)
+        if theta:
+            ax.set_ylim(min(lo for lo, _ in theta), max(hi for _, hi in theta))
+
+        ax.set_xlabel(r"Conformal Meridional Distance, $m'$")
+        ax.set_ylabel(r"Circumferential Coordinate, $\theta$/rad")
+        ax.set_title(title)
+        fig.colorbar(filled, label=LABELS.get(self.variable, self.variable), shrink=0.8)
+
+        return fig
+
+    def _values(self, block):
+        """Return the variable to contour, as an array over `block`."""
+        try:
+            return np.asarray(getattr(block, self.variable))
+        except AttributeError:
+            raise ValueError(
+                f"An ember block has no property {self.variable!r} to contour; "
+                f"try one of {sorted(LABELS)}."
+            ) from None
+
+
+STANDARD = (
+    AnnulusPlot(),
+    SectionsPlot(),
+    ConvergencePlot(),
+    SurfacePlot(),
+    ContourPlot(),
+)
+"""Post-processors that run whether or not a config asks for them.
+
+Cheap next to a solve, and each one degrades to no figures when what it needs
+is absent, so the set is safe to run for every verb. It is not part of a
+config: `turbigen.cli.processors` combines it with whatever `post_process`
+names, and a configured processor of the same type replaces its standard
+counterpart rather than adding to it.
+"""

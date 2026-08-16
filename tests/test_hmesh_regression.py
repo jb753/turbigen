@@ -4,8 +4,8 @@ import tempfile
 import numpy as np
 import pytest
 
-import turbigen.config
-import turbigen.yaml_utils
+import turbigen_ref.config
+import turbigen_ref.yaml_utils
 
 DATA = pathlib.Path(__file__).parent / "data"
 
@@ -15,7 +15,7 @@ def _build_grid(inputs):
     with tempfile.TemporaryDirectory() as tmp:
         conf_dict = dict(inputs["conf_dict"])
         conf_dict["work_dir"] = tmp
-        conf = turbigen.config.TurbigenConfig(**conf_dict)
+        conf = turbigen_ref.config.TurbigenConfig(**conf_dict)
         conf.get_mean_line_nominal()
         conf.get_geometry()
         conf.adjust_ref()

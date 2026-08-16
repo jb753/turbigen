@@ -2,7 +2,7 @@ import ember.block
 import ember.util
 import numpy as np
 import pytest
-from turbigen.util_post import get_zeta
+from turbigen_ref.util_post import get_zeta
 
 
 def test_get_zeta_1d_straight_line():

@@ -7,7 +7,7 @@ import ember.grid
 import ember.util
 import numpy as np
 
-from turbigen.util_post import get_i_stag, get_zeta, get_zeta_stag
+from turbigen_ref.util_post import get_i_stag, get_zeta, get_zeta_stag
 
 
 def make_blade_surf(ni=41, nj=11, i_stag_true=20):

@@ -35,7 +35,7 @@ Homepage = "https://turbigen.org"
 Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 
 [project.scripts]
-turbigen2 = "turbigen2.cli:main"
+turbigen = "turbigen.cli:main"
 
 [tool.black]
 target-version = ["py311"]

@@ -12,10 +12,10 @@ import numpy as np
 import pytest
 
 import ember.fluid
-import turbigen.designer as D
-import turbigen.plugins
-from turbigen.designer import Designer, DesignError
-from turbigen.meanline_new import MeanLine, MeanLineConfig
+import turbigen_ref.designer as D
+import turbigen_ref.plugins
+from turbigen_ref.designer import Designer, DesignError
+from turbigen_ref.meanline_new import MeanLine, MeanLineConfig
 
 GAMMA, CP = 1.4, 1005.0
 RGAS = CP * (GAMMA - 1.0) / GAMMA
@@ -29,7 +29,7 @@ def air():
 @pytest.fixture
 def clean_registry():
     """Restore the designer registry after a test registers into it."""
-    reg = turbigen.plugins.get_registry()["designer"]
+    reg = turbigen_ref.plugins.get_registry()["designer"]
     before = dict(reg)
     yield reg
     reg.clear()
@@ -249,7 +249,7 @@ def test_resolve_defaults_rejects_an_unknown_variable():
 
 
 def test_register_designer_accepts_a_valid_designer(clean_registry):
-    @turbigen.plugins.register_designer("_test_ok")
+    @turbigen_ref.plugins.register_designer("_test_ok")
     class Good(Uniform):
         pass
 
@@ -260,7 +260,7 @@ def test_register_designer_accepts_a_valid_designer(clean_registry):
 def test_register_designer_rejects_a_non_designer(clean_registry):
     with pytest.raises(TypeError, match="subclass of"):
 
-        @turbigen.plugins.register_designer("_test_bad")
+        @turbigen_ref.plugins.register_designer("_test_bad")
         class NotADesigner:
             pass
 
@@ -268,7 +268,7 @@ def test_register_designer_rejects_a_non_designer(clean_registry):
 def test_register_designer_rejects_a_bad_n_row(clean_registry):
     with pytest.raises(ValueError, match="n_row"):
 
-        @turbigen.plugins.register_designer("_test_nrow")
+        @turbigen_ref.plugins.register_designer("_test_nrow")
         class BadRows(Uniform):
             n_row = 0
 
@@ -276,20 +276,20 @@ def test_register_designer_rejects_a_bad_n_row(clean_registry):
 def test_register_designer_rejects_a_bad_forward_signature(clean_registry):
     with pytest.raises(TypeError, match="must be named 'ml'"):
 
-        @turbigen.plugins.register_designer("_test_sig")
+        @turbigen_ref.plugins.register_designer("_test_sig")
         class BadSig(Uniform):
             def forward(self, mean_line, Ma):
                 pass
 
 
 def test_register_designer_rejects_a_duplicate_name(clean_registry):
-    @turbigen.plugins.register_designer("_test_dup")
+    @turbigen_ref.plugins.register_designer("_test_dup")
     class First(Uniform):
         pass
 
     with pytest.raises(ValueError, match="already registered"):
 
-        @turbigen.plugins.register_designer("_test_dup")
+        @turbigen_ref.plugins.register_designer("_test_dup")
         class Second(Uniform):
             pass
 

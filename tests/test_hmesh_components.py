@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from turbigen.hmesh import H, _theta_limits
+from turbigen_ref.hmesh import H, _theta_limits
 
 
 @pytest.fixture

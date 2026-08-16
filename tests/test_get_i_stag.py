@@ -3,7 +3,7 @@ import ember.fluid
 import ember.util
 import numpy as np
 import pytest
-from turbigen.util_post import get_i_stag
+from turbigen_ref.util_post import get_i_stag
 
 
 def test_get_i_stag_simple_2d():

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import ember.fluid
-import turbigen.meanline_new
+import turbigen_ref.meanline_new
 
 GAMMA = 1.4
 CP = 1005.0
@@ -42,7 +42,7 @@ def make_machine(fluid, states):
     if len(states) % 2:
         raise ValueError("need an even number of stations, two per row")
 
-    ml = turbigen.meanline_new.MeanLine(len(states) // 2)
+    ml = turbigen_ref.meanline_new.MeanLine(len(states) // 2)
     ml.set_fluid(fluid)
     ml.set_r(0.5)
     ml.set_Am(1.0)
@@ -98,7 +98,7 @@ def test_eta_tt_at_least_eta_ts(simple_turbine):
 def test_zero_rows_is_rejected_at_construction():
     """A machine with no rows is refused when built, not when read."""
     with pytest.raises(ValueError, match="n_row must be >= 1"):
-        turbigen.meanline_new.MeanLine(0)
+        turbigen_ref.meanline_new.MeanLine(0)
 
 
 def test_efficiency_uses_machine_endpoints(perfect_air):

@@ -14,7 +14,7 @@ changes, so the collision has to be looked at rather than absorbed.
 
 import ember.block
 
-import turbigen.meanline_new
+import turbigen_ref.meanline_new
 
 # Members of Block that MeanLine deliberately replaces.
 EXPECTED_OVERRIDES = {
@@ -34,7 +34,7 @@ def _overridden_members():
     """Names defined on MeanLine that also exist on Block."""
     return {
         name
-        for name in vars(turbigen.meanline_new.MeanLine)
+        for name in vars(turbigen_ref.meanline_new.MeanLine)
         if not name.startswith("__")
         and hasattr(ember.block.Block, name)
     }
@@ -80,6 +80,6 @@ def test_inherited_block_properties_are_not_reimplemented():
         "rho",
         "conserved",
     ):
-        assert getattr(turbigen.meanline_new.MeanLine, name) is getattr(
+        assert getattr(turbigen_ref.meanline_new.MeanLine, name) is getattr(
             ember.block.Block, name
         ), f"{name} is reimplemented on MeanLine rather than inherited"

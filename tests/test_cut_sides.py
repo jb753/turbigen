@@ -4,7 +4,7 @@ import ember.util
 import ember.patch
 import pytest
 import numpy as np
-import turbigen.util_post
+import turbigen_ref.util_post
 
 
 def row_block(shape, i_le, i_te, di_cusp=None):
@@ -55,7 +55,7 @@ def row_block(shape, i_le, i_te, di_cusp=None):
 
 def test_cut_blade_sides_basic():
     """Test cut_blade_sides on a simple H-mesh grid."""
-    from turbigen.util_post import cut_blade_sides
+    from turbigen_ref.util_post import cut_blade_sides
 
     # Create a single-row H-mesh with shape (30, 20, 10)
     # Leading edge at i=5, trailing edge at i=15
@@ -121,7 +121,7 @@ def test_cut_blade_sides_basic():
 
 def test_cut_blade_sides_cusped():
     """Test cut_blade_sides on an H-mesh grid with a cusp at trailing edge."""
-    from turbigen.util_post import cut_blade_sides
+    from turbigen_ref.util_post import cut_blade_sides
 
     # Create a single-row H-mesh with a cusp
     # Leading edge at i=5, trailing edge at i=15, cusp extends 2 cells upstream
@@ -175,7 +175,7 @@ def test_cut_blade_sides_cusped():
 
 def test_cut_blade_surfs_basic():
     """Test cut_blade_surfs on a simple H-mesh grid."""
-    from turbigen.util_post import cut_blade_surfs
+    from turbigen_ref.util_post import cut_blade_surfs
 
     # Create a single-row H-mesh with shape (30, 20, 10)
     # Leading edge at i=5, trailing edge at i=15
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     blk = row_block((30, 20, 10), 5, 15, di_cusp=2)
     import matplotlib.pyplot as plt
 
-    C01 = turbigen.util_post.cut_blade_sides(blk)[0]
+    C01 = turbigen_ref.util_post.cut_blade_sides(blk)[0]
 
     fig, ax = plt.subplots()
     for C in C01:

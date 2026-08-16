@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import ember.fluid
-from turbigen.meanline_new import MeanLine
+from turbigen_ref.meanline_new import MeanLine
 
 N_ROW = 3
 

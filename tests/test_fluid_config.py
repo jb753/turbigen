@@ -3,13 +3,13 @@
 import pytest
 import numpy as np
 import dataclasses
-import turbigen.fluid
+import turbigen_ref.fluid
 import ember.fluid
 
 
 def test_perfect_fluid_config_instantiation():
     """Test that PerfectFluidConfig creates with required and default values."""
-    config = turbigen.fluid.PerfectFluidConfig(
+    config = turbigen_ref.fluid.PerfectFluidConfig(
         type="perfect", cp=1005.0, gamma=1.4, mu=1.8e-5
     )
 
@@ -25,7 +25,7 @@ def test_perfect_fluid_config_instantiation():
 
 def test_perfect_fluid_config_creates_working_fluid():
     """Test that the created fluid object works correctly."""
-    config = turbigen.fluid.PerfectFluidConfig(
+    config = turbigen_ref.fluid.PerfectFluidConfig(
         type="perfect", cp=1005.0, gamma=1.4, mu=1.8e-5
     )
 
@@ -48,14 +48,14 @@ def test_invalid_fluid_type_raises_error():
     with pytest.raises(AssertionError):
         # This should fail in __post_init__ when validating the type
         # PerfectFluidConfig requires type="perfect"
-        turbigen.fluid.PerfectFluidConfig(
+        turbigen_ref.fluid.PerfectFluidConfig(
             type="wrong_type", cp=1005.0, gamma=1.4, mu=1.8e-5
         )
 
 
 def test_fluid_config_immutability():
     """Test that fluid config is frozen and cannot be modified after creation."""
-    config = turbigen.fluid.PerfectFluidConfig(
+    config = turbigen_ref.fluid.PerfectFluidConfig(
         type="perfect", cp=1005.0, gamma=1.4, mu=1.8e-5
     )
 
@@ -74,10 +74,10 @@ def test_fluid_config_immutability():
 
 def test_different_configs_have_independent_fluids():
     """Test that different configs create independent fluid instances."""
-    config1 = turbigen.fluid.PerfectFluidConfig(
+    config1 = turbigen_ref.fluid.PerfectFluidConfig(
         type="perfect", cp=1005.0, gamma=1.4, mu=1.8e-5
     )
-    config2 = turbigen.fluid.PerfectFluidConfig(
+    config2 = turbigen_ref.fluid.PerfectFluidConfig(
         type="perfect", cp=1200.0, gamma=1.3, mu=2.0e-5
     )
 
@@ -102,10 +102,10 @@ def test_from_dict_creates_correct_config():
         "Pr": 0.72,
     }
 
-    config = turbigen.fluid.FluidConfig.from_dict(config_dict)
+    config = turbigen_ref.fluid.FluidConfig.from_dict(config_dict)
 
     # Check it created the right type
-    assert isinstance(config, turbigen.fluid.PerfectFluidConfig)
+    assert isinstance(config, turbigen_ref.fluid.PerfectFluidConfig)
     assert config.type == "perfect"
     assert config.cp == 1005.0
     assert config.gamma == 1.4
@@ -122,7 +122,7 @@ def test_from_dict_with_invalid_type_raises_error():
     config_dict = {"type": "unknown_fluid", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 
     with pytest.raises(ValueError, match="Unknown fluid type"):
-        turbigen.fluid.FluidConfig.from_dict(config_dict)
+        turbigen_ref.fluid.FluidConfig.from_dict(config_dict)
 
 
 def test_from_dict_does_not_modify_input():
@@ -130,7 +130,7 @@ def test_from_dict_does_not_modify_input():
     config_dict = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 
     original_dict = config_dict.copy()
-    turbigen.fluid.FluidConfig.from_dict(config_dict)
+    turbigen_ref.fluid.FluidConfig.from_dict(config_dict)
 
     # Input should be unchanged
     assert config_dict == original_dict
