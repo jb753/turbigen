@@ -10,7 +10,7 @@ from pathlib import Path
 
 import ember.yaml_util
 
-from turbigen2 import plugins
+from turbigen2 import include, plugins
 from turbigen2.annulus import AnnulusDesign
 from turbigen2.batch import Batch
 from turbigen2.blade import BladeDesign
@@ -87,7 +87,7 @@ class Config(Node):
         path = Path(path)
         plugins.discover(path.parent)
 
-        data = ember.yaml_util.read_yaml(path)
+        data = include.read(path)
         # A run writes its answer into the same file under `result:`. Ignore it
         # here: this returns a config. `turbigen2.case.read` returns both.
         data.pop("result", None)

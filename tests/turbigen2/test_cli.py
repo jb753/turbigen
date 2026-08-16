@@ -1097,3 +1097,84 @@ def test_a_failed_comparison_does_not_cost_the_run_its_output(run_case, monkeypa
 
     assert (run_case.parent / "restart.npz").is_file()
     assert (run_case.parent / "output.yaml").is_file()
+
+
+#
+# INCLUDES THROUGH THE CLI
+#
+# The merging rules are covered in test_include.py. These check the two things
+# only the CLI can show: that an assembled document really designs, and that an
+# override still has the last word over one.
+#
+
+
+@pytest.fixture
+def split_case(tmp_path):
+    """The same case as `case`, but with its mean line in a second file."""
+    directory = tmp_path / "split"
+    directory.mkdir()
+
+    fluid, _, mean_line = CASE.partition("mean_line:")
+    (directory / "mean_line.yaml").write_text(f"mean_line:{mean_line}")
+
+    path = directory / "input.yaml"
+    path.write_text(f"include: [mean_line.yaml]\n{fluid}")
+    return path
+
+
+def _tables_from_log(text):
+    """The design tables out of a run's log, without its timing line."""
+    return text.split("Mean line:")[1].split("Total time")[0]
+
+
+def test_a_config_assembled_from_includes_designs(split_case, case, capsys):
+    """Splitting a file across two must not change what it designs."""
+    assert cli.main(["design", str(split_case)]) == 0
+    split = capsys.readouterr().err
+
+    assert cli.main(["design", str(case)]) == 0
+    whole = capsys.readouterr().err
+
+    assert "Mean line:" in split
+    assert _tables_from_log(split) == _tables_from_log(whole)
+
+
+def test_an_override_beats_an_included_value(split_case, capsys):
+    """Includes are resolved before `-s`, so an override applies to the
+    assembled document rather than to whichever fragment defined the key."""
+    assert cli.main(["design", str(split_case)]) == 0
+    baseline = capsys.readouterr().err
+
+    assert cli.main(["design", str(split_case), "-s", "mean_line.psi=1.2"]) == 0
+    changed = capsys.readouterr().err
+
+    assert baseline != changed
+
+
+def test_an_include_key_does_not_reach_the_config(split_case):
+    """Popped during resolution, so the strict unknown-key check needs no
+    exception for it and a written config carries no pointer to a file that
+    may since have changed."""
+    from turbigen2 import Config  # noqa: PLC0415
+
+    config = Config.from_file(split_case)
+
+    assert "include" not in config.to_dict()
+    assert config == Config.from_dict(config.to_dict())
+
+
+def test_a_run_writes_its_includes_out_expanded(run_case):
+    """An archived run records what it ran, not where the pieces came from."""
+    directory = run_case.parent
+
+    fluid, _, rest = RUN_CASE.partition("mean_line:")
+    (directory / "fluid.yaml").write_text(fluid)
+    run_case.write_text(f"include: [fluid.yaml]\nmean_line:{rest}")
+
+    assert cli.main(["run", str(run_case)]) == 0
+
+    written = (directory / "output.yaml").read_text()
+    assert "include" not in written
+    # The included value is there in full, not as a pointer to a file that may
+    # since have changed.
+    assert "cp: 1005" in written

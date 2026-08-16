@@ -16,7 +16,7 @@ from pathlib import Path
 
 import ember.yaml_util
 
-from turbigen2 import plugins
+from turbigen2 import include, plugins
 from turbigen2.config import Config
 from turbigen2.result import Result
 
@@ -50,7 +50,7 @@ def read(path, design=True):
     path = Path(path)
     plugins.discover(path.parent)
 
-    data = ember.yaml_util.read_yaml(path)
+    data = include.read(path)
     result_data = data.pop(RESULT_KEY, None)
 
     config = Config.from_dict(data)

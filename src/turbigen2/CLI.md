@@ -203,6 +203,60 @@ registers itself when its body executes, an ordinary `import` already
 registers; `load_plugins(dir)` exists only for files that are not importable in
 the normal way.
 
+## Includes
+
+A top-level `include:` names files whose keys are merged underneath this one's,
+so a site's `job:`, a standard `solver:` and a family's `mesh:` are written once
+and shared.
+
+```yaml
+include: [../site/cluster.yaml, solver.yaml]
+mean_line: {...}
+solver:
+  n_step: 100          # keeps the rest of the included solver block
+```
+
+**One rule.** Later beats earlier, the including file beats everything it
+includes, and mappings merge exactly one level deep. Depth one is where it
+stops on purpose: it covers overriding one setting of an included block, while
+refusing to splice two mappings that declare different `type:` keys into a node
+with `psi` from one design and `span` from another. Lists replace wholesale,
+because merging `blades:` by index never gives the row you meant.
+
+**Files are found relative to whoever named them**, never the working
+directory, and an include named by an included file resolves against *that*
+file's directory. Same anchoring as plugin discovery and for the same reason: a
+case directory, its `turbigen_plugins/` and its fragments copy anywhere
+together, and the same file cannot design two different machines depending on
+where you invoked it from. The package this replaces tries the working
+directory first and warns when that shadows something.
+
+Includes may include, depth-first. A diamond — two files including a third —
+resolves; a loop raises naming the chain.
+
+**Ambiguity is refused, not resolved**, in the two places it arises. A key
+written twice in one file raises, at any depth, because every YAML loader keeps
+the last one and says nothing, so the earlier is a setting that goes quietly
+missing. And two files in the *same* `include:` list both setting a top-level
+key raises, because equals have no precedence worth relying on — where a file
+overriding what it includes is a hierarchy, and is what the merge depth is for.
+
+The old package wrote the duplicate-key check and then wired it to
+`read_yaml_list` alone, so no config has ever been checked by it.
+
+**An included `result:` is dropped**, with a debug line. Including a finished
+`output.yaml` to inherit its design is a fair thing to want; inheriting the
+answer it achieved is not, and `database` decides what counts as a sample by
+reading `result:`, so one inherited answer would poison every warm start that
+globs it.
+
+Resolution happens before `--set`, so an override is the last word and applies
+to the assembled document rather than to whichever fragment defined the key.
+`include:` is popped on the way in, so it never reaches the strict unknown-key
+check — and what a run writes is the expanded document, because an archived
+case records what it ran rather than pointing at files that may since have
+changed.
+
 ### Deliberately not carried over
 
 `--edit`, which opens the config in `$EDITOR` before running. It can be made to

@@ -47,6 +47,7 @@ from turbigen2 import (
     case,
     database,
     guess,
+    include,
     iterate,
     job,
     mixout,
@@ -233,7 +234,10 @@ def load_config(config_path, args):
     # keys it names can be resolved.
     plugins.discover(config_path.parent)
 
-    data = ember.yaml_util.read_yaml(config_path)
+    # Includes are resolved first, so an override is the last word and applies
+    # to the assembled document rather than to whichever fragment defined the
+    # key it names.
+    data = include.read(config_path)
 
     # Dropped before the overrides are applied, so that `-s result.x=1` cannot
     # reach into a previous run's answer. Re-running a case rewrites it anyway.
