@@ -33,7 +33,10 @@ def test_get_i_stag_simple_2d():
     Vx = np.ones((ni, nj, 1)) * 50.0  # m/s
     Vr = np.zeros((ni, nj, 1))
     Vt = np.zeros((ni, nj, 1))
-    block.set_P_rho(P * 1e5, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
+    block.set_P_rho(P * 1e5, rho)
+    block.set_Vx(Vx)
+    block.set_Vr(Vr)
+    block.set_Vt(Vt)
     block.set_Omega(0.0)  # Non-rotating, so P_rot = P
 
     # Squeeze to 2D before calling get_i_stag
@@ -51,7 +54,8 @@ def test_get_i_stag_shape_validation():
     # Test 3D block (doesn't squeeze to 2D)
     shape_3d = (10, 5, 5)
     xrt_3d = ember.util.linmesh3([0, 1], [1, 2], [0, 0.1], shape_3d)
-    block_3d = ember.block.Block(shape=shape_3d).set_xrt(xrt_3d)
+    block_3d = ember.block.Block(shape=shape_3d)
+    block_3d.set_xrt(xrt_3d)
 
     with pytest.raises(ValueError, match="Can only find stagnation point on 2D cuts"):
         get_i_stag(block_3d.squeeze())
@@ -59,7 +63,8 @@ def test_get_i_stag_shape_validation():
     # Test 1D block (squeezes to 1D, should raise)
     shape_1d = (10, 1, 1)
     xrt_1d = ember.util.linmesh3([0, 1], [1, 1], [0, 0], shape_1d)
-    block_1d = ember.block.Block(shape=shape_1d).set_xrt(xrt_1d)
+    block_1d = ember.block.Block(shape=shape_1d)
+    block_1d.set_xrt(xrt_1d)
 
     with pytest.raises(ValueError, match="Can only find stagnation point on 2D cuts"):
         get_i_stag(block_1d.squeeze())
@@ -92,7 +97,10 @@ def test_get_i_stag_multiple_j_lines():
     Vx = np.ones((ni, nj, 1)) * 50.0
     Vr = np.zeros((ni, nj, 1))
     Vt = np.zeros((ni, nj, 1))
-    block.set_P_rho(P * 1e5, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
+    block.set_P_rho(P * 1e5, rho)
+    block.set_Vx(Vx)
+    block.set_Vr(Vr)
+    block.set_Vt(Vt)
     block.set_Omega(0.0)
 
     i_stag = get_i_stag(block.squeeze())
@@ -140,7 +148,10 @@ def test_get_i_stag_rotating():
     Vx = np.ones((ni, nj, 1)) * 10.0
     Vr = np.zeros((ni, nj, 1))
     Vt = r[None, :, None] * Omega * np.ones((ni, 1, 1))  # solid-body rotation
-    block.set_P_rho(P, rho).set_Vx(Vx).set_Vr(Vr).set_Vt(Vt)
+    block.set_P_rho(P, rho)
+    block.set_Vx(Vx)
+    block.set_Vr(Vr)
+    block.set_Vt(Vt)
     block.set_Omega(Omega)
 
     i_stag = get_i_stag(block.squeeze())

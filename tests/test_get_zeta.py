@@ -44,7 +44,9 @@ def test_get_zeta_1d_circular_arc():
     x = np.zeros((ni, 1, 1))
     r = np.ones((ni, 1, 1))  # Radius = 1
     t = np.linspace(0, np.pi / 2, ni)[:, None, None]  # Quarter circle
-    block.set_x(x).set_r(r).set_t(t)
+    block.set_x(x)
+    block.set_r(r)
+    block.set_t(t)
 
     zeta = get_zeta(block)
 
@@ -74,7 +76,9 @@ def test_get_zeta_2d_uniform_lines():
     t = np.zeros((ni, nj, 1))
 
     block = ember.block.Block(shape=shape)
-    block.set_x(x).set_r(r).set_t(t)
+    block.set_x(x)
+    block.set_r(r)
+    block.set_t(t)
 
     zeta = get_zeta(block)
 
@@ -109,7 +113,9 @@ def test_get_zeta_2d_varying_lengths():
     r = np.ones((ni, nj, 1))
     t = np.zeros((ni, nj, 1))
 
-    block.set_x(x).set_r(r).set_t(t)
+    block.set_x(x)
+    block.set_r(r)
+    block.set_t(t)
 
     zeta = get_zeta(block)
 
@@ -140,7 +146,9 @@ def test_get_zeta_3d_independent_gridlines():
     t = np.zeros((ni, nj, nk))
 
     block = ember.block.Block(shape=shape)
-    block.set_x(x).set_r(r).set_t(t)
+    block.set_x(x)
+    block.set_r(r)
+    block.set_t(t)
 
     zeta = get_zeta(block)
 
@@ -174,7 +182,9 @@ def test_get_zeta_helix():
     r = np.ones((ni, 1, 1))
     t = 2 * np.pi * i_coords[:, None, None]  # One full rotation
 
-    block.set_x(x).set_r(r).set_t(t)
+    block.set_x(x)
+    block.set_r(r)
+    block.set_t(t)
 
     zeta = get_zeta(block)
 

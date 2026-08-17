@@ -43,7 +43,9 @@ def row_block(shape, i_le, i_te, di_cusp=None):
     frac_squeeze = np.interp(x_norm, [0.0, 0.5, 1.0], [1.0, 0.8, 1.0])
     xrt[i_le : i_te + 1, :, :, 2] *= frac_squeeze[:, None, None]
 
-    block = ember.block.Block(shape=shape).set_xrt(xrt).set_Nb(Nb)
+    block = ember.block.Block(shape=shape)
+    block.set_xrt(xrt)
+    block.set_Nb(Nb)
     block.patches.extend(patches)
 
     # Create grid and set periodic connectivity

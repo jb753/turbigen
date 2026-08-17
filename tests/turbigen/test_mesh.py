@@ -237,6 +237,18 @@ def test_the_mesh_advances_downstream_at_midspan(grid):
         assert (np.diff(x_mid) > 0.0).all()
 
 
+def test_the_passage_runs_from_the_first_periodic_face_to_the_second(grid):
+    """k increases with theta, so the two periodic faces cannot cross.
+
+    Pairing them is the mesher's own last step and would raise here if they
+    did not match, but nothing in that pairing says which way round they are:
+    a block wound the other way pairs just as happily and then has negative
+    volumes everywhere.
+    """
+    for block in grid:
+        assert (block.xrt[..., -1, 2] > block.xrt[..., 0, 2]).all()
+
+
 #
 # AGREEMENT WITH THE PACKAGE THIS REPLACES
 #

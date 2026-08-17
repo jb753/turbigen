@@ -1,8 +1,4 @@
 import logging
-import ember.run
-import ember.patch
-import ember.config
-import ember.fortran
 from pathlib import Path
 from dataclasses import dataclass
 from turbigen_ref.solvers.base import BaseSolver
@@ -55,6 +51,12 @@ class Ember(BaseSolver):
         return self.replace(full_mgrid=False)
 
     def run(self, grid, machine, workdir):
+        # ember.run and ember.config were dropped upstream, so these imports are
+        # deferred to here: the reference package is loaded to build geometry
+        # for the equivalence tests, and only this method needs a solver.
+        import ember.config
+        import ember.run
+
         # xllim = grid.get_xllim()[0]
         # logger.info(f"xllim: {xllim}")
 

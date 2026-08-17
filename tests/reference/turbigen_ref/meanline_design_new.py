@@ -257,20 +257,38 @@ class AxialTurbine(Designer):
             # Stator is stationary, rotor turns
             ml.set_Omega_row([0.0, U / r_rms])
 
-        # Guesses. The rotor exit swirl is negative for a turbine.
-        U0 = ao1 * Ma2 * 0.5
-        Vx0 = U0 * phi2
-        Vt2_0 = np.sqrt(max((Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2))
-        Vt3_rel_0 = -np.sqrt(
-            max((fac_Ma3_rel * Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2)
-        )
+        # Guesses, from the velocity triangles of a fifty per cent reaction
+        # repeating stage. That fixes the swirl either side of the rotor in
+        # terms of the blade speed, Vt2 - Vt3 = psi * U from the Euler work
+        # equation and Vt2 + Vt3 = U from the reaction, and so gives the stator
+        # exit velocity as a fixed multiple of U. The blade speed then follows
+        # from Ma2 once the stator exit speed of sound is known, which itself
+        # depends on the velocity: iterate a few times from the stagnation
+        # value. Guessing a whole triangle this way, rather than picking a
+        # blade speed and working outwards, is what the least-squares solve
+        # needs -- started far from a realisable stage it stalls at a
+        # compromise between the targets instead of finding the design.
+        Vt2_hat = 0.5 * (1.0 + psi)
+        V2_hat = np.sqrt(phi2**2 + Vt2_hat**2)
+        a2 = ao1
+        for _ in range(10):
+            U0 = Ma2 * a2 / V2_hat
+            rho2, u2 = ml.fluid.set_h_s(ho1 - 0.5 * (U0 * V2_hat) ** 2, s[1])
+            a2 = ml.fluid.get_a(rho2, u2)
+        U0 = Ma2 * a2 / V2_hat
+
+        # The rotor exit swirl is negative for a turbine, and by the symmetry
+        # of a fifty per cent reaction stage it mirrors the stator exit.
+        Vt2_0 = Vt2_hat * U0
+        Vt1_0 = Vt2_0 - psi * U0
+        Vt3_rel_0 = -Vt2_0
 
         self.solve_for(
             ml,
             build,
             unknowns={
                 "U": U0,
-                "Vt1": 0.0,
+                "Vt1": Vt1_0,
                 "Vt2": Vt2_0,
                 "Vt3_rel": Vt3_rel_0,
             },
