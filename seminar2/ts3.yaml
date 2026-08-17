@@ -1,7 +1,0 @@
-include:
-  - common.yaml
-solver:
-  type: ts3
-  nstep: 20000
-  nstep_avg: 5000
-  ilos: 1
