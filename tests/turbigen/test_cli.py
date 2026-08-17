@@ -599,9 +599,7 @@ def test_report_does_not_drop_an_answer_it_cannot_reproduce(run_case):
 
     field = out / cli.RESTART_NAME
     data = {
-        key: value
-        for key, value in np.load(field).items()
-        if key != restart.STAMP_KEY
+        key: value for key, value in np.load(field).items() if key != restart.STAMP_KEY
     }
     np.savez_compressed(field, **data)
     assert restart.read_stamp(field) is None
@@ -653,6 +651,173 @@ def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
     assert cli.main(["design", str(orphan / cli.OUTPUT_NAME)]) == 1
 
     assert "copy it to input.yaml" in capsys.readouterr().err
+
+
+#
+# WORKING SOMEWHERE ELSE
+#
+# -o moves the whole directory rather than splitting config from output, so
+# what these check is that the copy really is the target: everything lands
+# beside it, and nothing downstream can tell the difference.
+#
+
+
+def test_out_dir_runs_the_case_somewhere_new(run_case, tmp_path):
+    """The workdir holds the config and everything the run wrote."""
+    from turbigen import batch  # noqa: PLC0415
+
+    workdir = tmp_path / "runs" / "v2"
+
+    assert cli.main(["run", str(run_case), "-o", str(workdir)]) == 0
+
+    for name in (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.RESTART_NAME, "post.pdf"):
+        assert (workdir / name).is_file(), name
+
+    # The directory the config came from is left exactly as it was.
+    assert sorted(p.name for p in run_case.parent.iterdir()) == [batch.INPUT_NAME]
+
+
+def test_out_dir_copies_the_document_not_the_resolved_config(run_case, tmp_path):
+    """What lands there is what was asked for, includes and overrides folded in.
+
+    Not the fully defaulted document: that is what `output.yaml` is for, and
+    the difference between the two is the difference between an input and an
+    answer.
+    """
+    from turbigen import batch  # noqa: PLC0415
+
+    directory = run_case.parent
+    fluid, _, rest = RUN_CASE.partition("mean_line:")
+    (directory / "fluid.yaml").write_text(fluid)
+    run_case.write_text(f"include: [fluid.yaml]\nmean_line:{rest}")
+
+    workdir = tmp_path / "elsewhere"
+    assert (
+        cli.main(["run", str(run_case), "-o", str(workdir), "-s", "mesh.yplus=25.0"])
+        == 0
+    )
+
+    copied = (workdir / batch.INPUT_NAME).read_text()
+
+    # Expanded, because an include resolves against the directory it was
+    # written in and would dangle the moment the config moved.
+    assert "include" not in copied
+    assert "cp: 1005" in copied
+    # The override is baked in: the workdir records what was asked for.
+    assert "yplus: 25.0" in copied
+    # And it is the slim document, not the one with every default in it.
+    assert len(copied) < len((workdir / cli.OUTPUT_NAME).read_text())
+
+
+def test_out_dir_keeps_a_plugin_reachable(tmp_path, clean_registry):
+    """The registry is global and filled from the config's own directory.
+
+    Discovery happens against the original before the copy is written, so a
+    workdir outside the plugin tree still resolves the type it names.
+    """
+    plug_dir = tmp_path / "project" / plugins.PLUGIN_DIR_NAME
+    plug_dir.mkdir(parents=True)
+    (plug_dir / "mine.py").write_text(plugin_source("_t_workdir", "WorkdirStage"))
+
+    case_path = tmp_path / "project" / "stage" / "input.yaml"
+    case_path.parent.mkdir()
+    case_path.write_text(PLUGIN_CASE.format(name="_t_workdir"))
+
+    # Deliberately outside the tree the plugin lives in.
+    workdir = tmp_path / "far" / "away"
+
+    assert cli.main(["run", str(case_path), "-o", str(workdir)]) == 1
+
+    # It got far enough to need a mesh, which means the design resolved: a
+    # missing plugin fails earlier, on the unknown type.
+    from turbigen import batch  # noqa: PLC0415
+
+    assert (workdir / batch.INPUT_NAME).is_file()
+
+
+def test_out_dir_refuses_several_targets(run_case, tmp_path, capsys):
+    """One directory is one run."""
+    other = tmp_path / "second"
+    other.mkdir()
+    (other / "input.yaml").write_text(RUN_CASE)
+
+    status = cli.main(
+        ["run", str(run_case), str(other / "input.yaml"), "-o", str(tmp_path / "one")]
+    )
+
+    assert status == 1
+    assert "-o names one directory" in capsys.readouterr().err
+
+
+def test_out_dir_is_not_created_for_a_broken_config(case, tmp_path, capsys):
+    """Validated before anything is made, so a typo leaves no empty workdir."""
+    workdir = tmp_path / "never"
+
+    status = cli.main(["run", str(case), "-o", str(workdir), "-s", "mean_line.nope=1"])
+
+    assert status == 1
+    assert not workdir.exists()
+
+
+#
+# REPLACING AN ANSWER
+#
+
+
+def test_running_again_refuses_to_replace_an_answer(run_case, capsys):
+    """One rule, whatever the number of targets."""
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert cli.main(["run", str(run_case)]) == 1
+
+    printed = capsys.readouterr().err
+    assert "already records an answer" in printed
+    # Both ways out are offered, because they mean different things.
+    assert "-f" in printed and "-o" in printed
+
+
+def test_force_replaces_an_answer(run_case):
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert cli.main(["run", str(run_case), "-f"]) == 0
+
+
+def test_out_dir_needs_no_force(run_case, tmp_path):
+    """The point of -o: a variant goes somewhere new, so nothing is at risk."""
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert cli.main(["run", str(run_case), "-o", str(tmp_path / "variant")]) == 0
+
+
+@pytest.mark.parametrize("verb", ["design", "report"])
+def test_a_verb_with_no_answer_to_lose_never_refuses(run_case, tmp_path, verb):
+    """Scoped by capability, so neither needs naming.
+
+    `design` writes nothing at all and `report` never removes an answer it did
+    not reach, so neither can be the thing that loses one. Both used to refuse
+    here, and to advise a --force that argparse rejects.
+    """
+    second = tmp_path / "second"
+    second.mkdir()
+    (second / "input.yaml").write_text(RUN_CASE)
+
+    for path in (run_case, second / "input.yaml"):
+        assert cli.main(["run", str(path)]) == 0
+
+    assert cli.main([verb, str(run_case), str(second / "input.yaml")]) == 0
+
+
+def test_a_reported_case_is_not_a_run_one(run_case):
+    """A config-only `output.yaml` records no answer, so it blocks nothing.
+
+    Plotting a batch and then running it is an ordinary thing to do, and used
+    to be refused on the grounds that answers would be lost when there were
+    none.
+    """
+    assert cli.main(["report", str(run_case)]) == 0
+    assert (run_case.parent / cli.OUTPUT_NAME).is_file()
+
+    assert cli.main(["run", str(run_case)]) == 0
 
 
 #

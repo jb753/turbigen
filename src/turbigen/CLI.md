@@ -72,8 +72,8 @@ implementation detail of getting there.
 
 ## Where output goes
 
-**Beside the config it was given, as `output.yaml`.** There is no `-o` on any
-verb, nothing to derive and nothing to type:
+**Beside the config it was given, as `output.yaml`.** Nothing to derive and
+nothing to type:
 
 ```
 hiload/input.yaml -> hiload/{output.yaml, restart.npz, conv.cnv, post.pdf,
@@ -137,12 +137,47 @@ point along, `database` warm-starts from a neighbour. A mismatch is the normal
 case there. Only the report asks the strict question, because only the report
 writes an answer it did not itself march to.
 
-Clobbering follows from how much you stand to lose, and is therefore a
-question only for `run` and `iterate`. **One target overwrites** — you named
-that directory by naming the file in it, and tweak-and-re-run is the loop `run`
-exists for. **Several refuse**, because a batch is cluster hours whose loss is
-discovered a day later, and `--force` is the honest spelling of "yes, replace
-those answers".
+### Replacing an answer, and `-o`
+
+**Anything that would replace a recorded answer refuses**, whatever the number
+of targets. `-f` is the honest spelling of "yes, replace it".
+
+There used to be a count in this rule: one target overwrote silently, several
+refused. The reason given was that a batch is cluster hours whose loss is
+discovered a day later, while one re-run is recoverable --- but how many paths
+are on the command line is a poor proxy for how much is at stake, and it is not
+what "did I mean all of these" measures either. It also made `--force`
+advertised by verbs that do not have it, `design` among them, which is a dead
+end rather than a safeguard.
+
+The flat rule only works because **`-o DIR` runs a config somewhere new**:
+
+```
+turbigen run case/input.yaml -o runs/v2
+```
+
+The config is copied into the workdir as `input.yaml`, with its includes
+expanded and any `--set` applied, and the run happens there. A variant
+therefore goes somewhere that has no answer in it, and refusing to overwrite
+stays rare enough to be worth doing --- which is what makes `-f` mean something
+when you do type it.
+
+**`-o` moves the directory; it does not split it.** The copy becomes the
+target, so config and output stay together and no verb learns about the flag.
+That colocation is load-bearing: `report` finds `restart.npz` beside the
+config, plugin discovery walks up from it, and `iterate` and `chic` write an
+`input.yaml` into every directory they invent. A flag that put output somewhere
+else would break all three. What is written is the *document* --- what you
+asked for, not what it expands to --- because the expanded version is
+`output.yaml`, sitting next to it.
+
+On `run`, `iterate` and `chic` only. `design` writes nothing, `batch` numbers
+its own directories, and a report into an empty directory would have no field
+to find. Several targets with `-o` refuse, one directory being one run.
+
+This is `workdir:` returning as a flag rather than a config key, which is the
+same split `--queue` makes: the file says how a thing is done, the command line
+says where and whether. The `%`-versus-`*` placeholder vocabulary stays dead.
 
 ### Batches are numbered, not named
 
@@ -151,12 +186,13 @@ Numbering carries on from the highest that exists rather than counting how many
 there are, so a deleted batch in the middle does not make the next one
 overwrite a later one, and nothing is ever written into an existing batch.
 
-There is no `-o` and no naming pattern. The rule is the same one every other
-verb follows --- output goes beside the input --- and applying it here removes
-the last output flag, the `%`-versus-`*` placeholder vocabulary, and the
-sending of a batch to a different filesystem. That last is a real loss, and it
-is the constraint `run` already imposes on output a thousand times larger: put
-the config where you want the output.
+No `-o` here and no naming pattern. A batch is many runs, so a single workdir
+would mean nothing, and the rule is the same one every other verb follows ---
+output goes beside the input. Applying it here removes the naming pattern, the
+`%`-versus-`*` placeholder vocabulary, and the sending of a batch to a
+different filesystem. That last is a real loss, and it is the constraint `run`
+imposed on output a thousand times larger until `-o` gave it a way out: put
+the config where you want the output, or name where you want it copied to.
 
 It also makes the layout record which datum produced which batch. Nothing else
 does: `--continue` cannot tell that the datum or its bounds changed between
@@ -370,6 +406,7 @@ the grid the verb already has.
 
 ```
 turbigen run hiload/input.yaml
+turbigen run hiload/input.yaml -o runs/v2       # a variant, somewhere new
 turbigen run batch_0000/*/input.yaml            # serially, here
 turbigen run batch_0000/*/input.yaml --queue    # as one submission
 ```
@@ -379,9 +416,10 @@ solve. `prepare` is shared with `report` rather than written out again, so the
 grid a report draws is the one `run` actually solves. The two
 drifting apart is precisely what happened to `turbigen.main`.
 
-Everything lands beside the config, so there is nothing to name. Several
-config files run one after another, which is the bash loop this saves you
-writing, or become one submission with `--queue`.
+Everything lands beside the config, so there is nothing to name -- or beside
+the copy `-o` makes, which is how a variant is run without replacing the answer
+already there. Several config files run one after another, which is the bash
+loop this saves you writing, or become one submission with `--queue`.
 
 **Exit 2 when the solver did not converge**, with everything written anyway: a
 diverged run is exactly the one whose output someone needs to look at, so

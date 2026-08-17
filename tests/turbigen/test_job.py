@@ -339,6 +339,26 @@ def test_a_submitted_invocation_carries_every_override(batch):
     ]
 
 
+def test_a_submitted_invocation_carries_force(batch):
+    """Replacing an answer has to be said where the run actually happens.
+
+    A submitted job re-checks on the cluster, so without this a queued re-run
+    would refuse itself hours later and out of sight. `-o` is the opposite
+    case: it has already had its whole effect, the submitted path being the
+    copy in the workdir, so passing it on would redirect a config that is
+    already there.
+    """
+    parser = cli._make_parser()
+    args = parser.parse_args(
+        ["run", str(batch[0]), "-f", "-o", str(batch[0].parent), "-Q"]
+    )
+
+    options = cli.task_options(args)
+
+    assert "--force" in options
+    assert "-o" not in options and "--out-dir" not in options
+
+
 #
 # BATCH
 #
@@ -452,7 +472,7 @@ def test_several_targets_refuse_to_overwrite_an_answer(batch, capsys):
 
     assert cli.main(["run", *[str(path) for path in batch]]) == 1
 
-    assert "already been run" in capsys.readouterr().err
+    assert "already records an answer" in capsys.readouterr().err
 
 
 def test_force_overwrites_several_targets(batch, calls):
@@ -461,8 +481,20 @@ def test_force_overwrites_several_targets(batch, calls):
     assert cli.main(["run", *[str(p) for p in batch], "--queue", "--force"]) == 0
 
 
-def test_one_target_overwrites_without_asking(batch, calls):
-    """You named that directory by naming the file in it."""
-    (batch[0].parent / cli.OUTPUT_NAME).write_text("{}\n")
+def test_one_target_refuses_too(batch, calls):
+    """No special case for a single config, which is the point of the rule.
 
-    cli.check_clobber(cli._make_parser().parse_args(["run", str(batch[0])]), [batch[0]])
+    It used to overwrite silently, on the grounds that naming the file named
+    the directory. But the count of paths on the command line is a poor proxy
+    for how much is at stake, and `-o` now covers the case that special case
+    existed for: a variant goes somewhere new instead of over the top.
+    """
+    directory = batch[0].parent
+    (directory / cli.OUTPUT_NAME).write_text("{}\n")
+    parser = cli._make_parser()
+
+    with pytest.raises(ValueError, match="already records an answer"):
+        cli.check_clobber(parser.parse_args(["run", str(batch[0])]), [directory])
+
+    # And -f is how you say you meant it.
+    cli.check_clobber(parser.parse_args(["run", str(batch[0]), "-f"]), [directory])

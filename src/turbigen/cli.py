@@ -17,13 +17,20 @@ one place a run is genuinely too loud is `iterate`, which quietens the console
 by logger name on its own, and a shell already knows how to redirect.
 
 And a run writes `output.yaml` beside the config it was given. The output
-location is therefore never derived and never typed, and an input file is never
-overwritten by the run that reads it -- which matters because the file written
-is the *resolved* config, every default expanded, and writing that over a
-hand-kept file would lose its comments to the safe loader. One directory is one
-run. `design` writes nothing at all, ever, so it can be used to experiment
-with a design, or driven from a notebook, without leaving anything behind;
-everything worth keeping comes from a verb whose output is its point.
+location is therefore never derived, and an input file is never overwritten by
+the run that reads it -- which matters because the file written is the
+*resolved* config, every default expanded, and writing that over a hand-kept
+file would lose its comments to the safe loader. One directory is one run.
+
+`-o` moves the whole directory rather than splitting it: the config is copied
+into the workdir and the run happens there, so config and output stay together
+and nothing downstream has to know. It is also what keeps replacing an answer a
+rare enough thing to be worth refusing -- a variant goes somewhere new, and
+`-f` is for the case where you really did mean to write over what is there.
+
+`design` writes nothing at all, ever, so it can be used to experiment with a
+design, or driven from a notebook, without leaving anything behind; everything
+worth keeping comes from a verb whose output is its point.
 """
 
 import argparse
@@ -229,11 +236,19 @@ def setup_logging(verbose):
     _add_handler(logging.StreamHandler(sys.stderr))
 
 
-def load_config(config_path, args):
-    """Read the config file, apply overrides, and build a Config.
+def load_document(config_path, args):
+    """Read the config file and return the document it asks for, as a dict.
 
-    Discovery is done here rather than through `Config.from_file` because the
-    overrides have to be applied to the raw dict, before it is validated.
+    Everything that happens before validation: plugins registered, includes
+    assembled, a previous answer dropped, overrides applied. What comes back is
+    what the user asked for and nothing more --- no defaults filled in --- which
+    is what makes it the right thing to copy into a workdir. `output.yaml` is
+    where the fully expanded version belongs.
+
+    Separate from `load_config` because `-o` needs the document without the
+    `Config`, and because the discovery it does has to happen against the
+    *original* directory: the registry is global, so a design found here is
+    still registered when the copy is read back from somewhere else entirely.
     """
     config_path = Path(config_path)
 
@@ -252,7 +267,16 @@ def load_config(config_path, args):
 
     apply_overrides(data, args.overrides)
 
-    return Config.from_dict(data)
+    return data
+
+
+def load_config(config_path, args):
+    """Read the config file, apply overrides, and build a Config.
+
+    Discovery is done here rather than through `Config.from_file` because the
+    overrides have to be applied to the raw dict, before it is validated.
+    """
+    return Config.from_dict(load_document(config_path, args))
 
 
 #
@@ -325,28 +349,114 @@ def check_not_output(path):
     raise ValueError(f"{path} is a file turbigen wrote, not one to run on. {instead}")
 
 
-def check_clobber(args, paths):
-    """Raise if this invocation would destroy answers it cannot show you first.
+def out_dirs(args, paths):
+    """Return the directory each target will be worked in.
 
-    One target overwrites: you named that directory by naming the file in it,
-    and re-running a case after a tweak is the loop this verb exists for.
-    Several refuse, because a batch is cluster hours whose loss is discovered a
-    day later, and the check costs a `stat` each.
+    A workdir if `-o` named one, and each config's own directory otherwise.
+    Computed before anything is created, so that a refusal happens before a
+    directory is made rather than after.
     """
-    if len(paths) < 2 or getattr(args, "force", False):
+    if workdir := getattr(args, "workdir", None):
+        return [Path(workdir)]
+
+    return [path.resolve().parent for path in paths]
+
+
+def check_clobber(args, directories):
+    """Raise if this invocation would replace an answer already recorded.
+
+    One rule, whatever the number of targets. It used to be that a single
+    target overwrote silently and several refused, on the grounds that a batch
+    is cluster hours and one re-run is a recoverable mistake --- but the count
+    of paths on the command line is a poor proxy for how much is at stake, and
+    "did I mean all of these" is not what it measures. Now anything that would
+    replace an answer says so, and `-o` is how you run a variant without
+    replacing one.
+
+    Two things keep this from firing where it has no business. It is **scoped
+    by capability**: a verb that offers no `--force` cannot be destroying
+    anything, which excludes `design` (writes nothing) and `report` (never
+    removes an answer it did not reach) without naming either. And it keys on a
+    recorded `result:` rather than on the file existing, because `output.yaml`
+    stopped meaning "a run finished here" once `report` began writing one --- so
+    plotting a batch does not then block running it.
+    """
+    # Not `getattr(..., False)`: the absence of the attribute is the signal, and
+    # is different from the flag being present and unset.
+    if not hasattr(args, "force") or args.force:
         return
 
-    existing = [
-        path for path in paths if (Path(path).resolve().parent / OUTPUT_NAME).is_file()
+    answered = [
+        directory
+        for directory in directories
+        if _records_an_answer(Path(directory) / OUTPUT_NAME)
     ]
-    if not existing:
+    if not answered:
         return
 
-    raise ValueError(
-        f"{len(existing)} of {len(paths)} targets have already been run, "
-        f"starting with {existing[0].parent / OUTPUT_NAME}. Re-running would "
-        "replace their answers; pass --force if that is what you want."
+    where = answered[0] / OUTPUT_NAME
+    count = (
+        "" if len(answered) == 1 else f"{len(answered)} of {len(directories)} targets, "
     )
+    raise ValueError(
+        f"{count}{where} already records an answer. Running here would replace "
+        "it; pass -f to do that, or -o to work somewhere new."
+    )
+
+
+def redirect(args, paths):
+    """Return the targets to act on, honouring `-o` by moving the config.
+
+    Without `-o`, the paths as given. With one, the config is copied into the
+    workdir as `input.yaml` and *that* becomes the target, so everything
+    downstream --- `logging_into`, `stored_field`, `prepare` --- works on a
+    directory holding both the config and its output, exactly as if the file
+    had always lived there. No verb learns about the flag.
+
+    Done this way rather than as a second output path because the colocation is
+    load-bearing: `report` finds `restart.npz` beside the config, `plugins`
+    walks up from it, and `iterate` and `chic` write an `input.yaml` into every
+    directory they invent. A flag that split the two would break all three.
+    """
+    workdir = getattr(args, "workdir", None)
+    if workdir is None:
+        return paths
+
+    if len(paths) > 1:
+        raise ValueError(
+            f"-o names one directory, but {len(paths)} config files were given. "
+            "One directory is one run, so run them one at a time, or leave -o "
+            "off and let each write beside itself."
+        )
+
+    return [_copy_into_workdir(args, paths[0], Path(workdir))]
+
+
+def _copy_into_workdir(args, config_path, workdir):
+    """Write `config_path` into `workdir` as `input.yaml`, and return the copy.
+
+    What lands there is the *document*: includes assembled, overrides applied,
+    defaults left out. Expanding the includes is not optional, because their
+    paths resolve against the directory the config came from and would dangle
+    the moment it moves. Baking the overrides in is what makes the workdir a
+    record of what was asked for rather than of what was typed.
+
+    Comments do not survive, the safe loader having dropped them. That is the
+    cost of a generated directory, and the reason the original is left alone.
+    """
+    data = load_document(config_path, args)
+
+    # Validated before a directory is made, so a config with a typo in it fails
+    # where it was typed rather than leaving an empty workdir behind.
+    Config.from_dict(data)
+
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    copied = workdir / batch.INPUT_NAME
+    ember.yaml_util.write_yaml(data, copied)
+    logger.info(f"Copied the config to {copied}")
+
+    return copied
 
 
 def each(args, one):
@@ -357,7 +467,11 @@ def each(args, one):
     """
     paths = targets(args)
 
-    check_clobber(args, paths)
+    # Checked against where the work will land, and before `redirect` creates
+    # anything there.
+    check_clobber(args, out_dirs(args, paths))
+
+    paths = redirect(args, paths)
 
     if getattr(args, "queue", False):
         return submit_targets(args, paths)
@@ -432,14 +546,23 @@ def task_options(args):
     """Return the flags a submitted invocation must carry, as command line.
 
     Everything that changes what a run *does*, and nothing that decides where
-    it happens: `--queue` is consumed here, and `--force` has already had its
-    effect, since each submitted job is a single target and single targets
-    overwrite anyway.
+    it happens. `--queue` is consumed here, and `-o` has already had its whole
+    effect: the paths being submitted are the copies in the workdir, so passing
+    it on would redirect a config that is already there.
+
+    `--force` **is** carried, unlike the two above. Replacing an answer needs
+    saying wherever the run actually happens, and a submitted job re-checks on
+    the cluster: without this a queued re-run would refuse itself, hours later
+    and out of sight. It used to be dropped on the grounds that a single target
+    overwrote anyway, which stopped being true when that special case went.
 
     Rebuilt from the parsed arguments rather than by editing `sys.argv`, so an
     option written any of the ways argparse accepts it comes out in one form.
     """
     options = []
+
+    if getattr(args, "force", False):
+        options.append("--force")
 
     for override in args.overrides:
         options += ["-s", override]
@@ -1529,12 +1652,14 @@ def _make_parser():
         description=(
             "Design the machine, mesh it if the config says how, pick up any "
             f"{RESTART_NAME} a previous run left beside the config, and write "
-            "post.pdf. Each standard plot draws nothing when what it needs is "
-            "absent, so a mean-line design gives the geometry pages and a "
-            "solved case gives the flow. Re-plotting a finished run is "
-            "therefore the same command, with no flag between them. The grid "
-            "itself is never written, because how a mesh is serialised is a "
-            "property of the solver that will read it."
+            f"post.pdf and {OUTPUT_NAME}. Each standard plot draws nothing when "
+            "what it needs is absent, so a mean-line design gives the geometry "
+            "pages and a solved case gives the flow. Re-plotting a finished run "
+            "is therefore the same command, with no flag between them. The "
+            f"{OUTPUT_NAME} carries an answer only when the stored field is "
+            "stamped as this design's solution, and a report never removes one "
+            "it cannot reproduce. The grid itself is never written, because how "
+            "a mesh is serialised is a property of the solver that will read it."
         ),
     )
     report.set_defaults(func=cmd_report)
@@ -1552,6 +1677,7 @@ def _make_parser():
         ),
     )
     _add_force_argument(run)
+    _add_out_dir_argument(run)
     _add_queue_argument(run)
     _add_restart_argument(run)
     run.set_defaults(func=cmd_run)
@@ -1570,6 +1696,7 @@ def _make_parser():
         ),
     )
     _add_force_argument(iterate_)
+    _add_out_dir_argument(iterate_)
     _add_queue_argument(iterate_)
     _add_restart_argument(iterate_)
     iterate_.set_defaults(func=cmd_iterate)
@@ -1590,6 +1717,7 @@ def _make_parser():
         ),
     )
     _add_force_argument(chic_)
+    _add_out_dir_argument(chic_)
     _add_queue_argument(chic_)
     _add_restart_argument(chic_)
     chic_.set_defaults(func=cmd_chic)
@@ -1638,13 +1766,40 @@ def _make_parser():
 
 
 def _add_force_argument(parser):
-    """Add --force, which allows several targets to overwrite their answers."""
+    """Add --force, which allows a run to replace an answer already recorded.
+
+    Only on the verbs that solve. `check_clobber` treats the absence of this
+    flag as the verb having nothing to destroy, so adding it to a verb that
+    writes no answer would switch a guard on rather than off.
+    """
     parser.add_argument(
+        "-f",
         "--force",
         action="store_true",
         help=(
-            f"overwrite an existing {OUTPUT_NAME} when several config files "
-            "are given; one config file on its own always overwrites"
+            f"replace an answer already recorded in {OUTPUT_NAME} here; "
+            "without it, a directory that has been run refuses to be run again"
+        ),
+    )
+
+
+def _add_out_dir_argument(parser):
+    """Add -o, which runs a config in a directory of its own.
+
+    A redirection of the target rather than a second output path: the config is
+    copied into the workdir and the run happens there, so config and output
+    stay in one directory. That is what the rest of the system assumes.
+    """
+    parser.add_argument(
+        "-o",
+        "--out-dir",
+        dest="workdir",
+        metavar="DIR",
+        help=(
+            "work in DIR instead of beside the config: the config is copied "
+            f"there as {batch.INPUT_NAME}, with its includes expanded and any "
+            "--set applied, and everything the run writes lands there. This is "
+            "how to try a variant without replacing the answer you already have"
         ),
     )
 
@@ -1668,10 +1823,15 @@ def _add_queue_argument(parser):
 
 
 def _add_restart_argument(parser):
-    """Add --restart, which every verb that builds a grid can use.
+    """Add --restart, for the verbs that march a grid rather than just draw one.
 
-    Not on the common parent, because `design` never makes a grid to put a
-    field on and should not advertise a flag it would ignore.
+    Not on the common parent, and the two verbs left out are left out for
+    different reasons. `design` never makes a grid to put a field on, so the
+    flag would do nothing. `report` makes one, but takes its field from beside
+    the config and nowhere else, deliberately: that is what makes a report a
+    consistent picture of one directory. A field named from elsewhere is
+    guaranteed not to match the stamp, so it could only ever draw a hybrid and
+    refuse to record it --- flexibility that has nothing behind it.
     """
     parser.add_argument(
         "--restart",
