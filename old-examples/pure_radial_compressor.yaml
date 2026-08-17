@@ -1,0 +1,89 @@
+workdir: runs/pure_radial_compressor
+
+annulus:
+  AR_chord: [10.0, -1.0, -1.0]  # -1 to set by minimising curvature
+  AR_gap: [1.5, -1.0, -1.0 , 0.5]
+  nozzle_ratio: 0.8
+
+blades:
+- {}
+- Co: 0.5
+  Re_surf: 5e6
+  mstack: 1.0
+  sections:
+  - q_thick:
+    - 1.0
+    - 4.0
+    - 0.6
+    - 0.7
+    qstar_camber:
+    - 0.5
+    - 4.
+    - 2.0
+    - 0.5
+    - 0.0
+    spf: 0.5
+  thick_span: 0.04
+  thick_type: Impeller
+  tip: 0.01
+- {}
+
+inlet:
+  Po: 100000.0
+  To: 300.0
+  cp: 1005.0
+  gamma: 1.4
+mean_line:
+  Ma1_rel: 0.6
+  PR_tt: 2.0
+  htr1a: 0.5
+  RR_indu: 1.65
+  DH: [1.0, 1.0, 0.9, 0.9]
+  VmR: [0.7, 0.95, 0.95]
+  Ys: [0.01,0.08,0.1, 0.12]
+  mdot: 5.0
+  phi1: 0.6
+  Beta: [90., 90., 90., 90.]
+  type: mixed_compressor
+
+mesh:
+  dm_LE: 0.00005
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+operating_point:
+  mdot_pid:
+  - 1.0
+  - 0.2
+  - 0.0
+
+solver:
+  convert_sliding: true
+  nchange: 2000
+  nstep: 25000
+  nstep_avg: 5000
+  fmgrid: 0.4
+  type: ts3
+
+iterate:
+  fac_nstep_initial: 2.0
+  deviation:
+    clip: 5.0
+    relaxation_factor: 2.0
+    tolerance: 1.0
+  incidence:
+    clip: 2.0
+    relaxation_factor: 0.1
+    target: 0.0
+    tolerance: 15.0
+  mean_line:
+    match_tolerance:
+      Ys: 0.01
+
+post_process:
+  plot_annulus:
+  plot_pressure_distributions:
+    row_spf: [[], [0.5,], []]
+    use_rot: true
+...

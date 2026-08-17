@@ -1,0 +1,344 @@
+# This script generates a three-dimensional mesh from a geomturbo and
+# configuration file.
+
+igg_script_version(2.1)
+import encodings  # Need this before importing json
+import os, re, json
+
+def unicode_to_ascii_hook(pairs):
+    # Convert unicode to ascii strings when reading json.
+    # https://stackoverflow.com/a/34796078
+    new_pairs = []
+    for key, value in pairs:
+        if isinstance(value, unicode):
+            value = value.encode('utf-8')
+        if isinstance(key, unicode):
+            key = key.encode('utf-8')
+        new_pairs.append((key, value))
+    return dict(new_pairs)
+
+def get_mg(n):
+    # Next multiple of 8 + 1
+    return int(-8 * (-int(n) // 8) + 1)
+
+print('')
+print('')
+print('')
+print('*************************')
+print('* BEGIN AUTOGRID SCRIPT *')
+print('*************************')
+print('')
+
+
+# Read in the configuration file
+CONF_FILE = 'mesh_conf.json'
+print('Reading config file: %s' % CONF_FILE)
+with open(CONF_FILE,'r') as f:
+    conf = json.load(f, object_pairs_hook=unicode_to_ascii_hook)
+
+# Number of blades must be grepped from file because AG doesn't read in!
+# nb_str = os.popen('grep PERIOD mesh.geomTurbo').read()
+# nb = [float(nbi.split()[-1]) for nbi in nb_str.splitlines()]
+nb = conf["Nb"]
+
+# If this is NOT a cascade, make blade counts integers
+if not conf["is_cascade"]:
+    nb = [int(nbi) for nbi in nb]
+
+print('Read blade numbers: nb=%s' % str(nb))
+
+# Set for three levels of multigrid
+set_preference('numberOfGridLevel',int(4))
+
+# Load the geomTurbo
+print('Reading geometry: ' + os.getcwd() + '/mesh.geomTurbo')
+a5_init_new_project_from_a_geomTurbo_file(os.getcwd() + '/mesh.geomTurbo')
+
+if conf["inlet_bulb"]=="radial":
+    set_inlet_bulb_radial_topology()
+elif conf["inlet_bulb"]=="rounded":
+    set_inlet_bulb_rounded_topology()
+elif conf["inlet_bulb"]=="sharp":
+    set_inlet_bulb_sharp_topology()
+if conf["inlet_bulb"]:
+    set_inlet_bulb_singular_line(int(0))
+
+print("Setting default topology...")
+
+nrow = conf["nrow"]
+
+# First pass - choose a topology and then set default values
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    # Set number of blades and rpm from config
+    # Autogrid seems to fail to read these from geomturbo
+    row(n1).set_periodicity(nb[n])
+
+    # misc blade-to-blade blocking parameters
+    row(n1).blade(1).set_b2b_default_topology_periodicity_type(1)
+    if conf["round_TE"]:
+        row(n1).blade(1).set_rounded_treatment_at_trailing_edge(0)
+        row(n1).blade(1).set_blend_treatment_at_trailing_edge(1)
+    else:
+        row(n1).blade(1).set_blend_treatment_at_trailing_edge(0)
+        row(n1).blade(1).set_rounded_treatment_at_trailing_edge(1)
+    if conf["ncell_target"]:
+        print 'setting target ncell'
+        row(n1).set_coarse_grid_level(4, int(conf["ncell_target"]))
+    else:
+        print 'setting default ncell'
+        row(n1).set_coarse_grid_level(2)
+    row(n1).set_streamwise_weight(1.,conf["blade_streamwise_weight"],1.)
+    row(n1).set_upstream_block_relaxation(conf["relax_inlet"])
+    row(n1).set_downstream_block_relaxation(conf["relax_outlet"])
+
+    # How many blades to configure
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
+
+    # high-stagger topology setup
+    if conf["stagger"] == "auto":
+        row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
+        row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_detection()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_enable_high_staggered_optimization()
+        row(n1).blade(1).set_b2b_default_topology_disable_high_staggered_detection()
+
+    # Retrieve stagger data
+    # A nested list len(nrow) of in/out
+    stag_in, stag_out = conf["stagger"][n]
+
+    if stag_in < 0:
+        row(n1).blade(1).set_b2b_default_topology_high_staggered_inlet_angle()
+    elif stag_in > 0:
+        row(n1).blade(1).set_b2b_default_topology_low_staggered_inlet_angle()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_normal_inlet_angle()
+    if stag_out < 0:
+        row(n1).blade(1).set_b2b_default_topology_low_staggered_outlet_angle()
+    elif stag_out > 0:
+        row(n1).blade(1).set_b2b_default_topology_high_staggered_outlet_angle()
+    else:
+        row(n1).blade(1).set_b2b_default_topology_normal_outlet_angle()
+
+
+    for iib in ib:
+
+        # Blade surface cell width
+        row(n1).blade(iib).set_b2b_default_topology_cell_width_at_wall(float(conf["drt_row"][n]))
+
+        if conf["round_TE"]:
+            row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(0)
+            row(n1).blade(iib).set_blend_treatment_at_trailing_edge(1)
+        else:
+            row(n1).blade(iib).set_blend_treatment_at_trailing_edge(0)
+            row(n1).blade(iib).set_rounded_treatment_at_trailing_edge(1)
+
+        # row(n1).blade(iib).set_b2b_default_topology_cell_width_at_trailing_edge(float(conf["drt_row"][n]*4.0))
+
+
+        row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
+
+
+    # smoothing config
+    nsmooth = int(conf["nsmooth"])
+    nsmooth_multigrid = int(conf["nsmooth_multigrid"])
+    row(n1).set_row_full_multigrid_optimization_steps(nsmooth_multigrid)
+    row(n1).set_row_optimization_steps(nsmooth)
+    row(n1).set_row_bnd_optimization_steps(nsmooth//2)
+    row(n1).set_row_optimization_steps_in_gap(2*nsmooth)
+    row(n1).set_row_optimization_skewness_control(int(conf["skewness_control"]))
+    row(n1).set_row_optimization_orthogonality_control(float(conf["orthogonality_control"]))
+
+
+# Add z-const lines up and downstream of all rows
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    # The z-const lines are needed upstream and downstream of all rows
+    # If between rows, then halfway between LE/TE and mixing plane
+
+    # Inlet z const
+    if n1 == 1:
+        z = compute_default_relative_z_cst_line(n1, 0, conf["frac_up"])
+        z.set_linear_shape()
+        if conf["fix_h_inlet"]:
+            z.geometry_is_fixed()
+        else:
+            z.geometry_is_not_fixed()
+    else:
+        z = compute_default_relative_z_cst_line(n1, 0, 0.5)
+        z.set_default_shape()
+        z.geometry_is_not_fixed()
+    z.set_name("Z_%d_in" % n1)
+
+    # Outlet z const
+    if n1 == nrow:
+        z = compute_default_relative_z_cst_line(n1, 2, conf["frac_dn"])
+        z.set_linear_shape()
+        if conf["fix_h_outlet"]:
+            z.geometry_is_fixed()
+        else:
+            z.geometry_is_not_fixed()
+    else:
+        z = compute_default_relative_z_cst_line(n1, 2, 0.5)
+        z.set_default_shape()
+        z.geometry_is_not_fixed()
+    z.set_name("Z_%d_out" % n1)
+
+# # generate the mesh at the default 'coarse' resolution
+set_active_control_layer_index(int(conf["spf_ref"]*100))
+select_all()
+a5_reset_default_topology()
+
+# Now we apply our modifications to the default resolution
+
+print "Modifying the resolution..."
+
+# Set up flow paths
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    if not conf["ncell_target"]:
+        row(n1).set_row_flow_path_number(int(conf["nr"][n]))
+        row(n1).set_flow_path_control_cst_cells_number(conf["const_cells_pc"])
+    row(n1).set_flow_path_control_hub_clustering(conf["dr_hub"])
+    row(n1).set_flow_path_control_shroud_clustering(conf["dr_cas"])
+
+    # Set tip gap on main and splitter blades
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
+    for iib in ib:
+
+        if row(n1).blade(iib).get_shroud_gap():
+            row(n1).blade(iib).shroud_gap().set_clustering(conf["dr_cas"])
+            row(n1).blade(iib).shroud_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
+            row(n1).blade(iib).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(conf["nk_gap"])
+
+        if row(n1).blade(iib).get_hub_gap():
+            row(n1).blade(iib).hub_gap().set_clustering(conf["dr_cas"])
+            row(n1).blade(iib).hub_gap().set_number_of_points_in_spanwise_direction(conf["nr_tip_gap"])
+            row(n1).blade(iib).set_b2b_default_topology_grid_point_number_in_boundary_layer_of_gaps(conf["nk_gap"])
+
+select_all()
+a5_generate_flow_paths()
+
+set_active_control_layer_index(int(conf["spf_ref"]*100))
+# Copy the tip-gap distribution everywhere
+if conf["match_mixing"]:
+    row(1).outlet().copy_right_meridional_distribution()
+
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    # Small number of streamwise points in H blocks
+    z = z_cst_line("Z_%d_in" % n1)
+    z.streamwise_number_of_points(int(conf["nx_mix"]))
+    if conf["match_mixing"]:
+        z.paste_left_meridional_distribution()
+        z.paste_right_meridional_distribution()
+
+    z = z_cst_line("Z_%d_out" % n1)
+    z.streamwise_number_of_points(int(conf["nx_mix"]))
+    if conf["match_mixing"]:
+        z.paste_left_meridional_distribution()
+        z.paste_right_meridional_distribution()
+
+
+    if conf["match_mixing"]:
+        row(n1).outlet().paste_left_meridional_distribution()
+        row(n1).outlet().paste_right_meridional_distribution()
+        row(n1).inlet().paste_left_meridional_distribution()
+        row(n1).inlet().paste_right_meridional_distribution()
+
+    # Autogrid sometimes forgets we have asked for matching periodicity
+    # Reset that here for main and splitter blades
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
+    for iib in ib:
+        row(n1).blade(iib).set_b2b_default_topology_periodicity_type(1)
+
+        # Enable clustering in wake for last blade row
+        if conf["wake_control"] and n==nrow:
+            row(nrow).blade(iib).set_b2b_default_topology_enable_wake_control()
+            row(nrow).blade(iib).set_b2b_default_topology_enable_wake_prolongation()
+            row(nrow).blade(iib).set_b2b_default_topology_wake_control_deviation_angle(conf["wake_deviation"])
+
+# Blend the outlet k-grid lines to radial with theta=constant
+if conf["untwist_outlet"]:
+    row(nrow).set_untwist_downstream_block(int(1))
+    row(nrow).set_untwist_downstream_block_stream_location(50)
+
+if conf["untwist_inlet"]:
+    row(1).set_untwist_upstream_block(int(1))
+    row(1).set_untwist_upstream_block_stream_location(conf["untwist_inlet_extent"])
+
+# Set number of points in inlet/exit ducts
+z_cst_line("Z_1_in").streamwise_number_of_points(int(conf["nx_up"]))
+z_cst_line("Z_%d_out" % nrow).streamwise_number_of_points(int(conf["nx_dn"]))
+
+# Interpolation spacing
+for n in range(nrow):
+    row(n+1).set_row_interpolation_spacing(float(conf["span_interp"]))
+
+# Apply fillets
+print "Setting fillets..."
+for n in range(nrow):
+    n1 = n+1  # Autogrid uses 1-based indexing
+
+    is_butterfly = int(conf["is_butterfly"])
+    nkf = int(conf["nk_fillet"])
+
+    # If the radius is nonzero
+    if conf["R_fillet_hub"]:
+        Rfh = conf["R_fillet_hub"]
+    else:
+        Rfh = 0.
+
+    if conf["R_fillet_shd"] and not conf["tip"][n]:
+        Rfs = conf["R_fillet_shd"]
+    else:
+        Rfs = 0.
+
+    # How many blades to configure
+    if n in conf["splitter"]:
+        ib = (1,2)
+    else:
+        ib = (1,)
+
+    for iib in ib:
+        if Rfh:
+            f = row(n1).blade(iib).hub_fillet()
+            f.set_radius_at_leading_edge(Rfh)
+            f.set_radius_at_trailing_edge(Rfh)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_hub"]))
+            f.set_butterfly_topology(is_butterfly)
+            f.set_butterfly_radial_number_of_points(nkf)
+            f.set_minimum_angle(30)
+            f.set_create_geometry(0)
+        if Rfs:
+            f = row(n1).blade(iib).shroud_fillet()
+            f.set_radius_at_leading_edge(Rfs)
+            f.set_radius_at_trailing_edge(Rfs)
+            f.set_number_of_points_in_spanwise_direction(int(conf["nj_fillet_shd"]))
+            f.set_butterfly_topology(is_butterfly)
+            f.set_butterfly_radial_number_of_points(nkf)
+            f.set_minimum_angle(30)
+            f.set_create_geometry(0)
+
+
+## generate 3D
+print "Generating 3D mesh..."
+select_all()
+set_active_control_layer_index(int(conf["spf_ref"]*100))
+a5_generate_b2b()
+a5_start_3d_generation()
+a5_save_project(os.getcwd() + "/%s.trb" % conf["prefix"])
+print "Finished!"

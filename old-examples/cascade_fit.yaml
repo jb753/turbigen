@@ -1,0 +1,46 @@
+# Demonstrate fitting the camber and thickness parameters to coordinates
+
+workdir: runs/cascade_fit
+
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  mu: 1.8e-5
+  gamma: 1.4
+
+mean_line:
+  type: turbine_cascade
+  span: [0.1, 0.12]
+  Alpha: [40., -65.]
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+
+annulus:
+  AR_gap: [0.8, 0.9]
+  AR_chord: 1.6
+
+blades:
+  - Co: 0.7
+    sections:
+      - spf: 0.3
+        q_thick: [0.05, 0.08, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.7
+        q_thick: [0.05, 0.08, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+    # The above camber and thickness are used as an initial guess for fitting
+    fit: tests/data/sections.dat
+    fit_mode: xrt
+
+
+mesh:
+  type: h
+  yplus: 30.0
+
+post_process:
+  plot_section:
+    row_spf: [[0.3,0.7]]
+    coord_sys: xrt
+    compare: ['tests/data/sections.dat',]

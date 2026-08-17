@@ -1,0 +1,57 @@
+workdir: runs/axial_turbine_ts4
+
+inlet:
+  Po: 16.0e5
+  To: 1600.
+  cp: 1100.
+  mu: # Blank to set viscosity by Re_surf
+  gamma: 1.33
+
+mean_line:
+  type: axial_turbine
+  Alpha1: 0.
+  phi: 0.8
+  psi: 1.6
+  Lam: 0.5
+  Ma2: 0.6
+  eta: 0.92
+  loss_split: 0.4
+  htr: 0.9
+  Omega: 314.159
+
+annulus:
+  AR_gap: [0.6, 2., 0.7]
+  AR_chord: [1.6, 1.6]
+
+blades:
+  - Co: 0.7
+    Re_surf: 4.0e6 # Change viscosity to match
+    mstack: 0.5
+    sections:
+      - spf: 0.1
+        q_thick: [0.05, 0.12, 0.3, 0.2, 0.04, 0.15]
+        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
+      - spf: 0.8
+        q_thick: [0.05, 0.12, 0.3, 0.2, 0.04, 0.15]
+        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
+  - Co: 0.7
+    mstack: 0.5
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.35, 0.1, 0.04, 0.15]
+        qstar_camber: [0.,0., 1.0, 1.0, 0.0]
+    tip: 0.01  # Rotor tip gap
+
+solver:
+  type: ts4
+  nstep_avg: 200
+  nstep: 1000
+  soft_start: true
+
+post_process:
+  plot_convergence:
+
+mesh:
+  type: h
+  yplus: 30.
+  resolution_factor: 0.5

@@ -1,0 +1,49 @@
+# A completed config for the tutorial
+workdir: runs/rotor
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5  # Stagnation pressure [Pa]
+  To: 300.  # Stagnation temperature [K]
+  cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
+  mu: 1.8e-5  # Working fluid dynamic viscosity [kg/m/s]
+  gamma: 1.4  # Working fluid ratio of specific heats [-]
+
+# Mean-line design
+mean_line:
+  type: axial_compressor_rotor
+  PR: 1.1
+  mdot: 5.
+  phi: 0.5
+  psi: 0.4
+  etatt: 0.9
+  htr1: 0.8
+
+annulus:
+  AR_gap: [1.0, 1.0]  # Span to inlet/exit boundary distance
+  AR_chord: 3.  # Span to chord
+  nozzle_ratio: 0.9
+
+blades:
+  - DFL: 0.45  # Set number of blades using Lieblein
+    sections:  # One blade section at midheight
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [3., 8., 1.0, 1.0, 0.0]
+
+mesh:
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Coarsen the mesh
+
+solver:
+  type: ts3  # Use Turbostream 3
+  nstep: 20000
+  nstep_avg: 5000
+  fmgrid: 0.4
+  ilos: 1
+
+operating_point:
+  mdot_pid: [0.5, 0.1, 0.0]
+  mass_adjust: -0.01
+  rpm_adjust: 0.02

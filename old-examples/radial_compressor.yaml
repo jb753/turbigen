@@ -1,0 +1,120 @@
+workdir: runs/radial_compressor
+annulus:
+  AR_chord: [-1.0, .nan]  # -1 to set by minimising curvature
+  AR_gap: [0.5,.nan , 0.5]
+  nozzle_ratio: 0.8
+blades:
+- Co: 0.5
+  Re_surf: 5e6
+  mstack: 1.0
+  sections:
+  # - q_thick:
+  #   - 1.0
+  #   - 4.0
+  #   - 0.6
+  #   - 0.7
+  #   qstar_camber:
+  #   - -0.19842804016779864
+  #   - 10.63787908817374
+  #   - 2.0
+  #   - 0.5
+  #   - 0.0
+  #   spf: 0.3
+  - q_thick:
+    - 1.0
+    - 4.0
+    - 0.6
+    - 0.7
+    qstar_camber:
+    - 4.7511914472422285
+    - 10.63787908817374
+    - 2.0
+    - 0.5
+    - 0.0
+    spf: 0.5
+  # - q_thick:
+  #   - 1.0
+  #   - 4.0
+  #   - 0.6
+  #   - 0.7
+  #   qstar_camber:
+  #   - 7.411845053782818
+  #   - 10.63787908817374
+  #   - 2.0
+  #   - 0.5
+  #   - 0.0
+  #   spf: 0.85
+  thick_span: 0.04
+  thick_type: Impeller
+  tip: 0.01
+- {}
+inlet:
+  Po: 100000.0
+  To: 300.0
+  cp: 1005.0
+  gamma: 1.4
+mean_line:
+  Alpha1: 0.0
+  Alpha2_rel: -50.0
+  DH_diff: 0.75
+  DH_rotor: 0.9
+  Ma1_rel: 0.6
+  PR_tt: 2.0
+  eta_tt: 0.9120138691520197
+  htr1: 0.5
+  loss_split: 0.75
+  mdot: 5.0
+  phi1: 0.6
+  type: radial_compressor
+mesh:
+  dm_LE: 0.0001
+  nchord_relax: 0.5
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+operating_point:
+  mdot_pid:
+  - 0.5
+  - 0.1
+  - 0.0
+solver:
+  # soft_start: true
+  convert_sliding: true
+  nchange: 2000
+  nstep: 20000
+  nstep_avg: 4000
+  type: ts3
+
+iterate:
+  fac_nstep_initial: 2.0
+  mean_line:
+    relaxation_factor: 0.5
+    match_tolerance:
+      eta_tt: 0.01
+      loss_split: 0.01
+  deviation:
+    clip: 5.0
+    relaxation_factor: 2.0
+    tolerance: 1.0
+  incidence:
+    clip: 5.0
+    relaxation_factor: 0.5
+    target: 0.0
+    tolerance: 2.0
+    atol_chi: 0.1
+
+    # history:
+    # - - - - -0.19842804016779864
+    #     - - 18.844853909811604
+    #   - - - 3.8015719598322013
+    #     - - 3.044873893483043
+    # - null
+
+post_process:
+  plot_annulus:
+  write_stl:
+  write_ibl:
+  plot_pressure_distributions:
+    row_spf: [[0.3, 0.5, 0.7],[]]
+    use_rot: true
+...

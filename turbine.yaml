@@ -1,0 +1,51 @@
+work_dir: test_run/*
+
+fluid:
+  type: perfect
+  cp: 1005
+  gamma: 1.4
+  mu: 2.0e-4
+
+mean_line:
+  type: turbine_cascade
+  n_row: 1
+  span: [0.1, 0.1]
+  Alpha: [-30, 60]
+  Ma2: 0.6
+  Ys: 0
+  htr: 0.9
+
+annulus:
+  type: fixed_axial_chord
+  cx_gap: [0.1, 0.2]
+  cx_row: [0.1]
+
+blades:
+    - spf: 0.5
+      thick: [0.05, 0.12, 0.35, 0.0, 0.03, 0.20]
+      camber: [0., 0., 0.0]
+
+nblade:
+  - Co: 0.7
+
+mesh:
+  type: h
+  yplus: 30.0
+  dm_TE: 0.1
+  ni_TE: 9
+  skew_max: 45.0
+  ni_cusp: 5
+  AR_cusp: 2.0
+  # plot: true
+  # remote_host: gp-111
+  # remote_workdir: /mnt/data/jb753/meshing
+
+# mesh:
+#   type: oh
+#   yplus: 15.0
+#   remote_host: gp-111
+#   remote_workdir: /mnt/data/jb753/meshing
+
+# Configure the RANS solver
+solver:
+  type: ember

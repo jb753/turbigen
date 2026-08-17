@@ -1,0 +1,761 @@
+import logging
+
+"""Generic post-processor class."""
+
+from abc import ABC, abstractmethod
+import dataclasses
+import numpy as np
+from turbigen_ref import util
+import turbigen_ref.util_post
+import turbigen_ref.base
+import turbigen_ref.average
+import warnings
+import matplotlib.pyplot as plt
+import ember.cut
+import ember.convergence_history
+
+logger = logging.getLogger("turbigen")
+
+LABELS = {
+    "Mas": r"Isentropic Mach Number, $\mathit{Ma}_s$",
+    "Ys": "Entropy Loss Coefficient, $Y_s$",
+    "Ma_rel": r"Relative Mach Number, $\mathit{Ma}^\mathrm{rel}$",
+}
+
+
+@dataclasses.dataclass
+class BasePost(ABC):
+    """Base class for post-processing."""
+
+    @abstractmethod
+    def post(self, config, pdf):
+        """Perform the post processing on a config object."""
+        raise NotImplementedError()
+
+
+@dataclasses.dataclass
+class Convergence(BasePost):
+    """Plot convergence history from ember ConvergenceHistory object."""
+
+    def post(self, config, pdf):
+        """Make plots of convergence history from the CFD run."""
+
+        conv = config.solver.convergence
+
+        if conv is None:
+            logger.info("No simulation log returned, skipping convergence plot.")
+            return
+
+        n_steps = conv.i_log + 1
+
+        if n_steps == 0:
+            logger.info("No convergence data to plot.")
+            return
+
+        steps = conv.i_step[:n_steps]
+
+        # Moving-average window, scaled from solver iteration count to log
+        # samples (i_step records the iteration index at each log entry).
+        n_step_avg = int(getattr(config.solver, "n_step_avg", 1) or 1)
+        if n_steps >= 2:
+            n_step_log = max(int(steps[1] - steps[0]), 1)
+        else:
+            n_step_log = 1
+        window = max(n_step_avg // n_step_log, 1)
+
+        def smooth(y):
+            if window <= 1 or y.shape[0] < 2:
+                return y
+            w = min(window, y.shape[0])
+            kernel = np.ones(w)
+            n = y.shape[0]
+            # Trailing average: output[i] = mean(y[max(0,i-w+1) : i+1]).
+            # convolve(..., "full") index i = sum(y[0:i+1]) for i < w,
+            # then sum(y[i-w+1:i+1]) for i >= w. Taking [:n] gives the causal
+            # slice. Normalise by min(i+1, w) for the ramp-up.
+            norm = np.minimum(np.arange(1, n + 1), w).astype(float)
+            if y.ndim == 1:
+                return np.convolve(y, kernel, mode="full")[:n] / norm
+            out = np.empty_like(y, dtype=float)
+            for j in range(y.shape[1]):
+                out[:, j] = np.convolve(y[:, j], kernel, mode="full")[:n] / norm
+            return out
+
+        # Page 1: Residual plot
+        residuals = conv.residual[:n_steps]  # (n_steps, 5)
+
+        _, ax = plt.subplots(layout="constrained")
+        for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
+            ax.semilogy(steps, residuals[:, i_var], label=var_name)
+        ax.set_ylabel("Residual")
+        ax.set_xlabel("Iteration")
+        ax.set_title("Convergence History")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        pdf.savefig()
+        plt.close()
+
+        # Page 2: CFL plot
+        cfl_data = conv.cfl[:n_steps]  # (n_steps, 5)
+
+        _, ax = plt.subplots(layout="constrained")
+        for i_var, var_name in enumerate(["rho", "rhoVx", "rhoVr", "rhorVt", "rhoe"]):
+            ax.plot(steps, cfl_data[:, i_var], label=var_name)
+        ax.set_ylabel("CFL")
+        ax.set_xlabel("Iteration")
+        ax.set_title("CFL History")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        pdf.savefig()
+        plt.close()
+
+        # Page 3: Absolute difference from converged (final) value, in %.
+        # Mass: 100 * err_mdot (already a fractional imbalance).
+        # Work, loss: 100 * (q - q[-1]) / q[-1].
+        psi = smooth(conv.psi[:n_steps])
+        zeta = smooth(conv.zeta[:n_steps])
+        err_mdot = smooth(conv.err_mdot[:n_steps])
+
+        def rel_pct(q):
+            ref = np.abs(q[-1])
+            if ref == 0:
+                return 100.0 * np.abs(q - q[-1])
+            return 100.0 * np.abs(q - q[-1]) / ref
+
+        panels = [
+            (100.0 * np.abs(err_mdot), "Mass Conservation"),
+            (rel_pct(psi), r"Work, $\psi$"),
+            (rel_pct(zeta), r"Loss, $\zeta$"),
+        ]
+
+        linthresh = 1.0
+        major_ticks = [0, 1, 2, 4, 8, 16]
+        major_labels = [str(t) for t in major_ticks]
+        ylim_top = 16.0
+
+        _, ax = plt.subplots(1, 3, layout="constrained", sharey=True)
+        for axi, (y, title) in zip(ax, panels):
+            axi.plot(steps, y, "-")
+            axi.set_title(title)
+            axi.set_xlabel("Iteration")
+            axi.set_yscale("symlog", linthresh=linthresh, linscale=np.log10(2))
+            axi.set_yticks(major_ticks, major_labels)
+            axi.set_yticks([], minor=True)
+            axi.set_ylim(0, ylim_top)
+            axi.set_xlim(steps[0], steps[-1])
+            axi.grid(True, which="major", alpha=0.3, lw=0.8)
+        ax[0].set_ylabel("|Error| from final value [%]")
+
+        pdf.savefig()
+        plt.close()
+
+
+@dataclasses.dataclass
+class Metadata(BasePost):
+    def post(self, config, pdf):
+        """Make a slide with some text metadata."""
+
+        _, ax = plt.subplots(layout="constrained")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        left = 0.05
+        ax.set_title("Metadata:")
+        ax.text(left, 0.95, f"work_dir={str(config.work_dir)}")
+        pdf.savefig()
+        plt.close()
+
+
+def calculate_nondim(C, ml, vname):
+    """Calculate a non-dimensional varaiable over a cut.
+
+    Parameters
+    ----------
+    C : FlowField object
+        The cut to evaluate.
+    ml : MeanLine object
+        A single-row meanline object used to provide reference values.
+    vname: str
+        String indicating which variable to calculate.
+
+    Returns
+    -------
+    y : ndarray
+        The non-dimensional variable.
+    ylabel : str
+        Label for the y-axis.
+
+    """
+
+    # Isentropic from inlet entropy to local static
+    Cs = C.copy().set_P_s(C.P, ml.s[0])
+    hs = Cs.h
+    # Fix ho_rel and a to surface-mean values so that only local static P
+    # drives Mas; otherwise radial redistribution of ho_rel or variations in
+    # a split the PS/SS curves at the TE.
+    ho = np.mean(C.ho_rel)
+    a_ref = np.mean(Cs.a)
+
+    # Ensure ho > hs
+    dh = ho - hs
+    hs += np.min(dh)
+
+    # Evaluate velocity and Mach
+    Vs = np.sqrt(2.0 * np.maximum(ho - hs, 0.0))
+    Mas = Vs / a_ref
+
+    is_compressor = ml.P[1] > ml.P[0]
+
+    Poref = ml.Po_rel[0]
+    if is_compressor:
+        Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[0]
+        Pref = ml.P[0]
+    else:
+        Ys = ml.T[1] * (C.s - ml.s[0]) / ml.halfVsq_rel[1]
+        Pref = ml.P[1]
+
+    # Work coefficient
+    Cho_rel = (C.ho_rel - ml.ho_rel[0]) / ml.halfVsq_rel[1]
+    Cho = (C.ho - ml.ho[0]) / ml.halfVsq[1]
+
+    # Velocity coefficient
+    CVm = C.Vm / ml.V_rel[1]
+
+    Cp = (C.P - Poref) / (Poref - Pref)
+
+    if vname == "Mas":
+        return Mas
+    elif vname == "Ys":
+        return Ys
+    elif vname == "Cp":
+        return Cp
+    elif vname == "Ma_rel":
+        return C.Ma_rel
+    elif vname == "Mar":
+        return C.Vr / C.a
+    elif vname == "Max":
+        return C.Vx / C.a
+    elif vname == "Mat":
+        return C.Vt / C.a
+    elif vname == "Mam":
+        return C.Vm / C.a
+    elif vname == "Cho":
+        return Cho
+    elif vname == "Cho_rel":
+        return Cho_rel
+    elif vname == "CVm":
+        return CVm
+    elif vname == "Alpha":
+        return C.Alpha
+    elif vname == "Alpha_rel":
+        return C.Alpha_rel
+    elif vname == "Beta":
+        return C.Beta
+    else:
+        raise ValueError(f"Unknown variable {vname} requested.")
+
+
+@dataclasses.dataclass
+class SurfaceDistribution(BasePost):
+    variable: str = "Mas"
+    """Which variable to plot."""
+
+    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    """Mapping of row index to span fraction(s) to plot."""
+
+    offset: int = 0
+    """How many points away from the wall."""
+
+    def post(self, config, pdf):
+        """Plot distribution of a quantity around blade surface."""
+
+        # Default to plotting on the designed sections
+        if self.spf is not None:
+            spf = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
+
+        # Loop over rows
+        for irow, spfrow in spf.items():
+            if spfrow is None:
+                continue
+
+            # Setup figure
+            _, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"Row {irow}")
+            ax.set_xlabel(r"Surface Distance, $\zeta/\zeta_\mathrm{TE}$")
+            ax.set_xlim((0.0, 1.0))
+
+            label = LABELS.get(self.variable, self.variable)
+            ax.set_ylabel(label)
+
+            # Cut the entire blade
+            C = turbigen_ref.util_post.cut_blade_surfs(config.grid, self.offset)[irow][0]
+
+            # Main blade object, used to anchor the stag search on the
+            # geometric nose
+            bldnow = config.blades[irow][0]
+
+            # Loop over span fractions
+            for spfi in spfrow:
+                # Slice at required span fractions
+                xrc = config.annulus.get_span_curve(spfi)
+
+                Ci = ember.cut.structured_meridional(C, xrc.T)[0]
+
+                # Get the variable
+                y = calculate_nondim(
+                    Ci, config.mean_line.actual.get_row(irow), self.variable
+                )
+
+                # Geometric nose coordinates anchor the stag search window,
+                # which is more robust on blades with strong PS/SS asymmetry.
+                # get_nose evaluates the section, which requires the blade to
+                # be recambered; recamber and revert around the call so the
+                # stored config blades are left untouched.
+                ml_nom = config.mean_line.nominal.get_row(irow)
+                already_recambered = bldnow.is_recambered
+                if not already_recambered:
+                    bldnow.apply_recamber(ml_nom)
+                xrt_nose = bldnow.get_nose(spfi)
+                if not already_recambered:
+                    bldnow.undo_recamber(ml_nom)
+
+                # Extract surface distance and normalise
+                i_stag = turbigen_ref.util_post.get_i_stag(Ci, xrt_LE=xrt_nose)
+                zeta = turbigen_ref.util_post.get_zeta(Ci)
+                zeta_stag = zeta - zeta[i_stag]
+                # Shift zeta=0 to minimum Mas
+                if self.variable == "Mas":
+                    zeta_stag -= zeta_stag[np.argmin(y)]
+                # Calculate maximum zeta only on main blade
+                zeta_max = zeta_stag.max(axis=0)
+                zeta_min = np.abs(zeta_stag.min(axis=0))
+                zeta_norm = zeta_stag.copy()
+                zeta_norm[zeta_norm < 0.0] /= zeta_min
+                zeta_norm[zeta_norm > 0.0] /= zeta_max
+
+                ax.plot(
+                    np.abs(zeta_norm),
+                    y,
+                    label=f"spf={spfi}",
+                    linestyle="-",
+                    marker="",
+                )
+
+            # Finish this row
+            pdf.savefig()
+            plt.close()
+
+
+@dataclasses.dataclass
+class Contour(BasePost):
+    variable: str = "Ys"
+    """Which variable to plot."""
+
+    coord: str = "spf"
+    """Mapping of row index to span fraction(s) to plot."""
+
+    value: float = 0.5
+    """How many points away from the wall."""
+
+    show_mesh: bool = False
+    """Show grid lines."""
+
+    irow_ref: int = 0
+    """Which row to use for reference quantities."""
+
+    N_passage: int = 2
+    """Repeat in the circumferential direction."""
+
+    cmap: str = "plasma"
+    """matplotlib colormap to use."""
+
+    def post(self, config, pdf):
+        """Plot contours over a plane."""
+
+        try:
+            for val in self.value:
+                self.contour(val, config, pdf)
+        except TypeError:
+            # If value is not iterable, plot a single contour
+            self.contour(self.value, config, pdf)
+
+    def contour(self, val, config, pdf):
+        if self.coord == "spf":
+            # Span fraction cut
+            # Cut and repeat each row separately
+            xrc = config.annulus.get_span_curve(val)
+            Crow = config.grid.cut_span_unstructured(xrc)
+            Crow = [Ci.repeat_pitchwise(self.N_passage) for Ci in Crow]
+
+            # Combine the rows
+            C = turbigen_ref.base.concatenate(Crow)
+
+        else:
+            # Get an xr curve describing the cut plane.
+            if self.coord == "x":
+                xrc = np.array([[val, val], [0.1, 1.0]])
+            elif self.coord == "r":
+                xrc = np.array([[-1.0, 1.0], [val, val]])
+            elif self.coord == "m":
+                xrc = config.annulus.get_cut_plane(val)[0]
+            else:
+                raise Exception(f"Invalid coord={self.coord}")
+            C = config.grid.unstructured_cut_marching(xrc)
+
+            C = C.repeat_pitchwise(self.N_passage)
+
+        # Centre theta on zero
+        C.t -= 0.5 * (C.t.min() + C.t.max())
+
+        # Matplotlib style triangulate
+        C_tri, triangles = C.get_mpl_triangulation()
+
+        # Get the coordinates to plot
+        if self.coord == "x":
+            c = C_tri.yz
+        elif self.coord == "r":
+            c = C_tri.rt, C_tri.x
+        elif self.coord == "spf":
+            # Now generate a mapping from xr to meridional distance
+            mp_from_xr = config.annulus.get_mp_from_xr(val)
+            c = mp_from_xr(C_tri.xr), C_tri.t
+        elif self.coord == "m":
+            if np.ptp(C_tri.r) > np.ptp(C_tri.x):
+                c = C_tri.yz
+            else:
+                c = C_tri.rt, C_tri.r
+        else:
+            raise Exception(f"Invalid coord={self.coord}")
+
+        # Extract meanline reference row
+        if self.coord == "m":
+            irow_ref = int(val / 2 - 1)
+            row = config.mean_line.actual.get_row(irow_ref)
+        else:
+            row = config.mean_line.actual
+
+        # Get the variable
+        v = calculate_nondim(C_tri, row, self.variable)
+        # levels = clipped_levels(v)
+
+        # Setup figure
+        _, ax = plt.subplots(layout="constrained")
+        ax.set_title(f"{self.variable} at {self.coord}={val:.3g}")
+
+        # It seems that we have to pass triangles as a kwarg to tricontour,
+        # not positional, but this results in a UserWarning that contour
+        # does not take it as a kwarg. So catch and hide this warning.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cm = ax.tricontourf(
+                *c,
+                v,
+                # levels,
+                triangles=triangles,
+                cmap=self.cmap,
+                linestyles="none",
+            )
+        cm.set_edgecolor("face")
+        cm.set_linewidth(0.05)
+        ax.set_aspect("equal")  # Ensures equal scaling
+        ax.set_adjustable("box")  # Ensures equal scaling
+        ax.axis("off")
+
+        if self.show_mesh:
+            # Show the mesh
+            ax.triplot(*c, triangles, "k-", lw=0.05)
+
+        # Make the colorbar
+        label = LABELS.get(self.variable, self.variable)
+        plt.colorbar(cm, label=label, shrink=0.8)
+
+        # Finish this row
+        pdf.savefig()
+        plt.close()
+
+
+@dataclasses.dataclass
+class Annulus(BasePost):
+    m_cut: tuple = ()
+    """Meridional cut planes to plot."""
+
+    show_axis: bool = False
+    """Show the axis of rotation."""
+
+    show_blades: bool = True
+    """Show blades."""
+
+    def post(self, config, pdf):
+        """Plot an x-r view of the annulus."""
+
+        # Setup figure
+        fig, ax = plt.subplots(layout="constrained")
+        ax.axis("off")
+        ax.axis("equal")
+        ax.grid("off")
+
+        if self.show_blades:
+            config.apply_recamber()
+
+            grey = np.ones((3,)) * 0.4
+            Npts = 10
+            spf = np.linspace(0.0, 1.0, Npts)
+            # Meridional coordinates as a function of spf for
+            # blade LE, TE, and diagonals
+            m = np.stack(
+                (
+                    np.zeros((Npts,)),
+                    spf,
+                    1.0 - spf,
+                    np.ones((Npts,)),
+                )
+            )
+
+            # Loop over rows
+            for bld in config.blades:
+                if not bld:
+                    continue
+
+                # Loop over spanwise stations
+                # Get xr on camber line
+                xr = np.stack(
+                    [
+                        np.stack(bld[0].evaluate_section(spf[j], m=m[:, j])).mean(
+                            axis=0
+                        )[:2]
+                        for j in range(Npts)
+                    ]
+                ).transpose(2, 1, 0)
+
+                # Plot each of LE/TE/diagonals
+                for xri in xr:
+                    ax.plot(*xri, "-", color=grey)
+
+            config.undo_recamber()
+
+        # Plot the cut planes
+        for mi in self.m_cut:
+            xrc = config.annulus.get_cut_plane(mi)[0]
+            ax.plot(*xrc, "-", color="C0")
+
+        # Plot hub and casing lines
+        xr_hub, xr_cas = config.annulus.get_coords().transpose(0, 2, 1)
+        ax.plot(*xr_hub, "k-")
+        ax.plot(*xr_cas, "k-")
+
+        # Show axis of revolution
+        if self.show_axis:
+            ax.plot(xr_hub[0, (0, -1)], np.zeros((2,)), "k-.")
+
+        pdf.savefig()
+        plt.close()
+
+
+@dataclasses.dataclass
+class StreamtubeLoss(BasePost):
+    frac_mdot_break: tuple = (0.2, 0.8)
+    """Cumulative mass flow fractions for breakdown."""
+
+    def post(self, config, pdf):
+        # Find meridional coordinates of the cut planes
+        xr_cut = config.annulus.get_offset_planes(config.cut_offset)
+
+        # Take the cuts
+        cuts = [
+            config.grid.unstructured_cut_marching(xri).interpolate_to_structured()
+            for xri in xr_cut
+        ]
+
+        # Loop over cuts
+        Sdot_tube = []
+        for cut in cuts:
+            xtol = np.ptp(cut.r) * 1e-4
+            assert np.ptp(cut.x) < xtol
+
+            _, nj, nk = cut.shape
+
+            # Pitchwise-integrate mass flow to kg/s per unit span
+            mdot_pitch = np.trapz(cut.Nb * cut.rhoVx * cut.r, cut.t).squeeze()
+
+            # Spanwise-integrate mass flow to kg/s
+            mdot_span = util.cumtrapz0(mdot_pitch, cut.r[0, :, 0])
+
+            # Find indices for the mass flow fractions
+            frac_mdot = mdot_span / mdot_span[-1]
+            jbreak = np.interp(
+                self.frac_mdot_break, frac_mdot, np.arange(len(frac_mdot))
+            )
+
+            # Insert jbreaks into the cut
+            new_data = insert_jbreaks(cut._data, jbreak)
+            cut_new = cut.empty(new_data.shape[1:])
+            cut_new._data = new_data
+            cut_new._metadata = cut._metadata.copy()
+            cut = cut_new
+
+            # Recalculate jbreaks
+            mdot_pitch = np.trapz(cut.Nb * cut.rhoVx * cut.r, cut.t).squeeze()
+            mdot_span = util.cumtrapz0(mdot_pitch, cut.r[0, :, 0])
+            frac_mdot = mdot_span / mdot_span[-1]
+            jbreak = np.interp(
+                self.frac_mdot_break, frac_mdot, np.arange(len(frac_mdot))
+            )
+            jbreak_round = np.round(jbreak).astype(int)
+            assert np.allclose(jbreak_round, jbreak, atol=0.01)
+
+            # Split the cuts into tubes at jbreak_round
+            jbreak_round = np.insert(jbreak_round, 0, 0)
+            jbreak_round = np.append(jbreak_round, cut.nj - 1)
+            Sdot_tube.append([])
+            for j0, j1 in zip(jbreak_round[:-1], jbreak_round[1:]):
+                # Get current streamtube
+                tube = cut[:, j0 : j1 + 1, :]
+
+                # Integrate the entropy flow
+                Sdot_pitch = np.trapz(
+                    tube.Nb * tube.rhoVx * tube.s * tube.r, tube.t
+                ).squeeze()
+                Sdot_span = np.trapz(Sdot_pitch, tube.r[0, :, 0])
+                Sdot_tube[-1].append(Sdot_span)
+
+        # Convert entropy flows to an array
+        # indexed [station, streamtube]
+        Sdot_tube = np.array(Sdot_tube)
+
+        # Change in each row
+        DSdot = np.diff(Sdot_tube, axis=0)
+
+        # Exit mixing loss
+        cuts[-1].Omega = cuts[-1].Omega.mean()
+        Cexit, Aexit, Dsexit = turbigen_ref.average.mix_out(cuts[-1].squeeze())
+
+        mdot_exit = Cexit.rhoVx * Aexit
+        DSexit = Dsexit * mdot_exit
+        DStot = np.sum(DSdot) + DSexit
+
+        # Normalise by total machine entropy rise
+        DSdot_norm = DSdot / DStot
+        DSexit_norm = DSexit / DStot
+        logger.info("Entropy flow breakdown by streamtube[irow, itube]:")
+        logger.info(DSdot_norm)
+        logger.info(DSdot_norm.sum())
+        logger.info("Exit mixing loss:")
+        logger.info(DSexit_norm)
+
+        config.post_3d["DS_tube_norm"] = DSdot_norm
+        config.post_3d["DS_exit_norm"] = DSexit_norm
+
+
+@dataclasses.dataclass
+class Sections(BasePost):
+    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    """Mapping of row index to span fraction(s) to plot."""
+
+    def post(self, config, pdf):
+        config.apply_recamber()
+
+        # Default to plotting on the designed sections
+        if not self.spf:
+            spf_all = {irow: config.blades[irow][0].spf for irow in range(config.nrow)}
+        else:
+            spf_all = self.spf
+
+        logger.info(f"Plotting sections at span fractions: {spf_all}")
+
+        # Loop over rows
+        for irow, spfrow in spf_all.items():
+            # Set up axes
+            _, ax = plt.subplots()
+            ax.axis("equal")
+
+            # Loop over span fractions
+            for ispf, spf in enumerate(spfrow):
+                #
+                xrt_ul = np.stack(config.blades[irow][0].evaluate_section(spf))
+                xrrt_ul = xrt_ul.copy()
+                xrrt_ul[:, 2] *= xrrt_ul[:, 1]  # Convert to r,rt
+
+                logger.info(f"Plotting section row={irow} at spf={spf:.2g}")
+
+                for xrrti in xrrt_ul:
+                    ax.plot(
+                        xrrti[0],
+                        xrrti[2],
+                        "-",
+                        color=f"C{ispf}",
+                        label=f"spf={spf:.2g}",
+                    )
+
+            if len(spfrow) > 1:
+                ax.legend()
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
+
+        config.undo_recamber()
+
+
+@dataclasses.dataclass
+class InletProfiles(BasePost):
+    def post(self, config, pdf):
+        # Skip if no inlet profiles are available
+        if config.inlet.spf is None:
+            return
+
+        spf = config.inlet.spf
+        Po, To, Alpha, Beta = config.inlet.profiles
+
+        # Setup figure
+        fig, ax = plt.subplots(1, 4, layout="constrained", sharey=True)
+        fig.suptitle("Inlet Profiles")
+        ax[0].set_ylabel("Span Fraction")
+
+        ax[0].plot(Po, spf)
+        ax[0].set_xlabel(r"$P_0/\overline{P_0}$")
+
+        ax[1].plot(To, spf)
+        ax[1].set_xlabel(r"$T_0/\overline{T_0}$")
+
+        ax[2].plot(Alpha, spf)
+        ax[2].set_xlabel(r"$\alpha - \overline{\alpha}$")
+
+        ax[3].plot(Beta, spf)
+        ax[3].set_xlabel(r"$\beta - \overline{\beta}$")
+
+        pdf.savefig()
+
+
+def insert_jbreaks(data, jbreak):
+    """
+    Insert interpolated j-lines into `data` at fractional j-indices using np.insert.
+
+    Parameters:
+        data (np.ndarray): Array of shape (8, ni, nj, nk)
+        jbreak (list of float): Fractional j indices where new lines should be inserted (e.g., [1.5, 2.5])
+
+    Returns:
+        np.ndarray: New array with additional j-lines inserted.
+    """
+    assert data.ndim == 4, "Input must be a 4D array (8, ni, nj, nk)"
+    jbreak = sorted(jbreak)
+
+    new_slices = []
+    insert_indices = []
+
+    for jb in jbreak:
+        j0 = int(np.floor(jb))
+        frac = jb - j0
+        # Linear interpolation between j0 and j0+1
+        interpolated = (1 - frac) * data[:, :, (j0,), :] + frac * data[
+            :, :, (j0 + 1,), :
+        ]
+        new_slices.append(interpolated)
+        insert_indices.append(j0 + 1)  # insert *after* j0
+
+    # Insert along axis=2 (j-axis)
+    new_slices = np.concatenate(new_slices, axis=2)
+    new_data = np.insert(data, insert_indices, new_slices, axis=2)
+
+    assert new_data.shape[2] == data.shape[2] + len(jbreak)
+
+    return new_data

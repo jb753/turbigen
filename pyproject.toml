@@ -1,55 +1,92 @@
-[project]
-name = "turbigen"
-version = "1.5.1"
-requires-python = ">=3.9"
-dependencies = [
-    'CoolProp',
-    'matplotlib',
-    'numpy',
-    'PyYAML',
-    'scipy',
-    'h5py',
-    'numpy-stl',
-    'metis',
-]
-
-[project.optional-dependencies]
-docs = [
-    'sphinx~=7.2.6',
-    'sphinxcontrib-bibtex~=2.5.0',
-    'sphinx-autobuild~=2021.3.14',
-    'sphinx-argparse~=0.4.0',
-    'sphinxcontrib-programoutput~=0.7',
-]
-test = [
-    'pytest~=6.2.5',
-]
-
-[project.scripts]
-turbigen = "turbigen.main:main"
-turbigen-autogrid-server = "turbigen.autogrid.server:main"
-
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-# Only package what is in the turbigen folder
-[tool.setuptools.packages.find]
-include = ["turbigen",]
+[project]
+name = "turbigen"
+version = "3.0.0"
+requires-python = ">=3.11"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+  {name = "James Brind", email = "jb753@cam.ac.uk"},
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: POSIX :: Linux"
+]
+dependencies = [
+    'matplotlib~=3.10.0',
+    "numpy~=2.5.0",
+    "CoolProp~=6.7.0",
+    'PyYAML~=6.0.0',
+    'scipy~=1.18.0',
+    'h5py~=3.14.0',
+    'numpy-stl~=3.2.0',
+    'metis~=0.2a5',
+    # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
+    # Block.flat, mass_average over chosen axes -- is on ember's dev branch
+    # rather than master, and a long way ahead of the published ember-cfd.
+    # Hence a branch. Move to a version specifier once ember cuts one that
+    # carries this API. ember requires numpy 2.5, which is why the numpy and
+    # scipy pins above are what they are.
+    'ember-cfd @ git+https://github.com/jb753/ember.git@dev',
+]
+description = "Framework for turbomachinery design and computational fluid dynamics simulation"
+readme = "README.md"
+keywords = ["turbomachinery", "computational fluid dynamics", "compressor", "turbine"]
+
+[project.urls]
+Homepage = "https://turbigen.org"
+Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
+
+[project.scripts]
+turbigen = "turbigen.cli:main"
+
+[tool.black]
+target-version = ["py311"]
+
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-*"
+skip = "pp*"
+manylinux-x86_64-image = "manylinux2014"
+archs = ["x86_64"]
 
 [tool.bumpversion]
-allow_dirty = false
-commit = true
-message = "Bump version: {current_version} → {new_version}"
-commit_args = ""
+current_version = "2.7.3"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+search = "{current_version}"
+replace = "{new_version}"
+regex = false
+ignore_missing_version = false
 tag = true
 sign_tags = false
 tag_name = "v{new_version}"
 tag_message = "Bump version: {current_version} → {new_version}"
-current_version = "1.5.2"
-parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
-serialize = [
-    "{major}.{minor}.{patch}"
+allow_dirty = false
+commit = true
+message = "Bump version: {current_version} → {new_version}"
+commit_args = ""
+[[tool.bumpversion.files ]]
+filename = "pyproject.toml"
+
+[dependency-groups]
+dev = [
+    'sphinx~=8.0.0',
+    'sphinx-autobuild',
+    'sphinx-argparse',
+    'sphinxcontrib-programoutput',
+    'sphinxcontrib-bibtex',
+    'snowballstemmer==2.2.0',
+    'autodocsumm',
+    'pytest',
+    'pre-commit',
+    'twine',
+    'bump-my-version',
+    'pyqt6',
+    'pdoc',
 ]
-search = "{current_version}"
-replace = "{new_version}"
+
+[tool.uv]
+managed = false

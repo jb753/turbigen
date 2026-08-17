@@ -8,6 +8,29 @@ General conventions for variable names:
 * Stagnation quantities are denoted by a subscript letter oh: `Po`, `ho_rel`.
 * Depending on context, concatenation of symbols is either: a product, such as `rhoVx`; or a stack along the first array dimension, like `xrt`.
 
+The yaw angle, `Alpha` or :math:`\alpha`, is defined as the angle between the flow direction and
+the meridional direction:
+
+.. math::
+    \alpha = \arctan\left(\frac{V_\theta}{V_m}\right)
+
+where :math:`V_\theta` is the tangential and :math:`V_m` the meridional
+components of flow velocity. In the rotating frame, the relative yaw angle,
+`Alpha_rel` or :math:`\alpha^\mathrm{rel}`, is defined as:
+
+.. math::
+    \alpha^\mathrm{rel} = \arctan\left(\frac{V_\theta^\mathrm{rel}}{V_m}\right)
+
+The pitch angle, `Beta`, is defined as the angle between
+the meridional flow direction and the axial direction:
+
+.. math::
+    \beta = \arctan\left(\frac{V_r}{V_x}\right)
+
+where :math:`V_r` is the radial velocity component. Throughout the code, angles
+have units of degrees.
+
+
 =========== ============================================ =======
  Symbol      Quantity                                     Units
 =========== ============================================ =======
@@ -41,5 +64,5 @@ General conventions for variable names:
 `I`          Rothalpy                                     J/kg
 `Ma`         Mach number
 `A`          Area                                         m^2
-`zeta`       Surface distance coordinate                           m^2
+`zeta`       Surface distance coordinate                  m
 =========== ============================================ =======

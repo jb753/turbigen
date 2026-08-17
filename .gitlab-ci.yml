@@ -1,57 +1,69 @@
-image: python:3.9
+image: python:3.11
 
-# Run in two stages, only deploy if the tests pass
 stages:
+- build
 - test
 - deploy
+- publish
 
-test:
+
+before_script:
+  - curl -LsSf https://astral.sh/uv/install.sh | sh
+  - source $HOME/.local/bin/env
+  - uv venv
+  - source .venv/bin/activate
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_API_VERSION: 1.41
+  DOCKER_TLS_CERTDIR: ""
+
+build_wheel:
+  stage: build
+  script:
+    - uv build --wheel --sdist
+    - ls -l dist
+  artifacts:
+    expire_in: 2 hours
+    paths:
+      - dist
+
+tests:
   stage: test
   script:
-  - python -V
-  - pip install -U pip
-  - pip install -e ".[test]"
-  - pytest
+    - uv pip install dist/*.whl pytest
+    - pytest --slow
 
-docs:
-  script:
-  - python -V
-  - pip install -U pip
-  - pip install -e ".[docs]"
-  - make doc
-
-pages:
-  stage: deploy
-  script:
-  - python -V
-  - pip install -U pip
-  - pip install -e ".[docs]"
-  - make doc
-  - mv doc/_build public
-  artifacts:
-        paths:
-        - public
-  only:
-  - master
-
-release_job:
-  stage: deploy
-  only:
-  - master
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  rules:
-    - if: $CI_COMMIT_TAG                 # Run this job when a tag is created
-  script:
-    - echo "running release_job"
-  release:                               # See https://docs.gitlab.com/ee/ci/yaml/#release for available properties
-    tag_name: '$CI_COMMIT_TAG'
-    description: '$CI_COMMIT_TAG'
+# doc:
+#   stage: deploy
+#   artifacts:
+#     paths:
+#       - doc/_build
+#   script:
+#     - apt update && apt install -y pdf2svg fonts-freefont-ttf
+#     - uv pip install dist/*.whl sphinx~=8.0.0 sphinx-autobuild sphinx-argparse sphinxcontrib-programoutput sphinxcontrib-bibtex snowballstemmer==2.2.0 autodocsumm
+#     # - python doc/generate_examples.py
+#     - python doc/generate_meanline.py
+#     - python doc/generate_data_structures.py
+#     - sphinx-build -W doc doc/_build
 
 # pypi:
+#   stage: publish
 #   script:
-#     - pip install twine bump2version
-#     - bump2version minor
-#     - python setup.py sdist bdist_wheel
-#     - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python -m twine upload --verbose --skip-existing --repository-url https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+#     - uv pip install twine
+#     - ls -l dist
+#     - twine upload dist/*
 #   only:
 #     - master
+
+
+# pages:
+#   stage: publish
+#   script:
+#     - mv doc/_build public
+#   artifacts:
+#     paths:
+#       - public
+#   only:
+#   - master

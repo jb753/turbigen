@@ -1,0 +1,67 @@
+# Check that all post-processing routines function without error
+
+workdir: runs/cascade_post
+
+inlet:
+  Po: 1e5
+  To: 300.
+  cp: 1005.
+  mu: 1.8e-5
+  gamma: 1.4
+
+mean_line:
+  type: turbine_cascade
+  span: [0.1, 0.12]
+  Alpha: [40., -65.]
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+
+annulus:
+  AR_gap: [0.8, 0.9]
+  AR_chord: 1.6
+
+blades:
+  - Co: 0.7
+    sections:
+      - spf: 0.3
+        q_thick: [0.05, 0.08, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+      - spf: 0.7
+        q_thick: [0.05, 0.08, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+
+
+post_process:
+  write_ibl:
+  write_stl:
+  check_phase:
+  plot_annulus:
+  write_cuts:
+    mnorm_traverse: [0.5, 1.5, 2.5]
+    irow_surf: [0,]
+  plot_pressure_distributions:
+    row_spf: [[0.2, 0.5,],]
+  # plot_nose:
+  #   row_spf: [[0.2,],]
+  contour:
+    coord: spf
+    value: .5
+    irow_ref: 0
+    show_mesh: true
+    variable: Ys
+    # cmap: cubehelix_r
+    N_passage: 3
+  plot_camber:
+    row_spf: [[0.5,],]
+  plot_thickness:
+    row_spf: [[0.5,],]
+  plot_section:
+    row_spf: [[0.5,],]
+    coord_sys: xrt
+  calc_surf_dissipation:

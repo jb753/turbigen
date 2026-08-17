@@ -1,0 +1,134 @@
+"""Functions for reading and writing YAML files."""
+
+import logging
+import yaml
+import os
+import re
+import numpy as np
+from pathlib import Path, PosixPath
+
+logger = logging.getLogger("turbigen")
+
+
+# Allow dumping of numpy float64 to yaml
+def represent_float(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:float", str(data))
+
+
+# Allow dumping int to yaml
+def represent_int(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:int", str(data))
+
+
+# Allow dumping np.ndarray as a list to yaml
+def represent_ndarray(dumper, data):
+    return dumper.represent_list(data.tolist())
+
+
+# Dump path objects as strings
+def represent_path(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data.expanduser()))
+
+
+yaml.representer.SafeRepresenter.add_representer(np.float64, represent_float)
+yaml.representer.SafeRepresenter.add_representer(np.float32, represent_float)
+yaml.representer.SafeRepresenter.add_representer(np.int64, represent_int)
+yaml.representer.SafeRepresenter.add_representer(np.ndarray, represent_ndarray)
+yaml.representer.SafeRepresenter.add_representer(Path, represent_path)
+yaml.representer.SafeRepresenter.add_representer(PosixPath, represent_path)
+
+
+class UniqueKeyLoader(yaml.SafeLoader):
+    def construct_mapping(self, node, deep=False):
+        mapping = []
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise Exception(f'Config: duplicate key "{key}"')
+            mapping.append(key)
+        return super().construct_mapping(node, deep)
+
+
+PATTERN = """^(?:
+        [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
+        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
+        |[-+]?\\.(?:inf|Inf|INF)
+        |\\.(?:nan|NaN|NAN))$"""
+
+
+def read_yaml(fname):
+    """Read a dictionary from file."""
+
+    # Patch YAML loader to get scientific notation correct
+    loader = yaml.SafeLoader
+    loader.add_implicit_resolver(
+        "tag:yaml.org,2002:float",
+        re.compile(
+            PATTERN,
+            re.X,
+        ),
+        list("-+0123456789."),
+    )
+
+    # Read the YAML
+    config = {}
+    with open(fname, "r") as f:
+        config = yaml.load(f, Loader=loader)
+
+    # Look for top-level include key
+    config_include = {}
+    for fname_inc in config.pop("include", []):
+        # Resolve include path: prefer cwd, fall back to a path relative to
+        # the including config file.
+        fname_rel = os.path.join(os.path.dirname(fname), fname_inc)
+        if os.path.exists(fname_inc):
+            if os.path.exists(fname_rel) and not os.path.samefile(fname_inc, fname_rel):
+                logger.warning(
+                    f"Include '{fname_inc}' resolved to '{os.path.abspath(fname_inc)}' "
+                    f"(relative to cwd), shadowing '{os.path.abspath(fname_rel)}' "
+                    f"(relative to {fname})"
+                )
+        else:
+            fname_inc = fname_rel
+        logger.info(f"Including '{fname_inc}' from {fname}")
+
+        # Read the included file
+        with open(fname_inc, "r") as f:
+            inc_config = yaml.load(f, Loader=loader)
+        config_include.update(inc_config)
+
+    for k, v in config.items():
+        if (
+            k in config_include
+            and isinstance(config_include[k], dict)
+            and isinstance(v, dict)
+        ):
+            config_include[k].update(v)
+        else:
+            config_include[k] = v
+
+    return config_include
+
+
+def read_yaml_list(fname):
+    """Read a list of dictionaries from YAML file."""
+    # Patch YAML loader to get scientific notation correct
+    loader = UniqueKeyLoader
+    loader.add_implicit_resolver(
+        "tag:yaml.org,2002:float",
+        re.compile(PATTERN, re.X),
+        list("-+0123456789."),
+    )
+    # Read the YAML
+    with open(fname, "r") as f:
+        config = list(yaml.load_all(f, Loader=loader))
+
+    return config
+
+
+def write_yaml(d, fname, mode="w"):
+    """Write a dictionary to file."""
+    with open(fname, mode) as f:
+        yaml.safe_dump(d, f, explicit_start=True, explicit_end=True)

@@ -1,0 +1,44 @@
+igg_script_version(2.1)
+import encodings  # Need this before importing json
+import os, json
+
+def unicode_to_ascii_hook(pairs):
+    # Convert unicode to ascii strings when reading json.
+    # https://stackoverflow.com/a/34796078
+    new_pairs = []
+    for key, value in pairs:
+        if isinstance(value, unicode):
+            value = value.encode('utf-8')
+        if isinstance(key, unicode):
+            key = key.encode('utf-8')
+        new_pairs.append((key, value))
+    return dict(new_pairs)
+
+# Read in the configuration file
+CONF_FILE = 'mesh_conf.json'
+print('Reading config file: %s' % CONF_FILE)
+with open(CONF_FILE,'r') as f:
+    conf = json.load(f, object_pairs_hook=unicode_to_ascii_hook)
+
+open_igg_project(os.getcwd() + "/%s.igg" % conf["prefix"])
+
+# On spliterred rows, merge the blocks
+nrow = conf["nrow"]
+for irow in range(nrow):
+    if irow in conf["splitter"]:
+        row_str = "r%d_flux_1_Main_Blade_" % (irow+1)
+        next_row_str = "r%d_flux_1_Main_Blade_" % (irow+2)
+        dn_str = row_str + "downStream"
+        up_str = row_str + "upStream"
+        next_dn_str = next_row_str + "downStream"
+        next_up_str = next_row_str + "upStream"
+        blocks_merge(face(dn_str, 6), 0)
+        blocks_merge(face(up_str, 6), 0)
+
+# Join adjacent patches with the same boundary condition type
+# Needed to make splittered rows only have one mixing plane
+merge_patches()
+
+save_project(os.getcwd() + "/%s.igg" % conf["prefix"])
+
+export_plot3D(os.getcwd() + "/%s.g" % conf["prefix"],[3,1,"ASCII",0])

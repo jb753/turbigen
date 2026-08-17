@@ -1,0 +1,70 @@
+# Annotated minimal example configuration to run a turbine cascade
+#
+
+# All files relating to the case are held in a working directory
+workdir: runs/turbine_cascade_ts4
+
+# Perfect gas inlet state
+inlet:
+  Po: 1e5  # Stagnation pressure [Pa]
+  To: 300.  # Stagnation temperature [K]
+  cp: 1005.  # Specific heat capacity at constant pressure [J/kg/K]
+  mu: 1.8e-5  # Working fluid dynamic viscosity [kg/m/s]
+  gamma: 1.4  # Working fluid ratio of specific heats [-]
+
+# Mean-line design
+mean_line:
+  type: turbine_cascade  # Choose turbomachine from turbigen.meanline
+  # Aerodynamic parameters required for mean-line design
+  span: [0.1, 0.12]
+  Alpha: [40., -65.]
+  Ma2: 0.6
+  Yh: 0.1
+  htr: 0.9
+
+# Annulus shape using meridional aspect ratios
+annulus:
+  AR_gap: [0.8, 0.9]  # Span to inlet/exit boundary distance
+  AR_chord: 1.6  # Span to chord
+
+# Blade shapes
+blades:
+  # List of rows
+  - Co: 0.7  # Set number of blades using circulation coeff
+    sections:
+      # List of sections for this row
+      - spf: 0.5  # Span fraction
+        # Vector of thickness parameters
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        # Vector of camber parameters
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+    # - ...
+  # - ...
+
+# Computational mesh generation
+mesh:
+  type: h  # Mesh topology
+  yplus: 30.0  # Non-dimensional wall distance
+  resolution_factor: 0.5  # Double grid spacing in each direction
+
+# CFD solver
+solver:
+  type: ts3  # Which solver
+  nstep: 5000
+  nstep_avg: 1000
+  rtol_mdot: 0.02
+
+## CFD solver
+#solver:
+#  type: ts4  # Which solver
+#  nstep: 2000
+#  nstep_avg: 200
+#  # rtol_mdot: 0.02
+#  # # ...
+#  #
+
+
+
+post_process:
+  plot_convergence:
+    rtol_loss: 0.04

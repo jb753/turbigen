@@ -13,6 +13,7 @@
 import os
 import sys
 import turbigen
+import datetime
 
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -38,6 +39,7 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "autodocsumm",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
     "matplotlib.sphinxext.plot_directive",
@@ -103,7 +105,18 @@ mathjax3_config = {
 bibtex_bibfiles = ["refs.bib"]
 bibtex_reference_style = "author_year"
 
+# Update copyright year
+current_year = datetime.datetime.now().year
 
+# Optional: if you want to support a range like 2020–2025
+start_year = 2023
+if current_year == start_year:
+    copyright_year = str(start_year)
+else:
+    copyright_year = f"{start_year}–{current_year}"
+
+# Define the replacement
 rst_epilog = f"""
 .. |ProjectVersion| replace:: {release}
+.. |copyright_year| replace:: {copyright_year}
 """

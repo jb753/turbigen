@@ -1,0 +1,36 @@
+# To replicate an existing design, it may be more convenient to set
+# the geometry directly. This is the purpose of the 'analysis' mean line
+
+workdir: runs/analysis
+
+inlet:
+  Po: 20e5
+  To: 1600.
+  cp: 1005.
+  mu: 6e-5
+  gamma: 1.4
+
+
+mean_line:
+  type: analysis  # Directly specify flow angles
+  rh: [0.95, 0.95]  # Hub radii [m]
+  rt: [1.05, 1.05]  # Tip radii [m]
+  rpm: [0., 0.]  # Shaft speed [rpm]
+  mdot: 6.  # Mass flow rate [kg/s] only for flow intial guess
+  Alpha_rel: [70., 70.]  # Yaw angles [deg]
+  Beta: [0., 0.]  # Pitch angles [deg]
+
+annulus:
+  AR_gap: [1.0, 1.0]
+  AR_chord: [1.0,]
+
+blades:
+  - Nb: 60
+    sections:
+      - spf: 0.5
+        q_thick: [0.05, 0.12, 0.3, 0.02, 0.02, 0.18]
+        qstar_camber: [0., 0., 1.0, 1.0, 0.0]
+
+mesh:
+  type: h
+  yplus: 30.0
