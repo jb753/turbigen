@@ -12,6 +12,10 @@ Test cases:
 - test_a_field_is_not_reinterpreted_by_a_changed_datum: why not conserved
 - test_the_file_holds_primitives_only: no coordinates, no patches, no conserved
 - test_a_field_for_another_machine_is_refused: block count must match
+- test_the_stamp_follows_the_design: what the digest does and does not depend on
+- test_an_unstamped_field_reads_back_no_stamp: fields written before stamps
+- test_a_stamped_field_still_restarts_onto_a_changed_design: the stamp records
+  provenance and gates nothing here, which every chained restart depends on
 """
 
 import numpy as np
@@ -117,3 +121,87 @@ def test_a_field_for_another_machine_is_refused(solved, tmp_path):
 
     with pytest.raises(ValueError, match="2 block"):
         restart.apply(fresh, two_block)
+
+
+#
+# PROVENANCE STAMPS
+#
+# A stamp says which design a field solves. It is recorded here and read by the
+# report verb, which will not write an answer down without one that matches.
+# Nothing in this module acts on it, and the last test is what keeps it that
+# way: every chained restart in turbigen -- iterate, chic, warm_start -- hands
+# over a field from a design that has deliberately moved.
+#
+
+
+def test_the_stamp_follows_the_design(solved):
+    """It depends on what the field is, not on how it was reached."""
+    config, *_ = solved
+
+    assert restart.design_stamp(config) == restart.design_stamp(config)
+
+    moved = Config.from_dict(
+        {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
+    )
+    assert restart.design_stamp(moved) != restart.design_stamp(config)
+
+    # The solver decides how the answer was reached, not what it is, so raising
+    # the step count must not invalidate a field that is already good.
+    marched = Config.from_dict(
+        {
+            **CASCADE,
+            "solver": {**CASCADE["solver"], "n_step": CASCADE["solver"]["n_step"] + 10},
+        }
+    )
+    assert restart.design_stamp(marched) == restart.design_stamp(config)
+
+
+def test_an_unstamped_field_reads_back_no_stamp(solved):
+    """The fixture saves without a config, as every field written before this."""
+    *_, path = solved
+
+    assert restart.read_stamp(path) is None
+
+
+def test_a_stamped_field_carries_its_design(solved, tmp_path):
+    config, grid, _ = solved
+    path = tmp_path / "stamped.npz"
+
+    restart.save(path, grid, config)
+
+    assert restart.read_stamp(path) == restart.design_stamp(config)
+
+
+def test_a_stamped_field_still_restarts_onto_a_changed_design(solved, tmp_path):
+    """The stamp must never gate application, or iterate could not chain.
+
+    Every iteration starts from the field the last one reached, and the whole
+    point of an iteration is that the design moved in between. The same goes
+    for a characteristic walking its operating point along, and for a warm
+    start from a neighbour's answer. A mismatch here is the normal case.
+    """
+    config, grid, _ = solved
+    path = tmp_path / "stamped.npz"
+    restart.save(path, grid, config)
+
+    finer = Config.from_dict(
+        {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
+    )
+    *_, fresh = cli.prepare(finer)
+    assert restart.design_stamp(finer) != restart.read_stamp(path)
+
+    restart.apply(fresh, path)
+
+    assert np.all(np.isfinite(fresh[0].T)) and np.all(np.asarray(fresh[0].T) > 0.0)
+
+
+def test_the_stamp_is_not_counted_as_a_block(solved, tmp_path):
+    """A one-block field with a stamp in it is still a one-block field."""
+    config, grid, _ = solved
+    path = tmp_path / "stamped.npz"
+    restart.save(path, grid, config)
+
+    *_, fresh = cli.prepare(config)
+
+    # Would raise "has 2 block(s)" if the stamp key were counted as one.
+    restart.apply(fresh, path)

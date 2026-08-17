@@ -84,9 +84,15 @@ why a genuine warning there is indistinguishable from a startup banner.
 OUTPUT_NAME = "output.yaml"
 """What a run calls the resolved config and the answer it reached.
 
-Deliberately not the name of anything anyone hands us. An input is therefore
-never a candidate for being overwritten, which needs no check and no special
-case: the rule holds by construction rather than by inspection.
+Deliberately not the name of anything anyone hands us, and now enforced rather
+than merely conventional: `check_not_output` refuses it as a target in every
+verb. An input is therefore never a candidate for being overwritten, because a
+verb cannot overwrite a file it will not read.
+
+The check earns its keep now that `report` writes here too. While only the
+solving verbs did, the rule held by construction --- nothing read an
+`output.yaml` and wrote one back. `report` reads a config and writes one
+beside it, so without the refusal it would write over its own input.
 """
 
 LOG_NAME = "log_turbigen.txt"
@@ -259,8 +265,64 @@ def load_config(config_path, args):
 
 
 def targets(args):
-    """Return the config files this invocation acts on."""
-    return [Path(name) for name in args.CONFIG_YAML]
+    """Return the config files this invocation acts on.
+
+    Every verb comes through here --- `each` for five of them and `cmd_batch`
+    for itself --- so the one rule about what may be handed to turbigen is
+    stated once, and applies flatly.
+    """
+    paths = [Path(name) for name in args.CONFIG_YAML]
+
+    for path in paths:
+        check_not_output(path)
+
+    return paths
+
+
+def check_not_output(path):
+    """Raise if `path` is a file turbigen wrote rather than one it was given.
+
+    An `output.yaml` only exists because some other config was run, and that
+    config is still there: `run` leaves the file it was handed, whatever it was
+    named, and `batch`, `iterate` and `chic` write `input.yaml` into every
+    directory they invent. So there is always another file naming the same
+    directory, and wanting this one is not a case to support.
+
+    Flat across every verb, `design` included. `design` writes nothing and so
+    could read this safely, but a rule with an exception in it is one more
+    thing to remember than a rule without, and the exception would buy only the
+    ability to type a name that always has an equivalent.
+
+    This is what makes `OUTPUT_NAME` an invariant rather than a convention: a
+    verb cannot overwrite the file it read, because it will not read it.
+    """
+    if path.name != OUTPUT_NAME:
+        return
+
+    # Named rather than described, because the whole point is that there is
+    # something else to type, and guessing at it is the user's least favourite
+    # part of an error message.
+    siblings = sorted(
+        entry.name
+        for entry in path.resolve().parent.glob("*.yaml")
+        if entry.name != OUTPUT_NAME
+    )
+
+    if len(siblings) == 1:
+        instead = f"Run on {path.parent / siblings[0]} instead."
+    elif siblings:
+        listed = ", ".join(siblings)
+        instead = f"The configs beside it are: {listed}."
+    else:
+        # Nothing left to point at: the original was deleted, or this file was
+        # copied out of its run on its own. Adopting it as an input is fine,
+        # but it should be a thing you did rather than a thing that happened.
+        instead = (
+            f"Nothing else is beside it, so copy it to {batch.INPUT_NAME} if you "
+            "mean to adopt it as an input."
+        )
+
+    raise ValueError(f"{path} is a file turbigen wrote, not one to run on. {instead}")
 
 
 def check_clobber(args, paths):
@@ -555,22 +617,159 @@ def _report_one(args, config_path):
     Re-plotting is therefore the same command as plotting, and re-meshing to
     get there costs seconds against the minutes of the march it stands in for
     -- which is why the grid is not worth serialising.
+
+    The resolved config is written too, which is the one thing a report leaves
+    that is not a picture. It is also the only way to get one without paying
+    for a solve, `design` having promised to write nothing at all.
     """
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        config, machine, grid = prepare(config, stored_field(config_path))
+        field = stored_field(config_path)
+        config, machine, grid = prepare(config, field)
 
         # Looked for whether or not there is a field to go with it: a history
         # beside the config means a run happened here, and its convergence page
         # is worth drawing either way.
         history = read_history(config_path.parent / HISTORY_NAME)
 
-        result = Result(machine=machine, grid=grid, history=history)
+        answer = reconstruct(config, machine, grid, history, field)
+
+        result = answer or Result(machine=machine, grid=grid, history=history)
 
         write_report(config, result, out_dir)
+        _write_report_output(config, answer, out_dir)
 
     return 0
+
+
+def reconstruct(config, machine, grid, history, field):
+    """Return the answer `field` records for `config`, or None if it cannot.
+
+    A report has the same ingredients a run has once its march is over -- the
+    solved grid, the history beside it -- so it can measure the same three
+    things `solve` does and archive an identical `result:`. What it does not
+    have is the run itself, so it must first establish that the field it picked
+    up is the solution to the config in front of it and not merely a useful
+    starting guess for it. That is the stamp's whole purpose.
+
+    None is returned wherever any part of that fails. It means "this report has
+    no answer to record", never "the answer is that it did not converge": the
+    two are very different to `turbigen.database`, which drops any sample whose
+    `converged` is false, so guessing here would silently delete designs from a
+    later fit.
+    """
+    if field is None or grid is None:
+        return None
+
+    stamp = restart.read_stamp(field)
+    if stamp is None:
+        logger.info(
+            f"The field at {field} carries no design stamp, so this report "
+            "cannot tell which design it solves and will not record an answer."
+        )
+        return None
+
+    if stamp != restart.design_stamp(config):
+        logger.warning(
+            f"The field at {field} was written for a different design than "
+            "this config describes, so it is drawn but not recorded as its "
+            "answer."
+        )
+        return None
+
+    # Beyond here the field is this config's solution. The remaining guards are
+    # about whether the answer can be *described*, not whether it is the right
+    # one.
+    if config.solver is None or history is None:
+        logger.info(
+            "Without a solver: section and a convergence history there is no "
+            "saying whether this field converged, so no answer is recorded."
+        )
+        return None
+
+    try:
+        actual = mixout.mean_line(grid, machine)
+    except Exception as err:
+        logger.warning(f"Could not mix out the stored field: {err}")
+        return None
+
+    result = Result(
+        machine=machine,
+        actual=actual,
+        grid=grid,
+        converged=config.solver.converged(history),
+        history=history,
+    )
+
+    return dataclasses.replace(result, error=iterate.errors(config, result))
+
+
+def _write_report_output(config, answer, out_dir):
+    """Write the resolved config, and the answer if this report reached one.
+
+    **A report never removes a `result:` that is already there.** With an
+    answer it writes one indistinguishable from the run's own; without one it
+    writes the config alone -- unless that would drop an answer already on
+    disk, in which case it writes nothing and says so.
+
+    That last case is the whole reason this is not simply `_write_output`. A
+    config edited since it was run still draws perfectly well, and re-plotting
+    it must not be the thing that discards the answer being re-plotted.
+    """
+    path = out_dir / OUTPUT_NAME
+
+    if answer is not None:
+        case.write(path, config, answer)
+        run_log.info(f"Wrote resolved configuration and its answer to {path}")
+        return path
+
+    if _records_an_answer(path):
+        logger.warning(
+            f"Leaving {path} as it is: this report reached no answer of its "
+            "own, and the one recorded there is not this report's to discard."
+        )
+        return None
+
+    case.write(path, config)
+    run_log.info(f"Wrote resolved configuration to {path}")
+    return path
+
+
+def _records_an_answer(path):
+    """Return whether `path` is a case file that already holds a result."""
+    if not path.is_file():
+        return False
+
+    try:
+        _, result = case.read(path, design=False)
+    except Exception as err:
+        # Unreadable is not the same as empty, and overwriting a file we cannot
+        # parse is exactly the mistake this guard exists to prevent.
+        logger.warning(f"Could not read the answer already in {path}: {err}")
+        return True
+
+    return result is not None
+
+
+def write_input(config, out_dir):
+    """Record `config` as the input of the run about to happen in `out_dir`.
+
+    For the verbs that solve into directories they invent. `run` needs nothing
+    of the sort -- the file it was handed is already sitting there, whatever it
+    was called -- but an iteration's config exists only in memory, having been
+    moved there by the iterator, so without this the only record of what
+    `iter_0003` solved is the config half of its own `output.yaml`.
+
+    That matters because `output.yaml` is not a file anyone may hand back to
+    us. Writing the input is what keeps every directory a run happened in
+    addressable: `iter_0003/input.yaml` re-solves that iteration alone, and
+    reports it against the field already beside it.
+    """
+    path = out_dir / batch.INPUT_NAME
+    case.write(path, config)
+    logger.debug(f"Wrote the config being solved to {path}")
+    return path
 
 
 def solve(config, out_dir, restart_path=None):
@@ -630,7 +829,7 @@ def solve(config, out_dir, restart_path=None):
     # that raises must not be able to discard a solution the CFD has already
     # been paid for.
     restart_path = out_dir / RESTART_NAME
-    restart.save(restart_path, grid)
+    restart.save(restart_path, grid, config)
     run_log.info(f"Wrote the flow field to {restart_path}")
 
     # Beside the field, and for the same reason: it is what a re-plot needs to
@@ -786,6 +985,11 @@ def _chic_one(args, config_path):
             point_dir.mkdir(parents=True, exist_ok=True)
             chic.logger.info(f"Point {i_point} in {point_dir}")
 
+            # This point's own operating point exists nowhere else: the sweep
+            # moved it, and the datum describes the whole characteristic rather
+            # than any one station on it.
+            write_input(config_now, point_dir)
+
             # Chained, and near the limit this is what keeps a point converging
             # at all: the smallest perturbation from a field that worked.
             result = solve(config_now, point_dir, previous)
@@ -834,6 +1038,8 @@ def converge_design(config, out_dir, previous=None):
         design_dir.mkdir(parents=True, exist_ok=True)
         iterate.logger.info(f"Design point in {design_dir}")
 
+        write_input(config, design_dir)
+
         result = solve(config, design_dir, previous)
         _link_final(out_dir, design_dir)
 
@@ -853,6 +1059,11 @@ def converge_design(config, out_dir, previous=None):
         iter_dir = out_dir / f"iter_{i_iter:04d}"
         iter_dir.mkdir(parents=True, exist_ok=True)
         iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # Where this iteration's knobs stood, which the next one moves: the
+        # sequence is reproducible from the datum, but no single member of it
+        # is.
+        write_input(config_now, iter_dir)
 
         # Chained: each iteration starts from the field the last one reached,
         # which is most of the saving. Index-space interpolation covers the

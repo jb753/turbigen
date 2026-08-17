@@ -62,9 +62,11 @@ class Database(Node):
     answer is harmless, because what makes a match a sample is read from its
     `result:` rather than from where it sits.
 
-    ``output.yaml`` is what a run writes, so a glob naming it matches only runs
-    that finished: a sample that has not been run has an ``input.yaml`` and
-    nothing else.
+    ``output.yaml`` is written by any verb with something to record, `report`
+    included, so matching one is not by itself evidence that a run happened
+    there. What makes a match a sample is its ``result:``, and a report that
+    reached no answer writes the config alone --- which :func:`_sample` skips,
+    on the same line that skips a march which blew up.
     """
 
     power: float = 2.0

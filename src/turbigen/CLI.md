@@ -52,7 +52,7 @@ knows how to redirect it.
 | verb | does | writes | status |
 |---|---|---|---|
 | `design` | mean line, then annulus and blade geometry | **never** | **implemented** |
-| `report` | `design` + grid + any stored field, drawn | `post.pdf` | **implemented** |
+| `report` | `design` + grid + any stored field, drawn | `post.pdf`, `output.yaml` | **implemented** |
 | `run` | `report` + CFD + mix-out | everything | **implemented** |
 | `iterate` | repeated `run`, updating the design between calls | everything | **implemented** |
 | `chic` | `iterate`, then repeated `run` off design to the limit | everything | **implemented** |
@@ -84,11 +84,23 @@ Two rules make that safe, and each removes a check that would otherwise be
 needed.
 
 **The written name is never a name we were given.** A config file is therefore
-never a candidate for being overwritten, by construction rather than by
-inspection. This matters more than it sounds: what a run writes is the
-*resolved* config with every default expanded, so writing it over a hand-kept
-file would turn twenty commented lines into two hundred and lose every comment
-to the safe loader.
+never a candidate for being overwritten. This matters more than it sounds: what
+a run writes is the *resolved* config with every default expanded, so writing
+it over a hand-kept file would turn twenty commented lines into two hundred and
+lose every comment to the safe loader.
+
+The rule used to hold by construction, because nothing read an `output.yaml`
+and wrote one back. `report` does both, so it is now enforced instead: **no
+verb will run on a file named `output.yaml`**, `design` included. An
+`output.yaml` only exists because some other config was run, and that config is
+still there --- `run` leaves the file it was handed, whatever it was called,
+and `batch`, `iterate` and `chic` write an `input.yaml` into every directory
+they invent. So there is always another file naming the same directory, and
+wanting this one is not a case to support.
+
+One flat rule rather than an exemption for `design`, which writes nothing and
+could read one safely. An exception is one more thing to remember, and it would
+buy only the ability to type a name that always has an equivalent beside it.
 
 **One directory is one run.** Artefact names are fixed, so two configs run in
 one directory would collide; avoiding that is the user's business, and
@@ -100,11 +112,30 @@ because a report with nowhere to put its figures is not a thing anyone wants.
 There is no `--write`: it was a boolean left over from `-o DIR`, and once the
 location stopped being a choice it carried nothing.
 
-**Only the verbs that solve write `output.yaml`**, which is what makes
-re-plotting safe by construction. When the report verb also wrote configs, a
-re-plot wrote back over the run it had just read and could replace a converged
-`result:` with an empty one; that needed the two configs compared to catch, and
-the guard existed only because the wrong verb was writing.
+**Only a verb with an answer writes a `result:`.** `report` writes
+`output.yaml` too --- it is the only way to get a resolved config without
+paying for a solve, `design` having promised to write nothing --- but the
+config half and the answer half are governed separately.
+
+A report reaches an answer only when the `restart.npz` beside it is stamped as
+the solution to the design it just resolved. The stamp is a digest of the
+sections that decide what a field *is*: fluid, mean line, annulus, blades,
+mesh, operating point, inlet profile. `solver` is out, because it decides how
+the answer was reached rather than what it is, and raising the step count must
+not invalidate a good field.
+
+With a match, the report mixes out and records exactly what the run recorded.
+Without one --- a moved design, an unstamped field, no history to judge
+convergence by --- it has no answer of its own, and then **it never removes the
+one already there**: it writes the config alone if there is nothing to lose,
+and otherwise leaves the file untouched and says so.
+
+Note where the stamp is *not* checked. Applying a field asks whether it is a
+useful place to start, and the answer is usually yes even when the design has
+moved: `iterate` chains each pass off the last, `chic` walks its operating
+point along, `database` warm-starts from a neighbour. A mismatch is the normal
+case there. Only the report asks the strict question, because only the report
+writes an answer it did not itself march to.
 
 Clobbering follows from how much you stand to lose, and is therefore a
 question only for `run` and `iterate`. **One target overwrites** — you named
@@ -289,19 +320,21 @@ worth keeping comes from `report`, whose output is its point.
 
 ```
 turbigen report case/input.yaml            # draw what the case supports
-turbigen report hiload/output.yaml         # re-plot a finished run
+turbigen report hiload/input.yaml          # re-plot a finished run
+turbigen report hiload/iter_0003/input.yaml   # or one pass of an iterated one
 ```
 
 `design`, then the grid if the config says how, then any `restart.npz` a
-previous run left beside the config, then `post.pdf`. One command, no flags,
-whatever depth of case you point it at:
+previous run left beside the config, then `post.pdf` and `output.yaml`. One
+command, no flags, whatever depth of case you point it at:
 
 | the config has | the report has |
 |---|---|
-| a mean line | nothing to draw, so no file |
+| a mean line | nothing to draw, so no PDF --- but the resolved config |
 | an annulus and blades | the geometry pages |
 | a `mesh:` section | those, plus the grid |
 | a field beside it | those, plus the flow and the convergence page |
+| a field that is *this* design's | those, plus the answer recorded |
 
 Each standard processor draws nothing when what it needs is absent, so there is
 no mode to select. **Re-plotting a finished run is the same command as plotting
@@ -314,9 +347,16 @@ re-meshing to put a stored field back costs seconds against the minutes of the
 march it stands in for, which is why serialising it would not repay the
 trouble.
 
-Neither is `output.yaml`: an answer is written by whoever has one. That is what
-makes re-plotting in place safe by construction rather than by a guard — see
-[Where output goes](#where-output-goes).
+`output.yaml` is, and it is the only way to get a resolved config onto disk
+without paying for a solve. Whether it carries a `result:` depends on the stamp
+on the field beside it, and a report never removes an answer it cannot
+reproduce — see [Where output goes](#where-output-goes).
+
+Re-plotting therefore names the *input*, not the `output.yaml` the run wrote:
+what a run writes is not a file to hand back. Every directory a run happened in
+holds one, `iterate` and `chic` writing an `input.yaml` into the directories
+they invent so that a single pass or a single operating point stays addressable
+on its own.
 
 The convergence history is looked for beside the field, in `conv.cnv` ---
 ember's own format, which is a pickle, so reading it is guarded: a history that
@@ -834,8 +874,15 @@ target the parts unique to the command line:
 - `design` creates nothing — assert the config's directory is unchanged;
 - `run` writes a config that reads back equal to the one used, and leaves the
   input file byte-identical;
-- `report` of a run replaces no answer, even with `--set` making the config
-  differ from the archived one;
+- `report` of a run records the same answer the run did, and replaces none it
+  cannot reproduce — neither with `--set` moving the design out from under the
+  stored field, nor with an unstamped field of unknown provenance;
+- `iterate` and `chic` leave every subdirectory runnable, each holding the
+  design it solved;
+- no verb, `design` included, will run on a file named `output.yaml`, and the
+  refusal names the config beside it;
+- a stamped field still restarts onto a design that has moved, which is what
+  every chained restart depends on;
 - `--set` reaches the design, and a mistyped `--set` key fails;
 - an unknown verb, a missing file, and a bad config each exit non-zero with a
   message on stderr rather than a traceback;

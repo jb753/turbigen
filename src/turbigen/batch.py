@@ -410,10 +410,16 @@ def _deepcopy(value):
 
 
 INPUT_NAME = "input.yaml"
-"""What a member's config is called inside its own directory.
+"""What a run's config is called inside a directory turbigen made for it.
 
-Not what a run writes, which is ``output.yaml``, so a member and the answer it
-reaches sit side by side and neither can overwrite the other.
+Not what a run writes, which is ``output.yaml``, so the config and the answer
+it reaches sit side by side and neither can overwrite the other.
+
+Named here because a batch member was the first thing to need it, but the
+convention is general: `iterate` and `chic` write it into the directories they
+invent too, so that every directory a run happened in holds the input that
+produced it. That is what lets ``output.yaml`` be refused as a target --- there
+is always another file naming the same directory.
 """
 
 

@@ -10,7 +10,7 @@ import textwrap
 
 import pytest
 
-from turbigen import cli, iterate, plugins
+from turbigen import cli, iterate, plugins, restart
 
 CASE = """
 fluid:
@@ -188,9 +188,17 @@ def test_report_of_a_mean_line_design_is_not_an_error(case):
     assert (case.parent / cli.LOG_NAME).is_file()
     assert not (case.parent / "post.pdf").exists()
 
-    # The answer belongs to whoever has one: a report has nothing to put under
-    # `result:`, so it does not write a config at all.
-    assert not (case.parent / cli.OUTPUT_NAME).exists()
+    # The resolved config is written even here, where there was nothing to
+    # draw: it is the one artefact a report leaves that is not a picture, and
+    # the only way to get one without paying for a solve. The answer still
+    # belongs to whoever has one, so there is no `result:` under it.
+    written = case.parent / cli.OUTPUT_NAME
+    assert written.is_file()
+
+    from turbigen import case as case_io  # noqa: PLC0415
+
+    _, result = case_io.read(written, design=False)
+    assert result is None
 
 
 def test_a_batch_is_written_beside_its_datum(batch_case):
@@ -321,6 +329,10 @@ def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_regist
 
     This is why no plugin path is recorded anywhere: the output sits beside the
     case, so walking up from it reaches the same place.
+
+    Archived under a name of its own, because `output.yaml` is not a file
+    turbigen will read back. What is under test is that a resolved config finds
+    its plugins from where it sits, which has nothing to do with the name.
     """
     plug_dir = tmp_path / plugins.PLUGIN_DIR_NAME
     plug_dir.mkdir()
@@ -336,7 +348,7 @@ def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_regist
     # As a run would leave it: the resolved config, in the case's directory.
     from turbigen import Config  # noqa: PLC0415
 
-    archived = directory / cli.OUTPUT_NAME
+    archived = directory / "archived.yaml"
     Config.from_file(case).to_file(archived)
 
     assert cli.main(["design", str(archived)]) == 0
@@ -516,6 +528,9 @@ def test_report_picks_up_the_field_a_run_left(run_case):
     The grid is not serialised, so a report re-designs and re-meshes to put the
     stored field back -- seconds against the minutes of the march it stands in
     for, which is why serialising it would not be worth the trouble.
+
+    Re-plotting names the input, not the `output.yaml` the run wrote: what a
+    run writes is not a file to hand back to turbigen.
     """
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -523,11 +538,121 @@ def test_report_picks_up_the_field_a_run_left(run_case):
     before = (out / "post.pdf").read_bytes()
     (out / "post.pdf").unlink()
 
-    assert cli.main(["report", str(out / cli.OUTPUT_NAME)]) == 0
+    assert cli.main(["report", str(run_case)]) == 0
 
     # The same pages as the run drew, from the field it left behind.
     assert (out / "post.pdf").is_file()
     assert len((out / "post.pdf").read_bytes()) == pytest.approx(len(before), rel=0.05)
+
+
+def test_report_records_the_answer_a_stamped_field_holds(run_case):
+    """A re-plot archives an answer indistinguishable from the run's own.
+
+    The run's `output.yaml` is deleted first, so that finding one afterwards
+    can only mean the report measured it again: preserving what was already
+    there would leave nothing to find.
+    """
+    from turbigen import case  # noqa: PLC0415
+
+    out = run_case.parent
+    assert cli.main(["run", str(run_case)]) == 0
+
+    _, ran = case.read(out / cli.OUTPUT_NAME, design=False)
+    (out / cli.OUTPUT_NAME).unlink()
+
+    assert cli.main(["report", str(run_case)]) == 0
+
+    _, reported = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert reported is not None
+    assert reported.converged is ran.converged
+    assert reported.actual is not None
+    assert set(reported.error) == set(ran.error)
+
+
+def test_report_without_a_field_records_no_answer(run_case):
+    """The config is worth writing on its own; an answer is not invented."""
+    from turbigen import case  # noqa: PLC0415
+
+    assert cli.main(["report", str(run_case)]) == 0
+
+    config, result = case.read(run_case.parent / cli.OUTPUT_NAME, design=False)
+    assert result is None
+    # Resolved, so it is the config a run would have solved rather than the
+    # twenty lines the fixture wrote.
+    assert config.solver is not None
+
+
+def test_report_does_not_drop_an_answer_it_cannot_reproduce(run_case):
+    """An unstamped field is unknown provenance, which is not licence to write.
+
+    The field is rewritten without its stamp, exactly as a run from before
+    stamps existed would have left it. The report can still draw it -- and
+    does -- but has no way to say which design it solves, so the recorded
+    answer stays where it is.
+    """
+    import numpy as np  # noqa: PLC0415
+
+    from turbigen import case  # noqa: PLC0415
+
+    out = run_case.parent
+    assert cli.main(["run", str(run_case)]) == 0
+
+    field = out / cli.RESTART_NAME
+    data = {
+        key: value
+        for key, value in np.load(field).items()
+        if key != restart.STAMP_KEY
+    }
+    np.savez_compressed(field, **data)
+    assert restart.read_stamp(field) is None
+
+    assert cli.main(["report", str(run_case)]) == 0
+
+    _, after = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert after is not None
+    assert after.converged is True
+    assert (out / "post.pdf").is_file()
+
+
+#
+# WHAT A RUN WRITES IS NOT A FILE TO RUN ON
+#
+
+
+@pytest.mark.parametrize(
+    "verb", ["design", "report", "run", "iterate", "chic", "batch"]
+)
+def test_no_verb_will_run_on_what_a_run_wrote(run_case, verb, capsys):
+    """One flat rule, `design` included.
+
+    `design` writes nothing and could read this safely, but a rule with an
+    exception in it is one more thing to remember, and the exception would buy
+    only the ability to type a name that always has an equivalent beside it.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+
+    written = run_case.parent / cli.OUTPUT_NAME
+    assert cli.main([verb, str(written)]) == 1
+
+    printed = capsys.readouterr().err
+    assert "not one to run on" in printed
+    # Named, because the whole point is that there is something else to type.
+    assert str(run_case) in printed
+
+
+def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
+    """Nothing beside it, so there is nothing to redirect to.
+
+    Copying it to an input is a fine thing to do; it should just be a thing you
+    did rather than a thing that happened.
+    """
+    orphan = tmp_path / "alone"
+    orphan.mkdir()
+    (orphan / cli.OUTPUT_NAME).write_text(CASE)
+
+    assert cli.main(["design", str(orphan / cli.OUTPUT_NAME)]) == 1
+
+    assert "copy it to input.yaml" in capsys.readouterr().err
 
 
 #
@@ -578,6 +703,50 @@ def test_iterate_keeps_every_iteration(iterate_case):
 
     assert (out / "final").is_symlink()
     assert (out / "final").resolve() == (out / "iter_0001").resolve()
+
+
+def test_iterate_leaves_every_iteration_runnable(iterate_case):
+    """Each pass records the design it solved, which exists nowhere else.
+
+    The iterator moves the knobs in memory, so the datum plus the `iterate:`
+    section reproduces the sequence but not any one member of it. Without this
+    the only record of what `iter_0001` solved would be the config half of its
+    own `output.yaml` -- which is not a file turbigen will read back.
+    """
+    from turbigen import batch, case  # noqa: PLC0415
+
+    out = iterate_case.parent
+
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+
+    knobs = []
+    for i_iter in range(2):
+        written = out / f"iter_{i_iter:04d}" / batch.INPUT_NAME
+        assert written.is_file()
+
+        config, result = case.read(written, design=False)
+        # The input to that pass, so it carries no answer of its own.
+        assert result is None
+        knobs.append(config.blades[0].sections[0].dchi_TE)
+
+    # The whole point: the two passes solved different designs.
+    assert knobs[0] != knobs[1]
+
+
+def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
+    """An iteration directory is addressable on its own, and re-plots in place."""
+    out = iterate_case.parent
+
+    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+
+    from turbigen import batch  # noqa: PLC0415
+
+    iter_dir = out / "iter_0001"
+    (iter_dir / "post.pdf").unlink()
+
+    assert cli.main(["report", str(iter_dir / batch.INPUT_NAME)]) == 0
+
+    assert (iter_dir / "post.pdf").is_file()
 
 
 def test_iterate_links_its_answer_where_a_run_would_have_put_it(iterate_case):
@@ -879,26 +1048,38 @@ def test_report_on_an_unsolved_case_is_not_an_error(run_case):
 
 
 def test_reporting_in_place_keeps_the_recorded_answer(run_case):
-    """A verb that computed no answer cannot erase the one already there.
+    """A report never erases an answer, whether or not it can reproduce one.
 
-    True by construction rather than by a guard: only the verbs that solve
-    write `output.yaml`, so a report has no way to replace a converged run's
-    `result:` with an empty one. An earlier arrangement had the report verb
-    writing back over the config it had just read, and needed the two compared
-    to notice.
+    Two routes to the same guarantee. Reporting the case as it stands finds a
+    field whose stamp matches, so it measures the answer again and archives one
+    indistinguishable from the run's. Reporting it with the design overridden
+    finds a stamp that does not match, so it has no answer of its own -- and
+    leaves the recorded one alone rather than writing a config over it.
+
+    The second is the case that used to need a guard. It is now the difference
+    between a field that solves this design and one that is merely a good guess
+    at it, which is what the stamp is for.
     """
     from turbigen import case  # noqa: PLC0415
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
     _, before = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert before.converged is True
 
-    # Even with an override, which makes the config differ from the archived
-    # one and so defeats any comparison-based guard.
-    cli.main(["report", str(out / cli.OUTPUT_NAME), "-s", "mesh.yplus=25.0"])
+    # Reproduced: same design, same field, so the answer is measured again.
+    assert cli.main(["report", str(run_case)]) == 0
+
+    _, same = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert same.converged is True
+    assert same.actual is not None
+
+    # Preserved: the override moves the design, so the field beside it is no
+    # longer its solution and this report has nothing to record.
+    assert cli.main(["report", str(run_case), "-s", "mean_line.htr=0.98"]) == 0
 
     _, after = case.read(out / cli.OUTPUT_NAME, design=False)
-    assert after.converged is before.converged is True
+    assert after.converged is True
     assert after.actual is not None
 
 
@@ -1259,6 +1440,26 @@ def test_chic_solves_the_design_point_then_sweeps(chic_case):
     assert (out / "iter_0000" / cli.OUTPUT_NAME).is_file()
     assert (out / "chic_0000" / cli.OUTPUT_NAME).is_file()
     assert (out / "final").resolve() == (out / "iter_0000").resolve()
+
+
+def test_chic_leaves_every_point_runnable(chic_case):
+    """A point's own operating point exists nowhere else.
+
+    The sweep moved it, and the datum describes the whole characteristic rather
+    than any one station on it, so each directory records what it solved.
+    """
+    from turbigen import batch, case  # noqa: PLC0415
+
+    out = chic_case.parent
+
+    assert cli.main(["chic", str(chic_case)]) == 0
+
+    for point_dir in sorted(out.glob("chic_*")):
+        written = point_dir / batch.INPUT_NAME
+        assert written.is_file()
+
+        _, result = case.read(written, design=False)
+        assert result is None
 
 
 def test_chic_iterates_the_design_first_when_it_can(chic_iterate_case, capsys):
