@@ -788,7 +788,7 @@ def _plot_grid(g):
     plt.show()
 
 
-def _te_corner_curvature(tq, theta, m_lo):
+def _te_corner_curvature(tq, theta, m_lo, m_hi):
     """Locate the TE corner as the peak curvature of theta(m), sub-sample.
 
     The corner is the sharpest turning point of the surface theta distribution
@@ -799,13 +799,22 @@ def _te_corner_curvature(tq, theta, m_lo):
     quantisation), so the returned location varies smoothly with span unless the
     underlying geometry genuinely has a spanwise step.
 
+    The window is closed at `m_hi`, the trailing edge, at both ends. The blade
+    stops there and theta is held constant beyond it, so the first stencil
+    centred downstream of the trailing edge straddles the whole of that kink
+    while the one before it straddles only part: left open, the search would
+    take the corner to sit a node past the blade whenever the tq grid has no
+    node on the trailing edge itself. Only a tq that stops at the trailing edge
+    is safe without this, which is what the callers below happen to pass.
+
     Returns (tte, strength) or (None, 0.0) if no interior peak is found in the
-    window tq > m_lo. strength is the peak |curvature|, for picking a surface.
+    window m_lo < tq <= m_hi. strength is the peak |curvature|, for picking a
+    surface.
     """
     # Second difference ~ curvature (uniform tq spacing)
     d2 = theta[:-2] - 2.0 * theta[1:-1] + theta[2:]
     m_c = tq[1:-1]  # centres of the second-difference stencil
-    win = m_c > m_lo
+    win = (m_c > m_lo) & (m_c <= m_hi)
     if not win.any():
         return None, 0.0
     idx_win = np.flatnonzero(win)
@@ -820,7 +829,9 @@ def _te_corner_curvature(tq, theta, m_lo):
     delta = 0.5 * (yl - yr) / denom if denom != 0.0 else 0.0
     delta = float(np.clip(delta, -0.5, 0.5))
     dtq = tq[1] - tq[0]
-    tte = tq[ipk + 1] + delta * dtq
+    # The refinement shifts by up to half a cell, so cap it at the trailing
+    # edge as well: the corner is on the blade or it is nowhere.
+    tte = min(tq[ipk + 1] + delta * dtq, m_hi)
     return tte, a2[ipk]
 
 
@@ -894,8 +905,8 @@ def _theta_limits(
     # surface with the stronger corner. Single continuous criterion, so tte
     # varies smoothly with span unless the geometry has a real spanwise step.
     m_lo = mlim[1] - 0.2
-    tte_l, str_l = _te_corner_curvature(tq, theta_l, m_lo)
-    tte_u, str_u = _te_corner_curvature(tq, theta_u, m_lo)
+    tte_l, str_l = _te_corner_curvature(tq, theta_l, m_lo, mlim[1])
+    tte_u, str_u = _te_corner_curvature(tq, theta_u, m_lo, mlim[1])
     if tte_l is None and tte_u is None:
         # Fallback: cluster grid over last 1.0% chord
         tte = mlim[1] - 0.01
