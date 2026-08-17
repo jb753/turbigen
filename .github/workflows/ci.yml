@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # Called by a release workflow, so a tag cannot publish past a red CI.
+  workflow_call:
+  # Manual trigger, e.g. for iterating on scratch branches that don't match
+  # the push/pull_request triggers above.
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # turbigen itself is pure Python. These are for building ember, which
+      # carries the Fortran solver and is installed from source as a
+      # dependency.
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install turbigen
+        run: |
+          uv venv --python 3.13
+          uv pip install . pytest
+
+      - name: Test
+        # Not --no-sync, which is for a uv-managed project: this one sets
+        # tool.uv.managed = false, so there is no environment for uv to sync
+        # and the flag is not accepted.
+        run: uv run --no-project pytest
+
+      - name: Lint
+        # black and flake8 at the versions the repo pins, rather than either
+        # invoked loose: pre-commit is where this repo states what lint means,
+        # including the exclude that keeps it off tests/ and scripts/.
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # As above: for building ember, not turbigen.
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist and wheel
+        # One wheel covers every platform, this being pure Python, so there is
+        # no cibuildwheel matrix here and no per-OS verify-install job. What is
+        # worth checking is that the sdist is complete and the wheel imports,
+        # which is what the steps below do.
+        run: uv build
+
+      - name: Install the wheel into a clean environment
+        run: |
+          uv venv --python 3.13 verify-venv
+          VIRTUAL_ENV=verify-venv uv pip install dist/*.whl
+
+      - name: Smoke test the installed wheel
+        run: |
+          verify-venv/bin/python -c "import turbigen; print(turbigen.__file__)"
+          verify-venv/bin/turbigen --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
