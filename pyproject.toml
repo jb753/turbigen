@@ -17,14 +17,20 @@ classifiers = [
 ]
 dependencies = [
     'matplotlib~=3.10.0',
-    "numpy~=2.2.4",
+    "numpy~=2.5.0",
     "CoolProp~=6.7.0",
     'PyYAML~=6.0.0',
-    'scipy~=1.15.0',
+    'scipy~=1.18.0',
     'h5py~=3.14.0',
     'numpy-stl~=3.2.0',
     'metis~=0.2a5',
-    # 'ember @ git+ssh://git@gitlab.developers.cam.ac.uk/jb753/ember.git',
+    # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
+    # Block.flat, mass_average over chosen axes -- is on ember's dev branch
+    # rather than master, and a long way ahead of the published ember-cfd.
+    # Hence a branch. Move to a version specifier once ember cuts one that
+    # carries this API. ember requires numpy 2.5, which is why the numpy and
+    # scipy pins above are what they are.
+    'ember-cfd @ git+https://github.com/jb753/ember.git@dev',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
