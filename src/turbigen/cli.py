@@ -149,22 +149,70 @@ def apply_overrides(data, overrides):
 BATCH_PREFIX = "batch_"
 """What a batch of designs is called, before its number."""
 
+PLACEHOLDER = "%"
+"""Where a number goes in a directory name `-o` was given.
+
+One spelling, not two. The package this replaces accepted `%` and `*` for
+overlapping jobs, and which of them numbered a run was a thing to remember
+rather than to work out.
+"""
+
+DIGITS = 4
+"""How wide a directory number is written.
+
+Zero-padded so directories sort in creation order, in a shell glob and in a
+file browser alike. Wider numbers still parse, so a project that runs past
+9999 carries on rather than colliding.
+"""
+
+
+def numbered_dirs(parent, head, tail=""):
+    """Return the directories under `parent` named `head` + digits + `tail`."""
+    return [
+        entry
+        for entry in Path(parent).glob(f"{head}*{tail}")
+        if entry.is_dir() and dir_number(entry, head, tail) is not None
+    ]
+
+
+def next_numbered_dir(parent, head, tail=""):
+    """Return the next free `head`NNNN`tail` under `parent`.
+
+    Numbering carries on from the highest that already exists rather than
+    counting how many there are, so a deleted directory in the middle does not
+    cause the next one to overwrite a later one. That property is why this is
+    one function and not two: `batch` needs it so a lost batch cannot take a
+    later batch's number, and `-o` needs it for exactly the same reason.
+    """
+    numbers = [
+        dir_number(entry, head, tail) for entry in numbered_dirs(parent, head, tail)
+    ]
+
+    return Path(parent) / f"{head}{max(numbers, default=-1) + 1:0{DIGITS}d}{tail}"
+
+
+def dir_number(entry, head, tail=""):
+    """Return the number in `entry`'s name, or None if it carries none."""
+    name = entry.name
+    if not (name.startswith(head) and name.endswith(tail)):
+        return None
+
+    middle = name[len(head) : len(name) - len(tail)] if tail else name[len(head) :]
+    try:
+        return int(middle)
+    except ValueError:
+        # Something else living beside the numbered directories, which is not
+        # ours to interpret.
+        return None
+
 
 def existing_batches(parent):
     """Return the batch directories already under `parent`."""
-    return [
-        entry
-        for entry in Path(parent).glob(f"{BATCH_PREFIX}*")
-        if entry.is_dir() and _batch_number(entry) is not None
-    ]
+    return numbered_dirs(parent, BATCH_PREFIX)
 
 
 def next_batch_dir(parent):
     """Return the batch directory to write next, under `parent`.
-
-    Numbering carries on from the highest that already exists rather than
-    counting how many there are, so a deleted batch in the middle does not
-    cause the next one to overwrite a later one.
 
     Where a batch goes is not a choice, for the same reason it is not one for a
     run: it goes beside the datum that generated it. That also makes the layout
@@ -172,22 +220,41 @@ def next_batch_dir(parent):
     resolved bounds are logged, but the provenance was otherwise yours to
     remember.
     """
-    numbers = [_batch_number(entry) for entry in existing_batches(parent)]
-
-    # Zero-padded so the directories sort in creation order, in a shell glob and
-    # in a file browser alike. Wider numbers still parse below, so a project
-    # that runs past 9999 batches carries on rather than colliding.
-    return Path(parent) / f"{BATCH_PREFIX}{max(numbers, default=-1) + 1:04d}"
+    return next_numbered_dir(parent, BATCH_PREFIX)
 
 
-def _batch_number(entry):
-    """Return the number a batch directory carries, or None if it carries none."""
-    try:
-        return int(entry.name[len(BATCH_PREFIX) :])
-    except ValueError:
-        # Something else living beside the batches, which is not ours to
-        # interpret.
-        return None
+def resolve_workdir(workdir):
+    """Return the directory `-o` names, numbering it if it holds a `%`.
+
+    `-o runs/v%` is the next free `runs/vNNNN`. Without a placeholder the path
+    is taken as typed, so numbering is asked for rather than imposed.
+
+    Worth noting what this does to the rest of the CLI: a numbered workdir is
+    free by construction, so it can never hold an answer, and `check_clobber`
+    has nothing to refuse. Numbering and `-f` are therefore the two ways of not
+    losing a run, and asking for one means never needing the other.
+    """
+    text = str(workdir)
+    if PLACEHOLDER not in text:
+        return Path(workdir)
+
+    if text.count(PLACEHOLDER) > 1:
+        raise ValueError(
+            f"-o takes at most one '{PLACEHOLDER}', which is where the number "
+            f"goes; {text!r} has {text.count(PLACEHOLDER)}."
+        )
+
+    path = Path(workdir)
+    if PLACEHOLDER not in path.name:
+        raise ValueError(
+            f"-o can only number the last part of a path, and {text!r} puts "
+            f"'{PLACEHOLDER}' higher up. Number the directory being made, not "
+            "one of its parents."
+        )
+
+    head, _, tail = path.name.partition(PLACEHOLDER)
+
+    return next_numbered_dir(path.parent, head, tail)
 
 
 _HANDLER_TAG = "_turbigen_handler"
@@ -466,6 +533,14 @@ def each(args, one):
     if any member failed, and a script driving one need not parse the log.
     """
     paths = targets(args)
+
+    # Settled once, here, rather than wherever the workdir is next wanted: a
+    # `%` is resolved by looking at what exists, so asking twice invites two
+    # answers. Written back onto the arguments so that everything downstream
+    # sees the directory that was chosen, the same way `logging_into` records
+    # where a verb wrote.
+    if getattr(args, "workdir", None) is not None:
+        args.workdir = str(resolve_workdir(args.workdir))
 
     # Checked against where the work will land, and before `redirect` creates
     # anything there.
@@ -1790,6 +1865,10 @@ def _add_out_dir_argument(parser):
     copied into the workdir and the run happens there, so config and output
     stay in one directory. That is what the rest of the system assumes.
     """
+    # argparse runs %-formatting over help text, so the placeholder has to be
+    # doubled to survive being printed.
+    shown = PLACEHOLDER * 2
+
     parser.add_argument(
         "-o",
         "--out-dir",
@@ -1799,7 +1878,10 @@ def _add_out_dir_argument(parser):
             "work in DIR instead of beside the config: the config is copied "
             f"there as {batch.INPUT_NAME}, with its includes expanded and any "
             "--set applied, and everything the run writes lands there. This is "
-            "how to try a variant without replacing the answer you already have"
+            "how to try a variant without replacing the answer you already "
+            f"have. A '{shown}' in the last part of DIR is replaced by the next "
+            f"free number, so -o runs/v{shown} writes runs/v0000, then "
+            "runs/v0001"
         ),
     )
 

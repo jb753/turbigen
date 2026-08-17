@@ -759,6 +759,74 @@ def test_out_dir_is_not_created_for_a_broken_config(case, tmp_path, capsys):
     assert not workdir.exists()
 
 
+def test_out_dir_numbers_a_placeholder(run_case, tmp_path):
+    """`-o runs/v%` is the next free `runs/vNNNN`."""
+    for expected in ("v0000", "v0001", "v0002"):
+        assert (
+            cli.main(["run", str(run_case), "-o", str(tmp_path / "runs" / "v%")]) == 0
+        )
+        assert (tmp_path / "runs" / expected / cli.OUTPUT_NAME).is_file()
+
+
+def test_numbering_carries_on_past_a_deleted_directory(tmp_path):
+    """Counted from the highest that exists, not from how many there are.
+
+    The property `batch` needed first: a run deleted from the middle must not
+    let the next one take a later one's number.
+    """
+    for name in ("v0000", "v0003"):
+        (tmp_path / name).mkdir()
+
+    assert cli.next_numbered_dir(tmp_path, "v") == tmp_path / "v0004"
+
+
+def test_a_placeholder_may_carry_a_suffix(tmp_path):
+    """The number goes where the % is, not always at the end."""
+    (tmp_path / "x0000_hot").mkdir()
+
+    assert cli.resolve_workdir(tmp_path / "x%_hot") == tmp_path / "x0001_hot"
+
+
+def test_numbering_ignores_what_is_not_numbered(tmp_path):
+    """Something else living beside them is not ours to interpret."""
+    (tmp_path / "v0000").mkdir()
+    (tmp_path / "vnotes").mkdir()
+    (tmp_path / "v0001.txt").write_text("")
+
+    assert cli.next_numbered_dir(tmp_path, "v") == tmp_path / "v0001"
+
+
+def test_a_path_without_a_placeholder_is_taken_as_typed(tmp_path):
+    """Numbering is asked for, never imposed."""
+    assert cli.resolve_workdir(tmp_path / "exactly_here") == tmp_path / "exactly_here"
+
+
+@pytest.mark.parametrize(
+    ("pattern", "message"),
+    [
+        ("a%/b%", "at most one"),
+        ("%/case", "last part of a path"),
+    ],
+)
+def test_a_placeholder_that_cannot_be_numbered_says_so(tmp_path, pattern, message):
+    with pytest.raises(ValueError, match=message):
+        cli.resolve_workdir(tmp_path / pattern)
+
+
+def test_a_numbered_workdir_never_needs_force(run_case, tmp_path):
+    """Free by construction, so there is never an answer in it to refuse.
+
+    Numbering and -f are the two ways of not losing a run, and asking for one
+    means never needing the other.
+    """
+    pattern = str(tmp_path / "runs" / "v%")
+
+    for _ in range(2):
+        assert cli.main(["run", str(run_case), "-o", pattern]) == 0
+
+    assert sorted(p.name for p in (tmp_path / "runs").iterdir()) == ["v0000", "v0001"]
+
+
 #
 # REPLACING AN ANSWER
 #

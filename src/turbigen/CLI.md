@@ -177,7 +177,28 @@ to find. Several targets with `-o` refuse, one directory being one run.
 
 This is `workdir:` returning as a flag rather than a config key, which is the
 same split `--queue` makes: the file says how a thing is done, the command line
-says where and whether. The `%`-versus-`*` placeholder vocabulary stays dead.
+says where and whether.
+
+**A `%` in the last part of the path is the next free number:**
+
+```
+turbigen run case/input.yaml -o runs/v%      # runs/v0000, then runs/v0001
+```
+
+One spelling, not the `%`-versus-`*` pair the old package took, where which of
+them numbered a run was a thing to remember rather than work out. It goes where
+the `%` is, so `x%_hot` numbers in the middle, and more than one, or one
+outside the last component, is refused rather than guessed at.
+
+Numbering carries on from the highest that exists rather than counting how many
+there are, so a run deleted from the middle cannot let the next one take a
+later one's number. That is the property `batch` needed first, and both now
+call the same `next_numbered_dir`.
+
+Worth seeing what this does to the rule above: a numbered workdir is free by
+construction, so it can never hold an answer and there is nothing for `-f` to
+be needed for. Numbering and `-f` are the two ways of not losing a run, and
+asking for one means never reaching for the other.
 
 ### Batches are numbered, not named
 
@@ -186,13 +207,15 @@ Numbering carries on from the highest that exists rather than counting how many
 there are, so a deleted batch in the middle does not make the next one
 overwrite a later one, and nothing is ever written into an existing batch.
 
-No `-o` here and no naming pattern. A batch is many runs, so a single workdir
-would mean nothing, and the rule is the same one every other verb follows ---
-output goes beside the input. Applying it here removes the naming pattern, the
-`%`-versus-`*` placeholder vocabulary, and the sending of a batch to a
-different filesystem. That last is a real loss, and it is the constraint `run`
-imposed on output a thousand times larger until `-o` gave it a way out: put
-the config where you want the output, or name where you want it copied to.
+No `-o` here. A batch is many runs, so a single workdir would mean nothing, and
+the rule is the same one every other verb follows --- output goes beside the
+input. What that costs is sending a batch to a different filesystem, which is a
+real loss, and the constraint `run` imposed on output a thousand times larger
+until `-o` gave it a way out: put the config where you want the output, or name
+where you want it copied to.
+
+The numbering is the same `next_numbered_dir` that `-o %` uses, with
+`batch_` for a prefix.
 
 It also makes the layout record which datum produced which batch. Nothing else
 does: `--continue` cannot tell that the datum or its bounds changed between
@@ -407,6 +430,7 @@ the grid the verb already has.
 ```
 turbigen run hiload/input.yaml
 turbigen run hiload/input.yaml -o runs/v2       # a variant, somewhere new
+turbigen run hiload/input.yaml -o runs/v%       # the next free runs/vNNNN
 turbigen run batch_0000/*/input.yaml            # serially, here
 turbigen run batch_0000/*/input.yaml --queue    # as one submission
 ```
