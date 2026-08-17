@@ -759,6 +759,126 @@ def test_out_dir_is_not_created_for_a_broken_config(case, tmp_path, capsys):
     assert not workdir.exists()
 
 
+def test_out_dir_restarts_from_beside_the_config_it_was_given(
+    run_case, tmp_path, caplog
+):
+    """`-o` must not change what a bare `--restart` points at.
+
+    Resolved before the redirect, or it would look in the workdir being
+    created, which never holds a field -- so the two flags together could not
+    be used at all. Continuing from what you have while writing somewhere new
+    is the whole of a warm start.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+    field = run_case.parent / cli.RESTART_NAME
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        status = cli.main(
+            ["run", str(run_case), "-o", str(tmp_path / "warm"), "--restart"]
+        )
+
+    assert status == 0
+    assert f"Started from the restart field in {field}" in caplog.text
+
+
+def test_out_dir_will_not_replace_a_config_it_did_not_write(run_case, tmp_path, capsys):
+    """The guard the other two do not cover.
+
+    `output.yaml` is never a target and `check_clobber` refuses a recorded
+    answer, but a config sitting in the workdir with nothing beside it yet --
+    an unrun batch member, or something being drafted -- used to be replaced
+    without a word.
+    """
+    from turbigen import batch  # noqa: PLC0415
+
+    workdir = tmp_path / "notes"
+    workdir.mkdir()
+    draft = workdir / batch.INPUT_NAME
+    draft.write_text("# still writing this\n")
+
+    assert cli.main(["run", str(run_case), "-o", str(workdir)]) == 1
+
+    assert "is a different config" in capsys.readouterr().err
+    assert draft.read_text() == "# still writing this\n"
+
+    # And -f is how you say you meant it.
+    assert cli.main(["run", str(run_case), "-o", str(workdir), "-f"]) == 0
+    assert draft.read_text() != "# still writing this\n"
+
+
+def test_out_dir_repeats_the_same_config_without_complaint(run_case, tmp_path):
+    """Compared as documents, so retrying after a failure is silent.
+
+    Insisting on `-f` to write the same config over itself would be noise, and
+    the case it would fire on -- picking a run back up where it fell over -- is
+    the one where a prompt helps least.
+    """
+    workdir = tmp_path / "again"
+
+    assert cli.main(["run", str(run_case), "-o", str(workdir)]) == 0
+
+    # As a run that fell over before recording anything would have left it.
+    (workdir / cli.OUTPUT_NAME).unlink()
+    (workdir / cli.RESTART_NAME).unlink()
+
+    assert cli.main(["run", str(run_case), "-o", str(workdir)]) == 0
+
+
+#
+# INTENDED, THOUGH IT LOOKS LIKE A WART EITHER WAY
+#
+
+
+def test_a_failing_target_stops_the_ones_behind_it(run_case, tmp_path, capsys):
+    """An exception says the set is wrong, not that one member is unlucky.
+
+    Deliberate: the configs behind a broken one are likely broken the same way,
+    and stopping while the message is on screen beats burying it under thirty
+    that followed. A solve that merely diverges is different -- that is a 2,
+    and the next target still runs.
+    """
+    directories = []
+    for name, text in (
+        ("first", RUN_CASE),
+        ("broken", RUN_CASE.replace("Ma2: 0.6", "Ma2: nonsense")),
+        ("third", RUN_CASE),
+    ):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "input.yaml").write_text(text)
+        directories.append(directory)
+
+    status = cli.main(["run", *[str(d / "input.yaml") for d in directories]])
+
+    assert status == 1
+    assert "must be float" in capsys.readouterr().err
+
+    assert (directories[0] / cli.OUTPUT_NAME).is_file()
+    assert not (directories[2] / cli.OUTPUT_NAME).exists()
+
+
+def test_a_failed_run_keeps_its_workdir(run_case, tmp_path):
+    """The transcript of a failure is the most useful thing in the directory.
+
+    A numbered workdir consumes its number too. Both are intended: deleting the
+    evidence to keep the filing tidy is the wrong trade, and a number is cheap.
+    """
+    pattern = str(tmp_path / "runs" / "v%")
+
+    # No mesh section, so the run fails after the workdir has been made.
+    assert cli.main(["run", str(run_case), "-o", pattern, "-s", "mesh=null"]) == 1
+
+    from turbigen import batch  # noqa: PLC0415
+
+    failed = tmp_path / "runs" / "v0000"
+    assert (failed / batch.INPUT_NAME).is_file()
+    assert (failed / cli.LOG_NAME).is_file()
+
+    # And the number it burned is not handed out again.
+    assert cli.main(["run", str(run_case), "-o", pattern]) == 0
+    assert (tmp_path / "runs" / "v0001" / cli.OUTPUT_NAME).is_file()
+
+
 def test_out_dir_numbers_a_placeholder(run_case, tmp_path):
     """`-o runs/v%` is the next free `runs/vNNNN`."""
     for expected in ("v0000", "v0001", "v0002"):

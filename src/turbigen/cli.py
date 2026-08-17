@@ -233,6 +233,13 @@ def resolve_workdir(workdir):
     free by construction, so it can never hold an answer, and `check_clobber`
     has nothing to refuse. Numbering and `-f` are therefore the two ways of not
     losing a run, and asking for one means never needing the other.
+
+    **A run that fails still leaves its workdir**, holding the config it tried
+    and the log saying how far it got, and a numbered one still consumes its
+    number. Both are intended. The transcript of a failure is the most useful
+    thing in the directory at that moment, and deleting it to keep the
+    numbering tidy would throw away the evidence for the sake of the filing.
+    A number is cheap; the log of the run that did not work is not.
     """
     text = str(workdir)
     if PLACEHOLDER not in text:
@@ -517,20 +524,73 @@ def _copy_into_workdir(args, config_path, workdir):
     # where it was typed rather than leaving an empty workdir behind.
     Config.from_dict(data)
 
+    copied = workdir / batch.INPUT_NAME
+    _check_not_someone_elses(args, copied, data)
+
     workdir.mkdir(parents=True, exist_ok=True)
 
-    copied = workdir / batch.INPUT_NAME
     ember.yaml_util.write_yaml(data, copied)
     logger.info(f"Copied the config to {copied}")
 
     return copied
 
 
+def _check_not_someone_elses(args, copied, data):
+    """Raise if `copied` is a config that did not come from this invocation.
+
+    The other guards cover `output.yaml`, which is never a target, and a
+    recorded answer, which `check_clobber` refuses. Neither covers a config
+    sitting in the workdir with no answer beside it yet --- an unrun batch
+    member, or something being drafted --- and `-o` pointed at one used to
+    replace it without a word.
+
+    Compared as parsed documents rather than as text, so re-running `-o` into
+    the same directory after a failure is silent when the config has not
+    changed, which is the case where insisting on `-f` would be noise. Anything
+    that will not parse counts as different: unreadable is not the same as
+    absent, and the file is somebody's either way.
+    """
+    if getattr(args, "force", False) or not copied.is_file():
+        return
+
+    try:
+        existing = ember.yaml_util.read_yaml(copied)
+    except Exception:
+        existing = None
+
+    if existing == data:
+        return
+
+    raise ValueError(
+        f"{copied} is a different config from the one being copied there. "
+        "Writing it would lose whatever it says; pass -f to do that anyway, "
+        "or name a workdir that is empty."
+    )
+
+
 def each(args, one):
     """Run `one(args, config_path)` for every target, or submit them all.
 
-    Returns the worst exit code any of them reached, so a batch reports failure
-    if any member failed, and a script driving one need not parse the log.
+    Returns the worst exit code any target reached, so a run over several
+    reports failure if any of them failed and a script need not parse the log.
+    A solve that did not converge is a 2 and the next target still runs: a
+    diverged march is an answer about that design, not a reason to doubt the
+    rest.
+
+    **An exception stops the whole invocation, deliberately.** A config that
+    will not load, a design that will not close, a mesh that cannot be built:
+    these say the set of configs is wrong rather than that one member of it is
+    unlucky, and the ones behind it are likely wrong the same way. Better to
+    stop while the message is still on the screen than to bury it under the
+    thirty that followed and have it found tomorrow.
+
+    Two consequences to know about. The targets after the failure do not run,
+    so a serial sweep is resumed by fixing the config and running the rest ---
+    which `output.yaml` makes safe, the finished ones refusing to be redone.
+    And `--queue` does not behave this way: it submits every path without
+    loading any but the first, so the same command queued gets answers for the
+    good members. That is the difference between validating locally and handing
+    work to a scheduler, not an inconsistency to be ironed out.
     """
     paths = targets(args)
 
@@ -541,6 +601,15 @@ def each(args, one):
     # where a verb wrote.
     if getattr(args, "workdir", None) is not None:
         args.workdir = str(resolve_workdir(args.workdir))
+
+        # A bare `--restart` means the field beside the config you named, and
+        # `-o` must not change what it points at. Resolved before the redirect,
+        # or it would look in the workdir being created -- which never holds a
+        # field, so the two flags together could not be used at all. Continuing
+        # from what you have while writing somewhere new is the whole of a warm
+        # start, and the obvious reason to combine them.
+        if getattr(args, "restart", None) is True and len(paths) == 1:
+            args.restart = str(resolve_restart(args, paths[0]))
 
     # Checked against where the work will land, and before `redirect` creates
     # anything there.

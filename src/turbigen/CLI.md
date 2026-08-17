@@ -200,6 +200,19 @@ construction, so it can never hold an answer and there is nothing for `-f` to
 be needed for. Numbering and `-f` are the two ways of not losing a run, and
 asking for one means never reaching for the other.
 
+`-f` is still wanted for the third thing a workdir can already hold. A config
+sitting there with no answer beside it yet --- an unrun batch member, or
+something being drafted --- is nobody's to replace, so `-o` pointed at one
+refuses. Documents are compared rather than text, so re-running the same config
+into the same directory after a failure is silent, which is the case where
+insisting would be pure noise.
+
+**A run that fails keeps its workdir**, holding the config it tried and the log
+saying how far it got, and a numbered one keeps its number. The transcript of a
+failure is the most useful thing in that directory at that moment, and deleting
+it to keep the numbering tidy would throw the evidence away for the sake of the
+filing. A number is cheap.
+
 ### Batches are numbered, not named
 
 `batch` writes into the next free `batch_NNNN` beside its datum config.
@@ -442,8 +455,27 @@ drifting apart is precisely what happened to `turbigen.main`.
 
 Everything lands beside the config, so there is nothing to name -- or beside
 the copy `-o` makes, which is how a variant is run without replacing the answer
-already there. Several config files run one after another, which is the bash
-loop this saves you writing, or become one submission with `--queue`.
+already there. A bare `--restart` still means the field beside the config *you
+named*, not the workdir being created, so continuing from what you have while
+writing somewhere new is the two flags together and nothing more.
+
+Several config files run one after another, which is the bash loop this saves
+you writing, or become one submission with `--queue`.
+
+**An exception stops the whole invocation, and the targets behind it do not
+run.** A config that will not load, a design that will not close, a mesh that
+cannot be built: these say the set is wrong rather than that one member of it
+is unlucky, and stopping while the message is on the screen beats burying it
+under the thirty that followed. A solve that merely diverges is different --
+that is an exit 2, and the next target still runs, because a diverged march is
+an answer about that design rather than a reason to doubt the rest. Resume by
+fixing the config and running the rest; the finished ones refuse to be redone,
+which is what makes that safe.
+
+`--queue` does not work this way. It submits every path without loading any but
+the first, so the same command queued gets answers for the good members. That
+is the difference between validating locally and handing work to a scheduler,
+not an inconsistency waiting to be ironed out.
 
 **Exit 2 when the solver did not converge**, with everything written anyway: a
 diverged run is exactly the one whose output someone needs to look at, so
