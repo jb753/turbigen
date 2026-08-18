@@ -42,9 +42,16 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install turbigen
+        # --only-binary ember-cfd: no compiler is installed on any of these
+        # runners, so a source build of the solver cannot succeed. Without
+        # this, a gap in ember's wheel coverage -- a new interpreter it has
+        # not built for yet, an unfamiliar platform -- degrades into a build
+        # that fails somewhere down in gfortran. With it, the job says the
+        # true thing: there is no wheel for this. Scoped to ember rather than
+        # :all:, which would refuse to build turbigen itself.
         run: |
           uv venv --python ${{ matrix.python }}
-          uv pip install . pytest
+          uv pip install --only-binary ember-cfd . pytest
 
       - name: Test
         # Not --no-sync, which is for a uv-managed project: this one sets
@@ -114,7 +121,7 @@ jobs:
         shell: bash
         run: |
           uv venv --python 3.13 verify-venv
-          VIRTUAL_ENV=verify-venv uv pip install dist/*.whl
+          VIRTUAL_ENV=verify-venv uv pip install --only-binary ember-cfd dist/*.whl
 
       - name: Smoke test the installed wheel
         # Driven through uv rather than by naming the interpreter, the venv
