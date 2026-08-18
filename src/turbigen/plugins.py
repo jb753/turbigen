@@ -42,6 +42,12 @@ def find_plugin_dir(start):
     ancestor of the config file, which on a shared filesystem may include
     directories the user does not control, and importing Python found there
     would be running someone else's code.
+
+    Where the platform has no such notion of ownership --- Windows, where
+    :func:`os.getuid` does not exist --- the directory is still used, because
+    refusing every plugin on a single-user desktop would be a worse answer than
+    the check it cannot make. But it says so, once, rather than looking as
+    though it checked.
     """
     start = Path(start).resolve()
     uid = os.getuid() if hasattr(os, "getuid") else None
@@ -51,7 +57,13 @@ def find_plugin_dir(start):
         if not candidate.is_dir():
             continue
 
-        if uid is not None:
+        if uid is None:
+            logger.warning(
+                f"Loading {candidate} without checking who owns it: this "
+                "platform has no user ids. Read it before running a config "
+                "from a directory you do not control."
+            )
+        else:
             try:
                 owner = candidate.stat().st_uid
             except OSError as err:

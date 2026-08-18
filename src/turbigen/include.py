@@ -175,7 +175,10 @@ def _load(path):
     package wrote this check and then wired it to `read_yaml_list` only, so no
     config has ever been checked by it.
     """
-    with open(path, "r") as stream:
+    # Explicit encoding, because Python's default is the locale's: a config
+    # with a degree sign in a comment reads differently on a machine that is
+    # not UTF-8, and YAML is UTF-8 by specification anyway.
+    with open(path, "r", encoding="utf-8") as stream:
         _check_unique(yaml.compose(stream, Loader=_COMPOSER), path)
 
     data = ember.yaml_util.read_yaml(path)

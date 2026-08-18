@@ -13,17 +13,13 @@ authors = [
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-  "Operating System :: POSIX :: Linux"
+  "Operating System :: OS Independent"
 ]
 dependencies = [
     'matplotlib~=3.10.0',
     "numpy~=2.5.0",
-    "CoolProp~=6.7.0",
     'PyYAML~=6.0.0',
     'scipy~=1.18.0',
-    'h5py~=3.14.0',
-    'numpy-stl~=3.2.0',
-    'metis~=0.2a5',
     # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
     # Block.flat, mass_average over chosen axes -- is on ember's dev branch
     # rather than master, and a long way ahead of the published ember-cfd.

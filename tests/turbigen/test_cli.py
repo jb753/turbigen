@@ -6,6 +6,7 @@ overrides reach the design, that a user's design is found without being told
 where it is, and that a bad config reads as a message rather than a traceback.
 """
 
+import logging
 import textwrap
 
 import pytest
@@ -127,6 +128,23 @@ def test_nearest_plugin_dir_wins(tmp_path):
     nearest.mkdir()
 
     assert plugins.find_plugin_dir(near) == nearest
+
+
+def test_a_platform_without_owners_loads_but_says_so(tmp_path, monkeypatch, caplog):
+    """Windows has no user ids, so the ownership check cannot run there.
+
+    Refusing every plugin on a single-user desktop would be a worse answer than
+    the check we cannot make, so the directory is used --- but it warns, rather
+    than looking as though it checked and was satisfied.
+    """
+    monkeypatch.delattr(plugins.os, "getuid", raising=False)
+    wanted = tmp_path / plugins.PLUGIN_DIR_NAME
+    wanted.mkdir()
+
+    with caplog.at_level(logging.WARNING, logger="turbigen"):
+        assert plugins.find_plugin_dir(tmp_path) == wanted
+
+    assert "without checking who owns it" in caplog.text
 
 
 def test_no_plugin_dir_is_not_an_error(tmp_path):
