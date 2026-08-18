@@ -21,12 +21,16 @@ dependencies = [
     'PyYAML~=6.0.0',
     'scipy~=1.18.0',
     # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
-    # Block.flat, mass_average over chosen axes -- is on ember's dev branch
-    # rather than master, and a long way ahead of the published ember-cfd.
-    # Hence a branch. Move to a version specifier once ember cuts one that
-    # carries this API. ember requires numpy 2.5, which is why the numpy and
-    # scipy pins above are what they are.
-    'ember-cfd @ git+https://github.com/jb753/ember.git@dev',
+    # Block.flat, mass_average over chosen axes -- was on ember's dev branch
+    # for a while, and this was a git url pinned to it. 0.2.0 carries it, so
+    # an ordinary version specifier does now.
+    #
+    # Compatible-release rather than a floor: ember follows semver from 0.1.0,
+    # and until it reaches 1.0.0 a minor release may break the public API
+    # without deprecating anything first. So 0.3.0 is a thing to adopt
+    # deliberately rather than to be resolved into. ember requires numpy 2.5,
+    # which is why the numpy and scipy pins above are what they are.
+    'ember-cfd~=0.2.0',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
