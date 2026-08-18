@@ -71,6 +71,31 @@ def _family_root(cls):
     return None
 
 
+def _own_annotations(cls):
+    """Return the annotations `cls` declares itself, or None if it declares none.
+
+    Its own, never a base's: this is read in order to rewrite it, and reaching
+    an inherited mapping would edit the class that declared it instead.
+
+    Two spellings, because 3.14 evaluates annotations lazily (PEP 649). Up to
+    3.13 the mapping sits in ``cls.__dict__["__annotations__"]`` by the time
+    ``__init_subclass__`` runs. From 3.14 what sits there is the annotate
+    function, under ``__annotate_func__``, and the mapping is built on first
+    access --- so looking only for ``__annotations__`` found nothing, every
+    reserved name stayed a field, and ``n_row`` reached the config file.
+    """
+    if "__annotations__" in cls.__dict__:
+        return cls.__dict__["__annotations__"]
+
+    # PEP 649: reading the attribute is what evaluates and caches it. Guarded
+    # on the class declaring one, since the bare attribute would otherwise
+    # fall through to a base.
+    if "__annotate_func__" in cls.__dict__ or "__annotate__" in cls.__dict__:
+        return cls.__annotations__
+
+    return None
+
+
 def _as_classvar(annotation):
     """Wrap `annotation` in ClassVar unless it already is one."""
     if isinstance(annotation, str):
@@ -246,11 +271,14 @@ class Node:
         # Reserved names describe the class, not an instance, so keep them out
         # of the dataclass fields. Accept the natural `n_row: int = 2` as well
         # as the explicit `n_row: ClassVar[int] = 2`.
-        annotations = cls.__dict__.get("__annotations__")
+        annotations = _own_annotations(cls)
         if annotations:
             for name in RESERVED:
                 if name in annotations:
                     annotations[name] = _as_classvar(annotations[name])
+            # Written back rather than only mutated, so that the rewrite is
+            # what a lazily-evaluated class hands to dataclass() below.
+            cls.__annotations__ = annotations
 
         # Keyword-only, because everything is built from a mapping. It also
         # frees a family base to carry a defaulted field -- with positional

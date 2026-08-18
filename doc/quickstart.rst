@@ -11,7 +11,7 @@ Lines prefixed with `$` are to be executed at the Linux terminal.
 Prerequisites
 ^^^^^^^^^^^^^
 
-The program requires Python version 3.11 or greater.
+The program requires Python version 3.12 or greater.
 To keep the program separate from your system Python modules to
 avoid interference, we recommend the `uv` `package manager <https://docs.astral.sh/uv/getting-started/installation/>`_. To install :program:`turbigen` using it, run the below commands.
 

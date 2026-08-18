@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "turbigen"
 version = "3.0.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {text = "GPL-3.0-or-later"}
 authors = [
   {name = "James Brind", email = "jb753@cam.ac.uk"},
@@ -44,13 +44,7 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 turbigen = "turbigen.cli:main"
 
 [tool.black]
-target-version = ["py311"]
-
-[tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-*"
-skip = "pp*"
-manylinux-x86_64-image = "manylinux2014"
-archs = ["x86_64"]
+target-version = ["py312"]
 
 [tool.bumpversion]
 current_version = "2.7.3"

@@ -60,6 +60,13 @@ _INFEASIBLE = 1.0e6
 _DIFF_STEP = float(np.sqrt(np.finfo(np.float32).eps))
 """Relative finite-difference step, sized for the float32 mean-line storage."""
 
+NARROW_FRACTION = 0.1
+"""How close to `rtol` a converged residual may sit before it is remarked on.
+
+A tenth: the residuals a healthy solve reaches are three orders below rtol, so
+this is quiet in normal use and speaks only for a design near the edge.
+"""
+
 
 class DesignError(Exception):
     """A mean-line design could not be produced."""
@@ -312,6 +319,20 @@ class MeanLineDesign(Node):
             f"{self._who(label)} converged: {solved}, residual {err:.3e}, "
             f"{len(history)} evaluation(s)"
         )
+
+        # A solve that only just converged is one that may not converge on
+        # another machine. The mean line holds its state as float32, whose
+        # epsilon is 1.2e-07, so a healthy residual here sits three orders
+        # below rtol and a narrow one is a genuine signal rather than noise:
+        # the same design has flipped between converging and not across
+        # machines, and this is what says so before it does.
+        if err > rtol * NARROW_FRACTION:
+            logger.warning(
+                f"{self._who(label)} converged narrowly: residual {err:.3e} "
+                f"is within {1.0 / NARROW_FRACTION:.0f}x of rtol {rtol:.3e}, "
+                f"after {len(history)} evaluation(s). This design may not "
+                f"converge on another machine."
+            )
 
         return solved
 
