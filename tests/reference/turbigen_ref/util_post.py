@@ -7,13 +7,22 @@ import ember.cut
 import ember.patch
 from turbigen_ref import util
 
-import resource
 import logging
+
+try:
+    import resource
+except ImportError:
+    # Unix only, and this uses it for a debug RAM figure and nothing else.
+    # Absent on Windows, where importing this module at all is what the
+    # equivalence tests need.
+    resource = None
 
 logger = logging.getLogger("turbigen")
 
 
 def _log_ram(label):
+    if resource is None:
+        return
     rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
     logger.debug(f"RAM [{label}]: {rss_gb:.2f} GB")
 
