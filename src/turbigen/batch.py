@@ -280,12 +280,15 @@ def _sequence(config, spec, n, start):
             break
 
         values = lo + (hi - lo) * engine.random(1)[0]
-        candidate = _build(config, datum, paths, values)
+        candidate, why = _build(config, datum, paths, values)
 
         if candidate is None:
             # Deterministic given the seed, so this index is not retried later:
             # it would draw the same point and fail the same way.
-            logger.info(f"Point {index} does not design, so it is skipped.")
+            logger.info(
+                f"Point {index} ({_format_point(paths, values)}) does not "
+                f"design, so it is skipped: {why}"
+            )
         else:
             drawn.append((index, candidate))
 
@@ -322,14 +325,14 @@ def _grid(config, spec):
     built = []
 
     for index, values in enumerate(itertools.product(*spec.levels())):
-        candidate = _build(config, datum, paths, values)
+        candidate, why = _build(config, datum, paths, values)
 
         if candidate is None:
             # Warned rather than noted, unlike a drawn point: you named this
             # one, so its absence from the batch is news.
             logger.warning(
                 f"Point {index} ({_format_point(paths, values)}) does not "
-                "design, so it is skipped."
+                f"design, so it is skipped: {why}"
             )
         else:
             built.append((index, candidate))
@@ -344,7 +347,7 @@ def _grid(config, spec):
 
 
 def _build(config, datum, paths, values):
-    """Return the design at `values`, or None if it cannot be designed.
+    """Return ``(design, None)``, or ``(None, why)`` if it cannot be designed.
 
     Screened here rather than on the cluster. Designing costs no CFD --- it is
     a mean line, an annulus and some blades --- so a corner of the box that
@@ -376,13 +379,22 @@ def _build(config, datum, paths, values):
             candidate = type(config).from_dict(data)
             candidate.design()
         except DesignError as err:
-            logger.debug(f"A point did not design: {err}")
-            return None
+            # Returned rather than only logged at debug, because the caller is
+            # what knows which point this was, and because a screening that
+            # says only "does not design" is unreadable the one time it
+            # surprises you --- a point that designs on your machine and not
+            # on a CI runner is exactly when the reason is the whole message.
+            # Any warning on the way out comes too: a numeric complaint
+            # immediately before the failure is usually what explains it.
+            why = str(err)
+            for warning in caught:
+                why += f" [warned: {warning.message}]"
+            return None, why
 
     for warning in caught:
         logger.debug(f"A point designed, but warned: {warning.message}")
 
-    return candidate
+    return candidate, None
 
 
 def _strip(datum):
