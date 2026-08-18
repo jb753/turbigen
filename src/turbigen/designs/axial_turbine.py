@@ -6,6 +6,15 @@ import numpy as np
 
 from turbigen.design import MeanLineDesign
 
+VT1_FRACTION = 0.05
+"""Fraction of the guessed blade speed to start the inlet swirl at.
+
+Any value off zero conditions the Jacobian equally well --- 1%, 5% and 10%
+all give a condition number near 6.7, against 2.5e+06 at exactly zero --- so
+this is a guess rather than a tuned constant. Five percent is small enough to
+be a fair guess at an axial inlet and large enough to be nowhere near zero.
+"""
+
 
 class AxialTurbine(MeanLineDesign):
     """An axial turbine stage: a stator row followed by a rotor row.
@@ -148,6 +157,17 @@ class AxialTurbine(MeanLineDesign):
 
         # Guesses. The rotor exit swirl is negative for a turbine.
         U0 = ao1 * self.Ma2 * 0.5
+        # Off zero, though an axial inlet is what this converges to. A guess
+        # of exactly zero degenerates the finite-difference step: it is taken
+        # relative to the value, floored at one, so Vt1 got a step of 3.5e-04
+        # where the other three velocities got 0.05 to 0.10. Dividing by a
+        # step 156x smaller inflates that column of the Jacobian by about as
+        # much, leaving the columns spread 2800x and the matrix conditioned at
+        # 2.5e+06 -- whose smallest singular value, 6.4e-06, is below the
+        # noise floor of a float32 residual, so the solver was working a
+        # rank-3 problem believing it had rank 4. Seeded here instead: the
+        # condition number becomes 6.7, and does so for anything from 1% to
+        # 10%, which is what a guess should look like.
         Vx0 = U0 * phi2
         Vt2_0 = np.sqrt(max((self.Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2))
         Vt3_rel_0 = -np.sqrt(
@@ -159,7 +179,7 @@ class AxialTurbine(MeanLineDesign):
             build,
             unknowns={
                 "U": U0,
-                "Vt1": 0.0,
+                "Vt1": VT1_FRACTION * U0,
                 "Vt2": Vt2_0,
                 "Vt3_rel": Vt3_rel_0,
             },
