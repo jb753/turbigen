@@ -12,22 +12,38 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Cross-shaped rather than the full product: every OS on one Python, and
+    # every Python on one OS. A bug that is specific to both at once is rare
+    # enough not to be worth quadrupling the runner minutes for, the suite
+    # being several minutes of real CFD per job.
+    #
+    # 3.12 is the floor because scipy, numpy and ember all stop shipping
+    # wheels below it; 3.14 is the ceiling ember builds for.
+    strategy:
+      # A Windows failure must not hide a macOS one, which is exactly what
+      # this matrix exists to find.
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: "3.13"}
+          - {os: macos-latest, python: "3.13"}
+          - {os: windows-latest, python: "3.13"}
+          - {os: ubuntu-latest, python: "3.12"}
+          - {os: ubuntu-latest, python: "3.14"}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      # turbigen itself is pure Python. These are for building ember, which
-      # carries the Fortran solver and is installed from source as a
-      # dependency.
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
-
+      # No compiler toolchain is installed here. ember carries the Fortran
+      # solver and was once built from source as a dependency, which needed
+      # gfortran and ninja and confined this job to Linux; it now ships wheels
+      # for all three platforms, which is what lets this be a matrix at all.
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Install turbigen
         run: |
-          uv venv --python 3.13
+          uv venv --python ${{ matrix.python }}
           uv pip install . pytest
 
       - name: Test
@@ -36,6 +52,16 @@ jobs:
         # and the flag is not accepted.
         run: uv run --no-project pytest
 
+  lint:
+    # Once, not once per matrix leg: what black and flake8 make of the source
+    # does not depend on the platform reading it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Lint
         # black and flake8 at the versions the repo pins, rather than either
         # invoked loose: pre-commit is where this repo states what lint means,
@@ -43,34 +69,19 @@ jobs:
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
   package:
-    needs: test
+    needs: [test, lint]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # As above: for building ember, not turbigen.
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Build sdist and wheel
         # One wheel covers every platform, this being pure Python, so there is
-        # no cibuildwheel matrix here and no per-OS verify-install job. What is
-        # worth checking is that the sdist is complete and the wheel imports,
-        # which is what the steps below do.
+        # no cibuildwheel matrix here. What is worth checking per-platform is
+        # that the wheel installs and imports, which verify-install does.
         run: uv build
-
-      - name: Install the wheel into a clean environment
-        run: |
-          uv venv --python 3.13 verify-venv
-          VIRTUAL_ENV=verify-venv uv pip install dist/*.whl
-
-      - name: Smoke test the installed wheel
-        run: |
-          verify-venv/bin/python -c "import turbigen; print(turbigen.__file__)"
-          verify-venv/bin/turbigen --help > /dev/null
 
       - uses: actions/upload-artifact@v4
         with:
@@ -78,3 +89,39 @@ jobs:
           path: |
             dist/*.whl
             dist/*.tar.gz
+
+  verify-install:
+    # The wheel is built once; that it works is checked everywhere, which is
+    # the half of packaging a single build job cannot speak for.
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the wheel into a clean environment
+        # Explicitly bash: PowerShell is the default shell on the Windows
+        # runner and does not expand the glob.
+        shell: bash
+        run: |
+          uv venv --python 3.13 verify-venv
+          VIRTUAL_ENV=verify-venv uv pip install dist/*.whl
+
+      - name: Smoke test the installed wheel
+        # Driven through uv rather than by naming the interpreter, the venv
+        # putting it in bin/ on one platform and Scripts/ on another.
+        shell: bash
+        env:
+          VIRTUAL_ENV: verify-venv
+        run: |
+          uv run --no-project python -c "import turbigen; print(turbigen.__file__)"
+          uv run --no-project turbigen --help > /dev/null
