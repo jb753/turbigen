@@ -1308,9 +1308,9 @@ def converge_design(config, out_dir, previous=None):
         write_input(config, design_dir)
 
         result = solve(config, design_dir, previous)
-        _link_final(out_dir, design_dir)
+        field = promote_final(out_dir, design_dir, result.converged)
 
-        return config, result, result.converged, design_dir / RESTART_NAME
+        return config, result, result.converged, field
 
     # Iteration -1: where the knobs start. Anchored on the config file's own
     # directory, because a config is often run from somewhere else, and
@@ -1342,9 +1342,9 @@ def converge_design(config, out_dir, previous=None):
 
     config, result, converged = iterate.converge(config, run, config.max_iter)
 
-    _link_final(out_dir, previous.parent)
+    field = promote_final(out_dir, previous.parent, converged)
 
-    return config, result, converged, previous
+    return config, result, converged, field
 
 
 def cmd_batch(args):
@@ -1459,38 +1459,87 @@ def _console_handlers():
     return list(seen.values())
 
 
-def _link_final(out_dir, iter_dir):
-    """Point `final`, `output.yaml` and `restart.npz` at the last iteration.
+PROMOTED = (OUTPUT_NAME, RESTART_NAME, HISTORY_NAME, "post.pdf")
+"""What a settled design leaves at the root of its directory.
 
-    Symlinks rather than copies of the answer: the iterations are the record of
-    how the design got where it did, and duplicating megabytes to name one of
-    them would only invite the two to disagree.
+Everything a `run` leaves beside its config, so that a finished `iterate`
+directory reads as one: a database glob, a script reading a result and a
+`--restart` need not know whether a design took one solve or six.
+"""
 
-    The other two links are what make an artefact name mean the same thing
-    whichever verb produced it, so a database glob, a script reading a result
-    and a `--restart` need not know whether a design took one solve or six.
-    `run` leaves both beside the config it was given; without these, `iterate`
-    left neither, and `iterate` followed by `--restart` failed on a case that
-    plainly had a field.
+KEPT_PER_ITERATION = (batch.INPUT_NAME, OUTPUT_NAME, HISTORY_NAME)
+"""What an intermediate iteration keeps once the design has settled.
+
+The config it solved, the answer it reached, and the march that got there ---
+kilobytes apiece, and the only record of how the design moved. What goes is the
+flow field and the report drawn from it, which are the megabytes and which
+nothing reads again: `database` filters an unsettled iteration out by
+definition, `chic` reads only the config it was given, and no code globs
+`iter_*` at all. Both are recoverable by re-running that iteration's
+`input.yaml`, which is what makes deleting them a tidy-up rather than a loss.
+"""
+
+
+def promote_final(out_dir, iter_dir, converged):
+    """Move the last iteration's artefacts to `out_dir`, and prune the rest.
+
+    Only when the design settled. **A root `output.yaml` therefore means this
+    design converged**, which is a far more useful thing for the directory to
+    say than "here is wherever the iteration happened to stop". An unsettled
+    run keeps every iteration whole, because that is exactly when the history
+    is what you came to look at.
+
+    Moved rather than copied, and rather than linked as this once was. A copy
+    of `restart.npz` is megabytes duplicated and two files free to disagree; a
+    symlink avoids both but needs a filesystem that has them, and left the same
+    answer reachable by two paths --- which `database` counted twice, the
+    settled iteration being precisely the one that survives its filters.
+    Moving has neither problem: one answer, in one place, as a real file.
+
+    Returns the field to carry on from, which `chic` sweeps from and which has
+    moved out from under the caller.
     """
-    _link(out_dir / "final", iter_dir.name, directory=True)
-    _link(out_dir / OUTPUT_NAME, f"final/{OUTPUT_NAME}", directory=False)
-    _link(out_dir / RESTART_NAME, f"final/{RESTART_NAME}", directory=False)
+    if not converged:
+        iterate.logger.info(
+            "The design did not settle, so every iteration is kept whole and "
+            f"nothing is promoted to {out_dir}."
+        )
+        return iter_dir / RESTART_NAME
+
+    for name in PROMOTED:
+        source = iter_dir / name
+        if not source.is_file():
+            continue
+
+        destination = out_dir / name
+        if destination.exists():
+            destination.unlink()
+        source.rename(destination)
+
+    iterate.logger.info(f"Moved the settled design's artefacts to {out_dir}")
+
+    _prune_iterations(out_dir)
+
+    return out_dir / RESTART_NAME
 
 
-def _link(link, target, directory):
-    """Point `link` at `target`, replacing whatever was there."""
-    try:
-        if link.is_symlink() or link.exists():
-            link.unlink()
-        link.symlink_to(target, target_is_directory=directory)
-    except OSError as err:
-        # A filesystem without symlinks is a reason to say so, not to lose a
-        # finished set of iterations.
-        logger.warning(f"Could not link {link} to {target}: {err}")
-        return
+def _prune_iterations(out_dir):
+    """Cut every iteration directory back to what is worth keeping."""
+    removed = 0
+    for iter_dir in sorted(out_dir.glob("iter_*")):
+        if not iter_dir.is_dir():
+            continue
 
-    logger.info(f"Linked {link} to {target}")
+        for entry in iter_dir.iterdir():
+            if entry.is_file() and entry.name not in KEPT_PER_ITERATION:
+                entry.unlink()
+                removed += 1
+
+    if removed:
+        iterate.logger.info(
+            f"Removed {removed} intermediate file(s); re-run an iteration's "
+            f"{batch.INPUT_NAME} to rebuild one."
+        )
 
 
 def convergence_string(history, converged):

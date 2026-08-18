@@ -1042,20 +1042,117 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
     assert all(isinstance(value, float) for value in result.error.values())
 
 
-def test_iterate_keeps_every_iteration(iterate_case):
-    """The directories are the archive, so none of them is deleted."""
+SETTLED_CASE = ITERATE_CASE.replace(
+    "  - type: deviation\n", "  - type: deviation\n    tolerance: 20.0\n"
+).replace("  - type: incidence\n", "  - type: incidence\n    tolerance: 20.0\n")
+"""Tolerances loose enough that one pass settles the design.
+
+Absurd on purpose: what these check is what a settled run leaves behind, and
+paying for a genuine convergence would be minutes of CFD to learn nothing more.
+"""
+
+
+@pytest.fixture
+def settled_case(tmp_path):
+    directory = tmp_path / "settled"
+    directory.mkdir()
+    path = directory / "input.yaml"
+    path.write_text(SETTLED_CASE)
+    return path
+
+
+def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
+    """The history is exactly what you came to look at when it did not settle.
+
+    Nothing is promoted either, so a root `output.yaml` keeps its meaning:
+    this design converged. A directory without one has iterations to read.
+    """
     out = iterate_case.parent
 
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+    assert cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"]) == 2
 
     for i_iter in range(2):
         iter_dir = out / f"iter_{i_iter:04d}"
-        assert (iter_dir / cli.OUTPUT_NAME).is_file()
-        assert (iter_dir / "restart.npz").is_file()
-        assert (iter_dir / "post.pdf").is_file()
+        for name in (cli.OUTPUT_NAME, cli.RESTART_NAME, cli.HISTORY_NAME, "post.pdf"):
+            assert (iter_dir / name).is_file(), name
 
-    assert (out / "final").is_symlink()
-    assert (out / "final").resolve() == (out / "iter_0001").resolve()
+    assert not (out / cli.OUTPUT_NAME).exists()
+    assert not (out / cli.RESTART_NAME).exists()
+
+
+def test_a_settled_design_leaves_a_run_directory(settled_case):
+    """A finished iterate reads as a run, because that is what it is now."""
+    out = settled_case.parent
+
+    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+
+    for name in (cli.OUTPUT_NAME, cli.RESTART_NAME, cli.HISTORY_NAME, "post.pdf"):
+        assert (out / name).is_file(), name
+
+
+def test_nothing_a_run_leaves_is_a_symlink(settled_case):
+    """Moved, not linked. There is no `final`, and never a link to follow.
+
+    A copy would duplicate megabytes and let two files disagree; a link avoids
+    both but needs a filesystem that has them, and left one answer reachable by
+    two paths -- which `database` counted twice.
+    """
+    out = settled_case.parent
+
+    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+
+    assert not (out / "final").exists()
+    assert not any(entry.is_symlink() for entry in out.rglob("*"))
+
+
+def test_a_settled_design_prunes_its_iterations(tmp_path):
+    """Kilobytes stay, megabytes go, and the final one has moved up.
+
+    Built by hand rather than iterated to: what is under test is the tidy-up,
+    and three passes of real CFD would take minutes to produce files whose
+    contents do not matter.
+    """
+    from turbigen import batch  # noqa: PLC0415
+
+    names = (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.HISTORY_NAME, "post.pdf")
+    for i_iter in range(3):
+        iter_dir = tmp_path / f"iter_{i_iter:04d}"
+        iter_dir.mkdir()
+        for name in (*names, cli.RESTART_NAME):
+            (iter_dir / name).write_text(f"{i_iter} {name}")
+
+    field = cli.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
+
+    # The last iteration's artefacts are the run's artefacts now.
+    assert field == tmp_path / cli.RESTART_NAME
+    for name in cli.PROMOTED:
+        assert (tmp_path / name).read_text() == f"2 {name}"
+
+    # Its own directory keeps the config that produced it, and nothing else.
+    assert sorted(p.name for p in (tmp_path / "iter_0002").iterdir()) == [
+        batch.INPUT_NAME
+    ]
+
+    # The ones before it keep what is worth keeping.
+    for i_iter in range(2):
+        kept = sorted(p.name for p in (tmp_path / f"iter_{i_iter:04d}").iterdir())
+        assert kept == sorted(cli.KEPT_PER_ITERATION)
+
+
+def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
+    from turbigen import batch  # noqa: PLC0415
+
+    iter_dir = tmp_path / "iter_0000"
+    iter_dir.mkdir()
+    names = (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.RESTART_NAME, "post.pdf")
+    for name in names:
+        (iter_dir / name).write_text(name)
+
+    field = cli.promote_final(tmp_path, iter_dir, converged=False)
+
+    assert field == iter_dir / cli.RESTART_NAME
+    assert sorted(p.name for p in iter_dir.iterdir()) == sorted(names)
+    assert not (tmp_path / cli.OUTPUT_NAME).exists()
 
 
 def test_iterate_leaves_every_iteration_runnable(iterate_case):
@@ -1102,17 +1199,22 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
     assert (iter_dir / "post.pdf").is_file()
 
 
-def test_iterate_links_its_answer_where_a_run_would_have_put_it(iterate_case):
-    """`output.yaml` means what this run achieved, whichever verb produced it."""
+def test_iterate_puts_its_answer_where_a_run_would_have(settled_case):
+    """`output.yaml` means what this run achieved, whichever verb produced it.
+
+    A real file rather than the link this used to be, so a script reading a
+    result, a database glob and a `--restart` all see one answer in one place.
+    """
     from turbigen import case  # noqa: PLC0415
 
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=1"])
+    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
 
-    answer = iterate_case.parent / cli.OUTPUT_NAME
-    assert answer.is_symlink()
+    answer = settled_case.parent / cli.OUTPUT_NAME
+    assert answer.is_file() and not answer.is_symlink()
 
     _, result = case.read(answer, design=False)
     assert result is not None
+    assert result.converged is True
 
 
 def test_iterate_moves_the_design_and_records_why(iterate_case):
@@ -1768,19 +1870,24 @@ def chic_iterate_case(tmp_path):
     return path
 
 
-def test_iterate_leaves_a_field_where_restart_looks_for_it(iterate_case):
+def test_iterate_leaves_a_field_where_restart_looks_for_it(settled_case):
     """`run` left one beside the config and `iterate` did not, so `iterate`
-    followed by `--restart` failed on a case that plainly had a field."""
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=1"])
+    followed by `--restart` failed on a case that plainly had a field.
 
-    field = iterate_case.parent / cli.RESTART_NAME
-    assert field.is_symlink()
-    assert field.resolve().is_file()
+    A settled design, because that is now what puts a field at the root. An
+    unsettled one leaves its iterations whole instead, and restarting from one
+    means naming it -- which is the honest position, there being no converged
+    field to point at.
+    """
+    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+
+    field = settled_case.parent / cli.RESTART_NAME
+    assert field.is_file() and not field.is_symlink()
 
     # Which is exactly what the flag resolves, so the two agree by test rather
     # than by inspection.
     args = type("A", (), {"restart": True})()
-    assert cli.resolve_restart(args, iterate_case) == field
+    assert cli.resolve_restart(args, settled_case) == field
 
 
 def test_chic_solves_the_design_point_then_sweeps(chic_case):
@@ -1790,9 +1897,10 @@ def test_chic_solves_the_design_point_then_sweeps(chic_case):
 
     assert cli.main(["chic", str(chic_case)]) == 0
 
-    assert (out / "iter_0000" / cli.OUTPUT_NAME).is_file()
+    # The design point settled trivially, having no iterators to settle, so its
+    # answer has moved up to the root as a run's would.
+    assert (out / cli.OUTPUT_NAME).is_file()
     assert (out / "chic_0000" / cli.OUTPUT_NAME).is_file()
-    assert (out / "final").resolve() == (out / "iter_0000").resolve()
 
 
 def test_chic_leaves_every_point_runnable(chic_case):
@@ -1822,7 +1930,9 @@ def test_chic_iterates_the_design_first_when_it_can(chic_iterate_case, capsys):
     assert cli.main(["chic", str(chic_iterate_case), "-s", "max_iter=2"]) == 0
 
     assert "Converging the design first" in capsys.readouterr().err
-    assert (out / "iter_0000" / cli.OUTPUT_NAME).is_file()
+    # The design settled, so its answer is at the root rather than in the
+    # iteration that reached it.
+    assert (out / cli.OUTPUT_NAME).is_file()
     assert (out / "chic_0000" / cli.OUTPUT_NAME).is_file()
 
 

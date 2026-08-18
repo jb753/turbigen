@@ -508,22 +508,49 @@ solves again.
 It owns only the loop. Each iteration is an ordinary `run` in a directory of
 its own, chained so that iteration *k+1* starts from *k*'s flow field:
 
+A design that **settles** ends up reading as a `run` directory, because that is
+what it now is:
+
 ```
 hiload/input.yaml
-hiload/iter_0000/  output.yaml (with result: and its errors), restart.npz,
-                   conv.cnv, post.pdf
-hiload/iter_0001/  ...
-hiload/final       -> iter_0001
-hiload/output.yaml -> final/output.yaml
+hiload/output.yaml     the converged answer, restart.npz, conv.cnv, post.pdf
+hiload/iter_0000/      input.yaml, output.yaml, conv.cnv
+hiload/iter_0001/      input.yaml
 ```
 
-**Every iteration is kept**, and `final` is a symlink to the last. So is
-`output.yaml`, which therefore means "what this run achieved" whichever verb
-produced it: a database glob and a script reading a result need not know
-whether a design took one solve or six. The
-alternative — the existing `main.py` copies the converged iteration over the
-base directory and deletes the rest — destroys exactly the data that would let
-a later fit predict these corrections instead of iterating for them.
+The last iteration's artefacts are **moved** to the root, so `output.yaml`
+means "what this run achieved" whichever verb produced it and a database glob,
+a script reading a result and a `--restart` need not know whether a design took
+one solve or six. Its own directory is left holding the config that produced
+it, that answer having become the run's.
+
+The iterations before it keep their config, their answer and their march --- a
+few kilobytes each, and the only record of how the design moved --- and lose
+the flow field and the report drawn from it, which are the megabytes. Nothing
+reads those again: `database` filters an unsettled iteration out by definition,
+`chic` reads only the config it was given, and no code globs `iter_*` at all.
+Both are rebuilt by re-running that iteration's `input.yaml`, which is what
+makes this a tidy-up rather than a loss, and which was not true until each
+iteration recorded its own config.
+
+A design that **does not settle keeps every iteration whole, and nothing is
+promoted.** That is exactly when the history is what you came to look at. It
+also gives the root a meaning worth having: **an `output.yaml` there means this
+design converged**, rather than "here is wherever the iteration happened to
+stop". Restarting from an unsettled run means naming the iteration, which is
+the honest position when there is no converged field to point at.
+
+Moved rather than copied or linked. A copy is megabytes duplicated and two
+files free to disagree. A symlink avoids both --- and this was three symlinks
+for a while --- but needs a filesystem that has them, and leaves one answer
+reachable by two paths, which `database` duly counted twice: the settled
+iteration is precisely the one that survives its filters. Nothing turbigen
+writes is a symlink now.
+
+The alternative at the other extreme — the existing `main.py` copies the
+converged iteration over the base directory and deletes the rest — destroys
+exactly the data that would let a later fit predict these corrections instead
+of iterating for them. Keeping the yamls keeps that.
 
 ### What an iterator is
 
@@ -707,12 +734,17 @@ where `run --restart` truncates nothing.
 ### Sweeping a design converged earlier
 
 ```
-mkdir chic && cp case/final/output.yaml chic/input.yaml
-turbigen chic chic/input.yaml --restart case/final/restart.npz
+mkdir chic && cp case/output.yaml chic/input.yaml
+turbigen chic chic/input.yaml --restart case/restart.npz
 ```
 
 A directory of its own because one directory is one run. The copied config
-carries the converged `result:`, so the design phase is skipped.
+carries the converged `result:`, so the design phase is skipped. Both files
+being at the root of `case` is what a settled design leaves; if they are not
+there, it did not settle, and there is no converged design to sweep.
+
+Note the copy is renamed on the way in. `output.yaml` is not a name turbigen
+will read back, so adopting one as an input is a thing you do deliberately.
 
 Two things to know. `DP_adjust` scales the **converged** design's pressure
 change, not the original file's — `iterate` relaxes `Ys` onto what the CFD
