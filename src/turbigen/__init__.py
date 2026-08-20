@@ -37,7 +37,7 @@ from turbigen.hmesh import H
 from turbigen.mesh import Mesher, WallSpacing
 from turbigen.thickness import Taylor, ThicknessDesign
 from turbigen.design import DesignError, MeanLineDesign, check_round_trip
-from turbigen.fluid import Fluid, PerfectFluid
+from turbigen.fluid import Fluid, PerfectFluid, RealFluid
 from turbigen.iterate import Iterator
 from turbigen.job import Job, Slurm, Task, Tsp
 from turbigen.machine import Machine
@@ -120,5 +120,6 @@ __all__ = [
     "Task",
     "Tsp",
     "PerfectFluid",
+    "RealFluid",
     "check_round_trip",
 ]

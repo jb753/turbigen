@@ -30,7 +30,15 @@ dependencies = [
     # without deprecating anything first. So 0.3.0 is a thing to adopt
     # deliberately rather than to be resolved into. ember requires numpy 2.5,
     # which is why the numpy and scipy pins above are what they are.
-    'ember-cfd~=0.2.0',
+    #
+    # ...and it is a git url again, for as long as this branch lives. The
+    # RealFluid config node needs ember's real-gas equation of state, which is
+    # unreleased 0.3.0, so no version specifier can reach it. This costs CI:
+    # both jobs install with --only-binary ember-cfd because no runner has a
+    # Fortran toolchain, and a git url is a source build, so they fail on every
+    # platform until this goes back to 'ember-cfd~=0.3.0'. That swap is the
+    # last step of the branch, and it waits on ember 0.3.0 shipping wheels.
+    'ember-cfd @ git+https://github.com/jb753/ember.git@real-fluid',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
