@@ -75,6 +75,7 @@ dev = [
     'snowballstemmer==2.2.0',
     'autodocsumm',
     'pytest',
+    'pytest-xdist',
     'pre-commit',
     'twine',
     'bump-my-version',

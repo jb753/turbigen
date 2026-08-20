@@ -39,12 +39,12 @@ To run a case, use,
 
 .. code-block:: console
 
-    $ turbigen INPUT_YAML
+    $ turbigen run INPUT_YAML
 
 where `INPUT_YAML` is a yaml configuration file. Specimen configuration files
 are provided in the :doc:`examples/index` directory.
-Results will be logged to the screen and saved to a file in the working
-directory specified in the input file.
+Results will be logged to the screen and saved to a file beside the
+configuration file, alongside everything else the run writes.
 
 Command-line flags can
 also be used to temporarily change the behaviour of the program and override some settings in the input file. To see a list of these,

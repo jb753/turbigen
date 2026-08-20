@@ -17,12 +17,17 @@ import datetime
 
 sys.path.insert(0, os.path.abspath(".."))
 
+# Local extensions, which are found by import like any other.
+sys.path.insert(0, os.path.abspath("_ext"))
+
 
 # -- Project information -----------------------------------------------------
 
 
 project = "turbigen"
-copyright = turbigen.__copyright__
+# Stated here rather than read off the package, which no longer carries a
+# __copyright__ for this to import.
+copyright = f"{datetime.date.today().year}, James Brind"
 author = "James Brind"
 
 # The full version, including alpha/beta/rc tags
@@ -44,6 +49,7 @@ extensions = [
     "sphinxcontrib.programoutput",
     "matplotlib.sphinxext.plot_directive",
     "sphinxarg.ext",
+    "turbigen_example",
 ]
 
 # Add any paths that contain templates here, relative to this directory.

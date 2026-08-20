@@ -46,4 +46,4 @@ compile-intel ::
 	mv embsolve*.so turbigen/solvers
 
 generate-examples ::
-	python doc/generate_examples.py
+	uv run python doc/generate_examples.py

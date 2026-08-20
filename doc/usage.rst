@@ -4,6 +4,6 @@ Command-line options
 ====================
 
 .. argparse::
-   :module: turbigen.main
-   :func: _make_argparser
+   :module: turbigen.cli
+   :func: _make_parser
    :prog: turbigen

@@ -714,6 +714,9 @@ def task_options(args):
     if args.verbose:
         options.append("-v")
 
+    if getattr(args, "svg", False):
+        options.append("--svg")
+
     restart = getattr(args, "restart", None)
     if restart is True:
         options.append("--restart")
@@ -904,7 +907,7 @@ def _report_one(args, config_path):
 
         result = answer or Result(machine=machine, grid=grid, history=history)
 
-        write_report(config, result, out_dir)
+        write_report(config, result, out_dir, svg=args.svg)
         _write_report_output(config, answer, out_dir)
 
     return 0
@@ -1039,7 +1042,7 @@ def write_input(config, out_dir):
     return path
 
 
-def solve(config, out_dir, restart_path=None):
+def solve(config, out_dir, restart_path=None, svg=False):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
@@ -1103,7 +1106,7 @@ def solve(config, out_dir, restart_path=None):
     # draw the convergence page, and it costs a few kilobytes.
     save_history(out_dir / HISTORY_NAME, history)
 
-    _write_output(config, result, out_dir)
+    _write_output(config, result, out_dir, svg=svg)
 
     return result
 
@@ -1123,7 +1126,9 @@ def _run_one(args, config_path):
                 "The 'run' command needs a solver: section in the config file."
             )
 
-        result = solve(config, out_dir, resolve_restart(args, config_path))
+        result = solve(
+            config, out_dir, resolve_restart(args, config_path), svg=args.svg
+        )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
     # parsing the log. Everything written above is still written: a diverged
@@ -1599,7 +1604,7 @@ def _open_batch(args, datum_dir):
     return out_dir
 
 
-def _write_output(config, result, out_dir):
+def _write_output(config, result, out_dir, svg=False):
     """Write what a run achieved, and draw it.
 
     Only the verbs that solve call this, and that is what makes it safe:
@@ -1613,7 +1618,7 @@ def _write_output(config, result, out_dir):
     case.write(config_path, config, result)
     run_log.info(f"Wrote resolved configuration to {config_path}")
 
-    write_report(config, result, out_dir)
+    write_report(config, result, out_dir, svg=svg)
 
 
 def grid_string(grid):
@@ -1731,13 +1736,19 @@ def processors(config):
     return standard + list(config.post_process)
 
 
-def write_report(config, result, out_dir):
+def write_report(config, result, out_dir, svg=False):
     """Run the post-processors and collect their figures into one PDF.
 
     Nothing is produced without an output directory, so the figures are only
     made when there is somewhere to put them. With one, a report is always
     written: the standard plots cost a fraction of a solve, and a run whose
     output nobody looks at is worse than a page nobody needed.
+
+    `svg` additionally writes each figure as its own file, for a document that
+    places them one at a time. Off by default, by the same rule: a directory of
+    pictures nobody opens is worse than the one PDF that holds them. The names
+    carry the post-processor that drew each figure rather than a page number,
+    so adding a plot cannot silently rename the images after it.
     """
     # Imported here so that the CLI does not pay for matplotlib until there is
     # something to plot.
@@ -1755,12 +1766,17 @@ def write_report(config, result, out_dir):
     path = out_dir / "post.pdf"
     n_page = 0
     with PdfPages(path) as pdf:
-        for processor in processors(config):
+        for i_processor, processor in enumerate(processors(config)):
             logger.debug(f"Running post-processor {processor}")
             # Figures are closed as they are written rather than collected and
             # closed at the end, so a long report holds one at a time.
-            for figure in processor.report(config, result):
+            for i_figure, figure in enumerate(processor.report(config, result)):
                 pdf.savefig(figure)
+                if svg:
+                    figure.savefig(
+                        out_dir / f"post_{i_processor:02d}_{processor.type}"
+                        f"_{i_figure}.svg"
+                    )
                 plt.close(figure)
                 n_page += 1
 
@@ -1855,6 +1871,7 @@ def _make_parser():
             "a mesh is serialised is a property of the solver that will read it."
         ),
     )
+    _add_svg_argument(report)
     report.set_defaults(func=cmd_report)
 
     run = commands.add_parser(
@@ -1873,6 +1890,7 @@ def _make_parser():
     _add_out_dir_argument(run)
     _add_queue_argument(run)
     _add_restart_argument(run)
+    _add_svg_argument(run)
     run.set_defaults(func=cmd_run)
 
     iterate_ = commands.add_parser(
@@ -1972,6 +1990,25 @@ def _add_force_argument(parser):
         help=(
             f"replace an answer already recorded in {OUTPUT_NAME} here; "
             "without it, a directory that has been run refuses to be run again"
+        ),
+    )
+
+
+def _add_svg_argument(parser):
+    """Add --svg, for the two verbs that draw one case.
+
+    `design` has no figures to write, and `iterate` and `chic` draw a directory
+    of runs rather than a case, which is not what a document places. A flag
+    rather than a config key, because how a report is consumed is a property of
+    who is reading it, not of the machine being designed: one config feeds both
+    a person opening post.pdf and a page placing the figures individually.
+    """
+    parser.add_argument(
+        "--svg",
+        action="store_true",
+        help=(
+            "also write each figure as its own SVG beside post.pdf, named "
+            "after the post-processor that drew it, for embedding one at a time"
         ),
     )
 

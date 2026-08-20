@@ -1,62 +1,112 @@
 # Turbine cascade
 #
-# Run a stationary turbine cascade with prescribed flow angles.
+# One stationary row, so there are no mixing planes, at an exit Mach number of
+# 0.6 and a hub-to-tip ratio of 0.95, so the flow is nearly two-dimensional.
+# The cheapest case that exercises the whole pipeline: mean line, annulus,
+# blade, mesh, solve and report.
 #
+# The blade is drawn with ten degrees of leading-edge recamber and two of
+# trailing-edge, and the annulus is specified by aspect ratio rather than by a
+# chord in metres, which is the number a designer carries between machines.
+#
+# One thing this cannot express: the case it is adapted from solved with ts3,
+# and only ember is available here, so the solver settings below are ember's.
 
-
-# Use a new workdir for each run
-workdir: runs/*
-
-# Perfect gas inlet condition
-inlet:
-  Po: 1e5
-  To: 300.
-  cp: 1005.
+fluid:
+  type: perfect
+  cp: 1005.0
   gamma: 1.4
+  # A placeholder. The Re_surf iterator below owns this value and rewrites it,
+  # because a Reynolds number cannot be inverted for a viscosity without a
+  # design, and a design needs a viscosity to exist first.
+  mu: 1.8e-5
 
-# Set viscosity from Reynolds number
-Re_surf: 4e5
-
-# Turbine cascade design variables
 mean_line:
   type: turbine_cascade
-  span: [0.01, 0.011]
-  Alpha: [40., -65.0]
+  span: [0.1, 0.11]
+  Alpha: [40.0, -65.0]
   Ma2: 0.6
-  Yh: 0.029
-  htr: 0.99
+  Ys: 0.029
+  htr: 0.95
+  Po1: 1.0e5
+  To1: 300.0
 
-# Setup annulus using fixed aspect ratios
+# Span-to-meridional-chord ratios, for the row and for the ducts either side of
+# it. The chord in metres follows from the span the mean line chose.
 annulus:
+  type: aspect_ratio
+  AR_row: [2.0]
   AR_gap: [1.0, 1.0]
-  AR_chord: 2.0
 
-# Specify camber and thickness one one mid-span section
 blades:
-    - spf: 0.5
-      thick: [0.05, 0.12, 0.3, 0., 0.03, 0.18]
-      camber: [10., -2., 0.0]
+  - count:
+      type: Co
+      Co: 0.7
+    sections:
+      - spf: 0.5
+        dchi_LE: 10.0
+        dchi_TE: -2.0
+        camber:
+          type: quadratic
+          aft_loading: 0.0
+        thickness:
+          type: taylor
+          R_LE: 0.05
+          t_max: 0.12
+          m_tmax: 0.3
+          kappa_max: 0.0
+          t_TE: 0.03
+          tanwedge: 0.18
 
-# Discretise fluid domain using a coarse H-mesh
 mesh:
   type: h
+  yplus: 30.0
+  resolution_factor: 1.0
+  dm_TE: 0.0
   AR_cusp: 2.0
   ni_cusp: 5
-  yplus: 30.0
-  resolution_factor: 0.5
 
-# Use circulation for number of blades
-nblade:
-  - Co: 0.7
+# Close the loop between the design above and what it turns out to be. Each
+# iterator names one mismatch, measures it, and moves one design variable:
+#
+#   Re_surf     the viscosity, onto the Reynolds number asked for here
+#   deviation   trailing-edge recamber, so the flow leaves at the design angle
+#   mean_line   the nominal loss coefficient, onto what the solution achieved
+#
+# Only the last two cost CFD, and so only they need `turbigen iterate`. The
+# Reynolds number is read off the design in pure numpy, so `design`, `report`
+# and `run` all honour it as they stand.
+#
+# An `incidence` iterator would fit here too, but with a target of zero it
+# unwinds the ten degrees of leading-edge recamber set above, four degrees at a
+# time. That is a change to the design rather than a correction of it, so it is
+# left out to keep the blade as drawn.
+iterate:
+  - type: Re_surf
+    target: 4.0e5      # measured on the blade surface length
 
-# Configure the built-in flow solver
+  - type: deviation
+    tolerance: 0.5      # degrees of exit flow angle
+
+  - type: mean_line
+    variables: [Ys]
+    clip: 0.01          # of loss coefficient; the first march overstates it
+    tolerance: 0.05     # as a fraction of the nominal, not an absolute
+
 solver:
-  type: ts3
-  nstep: 2000
-
-post_process:
-  - type: sections
-  - type: contour
-    coord: spf
-    value: 0.5
-    variable: Ma_rel
+  type: ember
+  n_step: 1000
+  n_step_avg: 250
+  n_step_log: 50
+  n_stage: 4
+  cfl: 5.0
+  sf_resid: 1.0
+  dampin: 25.0
+  # No multigrid, which this case does not survive at the Reynolds number
+  # asked for above. With three levels the march goes to NaN across the whole
+  # block, and everything that softens it only postpones that: a lower CFL,
+  # more smoothing, and halving the mesh resolution each move the failure
+  # later without preventing it. Multigrid is stable here at a quarter of the
+  # Reynolds number, so it is the combination rather than either alone.
+  # Turned off, the residuals fall four orders inside the thousand steps below.
+  n_levels: 0
