@@ -30,6 +30,22 @@ Test cases:
 - test_the_operating_point_reaches_the_outlet_patches: and nothing else moves
 - test_the_operating_point_round_trips: an ordinary config node
 - test_the_operating_point_is_not_a_design_variable: outside database.SUBTREE
+- test_no_operating_point_leaves_the_exit_unthrottled: the default
+- test_zero_adjustment_throttles_to_the_design_mass_flow: what zero means
+- test_the_target_scales_with_the_adjustment: the same rule DP_adjust follows
+- test_the_target_reaching_the_patch_is_per_passage: annulus over Nb
+- test_a_throttled_exit_still_starts_from_the_design_pressure: both are set
+- test_a_throttle_can_be_cleared_without_re_meshing: no state left behind
+- test_only_one_outlet_patch_can_be_throttled: refused here, not at the march
+- test_a_pressure_and_a_mass_flow_can_be_stated_together: a start and a target
+- test_a_target_that_is_not_a_flow_is_refused: an adjustment of -1 or below
+- test_the_throttle_round_trips: an ordinary config node
+- test_a_characteristic_sweep_takes_the_throttle_off: a swept point is a pressure
+- test_an_unthrottled_run_has_nothing_to_read_back: the pressure was an input
+- test_the_pressure_a_throttle_settled_at_comes_back_as_DP_adjust: the inverse
+- test_the_datum_is_the_nominal_pressure_change: one scale, the design's
+- test_a_starting_guess_does_not_bias_what_is_read_back: in is not out
+- test_a_throttle_that_has_not_arrived_is_not_read_back: and says why
 """
 
 import dataclasses
@@ -327,6 +343,263 @@ def test_the_operating_point_is_not_a_design_variable():
     from turbigen import database  # noqa: PLC0415
 
     assert "operating_point" not in database.SUBTREE
+
+
+#
+# THROTTLING TO A MASS FLOW
+#
+# The other way to state an operating point. A prescribed pressure lets the
+# mass flow be whatever it draws; a throttle states the mass flow and lets the
+# pressure be whatever holds it. The controller itself is ember's and is tested
+# there --- what is checked here is that the target reaching it is the design's
+# mass flow, through one passage rather than the whole annulus, and that a grid
+# says the same thing when the operating point is applied to it twice.
+#
+
+
+def throttled(grid):
+    """Return the mass flow target on each outlet patch, per passage [kg/s]."""
+    return [patch.mdot_target for patch in grid.patches.outlet]
+
+
+def test_no_operating_point_leaves_the_exit_unthrottled(shrouded):
+    """The default, and what every config written before this said."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine)
+    assert throttled(grid) == [None]
+
+    bconds.apply(grid, machine, bconds.OperatingPoint())
+    assert throttled(grid) == [None]
+
+    assert bconds.exit_mdot(machine, None) is None
+    assert bconds.exit_mdot(machine, bconds.OperatingPoint()) is None
+
+
+def test_zero_adjustment_throttles_to_the_design_mass_flow(shrouded):
+    machine, _ = shrouded
+    point = bconds.OperatingPoint(mdot_adjust=0.0)
+
+    assert bconds.exit_mdot(machine, point) == pytest.approx(
+        float(machine.mean_line.outlet.mdot)
+    )
+
+
+@pytest.mark.parametrize("adjust", [0.05, -0.1, 0.5])
+def test_the_target_scales_with_the_adjustment(shrouded, adjust):
+    """The same rule DP_adjust follows: a fraction of the design value, so
+    zero is the design point and the number means the same thing anywhere."""
+    machine, _ = shrouded
+    mdot_design = float(machine.mean_line.outlet.mdot)
+
+    mdot = bconds.exit_mdot(machine, bconds.OperatingPoint(mdot_adjust=adjust))
+
+    assert mdot / mdot_design == pytest.approx(1.0 + adjust)
+
+
+def test_the_target_reaching_the_patch_is_per_passage(shrouded):
+    """The one unit conversion in this, and the one that fails quietly: ember
+    integrates the faces the mesh has, which is one passage, while the mean
+    line's mass flow is the whole annulus."""
+    machine, grid = shrouded
+    bconds.apply(grid, machine, bconds.OperatingPoint(mdot_adjust=0.0))
+
+    (patch,) = grid.patches.outlet
+    Nb = int(patch.block.Nb)
+
+    assert Nb > 1, "a per-passage target is indistinguishable from an annulus one"
+    assert patch.mdot_target * Nb == pytest.approx(
+        float(machine.mean_line.outlet.mdot), rel=1e-6
+    )
+
+
+def test_a_throttled_exit_still_starts_from_the_design_pressure(shrouded):
+    """The throttle chooses which pressure, not whether one is imposed, so the
+    patch must leave here with a pressure on it as well as a target."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine, bconds.OperatingPoint(mdot_adjust=0.1))
+
+    for patch in grid.patches.outlet:
+        assert patch.P == pytest.approx(float(machine.mean_line.outlet.P), rel=1e-6)
+
+
+def test_a_throttle_can_be_cleared_without_re_meshing(shrouded):
+    """What `bconds` is for, applied to the piece of state that is not a
+    number on a patch: a controller left wound up from the previous operating
+    point would be the one thing that did not come back."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine, bconds.OperatingPoint(mdot_adjust=0.2))
+    assert throttled(grid) != [None]
+
+    bconds.apply(grid, machine, bconds.OperatingPoint(DP_adjust=0.1))
+    assert throttled(grid) == [None]
+
+
+def test_only_one_outlet_patch_can_be_throttled(shrouded):
+    """Refused where the exit is known to be several patches, rather than at
+    the march, where ember would refuse it several stages later."""
+    machine, grid = shrouded
+    (patch,) = grid.patches.outlet
+
+    with pytest.raises(ValueError, match="only be throttled through one"):
+        bconds.apply_throttle(
+            [patch, patch], machine, bconds.OperatingPoint(mdot_adjust=0.0)
+        )
+
+
+def test_a_pressure_and_a_mass_flow_can_be_stated_together(shrouded):
+    """Not two answers to one question: the pressure is where the controller
+    starts and the mass flow is what it steers to."""
+    machine, grid = shrouded
+    point = bconds.OperatingPoint(DP_adjust=0.1, mdot_adjust=0.0)
+
+    bconds.apply(grid, machine, point)
+
+    (patch,) = grid.patches.outlet
+    assert patch.P == pytest.approx(bconds.exit_pressure(machine, point), rel=1e-6)
+    assert patch.mdot_target is not None
+
+
+@pytest.mark.parametrize("adjust", [-1.0, -1.5])
+def test_a_target_that_is_not_a_flow_is_refused(adjust):
+    with pytest.raises(ValueError, match="not a flow"):
+        bconds.OperatingPoint(mdot_adjust=adjust)
+
+
+def test_the_throttle_round_trips():
+    from turbigen import Config  # noqa: PLC0415
+
+    config = build(mesh=MESH)
+    config = dataclasses.replace(
+        config, operating_point=bconds.OperatingPoint(mdot_adjust=0.05)
+    )
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["operating_point"]["mdot_adjust"] == 0.05
+
+
+def test_a_characteristic_sweep_takes_the_throttle_off():
+    """A swept point is a pressure, so the controller comes off at each one:
+    left on, it would hold one mass flow and tabulate it as a map."""
+    from turbigen import chic  # noqa: PLC0415
+
+    config = dataclasses.replace(
+        build(mesh=MESH),
+        operating_point=bconds.OperatingPoint(DP_adjust=0.05, mdot_adjust=0.0),
+    )
+
+    swept = chic.at(config, 0.1)
+
+    assert swept.operating_point.mdot_adjust is None
+    assert swept.operating_point.DP_adjust == 0.1
+
+
+#
+# READING BACK WHERE A THROTTLE ENDED UP
+#
+# The pressure a throttled run reached is an outcome, not an input, and it is
+# the one thing about the operating point that a solve can change. `achieved`
+# is the inverse of `exit_pressure`: it reports where the controller put the
+# exit, in the units the config states a pressure in, so the point can be
+# archived, re-run, and swept from.
+#
+
+
+def settle(patch, level):
+    """Put the controller at `level` [Pa], as a converged march would leave it.
+
+    The correction is derived from the gains and the error sum rather than
+    stored, so moving the level means moving what it is derived from --- and
+    with the measured flow on target, which is what `achieved` requires before
+    it will read anything back.
+    """
+    dP = level - float(np.ravel(patch._P_raw)[0])
+    patch._mdot = patch._mdot_target
+    patch._Kp, patch._Ki = 0.0, 1.0
+    patch._eps_int = dP / float(patch.block.fluid.P_ref)
+
+
+def test_an_unthrottled_run_has_nothing_to_read_back(shrouded):
+    """The exit pressure was an input, so there is nothing the run decided."""
+    machine, grid = shrouded
+
+    bconds.apply(grid, machine)
+    assert bconds.achieved(grid, machine, None) is None
+    assert bconds.achieved(grid, machine, bconds.OperatingPoint()) is None
+    assert bconds.achieved(grid, machine, bconds.OperatingPoint(DP_adjust=0.1)) is None
+
+
+def test_the_pressure_a_throttle_settled_at_comes_back_as_DP_adjust(shrouded):
+    """The inverse of `exit_pressure`, so prescribing the answer reproduces the
+    run --- which is the whole reason for recording it."""
+    machine, grid = shrouded
+    point = bconds.OperatingPoint(mdot_adjust=0.0)
+    bconds.apply(grid, machine, point)
+
+    (patch,) = grid.patches.outlet
+    design = bconds.exit_pressure(machine, point)
+    settle(patch, design - 1000.0)
+
+    now = bconds.achieved(grid, machine, point)
+
+    assert bconds.exit_pressure(machine, now) == pytest.approx(design - 1000.0, rel=1e-6)
+    # And it is still the same run: the throttle is not cleared by reading it.
+    assert now.mdot_adjust == 0.0
+
+
+def test_the_datum_is_the_nominal_pressure_change(shrouded):
+    """Measured against the design's own pressure change, like every other
+    DP_adjust, so a sweep reads on one scale rather than a moving one."""
+    machine, grid = shrouded
+    point = bconds.OperatingPoint(mdot_adjust=0.0)
+    bconds.apply(grid, machine, point)
+
+    (patch,) = grid.patches.outlet
+    Po_in = float(machine.mean_line.inlet.Po)
+    DP_design = Po_in - float(machine.mean_line.outlet.P)
+    settle(patch, Po_in - 1.1 * DP_design)
+
+    now = bconds.achieved(grid, machine, point)
+
+    assert now.DP_adjust == pytest.approx(0.1, rel=1e-4)
+
+
+def test_a_starting_guess_does_not_bias_what_is_read_back(shrouded):
+    """DP_adjust going in is where the controller starts; coming out it is
+    where the controller finished, and the same finish reads the same way
+    whatever it started from."""
+    machine, grid = shrouded
+    Po_in = float(machine.mean_line.inlet.Po)
+    DP_design = Po_in - float(machine.mean_line.outlet.P)
+    target = Po_in - 1.1 * DP_design
+
+    seen = []
+    for guess in (0.0, 0.08):
+        point = bconds.OperatingPoint(DP_adjust=guess, mdot_adjust=0.0)
+        bconds.apply(grid, machine, point)
+        (patch,) = grid.patches.outlet
+        settle(patch, target)
+        seen.append(bconds.achieved(grid, machine, point).DP_adjust)
+
+    assert seen[0] == pytest.approx(seen[1], rel=1e-6)
+
+
+def test_a_throttle_that_has_not_arrived_is_not_read_back(shrouded, caplog):
+    """A controller still moving has not chosen a pressure, and recording where
+    it happened to be would archive a point the run was never at."""
+    machine, grid = shrouded
+    point = bconds.OperatingPoint(mdot_adjust=0.0)
+    bconds.apply(grid, machine, point)
+
+    (patch,) = grid.patches.outlet
+    settle(patch, bconds.exit_pressure(machine, point) - 1000.0)
+    patch._mdot = patch._mdot_target * 1.05
+
+    with caplog.at_level("WARNING", logger="turbigen"):
+        assert bconds.achieved(grid, machine, point) is None
+    assert "not recorded" in caplog.text
 
 
 #

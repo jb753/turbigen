@@ -1079,6 +1079,17 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # flow, and they can only be taken while the grid is in memory.
     result = dataclasses.replace(result, error=iterate.errors(config, result))
 
+    # Where a throttled exit turned out to sit, for the same reason and with
+    # the same deadline: the pressure the controller chose is on the patch, and
+    # the patch goes out of scope with the grid. Folded into the config as well
+    # as the result, so that `output.yaml` records the operating point the run
+    # reached rather than the guess it was given -- which is what makes a
+    # throttled run reproducible, and what a characteristic sweep measures from.
+    achieved = bconds.achieved(grid, machine, config.operating_point)
+    if achieved is not None:
+        config = dataclasses.replace(config, operating_point=achieved)
+        result = dataclasses.replace(result, operating_point=achieved)
+
     run_log.info(convergence_string(history, converged))
     if actual is not None:
         run_log.info(actual.to_string())
@@ -1315,7 +1326,7 @@ def converge_design(config, out_dir, previous=None):
         result = solve(config, design_dir, previous)
         field = promote_final(out_dir, design_dir, result.converged)
 
-        return config, result, result.converged, field
+        return _with_achieved(config, result), result, result.converged, field
 
     # Iteration -1: where the knobs start. Anchored on the config file's own
     # directory, because a config is often run from somewhere else, and
@@ -1349,7 +1360,25 @@ def converge_design(config, out_dir, previous=None):
 
     field = promote_final(out_dir, previous.parent, converged)
 
-    return config, result, converged, field
+    return _with_achieved(config, result), result, converged, field
+
+
+def _with_achieved(config, result):
+    """Return `config` running where `result` says the machine ended up.
+
+    The operating point is the one thing a solve can change about the config it
+    was given, a throttled exit being handed a mass flow and finding the
+    pressure that passes it. Applied on the way out of `converge_design` so
+    that whatever runs next -- a sweep, above all -- inherits the pressure the
+    design converged at rather than the guess it started from.
+
+    Iterators do not move it, so taking it off the last result is taking it off
+    the run that produced the design being returned.
+    """
+    if result is None or result.operating_point is None:
+        return config
+
+    return dataclasses.replace(config, operating_point=result.operating_point)
 
 
 def cmd_batch(args):

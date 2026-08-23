@@ -18,6 +18,9 @@ Test cases:
 - test_a_step_min_larger_than_step_is_refused: nothing would be refined
 - test_the_chic_section_round_trips: an ordinary config node
 - test_at_replaces_the_operating_point: a point states where it is
+- test_a_throttled_design_point_sets_the_datum: where the sweep departs from
+- test_the_bracket_is_absolute_not_an_offset_from_the_datum: one scale
+- test_at_takes_a_throttle_off: a swept point is a pressure
 """
 
 import dataclasses
@@ -61,6 +64,39 @@ def test_the_first_point_is_one_step_off_design():
     chic.sweep(config(step=0.05), runner(log=seen))
 
     assert seen[0] == pytest.approx(0.05)
+
+
+def test_a_throttled_design_point_sets_the_datum():
+    """A design converged with the throttle on did not sit at `DP_adjust = 0`:
+    the controller chose a pressure, and `bconds.achieved` wrote it into the
+    config. The sweep departs from there, so the first point is one step off
+    the machine that was actually run."""
+    seen = []
+    throttled = dataclasses.replace(
+        config(step=0.05),
+        operating_point=OperatingPoint(DP_adjust=0.05, mdot_adjust=0.0),
+    )
+
+    chic.sweep(throttled, runner(limit=0.5, log=seen))
+
+    assert seen[0] == pytest.approx(0.10)
+
+
+def test_the_bracket_is_absolute_not_an_offset_from_the_datum():
+    """One scale for the whole sweep, the design's own, so a bracket names
+    pressures that were run rather than departures from a moving origin."""
+    throttled = dataclasses.replace(
+        config(step=0.05, step_min=0.02),
+        operating_point=OperatingPoint(DP_adjust=0.05, mdot_adjust=0.0),
+    )
+
+    points, (lo, hi) = chic.sweep(throttled, runner())
+
+    # The stand-in refuses above 0.17 on the absolute scale, and the datum
+    # itself is the lower bound before anything has converged beyond it.
+    assert lo <= LIMIT <= hi
+    assert lo >= 0.05
+    assert points[0].DP_adjust == pytest.approx(0.10)
 
 
 def test_it_marches_by_the_step():
@@ -151,6 +187,20 @@ def test_max_points_below_one_is_refused():
 #
 # THE OPERATING POINT, AND THE REPORT
 #
+
+
+def test_at_takes_a_throttle_off():
+    """Every swept point is a prescribed pressure. The design point's own
+    throttle is not lost by this: the pressure it settled at is already this
+    config's `DP_adjust`, which is where the sweep starts."""
+    throttled = dataclasses.replace(
+        build(), operating_point=OperatingPoint(DP_adjust=0.05, mdot_adjust=0.0)
+    )
+
+    moved = chic.at(throttled, 0.1)
+
+    assert moved.operating_point.mdot_adjust is None
+    assert moved.operating_point.DP_adjust == pytest.approx(0.1)
 
 
 def test_at_replaces_the_operating_point():
