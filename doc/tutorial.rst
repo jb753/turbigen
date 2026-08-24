@@ -85,7 +85,7 @@ Assuming no inlet swirl, :math:`V_{\theta 1}=0` and the Euler work equation yiel
 We now have stagnation thermodynamic states and velocity vectors at inlet and
 exit of the rotor. Static enthalpy follows from subtracting the kinetic energy at
 constant entropy, :math:`h = h_0 - \tfrac{1}{2}V^2`; entropy does not depend on the frame of reference. Now, passing :math:`(h, s)`
-to the equation of state will yield density :mathrm:`\rho` or any other static thermodynamic
+to the equation of state will yield density :math:`\rho` or any other static thermodynamic
 property as needed.
 
 Conservation of mass then gives the annulus area at each station. Subscript :math:`m` denotes the meridional projection with no circumferential component, as opposed to the flow area which is normal to the velocity vector (and thus dependent on flow angle).
