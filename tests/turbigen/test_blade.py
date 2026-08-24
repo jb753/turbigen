@@ -21,6 +21,7 @@ from turbigen import (
     Blade,
     BladeDesign,
     Config,
+    DiffusionFactor,
     Quadratic,
     Row,
     Section,
@@ -113,6 +114,8 @@ class OldRow:
         self.Alpha = np.asarray(ml.Alpha, dtype=float)
         self.Alpha_rel = np.asarray(ml.Alpha_rel, dtype=float)
         self.Am = np.asarray(ml.Am, dtype=float)
+        self.V_rel = np.asarray(ml.V_rel, dtype=float)
+        self.Vt_rel = np.asarray(ml.Vt_rel, dtype=float)
 
 
 def old_blade(machine, i_row, dchi_LE=-8.0, dchi_TE=0.0):
@@ -332,6 +335,33 @@ def test_circulation_count_matches_the_turbigen_implementation(machine):
         )
 
         assert machine.rows[i_row].n_blade == int(np.round(expected).item())
+
+
+def test_diffusion_factor_count_matches_the_turbigen_implementation():
+    count = {"type": "DFL", "DFL": 0.45}
+    machine = build(
+        blades=[blade(count=count), blade(dchi_LE=2.0, count=count)]
+    ).design()
+
+    for i_row in range(2):
+        dchi_LE = (-8.0, 2.0)[i_row]
+        expected = turbigen_ref.nblade.DFL(DFL=0.45).get_blade_number(
+            OldRow(machine.mean_line.row(i_row)),
+            old_blade(machine, i_row, dchi_LE=dchi_LE),
+        )
+
+        assert machine.rows[i_row].n_blade == int(np.round(expected).item())
+
+
+def test_diffusion_factor_refuses_a_velocity_ratio_it_cannot_meet(machine):
+    # A row that diffuses less than the requested factor asks for has no
+    # pitch that delivers it, however many blades are fitted.
+    mean_line_row = machine.mean_line.row(0)
+    V2_V1 = (mean_line_row.V_rel[1] / mean_line_row.V_rel[0]).item()
+    count = DiffusionFactor(DFL=2.0 * (1.0 - V2_V1))
+
+    with pytest.raises(ValueError, match="too low for a diffusion factor"):
+        count.count(mean_line_row, machine.rows[0].blade)
 
 
 @pytest.mark.parametrize(

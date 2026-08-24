@@ -172,6 +172,42 @@ class Circulation(BladeCount):
         return int(np.round(2.0 * np.pi * r_ref / pitch).item())
 
 
+class DiffusionFactor(BladeCount):
+    """Set the number of blades using the Lieblein diffusion factor."""
+
+    type: ClassVar[str] = "DFL"
+
+    DFL: float
+    """Lieblein diffusion factor [--]. A typical value is 0.45; the flow
+    separates above about 0.6."""
+
+    spf: float = 0.5
+    """Span fraction to take the chord from."""
+
+    def count(self, mean_line_row, blade):
+        ml = mean_line_row
+
+        # Pitch to true chord ratio, Dixon and Hall eqn. (3.32)
+        V1, V2 = ml.V_rel
+        DVt = np.abs(np.diff(ml.Vt_rel).item())
+        excess = self.DFL + V2 / V1 - 1.0
+        if excess < 0.0:
+            raise ValueError(
+                f"A velocity ratio V2/V1={V2 / V1} is too low for a diffusion "
+                f"factor DFL={self.DFL}; they must satisfy DFL + V2/V1 > 1."
+            )
+        s_c = 2.0 * V1 / DVt * excess
+
+        # Stagger, assuming a quadratic camber line, resolves the true chord
+        # onto the meridional chord the blade reports
+        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
+        stagger = np.arctan(0.5 * (tanAlpha_rel[0] + tanAlpha_rel[1]))
+        pitch = s_c / np.cos(stagger) * blade.chord(self.spf)
+
+        r_ref = np.mean(ml.r)
+        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
+
+
 class BladeDesign(Node):
     """Design variables for one blade row."""
 

@@ -344,9 +344,11 @@ AutoGrid-format reshape and belongs with the mesher, `get_nose` and
 Only the camber and thickness types in use are ported --- every YAML in the
 repo uses `quadratic` and `taylor`, and the three `thick_type: Impeller` uses
 name a class that does not exist in the package. `Quartic`, `Taylor` and
-`TaylorQuadratic` camber, the `DFL` blade count and splitters (which appear
-only in `old-examples/`) are additions, not blockers, exactly as `AR_chord` is
-for the annulus.
+`TaylorQuadratic` camber and splitters (which appear only in `old-examples/`)
+are additions, not blockers, exactly as `AR_chord` is for the annulus. The
+`DFL` blade count has since been added on the same footing as `Co`, without an
+`adjust` of its own: the old class raised `NotImplementedError` from one, so
+there was nothing to port.
 
 ## Meshing
 
