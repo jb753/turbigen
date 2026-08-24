@@ -2,11 +2,10 @@
 Tutorial
 ========
 
-This tutorial walks through writing a new mean-line design and using it to
-design and simulate a compressor. Everything shown below is a real file in the
-repository, run on every commit, so nothing here can quietly stop working:
+This tutorial walks through writing a new mean-line class and using it to
+design and simulate a compressor.
 
-* the design itself is :download:`examples/turbigen_plugins/fan.py
+* the designer class is :download:`examples/turbigen_plugins/fan.py
   <../examples/turbigen_plugins/fan.py>`
 * the configuration is :download:`examples/fan.yaml <../examples/fan.yaml>`
 
@@ -34,14 +33,14 @@ following design variables (many other choices are possible):
 * Hub-to-tip ratio, :math:`\mathit{HTR}=r_\mathrm{hub}/r_\mathrm{cas}`
 * Total-to-total isentropic efficiency guess, :math:`\eta_\mathrm{tt}`
 
-To proceed with the annulus and blade shape design, :program:`turbigen`
-requires a *mean line*: the flow at the inlet and outlet of every blade row.
-For each of those stations we must supply
+To proceed with the annulus and blade shape construction, :program:`turbigen`
+requires a *mean line design*: a nominal averaged flow field at the inlet and
+outlet of every blade row. For each of those stations we must supply
 
 * a thermodynamic state, :math:`(h, s)` for example
 * an absolute-frame velocity vector, :math:`(V_x, V_r, V_\theta)`
-* an annulus area, :math:`A_m`, and a mean radius, :math:`r`
-* the angular velocity of the frame the row turns in, :math:`\Omega`
+* an annulus area, :math:`A_m`, and a mean radius, :math:`r_\mathrm{rms}`
+* the angular velocity of the blade frame, :math:`\Omega`
 
 .. _tut-ml-algo:
 
@@ -60,7 +59,7 @@ The specified total pressure rise and guess of total-to-total efficiency allow c
 
    \eta_\mathrm{tt} = \frac{h_{02s}-h_{01}}{h_{02}-h_{01}} \quad\Rightarrow\quad \Delta h_0 = \frac{1}{\eta_\mathrm{tt}}\left[h(p_{01}+\Delta p_0, s_1) - h_{01}\right]
 
-where :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)` is the ideal exit stagnation enthalpy for isentropic compression, i.e. enthalpy evaluated at the real exit stagnation pressure and inlet entropy.
+where :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)` is the ideal exit stagnation enthalpy for isentropic compression, i.e. enthalpy evaluated at the (lossy) exit stagnation pressure and (lossless) inlet entropy.
 
 The blade speed :math:`U` is then given from the definition of loading coefficient
 
@@ -84,11 +83,12 @@ Assuming no inlet swirl, :math:`V_{\theta 1}=0` and the Euler work equation yiel
    \Delta h_0 = U\left(V_{\theta 2}-V_{\theta 1}\right)\quad\Rightarrow\quad V_{\theta 2}=\frac{\Delta h_0}{U}
 
 We now have stagnation thermodynamic states and velocity vectors at inlet and
-exit of the rotor. Static states follow from subtracting the kinetic energy at
-constant entropy, :math:`h = h_0 - \tfrac{1}{2}V^2`, and with an equation of
-state those give a density.
+exit of the rotor. Static enthalpy follows from subtracting the kinetic energy at
+constant entropy, :math:`h = h_0 - \tfrac{1}{2}V^2`; entropy does not depend on the frame of reference. Now, passing :math:`(h, s)`
+to the equation of state will yield density :mathrm:`\rho` or any other static thermodynamic
+property as needed.
 
-Conservation of mass then gives the annulus area
+Conservation of mass then gives the annulus area at each station. Subscript :math:`m` denotes the meridional projection with no circumferential component, as opposed to the flow area which is normal to the velocity vector (and thus dependent on flow angle).
 
 .. math::
    :label: eqn-A

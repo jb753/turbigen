@@ -80,6 +80,7 @@ dev = [
     'sphinx-argparse',
     'sphinxcontrib-programoutput',
     'sphinxcontrib-bibtex',
+    'setuptools<81',  # sphinxcontrib-bibtex needs pkg_resources, removed in setuptools 81+
     'snowballstemmer==2.2.0',
     'autodocsumm',
     'pytest',
