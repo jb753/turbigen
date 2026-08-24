@@ -68,6 +68,14 @@ class RealFluid(Fluid):
     beta: tuple[float, ...]
     """Legendre coefficients of s/R along the reference isochor [--]."""
 
+    delta: tuple[tuple[float, ...], ...]
+    """Legendre coefficients of the viscosity surface [--], normalised by
+    :attr:`mu_c`."""
+
+    gamma: tuple[tuple[float, ...], ...]
+    """Legendre coefficients of the conductivity surface [--], normalised by
+    :attr:`kappa_c`."""
+
     rho_lim: tuple[float, float]
     """Density bounds of the fit box [kg/m^3]."""
 
@@ -75,17 +83,20 @@ class RealFluid(Fluid):
     """Internal energy bounds of the fit box [J/kg], on the datum the
     coefficients were fitted against."""
 
-    rho_isochor: float
-    """Density of the isochor the entropy integral starts from [kg/m^3]."""
-
     Rgas: float
     """Specific gas constant [J/kg/K]."""
 
-    mu: float
-    """Dynamic viscosity [kg/m/s]."""
+    mu_c: float
+    """Dynamic viscosity at the centre of the fit box [kg/m/s], the scale the
+    :attr:`delta` surface is normalised by."""
 
-    Pr: float = 0.7
-    """Prandtl number [--]."""
+    kappa_c: float
+    """Thermal conductivity at the centre of the fit box [W/m/K], the scale
+    the :attr:`gamma` surface is normalised by."""
+
+    scale_visc: float = 1.0
+    """Factor multiplying the viscosity, for sweeping Reynolds number without
+    touching the fit [--]."""
 
     P_dtm: float | None = None
     """Datum pressure where u = s = 0 [Pa]. Must lie in the fit box.
@@ -114,12 +125,14 @@ class RealFluid(Fluid):
         return ember.fluid.RealFluid(
             alpha=self.alpha,
             beta=self.beta,
+            delta=self.delta,
+            gamma=self.gamma,
             rho_lim=self.rho_lim,
             u_lim=self.u_lim,
-            rho_isochor=self.rho_isochor,
             Rgas=self.Rgas,
-            mu=self.mu,
-            Pr=self.Pr,
+            mu_c=self.mu_c,
+            kappa_c=self.kappa_c,
+            scale_visc=self.scale_visc,
             P_dtm=self.P_dtm,
             T_dtm=self.T_dtm,
         )

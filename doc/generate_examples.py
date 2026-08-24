@@ -19,6 +19,7 @@ Usage::
     make generate-examples                         # what is out of date
     uv run python doc/generate_examples.py -j 2    # two at a time
     uv run python doc/generate_examples.py -f      # everything again
+    uv run python doc/generate_examples.py fan     # just this one
 """
 
 import argparse
@@ -127,12 +128,34 @@ def main(argv=None):
         action="store_true",
         help="run every example, rather than only those that have changed",
     )
+    parser.add_argument(
+        "names",
+        nargs="*",
+        metavar="NAME",
+        help="examples to run, named without the .yaml; the default is all",
+    )
     args = parser.parse_args(argv)
 
     examples = sorted(INPUT_DIR.glob("*.yaml"))
     if not examples:
         print(f"No examples in {INPUT_DIR}", file=sys.stderr)
         return 1
+
+    # Naming examples is what lets a caller pay for the ones it wants. CI runs
+    # a single cheap case; the documentation build runs the lot. An unknown
+    # name is an error rather than an empty selection, so a typo in a workflow
+    # cannot quietly turn the job into a no-op that passes.
+    if args.names:
+        by_name = {e.stem: e for e in examples}
+        unknown = [n for n in args.names if n not in by_name]
+        if unknown:
+            print(
+                f"No such example(s): {', '.join(unknown)}. "
+                f"Available: {', '.join(sorted(by_name))}",
+                file=sys.stderr,
+            )
+            return 1
+        examples = [by_name[n] for n in dict.fromkeys(args.names)]
 
     stale = examples if args.force else [e for e in examples if is_stale(e)]
     for example in examples:

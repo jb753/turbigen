@@ -59,6 +59,49 @@ jobs:
         # and the flag is not accepted.
         run: uv run --no-project pytest
 
+  solve:
+    # The one real CFD run in CI. `test` above designs every example, which is
+    # pure numpy and costs milliseconds; nothing there meshes or solves, so a
+    # regression in the mesher or the solver on a real case would reach a user
+    # before it reached a test. This job closes that gap with a single case.
+    #
+    # One leg, not a matrix: this is minutes of CFD, and paying for it five
+    # times over would buy very little -- the solver is the same code on every
+    # platform, and what differs between them is already covered by `test`.
+    #
+    # `fan` and only `fan`, by name. The other example, turbine_cascade, is
+    # several times the cost and is run by hand into doc/_examples when the
+    # documentation needs its output.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install turbigen
+        run: |
+          uv venv --python 3.13
+          uv pip install --only-binary ember-cfd .
+
+      - name: Solve the fan example
+        # Through generate_examples.py rather than `turbigen run` directly, so
+        # that a failure prints the tail of the run's log instead of leaving
+        # the reason for it in a file the runner throws away. `turbigen run`
+        # solves once and never iterates, so the example's `iterate:` section
+        # costs nothing here.
+        run: uv run --no-project python doc/generate_examples.py fan
+
+      - name: Keep what the run produced
+        # On failure too: a diverged march is exactly when the convergence
+        # history and the log are worth having.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-fan
+          path: doc/_examples/fan/
+          if-no-files-found: warn
+
   lint:
     # Once, not once per matrix leg: what black and flake8 make of the source
     # does not depend on the platform reading it.
@@ -76,7 +119,7 @@ jobs:
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
   package:
-    needs: [test, lint]
+    needs: [test, lint, solve]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

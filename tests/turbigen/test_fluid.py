@@ -22,16 +22,24 @@ ALPHA = [
 ]
 BETA = [147.62290181807342, 3.9188329391484373, -0.18721253522834344]
 
+# Constant transport surfaces: a single Legendre term, order 0, whose value is
+# 1.0 everywhere in normalised coordinates -- so mu and kappa come out equal to
+# mu_c and kappa_c at every state, matching what the old mu/Pr fields meant
+# before ember fitted transport as surfaces of their own.
+DELTA = [[1.0]]
+GAMMA = [[1.0]]
+
 CASE = {
     "type": "real",
     "alpha": ALPHA,
     "beta": BETA,
+    "delta": DELTA,
+    "gamma": GAMMA,
     "rho_lim": [1.0, 50.0],
     "u_lim": [3.0e5, 4.0e5],
-    "rho_isochor": 25.5,
     "Rgas": 51.2,
-    "mu": 1.8e-5,
-    "Pr": 0.72,
+    "mu_c": 1.8e-5,
+    "kappa_c": 2.5e-2,
     # The centre of the box above, which is where the fitting script puts it.
     "P_dtm": 334563.125,
     "T_dtm": 250.27320861816406,
@@ -93,12 +101,13 @@ def test_eos_builds_an_ember_real_fluid(real):
     direct = ember.fluid.RealFluid(
         alpha=ALPHA,
         beta=BETA,
+        delta=DELTA,
+        gamma=GAMMA,
         rho_lim=(1.0, 50.0),
         u_lim=(3.0e5, 4.0e5),
-        rho_isochor=25.5,
         Rgas=51.2,
-        mu=1.8e-5,
-        Pr=0.72,
+        mu_c=1.8e-5,
+        kappa_c=2.5e-2,
         P_dtm=334563.125,
         T_dtm=250.27320861816406,
     )

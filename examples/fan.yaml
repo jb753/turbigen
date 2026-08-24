@@ -1,0 +1,109 @@
+# Axial fan
+#
+# The design built step by step in the tutorial: a single rotor, no inlet
+# swirl, constant axial velocity, at a stagnation pressure rise of 2 kPa and a
+# mass flow of 5 kg/s. The mean-line design itself is a user plugin rather than
+# a shipped design, in `turbigen_plugins/fan.py` beside this file, which is the
+# point the tutorial is making --- a new machine is a Python file and a config,
+# and nothing in turbigen needs changing to accept one.
+#
+# Low speed throughout: the exit Mach number is 0.13, so compressibility is
+# barely involved and the case converges quickly.
+
+fluid:
+  type: perfect
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-5
+
+# Design variables of the Fan class in turbigen_plugins/fan.py, which is found
+# by walking up from this file looking for a `turbigen_plugins` directory. The
+# `type` matches the ClassVar the plugin declares.
+mean_line:
+  type: fan
+  DPo: 2000.0     # Stagnation pressure rise [Pa]
+  mdot: 5.0       # Mass flow rate [kg/s]
+  phi: 0.5        # Flow coefficient
+  psi: 0.4        # Loading coefficient
+  htr: 0.8        # Inlet hub-to-tip ratio
+  etatt: 0.9      # Efficiency guess, relaxed by the mean_line iterator below
+  Po1: 1.0e5
+  To1: 300.0
+
+# Span-to-meridional-chord ratios, for the row and for the ducts either side of
+# it. The chord in metres follows from the span the mean line chose.
+annulus:
+  type: aspect_ratio
+  AR_row: [3.0]
+  AR_gap: [1.0, 1.0]
+
+blades:
+  - count:
+      type: Co
+      Co: 0.3
+    sections:
+      - spf: 0.5
+        dchi_LE: 0.0
+        dchi_TE: 0.0
+        camber:
+          type: quadratic
+          aft_loading: 0.0
+        thickness:
+          type: taylor
+          R_LE: 0.02
+          t_max: 0.06
+          m_tmax: 0.35
+          kappa_max: 0.0
+          t_TE: 0.01
+          tanwedge: 0.05
+
+mesh:
+  type: h
+  yplus: 30.0
+  resolution_factor: 0.5
+  dm_TE: 0.0
+  AR_cusp: 2.0
+  ni_cusp: 5
+
+# Hold the design mass flow by moving the exit pressure, rather than
+# prescribing a back pressure and accepting whatever flow it passes. Zero means
+# the design value itself; a fraction moves off it, which is how a speed line is
+# walked out.
+operating_point:
+  mdot_adjust: 0.0
+
+# Close the loop between the design above and what it turns out to be. Each
+# iterator names one mismatch, measures it, and moves one design variable:
+#
+#   deviation   trailing-edge recamber, so the flow leaves at the design angle
+#   incidence   leading-edge recamber, so the stagnation point sits on the nose
+#   mean_line   the efficiency guess, onto what the solution achieved
+#
+# All three cost CFD, so only `turbigen iterate` acts on them. `turbigen run`
+# solves once and instead reports each mismatch it measures, which is what
+# fills the nominal-against-actual table at the end of the log.
+iterate:
+  - type: deviation
+    tolerance: 0.5      # degrees of exit flow angle
+
+  - type: incidence
+    tolerance: 0.5      # degrees of leading-edge incidence
+
+  - type: mean_line
+    variables: [etatt]
+    tolerance: 0.005    # as a fraction of the nominal, not an absolute
+
+# Step counts chosen to converge inside a continuous-integration budget rather
+# than to squeeze the last of the residual out: this example is solved on every
+# push. A throttled exit needs the steps for its controller to settle as well
+# as for the residuals to fall, so the averaging window is a long one.
+solver:
+  type: ember
+  n_step: 3000
+  n_step_avg: 1000
+  n_step_log: 250
+  n_stage: 4
+  cfl: 5.0
+  sf_resid: 1.0
+  dampin: 25.0
+  n_levels: 0
