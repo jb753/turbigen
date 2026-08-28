@@ -132,7 +132,7 @@ class Config(Node):
         and `config.mesh.mesh(machine)` already says it without a second
         spelling on `Config`.
         """
-        mean_line = self.mean_line.design(self.fluid)
+        mean_line = self.mean_line.design(self.fluid.eos())
 
         annulus = None
         if self.annulus is not None:

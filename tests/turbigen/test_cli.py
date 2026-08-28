@@ -286,15 +286,24 @@ def test_nothing_but_batch_writes_to_stdout(case, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_missing_config_file_is_a_message_not_a_traceback(tmp_path, capsys):
+def test_a_failure_shows_the_traceback(tmp_path, capsys):
+    """A failure is fatal, so it reports where it happened.
+
+    Most failures are a mistake in a config file or in a plugin, and both are
+    the user's own code in the sense that matters: a line number is what tells
+    them which of their lines to look at. Summarising to `Type: message` reads
+    tidily for the handful of errors raised deliberately against user input,
+    and hides the file and line for every other one.
+    """
     assert cli.main(["design", str(tmp_path / "nope.yaml")]) == 1
 
     captured = capsys.readouterr()
+    assert "Traceback" in captured.err
     assert "FileNotFoundError" in captured.err
-    assert "Traceback" not in captured.err
 
 
-def test_verbose_shows_the_traceback(tmp_path, capsys):
+def test_verbose_is_not_needed_for_the_traceback(tmp_path, capsys):
+    """`-v` sets the logging level and says nothing about how errors print."""
     assert cli.main(["design", str(tmp_path / "nope.yaml"), "-v"]) == 1
 
     assert "Traceback" in capsys.readouterr().err

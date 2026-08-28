@@ -25,7 +25,7 @@ RGAS = CP * (GAMMA - 1.0) / GAMMA
 
 @pytest.fixture
 def air():
-    return PerfectFluid(cp=CP, gamma=GAMMA, mu=1.8e-5, Pr=0.72)
+    return PerfectFluid(cp=CP, gamma=GAMMA, mu=1.8e-5, Pr=0.72).eos()
 
 
 class Uniform(MeanLineDesign):
@@ -370,7 +370,7 @@ def test_design_refuses_a_mean_line_that_does_not_invert():
     design = Wrong(**CASES["axial_turbine"])
 
     with pytest.raises(DesignError, match="mdot"):
-        design.design(config.fluid)
+        design.design(config.fluid.eos())
 
 
 #

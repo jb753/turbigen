@@ -2139,13 +2139,17 @@ def main(argv=None):
 
     try:
         return args.func(args)
-    except Exception as err:
-        # A user error in a config file should read as a message, not a stack
-        # trace. The traceback is one -v away when it is actually wanted.
-        if args.verbose:
-            logger.exception("Error encountered, quitting...")
-        else:
-            logger.error(f"{type(err).__name__}: {err}")
+    except Exception:
+        # A failure gets its traceback, whatever it is. Most of them are raised
+        # from a config file or a plugin, which are the user's own code in the
+        # sense that matters: the file and line are what say which of their
+        # lines to look at. Summarising to `Type: message` reads tidily for the
+        # errors raised deliberately against user input, but those cannot be
+        # told apart by type from the ones that mean something is broken --
+        # both arrive as ValueError -- so suppressing the trace for one
+        # suppresses it for the other, which is the expensive half of the
+        # trade.
+        logger.exception("Error encountered, quitting...")
         return 1
     finally:
         # In a finally block so that a run which fell over still reports how

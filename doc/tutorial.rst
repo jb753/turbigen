@@ -5,10 +5,6 @@ Tutorial
 This tutorial walks through writing a new mean-line class and using it to
 design and simulate a compressor.
 
-* the designer class is :download:`examples/turbigen_plugins/fan.py
-  <../examples/turbigen_plugins/fan.py>`
-* the configuration is :download:`examples/fan.yaml <../examples/fan.yaml>`
-
 We first need to install :program:`turbigen`:
 
 .. code-block:: console
@@ -16,6 +12,26 @@ We first need to install :program:`turbigen`:
    $ curl -LsSf https://astral.sh/uv/install.sh | sh
    $ source $HOME/.local/bin/env
    $ uv tool install turbigen
+
+Save the YAML input file :download:`fan.yaml <../examples/fan.yaml>`
+to a convenient working directory. Your mean-line design algorithm, being code not
+data, must be written seperately in Python.
+:program:`turbigen` finds user-written designs by walking up from the
+input file looking for a directory called `turbigen_plugins`, so create one beside the configuration file and put your design code inside it. For this tutorial, use
+the designer class skeleton in :download:`fan.py
+<../examples/turbigen_plugins/fan.py>`.
+
+The file structure should look like this:
+
+.. code-block:: console
+
+   $ tree
+   .
+   ├── fan.yaml
+   └── turbigen_plugins
+       └── fan.py
+
+   2 directories, 2 files
 
 Problem statement
 ^^^^^^^^^^^^^^^^^
@@ -124,14 +140,6 @@ turns design variables into a mean line, and `backward`, which recovers the
 design variables from a mean line. The :ref:`ml-custom` section describes the
 general process in more detail.
 
-:program:`turbigen` finds user-written designs by walking up from the
-configuration file looking for a directory called `turbigen_plugins`, in the
-way that :program:`git` looks for a `.git` directory. So create one beside the
-configuration file and put `fan.py` inside it:
-
-.. code-block:: console
-
-   $ mkdir turbigen_plugins
 
 The skeleton of the design looks like this. The `type` string is the name a
 configuration file will use to ask for it, and `n_row` says how many blade
@@ -182,11 +190,12 @@ Implementing forward
 We can now code up the :ref:`tut-ml-algo`.
 
 :meth:`~turbigen.design.MeanLineDesign.allocate` gives an empty mean line of
-the right size, carrying the working fluid from the configuration file. The
-first task is the ideal exit enthalpy :math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)`
-in Eqn. :eq:`eqn-eta`. Note that nothing here names a perfect gas: a design
-should make no assumption about the equation of state, and asking the fluid for
-enthalpy at a pressure and an entropy is how that is done.
+the right size, carrying the equation of state built from the configuration
+file. The first task is the ideal exit enthalpy
+:math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)` in Eqn. :eq:`eqn-eta`. Note that
+nothing here names a perfect gas: a design should make no assumption about the
+equation of state, and asking the fluid for enthalpy at a pressure and an
+entropy is how that is done.
 
 .. literalinclude:: ../examples/turbigen_plugins/fan.py
    :language: python

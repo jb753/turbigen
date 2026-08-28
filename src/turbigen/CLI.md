@@ -987,10 +987,15 @@ A separate console script from `turbigen`, so the experiment can be installed
 alongside the existing tool without displacing it.
 
 No `sys.excepthook` is installed at all. `main()` catches exceptions around the
-command and reports them as a message with exit code 1, showing the traceback
-only under `-v`. Importing the CLI therefore has no effect on the process,
-unlike `turbigen.main:35`, which replaces the global excepthook at module
-scope.
+command, logs the traceback, and exits 1. Every failure gets its traceback,
+whatever it is: most are raised from a config file or a plugin, and the file
+and line say which of the user's own lines to look at. A `Type: message`
+summary reads tidily for the errors raised deliberately against user input, but
+those cannot be told apart by type from the ones that mean something is broken
+-- both arrive as `ValueError` -- so suppressing the trace for one suppresses
+it for the other. `-v` sets the logging level and says nothing about how errors
+print. Importing the CLI has no effect on the process, unlike
+`turbigen.main:35`, which replaces the global excepthook at module scope.
 
 ## Testing
 
@@ -1010,6 +1015,6 @@ target the parts unique to the command line:
 - a stamped field still restarts onto a design that has moved, which is what
   every chained restart depends on;
 - `--set` reaches the design, and a mistyped `--set` key fails;
-- an unknown verb, a missing file, and a bad config each exit non-zero with a
-  message on stderr rather than a traceback;
+- an unknown verb, a missing file, and a bad config each exit non-zero, and a
+  failure prints its traceback on stderr with or without `-v`;
 - nothing but `batch` writes to stdout.

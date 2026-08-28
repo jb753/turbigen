@@ -13,7 +13,7 @@ they serialise themselves. Writing one is a single class::
         phi: float
         Po1: float = 1e5
 
-        def forward(self, fluid):
+        def forward(self, fluid: ember.fluid._Fluid):
             ml = self.allocate(fluid)
             ...
             return ml
@@ -34,7 +34,7 @@ it, and lose the latter to rounding. A design that expects such conditions
 should move the datum, before it solves, from the inlet conditions it already
 knows::
 
-    ml.set_fluid(ml.fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
+    ml = self.allocate(fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
 
 Note that the *reference scales* are a separate matter and not worth setting
 here: floating-point precision is invariant under scaling, so dividing the
@@ -46,6 +46,7 @@ and nothing else. Scales matter to the grid, which a solver iterates on, and
 import logging
 from typing import ClassVar
 
+import ember.fluid
 import numpy as np
 import scipy.optimize
 
@@ -82,7 +83,7 @@ class MeanLineDesign(Node):
     # TO BE IMPLEMENTED BY A DESIGN
     #
 
-    def forward(self, fluid):
+    def forward(self, fluid: ember.fluid._Fluid):
         """Return a mean line built from this design's variables.
 
         Use :meth:`allocate` for the empty mean line, fill it in, and return
@@ -102,14 +103,14 @@ class MeanLineDesign(Node):
     # PROVIDED
     #
 
-    def allocate(self, fluid) -> MeanLine:
+    def allocate(self, fluid: ember.fluid._Fluid) -> MeanLine:
         """Return an empty mean line of the right size, ready to fill in.
 
         Parameters
         ----------
-        fluid : Fluid
-            The working fluid node. Its equation of state is created here, so
-            a design never handles an ember object itself.
+        fluid : ember.fluid._Fluid
+            The equation of state, already built from the config. A design
+            never sees the config node, only the fluid object it describes.
 
         """
         if not isinstance(self.n_row, int) or self.n_row < 1:
@@ -119,10 +120,10 @@ class MeanLineDesign(Node):
             )
 
         ml = MeanLine(self.n_row)
-        ml.set_fluid(fluid.eos())
+        ml.set_fluid(fluid)
         return ml
 
-    def design(self, fluid) -> MeanLine:
+    def design(self, fluid: ember.fluid._Fluid) -> MeanLine:
         """Return a mean line built from this design.
 
         Checks that the result inverts back to the design variables that asked
