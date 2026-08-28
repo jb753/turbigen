@@ -1,0 +1,43 @@
+fluid:
+  type: perfect  # Which fluid model, perfect or real
+  cp: 1005.0     # Specific heat at constant pressure [J/kg/K]
+  gamma: 1.4     # Ratio of specific heats [--]
+  mu: 1.8e-5     # Dynamic viscosity [Pa*s]
+
+mean_line:
+  type: fan    # Which plugin to use, compressor/turbine etc
+  DPo: 2000.0  # Stagnation pressure rise [Pa]
+  mdot: 5.0    # Mass flow rate [kg/s]
+  phi: 0.5     # Flow coefficient
+  psi: 0.4     # Loading coefficient
+  htr: 0.8     # Inlet hub-to-tip ratio
+  eta_tt: 0.9  # Efficiency guess
+
+annulus:
+  type: aspect_ratio  # How to select axial chord
+  AR_row: [3.0]       # span/chord ratio of the row
+  AR_gap: [1.0, 1.0]  # span/length ratio of inlet and exit ducts
+
+blades:
+  # List of rows
+  - count:
+      type: DFL  # Which method to set number of blades
+      DFL: 0.45  # Lieblein diffusion factor value
+    sections:
+      # List of sections
+      - spf: 0.5  # Span fraction of the section
+        dchi_LE: 0.0  # Leading edge recamber [deg]
+        dchi_TE: 0.0  # Trailing edge recamber [deg]
+        camber:
+          # Simple quadratic camber line
+          type: quadratic
+          aft_loading: 0.0
+        thickness:
+          # Piecewise cubic thickness distribution
+          type: taylor  # After Taylor and Miller (2017)
+          R_LE: 0.02  # Leading edge radius/chord
+          t_max: 0.06  # Maximum thickness/chord
+          m_tmax: 0.35  # Chord fraction at maximum thickness
+          kappa_max: 0.0  # Curvature at maximum thickness
+          t_TE: 0.01  # Trailing edge thickness/chord
+          tanwedge: 0.05  # Trailing edge wedge angle tangent

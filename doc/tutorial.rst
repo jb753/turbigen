@@ -173,8 +173,8 @@ If we ask :program:`turbigen` to run the design for `input.yaml` at this point, 
    :prompt:
    :ellipsis: 1, -2
 
-Design variable fields
-^^^^^^^^^^^^^^^^^^^^^^
+Design variables
+^^^^^^^^^^^^^^^^
 
 We now need to declare the design variables we need to take from the input file,
 by adding them as fields to the class.
@@ -204,8 +204,8 @@ Note that `To1` and `Po1` are not mentioned in the error message, because we spe
    :prepend: # ...
 
 
-Implementing forward
-^^^^^^^^^^^^^^^^^^^^
+Forward method
+^^^^^^^^^^^^^^
 
 We can now code up the :ref:`tut-ml-algo`. The `forward` method takes a `fluid`
 object as an argument, and can access the design variables as attributes of
@@ -296,8 +296,8 @@ If we now run :program:`turbigen` on `input.yaml`, it will load the input data, 
    :prompt:
    :ellipsis: 1, -2
 
-Implementing backward
-^^^^^^^^^^^^^^^^^^^^^
+Backward method
+^^^^^^^^^^^^^^^
 
 `backward` is the encapsulation of what each design variable means. It is a
 check that the mean line `forward` built really is the design that was asked
@@ -323,6 +323,47 @@ the result:
 
 .. program-output:: turbigen design input.yaml
    :cwd: ../tutorial/step4
+   :returncode: 0
+   :prompt:
+   :ellipsis: 1, 3
+
+Annulus and blade shapes
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+With the mean line built, we can now construct the annulus lines and blades by
+specifying some more input data.
+
+To use the built-in annulus requires only a few fairly self-explanatory
+lines in the input file:
+
+.. literalinclude:: ../tutorial/step5/input.yaml
+   :language: yaml
+   :caption: input.yaml
+   :start-at: annulus:
+   :end-before: blades:
+   :prepend:
+      # ...
+   :append:
+      # ...
+
+Blade specification is more involved. We need to choose how many blades in each
+row; the Lieblein diffusion factor is a good starting point for compressors. We
+can construct the blade sections at any number spanwise positions by choosing
+camber and thickness distribution, with the camber and thickness parameters
+smoothly interpolated across the span.
+
+.. literalinclude:: ../tutorial/step5/input.yaml
+   :language: yaml
+   :caption: input.yaml
+   :start-at: blades:
+   :prepend:
+      # ...
+
+Now passing the input file to :program:`turbigen` will now build the mean line
+and the annulus and blade shapes to give us some more printout, including the calculated meridional chord, number of blades, tip gap, and pitch-to-chord ratio:
+
+.. program-output:: turbigen design input.yaml
+   :cwd: ../tutorial/step5
    :returncode: 0
    :prompt:
    :ellipsis: 1, 3
