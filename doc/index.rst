@@ -21,15 +21,9 @@ User manual
 .. toctree::
    :maxdepth: 2
 
-   quickstart
    tutorial
-   nomenclature
    usage
-   data_structures
-   meanline
-   solver
-   examples/index
    changelog
    license
-   Source code repository <https://gitlab.developers.cam.ac.uk/jb753/turbigen>
+   Source code repository <https://github.com/jb753/turbigen>
    references

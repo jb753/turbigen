@@ -1,0 +1,8 @@
+fluid:
+  type: perfect  # Which fluid model, perfect or real
+  cp: 1005.0     # Specific heat at constant pressure [J/kg/K]
+  gamma: 1.4     # Ratio of specific heats [--]
+  mu: 1.8e-5     # Dynamic viscosity [Pa*s]
+
+mean_line:
+  type: fan    # Which plugin to use, compressor/turbine etc

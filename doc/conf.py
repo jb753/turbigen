@@ -4,22 +4,9 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-
-import os
-import sys
-import turbigen
 import datetime
 
-sys.path.insert(0, os.path.abspath(".."))
-
-# Local extensions, which are found by import like any other.
-sys.path.insert(0, os.path.abspath("_ext"))
-
+import turbigen
 
 # -- Project information -----------------------------------------------------
 
@@ -40,35 +27,15 @@ release = turbigen.__version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
-    "autodocsumm",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
-    "matplotlib.sphinxext.plot_directive",
     "sphinxarg.ext",
-    "turbigen_example",
 ]
-
-# Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
-
-plot_include_source = True
-plot_html_show_source_link = False
-plot_html_show_formats = False
-plot_formats = ["svg", "pdf"]
-plot_formats = ["svg", "pdf"]
-
-add_module_names = False
-autoclass_content = "init"
-autodoc_member_order = "bysource"
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -83,29 +50,12 @@ html_theme = "alabaster"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
+# Loaded after the theme, so it can override the theme.
+html_css_files = ["custom.css"]
+
 html_theme_options = {
     "description": f"Version {release}",
     "fixed_sidebar": True,
-}
-
-# Macros for LaTeX
-mathjax3_config = {
-    "tex": {
-        "macros": {
-            "Ma": r"{M\kern-.1ema}",
-            "Rey": r"{R\kern-.1eme}",
-            "htr": r"{\mathit{HTR}}",
-            "inn": r"{\mathrm{in}}",
-            "out": r"{\mathrm{out}}",
-            "rel": r"{\mathrm{rel}}",
-            "Chi": r"{\hat{\chi}}",
-            "TE": r"{\mathrm{TE}}",
-            "LE": r"{\mathrm{LE}}",
-            "dee": r"\mathrm{d}",
-            "RR": r"{\mathit{RR}}",
-            "VmR": r"{\mathit{VR}}",
-        },
-    }
 }
 
 bibtex_bibfiles = ["refs.bib"]

@@ -2,10 +2,10 @@
 Tutorial
 ========
 
-This tutorial walks through writing a new mean-line class and using it to
-design and simulate a compressor.
+This tutorial walks through writing a new mean-line class in order to design a compressor.
 
-We first need to install :program:`turbigen`:
+We first need to install :program:`turbigen`, which can be achieved on Linux or
+macOS with something like these shell commands:
 
 .. code-block:: console
 
@@ -13,21 +13,29 @@ We first need to install :program:`turbigen`:
    $ source $HOME/.local/bin/env
    $ uv tool install turbigen
 
-Save the YAML input file :download:`fan.yaml <../examples/fan.yaml>`
-to a convenient working directory. Your mean-line design algorithm, being code not
-data, must be written seperately in Python.
-:program:`turbigen` finds user-written designs by walking up from the
-input file looking for a directory called `turbigen_plugins`, so create one beside the configuration file and put your design code inside it. For this tutorial, use
-the designer class skeleton in :download:`fan.py
-<../examples/turbigen_plugins/fan.py>`.
+Usually, we run :program:`turbigen` by passing an input YAML file containing
+all the data required to construct a turbomachine. Your mean-line design
+algorithm, being code not data, must be written seperately in Python.
+:program:`turbigen` finds user-written designs by walking up from the input
+file looking for a directory called `turbigen_plugins`. The below commands
+create a directory called `tutorial`, change into it, create the
+`turbigen_plugins` directory, and create an empty input file and a Python file
+for the design:
 
-The file structure should look like this:
+.. code-block:: console
+
+   $ mkdir tutorial
+   $ cd tutorial
+   $ mkdir turbigen_plugins
+   $ touch input.yaml turbigen_plugins/fan.py
+
+The file structure should then look like this:
 
 .. code-block:: console
 
    $ tree
    .
-   ├── fan.yaml
+   ├── input.yaml
    └── turbigen_plugins
        └── fan.py
 
@@ -66,7 +74,7 @@ Mean-line design equations
 We need to combine conservation of mass, momentum, and energy with
 definitions of our design variables to solve for the flow in the turbomachine.
 This will yield a set of equations that we will later implement numerically in
-the `forward` method.
+a method on our new class.
 
 The specified total pressure rise and guess of total-to-total efficiency allow calculation of the compressor work :math:`\Delta h_0 = h_{02}-h_{01}`
 
@@ -135,287 +143,186 @@ Setting up the files
 ^^^^^^^^^^^^^^^^^^^^
 
 A mean-line design is a subclass of
-:class:`~turbigen.design.MeanLineDesign` with two methods: `forward`, which
-turns design variables into a mean line, and `backward`, which recovers the
-design variables from a mean line. The :ref:`ml-custom` section describes the
-general process in more detail.
+:class:`~turbigen.design.MeanLineDesign` which has two methods: :meth:`~turbigen.design.MeanLineDesign.forward`, which
+turns design variables into a flow field :class:`~turbigen.meanline.MeanLine`, and :meth:`~turbigen.design.MeanLineDesign.backward`
+, which recovers the
+design variables from a :class:`~turbigen.meanline.MeanLine` built by :meth:`~turbigen.design.MeanLineDesign.forward` or averaged from a CFD solution.
 
+Copy the below skeleton of the class into `turbigen_plugins/fan.py`. The `type`
+string is the name a input file will use to ask for the new turbomachine, and
+`n_row` says how many blade rows it describes:
 
-The skeleton of the design looks like this. The `type` string is the name a
-configuration file will use to ask for it, and `n_row` says how many blade
-rows it describes:
-
-.. code-block:: python
+.. literalinclude:: ../tutorial/step1/turbigen_plugins/fan.py
+   :language: python
    :caption: turbigen_plugins/fan.py
 
-   from typing import ClassVar
+We can now copy into `input.yaml` a skeleton configuration that asks for this
+design, but in order for the mean-line design to run we also need to specify the
+working fluid. The `fluid` section names a fluid by its `type` and sets any
+properties needed to specify that type.
 
-   import numpy as np
+.. literalinclude:: ../tutorial/step1/input.yaml
+   :language: yaml
+   :caption: input.yaml
 
-   from turbigen.design import MeanLineDesign
+If we ask :program:`turbigen` to run the design for `input.yaml` at this point, it will load the input data but stop because `forward` is not implemented.
 
+.. program-output:: turbigen design input.yaml
+   :cwd: ../tutorial/step1
+   :returncode: 1
+   :prompt:
+   :ellipsis: 1, -2
 
-   class Fan(MeanLineDesign):
-       """A single rotor at fixed inlet stagnation conditions and no inlet swirl."""
+Design variable fields
+^^^^^^^^^^^^^^^^^^^^^^
 
-       type: ClassVar[str] = "fan"
-       n_row: ClassVar[int] = 1
+We now need to declare the design variables we need to take from the input file,
+by adding them as fields to the class.
 
-       def forward(self, fluid):
-           """Return a mean line built from this design's variables."""
-           raise NotImplementedError("Implement the forward method")
-
-       def backward(self, ml):
-           """Return the design variables represented by mean line `ml`."""
-           raise NotImplementedError("Implement the backward method")
-
-Design variables
-^^^^^^^^^^^^^^^^
-
-The design variables are not arguments to `forward`; they are *fields on the
-class*. This is what lets them carry their own documentation and defaults, and
-what allows a configuration file to be checked against the design before
-anything is run. Each of the quantities from the problem statement becomes one
-field:
-
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step2/turbigen_plugins/fan.py
    :language: python
-   :start-at: DPo: float
-   :end-before: # SHARED DEFINITIONS
-   :dedent: 4
+   :caption: turbigen_plugins/fan.py
+   :start-at: class Fan
+   :end-before: def forward
+   :prepend: # ...
+   :append: # ...
+
+Optionally, a default can be set for a field, which will be used if the input file does not specify a value; the input file must include all fields without defaults. Hence, running the design now will produce a different error:
+
+.. program-output:: turbigen design input.yaml
+   :cwd: ../tutorial/step2
+   :returncode: 1
+   :prompt:
+   :ellipsis: 1, -2
+
+Note that `To1` and `Po1` are not mentioned in the error message, because we specified their defaults in the class (although the input file can override those defaults if needed). Finally, before moving to implementing the algorithm, add values for the missing design variables to `input.yaml`:
+
+.. literalinclude:: ../tutorial/step3/input.yaml
+   :language: yaml
+   :caption: input.yaml
+   :start-at: mean_line:
+   :prepend: # ...
+
 
 Implementing forward
 ^^^^^^^^^^^^^^^^^^^^
 
-We can now code up the :ref:`tut-ml-algo`.
+We can now code up the :ref:`tut-ml-algo`. The `forward` method takes a `fluid`
+object as an argument, and can access the design variables as attributes of
+`self`. The method must return a :class:`~turbigen.meanline.MeanLine` object
+with the flow field filled in.
 
-:meth:`~turbigen.design.MeanLineDesign.allocate` gives an empty mean line of
-the right size, carrying the equation of state built from the configuration
-file. The first task is the ideal exit enthalpy
-:math:`h_{02s}=h(p_{01}+\Delta p_0, s_1)` in Eqn. :eq:`eqn-eta`. Note that
-nothing here names a perfect gas: a design should make no assumption about the
-equation of state, and asking the fluid for enthalpy at a pressure and an
-entropy is how that is done.
+The `Fan` class specifies inlet stagnation pressure and
+temperature, but enthalpy and entropy are more
+convinient to work with. `fluid.set_P_T` returns the density and internal energy
+pair for a pressure and a temperature, which are then passed
+to `fluid.get_h` and `fluid.get_s` to evaluate stagnation enthalpy and
+entropy (noting that entropy does not depend on the frame of reference):
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
-   :start-at: ml = self.allocate(fluid)
-   :end-at: ho2s = ml.fluid.get_h(*ml.fluid.set_P_s(Po2, s1))
-   :dedent: 8
+   :start-at: def forward(self, fluid):
+   :end-at: s1 = fluid.get_s(rhoo1, uo1)
+   :dedent: 4
 
-The work, blade speed and velocities then follow directly from the definitions,
-Eqns. :eq:`eqn-eta` to :eq:`eqn-Vt`:
+At no point have we used perfect gas relations --- a design class should make no
+assumptions about the equation of state.
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+To evaluate Eqn. :eq:`eqn-eta` we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through `fluid.set_P_s` and  `fluid.get_h` to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:
+
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
-   :start-at: # Work from the definition of efficiency
+   :start-at: # Ideal exit stagnation enthalpy
+   :end-at: Dho = (ho2s - ho1) / self.eta_tt
+   :dedent: 4
+
+The blade speed and velocities then follow directly from the definitions
+Eqns. :eq:`eqn-psi` to :eq:`eqn-Vt`:
+
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
+   :language: python
+   :start-at: # Blade speed from the definition of loading coefficient
    :end-at: Vt2 = Dho / U
-   :dedent: 8
+   :dedent: 4
 
-Next the thermodynamic states. The exit entropy is not a free choice: it is
-whatever the pressure rise we asked for and the work we just found imply. With
-entropy and stagnation enthalpy known at both stations, the static states come
-from subtracting the kinetic energy. `ml.flat` is the mean line seen as a
-single streamwise list of stations, which is how the physics of a machine reads
-even though the storage is row by row.
+The exit entropy is set by the actual work and pressure rise. Then
+with entropy, stagnation enthalpy, and velocity known at both stations, the
+static states come from subtracting kinetic energy.
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
-   :start-at: # The exit entropy follows
-   :end-at: flat.set_Vt(Vt)
-   :dedent: 8
+   :start-at: # Exit entropy from actual work and pressure rise
+   :end-at: h = ho - 0.5 * (Vx**2 + Vt**2)
+   :dedent: 4
 
-The static states give a density, so conservation of mass now fixes the annulus
-areas, Eqn. :eq:`eqn-A`, and the hub-to-tip ratio fixes the mean radius,
+We can now store the flow field in a :class:`~turbigen.meanline.MeanLine`
+object, a blank instance of which is created by calling
+:class:`~turbigen.meanline.MeanLine.allocate`. The indexing convention for mean
+line stations is that `ml.shape == (2, n_row)`, where the first index is the
+station (0 for inlet, 1 for exit) and the second index is the row number. It is
+often more convenient to work with a one-dimensional view of shape `(2*n_row,)`, which
+can be obtained through the  `ml.flat` property. All data flows go through setter
+methods on the :class:`~turbigen.meanline.MeanLine` object that ensure
+the flow field is consistent and valid. In our case:
+
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
+   :language: python
+   :start-at: # Store the flow field
+   :end-at: flat.set_Vt(Vt)
+   :dedent: 4
+
+Now that the flow field is stored, we can use attributes on the :class:`~turbigen.meanline.MeanLine` object to evaluate derived quantities automatically. For example, we need density to set the annulus area via conservation of mass, Eqn. :eq:`eqn-A`, which we can access as `ml.flat.rho`. The hub-to-tip ratio then fixes the mean radius,
 Eqn. :eq:`eqn-rrms`, from which the shaft speed follows by Eqn. :eq:`eqn-Omega`:
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
    :start-at: # Conservation of mass sets the annulus areas
    :end-at: ml.set_Omega(U / r_rms)
-   :dedent: 8
+   :dedent: 4
 
-That is every quantity the mean line needs, so `forward` returns it. In full:
+That is every quantity the mean line needs, so `forward` can now return it. In full:
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
    :caption: turbigen_plugins/fan.py
    :pyobject: Fan.forward
    :dedent: 4
 
+If we now run :program:`turbigen` on `input.yaml`, it will load the input data, build the mean line, and then fall over because `backward` is not implemented:
+
+.. program-output:: turbigen design input.yaml
+   :cwd: ../tutorial/step3
+   :returncode: 1
+   :prompt:
+   :ellipsis: 1, -2
+
 Implementing backward
 ^^^^^^^^^^^^^^^^^^^^^
 
-`backward` is the single definition of what each design variable *means*. It
-serves as a check that the mean line `forward` built really is the design that
-was asked for --- :program:`turbigen` runs the round trip every time --- and it
-is also how design variables are read back out of a mixed-out CFD solution, so
-that the nominal design can be compared against what was achieved.
+`backward` is the encapsulation of what each design variable means. It is a
+check that the mean line `forward` built really is the design that was asked
+for and it is also how design variables are calculated from a mixed-out CFD
+solution to compare to the nominal design.
 
-Anything used by both directions is worth writing once and calling twice. A
-formula duplicated between `forward` and `backward` is free to drift:
+`backward` returns a dictionary keyed by the field names; extra keys beyond the
+design variables are reported for information only but not checked for
+consistency. The :class:`~turbigen.meanline.MeanLine` has many attributes that
+contain useful derived properties for this purpose. The properties `ml.inlet`
+and `ml.exit` index into the machine inlet and exit (across all rows).
 
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
-   :language: python
-   :start-at: def blade_speed(ml)
-   :end-before: # DESIGN
-   :dedent: 4
-
-`backward` then returns a dictionary keyed by the field names, using
-:ref:`meanline` attributes to evaluate them. Keys beyond the design variables
-are reported alongside them but are not part of the round trip, which is a
-convenient place to put derived quantities such as efficiency:
-
-.. literalinclude:: ../examples/turbigen_plugins/fan.py
+.. literalinclude:: ../tutorial/step4/turbigen_plugins/fan.py
    :language: python
    :caption: turbigen_plugins/fan.py
    :pyobject: Fan.backward
    :dedent: 4
 
-The configuration file
-^^^^^^^^^^^^^^^^^^^^^^
+With both methods written, the design runs to completion. :program:`turbigen`
+calls `forward` to build the mean line, passes it back through `backward` to
+check that the design variables it asked for are the ones it got, and prints
+the result:
 
-With the design written, a configuration file can ask for it. The `fluid`
-section states the working fluid, and `mean_line` names the design by its
-`type` string and sets its fields:
-
-.. literalinclude:: ../examples/fan.yaml
-   :language: yaml
-   :caption: fan.yaml
-   :start-at: fluid:
-   :end-before: # Span-to-meridional-chord ratios
-
-At this point ``turbigen design fan.yaml`` will run `forward`, check it with
-`backward`, and print the mean line --- everything the design describes, and
-nothing more.
-
-To grow blades and a mesh, add the sections that describe them. The annulus is
-specified by *aspect ratio* rather than by a chord in metres, which is the
-number a designer carries between machines: the chord follows from the span the
-mean line chose. The number of blades comes from a circulation coefficient
-rather than being stated outright.
-
-.. literalinclude:: ../examples/fan.yaml
-   :language: yaml
-   :caption: fan.yaml
-   :start-at: annulus:
-   :end-before: # Hold the design mass flow
-
-Because mass flow is one of our design variables, we want the simulation to
-pass the mass flow we designed for rather than whatever falls out of a
-prescribed back pressure. Throttling the exit does that: the solver moves the
-outlet pressure until the flow is the design value.
-
-.. literalinclude:: ../examples/fan.yaml
-   :language: yaml
-   :caption: fan.yaml
-   :start-at: operating_point:
-   :end-at: mdot_adjust: 0.0
-
-Finally the solver settings:
-
-.. literalinclude:: ../examples/fan.yaml
-   :language: yaml
-   :caption: fan.yaml
-   :start-at: solver:
-
-Running CFD
-^^^^^^^^^^^
-
-``turbigen run fan.yaml`` now designs the fan, meshes it, solves it once and
-reports. The input file, the log and the plots below are the real output of
-that command on the files shown above:
-
-.. turbigen-example:: fan
-
-Creating and running designs with different velocity triangles is as simple as
-changing a line or two in the `mean_line` section. This allows us to explore a
-new design space very quickly.
-
-Iterating the design
-^^^^^^^^^^^^^^^^^^^^
-
-The table at the end of the log compares the nominal mean-line design variables
-against actual values calculated from the three-dimensional CFD solution, using
-cuts that are mixed out at constant area. Reading it, several things are wrong.
-
-The mass flow, flow coefficient and hub-to-tip ratio are all met to within a
-fraction of a percent: the throttle held the mass flow, and the annulus is the
-one that was drawn. But the pressure rise and the loading are both far short of
-what was asked for. The root cause is deviation: the blades were drawn to turn
-the flow to the design angle exactly, with no allowance for the flow leaving a
-little short of the metal angle, so the rotor does less work than intended and
-raises less pressure. The efficiency guess is out too --- it had to be a guess,
-since the losses are not known until the flow is solved, but the annulus areas
-depend on it.
-
-There is a fourth problem the table does not show. The inlet flow is not
-precisely aligned with the leading-edge metal angle, so the flow accelerates
-sharply around the nose rather than dividing cleanly on it.
-
-:program:`turbigen` can correct all of these, by re-running the CFD and
-adjusting the design between runs. Each corrector is one entry in the `iterate`
-list: it names one mismatch, measures it, and moves one design variable to
-close it.
-
-.. literalinclude:: ../examples/fan.yaml
-   :language: yaml
-   :caption: fan.yaml
-   :start-at: iterate:
-   :end-before: # Step counts
-
-`deviation` recambers the trailing edge until the flow leaves at the design
-angle, `incidence` recambers the leading edge until the stagnation point sits
-on the nose, and `mean_line` relaxes the `etatt` field of our design onto the
-efficiency the solution actually achieved --- named by the same string
-`backward` returns it under, which is what ties the two together.
-
-Note that these are listed under `run` above at no cost: ``turbigen run``
-solves once and reports every mismatch it can measure, but changes nothing.
-Acting on them is a different verb:
-
-.. code-block:: console
-
-   $ turbigen iterate fan.yaml
-
-This repeats the design-mesh-solve cycle, applying the corrections each time,
-until every one of them is inside its tolerance. Each simulation restarts from
-the previous flow field, so convergence of the flow happens in parallel with
-adjustment of the geometry, and no single run has to converge from scratch.
-Each iteration is written to its own `iter_NNNN` directory, and the corrections
-applied are printed as a table, so a design that is failing to settle can be
-seen doing so. Expect this fan to take of the order of ten iterations: the
-recamber is deliberately limited per step, because a corrector that took the
-whole measured error at once would overshoot and ring.
-
-When it finishes, the working directory holds a configuration file for the
-converged design. The recamber angles it records are the deviation and
-incidence that were corrected for, and `etatt` is the efficiency the machine
-turned out to have rather than the one we guessed.
-
-Extensions
-^^^^^^^^^^
-
-This tutorial has demonstrated some of the functionality of
-:program:`turbigen`. Within the current choice of parameterisation, any change
-to the design is just an edit to `fan.yaml`:
-
-* Change the number of blades by changing the circulation coefficient `Co`,
-  or state a count outright with ``count: {type: Nb, Nb: 55}``
-* Increase the grid density with `resolution_factor` under `mesh`
-* Reshape the blade through the `camber` and `thickness` sections
-* Specify blade sections at several spanwise locations
-* Change the aspect ratio `AR_row`
-* Move off the design mass flow with `mdot_adjust`, which is how a
-  characteristic is walked out
-* Change the working fluid to a real gas under `fluid`
-
-To change the mean-line design itself, edit `forward` and `backward` in
-`fan.py`. For example: relax the assumption of constant axial velocity by
-adding a velocity ratio as a field, replace the loading coefficient with a de
-Haller number, or specify an inlet Mach number instead of a mass flow rate.
-
-To add a stator, raise `n_row` to 2 and extend `forward` to fill in four
-stations rather than two. `ml.flat` will then be a list of four, from machine
-inlet to machine outlet, and `ml.set_Omega_row` sets a different speed for each
-row.
+.. program-output:: turbigen design input.yaml
+   :cwd: ../tutorial/step4
+   :returncode: 0
+   :prompt:
+   :ellipsis: 1, 3

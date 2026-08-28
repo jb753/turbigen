@@ -1,0 +1,19 @@
+/* Long lines wrap instead of scrolling out of sight.
+ *
+ * The theme lets a code block scroll sideways, which hides the end of a line
+ * behind a scrollbar most readers never touch. That is tolerable for source,
+ * where the interesting part is at the left, and not for the program output
+ * the tutorial shows: an error message says what is wrong at the end of the
+ * line, and a truncated one teaches nothing.
+ *
+ * A hanging indent to mark the wrapped continuations is not available here:
+ * `pre-wrap` makes the whole listing one block, so `text-indent` moves the
+ * first line of the block rather than the first line of each wrap, which in
+ * source reads as the indentation being wrong.
+ */
+div.highlight pre,
+div.literal-block-wrapper div.highlight pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}

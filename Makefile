@@ -44,6 +44,3 @@ compile-double ::
 compile-intel ::
 	python -m numpy.f2py -m embsolvec --fcompiler=intelem --opt='-O3 -xHost -align array64byte -fast -fmax-errors=1' -c turbigen/solvers/embsolve-src/embsolve.f90
 	mv embsolve*.so turbigen/solvers
-
-generate-examples ::
-	uv run python doc/generate_examples.py
