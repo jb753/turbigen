@@ -195,21 +195,21 @@ def test_design_writes_nothing_at_all(case, capsys):
 
 
 def test_report_of_a_mean_line_design_is_not_an_error(case):
-    """Every standard plot needs geometry this case does not have.
+    """A report runs at every depth of case without a mode to select.
 
-    Each processor degrades to no figures when what it needs is missing, which
-    is what lets one verb cover every depth of case without a mode to select --
-    and an empty document is not a report, so no file appears.
+    The geometry and flow plots degrade to no figures when what they need is
+    missing, but the velocity triangles are drawn from the mean line alone --
+    so even this case leaves a `post.pdf`, of that one page.
     """
     assert cli.main(["report", str(case)]) == 0
 
     assert (case.parent / cli.LOG_NAME).is_file()
-    assert not (case.parent / "post.pdf").exists()
+    assert (case.parent / "post.pdf").is_file()
 
-    # The resolved config is written even here, where there was nothing to
-    # draw: it is the one artefact a report leaves that is not a picture, and
-    # the only way to get one without paying for a solve. The answer still
-    # belongs to whoever has one, so there is no `result:` under it.
+    # The resolved config is written too: it is the one artefact a report
+    # leaves that is not a picture, and the only way to get one without paying
+    # for a solve. The answer still belongs to whoever has one, so there is no
+    # `result:` under it.
     written = case.parent / cli.OUTPUT_NAME
     assert written.is_file()
 
@@ -437,7 +437,7 @@ mesh:
   dm_TE: 0.0
   AR_cusp: 2.0
   ni_cusp: 5
-solver: {type: ember, n_step: 10, n_step_log: 10, n_stage: 4}
+solver: {type: ember, n_step: 10, n_step_log: 10}
 """
 """A single stationary row, adapted from examples/turbine_cascade.yaml.
 

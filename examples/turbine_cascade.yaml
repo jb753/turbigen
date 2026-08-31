@@ -98,15 +98,7 @@ solver:
   n_step: 1000
   n_step_avg: 250
   n_step_log: 50
-  n_stage: 4
-  cfl: 5.0
-  sf_resid: 1.0
-  dampin: 25.0
-  # No multigrid, which this case does not survive at the Reynolds number
-  # asked for above. With three levels the march goes to NaN across the whole
-  # block, and everything that softens it only postpones that: a lower CFL,
-  # more smoothing, and halving the mesh resolution each move the failure
-  # later without preventing it. Multigrid is stable here at a quarter of the
-  # Reynolds number, so it is the combination rather than either alone.
-  # Turned off, the residuals fall four orders inside the thousand steps below.
-  n_levels: 0
+  # Everything else at turbigen's defaults: the bare single-grid scree march,
+  # which is what these are tuned for. This case does not survive multigrid at
+  # the Reynolds number above, and ember's own cfl of 5 is well past the limit
+  # for the scheme -- both of which the defaults already account for.
