@@ -86,8 +86,15 @@ dev = [
     'pytest',
     'pytest-xdist',
     'pre-commit',
-    'ruff',
-    'vulture',
+    # No ruff here. It is pinned in .pre-commit-config.yaml, and that pin is
+    # what CI enforces -- so a second, unpinned copy in this group is a second
+    # formatter with no version agreement and no authority. It resolved to
+    # 0.16.5 against the hook's 0.12.8, which format `X + """..."""` two
+    # different ways and disagree about which lint rules are on by default:
+    # running it reformatted files the hooks would then leave alone, since
+    # `exclude:` keeps them off tests/ entirely. Lint and format through
+    # `pre-commit run`, which is also what the CI job runs.
+    'vulture',  # bin/check_dead_code.sh runs this one with `uv run`
     'twine',
     'bump-my-version',
     'pyqt6',
