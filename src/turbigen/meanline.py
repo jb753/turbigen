@@ -53,8 +53,18 @@ logger = logging.getLogger("turbigen")
 class MeanLine(ember.block.Block):
     """One-dimensional flow field and annulus geometry along the mean line.
 
-    See the module docstring for the layout of the ``(2, n_row)`` shape and for
-    the meaning of the block radius.
+    An :class:`ember.block.Block` of shape ``(2, n_row)``: axis 0 indexes the
+    inlet (0) and outlet (1) stations of a blade row, axis 1 the rows. Every
+    flow property ember defines is therefore available directly and vectorised
+    over both axes; the members below are only what the mean line adds ---
+    annulus geometry derived from :attr:`Am`, a per-station :attr:`Omega` so
+    rows can spin independently, overall performance metrics, and
+    serialisation.
+
+    See the module docstring for the full layout of the shape, the streamwise
+    :py:attr:`~ember.block.Block.flat` view, and the meaning of the block
+    radius. The :ref:`api-meanline` page is the narrative guide to building one
+    and reading it back.
     """
 
     _data_keys = ember.block.Block._data_keys + ("Am", "Omega")
@@ -275,7 +285,7 @@ class MeanLine(ember.block.Block):
 
         Returns
         -------
-        fluid : Fluid
+        fluid : ember.fluid.Fluid
             A new equation of state; this mean line is left unchanged.
 
         """
@@ -379,7 +389,7 @@ class MeanLine(ember.block.Block):
         ----------
         data : dict
             As produced by :meth:`to_dict`.
-        fluid : Fluid
+        fluid : ember.fluid.Fluid
             Equation of state to read the stored state against. Required, and
             an argument rather than stored, because the numbers in `data` are
             dimensional and mean nothing without one.

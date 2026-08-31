@@ -82,11 +82,36 @@ release = turbigen.__version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
     "sphinxarg.ext",
     "turbigen_schema",
 ]
+
+# The mean line and its designer build on ember, so their inherited flow-field
+# API is documented there, not here. Point at /dev/ for now: it is the only
+# build that exposes the public `ember.fluid.Fluid`. It can drift from the
+# pinned release; realign the URL when ember cuts one carrying that name.
+intersphinx_mapping = {
+    "ember": ("https://ember-cfd.org/dev/", None),
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+}
+
+# Both documented modules are written in NumPy-style docstrings.
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+
+autodoc_member_order = "bysource"
+# Inherited members are ember's; a mention in the prose links to its docs
+# rather than pulling the whole Block API onto turbigen's page.
+autodoc_default_options = {
+    "members": True,
+    "show-inheritance": True,
+}
 
 # Local extensions, which are not installed anywhere.
 sys.path.insert(0, str(Path(__file__).parent / "_ext"))
