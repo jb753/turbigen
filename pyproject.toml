@@ -20,22 +20,15 @@ dependencies = [
     "numpy~=2.5.0",
     'PyYAML~=6.0.0',
     'scipy~=1.18.0',
-    # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
-    # Block.flat, mass_average over chosen axes -- was on ember's dev branch
-    # for a while, and this was a git url pinned to it. 0.2.0 carries it, so
-    # an ordinary version specifier does now.
-    #
-    # ember requires numpy 2.5, which is why the numpy and scipy pins above are
-    # what they are.
-    #
-    # It is a git url tracking master, not a version specifier. The RealFluid
-    # config node needs ember's real-gas equation of state, which is merged to
-    # master but unreleased, so no released version can reach it. This costs CI:
-    # both jobs install with --only-binary ember-cfd because no runner has a
-    # Fortran toolchain, and a git url is a source build, so they fail on every
-    # platform until this goes back to a released 'ember-cfd~=0.3.0'. That swap
-    # waits on ember cutting a release with the real-gas EOS and shipping wheels.
-    'ember-cfd @ git+https://github.com/jb753/ember.git@master',
+    # Compatible-release, not a floor: ember follows semver from 0.1.0, and
+    # until 1.0.0 a minor release may break the public API without deprecating
+    # first, so a new minor is adopted deliberately. 0.3.0 is the release that
+    # carries the real-gas equation of state the RealFluid node needs, and it
+    # ships wheels for every platform CI runs on -- which is what lets CI
+    # install with --only-binary ember-cfd on runners that have no Fortran
+    # toolchain. ember requires numpy 2.5, which is why the numpy and scipy
+    # pins above are what they are.
+    'ember-cfd~=0.3.0',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
