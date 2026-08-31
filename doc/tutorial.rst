@@ -2,7 +2,7 @@
 Tutorial
 ========
 
-This tutorial walks through writing a new mean-line class in order to design a compressor.
+This tutorial walks through writing a new mean-line class in order to design a compressor. Running actual CFD is out of scope for now.
 
 We first need to install :program:`turbigen`, which can be achieved on Linux or
 macOS with something like these shell commands:
@@ -417,7 +417,8 @@ any change to the design is just an edit to `input.yaml`:
 * Reshape the blade through the `camber` and `thickness` sections
 * Specify blade sections at several spanwise locations
 * Change the aspect ratio `AR_row`
-* Change the working fluid to a real gas under `fluid`
+* Change the working fluid to a real gas under `fluid`, evaluated from a
+  thermodynamically consistent fitted equation of state :cite:`Wheeler2024`
 
 To change the mean-line design itself, edit `forward` and `backward` in
 `fan.py`. For example: relax the assumption of constant axial velocity by
