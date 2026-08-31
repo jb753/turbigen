@@ -367,3 +367,72 @@ and the annulus and blade shapes to give us some more printout, including the ca
    :returncode: 0
    :prompt:
    :ellipsis: 1, 3
+
+Plotting
+^^^^^^^^
+
+So far, our invocation of :program:`turbigen` has been in `design` mode, which
+only prints to the console. We can save more detailed plots to disk by
+running `report` mode, which will write a `post.pdf` report with plots of the
+design, and if CFD were run the post-processed flow field as well. Report mode also saves an `output.yaml` file which is the same as the input file but with any defaults filled in, and a transcript of the console output in `log_turbigen.txt`. So if we run:
+
+.. program-output:: turbigen report input.yaml
+   :cwd: ../tutorial/step5
+   :returncode: 0
+   :prompt:
+   :ellipsis: 1, -7
+
+The flow-field plots are skipped because no CFD has been run; the annulus,
+blade section and velocity triangle plots are drawn from the geometry alone. All
+of the output is written alongside the input file:
+
+.. program-output:: ls
+   :cwd: ../tutorial/step5
+   :prompt:
+
+Opening `post.pdf` shows the meridional annulus view, the blade-to-blade
+sections of each row, and the mean-line velocity triangles:
+
+.. figure:: /_static/tut_step5_annulus.svg
+   :width: 90%
+
+   Meridional view of the annulus, with the blade row outlined.
+
+.. figure:: /_static/tut_step5_sections.svg
+   :width: 90%
+
+   Blade-to-blade sections, drawn on the conformal :math:`(m', \theta)` plane.
+
+.. figure:: /_static/tut_step5_triangle.svg
+   :width: 100%
+
+   Mean-line velocity triangles at inlet and exit of the row.
+
+Extensions
+^^^^^^^^^^
+
+We have now
+
+This tutorial has demonstrated some of the functionality of
+:program:`turbigen`. Within the current choice of mean-line parameterisation,
+any change to the design is just an edit to `input.yaml`:
+
+* Change the number of blades by changing the diffusion factor `DFL`,
+  or fix a count directly with ``count: {type: Nb, Nb: 55}``
+* Increase the grid density with `resolution_factor` under `mesh`
+* Reshape the blade through the `camber` and `thickness` sections
+* Specify blade sections at several spanwise locations
+* Change the aspect ratio `AR_row`
+* Move off the design mass flow with `mdot_adjust`, which is how a
+  characteristic is walked out
+* Change the working fluid to a real gas under `fluid`
+
+To change the mean-line design itself, edit `forward` and `backward` in
+`fan.py`. For example: relax the assumption of constant axial velocity by
+adding a velocity ratio as a field, replace the loading coefficient with a de
+Haller number, or specify an inlet Mach number instead of a mass flow rate.
+
+To add a stator, raise `n_row` to 2 and extend `forward` to fill in four
+stations rather than two. `ml.flat` will then be a list of four, from machine
+inlet to machine outlet, and `ml.set_Omega_row` sets a different speed for each
+row.

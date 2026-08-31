@@ -5,8 +5,48 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import datetime
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 import turbigen
+
+# -- Tutorial figures --------------------------------------------------------
+# The Plotting section of the tutorial embeds the plots from step 5's report.
+# The reader is shown `turbigen report input.yaml`; the SVGs it needs come from
+# the --svg variant, rendered here so that step is not part of the walkthrough.
+
+
+def _render_tutorial_figures():
+    here = Path(__file__).parent
+    step5 = here.parent / "tutorial" / "step5"
+    static = here / "_static"
+    static.mkdir(exist_ok=True)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from turbigen.cli import main; raise SystemExit(main())",
+            "report",
+            "--svg",
+            "input.yaml",
+        ],
+        cwd=step5,
+        check=True,
+        capture_output=True,
+    )
+
+    for src, dst in {
+        "post_00_triangle_0.svg": "tut_step5_triangle.svg",
+        "post_01_annulus_0.svg": "tut_step5_annulus.svg",
+        "post_02_sections_0.svg": "tut_step5_sections.svg",
+    }.items():
+        shutil.move(str(step5 / src), str(static / dst))
+
+
+_render_tutorial_figures()
 
 # -- Project information -----------------------------------------------------
 
