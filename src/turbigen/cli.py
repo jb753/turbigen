@@ -669,7 +669,7 @@ def batch_verb(config):
     """Return the verb a submitted batch should be run as.
 
     `iterate` when the datum says how to iterate, `run` otherwise. Inferred
-    from the section rather than asked for, the same way the depth of a design
+    from the key rather than asked for, the same way the depth of a design
     is set by what the config contains --- and the inference matters, because
     a batch submitted as `run` builds an archive `database` reads back as
     empty: a sample must have converged *and* have its errors inside their
@@ -678,9 +678,13 @@ def batch_verb(config):
     Logged, so that "why did this iterate" and "why did this not" are both
     answerable from the batch's own log file.
     """
-    verb = "iterate" if config.iterate else "run"
+    verb = "iterate" if config.iterate.correct else "run"
 
-    reason = "an iterate: section" if config.iterate else "no iterate: section"
+    reason = (
+        "an iterate: key naming what to correct"
+        if config.iterate.correct
+        else "nothing to correct"
+    )
     batch.logger.info(f"Submitting as '{verb}': the datum has {reason}.")
 
     return verb
@@ -1167,10 +1171,10 @@ def _iterate_one(args, config_path):
             raise ValueError(
                 "The 'iterate' command needs a solver: section in the config file."
             )
-        if not config.iterate:
+        if not config.iterate.correct:
             raise ValueError(
-                "The 'iterate' command needs an iterate: section saying what to "
-                "correct; without one, use 'run'."
+                "The 'iterate' command needs an iterate: key with a correct: "
+                "list saying what to correct; without one, use 'run'."
             )
 
         _, result, converged, _ = converge_design(
@@ -1316,7 +1320,7 @@ def converge_design(config, out_dir, previous=None):
         The flow field it reached, for whatever runs next.
 
     """
-    if not config.iterate:
+    if not config.iterate.correct:
         design_dir = out_dir / "iter_0000"
         design_dir.mkdir(parents=True, exist_ok=True)
         iterate.logger.info(f"Design point in {design_dir}")
@@ -1356,7 +1360,7 @@ def converge_design(config, out_dir, previous=None):
 
         return result
 
-    config, result, converged = iterate.converge(config, run, config.max_iter)
+    config, result, converged = iterate.converge(config, run, config.iterate.max_iter)
 
     field = promote_final(out_dir, previous.parent, converged)
 
@@ -1932,8 +1936,8 @@ def _make_parser():
             "flow actually did, correct the design, and solve again. Each "
             "iteration is an ordinary run in a directory of its own beside the "
             "config, with 'final' linked to the last and every iteration kept. "
-            "Needs an iterate: section. Exits 2 if the design had not "
-            "converged by max_iter."
+            "Needs an iterate: key naming what to correct. Exits 2 if the "
+            "design had not converged by iterate.max_iter."
         ),
     )
     _add_force_argument(iterate_)

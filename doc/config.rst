@@ -29,8 +29,7 @@ which command.
        :ref:`inlet_profile: <config-inlet_profile>`
      - commands that run CFD: :ref:`run <usage-run>`,
        :ref:`iterate <usage-iterate>` and :ref:`chic <usage-chic>`
-   * - :ref:`iterate: <config-iterate>`, ``max_iter:``,
-       :ref:`database: <config-database>`
+   * - :ref:`iterate: <config-iterate>`, :ref:`database: <config-database>`
      - iterative geometry updates in :ref:`iterate <usage-iterate>`
    * - :ref:`chic: <config-chic>`
      - running a characteristic in :ref:`chic <usage-chic>`

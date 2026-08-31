@@ -1,24 +1,9 @@
 # Turbine cascade
-#
-# One stationary row, so there are no mixing planes, at an exit Mach number of
-# 0.6 and a hub-to-tip ratio of 0.95, so the flow is nearly two-dimensional.
-# The cheapest case that exercises the whole pipeline: mean line, annulus,
-# blade, mesh, solve and report.
-#
-# The blade is drawn with ten degrees of leading-edge recamber and two of
-# trailing-edge, and the annulus is specified by aspect ratio rather than by a
-# chord in metres, which is the number a designer carries between machines.
-#
-# One thing this cannot express: the case it is adapted from solved with ts3,
-# and only ember is available here, so the solver settings below are ember's.
 
 fluid:
   type: perfect
   cp: 1005.0
   gamma: 1.4
-  # A placeholder. The Re_surf iterator below owns this value and rewrites it,
-  # because a Reynolds number cannot be inverted for a viscosity without a
-  # design, and a design needs a viscosity to exist first.
   mu: 1.8e-5
 
 mean_line:
@@ -31,8 +16,6 @@ mean_line:
   Po1: 1.0e5
   To1: 300.0
 
-# Span-to-meridional-chord ratios, for the row and for the ducts either side of
-# it. The chord in metres follows from the span the mean line chose.
 annulus:
   type: aspect_ratio
   AR_row: [2.0]
@@ -66,39 +49,19 @@ mesh:
   AR_cusp: 2.0
   ni_cusp: 5
 
-# Close the loop between the design above and what it turns out to be. Each
-# iterator names one mismatch, measures it, and moves one design variable:
-#
-#   Re_surf     the viscosity, onto the Reynolds number asked for here
-#   deviation   trailing-edge recamber, so the flow leaves at the design angle
-#   mean_line   the nominal loss coefficient, onto what the solution achieved
-#
-# Only the last two cost CFD, and so only they need `turbigen iterate`. The
-# Reynolds number is read off the design in pure numpy, so `design`, `report`
-# and `run` all honour it as they stand.
-#
-# An `incidence` iterator would fit here too, but with a target of zero it
-# unwinds the ten degrees of leading-edge recamber set above, four degrees at a
-# time. That is a change to the design rather than a correction of it, so it is
-# left out to keep the blade as drawn.
 iterate:
-  - type: Re_surf
-    target: 4.0e5      # measured on the blade surface length
-
-  - type: deviation
-    tolerance: 0.5      # degrees of exit flow angle
-
-  - type: mean_line
-    variables: [Ys]
-    clip: 0.01          # of loss coefficient; the first march overstates it
-    tolerance: 0.05     # as a fraction of the nominal, not an absolute
+  correct:
+    - type: Re_surf
+      target: 4.0e5
+    - type: deviation
+      tolerance: 0.5
+    - type: mean_line
+      variables: [Ys]
+      clip: 0.01
+      tolerance: 0.05
 
 solver:
   type: ember
   n_step: 1000
   n_step_avg: 250
   n_step_log: 50
-  # Everything else at turbigen's defaults: the bare single-grid scree march,
-  # which is what these are tuned for. This case does not survive multigrid at
-  # the Reynolds number above, and ember's own cfl of 5 is well past the limit
-  # for the scheme -- both of which the defaults already account for.

@@ -122,7 +122,7 @@ class Database(Node):
             return tuple(self.variables)
 
         owned = set()
-        for iterator in config.iterate:
+        for iterator in config.iterate.correct:
             owned |= set(iterator.paths(config))
 
         flat = [node.flatten(sample) for sample in samples]
@@ -207,7 +207,7 @@ def warm_start(config, anchor, exclude=()):
         + _format_table(iterate.unknowns(config), predicted)
     )
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         mine = {
             name: predicted[name]
             for name in iterator.unknowns(config)

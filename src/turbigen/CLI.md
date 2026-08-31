@@ -267,7 +267,7 @@ answers:
 ```
 
 Everything else that could be a flag is a *value*, and values live in the
-config where `-s` can reach them: `-s max_iter=6`, `-s job.hours=12`. The
+config where `-s` can reach them: `-s iterate.max_iter=6`, `-s job.hours=12`. The
 division is between **actions**, which must be typed deliberately and must
 never be latent in a file, and **values**, which belong in the file so that an
 archived case records what it was run under. `--max-iter` was on the wrong side
@@ -497,7 +497,7 @@ to a mean line is exactly the one whose output someone needs to look at.
 
 ```
 turbigen iterate hiload/input.yaml
-turbigen iterate hiload/input.yaml -s max_iter=6
+turbigen iterate hiload/input.yaml -s iterate.max_iter=6
 ```
 
 A mean line is a set of assumptions the CFD then contradicts: flow leaves a

@@ -19,7 +19,7 @@ from turbigen.chic import Chic
 from turbigen.database import Database
 from turbigen.design import MeanLineDesign
 from turbigen.fluid import Fluid
-from turbigen.iterate import Iterator
+from turbigen.iterate import Iteration
 from turbigen.job import Job
 from turbigen.machine import Machine
 from turbigen.mesh import Mesher
@@ -63,15 +63,10 @@ class Config(Node):
     over `operating_point.DP_adjust` would copy the whole profile into every
     member."""
 
-    iterate: tuple[Iterator, ...] = ()
-    """Design iterators, closing the loop between the design and its CFD. Only
-    needed by the command that iterates, but their errors are measured by every
-    run that solves."""
-
-    max_iter: int = 10
-    """Most design iterations before giving up. A value, not an action, so it
-    lives here where `-s max_iter=2` can reach it and an archived case records
-    the budget it was run under beside the tolerances it was judged against."""
+    iterate: Iteration = Iteration()
+    """Closing the loop between the design and its CFD. Only needed by the
+    command that iterates, but the errors it names are measured by every run
+    that solves."""
 
     database: Database | None = None
     """Finished runs to start the iterators from, instead of from whatever this
