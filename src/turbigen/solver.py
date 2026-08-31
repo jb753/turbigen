@@ -76,6 +76,10 @@ class Ember(Solver, ember.solver.Solver):
 
     type: ClassVar[str] = "ember"
 
+    # Restated to carry a description, which ember does not give it.
+    n_step: int
+    """Number of time steps to march [--]."""
+
     cfl: float = 0.4
     n_stage: int = 0
     n_levels: int = 0

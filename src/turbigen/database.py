@@ -60,9 +60,9 @@ class Database(Node):
     Recursive patterns are the point: ``../runs/**/output.yaml``. Matching the
     per-iteration subdirectories of an earlier iterate as well as its final
     answer is harmless, because what makes a match a sample is read from its
-    `result:` rather than from where it sits.
+    ``result:`` rather than from where it sits.
 
-    ``output.yaml`` is written by any verb with something to record, `report`
+    ``output.yaml`` is written by any command with something to record, `report`
     included, so matching one is not by itself evidence that a run happened
     there. What makes a match a sample is its ``result:``, and a report that
     reached no answer writes the config alone --- which :func:`_sample` skips,

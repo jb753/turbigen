@@ -299,91 +299,73 @@ class OperatingPoint(Node):
     different back pressures are not read as two different designs.
     """
 
+    # The exit static pressure is moved so that
+    #
+    #   dp = dp_design * (1 + DP_adjust),  dp_design = Po_in - p_out
+    #
+    # so zero reproduces the design exactly and positive always means *more*
+    # pressure change -- more throttled for a compressor, more expanded for a
+    # turbine. One formula covers both because the design's own dp carries the
+    # sign, negative for a machine that raises pressure, and neither the sign
+    # convention nor a machine type has to appear in the file.
+    #
+    # A pressure change and not a pressure ratio, which is the whole reason
+    # this field exists. A ratio measures from one rather than from zero, so a
+    # fraction of it is not a fraction of anything physical, and the error
+    # grows without limit as a machine gets slower. Adjusting the same cascade
+    # by "5 per cent": through the pressure ratio it is 1.16x the design
+    # pressure change at Ma = 0.6 and 3.14x at Ma = 0.05, where through this
+    # field it is 1.05x at both. The package this replaces offers only the
+    # ratio.
+    #
+    # The rule generalises -- adjust what vanishes when there is no machine,
+    # never what goes to one -- and is the same trap MeanLine.tolerances
+    # guards against for a design variable whose nominal is zero.
     DP_adjust: float = 0.0
-    """Change in pressure change through the machine, as a fraction [--].
+    """Change in the design pressure change through the machine, as a fraction [--]."""
 
-    The exit static pressure is moved so that
-
-    .. math::
-
-        \\Delta p = \\Delta p_\\mathrm{design} (1 + \\mathtt{DP\\_adjust}),
-        \\qquad
-        \\Delta p_\\mathrm{design} = p_{0,\\mathrm{in}} - p_\\mathrm{out}
-
-    so zero reproduces the design exactly and positive always means *more*
-    pressure change --- more throttled for a compressor, more expanded for a
-    turbine. One formula covers both because the design's own
-    :math:`\\Delta p` carries the sign, negative for a machine that raises
-    pressure, and neither the sign convention nor a machine type has to appear
-    in the file.
-
-    **A pressure change and not a pressure ratio**, which is the whole reason
-    this field exists. A ratio measures from one rather than from zero, so a
-    fraction of it is not a fraction of anything physical, and the error grows
-    without limit as a machine gets slower. Adjusting the same cascade by
-    "5 per cent": through the pressure ratio it is 1.16x the design pressure
-    change at Ma = 0.6 and 3.14x at Ma = 0.05, where through this field it is
-    1.05x at both. The package this replaces offers only the ratio.
-
-    The rule generalises --- adjust what vanishes when there is no machine,
-    never what goes to one --- and is the same trap
-    :meth:`turbigen.iterate.MeanLine.tolerances` guards against for a design
-    variable whose nominal is zero.
-    """
-
+    # The other way to move along a characteristic. Where DP_adjust states an
+    # exit pressure and lets the mass flow be whatever that draws, this states
+    # a mass flow, mdot = mdot_design * (1 + mdot_adjust), and lets the
+    # pressure be whatever holds it. The exit pressure computed from the design
+    # is still imposed, but as a *starting point*: a proportional-integral
+    # controller on the outlet patch (ember.outlet.OutletPatch.set_throttle)
+    # then moves it each step until the measured mass flow reaches the target.
+    # What the boundary imposes is still a pressure, so nothing about the
+    # characteristic treatment changes -- the throttle only chooses which
+    # pressure.
+    #
+    # None, the default, is no throttle at all: the exit pressure stands as
+    # exit_pressure() set it, and the mass flow is an outcome. This is the
+    # distinction the field exists to make, and the reason it is not simply 0.0
+    # by default -- a design that asks for a mass flow and a design that
+    # accepts one are different requests, and zero cannot say both.
+    #
+    # Which of the two to state is a property of the design, not a preference.
+    # A design whose variables include mdot -- a fan parametrised on mass flow
+    # and total pressure rise, say -- has no way to report whether it achieved
+    # them if the mass flow is left to drift, because the nominal-vs-actual
+    # table would be comparing the design against a different operating point.
+    # A design parametrised on Mach number and exit angle does not care, and
+    # the simpler prescribed pressure is right.
+    #
+    # The gains are ember's and are not exposed here. They are dimensionless
+    # and scaled on the reference quantities, which MeanLine.referenced_fluid
+    # takes from the design's own mean density and velocity -- representative
+    # by construction, which is the condition ember states for its defaults
+    # holding.
+    #
+    # Two restrictions, both from ember. Only one outlet patch may be
+    # throttled, so a grid whose exit is spread over several blocks is refused
+    # rather than over-throttled by the number of them; and the target must be
+    # positive, so an adjustment of -1 or below is refused below.
+    #
+    # DP_adjust still applies alongside this, as the pressure the controller
+    # *starts* from, and achieved() writes the pressure back once the mass flow
+    # has been reached -- so a throttled run archives the operating point it
+    # found, and the next one starts nearer to it.
     mdot_adjust: float | None = None
-    r"""Change in mass flow, as a fraction of the design value [--].
-
-    The other way to move along a characteristic. Where
-    :attr:`DP_adjust` states an exit pressure and lets the mass flow be
-    whatever that draws, this states a mass flow and lets the pressure be
-    whatever holds it:
-
-    .. math::
-
-        \dot m = \dot m_\mathrm{design} (1 + \mathtt{mdot\_adjust})
-
-    so zero is the design point, exactly as it is for the pressure. The exit
-    pressure computed from the design is still imposed, but as a *starting
-    point*: a proportional-integral controller on the outlet patch
-    (:meth:`ember.outlet.OutletPatch.set_throttle`) then moves it each step
-    until the measured mass flow reaches the target. What the boundary imposes
-    is still a pressure, so nothing about the characteristic treatment
-    changes --- the throttle only chooses which pressure.
-
-    ``None``, the default, is no throttle at all: the exit pressure stands as
-    :func:`exit_pressure` set it, and the mass flow is an outcome. This is the
-    distinction the field exists to make, and the reason it is not simply
-    ``0.0`` by default --- a design that asks for a mass flow and a design that
-    accepts one are different requests, and zero cannot say both.
-
-    **Which of the two to state is a property of the design, not a
-    preference.** A design whose variables include :math:`\dot m` --- a fan
-    parametrised on mass flow and total pressure rise, say --- has no way to
-    report whether it achieved them if the mass flow is left to drift, because
-    the nominal-vs-actual table would be comparing the design against a
-    different operating point. A design parametrised on Mach number and exit
-    angle does not care, and the simpler prescribed pressure is right.
-
-    The gains are ember's and are not exposed here. They are dimensionless and
-    scaled on the reference quantities, which
-    :meth:`turbigen.meanline.MeanLine.referenced_fluid` takes from the design's
-    own mean density and velocity --- representative by construction, which is
-    the condition ember states for its defaults holding.
-
-    Two restrictions, both from ember. Only one outlet patch may be throttled,
-    so a grid whose exit is spread over several blocks is refused rather than
-    over-throttled by the number of them; and the target must be positive, so
-    an adjustment of -1 or below is refused here.
-
-    :attr:`DP_adjust` still applies alongside this, as the pressure the
-    controller *starts* from: the exit pressure is prescribed exactly as it
-    would be without a throttle, and the throttle then moves it. A run
-    therefore states where it thinks the pressure is and what mass flow it
-    wants, and :func:`achieved` writes the first back once the second has been
-    reached --- so a throttled run archives the operating point it found, and
-    the next one starts nearer to it.
-    """
+    """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
     def __post_init__(self):
         # Checked when the config is read, because it needs no design.

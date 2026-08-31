@@ -17,3 +17,46 @@ div.literal-block-wrapper div.highlight pre {
     overflow-wrap: break-word;
     word-break: break-word;
 }
+
+/* Headings are bold at every level, and graded by size alone.
+ *
+ * Alabaster sets all six to `font-weight: normal`, in the body's own face and
+ * colour, and gives h5 and h6 the body's size as well --- so at those levels a
+ * heading is indistinguishable from the paragraph under it. The schema
+ * reference reaches them: a blade's camber is `blades:` > `sections:` >
+ * `camber:` > `type: quadratic`, four containments down.
+ *
+ * Weight is the axis the theme leaves unspent, but it has to be spent on every
+ * level at once. Bolding only the deep ones inverts the hierarchy wherever a
+ * bold child meets a normal parent -- h5 `type: Co` at 112% reads louder than
+ * its h4 parent `count:` at 130%, which is exactly backwards. Uniform weight
+ * leaves size as the only ranking signal, which is the theme's own ladder:
+ * 240 / 180 / 150 / 130 / 112 / 100.
+ */
+div.body h1,
+div.body h2,
+div.body h3,
+div.body h4,
+div.body h5,
+div.body h6 {
+    font-weight: bold;
+}
+
+/* The bottom two rungs the theme leaves flat at 100%, so `camber:` and the
+ * `type: quadratic` inside it would otherwise rank the same. */
+div.body h5 { font-size: 112%; }
+div.body h6 { font-size: 100%; }
+
+/* Keys in the generated schema tables are monospace whether or not they link.
+ *
+ * A key that holds further keys is written as a reference so the reader can
+ * follow it, and a reference carries no inline markup with it --- so the one
+ * that links would otherwise be set in body text beside the literals of the
+ * keys that do not, which reads as two kinds of thing rather than one. The
+ * generated tables carry the `config-keys` class for exactly this rule.
+ */
+table.config-keys td:first-child a,
+p.config-choices a {
+    font-family: var(--code-font-family, monospace);
+    font-size: 0.9em;
+}

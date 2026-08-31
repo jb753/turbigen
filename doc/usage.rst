@@ -43,10 +43,12 @@ Examples
    $ turbigen batch input.yaml
 
 A command only asks of a configuration what its own stage needs, and says so
-when it is missing: `run`, `iterate` and `chic` want a `solver:` section,
-`chic` a `chic:` section as well, and `batch` a `batch:` section naming the
-design variables to vary. `design` and `report` need neither, which is why a
-configuration describing only a mean line still has two verbs that work on it.
+when it is missing: `run`, `iterate` and `chic` want a
+:ref:`solver: <config-solver>` key, `chic` a :ref:`chic: <config-chic>` key as
+well, and `batch` a :ref:`batch: <config-batch>` key naming the design
+variables to vary. `design` and `report` need neither, which is why a
+configuration describing only a mean line still has two commands that work on
+it. The whole file is described in :ref:`config`.
 
 Output files
 ^^^^^^^^^^^^
@@ -64,7 +66,7 @@ there, and write all output there. The commands produce the following files:
    * - File
      - What it is
    * - `input.yaml`
-     - the original input file copied into the newly created working director
+     - the original input file copied into the newly created working directory
        if requested by `-o DIR`
    * - `output.yaml`
      - the achieved design together with the configuration that produced it,
@@ -104,6 +106,8 @@ turbigen
 Every command below takes one or more configuration files, and accepts `--set`
 and `--verbose`.
 
+.. _usage-design:
+
 design
 ^^^^^^
 
@@ -112,6 +116,8 @@ design
    :func: _make_parser
    :prog: turbigen
    :path: design
+
+.. _usage-report:
 
 report
 ^^^^^^
@@ -122,6 +128,8 @@ report
    :prog: turbigen
    :path: report
 
+.. _usage-run:
+
 run
 ^^^
 
@@ -130,6 +138,8 @@ run
    :func: _make_parser
    :prog: turbigen
    :path: run
+
+.. _usage-iterate:
 
 iterate
 ^^^^^^^
@@ -140,6 +150,8 @@ iterate
    :prog: turbigen
    :path: iterate
 
+.. _usage-chic:
+
 chic
 ^^^^
 
@@ -148,6 +160,8 @@ chic
    :func: _make_parser
    :prog: turbigen
    :path: chic
+
+.. _usage-batch:
 
 batch
 ^^^^^

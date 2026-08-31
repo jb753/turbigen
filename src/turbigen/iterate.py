@@ -895,7 +895,7 @@ class SurfaceReynolds(Iterator):
 
     A Reynolds number is what a cascade is actually specified at --- it is the
     number a designer carries between machines, where a viscosity in
-    kg/m/s is not. But it cannot simply be inverted for `mu`: it is measured
+    kg/m/s is not. But it cannot simply be inverted for ``mu:``: it is measured
     against a blade surface length and a mean-line reference state, so it needs
     a whole design, which needs a viscosity to exist first.
 

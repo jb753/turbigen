@@ -85,7 +85,11 @@ extensions = [
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
     "sphinxarg.ext",
+    "turbigen_schema",
 ]
+
+# Local extensions, which are not installed anywhere.
+sys.path.insert(0, str(Path(__file__).parent / "_ext"))
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

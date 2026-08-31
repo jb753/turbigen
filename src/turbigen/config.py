@@ -44,10 +44,10 @@ class Config(Node):
     """Blade designs, one per row. Omit them to design the annulus alone."""
 
     mesh: Mesher | None = None
-    """Mesh generation. Only needed by the verbs that make a grid."""
+    """Mesh generation. Only needed by the commands that make a grid."""
 
     solver: Solver | None = None
-    """Flow solver. Only needed by the verbs that solve."""
+    """Flow solver. Only needed by the commands that solve."""
 
     operating_point: OperatingPoint | None = None
     """Where to run the machine, as a departure from its design point. Read by
@@ -65,7 +65,7 @@ class Config(Node):
 
     iterate: tuple[Iterator, ...] = ()
     """Design iterators, closing the loop between the design and its CFD. Only
-    needed by the verb that iterates, but their errors are measured by every
+    needed by the command that iterates, but their errors are measured by every
     run that solves."""
 
     max_iter: int = 10
@@ -75,16 +75,16 @@ class Config(Node):
 
     database: Database | None = None
     """Finished runs to start the iterators from, instead of from whatever this
-    file says. Read once, by the verb that iterates."""
+    file says. Read once, by the command that iterates."""
 
     chic: Chic | None = None
     """How to sweep a characteristic to its stability limit. Read only by the
-    verb that sweeps, which holds the geometry fixed and moves the operating
+    command that sweeps, which holds the geometry fixed and moves the operating
     point alone."""
 
     batch: Batch | None = None
     """Design variables to vary, for covering a space with runs. Read only by
-    the verb that writes a batch, and stripped from the configs it emits: a
+    the command that writes a batch, and stripped from the configs it emits: a
     member is one design, not a design of experiments."""
 
     post_process: tuple[Post, ...] = ()

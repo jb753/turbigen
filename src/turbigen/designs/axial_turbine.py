@@ -39,7 +39,7 @@ class AxialTurbine(MeanLineDesign):
     """Stator exit Mach number [--]."""
 
     fac_Ma3_rel: float
-    """Rotor exit relative Mach number, as a multiple of `Ma2` [--]."""
+    """Rotor exit relative Mach number, as a multiple of ``Ma2:`` [--]."""
 
     mdot: float
     """Mass flow rate [kg/s]."""

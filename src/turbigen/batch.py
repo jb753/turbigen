@@ -84,14 +84,14 @@ class Batch(Node):
 
     Named rather than drawn, so the batch is the same every time it is written
     and no seed enters into it. This is the parameter study --- three values of
-    one variable, and a trend to plot --- as against `bounds`, which fills a
+    one variable, and a trend to plot --- as against ``bounds:``, which fills a
     space to be interpolated in later.
     """
 
     seed: int = 0
     """Seed for the scrambled sequence. The space, so it lives in the file.
 
-    Read only when `bounds` is what varies: a grid of named values is already
+    Read only when ``bounds:`` is what varies: a grid of named values is already
     the same every time.
     """
 

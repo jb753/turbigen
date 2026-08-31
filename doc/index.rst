@@ -18,10 +18,22 @@ Publications using :program:`turbigen`:
 
 User manual
 ===========
+.. Two trees, for one depth each. The schema reference is a section per
+   top-level key, so the input file format is worth three levels: a reader
+   looking for `mesh:` finds it in the sidebar rather than by scrolling. The
+   pages below it are worth two, because `usage` grows a "Positional
+   Arguments" and a "Named Arguments" heading for every command it documents,
+   and fourteen of those in the sidebar bury everything else.
+
+.. toctree::
+   :maxdepth: 3
+
+   tutorial
+   config
+
 .. toctree::
    :maxdepth: 2
 
-   tutorial
    usage
    changelog
    license
