@@ -48,6 +48,10 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 [project.scripts]
 turbigen = "turbigen.cli:main"
 
+[tool.setuptools.package-data]
+# The plotting style turbigen.post.styled applies to its figures.
+turbigen = ["*.mplstyle"]
+
 [tool.black]
 target-version = ["py312"]
 

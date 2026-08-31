@@ -22,7 +22,10 @@ old interface is not reading the config but that its post-processors call
 from inside a plot.
 """
 
+import contextlib
+import importlib.resources
 import logging
+from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
@@ -34,6 +37,9 @@ import turbigen.util
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
+
+_STYLE = importlib.resources.files("turbigen") / "turbigen.mplstyle"
+"""Shipped plotting style, applied by :func:`styled`."""
 
 N_CHORD_PLOT = 501
 """Chordwise points to draw a blade section with.
@@ -69,6 +75,47 @@ LABELS = {
     "s": r"Specific Entropy, $s$/J kg$^{-1}$K$^{-1}$",
 }
 """Axis labels for the block properties worth contouring, by attribute name."""
+
+
+@contextlib.contextmanager
+def styled():
+    """Draw with turbigen's defaults while the user's own rc still wins.
+
+    Layers, lowest first: matplotlib's built-in defaults, turbigen's shipped
+    style, then only the keys the user set explicitly in their own
+    matplotlibrc. So an override behaves exactly as it would without turbigen,
+    and everything left alone gets turbigen's look.
+
+    Scoped rather than global: entering this does not disturb the matplotlib
+    state a notebook caller is already working with. `write_report` wraps the
+    whole report in it; a notebook running one processor by hand can do the
+    same.
+    """
+    import matplotlib as mpl  # noqa: PLC0415
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    from matplotlib.style.core import STYLE_BLACKLIST  # noqa: PLC0415
+
+    with importlib.resources.as_file(_STYLE) as style_path:
+        layers = [str(style_path)]
+
+        # matplotlib has already loaded whichever rc file it found into
+        # rcParams; re-apply just the lines it actually contained, so they sit
+        # back on top of our style. The install default is skipped -- layering
+        # it would only overwrite the style with matplotlib's own defaults --
+        # and the handful of keys a style may not carry (backend and friends)
+        # are dropped, since they are already in effect and warn if restated.
+        user_rc = mpl.matplotlib_fname()
+        default_rc = Path(mpl.get_data_path()) / "matplotlibrc"
+        if user_rc and Path(user_rc) != default_rc:
+            explicit = mpl.rc_params_from_file(
+                user_rc, fail_on_error=False, use_default_template=False
+            )
+            layers.append(
+                {k: v for k, v in explicit.items() if k not in STYLE_BLACKLIST}
+            )
+
+        with plt.style.context(layers):
+            yield
 
 
 class Post(Node):

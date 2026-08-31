@@ -1794,7 +1794,9 @@ def write_report(config, result, out_dir, svg=False):
 
     path = out_dir / "post.pdf"
     n_page = 0
-    with PdfPages(path) as pdf:
+    # styled() spans figure creation, not just savefig: rcParams are read as
+    # artists are built. The user's own matplotlibrc still wins inside it.
+    with post.styled(), PdfPages(path) as pdf:
         for i_processor, processor in enumerate(processors(config)):
             logger.debug(f"Running post-processor {processor}")
             # Figures are closed as they are written rather than collected and

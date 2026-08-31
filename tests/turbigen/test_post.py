@@ -321,6 +321,40 @@ def test_velocity_triangle_plot_without_a_machine_is_empty(config):
     assert VelocityTrianglePlot().report(config, Result()) == []
 
 
+#
+# THE SHIPPED PLOTTING STYLE
+#
+
+
+def test_the_style_file_ships_with_the_package():
+    assert post._STYLE.is_file()
+    assert post._STYLE.read_text().strip()
+
+
+def test_styled_applies_turbigen_defaults_and_restores_them():
+    before = plt.rcParams["font.family"]
+
+    with post.styled():
+        assert plt.rcParams["font.family"] == ["serif"]
+        assert plt.rcParams["lines.linewidth"] == 2.0
+
+    assert plt.rcParams["font.family"] == before
+
+
+def test_a_user_rc_still_wins_inside_styled(tmp_path, monkeypatch):
+    """A key the user set behaves as it would without turbigen; one they did
+    not gets turbigen's value."""
+    import matplotlib as mpl
+
+    rc = tmp_path / "matplotlibrc"
+    rc.write_text("lines.linewidth: 5.0\n")
+    monkeypatch.setattr(mpl, "matplotlib_fname", lambda: str(rc))
+
+    with post.styled():
+        assert plt.rcParams["lines.linewidth"] == 5.0  # user override
+        assert plt.rcParams["font.family"] == ["serif"]  # turbigen default
+
+
 def test_convergence_plot_draws_residuals_and_errors(bladed, solved):
     residuals, errors = ConvergencePlot().report(bladed, solved)
 
