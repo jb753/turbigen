@@ -298,7 +298,7 @@ class SectionsPlot(Post):
             th_min = min(a.min() for a in thetas)
             th_max = max(a.max() for a in thetas)
             span = mp_max - mp_min
-            length = 0.2 * span
+            length = 0.32 * span
             gy = th_min - 0.1 * span - length
             _gnomon(ax, mp_min, gy, length, r"$m'$", r"$\theta$")
             ax.set_xlim(mp_min - 0.12 * span, mp_max + 0.05 * span)
@@ -394,7 +394,11 @@ class VelocityTrianglePlot(Post):
         Vm = np.array([float(st.Vm) for _, st in stations])
         pitch = 1.15 * Vm.max()
 
-        fig, ax = plt.subplots(layout="constrained")
+        # A row of triangles is a wide plot: widen the figure with the station
+        # count rather than let the default squeeze the labels together.
+        width, height = plt.rcParams["figure.figsize"]
+        width = max(width, 1.2 * len(stations))
+        fig, ax = plt.subplots(figsize=(width, height), layout="constrained")
         ax.set_aspect("equal")
         ax.axis("off")
         ax.set_title("Velocity Triangles")
@@ -444,8 +448,8 @@ class VelocityTrianglePlot(Post):
 
         # Coordinate arrows in place of the axes: meridional velocity to the
         # right, swirl up, at the same scale as everything else.
-        gx = -0.6 * pitch
-        _gnomon(ax, gx, y_label, 0.28 * pitch, r"$m$", r"$\theta$")
+        gx = -0.7 * pitch
+        _gnomon(ax, gx, y_label, 0.4 * pitch, r"$m$", r"$\theta$")
 
         ax.set_xlim(gx - 0.1 * pitch, x_right + 0.15 * pitch)
         ax.set_ylim(y_label - 0.15 * pitch, all_vt.max() + 0.15 * pitch)

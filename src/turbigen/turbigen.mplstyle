@@ -6,28 +6,24 @@
 # No backend line -- turbigen chooses one itself, and a style cannot change
 # the backend once pyplot has been imported.
 
-text.usetex             : False
-figure.figsize          : 7.0, 4.0
-figure.dpi              : 200
-
-axes.linewidth          : 1.5
-axes.grid               : False
-axes.titlesize          : medium
-axes.formatter.use_mathtext : True
-axes.unicode_minus      : False
-
-lines.linewidth         : 2
-lines.markeredgewidth   : 1.5
-
-xtick.major.width       : 1.5
-ytick.major.width       : 1.5
-
-legend.fontsize         : 12
-font.size               : 14
-font.family             : serif
-font.serif              : cmr10
-mathtext.fontset        : cm
-
-grid.alpha              : 0.15
-grid.color              : (0.15, 0.15, 0.15)
-grid.linewidth          : 1.5
+text.usetex : False
+figure.figsize : 3.416, 2.11
+axes.linewidth : 1.0
+lines.linewidth : 1.6
+lines.markeredgewidth : 1.0
+xtick.major.width : 1.0
+ytick.major.width : 1.0
+legend.fontsize : 8
+legend.labelspacing : 0.2
+font.size : 9
+font.sans-serif : FreeSans
+mathtext.fontset : cm
+axes.grid : False
+# Titles at body-text size, never the matplotlib default of one step up.
+axes.titlesize : medium
+axes.titleweight : normal
+figure.titlesize : medium
+grid.alpha : 0.15
+grid.color : (0.15,0.15,0.15)
+grid.linewidth : 1.5
+figure.dpi : 200
