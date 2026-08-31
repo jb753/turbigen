@@ -304,7 +304,14 @@ class SectionsPlot(Post):
             ax.set_xlim(mp_min - 0.12 * span, mp_max + 0.05 * span)
             ax.set_ylim(gy - 0.1 * span, th_max + 0.05 * span)
 
-            ax.legend()
+            # Outside the axes on the right: the box is turned off and the
+            # gnomon takes the corner, so there is nowhere clean for it inside.
+            ax.legend(
+                loc="upper left",
+                bbox_to_anchor=(1.0, 1.0),
+                borderaxespad=0.0,
+                frameon=False,
+            )
             figures.append(fig)
 
         return figures
