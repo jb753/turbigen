@@ -49,8 +49,6 @@ import turbigen.util
 
 logger = logging.getLogger("turbigen")
 
-f32 = np.float32
-
 
 class MeanLine(ember.block.Block):
     """One-dimensional flow field and annulus geometry along the mean line.

@@ -45,8 +45,14 @@ turbigen = "turbigen.cli:main"
 # The plotting style turbigen.post.styled applies to its figures.
 turbigen = ["*.mplstyle"]
 
-[tool.black]
-target-version = ["py312"]
+[tool.ruff.lint]
+# E741/E743: allow ambiguous variable and function names (e.g. I, l, O).
+ignore = ["E741", "E743"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+# A vulture whitelist is bare names that are "used" nowhere by design.
+"bin/vulture_whitelist.py" = ["F821"]
 
 [tool.bumpversion]
 current_version = "2.7.3"
@@ -80,6 +86,8 @@ dev = [
     'pytest',
     'pytest-xdist',
     'pre-commit',
+    'ruff',
+    'vulture',
     'twine',
     'bump-my-version',
     'pyqt6',

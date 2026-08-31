@@ -85,16 +85,6 @@ class CamberLine:
     """Tangent of the metal angle at the trailing edge."""
 
     @property
-    def chi_LE(self):
-        """Metal angle at the leading edge [deg]."""
-        return np.degrees(np.arctan(self.tanchi_LE))
-
-    @property
-    def chi_TE(self):
-        """Metal angle at the trailing edge [deg]."""
-        return np.degrees(np.arctan(self.tanchi_TE))
-
-    @property
     def Dtanchi(self):
         """Change in the tangent of the metal angle, leading to trailing [--]."""
         return self.tanchi_TE - self.tanchi_LE

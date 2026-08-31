@@ -196,7 +196,7 @@ check that the reserved-name promotion in `Node` is not over-applied.
 
 `Annulus` holds the fitted PCHIP curves and the geometry read off them:
 `evaluate_xr`, `nrow`, `nseg`, `mmax`, the hub/casing/mid/rms radii, `Am`,
-`htr`, `x_rms`, `chords` and `to_string`.
+`htr`, `chords` and `to_string`.
 
 The mesh-facing helpers on the old designer — `get_cut_plane`,
 `get_offset_planes`, `get_interfaces`, `get_mp_from_xr`, `xr_row`,

@@ -1721,8 +1721,7 @@ def design_variable_string(config, result):
 
     width = max(len(name) for name, _, _, _ in rows)
     header = (
-        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  "
-        f"{'err':>10}  {'err/%':>8}"
+        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
     )
     lines = ["Design variables:", header, "-" * len(header)]
 

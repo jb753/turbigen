@@ -115,3 +115,49 @@ def test_odd_station_count_is_rejected():
 
     with pytest.raises(ValueError, match="even number"):
         MeanLine.from_dict(data, FLUID.eos())
+
+
+def test_set_span_r_rms_round_trip():
+    """set_span_r_rms reproduces the span and RMS radius it was handed.
+
+    The block radius stored by the annulus setters *is* the RMS radius, so a
+    round trip has to recover both the span and r itself, and r has to sit at
+    the root mean square of the hub and casing radii it implies.
+    """
+    ml = MeanLine(1)
+    ml.set_fluid(FLUID.eos())
+    ml.set_P_T(1e5, 300.0)
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(0.0)
+
+    span, r_rms = 0.1, 0.5
+    ml.set_span_r_rms(span, r_rms)
+
+    assert ml.span == pytest.approx(span, rel=1e-5)
+    assert ml.r == pytest.approx(r_rms, rel=1e-5)
+    assert ml.r == pytest.approx(
+        np.sqrt(0.5 * (ml.r_hub**2 + ml.r_cas**2)), rel=1e-5
+    )
+
+
+def test_halfVsq_rel_is_kinetic_energy_in_the_rotating_frame():
+    """halfVsq_rel tracks the relative velocity, not the absolute one.
+
+    On a stationary row it coincides with halfVsq; once the row spins, the
+    swirl seen in the rotating frame changes and the two part company.
+    """
+    ml = MeanLine(1)
+    ml.set_fluid(FLUID.eos())
+    ml.set_P_T(1e5, 300.0)
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(150.0)
+    ml.set_r(0.5)
+
+    ml.set_Omega(0.0)
+    assert ml.halfVsq_rel == pytest.approx(ml.halfVsq)
+
+    ml.set_Omega(500.0)
+    assert ml.halfVsq_rel == pytest.approx(0.5 * ml.V_rel**2)
+    assert np.all(ml.halfVsq_rel < ml.halfVsq)  # U removes co-swirl

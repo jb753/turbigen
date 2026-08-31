@@ -622,7 +622,6 @@ class H(Mesher):
         AR_row,
         tte=None,
         chord_factor=1.0,
-        ni_chord=None,
         ni_cusp=0,
     ):
         """Evaluate streamwise grid vector for a blade row."""

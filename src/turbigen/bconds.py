@@ -179,13 +179,11 @@ class Sampled(InletProfile):
 
         if spf.size < 2:
             raise ValueError(
-                f"An inlet profile needs at least two span fractions, got "
-                f"{list(spf)}."
+                f"An inlet profile needs at least two span fractions, got {list(spf)}."
             )
         if np.any(np.diff(spf) <= 0.0):
             raise ValueError(
-                f"Inlet profile spf must increase from hub to casing, got "
-                f"{list(spf)}."
+                f"Inlet profile spf must increase from hub to casing, got {list(spf)}."
             )
         if spf[0] != 0.0 or spf[-1] != 1.0:
             raise ValueError(
@@ -612,7 +610,7 @@ def apply_throttle(patches_out, machine, operating_point=None):
     patch.set_throttle(mdot / Nb)
 
     logger.debug(
-        f"Throttling {patch.label!r} to {mdot / Nb:.5g} kg/s per passage, " f"Nb={Nb}."
+        f"Throttling {patch.label!r} to {mdot / Nb:.5g} kg/s per passage, Nb={Nb}."
     )
 
 
