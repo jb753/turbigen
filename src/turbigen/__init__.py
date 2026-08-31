@@ -50,6 +50,7 @@ from turbigen.post import (
     Post,
     SectionsPlot,
     SurfacePlot,
+    VelocityTrianglePlot,
 )
 from turbigen.batch import Batch
 from turbigen.chic import Chic
@@ -115,6 +116,7 @@ __all__ = [
     "Post",
     "SectionsPlot",
     "SurfacePlot",
+    "VelocityTrianglePlot",
     "Result",
     "Batch",
     "Job",

@@ -53,6 +53,13 @@ mesh's, not the curve's.
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
 
+N_SPAN_ANNULUS = 10
+"""Spanwise stations for the blade outline drawn on the annulus plot.
+
+A meridional view flattens the section away, so this only has to be enough to
+trace where a row sits and how it leans -- not to resolve a curve.
+"""
+
 LABELS = {
     "Ma": r"Mach Number, $\mathit{Ma}$",
     "Ma_rel": r"Relative Mach Number, $\mathit{Ma}^\mathrm{rel}$",
@@ -88,6 +95,34 @@ class Post(Node):
         )
 
 
+def _blade_annulus_lines(blade):
+    """Return meridional ``(x, r)`` polylines outlining a blade on the annulus.
+
+    Four lines per row -- leading edge, trailing edge, and the two diagonals of
+    the passage -- each traced hub to casing along the blade's camber surface.
+    Enough to show where a row sits and how it is staggered without drawing the
+    sections themselves. Ported from the annulus plot of the package this
+    replaces, which had to recamber the blade first; a `Blade` is already the
+    shape it will be meshed as.
+    """
+    spf = np.linspace(0.0, 1.0, N_SPAN_ANNULUS)
+
+    # Chordwise position of each line at every span station: leading edge at 0,
+    # trailing edge at 1, and the two diagonals crossing between them.
+    m = np.stack((np.zeros_like(spf), spf, 1.0 - spf, np.ones_like(spf)))
+
+    # Camber-line xr is the mean of the two surfaces. evaluate_section takes a
+    # scalar span fraction, so the stations are walked one at a time.
+    xr = np.stack(
+        [
+            np.mean(blade.evaluate_section(s, m=m[:, j]), axis=0)[:2]
+            for j, s in enumerate(spf)
+        ]
+    )
+    # (station, coord, line) -> (line, coord, station)
+    return xr.transpose(2, 1, 0)
+
+
 class AnnulusPlot(Post):
     """Meridional view of the annulus."""
 
@@ -98,6 +133,9 @@ class AnnulusPlot(Post):
 
     show_axis: bool = False
     """Draw the axis of rotation."""
+
+    show_blades: bool = True
+    """Outline each blade row with its leading and trailing edges and diagonals."""
 
     def report(self, config, result):
         annulus = result.machine.annulus
@@ -125,8 +163,18 @@ class AnnulusPlot(Post):
         for m_cut in self.m_cut:
             ax.plot(*annulus.evaluate_xr(m_cut, [0.0, 1.0]), "-", color="C0")
 
+        # Blade rows, drawn before the hub and casing so those stay on top.
+        if self.show_blades:
+            for row in result.machine.rows:
+                for x, r in _blade_annulus_lines(row.blade):
+                    ax.plot(x, r, "-", color="0.4")
+
         ax.plot(*xr_hub, "k-")
         ax.plot(*xr_cas, "k-")
+
+        # Dotted hub-to-casing lines closing the annulus at inlet and exit.
+        for m_end in (0.0, annulus.mmax):
+            ax.plot(*annulus.evaluate_xr(m_end, [0.0, 1.0]), "k:")
 
         if self.show_axis:
             ax.plot(xr_hub[0, (0, -1)], np.zeros(2), "k-.")
@@ -155,38 +203,207 @@ class SectionsPlot(Post):
 
     def report(self, config, result):
         rows = result.machine.rows if result.machine else ()
-        if not rows:
+        annulus = result.machine.annulus if result.machine else None
+        if not rows or annulus is None:
             logger.info("No blades were designed, skipping the sections plot.")
             return []
 
         import matplotlib.pyplot as plt  # noqa: PLC0415
 
+        # One curve spanning the whole machine, unwrapped onto the conformal
+        # (m', theta) plane exactly as the contour plot does it: angles and
+        # aspect ratios are preserved, so a section keeps the shape it has in
+        # the machine at any radius, and every row lands on one m' scale.
+        m = np.linspace(0.0, annulus.mmax, annulus.n_segment * N_SEGMENT_CUT + 1)
+
         figures = []
         for i_row, row in enumerate(rows):
             fig, ax = plt.subplots(layout="constrained")
-            ax.axis("equal")
-            ax.set_xlabel(r"Axial Coordinate, $x$/m")
-            ax.set_ylabel(r"Circumferential Coordinate, $r\theta$/m")
+            ax.set_aspect("equal")
+            ax.axis("off")
             ax.set_title(f"Row {i_row} Sections")
 
             # The geometry is drawn as it stands. The package this replaces has
             # to recamber the blade before it can plot one, and put it back
             # afterwards, because its sections are stored in an intermediate
             # form; here a Blade is already what it will be meshed as.
+            mps, thetas = [], []
             for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+                # The datum curve follows the section's own span, so each one
+                # sits in its true conformal plane.
+                xr_curve = annulus.evaluate_xr(m, spf).T
                 surfaces = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)
-                for i_surf, (x, r, t) in enumerate(surfaces):
+                for i_surf, xrt in enumerate(surfaces):
+                    mp = ember.util.unwrap_meridional(xr_curve, xrt[:2].T)
+                    theta = xrt[2]
                     ax.plot(
-                        x,
-                        r * t,
+                        mp,
+                        theta,
                         color=f"C{i_spf}",
                         label=f"spf={spf:.2f}" if i_surf == 0 else None,
                     )
+                    mps.append(mp)
+                    thetas.append(theta)
+
+            # Coordinate arrows below the blade, in place of the axes.
+            mp_min = min(a.min() for a in mps)
+            mp_max = max(a.max() for a in mps)
+            th_min = min(a.min() for a in thetas)
+            th_max = max(a.max() for a in thetas)
+            span = mp_max - mp_min
+            length = 0.2 * span
+            gy = th_min - 0.1 * span - length
+            _gnomon(ax, mp_min, gy, length, r"$m'$", r"$\theta$")
+            ax.set_xlim(mp_min - 0.12 * span, mp_max + 0.05 * span)
+            ax.set_ylim(gy - 0.1 * span, th_max + 0.05 * span)
 
             ax.legend()
             figures.append(fig)
 
         return figures
+
+
+def _arrow(ax, tail, tip, color, label=None, side=1):
+    """Draw one to-scale vector in data coordinates, optionally labelled.
+
+    annotate rather than quiver or arrow: it takes a tail and a tip straight
+    from the mean line and does no scaling of its own, so the vector on the
+    page is the velocity, measured against the coordinate arrows.
+
+    A label sits at the midpoint, pushed clear of the shaft along its normal;
+    `side` flips which way, for the vectors that would otherwise collide.
+    """
+    ax.annotate(
+        "",
+        xy=tip,
+        xytext=tail,
+        arrowprops={"arrowstyle": "-|>", "color": color, "linewidth": 1.5},
+    )
+    if label is None:
+        return
+
+    dx, dy = tip[0] - tail[0], tip[1] - tail[1]
+    length = np.hypot(dx, dy) or 1.0
+    ax.annotate(
+        label,
+        xy=(0.5 * (tail[0] + tip[0]), 0.5 * (tail[1] + tip[1])),
+        xytext=(side * -dy / length * 9.0, side * dx / length * 9.0),
+        textcoords="offset points",
+        ha="center",
+        va="center",
+        color=color,
+        fontsize="small",
+    )
+
+
+def _gnomon(ax, x0, y0, length, xlabel, ylabel):
+    """Draw a pair of labelled coordinate arrows in place of the axes.
+
+    Rooted at ``(x0, y0)``, one arrow to the right and one up, both `length`
+    long in data units so they read at the same scale as whatever they sit
+    beside.
+    """
+    _arrow(ax, (x0, y0), (x0 + length, y0), "0.3")
+    _arrow(ax, (x0, y0), (x0, y0 + length), "0.3")
+    pad = 0.15 * length
+    ax.text(x0 + length, y0 - pad, xlabel, ha="center", va="top")
+    ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
+
+
+class VelocityTrianglePlot(Post):
+    """Mean-line velocity triangles at inlet and exit of each row.
+
+    Drawn from the mean line alone, so this is the one flow plot that has
+    something to show at every pipeline depth -- a design that never meshed
+    still has its triangles.
+
+    The triangles are to scale against each other but carry no annulus or blade
+    geometry: meridional velocity runs along x, swirl along y, and the stations
+    are spread along x by a fixed pitch so neighbours do not overlap. The
+    absolute velocity is C0 and the relative velocity C1; blade speed closes
+    the two, tip to tip, and is only drawn where the row rotates.
+    """
+
+    type: ClassVar[str] = "triangle"
+
+    def report(self, config, result):
+        mean_line = result.machine.mean_line if result.machine else None
+        if mean_line is None or not mean_line.n_row:
+            logger.info("No mean line, skipping the velocity triangle plot.")
+            return []
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        # Every station, in streamwise order: inlet then exit of each row.
+        stations = []
+        for i_row in range(mean_line.n_row):
+            row = mean_line.row(i_row)
+            for i_end, label in ((0, "inlet"), (1, "exit")):
+                stations.append((f"Row {i_row} {label}", row[i_end]))
+
+        # One pitch for every gap, wide enough that the longest triangle clears
+        # its neighbour. Meridional velocity is the only thing that reaches
+        # along x, and it is never negative on a mean line.
+        Vm = np.array([float(st.Vm) for _, st in stations])
+        pitch = 1.15 * Vm.max()
+
+        fig, ax = plt.subplots(layout="constrained")
+        ax.set_aspect("equal")
+        ax.axis("off")
+        ax.set_title("Velocity Triangles")
+
+        for i_station, (label, st) in enumerate(stations):
+            x0 = i_station * pitch
+            vm = float(st.Vm)
+            vt = float(st.Vt)
+            vt_rel = float(st.Vt_rel)
+
+            # Absolute velocity from the station origin.
+            _arrow(ax, (x0, 0.0), (x0 + vm, vt), "C0", r"$V$")
+
+            # Relative velocity and the blade speed that closes onto it, drawn
+            # only where the frame actually rotates. Blade speed is purely
+            # tangential, so it runs from the tip of the relative vector to the
+            # tip of the absolute one; its label goes on the far side so it
+            # clears the two arrowheads meeting there.
+            if abs(float(st.Omega)) > 0.0:
+                _arrow(ax, (x0, 0.0), (x0 + vm, vt_rel), "C1", r"$V^\mathrm{rel}$")
+                _arrow(ax, (x0 + vm, vt_rel), (x0 + vm, vt), "k", r"$U$", side=-1)
+
+        # annotate does not grow the data limits, so the arrows would fall
+        # outside a default view. Framed from the vectors themselves.
+        all_vt = np.concatenate(
+            [
+                [float(st.Vt) for _, st in stations],
+                [float(st.Vt_rel) for _, st in stations],
+                [0.0],
+            ]
+        )
+        x_right = (len(stations) - 1) * pitch + Vm.max()
+        y_bot = all_vt.min()
+
+        # Station names on a single baseline below every triangle, standing in
+        # for the axis that has been taken away.
+        y_label = y_bot - 0.18 * pitch
+        for i_station, (label, st) in enumerate(stations):
+            ax.text(
+                i_station * pitch + 0.5 * float(st.Vm),
+                y_label,
+                label,
+                ha="center",
+                va="top",
+                fontsize="small",
+            )
+
+        # Coordinate arrows in place of the axes: meridional velocity to the
+        # right, swirl up, at the same scale as everything else.
+        gx = -0.6 * pitch
+        _gnomon(ax, gx, y_label, 0.28 * pitch, r"$m$", r"$\theta$")
+
+        ax.set_xlim(gx - 0.1 * pitch, x_right + 0.15 * pitch)
+        ax.set_ylim(y_label - 0.15 * pitch, all_vt.max() + 0.15 * pitch)
+
+        return [fig]
 
 
 class ConvergencePlot(Post):
@@ -535,6 +752,7 @@ class ContourPlot(Post):
 
 
 STANDARD = (
+    VelocityTrianglePlot(),
     AnnulusPlot(),
     SectionsPlot(),
     ConvergencePlot(),
