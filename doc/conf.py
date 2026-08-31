@@ -17,6 +17,16 @@ import turbigen
 # The reader is shown `turbigen report input.yaml`; the SVGs it needs come from
 # the --svg variant, rendered here so that step is not part of the walkthrough.
 
+# Which report processors the tutorial shows, mapped to the static file each is
+# embedded as. Keyed on processor type rather than figure index so a reordering
+# of turbigen.post.STANDARD does not silently break the page. Kept in step with
+# test_tutorial.py, which checks these names against the page and the report.
+TUTORIAL_FIGURES = {
+    "triangle": "tut_step5_triangle.svg",
+    "annulus": "tut_step5_annulus.svg",
+    "sections": "tut_step5_sections.svg",
+}
+
 
 def _render_tutorial_figures():
     here = Path(__file__).parent
@@ -38,12 +48,17 @@ def _render_tutorial_figures():
         capture_output=True,
     )
 
-    for src, dst in {
-        "post_00_triangle_0.svg": "tut_step5_triangle.svg",
-        "post_01_annulus_0.svg": "tut_step5_annulus.svg",
-        "post_02_sections_0.svg": "tut_step5_sections.svg",
-    }.items():
-        shutil.move(str(step5 / src), str(static / dst))
+    # report --svg writes post_<NN>_<type>_<fig>.svg; match on <type>.
+    for svg in step5.glob("post_*.svg"):
+        figure_type = svg.stem.split("_")[2]
+        if figure_type in TUTORIAL_FIGURES:
+            shutil.move(str(svg), str(static / TUTORIAL_FIGURES[figure_type]))
+
+    missing = [
+        name for name in TUTORIAL_FIGURES.values() if not (static / name).is_file()
+    ]
+    if missing:
+        raise RuntimeError(f"the tutorial report produced no figure for {missing}")
 
 
 _render_tutorial_figures()
