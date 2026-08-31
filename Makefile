@@ -20,7 +20,7 @@ doc-dev ::
 	sphinx-autobuild doc doc/_build --watch=src --watch=doc
 
 doc ::
-	sphinx-build -W doc doc/_build
+	uv run sphinx-build -W doc doc/_build
 
 sdist ::
 	python -m build --sdist .
