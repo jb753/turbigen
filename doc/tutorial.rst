@@ -158,7 +158,7 @@ string is the name a input file will use to ask for the new turbomachine, and
 
 We can now copy into `input.yaml` a skeleton configuration that asks for this
 design, but in order for the mean-line design to run we also need to specify the
-working fluid. The `fluid` section names a fluid by its `type` and sets any
+working fluid. The :ref:`fluid: <config-fluid>` section names a fluid by its `type` and sets any
 properties needed to specify that type.
 
 .. literalinclude:: ../tutorial/step1/input.yaml
@@ -371,9 +371,9 @@ and the annulus and blade shapes to give us some more printout, including the ca
 Plotting
 ^^^^^^^^
 
-So far, our invocation of :program:`turbigen` has been in `design` mode, which
+So far, our invocation of :program:`turbigen` has been in :ref:`design <usage-design>` mode, which
 only prints to the console. We can save more detailed plots to disk by
-running `report` mode, which will write a `post.pdf` report with plots of the
+running :ref:`report <usage-report>` mode, which will write a `post.pdf` report with plots of the
 design, and if CFD were run the post-processed flow field as well. Report mode also saves an `output.yaml` file which is the same as the input file but with any defaults filled in, and a transcript of the console output in `log_turbigen.txt`. So if we run:
 
 .. program-output:: turbigen report input.yaml
@@ -412,12 +412,15 @@ This tutorial has demonstrated some of the functionality of
 Within the current choice of mean-line parameterisation,
 any change to the design is just an edit to `input.yaml`:
 
-* Change the number of blades by changing the diffusion factor `DFL`,
-  or fix a count directly with ``count: {type: Nb, Nb: 55}``
-* Reshape the blade through the `camber` and `thickness` sections
+* Change the number of blades by changing the diffusion factor
+  :ref:`DFL <config-blades-count-dfl>`, or fix a
+  :ref:`count <config-blades-count>` directly with ``count: {type: Nb, Nb: 55}``
+* Reshape the blade through the :ref:`camber <config-blades-sections-camber>`
+  and :ref:`thickness <config-blades-sections-thickness>` sections
 * Specify blade sections at several spanwise locations
 * Change the aspect ratio `AR_row`
-* Change the working fluid to a real gas under `fluid`, evaluated from a
+* Change the working fluid to a :ref:`real <config-fluid-real>` gas under
+  :ref:`fluid: <config-fluid>`, evaluated from a
   thermodynamically consistent fitted equation of state :cite:`Wheeler2024`
 
 To change the mean-line design itself, edit `forward` and `backward` in
