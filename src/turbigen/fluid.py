@@ -41,7 +41,7 @@ class PerfectFluid(Fluid):
 
     # The non-dimensionalisation reference scales and the entropy datum
     # (V_ref, rho_ref, Rgas_ref, P_dtm, T_dtm) are deliberately absent. They
-    # are not inputs: MeanLine.referenced_fluid derives them from the design
+    # are not inputs: MeanLine.get_referenced_fluid derives them from the design
     # once it exists, and the mesher applies them to the grid, which is the
     # object whose conditioning matters. Declaring them here would put five
     # values in every config file that a user cannot usefully set and that are
@@ -112,7 +112,7 @@ class RealFluid(Fluid):
     # is the one place a real gas departs from that argument. A fitted surface
     # exists only inside its box and the datum has to lie in there, so unlike
     # a perfect gas -- whose datum is free, and is therefore left entirely to
-    # MeanLine.referenced_fluid -- a real gas needs one that is constructible
+    # MeanLine.get_referenced_fluid -- a real gas needs one that is constructible
     # before there is any design to derive it from. ember defaults it to the
     # centre of the fit box, which the coefficients here already determine, so
     # a config only carries the datum when it wants a different one. The

@@ -40,7 +40,7 @@ Note that the *reference scales* are a separate matter and not worth setting
 here: floating-point precision is invariant under scaling, so dividing the
 stored variables through by a density and a velocity changes their exponents
 and nothing else. Scales matter to the grid, which a solver iterates on, and
-:meth:`turbigen.meanline.MeanLine.referenced_fluid` supplies them there.
+:meth:`turbigen.meanline.MeanLine.get_referenced_fluid` supplies them there.
 """
 
 import logging

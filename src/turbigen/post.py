@@ -391,7 +391,7 @@ class VelocityTrianglePlot(Post):
         # Every station, in streamwise order: inlet then exit of each row.
         stations = []
         for i_row in range(mean_line.n_row):
-            row = mean_line.row(i_row)
+            row = mean_line[:, i_row]
             for i_end, label in ((0, "inlet"), (1, "exit")):
                 stations.append((f"Row {i_row} {label}", row[i_end]))
 
@@ -626,7 +626,7 @@ class SurfacePlot(Post):
                 continue
 
             surface = surfaces[i_row][0]
-            s_ref = result.machine.mean_line.row(i_row).s[0]
+            s_ref = result.machine.mean_line[:, i_row].s[0]
 
             fig, ax = plt.subplots(layout="constrained")
             ax.set_xlabel(r"Normalised Surface Distance, $|\zeta|$")

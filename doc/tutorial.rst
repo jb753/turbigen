@@ -257,13 +257,15 @@ static states come from subtracting kinetic energy.
 
 We can now store the flow field in a :class:`~turbigen.meanline.MeanLine`
 object, a blank instance of which is created by calling
-:class:`~turbigen.meanline.MeanLine.allocate`. The indexing convention for mean
+:meth:`~turbigen.design.MeanLineDesign.allocate`. The indexing convention for mean
 line stations is that `ml.shape == (2, n_row)`, where the first index is the
 station (0 for inlet, 1 for exit) and the second index is the row number. It is
 often more convenient to work with a one-dimensional view of shape `(2*n_row,)`, which
 can be obtained through the  `ml.flat` property. All data flows go through setter
 methods on the :class:`~turbigen.meanline.MeanLine` object that ensure
-the flow field is consistent and valid. In our case:
+the flow field is consistent and valid. See :doc:`/meanline` for the full
+reference of what is stored, how it is indexed, and which setters are
+available. In our case:
 
 .. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
@@ -307,7 +309,8 @@ solution to compare to the nominal design.
 `backward` returns a dictionary keyed by the field names; extra keys beyond the
 design variables are reported for information only but not checked for
 consistency. The :class:`~turbigen.meanline.MeanLine` has many attributes that
-contain useful derived properties for this purpose. The properties `ml.inlet`
+contain useful derived properties for this purpose --- see the
+:doc:`derived properties </meanline>` tables. The properties `ml.inlet`
 and `ml.exit` index into the machine inlet and exit (across all rows).
 
 .. literalinclude:: ../tutorial/step4/turbigen_plugins/fan.py

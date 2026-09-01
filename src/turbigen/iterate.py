@@ -693,7 +693,7 @@ class Deviation(Iterator):
         nominal = result.machine.mean_line
         return {
             f"dchi_TE[{i_row}]": float(
-                result.actual.row(i_row).Alpha_rel[1] - nominal.row(i_row).Alpha_rel[1]
+                result.actual[:, i_row].Alpha_rel[1] - nominal[:, i_row].Alpha_rel[1]
             )
             for i_row in range(len(config.blades))
         }

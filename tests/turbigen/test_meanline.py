@@ -11,7 +11,7 @@ survive being rebuilt against a *different* fluid, which rules out the
 conserved variables.
 
 Test cases:
-- test_unset_keys_really_are_unset: why STATE is eight and not twelve
+- test_unset_keys_really_are_unset: why _STATE is eight and not twelve
 - test_round_trip_reproduces_every_property: to_dict then from_dict
 - test_round_trip_survives_a_different_datum: the trap that cost 105 K
 - test_state_is_dimensional_and_readable: what lands in the file
@@ -34,7 +34,7 @@ def mean_line():
 
 
 def test_unset_keys_really_are_unset(mean_line):
-    """The reason MeanLine.STATE is eight quantities and not twelve.
+    """The reason MeanLine._STATE is eight quantities and not twelve.
 
     A mean line has no axial or tangential coordinate, no turbulent viscosity
     and no wall distance -- the annulus supplies position, and the rest are
@@ -46,7 +46,7 @@ def test_unset_keys_really_are_unset(mean_line):
         with pytest.raises(ValueError):
             getattr(mean_line.flat, key)
 
-    assert set(MeanLine.STATE).isdisjoint({"x", "t", "mu_turb", "wdist"})
+    assert set(MeanLine._STATE).isdisjoint({"x", "t", "mu_turb", "wdist"})
 
 
 def test_round_trip_reproduces_every_property(mean_line):
@@ -92,7 +92,7 @@ def test_state_is_dimensional_and_readable(mean_line):
     """What lands in the file is plain numbers a person can check."""
     data = mean_line.to_dict()
 
-    assert set(data) == set(MeanLine.STATE)
+    assert set(data) == set(MeanLine._STATE)
     assert all(isinstance(v, list) for v in data.values())
     assert all(len(v) == 2 * mean_line.n_row for v in data.values())
 
@@ -111,7 +111,7 @@ def test_missing_state_is_reported(mean_line):
 
 def test_odd_station_count_is_rejected():
     """A mean line has an inlet and an outlet for every row."""
-    data = {key: [1.0, 2.0, 3.0] for key in MeanLine.STATE}
+    data = {key: [1.0, 2.0, 3.0] for key in MeanLine._STATE}
 
     with pytest.raises(ValueError, match="even number"):
         MeanLine.from_dict(data, FLUID.eos())
@@ -139,6 +139,21 @@ def test_set_span_r_rms_round_trip():
     assert ml.r == pytest.approx(
         np.sqrt(0.5 * (ml.r_hub**2 + ml.r_cas**2)), rel=1e-5
     )
+
+
+def test_set_r_rms_is_an_alias_for_set_r():
+    """set_r_rms lands on r_rms, which is itself an alias for r."""
+    ml = MeanLine(1)
+    ml.set_fluid(FLUID.eos())
+    ml.set_P_T(1e5, 300.0)
+    ml.set_Vx(100.0)
+    ml.set_Vr(0.0)
+    ml.set_Vt(0.0)
+
+    ml.set_r_rms(0.4)
+
+    assert ml.r_rms == pytest.approx(0.4, rel=1e-5)
+    assert ml.r == pytest.approx(0.4, rel=1e-5)
 
 
 def test_halfVsq_rel_is_kinetic_energy_in_the_rotating_frame():

@@ -35,7 +35,8 @@ User manual
    :maxdepth: 2
 
    usage
-   api
+   meanline
+   design
    changelog
    license
    Source code repository <https://github.com/jb753/turbigen>

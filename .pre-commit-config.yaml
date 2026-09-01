@@ -20,6 +20,12 @@ repos:
         entry: ./bin/check_dead_code.sh
         language: script
         pass_filenames: false
+    -   id: check-member-order
+        name: check class member order
+        entry: uv run python bin/check_member_order.py
+        language: system
+        files: ^src/turbigen/.*\.py$
+        pass_filenames: true
     -   id: no-claude-in-commit-msg
         name: no Claude in commit message
         entry: ./bin/check_no_claude_commit_msg.sh

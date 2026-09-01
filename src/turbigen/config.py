@@ -143,7 +143,7 @@ class Config(Node):
                     f"blades for {mean_line.n_row} rows."
                 )
             rows = tuple(
-                blade.design(mean_line.row(i_row), annulus.row(i_row))
+                blade.design(mean_line[:, i_row], annulus.row(i_row))
                 for i_row, blade in enumerate(self.blades)
             )
 

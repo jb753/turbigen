@@ -298,7 +298,7 @@ def test_velocity_triangle_plot_draws_relative_vectors_only_where_it_rotates(
     # Absolute velocity everywhere; relative velocity and a closing blade
     # speed only at a station whose frame turns.
     expected = sum(
-        3 if abs(float(ml.row(i)[e].Omega)) > 0.0 else 1
+        3 if abs(float(ml[:, i][e].Omega)) > 0.0 else 1
         for i in range(ml.n_row)
         for e in (0, 1)
     )

@@ -350,7 +350,7 @@ class OperatingPoint(Node):
     # the simpler prescribed pressure is right.
     #
     # The gains are ember's and are not exposed here. They are dimensionless
-    # and scaled on the reference quantities, which MeanLine.referenced_fluid
+    # and scaled on the reference quantities, which MeanLine.get_referenced_fluid
     # takes from the design's own mean density and velocity -- representative
     # by construction, which is the condition ember states for its defaults
     # holding.

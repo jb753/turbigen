@@ -119,7 +119,7 @@ def test_eos_builds_an_ember_real_fluid(real):
 def test_the_reference_scales_are_not_config(real):
     """A file sets the fit, never the non-dimensionalisation.
 
-    The scales are derived from the design by MeanLine.referenced_fluid and
+    The scales are derived from the design by MeanLine.get_referenced_fluid and
     replaced before anything reads them, so a value for one in a config file
     could only ever be ignored.
     """
@@ -135,7 +135,7 @@ def test_the_datum_is_config_unlike_a_perfect_gas(real):
     """A real gas may be told its datum; a perfect gas has nowhere to say it.
 
     A perfect gas is defined everywhere, so its datum is free and
-    MeanLine.referenced_fluid is the only thing that picks one. A fitted
+    MeanLine.get_referenced_fluid is the only thing that picks one. A fitted
     surface exists only inside its box, so the datum has to land in there and
     the config is allowed a say.
     """

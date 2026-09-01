@@ -91,16 +91,14 @@ def old_grid(machine, mesh, spacing):
 #
 
 
-def test_reference_station_is_the_end_with_the_smaller_flow_area(machine):
-    """An area criterion, recovered from the mean line deleted in 948516a."""
+def test_characteristic_station_is_the_end_with_the_higher_relative_velocity(machine):
     for i_row in range(machine.mean_line.n_row):
-        row = machine.mean_line.row(i_row)
-        A_flow = row.Am / row.cosBeta
-        ref = machine.mean_line.ref(i_row)
+        row = machine.mean_line[:, i_row]
+        station = machine.mean_line.get_characteristic_station(i_row)
 
-        i_expected = int(np.argmin(A_flow))
-        assert ref.V_rel == pytest.approx(row.V_rel[i_expected])
-        assert ref.rho == pytest.approx(row.rho[i_expected])
+        i_expected = int(np.argmax(row.V_rel))
+        assert station.V_rel == pytest.approx(row.V_rel[i_expected])
+        assert station.rho == pytest.approx(row.rho[i_expected])
 
 
 def test_surface_reynolds_number_matches_its_definition(machine):
@@ -109,8 +107,10 @@ def test_surface_reynolds_number_matches_its_definition(machine):
     Re_surf = machine.Re_surf()
 
     for i_row, row in enumerate(machine.rows):
-        ref = machine.mean_line.ref(i_row)
-        expected = row.blade.surface_length(0.5) * ref.rho * ref.V_rel / ref.mu
+        station = machine.mean_line.get_characteristic_station(i_row)
+        expected = (
+            row.blade.surface_length(0.5) * station.rho * station.V_rel / station.mu
+        )
         assert Re_surf[i_row] == pytest.approx(expected)
 
 
@@ -165,7 +165,7 @@ def test_mesh_sets_the_scales_before_there_is_a_flow_to_scale(machine, grid):
     would need rescaling afterwards. A mean line, read dimensionally and never
     iterated on, does not care about its own scales; a grid does.
     """
-    reference = machine.mean_line.referenced_fluid()
+    reference = machine.mean_line.get_referenced_fluid()
 
     assert grid[0].fluid.rho_ref == reference.rho_ref
     assert grid[0].fluid.V_ref == reference.V_ref

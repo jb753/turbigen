@@ -189,7 +189,7 @@ def test_speed_can_be_changed_without_re_meshing(gapped):
 
     slower = dataclasses.replace(machine, mean_line=machine.mean_line.copy())
     Omega = np.asarray(machine.mean_line.Omega, dtype=float)[0]
-    slower.mean_line.set_Omega_row(0.5 * Omega)
+    slower.mean_line.set_Omega(0.5 * Omega)
 
     bconds.apply(grid, slower)
 

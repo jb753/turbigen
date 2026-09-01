@@ -100,7 +100,7 @@ class Mesher(Node):
         # and everything the solver writes afterwards are stored against them.
         # Set them later and the whole field would have to be rescaled.
         grid.set_L_ref(self.L_ref(machine))
-        grid.set_fluid(machine.mean_line.referenced_fluid())
+        grid.set_fluid(machine.mean_line.get_referenced_fluid())
         self.check_volumes(grid)
         grid.calculate_wdist(limit_pitch=WDIST_LIMIT_PITCH)
 
@@ -139,10 +139,13 @@ class Mesher(Node):
         Re_surf = machine.Re_surf()
         logger.debug(f"Surface Reynolds numbers: {Re_surf}")
 
-        ref = [machine.mean_line.ref(i) for i in range(len(machine.rows))]
-        rho = np.array([st.rho for st in ref])
-        mu = np.array([st.mu for st in ref])
-        V_rel = np.array([st.V_rel for st in ref])
+        stations = [
+            machine.mean_line.get_characteristic_station(i)
+            for i in range(len(machine.rows))
+        ]
+        rho = np.array([st.rho for st in stations])
+        mu = np.array([st.mu for st in stations])
+        V_rel = np.array([st.V_rel for st in stations])
 
         # Flat plate skin friction correlation
         Cf = (2.0 * np.log10(Re_surf) - 0.65) ** -2.3

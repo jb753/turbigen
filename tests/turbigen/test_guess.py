@@ -90,7 +90,7 @@ def test_guess_is_independent_of_the_datum_it_is_built_against(machine, grid):
     Conserved energy is measured from the datum where internal energy is zero,
     so copying a mean line's conserved variables into a block whose fluid has
     a different datum reinterprets them -- silently, and by a hundred kelvin
-    for a datum moved as far as `referenced_fluid` moves it. Transferring
+    for a datum moved as far as `get_referenced_fluid` moves it. Transferring
     pressure, temperature and velocity instead is datum-independent.
     """
     shifted = grid[0].fluid.change_datum(P_dtm=2.0e5, T_dtm=500.0)
