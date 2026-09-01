@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Tutorial &#8212; turbigen 0.1.dev1441+g96fcdd450 documentation</title>
+    <title>Tutorial &#8212; turbigen 0.1.dev1445+g69c7e02a5 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=b63b11cc"></script>
+    <script src="_static/documentation_options.js?v=a88c39db"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -34,7 +34,7 @@
 
 
 
-<p class="blurb">Version 0.1.dev1441+g96fcdd450</p>
+<p class="blurb">Version 0.1.dev1445+g69c7e02a5</p>
 
 
 
@@ -299,7 +299,7 @@ properties needed to specify that type.</p>
 </div>
 <p>If we ask <strong class="program">turbigen</strong> to run the design for <cite>input.yaml</cite> at this point, it will load the input data but stop because <cite>forward</cite> is not implemented.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 NotImplementedError: Implement the forward method
 Total time: 0.0 s
@@ -349,7 +349,7 @@ by adding them as fields to the class.</p>
 </div>
 <p>Optionally, a default can be set for a field, which will be used if the input file does not specify a value; the input file must include all fields without defaults. Hence, running the design now will produce a different error:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 TypeError: Fan.__init__() missing 6 required keyword-only arguments: 'DPo', 'mdot', 'phi', 'psi', 'htr', and 'eta_tt'
 Total time: 0.0 s
@@ -378,18 +378,18 @@ object as an argument, and can access the design variables as attributes of
 <cite>self</cite>. The method must return a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> object
 with the flow field filled in.</p>
 <p>The <cite>fluid</cite> object is the equation of state named by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>
-in the input file, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#module-ember.fluid" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>. That
+in the input file, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>. That
 interface is a pair of method families: a <cite>set_X_Y</cite> takes the two properties
 named and returns the density and internal energy pair that fixes the state,
 and a <cite>get_Z</cite> evaluates one property from that pair. The full list of both is
 in that reference; the ones used below are all this design needs.</p>
 <p>The <cite>Fan</cite> class specifies inlet stagnation pressure and
 temperature, but enthalpy and entropy are more
-convinient to work with. <a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_T()</span></code></a>
+convinient to work with. <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_T()</span></code></a>
 returns the density and internal energy
 pair for a pressure and a temperature, which are then passed
-to <a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> and
-<a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a> to evaluate stagnation enthalpy and
+to <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> and
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a> to evaluate stagnation enthalpy and
 entropy (noting that entropy does not depend on the frame of reference):</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid</span><span class="p">):</span>
     <span class="c1"># Inlet stagnation enthalpy and entropy</span>
@@ -400,7 +400,7 @@ entropy (noting that entropy does not depend on the frame of reference):</p>
 </div>
 <p>At no point have we used perfect gas relations — a design class should make no
 assumptions about the equation of state.</p>
-<p>To evaluate Eqn. <a class="reference internal" href="#equation-eqn-eta">(1)</a> we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through <a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_s()</span></code></a> and  <a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:</p>
+<p>To evaluate Eqn. <a class="reference internal" href="#equation-eqn-eta">(1)</a> we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_s()</span></code></a> and  <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Ideal exit stagnation enthalpy</span>
     <span class="n">Po2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Po1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">DPo</span>
     <span class="n">ho2s</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_h</span><span class="p">(</span><span class="o">*</span><span class="n">fluid</span><span class="o">.</span><span class="n">set_P_s</span><span class="p">(</span><span class="n">Po2</span><span class="p">,</span> <span class="n">s1</span><span class="p">))</span>
@@ -422,8 +422,8 @@ Eqns. <a class="reference internal" href="#equation-eqn-psi">(2)</a> to <a class
 </pre></div>
 </div>
 <p>The exit entropy is set by the actual work and pressure rise, evaluated with
-<a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_h()</span></code></a> and
-<a class="reference external" href="https://ember-cfd.org/master/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.3.1.dev17+g7de221833)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a>. Then
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_h()</span></code></a> and
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a>. Then
 with entropy, stagnation enthalpy, and velocity known at both stations, the
 static states come from subtracting kinetic energy.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Exit entropy from actual work and pressure rise</span>
@@ -527,7 +527,7 @@ Eqn. <a class="reference internal" href="#equation-eqn-rrms">(6)</a>, from which
 </div>
 <p>If we now run <strong class="program">turbigen</strong> on <cite>input.yaml</cite>, it will load the input data, build the mean line, and then fall over because <cite>backward</cite> is not implemented:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 NotImplementedError: Implement the backward method
 Total time: 0.0 s
@@ -571,7 +571,7 @@ calls <cite>forward</cite> to build the mean line, passes it back through <cite>
 check that the design variables it asked for are the ones it got, and prints
 the result — the <a class="reference internal" href="design.html#design-process"><span class="std std-ref">Design process</span></a> in full:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 Mean line:          Row 0     
                  Inlet  Outlet
@@ -640,7 +640,7 @@ smoothly interpolated across the span.</p>
 <p>Now passing the input file to <strong class="program">turbigen</strong> will now build the mean line
 and the annulus and blade shapes to give us some more printout, including the calculated meridional chord, number of blades, tip gap, and pitch-to-chord ratio:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 Mean line:          Row 0     
                  Inlet  Outlet
@@ -674,7 +674,7 @@ only prints to the console. We can save more detailed plots to disk by
 running <a class="reference internal" href="usage.html#usage-report"><span class="std std-ref">report</span></a> mode, which will write a <cite>post.pdf</cite> report with plots of the
 design, and if CFD were run the post-processed flow field as well. Report mode also saves an <cite>output.yaml</cite> file which is the same as the input file but with any defaults filled in, and a transcript of the console output in <cite>log_turbigen.txt</cite>. So if we run:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen report input.yaml
-*** TURBIGEN v0.1.dev1441+g96fcdd450 ***
+*** TURBIGEN v0.1.dev1445+g69c7e02a5 ***
 ...
 No solution was marched, skipping the convergence plot.
 No solved grid, skipping the surface distribution plot.
