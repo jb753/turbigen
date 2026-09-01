@@ -11,8 +11,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sphinx.ext.intersphinx import missing_reference as intersphinx_missing_reference
-
 import turbigen
 
 # -- Tutorial figures --------------------------------------------------------
@@ -96,11 +94,12 @@ extensions = [
 ]
 
 # The mean line and its designer build on ember, so their inherited flow-field
-# API is documented there, not here. Point at /master/ for now: it is the only
-# build that exposes the public `ember.fluid.Fluid`. It can drift from the
-# pinned release; realign the URL when ember cuts one carrying that name.
+# API is documented there, not here. This must point at the docs for the exact
+# ember release pinned in pyproject.toml -- a `:meth:` in a design docstring
+# resolves against this inventory, so a mismatched version silently drops or
+# misdirects the link. Keep the two in sync: bump both together.
 intersphinx_mapping = {
-    "ember": ("https://ember-cfd.org/master/", None),
+    "ember": ("https://ember-cfd.org/0.4.0/", None),
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
@@ -196,36 +195,3 @@ rst_epilog = f"""
 .. |ProjectVersion| replace:: {release}
 .. |copyright_year| replace:: {copyright_year}
 """
-
-
-# -- Cross-references to the fluid API ---------------------------------------
-# Every design method is annotated `ember.fluid._Fluid`, the base class the
-# pinned release exposes, but the published inventory documents it under the
-# public name `ember.fluid.Fluid`. Left alone, the annotation in the signature
-# of `forward`, `allocate` and `design` renders as dead text, on the one page a
-# reader consults to find out what a fluid can do. Retarget it and let
-# intersphinx resolve the public name, showing that name as the link text.
-FLUID_ALIASES = {"ember.fluid._Fluid": "ember.fluid.Fluid"}
-
-
-def _resolve_fluid_alias(app, env, node, contnode):
-    private = node.get("reftarget")
-    public = FLUID_ALIASES.get(private)
-    if public is None:
-        return None
-
-    node["reftarget"] = public
-
-    # A signature renders the name short, `_Fluid`, and the prose renders it in
-    # full; rewrite whichever spelling is there, so that no link on the page is
-    # labelled with a private name the reader cannot write.
-    spellings = {private: public, private.rpartition(".")[2]: public.rpartition(".")[2]}
-    replacement = spellings.get(contnode.astext())
-    if replacement:
-        contnode = contnode.__class__(replacement, replacement)
-
-    return intersphinx_missing_reference(app, env, node, contnode)
-
-
-def setup(app):
-    app.connect("missing-reference", _resolve_fluid_alias)

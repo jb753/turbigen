@@ -26,13 +26,17 @@ dependencies = [
     'scipy~=1.18.0',
     # Compatible-release, not a floor: ember follows semver from 0.1.0, and
     # until 1.0.0 a minor release may break the public API without deprecating
-    # first, so a new minor is adopted deliberately. 0.3.0 is the release that
-    # carries the real-gas equation of state the RealFluid node needs, and it
+    # first, so a new minor is adopted deliberately. 0.4.0 makes the flow-field
+    # base class public as `ember.fluid.Fluid` (it was `_Fluid` through 0.3.x)
+    # and carries the real-gas equation of state the RealFluid node needs. It
     # ships wheels for every platform CI runs on -- which is what lets CI
     # install with --only-binary ember-cfd on runners that have no Fortran
     # toolchain. ember requires numpy 2.5, which is why the numpy and scipy
     # pins above are what they are.
-    'ember-cfd~=0.3.0',
+    #
+    # Keep in sync with the "ember" intersphinx URL in doc/conf.py, which must
+    # point at the docs for the release pinned here.
+    'ember-cfd~=0.4.0',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"

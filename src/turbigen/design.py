@@ -12,7 +12,7 @@ is a single subclass::
         phi: float
         Po1: float = 1e5
 
-        def forward(self, fluid: ember.fluid._Fluid):
+        def forward(self, fluid: ember.fluid.Fluid):
             ml = self.allocate(fluid)
             ...
             return ml
@@ -217,7 +217,7 @@ class MeanLineDesign(Node):
     # TO BE IMPLEMENTED BY A DESIGN
     #
 
-    def forward(self, fluid: ember.fluid._Fluid):
+    def forward(self, fluid: ember.fluid.Fluid):
         """Return a mean line built from this design's variables.
 
         Use :meth:`allocate` for the empty mean line, fill it in, and return
@@ -237,12 +237,12 @@ class MeanLineDesign(Node):
     # PROVIDED
     #
 
-    def allocate(self, fluid: ember.fluid._Fluid) -> MeanLine:
+    def allocate(self, fluid: ember.fluid.Fluid) -> MeanLine:
         """Return an empty mean line of the right size, ready to fill in.
 
         Parameters
         ----------
-        fluid : ember.fluid._Fluid
+        fluid : ember.fluid.Fluid
             The equation of state, already built from the config. A design
             never sees the config node, only the fluid object it describes.
 
@@ -257,7 +257,7 @@ class MeanLineDesign(Node):
         ml.set_fluid(fluid)
         return ml
 
-    def design(self, fluid: ember.fluid._Fluid) -> MeanLine:
+    def design(self, fluid: ember.fluid.Fluid) -> MeanLine:
         """Return a mean line built from this design.
 
         Checks that the result inverts back to the design variables that asked
