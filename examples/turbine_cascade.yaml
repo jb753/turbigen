@@ -44,7 +44,6 @@ blades:
 mesh:
   type: h
   yplus: 30.0
-  resolution_factor: 1.0
   dm_TE: 0.0
   AR_cusp: 2.0
   ni_cusp: 5
@@ -65,3 +64,10 @@ solver:
   n_step: 1000
   n_step_avg: 250
   n_step_log: 50
+  cfl: 4
+  n_stage: 4
+  sf_resid: 1
+  fac_mgrid: 0.2
+  n_levels: 3
+  gain_filt: 0
+  delta_filt: 0.1
