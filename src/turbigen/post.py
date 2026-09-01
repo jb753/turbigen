@@ -671,13 +671,22 @@ class ContourPlot(Post):
     """Passages to draw, repeated pitchwise."""
 
     n_level: int = 21
-    """Number of filled contour levels."""
+    """Upper bound on the number of filled bands. The band edges are rounded to
+    a sensible step, so the actual count follows from that step and the range."""
+
+    clip_percentile: float = 1.0
+    """Percentile trimmed from each end of the field before the level range is
+    rounded. A stagnation cell or a corner artefact should colour one pixel,
+    not rescale the whole plot; 0 disables the trim."""
 
     cmap: str = "viridis"
     """Colour map to fill with."""
 
-    margin: float = 0.25
-    """How far to look either side of a row, as a fraction of its own length."""
+    margin: float = 1.0
+    """How far to look either side of a row, as a fraction of its meridional
+    length (leading to trailing edge) -- so the default frames roughly one
+    chord of approach and wake either side. Raise it for a highly staggered
+    row, whose true chord runs well past its meridional extent."""
 
     def report(self, config, result):
         machine = result.machine
@@ -711,24 +720,48 @@ class ContourPlot(Post):
             # they would each get their own, and the colours either side of a
             # mixing plane would mean different things.
             passages = []
+            fields = []
             for block in cut:
                 mp = ember.util.unwrap_meridional(xr_curve, block.xrt[..., :2])
                 values = self._values(block)
+                fields.append(values)
                 # Only theta moves between passages, so the conformal
                 # coordinate and the field are computed once and reused.
                 for passage in ember.block_util.repeat_pitchwise(block, self.n_passage):
                     passages.append((mp, passage.t, values))
 
-            levels = np.linspace(
-                min(values.min() for _, _, values in passages),
-                max(values.max() for _, _, values in passages),
-                self.n_level,
-            )
+            levels, extend = self._levels(fields)
 
             for window, title in self._windows(annulus, xr_curve, spf):
-                figures.append(self._draw(plt, passages, levels, window, title))
+                figures.append(self._draw(plt, passages, levels, extend, window, title))
 
         return figures
+
+    def _levels(self, fields):
+        """Return rounded band edges for `fields`, and the ``extend`` for them.
+
+        The range is taken from the ``clip_percentile``--``100 - clip_percentile``
+        span of the pooled field, not its raw extremes, then rounded outward to
+        a nice step. ``extend`` then reports whether any real value falls past
+        the rounded edges -- which the percentile trim makes likely -- so the
+        colourbar grows a triangle rather than the plot silently clipping.
+        """
+        import matplotlib.ticker as mticker  # noqa: PLC0415
+
+        pooled = np.concatenate([field.ravel() for field in fields])
+        lo, hi = np.percentile(
+            pooled, [self.clip_percentile, 100 - self.clip_percentile]
+        )
+        levels = mticker.MaxNLocator(
+            nbins=self.n_level, steps=[1, 2, 5, 10]
+        ).tick_values(lo, hi)
+
+        below = pooled.min() < levels[0]
+        above = pooled.max() > levels[-1]
+        extend = {(True, True): "both", (True, False): "min", (False, True): "max"}.get(
+            (below, above), "neither"
+        )
+        return levels, extend
 
     def _windows(self, annulus, xr_curve, spf):
         """Return the meridional window and title of each figure.
@@ -752,7 +785,7 @@ class ContourPlot(Post):
             )
         return windows
 
-    def _draw(self, plt, passages, levels, window, title):
+    def _draw(self, plt, passages, levels, extend, window, title):
         """Contour every passage that shows through `window`."""
         fig, ax = plt.subplots(layout="constrained")
 
@@ -765,7 +798,7 @@ class ContourPlot(Post):
                 continue
 
             filled = ax.contourf(
-                mp, passage_theta, values, levels=levels, cmap=self.cmap
+                mp, passage_theta, values, levels=levels, cmap=self.cmap, extend=extend
             )
 
             # Filled bands are drawn as separate polygons, so a vector backend
@@ -791,8 +824,10 @@ class ContourPlot(Post):
         if theta:
             ax.set_ylim(min(lo for lo, _ in theta), max(hi for _, hi in theta))
 
-        ax.set_xlabel(r"Conformal Meridional Distance, $m'$")
-        ax.set_ylabel(r"Circumferential Coordinate, $\theta$/rad")
+        # The plane carries its own scale -- m' and theta are dimensionless and
+        # drawn conformal -- so the frame, ticks and axis labels only take room
+        # from the field. The colourbar is the only quantitative key kept.
+        ax.axis("off")
         ax.set_title(title)
         fig.colorbar(filled, label=LABELS.get(self.variable, self.variable), shrink=0.8)
 

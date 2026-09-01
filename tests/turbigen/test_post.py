@@ -459,11 +459,15 @@ def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
 
 
 def test_contour_plot_repeats_passages(bladed, solved):
-    single = ContourPlot(n_passage=1).report(bladed, solved)[0]
-    double = ContourPlot(n_passage=2).report(bladed, solved)[0]
+    spans = [
+        np.ptp(ContourPlot(n_passage=n).report(bladed, solved)[0].axes[0].get_ylim())
+        for n in (1, 2, 3)
+    ]
 
-    span = np.ptp(single.axes[0].get_ylim())
-    assert np.ptp(double.axes[0].get_ylim()) > 1.5 * span
+    # Each extra passage stacks one more pitch on pitchwise, so the span grows
+    # by a fixed step -- not just "more", which a wider window would also give.
+    assert spans[1] > spans[0]
+    assert spans[2] - spans[1] == pytest.approx(spans[1] - spans[0], rel=0.05)
 
 
 def test_contour_plot_without_a_grid_is_empty(config, result):
