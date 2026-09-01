@@ -317,7 +317,7 @@ def test_options_lists_the_family():
     plugin or test that defines a design adds to it.
     """
     assert {"axial_turbine", "turbine_cascade"} <= set(MeanLineDesign.options())
-    assert "perfect" in Fluid.options()
+    assert {"perfect", "real"} <= set(Fluid.options())
 
 
 def test_family_root_is_the_direct_subclass_of_node():

@@ -19,7 +19,7 @@ from turbigen.chic import Chic
 from turbigen.database import Database
 from turbigen.design import MeanLineDesign
 from turbigen.fluid import Fluid
-from turbigen.iterate import Iterator
+from turbigen.iterate import Iteration
 from turbigen.job import Job
 from turbigen.machine import Machine
 from turbigen.mesh import Mesher
@@ -44,10 +44,10 @@ class Config(Node):
     """Blade designs, one per row. Omit them to design the annulus alone."""
 
     mesh: Mesher | None = None
-    """Mesh generation. Only needed by the verbs that make a grid."""
+    """Mesh generation. Only needed by the commands that make a grid."""
 
     solver: Solver | None = None
-    """Flow solver. Only needed by the verbs that solve."""
+    """Flow solver. Only needed by the commands that solve."""
 
     operating_point: OperatingPoint | None = None
     """Where to run the machine, as a departure from its design point. Read by
@@ -63,28 +63,23 @@ class Config(Node):
     over `operating_point.DP_adjust` would copy the whole profile into every
     member."""
 
-    iterate: tuple[Iterator, ...] = ()
-    """Design iterators, closing the loop between the design and its CFD. Only
-    needed by the verb that iterates, but their errors are measured by every
-    run that solves."""
-
-    max_iter: int = 10
-    """Most design iterations before giving up. A value, not an action, so it
-    lives here where `-s max_iter=2` can reach it and an archived case records
-    the budget it was run under beside the tolerances it was judged against."""
+    iterate: Iteration = Iteration()
+    """Closing the loop between the design and its CFD. Only needed by the
+    command that iterates, but the errors it names are measured by every run
+    that solves."""
 
     database: Database | None = None
     """Finished runs to start the iterators from, instead of from whatever this
-    file says. Read once, by the verb that iterates."""
+    file says. Read once, by the command that iterates."""
 
     chic: Chic | None = None
     """How to sweep a characteristic to its stability limit. Read only by the
-    verb that sweeps, which holds the geometry fixed and moves the operating
+    command that sweeps, which holds the geometry fixed and moves the operating
     point alone."""
 
     batch: Batch | None = None
     """Design variables to vary, for covering a space with runs. Read only by
-    the verb that writes a batch, and stripped from the configs it emits: a
+    the command that writes a batch, and stripped from the configs it emits: a
     member is one design, not a design of experiments."""
 
     post_process: tuple[Post, ...] = ()
@@ -132,7 +127,7 @@ class Config(Node):
         and `config.mesh.mesh(machine)` already says it without a second
         spelling on `Config`.
         """
-        mean_line = self.mean_line.design(self.fluid)
+        mean_line = self.mean_line.design(self.fluid.eos())
 
         annulus = None
         if self.annulus is not None:
@@ -148,7 +143,7 @@ class Config(Node):
                     f"blades for {mean_line.n_row} rows."
                 )
             rows = tuple(
-                blade.design(mean_line.row(i_row), annulus.row(i_row))
+                blade.design(mean_line[:, i_row], annulus.row(i_row))
                 for i_row, blade in enumerate(self.blades)
             )
 

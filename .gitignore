@@ -3,9 +3,7 @@ venv
 plug
 uv.lock
 tests/back-to-back/*/emb
-doc/examples/*.rst
-doc/examples/*.svg
-doc/examples/hashes.yaml
+doc/_examples/
 tags
 venv/
 dist
@@ -48,3 +46,9 @@ src/ember/embercmodule.c
 .gitlab-ci-local/
 backup/
 CLAUDE.md
+
+# Artefacts the docs build drops when it runs the tutorial in report mode
+doc/_static/tut_step5_*.svg
+tutorial/*/output.yaml
+tutorial/*/log_turbigen.txt
+tutorial/*/conv.cnv

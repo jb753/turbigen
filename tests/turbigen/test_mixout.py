@@ -71,7 +71,7 @@ CASCADE = {
         "AR_cusp": 2.0,
         "ni_cusp": 5,
     },
-    "solver": {"type": "ember", "n_step": 10, "n_step_log": 10, "n_stage": 4},
+    "solver": {"type": "ember", "n_step": 10, "n_step_log": 10},
 }
 """The single-row cascade from examples/turbine_cascade.yaml.
 

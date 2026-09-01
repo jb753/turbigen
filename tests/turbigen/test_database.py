@@ -47,7 +47,9 @@ SPREAD = ((1.4, 5.0), (1.6, 6.0), (1.8, 7.0))
 
 def make(psi, dchi_TE, **kwargs):
     """Return a two-row config at `psi` whose rows are recambered `dchi_TE`."""
-    config = dataclasses.replace(build(), iterate=ITERATORS, **kwargs)
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=ITERATORS), **kwargs
+    )
     config = dataclasses.replace(
         config, mean_line=dataclasses.replace(config.mean_line, psi=psi)
     )
@@ -103,7 +105,7 @@ def test_the_database_section_round_trips():
 
 
 def test_no_database_leaves_the_config_alone(tmp_path):
-    config = dataclasses.replace(build(), iterate=ITERATORS)
+    config = dataclasses.replace(build(), iterate=iterate.Iteration(correct=ITERATORS))
 
     assert database.warm_start(config, tmp_path) is config
 
@@ -271,7 +273,9 @@ def test_the_run_being_started_is_excluded(runs):
 def test_mismatched_iterators_are_skipped(runs, caplog):
     """A design with a different row count has no comparable knobs."""
     one_row = dataclasses.replace(
-        make(1.5, 5.0), blades=make(1.5, 5.0).blades[:1], iterate=ITERATORS
+        make(1.5, 5.0),
+        blades=make(1.5, 5.0).blades[:1],
+        iterate=iterate.Iteration(correct=ITERATORS),
     )
     write(runs / "runs" / "003", one_row)
 

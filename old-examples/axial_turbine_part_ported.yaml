@@ -1,6 +1,12 @@
 # Axial turbine
 #
 # A repeating-stage axial turbine with two blade rows.
+#
+# Half ported to the v3 schema and not yet running: `mean_line.n_row` is now a
+# ClassVar of the mean-line type rather than a setting, `work_dir`,
+# `fac_nstep_initial`, `design_space` and `nblade` are no longer config keys,
+# the blades want `sections:` and `count:`, and `mesh.nchord_axial` is gone.
+# Kept here as the starting point for finishing the job.
 
 # New working directory for each invocation
 work_dir: runs/*

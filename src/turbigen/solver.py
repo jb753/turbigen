@@ -61,12 +61,30 @@ class Solver(Node):
 class Ember(Solver, ember.solver.Solver):
     """The ember explicit time-marching solver.
 
-    Every field and ``run`` itself come from :class:`ember.solver.Solver`. The
-    settings this accepts are therefore whatever ember accepts, always, and
-    :meth:`Solver.options` will list them.
+    Every field and ``run`` itself come from :class:`ember.solver.Solver`, so
+    the settings this accepts are whatever ember accepts, always, and
+    :meth:`Solver.options` lists them.
+
+    Five defaults are restated below. ember tunes its own for large machine
+    meshes; turbigen also meshes small cascades with thin boundary cells, where
+    ember's ``cfl = 5`` is far past the stability limit its own docstring gives
+    for the default ``n_stage = 0`` scheme (``cfl ~ 0.6``). These pick the bare,
+    single-grid scree march that holds together on those: no multigrid, no
+    implicit residual smoothing, a Courant number inside the documented limit.
+    A config that knows its case can raise any of them.
     """
 
     type: ClassVar[str] = "ember"
+
+    # Restated to carry a description, which ember does not give it.
+    n_step: int
+    """Number of time steps to march [--]."""
+
+    cfl: float = 0.4
+    n_stage: int = 0
+    n_levels: int = 0
+    fac_mgrid: float = 0.0
+    sf_resid: float = 0.0
 
     def solve(self, grid):
         return self.run(grid)

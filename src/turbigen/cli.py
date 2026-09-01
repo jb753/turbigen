@@ -669,7 +669,7 @@ def batch_verb(config):
     """Return the verb a submitted batch should be run as.
 
     `iterate` when the datum says how to iterate, `run` otherwise. Inferred
-    from the section rather than asked for, the same way the depth of a design
+    from the key rather than asked for, the same way the depth of a design
     is set by what the config contains --- and the inference matters, because
     a batch submitted as `run` builds an archive `database` reads back as
     empty: a sample must have converged *and* have its errors inside their
@@ -678,9 +678,13 @@ def batch_verb(config):
     Logged, so that "why did this iterate" and "why did this not" are both
     answerable from the batch's own log file.
     """
-    verb = "iterate" if config.iterate else "run"
+    verb = "iterate" if config.iterate.correct else "run"
 
-    reason = "an iterate: section" if config.iterate else "no iterate: section"
+    reason = (
+        "an iterate: key naming what to correct"
+        if config.iterate.correct
+        else "nothing to correct"
+    )
     batch.logger.info(f"Submitting as '{verb}': the datum has {reason}.")
 
     return verb
@@ -713,6 +717,9 @@ def task_options(args):
 
     if args.verbose:
         options.append("-v")
+
+    if getattr(args, "svg", False):
+        options.append("--svg")
 
     restart = getattr(args, "restart", None)
     if restart is True:
@@ -904,7 +911,7 @@ def _report_one(args, config_path):
 
         result = answer or Result(machine=machine, grid=grid, history=history)
 
-        write_report(config, result, out_dir)
+        write_report(config, result, out_dir, svg=args.svg)
         _write_report_output(config, answer, out_dir)
 
     return 0
@@ -1039,7 +1046,7 @@ def write_input(config, out_dir):
     return path
 
 
-def solve(config, out_dir, restart_path=None):
+def solve(config, out_dir, restart_path=None, svg=False):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
@@ -1076,6 +1083,17 @@ def solve(config, out_dir, restart_path=None):
     # flow, and they can only be taken while the grid is in memory.
     result = dataclasses.replace(result, error=iterate.errors(config, result))
 
+    # Where a throttled exit turned out to sit, for the same reason and with
+    # the same deadline: the pressure the controller chose is on the patch, and
+    # the patch goes out of scope with the grid. Folded into the config as well
+    # as the result, so that `output.yaml` records the operating point the run
+    # reached rather than the guess it was given -- which is what makes a
+    # throttled run reproducible, and what a characteristic sweep measures from.
+    achieved = bconds.achieved(grid, machine, config.operating_point)
+    if achieved is not None:
+        config = dataclasses.replace(config, operating_point=achieved)
+        result = dataclasses.replace(result, operating_point=achieved)
+
     run_log.info(convergence_string(history, converged))
     if actual is not None:
         run_log.info(actual.to_string())
@@ -1103,7 +1121,7 @@ def solve(config, out_dir, restart_path=None):
     # draw the convergence page, and it costs a few kilobytes.
     save_history(out_dir / HISTORY_NAME, history)
 
-    _write_output(config, result, out_dir)
+    _write_output(config, result, out_dir, svg=svg)
 
     return result
 
@@ -1123,7 +1141,9 @@ def _run_one(args, config_path):
                 "The 'run' command needs a solver: section in the config file."
             )
 
-        result = solve(config, out_dir, resolve_restart(args, config_path))
+        result = solve(
+            config, out_dir, resolve_restart(args, config_path), svg=args.svg
+        )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
     # parsing the log. Everything written above is still written: a diverged
@@ -1151,10 +1171,10 @@ def _iterate_one(args, config_path):
             raise ValueError(
                 "The 'iterate' command needs a solver: section in the config file."
             )
-        if not config.iterate:
+        if not config.iterate.correct:
             raise ValueError(
-                "The 'iterate' command needs an iterate: section saying what to "
-                "correct; without one, use 'run'."
+                "The 'iterate' command needs an iterate: key with a correct: "
+                "list saying what to correct; without one, use 'run'."
             )
 
         _, result, converged, _ = converge_design(
@@ -1300,7 +1320,7 @@ def converge_design(config, out_dir, previous=None):
         The flow field it reached, for whatever runs next.
 
     """
-    if not config.iterate:
+    if not config.iterate.correct:
         design_dir = out_dir / "iter_0000"
         design_dir.mkdir(parents=True, exist_ok=True)
         iterate.logger.info(f"Design point in {design_dir}")
@@ -1310,7 +1330,7 @@ def converge_design(config, out_dir, previous=None):
         result = solve(config, design_dir, previous)
         field = promote_final(out_dir, design_dir, result.converged)
 
-        return config, result, result.converged, field
+        return _with_achieved(config, result), result, result.converged, field
 
     # Iteration -1: where the knobs start. Anchored on the config file's own
     # directory, because a config is often run from somewhere else, and
@@ -1340,11 +1360,29 @@ def converge_design(config, out_dir, previous=None):
 
         return result
 
-    config, result, converged = iterate.converge(config, run, config.max_iter)
+    config, result, converged = iterate.converge(config, run, config.iterate.max_iter)
 
     field = promote_final(out_dir, previous.parent, converged)
 
-    return config, result, converged, field
+    return _with_achieved(config, result), result, converged, field
+
+
+def _with_achieved(config, result):
+    """Return `config` running where `result` says the machine ended up.
+
+    The operating point is the one thing a solve can change about the config it
+    was given, a throttled exit being handed a mass flow and finding the
+    pressure that passes it. Applied on the way out of `converge_design` so
+    that whatever runs next -- a sweep, above all -- inherits the pressure the
+    design converged at rather than the guess it started from.
+
+    Iterators do not move it, so taking it off the last result is taking it off
+    the run that produced the design being returned.
+    """
+    if result is None or result.operating_point is None:
+        return config
+
+    return dataclasses.replace(config, operating_point=result.operating_point)
 
 
 def cmd_batch(args):
@@ -1599,7 +1637,7 @@ def _open_batch(args, datum_dir):
     return out_dir
 
 
-def _write_output(config, result, out_dir):
+def _write_output(config, result, out_dir, svg=False):
     """Write what a run achieved, and draw it.
 
     Only the verbs that solve call this, and that is what makes it safe:
@@ -1613,7 +1651,7 @@ def _write_output(config, result, out_dir):
     case.write(config_path, config, result)
     run_log.info(f"Wrote resolved configuration to {config_path}")
 
-    write_report(config, result, out_dir)
+    write_report(config, result, out_dir, svg=svg)
 
 
 def grid_string(grid):
@@ -1640,7 +1678,7 @@ def _design_variable_rows(config, result):
     could not print.
 
     And it is sound, because there are two states and not three: `solve_for`
-    raises if it cannot hit its targets and `check_round_trip` raises if the
+    raises if it cannot hit its targets and `_check_round_trip` raises if the
     inverted variables disagree with the fields that asked for them, so a
     nominal mean line that exists *is* the requested design.
 
@@ -1687,8 +1725,7 @@ def design_variable_string(config, result):
 
     width = max(len(name) for name, _, _, _ in rows)
     header = (
-        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  "
-        f"{'err':>10}  {'err/%':>8}"
+        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
     )
     lines = ["Design variables:", header, "-" * len(header)]
 
@@ -1731,13 +1768,19 @@ def processors(config):
     return standard + list(config.post_process)
 
 
-def write_report(config, result, out_dir):
+def write_report(config, result, out_dir, svg=False):
     """Run the post-processors and collect their figures into one PDF.
 
     Nothing is produced without an output directory, so the figures are only
     made when there is somewhere to put them. With one, a report is always
     written: the standard plots cost a fraction of a solve, and a run whose
     output nobody looks at is worse than a page nobody needed.
+
+    `svg` additionally writes each figure as its own file, for a document that
+    places them one at a time. Off by default, by the same rule: a directory of
+    pictures nobody opens is worse than the one PDF that holds them. The names
+    carry the post-processor that drew each figure rather than a page number,
+    so adding a plot cannot silently rename the images after it.
     """
     # Imported here so that the CLI does not pay for matplotlib until there is
     # something to plot.
@@ -1754,13 +1797,20 @@ def write_report(config, result, out_dir):
 
     path = out_dir / "post.pdf"
     n_page = 0
-    with PdfPages(path) as pdf:
-        for processor in processors(config):
+    # styled() spans figure creation, not just savefig: rcParams are read as
+    # artists are built. The user's own matplotlibrc still wins inside it.
+    with post.styled(), PdfPages(path) as pdf:
+        for i_processor, processor in enumerate(processors(config)):
             logger.debug(f"Running post-processor {processor}")
             # Figures are closed as they are written rather than collected and
             # closed at the end, so a long report holds one at a time.
-            for figure in processor.report(config, result):
+            for i_figure, figure in enumerate(processor.report(config, result)):
                 pdf.savefig(figure)
+                if svg:
+                    figure.savefig(
+                        out_dir / f"post_{i_processor:02d}_{processor.type}"
+                        f"_{i_figure}.svg"
+                    )
                 plt.close(figure)
                 n_page += 1
 
@@ -1855,6 +1905,7 @@ def _make_parser():
             "a mesh is serialised is a property of the solver that will read it."
         ),
     )
+    _add_svg_argument(report)
     report.set_defaults(func=cmd_report)
 
     run = commands.add_parser(
@@ -1873,6 +1924,7 @@ def _make_parser():
     _add_out_dir_argument(run)
     _add_queue_argument(run)
     _add_restart_argument(run)
+    _add_svg_argument(run)
     run.set_defaults(func=cmd_run)
 
     iterate_ = commands.add_parser(
@@ -1884,8 +1936,8 @@ def _make_parser():
             "flow actually did, correct the design, and solve again. Each "
             "iteration is an ordinary run in a directory of its own beside the "
             "config, with 'final' linked to the last and every iteration kept. "
-            "Needs an iterate: section. Exits 2 if the design had not "
-            "converged by max_iter."
+            "Needs an iterate: key naming what to correct. Exits 2 if the "
+            "design had not converged by iterate.max_iter."
         ),
     )
     _add_force_argument(iterate_)
@@ -1972,6 +2024,25 @@ def _add_force_argument(parser):
         help=(
             f"replace an answer already recorded in {OUTPUT_NAME} here; "
             "without it, a directory that has been run refuses to be run again"
+        ),
+    )
+
+
+def _add_svg_argument(parser):
+    """Add --svg, for the two verbs that draw one case.
+
+    `design` has no figures to write, and `iterate` and `chic` draw a directory
+    of runs rather than a case, which is not what a document places. A flag
+    rather than a config key, because how a report is consumed is a property of
+    who is reading it, not of the machine being designed: one config feeds both
+    a person opening post.pdf and a page placing the figures individually.
+    """
+    parser.add_argument(
+        "--svg",
+        action="store_true",
+        help=(
+            "also write each figure as its own SVG beside post.pdf, named "
+            "after the post-processor that drew it, for embedding one at a time"
         ),
     )
 
@@ -2073,13 +2144,17 @@ def main(argv=None):
 
     try:
         return args.func(args)
-    except Exception as err:
-        # A user error in a config file should read as a message, not a stack
-        # trace. The traceback is one -v away when it is actually wanted.
-        if args.verbose:
-            logger.exception("Error encountered, quitting...")
-        else:
-            logger.error(f"{type(err).__name__}: {err}")
+    except Exception:
+        # A failure gets its traceback, whatever it is. Most of them are raised
+        # from a config file or a plugin, which are the user's own code in the
+        # sense that matters: the file and line are what say which of their
+        # lines to look at. Summarising to `Type: message` reads tidily for the
+        # errors raised deliberately against user input, but those cannot be
+        # told apart by type from the ones that mean something is broken --
+        # both arrive as ValueError -- so suppressing the trace for one
+        # suppresses it for the other, which is the expensive half of the
+        # trade.
+        logger.exception("Error encountered, quitting...")
         return 1
     finally:
         # In a finally block so that a run which fell over still reports how

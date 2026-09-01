@@ -43,14 +43,16 @@ class Machine:
         """Return the surface Reynolds number of each blade row [--].
 
         A property of the design and nothing else: a surface length off the
-        blade, a reference state off the mean line, no grid and no solution.
-        It sat on the mesher until an iterator wanted it too, which is the
-        usual sign that a quantity belongs to the thing it is measured from
-        rather than to its first consumer.
+        blade, a characteristic state off the mean line, no grid and no
+        solution. It sat on the mesher until an iterator wanted it too, which
+        is the usual sign that a quantity belongs to the thing it is measured
+        from rather than to its first consumer.
         """
         ell = np.array([row.blade.surface_length(0.5) for row in self.rows])
-        ref = [self.mean_line.ref(i) for i in range(len(self.rows))]
-        L_visc = np.array([st.mu / st.rho / st.V_rel for st in ref])
+        stations = [
+            self.mean_line.get_characteristic_station(i) for i in range(len(self.rows))
+        ]
+        L_visc = np.array([st.mu / st.rho / st.V_rel for st in stations])
         return ell / L_visc
 
     def blade_string(self):

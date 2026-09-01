@@ -1,0 +1,14 @@
+fluid:
+  type: perfect  # Which fluid model, perfect or real
+  cp: 1005.0     # Specific heat at constant pressure [J/kg/K]
+  gamma: 1.4     # Ratio of specific heats [--]
+  mu: 1.8e-5     # Dynamic viscosity [Pa*s]
+
+mean_line:
+  type: fan    # Which plugin to use, compressor/turbine etc
+  DPo: 2000.0     # Stagnation pressure rise [Pa]
+  mdot: 5.0       # Mass flow rate [kg/s]
+  phi: 0.5        # Flow coefficient
+  psi: 0.4        # Loading coefficient
+  htr: 0.8        # Inlet hub-to-tip ratio
+  eta_tt: 0.9     # Efficiency guess

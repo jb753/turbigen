@@ -49,15 +49,57 @@ jobs:
         # that fails somewhere down in gfortran. With it, the job says the
         # true thing: there is no wheel for this. Scoped to ember rather than
         # :all:, which would refuse to build turbigen itself.
+        #
+        # pytest-xdist because pytest.ini runs `-n auto` by default: without it
+        # pytest rejects its own addopts and the job dies before collecting a
+        # test. sphinx because test_config_docs.py reads field docstrings back
+        # out of the source with its ModuleAnalyzer, and a module that cannot
+        # be imported is a collection error, not a skip -- the check that every
+        # config key is documented runs nowhere else, the docs job building the
+        # page rather than testing it. Both named rather than pulled in with
+        # the whole dev group, which also carries pyqt6 and needs system Qt.
         run: |
           uv venv --python ${{ matrix.python }}
-          uv pip install --only-binary ember-cfd . pytest
+          uv pip install --only-binary ember-cfd . pytest pytest-xdist sphinx
 
       - name: Test
         # Not --no-sync, which is for a uv-managed project: this one sets
         # tool.uv.managed = false, so there is no environment for uv to sync
         # and the flag is not accepted.
         run: uv run --no-project pytest
+
+  docs:
+    # Build the documentation, without publishing it. conf.py runs `turbigen
+    # report` to render the tutorial's figures and `program-output` runs every
+    # transcript the page shows, so `-W` turns a page that has drifted from the
+    # code -- a moved literalinclude anchor, a command that changed its exit
+    # code -- into a failure here. test_tutorial.py catches most of that on
+    # every commit; this catches the sphinx-only half.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install turbigen and the docs toolchain
+        # The sphinx pieces by name rather than the whole dev group, which also
+        # carries pyqt6 and needs system Qt. --only-binary ember-cfd for the
+        # reason given in `test`.
+        run: |
+          uv venv --python 3.13
+          uv pip install --only-binary ember-cfd . \
+            sphinx sphinx-argparse sphinxcontrib-programoutput \
+            sphinxcontrib-bibtex 'setuptools<81' snowballstemmer==2.2.0
+
+      - name: Build
+        run: uv run --no-project sphinx-build -W doc doc/_build
+
+      - name: Keep the built site
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: doc/_build/
 
   lint:
     # Once, not once per matrix leg: what black and flake8 make of the source
@@ -69,6 +111,17 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Install the tools the hooks shell out to
+        # `check-dead-code` runs bin/check_dead_code.sh, which calls `uv run
+        # vulture`: an environment for that to find, or the hook fails to spawn
+        # it and reports the spawn error as dead code. One environment, run the
+        # way a developer runs it, rather than a second unpinned copy invoked
+        # through uvx -- which is the arrangement pyproject.toml argues against
+        # for ruff, for the same reason.
+        run: |
+          uv venv --python 3.13
+          uv pip install vulture
+
       - name: Lint
         # black and flake8 at the versions the repo pins, rather than either
         # invoked loose: pre-commit is where this repo states what lint means,
@@ -76,7 +129,7 @@ jobs:
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
   package:
-    needs: [test, lint]
+    needs: [test, lint, docs]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

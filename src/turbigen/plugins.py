@@ -33,6 +33,11 @@ PLUGIN_DIR_NAME = "turbigen_plugins"
 _LOADED = set()
 """Plugin files already imported, so that loading twice is a no-op."""
 
+_ANNOUNCED = set()
+"""Plugin directories already logged, so a run that loads its config several
+times over --- copy to a workdir, build the Config, read back the result --- says
+"Loading plugins from ..." once rather than once per load."""
+
 
 def find_plugin_dir(start):
     """Return the nearest plugin directory at or above `start`, or None.
@@ -127,6 +132,12 @@ def discover(start):
         logger.debug(f"No {PLUGIN_DIR_NAME} directory found at or above {start}")
         return None
 
-    logger.info(f"Loading plugins from {plug_dir}")
+    resolved = plug_dir.resolve()
+    if resolved in _ANNOUNCED:
+        logger.debug(f"Plugins already loaded from {plug_dir}")
+    else:
+        logger.info(f"Loading plugins from {plug_dir}")
+        _ANNOUNCED.add(resolved)
+
     load_plugins(plug_dir)
     return plug_dir

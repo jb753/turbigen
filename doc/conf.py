@@ -4,25 +4,74 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-
-import os
-import sys
-import turbigen
 import datetime
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(".."))
+from sphinx.ext.intersphinx import missing_reference as intersphinx_missing_reference
 
+import turbigen
+
+# -- Tutorial figures --------------------------------------------------------
+# The Plotting section of the tutorial embeds the plots from step 5's report.
+# The reader is shown `turbigen report input.yaml`; the SVGs it needs come from
+# the --svg variant, rendered here so that step is not part of the walkthrough.
+
+# Which report processors the tutorial shows, mapped to the static file each is
+# embedded as. Keyed on processor type rather than figure index so a reordering
+# of turbigen.post.STANDARD does not silently break the page. Kept in step with
+# test_tutorial.py, which checks these names against the page and the report.
+TUTORIAL_FIGURES = {
+    "triangle": "tut_step5_triangle.svg",
+    "annulus": "tut_step5_annulus.svg",
+    "sections": "tut_step5_sections.svg",
+}
+
+
+def _render_tutorial_figures():
+    here = Path(__file__).parent
+    step5 = here.parent / "tutorial" / "step5"
+    static = here / "_static"
+    static.mkdir(exist_ok=True)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from turbigen.cli import main; raise SystemExit(main())",
+            "report",
+            "--svg",
+            "input.yaml",
+        ],
+        cwd=step5,
+        check=True,
+        capture_output=True,
+    )
+
+    # report --svg writes post_<NN>_<type>_<fig>.svg; match on <type>.
+    for svg in step5.glob("post_*.svg"):
+        figure_type = svg.stem.split("_")[2]
+        if figure_type in TUTORIAL_FIGURES:
+            shutil.move(str(svg), str(static / TUTORIAL_FIGURES[figure_type]))
+
+    missing = [
+        name for name in TUTORIAL_FIGURES.values() if not (static / name).is_file()
+    ]
+    if missing:
+        raise RuntimeError(f"the tutorial report produced no figure for {missing}")
+
+
+_render_tutorial_figures()
 
 # -- Project information -----------------------------------------------------
 
 
 project = "turbigen"
-copyright = turbigen.__copyright__
+# Stated here rather than read off the package, which no longer carries a
+# __copyright__ for this to import.
+copyright = f"{datetime.date.today().year}, James Brind"
 author = "James Brind"
 
 # The full version, including alpha/beta/rc tags
@@ -36,33 +85,49 @@ release = turbigen.__version__
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
+    "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
-    "autodocsumm",
+    "sphinx.ext.intersphinx",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.programoutput",
-    "matplotlib.sphinxext.plot_directive",
     "sphinxarg.ext",
+    "turbigen_schema",
 ]
 
-# Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
+# The mean line and its designer build on ember, so their inherited flow-field
+# API is documented there, not here. Point at /dev/ for now: it is the only
+# build that exposes the public `ember.fluid.Fluid`. It can drift from the
+# pinned release; realign the URL when ember cuts one carrying that name.
+intersphinx_mapping = {
+    "ember": ("https://ember-cfd.org/dev/", None),
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+}
+
+# Both documented modules are written in NumPy-style docstrings.
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+
+autodoc_member_order = "bysource"
+
+# A method in the sidebar is listed as `forward()`, not `MeanLineDesign.forward()`.
+# The class it belongs to is the entry directly above it, so repeating the name
+# on every child only costs the width that would have shown the method itself.
+toc_object_entries_show_parents = "hide"
+# Inherited members are ember's; a mention in the prose links to its docs
+# rather than pulling the whole Block API onto turbigen's page.
+autodoc_default_options = {
+    "members": True,
+    "show-inheritance": True,
+}
+
+# Local extensions, which are not installed anywhere.
+sys.path.insert(0, str(Path(__file__).parent / "_ext"))
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
-
-plot_include_source = True
-plot_html_show_source_link = False
-plot_html_show_formats = False
-plot_formats = ["svg", "pdf"]
-plot_formats = ["svg", "pdf"]
-
-add_module_names = False
-autoclass_content = "init"
-autodoc_member_order = "bysource"
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -77,29 +142,12 @@ html_theme = "alabaster"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
+# Loaded after the theme, so it can override the theme.
+html_css_files = ["custom.css"]
+
 html_theme_options = {
     "description": f"Version {release}",
     "fixed_sidebar": True,
-}
-
-# Macros for LaTeX
-mathjax3_config = {
-    "tex": {
-        "macros": {
-            "Ma": r"{M\kern-.1ema}",
-            "Rey": r"{R\kern-.1eme}",
-            "htr": r"{\mathit{HTR}}",
-            "inn": r"{\mathrm{in}}",
-            "out": r"{\mathrm{out}}",
-            "rel": r"{\mathrm{rel}}",
-            "Chi": r"{\hat{\chi}}",
-            "TE": r"{\mathrm{TE}}",
-            "LE": r"{\mathrm{LE}}",
-            "dee": r"\mathrm{d}",
-            "RR": r"{\mathit{RR}}",
-            "VmR": r"{\mathit{VR}}",
-        },
-    }
 }
 
 bibtex_bibfiles = ["refs.bib"]
@@ -120,3 +168,36 @@ rst_epilog = f"""
 .. |ProjectVersion| replace:: {release}
 .. |copyright_year| replace:: {copyright_year}
 """
+
+
+# -- Cross-references to the fluid API ---------------------------------------
+# Every design method is annotated `ember.fluid._Fluid`, the base class the
+# pinned release exposes, but the published inventory documents it under the
+# public name `ember.fluid.Fluid`. Left alone, the annotation in the signature
+# of `forward`, `allocate` and `design` renders as dead text, on the one page a
+# reader consults to find out what a fluid can do. Retarget it and let
+# intersphinx resolve the public name, showing that name as the link text.
+FLUID_ALIASES = {"ember.fluid._Fluid": "ember.fluid.Fluid"}
+
+
+def _resolve_fluid_alias(app, env, node, contnode):
+    private = node.get("reftarget")
+    public = FLUID_ALIASES.get(private)
+    if public is None:
+        return None
+
+    node["reftarget"] = public
+
+    # A signature renders the name short, `_Fluid`, and the prose renders it in
+    # full; rewrite whichever spelling is there, so that no link on the page is
+    # labelled with a private name the reader cannot write.
+    spellings = {private: public, private.rpartition(".")[2]: public.rpartition(".")[2]}
+    replacement = spellings.get(contnode.astext())
+    if replacement:
+        contnode = contnode.__class__(replacement, replacement)
+
+    return intersphinx_missing_reference(app, env, node, contnode)
+
+
+def setup(app):
+    app.connect("missing-reference", _resolve_fluid_alias)

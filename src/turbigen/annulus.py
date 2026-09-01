@@ -273,13 +273,6 @@ class Annulus:
         """Hub-to-tip ratio at all row inlet and outlet stations [--]."""
         return self.r_hub / self.r_tip
 
-    @property
-    def x_rms(self):
-        """Axial coordinates at the RMS radius, at all stations [m]."""
-        xr_hub, xr_cas = self._xr_stations
-        spf_rms = (self.r_rms - xr_hub[1]) / (xr_cas[1] - xr_hub[1])
-        return xr_hub[0] + (xr_cas[0] - xr_hub[0]) * spf_rms
-
     def span(self, m):
         """Return the hub-to-casing distance at meridional position(s) `m` [m].
 

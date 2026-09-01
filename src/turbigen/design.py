@@ -1,9 +1,8 @@
-"""Mean-line designers.
+"""Classes linking mean-line flow fields to design variables.
 
-A designer turns aerodynamic design variables into a mean-line flow field and
-back again. It is a :class:`~turbigen.node.Node`, so the design variables are
-its dataclass fields: they are the schema, they carry their own defaults, and
-they serialise themselves. Writing one is a single class::
+A :class:`MeanLineDesign` turns aerodynamic variables into a :class:`~turbigen.meanline.MeanLine`
+flow field and back again. Writing the mean-line design for a new machine
+is a single subclass::
 
     class MyStage(MeanLineDesign):
         type: ClassVar[str] = "my_stage"
@@ -13,39 +12,182 @@ they serialise themselves. Writing one is a single class::
         phi: float
         Po1: float = 1e5
 
-        def forward(self, fluid):
+        def forward(self, fluid: ember.fluid._Fluid):
             ml = self.allocate(fluid)
             ...
             return ml
 
         def backward(self, ml): ...
 
-``backward`` is the single definition of what each design variable *means*. It
-reports the design a CFD solution actually achieved, and it also supplies the
-residual that :meth:`MeanLineDesign.solve_for` drives when ``forward`` cannot
-hit a target directly. Writing a formula once and calling it from both
-directions is what stops them drifting apart.
+The :doc:`/tutorial` works through such a class in full, from an empty file to
+a designed fan; this page document the class in more detail. The
+data structure storing the flow field is documented at :doc:`/meanline`.
 
-A mean line stores its state as float32 against the entropy and internal-energy
-datum of its fluid, which defaults to 1 bar and 300 K. That is fine for air near
-ambient, but a machine running hot enough or high enough pressure will store a
-large internal energy with the kinetic energy as a small correction on top of
-it, and lose the latter to rounding. A design that expects such conditions
-should move the datum, before it solves, from the inlet conditions it already
-knows::
+.. _design-contract:
 
-    ml.set_fluid(ml.fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
+The design contract
+^^^^^^^^^^^^^^^^^^^
 
-Note that the *reference scales* are a separate matter and not worth setting
-here: floating-point precision is invariant under scaling, so dividing the
-stored variables through by a density and a velocity changes their exponents
-and nothing else. Scales matter to the grid, which a solver iterates on, and
-:meth:`turbigen.meanline.MeanLine.referenced_fluid` supplies them there.
+A design declares two class variables, writes two methods, and inherits the
+rest:
+
+.. list-table::
+   :widths: 40 60
+
+   * - ``type``
+     - The name an input file asks for, under :ref:`mean_line:
+       <config-mean_line>`.
+   * - ``n_row``
+     - Number of blade rows the design describes. The mean line it builds has
+       shape ``(2, n_row)``.
+   * - :meth:`MeanLineDesign.forward`
+     - Written by the design: build a mean line from the design variables.
+   * - :meth:`MeanLineDesign.backward`
+     - Written by the design: recover the design variables from a mean line.
+   * - :meth:`MeanLineDesign.allocate`
+     - Provided: an empty mean line of the right size and fluid.
+   * - :meth:`MeanLineDesign.design`
+     - Provided: run ``forward``, check the round trip, freeze the result.
+   * - :meth:`MeanLineDesign.solve_for`
+     - Provided: drive unknowns until ``backward`` reports the targets asked
+       for.
+
+A built-in design defined in the :program:`turbigen` package is registered
+automatically. A new user-created design need not be installed: it is picked up
+from any ``turbigen_plugins`` directory beside the input file, or in any
+directory above it.
+
+In addition to the class variables, `type` and `n_row`, a design declares its
+design variables as :class:`~dataclasses.dataclass` fields. Values for the
+design variables are taken from under the :ref:`mean_line: <config-mean_line>`
+key in the input file, converted to the annotated type and rejected if that
+fails. A field with
+no default is required, and omitting it from the input file is an error.
+A field with a default is optional, and the defaulted value is recorded in
+``output.yaml`` for future reproducibility.
+
+.. _design-process:
+
+Design process
+^^^^^^^^^^^^^^
+
+Loading an input file converts its :ref:`mean_line: <config-mean_line>` mapping
+into an instance of the class named by ``type``, with defaults filled in.
+:program:`turbigen` then calls :meth:`~MeanLineDesign.design` on that instance,
+passing the working fluid specified by :ref:`fluid: <config-fluid>`, and that
+method runs the design:
+
+#. :meth:`~MeanLineDesign.forward` builds a
+   :class:`~turbigen.meanline.MeanLine`;
+#. :meth:`~MeanLineDesign.backward` inverts it, and the result is compared
+   against the nominal design variables;
+#. mass is checked to be conserved through the machine;
+#. the :class:`~turbigen.meanline.MeanLine` is frozen, so that every stage
+   which follows --- annulus, blades, mesher, post-processing --- reads it and
+   cannot write to it.
+
+Because the check runs there, a nominal :class:`~turbigen.meanline.MeanLine`
+that exists *is* the requested design, and there is no third state between what
+was asked for and what was achieved.
+
+:meth:`~MeanLineDesign.forward` should start with
+:meth:`~MeanLineDesign.allocate`, which returns an empty
+:class:`~turbigen.meanline.MeanLine` of the right shape and working fluid,
+fills it in using the setters documented at :doc:`/meanline`, and returns it.
+It should make no assumption about the equation of state: a design written in
+terms of enthalpy and entropy works for a perfect gas and a real one alike.
+:ref:`tut-forward` builds one line by line from the design equations.
+
+The `fluid` it is passed is the equation of state named by :ref:`fluid:
+<config-fluid>`, whose interface is documented in :mod:`ember.fluid`.
+Thermodynamic properties come
+from its two method families: a `set_X_Y` returns the density and internal
+energy pair for the two properties named ---
+:meth:`~ember.fluid.Fluid.set_P_T`, :meth:`~ember.fluid.Fluid.set_P_s`,
+:meth:`~ember.fluid.Fluid.set_P_h`, :meth:`~ember.fluid.Fluid.set_h_s` and the
+rest --- and a `get_Z` evaluates one property from that pair, so
+:meth:`~ember.fluid.Fluid.get_h`, :meth:`~ember.fluid.Fluid.get_s`,
+:meth:`~ember.fluid.Fluid.get_T`, :meth:`~ember.fluid.Fluid.get_a` and so on.
+The whole interface is documented in :mod:`ember.fluid`.
+
+:meth:`~MeanLineDesign.backward` goes the other way, returning a plain dict
+keyed by field name. A key that is not a field is reported for information but
+never checked, so a design is free to return whatever else is worth printing
+next to a CFD solution; a field mapped to ``None`` declares itself deliberately
+not invertible, and is skipped; a field with no key at all warns once, naming
+the variable that can no longer be checked or reported.
+:meth:`~MeanLineDesign.backward` can run on a nominal design, or a mixed-out CFD
+solution --- it is the single definition of what each design variable means.
+:ref:`tut-backward` writes one for the design variables of a fan.
+
+.. _design-implicit:
+
+Implicit design problems
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Where possible, :meth:`~MeanLineDesign.forward` should build the mean line
+explicitly from the design variables, but there are often situations where
+the mean line cannot be built directly from the natural choice of design variables. :meth:`~MeanLineDesign.solve_for` adjusts unknowns until
+the residual calculated  through :meth:`~MeanLineDesign.backward` meets the targets asked for, thus solving implicit design problems.
+
+For example, a turbine stage at given stator exit Mach number cannot be built
+in one pass: that Mach number depends on the temperature, which depends on the
+static state and loss. So the
+design puts the whole construction in a closure over the quantities it does not
+yet know --- here the blade speed and the three swirl velocities --- and asks
+for the values of those which make :meth:`~MeanLineDesign.backward` report the
+design variables asked for::
+
+    def build(U, Vt1, Vt2, Vt3_rel):
+        \"\"\"Fill in `ml` for one trial set of unknowns.\"\"\"
+        ...
+
+    self.solve_for(
+        ml,
+        build,
+        unknowns={"U": U0, "Vt1": Vt1_0, "Vt2": Vt2_0, "Vt3_rel": Vt3_rel_0},
+        targets={
+            "psi": self.psi,
+            "Ma2": self.Ma2,
+            # Repeating stage: the flow leaves as it entered
+            "Alpha1": "Alpha3",
+        },
+        name="stage",
+    )
+
+``build`` is called as ``build(**unknowns)`` and writes into the same
+:class:`~turbigen.meanline.MeanLine` every time.
+The values in ``unknowns`` are initial guesses, which may be scalars or arrays,
+and the guess must itself give a valid mean line (but not necessarily one that
+meets the targets). During iteration, any calls to :meth:`~MeanLineDesign.backward` that error have a penalty residual applied.
+
+There must be at least as many targets as unknowns, or the solve is refused as
+underdetermined. On success the mean line is left rebuilt at the solution, so
+``forward`` can return it directly, and the solved unknowns are returned as a
+dict for a design that wants to keep them.
+
+A numeric ``target`` is a value that key must take; a string ``target`` names
+another key of :meth:`~MeanLineDesign.backward`'s output that it must equal.
+
+.. _design-datum:
+
+Thermodynamic datum
+^^^^^^^^^^^^^^^^^^^
+
+A design that expects high temperatures and pressures should
+move the fluid dynamic datum before allocating the mean line.
+For example, if the inlet stagnation conditions are specified as design variable fields::
+
+    ml = self.allocate(fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
+
+See :ref:`ember:datum-state` for more detail on this part of the fluid API.
+
 """
 
 import logging
 from typing import ClassVar
 
+import ember.fluid
 import numpy as np
 import scipy.optimize
 
@@ -59,13 +201,6 @@ _INFEASIBLE = 1.0e6
 
 _DIFF_STEP = float(np.sqrt(np.finfo(np.float32).eps))
 """Relative finite-difference step, sized for the float32 mean-line storage."""
-
-NARROW_FRACTION = 0.1
-"""How close to `rtol` a converged residual may sit before it is remarked on.
-
-A tenth: the residuals a healthy solve reaches are three orders below rtol, so
-this is quiet in normal use and speaks only for a design near the edge.
-"""
 
 
 class DesignError(Exception):
@@ -82,7 +217,7 @@ class MeanLineDesign(Node):
     # TO BE IMPLEMENTED BY A DESIGN
     #
 
-    def forward(self, fluid):
+    def forward(self, fluid: ember.fluid._Fluid):
         """Return a mean line built from this design's variables.
 
         Use :meth:`allocate` for the empty mean line, fill it in, and return
@@ -102,14 +237,14 @@ class MeanLineDesign(Node):
     # PROVIDED
     #
 
-    def allocate(self, fluid) -> MeanLine:
+    def allocate(self, fluid: ember.fluid._Fluid) -> MeanLine:
         """Return an empty mean line of the right size, ready to fill in.
 
         Parameters
         ----------
-        fluid : Fluid
-            The working fluid node. Its equation of state is created here, so
-            a design never handles an ember object itself.
+        fluid : ember.fluid._Fluid
+            The equation of state, already built from the config. A design
+            never sees the config node, only the fluid object it describes.
 
         """
         if not isinstance(self.n_row, int) or self.n_row < 1:
@@ -119,23 +254,19 @@ class MeanLineDesign(Node):
             )
 
         ml = MeanLine(self.n_row)
-        ml.set_fluid(fluid.eos())
+        ml.set_fluid(fluid)
         return ml
 
-    def design(self, fluid) -> MeanLine:
+    def design(self, fluid: ember.fluid._Fluid) -> MeanLine:
         """Return a mean line built from this design.
 
         Checks that the result inverts back to the design variables that asked
         for it, then freezes it at the earliest opportunity, so that every
         stage which follows -- annulus, blades, mesher, post-processing --
         reads the mean line and cannot write to it.
-
-        Because the check runs here, a nominal mean line that exists *is* the
-        requested design, and there is no third state between what was asked
-        for and what was achieved.
         """
         ml = self.forward(fluid)
-        check_round_trip(self, ml)
+        _check_round_trip(self, ml)
         return ml.freeze()
 
     def solve_for(
@@ -326,10 +457,10 @@ class MeanLineDesign(Node):
         # below rtol and a narrow one is a genuine signal rather than noise:
         # the same design has flipped between converging and not across
         # machines, and this is what says so before it does.
-        if err > rtol * NARROW_FRACTION:
+        if err > 0.1 * rtol:
             logger.warning(
                 f"{self._who(label)} converged narrowly: residual {err:.3e} "
-                f"is within {1.0 / NARROW_FRACTION:.0f}x of rtol {rtol:.3e}, "
+                f"is within 10x of rtol {rtol:.3e}, "
                 f"after {len(history)} evaluation(s). This design may not "
                 f"converge on another machine."
             )
@@ -358,7 +489,7 @@ def _format_history(history, max_show=6):
     return " ".join(parts)
 
 
-def check_round_trip(design, ml, rtol=0.5e-2):
+def _check_round_trip(design, ml, rtol=0.5e-2):
     """Verify a mean line reproduces the design variables that built it.
 
     Parameters

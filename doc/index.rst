@@ -18,18 +18,35 @@ Publications using :program:`turbigen`:
 
 User manual
 ===========
+.. Several trees, for one depth each. The schema reference is a section per
+   top-level key, so the input file format is worth three levels: a reader
+   looking for `mesh:` finds it in the sidebar rather than by scrolling. The
+   two API pages are worth three for the same reason, to list the methods of
+   the class each documents. But `usage` is worth only two, because it grows a
+   "Positional Arguments" and a "Named Arguments" heading for every command it
+   documents, and fourteen of those in the sidebar bury everything else.
+
+.. toctree::
+   :maxdepth: 3
+
+   tutorial
+   config
+
 .. toctree::
    :maxdepth: 2
 
-   quickstart
-   tutorial
-   nomenclature
    usage
-   data_structures
+
+.. toctree::
+   :maxdepth: 3
+
    meanline
-   solver
-   examples/index
+   design
+
+.. toctree::
+   :maxdepth: 2
+
    changelog
    license
-   Source code repository <https://gitlab.developers.cam.ac.uk/jb753/turbigen>
+   Source code repository <https://github.com/jb753/turbigen>
    references

@@ -328,12 +328,20 @@ def test_a_submitted_invocation_carries_every_override(batch):
     """
     parser = cli._make_parser()
     args = parser.parse_args(
-        ["iterate", str(batch[0]), "-s", "max_iter=3", "-s", "mean_line.psi=1.9", "-Q"]
+        [
+            "iterate",
+            str(batch[0]),
+            "-s",
+            "iterate.max_iter=3",
+            "-s",
+            "mean_line.psi=1.9",
+            "-Q",
+        ]
     )
 
     assert cli.task_options(args) == [
         "-s",
-        "max_iter=3",
+        "iterate.max_iter=3",
         "-s",
         "mean_line.psi=1.9",
     ]
@@ -382,7 +390,7 @@ def datum(tmp_path):
         path = directory / "input.yaml"
         text = BATCH_CASE
         if iterating:
-            text += "iterate:\n  - type: deviation\n"
+            text += "iterate:\n  correct:\n    - type: deviation\n"
         path.write_text(text)
         return path
 

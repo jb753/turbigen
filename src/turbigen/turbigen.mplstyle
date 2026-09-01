@@ -1,0 +1,29 @@
+# turbigen's default plotting style.
+#
+# Applied only around turbigen's own figures, as a base layer: anything the
+# user sets in their own matplotlibrc still wins. See turbigen.post.styled.
+#
+# No backend line -- turbigen chooses one itself, and a style cannot change
+# the backend once pyplot has been imported.
+
+text.usetex : False
+figure.figsize : 3.416, 2.11
+axes.linewidth : 1.0
+lines.linewidth : 1.6
+lines.markeredgewidth : 1.0
+xtick.major.width : 1.0
+ytick.major.width : 1.0
+legend.fontsize : 8
+legend.labelspacing : 0.2
+font.size : 9
+font.sans-serif : FreeSans
+mathtext.fontset : cm
+axes.grid : False
+# Titles at body-text size, never the matplotlib default of one step up.
+axes.titlesize : medium
+axes.titleweight : normal
+figure.titlesize : medium
+grid.alpha : 0.15
+grid.color : (0.15,0.15,0.15)
+grid.linewidth : 1.5
+figure.dpi : 200

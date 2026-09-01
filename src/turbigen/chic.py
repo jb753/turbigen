@@ -122,8 +122,20 @@ def at(config, DP_adjust):
     from turbigen.bconds import OperatingPoint  # noqa: PLC0415 - avoids a cycle
 
     point = config.operating_point or OperatingPoint()
+
+    # The throttle comes off, if there was one. A swept point is a pressure by
+    # definition -- that is what a characteristic is a set of -- and a
+    # controller holding the mass flow would ignore every point asked for here
+    # while the table at the end still read as a map. Cleared rather than
+    # refused because the design point it was converged at is not lost by
+    # clearing it: `converge_design` has already recorded the pressure the
+    # throttle settled at as this config's own `DP_adjust`, which is the datum
+    # `sweep` departs from.
     return dataclasses.replace(
-        config, operating_point=dataclasses.replace(point, DP_adjust=DP_adjust)
+        config,
+        operating_point=dataclasses.replace(
+            point, DP_adjust=DP_adjust, mdot_adjust=None
+        ),
     )
 
 
@@ -154,9 +166,19 @@ def sweep(config, run):
         raise ValueError("Sweeping a characteristic needs a chic: section.")
 
     points = []
-    # The design point itself is not re-run: it is what the caller has just
-    # converged, and `DP_adjust = 0` would only reproduce it.
-    lo, hi = 0.0, float("inf")
+
+    # Where the design point sits, which is what the sweep departs from rather
+    # than re-running. Usually zero, a design being run at its own pressure;
+    # not zero when the design point was throttled, because the controller
+    # chose a pressure and `bconds.achieved` wrote it here. Reading it rather
+    # than assuming zero is what keeps the first point one `step` from the
+    # machine that was actually converged, and keeps the bracket naming
+    # pressures that were run.
+    datum = config.operating_point.DP_adjust if config.operating_point else 0.0
+    if datum:
+        logger.info(f"Sweeping from the design point at DP_adjust={datum:.5g}.")
+
+    lo, hi = datum, float("inf")
     step = spec.step
 
     while len(points) < spec.max_points:

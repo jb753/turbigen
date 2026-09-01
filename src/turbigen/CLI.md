@@ -36,7 +36,7 @@ be wanted.
 Results are ordinary `INFO` records rather than a level of their own. The
 existing code routes them through `logger.warning` so that they survive the
 level being raised during iteration, which leaves genuine warnings —
-`check_round_trip` reporting that `backward` omits a design variable, or a mean
+`_check_round_trip` reporting that `backward` omits a design variable, or a mean
 line with relative flow angles approaching 90 degrees — indistinguishable from
 the startup banner.
 
@@ -267,7 +267,7 @@ answers:
 ```
 
 Everything else that could be a flag is a *value*, and values live in the
-config where `-s` can reach them: `-s max_iter=6`, `-s job.hours=12`. The
+config where `-s` can reach them: `-s iterate.max_iter=6`, `-s job.hours=12`. The
 division is between **actions**, which must be typed deliberately and must
 never be latent in a file, and **values**, which belong in the file so that an
 archived case records what it was run under. `--max-iter` was on the wrong side
@@ -497,7 +497,7 @@ to a mean line is exactly the one whose output someone needs to look at.
 
 ```
 turbigen iterate hiload/input.yaml
-turbigen iterate hiload/input.yaml -s max_iter=6
+turbigen iterate hiload/input.yaml -s iterate.max_iter=6
 ```
 
 A mean line is a set of assumptions the CFD then contradicts: flow leaves a
@@ -956,7 +956,7 @@ logged into each batch's own `log_turbigen.txt`.
 ### Points that will not design
 
 A corner of the box will not design: `solve_for` fails to converge, or
-`check_round_trip` refuses. Designing costs no CFD, so each point is screened
+`_check_round_trip` refuses. Designing costs no CFD, so each point is screened
 as it is drawn and a failure is skipped — found for nothing now, instead of one
 wasted cluster job at a time.
 
@@ -987,10 +987,15 @@ A separate console script from `turbigen`, so the experiment can be installed
 alongside the existing tool without displacing it.
 
 No `sys.excepthook` is installed at all. `main()` catches exceptions around the
-command and reports them as a message with exit code 1, showing the traceback
-only under `-v`. Importing the CLI therefore has no effect on the process,
-unlike `turbigen.main:35`, which replaces the global excepthook at module
-scope.
+command, logs the traceback, and exits 1. Every failure gets its traceback,
+whatever it is: most are raised from a config file or a plugin, and the file
+and line say which of the user's own lines to look at. A `Type: message`
+summary reads tidily for the errors raised deliberately against user input, but
+those cannot be told apart by type from the ones that mean something is broken
+-- both arrive as `ValueError` -- so suppressing the trace for one suppresses
+it for the other. `-v` sets the logging level and says nothing about how errors
+print. Importing the CLI has no effect on the process, unlike
+`turbigen.main:35`, which replaces the global excepthook at module scope.
 
 ## Testing
 
@@ -1010,6 +1015,6 @@ target the parts unique to the command line:
 - a stamped field still restarts onto a design that has moved, which is what
   every chained restart depends on;
 - `--set` reaches the design, and a mistyped `--set` key fails;
-- an unknown verb, a missing file, and a bad config each exit non-zero with a
-  message on stderr rather than a traceback;
+- an unknown verb, a missing file, and a bad config each exit non-zero, and a
+  failure prints its traceback on stderr with or without `-v`;
 - nothing but `batch` writes to stdout.

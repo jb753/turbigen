@@ -196,7 +196,7 @@ check that the reserved-name promotion in `Node` is not over-applied.
 
 `Annulus` holds the fitted PCHIP curves and the geometry read off them:
 `evaluate_xr`, `nrow`, `nseg`, `mmax`, the hub/casing/mid/rms radii, `Am`,
-`htr`, `x_rms`, `chords` and `to_string`.
+`htr`, `chords` and `to_string`.
 
 The mesh-facing helpers on the old designer — `get_cut_plane`,
 `get_offset_planes`, `get_interfaces`, `get_mp_from_xr`, `xr_row`,
@@ -344,9 +344,11 @@ AutoGrid-format reshape and belongs with the mesher, `get_nose` and
 Only the camber and thickness types in use are ported --- every YAML in the
 repo uses `quadratic` and `taylor`, and the three `thick_type: Impeller` uses
 name a class that does not exist in the package. `Quartic`, `Taylor` and
-`TaylorQuadratic` camber, the `DFL` blade count and splitters (which appear
-only in `old-examples/`) are additions, not blockers, exactly as `AR_chord` is
-for the annulus.
+`TaylorQuadratic` camber and splitters (which appear only in `old-examples/`)
+are additions, not blockers, exactly as `AR_chord` is for the annulus. The
+`DFL` blade count has since been added on the same footing as `Co`, without an
+`adjust` of its own: the old class raised `NotImplementedError` from one, so
+there was nothing to port.
 
 ## Meshing
 
@@ -831,9 +833,9 @@ what the data actually looks like.
 
 **There are two states, not three.** It is tempting to distinguish what was
 requested (`config.mean_line`'s fields) from what the design achieved
-(`backward(nominal)`), since `check_round_trip` only asserts they agree to
+(`backward(nominal)`), since `_check_round_trip` only asserts they agree to
 0.5%. They do not need separating: `solve_for` raises if it cannot hit its
-targets and `check_round_trip` raises if the round trip fails, so a nominal
+targets and `_check_round_trip` raises if the round trip fails, so a nominal
 mean line that exists *is* the requested design. The gap is an assertion
 threshold, not something to plot. It is the designer's job to refuse a design
 it cannot achieve.
@@ -865,7 +867,7 @@ it could not print.
 
 It is sound because there are two states and not three, as above: a nominal
 mean line that exists *is* the requested design, since `solve_for` raises if it
-cannot hit its targets and `check_round_trip` raises if the inverted variables
+cannot hit its targets and `_check_round_trip` raises if the inverted variables
 disagree with the fields that asked for them.
 
 Design variables are still marked off from diagnostics, by field membership

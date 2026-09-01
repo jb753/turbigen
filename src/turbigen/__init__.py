@@ -26,6 +26,7 @@ from turbigen.blade import (
     BladeCount,
     BladeDesign,
     Circulation,
+    DiffusionFactor,
     FixedCount,
     Row,
     Section,
@@ -36,9 +37,9 @@ from turbigen.database import Database
 from turbigen.hmesh import H
 from turbigen.mesh import Mesher, WallSpacing
 from turbigen.thickness import Taylor, ThicknessDesign
-from turbigen.design import DesignError, MeanLineDesign, check_round_trip
-from turbigen.fluid import Fluid, PerfectFluid
-from turbigen.iterate import Iterator
+from turbigen.design import DesignError, MeanLineDesign
+from turbigen.fluid import Fluid, PerfectFluid, RealFluid
+from turbigen.iterate import Iteration, Iterator
 from turbigen.job import Job, Slurm, Task, Tsp
 from turbigen.machine import Machine
 from turbigen.meanline import MeanLine
@@ -49,6 +50,7 @@ from turbigen.post import (
     Post,
     SectionsPlot,
     SurfacePlot,
+    VelocityTrianglePlot,
 )
 from turbigen.batch import Batch
 from turbigen.chic import Chic
@@ -78,6 +80,7 @@ __all__ = [
     "Circulation",
     "Config",
     "Database",
+    "DiffusionFactor",
     "FixedAxialChord",
     "FixedCount",
     "bconds",
@@ -113,6 +116,7 @@ __all__ = [
     "Post",
     "SectionsPlot",
     "SurfacePlot",
+    "VelocityTrianglePlot",
     "Result",
     "Batch",
     "Job",
@@ -120,5 +124,5 @@ __all__ = [
     "Task",
     "Tsp",
     "PerfectFluid",
-    "check_round_trip",
+    "RealFluid",
 ]

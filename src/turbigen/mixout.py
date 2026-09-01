@@ -102,7 +102,7 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
     # is derived from it: copied from the design, an off-design run would
     # report its relative Mach numbers in the wrong rotating frame, with
     # entirely plausible values.
-    actual.set_Omega_row([float(blocks[0].Omega) for blocks in grid.rows])
+    actual.set_Omega([float(blocks[0].Omega) for blocks in grid.rows])
 
     for i_station, xr in enumerate(cut_planes(machine.annulus, offset)):
         cut = ember.cut.unstructured(grid, xr)

@@ -94,7 +94,7 @@ def test_result_is_one_key_beside_the_config(config, result, tmp_path):
 
     assert case.RESULT_KEY in raw
     assert set(raw[case.RESULT_KEY]) == {"converged", "actual"}
-    assert set(raw[case.RESULT_KEY]["actual"]) == set(MeanLine.STATE)
+    assert set(raw[case.RESULT_KEY]["actual"]) == set(MeanLine._STATE)
     # The config's own keys are untouched by its neighbour.
     assert raw["mean_line"] == config.to_dict()["mean_line"]
 

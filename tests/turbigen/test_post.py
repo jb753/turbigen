@@ -25,6 +25,7 @@ from turbigen import (  # noqa: E402
     Result,
     SectionsPlot,
     SurfacePlot,
+    VelocityTrianglePlot,
     cli,
     post,
 )
@@ -185,8 +186,9 @@ def test_the_plot_draws_the_hub_and_casing(config, result):
     figures = config.post_process[0].report(config, result)
     ax = figures[0].axes[0]
 
-    # Two m_cut planes, then hub, casing, and the axis of rotation.
-    assert len(ax.lines) == 2 + 3
+    # Two m_cut planes; hub, casing and the axis of rotation; the inlet and
+    # exit end lines.
+    assert len(ax.lines) == 2 + 3 + 2
 
 
 def test_report_leaves_the_config_untouched(config, result):
@@ -200,6 +202,23 @@ def test_report_leaves_the_config_untouched(config, result):
     config.post_process[0].report(config, result)
 
     assert config.to_dict() == before
+
+
+def test_the_plot_outlines_each_blade_row(meshed):
+    """Leading edge, trailing edge and two diagonals, hub to casing, per row."""
+    figures = AnnulusPlot().report(None, meshed)
+    ax = figures[0].axes[0]
+
+    # Hub, casing and the two end lines, then four lines for every row.
+    assert len(ax.lines) == 4 + 4 * len(meshed.machine.rows)
+
+
+def test_the_blade_outline_can_be_turned_off(meshed):
+    figures = AnnulusPlot(show_blades=False).report(None, meshed)
+    ax = figures[0].axes[0]
+
+    # Hub, casing and the two end lines.
+    assert len(ax.lines) == 4
 
 
 #
@@ -228,6 +247,112 @@ def test_sections_plot_takes_the_span_fractions_it_is_given(bladed, meshed):
 
 def test_sections_plot_without_blades_is_empty(config, result):
     assert SectionsPlot().report(config, result) == []
+
+
+CASCADE = {
+    "type": "turbine_cascade",
+    "span": [0.05, 0.05],
+    "Alpha": [0.0, 70.0],
+    "Ma2": 0.8,
+    "Ys": 0.05,
+}
+
+
+def _arrows(ax):
+    """The annotate() arrows, which hang off the annotation, not ax.patches.
+
+    Two of them are the coordinate gnomon rather than a velocity vector.
+    """
+    tipped = [t for t in ax.texts if getattr(t, "arrow_patch", None) is not None]
+    return len(tipped) - 2
+
+
+def _station_labels(ax):
+    return {t.get_text() for t in ax.texts if t.get_text().startswith("Row ")}
+
+
+def test_velocity_triangle_plot_needs_only_a_mean_line(config, result):
+    """The one flow plot with something to draw at every pipeline depth."""
+    figures = VelocityTrianglePlot().report(config, result)
+
+    assert len(figures) == 1
+    assert isinstance(figures[0], plt.Figure)
+
+
+def test_velocity_triangle_plot_labels_every_station(config, result):
+    figures = VelocityTrianglePlot().report(config, result)
+    ax = figures[0].axes[0]
+
+    n_row = result.machine.mean_line.n_row
+    assert _station_labels(ax) == {
+        f"Row {i} {end}" for i in range(n_row) for end in ("inlet", "exit")
+    }
+
+
+def test_velocity_triangle_plot_draws_relative_vectors_only_where_it_rotates(
+    config, result
+):
+    ml = result.machine.mean_line
+    ax = VelocityTrianglePlot().report(config, result)[0].axes[0]
+
+    # Absolute velocity everywhere; relative velocity and a closing blade
+    # speed only at a station whose frame turns.
+    expected = sum(
+        3 if abs(float(ml[:, i][e].Omega)) > 0.0 else 1
+        for i in range(ml.n_row)
+        for e in (0, 1)
+    )
+    assert _arrows(ax) == expected
+
+
+def test_velocity_triangle_plot_of_a_stationary_row_has_no_blade_speed():
+    config = Config.from_dict(
+        {"fluid": FLUID, "mean_line": CASCADE, "post_process": POST}
+    )
+    result = Result(machine=config.design())
+
+    ax = VelocityTrianglePlot().report(config, result)[0].axes[0]
+
+    # A cascade never rotates: one absolute vector per station, nothing else.
+    assert _arrows(ax) == 2 * result.machine.mean_line.n_row
+
+
+def test_velocity_triangle_plot_without_a_machine_is_empty(config):
+    assert VelocityTrianglePlot().report(config, Result()) == []
+
+
+#
+# THE SHIPPED PLOTTING STYLE
+#
+
+
+def test_the_style_file_ships_with_the_package():
+    assert post._STYLE.is_file()
+    assert post._STYLE.read_text().strip()
+
+
+def test_styled_applies_turbigen_defaults_and_restores_them():
+    before = plt.rcParams["font.family"]
+
+    with post.styled():
+        assert plt.rcParams["font.family"] == ["serif"]
+        assert plt.rcParams["lines.linewidth"] == 2.0
+
+    assert plt.rcParams["font.family"] == before
+
+
+def test_a_user_rc_still_wins_inside_styled(tmp_path, monkeypatch):
+    """A key the user set behaves as it would without turbigen; one they did
+    not gets turbigen's value."""
+    import matplotlib as mpl
+
+    rc = tmp_path / "matplotlibrc"
+    rc.write_text("lines.linewidth: 5.0\n")
+    monkeypatch.setattr(mpl, "matplotlib_fname", lambda: str(rc))
+
+    with post.styled():
+        assert plt.rcParams["lines.linewidth"] == 5.0  # user override
+        assert plt.rcParams["font.family"] == ["serif"]  # turbigen default
 
 
 def test_convergence_plot_draws_residuals_and_errors(bladed, solved):
@@ -423,8 +548,20 @@ def test_a_report_is_written_without_any_post_processors(tmp_path):
     assert (tmp_path / "post.pdf").is_file()
 
 
-def test_a_design_with_nothing_to_draw_writes_no_report(tmp_path):
-    """An empty document is not a report, and matplotlib writes no file for one."""
+def test_a_mean_line_only_report_still_draws_its_triangles(tmp_path):
+    """The velocity triangles need no annulus or grid, so even the barest
+    design has one page worth writing."""
+    case = tmp_path / "case.yaml"
+    case.write_text(f"fluid: {FLUID}\nmean_line: {MEAN_LINE}\n")
+
+    assert cli.main(["report", str(case)]) == 0
+
+    assert (tmp_path / "post.pdf").is_file()
+
+
+def test_an_empty_document_is_not_written(tmp_path, monkeypatch):
+    """Every standard plot returning nothing writes no file at all."""
+    monkeypatch.setattr(post, "STANDARD", ())
     case = tmp_path / "case.yaml"
     case.write_text(f"fluid: {FLUID}\nmean_line: {MEAN_LINE}\n")
 

@@ -195,21 +195,21 @@ def test_design_writes_nothing_at_all(case, capsys):
 
 
 def test_report_of_a_mean_line_design_is_not_an_error(case):
-    """Every standard plot needs geometry this case does not have.
+    """A report runs at every depth of case without a mode to select.
 
-    Each processor degrades to no figures when what it needs is missing, which
-    is what lets one verb cover every depth of case without a mode to select --
-    and an empty document is not a report, so no file appears.
+    The geometry and flow plots degrade to no figures when what they need is
+    missing, but the velocity triangles are drawn from the mean line alone --
+    so even this case leaves a `post.pdf`, of that one page.
     """
     assert cli.main(["report", str(case)]) == 0
 
     assert (case.parent / cli.LOG_NAME).is_file()
-    assert not (case.parent / "post.pdf").exists()
+    assert (case.parent / "post.pdf").is_file()
 
-    # The resolved config is written even here, where there was nothing to
-    # draw: it is the one artefact a report leaves that is not a picture, and
-    # the only way to get one without paying for a solve. The answer still
-    # belongs to whoever has one, so there is no `result:` under it.
+    # The resolved config is written too: it is the one artefact a report
+    # leaves that is not a picture, and the only way to get one without paying
+    # for a solve. The answer still belongs to whoever has one, so there is no
+    # `result:` under it.
     written = case.parent / cli.OUTPUT_NAME
     assert written.is_file()
 
@@ -286,15 +286,24 @@ def test_nothing_but_batch_writes_to_stdout(case, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_missing_config_file_is_a_message_not_a_traceback(tmp_path, capsys):
+def test_a_failure_shows_the_traceback(tmp_path, capsys):
+    """A failure is fatal, so it reports where it happened.
+
+    Most failures are a mistake in a config file or in a plugin, and both are
+    the user's own code in the sense that matters: a line number is what tells
+    them which of their lines to look at. Summarising to `Type: message` reads
+    tidily for the handful of errors raised deliberately against user input,
+    and hides the file and line for every other one.
+    """
     assert cli.main(["design", str(tmp_path / "nope.yaml")]) == 1
 
     captured = capsys.readouterr()
+    assert "Traceback" in captured.err
     assert "FileNotFoundError" in captured.err
-    assert "Traceback" not in captured.err
 
 
-def test_verbose_shows_the_traceback(tmp_path, capsys):
+def test_verbose_is_not_needed_for_the_traceback(tmp_path, capsys):
+    """`-v` sets the logging level and says nothing about how errors print."""
     assert cli.main(["design", str(tmp_path / "nope.yaml"), "-v"]) == 1
 
     assert "Traceback" in capsys.readouterr().err
@@ -428,7 +437,7 @@ mesh:
   dm_TE: 0.0
   AR_cusp: 2.0
   ni_cusp: 5
-solver: {type: ember, n_step: 10, n_step_log: 10, n_stage: 4}
+solver: {type: ember, n_step: 10, n_step_log: 10}
 """
 """A single stationary row, adapted from examples/turbine_cascade.yaml.
 
@@ -487,9 +496,17 @@ def test_run_writes_a_config_that_reads_back(run_case):
 # has gone supersonic is the expected behaviour rather than a problem. Without
 # this the suite's `filterwarnings = error` turns it into an exception, and the
 # verb reports a config error (1) instead of a failed solve (2).
+#
+# Overflow is the same story one step later, in writing the restart the verb
+# saves so that a diverged run keeps its evidence: serialising a blown-up field
+# to float32 overflows in `val *= self.fluid.P_ref`. Which of these a diverged
+# march raises is down to the values it happens to reach -- NaN times P_ref is
+# quiet, a large finite float32 is not -- so it appeared first on macOS and
+# belongs to no platform in particular.
 @pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
 @pytest.mark.filterwarnings("ignore:invalid value")
 @pytest.mark.filterwarnings("ignore:divide by zero")
+@pytest.mark.filterwarnings("ignore:overflow encountered")
 def test_run_reports_a_failed_solve_in_its_exit_code(run_case):
     """Exit 2, and the output is still written.
 
@@ -1033,8 +1050,9 @@ def test_a_reported_case_is_not_a_run_one(run_case):
 
 ITERATE_CASE = RUN_CASE + """
 iterate:
-  - type: deviation
-  - type: incidence
+  correct:
+    - type: deviation
+    - type: incidence
 """
 
 
@@ -1061,8 +1079,10 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
 
 
 SETTLED_CASE = ITERATE_CASE.replace(
-    "  - type: deviation\n", "  - type: deviation\n    tolerance: 20.0\n"
-).replace("  - type: incidence\n", "  - type: incidence\n    tolerance: 20.0\n")
+    "    - type: deviation\n", "    - type: deviation\n      tolerance: 20.0\n"
+).replace(
+    "    - type: incidence\n", "    - type: incidence\n      tolerance: 20.0\n"
+)
 """Tolerances loose enough that one pass settles the design.
 
 Absurd on purpose: what these check is what a settled run leaves behind, and
@@ -1087,7 +1107,7 @@ def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
     """
     out = iterate_case.parent
 
-    assert cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"]) == 2
+    assert cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"]) == 2
 
     for i_iter in range(2):
         iter_dir = out / f"iter_{i_iter:04d}"
@@ -1102,7 +1122,7 @@ def test_a_settled_design_leaves_a_run_directory(settled_case):
     """A finished iterate reads as a run, because that is what it is now."""
     out = settled_case.parent
 
-    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+    assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
     for name in (cli.OUTPUT_NAME, cli.RESTART_NAME, cli.HISTORY_NAME, "post.pdf"):
         assert (out / name).is_file(), name
@@ -1117,7 +1137,7 @@ def test_nothing_a_run_leaves_is_a_symlink(settled_case):
     """
     out = settled_case.parent
 
-    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+    assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
     assert not (out / "final").exists()
     assert not any(entry.is_symlink() for entry in out.rglob("*"))
@@ -1185,7 +1205,7 @@ def test_iterate_leaves_every_iteration_runnable(iterate_case):
 
     out = iterate_case.parent
 
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+    cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
 
     knobs = []
     for i_iter in range(2):
@@ -1205,7 +1225,7 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
     """An iteration directory is addressable on its own, and re-plots in place."""
     out = iterate_case.parent
 
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+    cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
 
     from turbigen import batch  # noqa: PLC0415
 
@@ -1225,7 +1245,7 @@ def test_iterate_puts_its_answer_where_a_run_would_have(settled_case):
     """
     from turbigen import case  # noqa: PLC0415
 
-    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+    assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
     answer = settled_case.parent / cli.OUTPUT_NAME
     assert answer.is_file() and not answer.is_symlink()
@@ -1244,7 +1264,7 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     from turbigen import case  # noqa: PLC0415
 
     out = iterate_case.parent
-    cli.main(["iterate", str(iterate_case), "-s", "max_iter=2"])
+    cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
 
     first, first_result = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
     second, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)
@@ -1292,7 +1312,7 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
         ITERATE_CASE + f'\ndatabase:\n  path: "../archive/*/{cli.OUTPUT_NAME}"\n'
     )
 
-    cli.main(["iterate", str(with_database), "-s", "max_iter=1"])
+    cli.main(["iterate", str(with_database), "-s", "iterate.max_iter=1"])
 
     started, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
 
@@ -1305,12 +1325,15 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
 #
 
 
-BATCH_CASE = CASE + """
+BATCH_CASE = (
+    CASE
+    + """
 batch:
   seed: 0
   bounds:
     mean_line.psi: [1.4, 1.8]
 """
+)
 
 
 @pytest.fixture
@@ -1856,12 +1879,7 @@ pressure somewhere the solver will refuse.
 CHIC_CASE = RUN_CASE + SWEEP
 """No iterators, so the design phase is a single solve of the design point."""
 
-CHIC_ITERATE_CASE = (
-    ITERATE_CASE.replace(
-        "  - type: deviation\n", "  - type: deviation\n    tolerance: 20.0\n"
-    ).replace("  - type: incidence\n", "  - type: incidence\n    tolerance: 20.0\n")
-    + SWEEP
-)
+CHIC_ITERATE_CASE = SETTLED_CASE + SWEEP
 """And with iterators, loose enough that one pass settles the design.
 
 The tolerances are absurd on purpose: what this checks is that the two phases
@@ -1897,7 +1915,7 @@ def test_iterate_leaves_a_field_where_restart_looks_for_it(settled_case):
     means naming it -- which is the honest position, there being no converged
     field to point at.
     """
-    assert cli.main(["iterate", str(settled_case), "-s", "max_iter=3"]) == 0
+    assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
     field = settled_case.parent / cli.RESTART_NAME
     assert field.is_file() and not field.is_symlink()
@@ -1945,7 +1963,7 @@ def test_chic_iterates_the_design_first_when_it_can(chic_iterate_case, capsys):
     """The composition the verb exists for: converge, then sweep what settled."""
     out = chic_iterate_case.parent
 
-    assert cli.main(["chic", str(chic_iterate_case), "-s", "max_iter=2"]) == 0
+    assert cli.main(["chic", str(chic_iterate_case), "-s", "iterate.max_iter=2"]) == 0
 
     assert "Converging the design first" in capsys.readouterr().err
     # The design settled, so its answer is at the root rather than in the
@@ -1960,7 +1978,7 @@ def test_chic_refuses_to_sweep_a_design_that_did_not_settle(iterate_case, capsys
     unsettled = iterate_case.parent / "input.yaml"
     unsettled.write_text(ITERATE_CASE + SWEEP)
 
-    assert cli.main(["chic", str(unsettled), "-s", "max_iter=1"]) == 1
+    assert cli.main(["chic", str(unsettled), "-s", "iterate.max_iter=1"]) == 1
 
     assert "no machine to sweep" in capsys.readouterr().err
 

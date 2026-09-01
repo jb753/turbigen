@@ -39,7 +39,7 @@ class AxialTurbine(MeanLineDesign):
     """Stator exit Mach number [--]."""
 
     fac_Ma3_rel: float
-    """Rotor exit relative Mach number, as a multiple of `Ma2` [--]."""
+    """Rotor exit relative Mach number, as a multiple of ``Ma2:`` [--]."""
 
     mdot: float
     """Mass flow rate [kg/s]."""
@@ -153,7 +153,7 @@ class AxialTurbine(MeanLineDesign):
             flat.set_Am(mdot / flat.rho / Vx)
 
             # Stator is stationary, rotor turns
-            ml.set_Omega_row([0.0, U / r_rms])
+            ml.set_Omega([0.0, U / r_rms])
 
         # Guesses. The rotor exit swirl is negative for a turbine.
         U0 = ao1 * self.Ma2 * 0.5

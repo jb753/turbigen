@@ -20,17 +20,15 @@ dependencies = [
     "numpy~=2.5.0",
     'PyYAML~=6.0.0',
     'scipy~=1.18.0',
-    # The API turbigen is built on -- a frozen Solver, a Fortran-ordered
-    # Block.flat, mass_average over chosen axes -- was on ember's dev branch
-    # for a while, and this was a git url pinned to it. 0.2.0 carries it, so
-    # an ordinary version specifier does now.
-    #
-    # Compatible-release rather than a floor: ember follows semver from 0.1.0,
-    # and until it reaches 1.0.0 a minor release may break the public API
-    # without deprecating anything first. So 0.3.0 is a thing to adopt
-    # deliberately rather than to be resolved into. ember requires numpy 2.5,
-    # which is why the numpy and scipy pins above are what they are.
-    'ember-cfd~=0.2.0',
+    # Compatible-release, not a floor: ember follows semver from 0.1.0, and
+    # until 1.0.0 a minor release may break the public API without deprecating
+    # first, so a new minor is adopted deliberately. 0.3.0 is the release that
+    # carries the real-gas equation of state the RealFluid node needs, and it
+    # ships wheels for every platform CI runs on -- which is what lets CI
+    # install with --only-binary ember-cfd on runners that have no Fortran
+    # toolchain. ember requires numpy 2.5, which is why the numpy and scipy
+    # pins above are what they are.
+    'ember-cfd~=0.3.0',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
@@ -43,8 +41,18 @@ Repository = "https://gitlab.developers.cam.ac.uk/jb753/turbigen"
 [project.scripts]
 turbigen = "turbigen.cli:main"
 
-[tool.black]
-target-version = ["py312"]
+[tool.setuptools.package-data]
+# The plotting style turbigen.post.styled applies to its figures.
+turbigen = ["*.mplstyle"]
+
+[tool.ruff.lint]
+# E741/E743: allow ambiguous variable and function names (e.g. I, l, O).
+ignore = ["E741", "E743"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+# A vulture whitelist is bare names that are "used" nowhere by design.
+"bin/vulture_whitelist.py" = ["F821"]
 
 [tool.bumpversion]
 current_version = "2.7.3"
@@ -72,10 +80,21 @@ dev = [
     'sphinx-argparse',
     'sphinxcontrib-programoutput',
     'sphinxcontrib-bibtex',
+    'setuptools<81',  # sphinxcontrib-bibtex needs pkg_resources, removed in setuptools 81+
     'snowballstemmer==2.2.0',
     'autodocsumm',
     'pytest',
+    'pytest-xdist',
     'pre-commit',
+    # No ruff here. It is pinned in .pre-commit-config.yaml, and that pin is
+    # what CI enforces -- so a second, unpinned copy in this group is a second
+    # formatter with no version agreement and no authority. It resolved to
+    # 0.16.5 against the hook's 0.12.8, which format `X + """..."""` two
+    # different ways and disagree about which lint rules are on by default:
+    # running it reformatted files the hooks would then leave alone, since
+    # `exclude:` keeps them off tests/ entirely. Lint and format through
+    # `pre-commit run`, which is also what the CI job runs.
+    'vulture',  # bin/check_dead_code.sh runs this one with `uv run`
     'twine',
     'bump-my-version',
     'pyqt6',

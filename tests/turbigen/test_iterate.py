@@ -47,7 +47,7 @@ def config():
     """A two-row config with blades, iterating both recambers."""
     return dataclasses.replace(
         build(),
-        iterate=(iterate.Deviation(), iterate.Incidence()),
+        iterate=iterate.Iteration(correct=(iterate.Deviation(), iterate.Incidence())),
     )
 
 
@@ -147,16 +147,16 @@ def test_the_iterate_section_round_trips(config):
 def test_unknowns_round_trip(config):
     moved = {"dchi_TE[0]": -3.0, "dchi_TE[1]": 1.5}
 
-    after = config.iterate[0].with_unknowns(config, moved)
+    after = config.iterate.correct[0].with_unknowns(config, moved)
 
-    assert config.iterate[0].unknowns(after) == pytest.approx(moved)
+    assert config.iterate.correct[0].unknowns(after) == pytest.approx(moved)
 
 
 def test_setting_touches_nothing_else(config):
     """An iterator owns its fields and writes only those."""
     before = config.to_dict()
 
-    after = config.iterate[0].with_unknowns(config, {"dchi_TE[0]": -3.0}).to_dict()
+    after = config.iterate.correct[0].with_unknowns(config, {"dchi_TE[0]": -3.0}).to_dict()
 
     for i_row, (blade_before, blade_after) in enumerate(
         zip(before["blades"], after["blades"])
@@ -179,14 +179,14 @@ def test_recamber_shift_keeps_the_spanwise_distribution(config):
     """The knob is a row mean; how it varies over the span is a design choice."""
     before = [s.dchi_TE for s in config.blades[0].sections]
 
-    after = config.iterate[0].with_unknowns(config, {"dchi_TE[0]": -3.0})
+    after = config.iterate.correct[0].with_unknowns(config, {"dchi_TE[0]": -3.0})
 
     shifted = [s.dchi_TE for s in after.blades[0].sections]
     assert np.ptp(np.array(shifted) - np.array(before)) == pytest.approx(0.0)
 
 
 def test_order_of_application_does_not_matter(config):
-    deviation, incidence = config.iterate
+    deviation, incidence = config.iterate.correct
 
     one = incidence.with_unknowns(
         deviation.with_unknowns(config, {"dchi_TE[0]": -3.0}), {"dchi_LE[1]": 4.0}
@@ -200,7 +200,8 @@ def test_order_of_application_does_not_matter(config):
 
 def test_two_iterators_claiming_one_knob_is_refused(config):
     doubled = dataclasses.replace(
-        config, iterate=(iterate.Deviation(), iterate.Deviation())
+        config,
+        iterate=iterate.Iteration(correct=(iterate.Deviation(), iterate.Deviation())),
     )
 
     with pytest.raises(ValueError, match="both claim"):
@@ -227,16 +228,19 @@ def test_paths_match_what_is_moved(config):
     variables = ("psi", "Ys")
     config = dataclasses.replace(
         config,
-        iterate=config.iterate
-        + (
-            iterate.MeanLine(variables=variables),
-            # The hardest case for this: its knob is log(mu) while its leaf is
-            # mu, so the two namings are not even in the same units.
-            iterate.SurfaceReynolds(target=4e5),
+        iterate=dataclasses.replace(
+            config.iterate,
+            correct=config.iterate.correct
+            + (
+                iterate.MeanLine(variables=variables),
+                # The hardest case for this: its knob is log(mu) while its leaf
+                # is mu, so the two namings are not even in the same units.
+                iterate.SurfaceReynolds(target=4e5),
+            ),
         ),
     )
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         assert iterator.paths(config) == _probe(iterator, config)
 
 
@@ -244,7 +248,7 @@ def test_paths_are_real_leaves(config):
     """A misspelled path would silently exclude nothing at all."""
     leaves = set(node.flatten(config))
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         assert iterator.paths(config) <= leaves
 
 
@@ -254,7 +258,9 @@ def test_paths_are_real_leaves(config):
 
 
 def test_step_subtracts_the_error():
-    config = dataclasses.replace(build(), iterate=(Fixed(slope=1.0, target=3.0),))
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0),))
+    )
     psi = config.mean_line.psi
 
     stepped = iterate.step(config, Result())
@@ -265,7 +271,8 @@ def test_step_subtracts_the_error():
 def test_step_clips():
     """A big early error cannot throw the design further than the clip."""
     config = dataclasses.replace(
-        build(), iterate=(Fixed(slope=100.0, target=3.0, clip=0.1),)
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(slope=100.0, target=3.0, clip=0.1),)),
     )
     psi = config.mean_line.psi
 
@@ -290,7 +297,10 @@ def test_unmeasured_knobs_are_not_converged(config):
 
 def test_converge_reaches_the_answer():
     config = dataclasses.replace(
-        build(), iterate=(Fixed(slope=1.0, target=3.0, gain=0.5, tolerance=1e-3),)
+        build(),
+        iterate=iterate.Iteration(
+            correct=(Fixed(slope=1.0, target=3.0, gain=0.5, tolerance=1e-3),)
+        ),
     )
     seen = []
 
@@ -315,7 +325,9 @@ def test_converge_stops_on_a_diverged_march():
     towards that would move the design somewhere arbitrary and call it an
     iteration.
     """
-    config = dataclasses.replace(build(), iterate=(Fixed(slope=1.0, target=3.0),))
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0),))
+    )
     seen = []
 
     def run(config_now, i_iter):
@@ -332,7 +344,8 @@ def test_converge_stops_on_a_diverged_march():
 
 def test_converge_gives_up():
     config = dataclasses.replace(
-        build(), iterate=(Fixed(slope=1.0, target=3.0, gain=0.0),)
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0, gain=0.0),)),
     )
 
     _, _, converged = iterate.converge(config, lambda c, i: Result(), max_iter=3)
@@ -351,9 +364,11 @@ def test_no_history_is_the_declared_gain(config):
     result = Result(machine=machine, actual=machine.mean_line, error={})
 
     for gain in (1.0, -1.0, 0.5):
-        one = dataclasses.replace(build(), iterate=(Fixed(gain=gain, slope=1.0),))
+        one = dataclasses.replace(
+            build(), iterate=iterate.Iteration(correct=(Fixed(gain=gain, slope=1.0),))
+        )
         psi = one.mean_line.psi
-        error = one.iterate[0].error(one, result)["toy"]
+        error = one.iterate.correct[0].error(one, result)["toy"]
 
         stepped = iterate.step(one, result)
 
@@ -362,7 +377,9 @@ def test_no_history_is_the_declared_gain(config):
 
 def test_a_coupled_system_converges_faster(config):
     """The claim of the whole change, on the structure a stage produces."""
-    coupled = dataclasses.replace(build(), iterate=(Coupled(),))
+    coupled = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(Coupled(),))
+    )
 
     without, _ = drive(coupled, remember=False)
     with_history, final = drive(coupled, remember=True)
@@ -375,7 +392,9 @@ def test_a_coupled_system_converges_faster(config):
 
 def test_a_move_too_small_to_learn_from_is_ignored():
     """Below the threshold a secant reports noise, so the prior stands."""
-    config = dataclasses.replace(build(), iterate=(Fixed(slope=1.0, target=3.0),))
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0),))
+    )
     result = Result()
 
     values = iterate.unknowns(config)
@@ -395,7 +414,8 @@ def test_a_move_too_small_to_learn_from_is_ignored():
 def test_a_flat_response_stays_within_the_clip():
     """A plateau makes the Jacobian singular, which must not make a wild step."""
     config = dataclasses.replace(
-        build(), iterate=(Fixed(slope=1.0, target=3.0, clip=0.2),)
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0, clip=0.2),)),
     )
     result = Result()
 
@@ -424,7 +444,8 @@ def test_the_history_holds_no_grids():
         """Stand-in for the megabytes an ember Grid holds."""
 
     config = dataclasses.replace(
-        build(), iterate=(Fixed(slope=1.0, target=3.0, gain=0.5),)
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0, gain=0.5),)),
     )
     fields = []
 
@@ -451,7 +472,7 @@ def test_deviation_error_is_zero_for_a_machine_that_matches(config):
     machine = config.design()
     result = Result(machine=machine, actual=machine.mean_line)
 
-    error = config.iterate[0].error(config, result)
+    error = config.iterate.correct[0].error(config, result)
 
     assert error == pytest.approx({"dchi_TE[0]": 0.0, "dchi_TE[1]": 0.0})
 
@@ -459,12 +480,13 @@ def test_deviation_error_is_zero_for_a_machine_that_matches(config):
 def test_mean_line_error_is_zero_for_its_own_design():
     """Measured through backward(), so this also pins the design round trip."""
     config = dataclasses.replace(
-        build(), iterate=(iterate.MeanLine(variables=("psi", "Ys")),)
+        build(),
+        iterate=iterate.Iteration(correct=(iterate.MeanLine(variables=("psi", "Ys")),)),
     )
     machine = config.design()
     result = Result(machine=machine, actual=machine.mean_line)
 
-    error = config.iterate[0].error(config, result)
+    error = config.iterate.correct[0].error(config, result)
 
     assert set(error) == {"mean_line.psi", "mean_line.Ys[0]", "mean_line.Ys[1]"}
     assert error["mean_line.psi"] == pytest.approx(0.0, abs=1e-3)
@@ -473,10 +495,13 @@ def test_mean_line_error_is_zero_for_its_own_design():
 def test_mean_line_tolerance_scales_with_the_nominal():
     """One absolute number cannot serve a loss coefficient and a loading."""
     config = dataclasses.replace(
-        build(), iterate=(iterate.MeanLine(variables=("psi", "Ys"), tolerance=0.01),)
+        build(),
+        iterate=iterate.Iteration(
+            correct=(iterate.MeanLine(variables=("psi", "Ys"), tolerance=0.01),)
+        ),
     )
 
-    tolerances = config.iterate[0].tolerances(config)
+    tolerances = config.iterate.correct[0].tolerances(config)
 
     assert tolerances["mean_line.psi"] == pytest.approx(0.01 * config.mean_line.psi)
     assert tolerances["mean_line.Ys[0]"] == pytest.approx(0.01 * config.mean_line.Ys[0])
@@ -484,10 +509,11 @@ def test_mean_line_tolerance_scales_with_the_nominal():
 
 def test_mean_line_restores_a_scalar_as_a_scalar():
     config = dataclasses.replace(
-        build(), iterate=(iterate.MeanLine(variables=("psi", "Ys")),)
+        build(),
+        iterate=iterate.Iteration(correct=(iterate.MeanLine(variables=("psi", "Ys")),)),
     )
 
-    moved = config.iterate[0].with_unknowns(
+    moved = config.iterate.correct[0].with_unknowns(
         config, {"mean_line.psi": 1.9, "mean_line.Ys[1]": 0.06}
     )
 
@@ -510,7 +536,10 @@ def test_mean_line_restores_a_scalar_as_a_scalar():
 def with_Re(target=4e5, **kwargs):
     """A bladed two-row config asking for a surface Reynolds number."""
     return dataclasses.replace(
-        build(), iterate=(iterate.SurfaceReynolds(target=target, **kwargs),)
+        build(),
+        iterate=iterate.Iteration(
+            correct=(iterate.SurfaceReynolds(target=target, **kwargs),)
+        ),
     )
 
 
@@ -565,7 +594,9 @@ def test_resolve_selects_the_row():
 
 
 def test_resolve_without_a_design_only_iterator_is_the_identity():
-    config = dataclasses.replace(build(), iterate=(iterate.Deviation(),))
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(iterate.Deviation(),))
+    )
 
     assert iterate.resolve(config) is config
 
@@ -574,12 +605,15 @@ def test_resolve_keeps_the_whole_iterate_section():
     """It steps a subset, but what comes back must still carry the iterators
     the outer loop is about to need."""
     config = dataclasses.replace(
-        build(), iterate=(iterate.SurfaceReynolds(target=4e5), iterate.Deviation())
+        build(),
+        iterate=iterate.Iteration(
+            correct=(iterate.SurfaceReynolds(target=4e5), iterate.Deviation())
+        ),
     )
 
     resolved = iterate.resolve(config)
 
-    assert len(resolved.iterate) == 2
+    assert len(resolved.iterate.correct) == 2
     assert Config.from_dict(resolved.to_dict()) == resolved
 
 
@@ -600,7 +634,9 @@ def test_the_outer_loop_does_not_step_a_design_only_knob():
     """
     config = dataclasses.replace(
         build(),
-        iterate=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0)),
+        iterate=iterate.Iteration(
+            correct=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0))
+        ),
     )
 
     stepping = iterate.selected(config, from_solution=True)
@@ -632,7 +668,9 @@ def test_the_outer_loop_leaves_the_viscosity_alone():
     resolved must come back with it untouched."""
     config = dataclasses.replace(
         iterate.resolve(with_Re()),
-        iterate=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0, gain=0.5)),
+        iterate=iterate.Iteration(
+            correct=(iterate.SurfaceReynolds(target=4e5), Fixed(target=3.0, gain=0.5))
+        ),
     )
     mu_resolved = config.fluid.mu
 
@@ -668,7 +706,7 @@ def test_re_surf_needs_blades():
         {
             "fluid": FLUID,
             "mean_line": MEAN_LINE,
-            "iterate": [{"type": "Re_surf", "target": 4e5}],
+            "iterate": {"correct": [{"type": "Re_surf", "target": 4e5}]},
         }
     )
 
@@ -685,7 +723,7 @@ def test_the_iterate_section_round_trips_a_design_only_iterator():
     config = with_Re(target=4e5, i_row=1)
 
     assert Config.from_dict(config.to_dict()) == config
-    assert config.to_dict()["iterate"][0]["type"] == "Re_surf"
+    assert config.to_dict()["iterate"]["correct"][0]["type"] == "Re_surf"
 
 
 #
@@ -700,7 +738,9 @@ def test_the_iterate_section_round_trips_a_design_only_iterator():
 
 def repeating(**kwargs):
     """A config carrying a repeat iterator and nothing that needs solving."""
-    return dataclasses.replace(build(), iterate=(iterate.Repeat(**kwargs),))
+    return dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(iterate.Repeat(**kwargs),))
+    )
 
 
 def test_the_knobs_are_coefficients_not_samples():
@@ -734,7 +774,7 @@ def test_the_knobs_round_trip():
         "inlet_profile.DAlpha[0]": 1.5,
     }
 
-    after = config.iterate[0].with_unknowns(config, moved)
+    after = config.iterate.correct[0].with_unknowns(config, moved)
 
     for name, value in moved.items():
         assert iterate.unknowns(after)[name] == pytest.approx(value)
@@ -746,7 +786,7 @@ def test_a_written_profile_carries_no_level():
     """Modes start at 1, so a profile cannot acquire a mean."""
     config = repeating(order=3)
 
-    after = config.iterate[0].with_unknowns(
+    after = config.iterate.correct[0].with_unknowns(
         config, {"inlet_profile.DPo[0]": 0.4, "inlet_profile.DPo[1]": -0.2}
     )
 
@@ -758,19 +798,19 @@ def test_a_written_profile_carries_no_level():
 def test_paths_are_the_knobs_themselves():
     """The one iterator whose knobs are its leaves one for one."""
     config = repeating()
-    written = config.iterate[0].with_unknowns(config, {"inlet_profile.DPo[0]": 0.3})
+    written = config.iterate.correct[0].with_unknowns(config, {"inlet_profile.DPo[0]": 0.3})
 
-    assert config.iterate[0].paths(written) == set(iterate.unknowns(written))
+    assert config.iterate.correct[0].paths(written) == set(iterate.unknowns(written))
 
 
 def test_paths_match_what_repeat_writes():
     """Through the same probe the other iterators are held to."""
     config = repeating(order=2)
-    seeded = config.iterate[0].with_unknowns(
+    seeded = config.iterate.correct[0].with_unknowns(
         config, {name: 0.1 for name in iterate.unknowns(config)}
     )
 
-    assert seeded.iterate[0].paths(seeded) == _probe(seeded.iterate[0], seeded)
+    assert seeded.iterate.correct[0].paths(seeded) == _probe(seeded.iterate.correct[0], seeded)
 
 
 #
@@ -783,7 +823,7 @@ def test_the_angle_tolerance_is_not_the_pressure_tolerance():
     cannot serve both: 0.01 is slack on the first and absurd on the second."""
     config = repeating(atol_head=0.02, atol_angle=0.5)
 
-    tolerances = config.iterate[0].tolerances(config)
+    tolerances = config.iterate.correct[0].tolerances(config)
 
     assert tolerances["inlet_profile.DPo[0]"] == pytest.approx(0.02)
     assert tolerances["inlet_profile.DTo[1]"] == pytest.approx(0.02)
@@ -793,7 +833,7 @@ def test_the_angle_tolerance_is_not_the_pressure_tolerance():
 def test_the_angle_clip_is_not_the_pressure_clip():
     config = repeating(clip_head=0.1, clip_angle=4.0)
 
-    clips = config.iterate[0].clips(config)
+    clips = config.iterate.correct[0].clips(config)
 
     assert clips["inlet_profile.DPo[0]"] == pytest.approx(0.1)
     assert clips["inlet_profile.DAlpha[2]"] == pytest.approx(4.0)
@@ -803,8 +843,8 @@ def test_the_inherited_tolerance_is_ignored():
     """Setting it cannot quietly do half of something."""
     config = repeating(tolerance=99.0, clip=99.0, atol_head=0.02, atol_angle=0.5)
 
-    assert config.iterate[0].tolerances(config)["inlet_profile.DPo[0]"] == 0.02
-    assert config.iterate[0].clips(config)["inlet_profile.DAlpha[0]"] == 5.0
+    assert config.iterate.correct[0].tolerances(config)["inlet_profile.DPo[0]"] == 0.02
+    assert config.iterate.correct[0].clips(config)["inlet_profile.DAlpha[0]"] == 5.0
 
 
 def test_order_below_one_is_refused():

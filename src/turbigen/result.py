@@ -44,6 +44,24 @@ class Result:
     that a post-processor still takes only a config and a result.
     """
 
+    operating_point: object | None = None
+    """Where the machine turned out to be running, when that is not where it
+    was asked to run.
+
+    Only a throttled exit produces one: it is handed a mass flow and finds the
+    pressure that passes it, so the pressure is an outcome of the run in the
+    way every other boundary condition is an input to it. `None` otherwise,
+    which is every unthrottled run and every throttled one whose controller
+    had not settled.
+
+    Carried here rather than returned alongside, so that the one thing a solve
+    produces stays one object --- and read by `converge_design`, which has to
+    hand the operating point a design converged at to whatever sweeps it next.
+    Not written to the result file: it belongs in the `operating_point:`
+    section of the resolved config, where it can be run again, and it is
+    written there instead.
+    """
+
     error: dict = dataclasses.field(default_factory=dict)
     """What each configured iterator measured, by name.
 

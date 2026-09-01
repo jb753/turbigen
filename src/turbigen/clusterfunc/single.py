@@ -183,7 +183,7 @@ def _unit_fixed(dmin, dmax, ERmax, N, check=True):
             raise ClusteringException(
                 "Not enough points to cluster with "
                 f"dmin={dmin}, ERmax={ERmax}, dmax={dmax} capping, "
-                f"total length only {LL+1}."
+                f"total length only {LL + 1}."
             )
 
         # Binary search for cap distance that gives closes to unit length

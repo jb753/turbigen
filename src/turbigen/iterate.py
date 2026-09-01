@@ -177,6 +177,32 @@ class Iterator(Node):
         return {name: self.clip for name in self.unknowns(config)}
 
 
+class Iteration(Node):
+    """Closing the loop between a design and the CFD that tests it.
+
+    A mapping rather than the bare list of iterators it used to be, because
+    the loop has a setting of its own --- how many passes to allow --- and a
+    list has nowhere to put one. It lived at the top of the file instead,
+    where it read as a property of the case rather than of the iteration, and
+    where it was the one top-level key belonging to no stage of the design.
+
+    The other two commands with settings of their own, `chic:` and `batch:`,
+    are mappings for the same reason; this makes the three alike.
+    """
+
+    correct: tuple[Iterator, ...] = ()
+    """The mismatches to correct, one iterator each."""
+
+    max_iter: int = 10
+    """Most design iterations before giving up.
+
+    A budget, not a target: a design that converges stops without reaching it.
+    Here rather than beside the design it bounds, because it says how hard to
+    try rather than what to build --- and an archived case still records what
+    it was run under, which is why it is a key at all rather than a flag.
+    """
+
+
 #
 # THE STEPPER
 #
@@ -188,17 +214,20 @@ class Iterator(Node):
 def selected(config, from_solution):
     """Return `config` carrying only the iterators of one speed.
 
-    The stepper takes a config and reads `config.iterate` off it, so selecting
-    a subset is done by handing it a config that holds only those --- which
+    The stepper takes a config and reads `config.iterate.correct` off it, so
+    selecting a subset is done by handing it a config holding only those ---
     keeps every function below generic over *which* iterators it is stepping,
     without a second argument threaded through all of them.
     """
     return dataclasses.replace(
         config,
-        iterate=tuple(
-            iterator
-            for iterator in config.iterate
-            if iterator.from_solution == from_solution
+        iterate=dataclasses.replace(
+            config.iterate,
+            correct=tuple(
+                iterator
+                for iterator in config.iterate.correct
+                if iterator.from_solution == from_solution
+            ),
         ),
     )
 
@@ -210,7 +239,7 @@ def unknowns(config):
     result depend on the order they happen to appear in.
     """
     merged = {}
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         for name, value in iterator.unknowns(config).items():
             if name in merged:
                 raise ValueError(
@@ -224,7 +253,7 @@ def unknowns(config):
 def errors(config, result):
     """Return every configured iterator's error, merged."""
     merged = {}
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         merged.update(iterator.error(config, result))
     return merged
 
@@ -237,7 +266,7 @@ def converged(config, result):
     """
     measured = measured_errors(config, result)
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         for name, tolerance in iterator.tolerances(config).items():
             if name not in measured or not np.abs(measured[name]) <= tolerance:
                 return False
@@ -261,7 +290,7 @@ def properties(config):
     """Return the gain, clip and tolerance of every unknown, by name."""
     gain, clip, tolerance = {}, {}, {}
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         clips = iterator.clips(config)
         tolerances = iterator.tolerances(config)
         for name in iterator.unknowns(config):
@@ -342,7 +371,7 @@ def step(config, result, history=()):
         name: values[name] + change[i] * u_scale[i] for i, name in enumerate(names)
     }
 
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         mine = {
             name: moved[name] for name in iterator.unknowns(config) if name in moved
         }
@@ -418,7 +447,7 @@ def format_table(config, result):
     values = unknowns(config)
 
     tolerances = {}
-    for iterator in config.iterate:
+    for iterator in config.iterate.correct:
         tolerances.update(iterator.tolerances(config))
 
     width = max(len(name) for name in values) if values else 0
@@ -467,7 +496,7 @@ def resolve(config, max_iter=10):
 
     """
     inner = selected(config, from_solution=False)
-    if not inner.iterate:
+    if not inner.iterate.correct:
         return config
 
     history = []
@@ -664,7 +693,7 @@ class Deviation(Iterator):
         nominal = result.machine.mean_line
         return {
             f"dchi_TE[{i_row}]": float(
-                result.actual.row(i_row).Alpha_rel[1] - nominal.row(i_row).Alpha_rel[1]
+                result.actual[:, i_row].Alpha_rel[1] - nominal[:, i_row].Alpha_rel[1]
             )
             for i_row in range(len(config.blades))
         }
@@ -895,7 +924,7 @@ class SurfaceReynolds(Iterator):
 
     A Reynolds number is what a cascade is actually specified at --- it is the
     number a designer carries between machines, where a viscosity in
-    kg/m/s is not. But it cannot simply be inverted for `mu`: it is measured
+    kg/m/s is not. But it cannot simply be inverted for ``mu:``: it is measured
     against a blade surface length and a mean-line reference state, so it needs
     a whole design, which needs a viscosity to exist first.
 

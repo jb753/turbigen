@@ -21,6 +21,7 @@ from turbigen import (
     Blade,
     BladeDesign,
     Config,
+    DiffusionFactor,
     Quadratic,
     Row,
     Section,
@@ -113,6 +114,8 @@ class OldRow:
         self.Alpha = np.asarray(ml.Alpha, dtype=float)
         self.Alpha_rel = np.asarray(ml.Alpha_rel, dtype=float)
         self.Am = np.asarray(ml.Am, dtype=float)
+        self.V_rel = np.asarray(ml.V_rel, dtype=float)
+        self.Vt_rel = np.asarray(ml.Vt_rel, dtype=float)
 
 
 def old_blade(machine, i_row, dchi_LE=-8.0, dchi_TE=0.0):
@@ -146,7 +149,7 @@ def old_blade(machine, i_row, dchi_LE=-8.0, dchi_TE=0.0):
         thick_type="taylor",
     )
     designer.set_streamsurface(annulus.xr_row(i_row))
-    designer.apply_recamber(OldRow(machine.mean_line.row(i_row)))
+    designer.apply_recamber(OldRow(machine.mean_line[:, i_row]))
     return designer
 
 
@@ -193,8 +196,8 @@ def test_designing_twice_gives_two_independent_blades():
     mean_line = config.design().mean_line
     annulus = config.annulus.design(mean_line)
 
-    first = config.blades[0].design(mean_line.row(0), annulus.row(0))
-    second = config.blades[0].design(mean_line.row(0), annulus.row(0))
+    first = config.blades[0].design(mean_line[:, 0], annulus.row(0))
+    second = config.blades[0].design(mean_line[:, 0], annulus.row(0))
 
     assert first is not second
     np.testing.assert_allclose(first.blade.chi(0.5), second.blade.chi(0.5))
@@ -221,7 +224,7 @@ def test_blades_without_an_annulus_are_rejected():
 
 def test_recamber_is_measured_from_the_local_flow_angle(machine):
     """Metal angle is flow angle plus recamber, resolved once at design time."""
-    mean_line = machine.mean_line.row(0)
+    mean_line = machine.mean_line[:, 0]
     chi = machine.rows[0].blade.chi(0.5)
 
     # At mid-span of a free vortex the radius is not the rms radius, so this
@@ -327,11 +330,38 @@ def test_circulation_count_matches_the_turbigen_implementation(machine):
     for i_row in range(2):
         dchi_LE = (-8.0, 2.0)[i_row]
         expected = turbigen_ref.nblade.Co(Co=0.6).get_blade_number(
-            OldRow(machine.mean_line.row(i_row)),
+            OldRow(machine.mean_line[:, i_row]),
             old_blade(machine, i_row, dchi_LE=dchi_LE),
         )
 
         assert machine.rows[i_row].n_blade == int(np.round(expected).item())
+
+
+def test_diffusion_factor_count_matches_the_turbigen_implementation():
+    count = {"type": "DFL", "DFL": 0.45}
+    machine = build(
+        blades=[blade(count=count), blade(dchi_LE=2.0, count=count)]
+    ).design()
+
+    for i_row in range(2):
+        dchi_LE = (-8.0, 2.0)[i_row]
+        expected = turbigen_ref.nblade.DFL(DFL=0.45).get_blade_number(
+            OldRow(machine.mean_line[:, i_row]),
+            old_blade(machine, i_row, dchi_LE=dchi_LE),
+        )
+
+        assert machine.rows[i_row].n_blade == int(np.round(expected).item())
+
+
+def test_diffusion_factor_refuses_a_velocity_ratio_it_cannot_meet(machine):
+    # A row that diffuses less than the requested factor asks for has no
+    # pitch that delivers it, however many blades are fitted.
+    mean_line_row = machine.mean_line[:, 0]
+    V2_V1 = (mean_line_row.V_rel[1] / mean_line_row.V_rel[0]).item()
+    count = DiffusionFactor(DFL=2.0 * (1.0 - V2_V1))
+
+    with pytest.raises(ValueError, match="too low for a diffusion factor"):
+        count.count(mean_line_row, machine.rows[0].blade)
 
 
 @pytest.mark.parametrize(
@@ -344,7 +374,7 @@ def test_circulation_count_matches_the_turbigen_implementation(machine):
 )
 def test_each_tip_reference_gives_the_expected_gap(field, expected):
     machine = build(blades=[blade(**{field: 0.02}), blade()]).design()
-    mean_line = machine.mean_line.row(0)
+    mean_line = machine.mean_line[:, 0]
 
     reference = {
         "span": float(np.mean(mean_line.span)),

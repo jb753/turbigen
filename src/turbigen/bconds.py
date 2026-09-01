@@ -15,6 +15,7 @@ fast* everything turns. So a rotating patch is placed by geometry and valued
 here, and changing the speed is a boundary condition rather than a redesign.
 """
 
+import dataclasses
 import logging
 from typing import ClassVar
 
@@ -178,13 +179,11 @@ class Sampled(InletProfile):
 
         if spf.size < 2:
             raise ValueError(
-                f"An inlet profile needs at least two span fractions, got "
-                f"{list(spf)}."
+                f"An inlet profile needs at least two span fractions, got {list(spf)}."
             )
         if np.any(np.diff(spf) <= 0.0):
             raise ValueError(
-                f"Inlet profile spf must increase from hub to casing, got "
-                f"{list(spf)}."
+                f"Inlet profile spf must increase from hub to casing, got {list(spf)}."
             )
         if spf[0] != 0.0 or spf[-1] != 1.0:
             raise ValueError(
@@ -300,37 +299,85 @@ class OperatingPoint(Node):
     different back pressures are not read as two different designs.
     """
 
+    # The exit static pressure is moved so that
+    #
+    #   dp = dp_design * (1 + DP_adjust),  dp_design = Po_in - p_out
+    #
+    # so zero reproduces the design exactly and positive always means *more*
+    # pressure change -- more throttled for a compressor, more expanded for a
+    # turbine. One formula covers both because the design's own dp carries the
+    # sign, negative for a machine that raises pressure, and neither the sign
+    # convention nor a machine type has to appear in the file.
+    #
+    # A pressure change and not a pressure ratio, which is the whole reason
+    # this field exists. A ratio measures from one rather than from zero, so a
+    # fraction of it is not a fraction of anything physical, and the error
+    # grows without limit as a machine gets slower. Adjusting the same cascade
+    # by "5 per cent": through the pressure ratio it is 1.16x the design
+    # pressure change at Ma = 0.6 and 3.14x at Ma = 0.05, where through this
+    # field it is 1.05x at both. The package this replaces offers only the
+    # ratio.
+    #
+    # The rule generalises -- adjust what vanishes when there is no machine,
+    # never what goes to one -- and is the same trap MeanLine.tolerances
+    # guards against for a design variable whose nominal is zero.
     DP_adjust: float = 0.0
-    """Change in pressure change through the machine, as a fraction [--].
+    """Change in the design pressure change through the machine, as a fraction [--]."""
 
-    The exit static pressure is moved so that
+    # The other way to move along a characteristic. Where DP_adjust states an
+    # exit pressure and lets the mass flow be whatever that draws, this states
+    # a mass flow, mdot = mdot_design * (1 + mdot_adjust), and lets the
+    # pressure be whatever holds it. The exit pressure computed from the design
+    # is still imposed, but as a *starting point*: a proportional-integral
+    # controller on the outlet patch (ember.outlet.OutletPatch.set_throttle)
+    # then moves it each step until the measured mass flow reaches the target.
+    # What the boundary imposes is still a pressure, so nothing about the
+    # characteristic treatment changes -- the throttle only chooses which
+    # pressure.
+    #
+    # None, the default, is no throttle at all: the exit pressure stands as
+    # exit_pressure() set it, and the mass flow is an outcome. This is the
+    # distinction the field exists to make, and the reason it is not simply 0.0
+    # by default -- a design that asks for a mass flow and a design that
+    # accepts one are different requests, and zero cannot say both.
+    #
+    # Which of the two to state is a property of the design, not a preference.
+    # A design whose variables include mdot -- a fan parametrised on mass flow
+    # and total pressure rise, say -- has no way to report whether it achieved
+    # them if the mass flow is left to drift, because the nominal-vs-actual
+    # table would be comparing the design against a different operating point.
+    # A design parametrised on Mach number and exit angle does not care, and
+    # the simpler prescribed pressure is right.
+    #
+    # The gains are ember's and are not exposed here. They are dimensionless
+    # and scaled on the reference quantities, which MeanLine.get_referenced_fluid
+    # takes from the design's own mean density and velocity -- representative
+    # by construction, which is the condition ember states for its defaults
+    # holding.
+    #
+    # Two restrictions, both from ember. Only one outlet patch may be
+    # throttled, so a grid whose exit is spread over several blocks is refused
+    # rather than over-throttled by the number of them; and the target must be
+    # positive, so an adjustment of -1 or below is refused below.
+    #
+    # DP_adjust still applies alongside this, as the pressure the controller
+    # *starts* from, and achieved() writes the pressure back once the mass flow
+    # has been reached -- so a throttled run archives the operating point it
+    # found, and the next one starts nearer to it.
+    mdot_adjust: float | None = None
+    """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
-    .. math::
+    def __post_init__(self):
+        # Checked when the config is read, because it needs no design.
+        if self.mdot_adjust is None:
+            return
 
-        \\Delta p = \\Delta p_\\mathrm{design} (1 + \\mathtt{DP\\_adjust}),
-        \\qquad
-        \\Delta p_\\mathrm{design} = p_{0,\\mathrm{in}} - p_\\mathrm{out}
-
-    so zero reproduces the design exactly and positive always means *more*
-    pressure change --- more throttled for a compressor, more expanded for a
-    turbine. One formula covers both because the design's own
-    :math:`\\Delta p` carries the sign, negative for a machine that raises
-    pressure, and neither the sign convention nor a machine type has to appear
-    in the file.
-
-    **A pressure change and not a pressure ratio**, which is the whole reason
-    this field exists. A ratio measures from one rather than from zero, so a
-    fraction of it is not a fraction of anything physical, and the error grows
-    without limit as a machine gets slower. Adjusting the same cascade by
-    "5 per cent": through the pressure ratio it is 1.16x the design pressure
-    change at Ma = 0.6 and 3.14x at Ma = 0.05, where through this field it is
-    1.05x at both. The package this replaces offers only the ratio.
-
-    The rule generalises --- adjust what vanishes when there is no machine,
-    never what goes to one --- and is the same trap
-    :meth:`turbigen.iterate.MeanLine.tolerances` guards against for a design
-    variable whose nominal is zero.
-    """
+        if self.mdot_adjust <= -1.0:
+            raise ValueError(
+                f"mdot_adjust={self.mdot_adjust} asks for a mass flow of "
+                f"{1.0 + self.mdot_adjust:.4g} times the design, which is not "
+                f"a flow the exit can be throttled to."
+            )
 
 
 def _spanwise(patch, values):
@@ -354,7 +401,9 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
 
     Stagnation pressure and temperature and both flow angles go onto every
     inlet patch, static pressure onto every outlet patch, and each row's shaft
-    speed onto its blocks and their walls.
+    speed onto its blocks and their walls. An operating point that states a
+    mass flow additionally throttles the exit to it, the prescribed pressure
+    becoming the controller's starting point rather than its answer.
 
     Parameters
     ----------
@@ -400,6 +449,8 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     P_out = exit_pressure(machine, operating_point)
     for patch in patches_out:
         patch.set_P(P_out)
+
+    apply_throttle(patches_out, machine, operating_point)
 
     apply_rotation(grid, machine)
 
@@ -453,6 +504,179 @@ def exit_pressure(machine, operating_point=None):
         f"so exit P={P_out_now:.5g} Pa against a design {P_out:.5g} Pa."
     )
     return P_out_now
+
+
+def exit_mdot(machine, operating_point=None):
+    """Return the annulus mass flow to throttle the exit to [kg/s], or None.
+
+    ``None`` whenever nothing asked for a throttle, which is what an absent
+    ``operating_point`` and an absent :attr:`OperatingPoint.mdot_adjust` both
+    mean. Split out from :func:`apply` for the same reason
+    :func:`exit_pressure` is: where a machine is being run should be readable,
+    and testable, without a grid.
+
+    Parameters
+    ----------
+    machine : Machine
+        The design, which supplies the mass flow to scale.
+    operating_point : OperatingPoint or None
+        ``None`` is the design point, prescribing pressure.
+
+    Returns
+    -------
+    float or None
+
+    """
+    if operating_point is None or operating_point.mdot_adjust is None:
+        return None
+
+    # The machine outlet, because that is the station the throttled patch sits
+    # at. On a machine that neither bleeds nor is fed part-way this is the
+    # inlet value as well, but reading it where the patch is means a machine
+    # that does one of those still throttles to the flow passing the exit.
+    mdot_design = float(machine.mean_line.outlet.mdot)
+    mdot = mdot_design * (1.0 + operating_point.mdot_adjust)
+
+    logger.info(
+        f"Operating point: throttling to mdot={mdot:.5g} kg/s against a "
+        f"design {mdot_design:.5g} kg/s."
+    )
+    return mdot
+
+
+def apply_throttle(patches_out, machine, operating_point=None):
+    """Throttle the exit to a mass flow, or leave its pressure prescribed.
+
+    Always one or the other, never neither: a patch that is not being
+    throttled has its throttle *cleared*, so that applying an operating point
+    twice to one grid says the same thing as applying it once. `bconds` exists
+    to be re-run on a meshed grid --- that is what makes a speedline cost no
+    re-mesh --- and a controller left wound up from the previous point would
+    be the one piece of state that did not come back.
+
+    Parameters
+    ----------
+    patches_out : list of ember.outlet.OutletPatch
+        Every outlet patch on the grid.
+    machine : Machine
+        The design the grid was meshed from.
+    operating_point : OperatingPoint or None
+
+    """
+    mdot = exit_mdot(machine, operating_point)
+
+    if mdot is None:
+        for patch in patches_out:
+            patch.set_throttle(None)
+        return
+
+    # Refused here rather than at the march, where `ember.solver
+    # ._validate_throttle` would catch it several stages later: this is the
+    # place that knows the exit is one patch or many, and the answer does not
+    # depend on anything a solve produces. Splitting the target between them
+    # is not an alternative -- the split is only known once the answer is.
+    if len(patches_out) > 1:
+        raise ValueError(
+            f"The grid has {len(patches_out)} outlet patches, and a mass flow "
+            f"can only be throttled through one. Either mesh the exit as a "
+            f"single patch or state DP_adjust instead of mdot_adjust."
+        )
+
+    (patch,) = patches_out
+
+    # Per passage, which is what the patch measures: ember integrates the mass
+    # flux over the faces it actually has, and the mesh carries one passage per
+    # row. `Nb` is the same number `mixout` multiplies by to get back to the
+    # annulus, so the two agree by construction.
+    Nb = int(patch.block.Nb)
+    patch.set_throttle(mdot / Nb)
+
+    logger.debug(
+        f"Throttling {patch.label!r} to {mdot / Nb:.5g} kg/s per passage, Nb={Nb}."
+    )
+
+
+SETTLED_TOL = 1.0e-3
+"""Mass-flow error a throttle must be inside for its pressure to be read back.
+
+A fraction of the target. The controller reaches parts in ten thousand on a
+converged march, so this is loose enough not to reject a run that arrived and
+tight enough that a pressure recorded as an operating point is one.
+"""
+
+
+def achieved(grid, machine, operating_point=None):
+    """Return `operating_point` with the pressure a throttle settled at, or None.
+
+    The inverse of :func:`exit_pressure` composed with :func:`apply_throttle`:
+    the throttle moved the exit pressure, and this says where to, in the units
+    the config states a pressure in. ``None`` whenever there is nothing to say
+    --- no throttle, or one that has not arrived --- which leaves the caller's
+    operating point as the caller wrote it.
+
+    **The boundary level, not the mixed-out mean line.** They are different
+    numbers: the mean line is cut at the design stations, 2% of a chord behind
+    the trailing edge, and is mixed out at constant area, while this is the
+    pitchwise-mean pressure imposed at the exit plane a duct further
+    downstream. Only the boundary one reproduces the run when it is prescribed
+    back, which is the whole purpose of recording it --- and
+    :attr:`DP_adjust` is defined against the boundary, so only the boundary one
+    is even the right quantity.
+
+    Measured against the *nominal* pressure change, like every other
+    :attr:`DP_adjust`, so a sweep that follows reads on one scale set by the
+    design rather than one that moves with the solution.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        The solved grid, read but not modified.
+    machine : Machine
+        The design it was meshed from.
+    operating_point : OperatingPoint or None
+        What was asked for.
+
+    Returns
+    -------
+    OperatingPoint or None
+
+    """
+    if operating_point is None or operating_point.mdot_adjust is None:
+        return None
+
+    patches_out = grid.patches.outlet
+    if len(patches_out) != 1:
+        return None
+
+    (patch,) = patches_out
+
+    # A controller still moving has not chosen a pressure yet, and recording
+    # where it happened to be would archive an operating point the run was
+    # never at. Said out loud, because the alternative is a config that
+    # silently keeps the guess it started from.
+    stats = patch.get_throttle_stats()
+    if not stats["mdot_target"]:
+        return None
+
+    error = stats["mdot_throttle"] / stats["mdot_target"] - 1.0
+    if abs(error) > SETTLED_TOL:
+        logger.warning(
+            f"The throttle finished {error:+.2%} from its target, outside "
+            f"{SETTLED_TOL:.2%}, so the exit pressure it reached is not "
+            f"recorded as an operating point."
+        )
+        return None
+
+    Po_in = float(machine.mean_line.inlet.Po)
+    DP_design = Po_in - float(machine.mean_line.outlet.P)
+    DP_adjust = (Po_in - float(patch.P_throttle)) / DP_design - 1.0
+
+    logger.info(
+        f"Throttle settled at exit P={float(patch.P_throttle):.5g} Pa, which "
+        f"is DP_adjust={DP_adjust:.5g}."
+    )
+
+    return dataclasses.replace(operating_point, DP_adjust=DP_adjust)
 
 
 def apply_rotation(grid, machine):

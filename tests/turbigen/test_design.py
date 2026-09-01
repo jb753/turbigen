@@ -16,7 +16,7 @@ import pytest
 import turbigen_ref.meanline_new
 import turbigen_ref.plugins
 from turbigen import Config, DesignError, MeanLineDesign, PerfectFluid
-from turbigen.design import check_round_trip
+from turbigen.design import _check_round_trip
 from turbigen.designs.axial_turbine import AxialTurbine
 
 GAMMA, CP = 1.4, 1005.0
@@ -25,7 +25,7 @@ RGAS = CP * (GAMMA - 1.0) / GAMMA
 
 @pytest.fixture
 def air():
-    return PerfectFluid(cp=CP, gamma=GAMMA, mu=1.8e-5, Pr=0.72)
+    return PerfectFluid(cp=CP, gamma=GAMMA, mu=1.8e-5, Pr=0.72).eos()
 
 
 class Uniform(MeanLineDesign):
@@ -265,7 +265,7 @@ def test_builtin_design_round_trips(designed):
 
 def test_builtin_design_passes_its_own_check(designed):
     _, config, ml = designed
-    check_round_trip(config.mean_line, ml)
+    _check_round_trip(config.mean_line, ml)
 
 
 def test_builtin_design_conserves_mass(designed):
@@ -296,8 +296,8 @@ def test_axial_turbine_is_a_repeating_stage():
 def test_axial_turbine_stator_is_stationary():
     ml = build_config("axial_turbine").design().mean_line
 
-    assert np.all(ml.row(0).Omega == 0.0)
-    assert np.all(ml.row(1).Omega > 0.0)
+    assert np.all(ml[:, 0].Omega == 0.0)
+    assert np.all(ml[:, 1].Omega > 0.0)
 
 
 #
@@ -340,7 +340,7 @@ def test_design_freezes_what_it_returns(designed):
     _, _, ml = designed
 
     assert ml.frozen
-    assert ml.flat.frozen and ml.row(0).frozen
+    assert ml.flat.frozen and ml[:, 0].frozen
 
     with pytest.raises(ValueError, match="frozen"):
         ml.flat.set_Vx(10.0)
@@ -370,7 +370,7 @@ def test_design_refuses_a_mean_line_that_does_not_invert():
     design = Wrong(**CASES["axial_turbine"])
 
     with pytest.raises(DesignError, match="mdot"):
-        design.design(config.fluid)
+        design.design(config.fluid.eos())
 
 
 #
@@ -378,23 +378,23 @@ def test_design_refuses_a_mean_line_that_does_not_invert():
 #
 
 
-def test_referenced_fluid_does_not_touch_the_mean_line(designed):
+def test_get_referenced_fluid_does_not_touch_the_mean_line(designed):
     """It returns a fluid rather than applying one, which is what lets it run
     on a frozen mean line and lets the caller choose what to put it on."""
     _, _, ml = designed
     before = ml.fluid
 
-    referenced = ml.referenced_fluid()
+    referenced = ml.get_referenced_fluid()
 
     assert ml.fluid is before
     assert referenced is not before
 
 
-def test_referenced_fluid_scales_from_the_design(designed):
+def test_get_referenced_fluid_scales_from_the_design(designed):
     _, _, ml = designed
     flat = ml.flat
 
-    referenced = ml.referenced_fluid()
+    referenced = ml.get_referenced_fluid()
 
     assert referenced.rho_ref == pytest.approx(float(flat.rho.mean()), rel=1e-6)
     assert referenced.V_ref == pytest.approx(float(flat.V.mean()), rel=1e-6)
