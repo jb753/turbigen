@@ -1,0 +1,68 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ci:
+    # Runs the whole CI workflow -- test, lint, docs, and the package and
+    # verify-install jobs that build the wheel and sdist and check they
+    # install on every platform -- so a release tag cannot publish past a red
+    # CI or an unverified artifact. The `dist` artifact it uploads is what the
+    # publish jobs below hand to PyPI.
+    uses: ./.github/workflows/ci.yml
+
+  publish-testpypi:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          # Re-running a tag must not fail here just because TestPyPI already
+          # holds that version; publish-pypi is gated on this job succeeding.
+          skip-existing: true
+
+      - name: Install from TestPyPI
+        run: |
+          python -m venv testpypi-venv
+          # turbigen's dependencies (numpy, scipy, ember-cfd, ...) are on the
+          # real index, not TestPyPI, so fall back to it for anything missing.
+          testpypi-venv/bin/pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            turbigen
+
+      - name: Smoke test the installed package
+        run: |
+          testpypi-venv/bin/python -c "import turbigen; print(turbigen.__version__)"
+          testpypi-venv/bin/turbigen --help > /dev/null
+
+  publish-pypi:
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
