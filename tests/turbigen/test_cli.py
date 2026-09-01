@@ -496,9 +496,17 @@ def test_run_writes_a_config_that_reads_back(run_case):
 # has gone supersonic is the expected behaviour rather than a problem. Without
 # this the suite's `filterwarnings = error` turns it into an exception, and the
 # verb reports a config error (1) instead of a failed solve (2).
+#
+# Overflow is the same story one step later, in writing the restart the verb
+# saves so that a diverged run keeps its evidence: serialising a blown-up field
+# to float32 overflows in `val *= self.fluid.P_ref`. Which of these a diverged
+# march raises is down to the values it happens to reach -- NaN times P_ref is
+# quiet, a large finite float32 is not -- so it appeared first on macOS and
+# belongs to no platform in particular.
 @pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
 @pytest.mark.filterwarnings("ignore:invalid value")
 @pytest.mark.filterwarnings("ignore:divide by zero")
+@pytest.mark.filterwarnings("ignore:overflow encountered")
 def test_run_reports_a_failed_solve_in_its_exit_code(run_case):
     """Exit 2, and the output is still written.
 
