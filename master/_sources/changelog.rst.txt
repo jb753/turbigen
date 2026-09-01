@@ -1,6 +1,11 @@
 Changelog
 =========
 
+v3.0.0
+^^^^^^
+
+* A complete rewrite.
+
 v2.6.0
 ^^^^^^
 
