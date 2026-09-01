@@ -36,7 +36,7 @@ be wanted.
 Results are ordinary `INFO` records rather than a level of their own. The
 existing code routes them through `logger.warning` so that they survive the
 level being raised during iteration, which leaves genuine warnings —
-`check_round_trip` reporting that `backward` omits a design variable, or a mean
+`_check_round_trip` reporting that `backward` omits a design variable, or a mean
 line with relative flow angles approaching 90 degrees — indistinguishable from
 the startup banner.
 
@@ -956,7 +956,7 @@ logged into each batch's own `log_turbigen.txt`.
 ### Points that will not design
 
 A corner of the box will not design: `solve_for` fails to converge, or
-`check_round_trip` refuses. Designing costs no CFD, so each point is screened
+`_check_round_trip` refuses. Designing costs no CFD, so each point is screened
 as it is drawn and a failure is skipped — found for nothing now, instead of one
 wasted cluster job at a time.
 

@@ -16,7 +16,7 @@ import pytest
 import turbigen_ref.meanline_new
 import turbigen_ref.plugins
 from turbigen import Config, DesignError, MeanLineDesign, PerfectFluid
-from turbigen.design import check_round_trip
+from turbigen.design import _check_round_trip
 from turbigen.designs.axial_turbine import AxialTurbine
 
 GAMMA, CP = 1.4, 1005.0
@@ -265,7 +265,7 @@ def test_builtin_design_round_trips(designed):
 
 def test_builtin_design_passes_its_own_check(designed):
     _, config, ml = designed
-    check_round_trip(config.mean_line, ml)
+    _check_round_trip(config.mean_line, ml)
 
 
 def test_builtin_design_conserves_mass(designed):

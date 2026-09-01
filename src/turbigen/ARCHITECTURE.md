@@ -833,9 +833,9 @@ what the data actually looks like.
 
 **There are two states, not three.** It is tempting to distinguish what was
 requested (`config.mean_line`'s fields) from what the design achieved
-(`backward(nominal)`), since `check_round_trip` only asserts they agree to
+(`backward(nominal)`), since `_check_round_trip` only asserts they agree to
 0.5%. They do not need separating: `solve_for` raises if it cannot hit its
-targets and `check_round_trip` raises if the round trip fails, so a nominal
+targets and `_check_round_trip` raises if the round trip fails, so a nominal
 mean line that exists *is* the requested design. The gap is an assertion
 threshold, not something to plot. It is the designer's job to refuse a design
 it cannot achieve.
@@ -867,7 +867,7 @@ it could not print.
 
 It is sound because there are two states and not three, as above: a nominal
 mean line that exists *is* the requested design, since `solve_for` raises if it
-cannot hit its targets and `check_round_trip` raises if the inverted variables
+cannot hit its targets and `_check_round_trip` raises if the inverted variables
 disagree with the fields that asked for them.
 
 Design variables are still marked off from diagnostics, by field membership

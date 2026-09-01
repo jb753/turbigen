@@ -107,6 +107,11 @@ napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 
 autodoc_member_order = "bysource"
+
+# A method in the sidebar is listed as `forward()`, not `MeanLineDesign.forward()`.
+# The class it belongs to is the entry directly above it, so repeating the name
+# on every child only costs the width that would have shown the method itself.
+toc_object_entries_show_parents = "hide"
 # Inherited members are ember's; a mention in the prose links to its docs
 # rather than pulling the whole Block API onto turbigen's page.
 autodoc_default_options = {

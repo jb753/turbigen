@@ -147,6 +147,8 @@ A mean-line design is a subclass of
 turns design variables into a flow field :class:`~turbigen.meanline.MeanLine`, and :meth:`~turbigen.design.MeanLineDesign.backward`
 , which recovers the
 design variables from a :class:`~turbigen.meanline.MeanLine` built by :meth:`~turbigen.design.MeanLineDesign.forward` or averaged from a CFD solution.
+The :ref:`design-contract` sets out in full what such a subclass declares and
+what it inherits.
 
 Copy the below skeleton of the class into `turbigen_plugins/fan.py`. The `type`
 string is the name a input file will use to ask for the new turbomachine, and
@@ -203,6 +205,8 @@ Note that `To1` and `Po1` are not mentioned in the error message, because we spe
    :start-at: mean_line:
    :prepend: # ...
 
+
+.. _tut-forward:
 
 Forward method
 ^^^^^^^^^^^^^^
@@ -298,6 +302,8 @@ If we now run :program:`turbigen` on `input.yaml`, it will load the input data, 
    :prompt:
    :ellipsis: 1, -2
 
+.. _tut-backward:
+
 Backward method
 ^^^^^^^^^^^^^^^
 
@@ -308,7 +314,7 @@ solution to compare to the nominal design.
 
 `backward` returns a dictionary keyed by the field names; extra keys beyond the
 design variables are reported for information only but not checked for
-consistency. The :class:`~turbigen.meanline.MeanLine` has many attributes that
+consistency, as described under :ref:`design-process`. The :class:`~turbigen.meanline.MeanLine` has many attributes that
 contain useful derived properties for this purpose --- see the
 :doc:`derived properties </meanline>` tables. The properties `ml.inlet`
 and `ml.exit` index into the machine inlet and exit (across all rows).
@@ -322,7 +328,7 @@ and `ml.exit` index into the machine inlet and exit (across all rows).
 With both methods written, the design runs to completion. :program:`turbigen`
 calls `forward` to build the mean line, passes it back through `backward` to
 check that the design variables it asked for are the ones it got, and prints
-the result:
+the result --- the :ref:`design-process` in full:
 
 .. program-output:: turbigen design input.yaml
    :cwd: ../tutorial/step4
@@ -429,7 +435,10 @@ any change to the design is just an edit to `input.yaml`:
 To change the mean-line design itself, edit `forward` and `backward` in
 `fan.py`. For example: relax the assumption of constant axial velocity by
 adding a velocity ratio as a field, replace the loading coefficient with a de
-Haller number, or specify an inlet Mach number instead of a mass flow rate.
+Haller number, or specify an inlet Mach number instead of a mass flow rate. The
+last two cannot be built in one pass like the design variables here, because
+the flow field has to be known before either can be evaluated; see
+:ref:`design-implicit` for how to solve for them.
 
 To add a stator, raise `n_row` to 2 and extend `forward` to fill in four
 stations rather than two. `ml[0]` will then index the rotor, and `ml[1]` the

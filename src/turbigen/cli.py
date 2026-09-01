@@ -1678,7 +1678,7 @@ def _design_variable_rows(config, result):
     could not print.
 
     And it is sound, because there are two states and not three: `solve_for`
-    raises if it cannot hit its targets and `check_round_trip` raises if the
+    raises if it cannot hit its targets and `_check_round_trip` raises if the
     inverted variables disagree with the fields that asked for them, so a
     nominal mean line that exists *is* the requested design.
 

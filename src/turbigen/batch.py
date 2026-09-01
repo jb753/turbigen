@@ -351,7 +351,7 @@ def _build(config, datum, paths, values):
 
     Screened here rather than on the cluster. Designing costs no CFD --- it is
     a mean line, an annulus and some blades --- so a corner of the box that
-    `solve_for` cannot reach or that `check_round_trip` refuses is found now,
+    `solve_for` cannot reach or that `_check_round_trip` refuses is found now,
     for nothing, instead of one wasted job at a time.
     """
     data = _strip(datum)
