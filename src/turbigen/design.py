@@ -98,6 +98,18 @@ It should make no assumption about the equation of state: a design written in
 terms of enthalpy and entropy works for a perfect gas and a real one alike.
 :ref:`tut-forward` builds one line by line from the design equations.
 
+The `fluid` it is passed is the equation of state named by :ref:`fluid:
+<config-fluid>`, whose interface is documented in :mod:`ember.fluid`.
+Thermodynamic properties come
+from its two method families: a `set_X_Y` returns the density and internal
+energy pair for the two properties named ---
+:meth:`~ember.fluid.Fluid.set_P_T`, :meth:`~ember.fluid.Fluid.set_P_s`,
+:meth:`~ember.fluid.Fluid.set_P_h`, :meth:`~ember.fluid.Fluid.set_h_s` and the
+rest --- and a `get_Z` evaluates one property from that pair, so
+:meth:`~ember.fluid.Fluid.get_h`, :meth:`~ember.fluid.Fluid.get_s`,
+:meth:`~ember.fluid.Fluid.get_T`, :meth:`~ember.fluid.Fluid.get_a` and so on.
+The whole interface is documented in :mod:`ember.fluid`.
+
 :meth:`~MeanLineDesign.backward` goes the other way, returning a plain dict
 keyed by field name. A key that is not a field is reported for information but
 never checked, so a design is free to return whatever else is worth printing

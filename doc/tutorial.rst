@@ -216,11 +216,20 @@ object as an argument, and can access the design variables as attributes of
 `self`. The method must return a :class:`~turbigen.meanline.MeanLine` object
 with the flow field filled in.
 
+The `fluid` object is the equation of state named by :ref:`fluid: <config-fluid>`
+in the input file, whose interface is documented in :mod:`ember.fluid`. That
+interface is a pair of method families: a `set_X_Y` takes the two properties
+named and returns the density and internal energy pair that fixes the state,
+and a `get_Z` evaluates one property from that pair. The full list of both is
+in that reference; the ones used below are all this design needs.
+
 The `Fan` class specifies inlet stagnation pressure and
 temperature, but enthalpy and entropy are more
-convinient to work with. `fluid.set_P_T` returns the density and internal energy
+convinient to work with. :meth:`fluid.set_P_T() <ember.fluid.Fluid.set_P_T>`
+returns the density and internal energy
 pair for a pressure and a temperature, which are then passed
-to `fluid.get_h` and `fluid.get_s` to evaluate stagnation enthalpy and
+to :meth:`fluid.get_h() <ember.fluid.Fluid.get_h>` and
+:meth:`fluid.get_s() <ember.fluid.Fluid.get_s>` to evaluate stagnation enthalpy and
 entropy (noting that entropy does not depend on the frame of reference):
 
 .. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
@@ -232,7 +241,7 @@ entropy (noting that entropy does not depend on the frame of reference):
 At no point have we used perfect gas relations --- a design class should make no
 assumptions about the equation of state.
 
-To evaluate Eqn. :eq:`eqn-eta` we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through `fluid.set_P_s` and  `fluid.get_h` to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:
+To evaluate Eqn. :eq:`eqn-eta` we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through :meth:`fluid.set_P_s() <ember.fluid.Fluid.set_P_s>` and  :meth:`fluid.get_h() <ember.fluid.Fluid.get_h>` to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:
 
 .. literalinclude:: ../tutorial/step3/turbigen_plugins/fan.py
    :language: python
@@ -249,7 +258,9 @@ Eqns. :eq:`eqn-psi` to :eq:`eqn-Vt`:
    :end-at: Vt2 = Dho / U
    :dedent: 4
 
-The exit entropy is set by the actual work and pressure rise. Then
+The exit entropy is set by the actual work and pressure rise, evaluated with
+:meth:`fluid.set_P_h() <ember.fluid.Fluid.set_P_h>` and
+:meth:`fluid.get_s() <ember.fluid.Fluid.get_s>`. Then
 with entropy, stagnation enthalpy, and velocity known at both stations, the
 static states come from subtracting kinetic energy.
 
@@ -317,7 +328,7 @@ design variables are reported for information only but not checked for
 consistency, as described under :ref:`design-process`. The :class:`~turbigen.meanline.MeanLine` has many attributes that
 contain useful derived properties for this purpose --- see the
 :doc:`derived properties </meanline>` tables. The properties `ml.inlet`
-and `ml.exit` index into the machine inlet and exit (across all rows).
+and `ml.outlet` index into the machine inlet and outlet (across all rows).
 
 .. literalinclude:: ../tutorial/step4/turbigen_plugins/fan.py
    :language: python
@@ -441,6 +452,8 @@ the flow field has to be known before either can be evaluated; see
 :ref:`design-implicit` for how to solve for them.
 
 To add a stator, raise `n_row` to 2 and extend `forward` to fill in four
-stations rather than two. `ml[0]` will then index the rotor, and `ml[1]` the
-stator. We need to call `ml[0].set_Omega` to make only the rotor spin.
-`ml.flat` will now be of shape `(4,)`.
+stations rather than two. Rows are indexed by the second axis, so `ml[:, 0]`
+will be the rotor and `ml[:, 1]` the stator, each of shape `(2,)`; `ml[0]` and
+`ml[1]` remain the inlet and outlet stations of every row. We need to call
+`ml[:, 0].set_Omega` to make only the rotor spin. `ml.flat` will now be of
+shape `(4,)`, indexed from machine inlet to machine outlet.

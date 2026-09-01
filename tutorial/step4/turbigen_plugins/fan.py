@@ -92,7 +92,7 @@ class Fan(MeanLineDesign):
         # Fix a constant mean radius using inlet HTR
         Am1 = flat.Am[0]
         r_rms = np.sqrt(Am1 / (2.0 * np.pi) * (1.0 + self.htr**2) / (1.0 - self.htr**2))
-        ml.set_r(r_rms)
+        ml.set_r_rms(r_rms)
         ml.set_Omega(U / r_rms)
 
         return ml
