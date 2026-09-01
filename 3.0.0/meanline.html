@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Mean-line flow field &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Mean-line designers" href="design.html" />
+    <link rel="prev" title="Command-line interface" href="usage.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Mean-line flow field</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#indexing">Indexing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-a-mean-line">Building a mean line</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#derived-properties">Derived properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reference-scales-and-thermodynamic-datum">Reference scales and thermodynamic datum</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.meanline.MeanLine"><code class="docutils literal notranslate"><span class="pre">MeanLine</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.from_dict"><code class="docutils literal notranslate"><span class="pre">from_dict()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_Am"><code class="docutils literal notranslate"><span class="pre">set_Am()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_Omega"><code class="docutils literal notranslate"><span class="pre">set_Omega()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_r_rms"><code class="docutils literal notranslate"><span class="pre">set_r_rms()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_htr"><code class="docutils literal notranslate"><span class="pre">set_span_htr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_r_mid"><code class="docutils literal notranslate"><span class="pre">set_span_r_mid()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_r_rms"><code class="docutils literal notranslate"><span class="pre">set_span_r_rms()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.get_characteristic_station"><code class="docutils literal notranslate"><span class="pre">get_characteristic_station()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.get_referenced_fluid"><code class="docutils literal notranslate"><span class="pre">get_referenced_fluid()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.to_dict"><code class="docutils literal notranslate"><span class="pre">to_dict()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.Am"><code class="docutils literal notranslate"><span class="pre">Am</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.Dho"><code class="docutils literal notranslate"><span class="pre">Dho</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_ts"><code class="docutils literal notranslate"><span class="pre">Dhos_ts</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_tt"><code class="docutils literal notranslate"><span class="pre">Dhos_tt</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.eta_ts"><code class="docutils literal notranslate"><span class="pre">eta_ts</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.eta_tt"><code class="docutils literal notranslate"><span class="pre">eta_tt</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.flat"><code class="docutils literal notranslate"><span class="pre">flat</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.halfVsq"><code class="docutils literal notranslate"><span class="pre">halfVsq</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.halfVsq_rel"><code class="docutils literal notranslate"><span class="pre">halfVsq_rel</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.htr"><code class="docutils literal notranslate"><span class="pre">htr</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.inlet"><code class="docutils literal notranslate"><span class="pre">inlet</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.mdot"><code class="docutils literal notranslate"><span class="pre">mdot</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.Omega"><code class="docutils literal notranslate"><span class="pre">Omega</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.outlet"><code class="docutils literal notranslate"><span class="pre">outlet</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.PR_ts"><code class="docutils literal notranslate"><span class="pre">PR_ts</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.PR_tt"><code class="docutils literal notranslate"><span class="pre">PR_tt</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.r_cas"><code class="docutils literal notranslate"><span class="pre">r_cas</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.r_hub"><code class="docutils literal notranslate"><span class="pre">r_hub</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.r_mid"><code class="docutils literal notranslate"><span class="pre">r_mid</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms"><code class="docutils literal notranslate"><span class="pre">r_rms</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.meanline.MeanLine.span"><code class="docutils literal notranslate"><span class="pre">span</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "meanline.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="usage.html" title="previous chapter">Command-line interface</a></li>
+      <li>Next: <a href="design.html" title="next chapter">Mean-line designers</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-turbigen.meanline">
+<span id="mean-line-flow-field"></span><span id="meanline"></span><h1>Mean-line flow field<a class="headerlink" href="#module-turbigen.meanline" title="Link to this heading">¶</a></h1>
+<p>Mean-line flow field and annulus geometry, built on the ember Block.</p>
+<p>This module contains the basic data structure used in <strong class="program">turbigen</strong> to
+represent a one-dimensional flow field along the mean line of a turbomachine,
+holding averaged flow variables at the inlet and outlet of each blade row and
+minimal geometry. When combined with annulus and blade shape choices, a <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> is sufficient to define a complete turbomachine design.</p>
+<p>A <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> is an <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ember.block.Block</span></code></a> of shape <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>;
+; full documentation of the base class is in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#module-ember.block" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.block</span></code></a>.</p>
+<p>Two quantities are stored beyond the base class variables. <a class="reference internal" href="#turbigen.meanline.MeanLine.Am" title="turbigen.meanline.MeanLine.Am"><code class="xref py py-attr docutils literal notranslate"><span class="pre">MeanLine.Am</span></code></a>
+is the meridional annulus area, from which the rest of the annulus geometry
+(span, radii, hub-to-tip ratio) is derived. <a class="reference internal" href="#turbigen.meanline.MeanLine.Omega" title="turbigen.meanline.MeanLine.Omega"><code class="xref py py-attr docutils literal notranslate"><span class="pre">MeanLine.Omega</span></code></a> is the
+reference-frame angular velocity, which must vary from row to row here and is
+stored as nodal
+data.</p>
+<p>Note that stored radius <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.r" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ember.block.Block.r</span></code></a> is by convention the
+root-mean-square radius on a <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>. To make this explicit use the
+<a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms" title="turbigen.meanline.MeanLine.r_rms"><code class="xref py py-attr docutils literal notranslate"><span class="pre">MeanLine.r_rms</span></code></a> alias and its setter, <a class="reference internal" href="#turbigen.meanline.MeanLine.set_r_rms" title="turbigen.meanline.MeanLine.set_r_rms"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLine.set_r_rms()</span></code></a>.</p>
+<section id="indexing">
+<h2>Indexing<a class="headerlink" href="#indexing" title="Link to this heading">¶</a></h2>
+<p>Mean lines are always two-dimensional with shape <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code> where</p>
+<ul class="simple">
+<li><p>axis 0 indexes the two stations of a blade row, inlet (0) and outlet (1);</p></li>
+<li><p>axis 1 indexes the blade rows.</p></li>
+</ul>
+<p>Every flow property the base class defines — <code class="docutils literal notranslate"><span class="pre">Po</span></code>, <code class="docutils literal notranslate"><span class="pre">Ma</span></code>, <code class="docutils literal notranslate"><span class="pre">Ma_rel</span></code>, the
+Jacobians, and so on — is available directly and vectorised over both axes.</p>
+<p>Indexing follows numpy and returns views that share storage, so writes
+propagate back to the parent:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ml[0]</span></code> and <code class="docutils literal notranslate"><span class="pre">ml[1]</span></code> are the inlet and outlet planes of every row, each of
+shape <code class="docutils literal notranslate"><span class="pre">(n_row,)</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ml[:,</span> <span class="pre">i]</span></code> is row <code class="docutils literal notranslate"><span class="pre">i</span></code>, of shape <code class="docutils literal notranslate"><span class="pre">(2,)</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ml[0,</span> <span class="pre">i]</span></code> and <code class="docutils literal notranslate"><span class="pre">ml[1,</span> <span class="pre">i]</span></code> are that row’s inlet and outlet stations.</p></li>
+</ul>
+<p>The following properties return useful views of the mean line:</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.flat" title="turbigen.meanline.MeanLine.flat"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.flat</span></code></a></p></td>
+<td><p>View of all stations in streamwise order, a <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>, shape <code class="docutils literal notranslate"><span class="pre">(2</span> <span class="pre">*</span> <span class="pre">n_row,)</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.inlet" title="turbigen.meanline.MeanLine.inlet"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.inlet</span></code></a></p></td>
+<td><p>Machine inlet, the first station in streamwise order, a scalar <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.outlet" title="turbigen.meanline.MeanLine.outlet"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.outlet</span></code></a></p></td>
+<td><p>Machine outlet, the last station in streamwise order, a scalar <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="building-a-mean-line">
+<h2>Building a mean line<a class="headerlink" href="#building-a-mean-line" title="Link to this heading">¶</a></h2>
+<p>In practice, the design flow is to call
+<a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">allocate()</span></code></a> to initialise a mean line of
+the correct size and working fluid, and then fill in the data using setter
+methods — see <a class="reference internal" href="design.html"><span class="doc">Mean-line designers</span></a> for the designer’s own reference. See the
+<a class="reference internal" href="tutorial.html"><span class="doc">Tutorial</span></a> for a full worked example.</p>
+<p>A handful of the base class’s own setters cover most of what is
+needed:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_P_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_T()</span></code></a></p></td>
+<td><p>Store static pressure and temperature.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_P_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_s()</span></code></a></p></td>
+<td><p>Store static pressure and entropy.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_h_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_h_s()</span></code></a></p></td>
+<td><p>Store enthalpy and entropy.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_Vx" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_Vx()</span></code></a></p></td>
+<td><p>Store axial velocity.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_Vr" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_Vr()</span></code></a></p></td>
+<td><p>Store radial velocity.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_Vt" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_Vt()</span></code></a></p></td>
+<td><p>Store circumferential velocity.</p></td>
+</tr>
+</tbody>
+</table>
+<p>The <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> adds the following setters:</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_Am" title="turbigen.meanline.MeanLine.set_Am"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_Am</span></code></a>(Am)</p></td>
+<td><p>Set the annulus area normal to the meridional direction.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_Omega" title="turbigen.meanline.MeanLine.set_Omega"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_Omega</span></code></a>(Omega)</p></td>
+<td><p>Set reference frame angular velocity <span class="math notranslate nohighlight">\(\Omega\)</span>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_r_rms" title="turbigen.meanline.MeanLine.set_r_rms"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_r_rms</span></code></a>(r_rms)</p></td>
+<td><p>Set <a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms" title="turbigen.meanline.MeanLine.r_rms"><code class="xref py py-attr docutils literal notranslate"><span class="pre">MeanLine.r_rms</span></code></a>, an alias for <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_r" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">ember.block.Block.set_r()</span></code></a>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_htr" title="turbigen.meanline.MeanLine.set_span_htr"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_span_htr</span></code></a>(span, htr)</p></td>
+<td><p>Define annulus geometry from span and hub-to-tip ratio.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_r_mid" title="turbigen.meanline.MeanLine.set_span_r_mid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_span_r_mid</span></code></a>(span, r_mid)</p></td>
+<td><p>Define annulus geometry from span and mid-span radius.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.set_span_r_rms" title="turbigen.meanline.MeanLine.set_span_r_rms"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.set_span_r_rms</span></code></a>(span, r_rms)</p></td>
+<td><p>Define annulus geometry from span and root-mean-square radius.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="derived-properties">
+<h2>Derived properties<a class="headerlink" href="#derived-properties" title="Link to this heading">¶</a></h2>
+<p>Once the mean line flow field has been filled in, either by a design routine or by averaging a CFD solution, we can access most of the derived properties provided by the base class. The more useful ones are listed below:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.P" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">P</span></code></a></p></td>
+<td><p>Static pressure [Pa].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.T" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">T</span></code></a></p></td>
+<td><p>Static temperature [K].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.rho" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">rho</span></code></a></p></td>
+<td><p>Mass density [kg/m^3].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.h" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">h</span></code></a></p></td>
+<td><p>Static enthalpy [J/kg].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.s" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">s</span></code></a></p></td>
+<td><p>Specific entropy [J/kg/K].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Po" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Po</span></code></a></p></td>
+<td><p>Stagnation pressure [Pa].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.To" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">To</span></code></a></p></td>
+<td><p>Stagnation temperature [K].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.ho" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ho</span></code></a></p></td>
+<td><p>Stagnation enthalpy [J/kg].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Po_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Po_rel</span></code></a></p></td>
+<td><p>Relative-frame stagnation pressure [Pa].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.To_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">To_rel</span></code></a></p></td>
+<td><p>Relative-frame stagnation temperature [K].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.ho_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ho_rel</span></code></a></p></td>
+<td><p>Relative-frame stagnation enthalpy [J/kg].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Vx" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Vx</span></code></a></p></td>
+<td><p>Axial velocity [m/s].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Vr" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Vr</span></code></a></p></td>
+<td><p>Radial velocity [m/s].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Vt" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Vt</span></code></a></p></td>
+<td><p>Tangential velocity [m/s].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Vm" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Vm</span></code></a></p></td>
+<td><p>Meridional velocity magnitude [m/s].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.V" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">V</span></code></a></p></td>
+<td><p>Absolute velocity magnitude [m/s].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.V_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">V_rel</span></code></a></p></td>
+<td><p>Relative velocity magnitude [m/s].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.U" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">U</span></code></a></p></td>
+<td><p>Blade speed [m/s].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Alpha" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Alpha</span></code></a></p></td>
+<td><p>Absolute yaw angle [deg].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Alpha_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Alpha_rel</span></code></a></p></td>
+<td><p>Relative-frame yaw angle [deg].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.a" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">a</span></code></a></p></td>
+<td><p>Acoustic speed [m/s].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Ma" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Ma</span></code></a></p></td>
+<td><p>Absolute Mach number [-].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Ma_rel" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Ma_rel</span></code></a></p></td>
+<td><p>Relative-frame Mach number [-].</p></td>
+</tr>
+</tbody>
+</table>
+<p>The subclass provide these additional properties, which are mean-line specific geometry, integrated flow variables, and performance metrics:</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.Am" title="turbigen.meanline.MeanLine.Am"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.Am</span></code></a></p></td>
+<td><p>Annulus area normal to meridional velocity <span class="math notranslate nohighlight">\(A_m\)</span> [m^2], array.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.Dho" title="turbigen.meanline.MeanLine.Dho"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.Dho</span></code></a></p></td>
+<td><p>Actual stagnation enthalpy change from inlet to outlet, <span class="math notranslate nohighlight">\(\Delta h_0 = h_{0,\mathrm{out}} - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_ts" title="turbigen.meanline.MeanLine.Dhos_ts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.Dhos_ts</span></code></a></p></td>
+<td><p>Ideal stagnation enthalpy change to the outlet static pressure, <span class="math notranslate nohighlight">\(\Delta h_{0s,\mathrm{ts}} = h(p_\mathrm{out},\, s_\mathrm{in}) - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_tt" title="turbigen.meanline.MeanLine.Dhos_tt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.Dhos_tt</span></code></a></p></td>
+<td><p>Ideal stagnation enthalpy change to the outlet stagnation pressure, <span class="math notranslate nohighlight">\(\Delta h_{0s,\mathrm{tt}} = h(p_{0,\mathrm{out}},\, s_\mathrm{in}) - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.eta_ts" title="turbigen.meanline.MeanLine.eta_ts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.eta_ts</span></code></a></p></td>
+<td><p>Total-to-static isentropic efficiency <span class="math notranslate nohighlight">\(\eta_\mathrm{ts}\)</span> [-], scalar.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.eta_tt" title="turbigen.meanline.MeanLine.eta_tt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.eta_tt</span></code></a></p></td>
+<td><p>Total-to-total isentropic efficiency <span class="math notranslate nohighlight">\(\eta_\mathrm{tt}\)</span> [-], scalar.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.halfVsq" title="turbigen.meanline.MeanLine.halfVsq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.halfVsq</span></code></a></p></td>
+<td><p>Specific kinetic energy in the stationary frame, <span class="math notranslate nohighlight">\(\tfrac{1}{2}V^2\)</span> [J/kg], array.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.halfVsq_rel" title="turbigen.meanline.MeanLine.halfVsq_rel"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.halfVsq_rel</span></code></a></p></td>
+<td><p>Specific kinetic energy in the rotating frame, <span class="math notranslate nohighlight">\(\tfrac{1}{2}\left(V^\mathrm{rel}\right)^2\)</span> [J/kg], array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.htr" title="turbigen.meanline.MeanLine.htr"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.htr</span></code></a></p></td>
+<td><p>Annulus hub-to-tip ratio, <span class="math notranslate nohighlight">\(\mathit{HTR} = r_\mathrm{hub}/r_\mathrm{cas}\)</span> [-], array.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.mdot" title="turbigen.meanline.MeanLine.mdot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.mdot</span></code></a></p></td>
+<td><p>Annulus mass flow rate, <span class="math notranslate nohighlight">\(\dot{m} = \rho V_m A_m\)</span> [kg/s], array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.n_row" title="turbigen.meanline.MeanLine.n_row"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.n_row</span></code></a></p></td>
+<td><p>Number of blade rows [-], scalar.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.Omega" title="turbigen.meanline.MeanLine.Omega"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.Omega</span></code></a></p></td>
+<td><p>Reference frame angular velocity <span class="math notranslate nohighlight">\(\Omega\)</span> [rad/s], array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.PR_ts" title="turbigen.meanline.MeanLine.PR_ts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.PR_ts</span></code></a></p></td>
+<td><p>Total-to-static pressure ratio, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{ts} = p_{0,\mathrm{in}}/p_\mathrm{out}\)</span> [-], scalar.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.PR_tt" title="turbigen.meanline.MeanLine.PR_tt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.PR_tt</span></code></a></p></td>
+<td><p>Total-to-total pressure ratio, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{tt} = p_{0,\mathrm{in}}/p_{0,\mathrm{out}}\)</span> [-], scalar.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.r_cas" title="turbigen.meanline.MeanLine.r_cas"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.r_cas</span></code></a></p></td>
+<td><p>Annulus casing radius <span class="math notranslate nohighlight">\(r_\mathrm{cas}\)</span> [m], array.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.r_hub" title="turbigen.meanline.MeanLine.r_hub"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.r_hub</span></code></a></p></td>
+<td><p>Annulus hub radius <span class="math notranslate nohighlight">\(r_\mathrm{hub}\)</span> [m], array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.r_mid" title="turbigen.meanline.MeanLine.r_mid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.r_mid</span></code></a></p></td>
+<td><p>Annulus mid radius, <span class="math notranslate nohighlight">\(r_\mathrm{mid} = \tfrac{1}{2}(r_\mathrm{hub} + r_\mathrm{cas})\)</span> [m], array.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms" title="turbigen.meanline.MeanLine.r_rms"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.r_rms</span></code></a></p></td>
+<td><p>Annulus root-mean-square radius, <span class="math notranslate nohighlight">\(r_\mathrm{rms} = \sqrt{(r_\mathrm{hub}^2 + r_\mathrm{cas}^2)/2}\)</span> [m], array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.meanline.MeanLine.span" title="turbigen.meanline.MeanLine.span"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MeanLine.span</span></code></a></p></td>
+<td><p>Annulus span, <span class="math notranslate nohighlight">\(H = A_m/(2\pi r_\mathrm{mid})\)</span> [m], array.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="reference-scales-and-thermodynamic-datum">
+<h2>Reference scales and thermodynamic datum<a class="headerlink" href="#reference-scales-and-thermodynamic-datum" title="Link to this heading">¶</a></h2>
+<p>Only changes in the thermodynamic properties <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.u" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">u</span></code></a>,
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.s" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">s</span></code></a>, and by extension <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.ho" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ho</span></code></a>
+and so on are physically meaningful. Therefore, the datum level is arbitrary
+as discussed in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#datum-state" title="(in ember v0.4.0)"><span>Datum state</span></a>.</p>
+<p>The base class stores data in non-dimensional form against reference scales,
+according to <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#reference-scales" title="(in ember v0.4.0)"><span>Reference scales</span></a>. It is not neccesary to set these on
+a <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>, but downstream code uses
+<a class="reference internal" href="#turbigen.meanline.MeanLine.get_referenced_fluid" title="turbigen.meanline.MeanLine.get_referenced_fluid"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLine.get_referenced_fluid()</span></code></a> to get a fluid scaled and datumed to the
+mean line design, to give optimal numerical conditioning for a CFD solve.</p>
+</section>
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.meanline.</span></span><span class="sig-name descname"><span class="pre">MeanLine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_row</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Block</span></code></a></p>
+<p>One-dimensional flow field and annulus geometry along the mean line.</p>
+<p>An <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ember.block.Block</span></code></a> of shape <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>: axis 0 indexes the
+inlet and outlet stations of a blade row, axis 1 the rows. Every base class
+flow property is therefore available and vectorised over both axes. The
+<a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> adds annulus geometry, a per-station <a class="reference internal" href="#turbigen.meanline.MeanLine.Omega" title="turbigen.meanline.MeanLine.Omega"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Omega</span></code></a>, and
+overall performance metrics.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.from_dict">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fluid</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.from_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Build a mean line from <cite>data</cite> and an equation of state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – As produced by <a class="reference internal" href="#turbigen.meanline.MeanLine.to_dict" title="turbigen.meanline.MeanLine.to_dict"><code class="xref py py-meth docutils literal notranslate"><span class="pre">to_dict()</span></code></a>.</p></li>
+<li><p><strong>fluid</strong> (<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><em>ember.fluid.Fluid</em></a>) – Equation of state to read the stored state against. Required, and
+an argument rather than stored, because the numbers in <cite>data</cite> are
+dimensional and mean nothing without one.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new mean line built from <cite>data</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine">MeanLine</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_Am">
+<span class="sig-name descname"><span class="pre">set_Am</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Am</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_Am" title="Link to this definition">¶</a></dt>
+<dd><p>Set the annulus area normal to the meridional direction.
+See <a class="reference internal" href="#turbigen.meanline.MeanLine.Am" title="turbigen.meanline.MeanLine.Am"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Am</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>Am</strong> (<em>array-like</em>) – Annulus area [m^2]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_Omega">
+<span class="sig-name descname"><span class="pre">set_Omega</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Omega</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_Omega" title="Link to this definition">¶</a></dt>
+<dd><p>Set reference frame angular velocity <span class="math notranslate nohighlight">\(\Omega\)</span>.</p>
+<p>A plain <code class="docutils literal notranslate"><span class="pre">(n_row,)</span></code> array sets one value per blade row: numpy
+broadcasting aligns from the trailing axis, so it is implicitly
+treated as <code class="docutils literal notranslate"><span class="pre">(1,</span> <span class="pre">n_row)</span></code> and spread across the two stations of each
+row.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>Omega</strong> (<em>array-like</em>) – Angular velocity [rad/s]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_r_rms">
+<span class="sig-name descname"><span class="pre">set_r_rms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">r_rms</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_r_rms" title="Link to this definition">¶</a></dt>
+<dd><p>Set <a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms" title="turbigen.meanline.MeanLine.r_rms"><code class="xref py py-attr docutils literal notranslate"><span class="pre">MeanLine.r_rms</span></code></a>, an alias for <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.set_r" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">ember.block.Block.set_r()</span></code></a>.</p>
+<p>By mean-line convention the stored block radius <em>is</em> the
+root-mean-square radius, so this exists purely to let a caller name
+it that way rather than reaching for the base class’s setter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>r_rms</strong> (<em>array-like</em>) – Root-mean-square radius [m]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_span_htr">
+<span class="sig-name descname"><span class="pre">set_span_htr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">htr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_span_htr" title="Link to this definition">¶</a></dt>
+<dd><p>Define annulus geometry from span and hub-to-tip ratio.</p>
+<div class="math notranslate nohighlight">
+\[r_\mathrm{rms} = \frac{H \sqrt{\tfrac{1}{2}\left(1+\mathit{HTR}^2\right)}}{1-\mathit{HTR}}\]</div>
+<p>Requires an unpitched mean line, since the annulus geometry is
+derived from <a class="reference internal" href="#turbigen.meanline.MeanLine.r_rms" title="turbigen.meanline.MeanLine.r_rms"><code class="xref py py-attr docutils literal notranslate"><span class="pre">r_rms</span></code></a> rather than the true root-mean-square
+radius of an inclined surface.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span</strong> (<em>array-like</em>) – Annulus span [m]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+<li><p><strong>htr</strong> (<em>array-like</em>) – Hub-to-tip ratio [-]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_span_r_mid">
+<span class="sig-name descname"><span class="pre">set_span_r_mid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_mid</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_span_r_mid" title="Link to this definition">¶</a></dt>
+<dd><p>Define annulus geometry from span and mid-span radius.</p>
+<div class="math notranslate nohighlight">
+\[A_m = 2\pi r_\mathrm{mid} H, \qquad
+r_\mathrm{rms} = \sqrt{r_\mathrm{mid}^2 + \left(\frac{H}{2}\right)^2}\]</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span</strong> (<em>array-like</em>) – Annulus span [m]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+<li><p><strong>r_mid</strong> (<em>array-like</em>) – Annulus mid-span radius [m]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.set_span_r_rms">
+<span class="sig-name descname"><span class="pre">set_span_r_rms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_rms</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.set_span_r_rms" title="Link to this definition">¶</a></dt>
+<dd><p>Define annulus geometry from span and root-mean-square radius.</p>
+<div class="math notranslate nohighlight">
+\[r_\mathrm{mid} = \sqrt{r_\mathrm{rms}^2 - \left(\frac{H}{2\cos\beta}\right)^2},
+\qquad A_m = 2\pi r_\mathrm{mid} H\]</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span</strong> (<em>array-like</em>) – Annulus span [m]. Must broadcast to <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+<li><p><strong>r_rms</strong> (<em>array-like</em>) – Annulus root-mean-square radius [m]. Must broadcast to
+<code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.get_characteristic_station">
+<span class="sig-name descname"><span class="pre">get_characteristic_station</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">i_row</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.get_characteristic_station" title="Link to this definition">¶</a></dt>
+<dd><p>Return the station of blade row <cite>i_row</cite> characteristic of its flow.</p>
+<p>The end with the higher relative velocity — the inlet of a
+compressor row, which decelerates the relative flow, or the outlet
+of a turbine row, which accelerates it. Used to scale quantities
+derived from the mean flow, such as the wall spacing target and the
+surface Reynolds number, that need one representative station per
+row rather than a spatially varying one.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>i_row</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Row index.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A scalar view: the inlet or outlet station of row <cite>i_row</cite>,
+whichever has the higher relative velocity.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine">MeanLine</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.get_referenced_fluid">
+<span class="sig-name descname"><span class="pre">get_referenced_fluid</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.get_referenced_fluid" title="Link to this definition">¶</a></dt>
+<dd><p>Return an equation of state scaled and datumed to this mean line.</p>
+<p>The scales come from the design itself: mean density, velocity and gas
+constant, with the datum placed near the mean thermodynamic state so
+that internal energy and kinetic energy are comparable rather than one
+being lost in the rounding of the other.</p>
+<p>This <em>returns</em> rather than applies, which is what lets it work on a
+frozen mean line, and it takes no reference length, which is what frees
+it from needing any geometry. The caller decides what to put it on –
+in practice the grid, since that is the object a solver iterates on. A
+mean line is only ever read dimensionally, so its own scales do not
+matter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fluid</strong> – A new equation of state; this mean line is left unchanged.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)">ember.fluid.Fluid</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.to_dict">
+<span class="sig-name descname"><span class="pre">to_dict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.to_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Return this mean line’s complete state, in streamwise order.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The eight quantities that make up a complete mean line, each a
+list of <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">n_row</span></code> values, in the form <a class="reference internal" href="#turbigen.meanline.MeanLine.from_dict" title="turbigen.meanline.MeanLine.from_dict"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_dict()</span></code></a>
+reads back.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.to_string">
+<span class="sig-name descname"><span class="pre">to_string</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.meanline.MeanLine.to_string" title="Link to this definition">¶</a></dt>
+<dd><p>Return a concise tabular summary of the mean line, one row per station.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Stagnation pressure and temperature, Mach number, and flow angle
+in both frames, formatted via <code class="docutils literal notranslate"><span class="pre">turbigen.util.format_table</span></code>.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.Am">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Am</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.Am" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus area normal to meridional velocity <span class="math notranslate nohighlight">\(A_m\)</span> [m^2], array.</p>
+<p>The true area of the annular surface the flow crosses, not a
+projection of it, defined so that mass flow <a class="reference internal" href="#turbigen.meanline.MeanLine.mdot" title="turbigen.meanline.MeanLine.mdot"><code class="xref py py-attr docutils literal notranslate"><span class="pre">mdot</span></code></a> is</p>
+<div class="math notranslate nohighlight">
+\[\dot{m} = \rho V_m A_m\]</div>
+<p>At a pitch angle the surface is inclined to the axis, so <span class="math notranslate nohighlight">\(A_m\)</span>
+is larger than the axial view by one over <span class="math notranslate nohighlight">\(\cos\beta\)</span>:</p>
+<div class="math notranslate nohighlight">
+\[A_m = \frac{\pi \left(r_\mathrm{cas}^2 - r_\mathrm{hub}^2\right)}{\cos\beta}\]</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.Dho">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Dho</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.Dho" title="Link to this definition">¶</a></dt>
+<dd><p>Actual stagnation enthalpy change from inlet to outlet, <span class="math notranslate nohighlight">\(\Delta h_0 = h_{0,\mathrm{out}} - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.Dhos_ts">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Dhos_ts</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.Dhos_ts" title="Link to this definition">¶</a></dt>
+<dd><p>Ideal stagnation enthalpy change to the outlet static pressure, <span class="math notranslate nohighlight">\(\Delta h_{0s,\mathrm{ts}} = h(p_\mathrm{out},\, s_\mathrm{in}) - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p>
+<p>The isentropic counterpart to <a class="reference internal" href="#turbigen.meanline.MeanLine.Dho" title="turbigen.meanline.MeanLine.Dho"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dho</span></code></a> used by <a class="reference internal" href="#turbigen.meanline.MeanLine.eta_ts" title="turbigen.meanline.MeanLine.eta_ts"><code class="xref py py-attr docutils literal notranslate"><span class="pre">eta_ts</span></code></a>: an
+ideal expansion or compression from the inlet state to the actual
+outlet <em>static</em> pressure.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.Dhos_tt">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Dhos_tt</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.Dhos_tt" title="Link to this definition">¶</a></dt>
+<dd><p>Ideal stagnation enthalpy change to the outlet stagnation pressure, <span class="math notranslate nohighlight">\(\Delta h_{0s,\mathrm{tt}} = h(p_{0,\mathrm{out}},\, s_\mathrm{in}) - h_{0,\mathrm{in}}\)</span> [J/kg], scalar.</p>
+<p>As <a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_ts" title="turbigen.meanline.MeanLine.Dhos_ts"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dhos_ts</span></code></a>, but to the actual outlet <em>stagnation</em> pressure;
+used by <a class="reference internal" href="#turbigen.meanline.MeanLine.eta_tt" title="turbigen.meanline.MeanLine.eta_tt"><code class="xref py py-attr docutils literal notranslate"><span class="pre">eta_tt</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.eta_ts">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">eta_ts</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.eta_ts" title="Link to this definition">¶</a></dt>
+<dd><p>Total-to-static isentropic efficiency <span class="math notranslate nohighlight">\(\eta_\mathrm{ts}\)</span> [-], scalar.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\eta_\mathrm{ts} = \begin{cases}
+    \Delta h_{0s,\mathrm{ts}} / \Delta h_0 &amp; \Delta h_0 &gt; 0 \text{ (compressor)} \\
+    \Delta h_0 / \Delta h_{0s,\mathrm{ts}} &amp; \Delta h_0 \le 0 \text{ (turbine)}
+\end{cases}\end{split}\]</div>
+<p><a class="reference internal" href="#turbigen.meanline.MeanLine.Dho" title="turbigen.meanline.MeanLine.Dho"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dho</span></code></a> over <a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_ts" title="turbigen.meanline.MeanLine.Dhos_ts"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dhos_ts</span></code></a>, or the reciprocal for a turbine —
+so the ideal enthalpy change is to a static state, and any exit
+kinetic energy not recovered is folded into <a class="reference internal" href="#turbigen.meanline.MeanLine.Dho" title="turbigen.meanline.MeanLine.Dho"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dho</span></code></a> and so
+penalises <span class="math notranslate nohighlight">\(\eta_\mathrm{ts}\)</span>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.eta_tt">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">eta_tt</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.eta_tt" title="Link to this definition">¶</a></dt>
+<dd><p>Total-to-total isentropic efficiency <span class="math notranslate nohighlight">\(\eta_\mathrm{tt}\)</span> [-], scalar.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\eta_\mathrm{tt} = \begin{cases}
+    \Delta h_{0s,\mathrm{tt}} / \Delta h_0 &amp; \Delta h_0 &gt; 0 \text{ (compressor)} \\
+    \Delta h_0 / \Delta h_{0s,\mathrm{tt}} &amp; \Delta h_0 \le 0 \text{ (turbine)}
+\end{cases}\end{split}\]</div>
+<p><a class="reference internal" href="#turbigen.meanline.MeanLine.Dho" title="turbigen.meanline.MeanLine.Dho"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dho</span></code></a> over <a class="reference internal" href="#turbigen.meanline.MeanLine.Dhos_tt" title="turbigen.meanline.MeanLine.Dhos_tt"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Dhos_tt</span></code></a>, or the reciprocal for a turbine —
+so the ideal enthalpy change is to the actual outlet <em>stagnation</em>
+pressure, and exit kinetic energy is not penalised.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.flat">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">flat</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.flat" title="Link to this definition">¶</a></dt>
+<dd><p>View of all stations in streamwise order, a <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>, shape <code class="docutils literal notranslate"><span class="pre">(2</span> <span class="pre">*</span> <span class="pre">n_row,)</span></code>.</p>
+<p>A writeable view sharing storage with the parent, not a copy, running
+from machine inlet to machine outlet.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.halfVsq">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">halfVsq</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.halfVsq" title="Link to this definition">¶</a></dt>
+<dd><p>Specific kinetic energy in the stationary frame, <span class="math notranslate nohighlight">\(\tfrac{1}{2}V^2\)</span> [J/kg], array.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.halfVsq_rel">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">halfVsq_rel</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.halfVsq_rel" title="Link to this definition">¶</a></dt>
+<dd><p>Specific kinetic energy in the rotating frame, <span class="math notranslate nohighlight">\(\tfrac{1}{2}\left(V^\mathrm{rel}\right)^2\)</span> [J/kg], array.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.htr">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">htr</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.htr" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus hub-to-tip ratio, <span class="math notranslate nohighlight">\(\mathit{HTR} = r_\mathrm{hub}/r_\mathrm{cas}\)</span> [-], array.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.inlet">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">inlet</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.inlet" title="Link to this definition">¶</a></dt>
+<dd><p>Machine inlet, the first station in streamwise order, a scalar <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>.</p>
+<p>Not to be confused with <code class="docutils literal notranslate"><span class="pre">self[0]</span></code>, which is the inlet station of
+every row of shape <code class="docutils literal notranslate"><span class="pre">(n_row,)</span></code>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.mdot">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">mdot</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.mdot" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus mass flow rate, <span class="math notranslate nohighlight">\(\dot{m} = \rho V_m A_m\)</span> [kg/s], array.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.n_row">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">n_row</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.n_row" title="Link to this definition">¶</a></dt>
+<dd><p>Number of blade rows [-], scalar.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.Omega">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Omega</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.Omega" title="Link to this definition">¶</a></dt>
+<dd><p>Reference frame angular velocity <span class="math notranslate nohighlight">\(\Omega\)</span> [rad/s], array.</p>
+<p>Note that this overrides the base class <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.Omega" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ember.block.Block.Omega</span></code></a>
+to make it per-station rather than a single scalar.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.outlet">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">outlet</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.outlet" title="Link to this definition">¶</a></dt>
+<dd><p>Machine outlet, the last station in streamwise order, a scalar <a class="reference internal" href="#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>.</p>
+<p>Not to be confused with <code class="docutils literal notranslate"><span class="pre">ml[1]</span></code>, which is the outlet station of
+every row of shape <code class="docutils literal notranslate"><span class="pre">(n_row,)</span></code>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.PR_ts">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">PR_ts</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.PR_ts" title="Link to this definition">¶</a></dt>
+<dd><p>Total-to-static pressure ratio, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{ts} = p_{0,\mathrm{in}}/p_\mathrm{out}\)</span> [-], scalar.</p>
+<p>For a turbine, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{ts} &lt; 1\)</span>; for a compressor, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{ts} &gt; 1\)</span>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.PR_tt">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">PR_tt</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.PR_tt" title="Link to this definition">¶</a></dt>
+<dd><p>Total-to-total pressure ratio, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{tt} = p_{0,\mathrm{in}}/p_{0,\mathrm{out}}\)</span> [-], scalar.</p>
+<p>For a turbine, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{tt} &lt; 1\)</span>; for a compressor, <span class="math notranslate nohighlight">\(\mathit{PR}_\mathrm{tt} &gt; 1\)</span>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.r_cas">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_cas</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.r_cas" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus casing radius <span class="math notranslate nohighlight">\(r_\mathrm{cas}\)</span> [m], array.</p>
+<div class="math notranslate nohighlight">
+\[r_\mathrm{cas} = \sqrt{\frac{A_m \cos\beta}{2\pi} + r_\mathrm{rms}^2}\]</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.r_hub">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_hub</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.r_hub" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus hub radius <span class="math notranslate nohighlight">\(r_\mathrm{hub}\)</span> [m], array.</p>
+<div class="math notranslate nohighlight">
+\[r_\mathrm{hub} = \sqrt{r_\mathrm{rms}^2 - \frac{A_m \cos\beta}{2\pi}}\]</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.r_mid">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_mid</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.r_mid" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus mid radius, <span class="math notranslate nohighlight">\(r_\mathrm{mid} = \tfrac{1}{2}(r_\mathrm{hub} + r_\mathrm{cas})\)</span> [m], array.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.r_rms">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_rms</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.r_rms" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus root-mean-square radius, <span class="math notranslate nohighlight">\(r_\mathrm{rms} = \sqrt{(r_\mathrm{hub}^2 + r_\mathrm{cas}^2)/2}\)</span> [m], array.</p>
+<p>This is an alias for <a class="reference external" href="https://ember-cfd.org/0.4.0/api/block.html#ember.block.Block.r" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">r</span></code></a> to make it explicit the convention that mean-lines are defined at the root-mean-square radius of the hub and tip.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.meanline.MeanLine.span">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">span</span></span><a class="headerlink" href="#turbigen.meanline.MeanLine.span" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus span, <span class="math notranslate nohighlight">\(H = A_m/(2\pi r_\mathrm{mid})\)</span> [m], array.</p>
+<p>Valid for all pitch angles, because <span class="math notranslate nohighlight">\(A_m\)</span> is already inclined at
+<span class="math notranslate nohighlight">\(\beta\)</span> and not an axial projection. See <a class="reference internal" href="#turbigen.meanline.MeanLine.Am" title="turbigen.meanline.MeanLine.Am"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Am</span></code></a>.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/meanline.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

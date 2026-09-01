@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Index &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="#" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "genindex.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+
+<h1 id="index">Index</h1>
+
+<div class="genindex-jumpbox">
+ <a href="#A"><strong>A</strong></a>
+ | <a href="#B"><strong>B</strong></a>
+ | <a href="#D"><strong>D</strong></a>
+ | <a href="#E"><strong>E</strong></a>
+ | <a href="#F"><strong>F</strong></a>
+ | <a href="#G"><strong>G</strong></a>
+ | <a href="#H"><strong>H</strong></a>
+ | <a href="#I"><strong>I</strong></a>
+ | <a href="#M"><strong>M</strong></a>
+ | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
+ | <a href="#P"><strong>P</strong></a>
+ | <a href="#R"><strong>R</strong></a>
+ | <a href="#S"><strong>S</strong></a>
+ | <a href="#T"><strong>T</strong></a>
+ 
+</div>
+<h2 id="A">A</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.allocate">allocate() (turbigen.design.MeanLineDesign method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Am">Am (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="B">B</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.backward">backward() (turbigen.design.MeanLineDesign method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="D">D</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.design">design() (turbigen.design.MeanLineDesign method)</a>
+</li>
+      <li><a href="design.html#turbigen.design.DesignError">DesignError</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Dho">Dho (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Dhos_ts">Dhos_ts (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Dhos_tt">Dhos_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="E">E</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.eta_ts">eta_ts (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.eta_tt">eta_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="F">F</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.flat">flat (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.forward">forward() (turbigen.design.MeanLineDesign method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.from_dict">from_dict() (turbigen.meanline.MeanLine class method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="G">G</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.get_characteristic_station">get_characteristic_station() (turbigen.meanline.MeanLine method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.get_referenced_fluid">get_referenced_fluid() (turbigen.meanline.MeanLine method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="H">H</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.halfVsq">halfVsq (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.halfVsq_rel">halfVsq_rel (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.htr">htr (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="I">I</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.inlet">inlet (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="M">M</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.mdot">mdot (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine">MeanLine (class in turbigen.meanline)</a>
+</li>
+      <li><a href="design.html#turbigen.design.MeanLineDesign">MeanLineDesign (class in turbigen.design)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    module
+
+      <ul>
+        <li><a href="design.html#module-turbigen.design">turbigen.design</a>
+</li>
+        <li><a href="meanline.html#module-turbigen.meanline">turbigen.meanline</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="N">N</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.n_row">n_row (turbigen.design.MeanLineDesign attribute)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.n_row">(turbigen.meanline.MeanLine property)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Omega">Omega (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.outlet">outlet (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="P">P</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.PR_ts">PR_ts (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.PR_tt">PR_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="R">R</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_cas">r_cas (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_hub">r_hub (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_mid">r_mid (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_rms">r_rms (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="S">S</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_Am">set_Am() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_Omega">set_Omega() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_r_rms">set_r_rms() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_htr">set_span_htr() (turbigen.meanline.MeanLine method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_r_mid">set_span_r_mid() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_r_rms">set_span_r_rms() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="design.html#turbigen.design.MeanLineDesign.solve_for">solve_for() (turbigen.design.MeanLineDesign method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.span">span (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="T">T</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.to_dict">to_dict() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.to_string">to_string() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li>
+    turbigen.design
+
+      <ul>
+        <li><a href="design.html#module-turbigen.design">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    turbigen.meanline
+
+      <ul>
+        <li><a href="meanline.html#module-turbigen.meanline">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

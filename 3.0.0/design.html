@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Mean-line designers &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Changelog" href="changelog.html" />
+    <link rel="prev" title="Mean-line flow field" href="meanline.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Mean-line designers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#the-design-contract">The design contract</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-process">Design process</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implicit-design-problems">Implicit design problems</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#thermodynamic-datum">Thermodynamic datum</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.design.DesignError"><code class="docutils literal notranslate"><span class="pre">DesignError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.design.MeanLineDesign"><code class="docutils literal notranslate"><span class="pre">MeanLineDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.backward"><code class="docutils literal notranslate"><span class="pre">backward()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.allocate"><code class="docutils literal notranslate"><span class="pre">allocate()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.solve_for"><code class="docutils literal notranslate"><span class="pre">solve_for()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "design.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="meanline.html" title="previous chapter">Mean-line flow field</a></li>
+      <li>Next: <a href="changelog.html" title="next chapter">Changelog</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-turbigen.design">
+<span id="mean-line-designers"></span><span id="design"></span><h1>Mean-line designers<a class="headerlink" href="#module-turbigen.design" title="Link to this heading">¶</a></h1>
+<p>Classes linking mean-line flow fields to design variables.</p>
+<p>A <a class="reference internal" href="#turbigen.design.MeanLineDesign" title="turbigen.design.MeanLineDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLineDesign</span></code></a> turns aerodynamic variables into a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>
+flow field and back again. Writing the mean-line design for a new machine
+is a single subclass:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MyStage</span><span class="p">(</span><span class="n">MeanLineDesign</span><span class="p">):</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"my_stage"</span>
+    <span class="n">n_row</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span>
+
+    <span class="n">psi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">phi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">Po1</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e5</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid</span><span class="p">:</span> <span class="n">ember</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">Fluid</span><span class="p">):</span>
+        <span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">fluid</span><span class="p">)</span>
+        <span class="o">...</span>
+        <span class="k">return</span> <span class="n">ml</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ml</span><span class="p">):</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>The <a class="reference internal" href="tutorial.html"><span class="doc">Tutorial</span></a> works through such a class in full, from an empty file to
+a designed fan; this page document the class in more detail. The
+data structure storing the flow field is documented at <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a>.</p>
+<section id="the-design-contract">
+<span id="design-contract"></span><h2>The design contract<a class="headerlink" href="#the-design-contract" title="Link to this heading">¶</a></h2>
+<p>A design declares two class variables, writes two methods, and inherits the
+rest:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">type</span></code></p></td>
+<td><p>The name an input file asks for, under <a class="reference internal" href="config.html#config-mean-line"><span class="std std-ref">mean_line:</span></a>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">n_row</span></code></p></td>
+<td><p>Number of blade rows the design describes. The mean line it builds has
+shape <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.forward()</span></code></a></p></td>
+<td><p>Written by the design: build a mean line from the design variables.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.backward()</span></code></a></p></td>
+<td><p>Written by the design: recover the design variables from a mean line.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.allocate()</span></code></a></p></td>
+<td><p>Provided: an empty mean line of the right size and fluid.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.design" title="turbigen.design.MeanLineDesign.design"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.design()</span></code></a></p></td>
+<td><p>Provided: run <code class="docutils literal notranslate"><span class="pre">forward</span></code>, check the round trip, freeze the result.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.solve_for" title="turbigen.design.MeanLineDesign.solve_for"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.solve_for()</span></code></a></p></td>
+<td><p>Provided: drive unknowns until <code class="docutils literal notranslate"><span class="pre">backward</span></code> reports the targets asked
+for.</p></td>
+</tr>
+</tbody>
+</table>
+<p>A built-in design defined in the <strong class="program">turbigen</strong> package is registered
+automatically. A new user-created design need not be installed: it is picked up
+from any <code class="docutils literal notranslate"><span class="pre">turbigen_plugins</span></code> directory beside the input file, or in any
+directory above it.</p>
+<p>In addition to the class variables, <cite>type</cite> and <cite>n_row</cite>, a design declares its
+design variables as <code class="xref py py-class docutils literal notranslate"><span class="pre">dataclass</span></code> fields. Values for the
+design variables are taken from under the <a class="reference internal" href="config.html#config-mean-line"><span class="std std-ref">mean_line:</span></a>
+key in the input file, converted to the annotated type and rejected if that
+fails. A field with
+no default is required, and omitting it from the input file is an error.
+A field with a default is optional, and the defaulted value is recorded in
+<code class="docutils literal notranslate"><span class="pre">output.yaml</span></code> for future reproducibility.</p>
+</section>
+<section id="design-process">
+<span id="id1"></span><h2>Design process<a class="headerlink" href="#design-process" title="Link to this heading">¶</a></h2>
+<p>Loading an input file converts its <a class="reference internal" href="config.html#config-mean-line"><span class="std std-ref">mean_line:</span></a> mapping
+into an instance of the class named by <code class="docutils literal notranslate"><span class="pre">type</span></code>, with defaults filled in.
+<strong class="program">turbigen</strong> then calls <a class="reference internal" href="#turbigen.design.MeanLineDesign.design" title="turbigen.design.MeanLineDesign.design"><code class="xref py py-meth docutils literal notranslate"><span class="pre">design()</span></code></a> on that instance,
+passing the working fluid specified by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>, and that
+method runs the design:</p>
+<ol class="arabic simple">
+<li><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a> builds a
+<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>;</p></li>
+<li><p><a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> inverts it, and the result is compared
+against the nominal design variables;</p></li>
+<li><p>mass is checked to be conserved through the machine;</p></li>
+<li><p>the <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> is frozen, so that every stage
+which follows — annulus, blades, mesher, post-processing — reads it and
+cannot write to it.</p></li>
+</ol>
+<p>Because the check runs there, a nominal <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>
+that exists <em>is</em> the requested design, and there is no third state between what
+was asked for and what was achieved.</p>
+<p><a class="reference internal" href="#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a> should start with
+<a class="reference internal" href="#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">allocate()</span></code></a>, which returns an empty
+<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> of the right shape and working fluid,
+fills it in using the setters documented at <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a>, and returns it.
+It should make no assumption about the equation of state: a design written in
+terms of enthalpy and entropy works for a perfect gas and a real one alike.
+<a class="reference internal" href="tutorial.html#tut-forward"><span class="std std-ref">Forward method</span></a> builds one line by line from the design equations.</p>
+<p>The <cite>fluid</cite> it is passed is the equation of state named by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.
+Thermodynamic properties come
+from its two method families: a <cite>set_X_Y</cite> returns the density and internal
+energy pair for the two properties named —
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_s()</span></code></a>,
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_h_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_h_s()</span></code></a> and the
+rest — and a <cite>get_Z</cite> evaluates one property from that pair, so
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_s()</span></code></a>,
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_a" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_a()</span></code></a> and so on.
+The whole interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.</p>
+<p><a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> goes the other way, returning a plain dict
+keyed by field name. A key that is not a field is reported for information but
+never checked, so a design is free to return whatever else is worth printing
+next to a CFD solution; a field mapped to <code class="docutils literal notranslate"><span class="pre">None</span></code> declares itself deliberately
+not invertible, and is skipped; a field with no key at all warns once, naming
+the variable that can no longer be checked or reported.
+<a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> can run on a nominal design, or a mixed-out CFD
+solution — it is the single definition of what each design variable means.
+<a class="reference internal" href="tutorial.html#tut-backward"><span class="std std-ref">Backward method</span></a> writes one for the design variables of a fan.</p>
+</section>
+<section id="implicit-design-problems">
+<span id="design-implicit"></span><h2>Implicit design problems<a class="headerlink" href="#implicit-design-problems" title="Link to this heading">¶</a></h2>
+<p>Where possible, <a class="reference internal" href="#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a> should build the mean line
+explicitly from the design variables, but there are often situations where
+the mean line cannot be built directly from the natural choice of design variables. <a class="reference internal" href="#turbigen.design.MeanLineDesign.solve_for" title="turbigen.design.MeanLineDesign.solve_for"><code class="xref py py-meth docutils literal notranslate"><span class="pre">solve_for()</span></code></a> adjusts unknowns until
+the residual calculated  through <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> meets the targets asked for, thus solving implicit design problems.</p>
+<p>For example, a turbine stage at given stator exit Mach number cannot be built
+in one pass: that Mach number depends on the temperature, which depends on the
+static state and loss. So the
+design puts the whole construction in a closure over the quantities it does not
+yet know — here the blade speed and the three swirl velocities — and asks
+for the values of those which make <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> report the
+design variables asked for:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="n">U</span><span class="p">,</span> <span class="n">Vt1</span><span class="p">,</span> <span class="n">Vt2</span><span class="p">,</span> <span class="n">Vt3_rel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Fill in `ml` for one trial set of unknowns."""</span>
+    <span class="o">...</span>
+
+<span class="bp">self</span><span class="o">.</span><span class="n">solve_for</span><span class="p">(</span>
+    <span class="n">ml</span><span class="p">,</span>
+    <span class="n">build</span><span class="p">,</span>
+    <span class="n">unknowns</span><span class="o">=</span><span class="p">{</span><span class="s2">"U"</span><span class="p">:</span> <span class="n">U0</span><span class="p">,</span> <span class="s2">"Vt1"</span><span class="p">:</span> <span class="n">Vt1_0</span><span class="p">,</span> <span class="s2">"Vt2"</span><span class="p">:</span> <span class="n">Vt2_0</span><span class="p">,</span> <span class="s2">"Vt3_rel"</span><span class="p">:</span> <span class="n">Vt3_rel_0</span><span class="p">},</span>
+    <span class="n">targets</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">"psi"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi</span><span class="p">,</span>
+        <span class="s2">"Ma2"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ma2</span><span class="p">,</span>
+        <span class="c1"># Repeating stage: the flow leaves as it entered</span>
+        <span class="s2">"Alpha1"</span><span class="p">:</span> <span class="s2">"Alpha3"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">"stage"</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">build</span></code> is called as <code class="docutils literal notranslate"><span class="pre">build(**unknowns)</span></code> and writes into the same
+<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> every time.
+The values in <code class="docutils literal notranslate"><span class="pre">unknowns</span></code> are initial guesses, which may be scalars or arrays,
+and the guess must itself give a valid mean line (but not necessarily one that
+meets the targets). During iteration, any calls to <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> that error have a penalty residual applied.</p>
+<p>There must be at least as many targets as unknowns, or the solve is refused as
+underdetermined. On success the mean line is left rebuilt at the solution, so
+<code class="docutils literal notranslate"><span class="pre">forward</span></code> can return it directly, and the solved unknowns are returned as a
+dict for a design that wants to keep them.</p>
+<p>A numeric <code class="docutils literal notranslate"><span class="pre">target</span></code> is a value that key must take; a string <code class="docutils literal notranslate"><span class="pre">target</span></code> names
+another key of <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a>’s output that it must equal.</p>
+</section>
+<section id="thermodynamic-datum">
+<span id="design-datum"></span><h2>Thermodynamic datum<a class="headerlink" href="#thermodynamic-datum" title="Link to this heading">¶</a></h2>
+<p>A design that expects high temperatures and pressures should
+move the fluid dynamic datum before allocating the mean line.
+For example, if the inlet stagnation conditions are specified as design variable fields:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">fluid</span><span class="o">.</span><span class="n">change_datum</span><span class="p">(</span><span class="n">P_dtm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Po1</span><span class="p">,</span> <span class="n">T_dtm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">To1</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>See <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#datum-state" title="(in ember v0.4.0)"><span>Datum state</span></a> for more detail on this part of the fluid API.</p>
+</section>
+<dl class="py exception">
+<dt class="sig sig-object py" id="turbigen.design.DesignError">
+<span class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">DesignError</span></span><a class="headerlink" href="#turbigen.design.DesignError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Exception</span></code></a></p>
+<p>A mean-line design could not be produced.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">MeanLineDesign</span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
+<p>Base for mean-line designers.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.n_row">
+<span class="sig-name descname"><span class="pre">n_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.n_row" title="Link to this definition">¶</a></dt>
+<dd><p>Number of blade rows this design describes.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.design.MeanLineDesign.forward" title="Link to this definition">¶</a></dt>
+<dd><p>Return a mean line built from this design’s variables.</p>
+<p>Use <a class="reference internal" href="#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">allocate()</span></code></a> for the empty mean line, fill it in, and return
+it.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.backward">
+<span class="sig-name descname"><span class="pre">backward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ml</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.design.MeanLineDesign.backward" title="Link to this definition">¶</a></dt>
+<dd><p>Return the design variables represented by mean line <cite>ml</cite>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.allocate">
+<span class="sig-name descname"><span class="pre">allocate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.allocate" title="Link to this definition">¶</a></dt>
+<dd><p>Return an empty mean line of the right size, ready to fill in.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fluid</strong> (<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><em>ember.fluid.Fluid</em></a>) – The equation of state, already built from the config. A design
+never sees the config node, only the fluid object it describes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.design">
+<span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.design" title="Link to this definition">¶</a></dt>
+<dd><p>Return a mean line built from this design.</p>
+<p>Checks that the result inverts back to the design variables that asked
+for it, then freezes it at the earliest opportunity, so that every
+stage which follows – annulus, blades, mesher, post-processing –
+reads the mean line and cannot write to it.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.solve_for">
+<span class="sig-name descname"><span class="pre">solve_for</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ml</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">build</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unknowns</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.design.MeanLineDesign.solve_for" title="Link to this definition">¶</a></dt>
+<dd><p>Adjust <cite>unknowns</cite> until <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> reports <cite>targets</cite>.</p>
+<p>Use this for the parts of a design that cannot be constructed
+explicitly, where some quantity has to be guessed and then corrected.
+Everything else should be built directly in <code class="docutils literal notranslate"><span class="pre">forward</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ml</strong> (<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><em>MeanLine</em></a>) – The mean line being designed. <cite>build</cite> writes into it, and
+<a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> is read from it.</p></li>
+<li><p><strong>build</strong> (<em>callable</em>) – <code class="docutils literal notranslate"><span class="pre">build(**unknowns)</span></code>, constructing <cite>ml</cite> for one trial set of
+values. Its return value is ignored.</p></li>
+<li><p><strong>unknowns</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Quantities to solve for, mapped to their initial guesses. Values
+may be scalars or arrays.</p></li>
+<li><p><strong>targets</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – <p>Maps a key of <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a>’s output to the value it must take.
+A number means that key must equal it. A string names another key
+of <a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a>’s output that it must equal, which is how
+conditions like a repeating stage are written:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">targets</span><span class="o">=</span><span class="p">{</span><span class="s2">"psi"</span><span class="p">:</span> <span class="n">psi</span><span class="p">,</span> <span class="s2">"Alpha1"</span><span class="p">:</span> <span class="s2">"Alpha3"</span><span class="p">}</span>
+</pre></div>
+</div>
+</p></li>
+<li><p><strong>rtol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Largest acceptable scaled residual. A mean line stores its state as
+float32, and targets are derived quantities, so residuals below
+about 1e-6 are not reachable however many iterations are spent:
+do not tighten this towards float64 tolerances.</p></li>
+<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Iteration limit, in units of Jacobian evaluations.</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Label for this solve, used in error messages.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The solved values, in the same shapes as <cite>unknowns</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#turbigen.design.DesignError" title="turbigen.design.DesignError"><strong>DesignError</strong></a> – If the system is underdetermined, or the solve does not converge.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/design.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

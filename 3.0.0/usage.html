@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Command-line interface &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Mean-line flow field" href="meanline.html" />
+    <link rel="prev" title="Input file format" href="config.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Command-line interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#output-files">Output files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen">turbigen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design">design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#report">report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#run">run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#iterate">iterate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#chic">chic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#batch">batch</a></li>
+</ul>
+</li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "usage.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="config.html" title="previous chapter">Input file format</a></li>
+      <li>Next: <a href="meanline.html" title="next chapter">Mean-line flow field</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="command-line-interface">
+<span id="usage"></span><h1>Command-line interface<a class="headerlink" href="#command-line-interface" title="Link to this heading">¶</a></h1>
+<p>Four of the commands are the same pipeline stopped at different points, and
+each implies the stages before it:</p>
+<ul class="simple">
+<li><p><cite>design</cite> builds the mean line and the geometry;</p></li>
+<li><p><cite>run</cite> meshes and solves for the flow field;</p></li>
+<li><p><cite>iterate</cite> updates the geometry and repeats a run until the CFD-predicted flow field matches the nominal design intent;</p></li>
+<li><p><cite>chic</cite> sweeps a geometry along its mass flow characteristic.</p></li>
+</ul>
+<p>There are two more commands:</p>
+<ul class="simple">
+<li><p><cite>report</cite> recreates plots from a finished run;</p></li>
+<li><p><cite>batch</cite> writes a set of configuration files over a design space.</p></li>
+</ul>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>Construct<span class="w"> </span>a<span class="w"> </span>design<span class="w"> </span>and<span class="w"> </span>print<span class="w"> </span>to<span class="w"> </span>console
+<span class="gp">$ </span>turbigen<span class="w"> </span>design<span class="w"> </span>input.yaml
+
+<span class="gp"># </span>Construct<span class="w"> </span>a<span class="w"> </span>design<span class="w"> </span>and<span class="w"> </span>write<span class="w"> </span>plots<span class="w"> </span>to<span class="w"> </span>disk
+<span class="gp">$ </span>turbigen<span class="w"> </span>report<span class="w"> </span>input.yaml
+
+<span class="gp"># </span>The<span class="w"> </span>same,<span class="w"> </span>with<span class="w"> </span>one<span class="w"> </span>design<span class="w"> </span>variable<span class="w"> </span>changed
+<span class="gp">$ </span>turbigen<span class="w"> </span>design<span class="w"> </span>input.yaml<span class="w"> </span>-s<span class="w"> </span>mean_line.psi<span class="o">=</span><span class="m">1</span>.8
+
+<span class="gp"># </span>Design,<span class="w"> </span>run<span class="w"> </span>CFD,<span class="w"> </span>and<span class="w"> </span>post<span class="w"> </span>process<span class="w"> </span>one<span class="w"> </span><span class="k">case</span>
+<span class="gp">$ </span>turbigen<span class="w"> </span>run<span class="w"> </span>input.yaml
+
+<span class="gp"># </span>Iterate<span class="w"> </span>a<span class="w"> </span>geometry<span class="w"> </span><span class="k">until</span><span class="w"> </span>it<span class="w"> </span>matches<span class="w"> </span>design<span class="w"> </span>intent
+<span class="gp">$ </span>turbigen<span class="w"> </span>iterate<span class="w"> </span>input.yaml
+
+<span class="gp"># </span>Sweep<span class="w"> </span>a<span class="w"> </span>characteristic
+<span class="gp">$ </span>turbigen<span class="w"> </span>chic<span class="w"> </span>input.yaml
+
+<span class="gp"># </span>Write<span class="w"> </span>configurations<span class="w"> </span>over<span class="w"> </span>a<span class="w"> </span>design<span class="w"> </span>space
+<span class="gp">$ </span>turbigen<span class="w"> </span>batch<span class="w"> </span>input.yaml
+</pre></div>
+</div>
+<p>A command only asks of a configuration what its own stage needs, and says so
+when it is missing: <cite>run</cite>, <cite>iterate</cite> and <cite>chic</cite> want a
+<a class="reference internal" href="config.html#config-solver"><span class="std std-ref">solver:</span></a> key, <cite>chic</cite> a <a class="reference internal" href="config.html#config-chic"><span class="std std-ref">chic:</span></a> key as
+well, and <cite>batch</cite> a <a class="reference internal" href="config.html#config-batch"><span class="std std-ref">batch:</span></a> key naming the design
+variables to vary. <cite>design</cite> and <cite>report</cite> need neither, which is why a
+configuration describing only a mean line still has two commands that work on
+it. The whole file is described in <a class="reference internal" href="config.html#config"><span class="std std-ref">Input file format</span></a>.</p>
+</section>
+<section id="output-files">
+<h2>Output files<a class="headerlink" href="#output-files" title="Link to this heading">¶</a></h2>
+<p>The <cite>design</cite> command only prints to console, but all other commands write files
+and require a working directory. By default, all output is written in the same
+directory as the input file; with the <cite>-o DIR</cite> switch specified
+<strong class="program">turbigen</strong> will create <cite>DIR</cite> if it does not exist, copy the input file
+there, and write all output there. The commands produce the following files:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 22.0%" />
+<col style="width: 78.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>File</p></th>
+<th class="head"><p>What it is</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><cite>input.yaml</cite></p></td>
+<td><p>the original input file copied into the newly created working directory
+if requested by <cite>-o DIR</cite></p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>output.yaml</cite></p></td>
+<td><p>the achieved design together with the configuration that produced it,
+which may differ from the input if <cite>-s</cite> or <cite>iterate</cite> were used</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>post.pdf</cite></p></td>
+<td><p>post-processed figures</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>restart.npz</cite></p></td>
+<td><p>CFD-predicted flow field, to start a new run from a converged solution</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>conv.cnv</cite></p></td>
+<td><p>the CFD convergence history</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>log_turbigen.txt</cite></p></td>
+<td><p>a transcript, same as the console output</p></td>
+</tr>
+</tbody>
+</table>
+<p><cite>iterate</cite> creates <cite>iter_NNNN</cite> directories, <cite>chic</cite> creates <cite>chic_NNNN</cite> and
+<cite>batch</cite> creates <cite>batch_NNNN</cite>, one directory per iteration, operating point or
+sample. Each is a complete case directory in its own right, so can be resolved
+or use as an input for a new run.</p>
+<p>Three notes on the output files:</p>
+<ul class="simple">
+<li><p><cite>output.yaml</cite> is refused as an input file name, to prevent results being
+overwritten.</p></li>
+<li><p>After <cite>iterate</cite> or <cite>chic</cite>, the final run’s <cite>output.yaml</cite>, <cite>restart.npz</cite>,
+<cite>conv.cnv</cite> and <cite>post.pdf</cite> are promoted to the top level working
+directory, whereas the intermediate iterations stay in their own directories.</p></li>
+<li><p>The full three-dimensional mesh is never written, only stored in memory.</p></li>
+</ul>
+</section>
+<section id="turbigen">
+<h2>turbigen<a class="headerlink" href="#turbigen" title="Link to this heading">¶</a></h2>
+<p><p>turbigen is an experimental rebuild of the turbigen design system. Each command carries the design one stage further through the pipeline.</p>
+</p>
+<div class="highlight-default notranslate" id="id0"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">V</span><span class="p">]</span> <span class="n">COMMAND</span> <span class="o">...</span>
+</pre></div>
+</div>
+<section id="turbigen-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>COMMAND</kbd></dt>
+<dd><p>Possible choices: design, report, run, iterate, chic, batch</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-V, --version</kbd></dt>
+<dd><p>show program’s version number and exit</p>
+</dd>
+</dl>
+</section>
+<p>Every command below takes one or more configuration files, and accepts <cite>–set</cite>
+and <cite>–verbose</cite>.</p>
+</section>
+<section id="design">
+<span id="usage-design"></span><h2>design<a class="headerlink" href="#design" title="Link to this heading">¶</a></h2>
+<p><p>Design the mean line and geometry from a configuration file and print them. Nothing is ever written, so this is what to run while changing a number and watching the tables move. Use ‘report’ for figures.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-design"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">design</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-design-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-design-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-design-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-design-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="report">
+<span id="usage-report"></span><h2>report<a class="headerlink" href="#report" title="Link to this heading">¶</a></h2>
+<p><p>Design the machine, mesh it if the config says how, pick up any restart.npz a previous run left beside the config, and write post.pdf and output.yaml. Each standard plot draws nothing when what it needs is absent, so a mean-line design gives the geometry pages and a solved case gives the flow. Re-plotting a finished run is therefore the same command, with no flag between them. The output.yaml carries an answer only when the stored field is stamped as this design’s solution, and a report never removes one it cannot reproduce. The grid itself is never written, because how a mesh is serialised is a property of the solver that will read it.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-report"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">report</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">--</span><span class="n">svg</span><span class="p">]</span>
+                       <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-report-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-report-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-report-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-report-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>--svg</kbd></dt>
+<dd><p>also write each figure as its own SVG beside post.pdf, named after the post-processor that drew it, for embedding one at a time</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="run">
+<span id="usage-run"></span><h2>run<a class="headerlink" href="#run" title="Link to this heading">¶</a></h2>
+<p><p>Design the machine from a configuration file, mesh it, apply boundary conditions and an initial guess, and solve. Everything is written beside the config, in output.yaml and its companions. Exits 2 if the solver did not converge, having written its output anyway.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-run"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">run</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">f</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">o</span> <span class="n">DIR</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span>
+                    <span class="p">[</span><span class="o">--</span><span class="n">restart</span> <span class="p">[</span><span class="n">NPZ</span><span class="p">]]</span> <span class="p">[</span><span class="o">--</span><span class="n">svg</span><span class="p">]</span>
+                    <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-run-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-run-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-run-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-run-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-f, --force</kbd></dt>
+<dd><p>replace an answer already recorded in output.yaml here; without it, a directory that has been run refuses to be run again</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-o, --out-dir</kbd></dt>
+<dd><p>work in DIR instead of beside the config: the config is copied there as input.yaml, with its includes expanded and any –set applied, and everything the run writes lands there. This is how to try a variant without replacing the answer you already have. A ‘%’ in the last part of DIR is replaced by the next free number, so -o runs/v% writes runs/v0000, then runs/v0001</p>
+</dd>
+<dt><kbd>-Q, --queue</kbd></dt>
+<dd><p>submit to the queue named by the job: section instead of running here; every config becomes one submission</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>--restart</kbd></dt>
+<dd><p>load the flow field in NPZ, as written by a previous run, instead of the meridional guess; interpolated in index space if the mesh resolution has changed. With no NPZ given, reads restart.npz from beside the config file, which re-plots a run in place</p>
+</dd>
+<dt><kbd>--svg</kbd></dt>
+<dd><p>also write each figure as its own SVG beside post.pdf, named after the post-processor that drew it, for embedding one at a time</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="iterate">
+<span id="usage-iterate"></span><h2>iterate<a class="headerlink" href="#iterate" title="Link to this heading">¶</a></h2>
+<p><p>Solve the machine, measure how far its design is from what the flow actually did, correct the design, and solve again. Each iteration is an ordinary run in a directory of its own beside the config, with ‘final’ linked to the last and every iteration kept. Needs an iterate: key naming what to correct. Exits 2 if the design had not converged by iterate.max_iter.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-iterate"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">iterate</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">f</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">o</span> <span class="n">DIR</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span>
+                        <span class="p">[</span><span class="o">--</span><span class="n">restart</span> <span class="p">[</span><span class="n">NPZ</span><span class="p">]]</span>
+                        <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-iterate-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-iterate-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-iterate-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-iterate-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-f, --force</kbd></dt>
+<dd><p>replace an answer already recorded in output.yaml here; without it, a directory that has been run refuses to be run again</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-o, --out-dir</kbd></dt>
+<dd><p>work in DIR instead of beside the config: the config is copied there as input.yaml, with its includes expanded and any –set applied, and everything the run writes lands there. This is how to try a variant without replacing the answer you already have. A ‘%’ in the last part of DIR is replaced by the next free number, so -o runs/v% writes runs/v0000, then runs/v0001</p>
+</dd>
+<dt><kbd>-Q, --queue</kbd></dt>
+<dd><p>submit to the queue named by the job: section instead of running here; every config becomes one submission</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>--restart</kbd></dt>
+<dd><p>load the flow field in NPZ, as written by a previous run, instead of the meridional guess; interpolated in index space if the mesh resolution has changed. With no NPZ given, reads restart.npz from beside the config file, which re-plots a run in place</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="chic">
+<span id="usage-chic"></span><h2>chic<a class="headerlink" href="#chic" title="Link to this heading">¶</a></h2>
+<p><p>Converge the design, then hold its geometry fixed and step the back pressure until a point will not converge, halving the step and coming back at it from the last good field until the limit is pinned to chic.step_min. Each point is an ordinary run in a directory of its own. A case whose stored result says the design has already settled skips straight to the sweep. Needs a chic: section. What it finds is where a steady solver stops converging, which is not the surge line.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-chic"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">chic</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">f</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">o</span> <span class="n">DIR</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span>
+                     <span class="p">[</span><span class="o">--</span><span class="n">restart</span> <span class="p">[</span><span class="n">NPZ</span><span class="p">]]</span>
+                     <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-chic-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-chic-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-chic-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-chic-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-f, --force</kbd></dt>
+<dd><p>replace an answer already recorded in output.yaml here; without it, a directory that has been run refuses to be run again</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-o, --out-dir</kbd></dt>
+<dd><p>work in DIR instead of beside the config: the config is copied there as input.yaml, with its includes expanded and any –set applied, and everything the run writes lands there. This is how to try a variant without replacing the answer you already have. A ‘%’ in the last part of DIR is replaced by the next free number, so -o runs/v% writes runs/v0000, then runs/v0001</p>
+</dd>
+<dt><kbd>-Q, --queue</kbd></dt>
+<dd><p>submit to the queue named by the job: section instead of running here; every config becomes one submission</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>--restart</kbd></dt>
+<dd><p>load the flow field in NPZ, as written by a previous run, instead of the meridional guess; interpolated in index space if the mesh resolution has changed. With no NPZ given, reads restart.npz from beside the config file, which re-plots a run in place</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="batch">
+<span id="usage-batch"></span><h2>batch<a class="headerlink" href="#batch" title="Link to this heading">¶</a></h2>
+<p><p>Write one config per design over the design variables the batch: section names. With bounds:, designs are drawn from a Sobol’ sequence over the box; with values:, the batch is every combination of the values named, which is the parameter study a shell loop over –set cannot write. Points that cannot be designed are skipped, so no cluster time is spent finding that out. Nothing is run unless –queue asks for it. The batch is written beside the datum config, in the next free batch_NNNN, whose path is printed on stdout.</p>
+</p>
+<div class="highlight-default notranslate" id="turbigen-batch"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">batch</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">n</span> <span class="n">N</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span> <span class="p">[</span><span class="o">--</span><span class="k">continue</span><span class="p">]</span>
+                      <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="turbigen-batch-positional-arguments">
+<span id="turbigen.cli-_make_parser-positional-arguments"></span><h3>Positional Arguments<a class="headerlink" href="#turbigen-batch-positional-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>CONFIG_YAML</kbd></dt>
+<dd><p>one or more configuration files in yaml format; several are run one after another, or submitted together with –queue</p>
+</dd>
+</dl>
+</section>
+<section id="turbigen-batch-named-arguments">
+<span id="turbigen.cli-_make_parser-named-arguments"></span><h3>Named Arguments<a class="headerlink" href="#turbigen-batch-named-arguments" title="Link to this heading">¶</a></h3>
+<dl class="option-list">
+<dt><kbd>-s, --set</kbd></dt>
+<dd><p>override a config value; the value is parsed as YAML and the key is dotted, with integer segments indexing into lists, e.g. -s mean_line.psi=1.8 (repeatable)</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">[]</span></code></p>
+</dd>
+<dt><kbd>-v, --verbose</kbd></dt>
+<dd><p>output more diagnostic information on stderr</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>-n, --number</kbd></dt>
+<dd><p>how many designs to draw from bounds: (default 32; Sobol’ balance holds at powers of two). Not for values:, whose count is the product of what it names</p>
+</dd>
+<dt><kbd>-Q, --queue</kbd></dt>
+<dd><p>submit to the queue named by the job: section instead of running here; every config becomes one submission</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+<dt><kbd>--continue</kbd></dt>
+<dd><p>extend the batches already beside the datum config, starting after the highest member index they hold; bounds: only</p>
+<p>Default: <code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/usage.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Tutorial &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Input file format" href="config.html" />
+    <link rel="prev" title="User manual" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#problem-statement">Problem statement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mean-line-design-equations">Mean-line design equations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-the-files">Setting up the files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-variables">Design variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#forward-method">Forward method</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#backward-method">Backward method</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#annulus-and-blade-shapes">Annulus and blade shapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#plotting">Plotting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#extensions">Extensions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "tutorial.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">User manual</a></li>
+      <li>Next: <a href="config.html" title="next chapter">Input file format</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="tutorial">
+<h1>Tutorial<a class="headerlink" href="#tutorial" title="Link to this heading">¶</a></h1>
+<p>This tutorial walks through writing a new mean-line class in order to design a compressor. Running actual CFD is out of scope for now.</p>
+<p>We first need to install <strong class="program">turbigen</strong>, which can be achieved on Linux or
+macOS with something like these shell commands:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+<span class="gp">$ </span><span class="nb">source</span><span class="w"> </span><span class="nv">$HOME</span>/.local/bin/env
+<span class="gp">$ </span>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>turbigen
+</pre></div>
+</div>
+<p>Usually, we run <strong class="program">turbigen</strong> by passing an input YAML file containing
+all the data required to construct a turbomachine. Your mean-line design
+algorithm, being code not data, must be written seperately in Python.
+<strong class="program">turbigen</strong> finds user-written designs by walking up from the input
+file looking for a directory called <cite>turbigen_plugins</cite>. The below commands
+create a directory called <cite>tutorial</cite>, change into it, create the
+<cite>turbigen_plugins</cite> directory, and create an empty input file and a Python file
+for the design:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>mkdir<span class="w"> </span>tutorial
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>tutorial
+<span class="gp">$ </span>mkdir<span class="w"> </span>turbigen_plugins
+<span class="gp">$ </span>touch<span class="w"> </span>input.yaml<span class="w"> </span>turbigen_plugins/fan.py
+</pre></div>
+</div>
+<p>The file structure should then look like this:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>tree
+<span class="go">.</span>
+<span class="go">├── input.yaml</span>
+<span class="go">└── turbigen_plugins</span>
+<span class="go">    └── fan.py</span>
+
+<span class="go">2 directories, 2 files</span>
+</pre></div>
+</div>
+<section id="problem-statement">
+<h2>Problem statement<a class="headerlink" href="#problem-statement" title="Link to this heading">¶</a></h2>
+<p>Suppose we wish to design a rotor-only axial fan. We shall assume
+a constant axial velocity. The inlet state is specified
+as fixed values of <span class="math notranslate nohighlight">\(T_{01}\)</span> and <span class="math notranslate nohighlight">\(p_{01}\)</span> with no inlet swirl,
+<span class="math notranslate nohighlight">\(\alpha_1=0\)</span>. We can then parametrise the aerodynamics of the stage using the
+following design variables (many other choices are possible):</p>
+<ul class="simple">
+<li><p>Total pressure rise, <span class="math notranslate nohighlight">\(\Delta p_0\)</span></p></li>
+<li><p>Mass flow rate, <span class="math notranslate nohighlight">\(\dot{m}\)</span></p></li>
+<li><p>Flow coefficient, <span class="math notranslate nohighlight">\(\phi=V_x/U\)</span></p></li>
+<li><p>Loading coefficient, <span class="math notranslate nohighlight">\(\psi= \Delta h_0/U^2\)</span></p></li>
+<li><p>Hub-to-tip ratio, <span class="math notranslate nohighlight">\(\mathit{HTR}=r_\mathrm{hub}/r_\mathrm{cas}\)</span></p></li>
+<li><p>Total-to-total isentropic efficiency guess, <span class="math notranslate nohighlight">\(\eta_\mathrm{tt}\)</span></p></li>
+</ul>
+<p>To proceed with the annulus and blade shape construction, <strong class="program">turbigen</strong>
+requires a <em>mean line design</em>: a nominal averaged flow field at the inlet and
+outlet of every blade row. For each of those stations we must supply</p>
+<ul class="simple">
+<li><p>a thermodynamic state, <span class="math notranslate nohighlight">\((h, s)\)</span> for example</p></li>
+<li><p>an absolute-frame velocity vector, <span class="math notranslate nohighlight">\((V_x, V_r, V_\theta)\)</span></p></li>
+<li><p>an annulus area, <span class="math notranslate nohighlight">\(A_m\)</span>, and a mean radius, <span class="math notranslate nohighlight">\(r_\mathrm{rms}\)</span></p></li>
+<li><p>the angular velocity of the blade frame, <span class="math notranslate nohighlight">\(\Omega\)</span></p></li>
+</ul>
+</section>
+<section id="mean-line-design-equations">
+<span id="tut-ml-algo"></span><h2>Mean-line design equations<a class="headerlink" href="#mean-line-design-equations" title="Link to this heading">¶</a></h2>
+<p>We need to combine conservation of mass, momentum, and energy with
+definitions of our design variables to solve for the flow in the turbomachine.
+This will yield a set of equations that we will later implement numerically in
+a method on our new class.</p>
+<p>The specified total pressure rise and guess of total-to-total efficiency allow calculation of the compressor work <span class="math notranslate nohighlight">\(\Delta h_0 = h_{02}-h_{01}\)</span></p>
+<div class="math notranslate nohighlight" id="equation-eqn-eta">
+<span class="eqno">(1)<a class="headerlink" href="#equation-eqn-eta" title="Link to this equation">¶</a></span>\[\eta_\mathrm{tt} = \frac{h_{02s}-h_{01}}{h_{02}-h_{01}} \quad\Rightarrow\quad \Delta h_0 = \frac{1}{\eta_\mathrm{tt}}\left[h(p_{01}+\Delta p_0, s_1) - h_{01}\right]\]</div>
+<p>where <span class="math notranslate nohighlight">\(h_{02s}=h(p_{01}+\Delta p_0, s_1)\)</span> is the ideal exit stagnation enthalpy for isentropic compression, i.e. enthalpy evaluated at the (lossy) exit stagnation pressure and (lossless) inlet entropy.</p>
+<p>The blade speed <span class="math notranslate nohighlight">\(U\)</span> is then given from the definition of loading coefficient</p>
+<div class="math notranslate nohighlight" id="equation-eqn-psi">
+<span class="eqno">(2)<a class="headerlink" href="#equation-eqn-psi" title="Link to this equation">¶</a></span>\[\psi = \frac{\Delta h_0}{U^2} \quad\Rightarrow\quad U = \sqrt{\frac{\Delta h_0}{\psi}}\]</div>
+<p>The definition of flow coefficient yields the axial velocity <span class="math notranslate nohighlight">\(V_x\)</span></p>
+<div class="math notranslate nohighlight" id="equation-eqn-phi">
+<span class="eqno">(3)<a class="headerlink" href="#equation-eqn-phi" title="Link to this equation">¶</a></span>\[\phi = \frac{V_x}{U} \quad\Rightarrow\quad V_x = \phi U\]</div>
+<p>Assuming no inlet swirl, <span class="math notranslate nohighlight">\(V_{\theta 1}=0\)</span> and the Euler work equation yields the rotor exit circumferential velocity</p>
+<div class="math notranslate nohighlight" id="equation-eqn-vt">
+<span class="eqno">(4)<a class="headerlink" href="#equation-eqn-vt" title="Link to this equation">¶</a></span>\[\Delta h_0 = U\left(V_{\theta 2}-V_{\theta 1}\right)\quad\Rightarrow\quad V_{\theta 2}=\frac{\Delta h_0}{U}\]</div>
+<p>We now have stagnation thermodynamic states and velocity vectors at inlet and
+exit of the rotor. Static enthalpy follows from subtracting the kinetic energy at
+constant entropy, <span class="math notranslate nohighlight">\(h = h_0 - \tfrac{1}{2}V^2\)</span>; entropy does not depend on the frame of reference. Now, passing <span class="math notranslate nohighlight">\((h, s)\)</span>
+to the equation of state will yield density <span class="math notranslate nohighlight">\(\rho\)</span> or any other static thermodynamic
+property as needed.</p>
+<p>Conservation of mass then gives the annulus area at each station. Subscript <span class="math notranslate nohighlight">\(m\)</span> denotes the meridional projection with no circumferential component, as opposed to the flow area which is normal to the velocity vector (and thus dependent on flow angle).</p>
+<div class="math notranslate nohighlight" id="equation-eqn-a">
+<span class="eqno">(5)<a class="headerlink" href="#equation-eqn-a" title="Link to this equation">¶</a></span>\[\dot{m} = \rho A_m V_x \quad\Rightarrow\quad A_m = \frac{\dot{m}}{\rho V_x}\]</div>
+<p>and further specifying a hub-to-tip ratio fixes the mean radius</p>
+<div class="math notranslate nohighlight">
+\[A_m = \pi\left(r_\mathrm{cas}^2 - r_\mathrm{hub}^2\right)\,,\
+r_\mathrm{rms} = \sqrt{\frac{1}{2}\left(r_\mathrm{cas}^2 + r_\mathrm{hub}^2\right)}
+\,,\ \mathit{HTR}=\frac{r_\mathrm{hub}}{r_\mathrm{cas}}\]</div>
+<div class="math notranslate nohighlight" id="equation-eqn-rrms">
+<span class="eqno">(6)<a class="headerlink" href="#equation-eqn-rrms" title="Link to this equation">¶</a></span>\[\Rightarrow r_\mathrm{rms} = \sqrt{\frac{A_m}{2\pi}\frac{1+\mathit{HTR}^2}{1-\mathit{HTR}^2}}\]</div>
+<p>Finally, the shaft angular velocity is simply</p>
+<div class="math notranslate nohighlight" id="equation-eqn-omega">
+<span class="eqno">(7)<a class="headerlink" href="#equation-eqn-omega" title="Link to this equation">¶</a></span>\[\Omega = U/r_\mathrm{rms}\]</div>
+</section>
+<section id="setting-up-the-files">
+<h2>Setting up the files<a class="headerlink" href="#setting-up-the-files" title="Link to this heading">¶</a></h2>
+<p>A mean-line design is a subclass of
+<a class="reference internal" href="design.html#turbigen.design.MeanLineDesign" title="turbigen.design.MeanLineDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLineDesign</span></code></a> which has two methods: <a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a>, which
+turns design variables into a flow field <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>, and <a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a>
+, which recovers the
+design variables from a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> built by <a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.forward" title="turbigen.design.MeanLineDesign.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a> or averaged from a CFD solution.
+The <a class="reference internal" href="design.html#design-contract"><span class="std std-ref">The design contract</span></a> sets out in full what such a subclass declares and
+what it inherits.</p>
+<p>Copy the below skeleton of the class into <cite>turbigen_plugins/fan.py</cite>. The <cite>type</cite>
+string is the name a input file will use to ask for the new turbomachine, and
+<cite>n_row</cite> says how many blade rows it describes:</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">turbigen_plugins/fan.py</span><a class="headerlink" href="#id2" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">turbigen.design</span><span class="w"> </span><span class="kn">import</span> <span class="n">MeanLineDesign</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Fan</span><span class="p">(</span><span class="n">MeanLineDesign</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A single-row axial fan."""</span>
+
+    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"fan"</span>
+    <span class="n">n_row</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return a mean line built from this design's variables."""</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">"Implement the forward method"</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ml</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return the design variables represented by mean line `ml`."""</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">"Implement the backward method"</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>We can now copy into <cite>input.yaml</cite> a skeleton configuration that asks for this
+design, but in order for the mean-line design to run we also need to specify the
+working fluid. The <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a> section names a fluid by its <cite>type</cite> and sets any
+properties needed to specify that type.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">input.yaml</span><a class="headerlink" href="#id3" title="Link to this code">¶</a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">fluid</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">perfect</span><span class="w">  </span><span class="c1"># Which fluid model, perfect or real</span>
+<span class="w">  </span><span class="nt">cp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1005.0</span><span class="w">     </span><span class="c1"># Specific heat at constant pressure [J/kg/K]</span>
+<span class="w">  </span><span class="nt">gamma</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.4</span><span class="w">     </span><span class="c1"># Ratio of specific heats [--]</span>
+<span class="w">  </span><span class="nt">mu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.8e-5</span><span class="w">     </span><span class="c1"># Dynamic viscosity [Pa*s]</span>
+
+<span class="nt">mean_line</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fan</span><span class="w">    </span><span class="c1"># Which plugin to use, compressor/turbine etc</span>
+</pre></div>
+</div>
+</div>
+<p>If we ask <strong class="program">turbigen</strong> to run the design for <cite>input.yaml</cite> at this point, it will load the input data but stop because <cite>forward</cite> is not implemented.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+NotImplementedError: Implement the forward method
+Total time: 0.0 s
+</pre></div>
+</div>
+</section>
+<section id="design-variables">
+<h2>Design variables<a class="headerlink" href="#design-variables" title="Link to this heading">¶</a></h2>
+<p>We now need to declare the design variables we need to take from the input file,
+by adding them as fields to the class.</p>
+<div class="literal-block-wrapper docutils container" id="id4">
+<div class="code-block-caption"><span class="caption-text">turbigen_plugins/fan.py</span><a class="headerlink" href="#id4" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># ...</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Fan</span><span class="p">(</span><span class="n">MeanLineDesign</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A single-row axial fan."""</span>
+
+    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"fan"</span>
+    <span class="n">n_row</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="n">DPo</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Stagnation pressure rise across the rotor [Pa]."""</span>
+
+    <span class="n">mdot</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Mass flow rate [kg/s]."""</span>
+
+    <span class="n">phi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Inlet flow coefficient [--]."""</span>
+
+    <span class="n">psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Stage loading coefficient [--]."""</span>
+
+    <span class="n">htr</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Inlet hub-to-tip ratio [--]."""</span>
+
+    <span class="n">eta_tt</span><span class="p">:</span> <span class="nb">float</span>
+<span class="w">    </span><span class="sd">"""Total-to-total isentropic efficiency [--]."""</span>
+
+    <span class="n">Po1</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e5</span>
+<span class="w">    </span><span class="sd">"""Inlet stagnation pressure [Pa]."""</span>
+
+    <span class="n">To1</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">300.0</span>
+<span class="w">    </span><span class="sd">"""Inlet stagnation temperature [K]."""</span>
+
+<span class="c1"># ...</span>
+</pre></div>
+</div>
+</div>
+<p>Optionally, a default can be set for a field, which will be used if the input file does not specify a value; the input file must include all fields without defaults. Hence, running the design now will produce a different error:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+TypeError: Fan.__init__() missing 6 required keyword-only arguments: 'DPo', 'mdot', 'phi', 'psi', 'htr', and 'eta_tt'
+Total time: 0.0 s
+</pre></div>
+</div>
+<p>Note that <cite>To1</cite> and <cite>Po1</cite> are not mentioned in the error message, because we specified their defaults in the class (although the input file can override those defaults if needed). Finally, before moving to implementing the algorithm, add values for the missing design variables to <cite>input.yaml</cite>:</p>
+<div class="literal-block-wrapper docutils container" id="id5">
+<div class="code-block-caption"><span class="caption-text">input.yaml</span><a class="headerlink" href="#id5" title="Link to this code">¶</a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># ...</span>
+<span class="nt">mean_line</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fan</span><span class="w">    </span><span class="c1"># Which plugin to use, compressor/turbine etc</span>
+<span class="w">  </span><span class="nt">DPo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2000.0</span><span class="w">     </span><span class="c1"># Stagnation pressure rise [Pa]</span>
+<span class="w">  </span><span class="nt">mdot</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">       </span><span class="c1"># Mass flow rate [kg/s]</span>
+<span class="w">  </span><span class="nt">phi</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">        </span><span class="c1"># Flow coefficient</span>
+<span class="w">  </span><span class="nt">psi</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span><span class="w">        </span><span class="c1"># Loading coefficient</span>
+<span class="w">  </span><span class="nt">htr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.8</span><span class="w">        </span><span class="c1"># Inlet hub-to-tip ratio</span>
+<span class="w">  </span><span class="nt">eta_tt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.9</span><span class="w">     </span><span class="c1"># Efficiency guess</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="forward-method">
+<span id="tut-forward"></span><h2>Forward method<a class="headerlink" href="#forward-method" title="Link to this heading">¶</a></h2>
+<p>We can now code up the <a class="reference internal" href="#tut-ml-algo"><span class="std std-ref">Mean-line design equations</span></a>. The <cite>forward</cite> method takes a <cite>fluid</cite>
+object as an argument, and can access the design variables as attributes of
+<cite>self</cite>. The method must return a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> object
+with the flow field filled in.</p>
+<p>The <cite>fluid</cite> object is the equation of state named by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>
+in the input file, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>. That
+interface is a pair of method families: a <cite>set_X_Y</cite> takes the two properties
+named and returns the density and internal energy pair that fixes the state,
+and a <cite>get_Z</cite> evaluates one property from that pair. The full list of both is
+in that reference; the ones used below are all this design needs.</p>
+<p>The <cite>Fan</cite> class specifies inlet stagnation pressure and
+temperature, but enthalpy and entropy are more
+convinient to work with. <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_T()</span></code></a>
+returns the density and internal energy
+pair for a pressure and a temperature, which are then passed
+to <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> and
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a> to evaluate stagnation enthalpy and
+entropy (noting that entropy does not depend on the frame of reference):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid</span><span class="p">):</span>
+    <span class="c1"># Inlet stagnation enthalpy and entropy</span>
+    <span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Po1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">To1</span><span class="p">)</span>
+    <span class="n">ho1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_h</span><span class="p">(</span><span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span><span class="p">)</span>
+    <span class="n">s1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_s</span><span class="p">(</span><span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>At no point have we used perfect gas relations — a design class should make no
+assumptions about the equation of state.</p>
+<p>To evaluate Eqn. <a class="reference internal" href="#equation-eqn-eta">(1)</a> we straightforwardly calculate exit stagnation pressure from the specified pressure rise, and pass it together with inlet entropy through <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_s()</span></code></a> and  <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_h()</span></code></a> to evaluate the ideal exit enthalpy. Then rearrange and use the definition of efficiency to find the work done:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Ideal exit stagnation enthalpy</span>
+    <span class="n">Po2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Po1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">DPo</span>
+    <span class="n">ho2s</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_h</span><span class="p">(</span><span class="o">*</span><span class="n">fluid</span><span class="o">.</span><span class="n">set_P_s</span><span class="p">(</span><span class="n">Po2</span><span class="p">,</span> <span class="n">s1</span><span class="p">))</span>
+
+    <span class="c1"># Work from the definition of efficiency</span>
+    <span class="n">Dho</span> <span class="o">=</span> <span class="p">(</span><span class="n">ho2s</span> <span class="o">-</span> <span class="n">ho1</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">eta_tt</span>
+</pre></div>
+</div>
+<p>The blade speed and velocities then follow directly from the definitions
+Eqns. <a class="reference internal" href="#equation-eqn-psi">(2)</a> to <a class="reference internal" href="#equation-eqn-vt">(4)</a>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Blade speed from the definition of loading coefficient</span>
+    <span class="n">U</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Dho</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi</span><span class="p">)</span>
+
+    <span class="c1"># Axial velocity from the definition of flow coefficient</span>
+    <span class="n">Vx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi</span> <span class="o">*</span> <span class="n">U</span>
+
+    <span class="c1"># Exit swirl from the Euler work equation, no inlet swirl</span>
+    <span class="n">Vt2</span> <span class="o">=</span> <span class="n">Dho</span> <span class="o">/</span> <span class="n">U</span>
+</pre></div>
+</div>
+<p>The exit entropy is set by the actual work and pressure rise, evaluated with
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.set_P_h()</span></code></a> and
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fluid.get_s()</span></code></a>. Then
+with entropy, stagnation enthalpy, and velocity known at both stations, the
+static states come from subtracting kinetic energy.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Exit entropy from actual work and pressure rise</span>
+    <span class="n">ho2</span> <span class="o">=</span> <span class="n">ho1</span> <span class="o">+</span> <span class="n">Dho</span>
+    <span class="n">s2</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_s</span><span class="p">(</span><span class="o">*</span><span class="n">fluid</span><span class="o">.</span><span class="n">set_P_h</span><span class="p">(</span><span class="n">Po2</span><span class="p">,</span> <span class="n">ho2</span><span class="p">))</span>
+
+    <span class="c1"># Static enthalpy from stagnation enthalpy less KE</span>
+    <span class="n">Vt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">Vt2</span><span class="p">])</span>
+    <span class="n">ho</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">ho1</span><span class="p">,</span> <span class="n">ho2</span><span class="p">])</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">])</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">ho</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">Vx</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Vt</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We can now store the flow field in a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a>
+object, a blank instance of which is created by calling
+<a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">allocate()</span></code></a>. The indexing convention for mean
+line stations is that <cite>ml.shape == (2, n_row)</cite>, where the first index is the
+station (0 for inlet, 1 for exit) and the second index is the row number. It is
+often more convenient to work with a one-dimensional view of shape <cite>(2*n_row,)</cite>, which
+can be obtained through the  <cite>ml.flat</cite> property. All data flows go through setter
+methods on the <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> object that ensure
+the flow field is consistent and valid. See <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a> for the full
+reference of what is stored, how it is indexed, and which setters are
+available. In our case:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Store the flow field</span>
+    <span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">fluid</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">flat</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vx</span><span class="p">(</span><span class="n">Vx</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vr</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vt</span><span class="p">(</span><span class="n">Vt</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now that the flow field is stored, we can use attributes on the <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> object to evaluate derived quantities automatically. For example, we need density to set the annulus area via conservation of mass, Eqn. <a class="reference internal" href="#equation-eqn-a">(5)</a>, which we can access as <cite>ml.flat.rho</cite>. The hub-to-tip ratio then fixes the mean radius,
+Eqn. <a class="reference internal" href="#equation-eqn-rrms">(6)</a>, from which the shaft speed follows by Eqn. <a class="reference internal" href="#equation-eqn-omega">(7)</a>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="c1"># Conservation of mass sets the annulus areas</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Am</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mdot</span> <span class="o">/</span> <span class="n">flat</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">Vx</span><span class="p">)</span>
+
+    <span class="c1"># Fix a constant mean radius using inlet HTR</span>
+    <span class="n">Am1</span> <span class="o">=</span> <span class="n">flat</span><span class="o">.</span><span class="n">Am</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">r_rms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Am1</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">htr</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">htr</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">ml</span><span class="o">.</span><span class="n">set_r_rms</span><span class="p">(</span><span class="n">r_rms</span><span class="p">)</span>
+    <span class="n">ml</span><span class="o">.</span><span class="n">set_Omega</span><span class="p">(</span><span class="n">U</span> <span class="o">/</span> <span class="n">r_rms</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>That is every quantity the mean line needs, so <cite>forward</cite> can now return it. In full:</p>
+<div class="literal-block-wrapper docutils container" id="id6">
+<div class="code-block-caption"><span class="caption-text">turbigen_plugins/fan.py</span><a class="headerlink" href="#id6" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fluid</span><span class="p">):</span>
+    <span class="c1"># Inlet stagnation enthalpy and entropy</span>
+    <span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">set_P_T</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Po1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">To1</span><span class="p">)</span>
+    <span class="n">ho1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_h</span><span class="p">(</span><span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span><span class="p">)</span>
+    <span class="n">s1</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_s</span><span class="p">(</span><span class="n">rhoo1</span><span class="p">,</span> <span class="n">uo1</span><span class="p">)</span>
+
+    <span class="c1"># Ideal exit stagnation enthalpy</span>
+    <span class="n">Po2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Po1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">DPo</span>
+    <span class="n">ho2s</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_h</span><span class="p">(</span><span class="o">*</span><span class="n">fluid</span><span class="o">.</span><span class="n">set_P_s</span><span class="p">(</span><span class="n">Po2</span><span class="p">,</span> <span class="n">s1</span><span class="p">))</span>
+
+    <span class="c1"># Work from the definition of efficiency</span>
+    <span class="n">Dho</span> <span class="o">=</span> <span class="p">(</span><span class="n">ho2s</span> <span class="o">-</span> <span class="n">ho1</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">eta_tt</span>
+
+    <span class="c1"># Blade speed from the definition of loading coefficient</span>
+    <span class="n">U</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Dho</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi</span><span class="p">)</span>
+
+    <span class="c1"># Axial velocity from the definition of flow coefficient</span>
+    <span class="n">Vx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi</span> <span class="o">*</span> <span class="n">U</span>
+
+    <span class="c1"># Exit swirl from the Euler work equation, no inlet swirl</span>
+    <span class="n">Vt2</span> <span class="o">=</span> <span class="n">Dho</span> <span class="o">/</span> <span class="n">U</span>
+
+    <span class="c1"># Exit entropy from actual work and pressure rise</span>
+    <span class="n">ho2</span> <span class="o">=</span> <span class="n">ho1</span> <span class="o">+</span> <span class="n">Dho</span>
+    <span class="n">s2</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_s</span><span class="p">(</span><span class="o">*</span><span class="n">fluid</span><span class="o">.</span><span class="n">set_P_h</span><span class="p">(</span><span class="n">Po2</span><span class="p">,</span> <span class="n">ho2</span><span class="p">))</span>
+
+    <span class="c1"># Static enthalpy from stagnation enthalpy less KE</span>
+    <span class="n">Vt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">Vt2</span><span class="p">])</span>
+    <span class="n">ho</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">ho1</span><span class="p">,</span> <span class="n">ho2</span><span class="p">])</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">])</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">ho</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">Vx</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Vt</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Store the flow field</span>
+    <span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">fluid</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="n">ml</span><span class="o">.</span><span class="n">flat</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_h_s</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vx</span><span class="p">(</span><span class="n">Vx</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vr</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Vt</span><span class="p">(</span><span class="n">Vt</span><span class="p">)</span>
+
+    <span class="c1"># Conservation of mass sets the annulus areas</span>
+    <span class="n">flat</span><span class="o">.</span><span class="n">set_Am</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mdot</span> <span class="o">/</span> <span class="n">flat</span><span class="o">.</span><span class="n">rho</span> <span class="o">/</span> <span class="n">Vx</span><span class="p">)</span>
+
+    <span class="c1"># Fix a constant mean radius using inlet HTR</span>
+    <span class="n">Am1</span> <span class="o">=</span> <span class="n">flat</span><span class="o">.</span><span class="n">Am</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">r_rms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Am1</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">htr</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">htr</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">ml</span><span class="o">.</span><span class="n">set_r_rms</span><span class="p">(</span><span class="n">r_rms</span><span class="p">)</span>
+    <span class="n">ml</span><span class="o">.</span><span class="n">set_Omega</span><span class="p">(</span><span class="n">U</span> <span class="o">/</span> <span class="n">r_rms</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ml</span>
+</pre></div>
+</div>
+</div>
+<p>If we now run <strong class="program">turbigen</strong> on <cite>input.yaml</cite>, it will load the input data, build the mean line, and then fall over because <cite>backward</cite> is not implemented:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+NotImplementedError: Implement the backward method
+Total time: 0.0 s
+</pre></div>
+</div>
+</section>
+<section id="backward-method">
+<span id="tut-backward"></span><h2>Backward method<a class="headerlink" href="#backward-method" title="Link to this heading">¶</a></h2>
+<p><cite>backward</cite> is the encapsulation of what each design variable means. It is a
+check that the mean line <cite>forward</cite> built really is the design that was asked
+for and it is also how design variables are calculated from a mixed-out CFD
+solution to compare to the nominal design.</p>
+<p><cite>backward</cite> returns a dictionary keyed by the field names; extra keys beyond the
+design variables are reported for information only but not checked for
+consistency, as described under <a class="reference internal" href="design.html#design-process"><span class="std std-ref">Design process</span></a>. The <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> has many attributes that
+contain useful derived properties for this purpose — see the
+<a class="reference internal" href="meanline.html"><span class="doc">derived properties</span></a> tables. The properties <cite>ml.inlet</cite>
+and <cite>ml.outlet</cite> index into the machine inlet and outlet (across all rows).</p>
+<div class="literal-block-wrapper docutils container" id="id7">
+<div class="code-block-caption"><span class="caption-text">turbigen_plugins/fan.py</span><a class="headerlink" href="#id7" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ml</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="c1"># Design variables</span>
+        <span class="s2">"DPo"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">outlet</span><span class="o">.</span><span class="n">Po</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">Po</span><span class="p">,</span>
+        <span class="s2">"mdot"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">mdot</span><span class="p">,</span>
+        <span class="s2">"phi"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">Vx</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">U</span><span class="p">,</span>
+        <span class="s2">"psi"</span><span class="p">:</span> <span class="p">(</span><span class="n">ml</span><span class="o">.</span><span class="n">outlet</span><span class="o">.</span><span class="n">ho</span> <span class="o">-</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">ho</span><span class="p">)</span> <span class="o">/</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">U</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span>
+        <span class="s2">"htr"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">htr</span><span class="p">,</span>
+        <span class="s2">"eta_tt"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_tt</span><span class="p">,</span>
+        <span class="s2">"Po1"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">Po</span><span class="p">,</span>
+        <span class="s2">"To1"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">To</span><span class="p">,</span>
+        <span class="c1"># Optional diagnostic variables</span>
+        <span class="s2">"PR_tt"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">PR_tt</span><span class="p">,</span>
+        <span class="s2">"eta_ts"</span><span class="p">:</span> <span class="n">ml</span><span class="o">.</span><span class="n">eta_ts</span><span class="p">,</span>
+    <span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>With both methods written, the design runs to completion. <strong class="program">turbigen</strong>
+calls <cite>forward</cite> to build the mean line, passes it back through <cite>backward</cite> to
+check that the design variables it asked for are the ones it got, and prints
+the result — the <a class="reference internal" href="design.html#design-process"><span class="std std-ref">Design process</span></a> in full:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+Mean line:          Row 0     
+                 Inlet  Outlet
+Po/bar           1.000   1.020
+To/K            300.00  301.89
+Ma               0.099   0.127
+Ma_rel           0.222   0.155
+Alpha/deg          0.0    38.7
+Alpha_rel/deg    -63.4   -50.2
+Total time: 0.0 s
+</pre></div>
+</div>
+</section>
+<section id="annulus-and-blade-shapes">
+<h2>Annulus and blade shapes<a class="headerlink" href="#annulus-and-blade-shapes" title="Link to this heading">¶</a></h2>
+<p>With the mean line built, we can now construct the annulus lines and blades by
+specifying some more input data.</p>
+<p>To use the built-in annulus requires only a few fairly self-explanatory
+lines in the input file:</p>
+<div class="literal-block-wrapper docutils container" id="id8">
+<div class="code-block-caption"><span class="caption-text">input.yaml</span><a class="headerlink" href="#id8" title="Link to this code">¶</a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># ...</span>
+<span class="nt">annulus</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aspect_ratio</span><span class="w">  </span><span class="c1"># How to select axial chord</span>
+<span class="w">  </span><span class="nt">AR_row</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">3.0</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># span/chord ratio of the row</span>
+<span class="w">  </span><span class="nt">AR_gap</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">1.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># span/length ratio of inlet and exit ducts</span>
+
+<span class="c1"># ...</span>
+</pre></div>
+</div>
+</div>
+<p>Blade specification is more involved. We need to choose how many blades in each
+row; the Lieblein diffusion factor is a good starting point for compressors. We
+can construct the blade sections at any number spanwise positions by choosing
+camber and thickness distribution, with the camber and thickness parameters
+smoothly interpolated across the span.</p>
+<div class="literal-block-wrapper docutils container" id="id9">
+<div class="code-block-caption"><span class="caption-text">input.yaml</span><a class="headerlink" href="#id9" title="Link to this code">¶</a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># ...</span>
+<span class="nt">blades</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># List of rows</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">count</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DFL</span><span class="w">  </span><span class="c1"># Which method to set number of blades</span>
+<span class="w">      </span><span class="nt">DFL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.45</span><span class="w">  </span><span class="c1"># Lieblein diffusion factor value</span>
+<span class="w">    </span><span class="nt">sections</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># List of sections</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">spf</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">  </span><span class="c1"># Span fraction of the section</span>
+<span class="w">        </span><span class="nt">dchi_LE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span><span class="w">  </span><span class="c1"># Leading edge recamber [deg]</span>
+<span class="w">        </span><span class="nt">dchi_TE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span><span class="w">  </span><span class="c1"># Trailing edge recamber [deg]</span>
+<span class="w">        </span><span class="nt">camber</span><span class="p">:</span>
+<span class="w">          </span><span class="c1"># Simple quadratic camber line</span>
+<span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">quadratic</span>
+<span class="w">          </span><span class="nt">aft_loading</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">        </span><span class="nt">thickness</span><span class="p">:</span>
+<span class="w">          </span><span class="c1"># Piecewise cubic thickness distribution</span>
+<span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">taylor</span><span class="w">  </span><span class="c1"># After Taylor and Miller (2017)</span>
+<span class="w">          </span><span class="nt">R_LE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.02</span><span class="w">  </span><span class="c1"># Leading edge radius/chord</span>
+<span class="w">          </span><span class="nt">t_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.06</span><span class="w">  </span><span class="c1"># Maximum thickness/chord</span>
+<span class="w">          </span><span class="nt">m_tmax</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.35</span><span class="w">  </span><span class="c1"># Chord fraction at maximum thickness</span>
+<span class="w">          </span><span class="nt">kappa_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span><span class="w">  </span><span class="c1"># Curvature at maximum thickness</span>
+<span class="w">          </span><span class="nt">t_TE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.01</span><span class="w">  </span><span class="c1"># Trailing edge thickness/chord</span>
+<span class="w">          </span><span class="nt">tanwedge</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span><span class="w">  </span><span class="c1"># Trailing edge wedge angle tangent</span>
+</pre></div>
+</div>
+</div>
+<p>Now passing the input file to <strong class="program">turbigen</strong> will now build the mean line
+and the annulus and blade shapes to give us some more printout, including the calculated meridional chord, number of blades, tip gap, and pitch-to-chord ratio:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+Mean line:          Row 0     
+                 Inlet  Outlet
+Po/bar           1.000   1.020
+To/K            300.00  301.89
+Ma               0.099   0.127
+Ma_rel           0.222   0.155
+Alpha/deg          0.0    38.7
+Alpha_rel/deg    -63.4   -50.2
+Annulus:            Row 0     
+                 Inlet  Outlet
+r_rms/m         0.3017  0.3017
+r_hub/m         0.2666  0.2670
+r_tip/m         0.3332  0.3329
+Am/m2           0.1256  0.1243
+htr             0.8000  0.8019
+cx/m               0.0221     
+AR                 3.0000     
+Blades:          Row 0
+N_blade             55
+Gap/m           0.0000
+s/cm             1.578
+Total time: 0.0 s
+</pre></div>
+</div>
+</section>
+<section id="plotting">
+<h2>Plotting<a class="headerlink" href="#plotting" title="Link to this heading">¶</a></h2>
+<p>So far, our invocation of <strong class="program">turbigen</strong> has been in <a class="reference internal" href="usage.html#usage-design"><span class="std std-ref">design</span></a> mode, which
+only prints to the console. We can save more detailed plots to disk by
+running <a class="reference internal" href="usage.html#usage-report"><span class="std std-ref">report</span></a> mode, which will write a <cite>post.pdf</cite> report with plots of the
+design, and if CFD were run the post-processed flow field as well. Report mode also saves an <cite>output.yaml</cite> file which is the same as the input file but with any defaults filled in, and a transcript of the console output in <cite>log_turbigen.txt</cite>. So if we run:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen report input.yaml
+*** TURBIGEN v3.0.0 ***
+...
+No solution was marched, skipping the convergence plot.
+No solved grid, skipping the surface distribution plot.
+No grid to cut, skipping the contour plot.
+Wrote report to /home/runner/work/turbigen/turbigen/tutorial/step5/post.pdf
+Wrote resolved configuration to /home/runner/work/turbigen/turbigen/tutorial/step5/output.yaml
+Total time: 0.6 s
+Output directory was: /home/runner/work/turbigen/turbigen/tutorial/step5
+</pre></div>
+</div>
+<p>The flow-field plots are skipped because no CFD has been run; the annulus,
+blade section and velocity triangle plots are drawn from the geometry alone. All
+of the output is written alongside the input file:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ ls
+input.yaml
+log_turbigen.txt
+output.yaml
+post.pdf
+turbigen_plugins
+</pre></div>
+</div>
+<p>Opening <cite>post.pdf</cite> shows the mean-line velocity triangles, the meridional annulus view, the blade-to-blade
+sections of each row:</p>
+<figure class="align-default">
+<a class="reference internal image-reference" href="_images/tut_step5_triangle.svg"><img alt="_images/tut_step5_triangle.svg" src="_images/tut_step5_triangle.svg" style="width: 100%;" />
+</a>
+</figure>
+<figure class="align-default">
+<a class="reference internal image-reference" href="_images/tut_step5_annulus.svg"><img alt="_images/tut_step5_annulus.svg" src="_images/tut_step5_annulus.svg" style="width: 90%;" />
+</a>
+</figure>
+<figure class="align-default">
+<a class="reference internal image-reference" href="_images/tut_step5_sections.svg"><img alt="_images/tut_step5_sections.svg" src="_images/tut_step5_sections.svg" style="width: 90%;" />
+</a>
+</figure>
+</section>
+<section id="extensions">
+<h2>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">¶</a></h2>
+<p>This tutorial has demonstrated some of the functionality of
+<strong class="program">turbigen</strong>. We have now designed a new turbomachine and had a look at the resulting geometry.</p>
+<p>Within the current choice of mean-line parameterisation,
+any change to the design is just an edit to <cite>input.yaml</cite>:</p>
+<ul class="simple">
+<li><p>Change the number of blades by changing the diffusion factor
+<a class="reference internal" href="config.html#config-blades-count-dfl"><span class="std std-ref">DFL</span></a>, or fix a
+<a class="reference internal" href="config.html#config-blades-count"><span class="std std-ref">count</span></a> directly with <code class="docutils literal notranslate"><span class="pre">count:</span> <span class="pre">{type:</span> <span class="pre">Nb,</span> <span class="pre">Nb:</span> <span class="pre">55}</span></code></p></li>
+<li><p>Reshape the blade through the <a class="reference internal" href="config.html#config-blades-sections-camber"><span class="std std-ref">camber</span></a>
+and <a class="reference internal" href="config.html#config-blades-sections-thickness"><span class="std std-ref">thickness</span></a> sections</p></li>
+<li><p>Specify blade sections at several spanwise locations</p></li>
+<li><p>Change the aspect ratio <cite>AR_row</cite></p></li>
+<li><p>Change the working fluid to a <a class="reference internal" href="config.html#config-fluid-real"><span class="std std-ref">real</span></a> gas under
+<a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>, evaluated from a
+thermodynamically consistent fitted equation of state <span class="bibtex-citation" id="id1">[<a class="reference internal" href="references.html#id12" title="A. P. S. Wheeler. High Fidelity Simulation of Dense Vapours With Thermodynamic Consistent Modelling. Comput. Fluids, 268:106088, 2024. doi:10.1016/j.compfluid.2023.106088.">Wheeler, 2024</a>]</span></p></li>
+</ul>
+<p>To change the mean-line design itself, edit <cite>forward</cite> and <cite>backward</cite> in
+<cite>fan.py</cite>. For example: relax the assumption of constant axial velocity by
+adding a velocity ratio as a field, replace the loading coefficient with a de
+Haller number, or specify an inlet Mach number instead of a mass flow rate. The
+last two cannot be built in one pass like the design variables here, because
+the flow field has to be known before either can be evaluated; see
+<a class="reference internal" href="design.html#design-implicit"><span class="std std-ref">Implicit design problems</span></a> for how to solve for them.</p>
+<p>To add a stator, raise <cite>n_row</cite> to 2 and extend <cite>forward</cite> to fill in four
+stations rather than two. Rows are indexed by the second axis, so <cite>ml[:, 0]</cite>
+will be the rotor and <cite>ml[:, 1]</cite> the stator, each of shape <cite>(2,)</cite>; <cite>ml[0]</cite> and
+<cite>ml[1]</cite> remain the inlet and outlet stations of every row. We need to call
+<cite>ml[:, 0].set_Omega</cite> to make only the rotor spin. <cite>ml.flat</cite> will now be of
+shape <cite>(4,)</cite>, indexed from machine inlet to machine outlet.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/tutorial.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

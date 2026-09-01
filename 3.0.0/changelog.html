@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Changelog &#8212; turbigen 3.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=acc74ff5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="License" href="license.html" />
+    <link rel="prev" title="Mean-line designers" href="design.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.0</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Changelog</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#v3-0-0">v3.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-6-0">v2.6.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-5-0">v2.5.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-4-0">v2.4.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-3-0">v2.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-2-2">v2.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-2-0">v2.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-1-0">v2.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v2-0-0">v2.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-10-1">v1.10.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-10-0">v1.10.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-9-1">v1.9.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-9-0">v1.9.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-8-0">v1.8.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-7-0">v1.7.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-6-1">v1.6.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-6-0">v1.6.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-5-1">v1.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-5-0">v1.5.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-4-0">v1.4.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-4">v1.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-3">v1.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-2">v1.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-1">v1.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-3-0">v1.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-2-0">v1.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-1-0">v1.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#v1-0-0">v1.0.0</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "3.0.0";
+    var page = "changelog.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="design.html" title="previous chapter">Mean-line designers</a></li>
+      <li>Next: <a href="license.html" title="next chapter">License</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="changelog">
+<h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading">¶</a></h1>
+<section id="v3-0-0">
+<h2>v3.0.0<a class="headerlink" href="#v3-0-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>A complete rewrite.</p></li>
+</ul>
+</section>
+<section id="v2-6-0">
+<h2>v2.6.0<a class="headerlink" href="#v2-6-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Allow hub gaps in OH meshing by setting negative tip values</p></li>
+<li><p>Scale blade thickness on chord/span/absolute value</p></li>
+<li><p>Fix broken TS3 to TS4 conversion script on Wilkes</p></li>
+<li><p>More TS4 configuration options and better restart settings</p></li>
+<li><p>OH meshing data now saves correctly into the config file</p></li>
+<li><p>Bug fix where incidence was calculated on uncambered blades</p></li>
+<li><p>Additional TaylorQuadratic camber line setting metal angle directly instead of metal angle tangent</p></li>
+<li><p>Fix sections were always stacked at LE irrespective of mstack value</p></li>
+</ul>
+</section>
+<section id="v2-5-0">
+<h2>v2.5.0<a class="headerlink" href="#v2-5-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Allow scaling tip gap on chord, span, or absolute value</p></li>
+<li><p>Implement trailing-edge cusps in ember</p></li>
+<li><p>Print out area-averaged yplus in ember</p></li>
+<li><p>Add post processing for inlet profile plot and streamtube loss breakdown</p></li>
+<li><p>Bugfix for overly generous block equality</p></li>
+<li><p>Speed improvement for matching patches</p></li>
+<li><p>Add function to initialise a grid from TS3 hdf5</p></li>
+<li><p>Low-level utility function for grid warping</p></li>
+<li><p>Scripts to automate rebuilding the compiled Fortran code</p></li>
+<li><p>Save config to iteration directories before running the solver</p></li>
+<li><p>Split long Fortran routines into smaller subroutines</p></li>
+<li><p>Write out metdata for TS3 probes into a yaml file</p></li>
+<li><p>Allow per block overrides of block variables in TS3</p></li>
+<li><p>Implement general unsteady inlet boundary condition</p></li>
+<li><p>Functions for post-processing TS3 unsteady probes and wave separation</p></li>
+<li><p>Much internal restructuring and tidying up</p></li>
+</ul>
+</section>
+<section id="v2-4-0">
+<h2>v2.4.0<a class="headerlink" href="#v2-4-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add exit throttling to ember solver</p></li>
+<li><p>Allow profiling the code speed by exporting LINE_PROFILE=1</p></li>
+<li><p>Bug fix for Lieblein diffusion factor</p></li>
+<li><p>Bug fix for rotor-only mean-line check</p></li>
+<li><p>Finish tutorial</p></li>
+</ul>
+</section>
+<section id="v2-3-0">
+<h2>v2.3.0<a class="headerlink" href="#v2-3-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improve AutoGrid meshing robustness, error messages, and locate ssh-agent on via host host automatically</p></li>
+<li><p>Enable operating point change in new configuration format</p></li>
+<li><p>Fix exit PID controller</p></li>
+<li><p>Log full error message and exit if we fail to import a plugin</p></li>
+</ul>
+</section>
+<section id="v2-2-2">
+<h2>v2.2.2<a class="headerlink" href="#v2-2-2" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Error if trying to set viscosity from Reynolds with real working fluid</p></li>
+<li><p>Show mean-line table limits in the log when running real gas</p></li>
+<li><p>Add solver documentation page</p></li>
+</ul>
+</section>
+<section id="v2-2-0">
+<h2>v2.2.0<a class="headerlink" href="#v2-2-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Allow partial configuration files, exiting at first blank required key</p></li>
+<li><p>Faster compiler flags for Fortran</p></li>
+<li><p>Turbostream solvers with new base class</p></li>
+<li><p>Generate meanline documentation from the docstrings</p></li>
+<li><p>Catch post-processing errors and continue</p></li>
+<li><p>Submit jobs to a local queue, implement worker script</p></li>
+<li><p>Check for nans in ember</p></li>
+<li><p>Allow invocation with <cite>python -m turbigen</cite></p></li>
+<li><p>Implement design space sampling</p></li>
+<li><p>Bug fix for repeating stage iterator if spanwise points unequal</p></li>
+<li><p>General tidying up</p></li>
+</ul>
+</section>
+<section id="v2-1-0">
+<h2>v2.1.0<a class="headerlink" href="#v2-1-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add generic job configuration, and implement SLURM submission</p></li>
+<li><p>Add description and README to PyPI</p></li>
+<li><p>Add changelog, license, command-line options to docs</p></li>
+<li><p>Clean up some dead code and unused imports</p></li>
+</ul>
+</section>
+<section id="v2-0-0">
+<h2>v2.0.0<a class="headerlink" href="#v2-0-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Comprehensive internal refactoring of the code for better maintainability</p></li>
+<li><p>Finish the built-in CFD solver</p></li>
+<li><p>Plugin system now uses abstract base classes and reads all modules from a directory, rather than importing a single file by path</p></li>
+<li><p>AutoGrid server supports parallel workers, more settings, better robustnees checks</p></li>
+<li><p>Automate running examples to include results in docs</p></li>
+<li><p>Numerous bug fixes, improved error messages, etc.</p></li>
+<li><p>Use meson to compile the Fortran during installation, upload built linux
+wheels to PyPI – allows pip install</p></li>
+</ul>
+</section>
+<section id="v1-10-1">
+<h2>v1.10.1<a class="headerlink" href="#v1-10-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Bugfix for AutoGrid server not reading the delete switch</p></li>
+<li><p>Bugfix for scalar mean-line iterate variables</p></li>
+</ul>
+</section>
+<section id="v1-10-0">
+<h2>v1.10.0<a class="headerlink" href="#v1-10-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Use rotation-corrected static pressure to find stagnation points</p></li>
+<li><p>Add mixed-flow mean-line with mixed and pure radial examples</p></li>
+<li><p>Script to read polynomial coefficients and evaluate a previously-fitted design space</p></li>
+<li><p>Allow unbladed first row in H-mesh</p></li>
+<li><p>Add a syntax check for TS4 body force template</p></li>
+<li><p>Generalise to multi-stage machines</p></li>
+<li><p>Wrap the incidence angle with respect to camber angle</p></li>
+<li><p>Bugfix for TS4 throttle config</p></li>
+<li><p>Add -m command-line switch to debug the mean-line</p></li>
+<li><p>Take CFD inlet pitch angle from the mesh, not mean-line design</p></li>
+<li><p>Implement command-line options for AutoGrid server</p></li>
+<li><p>Bugfix to allow incidence correction on only one section</p></li>
+<li><p>Reduce LE recamber when incidence is close to tolerance</p></li>
+</ul>
+</section>
+<section id="v1-9-1">
+<h2>v1.9.1<a class="headerlink" href="#v1-9-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add retry for AutoGrid connections</p></li>
+<li><p>Use unstructured spanwise cuts to calculate incidence</p></li>
+<li><p>More robust tip H-meshing</p></li>
+<li><p>Incidence correction bugfix for unbladed cases</p></li>
+<li><p>Only reduce proportional part of PID controller gain on restart</p></li>
+<li><p>Clean up the hypercube running code</p></li>
+<li><p>Turbostream 3 SA helicity correction</p></li>
+<li><p>Better Turbostream 4 application variable defaults</p></li>
+<li><p>Use turbulent viscosity from old solution on restart</p></li>
+<li><p>Fix error in docs iterate config</p></li>
+</ul>
+</section>
+<section id="v1-9-0">
+<h2>v1.9.0<a class="headerlink" href="#v1-9-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add post-processing functions for unstructured cuts at constant span fraction</p></li>
+<li><p>Put rotational speeds in AutoGrid geomTurbo file when OH meshing</p></li>
+<li><p>Support TS3 cooling patches</p></li>
+<li><p>Method to allow trimming of grid blocks in pre-processing</p></li>
+<li><p>Compatability fixes for numpy 2 and pin dependency versions</p></li>
+<li><p>Add TS4 halo_implementation setting</p></li>
+<li><p>Fix bug with zero wall distance on non-matching patches</p></li>
+<li><p>Check patch indices are consistent with block size before writing TS3 input</p></li>
+</ul>
+</section>
+<section id="v1-8-0">
+<h2>v1.8.0<a class="headerlink" href="#v1-8-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fit blade sections to coordinates read from a file</p></li>
+<li><p>Overhaul post processing with separate functions for all plots</p></li>
+<li><p>Rewrite LE incidence calculation to work generally for axial and radial</p></li>
+<li><p>Allow off-design operation with rpm_adjust and mass_adjust settings</p></li>
+<li><p>Setting for inviscid boudary condition on zero-radius rod</p></li>
+<li><p>When running installed turbomachine, reuse installed initial guess</p></li>
+<li><p>Allow install function to return inverse design variables to mean line</p></li>
+<li><p>Add rounded trailing edge and fillet options to autogrid meshing</p></li>
+<li><p>Check for membership of the turbostream group before running TS3</p></li>
+<li><p>Error if we cannot locate the specified TS4 throttle tag</p></li>
+<li><p>Allow arbitrary setting of perfect gas internal energy datum</p></li>
+<li><p>Handle errors in cluster jobs and hold the node for debugging</p></li>
+<li><p>Allow unbladed rows in OH meshes</p></li>
+<li><p>Close off the tip of unshrouded rotor blades in STL export</p></li>
+<li><p>Make the coordinate check optional for debugging</p></li>
+<li><p>Fix bounds error on annulus interpolation due to floating point error</p></li>
+</ul>
+</section>
+<section id="v1-7-0">
+<h2>v1.7.0<a class="headerlink" href="#v1-7-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fix bug with noisy TS4 console logging</p></li>
+<li><p>Allow labels on TS4 point probes with different file names</p></li>
+<li><p>Implement unsteady boundary conditions into pre-processing framework</p></li>
+<li><p>Add tutorial to documentation</p></li>
+</ul>
+</section>
+<section id="v1-6-1">
+<h2>v1.6.1<a class="headerlink" href="#v1-6-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Fix bug where zero-valued configuration options are not written out</p></li>
+</ul>
+</section>
+<section id="v1-6-0">
+<h2>v1.6.0<a class="headerlink" href="#v1-6-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>General grid refinement by subdivision of cells</p></li>
+<li><p>Allow halting iterations by creating a stopit file in working directory</p></li>
+<li><p>Check for two-phase flow at the end of the calculation</p></li>
+<li><p>Incidence correction for splitters</p></li>
+<li><p>Improve robustness and simplify AutoGrid meshing script</p></li>
+<li><p>Use improved clustering functions for H-meshing</p></li>
+<li><p>Plot pressure distributions</p></li>
+<li><p>Implement loading mean-line, annulus, and installation modules from file</p></li>
+<li><p>Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to change body force)</p></li>
+<li><p>Configuration option for maximum H-mesh free stream skew</p></li>
+<li><p>Fix AutoGrid patch matching bug</p></li>
+<li><p>Fix bug with TS4 cfl_ramp_en not set</p></li>
+</ul>
+</section>
+<section id="v1-5-1">
+<h2>v1.5.1<a class="headerlink" href="#v1-5-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Minor corrections for open release</p></li>
+</ul>
+</section>
+<section id="v1-5-0">
+<h2>v1.5.0<a class="headerlink" href="#v1-5-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>General tidying up of the code</p></li>
+<li><p>Incidence correction only when mass flow is on target</p></li>
+<li><p>Rework configuration and command-line options</p></li>
+<li><p>Improve documentation</p></li>
+<li><p>Automatic numbering of working directories</p></li>
+</ul>
+</section>
+<section id="v1-4-0">
+<h2>v1.4.0<a class="headerlink" href="#v1-4-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Implement sweep by changing meridional locations of LE/TE</p></li>
+<li><p>Add splitter capability</p></li>
+<li><p>Allow preconditioning in TS4</p></li>
+<li><p>Yet more AutoGrid meshing options</p></li>
+<li><p>Record Exceptions in the turbigen log file, in addition to STDERR.</p></li>
+</ul>
+</section>
+<section id="v1-3-4">
+<h2>v1.3.4<a class="headerlink" href="#v1-3-4" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>More robust unstructured cutting by Marching Cubes algorithm.</p></li>
+<li><p>Allow prescribing body force in TS 4.2.82</p></li>
+<li><p>Find stagnation point by sign change of surface velocity</p></li>
+<li><p>Implement NaN check for TS4</p></li>
+<li><p>Write out a design space fit to json for web interface</p></li>
+<li><p>More AutoGrid options including untwist outlet</p></li>
+</ul>
+</section>
+<section id="v1-3-3">
+<h2>v1.3.3<a class="headerlink" href="#v1-3-3" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Update radial turbine to set stator LE diameter ratio</p></li>
+</ul>
+</section>
+<section id="v1-3-2">
+<h2>v1.3.2<a class="headerlink" href="#v1-3-2" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Allow custom TS3-&gt;TS4 conversion pipelines</p></li>
+<li><p>True Taylor camberline (quartic in chi, not tan chi)</p></li>
+<li><p>Generalise incidence correction to radial inflows and outflows</p></li>
+</ul>
+</section>
+<section id="v1-3-1">
+<h2>v1.3.1<a class="headerlink" href="#v1-3-1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Add rotor-only fan mean line</p></li>
+</ul>
+</section>
+<section id="v1-3-0">
+<h2>v1.3.0<a class="headerlink" href="#v1-3-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improved H-mesh tip-gap grid</p></li>
+<li><p>Add installation effects module</p></li>
+<li><p>Add write coordinates solver</p></li>
+<li><p>Allow running in parallel</p></li>
+</ul>
+</section>
+<section id="v1-2-0">
+<h2>v1.2.0<a class="headerlink" href="#v1-2-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Implement polynomial design-space fitting.</p></li>
+<li><p>Add option to run a hypercube of designs.</p></li>
+<li><p>Improve characteristic running.</p></li>
+<li><p>Fix bugs with mixing of supersonic flows and area signage.</p></li>
+<li><p>Fix bug with setting shroud rpm.</p></li>
+<li><p>Generalise to select a type of thickness distribution.</p></li>
+<li><p>Clean up the log file outputs.</p></li>
+<li><p>Skew H-mesh in flow direction outside of blade rows.</p></li>
+<li><p>Added unstructured cutting for post-processing the mixed-out flow.</p></li>
+<li><p>Added throttling options to target mass flow for TS3 and TS4.</p></li>
+<li><p>Added radial turbine mean-line design functions and example.</p></li>
+<li><p>Internal rewrite of data structures to be CFD-solver agnostic.</p></li>
+<li><p>… plus other miscellaneous enhancements and tidying.</p></li>
+</ul>
+</section>
+<section id="v1-1-0">
+<h2>v1.1.0<a class="headerlink" href="#v1-1-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Added H-meshing option, with pinched tips.</p></li>
+<li><p><cite>Config</cite> object for programmatic creation and validation of input files.</p></li>
+<li><p>Automated post processing to get a <cite>MeanLine</cite> object from mixed-out CFD cuts.</p></li>
+<li><p>Use inlet velocity as reference for compressor circulation coefficient.</p></li>
+<li><p>Mixed-out averaging generalised for any meridional cut (not just constant axial coordinate).</p></li>
+<li><p>Iteration to correct for incidence, deviation, and mean-line guesses.</p></li>
+<li><p>Options to set blade number directly or Lieblein diffusion factor.</p></li>
+<li><p>Running characteristics for compressor designs.</p></li>
+<li><p>Generate real gas tables for TS4 on demand.</p></li>
+<li><p>Let TS3 grid object use arbitrary equation of state for post-processing.</p></li>
+<li><p>Post-processing TS4 simulations by reading the flow field into a structured TS3 grid.</p></li>
+<li><p>Config file options to submit a job to the SLURM queue.</p></li>
+</ul>
+</section>
+<section id="v1-0-0">
+<h2>v1.0.0<a class="headerlink" href="#v1-0-0" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>First Whittle Laboratory internal release.</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/changelog.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

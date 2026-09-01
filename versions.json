@@ -3,6 +3,10 @@
     {
       "name": "master",
       "url": "master/"
+    },
+    {
+      "name": "3.0.0",
+      "url": "3.0.0/"
     }
   ]
 }
