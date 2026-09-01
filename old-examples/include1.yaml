@@ -1,5 +1,0 @@
-solver:
-  type: ts3  # Which solver
-  nstep: 5000
-  nstep_avg: 1000
-  rtol_mdot: 0.02
