@@ -49,9 +49,18 @@ jobs:
         # that fails somewhere down in gfortran. With it, the job says the
         # true thing: there is no wheel for this. Scoped to ember rather than
         # :all:, which would refuse to build turbigen itself.
+        #
+        # pytest-xdist because pytest.ini runs `-n auto` by default: without it
+        # pytest rejects its own addopts and the job dies before collecting a
+        # test. sphinx because test_config_docs.py reads field docstrings back
+        # out of the source with its ModuleAnalyzer, and a module that cannot
+        # be imported is a collection error, not a skip -- the check that every
+        # config key is documented runs nowhere else, the docs job building the
+        # page rather than testing it. Both named rather than pulled in with
+        # the whole dev group, which also carries pyqt6 and needs system Qt.
         run: |
           uv venv --python ${{ matrix.python }}
-          uv pip install --only-binary ember-cfd . pytest
+          uv pip install --only-binary ember-cfd . pytest pytest-xdist sphinx
 
       - name: Test
         # Not --no-sync, which is for a uv-managed project: this one sets
@@ -101,6 +110,17 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Install the tools the hooks shell out to
+        # `check-dead-code` runs bin/check_dead_code.sh, which calls `uv run
+        # vulture`: an environment for that to find, or the hook fails to spawn
+        # it and reports the spawn error as dead code. One environment, run the
+        # way a developer runs it, rather than a second unpinned copy invoked
+        # through uvx -- which is the arrangement pyproject.toml argues against
+        # for ruff, for the same reason.
+        run: |
+          uv venv --python 3.13
+          uv pip install vulture
 
       - name: Lint
         # black and flake8 at the versions the repo pins, rather than either
