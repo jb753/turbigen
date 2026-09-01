@@ -42,7 +42,6 @@ ALLOWED_ROOT_FILES = {
     "pyproject.toml",
     "pytest.ini",
     "Makefile",
-    "matplotlibrc",
     ".gitignore",
     ".pre-commit-config.yaml",
 }

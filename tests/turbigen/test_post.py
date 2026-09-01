@@ -331,14 +331,26 @@ def test_the_style_file_ships_with_the_package():
     assert post._STYLE.read_text().strip()
 
 
-def test_styled_applies_turbigen_defaults_and_restores_them():
-    before = plt.rcParams["font.family"]
+def test_styled_applies_the_shipped_style_and_restores_it(tmp_path, monkeypatch):
+    import matplotlib as mpl
+
+    # An empty user rc, so the only layers in play are matplotlib's built-in
+    # defaults and turbigen.mplstyle -- not whatever the machine running the
+    # tests happens to have set.
+    empty_rc = tmp_path / "matplotlibrc"
+    empty_rc.write_text("")
+    monkeypatch.setattr(mpl, "matplotlib_fname", lambda: str(empty_rc))
+
+    keys = ("lines.linewidth", "font.size", "figure.dpi")
+    before = {key: plt.rcParams[key] for key in keys}
 
     with post.styled():
-        assert plt.rcParams["font.family"] == ["serif"]
-        assert plt.rcParams["lines.linewidth"] == 2.0
+        # Values straight out of turbigen.mplstyle.
+        assert plt.rcParams["lines.linewidth"] == 1.6
+        assert plt.rcParams["font.size"] == 9.0
+        assert plt.rcParams["figure.dpi"] == 200.0
 
-    assert plt.rcParams["font.family"] == before
+    assert {key: plt.rcParams[key] for key in keys} == before
 
 
 def test_a_user_rc_still_wins_inside_styled(tmp_path, monkeypatch):
@@ -351,8 +363,8 @@ def test_a_user_rc_still_wins_inside_styled(tmp_path, monkeypatch):
     monkeypatch.setattr(mpl, "matplotlib_fname", lambda: str(rc))
 
     with post.styled():
-        assert plt.rcParams["lines.linewidth"] == 5.0  # user override
-        assert plt.rcParams["font.family"] == ["serif"]  # turbigen default
+        assert plt.rcParams["lines.linewidth"] == 5.0  # user override wins
+        assert plt.rcParams["font.size"] == 9.0  # style fills in what the user left
 
 
 def test_convergence_plot_draws_residuals_and_errors(bladed, solved):
