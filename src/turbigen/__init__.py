@@ -5,8 +5,6 @@ dataclass that builds itself from a dict and turns back into one. Importing
 this package registers the built-in fluids and designs.
 """
 
-import importlib.metadata
-
 from turbigen import designs  # noqa: F401 - registers the built-in designs
 from turbigen import bconds  # noqa: F401 - boundary conditions for a new grid
 from turbigen import case  # noqa: F401 - reading and writing a config with its result
@@ -59,13 +57,18 @@ from turbigen.result import Result
 from turbigen.solver import Ember, Solver
 from turbigen.node import Node
 
-__version__ = importlib.metadata.version("turbigen")
-"""Version of the distribution this package ships in.
+# _version.py is generated at build time by setuptools-scm (see pyproject.toml);
+# it is gitignored, so fall back to a runtime metadata lookup when running from
+# an uninstalled source tree that has never been built.
+try:
+    from turbigen._version import __version__
+except ImportError:  # pragma: no cover - only hit in a bare, unbuilt source tree
+    from importlib.metadata import version, PackageNotFoundError
 
-The distribution is still called `turbigen`, being what is installed, and this
-is one of two packages inside it. Read from the metadata rather than imported
-from the package being replaced, which is on its way out.
-"""
+    try:
+        __version__ = version("turbigen")
+    except PackageNotFoundError:
+        __version__ = "0.0.0+unknown"
 
 __all__ = [
     "Annulus",

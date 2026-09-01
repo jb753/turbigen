@@ -78,6 +78,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # setuptools-scm needs the tags to label the build; conf.py shows the
+          # version on every page.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -133,6 +137,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # setuptools-scm derives the version from the git tag, so the build
+          # needs the full history and tags, not a shallow checkout.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

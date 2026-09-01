@@ -1,11 +1,14 @@
-graft test
-graft examples
-graft turbigen
-graft pytest.ini
-global-exclude __pycache__
-global-exclude */__pycache__/*
-global-exclude *.pyc
-prune test/.pytest_cache
-prune examples/meshes/
-prune turbigen/install
-prune turbigen/figconf.py
+# setuptools-scm's file finder sweeps every tracked file into the sdist. The
+# package itself lives under src/turbigen, so keep the sdist to the things a
+# source build or a `pip install sdist` actually needs and drop the scratch
+# configs, old examples and stray artefacts tracked at the repo root.
+prune old-examples
+prune dbslice
+prune plug
+prune doc/_build
+exclude *.yaml
+exclude *.bak
+exclude *.rst.ref
+exclude plan.md
+exclude matplotlibrc
+global-exclude __pycache__ *.pyc *.pyo

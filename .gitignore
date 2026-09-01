@@ -20,6 +20,8 @@ run*/*
 *.pdf
 *.npz
 *.egg-info/
+# setuptools-scm generated version file
+src/turbigen/_version.py
 env-turbigen/
 external_code_comp_error.out
 *.sql
