@@ -1,0 +1,168 @@
+name: Docs
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  # Backfilling an older tag, or publishing a throwaway directory to try the
+  # deploy out without touching master or a release.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref to build (branch, tag or SHA)"
+        required: true
+      slug:
+        description: "Directory to publish under, e.g. 3.0.0"
+        required: true
+      backfill:
+        description: "Backfill a tag predating the current docs setup (grafts the picker, and does not treat warnings as errors)"
+        type: boolean
+        default: false
+
+# One deploy at a time. A release pushes a version-bump commit to master and a
+# tag, so two runs would otherwise race to push gh-pages. Queue rather than
+# cancel: a cancelled run leaves its version unpublished.
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Work out what to publish and where
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_SLUG: ${{ inputs.slug }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            ref="$INPUT_REF"
+            slug="$INPUT_SLUG"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            ref="$REF_NAME"
+            # Directory names drop the leading v, matching `release` in conf.py.
+            slug="${REF_NAME#v}"
+          else
+            ref="$REF_NAME"
+            slug="master"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "Publishing $ref as $slug"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Graft the version picker in from master
+        if: ${{ inputs.backfill }}
+        run: |
+          # Tags released before the picker existed have neither the template
+          # nor the conf.py wiring. Both are added to the checkout only, never
+          # committed, so the published tag still documents its own code.
+          git fetch --no-tags origin master
+          git checkout FETCH_HEAD -- doc/_templates/versions.html
+          cat >> doc/conf.py <<'CONF'
+
+          # Appended by .github/workflows/docs.yml when backfilling this tag.
+          import os as _os
+
+          templates_path = ["_templates"]
+          html_context = {
+              "turbigen_version_slug": _os.environ.get("TURBIGEN_DOCS_VERSION", release)
+          }
+          html_sidebars = {
+              "**": [
+                  "about.html",
+                  "searchfield.html",
+                  "navigation.html",
+                  "versions.html",
+                  "relations.html",
+                  "donate.html",
+              ]
+          }
+          CONF
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build docs
+        env:
+          TURBIGEN_DOCS_VERSION: ${{ steps.target.outputs.slug }}
+        run: |
+          # turbigen is pure Python and ember-cfd ships wheels, so no compiler
+          # toolchain is needed here. The sphinx pieces are named individually
+          # rather than pulled in with the whole dev group, which also carries
+          # pyqt6 and needs system Qt. --only-binary ember-cfd: no compiler is
+          # installed, so a source build of the solver cannot succeed; without
+          # this a gap in ember's wheel coverage degrades into a gfortran
+          # failure instead of saying plainly there is no wheel.
+          uv venv --python 3.13
+          uv pip install --only-binary ember-cfd . \
+            sphinx sphinx-argparse sphinxcontrib-programoutput \
+            sphinxcontrib-bibtex 'setuptools<81' snowballstemmer==2.2.0 \
+            packaging
+
+          if [ "$TURBIGEN_DOCS_VERSION" != "master" ]; then
+            # A tag build labels its pages with the tag. If the tagged commit's
+            # pyproject.toml carries a different version the tag is mislabelled;
+            # warn rather than fail, since turbigen's version is set by hand.
+            installed=$(uv run --no-project python -c \
+              "import importlib.metadata as m; print(m.version('turbigen'))")
+            if [ "$installed" != "$TURBIGEN_DOCS_VERSION" ]; then
+              echo "::warning::installed turbigen $installed does not match slug $TURBIGEN_DOCS_VERSION"
+            fi
+          fi
+
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            # A backfill publishes a tag as it shipped. -W gates new work
+            # against today's Sphinx; applied to an old tag it refuses to
+            # publish over references that resolved when the tag was cut.
+            uv run --no-project sphinx-build -b html doc doc/_build/html
+          else
+            uv run --no-project sphinx-build -W -b html doc doc/_build/html
+          fi
+
+      - name: Publish to gh-pages
+        env:
+          SLUG: ${{ steps.target.outputs.slug }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # On the first run the branch does not exist yet; create it as an
+          # orphan commit holding the empty tree.
+          git fetch origin gh-pages:gh-pages \
+            || git branch gh-pages \
+                 "$(git commit-tree "$(git hash-object -w -t tree /dev/null)" \
+                    -m 'Initialise gh-pages')"
+          git worktree add site gh-pages
+
+          # --delete scopes to this one version directory, so a rebuilt slug
+          # never keeps stale files while its siblings stay untouched.
+          # sphinx-build writes its doctree cache into the output directory.
+          rsync -a --delete --exclude=.doctrees doc/_build/html/ "site/$SLUG/"
+
+          # The generator describes the site rather than any one version, so
+          # always run the current one: a backfilled tag predates the script
+          # entirely, and an older copy would lay the site out to old rules.
+          git fetch --no-tags origin master
+          git checkout FETCH_HEAD -- bin/gen_docs_index.py
+          uv run --no-project --with packaging python bin/gen_docs_index.py site
+
+          cd site
+          git add .
+          if git diff --quiet --cached; then
+            echo "No change to publish."
+          else
+            git commit -m "Publish docs for $SLUG"
+            git push origin gh-pages
+          fi

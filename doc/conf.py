@@ -5,6 +5,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import datetime
+import os
 import shutil
 import subprocess
 import sys
@@ -95,11 +96,11 @@ extensions = [
 ]
 
 # The mean line and its designer build on ember, so their inherited flow-field
-# API is documented there, not here. Point at /dev/ for now: it is the only
+# API is documented there, not here. Point at /master/ for now: it is the only
 # build that exposes the public `ember.fluid.Fluid`. It can drift from the
 # pinned release; realign the URL when ember cuts one carrying that name.
 intersphinx_mapping = {
-    "ember": ("https://ember-cfd.org/dev/", None),
+    "ember": ("https://ember-cfd.org/master/", None),
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
@@ -123,6 +124,8 @@ autodoc_default_options = {
 
 # Local extensions, which are not installed anywhere.
 sys.path.insert(0, str(Path(__file__).parent / "_ext"))
+
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -149,6 +152,31 @@ html_theme_options = {
     "description": f"Version {release}",
     "fixed_sidebar": True,
 }
+
+# Docs are published as one directory per version, so a build has to know the
+# slug it will be served under: the rolling master build lives at "master", not
+# at the release string. The picker template reads this to mark the current
+# entry.
+html_context = {
+    "turbigen_version_slug": os.environ.get("TURBIGEN_DOCS_VERSION", release)
+}
+
+# Setting html_sidebars replaces alabaster's theme-level default wholesale, so
+# its stock blocks are re-listed here around the version picker.
+html_sidebars = {
+    "**": [
+        "about.html",
+        "searchfield.html",
+        "navigation.html",
+        "versions.html",
+        "relations.html",
+        "donate.html",
+    ]
+}
+
+# html_baseurl is deliberately unset. Without it Sphinx emits only relative
+# links, so one build tree serves correctly both from a GitHub Pages project
+# subpath and from a site apex, with no rebuild in between.
 
 bibtex_bibfiles = ["refs.bib"]
 bibtex_reference_style = "author_year"
