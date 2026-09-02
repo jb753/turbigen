@@ -114,7 +114,7 @@ class Mesher(Node):
         line, which carries no meaningful length: a chord is a property of the
         geometry, and the mean line is a flow field.
         """
-        return float(machine.annulus.chords(0.5)[1::2].max())
+        return float(machine.annulus.evaluate_chords(0.5)[1::2].max())
 
     def check_volumes(self, grid):
         """Raise if any cell in `grid` has a non-positive volume."""

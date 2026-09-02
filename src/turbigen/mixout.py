@@ -48,7 +48,7 @@ def cut_planes(annulus, offset=CUT_OFFSET):
 
     """
     n_row = annulus.n_row
-    chords = annulus.chords(0.5)
+    chords = annulus.evaluate_chords(0.5)
 
     # The offset is given in blade chords but applied to `m`, which is
     # normalised per segment -- so it has to be rescaled by the chord of the

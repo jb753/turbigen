@@ -106,7 +106,7 @@ def test_cut_planes_land_in_the_gaps():
     n_row = annulus.n_row
 
     # Recover the m of each cut from its axial position, via the mid-span line.
-    m_dense = np.linspace(0.0, annulus.mmax, 20001)
+    m_dense = np.linspace(0.0, annulus.m_max, 20001)
     x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
 
     for i_station, xr in enumerate(mixout.cut_planes(annulus)):

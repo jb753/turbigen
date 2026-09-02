@@ -196,8 +196,8 @@ def test_designing_twice_gives_two_independent_blades():
     mean_line = config.design().mean_line
     annulus = config.annulus.design(mean_line)
 
-    first = config.blades[0].design(mean_line[:, 0], annulus.row(0))
-    second = config.blades[0].design(mean_line[:, 0], annulus.row(0))
+    first = config.blades[0].design(mean_line[:, 0], annulus.extract_row(0))
+    second = config.blades[0].design(mean_line[:, 0], annulus.extract_row(0))
 
     assert first is not second
     np.testing.assert_allclose(first.blade.chi(0.5), second.blade.chi(0.5))
@@ -378,7 +378,7 @@ def test_each_tip_reference_gives_the_expected_gap(field, expected):
 
     reference = {
         "span": float(np.mean(mean_line.span)),
-        "chord": machine.annulus.chords(0.5)[1],
+        "chord": machine.annulus.evaluate_chords(0.5)[1],
         "metre": 1.0,
     }[expected]
 

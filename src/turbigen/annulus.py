@@ -1,16 +1,133 @@
-"""Annulus geometry.
+"""Classes to construct annulus geometry around a mean line design.
 
-An :class:`AnnulusDesign` is a config node describing the hub and casing lines;
-designing one produces an :class:`Annulus`, which holds the fitted curves and
-the geometry read off them. The split matters: the package this replaces stored
-the fitted splines on the designer itself, so the config and the result were one
-object and an un-designed annulus had no defined state.
+An :class:`AnnulusDesign` describes the designer's choice of shape for the hub
+and casing lines of a turbomachine; combining one with a
+:class:`~turbigen.meanline.MeanLine` produces an :class:`Annulus`, which holds
+the actual curves for a particular design. The design is what is specified in
+the input file under :ref:`annulus: <config-annulus>`, but is not in itself sufficient to construct an annulus.
 
-Two designs are provided, :class:`FixedAxialChord` and :class:`AspectRatio`,
-and they differ in one number per segment. See ARCHITECTURE.md for why: the
-four classes they replace are a 2x2 of chord specification against
-merged-or-not, merging is a continuous parameter rather than a type, and what
-remains is a single choice of how a segment's length is stated.
+
+.. _annulus-coordinate:
+
+The annulus coordinate
+^^^^^^^^^^^^^^^^^^^^^^
+
+An :class:`Annulus` is addressed by a normalised meridional coordinate ``m``
+and a span fraction ``spf``. ``m`` is 0 at the inlet, 1 at the first row
+leading edge, 2 at its trailing edge, and so on up to
+:attr:`~Annulus.m_max`; ``spf`` runs 0 at the hub to 1 at the casing.
+:meth:`Annulus.evaluate_xr` maps a pair of them to axial and radial
+coordinates, and every station property is read off it.
+
+:meth:`Annulus.extract_row` returns a :class:`RowAnnulus` for one blade row,
+carrying its own :meth:`~RowAnnulus.evaluate_xr` where ``m`` runs 0 at the
+leading edge to 1 at the trailing edge. A blade design is handed one of these
+rather than the whole annulus and a row index, so the convention mapping a row
+onto the annulus coordinate stays in one place.
+
+
+.. _annulus-process:
+
+Design process
+^^^^^^^^^^^^^^
+
+Loading an input file converts its :ref:`annulus: <config-annulus>` mapping
+into an instance of the class named by ``type``. Once the mean line is built,
+:program:`turbigen` calls :meth:`~AnnulusDesign.design`, which runs
+:meth:`~PchipAnnulus.forward`:
+
+#. :meth:`~PchipAnnulus.segment_lengths` gives the meridional arc length of
+   every row and gap;
+#. control points for the hub and casing are placed from the mean-line mean
+   radius, span and pitch angle at each station, with straight duct extensions
+   added at the inlet and exit;
+#. PCHIP curves are fitted through the control points in arc-length space, the
+   parameterisation iterated until each segment's length matches its target;
+#. a second fit through the end segments alone is made when ``merge_weight`` is
+   non-zero, for the curvature blend.
+
+
+.. _annulus-designs:
+
+The two built-in designs
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Both lay their values out over the segments, which alternate gap, row, gap,
+..., gap, so there are ``2 * n_row + 1`` of them and the gaps include the
+inlet and exit ducts.
+
+:class:`FixedAxialChord` (``fixed_axial_chord``) states the axial chord of each
+row in ``cx_row`` and of each gap in ``cx_gap``, in metres. An axial chord
+cannot describe a segment at 90 degrees pitch angle, where the arc length it
+implies is infinite.
+
+:class:`AspectRatio` (``aspect_ratio``) states the span-to-meridional-chord
+ratio of each row in ``AR_row`` and of each gap in ``AR_gap``. The span is the
+average over the segment, so a row's aspect ratio is set by the mean line on
+both sides of it. This is the specification the design correlations are written
+in, and it places no limit on the pitch angle.
+
+Both share ``nozzle_ratio``, which scales the exit span for a nozzle area
+ratio, and ``merge_weight``, which blends the fit towards a curve through the
+end segments alone to smooth curvature across the rows.
+The result is a frozen :class:`Annulus`, read by the blade designs, the mesher
+and the post-processing.
+
+Two designs ship with :program:`turbigen`, :class:`FixedAxialChord` and
+:class:`AspectRatio`. Both define the annulus lines using PCHIP curves in
+arc-length space, and differ only in how the meridional length of each row and
+gap is stated --- a dimensional axial chord in metres, or a span-to-chord
+ratio. Writing a design of your own means subclassing :class:`PchipAnnulus` and
+supplying the method to set the segment lengths. For example::
+
+    class MyAnnulus(PchipAnnulus):
+        type: ClassVar[str] = "my_annulus"
+
+        my_field: tuple[float, ...]
+
+        def segment_lengths(self, span_avg, cos_Beta_avg):
+            ...
+            return Ds
+
+The :doc:`/tutorial` uses the built-in annulus in a complete design; this page
+documents the classes in more detail. The mean line an annulus is built
+against is documented at :doc:`/meanline`.
+
+.. _annulus-contract:
+
+The design contract
+^^^^^^^^^^^^^^^^^^^
+
+A design sets one class variable, writes one method, and inherits the rest:
+
+.. list-table::
+   :widths: 40 60
+
+   * - ``type``
+     - The name an input file asks for, under :ref:`annulus:
+       <config-annulus>`.
+   * - :meth:`PchipAnnulus.segment_lengths`
+     - Written by the design: the meridional arc length of each row and gap.
+   * - :meth:`PchipAnnulus.forward`
+     - Provided: place the control points, fit the curves, return an
+       :class:`Annulus`.
+   * - :meth:`AnnulusDesign.design`
+     - Provided: run ``forward`` and return the result.
+
+Unlike a :class:`~turbigen.design.MeanLineDesign`, an annulus design declares
+no ``n_row``: it is generic over the number of rows, which comes from the mean
+line handed to :meth:`~AnnulusDesign.forward`. There is no ``backward`` either
+--- a fitted curve does not invert to a small set of design variables.
+
+A built-in design is registered automatically. A user-created design is picked
+up from any ``turbigen_plugins`` directory beside the input file, or above it,
+and need not be installed.
+
+The design variables are declared as :class:`~dataclasses.dataclass` fields and
+read from under the :ref:`annulus: <config-annulus>` key. A field with no
+default is required; a field with a default is optional and its value is
+recorded in ``output.yaml``.
+
 """
 
 import dataclasses
@@ -104,31 +221,34 @@ def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=2
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
-class StreamSurface:
-    """The annulus within one blade row.
+class RowAnnulus:
+    """The annulus restricted to one blade row.
 
-    Addressed by a normalised meridional coordinate running 0 at the leading
-    edge to 1 at the trailing edge, and a span fraction. A blade design is
-    handed one of these rather than the whole annulus and a row index, so that
-    the convention mapping a row onto the annulus coordinate stays inside
-    :class:`Annulus`, which is the only thing that defines it.
+    The full hub-to-casing annulus with the meridional coordinate clamped to
+    one row's range and renormalised, so ``m`` runs 0 at the leading edge to 1
+    at the trailing edge. A blade design is handed one of these rather than the
+    whole annulus and a row index, so that the convention mapping a row onto
+    the annulus coordinate stays inside :class:`Annulus`, which is the only
+    thing that defines it.
     """
 
-    evaluate_xr: object = dataclasses.field(repr=False)
+    _evaluate_xr_annulus: object = dataclasses.field(repr=False)
     """The annulus coordinate map this is a restriction of."""
 
-    m_LE: float
+    _m_LE: float
     """Annulus meridional coordinate of this row's leading edge."""
 
     chord: float
     """Meridional chord of the row at mid-span [m]."""
 
-    def xr(self, m, spf):
+    def evaluate_xr(self, m, spf):
         """Return meridional coordinates within the row.
 
-        Takes its arguments in the same order as
-        :meth:`Annulus.evaluate_xr`, which it is a restriction of. Both take
-        two broadcastable array-likes, so a transposed call would be silent.
+        The row-local counterpart of :meth:`Annulus.evaluate_xr`, taking its
+        arguments in the same order --- but here ``m`` runs 0 at the leading
+        edge to 1 at the trailing edge, rather than over the whole annulus.
+        Both take two broadcastable array-likes, so a transposed call would be
+        silent.
 
         Parameters
         ----------
@@ -144,7 +264,7 @@ class StreamSurface:
             Axial and radial coordinates, stacked on the first axis.
 
         """
-        return self.evaluate_xr(self.m_LE + np.asarray(m, dtype=float), spf)
+        return self._evaluate_xr_annulus(self._m_LE + np.asarray(m, dtype=float), spf)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -156,23 +276,20 @@ class Annulus:
     so on, and a span fraction ``spf`` running 0 at the hub to 1 at the casing.
 
     Frozen, like every other result: an annulus is what the design produced and
-    nothing downstream has any business changing it. `eq=False` because the
-    fields hold arrays and spline objects, so a generated `__eq__` would raise
-    on the first comparison -- and unlike a config Node, whose round trip is
-    checked by value, nothing ever compares two annuli.
+    nothing downstream has any business changing it.
     """
 
-    s: np.ndarray = dataclasses.field(repr=False)
+    _s: np.ndarray = dataclasses.field(repr=False)
     """Arc-length parameter of each control point."""
 
-    curves: tuple = dataclasses.field(repr=False)
+    _curves: tuple = dataclasses.field(repr=False)
     """Fitted hub and casing curves, (x_hub, r_hub, x_cas, r_cas)."""
 
-    curves_merged: tuple = dataclasses.field(repr=False)
+    _curves_merged: tuple = dataclasses.field(repr=False)
     """The same, fitted through the end segments only, for the merge blend."""
 
-    merge_weight: float
-    """Blend between `curves` at 0 and `curves_merged` at 1 [--]."""
+    _merge_weight: float
+    """Blend between the full fit at 0 and the end-segment fit at 1 [--]."""
 
     n_row: int
     """Number of blade rows."""
@@ -187,7 +304,7 @@ class Annulus:
         return 2 * self.n_row + 1
 
     @property
-    def mmax(self):
+    def m_max(self):
         """Largest valid value of the normalised meridional coordinate."""
         return float(self.n_segment)
 
@@ -214,17 +331,17 @@ class Annulus:
         mb, spfb = np.broadcast_arrays(
             np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
         )
-        sq = np.interp(mb, np.arange(len(self.s)), self.s)
+        sq = np.interp(mb, np.arange(len(self._s)), self._s)
 
-        weight = self.merge_weight
+        weight = self._merge_weight
         if weight == 0.0:
-            xhub, rhub, xcas, rcas = (curve(sq) for curve in self.curves)
+            xhub, rhub, xcas, rcas = (curve(sq) for curve in self._curves)
         elif weight == 1.0:
-            xhub, rhub, xcas, rcas = (curve(sq) for curve in self.curves_merged)
+            xhub, rhub, xcas, rcas = (curve(sq) for curve in self._curves_merged)
         else:
             xhub, rhub, xcas, rcas = (
                 (1.0 - weight) * plain(sq) + weight * merged(sq)
-                for plain, merged in zip(self.curves, self.curves_merged)
+                for plain, merged in zip(self._curves, self._curves_merged)
             )
 
         x = (1.0 - spfb) * xhub + spfb * xcas
@@ -273,7 +390,7 @@ class Annulus:
         """Hub-to-tip ratio at all row inlet and outlet stations [--]."""
         return self.r_hub / self.r_tip
 
-    def span(self, m):
+    def evaluate_span(self, m):
         """Return the hub-to-casing distance at meridional position(s) `m` [m].
 
         Parameters
@@ -291,7 +408,7 @@ class Annulus:
         xr_cas = self.evaluate_xr(m, 1.0)
         return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
 
-    def chords(self, spf):
+    def evaluate_chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.
 
         Segments alternate gap, row, gap, row, ..., gap, so there are
@@ -303,8 +420,8 @@ class Annulus:
             chords[i] = turbigen.util.arc_length(self.evaluate_xr(mq, spf))
         return chords
 
-    def row(self, i_row):
-        """Return the stream surfaces within blade row `i_row`.
+    def extract_row(self, i_row):
+        """Return the annulus of blade row `i_row` as a :class:`RowAnnulus`.
 
         Rows occupy the odd segments, so this is where the mapping from a row
         index onto the annulus meridional coordinate lives, and the only place
@@ -315,17 +432,17 @@ class Annulus:
                 f"Blade row {i_row} is out of range for an annulus with "
                 f"{self.n_row} rows."
             )
-        return StreamSurface(
+        return RowAnnulus(
             self.evaluate_xr,
-            m_LE=2 * i_row + 1,
-            chord=self.chords(0.5)[2 * i_row + 1],
+            2 * i_row + 1,
+            self.evaluate_chords(0.5)[2 * i_row + 1],
         )
 
     def to_string(self):
         """Tabular string representation of the annulus at row stations."""
         m = np.arange(1, 2 * self.n_row + 1, dtype=float)
-        span = self.span(m)
-        cx_row = self.chords(0.5)[1::2]
+        span = self.evaluate_span(m)
+        cx_row = self.evaluate_chords(0.5)[1::2]
         span_row = 0.5 * (span[::2] + span[1::2])
         properties = [
             ("r_rms/m", self.r_rms, ".4f"),
@@ -533,10 +650,7 @@ class AspectRatio(PchipAnnulus):
 
     def __post_init__(self):
         # Checked on the way in rather than at design time, because it needs
-        # no mean line: a non-positive aspect ratio is wrong on sight. The old
-        # package gave a negative value a second meaning, a segment whose
-        # length is chosen to smooth the curvature instead; that is not ported,
-        # so it must fail rather than be quietly reinterpreted.
+        # no mean line: a non-positive aspect ratio is wrong on sight.
         for name in ("AR_row", "AR_gap"):
             values = np.asarray(getattr(self, name), dtype=float)
             if np.any(values <= 0.0):

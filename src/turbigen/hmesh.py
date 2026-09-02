@@ -157,13 +157,13 @@ class H(Mesher):
         annulus = machine.annulus
         span_all = np.array(
             [
-                np.mean(annulus.span(np.arange(i_row * 2, i_row * 2 + 2)))
+                np.mean(annulus.evaluate_span(np.arange(i_row * 2, i_row * 2 + 2)))
                 for i_row in range(len(machine.rows))
             ]
         )
         tip_all = np.array([row.tip_gap for row in machine.rows])
         tip_ref = np.max(tip_all / span_all)
-        span_ref = annulus.span(1)
+        span_ref = annulus.evaluate_span(1)
         return spacing.hub / span_ref, spacing.casing / span_ref, tip_ref
 
     def _row_geometry(self, machine, i_row, spacing):
@@ -177,9 +177,9 @@ class H(Mesher):
         xr_mid = annulus.evaluate_xr(mrow, 0.5)
 
         ist = 2 * i_row
-        chord_hub = annulus.chords(0.0)[ist : ist + 3]
-        chord_mid = annulus.chords(0.5)[ist : ist + 3]
-        chord_cas = annulus.chords(1.0)[ist : ist + 3]
+        chord_hub = annulus.evaluate_chords(0.0)[ist : ist + 3]
+        chord_mid = annulus.evaluate_chords(0.5)[ist : ist + 3]
+        chord_cas = annulus.evaluate_chords(1.0)[ist : ist + 3]
 
         pitch_rtheta_hub = pitch_theta * xr_hub[1]
         pitch_rtheta_cas = pitch_theta * xr_cas[1]
@@ -193,7 +193,7 @@ class H(Mesher):
 
         drt_norm = spacing.surface[i_row] / pitch_rtheta_max
 
-        span_row = np.mean(annulus.span(np.arange(i_row * 2, i_row * 2 + 2)))
+        span_row = np.mean(annulus.evaluate_span(np.arange(i_row * 2, i_row * 2 + 2)))
         AR_row = span_row / chord_mid[1]
 
         return _RowGeometry(

@@ -770,7 +770,7 @@ def _incidence(result, i_row, spf, upstream):
     annulus = machine.annulus
 
     # A span cut of the whole machine, as the contour plot takes.
-    m = np.linspace(0.0, annulus.mmax, annulus.n_segment * 50 + 1)
+    m = np.linspace(0.0, annulus.m_max, annulus.n_segment * 50 + 1)
     xr_curve = annulus.evaluate_xr(m, spf).T
     cut = ember.cut.structured_meridional(result.grid, xr_curve)
     if not len(cut):

@@ -448,7 +448,7 @@ def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
     lo, hi = figures[0].axes[0].get_xlim()
 
     annulus = solved.machine.annulus
-    curve = annulus.evaluate_xr(np.linspace(0.0, annulus.mmax, 101), 0.5).T
+    curve = annulus.evaluate_xr(np.linspace(0.0, annulus.m_max, 101), 0.5).T
     edges = annulus.evaluate_xr([1, 2], 0.5).T
     m_LE, m_TE = ember.util.unwrap_meridional(curve, edges)
 

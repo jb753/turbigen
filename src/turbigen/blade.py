@@ -23,7 +23,7 @@ from typing import ClassVar
 import numpy as np
 
 import turbigen.util
-from turbigen.annulus import StreamSurface
+from turbigen.annulus import RowAnnulus
 from turbigen.camber import CamberDesign, CamberLine
 from turbigen.node import Node
 from turbigen.thickness import ThicknessDesign
@@ -272,15 +272,15 @@ class BladeDesign(Node):
                 f"A blade has one tip clearance, but {set_tips} were all given."
             )
 
-    def forward(self, mean_line_row, stream_surface):
+    def forward(self, mean_line_row, row_annulus):
         """Return the blade this design describes.
 
         Parameters
         ----------
         mean_line_row : MeanLine
             Inlet and outlet stations of this row, shape (2,).
-        stream_surface : StreamSurface
-            The annulus within this row, from :meth:`Annulus.row`.
+        row_annulus : RowAnnulus
+            The annulus within this row, from :meth:`Annulus.extract_row`.
 
         """
         spf = np.array([section.spf for section in self.sections])
@@ -302,13 +302,11 @@ class BladeDesign(Node):
         # other terms are zero, which __post_init__ has already ensured.
         span = float(np.mean(mean_line_row.span))
         tip_gap = (
-            self.tip_span * span
-            + self.tip_chord * stream_surface.chord
-            + self.tip_metre
+            self.tip_span * span + self.tip_chord * row_annulus.chord + self.tip_metre
         )
 
         blade = Blade(
-            stream_surface=stream_surface,
+            row_annulus=row_annulus,
             spf=spf,
             tanchi=tanchi,
             cambers=tuple(section.camber for section in self.sections),
@@ -327,9 +325,9 @@ class BladeDesign(Node):
             tip_gap=tip_gap,
         )
 
-    def design(self, mean_line_row, stream_surface):
+    def design(self, mean_line_row, row_annulus):
         """Return the row this design describes."""
-        return self.forward(mean_line_row, stream_surface)
+        return self.forward(mean_line_row, row_annulus)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -368,7 +366,7 @@ class Blade:
     to mutate, on the design or on the result.
     """
 
-    stream_surface: StreamSurface = dataclasses.field(repr=False)
+    row_annulus: RowAnnulus = dataclasses.field(repr=False)
     """The annulus within this row."""
 
     spf: np.ndarray = dataclasses.field(repr=False)
@@ -461,14 +459,14 @@ class Blade:
         mu_LTE = (mu - mcam_LE) / mcam_ptp
         ml_LTE = (ml - mcam_LE) / mcam_ptp
         mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self.stream_surface.xr(mcam, 0.5))
+        chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
 
         # Meridional coordinates of the upper, lower and camber lines
-        xru = self.stream_surface.xr(mu_LTE, spf)
-        xrl = self.stream_surface.xr(ml_LTE, spf)
-        xr = self.stream_surface.xr(mcam, spf)
+        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
+        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
+        xr = self.row_annulus.evaluate_xr(mcam, spf)
 
-        # Project the camber angle onto the stream surface
+        # Project the camber angle onto the annulus
         theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
 
         # Stack the sections, then rotate the whole blade

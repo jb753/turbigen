@@ -21,7 +21,8 @@ is a single subclass::
 
 The :doc:`/tutorial` works through such a class in full, from an empty file to
 a designed fan; this page document the class in more detail. The
-data structure storing the flow field is documented at :doc:`/meanline`.
+data structure storing the flow field is documented at :doc:`/meanline`, and
+the annulus stage that follows at :doc:`/annulus`.
 
 .. _design-contract:
 

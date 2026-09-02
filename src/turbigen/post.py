@@ -202,7 +202,7 @@ class AnnulusPlot(Post):
         # meridional view needs is a view on evaluate_xr, so nothing is added
         # to Annulus to support this: shapes wanted by one consumer belong in
         # that consumer.
-        m = np.linspace(0.0, annulus.mmax, annulus.n_segment * 50 + 1)
+        m = np.linspace(0.0, annulus.m_max, annulus.n_segment * 50 + 1)
         xr_hub = annulus.evaluate_xr(m, 0.0)
         xr_cas = annulus.evaluate_xr(m, 1.0)
 
@@ -220,7 +220,7 @@ class AnnulusPlot(Post):
         ax.plot(*xr_cas, "k-")
 
         # Dotted hub-to-casing lines closing the annulus at inlet and exit.
-        for m_end in (0.0, annulus.mmax):
+        for m_end in (0.0, annulus.m_max):
             ax.plot(*annulus.evaluate_xr(m_end, [0.0, 1.0]), "k:")
 
         if self.show_axis:
@@ -261,7 +261,7 @@ class SectionsPlot(Post):
         # (m', theta) plane exactly as the contour plot does it: angles and
         # aspect ratios are preserved, so a section keeps the shape it has in
         # the machine at any radius, and every row lands on one m' scale.
-        m = np.linspace(0.0, annulus.mmax, annulus.n_segment * N_SEGMENT_CUT + 1)
+        m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
 
         figures = []
         for i_row, row in enumerate(rows):
@@ -707,7 +707,7 @@ class ContourPlot(Post):
             # the cut surface, and once as the datum for the conformal
             # coordinate. Sharing it is what puts every row on a single
             # meridional scale, with no per-block offsets to reconcile.
-            m = np.linspace(0.0, annulus.mmax, annulus.n_segment * N_SEGMENT_CUT + 1)
+            m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
             xr_curve = annulus.evaluate_xr(m, spf).T
 
             cut = ember.cut.structured_meridional(result.grid, xr_curve)

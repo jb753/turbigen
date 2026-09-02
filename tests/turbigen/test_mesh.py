@@ -132,7 +132,7 @@ def test_annulus_spacings_are_the_mean_of_the_rows(machine):
 def test_wall_spacing_is_a_small_fraction_of_the_chord(machine):
     """A sanity bound: a y+ of 30 is microns, not millimetres."""
     spacing = H().wall_spacing(machine)
-    chord = machine.annulus.chords(0.5)[1]
+    chord = machine.annulus.evaluate_chords(0.5)[1]
 
     assert np.all(spacing.surface > 0.0)
     assert np.all(spacing.surface < 0.01 * chord)
@@ -152,7 +152,7 @@ def test_mesh_finishes_the_grid_the_mesher_returns(machine, grid):
     """
     # The longest row chord at mid-span, off the annulus. Not the mean line,
     # which carries no length of its own.
-    assert grid[0].L_ref == pytest.approx(machine.annulus.chords(0.5)[1::2].max())
+    assert grid[0].L_ref == pytest.approx(machine.annulus.evaluate_chords(0.5)[1::2].max())
     assert np.isfinite(grid[0].wdist).all()
     assert (grid[0].wdist >= 0.0).all()
 

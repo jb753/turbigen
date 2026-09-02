@@ -153,7 +153,7 @@ def test_merge_weight_is_a_parameter_not_a_type():
     plain = build(merge_weight=0.0).design().annulus
     merged = build(merge_weight=0.5).design().annulus
 
-    m = np.linspace(0.0, plain.mmax, 25)
+    m = np.linspace(0.0, plain.m_max, 25)
     assert not np.allclose(plain.evaluate_xr(m, 0.5), merged.evaluate_xr(m, 0.5))
 
 
@@ -196,7 +196,7 @@ def test_geometry_matches_the_mean_line_it_was_designed_from(machine):
     """
     annulus, flat = machine.annulus, machine.mean_line.flat
     m = np.arange(1, 2 * annulus.n_row + 1, dtype=float)
-    span = annulus.span(m)
+    span = annulus.evaluate_span(m)
 
     # Loose tolerances throughout: a mean line stores its state as float32.
     np.testing.assert_allclose(annulus.r_mid, flat.r_mid, rtol=1e-6)
@@ -363,7 +363,7 @@ def test_arc_length_lands_close_to_the_aspect_ratio():
     machine = build_AR().design()
 
     np.testing.assert_allclose(
-        machine.annulus.chords(0.5),
+        machine.annulus.evaluate_chords(0.5),
         requested_lengths(machine.mean_line.flat),
         rtol=1e-3,
     )
@@ -410,7 +410,7 @@ def test_the_two_designs_agree_when_they_ask_for_the_same_thing():
 
     equivalent = build(cx_gap=list(cx[::2]), cx_row=list(cx[1::2])).design().annulus
 
-    m = np.linspace(0.0, chord.mmax, 31)
+    m = np.linspace(0.0, chord.m_max, 31)
     np.testing.assert_allclose(
         equivalent.evaluate_xr(m, 0.5), chord.evaluate_xr(m, 0.5), atol=1e-12
     )
@@ -521,15 +521,15 @@ def test_aspect_ratio_matches_the_turbigen_implementation(weight):
 
 def test_annulus_cannot_be_rebound(machine):
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus.merge_weight = 0.9
+        machine.annulus._merge_weight = 0.9
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus.curves = ()
+        machine.annulus._curves = ()
 
 
-def test_stream_surface_cannot_be_rebound(machine):
+def test_row_annulus_cannot_be_rebound(machine):
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus.row(0).chord = 1.0
+        machine.annulus.extract_row(0).chord = 1.0
 
 
 def test_station_coordinates_are_cached(machine):
@@ -545,4 +545,4 @@ def test_repr_stays_readable(machine):
     so the bulky fields are excluded from it."""
     text = repr(machine.annulus)
 
-    assert text == f"Annulus(merge_weight=0.0, n_row={machine.annulus.n_row})"
+    assert text == f"Annulus(_merge_weight=0.0, n_row={machine.annulus.n_row})"

@@ -17,7 +17,7 @@ from turbigen.annulus import (
     AspectRatio,
     FixedAxialChord,
     PchipAnnulus,
-    StreamSurface,
+    RowAnnulus,
 )
 from turbigen.blade import (
     Blade,
@@ -97,7 +97,7 @@ __all__ = [
     "Quadratic",
     "Row",
     "Section",
-    "StreamSurface",
+    "RowAnnulus",
     "Taylor",
     "ThicknessDesign",
     "WallSpacing",
