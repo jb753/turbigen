@@ -1078,6 +1078,31 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
     assert all(isinstance(value, float) for value in result.error.values())
 
 
+METRIC_CASE = RUN_CASE + "\nmetrics:\n  - type: _test_grid_stats\n"
+
+
+def test_a_run_records_what_its_metrics_measured(tmp_path):
+    """A configured metric lands under `result: metrics:`, and a re-plot
+    reproduces it from the field left behind."""
+    from turbigen import case  # noqa: PLC0415
+    import test_metric  # noqa: F401, PLC0415 - registers the _test_grid_stats metric
+
+    path = tmp_path / "cascade" / "input.yaml"
+    path.parent.mkdir()
+    path.write_text(METRIC_CASE)
+    out = path.parent
+
+    assert cli.main(["run", str(path)]) == 0
+    _, ran = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert set(ran.metrics) == {"n_block", "shapes"}
+    assert isinstance(ran.metrics["n_block"], float)
+
+    (out / cli.OUTPUT_NAME).unlink()
+    assert cli.main(["report", str(path)]) == 0
+    _, reported = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert reported.metrics == ran.metrics
+
+
 SETTLED_CASE = ITERATE_CASE.replace(
     "    - type: deviation\n", "    - type: deviation\n      tolerance: 20.0\n"
 ).replace(

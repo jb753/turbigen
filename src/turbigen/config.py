@@ -23,6 +23,7 @@ from turbigen.iterate import Iteration
 from turbigen.job import Job
 from turbigen.machine import Machine
 from turbigen.mesh import Mesher
+from turbigen.metric import Metric
 from turbigen.node import Node
 from turbigen.post import Post
 from turbigen.solver import Solver
@@ -85,6 +86,10 @@ class Config(Node):
     post_process: tuple[Post, ...] = ()
     """Post-processors to run. Nothing is added implicitly: what the config
     asks for is what runs."""
+
+    metrics: tuple[Metric, ...] = ()
+    """Quantities to measure from the solved field and record under
+    ``result: metrics:``. Nothing is measured unless the config asks for it."""
 
     job: Job | None = None
     """Where to execute, when ``--queue`` asks for it. Read by no design stage:

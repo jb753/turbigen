@@ -2,6 +2,8 @@
 
 import dataclasses
 
+import numpy as np
+
 from turbigen.machine import Machine
 from turbigen.meanline import MeanLine
 
@@ -74,6 +76,16 @@ class Result:
     these errors later.
     """
 
+    metrics: dict = dataclasses.field(default_factory=dict)
+    """What each configured :class:`~turbigen.metric.Metric` measured, by name.
+
+    Kept for the same reason `error` is, and written beside it under
+    ``result: metrics:``. Nothing acts on these --- a metric is a passive
+    observation of the field, a surface integral or a loss breakdown that would
+    otherwise be lost when the grid goes out of scope. Values are numbers or
+    nested lists of them.
+    """
+
     @property
     def nominal(self) -> MeanLine:
         """The mean line as designed."""
@@ -102,6 +114,8 @@ class Result:
     #
     # `to_dict` names what it writes rather than dumping the fields, so a field
     # added above stays out of the file until someone decides it belongs there.
+    # `error` and `metrics` are the two that do: both are handfuls of numbers
+    # measured from the field, kept because that is what a result file is for.
     #
     # Nothing derived is stored either. `eta_tt`, `PR_tt` and the whole
     # `backward()` dict are recomputed from the mean line, so an archived file
@@ -117,6 +131,7 @@ class Result:
             actual=MeanLine.from_dict(actual, fluid) if actual else None,
             converged=bool(data.get("converged", False)),
             error=dict(data.get("error", {})),
+            metrics=dict(data.get("metrics", {})),
         )
 
     def to_dict(self):
@@ -128,4 +143,10 @@ class Result:
             # Floats, not numpy scalars, so the file reads as YAML rather than
             # as a pickle of array types.
             data["error"] = {name: float(value) for name, value in self.error.items()}
+        if self.metrics:
+            # Same, but a metric may measure a profile, so coerce recursively.
+            data["metrics"] = {
+                name: np.asarray(value, dtype=float).tolist()
+                for name, value in self.metrics.items()
+            }
         return data

@@ -58,6 +58,7 @@ from turbigen import (
     include,
     iterate,
     job,
+    metric,
     mixout,
     node,
     plugins,
@@ -976,7 +977,8 @@ def reconstruct(config, machine, grid, history, field):
         history=history,
     )
 
-    return dataclasses.replace(result, error=iterate.errors(config, result))
+    result = dataclasses.replace(result, error=iterate.errors(config, result))
+    return dataclasses.replace(result, metrics=metric.measure(config, result))
 
 
 def _write_report_output(config, answer, out_dir):
@@ -1082,6 +1084,10 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # achieved and the incidence its leading edge saw are observations of the
     # flow, and they can only be taken while the grid is in memory.
     result = dataclasses.replace(result, error=iterate.errors(config, result))
+
+    # Anything the config asked to measure from the field, for the same reason
+    # and against the same deadline.
+    result = dataclasses.replace(result, metrics=metric.measure(config, result))
 
     # Where a throttled exit turned out to sit, for the same reason and with
     # the same deadline: the pressure the controller chose is on the patch, and

@@ -69,5 +69,6 @@ solver:
   sf_resid: 1
   fac_mgrid: 0.2
   n_levels: 3
-  gain_filt: 0
+  dampin: 25.0
+  gain_filt: 1
   delta_filt: 0.1
