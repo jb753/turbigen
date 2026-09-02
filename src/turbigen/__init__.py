@@ -29,7 +29,7 @@ from turbigen.blade import (
     Row,
     SectionDesign,
 )
-from turbigen.camber import CamberDesign, CamberLine, Quadratic
+from turbigen.camber import Bernstein, CamberDesign, CamberLine, Quadratic
 from turbigen.config import Config
 from turbigen.database import Database
 from turbigen.hmesh import H
@@ -75,6 +75,7 @@ __all__ = [
     "AnnulusDesign",
     "AspectRatio",
     "PchipAnnulus",
+    "Bernstein",
     "Blade",
     "BladeCount",
     "BladeDesign",

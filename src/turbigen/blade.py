@@ -41,9 +41,9 @@ level:
      - a mean-line row, a :class:`~turbigen.annulus.RowAnnulus`
      - :class:`Row` --- a :class:`Blade`, ``n_blade``, ``tip_gap``
 
-:class:`~turbigen.camber.Quadratic` is the built-in camber shape and
-:class:`~turbigen.thickness.Taylor` the built-in thickness distribution; both
-are documented in the sections below.
+:class:`~turbigen.camber.Quadratic` and :class:`~turbigen.camber.Bernstein` are
+the built-in camber shapes and :class:`~turbigen.thickness.Taylor` the built-in
+thickness distribution; all are documented in the sections below.
 
 The number of blades comes from a :class:`BladeCount` rule on the design:
 
