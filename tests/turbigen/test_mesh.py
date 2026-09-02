@@ -109,7 +109,10 @@ def test_surface_reynolds_number_matches_its_definition(machine):
     for i_row, row in enumerate(machine.rows):
         station = machine.mean_line.get_characteristic_station(i_row)
         expected = (
-            row.blade.surface_length(0.5) * station.rho * station.V_rel / station.mu
+            row.blade.evaluate_surface_length(0.5)
+            * station.rho
+            * station.V_rel
+            / station.mu
         )
         assert Re_surf[i_row] == pytest.approx(expected)
 

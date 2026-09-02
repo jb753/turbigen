@@ -1,6 +1,6 @@
 .. _annulus:
 
-Annulus geometry
-================
+Annulus lines
+=============
 
 .. automodule:: turbigen.annulus

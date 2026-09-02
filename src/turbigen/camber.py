@@ -1,18 +1,19 @@
-"""Camber lines.
+"""
+.. _camber:
 
-A :class:`CamberDesign` is a config node describing the *shape* of a camber
-line between its end angles; pairing it with those angles gives a
-:class:`CamberLine`, which can be evaluated. The split is the same one the rest
-of the package makes, applied one level down: the end angles are not design
-variables at all but a result, being the local flow angle plus the recamber
-asked for by a :class:`~turbigen.blade.Section`.
+Camber lines
+^^^^^^^^^^^^
 
-That is what retires ``apply_recamber``/``undo_recamber``. The package this
-replaces stores the recamber angles in the first two slots of a parameter
-vector, overwrites them in place with the metal angles once a mean line is
-known, and guards the whole thing with an ``is_recambered`` flag that plots
-toggle on and off. Here the two live in different objects and a metal angle is
-computed once.
+A :class:`CamberDesign` describes the *shape* of a camber line between its end
+angles; pairing it with those angles gives a :class:`CamberLine`, which can be
+evaluated. The end angles are not design variables but a result --- the local
+flow angle plus the recamber asked for by a
+:class:`~turbigen.blade.SectionDesign` --- so the split here is the same one made
+everywhere else, one level down.
+
+:class:`Quadratic` (``quadratic``) is the built-in shape: the camber line slope
+varies quadratically along the chord, with :attr:`~Quadratic.aft_loading`
+shifting the turning towards the trailing edge.
 """
 
 import dataclasses
@@ -36,6 +37,7 @@ class CamberDesign(Node):
     """Base for camber line shapes.
 
     A shape knows nothing of the blade angles: it interpolates between them.
+    The :doc:`/blade` page covers where the angles come from.
     """
 
     def chi_hat(self, m):

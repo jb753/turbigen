@@ -44,6 +44,7 @@ User manual
    meanline
    design
    annulus
+   blade
 
 .. toctree::
    :maxdepth: 2

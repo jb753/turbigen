@@ -790,7 +790,7 @@ def _incidence(result, i_row, spf, upstream):
     alpha = np.asarray(block.Alpha_rel[i_read])
     flow = float(np.sum(weight * alpha) / np.sum(weight))
 
-    metal = float(machine.rows[i_row].blade.chi(spf)[0])
+    metal = float(machine.rows[i_row].blade.evaluate_chi(spf)[0])
 
     return flow - metal
 

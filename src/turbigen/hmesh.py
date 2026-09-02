@@ -337,7 +337,7 @@ class H(Mesher):
         uniform = np.linspace(0.0, 1.0, nk).reshape(1, 1, -1)
         assert np.all(relax >= 0.0) and np.all(relax <= 1.0)
 
-        Theta = blade.chi(0.5)
+        Theta = blade.evaluate_chi(0.5)
         pitch_frac_clust = np.tile(grids.pitch_frac_nom.reshape(1, 1, -1), (ni, nj, 1))
 
         # 3. Theta limits from blade sections

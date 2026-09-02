@@ -27,7 +27,7 @@ from turbigen.blade import (
     DiffusionFactor,
     FixedCount,
     Row,
-    Section,
+    SectionDesign,
 )
 from turbigen.camber import CamberDesign, CamberLine, Quadratic
 from turbigen.config import Config
@@ -96,7 +96,7 @@ __all__ = [
     "Mesher",
     "Quadratic",
     "Row",
-    "Section",
+    "SectionDesign",
     "RowAnnulus",
     "Taylor",
     "ThicknessDesign",
