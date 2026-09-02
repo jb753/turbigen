@@ -17,14 +17,7 @@ be a fair guess at an axial inlet and large enough to be nowhere near zero.
 
 
 class AxialTurbine(MeanLineDesign):
-    """An axial turbine stage: a stator row followed by a rotor row.
-
-    Note the use of ``ml.flat``. A mean line is stored as ``(2, n_row)``,
-    station by row, but the physics of a stage reads naturally in streamwise
-    order, so this design takes the flat view once and indexes it ``0, 1, 2,
-    3`` from machine inlet to machine outlet. That view shares storage with the
-    mean line, so writes through it land in the design being built.
-    """
+    """An axial turbine stage."""
 
     type: ClassVar[str] = "axial_turbine"
     n_row: ClassVar[int] = 2

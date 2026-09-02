@@ -15,7 +15,7 @@ from turbigen.node import Node
 
 
 class Fluid(Node):
-    """Base for equations of state."""
+    """Specify the equation of state of the working fluid."""
 
     def eos(self) -> ember.fluid.Fluid:
         """Return the ember fluid object for this equation of state."""

@@ -209,7 +209,11 @@ class DesignError(Exception):
 
 
 class MeanLineDesign(Node):
-    """Base for mean-line designers."""
+    """Choose the mean-line design algorithm.
+
+    The :doc:`/design` page covers what a subclass declares and how
+    :program:`turbigen` runs it.
+    """
 
     n_row: ClassVar[int | None] = None
     """Number of blade rows this design describes."""

@@ -420,14 +420,10 @@ class Annulus:
 
 
 class AnnulusDesign(Node):
-    """Base for annulus designs.
+    """Specify the shape of an annulus around a given mean line.
 
-    Unlike a mean-line design, an annulus declares no ``n_row``: it is generic
-    over row count, which comes from the mean line handed to :meth:`design`.
-
-    There is a single verb, :meth:`design`, and no ``forward``/``backward``
-    pair: a fitted curve does not invert to a small set of design variables,
-    so there is nothing for a ``backward`` to check a ``forward`` against.
+    The :doc:`/annulus` page covers the shapes that ship with
+    :program:`turbigen` and how a design is run.
     """
 
     def design(self, mean_line) -> Annulus:
@@ -568,10 +564,7 @@ class FixedAxialChord(PchipAnnulus):
     """Annulus with a prescribed axial chord for each row and gap.
 
     Note that an axial chord cannot describe a segment at 90 degrees pitch
-    angle: the arc length it implies is the chord divided by ``cos(Beta)``, so
-    a radial segment asks for an infinite one. :class:`AspectRatio` states the
-    arc length directly and has no such limit.
-    """
+    angle, so this method does not work for radial machines."""
 
     type: ClassVar[str] = "fixed_axial_chord"
 
@@ -590,11 +583,8 @@ class FixedAxialChord(PchipAnnulus):
 class AspectRatio(PchipAnnulus):
     """Annulus with a prescribed span-to-chord ratio for each row and gap.
 
-    The chord is meridional, and the span it is measured against is the
-    average over the segment, so a row's aspect ratio is set by the mean line
-    on both sides of it. This is the specification the design correlations are
-    written in --- an aspect ratio is a number a designer carries between
-    machines, where an axial chord in metres is not.
+    The chord is meridional, and the span it is measured against is the mean
+    of the inlet and outlet spans of each segment.
     """
 
     type: ClassVar[str] = "aspect_ratio"
