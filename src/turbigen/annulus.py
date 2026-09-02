@@ -1,11 +1,13 @@
 """Classes to construct annulus geometry around a mean line design.
 
-An :class:`AnnulusDesign` describes the choice of shape of hub and casing lines
-of a turbomachine. The design is what is specified in the input file under
+An :class:`AnnulusDesign` describes a family of hub and casing line shapes for
+a turbomachine. The design is what is specified in the input file under
 :ref:`annulus: <config-annulus>`, but is not in itself sufficient to construct
-an annulus: the design must be combined with a
-:class:`~turbigen.meanline.MeanLine` to produce an :class:`Annulus`, which
-holds the actual curves for a particular machine.
+an annulus. Conversely, a :class:`~turbigen.meanline.MeanLine` holds mean radii
+and annulus areas, but not axial coordinates or anything about the shape
+between stations. To get a complete annulus, we combine a
+:class:`AnnulusDesign` and a :class:`~turbigen.meanline.MeanLine` to produce an
+:class:`Annulus`, which calculates the actual curves for a particular machine.
 
 The :doc:`/tutorial` uses the built-in annulus in a complete design; this page
 documents the classes in more detail. The mean line an annulus is built
@@ -18,11 +20,11 @@ Built-in annulus shapes
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 The two annulus shapes that ship with :program:`turbigen` both define the
-annulus lines using PCHIP curves in arc-length space, and differ only in how
-the meridional length of each row and gap is stated --- a dimensional axial
-chord in metres, or a span-to-chord ratio. Both lay their values out over the
-segments, which alternate gap, row, gap, row, ..., so there are ``2 * n_row +
-1`` of them and the gaps include the inlet and outlet ducts.
+annulus lines using cubic splines in arc-length space, as subclasses of
+:class:`PchipAnnulus`, and differ only in how the meridional length of each row
+and gap is stated. Both lay their values out over the segments, which alternate
+gap, row, gap, row, ..., so there are ``2 * n_row + 1`` of them and the gaps
+include the inlet and outlet ducts.
 
 * :class:`FixedAxialChord` states the axial chord of each row in ``cx_row``
   and of each gap in ``cx_gap``, in metres. Note that this method only works
@@ -30,44 +32,16 @@ segments, which alternate gap, row, gap, row, ..., so there are ``2 * n_row +
 
 * :class:`AspectRatio` states the span-to-meridional-chord ratio of each row in
   ``AR_row`` and of each gap in ``AR_gap``. The aspect ratios are defined with
-  respect to the inlet and outlet spans of each segment. No limit is placed on
+  respect to the mean of inlet and outlet spans for each segment. No limit is placed on
   the pitch angle, so this method works for radial machines.
 
-Two more parameters are configurable.
+Two more parameters are configurable:
 
 * :attr:`~PchipAnnulus.nozzle_ratio` scales the exit span to achieve a desired
-  nozzle area
+  nozzle area;
 * :attr:`~PchipAnnulus.merge_weight` blends the annulus lines towards a curve
   through the machine inlet and outlet stations alone, instead of constraining
   the internal stations, to smooth curvature across the machine.
-
-.. _annulus-coordinate:
-
-The annulus coordinate
-^^^^^^^^^^^^^^^^^^^^^^
-
-An :class:`Annulus` is addressed by a normalised meridional coordinate ``m``
-and a span fraction ``spf``. ``m`` is 0 at the inlet, 1 at the first row
-leading edge, 2 at its trailing edge, and so on up to
-:attr:`~Annulus.m_max`; ``spf`` runs 0 at the hub to 1 at the casing.
-:meth:`Annulus.evaluate_xr` maps a pair of them to axial and radial
-coordinates, and every station property is read off it.
-
-.. figure:: /_static/annulus_coordinate.svg
-   :width: 100%
-
-   Meridional view of a two-row annulus. Each row is bounded by its leading-
-   and trailing-edge stations, so ``m`` reads 1 and 2 across the first row and
-   3 and 4 across the second, with the gaps and the inlet and outlet ducts
-   filling the rest up to :attr:`~Annulus.m_max`. ``spf`` runs 0 at the hub to
-   1 at the casing at any ``m``, gaps included. The source is
-   ``doc/figures/annulus_coordinate.tex``.
-
-:meth:`Annulus.extract_row` returns a :class:`RowAnnulus` for one blade row,
-carrying its own :meth:`~RowAnnulus.evaluate_xr` where ``m`` runs 0 at the
-leading edge to 1 at the trailing edge. A blade design is handed one of these
-rather than the whole annulus and a row index, so the convention mapping a row
-onto the annulus coordinate stays in one place.
 
 
 .. _annulus-process:
@@ -76,69 +50,41 @@ Design process
 ^^^^^^^^^^^^^^
 
 Loading an input file converts its :ref:`annulus: <config-annulus>` mapping
-into an instance of the class named by ``type``. Once the mean line is built,
-:program:`turbigen` calls :meth:`~PchipAnnulus.design`:
+into an instance of the :class:`AnnulusDesign` subclass
+named by ``type``. Once the mean line is built,
+:program:`turbigen` passes :meth:`PchipAnnulus.design` a :class:`~turbigen.meanline.MeanLine` and:
 
-#. :meth:`~PchipAnnulus.segment_lengths` gives the meridional arc length of
-   every row and gap;
-#. control points for the hub and casing are placed from the mean-line mean
+#. :meth:`~PchipAnnulus.segment_lengths` returns the meridional arc length of
+   every row and gap, given spans and pitch angles;
+#. Calculates points for the hub and casing from the mean-line mean
    radius, span and pitch angle at each station, with straight duct extensions
-   added at the inlet and exit;
-#. PCHIP curves are fitted through the control points in arc-length space, the
-   parameterisation iterated until each segment's length matches its target;
-#. a second fit through the end segments alone is made when
-   :attr:`~PchipAnnulus.merge_weight` is non-zero, for the curvature blend.
+   of the required segment length added at inlet and outlet;
+#. PCHIP splines are fitted through the control points in arc-length space
+   iterating until until each segment's length matches its target;
+#. A second spline fit through the machine inlet and outlet stations alone is made
+   when :attr:`~PchipAnnulus.merge_weight` is non-zero, for the curvature blend.
+
+Finally, the fitted splines are returned in an :class:`Annulus`. Downstream code
+uses :meth:`Annulus.evaluate_xr` and so on to get the coordinates of any
+position in the annulus coordinate system, described next.
 
 
-Two designs ship with :program:`turbigen`, :class:`FixedAxialChord` and
-:class:`AspectRatio`. Both define the annulus lines using PCHIP curves in
-arc-length space, and differ only in how the meridional length of each row and
-gap is stated --- a dimensional axial chord in metres, or a span-to-chord
-ratio. Writing a design of your own means subclassing :class:`PchipAnnulus` and
-supplying the method to set the segment lengths. For example::
+.. _annulus-coordinate:
 
-    class MyAnnulus(PchipAnnulus):
-        type: ClassVar[str] = "my_annulus"
+Annulus coordinate system
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-        my_field: tuple[float, ...]
+An :class:`Annulus` is addressed by a normalised meridional coordinate ``m``
+and a span fraction ``spf``. At the inlet, ``m=0``, then 1 at the first row
+leading edge, 2 at its trailing edge, and so on up to
+:attr:`~Annulus.m_max`. Span fraction ``spf`` runs from 0 at the hub to 1 at the casing.
+:meth:`Annulus.evaluate_xr` maps a pair of them to axial and radial
+coordinates.
 
-        def segment_lengths(self, span_avg, cos_Beta_avg):
-            ...
-            return Ds
+.. figure:: /_static/annulus_coordinate.svg
+   :width: 100%
 
-.. _annulus-contract:
-
-The design contract
-^^^^^^^^^^^^^^^^^^^
-
-A design sets one class variable, writes one method, and inherits the rest:
-
-.. list-table::
-   :widths: 40 60
-
-   * - ``type``
-     - The name an input file asks for, under :ref:`annulus:
-       <config-annulus>`.
-   * - :meth:`PchipAnnulus.segment_lengths`
-     - Written by the design: the meridional arc length of each row and gap.
-   * - :meth:`PchipAnnulus.design`
-     - Provided: place the control points, fit the curves, return an
-       :class:`Annulus`.
-
-Unlike a :class:`~turbigen.design.MeanLineDesign`, an annulus design declares
-no ``n_row``: it is generic over the number of rows, which comes from the mean
-line handed to :meth:`~AnnulusDesign.design`. There is only :meth:`design`, and
-no ``forward``/``backward`` pair --- a fitted curve does not invert to a small
-set of design variables, so there is nothing for a ``backward`` to check.
-
-A built-in design is registered automatically. A user-created design is picked
-up from any ``turbigen_plugins`` directory beside the input file, or above it,
-and need not be installed.
-
-The design variables are declared as :class:`~dataclasses.dataclass` fields and
-read from under the :ref:`annulus: <config-annulus>` key. A field with no
-default is required; a field with a default is optional and its value is
-recorded in ``output.yaml``.
+   Meridional view of a two-row and coordinate system.
 
 """
 
