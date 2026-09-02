@@ -521,10 +521,10 @@ def test_aspect_ratio_matches_the_turbigen_implementation(weight):
 
 def test_annulus_cannot_be_rebound(machine):
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus._merge_weight = 0.9
+        machine.annulus.merge_weight = 0.9
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus._curves = ()
+        machine.annulus.curves = ()
 
 
 def test_row_annulus_cannot_be_rebound(machine):
@@ -545,4 +545,4 @@ def test_repr_stays_readable(machine):
     so the bulky fields are excluded from it."""
     text = repr(machine.annulus)
 
-    assert text == f"Annulus(_merge_weight=0.0, n_row={machine.annulus.n_row})"
+    assert text == f"Annulus(merge_weight=0.0, n_row={machine.annulus.n_row})"

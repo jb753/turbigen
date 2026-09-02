@@ -272,7 +272,7 @@ class BladeDesign(Node):
                 f"A blade has one tip clearance, but {set_tips} were all given."
             )
 
-    def forward(self, mean_line_row, row_annulus):
+    def design(self, mean_line_row, row_annulus):
         """Return the blade this design describes.
 
         Parameters
@@ -324,10 +324,6 @@ class BladeDesign(Node):
             n_blade=self.count.count(mean_line_row, blade),
             tip_gap=tip_gap,
         )
-
-    def design(self, mean_line_row, row_annulus):
-        """Return the row this design describes."""
-        return self.forward(mean_line_row, row_annulus)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
