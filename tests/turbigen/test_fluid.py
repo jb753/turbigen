@@ -40,10 +40,14 @@ CASE = {
     "Rgas": 51.2,
     "mu_c": 1.8e-5,
     "kappa_c": 2.5e-2,
-    # The centre of the box above, which is where the fitting script puts it.
-    "P_dtm": 334563.125,
-    "T_dtm": 250.27320861816406,
 }
+
+# What the gas being fitted actually does at the centre of the box above, which
+# is where ember places the datum when it is not told one. Not the same
+# measurement as the datum read back off the surface: an order-2 fit separates
+# the two by about half a percent.
+BOX_CENTRE_P = 334563.125
+BOX_CENTRE_T = 250.27320861816406
 
 
 @pytest.fixture
@@ -108,70 +112,44 @@ def test_eos_builds_an_ember_real_fluid(real):
         Rgas=51.2,
         mu_c=1.8e-5,
         kappa_c=2.5e-2,
-        P_dtm=334563.125,
-        T_dtm=250.27320861816406,
     )
     rho, u = 25.5, 3.5e5
     assert float(eos.get_P(rho, u)) == float(direct.get_P(rho, u))
     assert float(eos.get_T(rho, u)) == float(direct.get_T(rho, u))
 
 
-def test_the_reference_scales_are_not_config(real):
-    """A file sets the fit, never the non-dimensionalisation.
+def test_the_reference_scales_and_datum_are_not_config(real):
+    """A file sets the fit, never the non-dimensionalisation or the datum.
 
-    The scales are derived from the design by MeanLine.get_referenced_fluid and
+    Both are derived from the design by MeanLine.get_referenced_fluid and
     replaced before anything reads them, so a value for one in a config file
     could only ever be ignored.
     """
     dumped = real.to_dict()
-    for scale in ("rho_ref", "V_ref", "Rgas_ref"):
-        assert scale not in dumped
+    for name in ("rho_ref", "V_ref", "Rgas_ref", "P_dtm", "T_dtm"):
+        assert name not in dumped
 
     with pytest.raises(ValueError, match="rho_ref"):
         Fluid.from_dict(dict(CASE, rho_ref=1.2))
+    with pytest.raises(ValueError, match="P_dtm"):
+        Fluid.from_dict(dict(CASE, P_dtm=1e5))
 
 
-def test_the_datum_is_config_unlike_a_perfect_gas(real):
-    """A real gas may be told its datum; a perfect gas has nowhere to say it.
-
-    A perfect gas is defined everywhere, so its datum is free and
-    MeanLine.get_referenced_fluid is the only thing that picks one. A fitted
-    surface exists only inside its box, so the datum has to land in there and
-    the config is allowed a say.
-    """
-    assert real.to_dict()["P_dtm"] == CASE["P_dtm"]
-    assert "P_dtm" not in PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5).to_dict()
-
-
-def test_the_datum_may_be_omitted():
-    """Left out, the datum comes from the middle of the fit box.
+def test_the_datum_defaults_to_the_fit_box_centre(real):
+    """With no datum in the config, ember places it in the middle of the box.
 
     Which is inside the box for any fit, whereas a fixed pressure and
     temperature is only inside some of them.
+
+    Loose, because the two numbers are not the same measurement: the datum
+    ember reports is read off the fitted surface, while BOX_CENTRE_* is what
+    the gas being fitted actually does there, and an order-2 fit separates them
+    by about half a percent. Tightening this would be asserting the quality of
+    the fit, which is ember's business.
     """
-    without = {k: v for k, v in CASE.items() if k not in ("P_dtm", "T_dtm")}
-    fluid = Fluid.from_dict(without)
-
-    assert fluid.P_dtm is None
-    assert fluid.to_dict()["P_dtm"] is None
-
-    # The box centre, which for this fit is nowhere near the 1 bar and 300 K
-    # that ember used to fall back on. Loose, because the two numbers are not
-    # the same measurement: the datum above is read off the fitted surface,
-    # while CASE carries what the gas being fitted actually does there, and an
-    # order-2 fit separates them by about half a percent. Tightening this
-    # would be asserting the quality of the fit, which is ember's business.
-    eos = fluid.eos()
-    assert float(eos.P_dtm) == pytest.approx(CASE["P_dtm"], rel=1e-2)
-    assert float(eos.T_dtm) == pytest.approx(CASE["T_dtm"], rel=1e-2)
-
-
-def test_a_given_datum_still_wins(real):
-    """An explicit datum is passed through rather than replaced by the box."""
-    moved = Fluid.from_dict(dict(CASE, T_dtm=260.0))
-
-    assert float(moved.eos().T_dtm) == pytest.approx(260.0)
-    assert float(real.eos().T_dtm) == pytest.approx(CASE["T_dtm"], rel=1e-5)
+    eos = real.eos()
+    assert float(eos.P_dtm) == pytest.approx(BOX_CENTRE_P, rel=1e-2)
+    assert float(eos.T_dtm) == pytest.approx(BOX_CENTRE_T, rel=1e-2)
 
 
 def test_datum_outside_the_fit_box_raises(real):

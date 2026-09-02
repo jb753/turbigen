@@ -1,10 +1,65 @@
-"""Working fluids.
+"""Working fluids for equation-of-state handling.
 
-A :class:`Fluid` node holds the parameters of an equation of state as they
-appear in the config file. The ember object that does the thermodynamics is
-built on demand by :meth:`Fluid.eos`, and is deliberately not stored: a node is
-a value, and keeping a derived object on it would put it in the instance
-``__dict__``, where pickling a config would drag it along.
+:program:`turbigen` does not evaluate thermodynamic properties itself: it
+outsources equation of state handling to the dependency
+:class:`ember.fluid.Fluid`. The :ref:`fluid: <config-fluid>` key in the input
+file contains everything needed to instantiate one of these equations of
+state, via :meth:`Fluid.eos`.
+
+Once built, the fluid is passed to
+:meth:`~turbigen.design.MeanLineDesign.design` and onwards to the CFD solver.
+The whole interface is comprehensively documented in :mod:`ember.fluid`. It is
+good practice to always use the fluid interface rather than taking any
+perfect-gas shortcuts, to allow the same design to be run with a real gas
+later.
+
+.. _fluid-builtin:
+
+Built-in equations of state
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:class:`PerfectFluid` (``perfect``) is a perfect gas with constant specific
+heats, taking ``cp``, ``gamma``, ``mu`` and ``Pr``.
+
+:class:`RealFluid` (``real``) is a real gas defined by Legendre-polynomial fits
+of the compressibility factor, entropy, viscosity and conductivity over a box
+in density and internal energy. It carries the fit coefficients and the box
+bounds, which are produced by fitting a reference equation of state such as
+CoolProp over the expected operating range.
+
+The full field list for each is in the :ref:`configuration reference
+<config-fluid>`, generated from the classes below.
+
+
+.. _fluid-scales:
+
+Reference scales and datum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The non-dimensionalisation reference scales and the entropy datum are not
+config inputs. They are not properties of the fluid but of the design:
+:meth:`turbigen.meanline.MeanLine.get_referenced_fluid` derives them once the
+mean line exists, and the mesher applies them to the grid, whose numerical
+conditioning is what they are for. See :ref:`ember:reference-scales` and
+:ref:`ember:datum-state`.
+
+Since only changes in internal energy and entropy are physical, the datum
+level is arbitrary. A real gas needs one inside its fit box to be
+constructible at all, and ember places it at the centre of the box, which is
+in range by construction. A design that wants a better-conditioned datum for
+its own pass moves it with :meth:`~ember.fluid.Fluid.change_datum`.
+
+
+.. _fluid-custom:
+
+Writing an equation of state
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Subclass :class:`Fluid`, set a ``type``, declare the parameters as dataclass
+fields, and implement :meth:`~Fluid.eos` to return an :class:`ember.fluid.Fluid`
+built from them. Like any node, it is picked up from a ``turbigen_plugins``
+directory beside the input file and need not be installed.
+
 """
 
 from typing import ClassVar
@@ -15,7 +70,11 @@ from turbigen.node import Node
 
 
 class Fluid(Node):
-    """Specify the equation of state of the working fluid."""
+    """Specify the equation of state of the working fluid.
+
+    The :doc:`/fluid` page covers the built-in equations of state and how a
+    fluid is used in a design.
+    """
 
     def eos(self) -> ember.fluid.Fluid:
         """Return the ember fluid object for this equation of state."""
@@ -98,25 +157,12 @@ class RealFluid(Fluid):
     """Factor multiplying the viscosity, for sweeping Reynolds number without
     touching the fit [--]."""
 
-    P_dtm: float | None = None
-    """Datum pressure where u = s = 0 [Pa]. Must lie in the fit box.
-
-    Omit it and ember places the datum at the centre of the box, which is
-    inside it by construction."""
-
-    T_dtm: float | None = None
-    """Datum temperature where u = s = 0 [K]. As :attr:`P_dtm`."""
-
-    # The three reference scales are absent for the reason given on
-    # PerfectFluid above, and the datum is optional rather than absent, which
-    # is the one place a real gas departs from that argument. A fitted surface
-    # exists only inside its box and the datum has to lie in there, so unlike
-    # a perfect gas -- whose datum is free, and is therefore left entirely to
-    # MeanLine.get_referenced_fluid -- a real gas needs one that is constructible
-    # before there is any design to derive it from. ember defaults it to the
-    # centre of the fit box, which the coefficients here already determine, so
-    # a config only carries the datum when it wants a different one. The
-    # conditioning pass still moves it afterwards either way.
+    # The reference scales and the entropy datum are absent for the reason
+    # given on PerfectFluid above: they are properties of the design, not the
+    # fluid, and MeanLine.get_referenced_fluid sets the datum that matters
+    # before the grid ever sees it. ember defaults the datum to the centre of
+    # the fit box, which is always in range, and a design that needs a
+    # better-conditioned one for its own pass moves it with change_datum.
 
     def eos(self) -> ember.fluid.RealFluid:
         # The coefficients go across as the tuples the node holds; ember's
@@ -133,6 +179,4 @@ class RealFluid(Fluid):
             mu_c=self.mu_c,
             kappa_c=self.kappa_c,
             scale_visc=self.scale_visc,
-            P_dtm=self.P_dtm,
-            T_dtm=self.T_dtm,
         )
