@@ -13,52 +13,44 @@ good practice to always use the fluid interface rather than taking any
 perfect-gas shortcuts, to allow the same design to be run with a real gas
 later.
 
-.. _fluid-builtin:
+There are two built-in equations of state:
 
-Built-in equations of state
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-:class:`PerfectFluid` (``perfect``) is a perfect gas with constant specific
-heats, taking ``cp``, ``gamma``, ``mu`` and ``Pr``.
-
-:class:`RealFluid` (``real``) is a real gas defined by Legendre-polynomial fits
-of the compressibility factor, entropy, viscosity and conductivity over a box
-in density and internal energy. It carries the fit coefficients and the box
-bounds, which are produced by fitting a reference equation of state such as
-CoolProp over the expected operating range.
+* :class:`PerfectFluid` is a perfect gas with constant specific heats and
+  transport properties;
+* :class:`RealFluid` is a real gas defined by Legendre-polynomial fits of the
+  compressibility factor, entropy, viscosity and conductivity, following
+  :cite:`Wheeler2024`.
 
 The full field list for each is in the :ref:`configuration reference
 <config-fluid>`, generated from the classes below.
-
 
 .. _fluid-scales:
 
 Reference scales and datum
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The non-dimensionalisation reference scales and the entropy datum are not
-config inputs. They are not properties of the fluid but of the design:
-:meth:`turbigen.meanline.MeanLine.get_referenced_fluid` derives them once the
-mean line exists, and the mesher applies them to the grid, whose numerical
-conditioning is what they are for. See :ref:`ember:reference-scales` and
-:ref:`ember:datum-state`.
+The ember documentation describes :ref:`reference scales
+<ember:reference-scales>` and the :ref:`datum state <ember:datum-state>`.
+These are used to non-dimensionalise the flow field and keep quantities
+of order unity to achieve good numerical conditioning in a CFD solver.
 
-Since only changes in internal energy and entropy are physical, the datum
-level is arbitrary. A real gas needs one inside its fit box to be
-constructible at all, and ember places it at the centre of the box, which is
-in range by construction. A design that wants a better-conditioned datum for
-its own pass moves it with :meth:`~ember.fluid.Fluid.change_datum`.
-
+The reference scales and datum are not
+configuration file inputs, because suitable values are derived from the mean-design
+itself via
+:meth:`turbigen.meanline.MeanLine.get_referenced_fluid`
 
 .. _fluid-custom:
 
-Writing an equation of state
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Writing a new equation of state
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Subclass :class:`Fluid`, set a ``type``, declare the parameters as dataclass
-fields, and implement :meth:`~Fluid.eos` to return an :class:`ember.fluid.Fluid`
-built from them. Like any node, it is picked up from a ``turbigen_plugins``
-directory beside the input file and need not be installed.
+First write your own subclass of :class:`ember.fluid.Fluid` following the
+abstract base and implementing the required methods. Then
+subclass :class:`Fluid`, set a distinct ``type``, declare the parameters as dataclass
+fields, and implement :meth:`~Fluid.eos` to return your :class:`ember.fluid.Fluid`
+built from the dataclass fields. Like any node, it is picked up from a
+``turbigen_plugins`` directory beside the input file and need not be installed
+in the source tree.
 
 """
 
