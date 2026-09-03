@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Tutorial &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
+    <title>Tutorial &#8212; turbigen 3.0.1.dev24+g11478bbd7 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
+    <script src="_static/documentation_options.js?v=f747c255"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -34,7 +34,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
+<p class="blurb">Version 3.0.1.dev24+g11478bbd7</p>
 
 
 
@@ -302,7 +302,7 @@ properties needed to specify that type.</p>
 </div>
 <p>If we ask <strong class="program">turbigen</strong> to run the design for <cite>input.yaml</cite> at this point, it will load the input data but stop because <cite>forward</cite> is not implemented.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 NotImplementedError: Implement the forward method
 Total time: 0.0 s
@@ -352,7 +352,7 @@ by adding them as fields to the class.</p>
 </div>
 <p>Optionally, a default can be set for a field, which will be used if the input file does not specify a value; the input file must include all fields without defaults. Hence, running the design now will produce a different error:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 TypeError: Fan.__init__() missing 6 required keyword-only arguments: 'DPo', 'mdot', 'phi', 'psi', 'htr', and 'eta_tt'
 Total time: 0.0 s
@@ -530,7 +530,7 @@ Eqn. <a class="reference internal" href="#equation-eqn-rrms">(6)</a>, from which
 </div>
 <p>If we now run <strong class="program">turbigen</strong> on <cite>input.yaml</cite>, it will load the input data, build the mean line, and then fall over because <cite>backward</cite> is not implemented:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 NotImplementedError: Implement the backward method
 Total time: 0.0 s
@@ -574,7 +574,7 @@ calls <cite>forward</cite> to build the mean line, passes it back through <cite>
 check that the design variables it asked for are the ones it got, and prints
 the result — the <a class="reference internal" href="design.html#design-process"><span class="std std-ref">Design process</span></a> in full:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 Mean line:          Row 0     
                  Inlet  Outlet
@@ -644,7 +644,7 @@ smoothly interpolated across the span.</p>
 <p>Now passing the input file to <strong class="program">turbigen</strong> will now build the mean line
 and the annulus and blade shapes to give us some more printout, including the calculated meridional chord, number of blades, tip gap, and pitch-to-chord ratio:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen design input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 Mean line:          Row 0     
                  Inlet  Outlet
@@ -678,7 +678,7 @@ only prints to the console. We can save more detailed plots to disk by
 running <a class="reference internal" href="usage.html#usage-report"><span class="std std-ref">report</span></a> mode, which will write a <cite>post.pdf</cite> report with plots of the
 design, and if CFD were run the post-processed flow field as well. Report mode also saves an <cite>output.yaml</cite> file which is the same as the input file but with any defaults filled in, and a transcript of the console output in <cite>log_turbigen.txt</cite>. So if we run:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>$ turbigen report input.yaml
-*** TURBIGEN v3.0.1.dev23+g573cedd93 ***
+*** TURBIGEN v3.0.1.dev24+g11478bbd7 ***
 ...
 No solution was marched, skipping the convergence plot.
 No solved grid, skipping the surface distribution plot.
