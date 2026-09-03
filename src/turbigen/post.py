@@ -479,6 +479,7 @@ class ConvergencePlot(Post):
             return []
 
         import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.ticker as mticker  # noqa: PLC0415
 
         # A history arrives trimmed to the records actually written, so there
         # is no NaN tail to slice off here.
@@ -493,32 +494,40 @@ class ConvergencePlot(Post):
         ax.set_title("Convergence History")
         ax.legend()
 
-        # The quantities themselves, as they settle -- not their distance from
-        # the final value. Read against a known design intent, the value is
-        # what says whether the answer is right; the deviation only says the
-        # march has stopped moving, which the residuals already show. Work and
-        # loss arrive already scaled by the fluid reference state (`ho_nd` by
-        # u_ref, `s_nd` by Rgas_ref), so they are comparable between cases as
-        # they stand and need no further normalisation. The mass error is a
-        # fraction of the mean flow through the machine, so it is the one that
-        # is genuinely a percentage.
+        # All three panels as a percentage error, so they read on one scale
+        # against one question: how far is each integral quantity from where
+        # the march left it? The mass error is already a fraction of the mean
+        # through-flow; work and loss are referred to their own final value,
+        # (x / x[-1] - 1), so a settled march sits on zero. The residuals
+        # carry the absolute story; these say how close to done it is.
+        final_psi = history.psi[-1] or 1.0
+        final_zeta = history.zeta[-1] or 1.0
         panels = (
-            (100.0 * history.err_mdot, r"Mass, $\varepsilon$", r"$\varepsilon$ [$\%$]"),
-            (history.psi, r"Work, $\psi$", r"$\psi$ [-]"),
-            (history.zeta, r"Loss, $\zeta$", r"$\zeta$ [-]"),
+            (100.0 * history.err_mdot, r"Mass, $\varepsilon$"),
+            (100.0 * (history.psi / final_psi - 1.0), r"Work, $\psi$"),
+            (100.0 * (history.zeta / final_zeta - 1.0), r"Loss, $\zeta$"),
         )
 
-        # Each panel scales to, and is labelled in, its own units: only the
-        # mass error is a percentage. The percent sign goes through mathtext,
-        # which renders it in both modes -- written bare it survives the
-        # default rc and then vanishes under text.usetex, where it opens a
-        # LaTeX comment and swallows the rest of the label.
+        # No axis labels: the title names the quantity and the ticks are plain
+        # integer percentages, so a unit on the axis would only repeat them.
         fig_error, axs = plt.subplots(1, 3, layout="constrained")
-        for axi, (y, title, ylabel) in zip(axs, panels):
+        for axi, (y, title) in zip(axs, panels):
             axi.plot(steps, y)
             axi.set_title(title)
-            axi.set_xlabel("Step")
-            axi.set_ylabel(ylabel)
+
+            # Symmetric about zero so the approach reads by eye, autoscaled to
+            # the swing but never tighter than +-2%: a converged trace should
+            # look flat, not fill the panel.
+            finite = np.abs(y)[np.isfinite(y)]
+            span = max(1.05 * float(finite.max()), 2.0) if finite.size else 2.0
+            axi.set_ylim(-span, span)
+
+            # Integer percentages, symmetric: -2 -1 0 1 2 at the floor, and a
+            # coarser integer step once the swing outgrows it.
+            axi.yaxis.set_major_locator(
+                mticker.MaxNLocator(nbins=4, integer=True, symmetric=True)
+            )
+
             # A march short enough to log once has nothing to span, and asking
             # for a zero-width axis is an error rather than an empty plot.
             if steps[-1] > steps[0]:
