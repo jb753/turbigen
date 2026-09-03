@@ -341,7 +341,17 @@ class FixedCount(BladeCount):
 
 
 class Circulation(BladeCount):
-    """Set the number of blades using a circulation coefficient."""
+    """Set the number of blades using a circulation coefficient.
+
+    The circulation coefficient is the blade circulation over an ideal one
+    that carries the exit velocity along the whole suction surface and
+    stagnated flow along the pressure surface, Coull and Hodson (2013) eqn.
+    (21). A typical value is 0.7; the loss correlations it was fitted against
+    begin to extrapolate above about 0.8.
+
+    Coull and Hodson write it for an axial row. What is evaluated here is the
+    generalisation to a changing radius, Kaufmann (2020) eqn. (F.6).
+    """
 
     type: ClassVar[str] = "Co"
 
@@ -362,7 +372,10 @@ class Circulation(BladeCount):
         cosAlpha_rel = turbigen.util.cosd(ml.Alpha_rel)
 
         # Circulation from the change in angular momentum, split into the part
-        # due to a change in radius and the part due to a change in swirl
+        # due to a change in radius and the part due to a change in swirl. For
+        # an irrotational inlet flow the two together are the circulation bound
+        # to the blade, the centrifugal term being the relative eddy that a
+        # changing radius sweeps out; on an axial row it drops out entirely.
         centrifugal = (1.0 - RR**2.0) * (tanAlpha[0] - tanAlpha_rel[0])
         tangential = tanAlpha_rel[0] - RR * VmR * tanAlpha_rel[1]
 
@@ -375,8 +388,10 @@ class Circulation(BladeCount):
         # Pitch that delivers the requested circulation coefficient
         pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)
 
-        r_ref = np.mean(ml.r)
-        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
+        # The coefficient is written in the inlet pitch, so it is the inlet
+        # radius that turns a pitch into a count; the count being the same all
+        # the way through then fixes the pitch at every other radius.
+        return int(np.round(2.0 * np.pi * ml.r[0] / pitch).item())
 
 
 class DiffusionFactor(BladeCount):
