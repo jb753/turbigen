@@ -211,7 +211,10 @@ def test_a_stationary_casing_is_measured_in_the_absolute_frame(grid):
     _, casing = util.cut_endwalls(grid)[1]
 
     assert float(casing.Omega) == 0.0
-    np.testing.assert_allclose(casing.ho_rel, casing.ho)
+    # ho_rel and ho are separate float32 reductions of what is analytically the
+    # same sum for a stationary cut, so they agree to a rounding step, not to
+    # assert_allclose's 1e-7 default.
+    np.testing.assert_allclose(casing.ho_rel, casing.ho, rtol=1e-6)
 
 
 def test_setting_a_cut_speed_does_not_re_time_the_grid(grid):
