@@ -72,16 +72,18 @@ def test_guess_keeps_the_reference_scales_the_mesher_set(machine, grid):
     mesher chose for the design, and every flow state written afterwards would
     be stored against the wrong ones.
     """
-    before = grid[0].fluid
+    # Snapshot the scalars, not the fluid object: a reference would compare
+    # equal to itself even if `apply` swapped the scales in place. These must
+    # survive bit-for-bit, so the comparison stays exact -- the failure this
+    # guards against is `apply` rebuilding from the mean line, whose float64
+    # scales land a rounding step off the grid's float32 ones.
+    fields = ("rho_ref", "V_ref", "Rgas_ref", "P_dtm", "T_dtm")
+    before = {name: getattr(grid[0].fluid, name) for name in fields}
 
     guess.apply(grid, machine)
 
-    after = grid[0].fluid
-    assert after.rho_ref == before.rho_ref
-    assert after.V_ref == before.V_ref
-    assert after.Rgas_ref == before.Rgas_ref
-    assert after.P_dtm == before.P_dtm
-    assert after.T_dtm == before.T_dtm
+    after = {name: getattr(grid[0].fluid, name) for name in fields}
+    assert after == before
 
 
 def test_guess_is_independent_of_the_datum_it_is_built_against(machine, grid):
