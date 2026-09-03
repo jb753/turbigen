@@ -285,14 +285,13 @@ class Tsp(Job):
     a small Debian package, in place of the flock'd text file, PID file, SIGHUP
     cancel-all and systemd unit that the package this replaces hand-rolls to
     the same end. Watch it with ``tsp -l``, read a job with ``tsp -c ID``, stop
-    the rest with ``tsp -C``.
+    the rest with ``tsp -C``, and set how many run at once with ``tsp -S``.
+    That last one belongs to the user: task-spooler keeps one server per user,
+    shared with everything else they have queued, so submitting a batch here
+    never touches it.
     """
 
     type: ClassVar[str] = "tsp"
-
-    slots: int = 4
-    """Jobs to run at once. Set on the queue itself, so it outlives this
-    submission and applies to whatever is already waiting."""
 
     cpus: int = 0
     """Slots one job occupies, for work that wants more than one core. Zero
@@ -300,9 +299,6 @@ class Tsp(Job):
 
     def forward(self, tasks, verb, options):
         binary = _find_tsp()
-
-        if self.slots:
-            run_process([binary, "-S", str(self.slots)], Path.cwd())
 
         ids = []
         for task in tasks:

@@ -233,14 +233,15 @@ def test_one_target_submits_into_its_own_directory(tmp_path, calls):
 def test_tsp_queues_one_job_per_task(batch, calls, monkeypatch):
     monkeypatch.setattr(job.shutil, "which", lambda name: f"/usr/bin/{name}")
 
-    ids = job.Tsp(slots=2).submit(tasks_for(batch), "run", ("-v",))
+    ids = job.Tsp().submit(tasks_for(batch), "run", ("-v",))
 
-    # The slot count first, then one job each.
-    slots, *queued = calls
-    assert slots[0] == ["/usr/bin/tsp", "-S", "2"]
-    assert len(queued) == 3
+    # One job each, and nothing else: the slot count belongs to the user's
+    # task-spooler server, shared with everything else they have queued, so
+    # submitting must not touch it.
+    assert len(calls) == 3
+    assert not any("-S" in argv for argv, _ in calls)
 
-    argv, cwd = queued[0]
+    argv, cwd = calls[0]
     assert argv[:3] == ["/usr/bin/tsp", "-L", "0000"]
     assert argv[-3:] == ["run", str(batch[0].resolve()), "-v"]
     assert cwd == str(batch[0].parent)
@@ -252,7 +253,7 @@ def test_tsp_asks_for_more_slots_when_a_job_needs_them(batch, calls, monkeypatch
 
     job.Tsp(cpus=4).submit(tasks_for(batch[:1]), "run")
 
-    _, (argv, _) = calls
+    ((argv, _),) = calls
     assert "-N" in argv
     assert argv[argv.index("-N") + 1] == "4"
 

@@ -1233,6 +1233,12 @@ execs `journalctl` --- and still cannot express a job wanting four cores.
 Nothing wraps `tsp -l` or `squeue`. They are better than anything we would put
 in front of them, so the turbigen surface is `--queue` and the `job:` key.
 
+The slot count is `tsp -S`, and it stays there. task-spooler keeps one server
+per user, so a slot count reaches everything that user has queued from
+anywhere and outlives the submission that set it. A `slots:` key here was a
+passthrough that quietly rewrote a setting that is not ours, on every submit,
+by default. `cpus:` stays because `-N` is per job, which is ours to say.
+
 ### A partition is not part of the design
 
 Nothing here is read by any design stage, and `database.SUBTREE` already
