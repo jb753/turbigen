@@ -764,9 +764,7 @@ class Incidence(Iterator):
                 name = f"dchi_LE[{i_row}][{i_section}]"
                 if name not in values:
                     continue
-                sections[i_section] = dataclasses.replace(
-                    section, dchi_LE=values[name]
-                )
+                sections[i_section] = dataclasses.replace(section, dchi_LE=values[name])
                 moved = True
             if moved:
                 blades[i_row] = dataclasses.replace(blade, sections=tuple(sections))
