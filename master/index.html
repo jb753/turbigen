@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>User manual &#8212; turbigen 0.1.dev1449+g1a5d798fd documentation</title>
+    <title>User manual &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=358a99ee"></script>
+    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -32,7 +32,7 @@
 
 
 
-<p class="blurb">Version 0.1.dev1449+g1a5d798fd</p>
+<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
 
 
 
@@ -57,8 +57,11 @@
 <li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
 </ul>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
 <li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
@@ -180,6 +183,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="config.html#chic">chic:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="config.html#batch">batch:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="config.html#post-process">post_process:</a></li>
+<li class="toctree-l3"><a class="reference internal" href="config.html#metrics">metrics:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="config.html#job">job:</a></li>
 </ul>
 </li>
@@ -205,6 +209,39 @@ usage instructions, descriptions of the theory involved, and listings of configu
 </div>
 <div class="toctree-wrapper compound">
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#reference-scales-and-datum">Reference scales and datum</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#writing-a-new-equation-of-state">Writing a new equation of state</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#turbigen.fluid.Fluid"><code class="docutils literal notranslate"><span class="pre">Fluid</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.Fluid.eos"><code class="docutils literal notranslate"><span class="pre">eos()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid"><code class="docutils literal notranslate"><span class="pre">PerfectFluid</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.cp"><code class="docutils literal notranslate"><span class="pre">cp</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.gamma"><code class="docutils literal notranslate"><span class="pre">gamma</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.mu"><code class="docutils literal notranslate"><span class="pre">mu</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.Pr"><code class="docutils literal notranslate"><span class="pre">Pr</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.PerfectFluid.eos"><code class="docutils literal notranslate"><span class="pre">eos()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid"><code class="docutils literal notranslate"><span class="pre">RealFluid</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.alpha"><code class="docutils literal notranslate"><span class="pre">alpha</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.beta"><code class="docutils literal notranslate"><span class="pre">beta</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.delta"><code class="docutils literal notranslate"><span class="pre">delta</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.gamma"><code class="docutils literal notranslate"><span class="pre">gamma</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.rho_lim"><code class="docutils literal notranslate"><span class="pre">rho_lim</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.u_lim"><code class="docutils literal notranslate"><span class="pre">u_lim</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.Rgas"><code class="docutils literal notranslate"><span class="pre">Rgas</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.mu_c"><code class="docutils literal notranslate"><span class="pre">mu_c</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.kappa_c"><code class="docutils literal notranslate"><span class="pre">kappa_c</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.scale_visc"><code class="docutils literal notranslate"><span class="pre">scale_visc</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="fluid.html#turbigen.fluid.RealFluid.eos"><code class="docutils literal notranslate"><span class="pre">eos()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="meanline.html#indexing">Indexing</a></li>
 <li class="toctree-l2"><a class="reference internal" href="meanline.html#building-a-mean-line">Building a mean line</a></li>
@@ -261,6 +298,182 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.allocate"><code class="docutils literal notranslate"><span class="pre">allocate()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="design.html#turbigen.design.MeanLineDesign.solve_for"><code class="docutils literal notranslate"><span class="pre">solve_for()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#built-in-annulus-shapes">Built-in annulus shapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#design-process">Design process</a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#annulus-coordinate-system">Annulus coordinate system</a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.CUT_OFFSET"><code class="docutils literal notranslate"><span class="pre">CUT_OFFSET</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus"><code class="docutils literal notranslate"><span class="pre">RowAnnulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_xr_annulus</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.m_LE"><code class="docutils literal notranslate"><span class="pre">m_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.chord"><code class="docutils literal notranslate"><span class="pre">chord</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus"><code class="docutils literal notranslate"><span class="pre">Annulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.s"><code class="docutils literal notranslate"><span class="pre">s</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.curves"><code class="docutils literal notranslate"><span class="pre">curves</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.curves_merged"><code class="docutils literal notranslate"><span class="pre">curves_merged</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.n_segment"><code class="docutils literal notranslate"><span class="pre">n_segment</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.m_max"><code class="docutils literal notranslate"><span class="pre">m_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.r_hub"><code class="docutils literal notranslate"><span class="pre">r_hub</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.r_tip"><code class="docutils literal notranslate"><span class="pre">r_tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.r_mid"><code class="docutils literal notranslate"><span class="pre">r_mid</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.r_rms"><code class="docutils literal notranslate"><span class="pre">r_rms</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.htr"><code class="docutils literal notranslate"><span class="pre">htr</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_span"><code class="docutils literal notranslate"><span class="pre">evaluate_span()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.cut_planes"><code class="docutils literal notranslate"><span class="pre">cut_planes()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_chords"><code class="docutils literal notranslate"><span class="pre">evaluate_chords()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.extract_row"><code class="docutils literal notranslate"><span class="pre">extract_row()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.AnnulusDesign"><code class="docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AnnulusDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus"><code class="docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.nozzle_ratio"><code class="docutils literal notranslate"><span class="pre">nozzle_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.FixedAxialChord"><code class="docutils literal notranslate"><span class="pre">FixedAxialChord</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.FixedAxialChord.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.FixedAxialChord.cx_row"><code class="docutils literal notranslate"><span class="pre">cx_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.FixedAxialChord.cx_gap"><code class="docutils literal notranslate"><span class="pre">cx_gap</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.FixedAxialChord.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio"><code class="docutils literal notranslate"><span class="pre">AspectRatio</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.AR_row"><code class="docutils literal notranslate"><span class="pre">AR_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.AR_gap"><code class="docutils literal notranslate"><span class="pre">AR_gap</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#built-in-shapes">Built-in shapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#design-process">Design process</a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#evaluating-a-blade">Evaluating a blade</a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign"><code class="docutils literal notranslate"><span class="pre">SectionDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.dchi_LE"><code class="docutils literal notranslate"><span class="pre">dchi_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.dchi_TE"><code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.camber"><code class="docutils literal notranslate"><span class="pre">camber</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.thickness"><code class="docutils literal notranslate"><span class="pre">thickness</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.BladeCount"><code class="docutils literal notranslate"><span class="pre">BladeCount</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeCount.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign"><code class="docutils literal notranslate"><span class="pre">BladeDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.sections"><code class="docutils literal notranslate"><span class="pre">sections</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.count"><code class="docutils literal notranslate"><span class="pre">count</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_span"><code class="docutils literal notranslate"><span class="pre">tip_span</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_chord"><code class="docutils literal notranslate"><span class="pre">tip_chord</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_metre"><code class="docutils literal notranslate"><span class="pre">tip_metre</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.vortex_exponent"><code class="docutils literal notranslate"><span class="pre">vortex_exponent</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.theta_offset"><code class="docutils literal notranslate"><span class="pre">theta_offset</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.FixedCount"><code class="docutils literal notranslate"><span class="pre">FixedCount</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.FixedCount.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.FixedCount.Nb"><code class="docutils literal notranslate"><span class="pre">Nb</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.FixedCount.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.Circulation"><code class="docutils literal notranslate"><span class="pre">Circulation</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Circulation.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Circulation.Co"><code class="docutils literal notranslate"><span class="pre">Co</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Circulation.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Circulation.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor"><code class="docutils literal notranslate"><span class="pre">DiffusionFactor</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor.DFL"><code class="docutils literal notranslate"><span class="pre">DFL</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.Blade"><code class="docutils literal notranslate"><span class="pre">Blade</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.row_annulus"><code class="docutils literal notranslate"><span class="pre">row_annulus</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.tanchi"><code class="docutils literal notranslate"><span class="pre">tanchi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.cambers"><code class="docutils literal notranslate"><span class="pre">cambers</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.thicknesses"><code class="docutils literal notranslate"><span class="pre">thicknesses</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.theta_offset"><code class="docutils literal notranslate"><span class="pre">theta_offset</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.n_section"><code class="docutils literal notranslate"><span class="pre">n_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_chi"><code class="docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_section"><code class="docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_surface_length"><code class="docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_chord"><code class="docutils literal notranslate"><span class="pre">evaluate_chord()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.Row"><code class="docutils literal notranslate"><span class="pre">Row</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.blade"><code class="docutils literal notranslate"><span class="pre">blade</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.n_blade"><code class="docutils literal notranslate"><span class="pre">n_blade</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.tip_gap"><code class="docutils literal notranslate"><span class="pre">tip_gap</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#camber-lines">Camber lines</a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.camber.CamberDesign"><code class="docutils literal notranslate"><span class="pre">CamberDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberDesign.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.camber.Quadratic"><code class="docutils literal notranslate"><span class="pre">Quadratic</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Quadratic.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Quadratic.aft_loading"><code class="docutils literal notranslate"><span class="pre">aft_loading</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Quadratic.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.camber.Bernstein"><code class="docutils literal notranslate"><span class="pre">Bernstein</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Bernstein.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Bernstein.order"><code class="docutils literal notranslate"><span class="pre">order</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Bernstein.coeff"><code class="docutils literal notranslate"><span class="pre">coeff</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.Bernstein.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine"><code class="docutils literal notranslate"><span class="pre">CamberLine</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape"><code class="docutils literal notranslate"><span class="pre">shape</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.tanchi_LE"><code class="docutils literal notranslate"><span class="pre">tanchi_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.tanchi_TE"><code class="docutils literal notranslate"><span class="pre">tanchi_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.Dtanchi"><code class="docutils literal notranslate"><span class="pre">Dtanchi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.chi"><code class="docutils literal notranslate"><span class="pre">chi()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#thickness-distributions">Thickness distributions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign"><code class="docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor"><code class="docutils literal notranslate"><span class="pre">Taylor</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.R_LE"><code class="docutils literal notranslate"><span class="pre">R_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.t_max"><code class="docutils literal notranslate"><span class="pre">t_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.m_tmax"><code class="docutils literal notranslate"><span class="pre">m_tmax</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.kappa_max"><code class="docutils literal notranslate"><span class="pre">kappa_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.t_TE"><code class="docutils literal notranslate"><span class="pre">t_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.tanwedge"><code class="docutils literal notranslate"><span class="pre">tanwedge</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.peak"><code class="docutils literal notranslate"><span class="pre">peak()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 </ul>
 </li>
 </ul>

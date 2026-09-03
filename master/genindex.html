@@ -4,12 +4,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Index &#8212; turbigen 0.1.dev1449+g1a5d798fd documentation</title>
+    <title>Index &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=358a99ee"></script>
+    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="#" />
@@ -30,7 +30,7 @@
 
 
 
-<p class="blurb">Version 0.1.dev1449+g1a5d798fd</p>
+<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
 
 
 
@@ -55,8 +55,11 @@
 <li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
 </ul>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
 <li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
@@ -139,29 +142,48 @@
 <div class="genindex-jumpbox">
  <a href="#A"><strong>A</strong></a>
  | <a href="#B"><strong>B</strong></a>
+ | <a href="#C"><strong>C</strong></a>
  | <a href="#D"><strong>D</strong></a>
  | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
  | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
+ | <a href="#K"><strong>K</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
  | <a href="#O"><strong>O</strong></a>
  | <a href="#P"><strong>P</strong></a>
+ | <a href="#Q"><strong>Q</strong></a>
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
+ | <a href="#V"><strong>V</strong></a>
  
 </div>
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.camber.Quadratic.aft_loading">aft_loading (turbigen.camber.Quadratic attribute)</a>
+</li>
       <li><a href="design.html#turbigen.design.MeanLineDesign.allocate">allocate() (turbigen.design.MeanLineDesign method)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.alpha">alpha (turbigen.fluid.RealFluid attribute)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.Am">Am (turbigen.meanline.MeanLine property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.Am">Am (turbigen.meanline.MeanLine property)</a>
+      <li><a href="annulus.html#turbigen.annulus.Annulus">Annulus (class in turbigen.annulus)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AnnulusDesign">AnnulusDesign (class in turbigen.annulus)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AspectRatio.AR_gap">AR_gap (turbigen.annulus.AspectRatio attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AspectRatio.AR_row">AR_row (turbigen.annulus.AspectRatio attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AspectRatio">AspectRatio (class in turbigen.annulus)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -171,23 +193,119 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="design.html#turbigen.design.MeanLineDesign.backward">backward() (turbigen.design.MeanLineDesign method)</a>
 </li>
+      <li><a href="blade.html#turbigen.camber.Bernstein">Bernstein (class in turbigen.camber)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.beta">beta (turbigen.fluid.RealFluid attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.blade.Blade">Blade (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Row.blade">blade (turbigen.blade.Row attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeCount">BladeCount (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeDesign">BladeDesign (class in turbigen.blade)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="C">C</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.blade.SectionDesign.camber">camber (turbigen.blade.SectionDesign attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberDesign">CamberDesign (class in turbigen.camber)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine">CamberLine (class in turbigen.camber)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.cambers">cambers (turbigen.blade.Blade attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.chi">chi() (turbigen.camber.CamberLine method)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.Bernstein.chi_hat">chi_hat() (turbigen.camber.Bernstein method)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.camber.CamberDesign.chi_hat">(turbigen.camber.CamberDesign method)</a>
+</li>
+        <li><a href="blade.html#turbigen.camber.Quadratic.chi_hat">(turbigen.camber.Quadratic method)</a>
+</li>
+      </ul></li>
+      <li><a href="annulus.html#turbigen.annulus.RowAnnulus.chord">chord (turbigen.annulus.RowAnnulus attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Circulation">Circulation (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Circulation.Co">Co (turbigen.blade.Circulation attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.Bernstein.coeff">coeff (turbigen.camber.Bernstein attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.count">count (turbigen.blade.BladeDesign attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeCount.count">count() (turbigen.blade.BladeCount method)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.blade.Circulation.count">(turbigen.blade.Circulation method)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.DiffusionFactor.count">(turbigen.blade.DiffusionFactor method)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.FixedCount.count">(turbigen.blade.FixedCount method)</a>
+</li>
+      </ul></li>
+      <li><a href="fluid.html#turbigen.fluid.PerfectFluid.cp">cp (turbigen.fluid.PerfectFluid attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.curves">curves (turbigen.annulus.Annulus attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.curves_merged">curves_merged (turbigen.annulus.Annulus attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.CUT_OFFSET">CUT_OFFSET (in module turbigen.annulus)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.cut_planes">cut_planes() (turbigen.annulus.Annulus method)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.FixedAxialChord.cx_gap">cx_gap (turbigen.annulus.FixedAxialChord attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.FixedAxialChord.cx_row">cx_row (turbigen.annulus.FixedAxialChord attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="D">D</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="design.html#turbigen.design.MeanLineDesign.design">design() (turbigen.design.MeanLineDesign method)</a>
+      <li><a href="blade.html#turbigen.blade.SectionDesign.dchi_LE">dchi_LE (turbigen.blade.SectionDesign attribute)</a>
 </li>
-      <li><a href="design.html#turbigen.design.DesignError">DesignError</a>
+      <li><a href="blade.html#turbigen.blade.SectionDesign.dchi_TE">dchi_TE (turbigen.blade.SectionDesign attribute)</a>
 </li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.delta">delta (turbigen.fluid.RealFluid attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AnnulusDesign.design">design() (turbigen.annulus.AnnulusDesign method)</a>
+
+      <ul>
+        <li><a href="annulus.html#turbigen.annulus.PchipAnnulus.design">(turbigen.annulus.PchipAnnulus method)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.BladeDesign.design">(turbigen.blade.BladeDesign method)</a>
+</li>
+        <li><a href="design.html#turbigen.design.MeanLineDesign.design">(turbigen.design.MeanLineDesign method)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="design.html#turbigen.design.DesignError">DesignError</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.DiffusionFactor.DFL">DFL (turbigen.blade.DiffusionFactor attribute)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.Dho">Dho (turbigen.meanline.MeanLine property)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.Dhos_ts">Dhos_ts (turbigen.meanline.MeanLine property)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.Dhos_tt">Dhos_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.DiffusionFactor">DiffusionFactor (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.Dtanchi">Dtanchi (turbigen.camber.CamberLine property)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.dydm">dydm() (turbigen.camber.CamberLine method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -195,11 +313,41 @@
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fluid.html#turbigen.fluid.Fluid.eos">eos() (turbigen.fluid.Fluid method)</a>
+
+      <ul>
+        <li><a href="fluid.html#turbigen.fluid.PerfectFluid.eos">(turbigen.fluid.PerfectFluid method)</a>
+</li>
+        <li><a href="fluid.html#turbigen.fluid.RealFluid.eos">(turbigen.fluid.RealFluid method)</a>
+</li>
+      </ul></li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.eta_ts">eta_ts (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.eta_tt">eta_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.evaluate_chi">evaluate_chi() (turbigen.blade.Blade method)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.evaluate_chord">evaluate_chord() (turbigen.blade.Blade method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.eta_tt">eta_tt (turbigen.meanline.MeanLine property)</a>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.evaluate_chords">evaluate_chords() (turbigen.annulus.Annulus method)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.evaluate_section">evaluate_section() (turbigen.blade.Blade method)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.evaluate_span">evaluate_span() (turbigen.annulus.Annulus method)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.evaluate_surface_length">evaluate_surface_length() (turbigen.blade.Blade method)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.evaluate_xr">evaluate_xr() (turbigen.annulus.Annulus method)</a>
+
+      <ul>
+        <li><a href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr">(turbigen.annulus.RowAnnulus method)</a>
+</li>
+      </ul></li>
+      <li><a href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr_annulus">evaluate_xr_annulus (turbigen.annulus.RowAnnulus attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.extract_row">extract_row() (turbigen.annulus.Annulus method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -207,10 +355,16 @@
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="annulus.html#turbigen.annulus.FixedAxialChord">FixedAxialChord (class in turbigen.annulus)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.FixedCount">FixedCount (class in turbigen.blade)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.flat">flat (turbigen.meanline.MeanLine property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fluid.html#turbigen.fluid.Fluid">Fluid (class in turbigen.fluid)</a>
+</li>
       <li><a href="design.html#turbigen.design.MeanLineDesign.forward">forward() (turbigen.design.MeanLineDesign method)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.from_dict">from_dict() (turbigen.meanline.MeanLine class method)</a>
@@ -221,10 +375,16 @@
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.get_characteristic_station">get_characteristic_station() (turbigen.meanline.MeanLine method)</a>
+      <li><a href="fluid.html#turbigen.fluid.PerfectFluid.gamma">gamma (turbigen.fluid.PerfectFluid attribute)</a>
+
+      <ul>
+        <li><a href="fluid.html#turbigen.fluid.RealFluid.gamma">(turbigen.fluid.RealFluid attribute)</a>
 </li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.get_characteristic_station">get_characteristic_station() (turbigen.meanline.MeanLine method)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.get_referenced_fluid">get_referenced_fluid() (turbigen.meanline.MeanLine method)</a>
 </li>
   </ul></td>
@@ -235,12 +395,16 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.halfVsq">halfVsq (turbigen.meanline.MeanLine property)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.halfVsq_rel">halfVsq_rel (turbigen.meanline.MeanLine property)</a>
 </li>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.htr">htr (turbigen.meanline.MeanLine property)</a>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.htr">htr (turbigen.annulus.Annulus property)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.htr">(turbigen.meanline.MeanLine property)</a>
 </li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -252,38 +416,96 @@
   </ul></td>
 </tr></table>
 
+<h2 id="K">K</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.kappa_c">kappa_c (turbigen.fluid.RealFluid attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.thickness.Taylor.kappa_max">kappa_max (turbigen.thickness.Taylor attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="annulus.html#turbigen.annulus.RowAnnulus.m_LE">m_LE (turbigen.annulus.RowAnnulus attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.m_max">m_max (turbigen.annulus.Annulus property)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.m_stack">m_stack (turbigen.blade.Blade attribute)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.blade.BladeDesign.m_stack">(turbigen.blade.BladeDesign attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.m_tmax">m_tmax (turbigen.thickness.Taylor attribute)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.mdot">mdot (turbigen.meanline.MeanLine property)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine">MeanLine (class in turbigen.meanline)</a>
 </li>
       <li><a href="design.html#turbigen.design.MeanLineDesign">MeanLineDesign (class in turbigen.design)</a>
 </li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.merge_weight">merge_weight (turbigen.annulus.Annulus attribute)</a>
+
+      <ul>
+        <li><a href="annulus.html#turbigen.annulus.PchipAnnulus.merge_weight">(turbigen.annulus.PchipAnnulus attribute)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     module
 
       <ul>
+        <li><a href="annulus.html#module-turbigen.annulus">turbigen.annulus</a>
+</li>
+        <li><a href="blade.html#module-turbigen.blade">turbigen.blade</a>
+</li>
+        <li><a href="blade.html#module-turbigen.camber">turbigen.camber</a>
+</li>
         <li><a href="design.html#module-turbigen.design">turbigen.design</a>
+</li>
+        <li><a href="fluid.html#module-turbigen.fluid">turbigen.fluid</a>
 </li>
         <li><a href="meanline.html#module-turbigen.meanline">turbigen.meanline</a>
 </li>
+        <li><a href="blade.html#module-turbigen.thickness">turbigen.thickness</a>
+</li>
       </ul></li>
+      <li><a href="fluid.html#turbigen.fluid.PerfectFluid.mu">mu (turbigen.fluid.PerfectFluid attribute)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.mu_c">mu_c (turbigen.fluid.RealFluid attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="design.html#turbigen.design.MeanLineDesign.n_row">n_row (turbigen.design.MeanLineDesign attribute)</a>
+      <li><a href="blade.html#turbigen.blade.Row.n_blade">n_blade (turbigen.blade.Row attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.n_row">n_row (turbigen.annulus.Annulus attribute)</a>
 
       <ul>
+        <li><a href="design.html#turbigen.design.MeanLineDesign.n_row">(turbigen.design.MeanLineDesign attribute)</a>
+</li>
         <li><a href="meanline.html#turbigen.meanline.MeanLine.n_row">(turbigen.meanline.MeanLine property)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.blade.Blade.n_section">n_section (turbigen.blade.Blade property)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.n_segment">n_segment (turbigen.annulus.Annulus property)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.FixedCount.Nb">Nb (turbigen.blade.FixedCount attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.PchipAnnulus.nozzle_ratio">nozzle_ratio (turbigen.annulus.PchipAnnulus attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -294,6 +516,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.camber.Bernstein.order">order (turbigen.camber.Bernstein attribute)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.outlet">outlet (turbigen.meanline.MeanLine property)</a>
 </li>
   </ul></td>
@@ -302,11 +526,27 @@
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.PR_ts">PR_ts (turbigen.meanline.MeanLine property)</a>
+      <li><a href="annulus.html#turbigen.annulus.PchipAnnulus">PchipAnnulus (class in turbigen.annulus)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.peak">peak() (turbigen.thickness.Taylor method)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.PerfectFluid">PerfectFluid (class in turbigen.fluid)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fluid.html#turbigen.fluid.PerfectFluid.Pr">Pr (turbigen.fluid.PerfectFluid attribute)</a>
+</li>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.PR_ts">PR_ts (turbigen.meanline.MeanLine property)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.PR_tt">PR_tt (turbigen.meanline.MeanLine property)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="Q">Q</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.camber.Quadratic">Quadratic (class in turbigen.camber)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -316,13 +556,41 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.r_cas">r_cas (turbigen.meanline.MeanLine property)</a>
 </li>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_hub">r_hub (turbigen.meanline.MeanLine property)</a>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.r_hub">r_hub (turbigen.annulus.Annulus property)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.r_hub">(turbigen.meanline.MeanLine property)</a>
 </li>
+      </ul></li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.R_LE">R_LE (turbigen.thickness.Taylor attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.r_mid">r_mid (turbigen.annulus.Annulus property)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.r_mid">(turbigen.meanline.MeanLine property)</a>
+</li>
+      </ul></li>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.r_rms">r_rms (turbigen.annulus.Annulus property)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.r_rms">(turbigen.meanline.MeanLine property)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_mid">r_mid (turbigen.meanline.MeanLine property)</a>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.r_tip">r_tip (turbigen.annulus.Annulus property)</a>
 </li>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.r_rms">r_rms (turbigen.meanline.MeanLine property)</a>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid">RealFluid (class in turbigen.fluid)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.Rgas">Rgas (turbigen.fluid.RealFluid attribute)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.rho_lim">rho_lim (turbigen.fluid.RealFluid attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Row">Row (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.row_annulus">row_annulus (turbigen.blade.Blade attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.RowAnnulus">RowAnnulus (class in turbigen.annulus)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -330,34 +598,131 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.s">s (turbigen.annulus.Annulus attribute)</a>
+</li>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.scale_visc">scale_visc (turbigen.fluid.RealFluid attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.SectionDesign">SectionDesign (class in turbigen.blade)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.sections">sections (turbigen.blade.BladeDesign attribute)</a>
+</li>
+      <li><a href="annulus.html#turbigen.annulus.AspectRatio.segment_lengths">segment_lengths() (turbigen.annulus.AspectRatio method)</a>
+
+      <ul>
+        <li><a href="annulus.html#turbigen.annulus.FixedAxialChord.segment_lengths">(turbigen.annulus.FixedAxialChord method)</a>
+</li>
+        <li><a href="annulus.html#turbigen.annulus.PchipAnnulus.segment_lengths">(turbigen.annulus.PchipAnnulus method)</a>
+</li>
+      </ul></li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.set_Am">set_Am() (turbigen.meanline.MeanLine method)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.set_Omega">set_Omega() (turbigen.meanline.MeanLine method)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.set_r_rms">set_r_rms() (turbigen.meanline.MeanLine method)</a>
 </li>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_htr">set_span_htr() (turbigen.meanline.MeanLine method)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_htr">set_span_htr() (turbigen.meanline.MeanLine method)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_r_mid">set_span_r_mid() (turbigen.meanline.MeanLine method)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.set_span_r_rms">set_span_r_rms() (turbigen.meanline.MeanLine method)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.shape">shape (turbigen.camber.CamberLine attribute)</a>
 </li>
       <li><a href="design.html#turbigen.design.MeanLineDesign.solve_for">solve_for() (turbigen.design.MeanLineDesign method)</a>
 </li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.span">span (turbigen.meanline.MeanLine property)</a>
 </li>
+      <li><a href="blade.html#turbigen.blade.Blade.spf">spf (turbigen.blade.Blade attribute)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.blade.Circulation.spf">(turbigen.blade.Circulation attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.DiffusionFactor.spf">(turbigen.blade.DiffusionFactor attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.SectionDesign.spf">(turbigen.blade.SectionDesign attribute)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.thickness.Taylor.t_max">t_max (turbigen.thickness.Taylor attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.t_TE">t_TE (turbigen.thickness.Taylor attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.tanchi">tanchi (turbigen.blade.Blade attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.tanchi_LE">tanchi_LE (turbigen.camber.CamberLine attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.camber.CamberLine.tanchi_TE">tanchi_TE (turbigen.camber.CamberLine attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.tanwedge">tanwedge (turbigen.thickness.Taylor attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.tau">tau() (turbigen.thickness.Taylor method)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.Taylor">Taylor (class in turbigen.thickness)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.theta_offset">theta_offset (turbigen.blade.Blade attribute)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.blade.BladeDesign.theta_offset">(turbigen.blade.BladeDesign attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="blade.html#turbigen.thickness.Taylor.thick">thick() (turbigen.thickness.Taylor method)</a>
+
+      <ul>
+        <li><a href="blade.html#turbigen.thickness.ThicknessDesign.thick">(turbigen.thickness.ThicknessDesign method)</a>
+</li>
+      </ul></li>
+      <li><a href="blade.html#turbigen.blade.SectionDesign.thickness">thickness (turbigen.blade.SectionDesign attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.thickness.ThicknessDesign">ThicknessDesign (class in turbigen.thickness)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Blade.thicknesses">thicknesses (turbigen.blade.Blade attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.tip_chord">tip_chord (turbigen.blade.BladeDesign attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.Row.tip_gap">tip_gap (turbigen.blade.Row attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.tip_metre">tip_metre (turbigen.blade.BladeDesign attribute)</a>
+</li>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.tip_span">tip_span (turbigen.blade.BladeDesign attribute)</a>
+</li>
       <li><a href="meanline.html#turbigen.meanline.MeanLine.to_dict">to_dict() (turbigen.meanline.MeanLine method)</a>
 </li>
-      <li><a href="meanline.html#turbigen.meanline.MeanLine.to_string">to_string() (turbigen.meanline.MeanLine method)</a>
+      <li><a href="annulus.html#turbigen.annulus.Annulus.to_string">to_string() (turbigen.annulus.Annulus method)</a>
+
+      <ul>
+        <li><a href="meanline.html#turbigen.meanline.MeanLine.to_string">(turbigen.meanline.MeanLine method)</a>
 </li>
+      </ul></li>
+      <li>
+    turbigen.annulus
+
+      <ul>
+        <li><a href="annulus.html#module-turbigen.annulus">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    turbigen.blade
+
+      <ul>
+        <li><a href="blade.html#module-turbigen.blade">module</a>
+</li>
+      </ul></li>
+      <li>
+    turbigen.camber
+
+      <ul>
+        <li><a href="blade.html#module-turbigen.camber">module</a>
+</li>
+      </ul></li>
       <li>
     turbigen.design
 
@@ -365,8 +730,13 @@
         <li><a href="design.html#module-turbigen.design">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    turbigen.fluid
+
+      <ul>
+        <li><a href="fluid.html#module-turbigen.fluid">module</a>
+</li>
+      </ul></li>
       <li>
     turbigen.meanline
 
@@ -374,6 +744,51 @@
         <li><a href="meanline.html#module-turbigen.meanline">module</a>
 </li>
       </ul></li>
+      <li>
+    turbigen.thickness
+
+      <ul>
+        <li><a href="blade.html#module-turbigen.thickness">module</a>
+</li>
+      </ul></li>
+      <li><a href="annulus.html#turbigen.annulus.AspectRatio.type">type (turbigen.annulus.AspectRatio attribute)</a>
+
+      <ul>
+        <li><a href="annulus.html#turbigen.annulus.FixedAxialChord.type">(turbigen.annulus.FixedAxialChord attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.Circulation.type">(turbigen.blade.Circulation attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.DiffusionFactor.type">(turbigen.blade.DiffusionFactor attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.blade.FixedCount.type">(turbigen.blade.FixedCount attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.camber.Bernstein.type">(turbigen.camber.Bernstein attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.camber.Quadratic.type">(turbigen.camber.Quadratic attribute)</a>
+</li>
+        <li><a href="fluid.html#turbigen.fluid.PerfectFluid.type">(turbigen.fluid.PerfectFluid attribute)</a>
+</li>
+        <li><a href="fluid.html#turbigen.fluid.RealFluid.type">(turbigen.fluid.RealFluid attribute)</a>
+</li>
+        <li><a href="blade.html#turbigen.thickness.Taylor.type">(turbigen.thickness.Taylor attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fluid.html#turbigen.fluid.RealFluid.u_lim">u_lim (turbigen.fluid.RealFluid attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="blade.html#turbigen.blade.BladeDesign.vortex_exponent">vortex_exponent (turbigen.blade.BladeDesign attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 

@@ -5,17 +5,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Mean-line designers &#8212; turbigen 0.1.dev1449+g1a5d798fd documentation</title>
+    <title>Mean-line designers &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=358a99ee"></script>
+    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Changelog" href="changelog.html" />
+    <link rel="next" title="Annulus lines" href="annulus.html" />
     <link rel="prev" title="Mean-line flow field" href="meanline.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 0.1.dev1449+g1a5d798fd</p>
+<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
 
 
 
@@ -58,6 +58,7 @@
 <li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
 </ul>
 <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Mean-line designers</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#the-design-contract">The design contract</a></li>
@@ -76,6 +77,8 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
@@ -134,7 +137,7 @@
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="meanline.html" title="previous chapter">Mean-line flow field</a></li>
-      <li>Next: <a href="changelog.html" title="next chapter">Changelog</a></li>
+      <li>Next: <a href="annulus.html" title="next chapter">Annulus lines</a></li>
   </ul></li>
 </ul>
 </div>
@@ -178,7 +181,8 @@ is a single subclass:</p>
 </div>
 <p>The <a class="reference internal" href="tutorial.html"><span class="doc">Tutorial</span></a> works through such a class in full, from an empty file to
 a designed fan; this page document the class in more detail. The
-data structure storing the flow field is documented at <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a>.</p>
+data structure storing the flow field is documented at <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a>, and
+the annulus stage that follows at <a class="reference internal" href="annulus.html"><span class="doc">Annulus lines</span></a>.</p>
 <section id="the-design-contract">
 <span id="design-contract"></span><h2>The design contract<a class="headerlink" href="#the-design-contract" title="Link to this heading">¶</a></h2>
 <p>A design declares two class variables, writes two methods, and inherits the
@@ -325,6 +329,12 @@ For example, if the inlet stagnation conditions are specified as design variable
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">fluid</span><span class="o">.</span><span class="n">change_datum</span><span class="p">(</span><span class="n">P_dtm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Po1</span><span class="p">,</span> <span class="n">T_dtm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">To1</span><span class="p">))</span>
 </pre></div>
 </div>
+<p>That is a hint for the design arithmetic, and it is not the datum the finished
+mean line carries. <a class="reference internal" href="#turbigen.design.MeanLineDesign.design" title="turbigen.design.MeanLineDesign.design"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MeanLineDesign.design()</span></code></a> moves it once more, onto
+<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.get_referenced_fluid" title="turbigen.meanline.MeanLine.get_referenced_fluid"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_referenced_fluid()</span></code></a>, before freezing — so
+a mean line and the grid meshed from it always measure entropy and internal
+energy from the same zero, and nothing downstream has to convert between them.
+Only the datum moves; the state does not.</p>
 <p>See <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#datum-state" title="(in ember v0.4.0)"><span>Datum state</span></a> for more detail on this part of the fluid API.</p>
 </section>
 <dl class="py exception">
@@ -338,7 +348,9 @@ For example, if the inlet stagnation conditions are specified as design variable
 <dt class="sig sig-object py" id="turbigen.design.MeanLineDesign">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">MeanLineDesign</span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
-<p>Base for mean-line designers.</p>
+<p>Choose the mean-line design algorithm.</p>
+<p>The <a class="reference internal" href="#"><span class="doc">Mean-line designers</span></a> page covers what a subclass declares and how
+<strong class="program">turbigen</strong> runs it.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.n_row">
 <span class="sig-name descname"><span class="pre">n_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.n_row" title="Link to this definition">¶</a></dt>
@@ -376,9 +388,10 @@ never sees the config node, only the fluid object it describes.</p>
 <span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.design" title="Link to this definition">¶</a></dt>
 <dd><p>Return a mean line built from this design.</p>
 <p>Checks that the result inverts back to the design variables that asked
-for it, then freezes it at the earliest opportunity, so that every
-stage which follows – annulus, blades, mesher, post-processing –
-reads the mean line and cannot write to it.</p>
+for it, moves it onto its own referenced fluid, then freezes it at the
+earliest opportunity, so that every stage which follows – annulus,
+blades, mesher, post-processing – reads the mean line and cannot write
+to it.</p>
 </dd></dl>
 
 <dl class="py method">

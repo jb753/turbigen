@@ -40,8 +40,11 @@ User manual
 .. toctree::
    :maxdepth: 3
 
+   fluid
    meanline
    design
+   annulus
+   blade
 
 .. toctree::
    :maxdepth: 2

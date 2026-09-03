@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-09-01T15:32:00.190391</dc:date>
+    <dc:date>2026-09-03T13:50:51.955873</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -265,17 +265,17 @@ z
    </g>
    <g id="patch_6">
     <path d="M 141.434848 54.605377 
-Q 159.298161 76.041352 176.087851 96.188981 
+Q 159.298161 76.041354 176.087851 96.188985 
 " style="fill: none; stroke: #ff7f0e; stroke-width: 1.5; stroke-linecap: round"/>
-    <path d="M 175.165985 92.271053 
-L 176.087851 96.188981 
-L 172.400389 94.575716 
+    <path d="M 175.165986 92.271057 
+L 176.087851 96.188985 
+L 172.400389 94.57572 
 z
 " style="fill: #ff7f0e; stroke: #ff7f0e; stroke-width: 1.5; stroke-linecap: round"/>
    </g>
    <g id="text_5">
     <!-- $V^\mathrm{rel}$ -->
-    <g style="fill: #ff7f0e" transform="translate(160.440712 72.349896) scale(0.07497 -0.07497)">
+    <g style="fill: #ff7f0e" transform="translate(160.440713 72.349899) scale(0.07497 -0.07497)">
      <use xlink:href="#Cmmi10-56" transform="translate(0 0.1625)"/>
      <use xlink:href="#Cmr10-72" transform="translate(69.670312 38.426562) scale(0.7)"/>
      <use xlink:href="#Cmr10-65" transform="translate(97.048242 38.426562) scale(0.7)"/>
@@ -283,8 +283,8 @@ z
     </g>
    </g>
    <g id="patch_7">
-    <path d="M 178.442183 97.018583 
-Q 178.442183 60.729941 178.442183 26.118349 
+    <path d="M 178.442183 97.018587 
+Q 178.442183 60.729943 178.442183 26.118349 
 " style="fill: none; stroke: #000000; stroke-width: 1.5; stroke-linecap: round"/>
     <path d="M 176.642183 29.718349 
 L 178.442183 26.118349 
@@ -294,7 +294,7 @@ z
    </g>
    <g id="text_6">
     <!-- $U$ -->
-    <g transform="translate(184.855718 62.797339) scale(0.07497 -0.07497)">
+    <g transform="translate(184.855718 62.797341) scale(0.07497 -0.07497)">
      <use xlink:href="#Cmmi10-55" transform="translate(0 0.6875)"/>
     </g>
    </g>

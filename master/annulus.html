@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Annulus lines &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Blade shapes" href="blade.html" />
+    <link rel="prev" title="Mean-line designers" href="design.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Annulus lines</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-annulus-shapes">Built-in annulus shapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-process">Design process</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#annulus-coordinate-system">Annulus coordinate system</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.CUT_OFFSET"><code class="docutils literal notranslate"><span class="pre">CUT_OFFSET</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.RowAnnulus"><code class="docutils literal notranslate"><span class="pre">RowAnnulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_xr_annulus</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.m_LE"><code class="docutils literal notranslate"><span class="pre">m_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.chord"><code class="docutils literal notranslate"><span class="pre">chord</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.Annulus"><code class="docutils literal notranslate"><span class="pre">Annulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.s"><code class="docutils literal notranslate"><span class="pre">s</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.curves"><code class="docutils literal notranslate"><span class="pre">curves</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.curves_merged"><code class="docutils literal notranslate"><span class="pre">curves_merged</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment"><code class="docutils literal notranslate"><span class="pre">n_segment</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.m_max"><code class="docutils literal notranslate"><span class="pre">m_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_hub"><code class="docutils literal notranslate"><span class="pre">r_hub</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_tip"><code class="docutils literal notranslate"><span class="pre">r_tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_mid"><code class="docutils literal notranslate"><span class="pre">r_mid</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_rms"><code class="docutils literal notranslate"><span class="pre">r_rms</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.htr"><code class="docutils literal notranslate"><span class="pre">htr</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_span"><code class="docutils literal notranslate"><span class="pre">evaluate_span()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.cut_planes"><code class="docutils literal notranslate"><span class="pre">cut_planes()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_chords"><code class="docutils literal notranslate"><span class="pre">evaluate_chords()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.extract_row"><code class="docutils literal notranslate"><span class="pre">extract_row()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.AnnulusDesign"><code class="docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AnnulusDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.PchipAnnulus"><code class="docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.nozzle_ratio"><code class="docutils literal notranslate"><span class="pre">nozzle_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.FixedAxialChord"><code class="docutils literal notranslate"><span class="pre">FixedAxialChord</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.FixedAxialChord.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.FixedAxialChord.cx_row"><code class="docutils literal notranslate"><span class="pre">cx_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.FixedAxialChord.cx_gap"><code class="docutils literal notranslate"><span class="pre">cx_gap</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.FixedAxialChord.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.AspectRatio"><code class="docutils literal notranslate"><span class="pre">AspectRatio</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AspectRatio.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AspectRatio.AR_row"><code class="docutils literal notranslate"><span class="pre">AR_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AspectRatio.AR_gap"><code class="docutils literal notranslate"><span class="pre">AR_gap</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AspectRatio.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "master";
+    var page = "annulus.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="design.html" title="previous chapter">Mean-line designers</a></li>
+      <li>Next: <a href="blade.html" title="next chapter">Blade shapes</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-turbigen.annulus">
+<span id="annulus-lines"></span><span id="annulus"></span><h1>Annulus lines<a class="headerlink" href="#module-turbigen.annulus" title="Link to this heading">¶</a></h1>
+<p>Classes to construct annulus geometry around a mean line design.</p>
+<p>An <a class="reference internal" href="#turbigen.annulus.AnnulusDesign" title="turbigen.annulus.AnnulusDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a> describes a family of hub and casing line shapes for
+a turbomachine. The design is what is specified in the input file under
+<a class="reference internal" href="config.html#config-annulus"><span class="std std-ref">annulus:</span></a>, but is not in itself sufficient to construct
+an annulus. Conversely, a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> holds mean radii
+and annulus areas, but not axial coordinates or anything about the shape
+between stations. To get a complete annulus, we combine a
+<a class="reference internal" href="#turbigen.annulus.AnnulusDesign" title="turbigen.annulus.AnnulusDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a> and a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> to produce an
+<a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">Annulus</span></code></a>, which calculates the actual curves for a particular machine.</p>
+<p>The <a class="reference internal" href="tutorial.html"><span class="doc">Tutorial</span></a> uses the built-in annulus in a complete design; this page
+documents the classes in more detail. The mean line an annulus is built
+against is documented at <a class="reference internal" href="meanline.html"><span class="doc">Mean-line flow field</span></a>.</p>
+<section id="built-in-annulus-shapes">
+<span id="annulus-designs"></span><h2>Built-in annulus shapes<a class="headerlink" href="#built-in-annulus-shapes" title="Link to this heading">¶</a></h2>
+<p>The two annulus shapes that ship with <strong class="program">turbigen</strong> both define the
+annulus lines using cubic splines in arc-length space, as subclasses of
+<a class="reference internal" href="#turbigen.annulus.PchipAnnulus" title="turbigen.annulus.PchipAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a>, and differ only in how the meridional length of each row
+and gap is stated. Both lay their values out over the segments, which alternate
+gap, row, gap, row, …, so there are <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">n_row</span> <span class="pre">+</span> <span class="pre">1</span></code> of them and the gaps
+include the inlet and outlet ducts.</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#turbigen.annulus.FixedAxialChord" title="turbigen.annulus.FixedAxialChord"><code class="xref py py-class docutils literal notranslate"><span class="pre">FixedAxialChord</span></code></a> states the axial chord of each row in <code class="docutils literal notranslate"><span class="pre">cx_row</span></code>
+and of each gap in <code class="docutils literal notranslate"><span class="pre">cx_gap</span></code>, in metres. Note that this method only works
+for axial machines.</p></li>
+<li><p><a class="reference internal" href="#turbigen.annulus.AspectRatio" title="turbigen.annulus.AspectRatio"><code class="xref py py-class docutils literal notranslate"><span class="pre">AspectRatio</span></code></a> states the span-to-meridional-chord ratio of each row in
+<code class="docutils literal notranslate"><span class="pre">AR_row</span></code> and of each gap in <code class="docutils literal notranslate"><span class="pre">AR_gap</span></code>. The aspect ratios are defined with
+respect to the mean of inlet and outlet spans for each segment. No limit is placed on
+the pitch angle, so this method works for radial machines.</p></li>
+</ul>
+<p>Two more parameters are configurable:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.nozzle_ratio" title="turbigen.annulus.PchipAnnulus.nozzle_ratio"><code class="xref py py-attr docutils literal notranslate"><span class="pre">nozzle_ratio</span></code></a> scales the exit span to achieve a desired
+nozzle area;</p></li>
+<li><p><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.merge_weight" title="turbigen.annulus.PchipAnnulus.merge_weight"><code class="xref py py-attr docutils literal notranslate"><span class="pre">merge_weight</span></code></a> blends the annulus lines towards a curve
+through the machine inlet and outlet stations alone, instead of constraining
+the internal stations, to smooth curvature across the machine.</p></li>
+</ul>
+</section>
+<section id="design-process">
+<span id="annulus-process"></span><h2>Design process<a class="headerlink" href="#design-process" title="Link to this heading">¶</a></h2>
+<p>Loading an input file converts its <a class="reference internal" href="config.html#config-annulus"><span class="std std-ref">annulus:</span></a> mapping
+into an instance of the <a class="reference internal" href="#turbigen.annulus.AnnulusDesign" title="turbigen.annulus.AnnulusDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a> subclass
+named by <code class="docutils literal notranslate"><span class="pre">type</span></code>. Once the mean line is built,
+<strong class="program">turbigen</strong> passes <a class="reference internal" href="#turbigen.annulus.PchipAnnulus.design" title="turbigen.annulus.PchipAnnulus.design"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PchipAnnulus.design()</span></code></a> a <a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><code class="xref py py-class docutils literal notranslate"><span class="pre">MeanLine</span></code></a> and:</p>
+<ol class="arabic simple">
+<li><p><a class="reference internal" href="#turbigen.annulus.PchipAnnulus.segment_lengths" title="turbigen.annulus.PchipAnnulus.segment_lengths"><code class="xref py py-meth docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a> returns the meridional arc length of
+every row and gap, given spans and pitch angles;</p></li>
+<li><p>Calculates points for the hub and casing from the mean-line mean
+radius, span and pitch angle at each station, with straight duct extensions
+of the required segment length added at inlet and outlet;</p></li>
+<li><p>PCHIP splines are fitted through the control points in arc-length space
+iterating until until each segment’s length matches its target;</p></li>
+<li><p>A second spline fit through the machine inlet and outlet stations alone is made
+when <a class="reference internal" href="#turbigen.annulus.PchipAnnulus.merge_weight" title="turbigen.annulus.PchipAnnulus.merge_weight"><code class="xref py py-attr docutils literal notranslate"><span class="pre">merge_weight</span></code></a> is non-zero, for the curvature blend.</p></li>
+</ol>
+<p>Finally, the fitted splines are returned in an <a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">Annulus</span></code></a>. Downstream code
+uses <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_xr()</span></code></a> and so on to get the coordinates of any
+position in the annulus coordinate system, described next.</p>
+</section>
+<section id="annulus-coordinate-system">
+<span id="annulus-coordinate"></span><h2>Annulus coordinate system<a class="headerlink" href="#annulus-coordinate-system" title="Link to this heading">¶</a></h2>
+<p>An <a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">Annulus</span></code></a> is addressed by a normalised meridional coordinate <code class="docutils literal notranslate"><span class="pre">m</span></code>
+and a span fraction <code class="docutils literal notranslate"><span class="pre">spf</span></code>. At the inlet, <code class="docutils literal notranslate"><span class="pre">m=0</span></code>, then 1 at the first row
+leading edge, 2 at its trailing edge, and so on up to
+<a class="reference internal" href="#turbigen.annulus.Annulus.m_max" title="turbigen.annulus.Annulus.m_max"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_max</span></code></a>. Span fraction <code class="docutils literal notranslate"><span class="pre">spf</span></code> runs from 0 at the hub to 1 at the casing.
+<a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_xr()</span></code></a> maps a pair of them to axial and radial
+coordinates.</p>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="_images/annulus_coordinate.svg"><img alt="_images/annulus_coordinate.svg" src="_images/annulus_coordinate.svg" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Meridional view of a two-row and coordinate system.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.CUT_OFFSET">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">CUT_OFFSET</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.02</span></span><a class="headerlink" href="#turbigen.annulus.CUT_OFFSET" title="Link to this definition">¶</a></dt>
+<dd><p>Cut planes sit this fraction of blade chord into the gap, clear of the row.</p>
+<p>Cutting exactly at a leading or trailing edge would put the plane inside the
+blade, where there is no single annulus-spanning surface to integrate over.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">RowAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">evaluate_xr_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">chord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>The annulus restricted to one blade row.</p>
+<p>The full hub-to-casing annulus with the meridional coordinate clamped to
+one row’s range and renormalised, so <code class="docutils literal notranslate"><span class="pre">m</span></code> runs 0 at the leading edge to 1
+at the trailing edge. A blade design is handed one of these rather than the
+whole annulus and a row index, so that the convention mapping a row onto
+the annulus coordinate stays inside <a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">Annulus</span></code></a>, which is the only
+thing that defines it.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_xr_annulus">
+<span class="sig-name descname"><span class="pre">evaluate_xr_annulus</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><span class="pre">object</span></a></span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_xr_annulus" title="Link to this definition">¶</a></dt>
+<dd><p>The annulus coordinate map this is a restriction of.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.m_LE">
+<span class="sig-name descname"><span class="pre">m_LE</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.m_LE" title="Link to this definition">¶</a></dt>
+<dd><p>Annulus meridional coordinate of this row’s leading edge.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.chord">
+<span class="sig-name descname"><span class="pre">chord</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.chord" title="Link to this definition">¶</a></dt>
+<dd><p>Meridional chord of the row at mid-span [m].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_xr">
+<span class="sig-name descname"><span class="pre">evaluate_xr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_xr" title="Link to this definition">¶</a></dt>
+<dd><p>Return meridional coordinates within the row.</p>
+<p>The row-local counterpart of <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_xr()</span></code></a>, taking its
+arguments in the same order — but here <code class="docutils literal notranslate"><span class="pre">m</span></code> runs 0 at the leading
+edge to 1 at the trailing edge, rather than over the whole annulus.
+Both take two broadcastable array-likes, so a transposed call would be
+silent.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m</strong> (<em>array_like</em>) – Normalised meridional distance, 0 at the leading edge and 1 at the
+trailing edge. Broadcast against <cite>spf</cite>.</p></li>
+<li><p><strong>spf</strong> (<em>array_like</em>) – Span fraction, 0 at the hub and 1 at the casing.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>xr</strong> – Axial and radial coordinates, stacked on the first axis.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (2, …)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">Annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves_merged</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Hub and casing lines of a designed annulus.</p>
+<p>Coordinates are addressed by a normalised meridional coordinate <code class="docutils literal notranslate"><span class="pre">m</span></code>,
+where 0 is the inlet, 1 the first row leading edge, 2 its trailing edge and
+so on, and a span fraction <code class="docutils literal notranslate"><span class="pre">spf</span></code> running 0 at the hub to 1 at the casing.</p>
+<p>Frozen, like every other result: an annulus is what the design produced and
+nothing downstream has any business changing it.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.s">
+<span class="sig-name descname"><span class="pre">s</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#turbigen.annulus.Annulus.s" title="Link to this definition">¶</a></dt>
+<dd><p>Arc-length parameter of each control point.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.curves">
+<span class="sig-name descname"><span class="pre">curves</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span><a class="headerlink" href="#turbigen.annulus.Annulus.curves" title="Link to this definition">¶</a></dt>
+<dd><p>Fitted hub and casing curves, (x_hub, r_hub, x_cas, r_cas).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.curves_merged">
+<span class="sig-name descname"><span class="pre">curves_merged</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span><a class="headerlink" href="#turbigen.annulus.Annulus.curves_merged" title="Link to this definition">¶</a></dt>
+<dd><p>The same, fitted through the end segments only, for the merge blend.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.merge_weight">
+<span class="sig-name descname"><span class="pre">merge_weight</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.annulus.Annulus.merge_weight" title="Link to this definition">¶</a></dt>
+<dd><p>Blend between the full fit at 0 and the end-segment fit at 1 [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.n_row">
+<span class="sig-name descname"><span class="pre">n_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><a class="headerlink" href="#turbigen.annulus.Annulus.n_row" title="Link to this definition">¶</a></dt>
+<dd><p>Number of blade rows.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.n_segment">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">n_segment</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.n_segment" title="Link to this definition">¶</a></dt>
+<dd><p>Number of segments, being the rows and the gaps between them.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.m_max">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">m_max</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.m_max" title="Link to this definition">¶</a></dt>
+<dd><p>Largest valid value of the normalised meridional coordinate.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.evaluate_xr">
+<span class="sig-name descname"><span class="pre">evaluate_xr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.evaluate_xr" title="Link to this definition">¶</a></dt>
+<dd><p>Return meridional coordinates within the annulus.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m</strong> (<em>array_like</em>) – Normalised meridional distance. Broadcast against <cite>spf</cite>.</p></li>
+<li><p><strong>spf</strong> (<em>array_like</em>) – Span fraction, 0 at the hub and 1 at the casing.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>xr</strong> – Axial and radial coordinates, stacked on the first axis.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (2, …)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.r_hub">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_hub</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.r_hub" title="Link to this definition">¶</a></dt>
+<dd><p>Hub radii at all row inlet and outlet stations [m].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.r_tip">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_tip</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.r_tip" title="Link to this definition">¶</a></dt>
+<dd><p>Casing radii at all row inlet and outlet stations [m].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.r_mid">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_mid</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.r_mid" title="Link to this definition">¶</a></dt>
+<dd><p>Mid-span radii at all row inlet and outlet stations [m].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.r_rms">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">r_rms</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.r_rms" title="Link to this definition">¶</a></dt>
+<dd><p>Root-mean-square radii at all row inlet and outlet stations [m].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.htr">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">htr</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.htr" title="Link to this definition">¶</a></dt>
+<dd><p>Hub-to-tip ratio at all row inlet and outlet stations [–].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.evaluate_span">
+<span class="sig-name descname"><span class="pre">evaluate_span</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.evaluate_span" title="Link to this definition">¶</a></dt>
+<dd><p>Return the hub-to-casing distance at meridional position(s) <cite>m</cite> [m].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>m</strong> (<em>array_like</em>) – Normalised meridional distance.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>span</strong> – Distance from hub to casing at each position [m].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.cut_planes">
+<span class="sig-name descname"><span class="pre">cut_planes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.02</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.cut_planes" title="Link to this definition">¶</a></dt>
+<dd><p>Return the meridional cut curve at each design station.</p>
+<p>A cut plane is the straight hub-to-casing line at one meridional
+position, so it is two points and needs nothing beyond
+<a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a> — which is why it lives here rather than with any
+one of the things that cut with it. The mean line is reduced between
+these planes, so a quantity integrated over the same bounds is directly
+comparable with the loss the mean line reports.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>offset</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Distance into the adjacent gap, as a fraction of blade chord.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>One <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">2)</span></code> array per station, in streamwise order, each holding
+two <code class="docutils literal notranslate"><span class="pre">(x,</span> <span class="pre">r)</span></code> points, hub then casing. This is the shape
+<a class="reference external" href="https://ember-cfd.org/0.4.0/api/cut.html#ember.cut.unstructured" title="(in ember v0.4.0)"><code class="xref py py-func docutils literal notranslate"><span class="pre">ember.cut.unstructured()</span></code></a> takes.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)">list</a> of ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.evaluate_chords">
+<span class="sig-name descname"><span class="pre">evaluate_chords</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.evaluate_chords" title="Link to this definition">¶</a></dt>
+<dd><p>Return the meridional chord of every segment at span fraction <cite>spf</cite>.</p>
+<p>Segments alternate gap, row, gap, row, …, gap, so there are
+<code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">n_row</span> <span class="pre">+</span> <span class="pre">1</span></code> of them.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.extract_row">
+<span class="sig-name descname"><span class="pre">extract_row</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">i_row</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.extract_row" title="Link to this definition">¶</a></dt>
+<dd><p>Return the annulus of blade row <cite>i_row</cite> as a <a class="reference internal" href="#turbigen.annulus.RowAnnulus" title="turbigen.annulus.RowAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">RowAnnulus</span></code></a>.</p>
+<p>Rows occupy the odd segments, so this is where the mapping from a row
+index onto the annulus meridional coordinate lives, and the only place
+it does.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.to_string">
+<span class="sig-name descname"><span class="pre">to_string</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.to_string" title="Link to this definition">¶</a></dt>
+<dd><p>Tabular string representation of the annulus at row stations.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.AnnulusDesign">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AnnulusDesign</span></span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
+<p>Specify the shape of an annulus around a given mean line.</p>
+<p>The <a class="reference internal" href="#"><span class="doc">Annulus lines</span></a> page covers the shapes that ship with
+<strong class="program">turbigen</strong> and how a design is run.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.AnnulusDesign.design">
+<span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean_line</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><span class="pre">Annulus</span></a></span></span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign.design" title="Link to this definition">¶</a></dt>
+<dd><p>Return the annulus this design describes for <cite>mean_line</cite>.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">PchipAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.AnnulusDesign" title="turbigen.annulus.AnnulusDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a></p>
+<p>Hub and casing lines fitted as PCHIP curves in arc-length space.</p>
+<p>Everything about the fit is here: the control points placed from the mean
+line, the arc-length iteration, the duct extensions, the nozzle scaling and
+the merge blend. A member supplies one thing, <a class="reference internal" href="#turbigen.annulus.PchipAnnulus.segment_lengths" title="turbigen.annulus.PchipAnnulus.segment_lengths"><code class="xref py py-meth docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a>, and
+that is the whole difference between the designs below.</p>
+<p>Deliberately not selectable — it declares no <code class="docutils literal notranslate"><span class="pre">type</span></code>, so it is not in
+the registry and cannot appear in a config file. It is the shared body of
+two designs, not a third one.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus.nozzle_ratio">
+<span class="sig-name descname"><span class="pre">nozzle_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus.nozzle_ratio" title="Link to this definition">¶</a></dt>
+<dd><p>Scaling applied to the exit span, for a nozzle area ratio [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus.merge_weight">
+<span class="sig-name descname"><span class="pre">merge_weight</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus.merge_weight" title="Link to this definition">¶</a></dt>
+<dd><p>Blend towards a curve fitted through the endpoints only [–].</p>
+<p>At 0 the hub and casing pass through every station. At 1 they follow a
+curve fitted through the first and last segments alone, which smooths
+curvature across the rows at the cost of missing the intermediate
+stations. Values between blend the two.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus.segment_lengths">
+<span class="sig-name descname"><span class="pre">segment_lengths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span_avg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cos_Beta_avg</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus.segment_lengths" title="Link to this definition">¶</a></dt>
+<dd><p>Return the meridional arc length of each segment [m].</p>
+<p>Arc length rather than axial length, because it is what both the
+parameterisation and the duct extensions are measured in; the axial
+length follows from the pitch angle. A design that states axial chords
+divides by <cite>cos_Beta_avg</cite> to get here, and one that states aspect
+ratios never needs it at all.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Annulus span averaged over each segment [m].</p></li>
+<li><p><strong>cos_Beta_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Cosine of the pitch angle averaged over each segment [–].</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Ds</strong> – Meridional arc length of each segment [m].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (<a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment">n_segment</a>,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus.design">
+<span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean_line</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus.design" title="Link to this definition">¶</a></dt>
+<dd><p>Return the annulus this design describes for <cite>mean_line</cite>.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">FixedAxialChord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.PchipAnnulus" title="turbigen.annulus.PchipAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a></p>
+<p>Annulus with a prescribed axial chord for each row and gap.</p>
+<p>Note that an axial chord cannot describe a segment at 90 degrees pitch
+angle, so this method does not work for radial machines.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fixed_axial_chord'</span></span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord.cx_row">
+<span class="sig-name descname"><span class="pre">cx_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord.cx_row" title="Link to this definition">¶</a></dt>
+<dd><p>Axial chord of each blade row [m], length n_row.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord.cx_gap">
+<span class="sig-name descname"><span class="pre">cx_gap</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord.cx_gap" title="Link to this definition">¶</a></dt>
+<dd><p>Axial chord of each gap, including the inlet and exit ducts [m],
+length n_row + 1.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord.segment_lengths">
+<span class="sig-name descname"><span class="pre">segment_lengths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span_avg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cos_Beta_avg</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord.segment_lengths" title="Link to this definition">¶</a></dt>
+<dd><p>Return the meridional arc length of each segment [m].</p>
+<p>Arc length rather than axial length, because it is what both the
+parameterisation and the duct extensions are measured in; the axial
+length follows from the pitch angle. A design that states axial chords
+divides by <cite>cos_Beta_avg</cite> to get here, and one that states aspect
+ratios never needs it at all.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Annulus span averaged over each segment [m].</p></li>
+<li><p><strong>cos_Beta_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Cosine of the pitch angle averaged over each segment [–].</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Ds</strong> – Meridional arc length of each segment [m].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (<a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment">n_segment</a>,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.annulus.AspectRatio">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AspectRatio</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.AspectRatio" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.PchipAnnulus" title="turbigen.annulus.PchipAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a></p>
+<p>Annulus with a prescribed span-to-chord ratio for each row and gap.</p>
+<p>The chord is meridional, and the span it is measured against is the mean
+of the inlet and outlet spans of each segment.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.AspectRatio.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aspect_ratio'</span></span><a class="headerlink" href="#turbigen.annulus.AspectRatio.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.AspectRatio.AR_row">
+<span class="sig-name descname"><span class="pre">AR_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#turbigen.annulus.AspectRatio.AR_row" title="Link to this definition">¶</a></dt>
+<dd><p>Span-to-meridional-chord ratio of each blade row [–], length n_row.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.AspectRatio.AR_gap">
+<span class="sig-name descname"><span class="pre">AR_gap</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#turbigen.annulus.AspectRatio.AR_gap" title="Link to this definition">¶</a></dt>
+<dd><p>Span-to-meridional-chord ratio of each gap, including the inlet and
+exit ducts [–], length n_row + 1.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.AspectRatio.segment_lengths">
+<span class="sig-name descname"><span class="pre">segment_lengths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span_avg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cos_Beta_avg</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.AspectRatio.segment_lengths" title="Link to this definition">¶</a></dt>
+<dd><p>Return the meridional arc length of each segment [m].</p>
+<p>Arc length rather than axial length, because it is what both the
+parameterisation and the duct extensions are measured in; the axial
+length follows from the pitch angle. A design that states axial chords
+divides by <cite>cos_Beta_avg</cite> to get here, and one that states aspect
+ratios never needs it at all.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Annulus span averaged over each segment [m].</p></li>
+<li><p><strong>cos_Beta_avg</strong> (<em>ndarray</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment"><em>n_segment</em></a><em>,</em><em>)</em>) – Cosine of the pitch angle averaged over each segment [–].</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Ds</strong> – Meridional arc length of each segment [m].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (<a class="reference internal" href="#turbigen.annulus.Annulus.n_segment" title="turbigen.annulus.Annulus.n_segment">n_segment</a>,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/annulus.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

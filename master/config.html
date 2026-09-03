@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Input file format &#8212; turbigen 0.1.dev1449+g1a5d798fd documentation</title>
+    <title>Input file format &#8212; turbigen 3.0.1.dev23+g573cedd93 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=358a99ee"></script>
+    <script src="_static/documentation_options.js?v=cd76c7c3"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -34,7 +34,7 @@
 
 
 
-<p class="blurb">Version 0.1.dev1449+g1a5d798fd</p>
+<p class="blurb">Version 3.0.1.dev23+g573cedd93</p>
 
 
 
@@ -71,6 +71,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#chic">chic:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#batch">batch:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#post-process">post_process:</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#metrics">metrics:</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#job">job:</a></li>
 </ul>
 </li>
@@ -81,8 +82,11 @@
 <li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
 </ul>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
 <li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
@@ -202,7 +206,8 @@ which command.</p>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-batch"><span class="std std-ref">batch:</span></a></p></td>
 <td><p>configuration sweeping in <a class="reference internal" href="usage.html#usage-batch"><span class="std std-ref">batch</span></a></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#config-post-process"><span class="std std-ref">post_process:</span></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#config-post-process"><span class="std std-ref">post_process:</span></a>,
+<a class="reference internal" href="#config-metrics"><span class="std std-ref">metrics:</span></a></p></td>
 <td><p>all commands excluding <a class="reference internal" href="usage.html#usage-design"><span class="std std-ref">design</span></a> and
 <a class="reference internal" href="usage.html#usage-batch"><span class="std std-ref">batch</span></a></p></td>
 </tr>
@@ -216,7 +221,16 @@ command typed at the shell is not. That tells apart the three names that are
 both, so <code class="docutils literal notranslate"><span class="pre">iterate:</span></code> is what the file holds and <a class="reference internal" href="usage.html#usage-iterate"><span class="std std-ref">iterate</span></a>
 is what runs it.</p>
 <p>Two more top-level keys are not phases of the design: <code class="docutils literal notranslate"><span class="pre">include:</span></code>, described
-below, and <code class="docutils literal notranslate"><span class="pre">result:</span></code>, which a finished run writes.</p>
+below, and <code class="docutils literal notranslate"><span class="pre">result:</span></code>, which a finished run writes. Under <code class="docutils literal notranslate"><span class="pre">result:</span></code> sit the
+mixed-out mean line the CFD achieved, the entropy rise the mixing-out itself
+introduced at each station under <code class="docutils literal notranslate"><span class="pre">Ds_mix:</span></code>, the error each iterator last
+measured, and, when the config asks for them under
+<a class="reference internal" href="#config-metrics"><span class="std std-ref">metrics:</span></a>, any
+quantities measured from the solved field — a surface integral, a plane
+average, a loss breakdown. Each <a class="reference internal" href="#config-metrics"><span class="std std-ref">metrics:</span></a> entry is
+evaluated once the march is over and its value recorded under <code class="docutils literal notranslate"><span class="pre">result:</span>
+<span class="pre">metrics:</span></code>, so a run archived today can be mined later. Metric designs of your
+own go in a <code class="docutils literal notranslate"><span class="pre">turbigen_plugins</span></code> directory, like any other.</p>
 <p>Duplicate keys or subkeys are refused.</p>
 <p>The whole file is checked early before anything is designed, so a typo will
 show up at the earliest opportunity.</p>
@@ -292,7 +306,8 @@ show up at the earliest opportunity.</p>
 <span class="w">  </span><span class="nt">sf_resid</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">  </span><span class="nt">fac_mgrid</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
 <span class="w">  </span><span class="nt">n_levels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-<span class="w">  </span><span class="nt">gain_filt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">  </span><span class="nt">dampin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25.0</span>
+<span class="w">  </span><span class="nt">gain_filt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">  </span><span class="nt">delta_filt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
 </pre></div>
 </div>
@@ -421,7 +436,12 @@ member is one design, not a design of experiments.</p></td>
 <td><p>Post-processors to run. Nothing is added implicitly: what the config
 asks for is what runs.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#config-job"><span class="std std-ref">job:</span></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#config-metrics"><span class="std std-ref">metrics:</span></a></p></td>
+<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">surface_dissipation</span></code></p></td>
+<td><p>Quantities to measure from the solved field and record under
+<code class="docutils literal notranslate"><span class="pre">result:</span> <span class="pre">metrics:</span></code>. Nothing is measured unless the config asks for it.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#config-job"><span class="std std-ref">job:</span></a></p></td>
 <td><p>mapping, default <code class="docutils literal notranslate"><span class="pre">null</span></code>; one of <code class="docutils literal notranslate"><span class="pre">slurm</span></code>, <code class="docutils literal notranslate"><span class="pre">tsp</span></code></p></td>
 <td><p>Where to execute, when <code class="docutils literal notranslate"><span class="pre">--queue</span></code> asks for it. Read by no design stage:
 a partition is a property of where you are, not of the machine.</p></td>
@@ -430,7 +450,9 @@ a partition is a property of where you are, not of the machine.</p></td>
 </table>
 <section id="fluid">
 <span id="config-fluid"></span><h3>fluid:<a class="headerlink" href="#fluid" title="Link to this heading">¶</a></h3>
-<p>Base for equations of state.</p>
+<p>Specify the equation of state of the working fluid.</p>
+<p>The <a class="reference internal" href="fluid.html"><span class="doc">Working fluids</span></a> page covers the built-in equations of state and how a
+fluid is used in a design.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-fluid-perfect"><span class="std std-ref">perfect</span></a>, <a class="reference internal" href="#config-fluid-real"><span class="std std-ref">real</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-perfect">
 <span id="config-fluid-perfect"></span><h4>type: perfect<a class="headerlink" href="#type-perfect" title="Link to this heading">¶</a></h4>
@@ -529,33 +551,19 @@ the <code class="xref py py-attr docutils literal notranslate"><span class="pre"
 <td><p>Factor multiplying the viscosity, for sweeping Reynolds number without
 touching the fit [–].</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">P_dtm:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">null</span></code></p></td>
-<td><p>Datum pressure where u = s = 0 [Pa]. Must lie in the fit box.</p>
-<p>Omit it and ember places the datum at the centre of the box, which is
-inside it by construction.</p>
-</td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">T_dtm:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">null</span></code></p></td>
-<td><p>Datum temperature where u = s = 0 [K]. As <code class="xref py py-attr docutils literal notranslate"><span class="pre">P_dtm</span></code>.</p></td>
-</tr>
 </tbody>
 </table>
 </section>
 </section>
 <section id="mean-line">
 <span id="config-mean-line"></span><h3>mean_line:<a class="headerlink" href="#mean-line" title="Link to this heading">¶</a></h3>
-<p>Base for mean-line designers.</p>
+<p>Choose the mean-line design algorithm.</p>
+<p>The <a class="reference internal" href="design.html"><span class="doc">Mean-line designers</span></a> page covers what a subclass declares and how
+<strong class="program">turbigen</strong> runs it.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-mean-line-axial-turbine"><span class="std std-ref">axial_turbine</span></a>, <a class="reference internal" href="#config-mean-line-turbine-cascade"><span class="std std-ref">turbine_cascade</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-axial-turbine">
 <span id="config-mean-line-axial-turbine"></span><h4>type: axial_turbine<a class="headerlink" href="#type-axial-turbine" title="Link to this heading">¶</a></h4>
-<p>An axial turbine stage: a stator row followed by a rotor row.</p>
-<p>Note the use of <code class="docutils literal notranslate"><span class="pre">ml.flat</span></code>. A mean line is stored as <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">n_row)</span></code>,
-station by row, but the physics of a stage reads naturally in streamwise
-order, so this design takes the flat view once and indexes it <code class="docutils literal notranslate"><span class="pre">0,</span> <span class="pre">1,</span> <span class="pre">2,</span>
-<span class="pre">3</span></code> from machine inlet to machine outlet. That view shares storage with the
-mean line, so writes through it land in the design being built.</p>
+<p>An axial turbine stage.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -662,18 +670,15 @@ mean line, so writes through it land in the design being built.</p>
 </section>
 <section id="annulus">
 <span id="config-annulus"></span><h3>annulus:<a class="headerlink" href="#annulus" title="Link to this heading">¶</a></h3>
-<p>Base for annulus designs.</p>
-<p>Unlike a mean-line design, an annulus declares no <code class="docutils literal notranslate"><span class="pre">n_row</span></code>: it is generic
-over row count, which comes from the mean line handed to <code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code>.</p>
+<p>Specify the shape of an annulus around a given mean line.</p>
+<p>The <a class="reference internal" href="annulus.html"><span class="doc">Annulus lines</span></a> page covers the shapes that ship with
+<strong class="program">turbigen</strong> and how a design is run.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-annulus-aspect-ratio"><span class="std std-ref">aspect_ratio</span></a>, <a class="reference internal" href="#config-annulus-fixed-axial-chord"><span class="std std-ref">fixed_axial_chord</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-aspect-ratio">
 <span id="config-annulus-aspect-ratio"></span><h4>type: aspect_ratio<a class="headerlink" href="#type-aspect-ratio" title="Link to this heading">¶</a></h4>
 <p>Annulus with a prescribed span-to-chord ratio for each row and gap.</p>
-<p>The chord is meridional, and the span it is measured against is the
-average over the segment, so a row’s aspect ratio is set by the mean line
-on both sides of it. This is the specification the design correlations are
-written in — an aspect ratio is a number a designer carries between
-machines, where an axial chord in metres is not.</p>
+<p>The chord is meridional, and the span it is measured against is the mean
+of the inlet and outlet spans of each segment.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -716,9 +721,7 @@ exit ducts [–], length n_row + 1.</p></td>
 <span id="config-annulus-fixed-axial-chord"></span><h4>type: fixed_axial_chord<a class="headerlink" href="#type-fixed-axial-chord" title="Link to this heading">¶</a></h4>
 <p>Annulus with a prescribed axial chord for each row and gap.</p>
 <p>Note that an axial chord cannot describe a segment at 90 degrees pitch
-angle: the arc length it implies is the chord divided by <code class="docutils literal notranslate"><span class="pre">cos(Beta)</span></code>, so
-a radial segment asks for an infinite one. <code class="xref py py-class docutils literal notranslate"><span class="pre">AspectRatio</span></code> states the
-arc length directly and has no such limit.</p>
+angle, so this method does not work for radial machines.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -761,6 +764,8 @@ length n_row + 1.</p></td>
 <section id="blades">
 <span id="config-blades"></span><h3>blades:<a class="headerlink" href="#blades" title="Link to this heading">¶</a></h3>
 <p>Design variables for one blade row.</p>
+<p>The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers how the sections, count and clearance become
+a shape.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -812,6 +817,7 @@ to this power. The default is a free vortex.</p></td>
 <section id="sections">
 <span id="config-blades-sections"></span><h4>sections:<a class="headerlink" href="#sections" title="Link to this heading">¶</a></h4>
 <p>One spanwise section of a blade.</p>
+<p>The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers how the sections stack into a shape.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -838,7 +844,7 @@ to this power. The default is a free vortex.</p></td>
 <td><p>Recamber of the trailing edge from the local flow angle [deg].</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#config-blades-sections-camber"><span class="std std-ref">camber:</span></a></p></td>
-<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">quadratic</span></code></p></td>
+<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">bernstein</span></code>, <code class="docutils literal notranslate"><span class="pre">quadratic</span></code></p></td>
 <td><p>Shape of the camber line between the end angles.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-blades-sections-thickness"><span class="std std-ref">thickness:</span></a></p></td>
@@ -850,8 +856,40 @@ to this power. The default is a free vortex.</p></td>
 <section id="camber">
 <span id="config-blades-sections-camber"></span><h5>camber:<a class="headerlink" href="#camber" title="Link to this heading">¶</a></h5>
 <p>Base for camber line shapes.</p>
-<p>A shape knows nothing of the blade angles: it interpolates between them.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-camber-quadratic"><span class="std std-ref">quadratic</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p>A shape knows nothing of the blade angles: it interpolates between them.
+The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers where the angles come from.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-camber-bernstein"><span class="std std-ref">bernstein</span></a>, <a class="reference internal" href="#config-blades-sections-camber-quadratic"><span class="std std-ref">quadratic</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<section id="type-bernstein">
+<span id="config-blades-sections-camber-bernstein"></span><h6>type: bernstein<a class="headerlink" href="#type-bernstein" title="Link to this heading">¶</a></h6>
+<p>Bernstein-polynomial perturbation of a quadratic camber line.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">order:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">3</span></code></p></td>
+<td><p>Degree of the Bernstein polynomial; one more than the coefficient count.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">coeff:</span></code></p></td>
+<td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
+<td><p>Interior Bernstein coefficients, local changes about a linear ramp [–].</p>
+<p>The two endpoint coefficients are fixed at zero so the camber line ends
+stay put; supply the <code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> interior values here. Fewer than
+that are zero-padded, and all-zero recovers a quadratic camber line.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
 <section id="type-quadratic">
 <span id="config-blades-sections-camber-quadratic"></span><h6>type: quadratic<a class="headerlink" href="#type-quadratic" title="Link to this heading">¶</a></h6>
 <p>Quadratic variation of camber line slope.</p>
@@ -882,10 +920,11 @@ aft, negative values forward.</p>
 <section id="thickness">
 <span id="config-blades-sections-thickness"></span><h5>thickness:<a class="headerlink" href="#thickness" title="Link to this heading">¶</a></h5>
 <p>Base for thickness distributions, normalised by meridional chord.</p>
+<p>The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers how a distribution is placed on a blade.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-thickness-taylor"><span class="std std-ref">taylor</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-taylor">
 <span id="config-blades-sections-thickness-taylor"></span><h6>type: taylor<a class="headerlink" href="#type-taylor" title="Link to this heading">¶</a></h6>
-<p>After Taylor (2016), two cubic splines in shape space.</p>
+<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id1">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
 <p>The splines meet at the point of maximum thickness, where the value, slope
 and curvature are all continuous.</p>
 <table class="config-keys docutils align-default">
@@ -933,6 +972,8 @@ and curvature are all continuous.</p>
 <section id="count">
 <span id="config-blades-count"></span><h4>count:<a class="headerlink" href="#count" title="Link to this heading">¶</a></h4>
 <p>Base for rules setting the number of blades in a row.</p>
+<p>The implementations sit after <code class="xref py py-class docutils literal notranslate"><span class="pre">BladeDesign</span></code>, since each reads a
+finished <code class="xref py py-class docutils literal notranslate"><span class="pre">Blade</span></code> to work.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-count-co"><span class="std std-ref">Co</span></a>, <a class="reference internal" href="#config-blades-count-dfl"><span class="std std-ref">DFL</span></a>, <a class="reference internal" href="#config-blades-count-nb"><span class="std std-ref">Nb</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-co">
 <span id="config-blades-count-co"></span><h5>type: Co<a class="headerlink" href="#type-co" title="Link to this heading">¶</a></h5>
@@ -1476,7 +1517,7 @@ are mappings for the same reason; this makes the three alike.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-iterate-correct"><span class="std std-ref">correct:</span></a></p></td>
-<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">Re_surf</span></code>, <code class="docutils literal notranslate"><span class="pre">deviation</span></code>, <code class="docutils literal notranslate"><span class="pre">incidence</span></code>, <code class="docutils literal notranslate"><span class="pre">mean_line</span></code>, <code class="docutils literal notranslate"><span class="pre">repeat</span></code></p></td>
+<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">Re_surf</span></code>, <code class="docutils literal notranslate"><span class="pre">deviation</span></code>, <code class="docutils literal notranslate"><span class="pre">diffusion_factor</span></code>, <code class="docutils literal notranslate"><span class="pre">incidence</span></code>, <code class="docutils literal notranslate"><span class="pre">mean_line</span></code>, <code class="docutils literal notranslate"><span class="pre">repeat</span></code></p></td>
 <td><p>The mismatches to correct, one iterator each.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_iter:</span></code></p></td>
@@ -1495,7 +1536,7 @@ it was run under, which is why it is a key at all rather than a flag.</p>
 <p>Base for design iterators.</p>
 <p>A member declares the knobs it owns, measures the error those knobs should
 null, and leaves every decision about how far to move to <code class="xref py py-func docutils literal notranslate"><span class="pre">step()</span></code>.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-iterate-correct-re-surf"><span class="std std-ref">Re_surf</span></a>, <a class="reference internal" href="#config-iterate-correct-deviation"><span class="std std-ref">deviation</span></a>, <a class="reference internal" href="#config-iterate-correct-incidence"><span class="std std-ref">incidence</span></a>, <a class="reference internal" href="#config-iterate-correct-mean-line"><span class="std std-ref">mean_line</span></a>, <a class="reference internal" href="#config-iterate-correct-repeat"><span class="std std-ref">repeat</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-iterate-correct-re-surf"><span class="std std-ref">Re_surf</span></a>, <a class="reference internal" href="#config-iterate-correct-deviation"><span class="std std-ref">deviation</span></a>, <a class="reference internal" href="#config-iterate-correct-diffusion-factor"><span class="std std-ref">diffusion_factor</span></a>, <a class="reference internal" href="#config-iterate-correct-incidence"><span class="std std-ref">incidence</span></a>, <a class="reference internal" href="#config-iterate-correct-mean-line"><span class="std std-ref">mean_line</span></a>, <a class="reference internal" href="#config-iterate-correct-repeat"><span class="std std-ref">repeat</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-re-surf">
 <span id="config-iterate-correct-re-surf"></span><h5>type: Re_surf<a class="headerlink" href="#type-re-surf" title="Link to this heading">¶</a></h5>
 <p>Set the viscosity to reach a surface Reynolds number.</p>
@@ -1610,13 +1651,79 @@ be meshed.</p>
 </tbody>
 </table>
 </section>
+<section id="type-diffusion-factor">
+<span id="config-iterate-correct-diffusion-factor"></span><h5>type: diffusion_factor<a class="headerlink" href="#type-diffusion-factor" title="Link to this heading">¶</a></h5>
+<p>Set the blade count to reach a target diffusion factor.</p>
+<p>Moves the circulation coefficient of a
+<a class="reference internal" href="blade.html#turbigen.blade.Circulation" title="turbigen.blade.Circulation"><code class="xref py py-class docutils literal notranslate"><span class="pre">Circulation</span></code></a> count rule, which rounds it to an
+integer number of blades — so the achieved diffusion factor lands within
+about one blade of the target rather than exactly on it. This shares its
+name with <a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor" title="turbigen.blade.DiffusionFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">turbigen.blade.DiffusionFactor</span></code></a>, the mean-line count
+rule; that one sets a blade count once from a correlation, this one drives
+the count from the CFD it produced.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>Circulation-coefficient change per unit diffusion-factor error [–].</p>
+<p>Positive: a larger coefficient gives a larger pitch, fewer blades, more
+loading and a higher diffusion factor. Only the first step and its sign
+come from here; the Broyden update refines the slope afterwards, so a value
+that slightly undershoots is safer than one that overshoots into the
+integer-count staircase.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></td>
+<td><p>Largest change in the circulation coefficient in one iteration [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
+<td><p>Converged inside this absolute error on the diffusion factor [–].</p>
+<p>The blade count is an integer, so the achieved diffusion factor moves in
+steps that this must clear: a row with few blades may need a looser value.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">target:</span></code></p></td>
+<td><p>float</p></td>
+<td><p>Isentropic-Mach diffusion factor to design for [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Index of the blade row whose diffusion factor meets the target [–].</p>
+<p>One row at a time: list the iterator again with a different <code class="docutils literal notranslate"><span class="pre">i_row</span></code> to
+place another row.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Span fraction to measure the diffusion factor at [–].</p></td>
+</tr>
+</tbody>
+</table>
+</section>
 <section id="type-incidence">
 <span id="config-iterate-correct-incidence"></span><h5>type: incidence<a class="headerlink" href="#type-incidence" title="Link to this heading">¶</a></h5>
 <p>Set the leading edge to meet the flow at a chosen incidence.</p>
-<p>Measured on the three-dimensional field at one span fraction rather than
-from the mixed-out mean line, because incidence is a local property of the
-leading edge and the whole point of moving it is that the mean line does
-not see what the tip and the hub are doing.</p>
+<p>Measured on the three-dimensional field at each section’s own span fraction
+rather than from the mixed-out mean line, because incidence is a local
+property of the leading edge and the whole point of moving it is that the
+mean line does not see what the tip and the hub are doing.</p>
+<p>One knob per section, not the row mean <code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> uses: a blade
+with N sections has N independent leading-edge angles, and each should meet
+the flow it actually sees. Collapsing them to a mean nulls the incidence at
+one span and leaves the rest with whatever the starting distribution gave.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -1655,11 +1762,7 @@ be meshed.</p>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Incidence to aim for [deg].</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
-<td><p>Span fraction to measure the incidence at.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">upstream:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">upstream:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
 <td><p>Where to read the flow angle, as a fraction of the gap ahead of the row.</p></td>
 </tr>
@@ -2104,6 +2207,58 @@ are spread along x by a fixed pitch so neighbours do not overlap. The
 absolute velocity is C0 and the relative velocity C1; blade speed closes
 the two, tip to tip, and is only drawn where the row rotates.</p>
 <p>This mapping takes no keys.</p>
+</section>
+</section>
+<section id="metrics">
+<span id="config-metrics"></span><h3>metrics:<a class="headerlink" href="#metrics" title="Link to this heading">¶</a></h3>
+<p>Base for quantities measured from a solved field.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-metrics-surface-dissipation"><span class="std std-ref">surface_dissipation</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<section id="type-surface-dissipation">
+<span id="config-metrics-surface-dissipation"></span><h4>type: surface_dissipation<a class="headerlink" href="#type-surface-dissipation" title="Link to this heading">¶</a></h4>
+<p>Denton’s velocity-cubed estimate of boundary layer loss.</p>
+<p>Entropy generated in the boundary layers on the wetted walls of each row,
+after Denton (1993),</p>
+<div class="math notranslate nohighlight">
+\[\dot{S}_\mathrm{surf}
+    = \int_\mathrm{surf} C_\mathrm{d}\,\frac{\rho V_s^3}{T}\,\mathrm{d}A\]</div>
+<p>where <span class="math notranslate nohighlight">\(V_s\)</span> is the local velocity at the edge of the boundary layer.
+That is a real velocity of real fluid, not an idealised one: it is
+recovered from the surface static pressure by expanding isentropically from
+the entropy of the free stream entering <em>that row</em>, because reading it off
+the cell against the wall would return a velocity inside the layer rather
+than at its edge.</p>
+<p>Evaluated in the frame of each wall, which the cut carries — so the
+casing over a tip gap is measured in the absolute frame while the blade
+below it is measured in the relative one, as the boundary layers on them
+are.</p>
+<p>The integral runs between the first and last mean-line cut planes, so the
+inlet and exit ducts are excluded and the surfaces bound the same control
+volume whose end states <code class="xref py py-attr docutils literal notranslate"><span class="pre">actual</span></code> reports.
+Loss in the gaps between rows is kept, attributed to the row whose blocks
+it sits in.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Cd:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.002</span></code></p></td>
+<td><p>Dissipation coefficient [–].</p>
+<p>Denton’s classic value. The entropy rate is exactly linear in it, so a
+second instance at another value measures nothing a rescale would not
+give.</p>
+</td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 <section id="job">
