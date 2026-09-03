@@ -170,9 +170,11 @@ def test_mesh_sets_the_scales_before_there_is_a_flow_to_scale(machine, grid):
     """
     reference = machine.mean_line.get_referenced_fluid()
 
-    assert grid[0].fluid.rho_ref == reference.rho_ref
-    assert grid[0].fluid.V_ref == reference.V_ref
-    assert grid[0].fluid.Rgas_ref == reference.Rgas_ref
+    # The grid carries its references as float32, so the mean line's float64
+    # values come back a rounding step away rather than bit-identical.
+    assert grid[0].fluid.rho_ref == pytest.approx(reference.rho_ref, rel=1e-6)
+    assert grid[0].fluid.V_ref == pytest.approx(reference.V_ref, rel=1e-6)
+    assert grid[0].fluid.Rgas_ref == pytest.approx(reference.Rgas_ref, rel=1e-6)
 
     # Order one, which is the point of setting them at all.
     assert 0.1 < reference.rho_ref < 10.0
