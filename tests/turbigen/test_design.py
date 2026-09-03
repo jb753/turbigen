@@ -250,7 +250,14 @@ def designed(request):
 
 
 def test_builtin_design_round_trips(designed):
-    """Every design variable comes back out of backward()."""
+    """Every design variable comes back out of backward(), unless it cannot.
+
+    A field mapped to None declares itself deliberately not invertible, which
+    is what a limit on the design rather than a variable of it looks like:
+    a finished mean line does not record what it was allowed to reach. That
+    is the contract in design.py, and what _check_round_trip honours, so it
+    is honoured here too.
+    """
     import dataclasses
 
     name, config, ml = designed
@@ -260,7 +267,8 @@ def test_builtin_design_round_trips(designed):
         key = field.name
         assert key in inverted, f"{name}: backward() omits design variable {key!r}"
         got = inverted[key]
-        assert got is not None, f"{name}: backward() returns None for {key!r}"
+        if got is None:
+            continue
         np.testing.assert_allclose(
             np.asarray(got, dtype=float),
             np.asarray(getattr(config.mean_line, key), dtype=float),
@@ -304,6 +312,35 @@ def test_axial_turbine_is_a_repeating_stage():
     assert float(inverted["Alpha1"]) == pytest.approx(
         float(inverted["Alpha3"]), abs=1e-2
     )
+
+
+def test_axial_turbine_accepts_an_inlet_mach_number_under_the_limit():
+    # The default limit of one is well clear of the inlet Mach number this
+    # case reaches, so the check has to be invisible until it is asked for.
+    ml = build_config("axial_turbine").design().mean_line
+
+    assert float(ml.flat.Ma[0]) < 1.0
+
+
+def test_axial_turbine_refuses_an_inlet_mach_number_over_the_limit():
+    # The inlet Mach number is not a target, so the only way to fail the check
+    # is to bring the limit down onto a design that already converged.
+    config = build_config("axial_turbine")
+    Ma1 = float(config.design().mean_line.flat.Ma[0])
+
+    tight = Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": {
+                "type": "axial_turbine",
+                **CASES["axial_turbine"],
+                "Ma1_max": 0.5 * Ma1,
+            },
+        }
+    )
+
+    with pytest.raises(DesignError, match="Ma1_max"):
+        tight.design()
 
 
 def test_axial_turbine_stator_is_stationary():

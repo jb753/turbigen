@@ -4,7 +4,7 @@ from typing import ClassVar
 
 import numpy as np
 
-from turbigen.design import MeanLineDesign
+from turbigen.design import DesignError, MeanLineDesign
 
 VT1_FRACTION = 0.05
 """Fraction of the guessed blade speed to start the inlet swirl at.
@@ -51,6 +51,14 @@ class AxialTurbine(MeanLineDesign):
 
     To1: float = 300.0
     """Inlet stagnation temperature [K]."""
+
+    Ma1_max: float = 1.0
+    """Largest acceptable stage inlet Mach number [--].
+
+    The inlet Mach number is an outcome of the design rather than something
+    asked for, so this is the limit it is checked against once the stage has
+    converged, not a target solved for.
+    """
 
     #
     # SHARED DEFINITIONS
@@ -186,6 +194,15 @@ class AxialTurbine(MeanLineDesign):
             name="stage",
         )
 
+        # The inlet Mach number falls out of the converged stage, so this is
+        # the first point it can be tested.
+        Ma1 = float(ml.flat.Ma[0])
+        if Ma1 > self.Ma1_max:
+            raise DesignError(
+                f"Mean-line type {self.type!r}: stage inlet Mach number "
+                f"Ma1={Ma1} exceeds Ma1_max={self.Ma1_max}."
+            )
+
         return ml
 
     def backward(self, ml):
@@ -204,8 +221,13 @@ class AxialTurbine(MeanLineDesign):
             "zeta": self.velocity_ratios(ml),
             "Po1": ml.inlet.Po,
             "To1": ml.inlet.To,
+            # A limit on the design, not a variable of it: nothing about a
+            # finished mean line says what its inlet Mach number was allowed
+            # to reach, so declare it deliberately not invertible.
+            "Ma1_max": None,
             # Diagnostics
             "Alpha1": ml.inlet.Alpha,
+            "Ma1": flat.Ma[0],
             "Alpha3": ml.outlet.Alpha,
             "Ma3_rel": flat.Ma_rel[3],
             "Lam": (h[1] - h[0]) / (h[3] - h[0]),
