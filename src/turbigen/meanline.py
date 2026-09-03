@@ -1,4 +1,4 @@
-"""Mean-line flow field and annulus geometry, built on the ember Block.
+"""Mean-line flow field, radius and annulus area.
 
 This module contains the basic data structure used in :program:`turbigen` to
 represent a one-dimensional flow field along the mean line of a turbomachine,

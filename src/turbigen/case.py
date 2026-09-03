@@ -37,7 +37,10 @@ def read(path, design=True):
         Whether to design the machine, so that :attr:`Result.nominal` works.
         On by default, since comparing nominal against actual is the point of
         keeping the two together. Turn it off when scraping many files and only
-        the achieved state is wanted.
+        the achieved state is wanted --- at the cost that the result's entropy
+        and internal energy are then measured from the config's datum rather
+        than the design's, so they are not comparable with those of a file read
+        the other way. Everything else, being dimensional, is.
 
     Returns
     -------
@@ -59,7 +62,16 @@ def read(path, design=True):
         return config, None
 
     machine = config.design() if design else None
-    result = Result.from_dict(result_data, config.fluid.eos(), machine=machine)
+
+    # The stored state is dimensional -- pressure, temperature, velocity -- so
+    # it can be read against any equation of state and come back unchanged.
+    # Which one is chosen decides only what datum the entropy and internal
+    # energy of the result are measured from, and it has to be the one the
+    # nominal mean line carries, or comparing the two would compare numbers
+    # taken from different zeros. Without a machine there is nothing to compare
+    # against and no design to reference, so the config's own fluid is used.
+    fluid = machine.mean_line.fluid if machine else config.fluid.eos()
+    result = Result.from_dict(result_data, fluid, machine=machine)
 
     return config, result
 

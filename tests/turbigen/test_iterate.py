@@ -9,7 +9,8 @@ Test cases:
 - test_the_iterate_section_round_trips: iterators are ordinary config nodes
 - test_unknowns_round_trip: what with_unknowns sets is what unknowns reads
 - test_setting_touches_nothing_else: an iterator writes only its own fields
-- test_recamber_shift_keeps_the_spanwise_distribution: the knob is a row mean
+- test_recamber_shift_keeps_the_spanwise_distribution: a deviation knob is a row mean
+- test_incidence_moves_each_section_independently: an incidence knob is per section
 - test_order_of_application_does_not_matter: knobs are disjoint, so they commute
 - test_two_iterators_claiming_one_knob_is_refused: caught at assembly
 - test_paths_match_what_is_moved: declared ownership is real ownership
@@ -31,6 +32,11 @@ Test cases:
 - test_mean_line_error_is_zero_for_its_own_design: likewise, through backward()
 - test_mean_line_tolerance_scales_with_the_nominal: relative, per variable
 - test_mean_line_restores_a_scalar_as_a_scalar: shapes survive a round trip
+- test_diffusion_factor_paths_match_what_is_moved: it owns the circulation knob
+- test_diffusion_factor_round_trips_the_coefficient: what it sets is what it reads
+- test_diffusion_factor_needs_a_circulation_rule: a fixed count is refused
+- test_diffusion_factor_is_quiet_without_a_grid: no solution, no correction
+- test_diffusion_factor_steps_the_count_down_when_loading_is_high: the right sign
 """
 
 import dataclasses
@@ -38,7 +44,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from test_blade import FLUID, MEAN_LINE, build
+from test_blade import FLUID, MEAN_LINE, blade, build
 from turbigen import Config, Result, iterate, node
 
 
@@ -176,7 +182,8 @@ def test_setting_touches_nothing_else(config):
 
 
 def test_recamber_shift_keeps_the_spanwise_distribution(config):
-    """The knob is a row mean; how it varies over the span is a design choice."""
+    """A deviation knob is a row mean; how it varies over the span is a design
+    choice, so a move shifts every section by the same amount."""
     before = [s.dchi_TE for s in config.blades[0].sections]
 
     after = config.iterate.correct[0].with_unknowns(config, {"dchi_TE[0]": -3.0})
@@ -185,14 +192,40 @@ def test_recamber_shift_keeps_the_spanwise_distribution(config):
     assert np.ptp(np.array(shifted) - np.array(before)) == pytest.approx(0.0)
 
 
+def test_incidence_moves_each_section_independently(config):
+    """An incidence knob is one section's leading edge, set outright: the
+    spanwise distribution is what the iterator is there to change."""
+    incidence = config.iterate.correct[1]
+    before = [s.dchi_LE for s in config.blades[0].sections]
+
+    after = incidence.with_unknowns(
+        config, {"dchi_LE[0][0]": 1.0, "dchi_LE[0][2]": -1.0}
+    )
+
+    moved = [s.dchi_LE for s in after.blades[0].sections]
+    assert moved[0] == pytest.approx(1.0)
+    assert moved[1] == pytest.approx(before[1])
+    assert moved[2] == pytest.approx(-1.0)
+    assert np.ptp(np.array(moved) - np.array(before)) > 1.0
+
+
+def test_incidence_has_one_unknown_per_section(config):
+    """Two rows of three sections, so six knobs, named row then section."""
+    incidence = config.iterate.correct[1]
+
+    assert set(incidence.unknowns(config)) == {
+        f"dchi_LE[{i}][{j}]" for i in range(2) for j in range(3)
+    }
+
+
 def test_order_of_application_does_not_matter(config):
     deviation, incidence = config.iterate.correct
 
     one = incidence.with_unknowns(
-        deviation.with_unknowns(config, {"dchi_TE[0]": -3.0}), {"dchi_LE[1]": 4.0}
+        deviation.with_unknowns(config, {"dchi_TE[0]": -3.0}), {"dchi_LE[1][0]": 4.0}
     )
     other = deviation.with_unknowns(
-        incidence.with_unknowns(config, {"dchi_LE[1]": 4.0}), {"dchi_TE[0]": -3.0}
+        incidence.with_unknowns(config, {"dchi_LE[1][0]": 4.0}), {"dchi_TE[0]": -3.0}
     )
 
     assert one == other
@@ -522,6 +555,84 @@ def test_mean_line_restores_a_scalar_as_a_scalar():
     assert moved.mean_line.Ys[1] == pytest.approx(0.06)
     # Round-tripping through a file is what would catch a stray array here.
     assert Config.from_dict(moved.to_dict()) == moved
+
+
+#
+# THE DIFFUSION FACTOR
+#
+# The blade count is chosen from a mean-line correlation, but the diffusion it
+# delivers is a property of the CFD. This iterator moves the circulation
+# coefficient -- a continuous knob -- and lets the count rule round it.
+#
+
+
+def with_DF(target=0.2, blades=None, **kwargs):
+    """A bladed config asking for a diffusion factor on its first row."""
+    return dataclasses.replace(
+        build(blades=blades),
+        iterate=iterate.Iteration(
+            correct=(iterate.DiffusionFactor(target=target, **kwargs),)
+        ),
+    )
+
+
+def test_diffusion_factor_paths_match_what_is_moved():
+    config = with_DF()
+
+    iterator = config.iterate.correct[0]
+    assert iterator.paths(config) == {"blades[0].count.Co"}
+    assert iterator.paths(config) == _probe(iterator, config)
+
+
+def test_diffusion_factor_round_trips_the_coefficient():
+    config = with_DF()
+    iterator = config.iterate.correct[0]
+
+    moved = iterator.with_unknowns(config, {"blades[0].count.Co": 0.9})
+
+    assert moved.blades[0].count.Co == pytest.approx(0.9)
+    assert iterator.unknowns(moved) == {"blades[0].count.Co": pytest.approx(0.9)}
+    assert Config.from_dict(moved.to_dict()) == moved
+
+
+def test_diffusion_factor_needs_a_circulation_rule():
+    """The knob is a circulation coefficient, so a fixed count has nothing to move."""
+    config = with_DF(
+        blades=[blade(count={"type": "Nb", "Nb": 30}), blade(dchi_LE=2.0)]
+    )
+    iterator = config.iterate.correct[0]
+
+    with pytest.raises(ValueError, match="type: Co"):
+        iterator.unknowns(config)
+    with pytest.raises(ValueError, match="type: Co"):
+        iterator.error(config, Result(grid=object(), machine=config.design()))
+
+
+def test_diffusion_factor_is_quiet_without_a_grid():
+    config = with_DF()
+    iterator = config.iterate.correct[0]
+
+    assert iterator.error(config, Result()) == {}
+    assert iterator.error(config, Result(machine=config.design())) == {}
+
+
+def test_diffusion_factor_steps_the_count_down_when_loading_is_high():
+    """Too much diffusion means too few blades: the coefficient must fall."""
+
+    class HighDF(iterate.DiffusionFactor):
+        """Stand in for a CFD that measures the design as over-diffused."""
+
+        def error(self, config, result):
+            return {self._name(): +0.1}
+
+    config = dataclasses.replace(
+        with_DF(), iterate=iterate.Iteration(correct=(HighDF(target=0.2),))
+    )
+    Co = config.blades[0].count.Co
+
+    stepped = iterate.step(config, Result())
+
+    assert stepped.blades[0].count.Co < Co
 
 
 #

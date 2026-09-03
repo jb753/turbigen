@@ -11,13 +11,14 @@ converged answer. That is enough: none of this depends on the flow being
 settled, only on it being a valid field.
 
 Test cases:
-- test_cut_planes_land_in_the_gaps: not inside a row, where there is no plane
-- test_cut_planes_span_hub_to_casing: two points, the shape ember wants
 - test_actual_has_the_shape_of_the_nominal: assembled per station
 - test_actual_keeps_the_design_annulus_area: what the AR contraction is for
 - test_actual_reports_the_speed_the_grid_ran_at: and Omega, which does not
 - test_actual_is_a_plausible_flow: finite, positive, roughly the design
 - test_actual_is_not_reinterpreted_by_the_datum: the P/T/V transfer
+- test_mixing_loss_has_the_shape_of_the_mean_line: one value per station
+- test_mixing_loss_is_a_real_entropy_rise: positive through the wake
+- test_mixing_loss_builds_through_the_row: exit lossier than inlet
 - test_a_cut_that_misses_the_grid_is_reported: names the station
 """
 
@@ -91,49 +92,6 @@ def solved():
 
 
 #
-# WHERE THE CUTS GO
-#
-
-
-def test_cut_planes_land_in_the_gaps():
-    """Cutting at a station exactly would put the plane inside the blade.
-
-    Rows occupy the odd segments of the annulus coordinate, so a leading-edge
-    cut has to sit just below an odd integer and a trailing-edge cut just above
-    the next one.
-    """
-    annulus = build().design().annulus
-    n_row = annulus.n_row
-
-    # Recover the m of each cut from its axial position, via the mid-span line.
-    m_dense = np.linspace(0.0, annulus.mmax, 20001)
-    x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
-
-    for i_station, xr in enumerate(mixout.cut_planes(annulus)):
-        x_cut = float(xr.mean(axis=0)[0])
-        m_cut = float(np.interp(x_cut, x_dense, m_dense))
-
-        station = 1.0 + i_station
-        if i_station % 2 == 0:
-            assert m_cut < station, "a leading edge cut must sit upstream"
-        else:
-            assert m_cut > station, "a trailing edge cut must sit downstream"
-        assert abs(m_cut - station) < 0.5, "and still in the adjacent gap"
-
-    assert len(mixout.cut_planes(annulus)) == 2 * n_row
-
-
-def test_cut_planes_span_hub_to_casing():
-    """Two (x, r) points, which is the curve ember.cut.unstructured takes."""
-    annulus = build().design().annulus
-
-    for xr in mixout.cut_planes(annulus):
-        assert xr.shape == (2, 2)
-        r_hub, r_cas = xr[0][1], xr[1][1]
-        assert r_cas > r_hub
-
-
-#
 # WHAT COMES BACK
 #
 
@@ -141,7 +99,7 @@ def test_cut_planes_span_hub_to_casing():
 def test_actual_has_the_shape_of_the_nominal(solved):
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert actual.shape == machine.mean_line.shape
     assert actual.n_row == machine.mean_line.n_row
@@ -156,7 +114,7 @@ def test_actual_keeps_the_design_annulus_area(solved):
     """
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     np.testing.assert_allclose(
         np.asarray(actual.flat.Am, dtype=float),
@@ -181,7 +139,7 @@ def test_actual_reports_the_speed_the_grid_ran_at(solved):
     for block in grid:
         block.set_Omega(100.0)
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert np.all(np.asarray(actual.flat.Omega, dtype=float) == pytest.approx(100.0))
     # And the design it came from is untouched, this being a cascade at rest.
@@ -194,7 +152,7 @@ def test_actual_reports_the_speed_the_grid_ran_at(solved):
 def test_actual_is_a_plausible_flow(solved):
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert np.all(np.isfinite(np.asarray(actual.flat.P)))
     assert np.all(np.asarray(actual.flat.P) > 0.0)
@@ -211,21 +169,74 @@ def test_actual_is_a_plausible_flow(solved):
 
 
 def test_actual_is_not_reinterpreted_by_the_datum(solved):
-    """The cut carries the grid's fluid, the mean line carries the design's.
+    """State crosses from the grid as P, T and velocity, not as conserved.
 
-    Those have different datums, so transferring the conserved variables would
-    silently shift the temperature. State is moved as P, T and velocity, which
-    crosses unchanged -- so the actual temperature must be a real temperature,
-    not one displaced by the gap between the two datums.
+    A design and the grid meshed from it share one datum, so today the transfer
+    would survive being written the wrong way. That is a property of the
+    pipeline rather than of `mean_line`, and it can be taken away by any change
+    upstream --- so the grid is put on a deliberately different datum here and
+    the mixed-out temperature has to come across unchanged anyway. Conserved
+    energy is measured from a datum and would arrive displaced by the gap
+    between the two; pressure, temperature and velocity are not and do not.
     """
     machine, grid = solved
+
+    grid = grid.copy()
+    fluid = grid[0].fluid
+    grid.set_fluid(
+        fluid.change_datum(P_dtm=0.5 * fluid.P_dtm, T_dtm=0.5 * fluid.T_dtm)
+    )
     assert grid[0].fluid.T_dtm != machine.mean_line.fluid.T_dtm
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     T = np.asarray(actual.flat.T, dtype=float)
     T_nominal = np.asarray(machine.mean_line.flat.T, dtype=float)
     assert np.all(np.abs(T - T_nominal) < 0.25 * T_nominal)
+
+
+#
+# THE MIXING LOSS
+#
+
+
+def test_mixing_loss_has_the_shape_of_the_mean_line(solved):
+    """One entropy rise per station, laid out like every other mean-line field."""
+    machine, grid = solved
+
+    actual, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert Ds_mix.shape == actual.shape
+    assert np.all(np.isfinite(Ds_mix))
+
+
+def test_mixing_loss_is_a_real_entropy_rise(solved):
+    """Mixing a non-uniform wake to uniformity generates entropy.
+
+    The trailing-edge cuts carry a wake, so their loss is unambiguously
+    positive. The inlet cuts sit in a nearly uniform inflow whose fluxes a
+    ten-step transient has not made conservative, so the mixing inequality can
+    be off by a small amount there --- bounded well below the wake's rise.
+    """
+    machine, grid = solved
+
+    _, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert np.all(Ds_mix[1] > 0.0)
+    assert np.all(np.abs(Ds_mix[0]) < Ds_mix[1])
+
+
+def test_mixing_loss_builds_through_the_row(solved):
+    """The trailing-edge cut carries a wake; the inlet cut is nearly uniform.
+
+    So the outlet station's mixing loss must exceed the inlet's, even on a
+    ten-step transient -- the wake is a geometric feature, not a converged one.
+    """
+    machine, grid = solved
+
+    _, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert np.all(Ds_mix[1] > Ds_mix[0])
 
 
 def test_a_cut_that_misses_the_grid_is_reported(solved):

@@ -48,7 +48,7 @@ class Machine:
         is the usual sign that a quantity belongs to the thing it is measured
         from rather than to its first consumer.
         """
-        ell = np.array([row.blade.surface_length(0.5) for row in self.rows])
+        ell = np.array([row.blade.evaluate_surface_length(0.5) for row in self.rows])
         stations = [
             self.mean_line.get_characteristic_station(i) for i in range(len(self.rows))
         ]
@@ -59,7 +59,7 @@ class Machine:
         """Tabular string representation of the blade rows."""
         r_ref = 0.5 * (self.mean_line.r[0] + self.mean_line.r[1])
         n_blade = np.array([row.n_blade for row in self.rows])
-        chord = np.array([row.blade.chord(0.5) for row in self.rows])
+        chord = np.array([row.blade.evaluate_chord(0.5) for row in self.rows])
         properties = [
             ("N_blade", n_blade, "d"),
             ("Gap/m", np.array([row.tip_gap for row in self.rows]), ".4f"),

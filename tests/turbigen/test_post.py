@@ -15,7 +15,9 @@ import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 import ember.util  # noqa: E402
+from test_blade import build  # noqa: E402
 from test_cli import RUN_CASE  # noqa: E402
+from test_mesh import MESH, TIP  # noqa: E402
 from turbigen import (  # noqa: E402
     AnnulusPlot,
     Config,
@@ -97,6 +99,14 @@ def solved(bladed):
         converged=True,
         history=history,
     )
+
+
+@pytest.fixture(scope="module")
+def gapped():
+    """A two-row case whose second row has a tip gap, meshed but not marched."""
+    config = build(blades=TIP, mesh=MESH)
+    _, machine, grid = cli.prepare(config)
+    return config, Result(machine=machine, grid=grid)
 
 
 @pytest.fixture(autouse=True)
@@ -410,6 +420,27 @@ def test_surface_plot_draws_an_unmarched_grid(bladed, meshed):
     assert len(figures) == 1
 
 
+def test_surface_plot_skips_a_section_above_a_clearance_gap(gapped):
+    """Over the tip there is no blade, so that section is dropped, not drawn.
+
+    The row still gets its figure: the sections below the gap are real.
+    """
+    config, result = gapped
+    figures = SurfacePlot(spf=(0.5, 0.99)).report(config, result)
+
+    # The shrouded row draws both sections, the gapped one only the section
+    # that has a blade under it.
+    assert [len(fig.axes[0].lines) for fig in figures] == [2, 1]
+
+
+def test_surface_plot_drops_a_row_left_with_no_section(gapped):
+    """An empty frame in the report is worse than no frame."""
+    config, result = gapped
+    figures = SurfacePlot(spf=(0.995,)).report(config, result)
+
+    assert len(figures) == 1
+
+
 def test_surface_plot_without_a_grid_is_empty(config, result):
     assert SurfacePlot().report(config, result) == []
 
@@ -448,7 +479,7 @@ def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
     lo, hi = figures[0].axes[0].get_xlim()
 
     annulus = solved.machine.annulus
-    curve = annulus.evaluate_xr(np.linspace(0.0, annulus.mmax, 101), 0.5).T
+    curve = annulus.evaluate_xr(np.linspace(0.0, annulus.m_max, 101), 0.5).T
     edges = annulus.evaluate_xr([1, 2], 0.5).T
     m_LE, m_TE = ember.util.unwrap_meridional(curve, edges)
 

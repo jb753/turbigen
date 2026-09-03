@@ -100,7 +100,13 @@ class Mesher(Node):
         # and everything the solver writes afterwards are stored against them.
         # Set them later and the whole field would have to be rescaled.
         grid.set_L_ref(self.L_ref(machine))
-        grid.set_fluid(machine.mean_line.get_referenced_fluid())
+        # The mean line already carries the fluid the solve wants: `design`
+        # referenced it before freezing, so it is the design's own scales and
+        # datum. Adopted rather than derived again, so that the grid and the
+        # mean line hold one equation of state and not two that agree to
+        # rounding -- a difference too small to matter physically and quite
+        # large enough for something downstream to compare and disbelieve.
+        grid.set_fluid(machine.mean_line.fluid)
         self.check_volumes(grid)
         grid.calculate_wdist(limit_pitch=WDIST_LIMIT_PITCH)
 
@@ -114,7 +120,7 @@ class Mesher(Node):
         line, which carries no meaningful length: a chord is a property of the
         geometry, and the mean line is a flow field.
         """
-        return float(machine.annulus.chords(0.5)[1::2].max())
+        return float(machine.annulus.evaluate_chords(0.5)[1::2].max())
 
     def check_volumes(self, grid):
         """Raise if any cell in `grid` has a non-positive volume."""

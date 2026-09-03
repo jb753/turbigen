@@ -153,7 +153,7 @@ def test_merge_weight_is_a_parameter_not_a_type():
     plain = build(merge_weight=0.0).design().annulus
     merged = build(merge_weight=0.5).design().annulus
 
-    m = np.linspace(0.0, plain.mmax, 25)
+    m = np.linspace(0.0, plain.m_max, 25)
     assert not np.allclose(plain.evaluate_xr(m, 0.5), merged.evaluate_xr(m, 0.5))
 
 
@@ -196,7 +196,7 @@ def test_geometry_matches_the_mean_line_it_was_designed_from(machine):
     """
     annulus, flat = machine.annulus, machine.mean_line.flat
     m = np.arange(1, 2 * annulus.n_row + 1, dtype=float)
-    span = annulus.span(m)
+    span = annulus.evaluate_span(m)
 
     # Loose tolerances throughout: a mean line stores its state as float32.
     np.testing.assert_allclose(annulus.r_mid, flat.r_mid, rtol=1e-6)
@@ -363,7 +363,7 @@ def test_arc_length_lands_close_to_the_aspect_ratio():
     machine = build_AR().design()
 
     np.testing.assert_allclose(
-        machine.annulus.chords(0.5),
+        machine.annulus.evaluate_chords(0.5),
         requested_lengths(machine.mean_line.flat),
         rtol=1e-3,
     )
@@ -410,7 +410,7 @@ def test_the_two_designs_agree_when_they_ask_for_the_same_thing():
 
     equivalent = build(cx_gap=list(cx[::2]), cx_row=list(cx[1::2])).design().annulus
 
-    m = np.linspace(0.0, chord.mmax, 31)
+    m = np.linspace(0.0, chord.m_max, 31)
     np.testing.assert_allclose(
         equivalent.evaluate_xr(m, 0.5), chord.evaluate_xr(m, 0.5), atol=1e-12
     )
@@ -527,9 +527,9 @@ def test_annulus_cannot_be_rebound(machine):
         machine.annulus.curves = ()
 
 
-def test_stream_surface_cannot_be_rebound(machine):
+def test_row_annulus_cannot_be_rebound(machine):
     with pytest.raises(dataclasses.FrozenInstanceError):
-        machine.annulus.row(0).chord = 1.0
+        machine.annulus.extract_row(0).chord = 1.0
 
 
 def test_station_coordinates_are_cached(machine):
@@ -546,3 +546,46 @@ def test_repr_stays_readable(machine):
     text = repr(machine.annulus)
 
     assert text == f"Annulus(merge_weight=0.0, n_row={machine.annulus.n_row})"
+
+
+#
+# WHERE THE CUTS GO
+#
+
+
+def test_cut_planes_land_in_the_gaps():
+    """Cutting at a station exactly would put the plane inside the blade.
+
+    Rows occupy the odd segments of the annulus coordinate, so a leading-edge
+    cut has to sit just below an odd integer and a trailing-edge cut just above
+    the next one.
+    """
+    annulus = build().design().annulus
+    n_row = annulus.n_row
+
+    # Recover the m of each cut from its axial position, via the mid-span line.
+    m_dense = np.linspace(0.0, annulus.m_max, 20001)
+    x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
+
+    for i_station, xr in enumerate(annulus.cut_planes()):
+        x_cut = float(xr.mean(axis=0)[0])
+        m_cut = float(np.interp(x_cut, x_dense, m_dense))
+
+        station = 1.0 + i_station
+        if i_station % 2 == 0:
+            assert m_cut < station, "a leading edge cut must sit upstream"
+        else:
+            assert m_cut > station, "a trailing edge cut must sit downstream"
+        assert abs(m_cut - station) < 0.5, "and still in the adjacent gap"
+
+    assert len(annulus.cut_planes()) == 2 * n_row
+
+
+def test_cut_planes_span_hub_to_casing():
+    """Two (x, r) points, which is the curve ember.cut.unstructured takes."""
+    annulus = build().design().annulus
+
+    for xr in annulus.cut_planes():
+        assert xr.shape == (2, 2)
+        r_hub, r_cas = xr[0][1], xr[1][1]
+        assert r_cas > r_hub

@@ -195,8 +195,9 @@ over row count, which comes from the mean line handed to `forward`. A useful
 check that the reserved-name promotion in `Node` is not over-applied.
 
 `Annulus` holds the fitted PCHIP curves and the geometry read off them:
-`evaluate_xr`, `nrow`, `nseg`, `mmax`, the hub/casing/mid/rms radii, `Am`,
-`htr`, `chords` and `to_string`.
+`evaluate_xr`, `n_row`, `n_segment`, `m_max`, the hub/casing/mid/rms radii,
+`Am`, `htr`, `evaluate_chords`, `evaluate_span`, `extract_row` and
+`to_string`.
 
 The mesh-facing helpers on the old designer — `get_cut_plane`,
 `get_offset_planes`, `get_interfaces`, `get_mp_from_xr`, `xr_row`,
@@ -217,7 +218,7 @@ geometry class for a line plot to transpose back. The plot is shorter without
 them.
 
 The test for whether a helper belongs: does it *compute* something, or only
-re-lay-out something already computed? `chords()` integrates arc length per
+re-lay-out something already computed? `evaluate_chords()` integrates arc length per
 segment, so it belongs. Those two did not. This is how the old
 `AnnulusDesigner` reached 1035 lines: each consumer added the view it wanted,
 and none of them were the annulus's business.
@@ -238,7 +239,7 @@ class BladeDesign(Node):
     theta_offset: float = 0.0
     m_stack: float = 0.5
 
-    def forward(self, mean_line_row, stream_surface) -> Row
+    def forward(self, mean_line_row, row_annulus) -> Row
 ```
 
 This is the stage where the config-as-its-own-result problem is worst. The old
@@ -274,18 +275,18 @@ gone. No YAML in the repo ever set it to anything else.
 
 ```python
 blades = tuple(
-    design.design(mean_line.row(i), annulus.row(i))
+    design.design(mean_line.row(i), annulus.extract_row(i))
     for i, design in enumerate(self.blades)
 )
 ```
 
 Passing an `Annulus` and a row index would copy the convention that row `i`
 occupies `m = 2i + 1 ... 2i + 2` into every blade design anyone writes, when it
-is the annulus that defines what `m` means. So `Annulus.row` returns a
-`StreamSurface`: the coordinate map restricted to one row, `m` running 0 at the
+is the annulus that defines what `m` means. So `Annulus.extract_row` returns a
+`RowAnnulus`: the annulus restricted to one row, `m` running 0 at the
 leading edge to 1 at the trailing edge, plus the meridional chord --- which
 `set_streamsurface` used to recompute by arc length even though
-`Annulus.chords` already had it.
+`Annulus.evaluate_chords` already had it.
 
 ### Blade number is paired with the blade, not merged into it
 
@@ -400,9 +401,10 @@ written to a file.
 attributes to a mesher, and `turbigen.Machine` already carries all of them ---
 `row.n_blade` and `row.tip_gap` were the two the blade port moved off their own
 parallel arrays and onto the row. The mesher reads the annulus through
-`evaluate_xr`, `chords` and `span`, and the rows through `evaluate_section` and
+`evaluate_xr`, `evaluate_chords` and `evaluate_span`, and the rows through
+`evaluate_section` and
 `chi` on their blades, and nothing else.
-`Annulus.span(m)` is the one method the mesh verb turned out to need; the five
+`Annulus.evaluate_span(m)` is the one method the mesh verb turned out to need; the five
 mesh-facing helpers deferred when the annulus was ported are still unused.
 
 ### What did not come across

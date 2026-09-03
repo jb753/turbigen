@@ -263,7 +263,7 @@ class Node:
     """Base for every mapping that can appear in a config file."""
 
     type: ClassVar[str | None] = None
-    """Name this class is selected by, for members of a family."""
+    """Name this class is selected by."""
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

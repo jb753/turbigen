@@ -1,19 +1,97 @@
-"""Blade geometry.
+"""Camber, thickness, and how blade sections stack into a row.
 
-A :class:`BladeDesign` is a config node describing one blade row; designing it
-against a row of the mean line and a row of the annulus produces a
-:class:`Blade`, which evaluates aerofoil sections.
+A :class:`BladeDesign` is the blade row specification as it appears in the
+input file under :ref:`blades: <config-blades>`, but is not in itself a shape:
+it defines recamber angles measured from a flow that is not known until the
+mean line is built. Combining a :class:`BladeDesign` with a
+:class:`~turbigen.meanline.MeanLine` and a :class:`~turbigen.annulus.RowAnnulus`
+produces a :class:`Row` with a full blade shape, a blade count, and a tip gap.
 
-The design is frozen and the result holds everything a mean line was needed to
-work out --- metal angles, blade number, tip gap. The package this replaces
-reaches the same place by mutating the designer three times over:
-``set_streamsurface`` writes the annulus and a thickness scale onto it,
-``apply_recamber`` overwrites the recamber angles in place with metal angles
-behind an ``is_recambered`` flag, and post-processors toggle that flag on and
-off around plots. None of it is possible here.
+The :doc:`/tutorial` builds a blade in a complete design; this page documents
+the classes in more detail. The mean line a blade turns against is documented
+at :doc:`/meanline` and the annulus it sits in at :doc:`/annulus`.
 
-Blade number lives on the design rather than in a parallel top-level list, so a
-row and its count cannot get out of step.
+
+.. _blade-shapes:
+
+Built-in shapes
+^^^^^^^^^^^^^^^
+
+A :class:`SectionDesign` names a span fraction, a recamber at each end, and a
+camber and a thickness design. A :class:`BladeDesign` holds one or more sections
+in increasing span fraction, together with a blade count, a tip clearance, a swirl
+distribution and a stacking position. Each of these is again a design paired
+with a result, the same split the rest of :program:`turbigen` makes at machine
+level:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Design (config)
+     - Combined with
+     - Result
+   * - :class:`~turbigen.camber.CamberDesign`
+     - leading and trailing metal angles
+     - :class:`~turbigen.camber.CamberLine`
+   * - :class:`~turbigen.thickness.ThicknessDesign`
+     - nothing; normalised by chord
+     - evaluated directly, no result type
+   * - :class:`SectionDesign`, :class:`BladeDesign`
+     - a mean-line row, a :class:`~turbigen.annulus.RowAnnulus`
+     - :class:`Row` --- a :class:`Blade`, ``n_blade``, ``tip_gap``
+
+:class:`~turbigen.camber.Quadratic` and :class:`~turbigen.camber.Bernstein` are
+the built-in camber shapes and :class:`~turbigen.thickness.Taylor` the built-in
+thickness distribution; all are documented in the sections below.
+
+The number of blades comes from a :class:`BladeCount` rule on the design:
+
+* :class:`FixedCount` (``Nb``) states it directly;
+* :class:`Circulation` (``Co``) sets it from a circulation coefficient and the
+  surface length;
+* :class:`DiffusionFactor` (``DFL``) sets it from the Lieblein diffusion factor
+  and the chord.
+
+A blade has one tip clearance, stated as a fraction of span
+(:attr:`~BladeDesign.tip_span`), a fraction of meridional chord
+(:attr:`~BladeDesign.tip_chord`) or an absolute length
+(:attr:`~BladeDesign.tip_metre`); giving more than one is an error.
+
+
+.. _blade-process:
+
+Design process
+^^^^^^^^^^^^^^
+
+:program:`turbigen` converts each entry of :ref:`blades: <config-blades>` into
+a row :class:`BladeDesign` and, once the mean line and annulus are built, passes
+them :meth:`~BladeDesign.design` which:
+
+#. Calculates leading and trailing edge metal angles for each section as the local
+   relative flow angle plus the recambers :attr:`~SectionDesign.dchi_LE` and
+   :attr:`~SectionDesign.dchi_TE`. The flow angle is read from the mean-line row,
+   with the swirl varied radially using the
+   :attr:`~BladeDesign.vortex_exponent` onto the section span fraction;
+#. Camber and thickness designs, the metal angles, the stacking
+   position and the blade rotation are collected across all sections into a
+   :class:`Blade` for each row;
+#. The :class:`BladeCount` rule reads the finished :class:`Blade` to fix the
+   number of blades.
+
+.. _blade-evaluate:
+
+Evaluating a blade
+^^^^^^^^^^^^^^^^^^
+
+A :class:`Blade` is addressed by span fraction, and every geometric quantity is
+read off it with an ``evaluate_`` method that interpolates the section designs
+field by field, extrapolating beyond the end sections.
+:meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
+of the two surfaces; :meth:`~Blade.evaluate_chi` the leading and trailing metal
+angles; and :meth:`~Blade.evaluate_chord` and
+:meth:`~Blade.evaluate_surface_length` the meridional chord and the longer
+surface length used by the count rules.
 """
 
 import dataclasses
@@ -23,7 +101,7 @@ from typing import ClassVar
 import numpy as np
 
 import turbigen.util
-from turbigen.annulus import StreamSurface
+from turbigen.annulus import RowAnnulus
 from turbigen.camber import CamberDesign, CamberLine
 from turbigen.node import Node
 from turbigen.thickness import ThicknessDesign
@@ -91,8 +169,11 @@ def _interpolate(nodes, spf_sections, spf):
         ) from err
 
 
-class Section(Node):
-    """One spanwise section of a blade."""
+class SectionDesign(Node):
+    """One spanwise section of a blade.
+
+    The :doc:`/blade` page covers how the sections stack into a shape.
+    """
 
     spf: float
     """Span fraction this section is defined at, 0 at hub and 1 at casing."""
@@ -111,7 +192,11 @@ class Section(Node):
 
 
 class BladeCount(Node):
-    """Base for rules setting the number of blades in a row."""
+    """Base for rules setting the number of blades in a row.
+
+    The implementations sit after :class:`BladeDesign`, since each reads a
+    finished :class:`Blade` to work.
+    """
 
     def count(self, mean_line_row, blade) -> int:
         """Return the number of blades for `blade` in `mean_line_row`."""
@@ -120,98 +205,14 @@ class BladeCount(Node):
         )
 
 
-class FixedCount(BladeCount):
-    """Directly specify the number of blades."""
-
-    type: ClassVar[str] = "Nb"
-
-    Nb: int
-    """Number of blades [--]."""
-
-    def count(self, mean_line_row, blade):
-        del mean_line_row, blade
-        return int(self.Nb)
-
-
-class Circulation(BladeCount):
-    """Set the number of blades using a circulation coefficient."""
-
-    type: ClassVar[str] = "Co"
-
-    Co: float
-    """Circulation coefficient [--]."""
-
-    spf: float = 0.5
-    """Span fraction to take the surface length from."""
-
-    def count(self, mean_line_row, blade):
-        ml = mean_line_row
-
-        # Ratios across the row
-        VmR = ml.Vm[1] / ml.Vm[0]
-        RR = ml.r[1] / ml.r[0]
-        tanAlpha = turbigen.util.tand(ml.Alpha)
-        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
-        cosAlpha_rel = turbigen.util.cosd(ml.Alpha_rel)
-
-        # Circulation from the change in angular momentum, split into the part
-        # due to a change in radius and the part due to a change in swirl
-        centrifugal = (1.0 - RR**2.0) * (tanAlpha[0] - tanAlpha_rel[0])
-        tangential = tanAlpha_rel[0] - RR * VmR * tanAlpha_rel[1]
-
-        # Normalise by inlet or outlet dynamic head, whichever is the larger
-        A_flow = ml.Am * cosAlpha_rel
-        total_in = cosAlpha_rel[0] * (centrifugal + tangential)
-        total_out = cosAlpha_rel[1] / VmR * (centrifugal + tangential)
-        total = total_in if A_flow[1] / A_flow[0] > 1.0 else total_out
-
-        # Pitch that delivers the requested circulation coefficient
-        pitch = np.abs(self.Co / total) * blade.surface_length(self.spf)
-
-        r_ref = np.mean(ml.r)
-        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
-
-
-class DiffusionFactor(BladeCount):
-    """Set the number of blades using the Lieblein diffusion factor."""
-
-    type: ClassVar[str] = "DFL"
-
-    DFL: float
-    """Lieblein diffusion factor [--]. A typical value is 0.45; the flow
-    separates above about 0.6."""
-
-    spf: float = 0.5
-    """Span fraction to take the chord from."""
-
-    def count(self, mean_line_row, blade):
-        ml = mean_line_row
-
-        # Pitch to true chord ratio, Dixon and Hall eqn. (3.32)
-        V1, V2 = ml.V_rel
-        DVt = np.abs(np.diff(ml.Vt_rel).item())
-        excess = self.DFL + V2 / V1 - 1.0
-        if excess < 0.0:
-            raise ValueError(
-                f"A velocity ratio V2/V1={V2 / V1} is too low for a diffusion "
-                f"factor DFL={self.DFL}; they must satisfy DFL + V2/V1 > 1."
-            )
-        s_c = 2.0 * V1 / DVt * excess
-
-        # Stagger, assuming a quadratic camber line, resolves the true chord
-        # onto the meridional chord the blade reports
-        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
-        stagger = np.arctan(0.5 * (tanAlpha_rel[0] + tanAlpha_rel[1]))
-        pitch = s_c / np.cos(stagger) * blade.chord(self.spf)
-
-        r_ref = np.mean(ml.r)
-        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
-
-
 class BladeDesign(Node):
-    """Design variables for one blade row."""
+    """Design variables for one blade row.
 
-    sections: tuple[Section, ...]
+    The :doc:`/blade` page covers how the sections, count and clearance become
+    a shape.
+    """
+
+    sections: tuple[SectionDesign, ...]
     """Spanwise sections, in increasing span fraction."""
 
     count: BladeCount
@@ -272,15 +273,15 @@ class BladeDesign(Node):
                 f"A blade has one tip clearance, but {set_tips} were all given."
             )
 
-    def forward(self, mean_line_row, stream_surface):
+    def design(self, mean_line_row, row_annulus):
         """Return the blade this design describes.
 
         Parameters
         ----------
         mean_line_row : MeanLine
             Inlet and outlet stations of this row, shape (2,).
-        stream_surface : StreamSurface
-            The annulus within this row, from :meth:`Annulus.row`.
+        row_annulus : RowAnnulus
+            The annulus within this row, from :meth:`Annulus.extract_row`.
 
         """
         spf = np.array([section.spf for section in self.sections])
@@ -302,13 +303,11 @@ class BladeDesign(Node):
         # other terms are zero, which __post_init__ has already ensured.
         span = float(np.mean(mean_line_row.span))
         tip_gap = (
-            self.tip_span * span
-            + self.tip_chord * stream_surface.chord
-            + self.tip_metre
+            self.tip_span * span + self.tip_chord * row_annulus.chord + self.tip_metre
         )
 
         blade = Blade(
-            stream_surface=stream_surface,
+            row_annulus=row_annulus,
             spf=spf,
             tanchi=tanchi,
             cambers=tuple(section.camber for section in self.sections),
@@ -327,48 +326,104 @@ class BladeDesign(Node):
             tip_gap=tip_gap,
         )
 
-    def design(self, mean_line_row, stream_surface):
-        """Return the row this design describes."""
-        return self.forward(mean_line_row, stream_surface)
+
+class FixedCount(BladeCount):
+    """Directly specify the number of blades."""
+
+    type: ClassVar[str] = "Nb"
+
+    Nb: int
+    """Number of blades [--]."""
+
+    def count(self, mean_line_row, blade):
+        del mean_line_row, blade
+        return int(self.Nb)
 
 
-@dataclasses.dataclass(frozen=True, eq=False)
-class Row:
-    """A number of blades installed in an annulus.
+class Circulation(BladeCount):
+    """Set the number of blades using a circulation coefficient."""
 
-    Separate from the shape it holds, because the two are independent: how a
-    blade is shaped says nothing about how many of them there are, and every
-    consumer wants one or the other, never both. That separation is also what
-    makes the shape constructible in one go, since counting reads a shape but a
-    shape never reads a count.
+    type: ClassVar[str] = "Co"
 
-    Paired rather than parallel, though. The package this replaces kept the
-    counts in a second list indexed by row, so a row and its count could get out
-    of step -- `config.get_nblade()` calls `sys.exit(1)` when they do. Held
-    together like this there is nothing to keep in step.
-    """
+    Co: float
+    """Circulation coefficient [--]."""
 
-    blade: "Blade" = dataclasses.field(repr=False)
-    """Shape of one blade."""
+    spf: float = 0.5
+    """Span fraction to take the surface length from."""
 
-    n_blade: int
-    """Number of blades in this row [--]."""
+    def count(self, mean_line_row, blade):
+        ml = mean_line_row
 
-    tip_gap: float
-    """Tip clearance [m]. A property of how the blade sits in its annulus,
-    rather than of its shape."""
+        # Ratios across the row
+        VmR = ml.Vm[1] / ml.Vm[0]
+        RR = ml.r[1] / ml.r[0]
+        tanAlpha = turbigen.util.tand(ml.Alpha)
+        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
+        cosAlpha_rel = turbigen.util.cosd(ml.Alpha_rel)
+
+        # Circulation from the change in angular momentum, split into the part
+        # due to a change in radius and the part due to a change in swirl
+        centrifugal = (1.0 - RR**2.0) * (tanAlpha[0] - tanAlpha_rel[0])
+        tangential = tanAlpha_rel[0] - RR * VmR * tanAlpha_rel[1]
+
+        # Normalise by inlet or outlet dynamic head, whichever is the larger
+        A_flow = ml.Am * cosAlpha_rel
+        total_in = cosAlpha_rel[0] * (centrifugal + tangential)
+        total_out = cosAlpha_rel[1] / VmR * (centrifugal + tangential)
+        total = total_in if A_flow[1] / A_flow[0] > 1.0 else total_out
+
+        # Pitch that delivers the requested circulation coefficient
+        pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)
+
+        r_ref = np.mean(ml.r)
+        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
+
+
+class DiffusionFactor(BladeCount):
+    """Set the number of blades using the Lieblein diffusion factor."""
+
+    type: ClassVar[str] = "DFL"
+
+    DFL: float
+    """Lieblein diffusion factor [--]. A typical value is 0.45; the flow
+    separates above about 0.6."""
+
+    spf: float = 0.5
+    """Span fraction to take the chord from."""
+
+    def count(self, mean_line_row, blade):
+        ml = mean_line_row
+
+        # Pitch to true chord ratio, Dixon and Hall eqn. (3.32)
+        V1, V2 = ml.V_rel
+        DVt = np.abs(np.diff(ml.Vt_rel).item())
+        excess = self.DFL + V2 / V1 - 1.0
+        if excess < 0.0:
+            raise ValueError(
+                f"A velocity ratio V2/V1={V2 / V1} is too low for a diffusion "
+                f"factor DFL={self.DFL}; they must satisfy DFL + V2/V1 > 1."
+            )
+        s_c = 2.0 * V1 / DVt * excess
+
+        # Stagger, assuming a quadratic camber line, resolves the true chord
+        # onto the meridional chord the blade reports
+        tanAlpha_rel = turbigen.util.tand(ml.Alpha_rel)
+        stagger = np.arctan(0.5 * (tanAlpha_rel[0] + tanAlpha_rel[1]))
+        pitch = s_c / np.cos(stagger) * blade.evaluate_chord(self.spf)
+
+        r_ref = np.mean(ml.r)
+        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
 class Blade:
     """The shape of one blade.
 
-    Frozen, like every other result. The package this replaces reaches its
-    geometry by mutating the designer three times over; here there is nothing
-    to mutate, on the design or on the result.
+    Frozen, like every other result: it is what the design produced against a
+    mean line, and nothing downstream has any business changing it.
     """
 
-    stream_surface: StreamSurface = dataclasses.field(repr=False)
+    row_annulus: RowAnnulus = dataclasses.field(repr=False)
     """The annulus within this row."""
 
     spf: np.ndarray = dataclasses.field(repr=False)
@@ -394,7 +449,7 @@ class Blade:
         """Number of sections this blade was defined by."""
         return len(self.spf)
 
-    def section(self, spf):
+    def _get_cam_thick(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
 
         Interpolated linearly between the sections, extrapolating beyond the
@@ -412,9 +467,9 @@ class Blade:
 
         return CamberLine(camber, *tanchi), thickness
 
-    def chi(self, spf):
+    def evaluate_chi(self, spf):
         """Return the metal angles at the leading and trailing edges [deg]."""
-        camber, _ = self.section(spf)
+        camber, _ = self._get_cam_thick(spf)
         return camber.chi((0.0, 1.0))
 
     def evaluate_section(self, spf, nchord=10000, m=None):
@@ -436,7 +491,7 @@ class Blade:
             surface is at the higher angular coordinate.
 
         """
-        camber, thickness = self.section(spf)
+        camber, thickness = self._get_cam_thick(spf)
 
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
@@ -461,14 +516,14 @@ class Blade:
         mu_LTE = (mu - mcam_LE) / mcam_ptp
         ml_LTE = (ml - mcam_LE) / mcam_ptp
         mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self.stream_surface.xr(mcam, 0.5))
+        chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
 
         # Meridional coordinates of the upper, lower and camber lines
-        xru = self.stream_surface.xr(mu_LTE, spf)
-        xrl = self.stream_surface.xr(ml_LTE, spf)
-        xr = self.stream_surface.xr(mcam, spf)
+        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
+        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
+        xr = self.row_annulus.evaluate_xr(mcam, spf)
 
-        # Project the camber angle onto the stream surface
+        # Project the camber angle onto the annulus
         theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
 
         # Stack the sections, then rotate the whole blade
@@ -486,7 +541,7 @@ class Blade:
 
         return xrtu, xrtl
 
-    def surface_length(self, spf):
+    def evaluate_surface_length(self, spf):
         """Return the length of the longer of the two surfaces at `spf` [m]."""
         xrtu, xrtl = self.evaluate_section(spf)
         lengths = [
@@ -495,7 +550,30 @@ class Blade:
         ]
         return np.maximum(*lengths)
 
-    def chord(self, spf):
+    def evaluate_chord(self, spf):
         """Return the meridional length of the camber line at `spf` [m]."""
         xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
         return turbigen.util.arc_length(xr)
+
+
+@dataclasses.dataclass(frozen=True, eq=False)
+class Row:
+    """A number of blades installed in an annulus.
+
+    Separate from the shape it holds, because the two are independent: how a
+    blade is shaped says nothing about how many of them there are, and every
+    consumer wants one or the other, never both. That separation is also what
+    makes the shape constructible in one go, since counting reads a shape but a
+    shape never reads a count. Paired rather than parallel, though, so a row and
+    its count cannot get out of step.
+    """
+
+    blade: Blade = dataclasses.field(repr=False)
+    """Shape of one blade."""
+
+    n_blade: int
+    """Number of blades in this row [--]."""
+
+    tip_gap: float
+    """Tip clearance [m]. A property of how the blade sits in its annulus,
+    rather than of its shape."""

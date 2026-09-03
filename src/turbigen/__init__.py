@@ -17,7 +17,7 @@ from turbigen.annulus import (
     AspectRatio,
     FixedAxialChord,
     PchipAnnulus,
-    StreamSurface,
+    RowAnnulus,
 )
 from turbigen.blade import (
     Blade,
@@ -27,9 +27,9 @@ from turbigen.blade import (
     DiffusionFactor,
     FixedCount,
     Row,
-    Section,
+    SectionDesign,
 )
-from turbigen.camber import CamberDesign, CamberLine, Quadratic
+from turbigen.camber import Bernstein, CamberDesign, CamberLine, Quadratic
 from turbigen.config import Config
 from turbigen.database import Database
 from turbigen.hmesh import H
@@ -41,6 +41,7 @@ from turbigen.iterate import Iteration, Iterator
 from turbigen.job import Job, Slurm, Task, Tsp
 from turbigen.machine import Machine
 from turbigen.meanline import MeanLine
+from turbigen.metric import Metric, SurfaceDissipation
 from turbigen.post import (
     AnnulusPlot,
     ContourPlot,
@@ -75,6 +76,7 @@ __all__ = [
     "AnnulusDesign",
     "AspectRatio",
     "PchipAnnulus",
+    "Bernstein",
     "Blade",
     "BladeCount",
     "BladeDesign",
@@ -96,8 +98,8 @@ __all__ = [
     "Mesher",
     "Quadratic",
     "Row",
-    "Section",
-    "StreamSurface",
+    "SectionDesign",
+    "RowAnnulus",
     "Taylor",
     "ThicknessDesign",
     "WallSpacing",
@@ -105,6 +107,8 @@ __all__ = [
     "DesignError",
     "Fluid",
     "Iterator",
+    "Metric",
+    "SurfaceDissipation",
     "MeanLine",
     "MeanLineDesign",
     "Chic",

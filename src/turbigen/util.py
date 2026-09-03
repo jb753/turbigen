@@ -372,12 +372,84 @@ def get_i_stag(block, xrt_LE=None):
     return i_stag
 
 
+def _wall_Omega(block, const_dim, at_end):
+    """Return the angular velocity of one whole boundary face [rad/s].
+
+    A wall turns with its block unless a `RotatingPatch` says otherwise, which
+    on a turbigen mesh happens exactly once: `bconds.apply_rotation` puts one
+    over a tip gap to hold the casing still while the row turns under it.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        Block the face belongs to.
+    const_dim : int
+        Axis the face is normal to, 0 for i, 1 for j, 2 for k.
+    at_end : bool
+        Whether the face is the high-index one.
+
+    Returns
+    -------
+    float
+        The single angular velocity that applies over the whole face.
+
+    Raises
+    ------
+    ValueError
+        If the face does not resolve to one speed --- two patches disagreeing,
+        or one covering part of the face and leaving the block's speed on the
+        rest. Both are the same fault, and reducing two speeds to one number
+        would be wrong without being visible.
+
+    """
+    end = block.shape[const_dim] - 1 if at_end else 0
+    face = f"{'ijk'[const_dim]}={'-1' if at_end else '0'}"
+
+    covering = [
+        patch
+        for patch in block.patches.rotating
+        if patch.const_dim == const_dim and patch.ijk_lim_abs[const_dim, 0] == end
+    ]
+
+    if not covering:
+        return float(block.Omega)
+
+    spanned = [
+        patch
+        for patch in covering
+        if all(
+            patch.ijk_lim_abs[d].tolist() == [0, block.shape[d] - 1]
+            for d in range(3)
+            if d != const_dim
+        )
+    ]
+
+    speeds = {float(patch.Omega) for patch in covering}
+    if len(spanned) != len(covering):
+        # What the patches leave uncovered still turns with the block, so a
+        # partial patch is two speeds over the face just as two patches are.
+        speeds.add(float(block.Omega))
+
+    if len(speeds) > 1:
+        raise ValueError(
+            f"Face {face} of block {block.label!r} has more than one wall "
+            f"speed: {sorted(speeds)}. A cut of it has no single frame."
+        )
+
+    return speeds.pop()
+
+
 def cut_blade_sides(grid, offset=0):
     """Return the pressure and suction side cuts of each row.
 
     H-mesh only: the blade is the pair of periodic-bounded k faces between the
     leading and trailing edges, so the edges are found by looking for where the
     upstream and downstream periodic patches stop.
+
+    A clearance gap is trimmed off the span. Over the gap the same k faces are
+    periodic rather than solid, so a cut that kept them would return the flow
+    passing over the tip as though it were a surface distribution --- which is
+    a wrong answer where no answer is the honest one.
 
     Parameters
     ----------
@@ -386,10 +458,15 @@ def cut_blade_sides(grid, offset=0):
     offset : int
         Cells away from the surface, for reading just off the wall.
 
+    Each cut carries the speed its own wall turns at, so `ho_rel` on it is the
+    stagnation enthalpy in the frame the boundary layer actually sees. That is
+    the block's speed for a blade, which no mesh turbigen builds overrides.
+
     Returns
     -------
     list
-        Two cuts per row, or None for a row whose edges were not found.
+        Two 2D ``(ni, nj)`` cuts per row, or None for a row whose edges were
+        not found.
 
     """
     cuts = []
@@ -397,6 +474,7 @@ def cut_blade_sides(grid, offset=0):
     for i in range(len(grid.rows)):
         ile = None
         ite = None
+        j_gap = None
 
         for block in grid.rows[i]:
             for patch in block.patches.periodic:
@@ -415,6 +493,13 @@ def cut_blade_sides(grid, offset=0):
                     elif lim[0, 1] == block.shape[0] - 1:
                         ite = lim[0, 0]
 
+                # The one k-face periodic that does not span the span is the
+                # clearance gap: it runs along the blade rather than upstream
+                # or downstream of it. Both sides carry one with the same
+                # limits, so finding it twice is finding the same gap.
+                if at_k_boundary and not spans_j and not spans_i:
+                    j_gap = lim[1]
+
             # A cusp or an inviscid patch on a k face marks the trailing edge
             # where the periodics do not.
             for patch in block.patches:
@@ -430,14 +515,27 @@ def cut_blade_sides(grid, offset=0):
             cuts.append(None)
             continue
 
+        # Where the gap sits comes from its own patch rather than being assumed
+        # to be at the casing, so a hub clearance would trim the other end.
+        nj = grid[i].shape[1]
+        if j_gap is None:
+            jst, jen = 0, nj
+        elif j_gap[1] == nj - 1:
+            jst, jen = 0, j_gap[0] + 1
+        else:
+            jst, jen = j_gap[1], nj
+
         sides = [
-            grid[i][ile : (ite + 1), :, None, 0 + offset].copy(keep_patches=False),
-            grid[i][ile : (ite + 1), :, None, -1 - offset].copy(keep_patches=False),
+            grid[i][ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
+            grid[i][ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
         ]
         # The patches described the block these were sliced out of, not the
-        # slices.
-        for side in sides:
+        # slices. Read the wall speed off the block first, the patches that say
+        # it being among those about to go.
+        speeds = [_wall_Omega(grid[i], 2, at_end) for at_end in (False, True)]
+        for side, Omega in zip(sides, speeds):
             side.patches.clear()
+            side.set_Omega(Omega)
 
         # Bring the two sides into one pitch, so a surface made of them is
         # continuous rather than a pitch apart.
@@ -463,7 +561,11 @@ def cut_blade_surfs(grid, offset=0):
     Returns
     -------
     list
-        One list of cuts per row, or None for a row that has none.
+        One list of 2D ``(ni, nj)`` cuts per row, streamwise by spanwise, or
+        None for a row that has none, each carrying the speed its wall turns
+        at. `ember.cut.structured_meridional` wants a third axis to interpolate
+        along; the caller that needs one adds it, because it is the caller that
+        takes it off the result again.
 
     """
     surfs = []
@@ -500,6 +602,60 @@ def cut_blade_surfs(grid, offset=0):
         for block in row_block:
             wraps = np.allclose(block[0, :, 0].xrt, block[-1, :, 0].xrt)
             if wraps and block.shape[1] == nj:
-                surfs[-1].append(block[:, :, None, offset])
+                # Copied, not sliced: a view shares its block's angular
+                # velocity, so setting the wall speed on one would re-time the
+                # grid itself.
+                surf = block[:, :, offset].copy(keep_patches=False)
+                surf.patches.clear()
+                surf.set_Omega(_wall_Omega(block, 2, offset != 0))
+                surfs[-1].append(surf)
 
     return surfs
+
+
+def cut_endwalls(grid, offset=0):
+    """Return the hub and casing surfaces of each row.
+
+    The endwalls need none of the edge-hunting `cut_blade_sides` does. The
+    mesher's convention is that ``j`` runs hub to casing, so an endwall is one
+    whole ``j`` face of a block and there is nothing to search for. A tip gap
+    does not change that: the gap is periodic patches on the ``k`` faces of the
+    same block, and the casing over it is still a wall, only one turning at its
+    own speed rather than the blade's.
+
+    Each cut carries the speed its own wall turns at rather than the frame its
+    block was solved in, so `ho_rel` on it is the stagnation enthalpy the
+    boundary layer on that wall sees. The two differ for exactly one surface a
+    turbigen mesh contains: the casing over a tip gap, which stands still while
+    the row turns under it.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    offset : int
+        Cells away from the surface, for reading just off the wall.
+
+    Returns
+    -------
+    list
+        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise,
+        hub then casing for each block in the row. Never `None`: unlike a
+        blade surface, an endwall is always there.
+
+    """
+    walls = []
+
+    for row_block in grid.rows:
+        walls.append([])
+        for block in row_block:
+            for at_end, j in ((False, 0 + offset), (True, -1 - offset)):
+                # Copied, not sliced: a view shares its block's angular
+                # velocity, so setting the wall speed on one would re-time the
+                # grid itself.
+                wall = block[:, j, :].copy(keep_patches=False)
+                wall.patches.clear()
+                wall.set_Omega(_wall_Omega(block, 1, at_end))
+                walls[-1].append(wall)
+
+    return walls

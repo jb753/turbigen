@@ -1,13 +1,17 @@
-"""Thickness distributions.
+"""
+.. _thickness:
 
-A :class:`ThicknessDesign` is a config node that evaluates thickness as a
-function of normalised meridional distance. Thickness is always normalised by
-the meridional chord, so unlike the package this replaces there is no reference
-length to choose and no ``scale`` method: a design is evaluable as soon as it
-exists, rather than only after a stream surface has been pushed onto it.
+Thickness distributions
+^^^^^^^^^^^^^^^^^^^^^^^^
 
-The parameters are named fields rather than positions in a vector. What used to
-be ``q_thick[3]`` is :attr:`Taylor.kappa_max`.
+A :class:`ThicknessDesign` evaluates thickness as a function of normalised
+meridional distance. Thickness is always normalised by the meridional chord, so
+there is no reference length to choose: a design is evaluable as soon as it
+exists, rather than only once a chord is known.
+
+:class:`Taylor` (``taylor``) is the built-in distribution: two cubic splines in
+shape space meeting at the point of maximum thickness, after
+:cite:`Taylor2016`.
 """
 
 import logging
@@ -33,7 +37,10 @@ def _validate_domain(m):
 
 
 class ThicknessDesign(Node):
-    """Base for thickness distributions, normalised by meridional chord."""
+    """Base for thickness distributions, normalised by meridional chord.
+
+    The :doc:`/blade` page covers how a distribution is placed on a blade.
+    """
 
     def thick(self, m):
         """Return half-thickness at normalised meridional distance `m`."""
@@ -41,7 +48,7 @@ class ThicknessDesign(Node):
 
 
 class Taylor(ThicknessDesign):
-    """After Taylor (2016), two cubic splines in shape space.
+    """Two cubic splines in shape space, after :cite:`Taylor2016`.
 
     The splines meet at the point of maximum thickness, where the value, slope
     and curvature are all continuous.

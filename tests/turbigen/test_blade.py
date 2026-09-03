@@ -24,7 +24,7 @@ from turbigen import (
     DiffusionFactor,
     Quadratic,
     Row,
-    Section,
+    SectionDesign,
     Taylor,
 )
 
@@ -196,11 +196,13 @@ def test_designing_twice_gives_two_independent_blades():
     mean_line = config.design().mean_line
     annulus = config.annulus.design(mean_line)
 
-    first = config.blades[0].design(mean_line[:, 0], annulus.row(0))
-    second = config.blades[0].design(mean_line[:, 0], annulus.row(0))
+    first = config.blades[0].design(mean_line[:, 0], annulus.extract_row(0))
+    second = config.blades[0].design(mean_line[:, 0], annulus.extract_row(0))
 
     assert first is not second
-    np.testing.assert_allclose(first.blade.chi(0.5), second.blade.chi(0.5))
+    np.testing.assert_allclose(
+        first.blade.evaluate_chi(0.5), second.blade.evaluate_chi(0.5)
+    )
 
 
 def test_wrong_number_of_blades_is_rejected():
@@ -225,7 +227,7 @@ def test_blades_without_an_annulus_are_rejected():
 def test_recamber_is_measured_from_the_local_flow_angle(machine):
     """Metal angle is flow angle plus recamber, resolved once at design time."""
     mean_line = machine.mean_line[:, 0]
-    chi = machine.rows[0].blade.chi(0.5)
+    chi = machine.rows[0].blade.evaluate_chi(0.5)
 
     # At mid-span of a free vortex the radius is not the rms radius, so this
     # is only approximately the mean-line angle, but it is much closer to it
@@ -284,20 +286,20 @@ def test_a_single_section_blade_is_constant_in_span():
 
     bld = config.design().rows[0].blade
 
-    np.testing.assert_allclose(bld.chi(0.0), bld.chi(1.0), atol=1e-12)
+    np.testing.assert_allclose(bld.evaluate_chi(0.0), bld.evaluate_chi(1.0), atol=1e-12)
 
 
 def test_sections_of_different_design_cannot_be_interpolated():
     """There is no meaning to blending one camber shape into another."""
     sections = (
-        Section(
+        SectionDesign(
             spf=0.0,
             dchi_LE=0.0,
             dchi_TE=0.0,
             camber=Quadratic(aft_loading=0.0),
             thickness=Taylor(**{k: v for k, v in THICKNESS.items() if k != "type"}),
         ),
-        Section(
+        SectionDesign(
             spf=1.0,
             dchi_LE=0.0,
             dchi_TE=0.0,
@@ -378,7 +380,7 @@ def test_each_tip_reference_gives_the_expected_gap(field, expected):
 
     reference = {
         "span": float(np.mean(mean_line.span)),
-        "chord": machine.annulus.chords(0.5)[1],
+        "chord": machine.annulus.evaluate_chords(0.5)[1],
         "metre": 1.0,
     }[expected]
 
@@ -455,11 +457,13 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
                 err_msg=f"differs from the turbigen blade at spf={spf}",
             )
 
-        np.testing.assert_allclose(new.chi(spf), old.get_chi(spf), atol=1e-12)
+        np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-12)
         np.testing.assert_allclose(
-            new.surface_length(spf), old.surface_length(spf), rtol=1e-12
+            new.evaluate_surface_length(spf), old.surface_length(spf), rtol=1e-12
         )
-        np.testing.assert_allclose(new.chord(spf), old.chord(spf), rtol=1e-12)
+        np.testing.assert_allclose(
+            new.evaluate_chord(spf), old.chord(spf), rtol=1e-12
+        )
 
 
 #
@@ -501,7 +505,7 @@ def test_blade_cannot_be_rebound():
 
 
 def test_camber_line_cannot_be_rebound():
-    camber, _ = build().design().rows[0].blade.section(0.5)
+    camber, _ = build().design().rows[0].blade._get_cam_thick(0.5)
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         camber.tanchi_LE = 0.0

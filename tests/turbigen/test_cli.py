@@ -673,6 +673,36 @@ def test_no_verb_will_run_on_what_a_run_wrote(run_case, verb, capsys):
     assert str(run_case) in printed
 
 
+def test_output_may_be_run_on_when_o_writes_elsewhere(run_case, tmp_path):
+    """The refusal is about overwriting, not about the name.
+
+    `-o` sends the write to another directory, so the `output.yaml` that was
+    read and the one that will be written are different files. Nothing is
+    lost, so nothing is refused.
+    """
+    from turbigen import batch  # noqa: PLC0415
+
+    assert cli.main(["run", str(run_case)]) == 0
+    written = run_case.parent / cli.OUTPUT_NAME
+    before = written.read_text()
+
+    workdir = tmp_path / "variant"
+    assert cli.main(["run", str(written), "-o", str(workdir)]) == 0
+
+    assert (workdir / cli.OUTPUT_NAME).is_file()
+    # The file that was read is untouched.
+    assert written.read_text() == before
+
+
+def test_output_still_refused_when_o_points_back_at_it(run_case, tmp_path, capsys):
+    """A literal `-o` at the file's own directory would still write over it."""
+    assert cli.main(["run", str(run_case)]) == 0
+    written = run_case.parent / cli.OUTPUT_NAME
+
+    assert cli.main(["run", str(written), "-o", str(run_case.parent)]) == 1
+    assert "not one to run on" in capsys.readouterr().err
+
+
 def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
     """Nothing beside it, so there is nothing to redirect to.
 
@@ -1074,8 +1104,33 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
 
     _, result = case.read(iterate_case.parent / cli.OUTPUT_NAME, design=False)
 
-    assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0]"}
+    assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0][0]"}
     assert all(isinstance(value, float) for value in result.error.values())
+
+
+METRIC_CASE = RUN_CASE + "\nmetrics:\n  - type: _test_grid_stats\n"
+
+
+def test_a_run_records_what_its_metrics_measured(tmp_path):
+    """A configured metric lands under `result: metrics:`, and a re-plot
+    reproduces it from the field left behind."""
+    from turbigen import case  # noqa: PLC0415
+    import test_metric  # noqa: F401, PLC0415 - registers the _test_grid_stats metric
+
+    path = tmp_path / "cascade" / "input.yaml"
+    path.parent.mkdir()
+    path.write_text(METRIC_CASE)
+    out = path.parent
+
+    assert cli.main(["run", str(path)]) == 0
+    _, ran = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert set(ran.metrics) == {"n_block", "shapes"}
+    assert isinstance(ran.metrics["n_block"], float)
+
+    (out / cli.OUTPUT_NAME).unlink()
+    assert cli.main(["report", str(path)]) == 0
+    _, reported = case.read(out / cli.OUTPUT_NAME, design=False)
+    assert reported.metrics == ran.metrics
 
 
 SETTLED_CASE = ITERATE_CASE.replace(
@@ -1272,7 +1327,7 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     # The case recambers its leading edge 10 degrees off the flow, so the
     # incidence is measured well below the target and the knob has to come down
     # to meet it.
-    error = first_result.error["dchi_LE[0]"]
+    error = first_result.error["dchi_LE[0][0]"]
     assert error < -1.0
 
     # By the rule the stepper states, from the error this run recorded: the
@@ -1295,14 +1350,14 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
 
     archived = Config.from_file(iterate_case)
     archived = iterate.Deviation().with_unknowns(archived, {"dchi_TE[0]": 7.5})
-    archived = iterate.Incidence().with_unknowns(archived, {"dchi_LE[0]": -3.25})
+    archived = iterate.Incidence().with_unknowns(archived, {"dchi_LE[0][0]": -3.25})
 
     directory = tmp_path / "archive" / "000"
     directory.mkdir(parents=True)
     case.write(
         directory / cli.OUTPUT_NAME,
         archived,
-        Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0]": 0.0}),
+        Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0][0]": 0.0}),
     )
 
     out = tmp_path / "with_database"
@@ -1317,7 +1372,7 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
     started, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
 
     assert iterate.unknowns(started)["dchi_TE[0]"] == pytest.approx(7.5)
-    assert iterate.unknowns(started)["dchi_LE[0]"] == pytest.approx(-3.25)
+    assert iterate.unknowns(started)["dchi_LE[0][0]"] == pytest.approx(-3.25)
 
 
 #
@@ -1735,14 +1790,20 @@ def test_a_solution_that_differs_shows_the_error():
 
 
 def test_a_zero_nominal_has_no_relative_error():
-    """Angles and efficiencies are routinely zero by design, so this is the
-    common case rather than a guard against the impossible."""
+    """Angles are routinely zero by design, so this is the common case rather
+    than a guard against the impossible.
+
+    An axial inlet, because that zero is one the designer asked for. Reaching
+    instead for whichever derived quantity happens to round to zero would pin
+    the test to the arithmetic rather than to the design: a cascade's
+    efficiency, for one, is a ratio of numbers that are both zero.
+    """
     cascade = {
         "fluid": {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5},
         "mean_line": {
             "type": "turbine_cascade",
             "span": [0.01, 0.011],
-            "Alpha": [40.0, -65.0],
+            "Alpha": [0.0, -65.0],
             "Ma2": 0.6,
             "Ys": 0.029,
             "htr": 0.99,

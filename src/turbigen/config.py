@@ -23,6 +23,7 @@ from turbigen.iterate import Iteration
 from turbigen.job import Job
 from turbigen.machine import Machine
 from turbigen.mesh import Mesher
+from turbigen.metric import Metric
 from turbigen.node import Node
 from turbigen.post import Post
 from turbigen.solver import Solver
@@ -86,6 +87,10 @@ class Config(Node):
     """Post-processors to run. Nothing is added implicitly: what the config
     asks for is what runs."""
 
+    metrics: tuple[Metric, ...] = ()
+    """Quantities to measure from the solved field and record under
+    ``result: metrics:``. Nothing is measured unless the config asks for it."""
+
     job: Job | None = None
     """Where to execute, when ``--queue`` asks for it. Read by no design stage:
     a partition is a property of where you are, not of the machine."""
@@ -143,7 +148,7 @@ class Config(Node):
                     f"blades for {mean_line.n_row} rows."
                 )
             rows = tuple(
-                blade.design(mean_line[:, i_row], annulus.row(i_row))
+                blade.design(mean_line[:, i_row], annulus.extract_row(i_row))
                 for i_row, blade in enumerate(self.blades)
             )
 

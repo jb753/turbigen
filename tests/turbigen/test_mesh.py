@@ -109,7 +109,10 @@ def test_surface_reynolds_number_matches_its_definition(machine):
     for i_row, row in enumerate(machine.rows):
         station = machine.mean_line.get_characteristic_station(i_row)
         expected = (
-            row.blade.surface_length(0.5) * station.rho * station.V_rel / station.mu
+            row.blade.evaluate_surface_length(0.5)
+            * station.rho
+            * station.V_rel
+            / station.mu
         )
         assert Re_surf[i_row] == pytest.approx(expected)
 
@@ -132,7 +135,7 @@ def test_annulus_spacings_are_the_mean_of_the_rows(machine):
 def test_wall_spacing_is_a_small_fraction_of_the_chord(machine):
     """A sanity bound: a y+ of 30 is microns, not millimetres."""
     spacing = H().wall_spacing(machine)
-    chord = machine.annulus.chords(0.5)[1]
+    chord = machine.annulus.evaluate_chords(0.5)[1]
 
     assert np.all(spacing.surface > 0.0)
     assert np.all(spacing.surface < 0.01 * chord)
@@ -152,7 +155,7 @@ def test_mesh_finishes_the_grid_the_mesher_returns(machine, grid):
     """
     # The longest row chord at mid-span, off the annulus. Not the mean line,
     # which carries no length of its own.
-    assert grid[0].L_ref == pytest.approx(machine.annulus.chords(0.5)[1::2].max())
+    assert grid[0].L_ref == pytest.approx(machine.annulus.evaluate_chords(0.5)[1::2].max())
     assert np.isfinite(grid[0].wdist).all()
     assert (grid[0].wdist >= 0.0).all()
 
@@ -167,9 +170,11 @@ def test_mesh_sets_the_scales_before_there_is_a_flow_to_scale(machine, grid):
     """
     reference = machine.mean_line.get_referenced_fluid()
 
-    assert grid[0].fluid.rho_ref == reference.rho_ref
-    assert grid[0].fluid.V_ref == reference.V_ref
-    assert grid[0].fluid.Rgas_ref == reference.Rgas_ref
+    # The grid carries its references as float32, so the mean line's float64
+    # values come back a rounding step away rather than bit-identical.
+    assert grid[0].fluid.rho_ref == pytest.approx(reference.rho_ref, rel=1e-6)
+    assert grid[0].fluid.V_ref == pytest.approx(reference.V_ref, rel=1e-6)
+    assert grid[0].fluid.Rgas_ref == pytest.approx(reference.Rgas_ref, rel=1e-6)
 
     # Order one, which is the point of setting them at all.
     assert 0.1 < reference.rho_ref < 10.0

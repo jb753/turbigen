@@ -354,7 +354,8 @@ With the mean line built, we can now construct the annulus lines and blades by
 specifying some more input data.
 
 To use the built-in annulus requires only a few fairly self-explanatory
-lines in the input file:
+lines in the input file. See :doc:`/annulus` for the designs available and
+what each key means:
 
 .. literalinclude:: ../tutorial/step5/input.yaml
    :language: yaml

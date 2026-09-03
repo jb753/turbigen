@@ -2,8 +2,9 @@
 
 A mean-line design is not self-consistent with its own solution: the flow
 leaves a blade at a different angle from the metal, arrives at a different
-incidence, and loses more than the design assumed. An :class:`Iterator` names
-one such mismatch, measures it, and says which design variable to move.
+incidence, loses more than the design assumed, and diffuses more or less over
+the surface than the blade count was chosen for. An :class:`Iterator` names one
+such mismatch, measures it, and says which design variable to move.
 
 The split is between physics and numerics, and it is the whole point of the
 module. An iterator is nearly declarative --- which knobs it owns, how to
@@ -36,7 +37,9 @@ from numpy.polynomial import legendre
 
 import ember.average
 import ember.cut
+import turbigen.util
 from turbigen.node import Node
+from turbigen.post import _isentropic_mach
 from turbigen.result import Result
 
 logger = logging.getLogger("turbigen.iterate")
@@ -611,8 +614,9 @@ def _recamber_unknowns(config, field):
     """Return the mean recamber of each row, under `field`.
 
     One number per row rather than one per section: the spanwise distribution
-    of recamber is a design decision, and an iterator correcting a mean-line
-    mismatch has nothing to say about it.
+    of recamber is a design decision, and :class:`Deviation`, which matches a
+    single mixed-out angle, has nothing to say about it. :class:`Incidence`
+    does, so it owns its sections individually rather than through this.
     """
     return {
         f"{field}[{i_row}]": float(
@@ -699,22 +703,33 @@ class Deviation(Iterator):
         }
 
 
+def _sections(config):
+    """Every ``(row index, section index, section)``, in streamwise order."""
+    return [
+        (i_row, i_section, section)
+        for i_row, blade in enumerate(config.blades)
+        for i_section, section in enumerate(blade.sections)
+    ]
+
+
 class Incidence(Iterator):
     """Set the leading edge to meet the flow at a chosen incidence.
 
-    Measured on the three-dimensional field at one span fraction rather than
-    from the mixed-out mean line, because incidence is a local property of the
-    leading edge and the whole point of moving it is that the mean line does
-    not see what the tip and the hub are doing.
+    Measured on the three-dimensional field at each section's own span fraction
+    rather than from the mixed-out mean line, because incidence is a local
+    property of the leading edge and the whole point of moving it is that the
+    mean line does not see what the tip and the hub are doing.
+
+    One knob per section, not the row mean :class:`Deviation` uses: a blade
+    with N sections has N independent leading-edge angles, and each should meet
+    the flow it actually sees. Collapsing them to a mean nulls the incidence at
+    one span and leaves the rest with whatever the starting distribution gave.
     """
 
     type: ClassVar[str] = "incidence"
 
     target: float = 0.0
     """Incidence to aim for [deg]."""
-
-    spf: float = 0.5
-    """Span fraction to measure the incidence at."""
 
     upstream: float = 0.05
     """Where to read the flow angle, as a fraction of the gap ahead of the row."""
@@ -734,13 +749,33 @@ class Incidence(Iterator):
     """Permissible error on local incidence [deg]."""
 
     def unknowns(self, config):
-        return _recamber_unknowns(config, "dchi_LE")
+        return {
+            f"dchi_LE[{i_row}][{i_section}]": float(section.dchi_LE)
+            for i_row, i_section, section in _sections(config)
+        }
 
     def with_unknowns(self, config, values):
-        return _with_recamber(config, "dchi_LE", values)
+        blades = list(config.blades)
+
+        for i_row, blade in enumerate(blades):
+            sections = list(blade.sections)
+            moved = False
+            for i_section, section in enumerate(sections):
+                name = f"dchi_LE[{i_row}][{i_section}]"
+                if name not in values:
+                    continue
+                sections[i_section] = dataclasses.replace(section, dchi_LE=values[name])
+                moved = True
+            if moved:
+                blades[i_row] = dataclasses.replace(blade, sections=tuple(sections))
+
+        return dataclasses.replace(config, blades=tuple(blades))
 
     def paths(self, config):
-        return _recamber_paths(config, "dchi_LE")
+        return {
+            f"blades[{i_row}].sections[{i_section}].dchi_LE"
+            for i_row, i_section, _ in _sections(config)
+        }
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
@@ -748,12 +783,15 @@ class Incidence(Iterator):
             return {}
 
         measured = {}
-        for i_row in range(len(config.blades)):
-            incidence = _incidence(result, i_row, self.spf, self.upstream)
+        for i_row, i_section, section in _sections(config):
+            incidence = _incidence(result, i_row, section.spf, self.upstream)
             if np.isfinite(incidence):
-                measured[f"dchi_LE[{i_row}]"] = incidence - self.target
+                measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
             else:
-                logger.info(f"Could not measure the incidence of row {i_row}.")
+                logger.info(
+                    f"Could not measure the incidence of row {i_row} "
+                    f"section {i_section}."
+                )
 
         return measured
 
@@ -770,7 +808,7 @@ def _incidence(result, i_row, spf, upstream):
     annulus = machine.annulus
 
     # A span cut of the whole machine, as the contour plot takes.
-    m = np.linspace(0.0, annulus.mmax, annulus.n_segment * 50 + 1)
+    m = np.linspace(0.0, annulus.m_max, annulus.n_segment * 50 + 1)
     xr_curve = annulus.evaluate_xr(m, spf).T
     cut = ember.cut.structured_meridional(result.grid, xr_curve)
     if not len(cut):
@@ -790,7 +828,7 @@ def _incidence(result, i_row, spf, upstream):
     alpha = np.asarray(block.Alpha_rel[i_read])
     flow = float(np.sum(weight * alpha) / np.sum(weight))
 
-    metal = float(machine.rows[i_row].blade.chi(spf)[0])
+    metal = float(machine.rows[i_row].blade.evaluate_chi(spf)[0])
 
     return flow - metal
 
@@ -1036,6 +1074,147 @@ class SurfaceReynolds(Iterator):
         return mu
 
 
+def _diffusion_factor(result, i_row, spf):
+    """Return the isentropic-Mach diffusion factor of row `i_row` at `spf` [--].
+
+    The peak isentropic surface Mach number divided by the trailing-edge value,
+    minus one --- the definition the package this replaces used. NaN when the
+    grid gives nothing to measure, so the caller can fall through to not
+    stepping rather than to a wrong number.
+    """
+    machine = result.machine
+    if result.grid is None or machine is None:
+        return np.nan
+    if result.history is not None and getattr(result.history, "diverged", False):
+        return np.nan
+
+    surfaces = turbigen.util.cut_blade_surfs(result.grid, 0)
+    if not surfaces or i_row >= len(surfaces) or surfaces[i_row] is None:
+        return np.nan
+
+    annulus = machine.annulus
+    s_ref = machine.mean_line[:, i_row].s[0]
+
+    # Rows occupy the odd meridional segments, so row i spans m from 2i+1 to
+    # 2i+2, exactly as the surface distribution plot cuts it.
+    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
+    xr = annulus.evaluate_xr(m, spf)
+    # Padded to three axes so that the spanwise one is the second, which is
+    # the axis `structured_meridional` interpolates along; the cut it returns
+    # is one wide and gets squeezed below.
+    surface = surfaces[i_row][0][:, :, None]
+    cut = ember.cut.structured_meridional(surface, xr.T)
+    if not len(cut):
+        return np.nan
+
+    # The cut wraps the blade from one trailing edge round to the other, so its
+    # endpoints are the two sides of the trailing edge.
+    mas = _isentropic_mach(cut[0], s_ref)[:, 0]
+    mas_TE = 0.5 * (mas[0] + mas[-1])
+    if not np.isfinite(mas_TE) or mas_TE <= 0.0:
+        return np.nan
+
+    return float((mas / mas_TE).max() - 1.0)
+
+
+class DiffusionFactor(Iterator):
+    """Set the blade count to reach a target diffusion factor.
+
+    Moves the circulation coefficient of a
+    :class:`~turbigen.blade.Circulation` count rule, which rounds it to an
+    integer number of blades --- so the achieved diffusion factor lands within
+    about one blade of the target rather than exactly on it. This shares its
+    name with :class:`turbigen.blade.DiffusionFactor`, the mean-line count
+    rule; that one sets a blade count once from a correlation, this one drives
+    the count from the CFD it produced.
+    """
+
+    type: ClassVar[str] = "diffusion_factor"
+
+    target: float
+    """Isentropic-Mach diffusion factor to design for [--]."""
+
+    i_row: int = 0
+    """Index of the blade row whose diffusion factor meets the target [--].
+
+    One row at a time: list the iterator again with a different ``i_row`` to
+    place another row.
+    """
+
+    spf: float = 0.5
+    """Span fraction to measure the diffusion factor at [--]."""
+
+    gain: float = 1.0
+    """Circulation-coefficient change per unit diffusion-factor error [--].
+
+    Positive: a larger coefficient gives a larger pitch, fewer blades, more
+    loading and a higher diffusion factor. Only the first step and its sign
+    come from here; the Broyden update refines the slope afterwards, so a value
+    that slightly undershoots is safer than one that overshoots into the
+    integer-count staircase.
+    """
+
+    clip: float = 0.1
+    """Largest change in the circulation coefficient in one iteration [--]."""
+
+    tolerance: float = 0.01
+    """Converged inside this absolute error on the diffusion factor [--].
+
+    The blade count is an integer, so the achieved diffusion factor moves in
+    steps that this must clear: a row with few blades may need a looser value.
+    """
+
+    def _name(self):
+        return f"blades[{self.i_row}].count.Co"
+
+    def _count(self, config):
+        """Return the circulation count rule this iterator moves, or raise."""
+        if not 0 <= self.i_row < len(config.blades):
+            raise ValueError(
+                f"i_row={self.i_row} is out of range for a machine with "
+                f"{len(config.blades)} blade row(s)."
+            )
+        count = config.blades[self.i_row].count
+        if getattr(count, "type", None) != "Co":
+            raise ValueError(
+                "The diffusion_factor iterator moves a circulation coefficient, "
+                f"so blades[{self.i_row}] must set its count with type: Co."
+            )
+        return count
+
+    def unknowns(self, config):
+        return {self._name(): float(self._count(config).Co)}
+
+    def with_unknowns(self, config, values):
+        name = self._name()
+        if name not in values:
+            return config
+
+        blades = list(config.blades)
+        blade = blades[self.i_row]
+        blades[self.i_row] = dataclasses.replace(
+            blade, count=dataclasses.replace(blade.count, Co=float(values[name]))
+        )
+        return dataclasses.replace(config, blades=tuple(blades))
+
+    def paths(self, config):
+        return {self._name()}
+
+    def error(self, config, result):
+        if result.grid is None or result.machine is None:
+            logger.debug("No solved grid, so no diffusion factor to measure.")
+            return {}
+
+        self._count(config)
+
+        df = _diffusion_factor(result, self.i_row, self.spf)
+        if not np.isfinite(df):
+            logger.info(f"Could not measure the diffusion factor of row {self.i_row}.")
+            return {}
+
+        return {self._name(): df - self.target}
+
+
 #
 # THE REPEATING STAGE
 #
@@ -1081,7 +1260,7 @@ def exit_profile(result, order, offset=None):
         Highest Legendre mode to fit. Modes start at 1: the constant is
         dropped, a profile being a redistribution rather than a level.
     offset : float or None
-        Cut plane offset in blade chords; `mixout.CUT_OFFSET` by default.
+        Cut plane offset in blade chords; `annulus.CUT_OFFSET` by default.
 
     Returns
     -------
@@ -1090,12 +1269,12 @@ def exit_profile(result, order, offset=None):
         :data:`turbigen.bconds.InletProfile.COLUMNS`.
 
     """
-    from turbigen import bconds, mixout  # noqa: PLC0415 - avoids a cycle
+    from turbigen import annulus, bconds  # noqa: PLC0415 - avoids a cycle
 
     grid, machine = result.grid, result.machine
-    xr = mixout.cut_planes(
-        machine.annulus, mixout.CUT_OFFSET if offset is None else offset
-    )[-1]
+    xr = machine.annulus.cut_planes(annulus.CUT_OFFSET if offset is None else offset)[
+        -1
+    ]
 
     cut = ember.cut.unstructured(grid, xr)
     if cut is None:

@@ -35,7 +35,8 @@ which command.
      - running a characteristic in :ref:`chic <usage-chic>`
    * - :ref:`batch: <config-batch>`
      - configuration sweeping in :ref:`batch <usage-batch>`
-   * - :ref:`post_process: <config-post_process>`
+   * - :ref:`post_process: <config-post_process>`,
+       :ref:`metrics: <config-metrics>`
      - all commands excluding :ref:`design <usage-design>` and
        :ref:`batch <usage-batch>`
    * - :ref:`job: <config-job>`
@@ -47,7 +48,16 @@ both, so ``iterate:`` is what the file holds and :ref:`iterate <usage-iterate>`
 is what runs it.
 
 Two more top-level keys are not phases of the design: ``include:``, described
-below, and ``result:``, which a finished run writes.
+below, and ``result:``, which a finished run writes. Under ``result:`` sit the
+mixed-out mean line the CFD achieved, the entropy rise the mixing-out itself
+introduced at each station under ``Ds_mix:``, the error each iterator last
+measured, and, when the config asks for them under
+:ref:`metrics: <config-metrics>`, any
+quantities measured from the solved field --- a surface integral, a plane
+average, a loss breakdown. Each :ref:`metrics: <config-metrics>` entry is
+evaluated once the march is over and its value recorded under ``result:
+metrics:``, so a run archived today can be mined later. Metric designs of your
+own go in a ``turbigen_plugins`` directory, like any other.
 
 Duplicate keys or subkeys are refused.
 
