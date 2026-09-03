@@ -379,6 +379,11 @@ def cut_blade_sides(grid, offset=0):
     leading and trailing edges, so the edges are found by looking for where the
     upstream and downstream periodic patches stop.
 
+    A clearance gap is trimmed off the span. Over the gap the same k faces are
+    periodic rather than solid, so a cut that kept them would return the flow
+    passing over the tip as though it were a surface distribution --- which is
+    a wrong answer where no answer is the honest one.
+
     Parameters
     ----------
     grid : ember.grid.Grid
@@ -389,7 +394,8 @@ def cut_blade_sides(grid, offset=0):
     Returns
     -------
     list
-        Two cuts per row, or None for a row whose edges were not found.
+        Two 2D ``(ni, nj)`` cuts per row, or None for a row whose edges were
+        not found.
 
     """
     cuts = []
@@ -397,6 +403,7 @@ def cut_blade_sides(grid, offset=0):
     for i in range(len(grid.rows)):
         ile = None
         ite = None
+        j_gap = None
 
         for block in grid.rows[i]:
             for patch in block.patches.periodic:
@@ -415,6 +422,13 @@ def cut_blade_sides(grid, offset=0):
                     elif lim[0, 1] == block.shape[0] - 1:
                         ite = lim[0, 0]
 
+                # The one k-face periodic that does not span the span is the
+                # clearance gap: it runs along the blade rather than upstream
+                # or downstream of it. Both sides carry one with the same
+                # limits, so finding it twice is finding the same gap.
+                if at_k_boundary and not spans_j and not spans_i:
+                    j_gap = lim[1]
+
             # A cusp or an inviscid patch on a k face marks the trailing edge
             # where the periodics do not.
             for patch in block.patches:
@@ -430,9 +444,19 @@ def cut_blade_sides(grid, offset=0):
             cuts.append(None)
             continue
 
+        # Where the gap sits comes from its own patch rather than being assumed
+        # to be at the casing, so a hub clearance would trim the other end.
+        nj = grid[i].shape[1]
+        if j_gap is None:
+            jst, jen = 0, nj
+        elif j_gap[1] == nj - 1:
+            jst, jen = 0, j_gap[0] + 1
+        else:
+            jst, jen = j_gap[1], nj
+
         sides = [
-            grid[i][ile : (ite + 1), :, None, 0 + offset].copy(keep_patches=False),
-            grid[i][ile : (ite + 1), :, None, -1 - offset].copy(keep_patches=False),
+            grid[i][ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
+            grid[i][ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
         ]
         # The patches described the block these were sliced out of, not the
         # slices.
@@ -463,7 +487,10 @@ def cut_blade_surfs(grid, offset=0):
     Returns
     -------
     list
-        One list of cuts per row, or None for a row that has none.
+        One list of 2D ``(ni, nj)`` cuts per row, streamwise by spanwise, or
+        None for a row that has none. `ember.cut.structured_meridional` wants
+        a third axis to interpolate along; the caller that needs one adds it,
+        because it is the caller that takes it off the result again.
 
     """
     surfs = []
@@ -500,6 +527,42 @@ def cut_blade_surfs(grid, offset=0):
         for block in row_block:
             wraps = np.allclose(block[0, :, 0].xrt, block[-1, :, 0].xrt)
             if wraps and block.shape[1] == nj:
-                surfs[-1].append(block[:, :, None, offset])
+                surfs[-1].append(block[:, :, offset])
 
     return surfs
+
+
+def cut_endwalls(grid, offset=0):
+    """Return the hub and casing surfaces of each row.
+
+    The endwalls need none of the edge-hunting `cut_blade_sides` does. The
+    mesher's convention is that ``j`` runs hub to casing, so an endwall is one
+    whole ``j`` face of a block and there is nothing to search for. A tip gap
+    does not change that: the gap is periodic patches on the ``k`` faces of the
+    same block, and the casing over it is still a wall, only one turning at its
+    own speed rather than the blade's.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    offset : int
+        Cells away from the surface, for reading just off the wall.
+
+    Returns
+    -------
+    list
+        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise,
+        hub then casing for each block in the row. Never `None`: unlike a
+        blade surface, an endwall is always there.
+
+    """
+    walls = []
+
+    for row_block in grid.rows:
+        walls.append([])
+        for block in row_block:
+            walls[-1].append(block[:, 0 + offset, :])
+            walls[-1].append(block[:, -1 - offset, :])
+
+    return walls

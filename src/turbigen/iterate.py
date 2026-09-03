@@ -1064,7 +1064,11 @@ def _diffusion_factor(result, i_row, spf):
     # 2i+2, exactly as the surface distribution plot cuts it.
     m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
     xr = annulus.evaluate_xr(m, spf)
-    cut = ember.cut.structured_meridional(surfaces[i_row][0], xr.T)
+    # Padded to three axes so that the spanwise one is the second, which is
+    # the axis `structured_meridional` interpolates along; the cut it returns
+    # is one wide and gets squeezed below.
+    surface = surfaces[i_row][0][:, :, None]
+    cut = ember.cut.structured_meridional(surface, xr.T)
     if not len(cut):
         return np.nan
 
