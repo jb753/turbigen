@@ -11,8 +11,6 @@ converged answer. That is enough: none of this depends on the flow being
 settled, only on it being a valid field.
 
 Test cases:
-- test_cut_planes_land_in_the_gaps: not inside a row, where there is no plane
-- test_cut_planes_span_hub_to_casing: two points, the shape ember wants
 - test_actual_has_the_shape_of_the_nominal: assembled per station
 - test_actual_keeps_the_design_annulus_area: what the AR contraction is for
 - test_actual_reports_the_speed_the_grid_ran_at: and Omega, which does not
@@ -91,49 +89,6 @@ def solved():
     _, machine, grid = cli.prepare(config)
     config.solver.solve(grid)
     return machine, grid
-
-
-#
-# WHERE THE CUTS GO
-#
-
-
-def test_cut_planes_land_in_the_gaps():
-    """Cutting at a station exactly would put the plane inside the blade.
-
-    Rows occupy the odd segments of the annulus coordinate, so a leading-edge
-    cut has to sit just below an odd integer and a trailing-edge cut just above
-    the next one.
-    """
-    annulus = build().design().annulus
-    n_row = annulus.n_row
-
-    # Recover the m of each cut from its axial position, via the mid-span line.
-    m_dense = np.linspace(0.0, annulus.m_max, 20001)
-    x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
-
-    for i_station, xr in enumerate(mixout.cut_planes(annulus)):
-        x_cut = float(xr.mean(axis=0)[0])
-        m_cut = float(np.interp(x_cut, x_dense, m_dense))
-
-        station = 1.0 + i_station
-        if i_station % 2 == 0:
-            assert m_cut < station, "a leading edge cut must sit upstream"
-        else:
-            assert m_cut > station, "a trailing edge cut must sit downstream"
-        assert abs(m_cut - station) < 0.5, "and still in the adjacent gap"
-
-    assert len(mixout.cut_planes(annulus)) == 2 * n_row
-
-
-def test_cut_planes_span_hub_to_casing():
-    """Two (x, r) points, which is the curve ember.cut.unstructured takes."""
-    annulus = build().design().annulus
-
-    for xr in mixout.cut_planes(annulus):
-        assert xr.shape == (2, 2)
-        r_hub, r_cas = xr[0][1], xr[1][1]
-        assert r_cas > r_hub
 
 
 #

@@ -546,3 +546,46 @@ def test_repr_stays_readable(machine):
     text = repr(machine.annulus)
 
     assert text == f"Annulus(merge_weight=0.0, n_row={machine.annulus.n_row})"
+
+
+#
+# WHERE THE CUTS GO
+#
+
+
+def test_cut_planes_land_in_the_gaps():
+    """Cutting at a station exactly would put the plane inside the blade.
+
+    Rows occupy the odd segments of the annulus coordinate, so a leading-edge
+    cut has to sit just below an odd integer and a trailing-edge cut just above
+    the next one.
+    """
+    annulus = build().design().annulus
+    n_row = annulus.n_row
+
+    # Recover the m of each cut from its axial position, via the mid-span line.
+    m_dense = np.linspace(0.0, annulus.m_max, 20001)
+    x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
+
+    for i_station, xr in enumerate(annulus.cut_planes()):
+        x_cut = float(xr.mean(axis=0)[0])
+        m_cut = float(np.interp(x_cut, x_dense, m_dense))
+
+        station = 1.0 + i_station
+        if i_station % 2 == 0:
+            assert m_cut < station, "a leading edge cut must sit upstream"
+        else:
+            assert m_cut > station, "a trailing edge cut must sit downstream"
+        assert abs(m_cut - station) < 0.5, "and still in the adjacent gap"
+
+    assert len(annulus.cut_planes()) == 2 * n_row
+
+
+def test_cut_planes_span_hub_to_casing():
+    """Two (x, r) points, which is the curve ember.cut.unstructured takes."""
+    annulus = build().design().annulus
+
+    for xr in annulus.cut_planes():
+        assert xr.shape == (2, 2)
+        r_hub, r_cas = xr[0][1], xr[1][1]
+        assert r_cas > r_hub

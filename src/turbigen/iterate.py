@@ -1225,7 +1225,7 @@ def exit_profile(result, order, offset=None):
         Highest Legendre mode to fit. Modes start at 1: the constant is
         dropped, a profile being a redistribution rather than a level.
     offset : float or None
-        Cut plane offset in blade chords; `mixout.CUT_OFFSET` by default.
+        Cut plane offset in blade chords; `annulus.CUT_OFFSET` by default.
 
     Returns
     -------
@@ -1234,12 +1234,12 @@ def exit_profile(result, order, offset=None):
         :data:`turbigen.bconds.InletProfile.COLUMNS`.
 
     """
-    from turbigen import bconds, mixout  # noqa: PLC0415 - avoids a cycle
+    from turbigen import annulus, bconds  # noqa: PLC0415 - avoids a cycle
 
     grid, machine = result.grid, result.machine
-    xr = mixout.cut_planes(
-        machine.annulus, mixout.CUT_OFFSET if offset is None else offset
-    )[-1]
+    xr = machine.annulus.cut_planes(annulus.CUT_OFFSET if offset is None else offset)[
+        -1
+    ]
 
     cut = ember.cut.unstructured(grid, xr)
     if cut is None:

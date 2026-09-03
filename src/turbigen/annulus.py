@@ -101,6 +101,13 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
+CUT_OFFSET = 0.02
+"""Cut planes sit this fraction of blade chord into the gap, clear of the row.
+
+Cutting exactly at a leading or trailing edge would put the plane inside the
+blade, where there is no single annulus-spanning surface to integrate over.
+"""
+
 
 def _segment_average(values):
     """Average a (2*n_row,) per-station array to (2*n_row+1,) segment values."""
@@ -365,6 +372,48 @@ class Annulus:
         xr_hub = self.evaluate_xr(m, 0.0)
         xr_cas = self.evaluate_xr(m, 1.0)
         return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
+
+    def cut_planes(self, offset=CUT_OFFSET):
+        """Return the meridional cut curve at each design station.
+
+        A cut plane is the straight hub-to-casing line at one meridional
+        position, so it is two points and needs nothing beyond
+        :meth:`evaluate_xr` --- which is why it lives here rather than with any
+        one of the things that cut with it. The mean line is reduced between
+        these planes, so a quantity integrated over the same bounds is directly
+        comparable with the loss the mean line reports.
+
+        Parameters
+        ----------
+        offset : float
+            Distance into the adjacent gap, as a fraction of blade chord.
+
+        Returns
+        -------
+        list of ndarray
+            One ``(2, 2)`` array per station, in streamwise order, each holding
+            two ``(x, r)`` points, hub then casing. This is the shape
+            :func:`ember.cut.unstructured` takes.
+
+        """
+        chords = self.evaluate_chords(0.5)
+
+        # The offset is given in blade chords but applied to `m`, which is
+        # normalised per segment -- so it has to be rescaled by the chord of
+        # the gap each station opens into. Rows are the odd segments, gaps the
+        # even.
+        chord_blade = np.repeat(chords[1::2], 2)
+        gaps = chords[::2]
+        chord_gap = np.concatenate([[gaps[0]], np.repeat(gaps[1:-1], 2), [gaps[-1]]])
+
+        # Leading edges step upstream, trailing edges downstream.
+        signed = offset * np.ones(2 * self.n_row)
+        signed[::2] *= -1.0
+        signed *= chord_blade / chord_gap
+
+        m_cut = np.arange(1.0, 2 * self.n_row + 1) + signed
+
+        return [self.evaluate_xr(m, [0.0, 1.0]).T for m in m_cut]
 
     def evaluate_chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.

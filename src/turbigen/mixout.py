@@ -15,59 +15,12 @@ import numpy as np
 import ember.average
 import ember.cut
 
+import turbigen.annulus
+
 logger = logging.getLogger("turbigen")
 
-CUT_OFFSET = 0.02
-"""Cut planes sit this fraction of blade chord into the gap, clear of the row.
 
-Cutting exactly at a leading or trailing edge would put the plane inside the
-blade, where there is no single annulus-spanning surface to integrate over.
-"""
-
-
-def cut_planes(annulus, offset=CUT_OFFSET):
-    """Return the meridional cut curve at each design station.
-
-    A cut plane is the straight hub-to-casing line at one meridional position,
-    so it is two points and needs nothing from the annulus beyond
-    :meth:`~turbigen.annulus.Annulus.evaluate_xr`.
-
-    Parameters
-    ----------
-    annulus : Annulus
-        Geometry to cut.
-    offset : float
-        Distance into the adjacent gap, as a fraction of blade chord.
-
-    Returns
-    -------
-    list of ndarray
-        One ``(2, 2)`` array per station, in streamwise order, each holding
-        two ``(x, r)`` points. This is the shape
-        :func:`ember.cut.unstructured` takes.
-
-    """
-    n_row = annulus.n_row
-    chords = annulus.evaluate_chords(0.5)
-
-    # The offset is given in blade chords but applied to `m`, which is
-    # normalised per segment -- so it has to be rescaled by the chord of the
-    # gap each station opens into. Rows are the odd segments, gaps the even.
-    chord_blade = np.repeat(chords[1::2], 2)
-    gaps = chords[::2]
-    chord_gap = np.concatenate([[gaps[0]], np.repeat(gaps[1:-1], 2), [gaps[-1]]])
-
-    # Leading edges step upstream, trailing edges downstream.
-    signed = offset * np.ones(2 * n_row)
-    signed[::2] *= -1.0
-    signed *= chord_blade / chord_gap
-
-    m_cut = np.arange(1.0, 2 * n_row + 1) + signed
-
-    return [annulus.evaluate_xr(m, [0.0, 1.0]).T for m in m_cut]
-
-
-def mean_line(grid, machine, offset=CUT_OFFSET):
+def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
     """Return the mean line `grid` actually achieved, and its mixing loss.
 
     Parameters
@@ -115,7 +68,7 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
     # so station i is row i // 2, end i % 2.
     Ds_mix_flat = np.empty(2 * machine.annulus.n_row)
 
-    for i_station, xr in enumerate(cut_planes(machine.annulus, offset)):
+    for i_station, xr in enumerate(machine.annulus.cut_planes(offset)):
         cut = ember.cut.unstructured(grid, xr)
         if cut is None:
             raise ValueError(
