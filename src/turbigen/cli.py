@@ -964,7 +964,7 @@ def reconstruct(config, machine, grid, history, field):
         return None
 
     try:
-        actual = mixout.mean_line(grid, machine)
+        actual, Ds_mix = mixout.mean_line(grid, machine)
     except Exception as err:
         logger.warning(f"Could not mix out the stored field: {err}")
         return None
@@ -972,6 +972,7 @@ def reconstruct(config, machine, grid, history, field):
     result = Result(
         machine=machine,
         actual=actual,
+        Ds_mix=Ds_mix,
         grid=grid,
         converged=config.solver.converged(history),
         history=history,
@@ -1067,8 +1068,9 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # out, and even a converged one can refuse, so this must not cost the run
     # the output it has already earned.
     actual = None
+    Ds_mix = None
     try:
-        actual = mixout.mean_line(grid, machine)
+        actual, Ds_mix = mixout.mean_line(grid, machine)
     except Exception as err:
         logger.warning(f"Could not mix out the solution: {err}")
 
@@ -1076,6 +1078,7 @@ def solve(config, out_dir, restart_path=None, svg=False):
         machine=machine,
         grid=grid,
         actual=actual,
+        Ds_mix=Ds_mix,
         converged=converged,
         history=history,
     )

@@ -30,6 +30,17 @@ class Result:
     actual: MeanLine | None = None
     """Mean line mixed out from the CFD solution, once there is one."""
 
+    Ds_mix: object | None = None
+    """Specific entropy rise from mixing each cut to uniformity [J/kg/K].
+
+    The loss the reduction to :attr:`actual` introduces, one value per station
+    in the same ``(2, n_row)`` shape --- the mixed-out entropy less the
+    mass-averaged entropy of the cut. Kept beside ``actual`` because it is
+    measured in the same pass and is gone once the grid is, exactly like a
+    :class:`~turbigen.metric.Metric`. An ``ndarray`` in memory, nested lists
+    once serialised.
+    """
+
     grid: object | None = None
     """Computational grid, once the machine has been meshed."""
 
@@ -114,8 +125,9 @@ class Result:
     #
     # `to_dict` names what it writes rather than dumping the fields, so a field
     # added above stays out of the file until someone decides it belongs there.
-    # `error` and `metrics` are the two that do: both are handfuls of numbers
-    # measured from the field, kept because that is what a result file is for.
+    # `Ds_mix`, `error` and `metrics` are the ones that do: all handfuls of
+    # numbers measured from the field, kept because that is what a result file
+    # is for.
     #
     # Nothing derived is stored either. `eta_tt`, `PR_tt` and the whole
     # `backward()` dict are recomputed from the mean line, so an archived file
@@ -126,9 +138,11 @@ class Result:
     def from_dict(cls, data, fluid, machine=None):
         """Rebuild a result from `data`, an equation of state and a machine."""
         actual = data.get("actual")
+        Ds_mix = data.get("Ds_mix")
         return cls(
             machine=machine,
             actual=MeanLine.from_dict(actual, fluid) if actual else None,
+            Ds_mix=np.asarray(Ds_mix, dtype=float) if Ds_mix is not None else None,
             converged=bool(data.get("converged", False)),
             error=dict(data.get("error", {})),
             metrics=dict(data.get("metrics", {})),
@@ -139,6 +153,8 @@ class Result:
         data = {"converged": bool(self.converged)}
         if self.actual is not None:
             data["actual"] = self.actual.to_dict()
+        if self.Ds_mix is not None:
+            data["Ds_mix"] = np.asarray(self.Ds_mix, dtype=float).tolist()
         if self.error:
             # Floats, not numpy scalars, so the file reads as YAML rather than
             # as a pickle of array types.

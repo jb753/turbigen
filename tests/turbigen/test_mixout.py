@@ -18,6 +18,9 @@ Test cases:
 - test_actual_reports_the_speed_the_grid_ran_at: and Omega, which does not
 - test_actual_is_a_plausible_flow: finite, positive, roughly the design
 - test_actual_is_not_reinterpreted_by_the_datum: the P/T/V transfer
+- test_mixing_loss_has_the_shape_of_the_mean_line: one value per station
+- test_mixing_loss_is_a_real_entropy_rise: positive through the wake
+- test_mixing_loss_builds_through_the_row: exit lossier than inlet
 - test_a_cut_that_misses_the_grid_is_reported: names the station
 """
 
@@ -141,7 +144,7 @@ def test_cut_planes_span_hub_to_casing():
 def test_actual_has_the_shape_of_the_nominal(solved):
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert actual.shape == machine.mean_line.shape
     assert actual.n_row == machine.mean_line.n_row
@@ -156,7 +159,7 @@ def test_actual_keeps_the_design_annulus_area(solved):
     """
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     np.testing.assert_allclose(
         np.asarray(actual.flat.Am, dtype=float),
@@ -181,7 +184,7 @@ def test_actual_reports_the_speed_the_grid_ran_at(solved):
     for block in grid:
         block.set_Omega(100.0)
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert np.all(np.asarray(actual.flat.Omega, dtype=float) == pytest.approx(100.0))
     # And the design it came from is untouched, this being a cascade at rest.
@@ -194,7 +197,7 @@ def test_actual_reports_the_speed_the_grid_ran_at(solved):
 def test_actual_is_a_plausible_flow(solved):
     machine, grid = solved
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     assert np.all(np.isfinite(np.asarray(actual.flat.P)))
     assert np.all(np.asarray(actual.flat.P) > 0.0)
@@ -221,11 +224,55 @@ def test_actual_is_not_reinterpreted_by_the_datum(solved):
     machine, grid = solved
     assert grid[0].fluid.T_dtm != machine.mean_line.fluid.T_dtm
 
-    actual = mixout.mean_line(grid, machine)
+    actual, _ = mixout.mean_line(grid, machine)
 
     T = np.asarray(actual.flat.T, dtype=float)
     T_nominal = np.asarray(machine.mean_line.flat.T, dtype=float)
     assert np.all(np.abs(T - T_nominal) < 0.25 * T_nominal)
+
+
+#
+# THE MIXING LOSS
+#
+
+
+def test_mixing_loss_has_the_shape_of_the_mean_line(solved):
+    """One entropy rise per station, laid out like every other mean-line field."""
+    machine, grid = solved
+
+    actual, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert Ds_mix.shape == actual.shape
+    assert np.all(np.isfinite(Ds_mix))
+
+
+def test_mixing_loss_is_a_real_entropy_rise(solved):
+    """Mixing a non-uniform wake to uniformity generates entropy.
+
+    The trailing-edge cuts carry a wake, so their loss is unambiguously
+    positive. The inlet cuts sit in a nearly uniform inflow whose fluxes a
+    ten-step transient has not made conservative, so the mixing inequality can
+    be off by a small amount there --- bounded well below the wake's rise.
+    """
+    machine, grid = solved
+
+    _, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert np.all(Ds_mix[1] > 0.0)
+    assert np.all(np.abs(Ds_mix[0]) < Ds_mix[1])
+
+
+def test_mixing_loss_builds_through_the_row(solved):
+    """The trailing-edge cut carries a wake; the inlet cut is nearly uniform.
+
+    So the outlet station's mixing loss must exceed the inlet's, even on a
+    ten-step transient -- the wake is a geometric feature, not a converged one.
+    """
+    machine, grid = solved
+
+    _, Ds_mix = mixout.mean_line(grid, machine)
+
+    assert np.all(Ds_mix[1] > Ds_mix[0])
 
 
 def test_a_cut_that_misses_the_grid_is_reported(solved):

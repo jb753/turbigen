@@ -49,8 +49,10 @@ is what runs it.
 
 Two more top-level keys are not phases of the design: ``include:``, described
 below, and ``result:``, which a finished run writes. Under ``result:`` sit the
-mixed-out mean line the CFD achieved, the error each iterator last measured,
-and, when the config asks for them under :ref:`metrics: <config-metrics>`, any
+mixed-out mean line the CFD achieved, the entropy rise the mixing-out itself
+introduced at each station under ``Ds_mix:``, the error each iterator last
+measured, and, when the config asks for them under
+:ref:`metrics: <config-metrics>`, any
 quantities measured from the solved field --- a surface integral, a plane
 average, a loss breakdown. Each :ref:`metrics: <config-metrics>` entry is
 evaluated once the march is over and its value recorded under ``result:

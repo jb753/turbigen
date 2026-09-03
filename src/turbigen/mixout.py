@@ -68,7 +68,7 @@ def cut_planes(annulus, offset=CUT_OFFSET):
 
 
 def mean_line(grid, machine, offset=CUT_OFFSET):
-    """Return the mean line `grid` actually achieved.
+    """Return the mean line `grid` actually achieved, and its mixing loss.
 
     Parameters
     ----------
@@ -84,6 +84,12 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
     MeanLine
         Mixed-out state at each design station, in the same shape as the
         nominal mean line.
+    ndarray
+        Specific entropy rise from mixing each cut to uniformity [J/kg/K], one
+        per station in the same shape as the mean line. This is the loss the
+        reduction itself introduces --- the mixed-out entropy less the
+        mass-averaged entropy of the cut --- and it is independent of the area
+        contraction, which is reversible.
 
     """
     # A copy of the nominal, so the actual starts with the annulus areas it was
@@ -103,6 +109,11 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
     # report its relative Mach numbers in the wrong rotating frame, with
     # entirely plausible values.
     actual.set_Omega([float(blocks[0].Omega) for blocks in grid.rows])
+
+    # One mixing loss per cut, filled in streamwise order and reshaped to the
+    # mean line's (2, n_row) layout at the end -- `flat` runs inlet-to-outlet,
+    # so station i is row i // 2, end i % 2.
+    Ds_mix_flat = np.empty(2 * machine.annulus.n_row)
 
     for i_station, xr in enumerate(cut_planes(machine.annulus, offset)):
         cut = ember.cut.unstructured(grid, xr)
@@ -131,6 +142,18 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
         except Exception as err:
             raise ValueError(f"Could not mix out station {i_station}: {err}") from err
 
+        # The loss the reduction introduces: entropy of the uniform state less
+        # the mass-averaged entropy of the cut it replaced. The AR contraction
+        # is isentropic and does not move `mixed.s`, so this is measured at the
+        # true cut area regardless of it. `mass_average` only takes a structured
+        # block, so the cut is interpolated to the resolution of the row it
+        # sits beside first.
+        i_row = i_station // 2
+        nj, nk = grid.rows[i_row][0].shape[1:]
+        structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
+        s_cut = float(ember.average.mass_average(structured.s, structured))
+        Ds_mix_flat[i_station] = float(mixed.s) - s_cut
+
         # Dimensional state, not `mixed.conserved`. The cut carries the grid's
         # fluid and this mean line carries the design's, and those have
         # different datums -- conserved energy is measured from one, so copying
@@ -142,4 +165,6 @@ def mean_line(grid, machine, offset=CUT_OFFSET):
         station.set_Vr(float(mixed.Vr))
         station.set_Vt(float(mixed.Vt))
 
-    return actual
+    Ds_mix = Ds_mix_flat.reshape((machine.annulus.n_row, 2)).T
+
+    return actual, Ds_mix

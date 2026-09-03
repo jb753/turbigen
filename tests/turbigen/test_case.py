@@ -14,6 +14,7 @@ Test cases:
 - test_config_from_file_ignores_a_result: the config half alone still loads
 - test_result_is_one_key_beside_the_config: the file layout
 - test_metrics_are_written_only_when_present: an empty measurement is no key
+- test_mixing_loss_is_written_only_when_present: same, for Ds_mix
 - test_reading_without_designing_skips_the_machine: for bulk scraping
 - test_nominal_without_a_machine_says_so: rather than an AttributeError
 """
@@ -118,6 +119,27 @@ def test_metrics_are_written_only_when_present(config, result, tmp_path):
     assert written == {"loss": [0.01, 0.02]}
     _, read_result = case.read(path)
     assert read_result.metrics == {"loss": [0.01, 0.02]}
+
+
+def test_mixing_loss_is_written_only_when_present(config, result, tmp_path):
+    """Like `metrics`: no key until a run measured one, then it round-trips."""
+    import dataclasses  # noqa: PLC0415
+
+    import yaml  # noqa: PLC0415
+
+    path = tmp_path / "case.yaml"
+
+    case.write(path, config, result)
+    assert "Ds_mix" not in yaml.safe_load(path.read_text())[case.RESULT_KEY]
+
+    Ds_mix = np.array([[0.0, 0.0], [12.4, 47.3]])
+    measured = dataclasses.replace(result, Ds_mix=Ds_mix)
+    case.write(path, config, measured)
+
+    written = yaml.safe_load(path.read_text())[case.RESULT_KEY]["Ds_mix"]
+    assert written == [[0.0, 0.0], [12.4, 47.3]]
+    _, read_result = case.read(path)
+    np.testing.assert_array_equal(read_result.Ds_mix, Ds_mix)
 
 
 def test_the_convergence_history_stays_out_of_the_file(config, result, tmp_path):
