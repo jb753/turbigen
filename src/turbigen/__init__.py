@@ -41,7 +41,7 @@ from turbigen.iterate import Iteration, Iterator
 from turbigen.job import Job, Slurm, Task, Tsp
 from turbigen.machine import Machine
 from turbigen.meanline import MeanLine
-from turbigen.metric import Metric
+from turbigen.metric import Metric, SurfaceDissipation
 from turbigen.post import (
     AnnulusPlot,
     ContourPlot,
@@ -108,6 +108,7 @@ __all__ = [
     "Fluid",
     "Iterator",
     "Metric",
+    "SurfaceDissipation",
     "MeanLine",
     "MeanLineDesign",
     "Chic",
