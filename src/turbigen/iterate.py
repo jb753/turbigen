@@ -2,9 +2,8 @@
 
 A mean-line design is not self-consistent with its own solution: the flow
 leaves a blade at a different angle from the metal, arrives at a different
-incidence, loses more than the design assumed, and diffuses more or less over
-the surface than the blade count was chosen for. An :class:`Iterator` names one
-such mismatch, measures it, and says which design variable to move.
+incidence, and loses more than the design assumed. An :class:`Iterator` names
+one such mismatch, measures it, and says which design variable to move.
 
 The split is between physics and numerics, and it is the whole point of the
 module. An iterator is nearly declarative --- which knobs it owns, how to
@@ -37,9 +36,7 @@ from numpy.polynomial import legendre
 
 import ember.average
 import ember.cut
-import turbigen.util
 from turbigen.node import Node
-from turbigen.post import _isentropic_mach
 from turbigen.result import Result
 
 logger = logging.getLogger("turbigen.iterate")
@@ -48,9 +45,6 @@ logger = logging.getLogger("turbigen.iterate")
 Named apart from what one run says so that `iterate` can quieten a hundred runs
 on the console without losing the few lines that describe the iteration itself.
 """
-
-N_SPAN_CUT = 101
-"""Meridional points defining the span curve a blade surface is cut along."""
 
 TINY = 1e-9
 """Below this a nominal value is treated as zero for a relative tolerance."""
@@ -1072,147 +1066,6 @@ class SurfaceReynolds(Iterator):
                 f"mu to change."
             )
         return mu
-
-
-def _diffusion_factor(result, i_row, spf):
-    """Return the isentropic-Mach diffusion factor of row `i_row` at `spf` [--].
-
-    The peak isentropic surface Mach number divided by the trailing-edge value,
-    minus one --- the definition the package this replaces used. NaN when the
-    grid gives nothing to measure, so the caller can fall through to not
-    stepping rather than to a wrong number.
-    """
-    machine = result.machine
-    if result.grid is None or machine is None:
-        return np.nan
-    if result.history is not None and getattr(result.history, "diverged", False):
-        return np.nan
-
-    surfaces = turbigen.util.cut_blade_surfs(result.grid, 0)
-    if not surfaces or i_row >= len(surfaces) or surfaces[i_row] is None:
-        return np.nan
-
-    annulus = machine.annulus
-    s_ref = machine.mean_line[:, i_row].s[0]
-
-    # Rows occupy the odd meridional segments, so row i spans m from 2i+1 to
-    # 2i+2, exactly as the surface distribution plot cuts it.
-    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
-    xr = annulus.evaluate_xr(m, spf)
-    # Padded to three axes so that the spanwise one is the second, which is
-    # the axis `structured_meridional` interpolates along; the cut it returns
-    # is one wide and gets squeezed below.
-    surface = surfaces[i_row][0][:, :, None]
-    cut = ember.cut.structured_meridional(surface, xr.T)
-    if not len(cut):
-        return np.nan
-
-    # The cut wraps the blade from one trailing edge round to the other, so its
-    # endpoints are the two sides of the trailing edge.
-    mas = _isentropic_mach(cut[0], s_ref)[:, 0]
-    mas_TE = 0.5 * (mas[0] + mas[-1])
-    if not np.isfinite(mas_TE) or mas_TE <= 0.0:
-        return np.nan
-
-    return float((mas / mas_TE).max() - 1.0)
-
-
-class DiffusionFactor(Iterator):
-    """Set the blade count to reach a target diffusion factor.
-
-    Moves the circulation coefficient of a
-    :class:`~turbigen.blade.Circulation` count rule, which rounds it to an
-    integer number of blades --- so the achieved diffusion factor lands within
-    about one blade of the target rather than exactly on it. This shares its
-    name with :class:`turbigen.blade.DiffusionFactor`, the mean-line count
-    rule; that one sets a blade count once from a correlation, this one drives
-    the count from the CFD it produced.
-    """
-
-    type: ClassVar[str] = "diffusion_factor"
-
-    target: float
-    """Isentropic-Mach diffusion factor to design for [--]."""
-
-    i_row: int = 0
-    """Index of the blade row whose diffusion factor meets the target [--].
-
-    One row at a time: list the iterator again with a different ``i_row`` to
-    place another row.
-    """
-
-    spf: float = 0.5
-    """Span fraction to measure the diffusion factor at [--]."""
-
-    gain: float = 1.0
-    """Circulation-coefficient change per unit diffusion-factor error [--].
-
-    Positive: a larger coefficient gives a larger pitch, fewer blades, more
-    loading and a higher diffusion factor. Only the first step and its sign
-    come from here; the Broyden update refines the slope afterwards, so a value
-    that slightly undershoots is safer than one that overshoots into the
-    integer-count staircase.
-    """
-
-    clip: float = 0.1
-    """Largest change in the circulation coefficient in one iteration [--]."""
-
-    tolerance: float = 0.01
-    """Converged inside this absolute error on the diffusion factor [--].
-
-    The blade count is an integer, so the achieved diffusion factor moves in
-    steps that this must clear: a row with few blades may need a looser value.
-    """
-
-    def _name(self):
-        return f"blades[{self.i_row}].count.Co"
-
-    def _count(self, config):
-        """Return the circulation count rule this iterator moves, or raise."""
-        if not 0 <= self.i_row < len(config.blades):
-            raise ValueError(
-                f"i_row={self.i_row} is out of range for a machine with "
-                f"{len(config.blades)} blade row(s)."
-            )
-        count = config.blades[self.i_row].count
-        if getattr(count, "type", None) != "Co":
-            raise ValueError(
-                "The diffusion_factor iterator moves a circulation coefficient, "
-                f"so blades[{self.i_row}] must set its count with type: Co."
-            )
-        return count
-
-    def unknowns(self, config):
-        return {self._name(): float(self._count(config).Co)}
-
-    def with_unknowns(self, config, values):
-        name = self._name()
-        if name not in values:
-            return config
-
-        blades = list(config.blades)
-        blade = blades[self.i_row]
-        blades[self.i_row] = dataclasses.replace(
-            blade, count=dataclasses.replace(blade.count, Co=float(values[name]))
-        )
-        return dataclasses.replace(config, blades=tuple(blades))
-
-    def paths(self, config):
-        return {self._name()}
-
-    def error(self, config, result):
-        if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no diffusion factor to measure.")
-            return {}
-
-        self._count(config)
-
-        df = _diffusion_factor(result, self.i_row, self.spf)
-        if not np.isfinite(df):
-            logger.info(f"Could not measure the diffusion factor of row {self.i_row}.")
-            return {}
-
-        return {self._name(): df - self.target}
 
 
 #

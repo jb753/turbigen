@@ -32,11 +32,6 @@ Test cases:
 - test_mean_line_error_is_zero_for_its_own_design: likewise, through backward()
 - test_mean_line_tolerance_scales_with_the_nominal: relative, per variable
 - test_mean_line_restores_a_scalar_as_a_scalar: shapes survive a round trip
-- test_diffusion_factor_paths_match_what_is_moved: it owns the circulation knob
-- test_diffusion_factor_round_trips_the_coefficient: what it sets is what it reads
-- test_diffusion_factor_needs_a_circulation_rule: a fixed count is refused
-- test_diffusion_factor_is_quiet_without_a_grid: no solution, no correction
-- test_diffusion_factor_steps_the_count_down_when_loading_is_high: the right sign
 """
 
 import dataclasses
@@ -555,84 +550,6 @@ def test_mean_line_restores_a_scalar_as_a_scalar():
     assert moved.mean_line.Ys[1] == pytest.approx(0.06)
     # Round-tripping through a file is what would catch a stray array here.
     assert Config.from_dict(moved.to_dict()) == moved
-
-
-#
-# THE DIFFUSION FACTOR
-#
-# The blade count is chosen from a mean-line correlation, but the diffusion it
-# delivers is a property of the CFD. This iterator moves the circulation
-# coefficient -- a continuous knob -- and lets the count rule round it.
-#
-
-
-def with_DF(target=0.2, blades=None, **kwargs):
-    """A bladed config asking for a diffusion factor on its first row."""
-    return dataclasses.replace(
-        build(blades=blades),
-        iterate=iterate.Iteration(
-            correct=(iterate.DiffusionFactor(target=target, **kwargs),)
-        ),
-    )
-
-
-def test_diffusion_factor_paths_match_what_is_moved():
-    config = with_DF()
-
-    iterator = config.iterate.correct[0]
-    assert iterator.paths(config) == {"blades[0].count.Co"}
-    assert iterator.paths(config) == _probe(iterator, config)
-
-
-def test_diffusion_factor_round_trips_the_coefficient():
-    config = with_DF()
-    iterator = config.iterate.correct[0]
-
-    moved = iterator.with_unknowns(config, {"blades[0].count.Co": 0.9})
-
-    assert moved.blades[0].count.Co == pytest.approx(0.9)
-    assert iterator.unknowns(moved) == {"blades[0].count.Co": pytest.approx(0.9)}
-    assert Config.from_dict(moved.to_dict()) == moved
-
-
-def test_diffusion_factor_needs_a_circulation_rule():
-    """The knob is a circulation coefficient, so a fixed count has nothing to move."""
-    config = with_DF(
-        blades=[blade(count={"type": "Nb", "Nb": 30}), blade(dchi_LE=2.0)]
-    )
-    iterator = config.iterate.correct[0]
-
-    with pytest.raises(ValueError, match="type: Co"):
-        iterator.unknowns(config)
-    with pytest.raises(ValueError, match="type: Co"):
-        iterator.error(config, Result(grid=object(), machine=config.design()))
-
-
-def test_diffusion_factor_is_quiet_without_a_grid():
-    config = with_DF()
-    iterator = config.iterate.correct[0]
-
-    assert iterator.error(config, Result()) == {}
-    assert iterator.error(config, Result(machine=config.design())) == {}
-
-
-def test_diffusion_factor_steps_the_count_down_when_loading_is_high():
-    """Too much diffusion means too few blades: the coefficient must fall."""
-
-    class HighDF(iterate.DiffusionFactor):
-        """Stand in for a CFD that measures the design as over-diffused."""
-
-        def error(self, config, result):
-            return {self._name(): +0.1}
-
-    config = dataclasses.replace(
-        with_DF(), iterate=iterate.Iteration(correct=(HighDF(target=0.2),))
-    )
-    Co = config.blades[0].count.Co
-
-    stepped = iterate.step(config, Result())
-
-    assert stepped.blades[0].count.Co < Co
 
 
 #

@@ -20,8 +20,16 @@ import ember.average
 import ember.cut
 import turbigen.util
 from turbigen.node import Node
+from turbigen.post import (
+    N_CHORD_PLOT,
+    _isentropic_mach,
+    _normalise_surface_distance,
+)
 
 logger = logging.getLogger("turbigen")
+
+N_SPAN_CUT = 101
+"""Meridional points defining the span curve a blade surface is cut along."""
 
 
 class Metric(Node):
@@ -239,3 +247,145 @@ def _within_the_machine(cut, planes):
     before_exit = ember.cut._signed_distance(planes[-1], xr) >= 0.0
 
     return after_inlet & before_exit
+
+
+class DiffusionFactor(Metric):
+    r"""Peak-to-exit diffusion over the blade surfaces of each row.
+
+    The isentropic surface Mach number is a distribution, and the amount it
+    falls from its peak back to the trailing edge is what the boundary layer on
+    the late suction surface has to survive,
+
+    .. math::
+        \mathit{DF} = \frac{\mathit{Ma}_{s,\mathrm{max}}}{\mathit{Ma}_{s,\mathrm{TE}}} - 1
+
+    where the trailing-edge value is the mean of the two sides of the cut, the
+    surface being wrapped from one of them round to the other. Where the peak
+    sits is reported with it: the same diffusion late on the surface is harder
+    on the boundary layer than early, so the factor alone does not say what
+    the blade is doing.
+
+    The isentropic Mach number is referred to the entropy entering *that row*,
+    the same reference :class:`~turbigen.post.SurfacePlot` draws it against, so
+    what this measures is the number that plot shows.
+
+    Measured, not iterated on. Blade count is what sets diffusion, and it is an
+    integer: driving it from a target moves the design in a staircase whose
+    tread is one blade, which is coarser than any tolerance worth asking for
+    and slower to settle than it is worth. So the number is recorded, at every
+    row and every span fraction, and the count is the designer's to choose.
+    """
+
+    type: ClassVar[str] = "diffusion_factor"
+
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions to measure the surface distribution at [--]."""
+
+    offset: int = 0
+    """Cells away from the wall to take the distribution at."""
+
+    def evaluate(self, config, result):
+        """Return the diffusion of each row, at each span fraction.
+
+        Returns
+        -------
+        dict
+            ``DF`` [--], ``Mas_max`` [--], ``Mas_TE`` [--] and ``zeta_max``
+            [--], each shaped ``(n_spf, n_row)``. The two Mach numbers are the
+            parts `DF` is made of, so a change in it says whether the peak grew
+            or the exit fell. `zeta_max` is where the peak sits, in surface
+            distance normalised as :class:`~turbigen.post.SurfacePlot` plots
+            it: zero at the stagnation point and one at the trailing edge, on
+            whichever surface the peak is on. NaN for a row and span with no
+            blade surface to cut --- above a clearance gap, or a row with no
+            blade at all.
+        """
+        grid, machine = result.grid, result.machine
+        if grid is None or machine is None:
+            return {}
+        if result.history is not None and getattr(result.history, "diverged", False):
+            return {}
+
+        surfaces = turbigen.util.cut_blade_surfs(grid, self.offset)
+
+        rows = machine.rows
+        n_row = len(grid.rows)
+        Mas_max = np.full((len(self.spf), n_row), np.nan)
+        Mas_TE = np.full((len(self.spf), n_row), np.nan)
+        zeta_max = np.full((len(self.spf), n_row), np.nan)
+
+        for i_row in range(n_row):
+            if i_row >= len(surfaces) or surfaces[i_row] is None:
+                continue
+
+            # `structured_meridional` walks the second axis of a three-axis
+            # block, so the surface is padded to put its spanwise axis there
+            # and the cut comes back one wide.
+            surface = surfaces[i_row][0][:, :, None]
+            s_ref = machine.mean_line[:, i_row].s[0]
+
+            blade = rows[i_row].blade
+
+            for i_spf, spf in enumerate(self.spf):
+                measured = _surface_distribution(
+                    machine.annulus, blade, surface, s_ref, i_row, spf
+                )
+                if measured is None:
+                    logger.debug(
+                        f"Row {i_row} has no blade surface at spf={spf:.2f}, "
+                        "so its diffusion there is unmeasured."
+                    )
+                    continue
+                mas, zeta = measured
+
+                # The cut wraps the blade from one trailing edge round to the
+                # other, so its endpoints are the two sides of the trailing
+                # edge and their mean is the exit value.
+                i_max = int(np.argmax(mas))
+                Mas_max[i_spf, i_row] = mas[i_max]
+                Mas_TE[i_spf, i_row] = 0.5 * (mas[0] + mas[-1])
+
+                # Folded onto the positive axis, as the plot folds it: which
+                # surface the peak is on is said by the peak being a peak.
+                zeta_max[i_spf, i_row] = abs(zeta[i_max])
+
+        # A trailing edge at rest divides no distribution: left as NaN, which
+        # is what an unmeasured diffusion already is.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            DF = np.where(Mas_TE > 0.0, Mas_max / Mas_TE - 1.0, np.nan)
+
+        return {
+            "DF": DF,
+            "Mas_max": Mas_max,
+            "Mas_TE": Mas_TE,
+            "zeta_max": zeta_max,
+        }
+
+
+def _surface_distribution(annulus, blade, surface, s_ref, i_row, spf):
+    """Return ``(mas, zeta)`` round the blade of row `i_row` at `spf`.
+
+    The isentropic Mach number and the normalised surface distance it is
+    plotted against, taken from the same cut so that a peak and where it sits
+    are the same point.
+
+    None where the section is not there --- above a clearance gap the blade has
+    no surface to cut, the span there being trimmed off as flow rather than
+    wall.
+    """
+    # Rows occupy the odd meridional segments, so row i spans m from 2i+1 to
+    # 2i+2, exactly as the surface distribution plot cuts it.
+    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
+    xr = annulus.evaluate_xr(m, spf)
+
+    cut = ember.cut.structured_meridional(surface, xr.T)
+    if not len(cut):
+        return None
+    cut = cut[0]
+
+    mas = _isentropic_mach(cut, s_ref)[:, 0]
+
+    # The geometric nose anchors the search for the stagnation point, exactly
+    # as the surface distribution plot anchors it.
+    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
+    return mas, _normalise_surface_distance(cut, mas, xrt_nose)

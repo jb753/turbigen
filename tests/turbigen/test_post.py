@@ -462,31 +462,33 @@ def test_surface_plot_skips_a_diverged_march(bladed, solved):
 
 
 def test_contour_plot_draws_a_blade_to_blade_view(bladed, solved):
-    figures = ContourPlot().report(bladed, solved)
+    """One figure per span fraction, holding every row that was cut."""
+    figures = ContourPlot(spf=(0.5,)).report(bladed, solved)
 
-    assert len(figures) == len(solved.machine.rows)
+    assert len(figures) == 1
     ax = figures[0].axes[0]
 
     # One filled set per block per passage, all on one colour scale.
-    assert len(ax.collections) == ContourPlot().n_passage
+    assert len(ax.collections) % ContourPlot().n_passage == 0
+    assert len(ax.collections) >= ContourPlot().n_passage
     # The conformal plane is only conformal if both axes are scaled alike.
     assert ax.get_aspect() == 1.0
 
 
-def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
-    """A machine-wide view is mostly duct, and the row a few pixels of it."""
+def test_contour_plot_frames_the_whole_machine(bladed, solved):
+    """Nothing is clipped meridionally: the ducts and every row are in frame."""
     figures = ContourPlot().report(bladed, solved)
     lo, hi = figures[0].axes[0].get_xlim()
 
     annulus = solved.machine.annulus
     curve = annulus.evaluate_xr(np.linspace(0.0, annulus.m_max, 101), 0.5).T
-    edges = annulus.evaluate_xr([1, 2], 0.5).T
+    edges = annulus.evaluate_xr([1, 2 * annulus.n_row], 0.5).T
     m_LE, m_TE = ember.util.unwrap_meridional(curve, edges)
 
-    # The row, and a margin of it either side -- not the whole curve.
+    # Every row, from the first leading edge to the last trailing edge, with
+    # the ducts either side of them still there.
     assert lo < m_LE
     assert hi > m_TE
-    assert hi - lo < ember.util.unwrap_meridional(curve, curve[-1])
 
 
 def test_contour_plot_repeats_passages(bladed, solved):

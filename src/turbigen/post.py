@@ -714,12 +714,6 @@ class ContourPlot(Post):
     cmap: str = "viridis"
     """Colour map to fill with."""
 
-    margin: float = 1.0
-    """How far to look either side of a row, as a fraction of its meridional
-    length (leading to trailing edge) -- so the default frames roughly one
-    chord of approach and wake either side. Raise it for a highly staggered
-    row, whose true chord runs well past its meridional extent."""
-
     def report(self, config, result):
         machine = result.machine
         annulus = machine.annulus if machine else None
@@ -764,8 +758,7 @@ class ContourPlot(Post):
 
             levels, extend = self._levels(fields)
 
-            for window, title in self._windows(annulus, xr_curve, spf):
-                figures.append(self._draw(plt, passages, levels, extend, window, title))
+            figures.append(self._draw(plt, passages, levels, extend, f"spf={spf:.2f}"))
 
         return figures
 
@@ -795,40 +788,16 @@ class ContourPlot(Post):
         )
         return levels, extend
 
-    def _windows(self, annulus, xr_curve, spf):
-        """Return the meridional window and title of each figure.
+    def _draw(self, plt, passages, levels, extend, title):
+        """Contour every passage of every row, on one set of axes.
 
-        One figure per row, framed on the row itself: a machine-wide view is
-        mostly inlet and outlet duct, and on a multi-stage machine the rows
-        would be a few pixels each. Rows occupy the odd annulus segments, so
-        the leading and trailing edges are at integer meridional stations, and
-        `unwrap_meridional` puts them on the same scale as the cut.
+        The whole machine in one frame, ducts included: rows drawn apart could
+        not be read against one another, and where a wake leaves one row and
+        arrives at the next is a thing the plot exists to show.
         """
-        if not annulus.n_row:
-            return [(None, f"spf={spf:.2f}")]
-
-        windows = []
-        for i_row in range(annulus.n_row):
-            edges = annulus.evaluate_xr([2 * i_row + 1, 2 * i_row + 2], spf).T
-            m_LE, m_TE = ember.util.unwrap_meridional(xr_curve, edges)
-            margin = self.margin * (m_TE - m_LE)
-            windows.append(
-                ((m_LE - margin, m_TE + margin), f"Row {i_row}, spf={spf:.2f}")
-            )
-        return windows
-
-    def _draw(self, plt, passages, levels, extend, window, title):
-        """Contour every passage that shows through `window`."""
         fig, ax = plt.subplots(layout="constrained")
 
-        theta = []
         for mp, passage_theta, values in passages:
-            # Blocks outside the window are skipped rather than drawn and
-            # clipped: on a multi-stage machine that is most of them, every
-            # time.
-            if window is not None and (mp.min() > window[1] or mp.max() < window[0]):
-                continue
-
             filled = ax.contourf(
                 mp, passage_theta, values, levels=levels, cmap=self.cmap, extend=extend
             )
@@ -839,22 +808,11 @@ class ContourPlot(Post):
             filled.set_edgecolor("face")
             filled.set_linewidth(0.05)
 
-            visible = passage_theta[
-                (mp >= window[0]) & (mp <= window[1]) if window else ...
-            ]
-            if visible.size:
-                theta.append((visible.min(), visible.max()))
-
         # Equal aspect is not decoration: m' and theta are both dimensionless,
         # and scaling them alike is what makes the plane conformal, so a
-        # section keeps the shape it has in the machine. It also means the
-        # limits have to be set from the visible data, or the aspect ratio
-        # pads the figure out with empty duct.
+        # section keeps the shape it has in the machine. Nothing is clipped, so
+        # the limits are whatever was drawn and matplotlib finds them itself.
         ax.set_aspect("equal")
-        if window is not None:
-            ax.set_xlim(*window)
-        if theta:
-            ax.set_ylim(min(lo for lo, _ in theta), max(hi for _, hi in theta))
 
         # The plane carries its own scale -- m' and theta are dimensionless and
         # drawn conformal -- so the frame, ticks and axis labels only take room
