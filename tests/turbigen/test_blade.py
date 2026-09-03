@@ -16,7 +16,7 @@ import pytest
 import turbigen_ref.annulus
 import turbigen_ref.blade
 import turbigen_ref.nblade
-from turbigen.blade import _interpolate
+from turbigen.blade import _Alpha_rel, _interpolate
 from turbigen import (
     Blade,
     BladeDesign,
@@ -265,7 +265,14 @@ def test_theta_offset_rotates_the_whole_blade():
             np.testing.assert_allclose(turned[2] - still[2], offset, atol=1e-9)
 
 
-def test_a_single_section_blade_is_constant_in_span():
+def test_a_single_section_blade_still_follows_the_vortex():
+    """One section is one recamber, not one metal angle.
+
+    The recamber is measured off the local flow angle, and on a rotor that
+    angle swings tens of degrees from hub to tip. A blade defined by a single
+    section therefore varies over the span like the vortex distribution does,
+    with its one recamber added everywhere.
+    """
     config = build(
         blades=[
             {
@@ -284,9 +291,18 @@ def test_a_single_section_blade_is_constant_in_span():
         ]
     )
 
-    bld = config.design().rows[0].blade
+    machine = config.design()
+    bld = machine.rows[0].blade
 
-    np.testing.assert_allclose(bld.evaluate_chi(0.0), bld.evaluate_chi(1.0), atol=1e-12)
+    dchi = np.array([-8.0, 0.0])
+    for spf in (0.0, 0.5, 1.0):
+        Alpha_rel = _Alpha_rel(machine.mean_line[:, 0], [spf], bld.vortex_exponent)[0]
+        np.testing.assert_allclose(bld.evaluate_chi(spf), Alpha_rel + dchi, atol=1e-12)
+
+    # A stator turns less over the span than a rotor, so the row that has to
+    # move is the one whose flow angle carries the blade speed.
+    rotor = machine.rows[1].blade
+    assert abs(rotor.evaluate_chi(1.0)[0] - rotor.evaluate_chi(0.0)[0]) > 10.0
 
 
 def test_sections_of_different_design_cannot_be_interpolated():
@@ -441,11 +457,18 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
     Camber, thickness, recamber, stacking and the stream surface all feed
     `evaluate_section`, so agreeing with the old package here is agreement
     everywhere.
+
+    Compared at the section span fractions, which is everywhere the two are
+    meant to agree. The old package resolves the metal angles onto the sections
+    and interpolates *those*, so between and beyond them it interpolates the
+    flow angle as well as the recamber; here the flow angle is evaluated where
+    it is asked for, which is the whole point of `evaluate_chi`. The two are
+    the same design and differ by a fifth of a degree at the endwalls.
     """
     old = old_blade(machine, i_row, dchi_LE=dchi_LE)
     new = machine.rows[i_row].blade
 
-    for spf in (0.0, 0.5, 1.0):
+    for spf in SPF:
         for surface_new, surface_old in zip(
             new.evaluate_section(spf), old.evaluate_section(spf)
         ):
@@ -461,9 +484,7 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
         np.testing.assert_allclose(
             new.evaluate_surface_length(spf), old.surface_length(spf), rtol=1e-12
         )
-        np.testing.assert_allclose(
-            new.evaluate_chord(spf), old.chord(spf), rtol=1e-12
-        )
+        np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-12)
 
 
 #

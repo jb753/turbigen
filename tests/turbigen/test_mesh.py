@@ -16,7 +16,7 @@ import ember.patch
 import turbigen_ref.annulus
 import turbigen_ref.geometry
 import turbigen_ref.hmesh
-from test_blade import ANNULUS, blade, build, old_blade
+from test_blade import ANNULUS, blade, build
 from turbigen import H, Mesher, WallSpacing
 
 MESH = {
@@ -41,6 +41,23 @@ def grid(machine):
     return build(mesh=MESH).mesh.mesh(machine)
 
 
+class AsOldBlade:
+    """One of this package's blades, under the names the old mesher calls.
+
+    The old mesher reads a blade through `evaluate_section` and `get_chi` and
+    nothing else, and both mean here what they meant there.
+    """
+
+    def __init__(self, blade):
+        self.blade = blade
+
+    def evaluate_section(self, spf, nchord=10000, m=None):
+        return self.blade.evaluate_section(spf, nchord=nchord, m=m)
+
+    def get_chi(self, spf):
+        return self.blade.evaluate_chi(spf)
+
+
 def old_grid(machine, mesh, spacing):
     """The same mesh, generated through the package this replaces."""
     flat = machine.mean_line.flat
@@ -58,10 +75,13 @@ def old_grid(machine, mesh, spacing):
         merge_weight=0.0,
     )
 
-    blades = [
-        [old_blade(machine, 0, dchi_LE=-8.0)],
-        [old_blade(machine, 1, dchi_LE=2.0)],
-    ]
+    # The old mesher is driven by *this* package's blades, through the two
+    # methods it asks of one. The blade the old package would have built is a
+    # fifth of a degree away at the endwalls, since it interpolates resolved
+    # metal angles where this evaluates the vortex distribution wherever it is
+    # asked --- a difference in the blade, which `test_blade` pins on its own,
+    # and one that would otherwise leak into a comparison of meshers.
+    blades = [[AsOldBlade(row.blade)] for row in machine.rows]
     mac = turbigen_ref.geometry.Machine(
         annulus,
         blades,
@@ -155,7 +175,9 @@ def test_mesh_finishes_the_grid_the_mesher_returns(machine, grid):
     """
     # The longest row chord at mid-span, off the annulus. Not the mean line,
     # which carries no length of its own.
-    assert grid[0].L_ref == pytest.approx(machine.annulus.evaluate_chords(0.5)[1::2].max())
+    assert grid[0].L_ref == pytest.approx(
+        machine.annulus.evaluate_chords(0.5)[1::2].max()
+    )
     assert np.isfinite(grid[0].wdist).all()
     assert (grid[0].wdist >= 0.0).all()
 

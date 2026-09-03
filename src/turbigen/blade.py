@@ -68,12 +68,13 @@ Design process
 a row :class:`BladeDesign` and, once the mean line and annulus are built, passes
 them :meth:`~BladeDesign.design` which:
 
-#. Calculates leading and trailing edge metal angles for each section as the local
-   relative flow angle plus the recambers :attr:`~SectionDesign.dchi_LE` and
-   :attr:`~SectionDesign.dchi_TE`. The flow angle is read from the mean-line row,
-   with the swirl varied radially using the
-   :attr:`~BladeDesign.vortex_exponent` onto the section span fraction;
-#. Camber and thickness designs, the metal angles, the stacking
+#. Collects the recambers :attr:`~SectionDesign.dchi_LE` and
+   :attr:`~SectionDesign.dchi_TE` of each section, together with the mean-line
+   row and the :attr:`~BladeDesign.vortex_exponent` the local flow angle they
+   are measured off is evaluated with. The two are added when a metal angle is
+   asked for rather than here, so a blade defined by one section still varies
+   over the span with the vortex distribution;
+#. Camber and thickness designs, the recambers, the stacking
    position and the blade rotation are collected across all sections into a
    :class:`Blade` for each row;
 #. The :class:`BladeCount` rule reads the finished :class:`Blade` to fix the
@@ -86,7 +87,9 @@ Evaluating a blade
 
 A :class:`Blade` is addressed by span fraction, and every geometric quantity is
 read off it with an ``evaluate_`` method that interpolates the section designs
-field by field, extrapolating beyond the end sections.
+field by field, extrapolating beyond the end sections. The metal angles are the
+exception: only the recamber is interpolated, and the flow angle it is added to
+is evaluated at the span fraction asked for.
 :meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
 of the two surfaces; :meth:`~Blade.evaluate_chi` the leading and trailing metal
 angles; and :meth:`~Blade.evaluate_chord` and
@@ -103,6 +106,7 @@ import numpy as np
 import turbigen.util
 from turbigen.annulus import RowAnnulus
 from turbigen.camber import CamberDesign, CamberLine
+from turbigen.meanline import MeanLine
 from turbigen.node import Node
 from turbigen.thickness import ThicknessDesign
 
@@ -286,18 +290,13 @@ class BladeDesign(Node):
         """
         spf = np.array([section.spf for section in self.sections])
 
-        # Recamber onto the local flow angles. This happens once, here: a metal
-        # angle is a function of the design and the mean line together, so it
-        # is a property of the result and never of the design.
+        # The recambers are carried as they were configured, not resolved into
+        # metal angles here: the flow angle they are measured from varies over
+        # the span, and a blade defined by one section would freeze it at that
+        # section's own span if the sum were taken now.
         dchi = np.array(
             [(section.dchi_LE, section.dchi_TE) for section in self.sections]
         )
-        chi = _Alpha_rel(mean_line_row, spf, self.vortex_exponent) + dchi
-        if np.any(np.abs(chi) > 90.0):
-            raise ValueError(f"Cannot set a blade angle over 90 degrees, chi={chi}.")
-        if np.any(np.abs(chi) > 80.0):
-            logger.warning(f"WARNING: high blade angles may hinder meshing, chi={chi}")
-        tanchi = turbigen.util.tand(chi)
 
         # Tip clearance in metres. Whichever reference length was used, the
         # other terms are zero, which __post_init__ has already ensured.
@@ -309,12 +308,23 @@ class BladeDesign(Node):
         blade = Blade(
             row_annulus=row_annulus,
             spf=spf,
-            tanchi=tanchi,
+            dchi=dchi,
+            mean_line_row=mean_line_row,
+            vortex_exponent=self.vortex_exponent,
             cambers=tuple(section.camber for section in self.sections),
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
             theta_offset=self.theta_offset,
         )
+
+        # Read at the endwalls, which is where the vortex distribution is most
+        # extreme and so where an unbuildable angle appears first. A blade with
+        # sections short of the endwalls has none of its own there, so this is
+        # a statement about what will be meshed rather than about what was
+        # written in the config file.
+        chi = np.array([blade.evaluate_chi(0.0), blade.evaluate_chi(1.0)])
+        if np.any(np.abs(chi) > 80.0):
+            logger.warning(f"WARNING: high blade angles may hinder meshing, chi={chi}")
 
         # The shape is complete before anything is counted, which is what lets
         # the count be read off it rather than written onto it. A circulation
@@ -444,8 +454,21 @@ class Blade:
     spf: np.ndarray = dataclasses.field(repr=False)
     """Span fraction of each section, shape (n_section,)."""
 
-    tanchi: np.ndarray = dataclasses.field(repr=False)
-    """Tangent of the metal angles, shape (n_section, 2)."""
+    dchi: np.ndarray = dataclasses.field(repr=False)
+    """Recamber of each section off the local flow angle, shape (n_section, 2) [deg]."""
+
+    mean_line_row: MeanLine = dataclasses.field(repr=False)
+    """Inlet and outlet stations of this row, shape (2,).
+
+    Held so that the metal angle can be resolved wherever the blade is asked
+    for one. A metal angle is a function of the design and the mean line
+    together, and the flow angle half of that sum varies over the span --- on a
+    rotor by tens of degrees --- so it cannot be reduced to a per-section
+    number without losing the variation between the sections and beyond them.
+    """
+
+    vortex_exponent: float = dataclasses.field(repr=False)
+    """Spanwise swirl distribution the flow angle is evaluated with [--]."""
 
     cambers: tuple = dataclasses.field(repr=False)
     """Camber shape of each section."""
@@ -473,19 +496,36 @@ class Blade:
         camber = _interpolate(self.cambers, self.spf, spf)
         thickness = _interpolate(self.thicknesses, self.spf, spf)
 
+        return CamberLine(
+            camber, *turbigen.util.tand(self.evaluate_chi(spf))
+        ), thickness
+
+    def evaluate_chi(self, spf):
+        """Return the metal angles at the leading and trailing edges [deg].
+
+        The recamber the sections declare, applied to the flow angle *here*:
+        the vortex distribution is evaluated at `spf` rather than at the
+        sections, so a blade defined by one section still turns with the span
+        it stands in.
+        """
         if self.n_section == 1:
-            tanchi = self.tanchi[0]
+            dchi = self.dchi[0]
         else:
-            tanchi = turbigen.util.interp1d_linear_extrap(self.spf, self.tanchi)(
+            dchi = turbigen.util.interp1d_linear_extrap(self.spf, self.dchi)(
                 spf
             ).reshape(-1)
 
-        return CamberLine(camber, *tanchi), thickness
+        chi = _Alpha_rel(self.mean_line_row, [spf], self.vortex_exponent)[0] + dchi
 
-    def evaluate_chi(self, spf):
-        """Return the metal angles at the leading and trailing edges [deg]."""
-        camber, _ = self._get_cam_thick(spf)
-        return camber.chi((0.0, 1.0))
+        # Checked here rather than at design time, because here is where a span
+        # fraction is named: the sections do not bound the angles any more, and
+        # a blade is meshed and cut at spans no section was written at.
+        if np.any(np.abs(chi) > 90.0):
+            raise ValueError(
+                f"Cannot set a blade angle over 90 degrees, chi={chi} at spf={spf}."
+            )
+
+        return chi
 
     def evaluate_section(self, spf, nchord=10000, m=None):
         """Return coordinates of the upper and lower surfaces at `spf`.
