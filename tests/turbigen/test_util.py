@@ -10,9 +10,10 @@ import numpy as np
 import pytest
 
 import ember.cut
+import ember.patch
 from test_blade import build
 from test_mesh import MESH, TIP
-from turbigen import H, util
+from turbigen import H, bconds, guess, util
 
 
 @pytest.fixture(scope="module")
@@ -23,8 +24,17 @@ def machine():
 
 @pytest.fixture(scope="module")
 def grid(machine):
-    """Meshed, the case that could break the hub-to-casing convention."""
-    return H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(machine)
+    """Meshed and turning, the case that could break the hub-to-casing convention.
+
+    Rotation is applied because a `RotatingPatch` leaves `Omega` at NaN until
+    `bconds` values it, and the meridional guess because a cut of a wall with
+    no field in it has no state to read. A grid that reaches any of this has
+    been through both.
+    """
+    grid = H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(machine)
+    bconds.apply_rotation(grid, machine)
+    guess.apply(grid, machine)
+    return grid
 
 
 def test_endwalls_are_two_per_block(grid):
@@ -112,3 +122,108 @@ def test_no_blade_surface_above_a_clearance_gap(grid, machine):
 
     assert n_cut(0.5) == 1
     assert n_cut(1.0) == 0
+
+
+#
+# WHICH FRAME A WALL CUT IS IN
+#
+
+
+def _with_rotating(grid, *specs):
+    """The stator block of a copy of `grid`, given extra rotating patches.
+
+    The stator is chosen because it carries none of its own, so whatever the
+    test adds is the whole story on that face.
+    """
+    grid = grid.copy()
+    block = grid[0]
+    for Omega, kwargs in specs:
+        patch = ember.patch.RotatingPatch(**kwargs)
+        block.patches.append(patch)
+        patch.set_Omega(Omega)
+    return block
+
+
+def test_a_wall_turns_with_its_block(grid):
+    """No rotating patch on a face means it takes the block's own speed."""
+    for block in grid:
+        assert util._wall_Omega(block, 1, False) == float(block.Omega)
+        assert util._wall_Omega(block, 2, False) == float(block.Omega)
+        assert util._wall_Omega(block, 2, True) == float(block.Omega)
+
+
+def test_a_casing_over_a_gap_stands_still(grid):
+    """The one wall a turbigen mesh gives a speed of its own."""
+    shrouded, gapped = grid
+
+    assert util._wall_Omega(shrouded, 1, True) == float(shrouded.Omega)
+
+    assert float(gapped.Omega) > 0.0
+    assert util._wall_Omega(gapped, 1, True) == 0.0
+
+
+def test_a_face_with_two_speeds_is_refused(grid):
+    """Two patches disagreeing cannot be reduced to the one number a cut wants."""
+    block = _with_rotating(
+        grid,
+        (100.0, dict(i=(0, 20), j=-1)),
+        (200.0, dict(i=(20, 80), j=-1)),
+    )
+
+    with pytest.raises(ValueError, match="more than one wall speed"):
+        util._wall_Omega(block, 1, True)
+
+
+def test_a_partly_covered_face_is_refused(grid):
+    """What a patch leaves uncovered still turns with the block, so that is two
+    speeds as surely as two patches are."""
+    block = _with_rotating(grid, (100.0, dict(i=(0, 20), j=-1)))
+
+    with pytest.raises(ValueError, match="more than one wall speed"):
+        util._wall_Omega(block, 1, True)
+
+
+def test_a_fully_covered_face_takes_the_patch_speed(grid):
+    """One patch spanning the face is the case that resolves."""
+    block = _with_rotating(grid, (100.0, dict(j=-1)))
+
+    assert util._wall_Omega(block, 1, True) == 100.0
+
+
+def test_cuts_carry_the_speed_of_their_own_wall(grid):
+    """Hub and blade turn with the block; the casing over a gap does not."""
+    for i_row, block in enumerate(grid):
+        hub, casing = util.cut_endwalls(grid)[i_row]
+        assert float(hub.Omega) == float(block.Omega)
+        assert float(util.cut_blade_surfs(grid)[i_row][0].Omega) == float(block.Omega)
+
+        expected = 0.0 if block.patches.rotating else float(block.Omega)
+        assert float(casing.Omega) == expected
+
+
+def test_a_stationary_casing_is_measured_in_the_absolute_frame(grid):
+    """`ho_rel` on a cut is the stagnation enthalpy its own boundary layer sees.
+
+    The mechanism rather than the label: a cut carrying zero angular velocity
+    must report the absolute stagnation enthalpy, which is what lets a metric
+    read `ho_rel` without asking which wall it has.
+    """
+    _, casing = util.cut_endwalls(grid)[1]
+
+    assert float(casing.Omega) == 0.0
+    np.testing.assert_allclose(casing.ho_rel, casing.ho)
+
+
+def test_setting_a_cut_speed_does_not_re_time_the_grid(grid):
+    """The cuts are copies, so writing to one cannot reach the solution.
+
+    A slice would share its block's angular velocity, and setting the wall speed
+    on one would silently turn the row it was cut from.
+    """
+    before = [float(block.Omega) for block in grid]
+
+    for cuts in util.cut_endwalls(grid) + util.cut_blade_surfs(grid):
+        for cut in cuts:
+            cut.set_Omega(-999.0)
+
+    assert [float(block.Omega) for block in grid] == before
