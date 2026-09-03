@@ -169,14 +169,23 @@ def test_actual_is_a_plausible_flow(solved):
 
 
 def test_actual_is_not_reinterpreted_by_the_datum(solved):
-    """The cut carries the grid's fluid, the mean line carries the design's.
+    """State crosses from the grid as P, T and velocity, not as conserved.
 
-    Those have different datums, so transferring the conserved variables would
-    silently shift the temperature. State is moved as P, T and velocity, which
-    crosses unchanged -- so the actual temperature must be a real temperature,
-    not one displaced by the gap between the two datums.
+    A design and the grid meshed from it share one datum, so today the transfer
+    would survive being written the wrong way. That is a property of the
+    pipeline rather than of `mean_line`, and it can be taken away by any change
+    upstream --- so the grid is put on a deliberately different datum here and
+    the mixed-out temperature has to come across unchanged anyway. Conserved
+    energy is measured from a datum and would arrive displaced by the gap
+    between the two; pressure, temperature and velocity are not and do not.
     """
     machine, grid = solved
+
+    grid = grid.copy()
+    fluid = grid[0].fluid
+    grid.set_fluid(
+        fluid.change_datum(P_dtm=0.5 * fluid.P_dtm, T_dtm=0.5 * fluid.T_dtm)
+    )
     assert grid[0].fluid.T_dtm != machine.mean_line.fluid.T_dtm
 
     actual, _ = mixout.mean_line(grid, machine)

@@ -181,6 +181,13 @@ For example, if the inlet stagnation conditions are specified as design variable
 
     ml = self.allocate(fluid.change_datum(P_dtm=self.Po1, T_dtm=self.To1))
 
+That is a hint for the design arithmetic, and it is not the datum the finished
+mean line carries. :meth:`MeanLineDesign.design` moves it once more, onto
+:meth:`~turbigen.meanline.MeanLine.get_referenced_fluid`, before freezing --- so
+a mean line and the grid meshed from it always measure entropy and internal
+energy from the same zero, and nothing downstream has to convert between them.
+Only the datum moves; the state does not.
+
 See :ref:`ember:datum-state` for more detail on this part of the fluid API.
 
 """
@@ -266,12 +273,23 @@ class MeanLineDesign(Node):
         """Return a mean line built from this design.
 
         Checks that the result inverts back to the design variables that asked
-        for it, then freezes it at the earliest opportunity, so that every
-        stage which follows -- annulus, blades, mesher, post-processing --
-        reads the mean line and cannot write to it.
+        for it, moves it onto its own referenced fluid, then freezes it at the
+        earliest opportunity, so that every stage which follows -- annulus,
+        blades, mesher, post-processing -- reads the mean line and cannot write
+        to it.
         """
         ml = self.forward(fluid)
         _check_round_trip(self, ml)
+
+        # The scales and datum the CFD wants are derived from the design, so
+        # this is the first moment they can be known and the last moment the
+        # mean line is writable. Doing it here rather than leaving the mesher
+        # to do it to the grid alone is what stops the two drifting apart: an
+        # entropy measured from one zero and compared against another raises
+        # nothing and reads perfectly plausibly, all the way through to an
+        # isentropic velocity or a loss that is quietly wrong.
+        ml.set_fluid(ml.get_referenced_fluid())
+
         return ml.freeze()
 
     def solve_for(

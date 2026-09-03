@@ -20,6 +20,12 @@ from turbigen.design import _check_round_trip
 from turbigen.designs.axial_turbine import AxialTurbine
 
 GAMMA, CP = 1.4, 1005.0
+
+TINY_WORK = 1.0
+"""Below this specific work [J/kg] a design does none, so has no efficiency.
+
+A stationary cascade's is exactly zero and carries only rounding, which is
+six orders of magnitude below the tens of kJ/kg a stage turns over."""
 RGAS = CP * (GAMMA - 1.0) / GAMMA
 
 
@@ -281,7 +287,14 @@ def test_builtin_design_is_physical(designed):
 
     assert np.all(ml.P > 0.0), f"{name}: non-positive static pressure"
     assert ml.PR_tt > 1.0, f"{name}: not expanding"
-    assert 0.0 < ml.eta_tt <= 1.0, f"{name}: eta_tt = {ml.eta_tt}"
+
+    # An efficiency is work out over work in, so a machine that does no work
+    # has none. A stationary cascade's `Dho` is identically zero and what
+    # survives in it is rounding, whose sign picks the turbine or compressor
+    # branch of `eta_tt` and so decides whether the ratio comes out near zero
+    # or in the hundreds of thousands. Neither is a statement about the design.
+    if abs(float(ml.Dho)) > TINY_WORK:
+        assert 0.0 < ml.eta_tt <= 1.0, f"{name}: eta_tt = {ml.eta_tt}"
 
 
 def test_axial_turbine_is_a_repeating_stage():
@@ -316,14 +329,33 @@ def test_matches_the_turbigen_implementation(name):
     old_config.set_nominal(PerfectFluid(cp=CP, gamma=GAMMA, mu=1.8e-5, Pr=0.72).eos())
     old = old_config.nominal
 
-    for prop in ("Po", "To", "Ma", "Ma_rel", "Alpha", "s", "mdot"):
+    for prop in ("Po", "To", "Ma", "Ma_rel", "Alpha", "mdot"):
         np.testing.assert_allclose(
             getattr(new, prop),
             getattr(old, prop),
             rtol=1e-3,
             err_msg=f"{name}: {prop} differs from the turbigen implementation",
         )
-    assert new.eta_tt == pytest.approx(old.eta_tt, rel=1e-3)
+
+    # Entropy is compared as a rise from the inlet rather than value for value.
+    # The two implementations no longer share a datum -- this one moves the
+    # mean line onto its referenced fluid so that it and the grid measure from
+    # the same zero, which the package it replaces does not do -- and a datum
+    # is a choice of origin, not a result. What the design determines is the
+    # entropy it generates, and that must still agree.
+    np.testing.assert_allclose(
+        new.s - new.s.ravel()[0],
+        old.s - old.s.ravel()[0],
+        rtol=1e-3,
+        atol=1e-4,
+        err_msg=f"{name}: entropy rise differs from the turbigen implementation",
+    )
+
+    # Same caveat as `test_builtin_design_is_physical`: a cascade does no work,
+    # so both implementations report a ratio of zeros and agreeing on one would
+    # mean nothing.
+    if abs(float(new.Dho)) > TINY_WORK:
+        assert new.eta_tt == pytest.approx(old.eta_tt, rel=1e-3)
 
 
 #

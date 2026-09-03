@@ -1760,14 +1760,20 @@ def test_a_solution_that_differs_shows_the_error():
 
 
 def test_a_zero_nominal_has_no_relative_error():
-    """Angles and efficiencies are routinely zero by design, so this is the
-    common case rather than a guard against the impossible."""
+    """Angles are routinely zero by design, so this is the common case rather
+    than a guard against the impossible.
+
+    An axial inlet, because that zero is one the designer asked for. Reaching
+    instead for whichever derived quantity happens to round to zero would pin
+    the test to the arithmetic rather than to the design: a cascade's
+    efficiency, for one, is a ratio of numbers that are both zero.
+    """
     cascade = {
         "fluid": {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5},
         "mean_line": {
             "type": "turbine_cascade",
             "span": [0.01, 0.011],
-            "Alpha": [40.0, -65.0],
+            "Alpha": [0.0, -65.0],
             "Ma2": 0.6,
             "Ys": 0.029,
             "htr": 0.99,
