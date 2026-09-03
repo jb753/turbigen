@@ -614,8 +614,9 @@ def _recamber_unknowns(config, field):
     """Return the mean recamber of each row, under `field`.
 
     One number per row rather than one per section: the spanwise distribution
-    of recamber is a design decision, and an iterator correcting a mean-line
-    mismatch has nothing to say about it.
+    of recamber is a design decision, and :class:`Deviation`, which matches a
+    single mixed-out angle, has nothing to say about it. :class:`Incidence`
+    does, so it owns its sections individually rather than through this.
     """
     return {
         f"{field}[{i_row}]": float(
@@ -702,22 +703,33 @@ class Deviation(Iterator):
         }
 
 
+def _sections(config):
+    """Every ``(row index, section index, section)``, in streamwise order."""
+    return [
+        (i_row, i_section, section)
+        for i_row, blade in enumerate(config.blades)
+        for i_section, section in enumerate(blade.sections)
+    ]
+
+
 class Incidence(Iterator):
     """Set the leading edge to meet the flow at a chosen incidence.
 
-    Measured on the three-dimensional field at one span fraction rather than
-    from the mixed-out mean line, because incidence is a local property of the
-    leading edge and the whole point of moving it is that the mean line does
-    not see what the tip and the hub are doing.
+    Measured on the three-dimensional field at each section's own span fraction
+    rather than from the mixed-out mean line, because incidence is a local
+    property of the leading edge and the whole point of moving it is that the
+    mean line does not see what the tip and the hub are doing.
+
+    One knob per section, not the row mean :class:`Deviation` uses: a blade
+    with N sections has N independent leading-edge angles, and each should meet
+    the flow it actually sees. Collapsing them to a mean nulls the incidence at
+    one span and leaves the rest with whatever the starting distribution gave.
     """
 
     type: ClassVar[str] = "incidence"
 
     target: float = 0.0
     """Incidence to aim for [deg]."""
-
-    spf: float = 0.5
-    """Span fraction to measure the incidence at."""
 
     upstream: float = 0.05
     """Where to read the flow angle, as a fraction of the gap ahead of the row."""
@@ -737,13 +749,35 @@ class Incidence(Iterator):
     """Permissible error on local incidence [deg]."""
 
     def unknowns(self, config):
-        return _recamber_unknowns(config, "dchi_LE")
+        return {
+            f"dchi_LE[{i_row}][{i_section}]": float(section.dchi_LE)
+            for i_row, i_section, section in _sections(config)
+        }
 
     def with_unknowns(self, config, values):
-        return _with_recamber(config, "dchi_LE", values)
+        blades = list(config.blades)
+
+        for i_row, blade in enumerate(blades):
+            sections = list(blade.sections)
+            moved = False
+            for i_section, section in enumerate(sections):
+                name = f"dchi_LE[{i_row}][{i_section}]"
+                if name not in values:
+                    continue
+                sections[i_section] = dataclasses.replace(
+                    section, dchi_LE=values[name]
+                )
+                moved = True
+            if moved:
+                blades[i_row] = dataclasses.replace(blade, sections=tuple(sections))
+
+        return dataclasses.replace(config, blades=tuple(blades))
 
     def paths(self, config):
-        return _recamber_paths(config, "dchi_LE")
+        return {
+            f"blades[{i_row}].sections[{i_section}].dchi_LE"
+            for i_row, i_section, _ in _sections(config)
+        }
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
@@ -751,12 +785,15 @@ class Incidence(Iterator):
             return {}
 
         measured = {}
-        for i_row in range(len(config.blades)):
-            incidence = _incidence(result, i_row, self.spf, self.upstream)
+        for i_row, i_section, section in _sections(config):
+            incidence = _incidence(result, i_row, section.spf, self.upstream)
             if np.isfinite(incidence):
-                measured[f"dchi_LE[{i_row}]"] = incidence - self.target
+                measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
             else:
-                logger.info(f"Could not measure the incidence of row {i_row}.")
+                logger.info(
+                    f"Could not measure the incidence of row {i_row} "
+                    f"section {i_section}."
+                )
 
         return measured
 

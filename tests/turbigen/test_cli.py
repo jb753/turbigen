@@ -1104,7 +1104,7 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
 
     _, result = case.read(iterate_case.parent / cli.OUTPUT_NAME, design=False)
 
-    assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0]"}
+    assert set(result.error) == {"dchi_TE[0]", "dchi_LE[0][0]"}
     assert all(isinstance(value, float) for value in result.error.values())
 
 
@@ -1327,7 +1327,7 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     # The case recambers its leading edge 10 degrees off the flow, so the
     # incidence is measured well below the target and the knob has to come down
     # to meet it.
-    error = first_result.error["dchi_LE[0]"]
+    error = first_result.error["dchi_LE[0][0]"]
     assert error < -1.0
 
     # By the rule the stepper states, from the error this run recorded: the
@@ -1350,14 +1350,14 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
 
     archived = Config.from_file(iterate_case)
     archived = iterate.Deviation().with_unknowns(archived, {"dchi_TE[0]": 7.5})
-    archived = iterate.Incidence().with_unknowns(archived, {"dchi_LE[0]": -3.25})
+    archived = iterate.Incidence().with_unknowns(archived, {"dchi_LE[0][0]": -3.25})
 
     directory = tmp_path / "archive" / "000"
     directory.mkdir(parents=True)
     case.write(
         directory / cli.OUTPUT_NAME,
         archived,
-        Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0]": 0.0}),
+        Result(converged=True, error={"dchi_TE[0]": 0.0, "dchi_LE[0][0]": 0.0}),
     )
 
     out = tmp_path / "with_database"
@@ -1372,7 +1372,7 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
     started, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
 
     assert iterate.unknowns(started)["dchi_TE[0]"] == pytest.approx(7.5)
-    assert iterate.unknowns(started)["dchi_LE[0]"] == pytest.approx(-3.25)
+    assert iterate.unknowns(started)["dchi_LE[0][0]"] == pytest.approx(-3.25)
 
 
 #

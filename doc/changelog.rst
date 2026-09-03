@@ -5,6 +5,7 @@ v3.0.0
 ^^^^^^
 
 * A complete rewrite.
+* Incidence iterator recambers each blade section independently; the incidence ``spf`` key is removed.
 
 v2.6.0
 ^^^^^^
