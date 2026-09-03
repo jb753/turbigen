@@ -673,6 +673,36 @@ def test_no_verb_will_run_on_what_a_run_wrote(run_case, verb, capsys):
     assert str(run_case) in printed
 
 
+def test_output_may_be_run_on_when_o_writes_elsewhere(run_case, tmp_path):
+    """The refusal is about overwriting, not about the name.
+
+    `-o` sends the write to another directory, so the `output.yaml` that was
+    read and the one that will be written are different files. Nothing is
+    lost, so nothing is refused.
+    """
+    from turbigen import batch  # noqa: PLC0415
+
+    assert cli.main(["run", str(run_case)]) == 0
+    written = run_case.parent / cli.OUTPUT_NAME
+    before = written.read_text()
+
+    workdir = tmp_path / "variant"
+    assert cli.main(["run", str(written), "-o", str(workdir)]) == 0
+
+    assert (workdir / cli.OUTPUT_NAME).is_file()
+    # The file that was read is untouched.
+    assert written.read_text() == before
+
+
+def test_output_still_refused_when_o_points_back_at_it(run_case, tmp_path, capsys):
+    """A literal `-o` at the file's own directory would still write over it."""
+    assert cli.main(["run", str(run_case)]) == 0
+    written = run_case.parent / cli.OUTPUT_NAME
+
+    assert cli.main(["run", str(written), "-o", str(run_case.parent)]) == 1
+    assert "not one to run on" in capsys.readouterr().err
+
+
 def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
     """Nothing beside it, so there is nothing to redirect to.
 

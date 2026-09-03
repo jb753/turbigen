@@ -17,10 +17,12 @@ one place a run is genuinely too loud is `iterate`, which quietens the console
 by logger name on its own, and a shell already knows how to redirect.
 
 And a run writes `output.yaml` beside the config it was given. The output
-location is therefore never derived, and an input file is never overwritten by
-the run that reads it -- which matters because the file written is the
-*resolved* config, every default expanded, and writing that over a hand-kept
-file would lose its comments to the safe loader. One directory is one run.
+location is therefore never derived, and an input file is never overwritten
+*in place* by the run that reads it -- which matters because the file written
+is the *resolved* config, every default expanded, and writing that over a
+hand-kept file would lose its comments to the safe loader. `-o` may read an
+`output.yaml` and write its result elsewhere; only a write that lands back on
+the file it read is refused. One directory is one run.
 
 `-o` moves the whole directory rather than splitting it: the config is copied
 into the workdir and the run happens there, so config and output stay together
@@ -93,9 +95,10 @@ OUTPUT_NAME = "output.yaml"
 """What a run calls the resolved config and the answer it reached.
 
 Deliberately not the name of anything anyone hands us, and now enforced rather
-than merely conventional: `check_not_output` refuses it as a target in every
-verb. An input is therefore never a candidate for being overwritten, because a
-verb cannot overwrite a file it will not read.
+than merely conventional: `check_not_output` refuses it as a target when the
+run would write back over it --- the default, where output lands beside the
+input. With `-o` sending the run to another directory the file is readable,
+because the write goes somewhere else and nothing is lost.
 
 The check earns its keep now that `report` writes here too. While only the
 solving verbs did, the rule held by construction --- nothing read an
@@ -373,29 +376,49 @@ def targets(args):
     paths = [Path(name) for name in args.CONFIG_YAML]
 
     for path in paths:
-        check_not_output(path)
+        check_not_output(args, path)
 
     return paths
 
 
-def check_not_output(path):
-    """Raise if `path` is a file turbigen wrote rather than one it was given.
+def _would_overwrite_input(args, path):
+    """True if this invocation's `output.yaml` is `path` itself.
 
-    An `output.yaml` only exists because some other config was run, and that
-    config is still there: `run` leaves the file it was handed, whatever it was
-    named, and `batch`, `iterate` and `chic` write `input.yaml` into every
-    directory they invent. So there is always another file naming the same
-    directory, and wanting this one is not a case to support.
+    The only reason `output.yaml` is refused as a target: a run writes it, and
+    writing the *resolved* config over a hand-kept one loses its comments. That
+    only happens when the write lands where the file was read.
 
-    Flat across every verb, `design` included. `design` writes nothing and so
-    could read this safely, but a rule with an exception in it is one more
-    thing to remember than a rule without, and the exception would buy only the
-    ability to type a name that always has an equivalent.
-
-    This is what makes `OUTPUT_NAME` an invariant rather than a convention: a
-    verb cannot overwrite the file it read, because it will not read it.
+    Without `-o` it always does --- output goes beside the input. With a `%`
+    placeholder it never does: the number names a directory that does not exist
+    yet, and that is checked here without resolving it, so the `%` is still
+    only resolved once, later. With a literal `-o dir` the run writes
+    `dir/output.yaml`, which is `path` only if `path` already lives in `dir`.
     """
-    if path.name != OUTPUT_NAME:
+    workdir = getattr(args, "workdir", None)
+
+    if workdir is None:
+        return True
+
+    if PLACEHOLDER in str(workdir):
+        return False
+
+    return Path(workdir).resolve() == path.resolve().parent
+
+
+def check_not_output(args, path):
+    """Raise if running on `path` would overwrite it with the run's own output.
+
+    `output.yaml` is the file a run writes beside the config it was given.
+    Handing that file back as the config is refused when the write would land
+    on it --- the default, where output sits beside input --- because the file
+    written is the *resolved* config, every default expanded, and writing that
+    over a hand-kept file would lose its comments to the safe loader.
+
+    It is allowed when `-o` sends the run somewhere else: the file read and the
+    file written are then different files, and nothing is lost. `report`, which
+    also writes here, is covered the same way.
+    """
+    if path.name != OUTPUT_NAME or not _would_overwrite_input(args, path):
         return
 
     # Named rather than described, because the whole point is that there is
