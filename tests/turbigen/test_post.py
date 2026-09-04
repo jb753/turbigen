@@ -26,9 +26,11 @@ from turbigen import (  # noqa: E402
     Post,
     Result,
     SectionsPlot,
+    SpanwisePlot,
     SurfacePlot,
     VelocityTrianglePlot,
     cli,
+    mixout,
     post,
 )
 
@@ -90,12 +92,19 @@ def meshed(bladed):
 
 @pytest.fixture(scope="module")
 def solved(bladed):
-    """The same case marched briefly, for a real field and a real history."""
+    """The same case marched briefly, for a real field and a real history.
+
+    Mixed out as well, because a spanwise profile is referred to the mean line
+    the grid achieved and there is no reason for a second march to get one.
+    """
     _, machine, grid = cli.prepare(bladed)
     history = bladed.solver.solve(grid)
+    actual, Ds_mix = mixout.mean_line(grid, machine)
     return Result(
         machine=machine,
         grid=grid,
+        actual=actual,
+        Ds_mix=Ds_mix,
         converged=True,
         history=history,
     )
@@ -103,10 +112,16 @@ def solved(bladed):
 
 @pytest.fixture(scope="module")
 def gapped():
-    """A two-row case whose second row has a tip gap, meshed but not marched."""
+    """A two-row case whose second row has a tip gap, meshed but not marched.
+
+    The only rotating machine here, and the only one with more than one row,
+    so it is what says a profile is referred to the right row and scaled by a
+    blade speed.
+    """
     config = build(blades=TIP, mesh=MESH)
     _, machine, grid = cli.prepare(config)
-    return config, Result(machine=machine, grid=grid)
+    actual, Ds_mix = mixout.mean_line(grid, machine)
+    return config, Result(machine=machine, grid=grid, actual=actual, Ds_mix=Ds_mix)
 
 
 @pytest.fixture(autouse=True)
@@ -510,6 +525,135 @@ def test_contour_plot_without_a_grid_is_empty(config, result):
 def test_contour_plot_rejects_a_variable_no_block_carries(bladed, solved):
     with pytest.raises(ValueError, match="no property 'Wobble'"):
         ContourPlot(variable="Wobble").report(bladed, solved)
+
+
+#
+# SPANWISE PROFILES
+#
+
+
+def test_cut_row_attributes_a_gap_to_the_row_upstream():
+    """Rows are the odd segments, gaps the even ones.
+
+    A cut inside a row belongs to it and there is nothing to decide. A cut in a
+    gap is a choice, and the row that produced the flow is the one it is read
+    against -- except in the inlet duct, where there is no upstream row.
+    """
+    n_row = 2
+
+    assert [post._cut_row(m, n_row) for m in (0.5, 1.0, 1.5, 2.0)] == [0, 0, 0, 0]
+    assert [post._cut_row(m, n_row) for m in (2.5, 3.0, 3.5, 4.0)] == [0, 1, 1, 1]
+
+    # The exit duct has no downstream row to fall to.
+    assert post._cut_row(4.5, n_row) == 1
+
+
+def test_spanwise_plot_draws_one_profile_per_cut(bladed, solved):
+    figures = SpanwisePlot(m_cut=(0.9, 2.1)).report(bladed, solved)
+
+    assert len(figures) == 2
+    for figure in figures:
+        (line,) = figure.axes[0].lines
+        _, spf = line.get_data()
+
+        # Hub to casing, in order, and face-centred -- so the ends approach 0
+        # and 1 without reaching them.
+        assert np.all(np.diff(spf) > 0.0)
+        assert 0.0 < spf[0] < spf[-1] < 1.0
+        assert figure.axes[0].get_ylim() == (0.0, 1.0)
+
+
+def test_spanwise_loss_is_the_size_the_mean_line_reports(bladed, solved):
+    """A units-and-blunders guard on the datum and the scaling velocity.
+
+    The profile is taken inside the trailing edge gap and the mean line is
+    reduced at the station beyond it, mixing included, so the two are not the
+    same number -- but a wrong entropy datum or the other row's kinetic energy
+    would be out by far more than the gap between them.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Ys").report(bladed, solved)
+    Ys, _ = figure.axes[0].lines[0].get_data()
+
+    row = solved.actual[:, 0]
+    reference = solved.actual.get_characteristic_station(0)
+    Ys_mean_line = (
+        float(row.T[1]) * float(row.s[1] - row.s[0]) / float(reference.halfVsq_rel)
+    )
+
+    assert np.all(Ys > 0.0)
+    assert np.mean(Ys) == pytest.approx(Ys_mean_line, rel=0.5)
+
+
+def test_spanwise_plot_refers_each_cut_to_its_own_row(gapped):
+    """The second row of the two-row case turns the flow the other way.
+
+    Which is only visible if each cut is scaled by its own row's conditions:
+    referred to one row throughout, both profiles would have the same sign.
+    """
+    config, result = gapped
+
+    Vt = [
+        SpanwisePlot(m_cut=(m,), variable="Vt")
+        .report(config, result)[0]
+        .axes[0]
+        .lines[0]
+        .get_data()[0]
+        for m in (2.1, 4.1)
+    ]
+
+    assert np.all(Vt[0] > 0.0)
+    assert np.all(Vt[1] < 0.0)
+
+
+def test_spanwise_velocity_is_scaled_by_blade_speed_where_there_is_one(gapped):
+    config, result = gapped
+
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Vt").report(config, result)
+
+    assert figure.axes[0].get_xlabel().endswith("$V_\\theta/U$")
+
+
+def test_spanwise_velocity_of_a_cascade_falls_back_to_its_own_velocity(bladed, solved):
+    """A cascade never rotates, so there is no blade speed to divide by.
+
+    Scaled by the velocity of the row's characteristic station instead, which
+    the label has to say -- a profile against an unnamed datum is unreadable.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Vt").report(bladed, solved)
+    Vt, _ = figure.axes[0].lines[0].get_data()
+
+    assert figure.axes[0].get_xlabel().endswith("$V_\\theta/V$")
+
+    # The exit flow angle the cascade was asked for, which is what a velocity
+    # divided by its own magnitude has to come back as.
+    Alpha = np.radians(yaml.safe_load(RUN_CASE)["mean_line"]["Alpha"][1])
+    assert np.mean(Vt) == pytest.approx(np.sin(Alpha), rel=0.05)
+
+
+def test_spanwise_plot_rejects_a_variable_it_cannot_build(bladed, solved):
+    with pytest.raises(ValueError, match="no spanwise variable 'Wobble'"):
+        SpanwisePlot(m_cut=(2.1,), variable="Wobble").report(bladed, solved)
+
+
+def test_spanwise_plot_without_a_grid_is_empty(config, result):
+    assert SpanwisePlot(m_cut=(2.1,)).report(config, result) == []
+
+
+def test_spanwise_plot_without_a_mixed_out_mean_line_is_empty(bladed, meshed):
+    """The datum is the mean line the grid achieved, so there is nothing to
+    refer a profile to until the grid has been reduced to one."""
+    assert meshed.actual is None
+    assert SpanwisePlot(m_cut=(2.1,)).report(bladed, meshed) == []
+
+
+def test_spanwise_plot_skips_a_diverged_march(bladed, solved):
+    import dataclasses  # noqa: PLC0415
+
+    history = solved.history.copy()
+    history.diverged = True
+    diverged = dataclasses.replace(solved, history=history)
+
+    assert SpanwisePlot(m_cut=(2.1,)).report(bladed, diverged) == []
 
 
 #

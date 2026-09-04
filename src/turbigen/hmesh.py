@@ -468,7 +468,7 @@ class H(Mesher):
         if njtip:
             ilim_tip = (ile, icusp)
             jlim_tip = (-njtip, -1)
-            logger.info(f"Adding tip patches i={ilim_tip}, j={jlim_tip}")
+            logger.debug(f"Adding tip patches i={ilim_tip}, j={jlim_tip}")
             patches.extend(
                 [
                     ember.patch.PeriodicPatch(i=ilim_tip, j=jlim_tip, k=0),

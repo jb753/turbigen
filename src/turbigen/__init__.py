@@ -48,6 +48,7 @@ from turbigen.post import (
     ConvergencePlot,
     Post,
     SectionsPlot,
+    SpanwisePlot,
     SurfacePlot,
     VelocityTrianglePlot,
 )
@@ -122,6 +123,7 @@ __all__ = [
     "ConvergencePlot",
     "Post",
     "SectionsPlot",
+    "SpanwisePlot",
     "SurfacePlot",
     "VelocityTrianglePlot",
     "Result",

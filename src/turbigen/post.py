@@ -30,6 +30,7 @@ from typing import ClassVar
 
 import numpy as np
 
+import ember.average
 import ember.block_util
 import ember.cut
 import ember.util
@@ -75,6 +76,23 @@ LABELS = {
     "s": r"Specific Entropy, $s$/J kg$^{-1}$K$^{-1}$",
 }
 """Axis labels for the block properties worth contouring, by attribute name."""
+
+_SPANWISE_LABELS = {
+    "Ys": r"Entropy Loss Coefficient, $Y_s$",
+    "Cp": r"Static Pressure, $C_p$",
+    "Cpo": r"Stagnation Pressure, $C_{p0}$",
+    "Cho": r"Stagnation Enthalpy, $C_{h0}$",
+    "Vm": r"Meridional Velocity, $V_m/{sym}$",
+    "Vt": r"Circumferential Velocity, $V_\theta/{sym}$",
+}
+"""Axis labels for the quantities `SpanwisePlot` will average, by name.
+
+Separate from `LABELS` because none of these are block properties: they are
+coefficients built from a cut and a mean line, so nothing can look one up the
+way `ContourPlot._values` looks up what it contours. ``{sym}`` is filled in
+with the symbol of whatever reference velocity was available, by
+`SpanwisePlot._profile`.
+"""
 
 
 @contextlib.contextmanager
@@ -834,6 +852,179 @@ class ContourPlot(Post):
                 f"An ember block has no property {self.variable!r} to contour; "
                 f"try one of {sorted(LABELS)}."
             ) from None
+
+
+def _cut_row(m, n_row):
+    """Return the row a cut at meridional position `m` is measured against.
+
+    Rows are the odd segments of an annulus and gaps the even ones, so a cut
+    inside a row belongs to it and there is nothing to decide. A cut in a gap
+    is a choice, and it is attributed to the row *upstream* of it: a profile
+    taken just past a trailing edge is read as what that row did, not as what
+    the next one is about to be given. The inlet duct has no upstream row, so
+    it falls to the first one.
+    """
+    segment = int(np.floor(m))
+    if segment % 2:
+        i_row = (segment - 1) // 2
+    else:
+        i_row = segment // 2 - 1
+    return int(np.clip(i_row, 0, n_row - 1))
+
+
+def _cut_spf(cut):
+    """Return face-centred span fraction along a structured cut.
+
+    A cut is not a patch, so `ember`'s own `spf` is out of reach and the span
+    is measured from the cut's own meridional line: normalised arc length hub
+    to casing. Face-centred, because everything `ember.average` returns is,
+    and a profile plotted against nodal span would be off by half a cell.
+    """
+    # Index 0 of the cut runs meridionally and index 1 in theta, so any
+    # constant-theta line carries the whole meridional extent.
+    xr = np.asarray(cut.xrt[:, 0, :2])
+    arc = np.concatenate(
+        [[0.0], np.cumsum(np.sqrt((np.diff(xr, axis=0) ** 2).sum(axis=-1)))]
+    )
+    spf = arc / arc[-1]
+    return 0.5 * (spf[:-1] + spf[1:])
+
+
+class SpanwisePlot(Post):
+    """Pitch-averaged flow quantity against span fraction, at a cut plane.
+
+    Where a row loses, rather than how much: the mixed-out mean line reduces a
+    station to one number and a blade-to-blade contour shows one span fraction
+    at a time, so neither can say that the loss sits in a corner or at the tip.
+
+    Everything is referred to `result.actual`, the mixed-out mean line the grid
+    achieved, so the datum and the field being averaged are the same flow. A
+    result that has not been mixed out yields no figures.
+    """
+
+    type: ClassVar[str] = "spanwise"
+
+    m_cut: tuple[float, ...] = ()
+    """Normalised meridional positions to cut and pitch-average at."""
+
+    variable: str = "Ys"
+    """Quantity to plot: ``Ys``, ``Cp``, ``Cpo``, ``Cho``, ``Vm`` or ``Vt``."""
+
+    def report(self, config, result):
+        machine = result.machine
+        annulus = machine.annulus if machine else None
+        if result.grid is None or annulus is None:
+            logger.info("No grid to cut, skipping the spanwise plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the spanwise plot.")
+            return []
+
+        if result.actual is None:
+            logger.info(
+                "No mixed-out mean line to refer to, skipping the spanwise plot."
+            )
+            return []
+
+        if self.variable not in _SPANWISE_LABELS:
+            raise ValueError(
+                f"There is no spanwise variable {self.variable!r} to plot; "
+                f"try one of {sorted(_SPANWISE_LABELS)}."
+            )
+
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        figures = []
+        for m in self.m_cut:
+            cut = ember.cut.unstructured(
+                result.grid, annulus.evaluate_xr(m, [0.0, 1.0]).T
+            )
+            if cut is None:
+                logger.info(f"No block reaches m={m}, skipping its spanwise plot.")
+                continue
+
+            i_row = _cut_row(m, annulus.n_row)
+
+            # Resolved at the mesh's own resolution rather than an invented
+            # one. A block is (streamwise, pitchwise, spanwise) and a cut is
+            # (meridional, theta), so the spanwise count leads.
+            _, nj, nk = result.grid.rows[i_row][0].shape
+            try:
+                structured = ember.cut.interpolate_to_structured(cut, (nk, nj))
+            except ValueError as err:
+                # A plane placed between two rows of different blade count has
+                # no single pitch to wrap theta by. That is a bad cut, not a
+                # broken report, so the other planes still get drawn.
+                logger.info(f"Could not interpolate the cut at m={m}: {err}")
+                continue
+
+            values, label = self._profile(structured, result.actual, i_row)
+            figures.append(
+                self._draw(plt, values, _cut_spf(structured), label, m, i_row)
+            )
+
+        return figures
+
+    def _profile(self, cut, mean_line, i_row):
+        """Return the spanwise profile to plot, and the label for it."""
+        row = mean_line[:, i_row]
+        ref = mean_line.get_characteristic_station(i_row)
+
+        def mass_avg(prop):
+            return ember.average.mass_average(prop, cut, axes=(1,))
+
+        def area_avg(prop):
+            return ember.average.area_average(prop, cut, axes=(1,))
+
+        # One reference velocity for the whole machine, so a stator profile can
+        # be read against the rotor beside it. A machine that does not rotate
+        # has no blade speed to scale by and falls back to the velocity of the
+        # row's characteristic station, which the label then says.
+        U_ref = float(np.max(np.abs(mean_line.U)))
+        sym = "U"
+        if not U_ref > 0.0:
+            U_ref = float(ref.V)
+            sym = "V"
+
+        # Which end of the row sets the scale, on the mean line's own reading
+        # of what the row does to the flow.
+        is_compressor = float(row.P[1]) > float(row.P[0])
+        dP = (
+            float(row.Po_rel[0]) - float(row.P[0])
+            if is_compressor
+            else float(row.Po_rel[1]) - float(row.P[1])
+        )
+
+        if self.variable == "Ys":
+            values = (
+                float(row.T[1])
+                * (mass_avg(cut.s) - float(row.s[0]))
+                / float(ref.halfVsq_rel)
+            )
+        elif self.variable == "Cp":
+            values = (area_avg(cut.P) - float(row.Po_rel[0])) / dP
+        elif self.variable == "Cpo":
+            values = (mass_avg(cut.Po) - float(row.Po_rel[0])) / dP
+        elif self.variable == "Cho":
+            values = (mass_avg(cut.ho) - float(row.ho[0])) / U_ref**2
+        elif self.variable == "Vm":
+            values = mass_avg(cut.Vm) / U_ref
+        elif self.variable == "Vt":
+            values = mass_avg(cut.Vt) / U_ref
+        else:
+            raise ValueError(f"Unhandled spanwise variable {self.variable!r}.")
+
+        return values, _SPANWISE_LABELS[self.variable].replace("{sym}", sym)
+
+    def _draw(self, plt, values, spf, label, m, i_row):
+        fig, ax = plt.subplots(layout="constrained")
+        ax.plot(values, spf)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Span Fraction")
+        ax.set_ylim((0.0, 1.0))
+        ax.set_title(f"{self.variable} at m={m:.3g}, row {i_row}")
+        return fig
 
 
 STANDARD = (
