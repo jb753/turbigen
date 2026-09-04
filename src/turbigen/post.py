@@ -79,8 +79,8 @@ LABELS = {
 
 _SPANWISE_LABELS = {
     "Ys": r"Entropy Loss Coefficient, $Y_s$",
-    "Cp": r"Static Pressure, $C_p$",
-    "Cpo": r"Stagnation Pressure, $C_{p0}$",
+    "CP": r"Static Pressure, $C_p$",
+    "CPo": r"Stagnation Pressure, $C_{p0}$",
     "Cho": r"Stagnation Enthalpy, $C_{h0}$",
     "Vm": r"Meridional Velocity, $V_m/{sym}$",
     "Vt": r"Circumferential Velocity, $V_\theta/{sym}$",
@@ -908,7 +908,7 @@ class SpanwisePlot(Post):
     """Normalised meridional positions to cut and pitch-average at."""
 
     variable: str = "Ys"
-    """Quantity to plot: ``Ys``, ``Cp``, ``Cpo``, ``Cho``, ``Vm`` or ``Vt``."""
+    """Quantity to plot: ``Ys``, ``CP``, ``CPo``, ``Cho``, ``Vm`` or ``Vt``."""
 
     def report(self, config, result):
         machine = result.machine
@@ -1002,9 +1002,9 @@ class SpanwisePlot(Post):
                 * (mass_avg(cut.s) - float(row.s[0]))
                 / float(ref.halfVsq_rel)
             )
-        elif self.variable == "Cp":
+        elif self.variable == "CP":
             values = (area_avg(cut.P) - float(row.Po_rel[0])) / dP
-        elif self.variable == "Cpo":
+        elif self.variable == "CPo":
             values = (mass_avg(cut.Po) - float(row.Po_rel[0])) / dP
         elif self.variable == "Cho":
             values = (mass_avg(cut.ho) - float(row.ho[0])) / U_ref**2
