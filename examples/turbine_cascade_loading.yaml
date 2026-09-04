@@ -1,20 +1,19 @@
 # Turbine cascade, with the loading distribution shaped
 #
 # The same cascade as turbine_cascade.yaml, with two things changed: the camber
-# line is a `bernstein` one carrying two interior coefficients, and a `loading`
-# iterator moves them until the suction surface Mach distribution has its peak
-# and its leading edge acceleration where they were asked for.
+# line is a `bernstein` one carrying one interior coefficient, and a `loading`
+# iterator moves it until the suction surface Mach distribution accelerates as
+# hard as asked for by `zeta_front`.
 #
-# How high the peak is cannot be left to the camber. At a fixed duty the area
-# enclosed by the Mach loop is the blade circulation, which the pitch sets, so a
-# camber line with pinned ends redistributes loading along the chord without
-# changing how much there is -- and of the three numbers describing the shape,
-# one is then spoken for. So the iterator takes the circulation coefficient as a
-# third lever and the peak height as a third target, and `count: {type: Co}`
-# below states where that lever starts rather than where it ends.
+# How high the peak stands cannot be left to the camber either. At a fixed duty
+# the area enclosed by the Mach loop is the blade circulation, which the pitch
+# sets, so a camber line with pinned ends redistributes loading along the chord
+# without changing how much there is. So a second iterator, `peak_Ma`, takes
+# the circulation coefficient as its own lever and the peak height as its own
+# target, and `count: {type: Co}` below states where that lever starts rather
+# than where it ends.
 #
-# Run it, and watch the two camber_coeff rows in the log walk their errors to
-# zero:
+# Run it, and watch the camber_coeff row in the log walk its error to zero:
 #
 #     turbigen iterate examples/turbine_cascade_loading.yaml -o runs/loading%
 #
@@ -32,7 +31,7 @@ mean_line:
   span: [0.1, 0.11]
   Alpha: [40.0, -65.0]
   Ma2: 0.6
-  Ys: 0.029
+  Ys: 0.021986417880620935
   htr: 0.95
   Po1: 1.0e5
   To1: 300.0
@@ -45,18 +44,18 @@ annulus:
 blades:
   - count:
       type: Co
-      Co: 0.7
+      Co: 0.7027124965034212
     sections:
       - spf: 0.5
-        dchi_LE: 10.0
-        dchi_TE: -2.0
-        # Both interior coefficients written out, not left to be zero-padded:
-        # the iterator moves them, so each one has to be a leaf of the config.
-        # All-zero is the quadratic camber line the other example uses.
+        dchi_LE: 3.27208263288533
+        dchi_TE: -2.5263871403913134
+        # The interior coefficient written out, not left to be zero-padded:
+        # the iterator moves it, so it has to be a leaf of the config. Zero is
+        # the quadratic camber line the other example uses.
         camber:
           type: bernstein
-          order: 3
-          coeff: [0.0, 0.0]
+          order: 2
+          coeff: [-0.22546998925441372]
         thickness:
           type: taylor
           R_LE: 0.04
@@ -87,19 +86,17 @@ iterate:
       variables: [Ys]
       clip: 0.01
       tolerance: 0.05
-    # Where the suction peak sits, and how hard the leading edge accelerates
-    # -- the latter as Ma(zeta_front)/Ma_TE * Ma_2/Ma_1, Clark's third
-    # parameter, which means the same thing across rows of differing duty.
-    # Two targets, because two is what a camber line has to give at a fixed
-    # blade count.
+    # How hard the leading edge accelerates, as Ma(zeta_front)/Ma_TE *
+    # Ma_2/Ma_1, Clark's third parameter, which means the same thing across
+    # rows of differing duty.
     - type: loading
       i_row: 0
       zeta_front: 0.2
-      zeta_peak: 0.55
       fac_front: 1.6
     - type: peak_Ma
       i_row: 0
       fac_peak: 1.3
+      gain: 0.75
 
 post_process:
   - type: surface

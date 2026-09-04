@@ -448,7 +448,7 @@ def _shaped(config, fac_peak=None, **kwargs):
 
     blade = config.blades[0]
     sections = tuple(
-        dataclasses.replace(section, camber=camber.Bernstein(order=3, coeff=(0.0, 0.0)))
+        dataclasses.replace(section, camber=camber.Bernstein(order=2, coeff=(0.0,)))
         for section in blade.sections
     )
     correct = [iterate.LoadingDistribution(**kwargs)]
@@ -498,7 +498,7 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     The point of the overlay: what the iterator closes is the gap between these
     two lines, which is far easier to see than to read off a table.
     """
-    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, fac_peak=1.3)
+    config = _shaped(bladed, fac_front=1.8, fac_peak=1.3)
     zeta, mas = _peaked()
 
     fig, ax = plt.subplots()
@@ -521,10 +521,11 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     # the target is defined by.
     x, y = target.get_xdata(), target.get_ydata()
     assert x[np.isfinite(y)].min() == pytest.approx(0.2)
-    # Every number on the line is one that was asked for: the apex sits at the
-    # target peak position and height, and the front anchor is what
-    # `fac_front` denormalises to against this row's duty.
-    assert x[np.nanargmax(y)] == pytest.approx(0.6, abs=x[1] - x[0])
+    # The apex sits where `_peaked` put it (0.55), which is only ever read off
+    # the achieved distribution; the front anchor and the peak height are the
+    # two numbers that were actually asked for, denormalised against this
+    # row's duty.
+    assert x[np.nanargmax(y)] == pytest.approx(0.55, abs=x[1] - x[0])
     assert np.nanmax(y) == pytest.approx(config.iterate.correct[1].fac_peak, rel=1e-2)
     assert np.interp(0.2, x, y) == pytest.approx(
         _ma_front(config, machine, ma_TE=1.0), rel=1e-3
@@ -537,41 +538,28 @@ def test_surface_plot_overlays_nothing_without_an_iterator(bladed, solved):
     assert "target" not in line.get_label()
 
 
-def test_surface_plot_overlays_a_target_on_a_peakless_cascade(bladed, solved):
-    """The target is drawn whether or not the blade has reached it.
+def test_surface_plot_draws_no_apex_it_cannot_find(bladed, solved):
+    """No peak to fit is no place to draw the target's apex, `peak_Ma` or not.
 
-    This fixture accelerates all the way to its trailing edge and so has no
-    peak for the *iterator* to measure --- but the target is a statement about
-    what was wanted, not about what was found, so it is exactly the case where
-    seeing the two together is most use. It needs the level stated, since with
-    no `peak_Ma` the height would have to be measured and cannot be.
+    This fixture accelerates all the way to its trailing edge, so it offers no
+    peak for either the iterator or the overlay to read a position from. The
+    target's front value is still a claim, but with nowhere to put the other
+    end of the line, nothing is drawn rather than something invented.
     """
-    config = _shaped(bladed, zeta_peak=0.55, fac_front=1.8, fac_peak=1.3)
-
-    labels = [
-        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
-    ]
-    assert any("target" in label for label in labels)
-
-
-def test_surface_plot_draws_no_level_it_cannot_measure(bladed, solved):
-    """With no `peak_Ma`, the height comes from the fit -- which may not exist.
-
-    Nothing is drawn rather than a target at an invented height: the shape was
-    asked for, the level was not, and this cascade offers no peak to borrow one
-    from.
-    """
-    config = _shaped(bladed, zeta_peak=0.55, fac_front=1.8)
-
-    labels = [
-        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
-    ]
-    assert not any("target" in label for label in labels)
+    for config in (
+        _shaped(bladed, fac_front=1.8),
+        _shaped(bladed, fac_front=1.8, fac_peak=1.3),
+    ):
+        labels = [
+            ln.get_label()
+            for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+        ]
+        assert not any("target" in label for label in labels)
 
 
 def test_surface_plot_overlay_ignores_another_span(bladed, machine):
     """A target set at one span says nothing about the sections either side."""
-    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, spf=0.25)
+    config = _shaped(bladed, fac_front=1.8, spf=0.25)
 
     fig, ax = plt.subplots()
     post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
@@ -580,7 +568,7 @@ def test_surface_plot_overlay_ignores_another_span(bladed, machine):
 
 def test_surface_plot_overlay_ignores_another_row(bladed, machine):
     """One row per iterator, so a target for row 1 is not drawn on row 0."""
-    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, i_row=1)
+    config = _shaped(bladed, fac_front=1.8, i_row=1)
 
     fig, ax = plt.subplots()
     post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")

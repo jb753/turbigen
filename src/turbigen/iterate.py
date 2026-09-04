@@ -876,9 +876,9 @@ def _incidence(result, surface, i_row, spf, tolerance=0.0):
     # The thickness vanishes at m = 0, so the first point of either surface is
     # the nose. It anchors the stagnation search window, which is what makes
     # the search robust on a strongly asymmetric leading edge.
-    xrt_nose = blade.evaluate_section(
-        spf, nchord=turbigen.loading.N_CHORD_NOSE
-    )[0][:, 0]
+    xrt_nose = blade.evaluate_section(spf, nchord=turbigen.loading.N_CHORD_NOSE)[0][
+        :, 0
+    ]
 
     i_stag, found = turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)
     if not found[0]:
@@ -944,15 +944,13 @@ def _report_resolution(cut, i_stag, e_m, chi, i_row, spf, tolerance):
         )
 
 
-N_COEFF = 2
+N_COEFF = 1
 """Interior Bernstein coefficients a loading distribution moves.
 
-Two, and the number is a claim about the physics rather than a convenience. At
-a fixed duty the area enclosed by the isentropic Mach loop is the blade
-circulation, which the pitch sets; a camber line with its ends pinned
-redistributes that area along the chord but does not change it. So of the three
-numbers describing a two-line shape --- a front value, a peak value, and where
-the peak sits --- one is spoken for by the blade count, and two are free.
+One, because :class:`LoadingDistribution` chases one number: the Mach number
+at `zeta_front`. A camber line with its ends pinned needs one interior degree
+of freedom to move one point on the curve, and no more --- a second knob would
+have nothing of its own left to null, since `PeakMach` already owns the level.
 """
 
 BERNSTEIN_ORDER = N_COEFF + 1
@@ -960,34 +958,25 @@ BERNSTEIN_ORDER = N_COEFF + 1
 
 
 class LoadingDistribution(Iterator):
-    """Shape the suction surface Mach distribution by moving the camber line.
+    """Shape the leading-edge acceleration by moving the camber line.
 
     :class:`Deviation` and :class:`Incidence` correct the *ends* of a blade
-    against the flow. This corrects what happens in between: where the peak
-    suction sits and how hard the leading edge accelerates, which is what a
-    designer chooses when they pick an aerodynamic style, and which Clark
-    (2019) shows a handful of numbers spans a useful family of.
+    against the flow. This corrects one point in between: how hard the
+    leading edge accelerates by `zeta_front`, which is what a designer chooses
+    when they pick an aerodynamic style, and which Clark (2019) shows is a
+    useful number to hold rather than let the mean-line design produce
+    whatever it produces.
 
-    The knob is the interior coefficients of a
-    :class:`~turbigen.camber.Bernstein` camber line. Their endpoint
-    counterparts are pinned at zero, so the metal angles do not move and this
-    iterator cannot fight the two that own them.
+    The knob is the single interior coefficient of a
+    :class:`~turbigen.camber.Bernstein` camber line --- see :data:`N_COEFF`.
+    Its endpoint counterparts are pinned at zero, so the metal angles do not
+    move and this iterator cannot fight the two that own them.
 
-    **This wants :class:`PeakMach` beside it.** Two knobs are what a camber
-    line has to give at a fixed blade count --- see :data:`N_COEFF` --- but the
-    three numbers describing the shape carry one constraint between them, so
-    the level is not free to be ignored: it drifts, and drags the shape with
-    it. Swept over circulation coefficients of 0.6, 0.7 and 0.8 against one
-    fixed pair of targets here, only the value they had been calibrated at
-    converged. `PeakMach` supplies the third lever and the third target, and
-    the two are configured together.
-
-    The two targets here are the shape, and both are blind to the level: `zeta_peak` is a position, and `fac_front` is
-    a ratio of two points on one curve, so both survive the distribution being
-    scaled. What that leaves free is the peak Mach number itself --- which is
-    the blade count's to set, and stays a design choice rather than becoming a
-    third thing to iterate. `DiffusionFactor` was never ported here precisely
-    because blade count changes the mesh; a camber line does not.
+    Read straight off the suction surface at `zeta_front` rather than off a
+    fit, so this needs no peak to exist and asks nothing of where one sits or
+    how high it stands. `PeakMach` sits beside it and owns the level; between
+    the two, neither where the peak is nor how it is reached is a target ---
+    only the front acceleration and the overall diffusion are.
 
     One row per iterator, like :class:`SurfaceReynolds`: a stator and a rotor
     want different loading, so two rows means two entries.
@@ -997,9 +986,6 @@ class LoadingDistribution(Iterator):
 
     i_row: int = 0
     """Index of the blade row to shape."""
-
-    zeta_peak: float = 0.5
-    """Target surface fraction of the peak isentropic Mach number [--]."""
 
     fac_front: float = 1.8
     """Target leading-edge Mach number, normalised by duty [--].
@@ -1017,94 +1003,65 @@ class LoadingDistribution(Iterator):
     """
 
     zeta_front: float = 0.2
-    """Front anchor, and where the matched window starts [--].
+    """Front anchor, and where the Mach number is read off [--].
 
-    Fixed rather than driven. It is the boundary between what the leading edge
-    decides and what the camber line does, so it says *where to measure* rather
-    than what to want --- and below it the distribution belongs to
-    :class:`Incidence` and the thickness, neither of which this moves.
+    It is the boundary between what the leading edge decides and what the
+    camber line does, so it says *where to measure* rather than what to want
+    --- and below it the distribution belongs to :class:`Incidence` and the
+    thickness, neither of which this moves.
 
-    A fifth rather than a tenth, because the two straight lines have to be a
-    fair description of what they are fitted to. On a cascade measured here the
-    fitted front line and the data disagreed by 0.08 in Mach fraction with the
-    window starting at 0.1, and by 0.03 starting at 0.2: the first window
-    reaches inside the sharp acceleration round the nose, which no straight
-    line describes, and the second starts past it.
+    A fifth rather than a tenth, because a point that close to the nose still
+    sits inside the sharp acceleration round it, which is not the camber
+    line's to answer for.
 
-    :class:`PeakMach` carries the same setting and the two must agree, or they
-    fit different windows and describe different curves.
-    """
-
-    zeta_TE: float = 0.98
-    """Where the matched window ends [--].
-
-    Short of the trailing edge, where the two surfaces must meet and where the
-    surface means `isentropic_mach` takes for stagnation enthalpy and sound
-    speed are least able to say what a single point is doing.
+    :class:`PeakMach` carries the same setting for its own fitted window, and
+    the two should agree so that a design's front and peak describe the same
+    curve.
     """
 
     spf: float = 0.5
     """Span fraction to measure the distribution at [--]."""
 
     gain: float = -0.5
-    """How much of the error to subtract, for both knobs.
+    """How much of the error to subtract.
 
     **A starting direction, not a calibration.** Measured on two different
-    cascades, the diagonal of the response came out with *opposite signs* --- a
-    first blade gave ``d(zeta_peak)/dc = [-0.24, -0.30]`` while the blade in
-    `examples/turbine_cascade_loading.yaml` gave ``[+0.15, -0.80]``, and the
-    front term flipped likewise. Which Bernstein bump dominates which target is
-    evidently a property of the blade rather than of the parametrisation, so
-    there is no scalar here that is right in general, and one confident enough
-    to matter would be wrong half the time.
+    cascades, the sign of the response came out opposite --- a first blade
+    gave ``d(fac_front)/dc = -0.80`` while the blade in
+    `examples/turbine_cascade_loading.yaml` gave ``+0.15`` for the
+    corresponding coefficient. Which way the one Bernstein bump moves the
+    front value is evidently a property of the blade rather than of the
+    parametrisation, so there is no scalar here that is right in general, and
+    one confident enough to matter would be wrong half the time.
 
     Small, accordingly. Two things follow from that and both are wanted: a
     first step taken on a wrong sign costs one iteration rather than an
-    excursion, and the steps it asks for sit *inside* :attr:`clip` --- which
-    matters more than it looks, because `step` clips each component on its own,
-    so a step that saturates is projected onto a corner of the box and keeps
-    only the signs of the direction the Jacobian worked out. Under the clip,
-    the direction survives.
+    excursion, and the step it asks for sits *inside* :attr:`clip`.
 
-    The Broyden update is what actually steers this iterator. On the cascade
-    above it recovered from a wrong-signed opening step and converged both
-    knobs, so the machinery does the work; this only has to avoid getting in
-    its way.
+    The Broyden update is what actually steers this iterator. It only has to
+    avoid getting in its way.
     """
 
     clip: float = 0.1
-    """Largest change in one coefficient per iteration [--].
+    """Largest change in the coefficient per iteration [--].
 
-    Measured against how far these coefficients actually travel. On the
-    cascade in `examples/turbine_cascade_loading.yaml` they converged at about
-    -0.23 and 0.02 from a start of zero, and at a clip of 0.05 the step
-    saturated on one knob or both for five iterations running --- which is not
-    merely slow: `step` clips each component separately, so a step saturated in
-    both is projected onto a corner of the box and keeps only the *signs* of
-    what the Jacobian asked for.
+    Measured against how far it actually travels. On the cascade in
+    `examples/turbine_cascade_loading.yaml` it converged at about -0.23 from a
+    start of zero, and at a clip of 0.05 the step saturated for five
+    iterations running --- which is not merely slow: a step saturated at the
+    clip keeps only the *sign* of what the Jacobian asked for.
     """
 
-    atol_zeta: float = 0.02
-    """Converged when the peak is within this of where it was asked for [--]."""
-
-    atol_fac: float = 0.05
+    tolerance: float = 0.05
     """Converged when the front Mach number is within this [--].
 
-    Looser than :attr:`atol_zeta` in absolute terms because the quantity is
-    larger --- around 1.9 on the cascade measured here against a surface
-    fraction below one --- so this is the tighter of the two as a fraction of
-    what it measures.
+    Around 1.9 on the cascade measured here, so this is a few per cent of what
+    it measures.
     """
 
     def __post_init__(self):
-        if not 0.0 < self.zeta_front < self.zeta_peak < self.zeta_TE <= 1.0:
-            raise ValueError(
-                f"A loading distribution needs 0 < zeta_front < zeta_peak < "
-                f"zeta_TE <= 1, got zeta_front={self.zeta_front}, "
-                f"zeta_peak={self.zeta_peak}, zeta_TE={self.zeta_TE}. The peak "
-                f"has to sit inside the window that is matched, or there is "
-                f"nothing to fit two lines either side of."
-            )
+        if not 0.0 < self.zeta_front <= 1.0:
+            raise ValueError(f"zeta_front must be in (0, 1], got {self.zeta_front}.")
         if not self.fac_front > 0.0:
             raise ValueError(
                 f"fac_front must be positive, got {self.fac_front}. It is a "
@@ -1117,12 +1074,11 @@ class LoadingDistribution(Iterator):
     #
 
     def names(self):
-        """Return the table key of each knob, in a fixed order.
+        """Return the table key of the knob, as a one-element list.
 
         Carrying the row, so that two entries shaping two rows cannot collide
-        in `unknowns`. The order is the pairing the declared `gain` asserts a
-        sign for: the two camber coefficients against the two shape targets,
-        and the circulation coefficient against the level.
+        in `unknowns`. A list rather than a bare name because `unknowns` and
+        `paths` are written generically over :data:`N_COEFF`.
         """
         return [f"camber_coeff[{self.i_row}][{j}]" for j in range(N_COEFF)]
 
@@ -1175,44 +1131,16 @@ class LoadingDistribution(Iterator):
         self._check(config)
 
         measured = turbigen.loading.measure(
-            result, self.i_row, self.spf, self.zeta_front, self.zeta_TE
+            result, self.i_row, self.spf, self.zeta_front
         )
-        if measured is None or not np.isfinite(measured.zeta_peak):
+        if measured is None or not np.isfinite(measured.fac_front):
             logger.info(
-                f"Could not find a suction peak on row {self.i_row} at "
-                f"spf={self.spf:.2f} between zeta={self.zeta_front:.2f} and "
-                f"{self.zeta_TE:.2f}, so its loading shape is unmeasured."
+                f"Could not find a suction surface on row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its front acceleration is unmeasured."
             )
             return {}
 
-        return dict(
-            zip(
-                self.names(),
-                (
-                    measured.zeta_peak - self.zeta_peak,
-                    measured.fac_front - self.fac_front,
-                ),
-            )
-        )
-
-    #
-    # TWO SCALES, NOT ONE
-    #
-
-    def _by_knob(self, zeta, fac):
-        """Return one value per knob, in `names` order."""
-        return dict(zip(self.names(), (zeta, fac)))
-
-    def tolerances(self, config):
-        """Return a tolerance per knob, in that knob's own units.
-
-        A surface fraction and a Mach ratio are different things measured on
-        different scales, and the inherited scalar `tolerance` has no way to
-        say so. Ignored outright rather than blended, as :class:`Repeat`
-        ignores it, so that setting it cannot quietly do half of something.
-        """
-        del config
-        return self._by_knob(self.atol_zeta, self.atol_fac)
+        return dict(zip(self.names(), (measured.fac_front - self.fac_front,)))
 
     #
     # WHAT THE CONFIG HAS TO PROVIDE
@@ -1243,24 +1171,23 @@ class LoadingDistribution(Iterator):
             if not isinstance(camber, Bernstein):
                 raise ValueError(
                     f"Shaping a loading distribution moves the interior "
-                    f"coefficients of a Bernstein camber line, and {where} has "
+                    f"coefficient of a Bernstein camber line, and {where} has "
                     f"a {type(camber).__name__} camber, which has none. Set "
                     f"camber: {{type: bernstein, order: {BERNSTEIN_ORDER}, "
-                    f"coeff: [0.0, 0.0]}}."
+                    f"coeff: [0.0]}}."
                 )
 
             if camber.order != BERNSTEIN_ORDER or len(camber.coeff) != N_COEFF:
                 raise ValueError(
                     f"Shaping a loading distribution needs exactly {N_COEFF} "
-                    f"interior camber coefficients, so order must be "
+                    f"interior camber coefficient, so order must be "
                     f"{BERNSTEIN_ORDER} and coeff must be given in full; "
                     f"{where} has order={camber.order} with "
-                    f"{len(camber.coeff)} coefficient(s). Two is what a camber "
-                    f"line has to give at a fixed blade count, and the "
-                    f"coefficients are written out rather than zero-padded so "
-                    f"that every one this moves is a leaf of the config."
+                    f"{len(camber.coeff)} coefficient(s). One is what a camber "
+                    f"line has to give to move a single front value, and the "
+                    f"coefficient is written out rather than zero-padded so "
+                    f"that the one this moves is a leaf of the config."
                 )
-
 
 
 class PeakMach(Iterator):
@@ -1319,7 +1246,12 @@ class PeakMach(Iterator):
     """
 
     zeta_TE: float = 0.98
-    """Far end of the window fitted [--]. Must match `LoadingDistribution`."""
+    """Far end of the window fitted [--].
+
+    `LoadingDistribution` reads its own target straight off the surface
+    rather than from a fit, so it carries no matching setting of its own; only
+    `zeta_front` needs to agree between the two.
+    """
 
     gain: float = 1.5
     """How much of the error to subtract [--].
@@ -1706,8 +1638,7 @@ def exit_profile(result, order, offset=None):
     if cut is None:
         raise ValueError(f"The exit cut plane at {xr.tolist()} misses the grid.")
 
-    # Structured so that the pitch is an axis to average over. Sized from the
-    block = grid[-1]
+    # Structured so that the pitch is an axis to average over.
     nj, nk = 137, 113  # Brute force to avoid any loss of resolution
     structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
 

@@ -570,13 +570,13 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
 
     **The target and nothing else.** The solid curve beside it is what was
     achieved, and the gap between the two is what the iteration closes;
-    anything more on the axes only makes that harder to see. The two-line fit
-    the iterators measure with is deliberately not drawn --- it is how the
-    numbers in the log were arrived at, not a thing anybody designed.
+    anything more on the axes only makes that harder to see.
 
-    The shape comes from `loading` and the level from the `peak_Ma` beside it.
-    With no `peak_Ma` configured the level was never asked for, so the target
-    is drawn at the height the blade reached and only its shape is a claim.
+    `loading` only ever targets one point, the front value at `zeta_front`, so
+    the apex the target line is drawn through is read off the achieved
+    distribution rather than asked for. The height at that apex comes from the
+    `peak_Ma` beside it where one is configured; with none, the line is drawn
+    through the height the blade reached and only its front value is a claim.
     """
     from turbigen.iterate import (  # noqa: PLC0415 - avoids a cycle
         LoadingDistribution,
@@ -596,18 +596,22 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
         return
 
     level = _matching(config, PeakMach, i_row, spf)
-    if level is not None:
-        ma_peak = level.fac_peak * ma_TE
-    else:
-        folded, suction = turbigen.util.suction_side(zeta, mas)
-        window = (folded >= shape.zeta_front) & (folded <= shape.zeta_TE)
-        if window.sum() < 4:
-            return
-        _, ma_peak, _ = turbigen.util.loading_from_distribution(
-            folded[window], suction[window], shape.zeta_front, shape.zeta_TE
-        )
-        if not np.isfinite(ma_peak):
-            return
+    zeta_TE = level.zeta_TE if level is not None else 0.98
+
+    # The apex position is read from the data even where the height is not:
+    # `loading` states no target for it, so the only honest place to draw the
+    # peak of the target line is wherever the blade actually put one.
+    folded, suction = turbigen.util.suction_side(zeta, mas)
+    window = (folded >= shape.zeta_front) & (folded <= zeta_TE)
+    if window.sum() < 4:
+        return
+    zeta_peak, ma_peak_fit, _ = turbigen.util.loading_from_distribution(
+        folded[window], suction[window], shape.zeta_front, zeta_TE
+    )
+    if not np.isfinite(zeta_peak):
+        return
+
+    ma_peak = level.fac_peak * ma_TE if level is not None else ma_peak_fit
 
     drawn = np.linspace(shape.zeta_front, 1.0, 101)
     ax.plot(
@@ -615,7 +619,7 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
         turbigen.util.loading_target(
             drawn,
             shape.zeta_front,
-            shape.zeta_peak,
+            zeta_peak,
             shape.fac_front * ma_TE / mach_ratio(machine, i_row),
             ma_peak,
             ma_TE,
@@ -706,7 +710,7 @@ class SurfacePlot(Post):
                 # Folded onto the positive axis, so both surfaces run from the
                 # stagnation point at zero out to the trailing edge at one and
                 # can be read against each other directly.
-                line, = ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+                (line,) = ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
 
                 _draw_loading_target(
                     ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()

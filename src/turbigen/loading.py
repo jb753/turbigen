@@ -49,6 +49,11 @@ class Loading:
     to the trailing edge because that is a mean-line quantity fixed by the
     duty, and carrying the Mach ratio so the same number means the same style
     of leading edge across rows of differing duty.
+
+    Read straight off the surface distribution at `zeta_front`, unlike
+    :attr:`fac_peak`, which comes from a fit. A single interpolated point
+    needs no peak to exist, so this is finite even on a blade that
+    accelerates all the way to its trailing edge.
     """
 
     fac_peak: float
@@ -166,14 +171,19 @@ def measure(result, i_row, spf, zeta_front=0.2, zeta_TE=0.98):
     folded, suction = turbigen.util.suction_side(zeta, mas)
     i_max = int(np.argmax(suction))
 
-    zeta_peak, ma_peak, ma_front = turbigen.util.loading_from_distribution(
+    # Read straight off the data rather than off the two-line fit below: the
+    # front value does not need a peak to be meaningful, only a point at
+    # `zeta_front`, which interpolating the suction side always has.
+    ma_front = float(np.interp(zeta_front, folded, suction))
+
+    zeta_peak, ma_peak, _ = turbigen.util.loading_from_distribution(
         folded, suction, zeta_front, zeta_TE
     )
     fitted = np.isfinite(ma_peak)
 
     return Loading(
         zeta_peak=zeta_peak,
-        fac_front=ma_front / ma_TE * mach_ratio(machine, i_row) if fitted else np.nan,
+        fac_front=ma_front / ma_TE * mach_ratio(machine, i_row),
         fac_peak=ma_peak / ma_TE if fitted else np.nan,
         ma_peak=ma_peak,
         ma_TE=ma_TE,

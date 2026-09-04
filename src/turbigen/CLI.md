@@ -649,78 +649,67 @@ profile.
 ### Shaping the loading, and why two knobs
 
 `deviation` and `incidence` correct the *ends* of a blade. `loading` corrects
-what happens in between — where the suction peak sits and how hard the leading
-edge accelerates — by moving the interior coefficients of a `bernstein` camber
-line, whose endpoint coefficients are pinned so the metal angles stay put and
-the three cannot fight.
+one point in between — how hard the leading edge accelerates by `zeta_front` —
+by moving the single interior coefficient of a `bernstein` camber line, whose
+endpoint coefficients are pinned so the metal angles stay put and this cannot
+fight the two that own them.
 
-Three knobs, and the number is physics rather than convenience. At a fixed duty
-the area enclosed by the isentropic Mach loop is the blade circulation, which
-the pitch sets; a camber line with pinned ends redistributes that area along the
-chord without changing it. So of the three numbers describing a two-line
-shape — a front value, a peak value, and where the peak sits — one is spoken for
-at fixed blade count, and only **two are reachable**.
+One knob, and the number is physics rather than convenience: a camber line with
+pinned ends needs one interior degree of freedom to move one point on the
+curve, and no more. Where the peak of the resulting distribution sits and how
+high it stands are not targets — the first is left to fall out of the shape,
+and the second belongs to a companion iterator.
 
-Targeting two and letting the third float is what this first did, and it does
-not work: the level and the shape are bound by that same constraint, so an
-uncontrolled level drifts and drags the shape with it. Sweeping the circulation
-coefficient over 0.6, 0.7 and 0.8 at one fixed pair of shape targets, only the
-value the targets had been calibrated at converged; the outer two diverged or
-went flat, because the blade's natural peak position moves with loading
-(0.638, 0.610, 0.571 at those three) and two camber coefficients cannot drag it
-back.
-
-So the circulation coefficient becomes the third lever and the peak height the
-third target, which lifts the constraint and makes the system square.
+That companion is `peak_Ma`, since how high the peak stands cannot be left to
+the camber either. At a fixed duty the area enclosed by the isentropic Mach
+loop is the blade circulation, which the pitch sets; a camber line with pinned
+ends redistributes that area along the chord without changing it, so the level
+is the blade count's to set.
 
 **Two members, not one, because a gain carries one sign.** `gain` states the
 sign of a knob's sensitivity as well as its size, and these knobs disagree: the
-peak rises with the circulation coefficient where the shape targets fall with
-the camber coefficients. Folded into a single iterator, one scalar gain drove
+peak rises with the circulation coefficient where the front value falls with
+the camber coefficient. Folded into a single iterator, one scalar gain drove
 the count the wrong way at every iteration — `Co` walked from 0.70 to 0.57
 while the peak it was meant to raise fell with it. Split into `loading` and
 `peak_Ma`, each declares the sign it has, and the stepper merges them into one
 table so nothing about the coupling is lost. They are configured together and
 are of little use apart.
 
-The three targets are `zeta_peak`; `fac_front`, which is
+`loading`'s one target is `fac_front`, which is
 `Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1` — Clark's third parameter, referred to
 the trailing edge because that is a mean-line quantity fixed by the duty, and
 carrying the `Ma_2 / Ma_1` factor so the same number means the same style of
-leading edge across rows of different duty; and `fac_peak = Ma_peak / Ma_TE`,
-which is one more than the diffusion factor `metrics: diffusion_factor` records
-— the same measurement, through `turbigen.loading`, so a report cannot
-contradict what a design was iterated onto.
-
-That metric reports both peaks. `Mas_max` and `zeta_max` come from a maximum of
-the data and exist for every blade; `zeta_peak`, `fac_front` and `fac_peak` come
-from the fit and are NaN on a blade that accelerates all the way to its trailing
-edge and so has no interior peak to place. `DF` is built from the maximum, so
-every blade still gets one.
+leading edge across rows of different duty. It is read straight off the surface
+distribution at `zeta_front`, needing no peak to exist, so it is finite even on
+a blade that accelerates all the way to its trailing edge. `peak_Ma`'s target
+is `fac_peak = Ma_peak / Ma_TE`, which is one more than the diffusion factor
+`metrics: diffusion_factor` records — the same measurement, through
+`turbigen.loading`, so a report cannot contradict what a design was iterated
+onto. That metric also records `zeta_peak` and `fac_peak`, which come from a
+fit and are NaN on a blade with no interior peak to place; `Mas_max` and
+`zeta_max` come from a maximum of the data and exist for every blade, and `DF`
+is built from the maximum, so every blade still gets one.
 
 Moving blade count is what stopped `DiffusionFactor` being ported, because it
 changes the mesh. It still does — the mesher sizes the grid from the pitch, so
 `Co` 0.70 and 0.75 mesh at 225 and 209 streamwise nodes on the example
-cascade — which puts a floor on `atol_peak` but does not prevent the loop, since
-every iteration remeshes and restarts by index-space interpolation anyway. The
-integer blade count is the smaller worry it looks: on that cascade one blade is
-0.36% of `Co`, far finer than any step taken, though it scales as `1/N_blade`
-and would matter on a row with forty.
+cascade — which puts a floor on `peak_Ma`'s tolerance but does not prevent the
+loop, since every iteration remeshes and restarts by index-space interpolation
+anyway. The integer blade count is the smaller worry it looks: on that cascade
+one blade is 0.36% of `Co`, far finer than any step taken, though it scales as
+`1/N_blade` and would matter on a row with forty.
 
-The window starts at `zeta_front`, a fifth of the way along the surface by
-default rather than a tenth: two straight lines have to be a fair description of
-what they are fitted to, and a window reaching inside the sharp acceleration
-round the nose is not one — on a cascade measured here the fitted front line and
-the data disagreed by 0.08 in Mach fraction starting at 0.1, and by 0.03
-starting at 0.2.
+`zeta_front` sits a fifth of the way along the surface by default rather than a
+tenth: a point that close to the nose still sits inside the sharp acceleration
+round it, which is not the camber line's to answer for. `peak_Ma` carries the
+same setting for the window its own fit uses, and the two should agree so that
+a design's front and peak describe the same curve.
 
 The measurement is the surface distribution `post: surface` draws, through the
-same functions, so what is iterated to is what the report shows — and the report
-overlays the target on it. Where the peak sits comes from a least-squares fit of
-two straight lines meeting at a breakpoint, not from an argmax: the peak then
-falls out as the intersection of two lines each fitted over many points, which
-is what keeps it steady on the flat-topped profiles that are a design style
-rather than a pathology.
+same functions, so what is iterated to is what the report shows — and the
+report overlays the target on it, its apex read off the achieved distribution
+since `loading` states no target for where it sits.
 
 ### Starting from designs already run
 
