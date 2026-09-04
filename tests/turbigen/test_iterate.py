@@ -875,13 +875,76 @@ def test_the_inherited_tolerance_is_ignored():
     assert config.iterate.correct[0].clips(config)["inlet_profile.DAlpha[0]"] == 5.0
 
 
+#
+# HOW MUCH COMES ROUND AGAIN
+#
+
+
+def test_the_whole_exit_profile_comes_round_by_default():
+    """A strictly repeating stage, which is what the loop meant before."""
+    assert iterate.Repeat().transfers() == {"DPo": 1.0, "DTo": 1.0, "DAlpha": 1.0}
+
+
+def test_only_the_temperature_is_damped():
+    """Pressure and angle are re-established by the row; temperature mixes."""
+    transfers = iterate.Repeat(transfer_To=0.5).transfers()
+
+    assert transfers["DTo"] == pytest.approx(0.5)
+    assert transfers["DPo"] == 1.0
+    assert transfers["DAlpha"] == 1.0
+
+
+def test_a_damped_temperature_moves_the_fixed_point_not_the_path(monkeypatch):
+    """The error is what the loop nulls, so halving the transfer has to leave a
+    null error at an inlet carrying half the exit profile -- not merely take
+    smaller steps towards carrying all of it, which is what a gain would do."""
+    exit_profile = {"DPo": (0.4, 0.0), "DTo": (0.6, 0.0), "DAlpha": (2.0, 0.0)}
+    monkeypatch.setattr(
+        iterate, "exit_profile", lambda result, order, offset: exit_profile
+    )
+
+    config = repeating(order=2, transfer_To=0.5)
+    repeat = config.iterate.correct[0]
+
+    # An inlet carrying half the exit temperature profile and all of the rest.
+    settled = repeat.with_unknowns(
+        config,
+        {
+            "inlet_profile.DPo[0]": 0.4,
+            "inlet_profile.DTo[0]": 0.3,
+            "inlet_profile.DAlpha[0]": 2.0,
+        },
+    )
+    result = Result(machine=settled.design(), grid=object())
+
+    errors = settled.iterate.correct[0].error(settled, result)
+
+    assert errors["inlet_profile.DTo[0]"] == pytest.approx(0.0)
+    assert errors["inlet_profile.DPo[0]"] == pytest.approx(0.0)
+    assert errors["inlet_profile.DAlpha[0]"] == pytest.approx(0.0)
+
+    # And the undamped loop is not settled there: it wants the whole profile.
+    undamped = dataclasses.replace(
+        settled, iterate=iterate.Iteration(correct=(iterate.Repeat(order=2),))
+    )
+    assert undamped.iterate.correct[0].error(undamped, result)[
+        "inlet_profile.DTo[0]"
+    ] == pytest.approx(-0.3)
+
+
+def test_a_transfer_outside_zero_to_one_is_refused():
+    for transfer_To in (-0.1, 1.5):
+        with pytest.raises(ValueError, match="between 0 and 1"):
+            iterate.Repeat(transfer_To=transfer_To)
+
+
 def test_order_below_one_is_refused():
     with pytest.raises(ValueError, match="at least 1"):
         iterate.Repeat(order=0)
 
 
 def test_the_repeat_section_round_trips():
-    config = repeating(order=4, atol_angle=0.25)
+    config = repeating(order=4, atol_angle=0.25, transfer_To=0.5)
 
     assert Config.from_dict(config.to_dict()) == config
 

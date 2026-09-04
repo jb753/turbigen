@@ -1313,7 +1313,32 @@ class Repeat(Iterator):
     """
 
     gain: float = 1.0
-    """One copies the exit profile outright; less under-relaxes it."""
+    """One copies the exit profile outright; less under-relaxes it.
+
+    Relaxation only: the loop stops where the error is null, and `gain` scales
+    the path to that point rather than moving it. What fraction of the exit
+    profile the converged inlet actually carries is
+    :attr:`transfer_To` and nothing else.
+    """
+
+    transfer_To: float = 1.0
+    """Fraction of the exit stagnation temperature profile fed back upstream.
+
+    One is a strictly repeating stage: whatever temperature redistribution
+    leaves, arrives. That is the right statement for pressure and for angle,
+    which the blade row re-establishes, and it overstates the temperature
+    profile, which mixes out between stages instead --- a hot streak that
+    survives one stage intact survives every stage, and the loop compounds it.
+
+    Below one the converged inlet carries that fraction of the exit profile,
+    because the error is measured against the damped exit rather than the raw
+    one. It is a claim about how much interstage mixing there is, so it belongs
+    here as a number somebody chooses rather than as a relaxation that would
+    slow the loop down and land in the same place anyway.
+
+    Only the temperature is damped. Pressure and angle keep their full
+    feedback, so the default is exactly the loop as it was.
+    """
 
     atol_head: float = 0.01
     """Converged when ``DPo`` and ``DTo`` are within this [--].
@@ -1336,6 +1361,13 @@ class Repeat(Iterator):
             raise ValueError(
                 f"repeat.order must be at least 1, got {self.order}. Mode 0 is "
                 f"the constant, which a profile does not carry."
+            )
+        if not 0.0 <= self.transfer_To <= 1.0:
+            raise ValueError(
+                f"repeat.transfer_To must be between 0 and 1, got "
+                f"{self.transfer_To}. It is the fraction of the exit "
+                f"temperature profile that comes round again; above one the "
+                f"loop amplifies its own profile, and below zero it inverts it."
             )
 
     #
@@ -1393,14 +1425,25 @@ class Repeat(Iterator):
         measured = exit_profile(result, self.order, self.offset)
         current = self.unknowns(config)
 
-        # inlet minus outlet, so that `u -= gain * e` at gain one lands on the
-        # outlet exactly.
+        # Inlet minus the exit profile this stage is fed by, so that
+        # `u -= gain * e` at gain one lands on it exactly. That is the whole
+        # exit profile except in temperature, where `transfer_To` says how much
+        # of it survives to the next inlet -- and damping it here rather than
+        # in the step is what moves the fixed point rather than the path to it.
+        transferred = self.transfers()
         return {
             f"inlet_profile.{name}[{mode}]": (
-                current[f"inlet_profile.{name}[{mode}]"] - measured[name][mode]
+                current[f"inlet_profile.{name}[{mode}]"]
+                - transferred[name] * measured[name][mode]
             )
             for name in self.COLUMNS
             for mode in range(self.order)
+        }
+
+    def transfers(self):
+        """Return the fraction of the exit profile each column feeds back."""
+        return {
+            name: (self.transfer_To if name == "DTo" else 1.0) for name in self.COLUMNS
         }
 
     #
