@@ -40,6 +40,7 @@ import numpy as np
 import pytest
 
 from test_blade import FLUID, MEAN_LINE, blade, build
+import turbigen.loading
 from turbigen import Config, Result, iterate, node
 
 
@@ -1100,16 +1101,16 @@ class Shaped(iterate.LoadingDistribution):
     """
 
     def response(self, config):
-        c0, c1, Co = (self.unknowns(config)[name] for name in self.names())
+        c0, c1 = (self.unknowns(config)[name] for name in self.names())
+        Co = config.blades[self.i_row].count.Co
         return (
             0.610 - 0.244 * c0 - 0.297 * c1 - 0.340 * (Co - 0.7),
             1.900 - 0.500 * c0 - 1.150 * c1 + 2.600 * (Co - 0.7),
-            1.160 - 0.020 * c0 - 0.030 * c1 + 0.500 * (Co - 0.7),
         )
 
     def error(self, config, result):
         del result
-        targets = (self.zeta_peak, self.fac_front, self.fac_peak)
+        targets = (self.zeta_peak, self.fac_front)
         return dict(zip(self.names(), np.asarray(self.response(config)) - targets))
 
 
@@ -1123,12 +1124,36 @@ class Degenerate(Shaped):
     """
 
     def response(self, config):
-        c0, c1, Co = (self.unknowns(config)[name] for name in self.names())
-        return (
-            0.610 - 0.244 * (c0 - c1),
-            1.900 - 0.500 * (c0 - c1),
-            1.160 + 0.500 * (Co - 0.7),
+        c0, c1 = (self.unknowns(config)[name] for name in self.names())
+        return 0.610 - 0.244 * (c0 - c1), 1.900 - 0.500 * (c0 - c1)
+
+
+def _measured(zeta_peak=0.62, fac_front=1.95, fac_peak=1.25):
+    """A `Loading` with the fields a test cares about and plausible rest."""
+    return turbigen.loading.Loading(
+        zeta_peak=zeta_peak, fac_front=fac_front, fac_peak=fac_peak,
+        ma_peak=0.75, ma_TE=0.60, ma_max=0.74, zeta_max=zeta_peak + 0.02,
+    )
+
+
+class Levelled(iterate.PeakMach):
+    """The `peak_Ma` stand-in, whose slope is positive where the camber's is not.
+
+    Its whole reason for being a separate member: `Iterator.gain` carries one
+    sign per iterator, and this knob's is the opposite of the shape knobs'.
+    """
+
+    def response(self, config):
+        c0, c1 = (
+            float(np.mean([s.camber.coeff[j] for s in config.blades[self.i_row].sections]))
+            for j in range(2)
         )
+        Co = config.blades[self.i_row].count.Co
+        return 1.160 - 0.020 * c0 - 0.030 * c1 + 0.500 * (Co - 0.7)
+
+    def error(self, config, result):
+        del result
+        return {f"Co[{self.i_row}]": self.response(config) - self.fac_peak}
 
 
 def designing(config, i_iter):
@@ -1142,7 +1167,6 @@ def test_loading_owns_two_coefficients_of_its_own_row(loading):
     assert set(loading.iterate.correct[0].unknowns(loading)) == {
         "camber_coeff[0][0]",
         "camber_coeff[0][1]",
-        "Co[0]",
     }
 
 
@@ -1200,32 +1224,86 @@ def test_loading_leaves_the_rows_it_does_not_own_alone(loading):
     assert moved.blades[1] == loading.blades[1]
 
 
-def test_loading_owns_the_circulation_coefficient(loading):
+def test_peak_owns_the_circulation_coefficient(loading):
     """The third lever, and the reason there can be a third target.
 
     At a fixed blade count the loop area is fixed, so the three numbers
     describing a two-line shape carry one constraint between them and only two
     are reachable. Freeing `Co` lifts it.
     """
-    iterator = loading.iterate.correct[0]
-    assert iterator.unknowns(loading)["Co[0]"] == pytest.approx(
-        loading.blades[0].count.Co
-    )
+    peak = iterate.PeakMach(i_row=0)
 
-    moved = iterator.with_unknowns(loading, {"Co[0]": 0.62})
+    assert peak.unknowns(loading) == {"Co[0]": pytest.approx(loading.blades[0].count.Co)}
+
+    moved = peak.with_unknowns(loading, {"Co[0]": 0.62})
     assert moved.blades[0].count.Co == pytest.approx(0.62)
-    # The camber it did not move stays where it was.
+    # It owns the count and nothing else; the camber is the other member's.
     assert moved.blades[0].sections == loading.blades[0].sections
 
 
-def test_loading_needs_a_circulation_count():
+def test_peak_declares_the_opposite_sign_to_the_shape(loading):
+    """Why this is a member of its own rather than a third knob on the other.
+
+    `gain` carries one sign per iterator. The peak rises with the circulation
+    coefficient while the shape targets fall with the camber coefficients, so a
+    single scalar cannot serve both -- folded together it drove this knob the
+    wrong way every iteration.
+    """
+    config = dataclasses.replace(
+        loading,
+        iterate=iterate.Iteration(
+            correct=(*loading.iterate.correct, iterate.PeakMach(i_row=0))
+        ),
+    )
+    gain, _, _ = iterate.properties(config)
+
+    assert gain["camber_coeff[0][0]"] < 0.0
+    assert gain["Co[0]"] > 0.0
+
+
+def test_peak_paths_match_what_is_moved(loading):
+    peak = iterate.PeakMach(i_row=0)
+    assert peak.paths(loading) == _probe(peak, loading)
+    assert peak.paths(loading) <= set(node.flatten(loading))
+
+
+def test_peak_round_trips_through_a_config_dict(loading):
+    config = dataclasses.replace(
+        loading, iterate=iterate.Iteration(correct=(iterate.PeakMach(fac_peak=1.3),))
+    )
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["iterate"]["correct"][0]["type"] == "peak_Ma"
+
+
+def test_peak_without_a_grid_measures_nothing(loading):
+    assert iterate.PeakMach().error(loading, Result()) == {}
+
+
+def test_peak_delegates_to_the_measurement(loading, monkeypatch):
+    monkeypatch.setattr(
+        turbigen.loading, "measure", lambda *a: _measured(fac_peak=1.31)
+    )
+    error = iterate.PeakMach(fac_peak=1.2).error(
+        loading, Result(machine=loading.design(), grid=object())
+    )
+    assert error["Co[0]"] == pytest.approx(1.31 - 1.2)
+
+
+def test_peak_needs_a_circulation_count():
     """A fixed blade count has no continuous lever to move."""
     fixed = shaped()
     fixed["count"] = {"type": "Nb", "Nb": 40}
     config = build(blades=[fixed, shaped()])
 
     with pytest.raises(ValueError, match="FixedCount"):
-        iterate.LoadingDistribution().unknowns(config)
+        iterate.PeakMach().unknowns(config)
+
+
+@pytest.mark.parametrize("kwargs", [{"fac_peak": 0.0}, {"fac_peak": -1.0},
+                                    {"zeta_front": 0.0}, {"zeta_front": 0.99}])
+def test_peak_refuses_an_impossible_setting(kwargs):
+    with pytest.raises(ValueError):
+        iterate.PeakMach(**kwargs)
 
 
 def test_loading_paths_match_what_is_moved(loading):
@@ -1259,7 +1337,7 @@ def test_loading_two_rows_do_not_collide():
 
     assert set(iterate.unknowns(config)) == {
         f"camber_coeff[{i}][{j}]" for i in range(2) for j in range(2)
-    } | {"Co[0]", "Co[1]"}
+    }
 
 
 def test_loading_shares_a_table_with_the_recambers():
@@ -1284,12 +1362,11 @@ def test_loading_shares_a_table_with_the_recambers():
 def test_loading_has_a_tolerance_for_each_of_its_units(loading):
     """A surface fraction and a Mach ratio, which one number cannot serve."""
     iterator = dataclasses.replace(
-        loading.iterate.correct[0], atol_zeta=0.03, atol_fac=0.07, atol_peak=0.11
+        loading.iterate.correct[0], atol_zeta=0.03, atol_fac=0.07
     )
     assert iterator.tolerances(loading) == {
         "camber_coeff[0][0]": 0.03,
         "camber_coeff[0][1]": 0.07,
-        "Co[0]": 0.11,
     }
 
 
@@ -1350,22 +1427,28 @@ def test_loading_refuses_an_unreachable_target(kwargs):
 def test_loading_converges_onto_its_target(loading):
     """The closed loop, against a declared response instead of a solver."""
     config = dataclasses.replace(
-        loading, iterate=iterate.Iteration(correct=(Shaped(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19),))
+        loading,
+        iterate=iterate.Iteration(
+            correct=(
+                Shaped(zeta_peak=0.57, fac_front=1.85),
+                Levelled(fac_peak=1.19),
+            )
+        ),
     )
 
     final, _, converged = iterate.converge(config, designing, max_iter=20)
     assert converged
 
-    zeta_peak, fac_front, fac_peak = final.iterate.correct[0].response(final)
+    zeta_peak, fac_front = final.iterate.correct[0].response(final)
     assert zeta_peak == pytest.approx(0.57, abs=0.02)
     assert fac_front == pytest.approx(1.85, abs=0.05)
-    assert fac_peak == pytest.approx(1.19, abs=0.02)
+    assert final.iterate.correct[1].response(final) == pytest.approx(1.19, abs=0.02)
 
 
 def test_loading_moves_the_camber_it_started_from(loading):
     """Convergence has to come from the coefficients, not from nowhere."""
     config = dataclasses.replace(
-        loading, iterate=iterate.Iteration(correct=(Shaped(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19),))
+        loading, iterate=iterate.Iteration(correct=(Shaped(zeta_peak=0.57, fac_front=1.85),))
     )
     final, _, _ = iterate.converge(config, designing, max_iter=20)
 
@@ -1375,7 +1458,7 @@ def test_loading_moves_the_camber_it_started_from(loading):
 
 def test_loading_is_clipped(loading):
     """The trust bound holds on the first step, taken before anything is known."""
-    iterator = Shaped(zeta_peak=0.30, fac_front=1.20, fac_peak=1.50, clip=0.02, clip_Co=0.02)
+    iterator = Shaped(zeta_peak=0.30, fac_front=1.20, clip=0.02)
     config = dataclasses.replace(
         loading, iterate=iterate.Iteration(correct=(iterator,))
     )
@@ -1388,7 +1471,7 @@ def test_loading_is_clipped(loading):
 
 def test_loading_survives_a_degenerate_response(loading):
     """Two knobs that cancel make the Jacobian singular, not the design NaN."""
-    iterator = Degenerate(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19)
+    iterator = Degenerate(zeta_peak=0.57, fac_front=1.85)
     config = dataclasses.replace(
         loading, iterate=iterate.Iteration(correct=(iterator,))
     )
@@ -1405,7 +1488,9 @@ def test_loading_delegates_to_the_measurement(loading, monkeypatch):
     cutting it does needs a solved grid, and the arithmetic either side of it
     does not.
     """
-    monkeypatch.setattr(iterate, "measure_loading", lambda *args: (0.62, 1.95, 1.25))
+    monkeypatch.setattr(
+        turbigen.loading, "measure", lambda *a: _measured(zeta_peak=0.62, fac_front=1.95)
+    )
 
     error = loading.iterate.correct[0].error(
         loading, Result(machine=loading.design(), grid=object())
@@ -1413,12 +1498,11 @@ def test_loading_delegates_to_the_measurement(loading, monkeypatch):
 
     assert error["camber_coeff[0][0]"] == pytest.approx(0.62 - 0.55)
     assert error["camber_coeff[0][1]"] == pytest.approx(1.95 - 1.8)
-    assert error["Co[0]"] == pytest.approx(1.25 - 1.2)
 
 
 def test_loading_drops_a_distribution_with_no_peak(loading, monkeypatch):
     """An unmeasured knob is held, not stepped on a NaN."""
-    monkeypatch.setattr(iterate, "measure_loading", lambda *args: (np.nan, np.nan, np.nan))
+    monkeypatch.setattr(turbigen.loading, "measure", lambda *a: None)
 
     result = Result(machine=loading.design(), grid=object())
     assert loading.iterate.correct[0].error(loading, result) == {}

@@ -18,9 +18,9 @@ import numpy as np
 
 import ember.average
 import ember.cut
+import turbigen.loading
 import turbigen.util
 from turbigen.node import Node
-from turbigen.post import N_CHORD_PLOT
 
 logger = logging.getLogger("turbigen")
 
@@ -261,11 +261,18 @@ class DiffusionFactor(Metric):
     the same reference :class:`~turbigen.post.SurfacePlot` draws it against, so
     what this measures is the number that plot shows.
 
-    Measured, not iterated on. Blade count is what sets diffusion, and it is an
-    integer: driving it from a target moves the design in a staircase whose
-    tread is one blade, which is coarser than any tolerance worth asking for
-    and slower to settle than it is worth. So the number is recorded, at every
-    row and every span fraction, and the count is the designer's to choose.
+    Every number here comes from :func:`turbigen.loading.measure`, which is
+    also what :class:`~turbigen.iterate.LoadingDistribution` and
+    :class:`~turbigen.iterate.PeakMach` correct against. That sharing is the
+    point: a metric and an iterator that disagreed about where the peak was
+    would let a design be driven onto a target the report then contradicts.
+
+    The peak is fitted rather than taken as a maximum of the data --- two
+    straight lines meeting at a breakpoint, so it uses every point in the
+    window and slides where an argmax steps between nodes. That makes `DF`
+    a little different from a peak read straight off the curve, by around
+    three per cent on the case it was checked against, and much steadier on the
+    flat-topped distributions that are a design style rather than a pathology.
     """
 
     type: ClassVar[str] = "diffusion_factor"
@@ -276,99 +283,73 @@ class DiffusionFactor(Metric):
     offset: int = 0
     """Cells away from the wall to take the distribution at."""
 
+    zeta_front: float = 0.2
+    """Front anchor of the window fitted [--].
+
+    Matches the default the iterators carry, so a config that shapes a blade
+    and a config that only measures one describe the same curve.
+    """
+
+    zeta_TE: float = 0.98
+    """Far end of the window fitted [--]."""
+
     def evaluate(self, config, result):
         """Return the diffusion of each row, at each span fraction.
 
         Returns
         -------
         dict
-            ``DF`` [--], ``Mas_max`` [--], ``Mas_TE`` [--] and ``zeta_max``
-            [--], each shaped ``(n_spf, n_row)``. The two Mach numbers are the
-            parts `DF` is made of, so a change in it says whether the peak grew
-            or the exit fell. `zeta_max` is where the peak sits, in surface
-            distance normalised as :class:`~turbigen.post.SurfacePlot` plots
-            it: zero at the stagnation point and one at the trailing edge, on
-            whichever surface the peak is on. NaN for a row and span with no
-            blade surface to cut --- above a clearance gap, or a row with no
-            blade at all.
+            ``DF``, ``Mas_peak``, ``Mas_TE``, ``zeta_peak``, ``fac_front`` and
+            ``fac_peak`` [--], each shaped ``(n_spf, n_row)``. The two Mach
+            numbers are the parts `DF` is made of, so a change in it says
+            whether the peak grew or the exit fell; `fac_peak` is the same
+            ratio written as ``DF + 1``, which is the form the iterators take a
+            target in. `zeta_peak` is where the peak sits and `fac_front` how
+            hard the leading edge accelerates --- the same two numbers
+            :class:`~turbigen.iterate.LoadingDistribution` shapes a blade to.
+            NaN for a row and span with nothing to measure: above a clearance
+            gap, a row with no blade, or a distribution with no peak in the
+            window.
         """
-        grid, machine = result.grid, result.machine
-        if grid is None or machine is None:
+        del config
+
+        if result.grid is None or result.machine is None:
             return {}
         if result.history is not None and getattr(result.history, "diverged", False):
             return {}
 
-        surfaces = turbigen.util.cut_blade_surfs(grid, self.offset)
+        shape = (len(self.spf), len(result.grid.rows))
+        out = {
+            name: np.full(shape, np.nan)
+            for name in ("Mas_max", "Mas_TE", "zeta_max",
+                         "zeta_peak", "fac_front", "fac_peak")
+        }
 
-        rows = machine.rows
-        n_row = len(grid.rows)
-        Mas_max = np.full((len(self.spf), n_row), np.nan)
-        Mas_TE = np.full((len(self.spf), n_row), np.nan)
-        zeta_max = np.full((len(self.spf), n_row), np.nan)
-
-        for i_row in range(n_row):
-            if i_row >= len(surfaces) or surfaces[i_row] is None:
-                continue
-
-            surface = surfaces[i_row][0]
-            s_ref = machine.mean_line[:, i_row].s[0]
-
-            blade = rows[i_row].blade
-
+        for i_row in range(shape[1]):
             for i_spf, spf in enumerate(self.spf):
-                measured = _surface_distribution(
-                    machine.annulus, blade, surface, s_ref, i_row, spf
+                measured = turbigen.loading.measure(
+                    result, i_row, spf, self.zeta_front, self.zeta_TE
                 )
                 if measured is None:
                     logger.debug(
-                        f"Row {i_row} has no blade surface at spf={spf:.2f}, "
-                        "so its diffusion there is unmeasured."
+                        f"Row {i_row} has no loading to measure at "
+                        f"spf={spf:.2f}, so its diffusion there is unmeasured."
                     )
                     continue
-                mas, zeta = measured
 
-                # The cut wraps the blade from one trailing edge round to the
-                # other, so its endpoints are the two sides of the trailing
-                # edge and their mean is the exit value.
-                i_max = int(np.argmax(mas))
-                Mas_max[i_spf, i_row] = mas[i_max]
-                Mas_TE[i_spf, i_row] = 0.5 * (mas[0] + mas[-1])
+                out["Mas_max"][i_spf, i_row] = measured.ma_max
+                out["Mas_TE"][i_spf, i_row] = measured.ma_TE
+                out["zeta_max"][i_spf, i_row] = measured.zeta_max
+                out["zeta_peak"][i_spf, i_row] = measured.zeta_peak
+                out["fac_front"][i_spf, i_row] = measured.fac_front
+                out["fac_peak"][i_spf, i_row] = measured.fac_peak
 
-                # Folded onto the positive axis, as the plot folds it: which
-                # surface the peak is on is said by the peak being a peak.
-                zeta_max[i_spf, i_row] = abs(zeta[i_max])
-
-        # A trailing edge at rest divides no distribution: left as NaN, which
-        # is what an unmeasured diffusion already is.
+        # From the maximum rather than from the fit, so that every blade gets a
+        # diffusion factor: one that accelerates to its trailing edge has no
+        # interior peak to fit, and it is still diffusing nothing, which is a
+        # measurement rather than a failure.
         with np.errstate(divide="ignore", invalid="ignore"):
-            DF = np.where(Mas_TE > 0.0, Mas_max / Mas_TE - 1.0, np.nan)
-
-        return {
-            "DF": DF,
-            "Mas_max": Mas_max,
-            "Mas_TE": Mas_TE,
-            "zeta_max": zeta_max,
-        }
-
-
-def _surface_distribution(annulus, blade, surface, s_ref, i_row, spf):
-    """Return ``(mas, zeta)`` round the blade of row `i_row` at `spf`.
-
-    The isentropic Mach number and the normalised surface distance it is
-    plotted against, taken from the same cut so that a peak and where it sits
-    are the same point.
-
-    None where the section is not there --- above a clearance gap the blade has
-    no surface to cut, the span there being trimmed off as flow rather than
-    wall.
-    """
-    cut, _ = turbigen.util.cut_section(surface, annulus, i_row, spf)
-    if cut is None:
-        return None
-
-    mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
-
-    # The geometric nose anchors the search for the stagnation point, exactly
-    # as the surface distribution plot anchors it.
-    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-    return mas, turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
+            out["DF"] = np.where(
+                out["Mas_TE"] > 0.0, out["Mas_max"] / out["Mas_TE"] - 1.0, np.nan
+            )
+        return out

@@ -435,8 +435,13 @@ def machine(bladed):
     return bladed.design()
 
 
-def _shaped(config, **kwargs):
-    """Return `config` with a Bernstein camber and a loading iterator on row 0."""
+def _shaped(config, fac_peak=None, **kwargs):
+    """Return `config` with a Bernstein camber and a loading iterator on row 0.
+
+    `fac_peak` adds the `peak_Ma` member beside it, which is what states the
+    level of the target; without one the overlay draws the shape at the height
+    the blade reached.
+    """
     import dataclasses  # noqa: PLC0415 - only these tests rebuild a config
 
     from turbigen import camber, iterate  # noqa: PLC0415
@@ -446,10 +451,19 @@ def _shaped(config, **kwargs):
         dataclasses.replace(section, camber=camber.Bernstein(order=3, coeff=(0.0, 0.0)))
         for section in blade.sections
     )
+    correct = [iterate.LoadingDistribution(**kwargs)]
+    if fac_peak is not None:
+        correct.append(
+            iterate.PeakMach(
+                i_row=kwargs.get("i_row", 0),
+                spf=kwargs.get("spf", 0.5),
+                fac_peak=fac_peak,
+            )
+        )
     return dataclasses.replace(
         config,
         blades=(dataclasses.replace(blade, sections=sections),),
-        iterate=iterate.Iteration(correct=(iterate.LoadingDistribution(**kwargs),)),
+        iterate=iterate.Iteration(correct=tuple(correct)),
     )
 
 
@@ -472,7 +486,7 @@ def _peaked(n=200):
 
 def _ma_front(config, machine, ma_TE=1.0):
     """Return the Mach number the configured target implies at `zeta_front`."""
-    from turbigen.iterate import mach_ratio  # noqa: PLC0415
+    from turbigen.loading import mach_ratio  # noqa: PLC0415
 
     iterator = config.iterate.correct[0]
     return iterator.fac_front * ma_TE / mach_ratio(machine, iterator.i_row)
@@ -484,7 +498,7 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     The point of the overlay: what the iterator closes is the gap between these
     two lines, which is far easier to see than to read off a table.
     """
-    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8)
+    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, fac_peak=1.3)
     zeta, mas = _peaked()
 
     fig, ax = plt.subplots()
@@ -511,9 +525,7 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     # target peak position and height, and the front anchor is what
     # `fac_front` denormalises to against this row's duty.
     assert x[np.nanargmax(y)] == pytest.approx(0.6, abs=x[1] - x[0])
-    assert np.nanmax(y) == pytest.approx(
-        config.iterate.correct[0].fac_peak, rel=1e-2
-    )
+    assert np.nanmax(y) == pytest.approx(config.iterate.correct[1].fac_peak, rel=1e-2)
     assert np.interp(0.2, x, y) == pytest.approx(
         _ma_front(config, machine, ma_TE=1.0), rel=1e-3
     )
@@ -531,12 +543,30 @@ def test_surface_plot_overlays_a_target_on_a_peakless_cascade(bladed, solved):
     This fixture accelerates all the way to its trailing edge and so has no
     peak for the *iterator* to measure --- but the target is a statement about
     what was wanted, not about what was found, so it is exactly the case where
-    seeing the two together is most use.
+    seeing the two together is most use. It needs the level stated, since with
+    no `peak_Ma` the height would have to be measured and cannot be.
+    """
+    config = _shaped(bladed, zeta_peak=0.55, fac_front=1.8, fac_peak=1.3)
+
+    labels = [
+        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+    ]
+    assert any("target" in label for label in labels)
+
+
+def test_surface_plot_draws_no_level_it_cannot_measure(bladed, solved):
+    """With no `peak_Ma`, the height comes from the fit -- which may not exist.
+
+    Nothing is drawn rather than a target at an invented height: the shape was
+    asked for, the level was not, and this cascade offers no peak to borrow one
+    from.
     """
     config = _shaped(bladed, zeta_peak=0.55, fac_front=1.8)
 
-    labels = [ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines]
-    assert any("target" in label for label in labels)
+    labels = [
+        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+    ]
+    assert not any("target" in label for label in labels)
 
 
 def test_surface_plot_overlay_ignores_another_span(bladed, machine):

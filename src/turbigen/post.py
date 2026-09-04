@@ -548,6 +548,18 @@ class ConvergencePlot(Post):
         return [fig_resid, fig_error]
 
 
+def _matching(config, cls, i_row, spf):
+    """Return the first iterator of `cls` reading this row and span, or None."""
+    for iterator in config.iterate.correct:
+        if (
+            isinstance(iterator, cls)
+            and iterator.i_row == i_row
+            and np.isclose(iterator.spf, spf)
+        ):
+            return iterator
+    return None
+
+
 def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
     """Overlay what a `loading` iterator is aiming this section at, if any.
 
@@ -556,45 +568,56 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
     made. Dashed, and in the colour of the distribution it belongs to, so a
     plot of several sections stays readable.
 
-    **The target and nothing else.** All three of its numbers are stated, so
-    the line is entirely what was asked for and the solid curve beside it is
-    entirely what was achieved; the gap between them is what the iterator is
-    closing, and anything else on the axes only makes that harder to see. The
-    two-line fit the iterator measures with is deliberately not drawn --- it is
-    how the numbers in the log were arrived at, not a thing anybody designed.
+    **The target and nothing else.** The solid curve beside it is what was
+    achieved, and the gap between the two is what the iteration closes;
+    anything more on the axes only makes that harder to see. The two-line fit
+    the iterators measure with is deliberately not drawn --- it is how the
+    numbers in the log were arrived at, not a thing anybody designed.
 
-    The one measured quantity it borrows is the trailing edge value, because
-    that is what the targets are ratios *of*.
+    The shape comes from `loading` and the level from the `peak_Ma` beside it.
+    With no `peak_Ma` configured the level was never asked for, so the target
+    is drawn at the height the blade reached and only its shape is a claim.
     """
-    from turbigen.iterate import LoadingDistribution, mach_ratio  # noqa: PLC0415
+    from turbigen.iterate import (  # noqa: PLC0415 - avoids a cycle
+        LoadingDistribution,
+        PeakMach,
+    )
+    from turbigen.loading import mach_ratio  # noqa: PLC0415
 
-    iterators = [
-        iterator
-        for iterator in config.iterate.correct
-        if isinstance(iterator, LoadingDistribution)
-        and iterator.i_row == i_row
-        and np.isclose(iterator.spf, spf)
-    ]
-    if not iterators:
+    shape = _matching(config, LoadingDistribution, i_row, spf)
+    if shape is None:
         return
-    iterator = iterators[0]
 
     # The cut wraps the blade from one trailing edge round to the other, so its
     # two ends are the two sides of the trailing edge and their mean is the
-    # exit value -- read the same way `measure_loading` reads it.
+    # exit value -- read the same way `loading.measure` reads it.
     ma_TE = 0.5 * (mas[0] + mas[-1])
     if not ma_TE:
         return
 
-    drawn = np.linspace(iterator.zeta_front, 1.0, 101)
+    level = _matching(config, PeakMach, i_row, spf)
+    if level is not None:
+        ma_peak = level.fac_peak * ma_TE
+    else:
+        folded, suction = turbigen.util.suction_side(zeta, mas)
+        window = (folded >= shape.zeta_front) & (folded <= shape.zeta_TE)
+        if window.sum() < 4:
+            return
+        _, ma_peak, _ = turbigen.util.loading_from_distribution(
+            folded[window], suction[window], shape.zeta_front, shape.zeta_TE
+        )
+        if not np.isfinite(ma_peak):
+            return
+
+    drawn = np.linspace(shape.zeta_front, 1.0, 101)
     ax.plot(
         drawn,
         turbigen.util.loading_target(
             drawn,
-            iterator.zeta_front,
-            iterator.zeta_peak,
-            iterator.fac_front * ma_TE / mach_ratio(machine, i_row),
-            iterator.fac_peak * ma_TE,
+            shape.zeta_front,
+            shape.zeta_peak,
+            shape.fac_front * ma_TE / mach_ratio(machine, i_row),
+            ma_peak,
             ma_TE,
         ),
         linestyle="--",

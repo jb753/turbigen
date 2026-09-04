@@ -13,6 +13,8 @@ Test cases:
 - test_it_measures_what_the_surface_plot_draws: the same cut, the same numbers
 - test_the_peak_sits_where_the_distribution_peaks: and on the plot's own axis
 - test_a_section_above_the_gap_is_unmeasured: NaN rather than a wrong number
+- test_the_fitted_peak_is_reported_beside_the_raw_one: two peaks, two questions
+- test_a_peakless_blade_still_gets_a_diffusion_factor: the raw one always exists
 - test_values_survive_the_case_file: floats and NaN both
 """
 
@@ -92,10 +94,24 @@ def test_keys_and_shape(solved):
 
     values = DiffusionFactor(spf=spf).evaluate(config, result)
 
-    assert set(values) == {"DF", "Mas_max", "Mas_TE", "zeta_max"}
+    assert set(values) == {
+        "DF",
+        "Mas_max",
+        "Mas_TE",
+        "zeta_max",
+        "zeta_peak",
+        "fac_front",
+        "fac_peak",
+    }
     for name, value in values.items():
         assert np.shape(value) == (len(spf), result.grid.n_row), name
-        assert np.all(np.isfinite(value)), name
+
+    # The columns read from a maximum of the data exist for every blade with a
+    # surface. The fitted ones do not -- an accelerating cascade has no
+    # interior peak to place -- so they are allowed to be NaN here and are
+    # covered by their own tests below.
+    for name in ("DF", "Mas_max", "Mas_TE", "zeta_max"):
+        assert np.all(np.isfinite(values[name])), name
 
 
 #
@@ -178,6 +194,43 @@ def test_a_section_above_the_gap_is_unmeasured(gapped):
     assert np.isnan(DF[1, TIP_ROW]), "the tip section is trimmed off as flow"
 
 
+def test_the_fitted_peak_is_reported_beside_the_raw_one(solved):
+    """Two peaks, because they answer different questions.
+
+    `Mas_max` and `zeta_max` come from a maximum of the data and exist for
+    every distribution. `fac_peak` and `zeta_peak` come from the two-line fit
+    the iterators steer on, which slides smoothly but is undefined on a blade
+    that accelerates all the way to its trailing edge.
+    """
+    config, result = solved
+    values = DiffusionFactor().evaluate(config, result)
+
+    # The raw pair is always measurable on a blade that has a surface.
+    assert np.isfinite(np.asarray(values["Mas_max"])).all()
+
+    fac_peak = np.asarray(values["fac_peak"])
+    if np.isfinite(fac_peak).any():
+        # Where the fit succeeded, the level agrees with the raw ratio to
+        # within the few per cent an apex overshoots a rounded crest by.
+        raw = np.asarray(values["Mas_max"]) / np.asarray(values["Mas_TE"])
+        assert fac_peak[np.isfinite(fac_peak)] == pytest.approx(
+            raw[np.isfinite(fac_peak)], rel=0.1
+        )
+
+
+def test_a_peakless_blade_still_gets_a_diffusion_factor(gapped):
+    """An accelerating cascade has no interior peak, and still diffuses.
+
+    The fitted columns are NaN there and `DF` is not, which is the whole reason
+    both are reported: a metric that has to describe every blade cannot use a
+    number that only some blades have.
+    """
+    config, result = gapped
+    values = DiffusionFactor().evaluate(config, result)
+
+    assert np.isfinite(np.asarray(values["DF"])[0, TIP_ROW])
+
+
 #
 # WHAT IS KEPT
 #
@@ -197,4 +250,12 @@ def test_values_survive_the_case_file(gapped, tmp_path):
 
     for name, value in result.metrics.items():
         np.testing.assert_allclose(read_back.metrics[name], value)
-    assert set(read_back.metrics) == {"DF", "Mas_max", "Mas_TE", "zeta_max"}
+    assert set(read_back.metrics) == {
+        "DF",
+        "Mas_max",
+        "Mas_TE",
+        "zeta_max",
+        "zeta_peak",
+        "fac_front",
+        "fac_peak",
+    }

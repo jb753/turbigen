@@ -639,7 +639,8 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 | `deviation` | mean `dchi_TE` of each row | achieved exit `Alpha_rel` minus design |
 | `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
 | `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
-| `loading` | two interior Bernstein camber coefficients of one row, and its circulation coefficient | where the suction peak sits, the duty-normalised leading-edge Mach number, and the peak height, each minus what was asked for |
+| `loading` | two interior Bernstein camber coefficients of one row | where the suction peak sits and the duty-normalised leading-edge Mach number, minus what was asked for |
+| `peak_Ma` | the circulation coefficient of one row | peak Mach number over the trailing edge value, minus what was asked for |
 
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise
@@ -670,13 +671,32 @@ went flat, because the blade's natural peak position moves with loading
 back.
 
 So the circulation coefficient becomes the third lever and the peak height the
-third target, which lifts the constraint and makes the system square. The three
-targets are `zeta_peak`; `fac_front`, which is
+third target, which lifts the constraint and makes the system square.
+
+**Two members, not one, because a gain carries one sign.** `gain` states the
+sign of a knob's sensitivity as well as its size, and these knobs disagree: the
+peak rises with the circulation coefficient where the shape targets fall with
+the camber coefficients. Folded into a single iterator, one scalar gain drove
+the count the wrong way at every iteration — `Co` walked from 0.70 to 0.57
+while the peak it was meant to raise fell with it. Split into `loading` and
+`peak_Ma`, each declares the sign it has, and the stepper merges them into one
+table so nothing about the coupling is lost. They are configured together and
+are of little use apart.
+
+The three targets are `zeta_peak`; `fac_front`, which is
 `Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1` — Clark's third parameter, referred to
 the trailing edge because that is a mean-line quantity fixed by the duty, and
 carrying the `Ma_2 / Ma_1` factor so the same number means the same style of
 leading edge across rows of different duty; and `fac_peak = Ma_peak / Ma_TE`,
-which is one more than the diffusion factor `metrics: diffusion_factor` records.
+which is one more than the diffusion factor `metrics: diffusion_factor` records
+— the same measurement, through `turbigen.loading`, so a report cannot
+contradict what a design was iterated onto.
+
+That metric reports both peaks. `Mas_max` and `zeta_max` come from a maximum of
+the data and exist for every blade; `zeta_peak`, `fac_front` and `fac_peak` come
+from the fit and are NaN on a blade that accelerates all the way to its trailing
+edge and so has no interior peak to place. `DF` is built from the maximum, so
+every blade still gets one.
 
 Moving blade count is what stopped `DiffusionFactor` being ported, because it
 changes the mesh. It still does — the mesher sizes the grid from the pitch, so
