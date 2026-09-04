@@ -598,6 +598,19 @@ singular and the step large, and the clip reduces that to the old behaviour
 rather than a wild excursion. There is no line search, because a rejected step
 would cost a whole CFD solve.
 
+The clip **scales** the step rather than clipping each knob separately. The
+difference only shows when more than one knob is over its limit, and then it is
+the difference between a shorter step and a different one: clipping each
+component projects the step onto a corner of the box, keeping the sign pattern
+of the direction and none of its shape. That cycles. Two runs of a two-knob
+`loading` iterator sat in a period-2 orbit doing exactly this — alternating
+steps of `+(0.1, -0.1)` and `-(0.1, +0.1)`, each overshoot provoking the
+opposite corner, the design returning to where it had been two iterations
+before — and Broyden could not escape it, every move being collinear with the
+last. Scaling keeps the direction; the binding knob still moves exactly its
+clip, and the others move less than they asked for, which is what going the
+right way costs.
+
 `gain` carries the sign of the local sensitivity as well as its size: it is
 negative for `incidence`, whose error falls as its knob rises. Both signs are
 checked against CFD rather than assumed.
@@ -626,10 +639,68 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 | `deviation` | mean `dchi_TE` of each row | achieved exit `Alpha_rel` minus design |
 | `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
 | `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
+| `loading` | two interior Bernstein camber coefficients of one row, and its circulation coefficient | where the suction peak sits, the duty-normalised leading-edge Mach number, and the peak height, each minus what was asked for |
 
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise
 profile.
+
+### Shaping the loading, and why two knobs
+
+`deviation` and `incidence` correct the *ends* of a blade. `loading` corrects
+what happens in between — where the suction peak sits and how hard the leading
+edge accelerates — by moving the interior coefficients of a `bernstein` camber
+line, whose endpoint coefficients are pinned so the metal angles stay put and
+the three cannot fight.
+
+Three knobs, and the number is physics rather than convenience. At a fixed duty
+the area enclosed by the isentropic Mach loop is the blade circulation, which
+the pitch sets; a camber line with pinned ends redistributes that area along the
+chord without changing it. So of the three numbers describing a two-line
+shape — a front value, a peak value, and where the peak sits — one is spoken for
+at fixed blade count, and only **two are reachable**.
+
+Targeting two and letting the third float is what this first did, and it does
+not work: the level and the shape are bound by that same constraint, so an
+uncontrolled level drifts and drags the shape with it. Sweeping the circulation
+coefficient over 0.6, 0.7 and 0.8 at one fixed pair of shape targets, only the
+value the targets had been calibrated at converged; the outer two diverged or
+went flat, because the blade's natural peak position moves with loading
+(0.638, 0.610, 0.571 at those three) and two camber coefficients cannot drag it
+back.
+
+So the circulation coefficient becomes the third lever and the peak height the
+third target, which lifts the constraint and makes the system square. The three
+targets are `zeta_peak`; `fac_front`, which is
+`Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1` — Clark's third parameter, referred to
+the trailing edge because that is a mean-line quantity fixed by the duty, and
+carrying the `Ma_2 / Ma_1` factor so the same number means the same style of
+leading edge across rows of different duty; and `fac_peak = Ma_peak / Ma_TE`,
+which is one more than the diffusion factor `metrics: diffusion_factor` records.
+
+Moving blade count is what stopped `DiffusionFactor` being ported, because it
+changes the mesh. It still does — the mesher sizes the grid from the pitch, so
+`Co` 0.70 and 0.75 mesh at 225 and 209 streamwise nodes on the example
+cascade — which puts a floor on `atol_peak` but does not prevent the loop, since
+every iteration remeshes and restarts by index-space interpolation anyway. The
+integer blade count is the smaller worry it looks: on that cascade one blade is
+0.36% of `Co`, far finer than any step taken, though it scales as `1/N_blade`
+and would matter on a row with forty.
+
+The window starts at `zeta_front`, a fifth of the way along the surface by
+default rather than a tenth: two straight lines have to be a fair description of
+what they are fitted to, and a window reaching inside the sharp acceleration
+round the nose is not one — on a cascade measured here the fitted front line and
+the data disagreed by 0.08 in Mach fraction starting at 0.1, and by 0.03
+starting at 0.2.
+
+The measurement is the surface distribution `post: surface` draws, through the
+same functions, so what is iterated to is what the report shows — and the report
+overlays the target on it. Where the peak sits comes from a least-squares fit of
+two straight lines meeting at a breakpoint, not from an argmax: the peak then
+falls out as the intersection of two lines each fitted over many points, which
+is what keeps it steady on the flat-topped profiles that are a design style
+rather than a pathology.
 
 ### Starting from designs already run
 

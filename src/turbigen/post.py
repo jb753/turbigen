@@ -49,14 +49,6 @@ Far fewer than the ten thousand `evaluate_section` defaults to, which is a
 resolution for geometry and not for a line on a page.
 """
 
-N_SPAN_CUT = 101
-"""Meridional points defining the span curve a blade surface is cut along.
-
-Only the placement of the cut surface depends on this: `structured_meridional`
-walks the grid's own gridlines, so the resolution of what comes back is the
-mesh's, not the curve's.
-"""
-
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
 
@@ -556,59 +548,60 @@ class ConvergencePlot(Post):
         return [fig_resid, fig_error]
 
 
-def _isentropic_mach(cut, s_ref):
-    """Return isentropic Mach number over `cut`, referred to entropy `s_ref`.
+def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
+    """Overlay what a `loading` iterator is aiming this section at, if any.
 
-    Expanded isentropically from the row inlet entropy to the local static
-    pressure, so the result reads as the Mach number the blade would see with
-    no loss upstream of the point in question.
+    Only where one is configured for this row and reads this span fraction: a
+    target drawn at a span nobody iterates would be a claim the design never
+    made. Dashed, and in the colour of the distribution it belongs to, so a
+    plot of several sections stays readable.
+
+    **The target and nothing else.** All three of its numbers are stated, so
+    the line is entirely what was asked for and the solid curve beside it is
+    entirely what was achieved; the gap between them is what the iterator is
+    closing, and anything else on the axes only makes that harder to see. The
+    two-line fit the iterator measures with is deliberately not drawn --- it is
+    how the numbers in the log were arrived at, not a thing anybody designed.
+
+    The one measured quantity it borrows is the trailing edge value, because
+    that is what the targets are ratios *of*.
     """
-    # Set in place on a copy, not chained off one: ember's setters return
-    # nothing, whatever the idiom in the package this is ported from suggests.
-    isen = cut.copy()
-    isen.set_P_s(cut.P, s_ref)
+    from turbigen.iterate import LoadingDistribution, mach_ratio  # noqa: PLC0415
 
-    # Stagnation enthalpy and sound speed are taken as surface means so that
-    # only local static pressure drives the distribution. Left local, radial
-    # redistribution of ho_rel and variation in a split the two surfaces apart
-    # at the trailing edge, where they must meet.
-    ho = np.mean(cut.ho_rel)
-    a_ref = np.mean(isen.a)
+    iterators = [
+        iterator
+        for iterator in config.iterate.correct
+        if isinstance(iterator, LoadingDistribution)
+        and iterator.i_row == i_row
+        and np.isclose(iterator.spf, spf)
+    ]
+    if not iterators:
+        return
+    iterator = iterators[0]
 
-    # Shift so the lowest point sits exactly at rest rather than slightly
-    # below it, which the discrete field can otherwise produce.
-    hs = isen.h
-    hs = hs + np.min(ho - hs)
+    # The cut wraps the blade from one trailing edge round to the other, so its
+    # two ends are the two sides of the trailing edge and their mean is the
+    # exit value -- read the same way `measure_loading` reads it.
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
 
-    return np.sqrt(2.0 * np.maximum(ho - hs, 0.0)) / a_ref
-
-
-def _normalise_surface_distance(cut, mas, xrt_nose):
-    """Return surface distance in [-1, 1], zero at the stagnation point.
-
-    Each surface is normalised by its own length, so both reach one at the
-    trailing edge however asymmetric the blade is. The sign says which surface
-    a point is on, following the direction the cut loops in; the plot folds it
-    away, but normalising the two sides has to happen while they are still
-    told apart.
-    """
-    zeta = turbigen.util.get_zeta(cut)[:, 0]
-
-    # The geometric nose anchors the search window, which is more robust on
-    # blades with a strongly asymmetric leading edge than the arc-length
-    # midpoint the function falls back on. Whether it found a real maximum does
-    # not matter here: the origin moves onto the lowest Mach number below in
-    # any case, and this only has to land on the right side of the blade.
-    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0][0])
-    zeta = zeta - zeta[i_stag]
-
-    # Then move the origin onto the lowest Mach number, which is the
-    # stagnation point of the flow rather than of the grid.
-    zeta = zeta - zeta[np.argmin(mas)]
-
-    upper = zeta.max()
-    lower = np.abs(zeta.min())
-    return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
+    drawn = np.linspace(iterator.zeta_front, 1.0, 101)
+    ax.plot(
+        drawn,
+        turbigen.util.loading_target(
+            drawn,
+            iterator.zeta_front,
+            iterator.zeta_peak,
+            iterator.fac_front * ma_TE / mach_ratio(machine, i_row),
+            iterator.fac_peak * ma_TE,
+            ma_TE,
+        ),
+        linestyle="--",
+        color=color,
+        linewidth=1.0,
+        label=f"target, spf={spf:.2f}",
+    )
 
 
 class SurfacePlot(Post):
@@ -661,7 +654,7 @@ class SurfacePlot(Post):
             # and the cut comes back one wide. Both halves are here rather
             # than split across the cut helper, because the shape is this
             # call's business and nothing else's.
-            surface = surfaces[i_row][0][:, :, None]
+            surface = surfaces[i_row][0]
             s_ref = result.machine.mean_line[:, i_row].s[0]
 
             fig, ax = plt.subplots(layout="constrained")
@@ -671,31 +664,30 @@ class SurfacePlot(Post):
             ax.set_xlim(0.0, 1.0)
 
             for spf in _span_fractions(self.spf, row.blade):
-                # Rows occupy the odd meridional segments of the annulus, so
-                # row i spans m from 2i+1 to 2i+2.
-                m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
-                xr = annulus.evaluate_xr(m, spf)
-                cut = ember.cut.structured_meridional(surface, xr.T)
+                cut, _ = turbigen.util.cut_section(surface, annulus, i_row, spf)
 
                 # Above a clearance gap the blade has no surface to cut, the
                 # span there being trimmed off as flow rather than wall. Asked
                 # for a section that is not there, say so and draw the rest.
-                if not len(cut):
+                if cut is None:
                     logger.info(
                         f"Row {i_row} has no blade surface at spf={spf:.2f}, "
                         "skipping that section."
                     )
                     continue
-                cut = cut[0]
 
-                mas = _isentropic_mach(cut, s_ref)[:, 0]
+                mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
                 xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-                zeta = _normalise_surface_distance(cut, mas, xrt_nose)
+                zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 
                 # Folded onto the positive axis, so both surfaces run from the
                 # stagnation point at zero out to the trailing edge at one and
                 # can be read against each other directly.
-                ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+                line, = ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+
+                _draw_loading_target(
+                    ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
+                )
 
             # Every section asked for was above the gap, so there is nothing on
             # the axes. An empty frame in the report is worse than no frame, and
@@ -952,7 +944,9 @@ class SpanwisePlot(Post):
             # Resolved at the mesh's own resolution rather than an invented
             # one. A block is (streamwise, pitchwise, spanwise) and a cut is
             # (meridional, theta), so the spanwise count leads.
-            _, nj, nk = result.grid.rows[i_row][0].shape
+            # _, nj, nk = result.grid.rows[i_row][0].shape
+            nj = 137
+            nk = 113
             try:
                 structured = ember.cut.interpolate_to_structured(cut, (nk, nj))
             except ValueError as err:

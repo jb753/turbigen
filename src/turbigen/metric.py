@@ -20,17 +20,9 @@ import ember.average
 import ember.cut
 import turbigen.util
 from turbigen.node import Node
-from turbigen.post import (
-    N_CHORD_PLOT,
-    _isentropic_mach,
-    _normalise_surface_distance,
-)
+from turbigen.post import N_CHORD_PLOT
 
 logger = logging.getLogger("turbigen")
-
-N_SPAN_CUT = 101
-"""Meridional points defining the span curve a blade surface is cut along."""
-
 
 class Metric(Node):
     """Base for quantities measured from a solved field."""
@@ -318,10 +310,7 @@ class DiffusionFactor(Metric):
             if i_row >= len(surfaces) or surfaces[i_row] is None:
                 continue
 
-            # `structured_meridional` walks the second axis of a three-axis
-            # block, so the surface is padded to put its spanwise axis there
-            # and the cut comes back one wide.
-            surface = surfaces[i_row][0][:, :, None]
+            surface = surfaces[i_row][0]
             s_ref = machine.mean_line[:, i_row].s[0]
 
             blade = rows[i_row].blade
@@ -373,19 +362,13 @@ def _surface_distribution(annulus, blade, surface, s_ref, i_row, spf):
     no surface to cut, the span there being trimmed off as flow rather than
     wall.
     """
-    # Rows occupy the odd meridional segments, so row i spans m from 2i+1 to
-    # 2i+2, exactly as the surface distribution plot cuts it.
-    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
-    xr = annulus.evaluate_xr(m, spf)
-
-    cut = ember.cut.structured_meridional(surface, xr.T)
-    if not len(cut):
+    cut, _ = turbigen.util.cut_section(surface, annulus, i_row, spf)
+    if cut is None:
         return None
-    cut = cut[0]
 
-    mas = _isentropic_mach(cut, s_ref)[:, 0]
+    mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
 
     # The geometric nose anchors the search for the stagnation point, exactly
     # as the surface distribution plot anchors it.
     xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-    return mas, _normalise_surface_distance(cut, mas, xrt_nose)
+    return mas, turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)

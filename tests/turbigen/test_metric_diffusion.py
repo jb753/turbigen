@@ -27,7 +27,7 @@ from test_mesh import MESH, TIP
 from test_cli import RUN_CASE
 from turbigen import Config, Result, case, cli, metric, mixout, util
 from turbigen.metric import DiffusionFactor
-from turbigen.post import N_CHORD_PLOT, _isentropic_mach, _normalise_surface_distance
+from turbigen.post import N_CHORD_PLOT
 
 TIP_ROW = 1
 """The row of the two-row fixture that has a clearance gap."""
@@ -157,14 +157,14 @@ def _distribution(result, i_row, spf):
     import ember.cut  # noqa: PLC0415 - only the test's own arithmetic needs it
 
     surface = util.cut_blade_surfs(result.grid, 0)[i_row][0][:, :, None]
-    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, metric.N_SPAN_CUT)
+    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, util.N_SPAN_CUT)
     xr = result.machine.annulus.evaluate_xr(m, spf)
     cut = ember.cut.structured_meridional(surface, xr.T)[0]
 
-    mas = _isentropic_mach(cut, result.machine.mean_line[:, i_row].s[0])[:, 0]
+    mas = util.isentropic_mach(cut, result.machine.mean_line[:, i_row].s[0])[:, 0]
     blade = result.machine.rows[i_row].blade
     xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-    return mas, _normalise_surface_distance(cut, mas, xrt_nose)
+    return mas, util.normalise_surface_distance(cut, mas, xrt_nose)
 
 
 def test_a_section_above_the_gap_is_unmeasured(gapped):

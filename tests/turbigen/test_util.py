@@ -432,3 +432,170 @@ def test_the_normal_yaw_moves_smoothly_between_nodes():
     # A cell is one node spacing of sweep, and it is traversed evenly.
     step = ARC[1] - ARC[0]
     np.testing.assert_allclose(yaw, yaw[0] + fractions * step, atol=1e-3)
+
+
+#
+# SURFACE DISTRIBUTIONS
+#
+# Arithmetic, so no mesh below here. What the two-line fit has to survive is a
+# flat top, a noisy curve and a curve with no peak at all -- the first being a
+# design style rather than a pathology, and the last being what an unconverged
+# march looks like.
+#
+
+TARGET = dict(zeta_front=0.1, zeta_peak=0.55, ma_front=0.585, ma_peak=1.3, ma_TE=1.0)
+"""A distribution in the middle of the family, to perturb away from."""
+
+
+def distribution(n=200, **overrides):
+    """Return ``(zeta, ma)`` sampled from an exact two-line target."""
+    zeta = np.linspace(0.1, 0.98, n)
+    return zeta, util.loading_target(zeta, **{**TARGET, **overrides})
+
+
+def test_the_target_hits_the_points_it_is_built_from():
+    """Both anchors and the peak, which is the whole definition of the shape."""
+    zeta = np.array([TARGET["zeta_front"], TARGET["zeta_peak"], 1.0])
+    ma = util.loading_target(zeta, **TARGET)
+
+    assert ma[0] == pytest.approx(TARGET["ma_front"])
+    assert ma[1] == pytest.approx(TARGET["ma_peak"])
+    assert ma[2] == pytest.approx(TARGET["ma_TE"])
+
+
+def test_the_target_says_nothing_ahead_of_the_front_anchor():
+    """NaN rather than an extrapolation, the window being where the claim is.
+
+    Ahead of it the distribution belongs to the leading edge, and a line drawn
+    there would read as a target nobody set.
+    """
+    zeta = np.linspace(0.0, 0.98, 99)
+    ma = util.loading_target(zeta, **TARGET)
+
+    assert np.all(np.isnan(ma[zeta < TARGET["zeta_front"]]))
+    assert np.all(np.isfinite(ma[zeta >= TARGET["zeta_front"]]))
+
+
+def test_the_fit_recovers_an_exact_two_line_curve():
+    """The round trip: build a curve from four numbers, read them back."""
+    zeta_peak, ma_peak, slope_front, slope_aft = util.fit_two_lines(*distribution())
+
+    assert zeta_peak == pytest.approx(TARGET["zeta_peak"], abs=1e-3)
+    assert ma_peak == pytest.approx(TARGET["ma_peak"], abs=1e-3)
+    assert slope_front > 0.0 > slope_aft
+
+
+@pytest.mark.parametrize("zeta_peak", [0.3, 0.45, 0.6, 0.75])
+def test_the_fit_finds_the_peak_anywhere_in_the_window(zeta_peak):
+    """Front-loaded through aft-loaded, which is the range of styles asked for."""
+    measured, _, _, _ = util.fit_two_lines(*distribution(zeta_peak=zeta_peak))
+    assert measured == pytest.approx(zeta_peak, abs=1e-3)
+
+
+def test_the_fit_survives_noise():
+    """Mesh noise on the surface must not move the peak much.
+
+    The peak comes back as the intersection of two lines each fitted over many
+    points, so noise averages out of it -- where an argmax would follow
+    whichever node it happened to lift.
+    """
+    zeta, ma = distribution()
+    noisy = ma + np.random.default_rng(0).normal(0.0, 0.01, ma.shape)
+
+    zeta_peak, _, _, _ = util.fit_two_lines(zeta, noisy)
+    assert zeta_peak == pytest.approx(TARGET["zeta_peak"], abs=0.02)
+
+
+def test_the_fit_survives_a_flat_top():
+    """A flat-topped profile is a design style, not a degenerate case.
+
+    Where the peak sits is genuinely ill-defined on one, so this asks only that
+    the answer stay finite and inside the window: a NaN here would stall the
+    iteration on exactly the blades it was built for.
+    """
+    zeta, ma = util.fit_two_lines(*distribution(ma_peak=1.02, ma_front=0.918))[:2]
+
+    assert np.isfinite(zeta)
+    assert 0.1 < zeta < 0.98
+
+
+@pytest.mark.parametrize("ma", [lambda z: z, lambda z: 2.0 - z, lambda z: 0.0 * z + 1.0])
+def test_the_fit_refuses_a_curve_with_no_peak(ma):
+    """Rising, falling and flat all have no interior maximum to place.
+
+    NaN rather than the least-bad breakpoint, because the caller drops an
+    unmeasured knob and steps on a measured one --- so a number invented here
+    would move a design.
+    """
+    zeta = np.linspace(0.1, 0.98, 200)
+    assert np.all(np.isnan(util.fit_two_lines(zeta, ma(zeta))))
+
+
+def test_the_fit_needs_enough_points():
+    """Three coefficients, so three points constrain nothing."""
+    assert np.all(np.isnan(util.fit_two_lines([0.1, 0.5, 0.9], [0.5, 1.0, 0.8])))
+
+
+def test_the_reduction_recovers_what_the_target_was_built_from():
+    """`loading_from_distribution` against the numbers it is meant to read."""
+    zeta_peak, ma_peak, ma_front = util.loading_from_distribution(*distribution())
+
+    assert zeta_peak == pytest.approx(TARGET["zeta_peak"], abs=1e-3)
+    assert ma_peak == pytest.approx(TARGET["ma_peak"], abs=1e-3)
+    assert ma_front == pytest.approx(TARGET["ma_front"], abs=1e-3)
+
+
+def test_the_reduction_scales_with_the_distribution():
+    """Every number it reads is a Mach number, so all of them scale together.
+
+    What the caller divides them by decides what survives a change of level:
+    referred to the peak the ratio is untouched, and referred to the trailing
+    edge -- which the duty pins while the peak floats -- it is not. That choice
+    is `turbigen.iterate.measure_loading`'s and deliberately not made here.
+    """
+    zeta, ma = distribution()
+    reference = np.array(util.loading_from_distribution(zeta, ma))
+
+    for factor in (0.5, 2.0):
+        scaled = np.array(util.loading_from_distribution(zeta, factor * ma))
+        # The peak position is a position and does not scale; the two Mach
+        # numbers do, exactly.
+        assert scaled[0] == pytest.approx(reference[0], abs=1e-6)
+        np.testing.assert_allclose(scaled[1:], factor * reference[1:], rtol=1e-6)
+
+
+def test_the_reduction_reports_nothing_from_a_curve_with_no_peak():
+    zeta = np.linspace(0.1, 0.98, 200)
+    assert np.all(np.isnan(util.loading_from_distribution(zeta, zeta)))
+
+
+def test_the_reduction_reports_nothing_from_an_empty_window():
+    """A cut too coarse to have four points in the window measures nothing."""
+    zeta = np.array([0.0, 0.05, 0.5, 1.0])
+    assert np.all(np.isnan(util.loading_from_distribution(zeta, np.ones(4))))
+
+
+@pytest.mark.parametrize("sign", [1.0, -1.0])
+def test_the_suction_side_is_the_faster_one(sign):
+    """Read off the flow, not off a mesh convention.
+
+    `normalise_surface_distance` signs the two surfaces by the direction its
+    cut loops in, which says nothing about which one the flow accelerates over.
+    """
+    zeta = np.linspace(-1.0, 1.0, 201)
+    ma = np.where(np.sign(zeta) == sign, 1.0 + np.abs(zeta), 0.2 * np.abs(zeta))
+
+    folded, kept = util.suction_side(zeta, ma)
+
+    assert np.all(folded >= 0.0)
+    assert np.all(np.diff(folded) >= 0.0)
+    assert kept.max() == pytest.approx(2.0)
+
+
+def test_the_suction_side_of_a_one_sided_cut_is_all_of_it():
+    """Nothing to choose between, so folding is all there is to do."""
+    zeta = np.linspace(0.0, 1.0, 51)
+    folded, ma = util.suction_side(zeta, zeta**2)
+
+    np.testing.assert_allclose(folded, zeta)
+    np.testing.assert_allclose(ma, zeta**2)

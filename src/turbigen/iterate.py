@@ -363,7 +363,7 @@ def step(config, result, history=()):
             for name, scale in zip(names, u_scale)
         ]
     )
-    change = np.clip(change, -limit, limit)
+    change = _bounded(change, limit)
 
     moved = {
         name: values[name] + change[i] * u_scale[i] for i, name in enumerate(names)
@@ -409,6 +409,37 @@ def _jacobian(names, prior, history, current, u_scale, e_scale):
         jacobian = jacobian + np.outer(de - jacobian @ du, du) / length
 
     return jacobian
+
+
+def _bounded(change, limit):
+    """Return `change` scaled down until every knob is inside its limit.
+
+    **Scaled, not clipped per knob.** Clipping each component on its own is the
+    obvious reading of "no knob moves more than its clip", and it silently
+    throws away the thing the Jacobian was solved for: a step over the limit in
+    two knobs at once gets projected onto a *corner* of the box, so what
+    survives is the sign pattern of the direction and none of its shape.
+
+    That is not a slow step, it is a different one, and it cycles. Two runs of
+    a two-knob loading iterator sat in a period-2 orbit doing it --- steps of
+    exactly ``+(0.1, -0.1)`` and ``-(0.1, +0.1)`` alternating, each overshoot
+    provoking the opposite corner and landing back where it had been two
+    iterations before. Broyden could not break the orbit either, every move
+    being collinear with the last, so it only ever learned along that one
+    diagonal.
+
+    Scaling keeps the direction and shortens the step, which is what a trust
+    region is. The knob that binds still moves exactly its clip, so what the
+    setting promises is unchanged; the others move less than they asked for,
+    which is the price of going the right way.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        excess = np.max(np.where(np.isfinite(limit), np.abs(change) / limit, 0.0))
+
+    if not np.isfinite(excess) or excess <= 1.0:
+        return change
+
+    return change / excess
 
 
 def _newton(jacobian, error, prior):
@@ -808,9 +839,6 @@ class Incidence(Iterator):
         return measured
 
 
-N_SPAN_CUT = 101
-"""Meridional points in a span-fraction cut of a row."""
-
 N_CHORD_NOSE = 501
 """Chordwise points used to place the geometric nose of a section."""
 
@@ -842,20 +870,11 @@ def _incidence(result, surface, i_row, spf, tolerance=0.0):
     if surface is None:
         return np.nan
 
-    # Rows occupy the odd meridional segments of the annulus, so row i runs
-    # from the leading edge at 2i+1 to the trailing edge at 2i+2.
-    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
-    xr = annulus.evaluate_xr(m, spf)
-
-    # `structured_meridional` walks the second axis of a three-axis block, so
-    # the surface is padded to put its spanwise axis there and the cut comes
-    # back one wide.
-    cut = ember.cut.structured_meridional(surface[0][:, :, None], xr.T)
-    if not len(cut):
+    cut, xr = turbigen.util.cut_section(surface[0], annulus, i_row, spf)
+    if cut is None:
         # Above a clearance gap the blade has no surface to cut, the span there
         # being trimmed off as flow rather than wall.
         return np.nan
-    cut = cut[0]
 
     # The thickness vanishes at m = 0, so the first point of either surface is
     # the nose. It anchors the stagnation search window, which is what makes
@@ -917,13 +936,471 @@ def _report_resolution(cut, i_stag, e_m, chi, i_row, spf, tolerance):
     ]
     turn = 0.5 * abs(neighbours[1] - neighbours[0])
 
-    if turn > tolerance:
+    if turn > 2 * tolerance:
         logger.info(
             f"The leading edge of row {i_row} at spf={spf:.2f} turns "
             f"{turn:.1f} deg across the cell the flow stagnated in, so its "
             f"incidence is unlikely to be accurate to the {tolerance:.1f} deg "
             "being iterated to. Refine the nose, or ask for less."
         )
+
+
+N_COEFF = 2
+"""Interior Bernstein coefficients a loading distribution moves.
+
+Two, and the number is a claim about the physics rather than a convenience. At
+a fixed duty the area enclosed by the isentropic Mach loop is the blade
+circulation, which the pitch sets; a camber line with its ends pinned
+redistributes that area along the chord but does not change it. So of the three
+numbers describing a two-line shape --- a front value, a peak value, and where
+the peak sits --- one is spoken for by the blade count, and two are free.
+"""
+
+BERNSTEIN_ORDER = N_COEFF + 1
+"""Bernstein order carrying exactly :data:`N_COEFF` interior coefficients."""
+
+
+def mach_ratio(machine, i_row):
+    """Return ``Ma_2 / Ma_1`` across row `i_row`, in the relative frame.
+
+    Relative because a surface distribution is a relative-frame quantity ---
+    `isentropic_mach` builds it from `ho_rel` --- so an absolute ratio would
+    describe a rotor the blade does not see. The two are the same for a
+    stationary row.
+
+    Off the nominal mean line rather than the mixed-out one. It is a
+    normalisation, and a normalisation that moved with the solution would make
+    the target mean something slightly different every iteration; the design
+    is also what the target was written against.
+    """
+    ml = machine.mean_line[:, i_row]
+    return float(ml.Ma_rel[1] / ml.Ma_rel[0])
+
+
+def measure_loading(result, i_row, spf, zeta_front, zeta_TE):
+    """Return the loading shape of row `i_row` at span fraction `spf`.
+
+    Cut the blade, expand isentropically from the row inlet entropy, keep the
+    suction surface, and reduce what is left to the two numbers a camber line
+    can move --- every step of it through the same functions
+    :class:`~turbigen.post.SurfacePlot` draws with, so that what is iterated to
+    is what the report shows.
+
+    Returns
+    -------
+    zeta_peak : float
+        Surface fraction of the peak.
+    fac_front : float
+        ``Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1``, the duty-normalised leading
+        edge Mach number.
+    fac_peak : float
+        ``Ma_peak / Ma_TE``, the level of the loading. One more than the
+        diffusion factor `turbigen.metric.DiffusionFactor` records, which is
+        the same number written the way a designer says it.
+
+    All NaN where there was nothing to measure: a section above a clearance
+    gap, or a distribution with no peak in the window. The caller drops those
+    rather than stepping on them.
+
+    """
+    surfaces = turbigen.util.cut_blade_surfs(result.grid)
+    if i_row >= len(surfaces) or surfaces[i_row] is None:
+        return np.nan, np.nan, np.nan
+
+    machine = result.machine
+    blade = machine.rows[i_row].blade
+
+    cut, _ = turbigen.util.cut_section(
+        surfaces[i_row][0], machine.annulus, i_row, spf
+    )
+    if cut is None:
+        return np.nan, np.nan, np.nan
+
+    mas = turbigen.util.isentropic_mach(cut, machine.mean_line[:, i_row].s[0])[:, 0]
+
+    # The cut wraps the blade from one trailing edge round to the other, so its
+    # two ends are the two sides of the trailing edge and their mean is the
+    # exit value. Taken before the suction side is folded out, which is the
+    # only moment both sides are still there.
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+
+    # The geometric nose anchors the stagnation search, exactly as the surface
+    # distribution plot anchors it.
+    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
+    zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
+
+    zeta_peak, ma_peak, ma_front = turbigen.util.loading_from_distribution(
+        *turbigen.util.suction_side(zeta, mas), zeta_front, zeta_TE
+    )
+    if not np.isfinite(ma_front) or not ma_TE:
+        return np.nan, np.nan, np.nan
+
+    return (
+        zeta_peak,
+        ma_front / ma_TE * mach_ratio(machine, i_row),
+        ma_peak / ma_TE,
+    )
+
+
+class LoadingDistribution(Iterator):
+    """Shape the suction surface Mach distribution by moving the camber line.
+
+    :class:`Deviation` and :class:`Incidence` correct the *ends* of a blade
+    against the flow. This corrects what happens in between: where the peak
+    suction sits and how hard the leading edge accelerates, which is what a
+    designer chooses when they pick an aerodynamic style, and which Clark
+    (2019) shows a handful of numbers spans a useful family of.
+
+    The knob is the interior coefficients of a
+    :class:`~turbigen.camber.Bernstein` camber line. Their endpoint
+    counterparts are pinned at zero, so the metal angles do not move and this
+    iterator cannot fight the two that own them.
+
+    **Two knobs, because two is what a camber line has to give.** See
+    :data:`N_COEFF`. The two targets are chosen to be blind to the level of the
+    loading: `zeta_peak` is a position, and `fac_front` is
+    a ratio of two points on one curve, so both survive the distribution being
+    scaled. What that leaves free is the peak Mach number itself --- which is
+    the blade count's to set, and stays a design choice rather than becoming a
+    third thing to iterate. `DiffusionFactor` was never ported here precisely
+    because blade count changes the mesh; a camber line does not.
+
+    One row per iterator, like :class:`SurfaceReynolds`: a stator and a rotor
+    want different loading, so two rows means two entries.
+    """
+
+    type: ClassVar[str] = "loading"
+
+    i_row: int = 0
+    """Index of the blade row to shape."""
+
+    zeta_peak: float = 0.5
+    """Target surface fraction of the peak isentropic Mach number [--]."""
+
+    fac_front: float = 1.8
+    """Target leading-edge Mach number, normalised by duty [--].
+
+    ``Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1``, which is Clark (2019) parameter
+    3. Referred to the trailing edge rather than to the peak because `Ma_TE` is
+    a mean-line quantity, fixed by the duty, where the peak is a fitted one
+    that moves with the loading --- and the ``Ma_2 / Ma_1`` factor is what
+    makes the same number mean the same style of leading edge across rows of
+    different duty, which is the whole reason the parameter is written this
+    way.
+
+    Typically greater than one on a turbine, the surface being faster at a
+    tenth of its length than the mean line is at exit.
+    """
+
+    fac_peak: float = 1.2
+    """Target peak Mach number over the trailing edge value [--].
+
+    The *level* of the loading, where the other two targets are its shape. One
+    more than the diffusion factor :class:`turbigen.metric.DiffusionFactor`
+    records, so a target here is a statement about diffusion in the units a
+    designer already uses.
+
+    Owned by the blade count rather than by the camber: at a fixed duty the
+    area enclosed by the Mach loop is the blade circulation, which the pitch
+    sets and a camber line only redistributes. That is why this target arrives
+    together with :attr:`Co` in the knobs below, and why neither is much use
+    without the other.
+    """
+
+    zeta_front: float = 0.2
+    """Front anchor, and where the matched window starts [--].
+
+    Fixed rather than driven. It is the boundary between what the leading edge
+    decides and what the camber line does, so it says *where to measure* rather
+    than what to want --- and below it the distribution belongs to
+    :class:`Incidence` and the thickness, neither of which this moves.
+
+    A fifth rather than a tenth, because the two straight lines have to be a
+    fair description of what they are fitted to. On a cascade measured here the
+    fitted front line and the data disagreed by 0.08 in Mach fraction with the
+    window starting at 0.1, and by 0.03 starting at 0.2: the first window
+    reaches inside the sharp acceleration round the nose, which no straight
+    line describes, and the second starts past it.
+    """
+
+    zeta_TE: float = 0.98
+    """Where the matched window ends [--].
+
+    Short of the trailing edge, where the two surfaces must meet and where the
+    surface means `isentropic_mach` takes for stagnation enthalpy and sound
+    speed are least able to say what a single point is doing.
+    """
+
+    spf: float = 0.5
+    """Span fraction to measure the distribution at [--]."""
+
+    gain: float = -0.5
+    """How much of the error to subtract, for both knobs.
+
+    **A starting direction, not a calibration.** Measured on two different
+    cascades, the diagonal of the response came out with *opposite signs* --- a
+    first blade gave ``d(zeta_peak)/dc = [-0.24, -0.30]`` while the blade in
+    `examples/turbine_cascade_loading.yaml` gave ``[+0.15, -0.80]``, and the
+    front term flipped likewise. Which Bernstein bump dominates which target is
+    evidently a property of the blade rather than of the parametrisation, so
+    there is no scalar here that is right in general, and one confident enough
+    to matter would be wrong half the time.
+
+    Small, accordingly. Two things follow from that and both are wanted: a
+    first step taken on a wrong sign costs one iteration rather than an
+    excursion, and the steps it asks for sit *inside* :attr:`clip` --- which
+    matters more than it looks, because `step` clips each component on its own,
+    so a step that saturates is projected onto a corner of the box and keeps
+    only the signs of the direction the Jacobian worked out. Under the clip,
+    the direction survives.
+
+    The Broyden update is what actually steers this iterator. On the cascade
+    above it recovered from a wrong-signed opening step and converged both
+    knobs, so the machinery does the work; this only has to avoid getting in
+    its way.
+    """
+
+    clip: float = 0.1
+    """Largest change in one coefficient per iteration [--].
+
+    Measured against how far these coefficients actually travel. On the
+    cascade in `examples/turbine_cascade_loading.yaml` they converged at about
+    -0.23 and 0.02 from a start of zero, and at a clip of 0.05 the step
+    saturated on one knob or both for five iterations running --- which is not
+    merely slow: `step` clips each component separately, so a step saturated in
+    both is projected onto a corner of the box and keeps only the *signs* of
+    what the Jacobian asked for.
+    """
+
+    atol_zeta: float = 0.02
+    """Converged when the peak is within this of where it was asked for [--]."""
+
+    clip_Co: float = 0.05
+    """Largest change in the circulation coefficient per iteration [--].
+
+    Smaller than a camber coefficient's clip in proportion to how far `Co`
+    travels: it starts somewhere sensible and is being trimmed, where a camber
+    coefficient starts at zero and has to find its own scale.
+    """
+
+    atol_peak: float = 0.02
+    """Converged when the peak Mach number ratio is within this [--].
+
+    Tighter than :attr:`atol_fac` because the blade count sets this almost
+    alone, so it is the one target with a lever of its own. The floor on it is
+    the mesh: `Co` changes the pitch, and the mesher sizes the grid from the
+    pitch, so a step in `Co` large enough to add or drop a streamwise node
+    moves this by a little for reasons that are discretisation rather than
+    flow.
+    """
+
+    atol_fac: float = 0.05
+    """Converged when the front Mach number is within this [--].
+
+    Looser than :attr:`atol_zeta` in absolute terms because the quantity is
+    larger --- around 1.9 on the cascade measured here against a surface
+    fraction below one --- so this is the tighter of the two as a fraction of
+    what it measures.
+    """
+
+    def __post_init__(self):
+        if not 0.0 < self.zeta_front < self.zeta_peak < self.zeta_TE <= 1.0:
+            raise ValueError(
+                f"A loading distribution needs 0 < zeta_front < zeta_peak < "
+                f"zeta_TE <= 1, got zeta_front={self.zeta_front}, "
+                f"zeta_peak={self.zeta_peak}, zeta_TE={self.zeta_TE}. The peak "
+                f"has to sit inside the window that is matched, or there is "
+                f"nothing to fit two lines either side of."
+            )
+        if not self.fac_peak > 0.0:
+            raise ValueError(
+                f"fac_peak must be positive, got {self.fac_peak}. It is the "
+                f"peak Mach number over the trailing edge one, so on a turbine "
+                f"it is greater than one."
+            )
+        if not self.fac_front > 0.0:
+            raise ValueError(
+                f"fac_front must be positive, got {self.fac_front}. It is a "
+                f"Mach number over a Mach number, and on a turbine it is "
+                f"usually greater than one."
+            )
+
+    #
+    # THE PROTOCOL
+    #
+
+    def names(self):
+        """Return the table key of each knob, in a fixed order.
+
+        Carrying the row, so that two entries shaping two rows cannot collide
+        in `unknowns`. The order is the pairing the declared `gain` asserts a
+        sign for: the two camber coefficients against the two shape targets,
+        and the circulation coefficient against the level.
+        """
+        return [f"camber_coeff[{self.i_row}][{j}]" for j in range(N_COEFF)] + [
+            f"Co[{self.i_row}]"
+        ]
+
+    def unknowns(self, config):
+        coefficients = self._coefficients(config)
+        values = [float(np.mean(coefficients[:, j])) for j in range(N_COEFF)]
+        values.append(float(self._count(config).Co))
+        return dict(zip(self.names(), values))
+
+    def with_unknowns(self, config, values):
+        current = self.unknowns(config)
+        moved = {**current, **{k: v for k, v in values.items() if k in current}}
+
+        blades = list(config.blades)
+        blade = blades[self.i_row]
+
+        shift = np.array(
+            [moved[name] - current[name] for name in self.names()[:N_COEFF]]
+        )
+
+        # A uniform shift, as `_with_recamber` applies one: whatever spanwise
+        # variation of the loading shape the design asked for survives being
+        # iterated, because only one span fraction was ever measured and this
+        # has nothing to say about the others.
+        sections = tuple(
+            dataclasses.replace(
+                section,
+                camber=dataclasses.replace(
+                    section.camber,
+                    coeff=tuple(np.asarray(section.camber.coeff) + shift),
+                ),
+            )
+            for section in blade.sections
+        )
+
+        blades[self.i_row] = dataclasses.replace(
+            blade,
+            sections=sections,
+            count=dataclasses.replace(blade.count, Co=moved[self.names()[-1]]),
+        )
+        return dataclasses.replace(config, blades=tuple(blades))
+
+    def paths(self, config):
+        return {
+            f"blades[{self.i_row}].sections[{i_section}].camber.coeff[{j}]"
+            for i_section in range(len(config.blades[self.i_row].sections))
+            for j in range(N_COEFF)
+        } | {f"blades[{self.i_row}].count.Co"}
+
+    def error(self, config, result):
+        if result.grid is None or result.machine is None:
+            logger.debug("No solved grid, so no loading distribution to measure.")
+            return {}
+
+        self._check(config)
+
+        measured = measure_loading(
+            result, self.i_row, self.spf, self.zeta_front, self.zeta_TE
+        )
+        if not all(np.isfinite(measured)):
+            logger.info(
+                f"Could not find a suction peak on row {self.i_row} at "
+                f"spf={self.spf:.2f} between zeta={self.zeta_front:.2f} and "
+                f"{self.zeta_TE:.2f}, so its loading is unmeasured."
+            )
+            return {}
+
+        targets = (self.zeta_peak, self.fac_front, self.fac_peak)
+        return dict(zip(self.names(), np.asarray(measured) - targets))
+
+    #
+    # TWO SCALES, NOT ONE
+    #
+
+    def _by_knob(self, zeta, fac, level):
+        """Return one value per knob, in `names` order."""
+        return dict(zip(self.names(), (zeta, fac, level)))
+
+    def tolerances(self, config):
+        """Return a tolerance per knob, in that knob's own units.
+
+        A surface fraction and a Mach ratio are different things measured on
+        different scales, and the inherited scalar `tolerance` has no way to
+        say so. Ignored outright rather than blended, as :class:`Repeat`
+        ignores it, so that setting it cannot quietly do half of something.
+        """
+        del config
+        return self._by_knob(self.atol_zeta, self.atol_fac, self.atol_peak)
+
+    def clips(self, config):
+        """Return the largest step for each knob, in its own units.
+
+        A camber coefficient and a circulation coefficient are not the same
+        kind of number, and the inherited scalar `clip` has no way to say so.
+        Note the trust bound scales the whole step rather than clipping each
+        knob on its own, so these bound the step *together*: whichever knob
+        binds moves exactly its clip and the rest move proportionately less.
+        """
+        del config
+        return self._by_knob(self.clip, self.clip, self.clip_Co)
+
+    #
+    # WHAT THE CONFIG HAS TO PROVIDE
+    #
+
+    def _count(self, config):
+        """Return this row's blade count design, which has to have a `Co`."""
+        from turbigen.blade import Circulation  # noqa: PLC0415 - avoids a cycle
+
+        count = config.blades[self.i_row].count
+        if not isinstance(count, Circulation):
+            raise ValueError(
+                f"Setting the level of a loading distribution means moving the "
+                f"blade count, and row {self.i_row} counts its blades with a "
+                f"{type(count).__name__}, which has no circulation coefficient "
+                f"to move. Set count: {{type: Co, Co: 0.7}}."
+            )
+        return count
+
+    def _coefficients(self, config):
+        """Return every section's interior coefficients, ``(n_section, N_COEFF)``."""
+        self._check(config)
+        return np.array(
+            [section.camber.coeff for section in config.blades[self.i_row].sections],
+            dtype=float,
+        )
+
+    def _check(self, config):
+        """Raise unless this row's camber lines can carry the knob."""
+        from turbigen.camber import Bernstein  # noqa: PLC0415 - avoids a cycle
+
+        if not 0 <= self.i_row < len(config.blades):
+            raise ValueError(
+                f"i_row={self.i_row} is out of range for a machine with "
+                f"{len(config.blades)} blade row(s)."
+            )
+
+        self._count(config)
+
+        for i_section, section in enumerate(config.blades[self.i_row].sections):
+            camber = section.camber
+            where = f"row {self.i_row} section {i_section}"
+
+            if not isinstance(camber, Bernstein):
+                raise ValueError(
+                    f"Shaping a loading distribution moves the interior "
+                    f"coefficients of a Bernstein camber line, and {where} has "
+                    f"a {type(camber).__name__} camber, which has none. Set "
+                    f"camber: {{type: bernstein, order: {BERNSTEIN_ORDER}, "
+                    f"coeff: [0.0, 0.0]}}."
+                )
+
+            if camber.order != BERNSTEIN_ORDER or len(camber.coeff) != N_COEFF:
+                raise ValueError(
+                    f"Shaping a loading distribution needs exactly {N_COEFF} "
+                    f"interior camber coefficients, so order must be "
+                    f"{BERNSTEIN_ORDER} and coeff must be given in full; "
+                    f"{where} has order={camber.order} with "
+                    f"{len(camber.coeff)} coefficient(s). Two is what a camber "
+                    f"line has to give at a fixed blade count, and the "
+                    f"coefficients are written out rather than zero-padded so "
+                    f"that every one this moves is a leaf of the config."
+                )
 
 
 class MeanLine(Iterator):
@@ -1216,12 +1693,9 @@ def exit_profile(result, order, offset=None):
         raise ValueError(f"The exit cut plane at {xr.tolist()} misses the grid.")
 
     # Structured so that the pitch is an axis to average over. Sized from the
-    # block it came out of, so the profile is measured at the resolution the
-    # mesh has rather than one chosen here.
     block = grid[-1]
-    structured = ember.cut.interpolate_to_structured(
-        cut, (block.shape[1], block.shape[2])
-    )
+    nj, nk = 137, 113  # Brute force to avoid any loss of resolution
+    structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
 
     mean = ember.average.mix_out(cut)
     spf = span_fractions(structured)

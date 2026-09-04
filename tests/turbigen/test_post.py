@@ -32,6 +32,7 @@ from turbigen import (  # noqa: E402
     cli,
     mixout,
     post,
+    util,
 )
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
@@ -426,6 +427,134 @@ def test_surface_plot_draws_a_physical_distribution(bladed, solved):
     assert mas.min() == pytest.approx(0.0, abs=1e-2)
     # A turbine cascade accelerating to a subsonic exit.
     assert 0.3 < mas.max() < 1.5
+
+
+@pytest.fixture(scope="module")
+def machine(bladed):
+    """The bladed case designed, for the duty a loading target is scaled by."""
+    return bladed.design()
+
+
+def _shaped(config, **kwargs):
+    """Return `config` with a Bernstein camber and a loading iterator on row 0."""
+    import dataclasses  # noqa: PLC0415 - only these tests rebuild a config
+
+    from turbigen import camber, iterate  # noqa: PLC0415
+
+    blade = config.blades[0]
+    sections = tuple(
+        dataclasses.replace(section, camber=camber.Bernstein(order=3, coeff=(0.0, 0.0)))
+        for section in blade.sections
+    )
+    return dataclasses.replace(
+        config,
+        blades=(dataclasses.replace(blade, sections=sections),),
+        iterate=iterate.Iteration(correct=(iterate.LoadingDistribution(**kwargs),)),
+    )
+
+
+def _peaked(n=200):
+    """A signed distribution with a real peak on the positive surface.
+
+    The fixtures here are a cascade that accelerates all the way to its
+    trailing edge, which has no interior peak to aim at --- see
+    `test_surface_plot_overlays_nothing_without_a_peak`. Drawing the overlay
+    needs one, so this supplies it. Its peak is at 0.55 and its trailing edge
+    value 1.0, both read back by the tests below.
+    """
+    zeta = np.linspace(-1.0, 1.0, n)
+    suction = util.loading_target(np.abs(zeta), 0.2, 0.55, 0.700, 1.3, 1.0)
+    # The pressure side rises to meet the suction side at the trailing edge,
+    # as the two surfaces must, so the mean of the cut's two ends is 1.0.
+    pressure = 0.2 + 0.8 * np.abs(zeta)
+    return zeta, np.where(zeta > 0.0, np.nan_to_num(suction, nan=0.2), pressure)
+
+
+def _ma_front(config, machine, ma_TE=1.0):
+    """Return the Mach number the configured target implies at `zeta_front`."""
+    from turbigen.iterate import mach_ratio  # noqa: PLC0415
+
+    iterator = config.iterate.correct[0]
+    return iterator.fac_front * ma_TE / mach_ratio(machine, iterator.i_row)
+
+
+def test_surface_plot_overlays_a_loading_target(bladed, machine):
+    """A configured target is drawn over the distribution it is aiming at.
+
+    The point of the overlay: what the iterator closes is the gap between these
+    two lines, which is far easier to see than to read off a table.
+    """
+    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8)
+    zeta, mas = _peaked()
+
+    fig, ax = plt.subplots()
+    (measured,) = ax.plot(np.abs(zeta), mas, color="C3")
+    post._draw_loading_target(
+        ax, config, machine, 0, 0.5, zeta, mas, measured.get_color()
+    )
+
+    # The target line and nothing else: no fit, no apex marker.
+    assert len(ax.lines) == 2
+
+    (target,) = [ln for ln in ax.lines if "target" in ln.get_label()]
+
+    # Dashed and in the colour of the distribution it belongs to, so a plot of
+    # several sections stays readable.
+    assert target.get_linestyle() != measured.get_linestyle()
+    assert target.get_color() == measured.get_color()
+
+    # Drawn only over the window that is matched, and through the two points
+    # the target is defined by.
+    x, y = target.get_xdata(), target.get_ydata()
+    assert x[np.isfinite(y)].min() == pytest.approx(0.2)
+    # Every number on the line is one that was asked for: the apex sits at the
+    # target peak position and height, and the front anchor is what
+    # `fac_front` denormalises to against this row's duty.
+    assert x[np.nanargmax(y)] == pytest.approx(0.6, abs=x[1] - x[0])
+    assert np.nanmax(y) == pytest.approx(
+        config.iterate.correct[0].fac_peak, rel=1e-2
+    )
+    assert np.interp(0.2, x, y) == pytest.approx(
+        _ma_front(config, machine, ma_TE=1.0), rel=1e-3
+    )
+
+
+def test_surface_plot_overlays_nothing_without_an_iterator(bladed, solved):
+    """No target configured is no claim to draw."""
+    (line,) = SurfacePlot().report(bladed, solved)[0].axes[0].lines
+    assert "target" not in line.get_label()
+
+
+def test_surface_plot_overlays_a_target_on_a_peakless_cascade(bladed, solved):
+    """The target is drawn whether or not the blade has reached it.
+
+    This fixture accelerates all the way to its trailing edge and so has no
+    peak for the *iterator* to measure --- but the target is a statement about
+    what was wanted, not about what was found, so it is exactly the case where
+    seeing the two together is most use.
+    """
+    config = _shaped(bladed, zeta_peak=0.55, fac_front=1.8)
+
+    labels = [ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines]
+    assert any("target" in label for label in labels)
+
+
+def test_surface_plot_overlay_ignores_another_span(bladed, machine):
+    """A target set at one span says nothing about the sections either side."""
+    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, spf=0.25)
+
+    fig, ax = plt.subplots()
+    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
+    assert not ax.lines
+
+
+def test_surface_plot_overlay_ignores_another_row(bladed, machine):
+    """One row per iterator, so a target for row 1 is not drawn on row 0."""
+    config = _shaped(bladed, zeta_peak=0.6, fac_front=1.8, i_row=1)
+
+    fig, ax = plt.subplots()
+    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
+    assert not ax.lines
 
 
 def test_surface_plot_draws_an_unmarched_grid(bladed, meshed):

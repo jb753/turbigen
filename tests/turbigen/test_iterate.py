@@ -981,3 +981,445 @@ def test_the_fit_recovers_blockage_but_not_the_wall():
     blockage = np.trapezoid(1 - u, spf)
     fitted = np.trapezoid(1 - np.sqrt(np.clip(fit + 1, 0, None)), spf)
     assert abs(fitted - blockage) / blockage < 0.1
+
+
+#
+# THE TRUST BOUND
+#
+
+
+@pytest.mark.parametrize(
+    "change, limit, expected",
+    [
+        # Nothing over its limit passes through untouched.
+        ([0.05, -0.02], [0.1, 0.1], [0.05, -0.02]),
+        # One knob over: everything shrinks by the same factor.
+        ([0.3, 0.05], [0.1, 0.1], [0.1, 0.05 / 3.0]),
+        # Both over, which is the case that used to be projected onto a corner.
+        ([0.3, -0.2], [0.1, 0.1], [0.1, -0.2 / 3.0]),
+        # A knob with no clip does not constrain the others.
+        ([5.0, -2.0], [np.inf, np.inf], [5.0, -2.0]),
+        ([0.3, -0.2], [0.1, np.inf], [0.1, -0.2 / 3.0]),
+        # A step of nothing stays nothing rather than dividing by zero.
+        ([0.0, 0.0], [0.1, 0.1], [0.0, 0.0]),
+    ],
+)
+def test_the_trust_bound_scales_rather_than_clipping(change, limit, expected):
+    """The direction survives; only the length is cut."""
+    np.testing.assert_allclose(
+        iterate._bounded(np.array(change), np.array(limit)), expected
+    )
+
+
+def test_the_trust_bound_keeps_the_direction():
+    """The ratio between knobs is what per-component clipping destroyed."""
+    change = np.array([0.31, -0.17, 0.02])
+    bounded = iterate._bounded(change, np.full(3, 0.1))
+
+    # Same direction, shorter.
+    np.testing.assert_allclose(
+        bounded / np.linalg.norm(bounded), change / np.linalg.norm(change)
+    )
+    assert np.linalg.norm(bounded) < np.linalg.norm(change)
+
+    # And the knob that binds moves exactly its clip, which is what the
+    # setting promises.
+    assert np.max(np.abs(bounded)) == pytest.approx(0.1)
+
+
+def test_a_saturated_step_does_not_cycle():
+    """Two knobs whose Newton step exceeds both clips must not orbit.
+
+    Clipping each on its own sent a two-knob loading iterator into a period-2
+    orbit: the corner of the box overshoots, the next step wants the opposite
+    corner, and the design lands exactly where it was two iterations before.
+    Scaling cannot do that, because it never changes the direction it was
+    handed.
+    """
+    change = np.array([0.4, -0.25])
+    limit = np.full(2, 0.1)
+
+    first = iterate._bounded(change, limit)
+    # The corner would have been (+0.1, -0.1): equal magnitudes, no memory of
+    # the 0.4-to-0.25 ratio that the Jacobian actually asked for.
+    assert abs(first[0]) != pytest.approx(abs(first[1]))
+    np.testing.assert_allclose(first[0] / first[1], change[0] / change[1])
+
+
+#
+# THE LOADING DISTRIBUTION
+#
+# Shape rather than end angles, so its knob is a camber line and its error is a
+# curve reduced to two numbers. Everything below stands in for the CFD that
+# would measure that curve: `Shaped` declares the answer as a function of its
+# own knobs, exactly as `Fixed` and `Coupled` do above.
+#
+
+BERNSTEIN = {"type": "bernstein", "order": 3, "coeff": [0.0, 0.0]}
+"""A camber line carrying exactly the two coefficients the iterator moves."""
+
+
+def shaped(camber=None, **kwargs):
+    """Return a blade whose sections carry a Bernstein camber line.
+
+    `test_blade.blade` writes a quadratic camber and takes no argument to say
+    otherwise; rather than widen the shared factory for one caller, this
+    rewrites the sections it produces.
+    """
+    built = blade(**kwargs)
+    built["sections"] = [
+        {**section, "camber": dict(camber or BERNSTEIN)} for section in built["sections"]
+    ]
+    return built
+
+
+@pytest.fixture
+def loading():
+    """A two-row config whose first row has its loading shaped."""
+    return dataclasses.replace(
+        build(blades=[shaped(), shaped()]),
+        iterate=iterate.Iteration(
+            correct=(iterate.LoadingDistribution(zeta_peak=0.55, fac_front=1.8),)
+        ),
+    )
+
+
+class Shaped(iterate.LoadingDistribution):
+    """The real knobs, against a declared response instead of a solved grid.
+
+    Only `error` is overridden, so `unknowns`, `with_unknowns`, `paths` and the
+    tolerances under test are the shipped ones. No `type`, so it stays out of
+    the registry.
+
+    The response is the one measured on a cascade, so what the loop is tested
+    against is the coupling it will actually meet: both coefficients pull the
+    peak forward and soften the front, and the circulation coefficient moves
+    all three --- strongly on the level, which is the pairing it is declared
+    for, and appreciably on the other two, which is why the level had to become
+    a target rather than being left to float.
+    """
+
+    def response(self, config):
+        c0, c1, Co = (self.unknowns(config)[name] for name in self.names())
+        return (
+            0.610 - 0.244 * c0 - 0.297 * c1 - 0.340 * (Co - 0.7),
+            1.900 - 0.500 * c0 - 1.150 * c1 + 2.600 * (Co - 0.7),
+            1.160 - 0.020 * c0 - 0.030 * c1 + 0.500 * (Co - 0.7),
+        )
+
+    def error(self, config, result):
+        del result
+        targets = (self.zeta_peak, self.fac_front, self.fac_peak)
+        return dict(zip(self.names(), np.asarray(self.response(config)) - targets))
+
+
+class Degenerate(Shaped):
+    """A response that moves both errors along one direction only.
+
+    Contrived --- the measured Jacobian has a condition number of 7, so this is
+    not where the iterator lives --- but the guard it exercises is the one that
+    decides what happens when a blade stops responding, and a design with a NaN
+    in it is worse than a design that stopped moving.
+    """
+
+    def response(self, config):
+        c0, c1, Co = (self.unknowns(config)[name] for name in self.names())
+        return (
+            0.610 - 0.244 * (c0 - c1),
+            1.900 - 0.500 * (c0 - c1),
+            1.160 + 0.500 * (Co - 0.7),
+        )
+
+
+def designing(config, i_iter):
+    """A run that designs and solves nothing."""
+    del i_iter
+    return Result(machine=config.design())
+
+
+def test_loading_owns_two_coefficients_of_its_own_row(loading):
+    """Two knobs, named by row so a second entry cannot collide with them."""
+    assert set(loading.iterate.correct[0].unknowns(loading)) == {
+        "camber_coeff[0][0]",
+        "camber_coeff[0][1]",
+        "Co[0]",
+    }
+
+
+def test_loading_reads_the_mean_across_sections(loading):
+    """One number per coefficient per row, as a deviation is one per row.
+
+    The distribution is measured at a single span fraction, so it has nothing
+    to say about how the shape should vary up the blade.
+    """
+    varied = dataclasses.replace(
+        loading.blades[0],
+        sections=tuple(
+            dataclasses.replace(
+                section, camber=dataclasses.replace(section.camber, coeff=(c, 0.0))
+            )
+            for section, c in zip(loading.blades[0].sections, (0.1, 0.2, 0.6))
+        ),
+    )
+    config = dataclasses.replace(loading, blades=(varied, loading.blades[1]))
+
+    assert loading.iterate.correct[0].unknowns(config)[
+        "camber_coeff[0][0]"
+    ] == pytest.approx(0.3)
+
+
+def test_loading_shifts_every_section_alike(loading):
+    """A uniform shift, so a spanwise distribution survives being iterated."""
+    before = (0.1, 0.2, 0.6)
+    varied = dataclasses.replace(
+        loading.blades[0],
+        sections=tuple(
+            dataclasses.replace(
+                section, camber=dataclasses.replace(section.camber, coeff=(c, 0.0))
+            )
+            for section, c in zip(loading.blades[0].sections, before)
+        ),
+    )
+    config = dataclasses.replace(loading, blades=(varied, loading.blades[1]))
+
+    moved = loading.iterate.correct[0].with_unknowns(
+        config, {"camber_coeff[0][0]": 0.5}
+    )
+    after = [section.camber.coeff[0] for section in moved.blades[0].sections]
+
+    # The mean lands on what was asked for, and the spread is untouched.
+    assert np.mean(after) == pytest.approx(0.5)
+    np.testing.assert_allclose(np.array(after) - np.array(before), 0.2)
+
+
+def test_loading_leaves_the_rows_it_does_not_own_alone(loading):
+    """One row per iterator, so the other row's camber must not move."""
+    moved = loading.iterate.correct[0].with_unknowns(
+        loading, {"camber_coeff[0][0]": 0.3}
+    )
+    assert moved.blades[1] == loading.blades[1]
+
+
+def test_loading_owns_the_circulation_coefficient(loading):
+    """The third lever, and the reason there can be a third target.
+
+    At a fixed blade count the loop area is fixed, so the three numbers
+    describing a two-line shape carry one constraint between them and only two
+    are reachable. Freeing `Co` lifts it.
+    """
+    iterator = loading.iterate.correct[0]
+    assert iterator.unknowns(loading)["Co[0]"] == pytest.approx(
+        loading.blades[0].count.Co
+    )
+
+    moved = iterator.with_unknowns(loading, {"Co[0]": 0.62})
+    assert moved.blades[0].count.Co == pytest.approx(0.62)
+    # The camber it did not move stays where it was.
+    assert moved.blades[0].sections == loading.blades[0].sections
+
+
+def test_loading_needs_a_circulation_count():
+    """A fixed blade count has no continuous lever to move."""
+    fixed = shaped()
+    fixed["count"] = {"type": "Nb", "Nb": 40}
+    config = build(blades=[fixed, shaped()])
+
+    with pytest.raises(ValueError, match="FixedCount"):
+        iterate.LoadingDistribution().unknowns(config)
+
+
+def test_loading_paths_match_what_is_moved(loading):
+    """The `paths`/`with_unknowns` contract, on a knob nested two deep.
+
+    A camber coefficient is a leaf inside a tuple inside a camber inside a
+    section, which is further down than any other iterator reaches.
+    """
+    iterator = loading.iterate.correct[0]
+
+    assert iterator.paths(loading) == _probe(iterator, loading)
+    assert iterator.paths(loading) <= set(node.flatten(loading))
+
+
+def test_loading_round_trips_through_a_config_dict(loading):
+    assert Config.from_dict(loading.to_dict()) == loading
+    assert loading.to_dict()["iterate"]["correct"][0]["type"] == "loading"
+
+
+def test_loading_two_rows_do_not_collide():
+    """A stator and a rotor want different loading, so two entries."""
+    config = dataclasses.replace(
+        build(blades=[shaped(), shaped()]),
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.LoadingDistribution(i_row=0, zeta_peak=0.55, fac_front=1.8),
+                iterate.LoadingDistribution(i_row=1, zeta_peak=0.60, fac_front=1.9),
+            )
+        ),
+    )
+
+    assert set(iterate.unknowns(config)) == {
+        f"camber_coeff[{i}][{j}]" for i in range(2) for j in range(2)
+    } | {"Co[0]", "Co[1]"}
+
+
+def test_loading_shares_a_table_with_the_recambers():
+    """Nothing else claims a camber coefficient, so all three iterate together."""
+    config = dataclasses.replace(
+        build(blades=[shaped(), shaped()]),
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.Deviation(),
+                iterate.Incidence(),
+                iterate.LoadingDistribution(),
+            )
+        ),
+    )
+
+    unknowns = iterate.unknowns(config)
+    assert "camber_coeff[0][0]" in unknowns
+    assert "dchi_TE[0]" in unknowns
+    assert iterate.format_table(config, Result())
+
+
+def test_loading_has_a_tolerance_for_each_of_its_units(loading):
+    """A surface fraction and a Mach ratio, which one number cannot serve."""
+    iterator = dataclasses.replace(
+        loading.iterate.correct[0], atol_zeta=0.03, atol_fac=0.07, atol_peak=0.11
+    )
+    assert iterator.tolerances(loading) == {
+        "camber_coeff[0][0]": 0.03,
+        "camber_coeff[0][1]": 0.07,
+        "Co[0]": 0.11,
+    }
+
+
+def test_loading_without_a_grid_measures_nothing(loading):
+    """A run with no field says nothing about a distribution."""
+    assert loading.iterate.correct[0].error(loading, Result()) == {}
+
+
+def test_loading_needs_a_bernstein_camber():
+    """A quadratic camber line has no interior coefficient to move."""
+    config = build(blades=[blade(), blade()])
+    with pytest.raises(ValueError, match="Quadratic"):
+        iterate.LoadingDistribution().unknowns(config)
+
+
+@pytest.mark.parametrize(
+    "camber",
+    [
+        {"type": "bernstein", "order": 4, "coeff": [0.0, 0.0, 0.0]},
+        {"type": "bernstein", "order": 3, "coeff": [0.0]},
+        {"type": "bernstein", "order": 3, "coeff": []},
+    ],
+)
+def test_loading_needs_exactly_two_coefficients(camber):
+    """Two is what a camber line has to give at a fixed blade count.
+
+    A short `coeff` is refused as well as a long one: `Bernstein` zero-pads it
+    to evaluate, but an unwritten coefficient is no leaf of the config, and
+    `paths` would then name something that does not exist.
+    """
+    config = build(blades=[shaped(camber=camber), shaped()])
+    with pytest.raises(ValueError, match="exactly 2"):
+        iterate.LoadingDistribution().unknowns(config)
+
+
+def test_loading_refuses_a_row_that_is_not_there():
+    config = build(blades=[shaped(), shaped()])
+    with pytest.raises(ValueError, match="out of range"):
+        iterate.LoadingDistribution(i_row=5).unknowns(config)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"zeta_peak": 0.05},  # ahead of the front anchor
+        {"zeta_peak": 0.99},  # past the end of the window
+        {"zeta_front": 0.0},  # the stagnation point itself
+        {"fac_front": 0.0},  # a leading edge that is not moving
+        {"fac_front": -0.5},  # a Mach number ratio below zero
+    ],
+)
+def test_loading_refuses_an_unreachable_target(kwargs):
+    """Caught where it is written, rather than as a NaN eight solves later."""
+    with pytest.raises(ValueError):
+        iterate.LoadingDistribution(**kwargs)
+
+
+def test_loading_converges_onto_its_target(loading):
+    """The closed loop, against a declared response instead of a solver."""
+    config = dataclasses.replace(
+        loading, iterate=iterate.Iteration(correct=(Shaped(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19),))
+    )
+
+    final, _, converged = iterate.converge(config, designing, max_iter=20)
+    assert converged
+
+    zeta_peak, fac_front, fac_peak = final.iterate.correct[0].response(final)
+    assert zeta_peak == pytest.approx(0.57, abs=0.02)
+    assert fac_front == pytest.approx(1.85, abs=0.05)
+    assert fac_peak == pytest.approx(1.19, abs=0.02)
+
+
+def test_loading_moves_the_camber_it_started_from(loading):
+    """Convergence has to come from the coefficients, not from nowhere."""
+    config = dataclasses.replace(
+        loading, iterate=iterate.Iteration(correct=(Shaped(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19),))
+    )
+    final, _, _ = iterate.converge(config, designing, max_iter=20)
+
+    assert final.blades[0].sections[0].camber.coeff != (0.0, 0.0)
+    assert final.blades[1] == config.blades[1]
+
+
+def test_loading_is_clipped(loading):
+    """The trust bound holds on the first step, taken before anything is known."""
+    iterator = Shaped(zeta_peak=0.30, fac_front=1.20, fac_peak=1.50, clip=0.02, clip_Co=0.02)
+    config = dataclasses.replace(
+        loading, iterate=iterate.Iteration(correct=(iterator,))
+    )
+
+    stepped = iterate.step(config, Result(machine=config.design()))
+
+    for name, value in iterator.unknowns(stepped).items():
+        assert abs(value - iterator.unknowns(config)[name]) <= 0.02 + 1e-9
+
+
+def test_loading_survives_a_degenerate_response(loading):
+    """Two knobs that cancel make the Jacobian singular, not the design NaN."""
+    iterator = Degenerate(zeta_peak=0.57, fac_front=1.85, fac_peak=1.19)
+    config = dataclasses.replace(
+        loading, iterate=iterate.Iteration(correct=(iterator,))
+    )
+
+    for _ in range(5):
+        config = iterate.step(config, Result(machine=config.design()))
+        assert all(np.isfinite(v) for v in iterator.unknowns(config).values())
+
+
+def test_loading_delegates_to_the_measurement(loading, monkeypatch):
+    """`error` guards and subtracts; everything else is `measure_loading`.
+
+    Replaced wholesale, which is what having it at module level is for: the
+    cutting it does needs a solved grid, and the arithmetic either side of it
+    does not.
+    """
+    monkeypatch.setattr(iterate, "measure_loading", lambda *args: (0.62, 1.95, 1.25))
+
+    error = loading.iterate.correct[0].error(
+        loading, Result(machine=loading.design(), grid=object())
+    )
+
+    assert error["camber_coeff[0][0]"] == pytest.approx(0.62 - 0.55)
+    assert error["camber_coeff[0][1]"] == pytest.approx(1.95 - 1.8)
+    assert error["Co[0]"] == pytest.approx(1.25 - 1.2)
+
+
+def test_loading_drops_a_distribution_with_no_peak(loading, monkeypatch):
+    """An unmeasured knob is held, not stepped on a NaN."""
+    monkeypatch.setattr(iterate, "measure_loading", lambda *args: (np.nan, np.nan, np.nan))
+
+    result = Result(machine=loading.design(), grid=object())
+    assert loading.iterate.correct[0].error(loading, result) == {}
+    assert not iterate.converged(loading, result)

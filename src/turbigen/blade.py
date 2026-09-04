@@ -140,6 +140,11 @@ def _Alpha_rel(mean_line_row, spf, vortex_exponent):
     return np.degrees(np.arctan(Vt_rel / ml.Vm))
 
 
+def _is_sequence(value):
+    """Whether a design parameter is several numbers rather than one."""
+    return isinstance(value, (tuple, list, np.ndarray))
+
+
 def _interpolate(nodes, spf_sections, spf):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
@@ -158,11 +163,48 @@ def _interpolate(nodes, spf_sections, spf):
     if len(nodes) == 1 or not names:
         return nodes[0]
 
-    values = np.array([[getattr(node, name) for name in names] for node in nodes])
+    # A parameter is not always one number: a Bernstein camber line carries a
+    # tuple of coefficients, so each section is flattened to one row and the
+    # shapes are put back afterwards. Sections whose tuples are different
+    # lengths describe different designs and cannot be blended, which is the
+    # same objection as blending a quadratic into a quartic.
+    rows = [
+        [np.atleast_1d(np.asarray(getattr(node, name), dtype=float)) for name in names]
+        for node in nodes
+    ]
+    widths = [len(part) for part in rows[0]]
+    for row in rows:
+        if [len(part) for part in row] != widths:
+            raise ValueError(
+                f"Every section must carry the same number of parameters to "
+                f"interpolate between, and a {cls.__name__} section has "
+                f"{[len(part) for part in row]} against {widths}."
+            )
+
+    # A parameter every section agrees on is carried over untouched rather than
+    # interpolated onto itself. Same number either way, but it keeps whatever
+    # type the field was declared with -- a Bernstein order is an integer, and
+    # a float in its place is not a valid one.
+    values = np.array([np.concatenate(row) for row in rows])
     interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
+    interpolated = np.asarray(interpolated).reshape(-1)
+
+    moved = {}
+    for name, width, start in zip(names, widths, np.cumsum([0, *widths])):
+        original = getattr(nodes[0], name)
+        # `array_equal` rather than `==`, which on an array field would give an
+        # array of answers and no way to reduce it.
+        if all(np.array_equal(getattr(node, name), original) for node in nodes):
+            moved[name] = original
+            continue
+
+        chunk = interpolated[start : start + width]
+        moved[name] = (
+            type(original)(chunk) if width > 1 or _is_sequence(original) else chunk[0]
+        )
 
     try:
-        return cls(**dict(zip(names, interpolated.reshape(-1))))
+        return cls(**moved)
     except ValueError as err:
         # Interpolating between two valid sections can land on an invalid one,
         # since nothing constrains the path between them. Say where, or the
