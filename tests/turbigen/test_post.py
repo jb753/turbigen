@@ -644,6 +644,31 @@ def test_spanwise_yaw_angle_is_the_angle_the_row_turned_to(bladed, solved):
     assert np.mean(Alpha) == pytest.approx(float(solved.actual[:, 0].Alpha[1]), abs=2.0)
 
 
+def test_spanwise_yaw_angle_is_taken_in_the_frame_it_is_asked_for(gapped):
+    """The rotor sees a different angle from the one the duct downstream does.
+
+    Which is the whole reason the relative one is offered: on the row that
+    turns, the two frames differ by the swirl the blade speed adds, and a
+    profile in the wrong frame is a plausible-looking answer to another
+    question.
+    """
+    config, result = gapped
+
+    angles = [
+        SpanwisePlot(m_cut=(4.1,), variable=variable)
+        .report(config, result)[0]
+        .axes[0]
+        .lines[0]
+        .get_data()[0]
+        for variable in ("Alpha", "Alpha_rel")
+    ]
+
+    assert np.all(np.abs(angles[0] - angles[1]) > 1.0)
+    assert np.mean(angles[1]) == pytest.approx(
+        float(result.actual[:, 1].Alpha_rel[1]), abs=2.0
+    )
+
+
 def test_spanwise_plot_rejects_a_variable_it_cannot_build(bladed, solved):
     with pytest.raises(ValueError, match="no spanwise variable 'Wobble'"):
         SpanwisePlot(m_cut=(2.1,), variable="Wobble").report(bladed, solved)

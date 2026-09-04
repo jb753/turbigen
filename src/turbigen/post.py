@@ -85,6 +85,7 @@ _SPANWISE_LABELS = {
     "Vm": r"Meridional Velocity, $V_m/{sym}$",
     "Vt": r"Circumferential Velocity, $V_\theta/{sym}$",
     "Alpha": r"Yaw Angle, $\alpha$/deg",
+    "Alpha_rel": r"Relative Yaw Angle, $\alpha^\mathrm{rel}$/deg",
 }
 """Axis labels for the quantities `SpanwisePlot` will average, by name.
 
@@ -909,8 +910,8 @@ class SpanwisePlot(Post):
     """Normalised meridional positions to cut and pitch-average at."""
 
     variable: str = "Ys"
-    """Quantity to plot: ``Ys``, ``CP``, ``CPo``, ``Cho``, ``Vm``, ``Vt`` or
-    ``Alpha``."""
+    """Quantity to plot: ``Ys``, ``CP``, ``CPo``, ``Cho``, ``Vm``, ``Vt``,
+    ``Alpha`` or ``Alpha_rel``."""
 
     def report(self, config, result):
         machine = result.machine
@@ -1014,12 +1015,14 @@ class SpanwisePlot(Post):
             values = mass_avg(cut.Vm) / U_ref
         elif self.variable == "Vt":
             values = mass_avg(cut.Vt) / U_ref
-        elif self.variable == "Alpha":
-            # The one quantity here that carries its own units, so it is
-            # averaged and plotted as it stands rather than referred to
+        elif self.variable in ("Alpha", "Alpha_rel"):
+            # The two quantities here that carry their own units, so they are
+            # averaged and plotted as they stand rather than referred to
             # anything. Mass-weighted like the velocities, so a wake cannot
-            # pull the angle around.
-            values = mass_avg(cut.Alpha)
+            # pull the angle around. The relative one is taken in the frame the
+            # cut carries, which is the frame of the blocks it was cut from --
+            # so a rotor profile is the angle its own blades see.
+            values = mass_avg(getattr(cut, self.variable))
         else:
             raise ValueError(f"Unhandled spanwise variable {self.variable!r}.")
 
