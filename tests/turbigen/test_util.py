@@ -9,8 +9,11 @@ be indifferent to.
 import numpy as np
 import pytest
 
+import ember.block
 import ember.cut
+import ember.fluid
 import ember.patch
+import ember.util
 from test_blade import build
 from test_mesh import MESH, TIP
 from turbigen import H, bconds, guess, util
@@ -230,3 +233,202 @@ def test_setting_a_cut_speed_does_not_re_time_the_grid(grid):
             cut.set_Omega(-999.0)
 
     assert [float(block.Omega) for block in grid] == before
+
+
+#
+# THE STAGNATION POINT
+#
+# Arithmetic on a planted pressure peak, so that what is asserted is the search
+# and the refinement rather than a solution someone has to trust.
+#
+
+
+def stagnation_block(ni=41, nj=5, i_peak=20.0, flat=False):
+    """A 2D cut carrying a Gaussian pressure peak at `i_peak`.
+
+    Straight and uniformly spaced, so that arc length is a linear map of index
+    and a fractional index can be read back out of a `zeta` unambiguously.
+    """
+    shape = (ni, nj, 1)
+    block = ember.block.Block(shape=shape)
+    block.set_xrt(ember.util.linmesh3([0.0, 1.0], [1.0, 1.5], [0.0, 0.0], shape))
+    block.set_fluid(ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1e-5, Pr=0.72))
+    block.set_Omega(0.0)
+
+    i = np.arange(ni)[:, None, None]
+    if flat:
+        # Rising all the way across, so there is no interior maximum to find.
+        P = 1e5 + 1e3 * i * np.ones(shape)
+    else:
+        P = 1e5 + 1e5 * np.exp(-((i - i_peak) ** 2) / 20.0) * np.ones(shape)
+
+    block.set_P_rho(P, np.full(shape, 1.2))
+    block.set_Vx(np.full(shape, 50.0))
+    block.set_Vr(np.zeros(shape))
+    block.set_Vt(np.zeros(shape))
+
+    return block.squeeze()
+
+
+def test_the_stagnation_point_is_the_pressure_peak():
+    """A peak planted on a node is found on that node, and reported as found."""
+    i_stag, found = util.get_i_stag(stagnation_block(i_peak=20.0))
+    assert (i_stag == 20).all()
+    assert found.all()
+
+
+def test_a_stagnation_point_between_nodes_is_refined_onto_it():
+    """The parabola recovers a peak that no node sits on.
+
+    The integer index alone is a step function of the flow, so a leading edge
+    that moves by less than a cell would show no change in incidence at all.
+    """
+    block = stagnation_block(i_peak=20.4)
+    i_stag, found = util.get_i_stag(block)
+    assert found.all()
+
+    zeta = util.get_zeta(block)
+    zeta_stag = util.get_zeta_stag(block, i_stag)
+
+    # Back to a fractional index, which the uniform spacing makes linear.
+    lower, upper = zeta[20, :], zeta[21, :]
+    i_recovered = 20.0 + (zeta_stag - lower) / (upper - lower)
+
+    assert (lower < zeta_stag).all() and (zeta_stag < upper).all()
+    np.testing.assert_allclose(i_recovered, 20.4, atol=1e-2)
+
+
+def test_the_refinement_stands_on_the_node_it_is_given():
+    """With no maximum, `get_zeta_stag` falls back rather than extrapolating."""
+    block = stagnation_block(flat=True)
+    i_stag, _ = util.get_i_stag(block)
+    zeta = util.get_zeta(block)
+    np.testing.assert_allclose(
+        util.get_zeta_stag(block, i_stag), zeta[i_stag, np.arange(block.shape[1])]
+    )
+
+
+def test_a_stagnation_point_that_was_not_found_says_so():
+    """A monotonic surface still returns an index, flagged as a guess.
+
+    The incidence iterator drops a section it could not measure, and would
+    otherwise step on whichever end of the blade happened to be at the higher
+    pressure.
+    """
+    i_stag, found = util.get_i_stag(stagnation_block(flat=True))
+    assert not found.any()
+    assert (i_stag >= 0).all()
+
+
+#
+# THE SURFACE NORMAL
+#
+# A circular arc standing for a leading edge, because the answer is then known
+# in closed form: the normal at a point swept an angle from the nose is that
+# angle away from the camber direction, which is what an incidence is.
+#
+
+
+def nose_arc(a_deg, R=0.05, r_hub=1.0, nj=3, reverse=False):
+    """An arc of radius `R` about the origin, as a cut of a leading edge.
+
+    At constant radius, so that `(m, r * theta)` is `(x, r * theta)` and the
+    geometry can be written down. `a = 180 deg` is the nose, with the blade
+    interior towards positive x.
+    """
+    a = np.radians(np.asarray(a_deg, dtype=float))
+    if reverse:
+        a = a[::-1]
+
+    shape = (len(a), nj, 1)
+    x = (R * np.cos(a))[:, None, None] * np.ones(shape)
+    r = np.full(shape, r_hub)
+    t = (R * np.sin(a) / r_hub)[:, None, None] * np.ones(shape)
+
+    block = ember.block.Block(shape=shape)
+    block.set_xrt(np.stack((x, r, t), axis=-1))
+
+    return block.squeeze()
+
+
+ARC = np.linspace(90.0, 270.0, 361)
+"""Half a turn about the nose, at half a degree a node."""
+
+MERIDIONAL = np.array([1.0, 0.0])
+"""Downstream, for an arc drawn at constant radius."""
+
+
+@pytest.mark.parametrize("swept", [-40.0, 0.0, 40.0])
+def test_the_normal_yaw_is_the_angle_swept_from_the_nose(swept):
+    """What the reference subtends at the centre of the leading edge circle.
+
+    Recovered without the circle's radius anywhere in the arithmetic, which is
+    what lets this work for a thickness distribution that does not define one.
+    """
+    cut = nose_arc(ARC)
+    node = int(np.argmin(np.abs(ARC - (180.0 + swept))))
+
+    yaw = util.surface_normal_yaw(
+        cut, util.get_zeta(cut)[node, :], MERIDIONAL, 0.0
+    )
+
+    # Differenced centrally on a finely drawn arc, so it is recovered to a
+    # hundred-thousandth of a degree. Nothing here needs it that tight.
+    np.testing.assert_allclose(yaw, swept, atol=1e-3)
+
+
+def test_the_normal_yaw_does_not_depend_on_which_way_the_cut_runs():
+    """`cut_blade_sides` joins the two k faces in an order the H-mesh and
+    O-mesh branches do not share, so the direction of travel round a nose is a
+    property of the mesh. The answer must not be."""
+    node = int(np.argmin(np.abs(ARC - 220.0)))
+
+    forward = nose_arc(ARC)
+    backward = nose_arc(ARC, reverse=True)
+
+    yaw_forward = util.surface_normal_yaw(
+        forward, util.get_zeta(forward)[node, :], MERIDIONAL, 0.0
+    )
+    # The same point of the arc, which the reversal moved to the other end.
+    yaw_backward = util.surface_normal_yaw(
+        backward, util.get_zeta(backward)[len(ARC) - 1 - node, :], MERIDIONAL, 0.0
+    )
+
+    np.testing.assert_allclose(yaw_forward, yaw_backward, atol=1e-3)
+
+
+def test_the_metal_angle_only_chooses_between_the_two_normals():
+    """A surface has two normals and `chi` says which is inward. It must not
+    otherwise enter the answer, which is measured, not assumed."""
+    cut = nose_arc(ARC)
+    zeta = util.get_zeta(cut)[int(np.argmin(np.abs(ARC - 200.0))), :]
+
+    yaw = [util.surface_normal_yaw(cut, zeta, MERIDIONAL, chi) for chi in (-30.0, 30.0)]
+
+    np.testing.assert_allclose(yaw[0], yaw[1], atol=1e-9)
+
+
+def test_the_normal_yaw_moves_smoothly_between_nodes():
+    """Read at a sub-cell arc length, as `get_zeta_stag` returns one.
+
+    The components are interpolated rather than the angle they make, so a
+    stagnation point crossing a cell boundary moves the answer by a cell's
+    worth of angle and not by a step.
+    """
+    cut = nose_arc(ARC)
+    zeta_line = util.get_zeta(cut)[:, 0]
+
+    node = int(np.argmin(np.abs(ARC - 200.0)))
+    fractions = np.linspace(0.0, 1.0, 11)
+    zeta = zeta_line[node] + fractions * (zeta_line[node + 1] - zeta_line[node])
+
+    yaw = np.array(
+        [
+            util.surface_normal_yaw(cut, np.full(3, z), MERIDIONAL, 0.0)[0]
+            for z in zeta
+        ]
+    )
+
+    # A cell is one node spacing of sweep, and it is traversed evenly.
+    step = ARC[1] - ARC[0]
+    np.testing.assert_allclose(yaw, yaw[0] + fractions * step, atol=1e-3)

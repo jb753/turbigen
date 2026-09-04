@@ -43,6 +43,11 @@ def cosd(x):
     return np.cos(np.radians(x))
 
 
+def sind(x):
+    """Return the sine of an angle in degrees."""
+    return np.sin(np.radians(x))
+
+
 #
 # CUMULATIVE QUANTITIES
 #
@@ -319,6 +324,17 @@ def get_i_stag(block, xrt_LE=None):
         makes the answer robust on a blade whose two sides are of very
         different length.
 
+    Returns
+    -------
+    i_stag : ndarray of int, shape (nj,)
+        Streamwise index of the stagnation point on each j-line.
+    found : ndarray of bool, shape (nj,)
+        Whether that index is a pressure maximum inside the search window, as
+        opposed to the best guess made when there was none. A guess is good
+        enough to normalise a surface distance by, and not good enough to
+        measure an incidence from, so the two answers are told apart here
+        rather than left for each caller to decide it got a real one.
+
     """
     if block.ndim != 2:
         raise ValueError(
@@ -349,6 +365,7 @@ def get_i_stag(block, xrt_LE=None):
 
     half_window = 0.05
     i_stag = np.full((nj,), 0, dtype=int)
+    found = np.full((nj,), False)
 
     for j in range(nj):
         z_centre = z_nose[j]
@@ -360,6 +377,7 @@ def get_i_stag(block, xrt_LE=None):
 
         if len(crossings):
             i_stag[j] = crossings[np.argmax(P[crossings, j])]
+            found[j] = True
         elif xrt_LE is not None:
             # No maximum in the window: take the highest pressure in it rather
             # than the highest anywhere, which on an asymmetric blade would
@@ -369,7 +387,136 @@ def get_i_stag(block, xrt_LE=None):
         else:
             i_stag[j] = np.argmax(P[:, j])
 
-    return i_stag
+    return i_stag, found
+
+
+def get_zeta_stag(block, i_stag):
+    """Return the arc length of the stagnation point on each j-line.
+
+    The index :func:`get_i_stag` returns, refined to somewhere between nodes by
+    fitting a parabola through the rotary pressure at ``i - 1``, ``i`` and
+    ``i + 1`` against arc length and taking its vertex.
+
+    Worth the three lines because the integer index is a step function of the
+    flow: a leading edge that moves by less than a cell returns the same node,
+    and an incidence measured from it does not change at all until it jumps by
+    a whole cell. Differencing that gives a slope of either zero or nonsense,
+    which is exactly what a secant update cannot be fed.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        The two-dimensional cut `i_stag` was found on.
+    i_stag : array_like of int, shape (nj,)
+        Streamwise index of the stagnation point on each j-line.
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        Arc length of the stagnation point, in the units of :func:`get_zeta`.
+
+    """
+    P = block.P_rot
+    zeta = get_zeta(block)
+    ni, nj = block.shape[:2]
+
+    # Clamped so that the neighbours either side exist, which costs the sub-cell
+    # correction on a stagnation point sitting on the very end of the cut --- a
+    # blade whose flow attaches at the trailing edge has larger problems.
+    i = np.clip(np.asarray(i_stag), 1, ni - 2)
+    j = np.arange(nj)
+
+    z0, z1, z2 = zeta[i - 1, j], zeta[i, j], zeta[i + 1, j]
+    p0, p1, p2 = P[i - 1, j], P[i, j], P[i + 1, j]
+
+    # Divided differences, so that a mesh clustered towards the nose is fitted
+    # on its own spacing rather than on an assumed uniform one.
+    d01 = z1 - z0
+    d12 = z2 - z1
+    s01 = (p1 - p0) / d01
+    s12 = (p2 - p1) / d12
+    curvature = (s12 - s01) / (z2 - z0)
+    slope = 0.5 * (s01 + s12)
+
+    # A triple that is not concave down has no vertex to find, which happens
+    # only where `get_i_stag` did not find a maximum either. Left on the node.
+    delta = np.where(curvature >= 0.0, 0.0, -slope / (2.0 * curvature))
+
+    # Kept inside the bracket the three points span: a nearly flat parabola
+    # puts its vertex arbitrarily far away, and the answer is known to lie
+    # between the neighbours of a maximum.
+    return z1 + np.clip(delta, -d01, d12)
+
+
+def surface_normal_yaw(cut, zeta, e_m, chi):
+    """Return the yaw of the inward surface normal at arc length `zeta` [deg].
+
+    Yaw in the ``(m, r * theta)`` frame a metal angle is quoted in, so it can be
+    differenced against one directly. At a stagnation point this is the angle
+    the flow arrives at: the dividing streamline meets the wall along its
+    normal, which is what lets an incidence be read off the blade rather than
+    off a plane somewhere upstream.
+
+    Parameters
+    ----------
+    cut : ember.block.Block
+        A two-dimensional cut of a blade surface.
+    zeta : array_like, shape (nj,)
+        Arc length along each j-line to take the normal at, as
+        :func:`get_zeta_stag` returns.
+    e_m : array_like, shape (2,)
+        Unit vector in ``(x, r)`` pointing downstream along the meridional
+        direction. What tells a coordinate difference along the surface from a
+        signed meridional distance --- arc length alone cannot, being positive
+        on both sides of a leading edge.
+    chi : float
+        Metal angle at the leading edge [deg]. Orients the normal: of the two
+        normals to a surface, the one wanted here points into the blade, and at
+        the nose that is the camber direction. Which of the two the arithmetic
+        produces depends on the direction the cut runs in, and that is a
+        property of the mesh --- `cut_blade_sides` joins the ``k = 0`` and
+        ``k = -1`` faces in an order the H-mesh and O-mesh branches do not
+        share --- so it is settled from the geometry rather than assumed.
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        Yaw of the inward normal on each j-line [deg].
+
+    """
+    zeta_line = get_zeta(cut)
+    nj = cut.shape[1]
+
+    # Central differences, so the tangent is centred on the node its arc length
+    # is, and the interpolation below is between neighbours rather than across
+    # a half-cell offset.
+    dx = np.gradient(cut.x, axis=0)
+    dr = np.gradient(cut.r, axis=0)
+    dt = np.gradient(cut.t, axis=0)
+
+    # Into the frame the angle is quoted in. The tangential step is an angle
+    # until a radius makes it a distance.
+    t_m = dx * e_m[0] + dr * e_m[1]
+    t_rt = cut.r * dt
+
+    zeta = np.atleast_1d(zeta)
+    yaw = np.zeros((nj,))
+    for j in range(nj):
+        # The components are interpolated, not the angle they make: an angle
+        # would have to be unwrapped first, and the point of a sub-cell arc
+        # length is that what comes out of it moves smoothly.
+        m_j = np.interp(zeta[j], zeta_line[:, j], t_m[:, j])
+        rt_j = np.interp(zeta[j], zeta_line[:, j], t_rt[:, j])
+
+        # The tangent turned a quarter turn is a normal; which of the two it is
+        # follows from the sign.
+        n_m, n_rt = -rt_j, m_j
+        if n_m * cosd(chi) + n_rt * sind(chi) < 0.0:
+            n_m, n_rt = -n_m, -n_rt
+
+        yaw[j] = np.degrees(np.arctan2(n_rt, n_m))
+
+    return yaw
 
 
 def _wall_Omega(block, const_dim, at_end):

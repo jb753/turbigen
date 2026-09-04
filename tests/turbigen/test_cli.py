@@ -1135,13 +1135,17 @@ def test_a_run_records_what_its_metrics_measured(tmp_path):
 
 SETTLED_CASE = ITERATE_CASE.replace(
     "    - type: deviation\n", "    - type: deviation\n      tolerance: 20.0\n"
-).replace(
-    "    - type: incidence\n", "    - type: incidence\n      tolerance: 20.0\n"
-)
-"""Tolerances loose enough that one pass settles the design.
+).replace("    - type: incidence\n", "")
+"""One iterator, at a tolerance loose enough that a single pass settles it.
 
 Absurd on purpose: what these check is what a settled run leaves behind, and
 paying for a genuine convergence would be minutes of CFD to learn nothing more.
+
+Incidence is dropped rather than loosened, because it is measured as a swept
+angle around the nose and this mesh does not resolve one --- five nodes to a
+leading edge radius, which is some twenty degrees of nose to a cell. No
+tolerance makes that meaningful, and these tests are about a settled run's
+directory rather than about what settled it.
 """
 
 
@@ -1319,7 +1323,20 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     from turbigen import case  # noqa: PLC0415
 
     out = iterate_case.parent
-    cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
+    # Unclipped, so the step is the rule and nothing else. This mesh reads a
+    # large incidence --- its leading edge carries some twenty degrees of nose
+    # to a cell --- and the default two degree clip would bound the step before
+    # the rule got to set it.
+    cli.main(
+        [
+            "iterate",
+            str(iterate_case),
+            "-s",
+            "iterate.max_iter=2",
+            "-s",
+            "iterate.correct.1.clip=0",
+        ]
+    )
 
     first, first_result = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
     second, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)

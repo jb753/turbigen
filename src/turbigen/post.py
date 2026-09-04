@@ -576,8 +576,10 @@ def _normalise_surface_distance(cut, mas, xrt_nose):
 
     # The geometric nose anchors the search window, which is more robust on
     # blades with a strongly asymmetric leading edge than the arc-length
-    # midpoint the function falls back on.
-    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0])
+    # midpoint the function falls back on. Whether it found a real maximum does
+    # not matter here: the origin moves onto the lowest Mach number below in
+    # any case, and this only has to land on the right side of the blade.
+    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0][0])
     zeta = zeta - zeta[i_stag]
 
     # Then move the origin onto the lowest Mach number, which is the

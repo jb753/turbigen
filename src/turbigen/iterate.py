@@ -36,6 +36,7 @@ from numpy.polynomial import legendre
 
 import ember.average
 import ember.cut
+import turbigen.util
 from turbigen.node import Node
 from turbigen.result import Result
 
@@ -709,10 +710,16 @@ def _sections(config):
 class Incidence(Iterator):
     """Set the leading edge to meet the flow at a chosen incidence.
 
-    Measured on the three-dimensional field at each section's own span fraction
-    rather than from the mixed-out mean line, because incidence is a local
-    property of the leading edge and the whole point of moving it is that the
-    mean line does not see what the tip and the hub are doing.
+    Measured from the stagnation point on the blade itself, at each section's
+    own span fraction, rather than from the mixed-out mean line: incidence is a
+    local property of the leading edge, and the whole point of moving one is
+    that the mean line does not see what the tip and the hub are doing.
+
+    On the blade rather than on a plane ahead of it, because where the flow
+    attaches is the thing being controlled. A flow angle read upstream --- what
+    this class used to do --- answers a slightly different question at every
+    distance it is read from, and the distance was a setting nobody had grounds
+    to choose.
 
     One knob per section, not the row mean :class:`Deviation` uses: a blade
     with N sections has N independent leading-edge angles, and each should meet
@@ -725,22 +732,27 @@ class Incidence(Iterator):
     target: float = 0.0
     """Incidence to aim for [deg]."""
 
-    upstream: float = 0.05
-    """Where to read the flow angle, as a fraction of the gap ahead of the row."""
-
     # Negative because the metal angle rises with the recamber while the
     # incidence is measured against it, so the error falls as the knob rises.
     #
-    # Damped an order of magnitude below the measured slope of -0.99, because
-    # incidence against leading-edge recamber is flat over a range and then
-    # flips, and a Newton-sized first step is taken before anything has been
-    # learned about which of those a design is sitting in. The secant recovers
-    # the rate from the second iteration on, so the cost of being timid here is
-    # one gentle step rather than a slow iteration.
-    gain: float = -0.1
+    # Deliberately timid. A swept angle responds more steeply to recamber than
+    # the flow angle this used to measure --- the stagnation point moves
+    # several degrees around the nose for one degree of metal --- and a row
+    # takes much of its incidence from the row upstream, so a first step is
+    # taken before anything has been learned about either. The secant recovers
+    # the rate from the second iteration on, so being cautious here costs a
+    # gentle opening step rather than a slow iteration.
+    gain: float = -0.05
     clip: float = 2.0
-    tolerance: float = 1.0
-    """Permissible error on local incidence [deg]."""
+    tolerance: float = 5.0
+    """Permissible error on local incidence [deg].
+
+    Loose next to a deviation, because it is measured on the nose: how far the
+    surface turns across the cell the flow stagnated in bounds how accurate a
+    discrete solution can be about it, and on a mesh that resolves a blade well
+    that is still a few degrees. `_report_resolution` says when a case is
+    asking for more than its own mesh can answer.
+    """
 
     def unknowns(self, config):
         return {
@@ -776,9 +788,15 @@ class Incidence(Iterator):
             logger.debug("No solved grid, so no incidence to measure.")
             return {}
 
+        # One cut of each blade, not one per section: the cut is the expensive
+        # part of the measurement and does not depend on span.
+        surfaces = turbigen.util.cut_blade_surfs(result.grid)
+
         measured = {}
         for i_row, i_section, section in _sections(config):
-            incidence = _incidence(result, i_row, section.spf, self.upstream)
+            incidence = _incidence(
+                result, surfaces[i_row], i_row, section.spf, self.tolerance
+            )
             if np.isfinite(incidence):
                 measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
             else:
@@ -790,58 +808,122 @@ class Incidence(Iterator):
         return measured
 
 
-def _incidence(result, i_row, spf, upstream):
+N_SPAN_CUT = 101
+"""Meridional points in a span-fraction cut of a row."""
+
+N_CHORD_NOSE = 501
+"""Chordwise points used to place the geometric nose of a section."""
+
+
+def _incidence(result, surface, i_row, spf, tolerance=0.0):
     """Return the incidence onto row `i_row` at span fraction `spf` [deg].
 
-    The flow angle a little ahead of the leading edge, mass-averaged over the
-    pitch, minus the metal angle there. Both are relative-frame yaw angles in
-    the same convention, so the difference is the incidence as a designer means
-    it.
+    How far the flow has swept the stagnation point around the nose, as an
+    angle. The dividing streamline meets the wall along its normal, so the yaw
+    of the surface normal where the flow stagnates is the angle the flow
+    arrives at; the metal angle it is measured against is the camber direction
+    at the leading edge, which the blade knows exactly rather than by
+    measurement --- a camber line is *built* from `chi_LE`.
+
+    That makes this the angle the reference implementation subtends at the
+    centre of the leading edge circle, without needing the circle: the radius
+    entered there only as the constant relating an arc to an angle, and cancels
+    out of a construction made from tangents. It is `R_LE` that would have been
+    needed to keep it, and `R_LE` belongs to one thickness distribution rather
+    than to the interface every distribution implements.
+
+    NaN when there is nothing to measure --- a section above a clearance gap,
+    or a leading edge the stagnation point could not be found on --- which the
+    caller drops rather than steps on.
     """
-    machine = result.machine
-    annulus = machine.annulus
+    annulus = result.machine.annulus
+    blade = result.machine.rows[i_row].blade
 
-    # A span cut of the whole machine, as the contour plot takes.
-    m = np.linspace(0.0, annulus.m_max, annulus.n_segment * 50 + 1)
-    xr_curve = annulus.evaluate_xr(m, spf).T
-    cut = ember.cut.structured_meridional(result.grid, xr_curve)
+    if surface is None:
+        return np.nan
+
+    # Rows occupy the odd meridional segments of the annulus, so row i runs
+    # from the leading edge at 2i+1 to the trailing edge at 2i+2.
+    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
+    xr = annulus.evaluate_xr(m, spf)
+
+    # `structured_meridional` walks the second axis of a three-axis block, so
+    # the surface is padded to put its spanwise axis there and the cut comes
+    # back one wide.
+    cut = ember.cut.structured_meridional(surface[0][:, :, None], xr.T)
     if not len(cut):
+        # Above a clearance gap the blade has no surface to cut, the span there
+        # being trimmed off as flow rather than wall.
+        return np.nan
+    cut = cut[0]
+
+    # The thickness vanishes at m = 0, so the first point of either surface is
+    # the nose. It anchors the stagnation search window, which is what makes
+    # the search robust on a strongly asymmetric leading edge.
+    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
+
+    i_stag, found = turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)
+    if not found[0]:
         return np.nan
 
-    # Rows occupy the odd segments, so the leading edge is at an integer
-    # station and the flow is read a fraction of the gap ahead of it.
-    xr_read = annulus.evaluate_xr(2 * i_row + 1 - upstream, spf)
+    # Refined to between nodes, because the integer index is a step function of
+    # the flow: a leading edge that moves by less than a cell would show no
+    # change at all, and then a whole cell's worth at once.
+    zeta_stag = turbigen.util.get_zeta_stag(cut, i_stag)
 
-    block, i_read = _nearest_station(cut, xr_read)
-    if block is None:
-        return np.nan
+    # Downstream meridional direction at the leading edge, off the same
+    # annulus curve the cut was taken along. Arc length around a nose is
+    # positive on both sides of it and cannot say which way is downstream.
+    e_m = xr[:, 1] - xr[:, 0]
+    e_m = e_m / np.linalg.norm(e_m)
 
-    # Mass-averaged over the pitch: an area average would let the wake, which
-    # carries little of the flow, pull the angle around.
-    weight = np.asarray(block.rhoVm[i_read])
-    alpha = np.asarray(block.Alpha_rel[i_read])
-    flow = float(np.sum(weight * alpha) / np.sum(weight))
+    chi = float(blade.evaluate_chi(spf)[0])
+    flow = float(turbigen.util.surface_normal_yaw(cut, zeta_stag, e_m, chi)[0])
 
-    metal = float(machine.rows[i_row].blade.evaluate_chi(spf)[0])
+    _report_resolution(cut, i_stag, e_m, chi, i_row, spf, tolerance)
 
-    return flow - metal
+    # Wrapped, because a normal yaw runs to a half turn either way while a
+    # metal angle does not, and their difference is small by construction.
+    return (flow - chi + 180.0) % 360.0 - 180.0
 
 
-def _nearest_station(cut, xr):
-    """Return the block of `cut` holding `xr`, and the streamwise index of it."""
-    best, best_block, best_index = np.inf, None, None
+def _report_resolution(cut, i_stag, e_m, chi, i_row, spf, tolerance):
+    """Say when the nose is meshed too coarsely for the tolerance asked of it.
 
-    for block in cut:
-        # The pitchwise index is immaterial: a span cut holds one meridional
-        # position per streamwise station, to within the mesh's own skew.
-        distance = np.hypot(
-            np.asarray(block.x)[:, 0] - xr[0], np.asarray(block.r)[:, 0] - xr[1]
+    How far the surface turns across the cell the flow stagnated in, read off
+    the same normal the measurement uses, and so needing no leading edge radius
+    and no assumption about the shape of the nose.
+
+    An estimate of accuracy, not of step size. The answer this reports on is
+    smooth --- the stagnation point is located between nodes, and sweeping the
+    span fraction across a cell moves the measured incidence by hundredths of a
+    degree, not in steps. What a cell of nose bounds is how far the pressure
+    peak of a *discrete* solution can sit from the real one, which is a
+    truncation error: it does not shrink as the solver converges, and no
+    refinement of the peak's location within the mesh can see it.
+
+    Compared against the tolerance rather than against a constant, because
+    coarse has no meaning here on its own: a nose good to five degrees is ample
+    for a design that wants ten and hopeless for one that wants one.
+    """
+    zeta_line = turbigen.util.get_zeta(cut)
+    i = int(np.clip(i_stag[0], 1, cut.shape[0] - 2))
+
+    # One call an arc length: `surface_normal_yaw` reads one point per j-line,
+    # and the two wanted here are two points on the same one.
+    neighbours = [
+        turbigen.util.surface_normal_yaw(cut, zeta_line[k, :], e_m, chi)[0]
+        for k in (i - 1, i + 1)
+    ]
+    turn = 0.5 * abs(neighbours[1] - neighbours[0])
+
+    if turn > tolerance:
+        logger.info(
+            f"The leading edge of row {i_row} at spf={spf:.2f} turns "
+            f"{turn:.1f} deg across the cell the flow stagnated in, so its "
+            f"incidence is unlikely to be accurate to the {tolerance:.1f} deg "
+            "being iterated to. Refine the nose, or ask for less."
         )
-        index = int(np.argmin(distance))
-        if distance[index] < best:
-            best, best_block, best_index = distance[index], block, index
-
-    return best_block, best_index
 
 
 class MeanLine(Iterator):
