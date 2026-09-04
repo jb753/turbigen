@@ -630,6 +630,20 @@ def test_spanwise_velocity_of_a_cascade_falls_back_to_its_own_velocity(bladed, s
     assert np.mean(Vt) == pytest.approx(np.sin(Alpha), rel=0.05)
 
 
+def test_spanwise_yaw_angle_is_the_angle_the_row_turned_to(bladed, solved):
+    """In degrees, and against nothing: an angle is already a number.
+
+    Weighed against the mixed-out exit angle, which is the same average taken
+    the other way -- so this is what says the profile is neither in radians nor
+    referred to some scale it does not need.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Alpha").report(bladed, solved)
+    Alpha, _ = figure.axes[0].lines[0].get_data()
+
+    assert figure.axes[0].get_xlabel().endswith("/deg")
+    assert np.mean(Alpha) == pytest.approx(float(solved.actual[:, 0].Alpha[1]), abs=2.0)
+
+
 def test_spanwise_plot_rejects_a_variable_it_cannot_build(bladed, solved):
     with pytest.raises(ValueError, match="no spanwise variable 'Wobble'"):
         SpanwisePlot(m_cut=(2.1,), variable="Wobble").report(bladed, solved)
