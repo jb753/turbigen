@@ -165,7 +165,9 @@ def test_setting_touches_nothing_else(config):
     """An iterator owns its fields and writes only those."""
     before = config.to_dict()
 
-    after = config.iterate.correct[0].with_unknowns(config, {"dchi_TE[0]": -3.0}).to_dict()
+    after = (
+        config.iterate.correct[0].with_unknowns(config, {"dchi_TE[0]": -3.0}).to_dict()
+    )
 
     for i_row, (blade_before, blade_after) in enumerate(
         zip(before["blades"], after["blades"])
@@ -834,7 +836,9 @@ def test_a_written_profile_carries_no_level():
 def test_paths_are_the_knobs_themselves():
     """The one iterator whose knobs are its leaves one for one."""
     config = repeating()
-    written = config.iterate.correct[0].with_unknowns(config, {"inlet_profile.DPo[0]": 0.3})
+    written = config.iterate.correct[0].with_unknowns(
+        config, {"inlet_profile.DPo[0]": 0.3}
+    )
 
     assert config.iterate.correct[0].paths(written) == set(iterate.unknowns(written))
 
@@ -846,7 +850,9 @@ def test_paths_match_what_repeat_writes():
         config, {name: 0.1 for name in iterate.unknowns(config)}
     )
 
-    assert seeded.iterate.correct[0].paths(seeded) == _probe(seeded.iterate.correct[0], seeded)
+    assert seeded.iterate.correct[0].paths(seeded) == _probe(
+        seeded.iterate.correct[0], seeded
+    )
 
 
 #
@@ -1076,7 +1082,8 @@ def shaped(camber=None, **kwargs):
     """
     built = blade(**kwargs)
     built["sections"] = [
-        {**section, "camber": dict(camber or BERNSTEIN)} for section in built["sections"]
+        {**section, "camber": dict(camber or BERNSTEIN)}
+        for section in built["sections"]
     ]
     return built
 
@@ -1086,7 +1093,9 @@ def loading():
     """A two-row config whose first row has its loading shaped."""
     return dataclasses.replace(
         build(blades=[shaped(), shaped()]),
-        iterate=iterate.Iteration(correct=(iterate.LoadingDistribution(fac_front=1.8),)),
+        iterate=iterate.Iteration(
+            correct=(iterate.LoadingDistribution(fac_front=1.8),)
+        ),
     )
 
 
@@ -1116,8 +1125,13 @@ class Shaped(iterate.LoadingDistribution):
 def _measured(fac_front=1.95, fac_peak=1.25, zeta_peak=0.62):
     """A `Loading` with the fields a test cares about and plausible rest."""
     return turbigen.loading.Loading(
-        zeta_peak=zeta_peak, fac_front=fac_front, fac_peak=fac_peak,
-        ma_peak=0.75, ma_TE=0.60, ma_max=0.74, zeta_max=zeta_peak + 0.02,
+        zeta_peak=zeta_peak,
+        fac_front=fac_front,
+        fac_peak=fac_peak,
+        ma_peak=0.75,
+        ma_TE=0.60,
+        ma_max=0.74,
+        zeta_max=zeta_peak + 0.02,
     )
 
 
@@ -1215,7 +1229,9 @@ def test_peak_owns_the_circulation_coefficient(loading):
     """
     peak = iterate.PeakMach(i_row=0)
 
-    assert peak.unknowns(loading) == {"Co[0]": pytest.approx(loading.blades[0].count.Co)}
+    assert peak.unknowns(loading) == {
+        "Co[0]": pytest.approx(loading.blades[0].count.Co)
+    }
 
     moved = peak.with_unknowns(loading, {"Co[0]": 0.62})
     assert moved.blades[0].count.Co == pytest.approx(0.62)
@@ -1281,8 +1297,10 @@ def test_peak_needs_a_circulation_count():
         iterate.PeakMach().unknowns(config)
 
 
-@pytest.mark.parametrize("kwargs", [{"fac_peak": 0.0}, {"fac_peak": -1.0},
-                                    {"zeta_front": 0.0}, {"zeta_front": 0.99}])
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"fac_peak": 0.0}, {"fac_peak": -1.0}, {"zeta_front": 0.0}, {"zeta_front": 0.99}],
+)
 def test_peak_refuses_an_impossible_setting(kwargs):
     with pytest.raises(ValueError):
         iterate.PeakMach(**kwargs)
@@ -1450,7 +1468,9 @@ def test_loading_delegates_to_the_measurement(loading, monkeypatch):
     cutting it does needs a solved grid, and the arithmetic either side of it
     does not.
     """
-    monkeypatch.setattr(turbigen.loading, "measure", lambda *a: _measured(fac_front=1.95))
+    monkeypatch.setattr(
+        turbigen.loading, "measure", lambda *a: _measured(fac_front=1.95)
+    )
 
     error = loading.iterate.correct[0].error(
         loading, Result(machine=loading.design(), grid=object())
@@ -1485,7 +1505,9 @@ order 3 moves."""
 def profile():
     """A two-row config whose first row has its loading profile shaped."""
     return dataclasses.replace(
-        build(blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]),
+        build(
+            blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]
+        ),
         iterate=iterate.Iteration(correct=(iterate.LoadingProfile(order=3),)),
     )
 
@@ -1553,7 +1575,9 @@ def test_profile_needs_a_bernstein_camber():
 def test_profile_needs_coefficients_written_out_in_full():
     """A short or mismatched-order camber line is refused, not padded."""
     config = build(
-        blades=[shaped(camber={"type": "bernstein", "order": 4, "coeff": [0.0, 0.0, 0.0]})]
+        blades=[
+            shaped(camber={"type": "bernstein", "order": 4, "coeff": [0.0, 0.0, 0.0]})
+        ]
         * 2
     )
     with pytest.raises(ValueError, match="written out in full"):
@@ -1561,7 +1585,9 @@ def test_profile_needs_coefficients_written_out_in_full():
 
 
 def test_profile_refuses_a_row_that_is_not_there():
-    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)])
+    config = build(
+        blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]
+    )
     with pytest.raises(ValueError, match="out of range"):
         iterate.LoadingProfile(i_row=5).unknowns(config)
 
@@ -1589,19 +1615,30 @@ def test_profile_without_a_grid_measures_nothing(profile):
 def test_profile_gains_clips_and_tolerances_differ_for_shape_and_level():
     """Two knobs, not one: the level and the shape need not agree."""
     iterator = iterate.LoadingProfile(
-        order=3, gain=-0.5, gain_Co=1.5, clip=0.1, clip_Co=0.05,
-        tolerance=0.05, tolerance_Co=0.02,
+        order=3,
+        gain=-0.5,
+        gain_Co=1.5,
+        clip=0.1,
+        clip_Co=0.05,
+        tolerance=0.05,
+        tolerance_Co=0.02,
     )
     config = build(blades=[shaped(camber=PROFILE_BERNSTEIN)] * 2)
 
     assert iterator.gains(config) == {
-        "camber_coeff[0][0]": -0.5, "camber_coeff[0][1]": -0.5, "Co[0]": 1.5,
+        "camber_coeff[0][0]": -0.5,
+        "camber_coeff[0][1]": -0.5,
+        "Co[0]": 1.5,
     }
     assert iterator.clips(config) == {
-        "camber_coeff[0][0]": 0.1, "camber_coeff[0][1]": 0.1, "Co[0]": 0.05,
+        "camber_coeff[0][0]": 0.1,
+        "camber_coeff[0][1]": 0.1,
+        "Co[0]": 0.05,
     }
     assert iterator.tolerances(config) == {
-        "camber_coeff[0][0]": 0.05, "camber_coeff[0][1]": 0.05, "Co[0]": 0.02,
+        "camber_coeff[0][0]": 0.05,
+        "camber_coeff[0][1]": 0.05,
+        "Co[0]": 0.02,
     }
 
 
@@ -1661,11 +1698,7 @@ def test_profile_held_knob_never_blocks_convergence(profile, monkeypatch):
     stepping = dataclasses.replace(
         profile,
         iterate=iterate.Iteration(
-            correct=(
-                iterate.LoadingProfile(
-                    order=3, tolerance=1.0, tolerance_Co=1.0
-                ),
-            )
+            correct=(iterate.LoadingProfile(order=3, tolerance=1.0, tolerance_Co=1.0),)
         ),
     )
 
@@ -1796,12 +1829,80 @@ def test_calibration_keeps_every_iterator():
     assert outer.gain == pytest.approx(1.0, rel=1e-6)
 
 
-def test_a_loading_profile_splits_its_calibration():
-    """Two gains cannot be written from one mean over every knob."""
+def test_the_ceiling_is_what_a_clip_and_a_tolerance_leave_measurable():
+    """The bound is `clip / (margin * DU_MIN * tolerance)`, and unbounded without a clip.
+
+    `deviation`'s numbers, which is where this was first needed: a clip of 2
+    degrees against a tolerance of half of one.
+    """
+    assert iterate._ceiling(2.0, 0.5) == pytest.approx(8.0)
+    assert iterate._ceiling(2.0, 5.0) == pytest.approx(0.8)
+
+    # No clip is no bound: a knob free to move as far as the step asks can
+    # always make a move large enough to learn from.
+    assert iterate._ceiling(0.0, 0.5) == np.inf
+
+
+def with_bounded(**kwargs):
+    """A config iterating one analytic knob under a clip, so a ceiling exists.
+
+    `with_fixed` fixes a tolerance of its own, and the ceiling is a statement
+    about a clip *and* a tolerance together; both have to be sayable here.
+    """
+    return dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(**kwargs),)),
+    )
+
+
+def test_a_flat_response_cannot_calibrate_past_what_it_can_measure():
+    """A gain big enough to make its own moves illegible is capped there.
+
+    `step` divides a move by `|gain| * tolerance` before deciding it is worth
+    learning from, so a large enough gain freezes the Jacobian at whatever it
+    already believed --- including a sign a flat response got wrong. This
+    knob's slope of 0.025 asks for a gain of 40, past the 8 its own clip and
+    tolerance leave measurable.
+    """
+    psi = float(build().mean_line.psi)
+    config = with_bounded(
+        slope=0.025, target=psi - 40.0, gain=1.0, clip=2.0, tolerance=0.5
+    )
+
+    final, _, _converged = iterate.converge(config, solve_nothing, max_iter=3)
+
+    gain = final.iterate.correct[0].gain
+    assert abs(gain) == pytest.approx(iterate._ceiling(2.0, 0.5))
+
+    # Capped, not reverted: the sign it measured still stands, so the
+    # correction keeps going the way the run found out it should.
+    assert gain > 0.0
+
+
+def test_a_gain_inside_the_ceiling_is_written_back_untouched():
+    """The cap bounds the pathological case, it does not rescale every run."""
+    config = with_bounded(slope=1.0, target=3.0, gain=0.5, clip=2.0, tolerance=0.5)
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
+
+
+def test_a_loading_profile_keeps_every_gain_it_measured():
+    """Each knob's own slope survives, level included, with `Co` leading.
+
+    Three knobs answer to three different sensitivities, so a calibration is
+    three numbers. Reducing them --- which this used to do, writing the mean of
+    the camber gains and the level's separately --- discards the difference
+    between a coefficient at the front of a blade and one at the back, and lets
+    a single flat knob move the gain of every other.
+    """
     profile = iterate.LoadingProfile(i_row=0, order=3, gain=-0.5, gain_Co=1.5)
+    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN)])
 
     calibrated = profile.with_gains(
-        None,
+        config,
         {
             "camber_coeff[0][0]": -0.2,
             "camber_coeff[0][1]": -0.4,
@@ -1809,8 +1910,18 @@ def test_a_loading_profile_splits_its_calibration():
         },
     )
 
-    assert calibrated.gain == pytest.approx(-0.3)
-    assert calibrated.gain_Co == pytest.approx(2.0)
+    # `Co` first, then one per camber coefficient -- `unknowns` order.
+    assert calibrated.gain == pytest.approx((2.0, -0.2, -0.4))
+
+    # The declared priors are untouched: `gain_Co` says where the level starts,
+    # not where it ended up, and nothing reads it once `gain` carries a
+    # sequence.
+    assert calibrated.gain_Co == pytest.approx(1.5)
+
+    # And what it now reports per knob is what it was handed.
+    assert calibrated.gains(config) == pytest.approx(
+        {"Co[0]": 2.0, "camber_coeff[0][0]": -0.2, "camber_coeff[0][1]": -0.4}
+    )
 
 
 def test_a_pass_runs_on_the_gains_the_last_one_measured():
@@ -1837,4 +1948,3 @@ def test_a_pass_runs_on_the_gains_the_last_one_measured():
     assert seen[0] == 0.5
     assert seen[-1] == pytest.approx(1.0, rel=1e-6)
     assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
-

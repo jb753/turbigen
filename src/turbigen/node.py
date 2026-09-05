@@ -165,6 +165,31 @@ SCALARS = (bool, int, float, str)
 """Scalar annotations a value out of a config file is converted against."""
 
 
+def _scalar_or_sequence(annotation):
+    """Return the scalar of ``X | tuple[X, ...]``, or None if not one.
+
+    The one wider union this module understands, and it is understood because
+    the *value* says which member is meant: a number is the scalar, a list is
+    the sequence. No discriminator key, and no ambiguity to resolve.
+
+    A field written this way holds either one setting or one per knob --- an
+    iterator gain, which is a single declared prior until a run has measured
+    each of its knobs separately. Every other union still passes through
+    unconverted, as :func:`_strip_none` describes.
+    """
+    if get_origin(annotation) not in (typing.Union, types.UnionType):
+        return None
+
+    args = [arg for arg in get_args(annotation) if arg is not type(None)]
+    if len(args) != 2:
+        return None
+
+    for scalar, other in (args, args[::-1]):
+        if scalar in SCALARS and _sequence_member(other) is scalar:
+            return scalar
+    return None
+
+
 def _to_scalar(annotation, value, where):
     """Convert `value` to the scalar type `annotation` names.
 
@@ -231,6 +256,18 @@ def _from_config(annotation, value, where):
 
     if isinstance(annotation, type) and issubclass(annotation, Node):
         return annotation.from_dict(value)
+
+    scalar = _scalar_or_sequence(annotation)
+    if scalar is not None:
+        # Dispatched on the value, not the annotation: a sequence converts
+        # elementwise and anything else converts as the scalar, so both members
+        # get the same checking a field annotated with either alone would get.
+        if isinstance(value, (list, tuple)) and not isinstance(value, str):
+            return tuple(
+                _from_config(scalar, item, f"{where}[{i}]")
+                for i, item in enumerate(value)
+            )
+        return _to_scalar(scalar, value, where)
 
     member = _sequence_member(annotation)
     if member is not None:

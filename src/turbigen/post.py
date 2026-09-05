@@ -631,6 +631,77 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
     )
 
 
+def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
+    """Overlay what a `loading_profile` iterator is aiming this section at.
+
+    The sibling of :func:`_draw_loading_target`, for the iterator that shapes
+    the whole curve rather than one point on it --- see
+    :class:`~turbigen.iterate.LoadingProfile`. Two differences follow from
+    that:
+
+    * The apex is drawn where the target puts it, not where the blade did.
+      `LoadingProfile` states a `zeta_peak` as well as a `fac_peak`, so there
+      is no need to read a position off the achieved distribution and no
+      honesty in doing so.
+    * The points the iterator actually reads are marked. It samples the curve
+      at one `m` per camber coefficient, and where those land in `zeta` is a
+      property of the blade's geometry rather than anything the target says;
+      a circle apiece shows which part of the gap between the two lines each
+      knob is answering for.
+    """
+    from turbigen.iterate import LoadingProfile
+    from turbigen.loading import mach_ratio, measure_profile
+
+    profile = _matching(config, LoadingProfile, i_row, spf)
+    if profile is None:
+        return
+
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
+
+    # A target is written in `fac`, which is the trailing-edge Mach number
+    # times the row's `Ma_2 / Ma_1`; dividing that back out is what turns one
+    # into a Mach number these axes can carry.
+    scale = ma_TE / mach_ratio(result.machine, i_row)
+
+    drawn = np.linspace(profile.zeta_front, 1.0, 101)
+    ax.plot(
+        drawn,
+        turbigen.util.loading_target(
+            drawn,
+            profile.zeta_front,
+            profile.zeta_peak,
+            profile.fac_front * scale,
+            profile.fac_peak * scale,
+            ma_TE,
+        ),
+        linestyle="--",
+        color=color,
+        linewidth=1.0,
+        label=f"target, spf={spf:.2f}",
+    )
+
+    # Measured the same way the iterator measures, rather than interpolated
+    # off the drawn curve: the two differ by whatever the plot's `offset` and
+    # the sampler's own cut disagree about, and the circles are only worth
+    # drawing if they are the numbers the errors were formed from.
+    measured = measure_profile(result, i_row, spf, profile.knob_m())
+    if measured is None:
+        return
+    zeta_knob, fac_knob = measured
+
+    ax.plot(
+        zeta_knob,
+        fac_knob * scale,
+        linestyle="none",
+        marker="o",
+        markerfacecolor="none",
+        color=color,
+        label=f"samples, spf={spf:.2f}",
+    )
+
+
 class SurfacePlot(Post):
     """Isentropic Mach number around the blade surfaces."""
 
@@ -714,6 +785,9 @@ class SurfacePlot(Post):
 
                 _draw_loading_target(
                     ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
+                )
+                _draw_loading_profile(
+                    ax, config, result, i_row, spf, mas, line.get_color()
                 )
 
             # Every section asked for was above the gap, so there is nothing on

@@ -30,6 +30,7 @@ from turbigen import (
     SurfacePlot,
     VelocityTrianglePlot,
     cli,
+    loading,
     mixout,
     post,
     util,
@@ -530,6 +531,82 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     assert np.interp(0.2, x, y) == pytest.approx(
         _ma_front(config, machine, ma_TE=1.0), rel=1e-3
     )
+
+
+def _profiled(config, **kwargs):
+    """Return `config` with a `loading_profile` iterator on row 0.
+
+    No camber line is substituted: the overlay reads the target off the
+    iterator and the samples off the solution, and neither asks what the
+    config's camber is made of.
+    """
+    import dataclasses
+
+    from turbigen import iterate
+
+    return dataclasses.replace(
+        config,
+        iterate=iterate.Iteration(correct=(iterate.LoadingProfile(**kwargs),)),
+    )
+
+
+def test_surface_plot_overlays_a_loading_profile(bladed, solved):
+    """The whole template is drawn, and marked where the iterator reads it.
+
+    `LoadingProfile` states both ends of its target, so unlike
+    `test_surface_plot_overlays_a_loading_target` nothing here is read off the
+    achieved distribution --- and the circles say which points the errors were
+    formed from.
+    """
+    config = _profiled(bladed, order=4, zeta_front=0.2, zeta_peak=0.6)
+    iterator = config.iterate.correct[0]
+
+    ax = SurfacePlot().report(config, solved)[0].axes[0]
+    (measured,) = [ln for ln in ax.lines if ln.get_label().startswith("spf")]
+    (target,) = [ln for ln in ax.lines if "target" in ln.get_label()]
+    (samples,) = [ln for ln in ax.lines if "samples" in ln.get_label()]
+
+    # In the colour of the distribution they belong to, so a plot of several
+    # sections stays readable, and dashed for the line, circles for the points.
+    assert target.get_color() == measured.get_color()
+    assert samples.get_color() == measured.get_color()
+    assert target.get_linestyle() != measured.get_linestyle()
+    assert samples.get_marker() == "o"
+
+    # Drawn over the driven window only, with its apex where the target asks
+    # for one rather than where the blade put one.
+    x, y = target.get_xdata(), target.get_ydata()
+    assert x[np.isfinite(y)].min() == pytest.approx(iterator.zeta_front)
+    assert x[np.nanargmax(y)] == pytest.approx(iterator.zeta_peak, abs=x[1] - x[0])
+
+    # The two anchors and the trailing edge, denormalised against this row's
+    # duty exactly as the iterator normalises what it measures.
+    ma_TE = 0.5 * (measured.get_ydata()[0] + measured.get_ydata()[-1])
+    scale = ma_TE / loading.mach_ratio(solved.machine, 0)
+    assert np.interp(iterator.zeta_front, x, y) == pytest.approx(
+        iterator.fac_front * scale, rel=1e-3
+    )
+    assert np.nanmax(y) == pytest.approx(iterator.fac_peak * scale, rel=1e-2)
+    assert y[-1] == pytest.approx(ma_TE, rel=1e-3)
+
+    # One circle per camber coefficient, at the surface fraction that
+    # coefficient's `m` lands on -- the iterator's own numbers, not a reading
+    # off the drawn curve.
+    zeta_knob, fac_knob = loading.measure_profile(
+        solved, 0, iterator.spf, iterator.knob_m()
+    )
+    assert len(samples.get_xdata()) == iterator.order - 1
+    assert samples.get_xdata() == pytest.approx(zeta_knob)
+    assert samples.get_ydata() == pytest.approx(fac_knob * scale)
+
+
+def test_surface_plot_profile_overlay_ignores_another_span(bladed, solved):
+    """A profile set at one span says nothing about the sections either side."""
+    config = _profiled(bladed, spf=0.25)
+    labels = [
+        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+    ]
+    assert not any("target" in label or "samples" in label for label in labels)
 
 
 def test_surface_plot_overlays_nothing_without_an_iterator(bladed, solved):

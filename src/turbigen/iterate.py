@@ -30,6 +30,7 @@ Here an iterator returns a new config and owns no state at all.
 import dataclasses
 import itertools
 import logging
+import math
 from typing import ClassVar
 
 import ember.average
@@ -67,6 +68,42 @@ COND_MAX = 1e6
 FLAT = 0.1
 """A diagonal below this fraction of its prior counts as a flat response."""
 
+GAIN_MARGIN = 2.0
+"""How far inside the measurable range :func:`_ceiling` keeps a capped gain.
+
+At exactly the bound a full-clip move is worth `DU_MIN` and nothing smaller
+teaches the Jacobian anything, which is a knife edge to sit a loop on. Two puts
+a full-clip move at twice the floor, so half of one still counts.
+"""
+
+
+def _ceiling(clip, tolerance):
+    """Return the largest gain a knob can carry and still be measurable.
+
+    `step` divides a move by ``|gain| * tolerance`` before `_jacobian` decides
+    whether it is worth learning from, and the largest move a knob can make is
+    its clip. So the scaled move a knob can offer is at most
+    ``clip / (|gain| * tolerance)``, and a gain large enough to push that under
+    `DU_MIN` locks the Jacobian at whatever it already believed --- including a
+    sign that a flat response got wrong.
+
+    Infinite where there is nothing to bound it with: a knob with no clip can
+    move as far as the step asks, so no gain makes its move illegible.
+    """
+    if not clip or not tolerance:
+        return np.inf
+    return float(clip / (GAIN_MARGIN * DU_MIN * tolerance))
+
+
+def _one_or_many(values):
+    """Return a lone value as a scalar and several as a tuple.
+
+    What keeps a single-knob iterator writing ``gain: -1.0`` in its config
+    rather than ``gain: [-1.0]``: the sequence form exists to carry knobs that
+    differ, and one knob cannot differ from itself.
+    """
+    return values[0] if len(values) == 1 else tuple(values)
+
 
 class Iterator(Node):
     """Base for design iterators.
@@ -88,7 +125,7 @@ class Iterator(Node):
     guessing it wrong fails silently in both directions.
     """
 
-    gain: float = 1.0
+    gain: float | tuple[float, ...] = 1.0
     """How much of the error to subtract from the unknown.
 
     Carries the sign of the local sensitivity as well as its size: the step is
@@ -100,6 +137,16 @@ class Iterator(Node):
     goes, and :func:`calibrate` writes back the slope the run went on to
     measure, so a design iterated twice starts the second time from the
     sensitivity it saw rather than from the guess it was given.
+
+    **One number or one per knob.** A scalar is a single declared prior, spread
+    over every knob the iterator owns; a sequence carries them separately, in
+    the order :meth:`unknowns` returns. A design is declared with the scalar,
+    because a prior is a statement about a *kind* of knob and the count is
+    rarely known while writing a file; a run measures a slope for each knob and
+    writes back the sequence, because those are genuinely different numbers.
+    Reducing them to one would blend, say, the sensitivity of a recamber at
+    hub and casing, or of a camber coefficient at the front of a blade with one
+    at the back --- measurements of different constants, not repeats of one.
     """
 
     clip: float = 0.0
@@ -184,27 +231,56 @@ class Iterator(Node):
     def gains(self, config):
         """Return the gain of each unknown, by name.
 
-        Uniform by default, from :attr:`gain` -- the common case, and the one
-        every iterator before :class:`LoadingProfile` needed. Overridden where
-        two knobs owned by the same iterator answer to different signs, which
-        a single scalar cannot carry.
+        A scalar :attr:`gain` is spread over every knob; a sequence is matched
+        to them in the order :meth:`unknowns` returns, which is the order
+        :meth:`with_gains` wrote it in.
         """
-        return {name: self.gain for name in self.unknowns(config)}
+        names = list(self.unknowns(config))
+        return dict(zip(names, self._gain_each(names)))
+
+    def _gain_each(self, names):
+        """Return the gain of each name in `names`, spreading a scalar over them.
+
+        A declared sequence has to match the knobs it claims to describe. It
+        will not when a config carries a calibration measured against a
+        different design --- a blade that has gained a section, a
+        :class:`LoadingProfile` whose `order` was changed --- and silently
+        reinterpreting those numbers against knobs they were never measured on
+        is worse than refusing them, because it would be a wrong sensitivity
+        rather than an absent one.
+        """
+        names = list(names)
+        if isinstance(self.gain, (int, float)):
+            return [float(self.gain)] * len(names)
+
+        if len(self.gain) != len(names):
+            raise ValueError(
+                f"{type(self).__name__} was given {len(self.gain)} gain(s) for "
+                f"{len(names)} knob(s): {names}. A sequence of gains is one per "
+                f"unknown, in that order; write a single number to declare one "
+                f"prior for all of them."
+            )
+        return [float(value) for value in self.gain]
 
     def with_gains(self, config, gains):
         """Return this iterator carrying the gains a run measured.
 
         The dual of :meth:`gains`, as :meth:`with_unknowns` is of
-        :meth:`unknowns`. One scalar covers knobs a run measures one slope
-        apiece for -- every section of a recamber, every camber coefficient --
-        so the reduction is a plain mean: exact for the single-knob case, and
-        for the rest an average of measurements of the same declared constant.
+        :meth:`unknowns`. Every measurement is kept, one per knob, because
+        knobs an iterator happens to own together are not measurements of one
+        constant: two sections of a recamber, or two camber coefficients at
+        different points on a chord, have genuinely different sensitivities and
+        a run measures each of them.
 
-        Overridden where an iterator carries a second gain, which only
-        :class:`LoadingProfile` does.
+        A lone knob is written back as a scalar, so that the common case reads
+        in a config file exactly as it was declared.
+
+        Overridden where an iterator carries a gain outside :meth:`unknowns`,
+        which only :class:`LoadingProfile` does.
         """
-        del config
-        return dataclasses.replace(self, gain=float(np.mean(list(gains.values()))))
+        prior = self.gains(config)
+        measured = [float(gains.get(name, prior[name])) for name in prior]
+        return dataclasses.replace(self, gain=_one_or_many(measured))
 
 
 class Iteration(Node):
@@ -502,6 +578,26 @@ def calibrate(config, result, history=()):
     Only the diagonal. What the off-diagonal terms know is a property of the
     trajectory a run took, and it stays inside that run.
 
+    **Bounded, or a flat response is unrecoverable.** A knob whose measured
+    response is near zero gives a near-zero denominator, and the gain that
+    comes back is enormous with a sign read off noise. The clip bounds the
+    *step* that gain asks for, but not the gain itself, and the gain is written
+    into the design --- so what looks like a bounded excursion is really a
+    march of exactly one clip per iteration, indefinitely.
+
+    Worse, it cannot be measured out again. `step` scales a move by
+    ``|gain| * tolerance`` before the Broyden update looks at it, and declines
+    to learn from anything below `DU_MIN`; the largest move a knob can make is
+    its clip. So a gain above ``clip / (DU_MIN * tolerance)`` makes even a
+    full-clip move illegible, the Jacobian freezes at the sign of the wrong
+    gain, and the loop can no longer discover its mistake. The gain scales the
+    measurement that would correct the gain.
+
+    :func:`_ceiling` is that bound with a factor of two in hand, so a
+    full-clip move stays worth twice the floor rather than landing exactly on
+    it. A cap, not a floor on the denominator: a floor bounds the *ratio* of
+    one step, which two flat passes in a row simply spend twice.
+
     Parameters
     ----------
     config : Config
@@ -532,6 +628,16 @@ def calibrate(config, result, history=()):
             # `_newton` does not.
             logger.info(f"The measured slope of {name} is zero, so its gain stands.")
             continue
+
+        ceiling = _ceiling(table.clip[name], table.e_scale[i])
+        if abs(gain) > ceiling:
+            logger.info(
+                f"The measured gain of {name} is {gain:.3g}, past the "
+                f"{ceiling:.3g} its clip and tolerance leave measurable; "
+                f"capping it there."
+            )
+            gain = math.copysign(ceiling, gain)
+
         calibrated[name] = float(gain)
 
     correct = []
@@ -1598,11 +1704,13 @@ class LoadingProfile(Iterator):
     coefficients. One iterator, one internally consistent target curve, and
     nothing that two separately-configured iterators could disagree about.
 
-    That needs two gains, not one: the level rises with `Co` while the shape
+    That needs two *priors*, not one: the level rises with `Co` while the shape
     residuals fall with the camber coefficients, the same disagreement that
     made `PeakMach` a member of its own rather than a third knob on
-    `LoadingDistribution`. :meth:`gains` is overridden accordingly --- see
-    :meth:`Iterator.gains`.
+    `LoadingDistribution`. A single declared number cannot carry both signs, so
+    :attr:`gain_Co` is written beside :attr:`gain` --- see :meth:`gains`. What
+    a run *measures* needs no such split: :attr:`Iterator.gain` holds one
+    calibrated value per knob, this iterator's level included.
 
     **`fac_peak` here is not `PeakMach.fac_peak`.** This carries the same
     `Ma_2 / Ma_1` factor `fac_front` does, so the two anchors describe one
@@ -1661,11 +1769,18 @@ class LoadingProfile(Iterator):
     docstring.
     """
 
-    gain: float = -0.5
-    """How much of the shape error to subtract from each camber coefficient.
+    gain: float | tuple[float, ...] = -0.5
+    """How much of the error to subtract from each knob.
 
     A starting direction, not a calibration --- see
     :attr:`LoadingDistribution.gain`, which the same caveat applies to.
+
+    **As a scalar this describes the camber coefficients only**, with
+    :attr:`gain_Co` carrying the level beside it; the two disagree on sign, so
+    one number cannot be both. As a sequence it carries every knob, `Co` first
+    and then one per coefficient, which is the form :func:`calibrate` writes
+    back once a run has measured each of them separately. See
+    :meth:`unknowns` for why `Co` leads.
     """
 
     clip: float = 0.1
@@ -1675,11 +1790,17 @@ class LoadingProfile(Iterator):
     """Converged when every driven point's shape residual is within this [--]."""
 
     gain_Co: float = 1.5
-    """How much of the level error to subtract from `Co` [--].
+    """How much of the level error to subtract from `Co`, as a prior [--].
 
     Positive, for the reason :attr:`PeakMach.gain` is: the level rises with
     the circulation coefficient, and that sign is a calibration rather than a
-    guess.
+    guess. That is the whole reason this is written apart from :attr:`gain`
+    rather than being its first element: a scalar prior cannot carry two signs,
+    and the level's is known.
+
+    **Read only while :attr:`gain` is a scalar.** Once a run has calibrated,
+    `gain` carries every knob including this one, and what is written here no
+    longer reaches the loop.
     """
 
     clip_Co: float = 0.05
@@ -1703,6 +1824,15 @@ class LoadingProfile(Iterator):
             raise ValueError(f"fac_front must be positive, got {self.fac_front}.")
         if not self.fac_peak > 0.0:
             raise ValueError(f"fac_peak must be positive, got {self.fac_peak}.")
+        if not isinstance(self.gain, (int, float)) and len(self.gain) != self.order:
+            raise ValueError(
+                f"A loading profile of order {self.order} has {self.order} "
+                f"knobs --- the level and {self.order - 1} camber "
+                f"coefficient(s) --- but was given {len(self.gain)} gain(s). "
+                f"A sequence is one per knob with Co first; write a single "
+                f"number to declare one prior for the camber and let gain_Co "
+                f"carry the level."
+            )
 
     #
     # THE PROTOCOL
@@ -1718,13 +1848,21 @@ class LoadingProfile(Iterator):
         return [f"camber_coeff[{self.i_row}][{j}]" for j in range(self.order - 1)]
 
     def unknowns(self, config):
+        """Return the level first, then one camber coefficient per knob.
+
+        **`Co` leads, and the order is load-bearing.** A sequence :attr:`gain`
+        is matched to this order, so where `Co` sits decides which element of a
+        calibration belongs to it. Putting it first fixes that at index zero
+        whatever `order` is; last, it would move every time the camber line
+        gained or lost a coefficient, and a gain measured for a circulation
+        coefficient would silently be read as one for a camber knob.
+        """
         coefficients = self._coefficients(config)
-        shape = {
+        level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
+        return level | {
             name: float(np.mean(coefficients[:, j]))
             for j, name in enumerate(self.names())
         }
-        shape[f"Co[{self.i_row}]"] = float(_circulation_count(config, self.i_row).Co)
-        return shape
 
     def with_unknowns(self, config, values):
         current = self.unknowns(config)
@@ -1775,7 +1913,7 @@ class LoadingProfile(Iterator):
         _circulation_count(config, self.i_row)
 
         measured = turbigen.loading.measure_profile(
-            result, self.i_row, self.spf, self._knob_m()
+            result, self.i_row, self.spf, self.knob_m()
         )
         if measured is None:
             logger.info(
@@ -1829,34 +1967,32 @@ class LoadingProfile(Iterator):
         return errors
 
     #
-    # TWO GAINS, NOT ONE
+    # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
     #
 
     def _by_knob(self, shape_value, level_value):
-        """Return `shape_value` for every camber knob and `level_value` for `Co`."""
-        values = {name: shape_value for name in self.names()}
-        values[f"Co[{self.i_row}]"] = level_value
-        return values
+        """Return `level_value` for `Co` and `shape_value` for every camber knob.
+
+        In :meth:`unknowns` order, `Co` first --- see there for why that is
+        fixed rather than incidental.
+        """
+        values = {f"Co[{self.i_row}]": level_value}
+        return values | {name: shape_value for name in self.names()}
 
     def gains(self, config):
-        del config
-        return self._by_knob(self.gain, self.gain_Co)
+        """Return the gain of each knob, with the level's declared separately.
 
-    def with_gains(self, config, gains):
-        """Split a calibration between the shape gain and the level one.
-
-        Two gains, so the base class reduction --- one mean over every knob ---
-        would average a camber sensitivity with a circulation one and write the
-        result to both.
+        A scalar :attr:`gain` describes the *camber* knobs only, and
+        :attr:`gain_Co` supplies the level, because the two disagree on sign
+        and no single number covers both. A sequence carries every knob
+        already --- `Co` at index zero, as :meth:`unknowns` orders them --- and
+        is what a run writes back, so `gain_Co` is the level's prior rather
+        than its permanent home.
         """
-        del config
-        shape = [gains[name] for name in self.names() if name in gains]
-        level = gains.get(f"Co[{self.i_row}]", self.gain_Co)
-        return dataclasses.replace(
-            self,
-            gain=float(np.mean(shape)) if shape else self.gain,
-            gain_Co=float(level),
-        )
+        names = list(self.unknowns(config))
+        if isinstance(self.gain, (int, float)):
+            return self._by_knob(float(self.gain), float(self.gain_Co))
+        return dict(zip(names, self._gain_each(names)))
 
     def clips(self, config):
         del config
@@ -1870,8 +2006,14 @@ class LoadingProfile(Iterator):
     # WHAT THE CONFIG HAS TO PROVIDE
     #
 
-    def _knob_m(self):
-        """Return the characteristic `m` of each interior coefficient."""
+    def knob_m(self):
+        """Return the characteristic `m` of each interior coefficient.
+
+        Public because the surface-distribution plot samples the achieved
+        curve at exactly these points --- see
+        `turbigen.post._draw_loading_profile`. A plot that guessed at its own
+        sample positions would be drawing circles the iterator never read.
+        """
         return np.arange(1, self.order) / self.order
 
     def _coefficients(self, config):
