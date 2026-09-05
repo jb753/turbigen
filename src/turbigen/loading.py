@@ -83,6 +83,99 @@ class Loading:
     """Surface fraction of :attr:`ma_max` [--]."""
 
 
+@dataclasses.dataclass(frozen=True)
+class _SuctionCut:
+    """The raw suction-surface distribution of one cut, before any reduction.
+
+    Shared by every consumer that needs the whole curve rather than a
+    reduction of it: :func:`measure` folds it into the fitted numbers
+    :class:`~turbigen.iterate.LoadingDistribution` and
+    :class:`~turbigen.iterate.PeakMach` iterate on, and :func:`measure_profile`
+    samples it directly at points :class:`~turbigen.iterate.Blade` places by
+    its own geometry.
+    """
+
+    blade: object
+    """The row's blade, for placing a point on its geometry."""
+
+    folded_phys: np.ndarray
+    """Physical arc length from the flow's own stagnation point, increasing,
+    along the suction surface only [m]."""
+
+    suction: np.ndarray
+    """Isentropic Mach number at each point of :attr:`folded_phys` [--]."""
+
+    ma_TE: float
+    """Isentropic Mach number at the trailing edge [--]."""
+
+    xrt_stag: np.ndarray
+    """The stagnation node's own coordinates, as `(x, r, r * theta)` [m, m, m].
+
+    What :meth:`~turbigen.blade.Blade.locate_suction_arc_length` needs to
+    place the blade's own geometric curve at the same origin this one is
+    already anchored to.
+    """
+
+
+def _cut_suction_side(result, i_row, spf):
+    """Return the raw suction-surface distribution of row `i_row`, or None.
+
+    None for the same reasons :func:`measure` returns None: no blade at this
+    row, no section at this span, or a trailing edge so thin `ma_TE` reads as
+    zero.
+    """
+    if result.grid is None or result.machine is None:
+        return None
+
+    surfaces = turbigen.util.cut_blade_surfs(result.grid)
+    if i_row >= len(surfaces) or surfaces[i_row] is None:
+        return None
+
+    machine = result.machine
+    blade = machine.rows[i_row].blade
+
+    cut, _ = turbigen.util.cut_section(surfaces[i_row][0], machine.annulus, i_row, spf)
+    if cut is None:
+        return None
+
+    mas = turbigen.util.isentropic_mach(cut, machine.mean_line[:, i_row].s[0])[:, 0]
+
+    # The cut wraps the blade from one trailing edge round to the other, so its
+    # two ends are the two sides of the trailing edge and their mean is the
+    # exit value. Taken before the suction side is folded out, which is the
+    # only moment both sides are still there.
+    ma_TE = 0.5 * float(mas[0] + mas[-1])
+    if not ma_TE:
+        return None
+
+    # The geometric nose anchors the stagnation search, exactly as the surface
+    # distribution plot anchors it.
+    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
+
+    # Physical arc length from the flow's own stagnation point -- the coldest
+    # node, which is what `normalise_surface_distance` actually zeroes at,
+    # rather than `get_i_stag`'s pressure-based search window -- kept
+    # unnormalised so a caller can place a point measured in true distance,
+    # not only one already expressed as a fraction of some divisor.
+    zeta_phys = turbigen.util.get_zeta(cut)[:, 0]
+    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0][0])
+    zeta_phys = zeta_phys - zeta_phys[i_stag]
+    i0 = int(np.argmin(mas))
+    zeta_phys = zeta_phys - zeta_phys[i0]
+
+    folded_phys, suction = turbigen.util.suction_side(zeta_phys, mas)
+
+    xrt_stag = np.array([cut.x[i0, 0], cut.r[i0, 0], cut.r[i0, 0] * cut.t[i0, 0]])
+
+    return _SuctionCut(
+        blade=blade,
+        folded_phys=folded_phys,
+        suction=suction,
+        ma_TE=ma_TE,
+        xrt_stag=xrt_stag,
+    )
+
+
 def mach_ratio(machine, i_row):
     """Return ``Ma_2 / Ma_1`` across row `i_row`, in the relative frame.
 
@@ -139,54 +232,92 @@ def measure(result, i_row, spf, zeta_front=0.2, zeta_TE=0.98):
         that iterate check the field they use; a metric records both.
 
     """
-    if result.grid is None or result.machine is None:
-        return None
-
-    surfaces = turbigen.util.cut_blade_surfs(result.grid)
-    if i_row >= len(surfaces) or surfaces[i_row] is None:
-        return None
-
-    machine = result.machine
-    blade = machine.rows[i_row].blade
-
-    cut, _ = turbigen.util.cut_section(surfaces[i_row][0], machine.annulus, i_row, spf)
+    cut = _cut_suction_side(result, i_row, spf)
     if cut is None:
         return None
 
-    mas = turbigen.util.isentropic_mach(cut, machine.mean_line[:, i_row].s[0])[:, 0]
-
-    # The cut wraps the blade from one trailing edge round to the other, so its
-    # two ends are the two sides of the trailing edge and their mean is the
-    # exit value. Taken before the suction side is folded out, which is the
-    # only moment both sides are still there.
-    ma_TE = 0.5 * float(mas[0] + mas[-1])
-    if not ma_TE:
-        return None
-
-    # The geometric nose anchors the stagnation search, exactly as the surface
-    # distribution plot anchors it.
-    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
-    zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
-
-    folded, suction = turbigen.util.suction_side(zeta, mas)
-    i_max = int(np.argmax(suction))
+    # Divide the physical distance down to the [0, 1] fraction every zeta
+    # elsewhere is written in -- the total physical extent of the suction
+    # side this particular cut happened to have.
+    divisor = cut.folded_phys.max() or 1.0
+    folded = cut.folded_phys / divisor
+    i_max = int(np.argmax(cut.suction))
 
     # Read straight off the data rather than off the two-line fit below: the
     # front value does not need a peak to be meaningful, only a point at
     # `zeta_front`, which interpolating the suction side always has.
-    ma_front = float(np.interp(zeta_front, folded, suction))
+    ma_front = float(np.interp(zeta_front, folded, cut.suction))
 
     zeta_peak, ma_peak, _ = turbigen.util.loading_from_distribution(
-        folded, suction, zeta_front, zeta_TE
+        folded, cut.suction, zeta_front, zeta_TE
     )
     fitted = np.isfinite(ma_peak)
 
     return Loading(
         zeta_peak=zeta_peak,
-        fac_front=ma_front / ma_TE * mach_ratio(machine, i_row),
-        fac_peak=ma_peak / ma_TE if fitted else np.nan,
+        fac_front=ma_front / cut.ma_TE * mach_ratio(result.machine, i_row),
+        fac_peak=ma_peak / cut.ma_TE if fitted else np.nan,
         ma_peak=ma_peak,
-        ma_TE=ma_TE,
-        ma_max=float(suction[i_max]),
+        ma_TE=cut.ma_TE,
+        ma_max=float(cut.suction[i_max]),
         zeta_max=float(folded[i_max]),
     )
+
+
+def measure_profile(result, i_row, spf, m):
+    """Return the loading level at each `m` a :class:`LoadingProfile` moves.
+
+    Where :func:`measure` reduces the suction-surface distribution to a
+    handful of fitted numbers, this samples it directly at points placed by
+    the blade's own geometry rather than read off the curve at a fixed
+    surface fraction --- what a camber coefficient actually moves is
+    expressed in `m`, not in `zeta`, and the two are not the same fraction of
+    the way along the chord.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    i_row : int
+        Blade row to measure.
+    spf : float
+        Span fraction to measure at.
+    m : array_like
+        Normalised chordwise positions to sample at, as
+        :meth:`~turbigen.blade.Blade.evaluate_section` takes.
+
+    Returns
+    -------
+    zeta, fac : ndarray, shape like `m`
+        Surface fraction of each point, and the isentropic Mach number there
+        referred to the trailing edge and carrying the same `Ma_2 / Ma_1`
+        factor :attr:`Loading.fac_front` does --- so a target built from
+        `fac_front` and a peak value written the same way can be compared
+        against this directly, at every point at once.
+
+    None
+        Where there was nothing to measure at all --- see :func:`measure`.
+
+    """
+    cut = _cut_suction_side(result, i_row, spf)
+    if cut is None:
+        return None
+
+    # The blade's own curve, from its leading edge -- not the flow's
+    # stagnation point, which is `locate_suction_arc_length` below's job to
+    # place onto it. Evaluated over the whole chord even though only a few
+    # points are wanted: `evaluate_section` rescales onto the aerofoil from
+    # whatever `m` it is given, so asking for isolated points would rescale
+    # onto them instead of onto the true leading and trailing edges.
+    m_dense, s_dense = cut.blade.evaluate_arc_length(spf)
+    s_stag = cut.blade.locate_suction_arc_length(spf, cut.xrt_stag)
+
+    s = np.interp(np.asarray(m, dtype=float), m_dense, s_dense) - s_stag
+
+    divisor = cut.folded_phys.max() or 1.0
+    zeta = s / divisor
+
+    ma = np.interp(s, cut.folded_phys, cut.suction)
+    fac = ma / cut.ma_TE * mach_ratio(result.machine, i_row)
+
+    return zeta, fac

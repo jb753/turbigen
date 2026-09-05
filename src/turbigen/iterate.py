@@ -175,6 +175,16 @@ class Iterator(Node):
         """Return the largest step for each unknown, by name."""
         return {name: self.clip for name in self.unknowns(config)}
 
+    def gains(self, config):
+        """Return the gain of each unknown, by name.
+
+        Uniform by default, from :attr:`gain` -- the common case, and the one
+        every iterator before :class:`LoadingProfile` needed. Overridden where
+        two knobs owned by the same iterator answer to different signs, which
+        a single scalar cannot carry.
+        """
+        return {name: self.gain for name in self.unknowns(config)}
+
 
 class Iteration(Node):
     """Closing the loop between a design and the CFD that tests it.
@@ -290,10 +300,11 @@ def properties(config):
     gain, clip, tolerance = {}, {}, {}
 
     for iterator in config.iterate.correct:
+        gains = iterator.gains(config)
         clips = iterator.clips(config)
         tolerances = iterator.tolerances(config)
         for name in iterator.unknowns(config):
-            gain[name] = iterator.gain
+            gain[name] = gains[name]
             clip[name] = clips[name]
             tolerance[name] = tolerances[name]
 
@@ -1190,6 +1201,42 @@ class LoadingDistribution(Iterator):
                 )
 
 
+def _circulation_count(config, i_row):
+    """Return row `i_row`'s blade count design, which has to have a `Co`.
+
+    Shared by every iterator that moves the blade count -- :class:`PeakMach`
+    and :class:`LoadingProfile` both do, and neither owns the other's
+    validation.
+    """
+    from turbigen.blade import Circulation  # noqa: PLC0415 - avoids a cycle
+
+    if not 0 <= i_row < len(config.blades):
+        raise ValueError(
+            f"i_row={i_row} is out of range for a machine with "
+            f"{len(config.blades)} blade row(s)."
+        )
+
+    count = config.blades[i_row].count
+    if not isinstance(count, Circulation):
+        raise ValueError(
+            f"Setting the level of a loading distribution means moving the "
+            f"blade count, and row {i_row} counts its blades with a "
+            f"{type(count).__name__}, which has no circulation coefficient "
+            f"to move. Set count: {{type: Co, Co: 0.7}}."
+        )
+    return count
+
+
+def _with_circulation(config, i_row, Co):
+    """Return `config` with row `i_row`'s circulation coefficient set to `Co`."""
+    _circulation_count(config, i_row)
+    blades = list(config.blades)
+    blades[i_row] = dataclasses.replace(
+        blades[i_row], count=dataclasses.replace(blades[i_row].count, Co=Co)
+    )
+    return dataclasses.replace(config, blades=tuple(blades))
+
+
 class PeakMach(Iterator):
     """Set the level of the loading by moving the blade count.
 
@@ -1290,20 +1337,13 @@ class PeakMach(Iterator):
             )
 
     def unknowns(self, config):
-        return {f"Co[{self.i_row}]": float(self._count(config).Co)}
+        return {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
 
     def with_unknowns(self, config, values):
         name = f"Co[{self.i_row}]"
         if name not in values:
             return config
-
-        self._count(config)
-        blades = list(config.blades)
-        blades[self.i_row] = dataclasses.replace(
-            blades[self.i_row],
-            count=dataclasses.replace(blades[self.i_row].count, Co=values[name]),
-        )
-        return dataclasses.replace(config, blades=tuple(blades))
+        return _with_circulation(config, self.i_row, values[name])
 
     def paths(self, config):
         del config
@@ -1314,7 +1354,7 @@ class PeakMach(Iterator):
             logger.debug("No solved grid, so no loading level to measure.")
             return {}
 
-        self._count(config)
+        _circulation_count(config, self.i_row)
 
         measured = turbigen.loading.measure(
             result, self.i_row, self.spf, self.zeta_front, self.zeta_TE
@@ -1328,9 +1368,312 @@ class PeakMach(Iterator):
 
         return {f"Co[{self.i_row}]": measured.fac_peak - self.fac_peak}
 
-    def _count(self, config):
-        """Return this row's blade count design, which has to have a `Co`."""
-        from turbigen.blade import Circulation  # noqa: PLC0415 - avoids a cycle
+
+def _target_fac(zeta, zeta_front, fac_front, zeta_peak, fac_peak, mach_ratio):
+    """Return a two-line target, in the units :func:`turbigen.loading.measure_profile` reports.
+
+    Front anchor to peak, and peak to the trailing edge -- the same shape
+    `turbigen.util.loading_target` draws for a report, but built directly in
+    `fac` units rather than absolute Mach numbers, since that is what
+    :class:`LoadingProfile` compares its samples against. The trailing edge
+    anchor is `mach_ratio` itself, not one: `Ma(1) / Ma_TE * mach_ratio` is
+    `mach_ratio` by definition, whatever the duty.
+    """
+    zeta = np.asarray(zeta, dtype=float)
+    front = fac_front + (fac_peak - fac_front) * (zeta - zeta_front) / (
+        zeta_peak - zeta_front
+    )
+    aft = fac_peak + (mach_ratio - fac_peak) * (zeta - zeta_peak) / (1.0 - zeta_peak)
+    return np.where(zeta < zeta_peak, front, aft)
+
+
+class LoadingProfile(Iterator):
+    """Shape a whole suction-surface Mach distribution against a two-line template.
+
+    :class:`LoadingDistribution` moves one point on the curve with one
+    coefficient. This moves several at once: a higher-order
+    :class:`~turbigen.camber.Bernstein` camber line gives `order - 1` interior
+    coefficients, each with a characteristic position ``m = (j + 1) / order``
+    on the camber line, and each is driven toward a target built from
+    `zeta_front`/`fac_front` and `zeta_peak`/`fac_peak` -- two anchors and a
+    straight line each side of the peak, read off wherever that coefficient's
+    `m` actually lands on the *measured* surface, not at some fixed fraction
+    of it, because the two are not the same fraction of the way along the
+    chord. See :meth:`~turbigen.blade.Blade.evaluate_arc_length`.
+
+    **This owns the level itself, rather than wanting a `PeakMach` beside
+    it.** A camber line still cannot create circulation, only redistribute
+    it -- see :class:`PeakMach` -- so the level is not free to be ignored
+    here either. But with the whole curve sampled rather than one point,
+    the level does not need a second iterator and a second fitted number to
+    find it: it is the *mean* of every sampled point's error against the
+    target, and what is left after subtracting that mean out of each one is
+    the shape residual, blind to the level by construction. The mean drives
+    `Co`, exactly as :class:`PeakMach` would; the residuals drive the camber
+    coefficients. One iterator, one internally consistent target curve, and
+    nothing that two separately-configured iterators could disagree about.
+
+    That needs two gains, not one: the level rises with `Co` while the shape
+    residuals fall with the camber coefficients, the same disagreement that
+    made `PeakMach` a member of its own rather than a third knob on
+    `LoadingDistribution`. :meth:`gains` is overridden accordingly --- see
+    :meth:`Iterator.gains`.
+
+    **`fac_peak` here is not `PeakMach.fac_peak`.** This carries the same
+    `Ma_2 / Ma_1` factor `fac_front` does, so the two anchors describe one
+    consistent line; `PeakMach.fac_peak` and `turbigen.metric.DiffusionFactor`
+    do not carry it, because Clark's parameter 3 is specifically a statement
+    about the *front*. Translate by `mach_ratio` (see
+    `turbigen.loading.mach_ratio`) if the same physical target has to be
+    written both ways.
+
+    Only points measured beyond `zeta_front` are driven, exactly as
+    `LoadingDistribution` only drives one: below it the distribution belongs
+    to `Incidence` and the thickness. A coefficient whose `m` maps inside
+    that window at every iteration never receives an error and never moves
+    --- which `step` handles correctly as a held knob, but is worth noticing
+    before choosing an `order` high enough to pack one in there.
+    """
+
+    type: ClassVar[str] = "loading_profile"
+
+    i_row: int = 0
+    """Index of the blade row to shape."""
+
+    spf: float = 0.5
+    """Span fraction to measure the distribution at [--]."""
+
+    order: int = 3
+    """Bernstein order of the camber line; `order - 1` interior coefficients,
+    one knob apiece."""
+
+    zeta_front: float = 0.2
+    """Front anchor, and the start of the driven window [--].
+
+    Below it the distribution belongs to the leading edge, not the camber
+    line -- see :attr:`LoadingDistribution.zeta_front`, which this means the
+    same way.
+    """
+
+    fac_front: float = 1.8
+    """Target leading-edge Mach number, normalised by duty [--].
+
+    Written the same way :attr:`LoadingDistribution.fac_front` is --- see
+    there for what the `Ma_2 / Ma_1` factor is for.
+    """
+
+    zeta_peak: float = 0.5
+    """Target surface fraction of the peak [--]."""
+
+    fac_peak: float = 2.4
+    """Target peak Mach number, normalised the same way :attr:`fac_front` is.
+
+    **Carries `Ma_2 / Ma_1`, unlike `PeakMach.fac_peak`.** See the class
+    docstring.
+    """
+
+    gain: float = -0.5
+    """How much of the shape error to subtract from each camber coefficient.
+
+    A starting direction, not a calibration --- see
+    :attr:`LoadingDistribution.gain`, which the same caveat applies to.
+    """
+
+    clip: float = 0.1
+    """Largest change in one camber coefficient per iteration [--]."""
+
+    tolerance: float = 0.05
+    """Converged when every driven point's shape residual is within this [--]."""
+
+    gain_Co: float = 1.5
+    """How much of the level error to subtract from `Co` [--].
+
+    Positive, for the reason :attr:`PeakMach.gain` is: the level rises with
+    the circulation coefficient, and that sign is a calibration rather than a
+    guess.
+    """
+
+    clip_Co: float = 0.05
+    """Largest change in the circulation coefficient per iteration [--]."""
+
+    tolerance_Co: float = 0.02
+    """Converged when the mean level error is within this [--]."""
+
+    def __post_init__(self):
+        if self.order < 2:
+            raise ValueError(
+                f"order must be at least 2, got {self.order}. A Bernstein "
+                f"camber line needs at least one interior coefficient to move."
+            )
+        if not 0.0 < self.zeta_front < self.zeta_peak < 1.0:
+            raise ValueError(
+                f"A loading profile needs 0 < zeta_front < zeta_peak < 1, "
+                f"got zeta_front={self.zeta_front}, zeta_peak={self.zeta_peak}."
+            )
+        if not self.fac_front > 0.0:
+            raise ValueError(f"fac_front must be positive, got {self.fac_front}.")
+        if not self.fac_peak > 0.0:
+            raise ValueError(f"fac_peak must be positive, got {self.fac_peak}.")
+
+    #
+    # THE PROTOCOL
+    #
+
+    def names(self):
+        """Return the table key of each camber knob, in a fixed order.
+
+        `Co[i_row]` is not among them: it is not a leaf of a Bernstein camber
+        line, and every method below that walks `names()` to touch camber
+        coefficients would otherwise have to skip it by hand.
+        """
+        return [f"camber_coeff[{self.i_row}][{j}]" for j in range(self.order - 1)]
+
+    def unknowns(self, config):
+        coefficients = self._coefficients(config)
+        shape = {
+            name: float(np.mean(coefficients[:, j]))
+            for j, name in enumerate(self.names())
+        }
+        shape[f"Co[{self.i_row}]"] = float(_circulation_count(config, self.i_row).Co)
+        return shape
+
+    def with_unknowns(self, config, values):
+        current = self.unknowns(config)
+        moved = {**current, **{k: v for k, v in values.items() if k in current}}
+
+        co_name = f"Co[{self.i_row}]"
+        if moved[co_name] != current[co_name]:
+            config = _with_circulation(config, self.i_row, moved[co_name])
+
+        blades = list(config.blades)
+        blade = blades[self.i_row]
+
+        shift = np.array([moved[name] - current[name] for name in self.names()])
+
+        # A uniform shift, as `LoadingDistribution.with_unknowns` applies one:
+        # whatever spanwise variation of the loading shape the design asked
+        # for survives being iterated, because only one span fraction was
+        # ever measured.
+        sections = tuple(
+            dataclasses.replace(
+                section,
+                camber=dataclasses.replace(
+                    section.camber,
+                    coeff=tuple(np.asarray(section.camber.coeff) + shift),
+                ),
+            )
+            for section in blade.sections
+        )
+
+        blades[self.i_row] = dataclasses.replace(blade, sections=sections)
+        return dataclasses.replace(config, blades=tuple(blades))
+
+    def paths(self, config):
+        paths = {
+            f"blades[{self.i_row}].sections[{i_section}].camber.coeff[{j}]"
+            for i_section in range(len(config.blades[self.i_row].sections))
+            for j in range(self.order - 1)
+        }
+        paths.add(f"blades[{self.i_row}].count.Co")
+        return paths
+
+    def error(self, config, result):
+        if result.grid is None or result.machine is None:
+            logger.debug("No solved grid, so no loading profile to measure.")
+            return {}
+
+        self._check(config)
+        _circulation_count(config, self.i_row)
+
+        measured = turbigen.loading.measure_profile(
+            result, self.i_row, self.spf, self._knob_m()
+        )
+        if measured is None:
+            logger.info(
+                f"Could not find a suction surface on row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its loading profile is unmeasured."
+            )
+            return {}
+        zeta, fac = measured
+
+        mach_ratio = turbigen.loading.mach_ratio(result.machine, self.i_row)
+        target = _target_fac(
+            zeta,
+            self.zeta_front,
+            self.fac_front,
+            self.zeta_peak,
+            self.fac_peak,
+            mach_ratio,
+        )
+
+        names = np.array(self.names())
+        driven = zeta > self.zeta_front
+        for name, z in zip(names[~driven], zeta[~driven]):
+            logger.debug(
+                f"{name} maps to zeta={z:.3f}, at or below "
+                f"zeta_front={self.zeta_front:.2f}; holding it."
+            )
+        if not np.any(driven):
+            logger.info(
+                f"Every knob of row {self.i_row}'s loading profile maps "
+                f"inside zeta_front={self.zeta_front:.2f}, so none of it is "
+                f"driven."
+            )
+            return {}
+
+        # The mean of the errors is what the level got wrong; what is left
+        # over, per point, is blind to the level by construction and is the
+        # shape's to answer for.
+        residual = fac[driven] - target[driven]
+        level = float(np.mean(residual))
+        shape = residual - level
+
+        errors = dict(zip(names[driven].tolist(), shape.tolist()))
+        errors[f"Co[{self.i_row}]"] = level
+        return errors
+
+    #
+    # TWO GAINS, NOT ONE
+    #
+
+    def _by_knob(self, shape_value, level_value):
+        """Return `shape_value` for every camber knob and `level_value` for `Co`."""
+        values = {name: shape_value for name in self.names()}
+        values[f"Co[{self.i_row}]"] = level_value
+        return values
+
+    def gains(self, config):
+        del config
+        return self._by_knob(self.gain, self.gain_Co)
+
+    def clips(self, config):
+        del config
+        return self._by_knob(self.clip, self.clip_Co)
+
+    def tolerances(self, config):
+        del config
+        return self._by_knob(self.tolerance, self.tolerance_Co)
+
+    #
+    # WHAT THE CONFIG HAS TO PROVIDE
+    #
+
+    def _knob_m(self):
+        """Return the characteristic `m` of each interior coefficient."""
+        return np.arange(1, self.order) / self.order
+
+    def _coefficients(self, config):
+        """Return every section's interior coefficients, ``(n_section, order-1)``."""
+        self._check(config)
+        return np.array(
+            [section.camber.coeff for section in config.blades[self.i_row].sections],
+            dtype=float,
+        )
+
+    def _check(self, config):
+        """Raise unless this row's camber lines can carry the knobs, and its
+        blade count can carry the level."""
+        from turbigen.camber import Bernstein  # noqa: PLC0415 - avoids a cycle
 
         if not 0 <= self.i_row < len(config.blades):
             raise ValueError(
@@ -1338,15 +1681,26 @@ class PeakMach(Iterator):
                 f"{len(config.blades)} blade row(s)."
             )
 
-        count = config.blades[self.i_row].count
-        if not isinstance(count, Circulation):
-            raise ValueError(
-                f"Setting the level of a loading distribution means moving the "
-                f"blade count, and row {self.i_row} counts its blades with a "
-                f"{type(count).__name__}, which has no circulation coefficient "
-                f"to move. Set count: {{type: Co, Co: 0.7}}."
-            )
-        return count
+        for i_section, section in enumerate(config.blades[self.i_row].sections):
+            camber = section.camber
+            where = f"row {self.i_row} section {i_section}"
+
+            if not isinstance(camber, Bernstein):
+                raise ValueError(
+                    f"Shaping a loading profile moves the interior "
+                    f"coefficients of a Bernstein camber line, and {where} "
+                    f"has a {type(camber).__name__} camber, which has none. "
+                    f"Set camber: {{type: bernstein, order: {self.order}, "
+                    f"coeff: {[0.0] * (self.order - 1)}}}."
+                )
+
+            if camber.order != self.order or len(camber.coeff) != self.order - 1:
+                raise ValueError(
+                    f"Shaping a loading profile of order {self.order} needs "
+                    f"exactly {self.order - 1} interior camber coefficient(s) "
+                    f"written out in full; {where} has order={camber.order} "
+                    f"with {len(camber.coeff)} coefficient(s)."
+                )
 
 
 class MeanLine(Iterator):

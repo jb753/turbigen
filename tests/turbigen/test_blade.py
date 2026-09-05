@@ -16,7 +16,8 @@ import pytest
 import turbigen_ref.annulus
 import turbigen_ref.blade
 import turbigen_ref.nblade
-from turbigen.blade import _Alpha_rel, _interpolate
+import turbigen.util
+from turbigen.blade import _Alpha_rel, _interpolate, _to_xrrt
 from turbigen import (
     Blade,
     BladeDesign,
@@ -485,6 +486,93 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
             new.evaluate_surface_length(spf), old.surface_length(spf), rtol=1e-12
         )
         np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-12)
+
+
+#
+# ARC LENGTH AS A FUNCTION OF M
+#
+# What a loading iterator would use to place a point measured on the flow back
+# onto the camber line that produced it -- see `evaluate_surface_length`, which
+# now gets its answer from here instead of duplicating the arc-length work.
+#
+
+
+def test_arc_length_starts_at_the_leading_edge(machine):
+    """Zero at m=0, since that is where the two surfaces meet."""
+    for spf in SPF:
+        _, s = machine.rows[0].blade.evaluate_arc_length(spf)
+        assert s[0] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_arc_length_agrees_with_the_surface_length(machine):
+    """Its last point is what `evaluate_surface_length` reports.
+
+    Two different reductions of the same curve, so they had better agree: one
+    keeps the whole thing, the other keeps only the number a report wants.
+    """
+    blade = machine.rows[0].blade
+    for spf in SPF:
+        _, s = blade.evaluate_arc_length(spf)
+        assert s[-1] == pytest.approx(blade.evaluate_surface_length(spf), rel=1e-9)
+
+
+def test_arc_length_is_monotonic(machine):
+    """A cumulative length can only grow."""
+    _, s = machine.rows[0].blade.evaluate_arc_length(0.5)
+    assert np.all(np.diff(s) >= 0.0)
+
+
+def test_arc_length_returns_the_longer_surface(machine):
+    """The suction surface, on a blade turning the flow the ordinary way.
+
+    Checked directly against `evaluate_section`'s own two surfaces rather than
+    trusted blindly: whichever of them is longer at `m=1` is what this must
+    have picked.
+    """
+    blade = machine.rows[0].blade
+    for spf in SPF:
+        _, s = blade.evaluate_arc_length(spf)
+        xrtu, xrtl = blade.evaluate_section(spf)
+        length_upper = turbigen.util.arc_length(_to_xrrt(xrtu))
+        length_lower = turbigen.util.arc_length(_to_xrrt(xrtl))
+        assert s[-1] == pytest.approx(max(length_upper, length_lower), rel=1e-9)
+
+
+def test_arc_length_defaults_to_a_clustered_m(machine):
+    """With no `m` given, the curve is `evaluate_section`'s own default."""
+    m, s = machine.rows[0].blade.evaluate_arc_length(0.5, nchord=51)
+    np.testing.assert_allclose(m, turbigen.util.cluster_cosine(51))
+    assert len(s) == 51
+
+
+def test_arc_length_reports_the_m_it_was_given(machine):
+    """A custom `m` comes back unchanged, so the two arrays stay index-paired."""
+    m_in = np.linspace(0.0, 1.0, 17)
+    m_out, s = machine.rows[0].blade.evaluate_arc_length(0.5, m=m_in)
+    np.testing.assert_array_equal(m_out, m_in)
+    assert len(s) == len(m_in)
+
+
+def test_arc_length_places_a_point_measured_off_the_surface(machine):
+    """Round trip: a point placed by arc length lands back near where it was.
+
+    The whole reason this exists -- a loading iterator measures a point on the
+    flow, not on `m`, and has to place it back onto the camber line it came
+    from. Inverting the curve this returns is how, and it has to work at
+    whatever resolution a caller asks the curve at, not only the one it was
+    built with: a fine curve stands in for "the true answer" and a coarse one
+    for what an iterator would actually use.
+    """
+    blade = machine.rows[0].blade
+    spf = 0.5
+    m_fine, s_fine = blade.evaluate_arc_length(spf, nchord=50001)
+    m_coarse, s_coarse = blade.evaluate_arc_length(spf, nchord=2001)
+
+    m_true = 0.37
+    s_true = np.interp(m_true, m_fine, s_fine)
+
+    m_back = np.interp(s_true, s_coarse, m_coarse)
+    assert m_back == pytest.approx(m_true, abs=1e-3)
 
 
 #

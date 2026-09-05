@@ -145,6 +145,19 @@ def _is_sequence(value):
     return isinstance(value, (tuple, list, np.ndarray))
 
 
+def _to_xrrt(xrt):
+    """Return `xrt` with its angle turned into a distance.
+
+    `evaluate_section` reports angular position as `theta`, in radians, which
+    `arc_length` cannot make a distance out of on its own; multiplying by
+    radius turns the third row into `r * theta`, a physical length like the
+    other two, so a curve reported this way measures true arc length rather
+    than something angle dominates near the axis and distance dominates far
+    from it.
+    """
+    return np.stack((*xrt[:2], xrt[1] * xrt[2]))
+
+
 def _interpolate(nodes, spf_sections, spf):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
@@ -640,17 +653,101 @@ class Blade:
 
     def evaluate_surface_length(self, spf):
         """Return the length of the longer of the two surfaces at `spf` [m]."""
-        xrtu, xrtl = self.evaluate_section(spf)
-        lengths = [
-            turbigen.util.arc_length(np.stack((*xrt[:2], xrt[1] * xrt[2])))
-            for xrt in (xrtu, xrtl)
-        ]
-        return np.maximum(*lengths)
+        return self.evaluate_arc_length(spf)[1][-1]
 
     def evaluate_chord(self, spf):
         """Return the meridional length of the camber line at `spf` [m]."""
         xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
         return turbigen.util.arc_length(xr)
+
+    def evaluate_arc_length(self, spf, m=None, nchord=10000):
+        """Return arc length along the longer surface, as a function of `m`, at `spf`.
+
+        Zero at the leading edge. The longer surface is the suction one: it is
+        the convex side of the camber, which wraps a larger radius than the
+        concave one for the same turning and so sweeps a longer path --
+        checked against two converged solutions, where the flow's own suction
+        side (higher Mach, lower pressure) matched the longer geometric
+        surface at every sample point tried, by margins of microns against
+        millimetres. Reading it off the shape rather than off a flow field is
+        what lets this be called before either exists.
+
+        That is a fact about a blade turning the flow the way one normally
+        does, not a law of geometry -- :func:`turbigen.util.suction_side`
+        works from the flow instead precisely because the two surfaces can
+        swap over at extreme incidence, which a shape alone cannot see
+        coming. Fine for placing a converging design's own measurements back
+        onto its shape, which never strays that far from where it is headed.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to evaluate at.
+        m : array_like, optional
+            Normalised chordwise positions to evaluate at, as
+            :meth:`evaluate_section` takes. Defaults to `nchord` clustered
+            points, dense enough that inverting the curve back from a
+            measured arc length lands within microns of the true `m`.
+        nchord : int
+            Chordwise points, if `m` is not given.
+
+        Returns
+        -------
+        m, s : ndarray, shape (n,)
+            The chordwise positions evaluated at, and the cumulative arc
+            length of the longer surface to every one of them [m].
+
+        """
+        if m is None:
+            m = turbigen.util.cluster_cosine(nchord)
+
+        _, s = self._suction_curve(spf, m)
+        return m, s
+
+    def _suction_curve(self, spf, m):
+        """Return `(xrt, s)` for the longer surface, over `m`, at `spf`.
+
+        The one place :meth:`evaluate_arc_length` and
+        :meth:`locate_suction_arc_length` agree on which surface that is, so
+        the two cannot answer with different surfaces if a future change ever
+        touched only one of them.
+        """
+        xrtu, xrtl = self.evaluate_section(spf, m=m)
+        s_upper = turbigen.util.cum_arc_length(_to_xrrt(xrtu))
+        s_lower = turbigen.util.cum_arc_length(_to_xrrt(xrtl))
+        return (xrtu, s_upper) if s_upper[-1] >= s_lower[-1] else (xrtl, s_lower)
+
+    def locate_suction_arc_length(self, spf, xrt, nchord=10000):
+        """Return the arc length nearest a point close to the suction surface.
+
+        A point measured on the flow -- a stagnation point, say -- is not
+        naturally expressed in `m` or in arc length; it is wherever the flow
+        put it. This is how it gets placed back onto the curve
+        :meth:`evaluate_arc_length` returns: matched by nearest point in true
+        `(x, r, r * theta)` distance, dense enough that the match lands
+        within microns of the truth for any point actually on the surface.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to evaluate at.
+        xrt : array_like, shape (3,)
+            A point close to the suction surface, as `(x, r, theta)`.
+        nchord : int
+            Chordwise points the surface is searched at.
+
+        Returns
+        -------
+        float
+            Arc length to the nearest point found, on the scale
+            :meth:`evaluate_arc_length` returns [m].
+
+        """
+        m = turbigen.util.cluster_cosine(nchord)
+        xrt_curve, s = self._suction_curve(spf, m)
+
+        distance = turbigen.util.vecnorm(_to_xrrt(xrt_curve) - np.asarray(xrt)[:, None])
+        return float(s[int(np.argmin(distance))])
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

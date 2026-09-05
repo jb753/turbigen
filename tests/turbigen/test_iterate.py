@@ -1459,3 +1459,186 @@ def test_loading_drops_a_distribution_with_no_suction_surface(loading, monkeypat
     result = Result(machine=loading.design(), grid=object())
     assert loading.iterate.correct[0].error(loading, result) == {}
     assert not iterate.converged(loading, result)
+
+
+#
+# THE LOADING PROFILE
+#
+# The whole curve rather than one point, so its knobs are every interior
+# camber coefficient plus the circulation coefficient that owns the level.
+# `measure_profile` stands in for the CFD, exactly as `measure` does above.
+#
+
+PROFILE_BERNSTEIN = {"type": "bernstein", "order": 3, "coeff": [0.0, 0.0]}
+"""A camber line carrying exactly the two coefficients a `LoadingProfile` of
+order 3 moves."""
+
+
+@pytest.fixture
+def profile():
+    """A two-row config whose first row has its loading profile shaped."""
+    return dataclasses.replace(
+        build(blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]),
+        iterate=iterate.Iteration(correct=(iterate.LoadingProfile(order=3),)),
+    )
+
+
+def test_profile_owns_two_coefficients_and_the_level(profile):
+    """order=3 gives two interior coefficients, plus the row's own Co."""
+    assert set(profile.iterate.correct[0].unknowns(profile)) == {
+        "camber_coeff[0][0]",
+        "camber_coeff[0][1]",
+        "Co[0]",
+    }
+
+
+def test_profile_reads_the_mean_across_sections(profile):
+    """One number per row and per coefficient, as a deviation is one per row."""
+    varied = dataclasses.replace(
+        profile.blades[0],
+        sections=tuple(
+            dataclasses.replace(
+                section, camber=dataclasses.replace(section.camber, coeff=(c, 0.0))
+            )
+            for section, c in zip(profile.blades[0].sections, (0.1, 0.2, 0.6))
+        ),
+    )
+    config = dataclasses.replace(profile, blades=(varied, profile.blades[1]))
+
+    unknowns = profile.iterate.correct[0].unknowns(config)
+    assert unknowns["camber_coeff[0][0]"] == pytest.approx(0.3)
+    assert unknowns["camber_coeff[0][1]"] == pytest.approx(0.0)
+
+
+def test_profile_shifts_every_section_alike(profile):
+    """A uniform shift, so a spanwise distribution survives being iterated."""
+    moved = profile.iterate.correct[0].with_unknowns(
+        profile, {"camber_coeff[0][0]": 0.4, "Co[0]": 0.65}
+    )
+
+    coeffs0 = [s.camber.coeff[0] for s in moved.blades[0].sections]
+    np.testing.assert_allclose(coeffs0, 0.4)
+    assert moved.blades[0].count.Co == pytest.approx(0.65)
+    # The other coefficient and the other row are untouched.
+    assert all(s.camber.coeff[1] == 0.0 for s in moved.blades[0].sections)
+    assert moved.blades[1] == profile.blades[1]
+
+
+def test_profile_paths_match_what_is_moved(profile):
+    """A knob nested two deep, plus a sibling one on the blade count."""
+    iterator = profile.iterate.correct[0]
+    assert iterator.paths(profile) == _probe(iterator, profile)
+    assert iterator.paths(profile) <= set(node.flatten(profile))
+
+
+def test_profile_round_trips_through_a_config_dict(profile):
+    assert Config.from_dict(profile.to_dict()) == profile
+    assert profile.to_dict()["iterate"]["correct"][0]["type"] == "loading_profile"
+
+
+def test_profile_needs_a_bernstein_camber():
+    """A quadratic camber line has no interior coefficient to move."""
+    config = build(blades=[blade(), blade()])
+    with pytest.raises(ValueError, match="Quadratic"):
+        iterate.LoadingProfile().unknowns(config)
+
+
+def test_profile_needs_coefficients_written_out_in_full():
+    """A short or mismatched-order camber line is refused, not padded."""
+    config = build(
+        blades=[shaped(camber={"type": "bernstein", "order": 4, "coeff": [0.0, 0.0, 0.0]})]
+        * 2
+    )
+    with pytest.raises(ValueError, match="written out in full"):
+        iterate.LoadingProfile(order=3).unknowns(config)
+
+
+def test_profile_refuses_a_row_that_is_not_there():
+    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)])
+    with pytest.raises(ValueError, match="out of range"):
+        iterate.LoadingProfile(i_row=5).unknowns(config)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"order": 1},  # no interior coefficient at all
+        {"zeta_front": 0.6, "zeta_peak": 0.5},  # peak ahead of the front anchor
+        {"zeta_front": 0.0},  # the stagnation point itself
+        {"zeta_peak": 1.0},  # the trailing edge itself
+        {"fac_front": 0.0},
+        {"fac_peak": -0.5},
+    ],
+)
+def test_profile_refuses_an_impossible_setting(kwargs):
+    with pytest.raises(ValueError):
+        iterate.LoadingProfile(**kwargs)
+
+
+def test_profile_without_a_grid_measures_nothing(profile):
+    assert profile.iterate.correct[0].error(profile, Result()) == {}
+
+
+def test_profile_gains_clips_and_tolerances_differ_for_shape_and_level():
+    """Two knobs, not one: the level and the shape need not agree."""
+    iterator = iterate.LoadingProfile(
+        order=3, gain=-0.5, gain_Co=1.5, clip=0.1, clip_Co=0.05,
+        tolerance=0.05, tolerance_Co=0.02,
+    )
+    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN)] * 2)
+
+    assert iterator.gains(config) == {
+        "camber_coeff[0][0]": -0.5, "camber_coeff[0][1]": -0.5, "Co[0]": 1.5,
+    }
+    assert iterator.clips(config) == {
+        "camber_coeff[0][0]": 0.1, "camber_coeff[0][1]": 0.1, "Co[0]": 0.05,
+    }
+    assert iterator.tolerances(config) == {
+        "camber_coeff[0][0]": 0.05, "camber_coeff[0][1]": 0.05, "Co[0]": 0.02,
+    }
+
+
+def test_profile_delegates_to_the_measurement(profile, monkeypatch):
+    """`error` guards, builds the target, and splits level from shape; the rest is `measure_profile`."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_profile",
+        lambda *a: (np.array([0.3, 0.7]), np.array([2.0, 2.5])),
+    )
+
+    iterator = profile.iterate.correct[0]
+    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
+
+    # zeta=0.3 sits on the front line (target 2.0), zeta=0.7 on the aft line
+    # (target 1.88); the mean of the two residuals is the level, and each
+    # point's own residual less that mean is its shape error.
+    assert error["Co[0]"] == pytest.approx(0.31)
+    assert error["camber_coeff[0][0]"] == pytest.approx(-0.31)
+    assert error["camber_coeff[0][1]"] == pytest.approx(0.31)
+
+
+def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
+    """A coefficient whose m maps inside zeta_front is held, not stepped."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_profile",
+        lambda *a: (np.array([0.15, 0.7]), np.array([0.0, 2.5])),
+    )
+
+    iterator = profile.iterate.correct[0]
+    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
+
+    assert "camber_coeff[0][0]" not in error
+    assert error["camber_coeff[0][1]"] == pytest.approx(0.0)
+    assert error["Co[0]"] == pytest.approx(0.62)
+
+
+def test_profile_drops_a_distribution_with_no_suction_surface(profile, monkeypatch):
+    """An unmeasured row is held, not stepped on a NaN."""
+    monkeypatch.setattr(turbigen.loading, "measure_profile", lambda *a: None)
+
+    result = Result(machine=profile.design(), grid=object())
+    assert profile.iterate.correct[0].error(profile, result) == {}
+    assert not iterate.converged(profile, result)
