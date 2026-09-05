@@ -75,6 +75,20 @@ class Quadratic(CamberDesign):
         return m * (a * m + (1.0 - a))
 
 
+def _elevate_control_points(b):
+    """Degree-elevate a Bezier control-point array by one degree.
+
+    Exact identity, not an approximation: the elevated curve traces the same
+    shape as `b`, just written in the next degree's basis.
+    """
+    n = len(b) - 1
+    i = np.arange(n + 2)
+    left = np.concatenate(([0.0], b))
+    right = np.concatenate((b, [0.0]))
+    t = i / (n + 1)
+    return t * left + (1.0 - t) * right
+
+
 class Bernstein(CamberDesign):
     """Bernstein-polynomial perturbation of a quadratic camber line."""
 
@@ -87,12 +101,28 @@ class Bernstein(CamberDesign):
     """Interior Bernstein coefficients, local changes about a linear ramp [--].
 
     The two endpoint coefficients are fixed at zero so the camber line ends
-    stay put; supply the :attr:`order` ``- 1`` interior values here. Fewer than
-    that are zero-padded, and all-zero recovers a quadratic camber line.
+    stay put; supply all :attr:`order` ``- 1`` interior values here, or none
+    at all to recover a quadratic camber line. A shorter, non-empty `coeff`
+    is only accepted with :attr:`upsample` set, since padding it with zeros
+    would silently change the shape rather than leave it alone.
     """
 
-    def chi_hat(self, m):
-        _validate_domain(m)
+    upsample: bool = False
+    """Reinterpret a short :attr:`coeff` as a lower-order curve, exactly.
+
+    A `coeff` shorter than :attr:`order` ``- 1`` is read, once at
+    construction, as the interior coefficients of a *lower-order* Bernstein
+    curve, which is then raised to :attr:`order` by Bezier degree elevation
+    --- an exact identity, not a fit --- and :attr:`coeff` is replaced by the
+    elevated, full-length array. The camber line is unchanged by this and the
+    extra coefficients are then free to perturb it further. Sampling the
+    low-order curve and solving a matrix problem to match points would only
+    approximate this, and get worse-conditioned as the order grows; degree
+    elevation gets the same result exactly and in closed form, so use that
+    instead.
+    """
+
+    def __post_init__(self):
         n = self.order
         if n < 2:
             raise ValueError("Bernstein camber order must be at least 2.")
@@ -101,11 +131,32 @@ class Bernstein(CamberDesign):
                 f"Bernstein camber of order {n} takes at most {n - 1} "
                 f"coefficients, got {len(self.coeff)}."
             )
+        if self.coeff and len(self.coeff) < n - 1:
+            if not self.upsample:
+                raise ValueError(
+                    f"Bernstein camber of order {n} needs all {n - 1} "
+                    f"interior coefficients, got {len(self.coeff)}. Either "
+                    f"supply them all, or set upsample=True to raise this "
+                    f"shorter curve to order {n} exactly."
+                )
+            # Full control points of the low-order curve, ramp plus
+            # perturbation, endpoints pinned at 0 and 1.
+            n_low = len(self.coeff) + 1
+            b = np.concatenate(
+                ([0.0], np.arange(1, n_low) / n_low + np.asarray(self.coeff), [1.0])
+            )
+            for _ in range(n - n_low):
+                b = _elevate_control_points(b)
+            coeff = tuple(float(v) for v in b[1:-1] - np.arange(1, n) / n)
+            object.__setattr__(self, "coeff", coeff)
+
+    def chi_hat(self, m):
+        _validate_domain(m)
+        n = self.order
         m = np.asarray(m, dtype=float)
         scalar = m.ndim == 0
         m = np.atleast_1d(m)
-        c = np.zeros(n - 1)
-        c[: len(self.coeff)] = self.coeff
+        c = np.zeros(n - 1) if not self.coeff else np.asarray(self.coeff)
         i = np.arange(1, n)
         binom = np.array([math.comb(n, k) for k in i], dtype=float)
         basis = (
