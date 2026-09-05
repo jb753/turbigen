@@ -1430,9 +1430,13 @@ class LoadingProfile(Iterator):
     Only points measured beyond `zeta_front` are driven, exactly as
     `LoadingDistribution` only drives one: below it the distribution belongs
     to `Incidence` and the thickness. A coefficient whose `m` maps inside
-    that window at every iteration never receives an error and never moves
-    --- which `step` handles correctly as a held knob, but is worth noticing
-    before choosing an `order` high enough to pack one in there.
+    that window is reported with an error of exactly zero rather than
+    omitted, so it never moves but also never blocks convergence forever ---
+    `converged` treats a knob no iterator ever measured as proof of nothing,
+    which a coefficient excluded on purpose is not. Still worth noticing
+    before choosing an `order` high enough to pack one in there: a knob held
+    this way carries whatever value it started with, unexamined, for the rest
+    of the run.
     """
 
     type: ClassVar[str] = "loading_profile"
@@ -1608,18 +1612,25 @@ class LoadingProfile(Iterator):
 
         names = np.array(self.names())
         driven = zeta > self.zeta_front
-        for name, z in zip(names[~driven], zeta[~driven]):
+        held = names[~driven]
+        for name, z in zip(held, zeta[~driven]):
             logger.debug(
                 f"{name} maps to zeta={z:.3f}, at or below "
-                f"zeta_front={self.zeta_front:.2f}; holding it."
+                f"zeta_front={self.zeta_front:.2f}; holding it at zero error."
             )
+
+        # A held knob never moves, so it has nothing new to answer for ---
+        # reported as exactly zero rather than omitted, so it cannot block
+        # convergence forever the way a genuine measurement failure should.
+        errors = dict.fromkeys(held.tolist(), 0.0)
+
         if not np.any(driven):
             logger.info(
                 f"Every knob of row {self.i_row}'s loading profile maps "
                 f"inside zeta_front={self.zeta_front:.2f}, so none of it is "
-                f"driven."
+                f"driven and the level is unmeasured."
             )
-            return {}
+            return errors
 
         # The mean of the errors is what the level got wrong; what is left
         # over, per point, is blind to the level by construction and is the
@@ -1628,7 +1639,7 @@ class LoadingProfile(Iterator):
         level = float(np.mean(residual))
         shape = residual - level
 
-        errors = dict(zip(names[driven].tolist(), shape.tolist()))
+        errors.update(zip(names[driven].tolist(), shape.tolist()))
         errors[f"Co[{self.i_row}]"] = level
         return errors
 

@@ -1619,7 +1619,12 @@ def test_profile_delegates_to_the_measurement(profile, monkeypatch):
 
 
 def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
-    """A coefficient whose m maps inside zeta_front is held, not stepped."""
+    """A coefficient whose m maps inside zeta_front is held at zero error.
+
+    Zero rather than omitted: `converged` treats an omitted knob as proof of
+    nothing, which would block this design forever on a coefficient that is
+    excluded on purpose, every iteration, by construction.
+    """
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
     monkeypatch.setattr(
         turbigen.loading,
@@ -1630,9 +1635,49 @@ def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
     iterator = profile.iterate.correct[0]
     error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
 
-    assert "camber_coeff[0][0]" not in error
+    assert error["camber_coeff[0][0]"] == pytest.approx(0.0)
     assert error["camber_coeff[0][1]"] == pytest.approx(0.0)
     assert error["Co[0]"] == pytest.approx(0.62)
+
+
+def test_profile_held_knob_never_blocks_convergence(profile, monkeypatch):
+    """The whole point: a permanently-excluded coefficient still lets the
+    design converge, as long as everything else measured is in tolerance."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_profile",
+        lambda *a: (np.array([0.15, 0.55]), np.array([0.0, 1.6])),
+    )
+
+    result = Result(machine=profile.design(), grid=object())
+    stepping = dataclasses.replace(
+        profile,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.LoadingProfile(
+                    order=3, tolerance=1.0, tolerance_Co=1.0
+                ),
+            )
+        ),
+    )
+
+    assert iterate.converged(stepping, result)
+
+
+def test_profile_all_knobs_held_reports_zero_shape_and_no_level(profile, monkeypatch):
+    """With nothing beyond zeta_front, every camber knob is zero and the
+    level -- which needs at least one driven point -- stays unmeasured."""
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_profile",
+        lambda *a: (np.array([0.1, 0.15]), np.array([0.0, 0.0])),
+    )
+
+    iterator = profile.iterate.correct[0]
+    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
+
+    assert error == {"camber_coeff[0][0]": 0.0, "camber_coeff[0][1]": 0.0}
 
 
 def test_profile_drops_a_distribution_with_no_suction_surface(profile, monkeypatch):
