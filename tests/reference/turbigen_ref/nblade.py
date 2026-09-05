@@ -4,7 +4,9 @@ import logging
 
 import dataclasses
 from abc import ABC, abstractmethod
+
 import numpy as np
+
 from turbigen_ref import util
 
 logger = logging.getLogger("turbigen")

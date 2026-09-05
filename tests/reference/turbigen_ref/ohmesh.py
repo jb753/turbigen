@@ -1,11 +1,13 @@
-import logging
-import numpy as np
-import turbigen_ref.autogrid
-import os
-import turbigen_ref.util
-import turbigen_ref.mesh
-import turbigen_ref.autogrid.reader
 import dataclasses
+import logging
+import os
+
+import numpy as np
+
+import turbigen_ref.autogrid
+import turbigen_ref.autogrid.reader
+import turbigen_ref.mesh
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -71,7 +73,6 @@ class OH(turbigen_ref.mesh.Mesher):
 
     nj_tip: int = 25
     nk_gap: int = 9
-    const_cells_frac: float = 0.45
 
     frac_inlet: float = 0.9
     frac_outlet: float = 0.15

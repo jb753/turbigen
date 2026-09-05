@@ -1,12 +1,13 @@
 """Distribute points with symmetric clustering."""
 
-import numpy as np
-from turbigen.clusterfunc.exceptions import ClusteringException
-import turbigen.clusterfunc.check
-import turbigen.clusterfunc.util
-import turbigen.clusterfunc.single
-
 import warnings
+
+import numpy as np
+
+import turbigen.clusterfunc.check
+import turbigen.clusterfunc.single
+import turbigen.clusterfunc.util
+from turbigen.clusterfunc.exceptions import ClusteringException
 
 
 def fixed(dx0, dx1, N, x0=0.0, x1=1.0):

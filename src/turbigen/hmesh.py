@@ -17,13 +17,12 @@ import dataclasses
 import logging
 from typing import ClassVar
 
-import numpy as np
-
 import ember.block
 import ember.grid
 import ember.patch
-import turbigen.util as util
-from turbigen import clusterfunc
+import numpy as np
+
+from turbigen import clusterfunc, util
 from turbigen.mesh import Mesher
 
 logger = logging.getLogger("turbigen")
@@ -514,7 +513,7 @@ class H(Mesher):
 
     def _stitch_mixing_planes(self, grid):
         """Force xr coordinates to match exactly at mixing planes."""
-        for i_row in range(0, len(grid) - 1):
+        for i_row in range(len(grid) - 1):
             xr0 = grid[i_row].xrt[-1, :, 0, :2]
             xr1 = grid[i_row + 1].xrt[0, :, 0, :2]
             xrav = 0.5 * (xr0 + xr1)

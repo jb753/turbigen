@@ -23,10 +23,10 @@ import dataclasses
 import numpy as np
 import pytest
 import yaml
-
 from test_blade import build
-from test_mesh import MESH, TIP
 from test_cli import RUN_CASE
+from test_mesh import MESH, TIP
+
 from turbigen import Config, Result, case, cli, metric, mixout, util
 from turbigen.metric import DiffusionFactor
 from turbigen.post import N_CHORD_PLOT
@@ -170,7 +170,7 @@ def test_the_peak_sits_where_the_distribution_peaks(solved):
 
 def _distribution(result, i_row, spf):
     """Return ``(mas, zeta)`` cut here rather than by the metric."""
-    import ember.cut  # noqa: PLC0415 - only the test's own arithmetic needs it
+    import ember.cut
 
     surface = util.cut_blade_surfs(result.grid, 0)[i_row][0][:, :, None]
     m = np.linspace(2 * i_row + 1, 2 * i_row + 2, util.N_SPAN_CUT)

@@ -28,12 +28,12 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-import numpy as np
-
 import ember.average
 import ember.block_util
 import ember.cut
 import ember.util
+import numpy as np
+
 import turbigen.util
 from turbigen.node import Node
 
@@ -103,9 +103,9 @@ def styled():
     whole report in it; a notebook running one processor by hand can do the
     same.
     """
-    import matplotlib as mpl  # noqa: PLC0415
-    import matplotlib.pyplot as plt  # noqa: PLC0415
-    from matplotlib.style.core import STYLE_BLACKLIST  # noqa: PLC0415
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    from matplotlib.style.core import STYLE_BLACKLIST
 
     with importlib.resources.as_file(_STYLE) as style_path:
         layers = [str(style_path)]
@@ -204,7 +204,7 @@ class AnnulusPlot(Post):
 
         # Imported here so that turbigen can be used without a display, and
         # without paying for matplotlib when nothing is being plotted.
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(layout="constrained")
         ax.axis("off")
@@ -267,7 +267,7 @@ class SectionsPlot(Post):
             logger.info("No blades were designed, skipping the sections plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # One curve spanning the whole machine, unwrapped onto the conformal
         # (m', theta) plane exactly as the contour plot does it: angles and
@@ -398,7 +398,7 @@ class VelocityTrianglePlot(Post):
             logger.info("No mean line, skipping the velocity triangle plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # Every station, in streamwise order: inlet then exit of each row.
         stations = []
@@ -490,8 +490,8 @@ class ConvergencePlot(Post):
             logger.info("The march logged no records, skipping the convergence plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
-        import matplotlib.ticker as mticker  # noqa: PLC0415
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
 
         # A history arrives trimmed to the records actually written, so there
         # is no NaN tail to slice off here.
@@ -578,11 +578,11 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
     `peak_Ma` beside it where one is configured; with none, the line is drawn
     through the height the blade reached and only its front value is a claim.
     """
-    from turbigen.iterate import (  # noqa: PLC0415 - avoids a cycle
+    from turbigen.iterate import (
         LoadingDistribution,
         PeakMach,
     )
-    from turbigen.loading import mach_ratio  # noqa: PLC0415
+    from turbigen.loading import mach_ratio
 
     shape = _matching(config, LoadingDistribution, i_row, spf)
     if shape is None:
@@ -658,7 +658,7 @@ class SurfacePlot(Post):
             logger.info("The march diverged, skipping the surface distribution plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # One cut of the whole blade per row, sliced at each span fraction
         # below: the cut is the expensive part and does not depend on span.
@@ -766,7 +766,7 @@ class ContourPlot(Post):
             logger.info("The march diverged, skipping the contour plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         figures = []
         for spf in self.spf:
@@ -812,7 +812,7 @@ class ContourPlot(Post):
         the rounded edges -- which the percentile trim makes likely -- so the
         colourbar grows a triangle rather than the plot silently clipping.
         """
-        import matplotlib.ticker as mticker  # noqa: PLC0415
+        import matplotlib.ticker as mticker
 
         pooled = np.concatenate([field.ravel() for field in fields])
         lo, hi = np.percentile(
@@ -955,7 +955,7 @@ class SpanwisePlot(Post):
                 f"try one of {sorted(_SPANWISE_LABELS)}."
             )
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         figures = []
         for m in self.m_cut:

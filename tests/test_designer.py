@@ -8,10 +8,9 @@ free-function design could not enforce, and which `turbine_cascade`'s loss
 coefficient silently failed by four orders of magnitude.
 """
 
+import ember.fluid
 import numpy as np
 import pytest
-
-import ember.fluid
 import turbigen_ref.designer as D
 import turbigen_ref.plugins
 from turbigen_ref.designer import Designer, DesignError

@@ -1,8 +1,9 @@
 import logging
 import os
-import turbigen_ref.util
+
 import matplotlib.pyplot as plt
 import numpy as np
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -49,7 +50,7 @@ def post(
         sect_grid = []
         sect_compare = []
 
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
 
         # Loop over span fractions
         for ispf, spf in enumerate(spfrow):
@@ -70,7 +71,7 @@ def post(
             #     tavg = 0.5 * (surf.t.min() + surf.t.max()) - np.pi / 2.0
 
             mlim = (-0.1, 1.1)
-            mp_from_xr, spf_actual = turbigen_ref.util.get_mp_from_xr(
+            mp_from_xr, _spf_actual = turbigen_ref.util.get_mp_from_xr(
                 grid, machine, irow, spf, mlim
             )
 

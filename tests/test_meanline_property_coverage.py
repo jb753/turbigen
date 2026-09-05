@@ -13,7 +13,6 @@ changes, so the collision has to be looked at rather than absorbed.
 """
 
 import ember.block
-
 import turbigen_ref.meanline_new
 
 # Members of Block that MeanLine deliberately replaces.

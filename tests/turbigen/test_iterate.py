@@ -32,14 +32,21 @@ Test cases:
 - test_mean_line_error_is_zero_for_its_own_design: likewise, through backward()
 - test_mean_line_tolerance_scales_with_the_nominal: relative, per variable
 - test_mean_line_restores_a_scalar_as_a_scalar: shapes survive a round trip
+- test_calibration_measures_the_slope: a run writes back the slope it saw
+- test_calibration_measures_a_steeper_slope: and its size, not only its sign
+- test_calibration_measures_a_sign_it_did_not_expect: a flip is a measurement
+- test_a_run_with_nothing_to_learn_keeps_its_gain: the fixed point of the update
+- test_calibration_keeps_every_iterator: including the design-only ones
+- test_a_loading_profile_splits_its_calibration: two gains, two measurements
+- test_a_pass_runs_on_the_gains_the_last_one_measured: carried, not held back
 """
 
 import dataclasses
 
 import numpy as np
 import pytest
-
 from test_blade import FLUID, MEAN_LINE, blade, build
+
 import turbigen.loading
 from turbigen import Config, Result, iterate, node
 
@@ -466,8 +473,8 @@ def test_the_history_holds_no_grids():
     Asserted by weak reference rather than by inspection, because the failure
     would otherwise be silent until a large machine ran out of memory.
     """
-    import gc  # noqa: PLC0415
-    import weakref  # noqa: PLC0415
+    import gc
+    import weakref
 
     class Field:
         """Stand-in for the megabytes an ember Grid holds."""
@@ -964,7 +971,7 @@ def test_the_fit_recovers_blockage_but_not_the_wall():
     a repeating loop is the integrated deficit, the near-wall flow being
     re-established by the no-slip wall just downstream of the inlet plane.
     """
-    from numpy.polynomial import legendre  # noqa: PLC0415
+    from numpy.polynomial import legendre
 
     spf = np.linspace(0.0, 1.0, 401)
     delta = 0.05
@@ -1687,3 +1694,147 @@ def test_profile_drops_a_distribution_with_no_suction_surface(profile, monkeypat
     result = Result(machine=profile.design(), grid=object())
     assert profile.iterate.correct[0].error(profile, result) == {}
     assert not iterate.converged(profile, result)
+
+
+#
+# CALIBRATION
+#
+# A gain is the reciprocal of an assumed slope, and a run measures the real
+# one. What is asserted below is that what it measured is what comes back.
+#
+
+
+def with_fixed(**kwargs):
+    """A config iterating one analytic knob."""
+    return dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(correct=(Fixed(tolerance=1e-3, **kwargs),)),
+    )
+
+
+def solve_nothing(config_now, i_iter):
+    """A run that solves nothing: `Fixed` states its own error."""
+    return Result()
+
+
+def test_calibration_measures_the_slope():
+    """A true slope of 1 is a gain of 1, whatever the file declared."""
+    config = with_fixed(slope=1.0, target=3.0, gain=0.5)
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
+    # The config handed in is not touched, here or anywhere else.
+    assert config.iterate.correct[0].gain == 0.5
+
+
+def test_calibration_measures_a_steeper_slope():
+    """The size is measured too: twice the slope is half the gain."""
+    config = with_fixed(slope=2.0, target=3.0, gain=0.5)
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    assert final.iterate.correct[0].gain == pytest.approx(0.5, rel=1e-6)
+
+
+def test_calibration_measures_a_sign_it_did_not_expect():
+    """A flipped response is written back, not vetoed.
+
+    The declared gain has the wrong sign here, so the first step goes the wrong
+    way; Broyden sees that within the run and recovers. What the next run needs
+    is the sign this one measured, and refusing to record it would leave the
+    same wrong first step to be paid for again.
+    """
+    config = with_fixed(slope=-1.0, target=3.0, gain=1.0)
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    assert final.iterate.correct[0].gain == pytest.approx(-1.0, rel=1e-6)
+
+
+def test_a_run_with_nothing_to_learn_keeps_its_gain():
+    """A knob that never moved is seeded with its prior and comes back as it went in.
+
+    This is the fixed point that makes the update safe to apply unconditionally:
+    with no informative move the Jacobian is the diagonal the gain asserts, so
+    the calibration is arithmetically the identity.
+    """
+    config = with_fixed(slope=1.0, target=float(build().mean_line.psi), gain=0.37)
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    assert final.iterate.correct[0].gain == pytest.approx(0.37)
+
+
+def test_calibration_keeps_every_iterator():
+    """The gains are calibrated on a view, and the view is put back in place.
+
+    Only the solution iterators are stepped, and only they are calibrated: a
+    design-only knob is on its target before the solve, so its error is zero
+    while its value has moved, which is a slope of zero. It must still come
+    back, untouched, in the place it was declared.
+    """
+    config = dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.SurfaceReynolds(target=4e5),
+                Fixed(slope=1.0, target=3.0, gain=0.5, tolerance=1e-3),
+            )
+        ),
+    )
+
+    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
+
+    assert converged
+    inner, outer = final.iterate.correct
+    assert inner == config.iterate.correct[0]
+    assert outer.gain == pytest.approx(1.0, rel=1e-6)
+
+
+def test_a_loading_profile_splits_its_calibration():
+    """Two gains cannot be written from one mean over every knob."""
+    profile = iterate.LoadingProfile(i_row=0, order=3, gain=-0.5, gain_Co=1.5)
+
+    calibrated = profile.with_gains(
+        None,
+        {
+            "camber_coeff[0][0]": -0.2,
+            "camber_coeff[0][1]": -0.4,
+            "Co[0]": 2.0,
+        },
+    )
+
+    assert calibrated.gain == pytest.approx(-0.3)
+    assert calibrated.gain_Co == pytest.approx(2.0)
+
+
+def test_a_pass_runs_on_the_gains_the_last_one_measured():
+    """A calibration is carried into the next pass, not held back to the end.
+
+    Which is what puts it in each iteration's own record: `solve` writes the
+    config it was handed, so a gain that reaches the next pass reaches that
+    pass's `output.yaml` with no further machinery.
+
+    The first two passes run on the declared gain --- the first has no history
+    to learn from, so its calibration is the identity --- and the third runs on
+    the slope the second measured.
+    """
+    config = with_fixed(slope=1.0, target=3.0, gain=0.5)
+    seen = []
+
+    def run(config_now, i_iter):
+        seen.append(config_now.iterate.correct[0].gain)
+        return Result()
+
+    final, _, converged = iterate.converge(config, run, max_iter=50)
+
+    assert converged
+    assert seen[0] == 0.5
+    assert seen[-1] == pytest.approx(1.0, rel=1e-6)
+    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
+

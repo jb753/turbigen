@@ -342,7 +342,7 @@ def _common_dir(tasks):
 def _time_string(hours):
     """Return `hours` as SLURM's ``H:MM:SS``, via seconds so nothing rounds up
     into an invalid minute or hour."""
-    total = int(round(hours * 3600.0))
+    total = round(hours * 3600.0)
     whole_hours, rest = divmod(total, 3600)
     minutes, seconds = divmod(rest, 60)
     return f"{whole_hours:02d}:{minutes:02d}:{seconds:02d}"

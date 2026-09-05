@@ -20,8 +20,8 @@ Test cases:
 
 import numpy as np
 import pytest
-
 from test_mixout import CASCADE
+
 from turbigen import cli, restart
 from turbigen.config import Config
 
@@ -30,7 +30,7 @@ from turbigen.config import Config
 def solved(tmp_path_factory):
     """A short march, and the field it reached written to a file."""
     config = Config.from_dict(CASCADE)
-    _, machine, grid = cli.prepare(config)
+    _, _machine, grid = cli.prepare(config)
     config.solver.solve(grid)
 
     path = tmp_path_factory.mktemp("restart") / "restart.npz"
@@ -59,7 +59,7 @@ def test_a_field_can_be_restarted_onto_a_finer_mesh(solved):
     Index space maps leading edge to leading edge, which is what makes a field
     from a previous design worth starting from at all.
     """
-    config, grid, path = solved
+    _config, grid, path = solved
     finer = Config.from_dict(
         {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
     )
@@ -110,7 +110,7 @@ def test_the_file_holds_primitives_only(solved):
 
 
 def test_a_field_for_another_machine_is_refused(solved, tmp_path):
-    config, grid, path = solved
+    config, _grid, path = solved
     *_, fresh = cli.prepare(config)
 
     # A file claiming two blocks, against a one-block grid.

@@ -2,10 +2,11 @@ import logging
 
 """Save plots of incidence."""
 
-import numpy as np
 import os
-import turbigen_ref.util
+
 import matplotlib.pyplot as plt
+import numpy as np
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -18,7 +19,7 @@ def post(grid, machine, meanline, _, postdir, fac_RLE=1.0):
         for jblade in range(len(data[irow])):
             spf, inc, chi_stag, chi_metal = data[irow][jblade]
 
-            fig, ax = plt.subplots(1, 2)
+            _fig, ax = plt.subplots(1, 2)
             ax[0].set_xlabel("Angle/deg")
             ax[0].set_ylabel("Span Fraction")
             ax[0].plot(chi_stag, spf, label="Flow")

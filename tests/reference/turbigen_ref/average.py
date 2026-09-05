@@ -3,8 +3,9 @@ import logging
 """Functions for mixed-out averaging."""
 
 import numpy as np
-import turbigen_ref.util
 import scipy.optimize
+
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -166,7 +167,7 @@ def solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot, Ax, Ar, F_mix):
             rmom_mix = (
                 ro_mix * vx_mix * vr_mix * Ax + (ro_mix * vr_mix**2.0 + P_mix) * Ar
             )
-            if not np.sign(rmom_mix) == np.sign(rmom_tot):
+            if np.sign(rmom_mix) != np.sign(rmom_tot):
                 vr_mix *= -1.0
 
         else:
@@ -198,7 +199,7 @@ def solve_state(mass_tot, xmom_tot, rmom_tot, rtmom_tot, ho_tot, Ax, Ar, F_mix):
             xmom_mix = (
                 ro_mix * vx_mix**2.0 + P_mix
             ) * Ax + ro_mix * vr_mix * vx_mix * Ar
-            if not np.sign(xmom_mix) == np.sign(xmom_tot):
+            if np.sign(xmom_mix) != np.sign(xmom_tot):
                 vx_mix *= -1.0
 
         vsq_mix = vm_mix**2.0 + vt_mix**2.0
@@ -434,7 +435,7 @@ def mix_out(F):
 
 def primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas):
     """Convert CFD primary variables to pressure, temperature and velocity."""
-    cp, cv = specific_heats(ga, rgas)
+    _cp, cv = specific_heats(ga, rgas)
 
     # Divide out density
     vx = rovx / ro
@@ -453,7 +454,7 @@ def primary_to_secondary(r, ro, rovx, rovr, rorvt, roe, ga, rgas):
 def secondary_to_primary(r, vx, vr, vt, P, T, ga, rgas):
     """Convert secondary variables to CFD primary variables."""
 
-    cp, cv = specific_heats(ga, rgas)
+    _cp, cv = specific_heats(ga, rgas)
 
     vsq = vx**2.0 + vr**2.0 + vt**2.0
 

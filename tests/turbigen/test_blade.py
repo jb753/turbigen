@@ -12,12 +12,11 @@ import dataclasses
 
 import numpy as np
 import pytest
-
 import turbigen_ref.annulus
 import turbigen_ref.blade
 import turbigen_ref.nblade
+
 import turbigen.util
-from turbigen.blade import _Alpha_rel, _interpolate, _to_xrrt
 from turbigen import (
     Blade,
     BladeDesign,
@@ -28,6 +27,7 @@ from turbigen import (
     SectionDesign,
     Taylor,
 )
+from turbigen.blade import _Alpha_rel, _interpolate, _to_xrrt
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {

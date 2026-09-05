@@ -27,8 +27,8 @@ import hashlib
 import json
 import logging
 
-import numpy as np
 import ember.block_util
+import numpy as np
 
 logger = logging.getLogger("turbigen")
 

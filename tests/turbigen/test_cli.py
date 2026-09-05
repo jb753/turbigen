@@ -213,7 +213,7 @@ def test_report_of_a_mean_line_design_is_not_an_error(case):
     written = case.parent / cli.OUTPUT_NAME
     assert written.is_file()
 
-    from turbigen import case as case_io  # noqa: PLC0415
+    from turbigen import case as case_io
 
     _, result = case_io.read(written, design=False)
     assert result is None
@@ -373,7 +373,7 @@ def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_regist
     assert cli.main(["design", str(case)]) == 0
 
     # As a run would leave it: the resolved config, in the case's directory.
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     archived = directory / "archived.yaml"
     Config.from_file(case).to_file(archived)
@@ -482,7 +482,7 @@ def test_a_run_never_overwrites_its_input(run_case):
 
 def test_run_writes_a_config_that_reads_back(run_case):
     """The archived config is the run, defaults and all."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["run", str(run_case)])
 
@@ -541,7 +541,7 @@ def test_run_writes_its_answer_beside_the_config(run_case):
     comparing what was achieved against what was asked for needs no second
     artefact and no repeat of the CFD.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["run", str(run_case)]) == 0
 
@@ -587,7 +587,7 @@ def test_report_records_the_answer_a_stamped_field_holds(run_case):
     can only mean the report measured it again: preserving what was already
     there would leave nothing to find.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -606,7 +606,7 @@ def test_report_records_the_answer_a_stamped_field_holds(run_case):
 
 def test_report_without_a_field_records_no_answer(run_case):
     """The config is worth writing on its own; an answer is not invented."""
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["report", str(run_case)]) == 0
 
@@ -625,9 +625,9 @@ def test_report_does_not_drop_an_answer_it_cannot_reproduce(run_case):
     does -- but has no way to say which design it solves, so the recorded
     answer stays where it is.
     """
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -680,7 +680,6 @@ def test_output_may_be_run_on_when_o_writes_elsewhere(run_case, tmp_path):
     read and the one that will be written are different files. Nothing is
     lost, so nothing is refused.
     """
-    from turbigen import batch  # noqa: PLC0415
 
     assert cli.main(["run", str(run_case)]) == 0
     written = run_case.parent / cli.OUTPUT_NAME
@@ -729,7 +728,7 @@ def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
 
 def test_out_dir_runs_the_case_somewhere_new(run_case, tmp_path):
     """The workdir holds the config and everything the run wrote."""
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     workdir = tmp_path / "runs" / "v2"
 
@@ -749,7 +748,7 @@ def test_out_dir_copies_the_document_not_the_resolved_config(run_case, tmp_path)
     the difference between the two is the difference between an input and an
     answer.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     directory = run_case.parent
     fluid, _, rest = RUN_CASE.partition("mean_line:")
@@ -795,7 +794,7 @@ def test_out_dir_keeps_a_plugin_reachable(tmp_path, clean_registry):
 
     # It got far enough to need a mesh, which means the design resolved: a
     # missing plugin fails earlier, on the unknown type.
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     assert (workdir / batch.INPUT_NAME).is_file()
 
@@ -854,7 +853,7 @@ def test_out_dir_will_not_replace_a_config_it_did_not_write(run_case, tmp_path, 
     an unrun batch member, or something being drafted -- used to be replaced
     without a word.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     workdir = tmp_path / "notes"
     workdir.mkdir()
@@ -933,7 +932,7 @@ def test_a_failed_run_keeps_its_workdir(run_case, tmp_path):
     # No mesh section, so the run fails after the workdir has been made.
     assert cli.main(["run", str(run_case), "-o", pattern, "-s", "mesh=null"]) == 1
 
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     failed = tmp_path / "runs" / "v0000"
     assert (failed / batch.INPUT_NAME).is_file()
@@ -1098,7 +1097,7 @@ def iterate_case(tmp_path):
 def test_every_run_records_what_the_iterators_measured(iterate_case):
     """Iterating or not: these are observations of the flow, and only a solved
     grid holds them."""
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["run", str(iterate_case)]) == 0
 
@@ -1114,8 +1113,9 @@ METRIC_CASE = RUN_CASE + "\nmetrics:\n  - type: _test_grid_stats\n"
 def test_a_run_records_what_its_metrics_measured(tmp_path):
     """A configured metric lands under `result: metrics:`, and a re-plot
     reproduces it from the field left behind."""
-    from turbigen import case  # noqa: PLC0415
-    import test_metric  # noqa: F401, PLC0415 - registers the _test_grid_stats metric
+    import test_metric  # noqa: F401 - registers the _test_grid_stats metric
+
+    from turbigen import case
 
     path = tmp_path / "cascade" / "input.yaml"
     path.parent.mkdir()
@@ -1177,6 +1177,29 @@ def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
     assert not (out / cli.RESTART_NAME).exists()
 
 
+def test_an_unsettled_design_still_records_its_gains(iterate_case):
+    """A run that gave up is exactly where a badly declared gain shows up.
+
+    Nothing is promoted, so the record it leaves is the last iteration's own
+    `output.yaml` --- which is also the file `promote_final` moves to the root
+    when a design does settle, so one rule covers both.
+    """
+    from turbigen import case
+
+    out = iterate_case.parent
+
+    assert cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"]) == 2
+
+    # The first pass has no history to learn from, so it runs and records the
+    # gains the file declared; the last one is the one with a slope to write.
+    declared, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
+    measured, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)
+
+    assert [iterator.gain for iterator in measured.iterate.correct] != [
+        iterator.gain for iterator in declared.iterate.correct
+    ]
+
+
 def test_a_settled_design_leaves_a_run_directory(settled_case):
     """A finished iterate reads as a run, because that is what it is now."""
     out = settled_case.parent
@@ -1209,7 +1232,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     and three passes of real CFD would take minutes to produce files whose
     contents do not matter.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     names = (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.HISTORY_NAME, "post.pdf")
     for i_iter in range(3):
@@ -1237,7 +1260,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
 
 
 def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     iter_dir = tmp_path / "iter_0000"
     iter_dir.mkdir()
@@ -1260,7 +1283,7 @@ def test_iterate_leaves_every_iteration_runnable(iterate_case):
     the only record of what `iter_0001` solved would be the config half of its
     own `output.yaml` -- which is not a file turbigen will read back.
     """
-    from turbigen import batch, case  # noqa: PLC0415
+    from turbigen import batch, case
 
     out = iterate_case.parent
 
@@ -1286,7 +1309,7 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
 
     cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
 
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     iter_dir = out / "iter_0001"
     (iter_dir / "post.pdf").unlink()
@@ -1302,7 +1325,7 @@ def test_iterate_puts_its_answer_where_a_run_would_have(settled_case):
     A real file rather than the link this used to be, so a script reading a
     result, a database glob and a `--restart` all see one answer in one place.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
@@ -1320,7 +1343,7 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     Together those are one sample of "this design gave that mismatch", which is
     what any later fit over an archive of runs would be built from.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = iterate_case.parent
     # Unclipped, so the step is the rule and nothing else. This mesh reads a
@@ -1363,7 +1386,7 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
     prediction before the first run, none of which needs a march to prove. One
     sample, so every query sits on top of it and the answer is exact.
     """
-    from turbigen import Config, Result, case  # noqa: PLC0415
+    from turbigen import Config, Result, case
 
     archived = Config.from_file(iterate_case)
     archived = iterate.Deviation().with_unknowns(archived, {"dchi_TE[0]": 7.5})
@@ -1442,7 +1465,7 @@ def test_batch_prints_the_batch_directory(batch_case, capsys):
 
 
 def test_batch_members_are_runnable_designs(batch_case):
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["batch", str(batch_case), "-n", "2"])
 
@@ -1471,7 +1494,7 @@ def test_batch_continue_carries_on_into_a_new_batch(batch_case):
 
 def test_batch_continue_is_the_tail_of_one_batch(tmp_path):
     """Two batches of two hold what one batch of four would have."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     def datum(name):
         directory = tmp_path / name
@@ -1543,7 +1566,7 @@ def test_a_grid_writes_one_member_per_point(grid_case):
 
 def test_a_grid_member_carries_its_own_point(grid_case):
     """The value is in the file, so the study is not only in shell history."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["batch", str(grid_case)])
 
@@ -1628,7 +1651,7 @@ def test_reporting_in_place_keeps_the_recorded_answer(run_case):
     between a field that solves this design and one that is merely a good guess
     at it, which is what the stamp is for.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -1699,7 +1722,7 @@ def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch
     a config asks for them -- so with the two the other way round, a plot that
     fell over would throw away a march that had already been paid for.
     """
-    from turbigen import SectionsPlot  # noqa: PLC0415
+    from turbigen import SectionsPlot
 
     def boom(self, config, result):
         raise RuntimeError("plot exploded")
@@ -1737,7 +1760,7 @@ TURBINE = {
 
 def _table(nominal_config, actual_config=None):
     """Format a table comparing one design against another's mean line."""
-    from turbigen import Config, Result  # noqa: PLC0415
+    from turbigen import Config, Result
 
     config = Config.from_dict(nominal_config)
     machine = config.design()
@@ -1908,7 +1931,7 @@ def test_an_include_key_does_not_reach_the_config(split_case):
     """Popped during resolution, so the strict unknown-key check needs no
     exception for it and a written config carries no pointer to a file that
     may since have changed."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = Config.from_file(split_case)
 
@@ -2023,7 +2046,7 @@ def test_chic_leaves_every_point_runnable(chic_case):
     The sweep moved it, and the datum describes the whole characteristic rather
     than any one station on it, so each directory records what it solved.
     """
-    from turbigen import batch, case  # noqa: PLC0415
+    from turbigen import batch, case
 
     out = chic_case.parent
 

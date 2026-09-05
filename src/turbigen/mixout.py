@@ -11,9 +11,9 @@ solution without re-running anything.
 
 import logging
 
-import numpy as np
 import ember.average
 import ember.cut
+import numpy as np
 
 import turbigen.annulus
 

@@ -17,8 +17,8 @@ sane starting point, not to be right.
 
 import logging
 
-import numpy as np
 import ember.block
+import numpy as np
 
 logger = logging.getLogger("turbigen")
 

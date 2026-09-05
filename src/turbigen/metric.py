@@ -14,15 +14,16 @@ way an iterator derives ``dchi_TE[0]`` --- there is no user-supplied label.
 import logging
 from typing import ClassVar
 
-import numpy as np
-
 import ember.average
 import ember.cut
+import numpy as np
+
 import turbigen.loading
 import turbigen.util
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
+
 
 class Metric(Node):
     """Base for quantities measured from a solved field."""
@@ -321,8 +322,14 @@ class DiffusionFactor(Metric):
         shape = (len(self.spf), len(result.grid.rows))
         out = {
             name: np.full(shape, np.nan)
-            for name in ("Mas_max", "Mas_TE", "zeta_max",
-                         "zeta_peak", "fac_front", "fac_peak")
+            for name in (
+                "Mas_max",
+                "Mas_TE",
+                "zeta_max",
+                "zeta_peak",
+                "fac_front",
+                "fac_peak",
+            )
         }
 
         for i_row in range(shape[1]):

@@ -46,6 +46,7 @@ float even when the file quoted it, and ``mu: null`` is an error rather than a
 """
 
 import dataclasses
+import itertools
 import types
 import typing
 from typing import (
@@ -199,9 +200,8 @@ def _to_scalar(annotation, value, where):
                 return float(value)
             except ValueError:
                 pass
-    elif annotation is str:
-        if isinstance(value, str):
-            return value
+    elif annotation is str and isinstance(value, str):
+        return value
 
     raise ValueError(
         f"{where} must be {_type_name(annotation)}, got {value!r} "
@@ -481,7 +481,7 @@ def set_by_path(data, path, value):
     segments = parse_path(path)
 
     target = data
-    for segment, following in zip(segments[:-1], segments[1:]):
+    for segment, following in itertools.pairwise(segments):
         child = _child(target, segment)
         if not isinstance(child, (dict, list)):
             child = [] if isinstance(following, int) else {}

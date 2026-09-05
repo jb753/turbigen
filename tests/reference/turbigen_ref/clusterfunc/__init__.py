@@ -1,3 +1,1 @@
-from . import single
-from . import double
-from . import symmetric
+from . import double, single, symmetric

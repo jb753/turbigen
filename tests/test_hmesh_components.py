@@ -115,7 +115,7 @@ class TestStreamwiseGrid:
 
     @pytest.mark.parametrize("L", [(1.0, 1.0), (1.0, 0.5), (0.5, 1.0), (0.5, 0.5)])
     def test_endpoints(self, mesher, L):
-        t, ile, ite = mesher.streamwise_grid(self.PC, 41, L, 1.5, tte=0.95)
+        t, _ile, _ite = mesher.streamwise_grid(self.PC, 41, L, 1.5, tte=0.95)
         assert np.isclose(t[0], -L[0])
         assert np.isclose(t[-1], 1.0 + L[1])
 
@@ -198,7 +198,7 @@ class TestThetaLimits:
     def test_upper_above_lower(self, axial_section):
         xrt_u, xrt_l = axial_section
         tq = np.linspace(-0.2, 1.2, 80)
-        tu, tl, tte = _theta_limits(tq, xrt_u, xrt_l, (0, 1))
+        tu, tl, _tte = _theta_limits(tq, xrt_u, xrt_l, (0, 1))
         assert (tu >= tl).all()
 
     def test_tte_in_range(self, axial_section):
@@ -247,5 +247,5 @@ class TestThetaLimits:
         xrt_u = np.stack([x, r, camber + thick])
         xrt_l = np.stack([x, r, camber - thick])
         tq = np.linspace(-0.2, 1.2, 80)
-        tu, tl, tte = _theta_limits(tq, xrt_u, xrt_l, (0, 1))
+        tu, tl, _tte = _theta_limits(tq, xrt_u, xrt_l, (0, 1))
         assert (tu >= tl).all()

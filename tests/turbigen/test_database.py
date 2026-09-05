@@ -34,8 +34,8 @@ Test cases:
 import dataclasses
 
 import pytest
-
 from test_blade import build
+
 from turbigen import Config, Database, Result, case, database, iterate
 
 ITERATORS = (iterate.Deviation(), iterate.Incidence())

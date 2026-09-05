@@ -12,9 +12,9 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
-
 import turbigen_ref.meanline_new
 import turbigen_ref.plugins
+
 from turbigen import Config, DesignError, MeanLineDesign, PerfectFluid
 from turbigen.design import _check_round_trip
 from turbigen.designs.axial_turbine import AxialTurbine

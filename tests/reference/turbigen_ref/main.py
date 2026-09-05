@@ -1,22 +1,25 @@
 """Entry point for running turbigen from the shell."""
 
-import logging
-import gc
-from turbigen_ref import util
-import turbigen_ref.yaml_utils
-import turbigen_ref.plugins
-import subprocess
-from timeit import default_timer as timer
-from pathlib import Path
-import shutil
-import sys
-import os
-import turbigen_ref.config
-import turbigen_ref.viewer
-import datetime
 import argparse
+import datetime
+import gc
+import itertools
+import logging
+import os
 import resource
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from timeit import default_timer as timer
+
 import yaml
+
+import turbigen_ref.config
+import turbigen_ref.plugins
+import turbigen_ref.viewer
+import turbigen_ref.yaml_utils
+from turbigen_ref import util
 
 logger = logging.getLogger("turbigen")
 
@@ -194,7 +197,7 @@ def _apply_overrides(d, overrides):
         value = yaml.safe_load(raw)
         segs = [_seg(s) for s in key.split(".")]
         node = d
-        for seg, nxt in zip(segs[:-1], segs[1:]):
+        for seg, nxt in itertools.pairwise(segs):
             child = _get_child(node, seg)
             if not isinstance(child, (dict, list)):
                 child = [] if isinstance(nxt, int) else {}
@@ -350,7 +353,7 @@ def cmd_run(args):
                 for i in range(iiter + 1):
                     iter_dir = basedir / f"{i:03d}"
                     iter_conf_dest = all_iter_dir / f"config_{i:03d}.yaml"
-                    if not i == iiter:
+                    if i != iiter:
                         shutil.move(iter_dir / conf.basename, iter_conf_dest)
                     shutil.rmtree(iter_dir)
                 conf.work_dir = basedir
@@ -445,7 +448,7 @@ def cmd_run(args):
                 for i in range(iiter + 1):
                     iter_dir = basedir / f"{i:03d}"
                     iter_conf_dest = all_iter_dir / f"config_{i:03d}.yaml"
-                    if not i == iiter:
+                    if i != iiter:
                         shutil.move(iter_dir / conf.basename, iter_conf_dest)
                     shutil.rmtree(iter_dir)
                 conf.work_dir = basedir
@@ -552,7 +555,7 @@ def main():
 
 def _fmt_iter_cell(k, val, signed=True):
     """Per-variable value formatter for the iteration log."""
-    if k.startswith("Inc") or k.startswith("Dev"):
+    if k.startswith(("Inc", "Dev")):
         return f"{val:+.1f}" if signed else f"{val:.1f}"
     if k == "Min":
         return f"{val:.0f}"
@@ -572,7 +575,7 @@ def format_iter_log(log_data, tol=None, header=False):
     # and error columns (E*) used only for status checks.
     keys = [
         k
-        for k in log_data.keys()
+        for k in log_data
         if not (k.startswith("D") and not k.startswith("Dev["))
         and not k.startswith("E")
     ]

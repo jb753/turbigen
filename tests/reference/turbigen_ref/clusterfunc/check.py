@@ -1,6 +1,7 @@
 import numpy as np
-from turbigen_ref.clusterfunc.exceptions import ClusteringException
+
 import turbigen_ref.clusterfunc.util
+from turbigen_ref.clusterfunc.exceptions import ClusteringException
 
 
 def unit_single(x, Dmin, Dmax, ERmax, rtol=1e-9):
@@ -91,7 +92,7 @@ def unit_symmetric(x, Dmin, Dmax, ERmax, rtol=1e-9):
 
     # Evaluate and correct for the shrinking part
     ER = dx[1:] / dx[:-1]
-    Na, Nb = turbigen_ref.clusterfunc.util.split_cells(len(x))
+    _Na, _Nb = turbigen_ref.clusterfunc.util.split_cells(len(x))
 
     ER1 = ER.copy()
     ER1[ER1 < 1.0] = 1.0 / ER1[ER1 < 1.0]

@@ -41,9 +41,9 @@ mean line carries one radius per station, and that is the one it carries.
 
 import logging
 
-import numpy as np
 import ember.block
 import ember.fluid
+import numpy as np
 
 import turbigen_ref.designer
 import turbigen_ref.plugins

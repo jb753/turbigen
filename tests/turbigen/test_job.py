@@ -407,7 +407,7 @@ def test_batch_writes_members_and_submits_them(datum, calls):
     members = sorted((path.parent / "batch_0000").glob("*/input.yaml"))
     assert len(members) == 2
 
-    ((argv, cwd),) = calls
+    ((argv, _cwd),) = calls
     assert argv[0].endswith("sbatch")
     assert argv[1] == "--array=1-2"
 

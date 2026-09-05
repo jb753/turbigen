@@ -1,7 +1,7 @@
-import numpy as np
-import ember.grid
 import ember.block
+import ember.grid
 import ember.patch
+import numpy as np
 
 
 def _read_coord(f, nijkb):
@@ -44,7 +44,7 @@ def read(g_file, bcs_file, Lref=1.0):
             for ipface in range(npface):
                 # Extract data for this patch
                 ln_patch = f.readline().split()
-                plabel, ptype = ln_patch[:2]
+                _plabel, ptype = ln_patch[:2]
                 psten = np.array(ln_patch[2:6], dtype=int).reshape(2, 2).T - 1
 
                 # Skip solid wall patches

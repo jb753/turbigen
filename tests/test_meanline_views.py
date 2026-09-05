@@ -7,10 +7,9 @@ are how the design functions address individual planes. A silent copy anywhere
 in that table would lose writes without raising, so pin the whole table.
 """
 
+import ember.fluid
 import numpy as np
 import pytest
-
-import ember.fluid
 from turbigen_ref.meanline_new import MeanLine
 
 N_ROW = 3

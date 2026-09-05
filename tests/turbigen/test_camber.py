@@ -19,8 +19,8 @@ Test cases:
 
 import numpy as np
 import pytest
-
 import turbigen_ref.new_geometry
+
 from turbigen import Bernstein, Quadratic
 from turbigen.camber import CamberDesign, CamberLine
 

@@ -2,15 +2,17 @@ import logging
 
 """Functions for fitting polynomials to a design space."""
 
-import os
 import json
-from multiprocessing import Pool
+import os
 from itertools import repeat
+from multiprocessing import Pool
+
 import numpy as np
 from scipy.spatial import Delaunay
-import turbigen_ref.util
+
 import turbigen_ref.flowfield
 import turbigen_ref.post_process
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -233,7 +235,7 @@ def legfit(x, y, N, basis="total-order"):
 
     """
 
-    npts, ndim = x.shape
+    _npts, ndim = x.shape
 
     # Prepare normalised independent variables
     xl = np.min(x, axis=0, keepdims=True)
@@ -523,7 +525,7 @@ class DesignSpace:
         v = np.stack([self._get_data_var(self._train, vn) for vn in v_names])
 
         # Initialise front arbitrarily
-        nv, npts = v.shape
+        nv, _npts = v.shape
 
         for iv in range(nv):
             if negate[iv]:

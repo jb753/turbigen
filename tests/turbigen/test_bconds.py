@@ -52,8 +52,8 @@ import dataclasses
 
 import numpy as np
 import pytest
-
 from test_blade import blade, build
+
 from turbigen import bconds
 
 MESH = {"type": "h", "dm_TE": 0.05, "resolution_factor": 0.5, "dspf_mid": 0.1}
@@ -113,7 +113,7 @@ def test_outlet_gets_the_design_static_pressure(shrouded):
 
 
 def test_a_grid_without_an_inlet_is_refused(shrouded):
-    machine, grid = shrouded
+    machine, _grid = shrouded
 
     class Bare:
         patches = type("P", (), {"inlet": (), "outlet": ()})()
@@ -247,7 +247,7 @@ class Stub:
     """
 
     def __init__(self, Po_in, P_out):
-        end = lambda value: type("S", (), {"Po": value, "P": value})()  # noqa: E731
+        end = lambda value: type("S", (), {"Po": value, "P": value})()
         self.mean_line = type("M", (), {"inlet": end(Po_in), "outlet": end(P_out)})()
 
 
@@ -326,7 +326,7 @@ def test_the_operating_point_reaches_the_outlet_patches(shrouded):
 
 
 def test_the_operating_point_round_trips():
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = build(mesh=MESH)
     config = dataclasses.replace(
@@ -340,7 +340,7 @@ def test_the_operating_point_round_trips():
 def test_the_operating_point_is_not_a_design_variable():
     """Outside `database.SUBTREE`, so two runs of one machine at different back
     pressures are one design run twice rather than two designs."""
-    from turbigen import database  # noqa: PLC0415
+    from turbigen import database
 
     assert "operating_point" not in database.SUBTREE
 
@@ -469,7 +469,7 @@ def test_a_target_that_is_not_a_flow_is_refused(adjust):
 
 
 def test_the_throttle_round_trips():
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = build(mesh=MESH)
     config = dataclasses.replace(
@@ -483,7 +483,7 @@ def test_the_throttle_round_trips():
 def test_a_characteristic_sweep_takes_the_throttle_off():
     """A swept point is a pressure, so the controller comes off at each one:
     left on, it would hold one mass flow and tabulate it as a map."""
-    from turbigen import chic  # noqa: PLC0415
+    from turbigen import chic
 
     config = dataclasses.replace(
         build(mesh=MESH),
@@ -772,7 +772,7 @@ def test_one_station_is_not_a_profile():
 
 
 def test_the_profile_round_trips():
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = dataclasses.replace(
         build(mesh=MESH), inlet_profile=with_profile(**BOUNDARY_LAYER)
@@ -790,7 +790,7 @@ def test_the_profile_is_not_part_of_the_operating_point():
     operating point would say something false, and a `batch` over `DP_adjust`
     would copy the whole thing into every member.
     """
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     with pytest.raises(ValueError, match="Unknown key"):
         Config.from_dict(
@@ -804,7 +804,7 @@ def test_the_profile_is_not_part_of_the_operating_point():
 def test_a_profile_survives_a_characteristic_sweep():
     """`chic` replaces the operating point alone, so a top-level profile is
     carried through untouched -- by design now, rather than by luck."""
-    from turbigen import Chic, chic  # noqa: PLC0415
+    from turbigen import Chic, chic
 
     config = dataclasses.replace(
         build(mesh=MESH),
@@ -831,7 +831,7 @@ def test_a_profile_survives_a_characteristic_sweep():
 def test_a_legendre_profile_is_the_series_it_says():
     """Evaluated, not interpolated, so the patch's own resolution is what it
     is applied at."""
-    from numpy.polynomial import legendre  # noqa: PLC0415
+    from numpy.polynomial import legendre
 
     profile = bconds.Legendre(DPo=(0.4, -0.25, 0.10))
     spf = np.linspace(0.0, 1.0, 37)
@@ -894,7 +894,7 @@ def test_a_legendre_profile_that_perturbs_nothing_is_refused():
 
 
 def test_the_legendre_profile_round_trips():
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = dataclasses.replace(
         build(mesh=MESH), inlet_profile=bconds.Legendre(DPo=(0.4, -0.25, 0.10))
@@ -907,7 +907,7 @@ def test_the_legendre_profile_round_trips():
 def test_a_profile_must_name_its_form():
     """A family, so `type:` chooses; there is no default form because neither
     is more obviously right than the other."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     with pytest.raises(ValueError, match="type"):
         Config.from_dict(

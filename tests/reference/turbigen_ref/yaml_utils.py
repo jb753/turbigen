@@ -1,11 +1,12 @@
 """Functions for reading and writing YAML files."""
 
 import logging
-import yaml
 import os
 import re
-import numpy as np
 from pathlib import Path, PosixPath
+
+import numpy as np
+import yaml
 
 logger = logging.getLogger("turbigen")
 
@@ -67,7 +68,7 @@ def read_yaml(fname):
         "tag:yaml.org,2002:float",
         re.compile(
             PATTERN,
-            re.X,
+            re.VERBOSE,
         ),
         list("-+0123456789."),
     )
@@ -118,7 +119,7 @@ def read_yaml_list(fname):
     loader = UniqueKeyLoader
     loader.add_implicit_resolver(
         "tag:yaml.org,2002:float",
-        re.compile(PATTERN, re.X),
+        re.compile(PATTERN, re.VERBOSE),
         list("-+0123456789."),
     )
     # Read the YAML

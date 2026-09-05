@@ -11,8 +11,8 @@ import dataclasses
 
 import numpy as np
 import pytest
-
 import turbigen_ref.annulus
+
 from turbigen import Annulus, Config, FixedAxialChord, Machine
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}

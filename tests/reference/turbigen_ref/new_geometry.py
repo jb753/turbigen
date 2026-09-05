@@ -1,9 +1,11 @@
 """Classes to represent machine geometry."""
 
-import math
-import numpy as np
 import dataclasses
+import math
+
+import numpy as np
 from scipy.interpolate import PchipInterpolator
+
 from turbigen_ref import util
 
 

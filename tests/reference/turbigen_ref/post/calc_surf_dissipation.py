@@ -1,7 +1,6 @@
 """Velocity-cubed estimate of surface dissipation."""
 
 import numpy as np
-
 import turbigen_ref.grid
 import turbigen_ref.util
 

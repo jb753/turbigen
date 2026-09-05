@@ -26,8 +26,8 @@ Test cases:
 import dataclasses
 
 import pytest
-
 from test_blade import build
+
 from turbigen import Chic, Config, Result, chic
 from turbigen.bconds import OperatingPoint
 

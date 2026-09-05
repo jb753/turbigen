@@ -3,10 +3,11 @@ import logging
 """Contour loss coefficient over traverse plane."""
 
 import os
-import turbigen_ref.util
-import numpy as np
-import matplotlib.pyplot as plt
 from enum import Enum
+
+import matplotlib.pyplot as plt
+import numpy as np
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -131,7 +132,7 @@ def post(
     else:
         raise Exception("Should not reach here.")
 
-    fig, ax = plt.subplots(layout="constrained")
+    _fig, ax = plt.subplots(layout="constrained")
     ax.plot(v, spf)
     ax.set_xlabel(label)
     ax.set_ylabel("Span Fraction")

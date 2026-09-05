@@ -1,46 +1,42 @@
 """Initial thoughts on an improved config class."""
 
+import dataclasses
+import importlib
 import logging
 import resource
-
-
-import dataclasses
+import sys
 import traceback
 from copy import deepcopy
-import numpy as np
-import sys
-import importlib
 from pathlib import Path
-import turbigen_ref.fluid
-import turbigen_ref.meanline_new
-import turbigen_ref.solvers.base
-import turbigen_ref.base
-import turbigen_ref.iterators
-import turbigen_ref.average
-import turbigen_ref.op_point
 
-import turbigen_ref.post
-import turbigen_ref.geometry
-import turbigen_ref.annulus
-import turbigen_ref.inlet
-import turbigen_ref.mesh
-import turbigen_ref.hmesh
-
-import turbigen_ref.ohmesh
-import turbigen_ref.blade
-import turbigen_ref.dspace
-import turbigen_ref.nblade
-import turbigen_ref.job
-from turbigen_ref import util
-from typing import List
-from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.pyplot as plt
-
-import ember.grid
-import ember.cut
 import ember.average
 import ember.block_util
+import ember.cut
+import ember.grid
 import ember.util
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_pdf import PdfPages
+
+import turbigen_ref.annulus
+import turbigen_ref.average
+import turbigen_ref.base
+import turbigen_ref.blade
+import turbigen_ref.dspace
+import turbigen_ref.fluid
+import turbigen_ref.geometry
+import turbigen_ref.hmesh
+import turbigen_ref.inlet
+import turbigen_ref.iterators
+import turbigen_ref.job
+import turbigen_ref.meanline_new
+import turbigen_ref.mesh
+import turbigen_ref.nblade
+import turbigen_ref.ohmesh
+import turbigen_ref.op_point
+import turbigen_ref.post
+import turbigen_ref.solvers.base
+from turbigen_ref import util
 
 logger = logging.getLogger("turbigen")
 
@@ -73,12 +69,12 @@ class TurbigenConfig:
     annulus: turbigen_ref.annulus.AnnulusDesigner = None
     """Settings for the annulus designer."""
 
-    blades: List[List[turbigen_ref.blade.BladeDesigner]] = dataclasses.field(
+    blades: list[list[turbigen_ref.blade.BladeDesigner]] = dataclasses.field(
         default_factory=list
     )
     """Settings for the blade designers."""
 
-    nblade: List[turbigen_ref.nblade.BladeNumberConfig] = dataclasses.field(
+    nblade: list[turbigen_ref.nblade.BladeNumberConfig] = dataclasses.field(
         default_factory=list
     )
     """Settings for blade number selection."""
@@ -95,7 +91,7 @@ class TurbigenConfig:
     operating_point: turbigen_ref.op_point.OperatingPoint = None
     """Settings for off-design operation and throttling."""
 
-    iterate: List[turbigen_ref.iterators.IteratorConfig] = dataclasses.field(
+    iterate: list[turbigen_ref.iterators.IteratorConfig] = dataclasses.field(
         default_factory=list
     )
 
@@ -734,7 +730,7 @@ class TurbigenConfig:
 
         blocks = turbigen_ref.util_post.cut_span(self.grid, self.annulus, spf)
         blocks = ember.util.pitchwise_repeat(blocks, n=2)
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         ax.set_aspect("equal")
         ax.axis("off")
         for b in blocks:

@@ -1,9 +1,10 @@
 import logging
-import turbigen_ref.util
-import turbigen_ref.grid
 import os
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+
+import turbigen_ref.grid
+import turbigen_ref.util
 from turbigen_ref.solvers.base import BaseSolver
 
 logger = logging.getLogger("turbigen")

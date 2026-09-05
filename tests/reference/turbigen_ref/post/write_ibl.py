@@ -4,8 +4,9 @@ import logging
 
 This is heavily based on bl_write_ibl by James Taylor."""
 
-import numpy as np
 import os
+
+import numpy as np
 import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
@@ -121,10 +122,9 @@ def post(grid, machine, meanline, _, postdir, nspan=22, nchord=100):
                 _write_blade(f, bld, nspan, nchord)
 
             # Splitter blade if present
-            if machine.split:
-                if bld := machine.split[irow]:
-                    logger.info(f"Writing row {irow} splitter")
-                    _write_blade(f, bld, nspan, nchord)
+            if machine.split and (bld := machine.split[irow]):
+                logger.info(f"Writing row {irow} splitter")
+                _write_blade(f, bld, nspan, nchord)
 
         # Hub and casing lines
         hub, cas = machine.ann.get_coords().transpose(0, 2, 1)

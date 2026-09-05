@@ -1,7 +1,7 @@
 """SSH connection management."""
 
-import subprocess
 import os
+import subprocess
 from time import sleep
 
 

@@ -31,10 +31,10 @@ import dataclasses
 import numpy as np
 import pytest
 import yaml
-
 from test_blade import build
 from test_cli import RUN_CASE
 from test_mesh import MESH, TIP
+
 from turbigen import Config, Result, SurfaceDissipation, case, cli, metric, mixout, util
 
 TIP_ROW = 1

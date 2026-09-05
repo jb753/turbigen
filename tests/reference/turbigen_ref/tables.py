@@ -1,11 +1,13 @@
 """Generate thermodynamic property tables in TS4 format."""
 
-from CoolProp import CoolProp as CP
-import numpy as np
-from multiprocessing import Pool
 from itertools import repeat
-from turbigen_ref import util, fluid
+from multiprocessing import Pool
+
+import numpy as np
+from CoolProp import CoolProp as CP
 from scipy.interpolate import RegularGridInterpolator
+
+from turbigen_ref import fluid, util
 
 PROPERTY_TABLES = [
     (CP.ispeed_sound, CP.DmassUmass_INPUTS),
@@ -274,7 +276,7 @@ def _get_tables(fluid_name, grids, Nworker=32):
     """
 
     # Preallocate main table
-    nj, ni = list(grids.values())[0][0].shape
+    nj, ni = next(iter(grids.values()))[0].shape
     tables = np.zeros((NTABLE, nj, ni))
 
     # Loop over grids

@@ -1,8 +1,9 @@
 import fcntl
 import json
 import logging
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 logger = logging.getLogger("turbigen")
 
@@ -239,9 +240,10 @@ def record_metadata(config):
 
 
 def _write_Mas_json(config):
+    import ember.cut
+
     import turbigen_ref.util_post
     from turbigen_ref.post import calculate_nondim
-    import ember.cut
 
     cuts = turbigen_ref.util_post.cut_blade_surfs(config.grid, offset=0)
 

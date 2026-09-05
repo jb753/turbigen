@@ -531,7 +531,7 @@ def _check_round_trip(design, ml, rtol=0.5e-2):
         not conserved.
 
     """
-    import dataclasses  # noqa: PLC0415 - only needed on this path
+    import dataclasses
 
     who = design.type or type(design).__name__
     actual = design.backward(ml)

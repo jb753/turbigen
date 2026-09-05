@@ -14,13 +14,12 @@ cuts below, is not, for the same reason the mesher dropped its seven.
 
 import logging
 
-import numpy as np
-import scipy.interpolate
-from scipy.integrate import cumulative_trapezoid
-
 import ember.block_util
 import ember.cut
 import ember.patch
+import numpy as np
+import scipy.interpolate
+from scipy.integrate import cumulative_trapezoid
 
 logger = logging.getLogger("turbigen")
 

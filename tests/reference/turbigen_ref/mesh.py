@@ -1,7 +1,7 @@
 """Classes to perform meshing."""
 
-from abc import ABC, abstractmethod
 import dataclasses
+from abc import ABC, abstractmethod
 
 
 @dataclasses.dataclass

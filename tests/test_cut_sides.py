@@ -1,9 +1,9 @@
 import ember.block
 import ember.grid
-import ember.util
 import ember.patch
-import pytest
+import ember.util
 import numpy as np
+import pytest
 import turbigen_ref.util_post
 
 

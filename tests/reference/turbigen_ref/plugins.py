@@ -75,7 +75,7 @@ def list_plugins():
     reg = get_registry()
     logger.info("Available mean line types:")
     for name, designer in sorted(reg["designer"].items()):
-        import turbigen_ref.designer  # noqa: PLC0415 - avoid a circular import
+        import turbigen_ref.designer
 
         params = turbigen_ref.designer.design_params(designer)
         shown = ", ".join(
@@ -100,7 +100,7 @@ def register_designer(name):
     """
 
     def decorator(cls):
-        import turbigen_ref.designer  # noqa: PLC0415 - avoid a circular import
+        import turbigen_ref.designer
 
         if not (inspect.isclass(cls) and issubclass(cls, turbigen_ref.designer.Designer)):
             raise TypeError(

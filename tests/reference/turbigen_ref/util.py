@@ -1,23 +1,21 @@
-from abc import ABC, abstractmethod
-import numpy as np
 import gzip
-import os
 import inspect
+import logging
+import os
+import pickle
+import re
 import tarfile
-import scipy.interpolate
+import tempfile
+from abc import ABC, abstractmethod
+from pathlib import Path
 
-from turbigen_ref.exceptions import ConfigError
+import numpy as np
+import scipy.interpolate
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
-import re
 
-import pickle
-import tempfile
-from pathlib import Path
-
-
-import logging
+from turbigen_ref.exceptions import ConfigError
 
 
 def check_scalar(**kwargs):
@@ -212,14 +210,9 @@ def replace_nan(x, y, z, kind):
 def _match(x, y):
     if x is None and y is None:
         return True
-    elif x is None and y is not None:
+    elif x is None and y is not None or x is not None and y is None:
         return False
-    elif x is not None and y is None:
-        return False
-    elif np.isclose(x, y).all():
-        return True
-    else:
-        return False
+    return bool(np.isclose(x, y).all())
 
 
 def node_to_face(var):
@@ -250,7 +243,7 @@ def interpolate_transfinite(c, plot=False):
     if plot:
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         labels = ["C1", "C2", "C3", "C4"]
         markers = ["x", "+", "^", "o"]
         for i, ci in enumerate(c):
@@ -867,9 +860,7 @@ def save_source_tar_gz(output_filename):
     with tarfile.open(output_filename, "w:gz") as tar:
         for root, _, files in os.walk(directory):
             for file in files:
-                if file.endswith(".py") or file.endswith(
-                    ".toml"
-                ):  # Only include Python source files
+                if file.endswith((".py", ".toml")):  # Only include Python source files
                     file_path = os.path.join(root, file)
                     logger.debug(f"{file_path}")
                     tar.add(file_path, arcname=os.path.relpath(file_path, directory))
@@ -1105,7 +1096,7 @@ def amplitude_spectrum(x, fs, axis=-1):
 def average(x, axis):
     n = np.shape(x)[axis]
     return 0.5 * (
-        np.take(x, range(1, n), axis=axis) + np.take(x, range(0, n - 1), axis=axis)
+        np.take(x, range(1, n), axis=axis) + np.take(x, range(n - 1), axis=axis)
     )
 
 
@@ -1156,7 +1147,6 @@ def safe_pickle_dump(obj, filename, zip, max_retries=3):
             return
 
         except KeyboardInterrupt:
-            #
             attempts += 1
             logger.warning(
                 f"Writing pickle interrupted, retry {attempts}/{max_retries}"

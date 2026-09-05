@@ -3,9 +3,10 @@ import logging
 """Save plot of camber line."""
 
 import os
-import turbigen_ref.util
-import turbigen_ref.camber
+
 import matplotlib.pyplot as plt
+import turbigen_ref.camber
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -17,7 +18,7 @@ def post(grid, machine, meanline, _, postdir, row_spf):
     # Loop over rows
     for irow, spfrow in enumerate(row_spf):
         # Set up axes
-        fig, ax = plt.subplots(layout="constrained")
+        _fig, ax = plt.subplots(layout="constrained")
         ax.set_xlabel(r"Meridional Distance, $m/c_m$")
         ax.set_ylabel(r"Normalised Metal Angle, $\hat{\chi}$")
         ax.set_xlim((0.0, 1.0))

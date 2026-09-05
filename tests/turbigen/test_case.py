@@ -21,8 +21,8 @@ Test cases:
 
 import numpy as np
 import pytest
-
 from test_blade import build
+
 from turbigen import Config, MeanLine, Result, case
 
 
@@ -87,7 +87,7 @@ def test_config_from_file_ignores_a_result(config, result, tmp_path):
 
 def test_result_is_one_key_beside_the_config(config, result, tmp_path):
     """One document, one extra key -- so safe_load and yq keep working."""
-    import yaml  # noqa: PLC0415
+    import yaml
 
     path = tmp_path / "case.yaml"
     case.write(path, config, result)
@@ -103,9 +103,9 @@ def test_result_is_one_key_beside_the_config(config, result, tmp_path):
 
 def test_metrics_are_written_only_when_present(config, result, tmp_path):
     """A metric that measured nothing leaves no key, like `error` does."""
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
-    import yaml  # noqa: PLC0415
+    import yaml
 
     path = tmp_path / "case.yaml"
 
@@ -123,9 +123,9 @@ def test_metrics_are_written_only_when_present(config, result, tmp_path):
 
 def test_mixing_loss_is_written_only_when_present(config, result, tmp_path):
     """Like `metrics`: no key until a run measured one, then it round-trips."""
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
-    import yaml  # noqa: PLC0415
+    import yaml
 
     path = tmp_path / "case.yaml"
 
@@ -149,7 +149,7 @@ def test_the_convergence_history_stays_out_of_the_file(config, result, tmp_path)
     far more than a result file should carry, and it is worthless without the
     run that produced it.
     """
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
     path = tmp_path / "case.yaml"
     case.write(path, config, dataclasses.replace(result, history=object()))

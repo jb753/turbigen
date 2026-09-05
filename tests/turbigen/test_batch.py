@@ -51,8 +51,8 @@ Test cases:
 import dataclasses
 
 import pytest
-
 from test_blade import build
+
 from turbigen import Config, batch
 
 BOX = {"mean_line.psi": [1.4, 1.8], "mean_line.phi2": [0.6, 0.9]}
@@ -80,7 +80,7 @@ def make(bounds=None, values=None, seed=0, **kwargs):
 
 def values_of(pairs, path="mean_line.psi"):
     """Return the value of `path` in each emitted design."""
-    from turbigen import node  # noqa: PLC0415
+    from turbigen import node
 
     return [node.flatten(config)[path] for _, config in pairs]
 
@@ -309,7 +309,7 @@ def test_an_integer_bound_is_refused():
     They then sit on top of each other in `database._predict` and are averaged
     as though they were repeat runs of one design, which they are.
     """
-    from turbigen import Ember  # noqa: PLC0415
+    from turbigen import Ember
 
     config = make({"solver.n_step": [10, 100]}, solver=Ember(n_step=10))
 
@@ -319,7 +319,7 @@ def test_an_integer_bound_is_refused():
 
 def test_an_integer_value_is_allowed():
     """Named values cannot collide, so the reason for the ban does not apply."""
-    from turbigen import Ember, node  # noqa: PLC0415
+    from turbigen import Ember, node
 
     config = make(values={"solver.n_step": [10, 100]}, solver=Ember(n_step=10))
     pairs = batch.generate(config)

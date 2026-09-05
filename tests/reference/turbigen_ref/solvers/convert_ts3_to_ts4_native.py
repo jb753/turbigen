@@ -2,21 +2,22 @@
 # Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM
 import os
 import sys
+
 import numpy
-import vtk
-import ts.process.ts3_reader
 import ts.process.pre.vtk_adaptor
 import ts.process.pre.vtk_util
+import ts.process.ts3_reader
 import ts.util
+import vtk
 
 print("Python version:", sys.version)
 print("Python executable:", sys.executable)
 print("Numpy version:", numpy.__version__)
 print("Numpy path:", numpy.__path__)
 
-if not len(sys.argv) == 3:
+if len(sys.argv) != 3:
     print("Usage: convert_ts3_to_ts4.py INPUT_HDF5 OUTPUT_STEM")
-    exit(1)
+    sys.exit(1)
 
 
 def select_by_string(vtk_grid, string):
@@ -77,12 +78,12 @@ output_stem_full = os.path.abspath(output_stem)
 
 # Check for input and output files
 if not os.path.exists(input_hdf5_full):
-    print("Input %s not found" % input_hdf5_full)
-    exit(1)
+    print(f"Input {input_hdf5_full} not found")
+    sys.exit(1)
 output_dir, _ = os.path.split(output_stem_full)
 if not os.path.exists(output_dir):
-    print("Output dir %s not found" % output_dir)
-    exit(1)
+    print(f"Output dir {output_dir} not found")
+    sys.exit(1)
 
 # Read TS3 file
 reader = ts.process.ts3_reader.TS3Reader()

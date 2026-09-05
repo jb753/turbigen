@@ -2,10 +2,12 @@ import logging
 
 """Classes to update mean-line design using a CFD solution."""
 
-from abc import ABC, abstractmethod
 import dataclasses
 import resource
+from abc import ABC, abstractmethod
+
 import numpy as np
+
 from turbigen_ref import util, util_post
 
 logger = logging.getLogger("turbigen")
@@ -164,7 +166,7 @@ class Deviation(IteratorConfig):
 
 @dataclasses.dataclass
 class DiffusionFactor(IteratorConfig):
-    target: dict = dataclasses.field(default_factory=lambda: ({}))
+    target: dict = dataclasses.field(default_factory=dict)
     """Mapping of row index to target diffusion factor."""
 
     K: float = 0.25
@@ -247,7 +249,6 @@ class Incidence(IteratorConfig):
 
     def check(self, config):
         """Ensure that the iterator is correctly configured."""
-        pass
 
     def update(self, config):
         """Move the metal angle to match the target local incidence angle."""
@@ -338,7 +339,7 @@ class MeanLine(IteratorConfig):
     relaxation_factor: float = 0.5
     """Factor controlling size of changes."""
 
-    tolerance: dict = dataclasses.field(default_factory=lambda: ({}))
+    tolerance: dict = dataclasses.field(default_factory=dict)
     """Mapping of design variable name to tolerance for convergence."""
 
     def check(self, config):

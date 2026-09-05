@@ -1,9 +1,10 @@
 """Base class to define solver interface."""
 
-from abc import ABC, abstractmethod
 import dataclasses
 import json
+from abc import ABC, abstractmethod
 from pathlib import Path
+
 import numpy as np
 
 

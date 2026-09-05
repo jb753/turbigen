@@ -7,16 +7,17 @@ wall distance on the way out. The package this replaces leaves all of that to
 the caller, so these check the framework as well as the mesh.
 """
 
+import itertools
 import sys
 
+import ember.patch
 import numpy as np
 import pytest
-
-import ember.patch
 import turbigen_ref.annulus
 import turbigen_ref.geometry
 import turbigen_ref.hmesh
 from test_blade import ANNULUS, blade, build
+
 from turbigen import H, Mesher, WallSpacing
 
 MESH = {
@@ -252,7 +253,7 @@ def test_every_cell_has_positive_volume(grid):
 
 
 def test_mixing_planes_have_matching_coordinates(grid):
-    for upstream, downstream in zip(grid[:-1], grid[1:]):
+    for upstream, downstream in itertools.pairwise(grid):
         np.testing.assert_allclose(
             upstream.xrt[-1, :, 0, :2],
             downstream.xrt[0, :, 0, :2],

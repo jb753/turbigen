@@ -1,6 +1,7 @@
 """Configuration for changing machine operating point."""
 
 import dataclasses
+
 import numpy as np
 
 

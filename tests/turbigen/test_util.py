@@ -6,16 +6,16 @@ blade surface apart from the k faces above it, and what the endwalls have to
 be indifferent to.
 """
 
-import numpy as np
-import pytest
-
 import ember.block
 import ember.cut
 import ember.fluid
 import ember.patch
 import ember.util
+import numpy as np
+import pytest
 from test_blade import build
 from test_mesh import MESH, TIP
+
 from turbigen import H, bconds, guess, util
 
 
@@ -169,8 +169,8 @@ def test_a_face_with_two_speeds_is_refused(grid):
     """Two patches disagreeing cannot be reduced to the one number a cut wants."""
     block = _with_rotating(
         grid,
-        (100.0, dict(i=(0, 20), j=-1)),
-        (200.0, dict(i=(20, 80), j=-1)),
+        (100.0, {"i": (0, 20), "j": -1}),
+        (200.0, {"i": (20, 80), "j": -1}),
     )
 
     with pytest.raises(ValueError, match="more than one wall speed"):
@@ -180,7 +180,7 @@ def test_a_face_with_two_speeds_is_refused(grid):
 def test_a_partly_covered_face_is_refused(grid):
     """What a patch leaves uncovered still turns with the block, so that is two
     speeds as surely as two patches are."""
-    block = _with_rotating(grid, (100.0, dict(i=(0, 20), j=-1)))
+    block = _with_rotating(grid, (100.0, {"i": (0, 20), "j": -1}))
 
     with pytest.raises(ValueError, match="more than one wall speed"):
         util._wall_Omega(block, 1, True)
@@ -188,7 +188,7 @@ def test_a_partly_covered_face_is_refused(grid):
 
 def test_a_fully_covered_face_takes_the_patch_speed(grid):
     """One patch spanning the face is the case that resolves."""
-    block = _with_rotating(grid, (100.0, dict(j=-1)))
+    block = _with_rotating(grid, (100.0, {"j": -1}))
 
     assert util._wall_Omega(block, 1, True) == 100.0
 
@@ -443,7 +443,7 @@ def test_the_normal_yaw_moves_smoothly_between_nodes():
 # march looks like.
 #
 
-TARGET = dict(zeta_front=0.1, zeta_peak=0.55, ma_front=0.585, ma_peak=1.3, ma_TE=1.0)
+TARGET = {"zeta_front": 0.1, "zeta_peak": 0.55, "ma_front": 0.585, "ma_peak": 1.3, "ma_TE": 1.0}
 """A distribution in the middle of the family, to perturb away from."""
 
 
@@ -513,7 +513,7 @@ def test_the_fit_survives_a_flat_top():
     the answer stay finite and inside the window: a NaN here would stall the
     iteration on exactly the blades it was built for.
     """
-    zeta, ma = util.fit_two_lines(*distribution(ma_peak=1.02, ma_front=0.918))[:2]
+    zeta, _ma = util.fit_two_lines(*distribution(ma_peak=1.02, ma_front=0.918))[:2]
 
     assert np.isfinite(zeta)
     assert 0.1 < zeta < 0.98

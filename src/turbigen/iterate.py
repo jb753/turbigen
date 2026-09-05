@@ -28,14 +28,15 @@ Here an iterator returns a new config and owns no state at all.
 """
 
 import dataclasses
+import itertools
 import logging
 from typing import ClassVar
 
+import ember.average
+import ember.cut
 import numpy as np
 from numpy.polynomial import legendre
 
-import ember.average
-import ember.cut
 import turbigen.loading
 import turbigen.util
 from turbigen.node import Node
@@ -94,6 +95,11 @@ class Iterator(Node):
     always ``u -= gain * e``, so an iterator whose error *falls* as its knob
     rises declares a negative gain. Reciprocal of an assumed slope, so it is
     the crudest possible Newton step.
+
+    An input *and* an output: what a file declares is where the first step
+    goes, and :func:`calibrate` writes back the slope the run went on to
+    measure, so a design iterated twice starts the second time from the
+    sensitivity it saw rather than from the guess it was given.
     """
 
     clip: float = 0.0
@@ -185,6 +191,21 @@ class Iterator(Node):
         """
         return {name: self.gain for name in self.unknowns(config)}
 
+    def with_gains(self, config, gains):
+        """Return this iterator carrying the gains a run measured.
+
+        The dual of :meth:`gains`, as :meth:`with_unknowns` is of
+        :meth:`unknowns`. One scalar covers knobs a run measures one slope
+        apiece for -- every section of a recamber, every camber coefficient --
+        so the reduction is a plain mean: exact for the single-knob case, and
+        for the rest an average of measurements of the same declared constant.
+
+        Overridden where an iterator carries a second gain, which only
+        :class:`LoadingProfile` does.
+        """
+        del config
+        return dataclasses.replace(self, gain=float(np.mean(list(gains.values()))))
+
 
 class Iteration(Node):
     """Closing the loop between a design and the CFD that tests it.
@@ -238,6 +259,31 @@ def selected(config, from_solution):
                 if iterator.from_solution == from_solution
             ),
         ),
+    )
+
+
+def restored(config, view):
+    """Return `config` carrying the iterators `view` holds, in their old places.
+
+    The inverse of :func:`selected`, and needed because the calibration is done
+    on a view: putting `config.iterate` back, which is how a *stepped* config
+    regains the iterators it was filtered down from, would throw away the very
+    members that were changed.
+
+    Positional, not by name: `selected` filters in order and changes nothing
+    else, so the nth member of the view is the nth member of `config` with that
+    `from_solution`.
+    """
+    members = iter(view.iterate.correct)
+    from_solution = {iterator.from_solution for iterator in view.iterate.correct}
+
+    correct = tuple(
+        next(members) if iterator.from_solution in from_solution else iterator
+        for iterator in config.iterate.correct
+    )
+
+    return dataclasses.replace(
+        config, iterate=dataclasses.replace(config.iterate, correct=correct)
     )
 
 
@@ -311,6 +357,68 @@ def properties(config):
     return gain, clip, tolerance
 
 
+@dataclasses.dataclass(frozen=True)
+class _Table:
+    """The flat table the module docstring draws, ready for arithmetic.
+
+    Assembled once by :func:`_assembled` so that everything reading a run ---
+    the step it takes and the gains it calibrates --- reads the same names, the
+    same scales and the same Jacobian, rather than two nearly identical
+    assemblies free to drift apart.
+    """
+
+    names: list
+    values: dict
+    measured: dict
+    gain: dict
+    clip: dict
+    u_scale: np.ndarray
+    e_scale: np.ndarray
+    prior: np.ndarray
+    jacobian: np.ndarray
+
+
+def _assembled(config, result, history):
+    """Return the table for this run, or None when there is nothing to work on."""
+    measured = measured_errors(config, result)
+    values = unknowns(config)
+    gain, clip, tolerance = properties(config)
+
+    # A knob with nothing measured is held, as is one with no gain, which is
+    # how an iterator says it does not want to move.
+    names = [
+        name
+        for name in values
+        if name in measured and gain[name] and tolerance[name] > TINY
+    ]
+    if not names:
+        return None
+
+    # Worked in units of each knob's own tolerance, which is the only scale
+    # declared for it. Degrees of recamber and a loss coefficient otherwise
+    # share one Euclidean norm in the Broyden update, and the update -- being
+    # least-change in that norm -- would spend itself entirely on whichever
+    # variable happened to carry the larger numbers.
+    u_scale = np.array([abs(gain[name]) * tolerance[name] for name in names])
+    e_scale = np.array([tolerance[name] for name in names])
+    prior = np.array([np.sign(gain[name]) for name in names])
+
+    jacobian = _jacobian(names, prior, history, (values, measured), u_scale, e_scale)
+    _report_flat(names, jacobian)
+
+    return _Table(
+        names=names,
+        values=values,
+        measured=measured,
+        gain=gain,
+        clip=clip,
+        u_scale=u_scale,
+        e_scale=e_scale,
+        prior=prior,
+        jacobian=jacobian,
+    )
+
+
 def step(config, result, history=()):
     """Return the config to try next, from the errors `result` reports.
 
@@ -338,47 +446,32 @@ def step(config, result, history=()):
         iteration would pin gigabytes to read a few dozen floats.
 
     """
-    measured = measured_errors(config, result)
-    values = unknowns(config)
-    gain, clip, tolerance = properties(config)
-
-    # A knob with nothing measured is held, as is one with no gain, which is
-    # how an iterator says it does not want to move.
-    names = [
-        name
-        for name in values
-        if name in measured and gain[name] and tolerance[name] > TINY
-    ]
-    if not names:
+    table = _assembled(config, result, history)
+    if table is None:
         logger.debug("Nothing measured to correct towards, so nothing moves.")
         return config
 
-    # Worked in units of each knob's own tolerance, which is the only scale
-    # declared for it. Degrees of recamber and a loss coefficient otherwise
-    # share one Euclidean norm in the Broyden update, and the update -- being
-    # least-change in that norm -- would spend itself entirely on whichever
-    # variable happened to carry the larger numbers.
-    u_scale = np.array([abs(gain[name]) * tolerance[name] for name in names])
-    e_scale = np.array([tolerance[name] for name in names])
-    prior = np.array([np.sign(gain[name]) for name in names])
+    names, values, _gain, clip = table.names, table.values, table.gain, table.clip
 
-    jacobian = _jacobian(names, prior, history, (values, measured), u_scale, e_scale)
-    _report_flat(names, jacobian)
-
-    change = _newton(jacobian, np.array([measured[n] for n in names]) / e_scale, prior)
+    change = _newton(
+        table.jacobian,
+        np.array([table.measured[n] for n in names]) / table.e_scale,
+        table.prior,
+    )
 
     # The clip is the trust bound, and the reason a flat response degrades to
     # the old behaviour rather than to a wild excursion.
     limit = np.array(
         [
             clip[name] / scale if clip[name] else np.inf
-            for name, scale in zip(names, u_scale)
+            for name, scale in zip(names, table.u_scale)
         ]
     )
     change = _bounded(change, limit)
 
     moved = {
-        name: values[name] + change[i] * u_scale[i] for i, name in enumerate(names)
+        name: values[name] + change[i] * table.u_scale[i]
+        for i, name in enumerate(names)
     }
 
     for iterator in config.iterate.correct:
@@ -391,6 +484,77 @@ def step(config, result, history=()):
     return config
 
 
+def calibrate(config, result, history=()):
+    """Return `config` with each iterator's gain set to the slope the run measured.
+
+    A gain is the reciprocal of an assumed slope, and :func:`step` spends the
+    run measuring the real one: the scaled Jacobian is
+    ``J_ii = (de_i/du_i) * |gain_i|``, so the gain that turns the Newton step
+    into a unit step is::
+
+        gain_new = abs(gain_old) / J_ii
+
+    with the sign falling out of `J_ii` rather than being carried over. The
+    fixed point is what makes this safe to apply unconditionally: a knob that
+    never moved far enough to learn from keeps the prior it was seeded with,
+    ``J_ii = sign(gain)``, and comes back exactly as it went in.
+
+    Only the diagonal. What the off-diagonal terms know is a property of the
+    trajectory a run took, and it stays inside that run.
+
+    Parameters
+    ----------
+    config : Config
+        The design that was run.
+    result : Result
+        What running it achieved.
+    history : sequence
+        Earlier ``(unknowns, errors)`` pairs from this run, oldest first, as
+        :func:`step` takes them.
+
+    Returns
+    -------
+    config : Config
+        The same config with the gains of its iterators replaced.
+
+    """
+    table = _assembled(config, result, history)
+    if table is None:
+        logger.debug("Nothing was measured, so the gains stand as declared.")
+        return config
+
+    calibrated = {}
+    for i, name in enumerate(table.names):
+        gain = abs(table.gain[name]) / table.jacobian[i, i]
+        if not np.isfinite(gain):
+            # A knob whose measured slope came out at zero says nothing about
+            # its own reciprocal. Never propagate a NaN into a design, as
+            # `_newton` does not.
+            logger.info(f"The measured slope of {name} is zero, so its gain stands.")
+            continue
+        calibrated[name] = float(gain)
+
+    correct = []
+    for iterator in config.iterate.correct:
+        mine = {
+            name: calibrated[name]
+            for name in iterator.unknowns(config)
+            if name in calibrated
+        }
+        if mine:
+            was = iterator.gains(config)
+            logger.info(
+                "Calibrated "
+                + ", ".join(f"{n}: {was[n]:.3g} -> {g:.3g}" for n, g in mine.items())
+            )
+            iterator = iterator.with_gains(config, mine)
+        correct.append(iterator)
+
+    return dataclasses.replace(
+        config, iterate=dataclasses.replace(config.iterate, correct=tuple(correct))
+    )
+
+
 def _jacobian(names, prior, history, current, u_scale, e_scale):
     """Return the scaled Jacobian, from the prior and every informative move.
 
@@ -401,7 +565,7 @@ def _jacobian(names, prior, history, current, u_scale, e_scale):
     jacobian = np.diag(prior)
 
     trajectory = list(history) + [current]
-    for (values, errs), (values_next, errs_next) in zip(trajectory, trajectory[1:]):
+    for (values, errs), (values_next, errs_next) in itertools.pairwise(trajectory):
         if not all(
             name in mapping
             for mapping in (values, errs, values_next, errs_next)
@@ -627,18 +791,39 @@ def converge(config, run, max_iter=10):
         # move, which is two different designs on one row.
         logger.info(f"Iteration {i_iter}:\n{format_table(stepping, result)}")
 
+        # Before the verdict, so that the pass which converges is the one whose
+        # slopes are kept: it is a measurement like any other, and the run that
+        # settles is the run most worth learning from.
+        calibration = calibrate(stepping, result, history)
+
         if converged(stepping, result):
             logger.info(f"Converged after {i_iter + 1} iteration(s).")
-            return config, result, True
+            return restored(config, calibration), result, True
 
         # The stepped config is what the next pass runs, so the one returned
-        # alongside a result is always the one that produced it.
+        # alongside a result is always the one that produced it -- and it
+        # carries the gains this pass measured as well as the knobs it moved.
+        #
+        # **Carried rather than held back to the end.** A gain is only ever the
+        # seed of the Jacobian: `_jacobian` rebuilds from the history on every
+        # call, so every direction the run has already moved in is governed by
+        # the Broyden estimate rather than by the declared slope, and a Newton
+        # step is invariant to the diagonal rescaling a new gain amounts to.
+        # Folding it in is therefore almost a no-op for the step, and it is
+        # what makes each iteration's `output.yaml` record the sensitivities
+        # that iteration was run under rather than the guess the file opened
+        # with. Where the gain does act alone is `DU_MIN`, which admits a move
+        # to the update in units of `|gain| * tolerance`: a measured scale
+        # there is a better threshold than an assumed one.
         stepped = dataclasses.replace(
-            step(stepping, result, history), iterate=config.iterate
+            step(stepping, result, history),
+            iterate=restored(config, calibration).iterate,
         )
         history.append((unknowns(stepping), measured_errors(stepping, result)))
         config = stepped
 
+    # No calibration to apply here: the config that came out of the last pass
+    # is carrying it already.
     logger.warning(f"Not converged after {max_iter} iteration(s).")
     return config, result, False
 
@@ -1167,7 +1352,7 @@ class LoadingDistribution(Iterator):
 
     def _check(self, config):
         """Raise unless this row's camber lines can carry the knob."""
-        from turbigen.camber import Bernstein  # noqa: PLC0415 - avoids a cycle
+        from turbigen.camber import Bernstein
 
         if not 0 <= self.i_row < len(config.blades):
             raise ValueError(
@@ -1208,7 +1393,7 @@ def _circulation_count(config, i_row):
     and :class:`LoadingProfile` both do, and neither owns the other's
     validation.
     """
-    from turbigen.blade import Circulation  # noqa: PLC0415 - avoids a cycle
+    from turbigen.blade import Circulation
 
     if not 0 <= i_row < len(config.blades):
         raise ValueError(
@@ -1657,6 +1842,22 @@ class LoadingProfile(Iterator):
         del config
         return self._by_knob(self.gain, self.gain_Co)
 
+    def with_gains(self, config, gains):
+        """Split a calibration between the shape gain and the level one.
+
+        Two gains, so the base class reduction --- one mean over every knob ---
+        would average a camber sensitivity with a circulation one and write the
+        result to both.
+        """
+        del config
+        shape = [gains[name] for name in self.names() if name in gains]
+        level = gains.get(f"Co[{self.i_row}]", self.gain_Co)
+        return dataclasses.replace(
+            self,
+            gain=float(np.mean(shape)) if shape else self.gain,
+            gain_Co=float(level),
+        )
+
     def clips(self, config):
         del config
         return self._by_knob(self.clip, self.clip_Co)
@@ -1684,7 +1885,7 @@ class LoadingProfile(Iterator):
     def _check(self, config):
         """Raise unless this row's camber lines can carry the knobs, and its
         blade count can carry the level."""
-        from turbigen.camber import Bernstein  # noqa: PLC0415 - avoids a cycle
+        from turbigen.camber import Bernstein
 
         if not 0 <= self.i_row < len(config.blades):
             raise ValueError(
@@ -1992,7 +2193,7 @@ def exit_profile(result, order, offset=None):
         :data:`turbigen.bconds.InletProfile.COLUMNS`.
 
     """
-    from turbigen import annulus, bconds  # noqa: PLC0415 - avoids a cycle
+    from turbigen import annulus, bconds
 
     grid, machine = result.grid, result.machine
     xr = machine.annulus.cut_planes(annulus.CUT_OFFSET if offset is None else offset)[
@@ -2182,7 +2383,7 @@ class Repeat(Iterator):
         }
 
     def with_unknowns(self, config, values):
-        from turbigen import bconds  # noqa: PLC0415 - avoids a cycle
+        from turbigen import bconds
 
         current = self.unknowns(config)
         moved = {**current, **{k: v for k, v in values.items() if k in current}}

@@ -20,8 +20,8 @@ import logging
 import numpy as np
 import pytest
 import yaml
-
 from test_cli import RUN_CASE
+
 from turbigen import Config, Metric, Result, case, cli, metric
 
 

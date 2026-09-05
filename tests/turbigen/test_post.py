@@ -9,16 +9,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pytest  # noqa: E402
-import yaml  # noqa: E402
+import ember.util
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+import yaml
+from test_blade import build
+from test_cli import RUN_CASE
+from test_mesh import MESH, TIP
 
-import ember.util  # noqa: E402
-from test_blade import build  # noqa: E402
-from test_cli import RUN_CASE  # noqa: E402
-from test_mesh import MESH, TIP  # noqa: E402
-from turbigen import (  # noqa: E402
+from turbigen import (
     AnnulusPlot,
     Config,
     ContourPlot,
@@ -442,9 +442,9 @@ def _shaped(config, fac_peak=None, **kwargs):
     level of the target; without one the overlay draws the shape at the height
     the blade reached.
     """
-    import dataclasses  # noqa: PLC0415 - only these tests rebuild a config
+    import dataclasses
 
-    from turbigen import camber, iterate  # noqa: PLC0415
+    from turbigen import camber, iterate
 
     blade = config.blades[0]
     sections = tuple(
@@ -486,7 +486,7 @@ def _peaked(n=200):
 
 def _ma_front(config, machine, ma_TE=1.0):
     """Return the Mach number the configured target implies at `zeta_front`."""
-    from turbigen.loading import mach_ratio  # noqa: PLC0415
+    from turbigen.loading import mach_ratio
 
     iterator = config.iterate.correct[0]
     return iterator.fac_front * ma_TE / mach_ratio(machine, iterator.i_row)
@@ -501,7 +501,7 @@ def test_surface_plot_overlays_a_loading_target(bladed, machine):
     config = _shaped(bladed, fac_front=1.8, fac_peak=1.3)
     zeta, mas = _peaked()
 
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     (measured,) = ax.plot(np.abs(zeta), mas, color="C3")
     post._draw_loading_target(
         ax, config, machine, 0, 0.5, zeta, mas, measured.get_color()
@@ -561,7 +561,7 @@ def test_surface_plot_overlay_ignores_another_span(bladed, machine):
     """A target set at one span says nothing about the sections either side."""
     config = _shaped(bladed, fac_front=1.8, spf=0.25)
 
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
     assert not ax.lines
 
@@ -570,7 +570,7 @@ def test_surface_plot_overlay_ignores_another_row(bladed, machine):
     """One row per iterator, so a target for row 1 is not drawn on row 0."""
     config = _shaped(bladed, fac_front=1.8, i_row=1)
 
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
     assert not ax.lines
 
@@ -613,7 +613,7 @@ def test_surface_plot_skips_a_diverged_march(bladed, solved):
     The plot has to notice, because the standard set runs unasked: raising here
     would report a diverged run as a broken config.
     """
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
     history = solved.history.copy()
     history.diverged = True
@@ -833,7 +833,7 @@ def test_spanwise_plot_without_a_mixed_out_mean_line_is_empty(bladed, meshed):
 
 
 def test_spanwise_plot_skips_a_diverged_march(bladed, solved):
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
     history = solved.history.copy()
     history.diverged = True
