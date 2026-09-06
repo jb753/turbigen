@@ -1669,12 +1669,21 @@ def _target_fac(zeta, zeta_front, fac_front, zeta_peak, fac_peak, mach_ratio):
     :class:`LoadingProfile` compares its samples against. The trailing edge
     anchor is `mach_ratio` itself, not one: `Ma(1) / Ma_TE * mach_ratio` is
     `mach_ratio` by definition, whatever the duty.
+
+    **The two anchors are not written in the same units.** `fac_front` carries
+    the `Ma_2 / Ma_1` factor Clark's third parameter is defined with, and so is
+    already in the units measured; `fac_peak` is plain `Ma_peak / Ma_TE`, the
+    way `PeakMach` and `turbigen.metric.DiffusionFactor` state a peak, and is
+    multiplied by `mach_ratio` here to reach them. Each end of the curve is
+    written the way a designer already reads it, and the conversion happens
+    once, here.
     """
     zeta = np.asarray(zeta, dtype=float)
-    front = fac_front + (fac_peak - fac_front) * (zeta - zeta_front) / (
+    peak = fac_peak * mach_ratio
+    front = fac_front + (peak - fac_front) * (zeta - zeta_front) / (
         zeta_peak - zeta_front
     )
-    aft = fac_peak + (mach_ratio - fac_peak) * (zeta - zeta_peak) / (1.0 - zeta_peak)
+    aft = peak + (mach_ratio - peak) * (zeta - zeta_peak) / (1.0 - zeta_peak)
     return np.where(zeta < zeta_peak, front, aft)
 
 
@@ -1712,13 +1721,16 @@ class LoadingProfile(Iterator):
     a run *measures* needs no such split: :attr:`Iterator.gain` holds one
     calibrated value per knob, this iterator's level included.
 
-    **`fac_peak` here is not `PeakMach.fac_peak`.** This carries the same
-    `Ma_2 / Ma_1` factor `fac_front` does, so the two anchors describe one
-    consistent line; `PeakMach.fac_peak` and `turbigen.metric.DiffusionFactor`
-    do not carry it, because Clark's parameter 3 is specifically a statement
-    about the *front*. Translate by `mach_ratio` (see
-    `turbigen.loading.mach_ratio`) if the same physical target has to be
-    written both ways.
+    **`fac_peak` here means what `PeakMach.fac_peak` means:** plain
+    `Ma_peak / Ma_TE`, one more than the diffusion factor
+    `turbigen.metric.DiffusionFactor` records, carrying no `Ma_2 / Ma_1`
+    factor. `fac_front` does carry one, because Clark's parameter 3 is
+    specifically a statement about the *front*, so the two anchors are written
+    in different units and reconciled in one place --- see
+    :func:`_target_fac`. The alternative, one consistent unit across both
+    anchors, made the same physical peak read as two different numbers
+    depending on which iterator asked for it, which is exactly what lets a
+    report contradict the design it describes.
 
     Only points measured beyond `zeta_front` are driven, exactly as
     `LoadingDistribution` only drives one: below it the distribution belongs
@@ -1762,11 +1774,12 @@ class LoadingProfile(Iterator):
     zeta_peak: float = 0.5
     """Target surface fraction of the peak [--]."""
 
-    fac_peak: float = 2.4
-    """Target peak Mach number, normalised the same way :attr:`fac_front` is.
+    fac_peak: float = 1.2
+    """Target peak Mach number over the trailing edge value [--].
 
-    **Carries `Ma_2 / Ma_1`, unlike `PeakMach.fac_peak`.** See the class
-    docstring.
+    `Ma_peak / Ma_TE`, exactly as :attr:`PeakMach.fac_peak` states it, and one
+    more than the diffusion factor. **Carries no `Ma_2 / Ma_1` factor, unlike
+    :attr:`fac_front`** --- see the class docstring.
     """
 
     gain: float | tuple[float, ...] = -0.5

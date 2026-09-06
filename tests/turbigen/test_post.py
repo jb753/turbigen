@@ -579,14 +579,15 @@ def test_surface_plot_overlays_a_loading_profile(bladed, solved):
     assert x[np.isfinite(y)].min() == pytest.approx(iterator.zeta_front)
     assert x[np.nanargmax(y)] == pytest.approx(iterator.zeta_peak, abs=x[1] - x[0])
 
-    # The two anchors and the trailing edge, denormalised against this row's
-    # duty exactly as the iterator normalises what it measures.
+    # The two anchors and the trailing edge, denormalised exactly as the
+    # iterator normalises what it measures: `fac_front` carries the row's duty
+    # factor, `fac_peak` -- plain Ma_peak/Ma_TE -- does not.
     ma_TE = 0.5 * (measured.get_ydata()[0] + measured.get_ydata()[-1])
     scale = ma_TE / loading.mach_ratio(solved.machine, 0)
     assert np.interp(iterator.zeta_front, x, y) == pytest.approx(
         iterator.fac_front * scale, rel=1e-3
     )
-    assert np.nanmax(y) == pytest.approx(iterator.fac_peak * scale, rel=1e-2)
+    assert np.nanmax(y) == pytest.approx(iterator.fac_peak * ma_TE, rel=1e-2)
     assert y[-1] == pytest.approx(ma_TE, rel=1e-3)
 
     # One circle per camber coefficient, at the surface fraction that

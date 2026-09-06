@@ -660,9 +660,11 @@ def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
     if not ma_TE:
         return
 
-    # A target is written in `fac`, which is the trailing-edge Mach number
+    # `fac_front` is written in `fac`, which is the trailing-edge Mach number
     # times the row's `Ma_2 / Ma_1`; dividing that back out is what turns one
-    # into a Mach number these axes can carry.
+    # into a Mach number these axes can carry. `fac_peak` carries no such
+    # factor -- it is plain `Ma_peak / Ma_TE`, as `peak_Ma` states a peak --
+    # so it denormalises against `ma_TE` alone.
     scale = ma_TE / mach_ratio(result.machine, i_row)
 
     drawn = np.linspace(profile.zeta_front, 1.0, 101)
@@ -673,7 +675,7 @@ def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
             profile.zeta_front,
             profile.zeta_peak,
             profile.fac_front * scale,
-            profile.fac_peak * scale,
+            profile.fac_peak * ma_TE,
             ma_TE,
         ),
         linestyle="--",

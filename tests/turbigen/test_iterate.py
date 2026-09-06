@@ -1654,12 +1654,14 @@ def test_profile_delegates_to_the_measurement(profile, monkeypatch):
     iterator = profile.iterate.correct[0]
     error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
 
-    # zeta=0.3 sits on the front line (target 2.0), zeta=0.7 on the aft line
-    # (target 1.88); the mean of the two residuals is the level, and each
-    # point's own residual less that mean is its shape error.
-    assert error["Co[0]"] == pytest.approx(0.31)
-    assert error["camber_coeff[0][0]"] == pytest.approx(-0.31)
-    assert error["camber_coeff[0][1]"] == pytest.approx(0.31)
+    # The peak anchor is `fac_peak * mach_ratio` = 1.32, since `fac_peak` is
+    # written as Ma_peak/Ma_TE and carries no duty factor. zeta=0.3 sits on the
+    # front line (target 1.64), zeta=0.7 on the aft line (target 1.232); the
+    # mean of the two residuals is the level, and each point's own residual
+    # less that mean is its shape error.
+    assert error["Co[0]"] == pytest.approx(0.814)
+    assert error["camber_coeff[0][0]"] == pytest.approx(-0.454)
+    assert error["camber_coeff[0][1]"] == pytest.approx(0.454)
 
 
 def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
@@ -1681,7 +1683,7 @@ def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
 
     assert error["camber_coeff[0][0]"] == pytest.approx(0.0)
     assert error["camber_coeff[0][1]"] == pytest.approx(0.0)
-    assert error["Co[0]"] == pytest.approx(0.62)
+    assert error["Co[0]"] == pytest.approx(1.268)
 
 
 def test_profile_held_knob_never_blocks_convergence(profile, monkeypatch):
