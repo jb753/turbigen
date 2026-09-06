@@ -298,6 +298,82 @@ def test_a_stagnation_point_between_nodes_is_refined_onto_it():
     np.testing.assert_allclose(i_recovered, 20.4, atol=1e-2)
 
 
+def stretched_stagnation_block(ni=11, nj=5, ratio=1.2, i_peak=5, offset=0.4):
+    """A cut whose spacing grows geometrically, carrying an exact parabola.
+
+    The pressure is a parabola *in arc length*, so the three-point fit is exact
+    and its vertex is recoverable to round-off however the nodes are spaced ---
+    which is what tells a refinement that respects the spacing from one that
+    assumes it uniform.
+
+    Returns the block, the index the peak sits in, and the arc length it was
+    planted at.
+    """
+    shape = (ni, nj, 1)
+    block = ember.block.Block(shape=shape)
+
+    # Geometric spacing at the expansion ratio a mesh actually carries, so no
+    # two cells about the peak are the same size.
+    ds = ratio ** np.arange(ni - 1)
+    x = np.concatenate(([0.0], np.cumsum(ds)))
+    x = x / x[-1]
+
+    xrt = np.zeros(shape + (3,))
+    xrt[..., 0] = x[:, None, None]
+    xrt[..., 1] = 1.0
+    block.set_xrt(xrt)
+    block.set_fluid(ember.fluid.PerfectFluid(cp=1005.0, gamma=1.4, mu=1e-5, Pr=0.72))
+    block.set_Omega(0.0)
+
+    # Between `i_peak` and its neighbour, in the units of that cell.
+    x_peak = x[i_peak] + offset * (x[i_peak + 1] - x[i_peak])
+
+    # At constant radius and zero angle, arc length is the axial coordinate, so
+    # a parabola in one is a parabola in the other. Shallow enough to stay
+    # positive across a domain of unit length.
+    P = 2e5 - 1e5 * (xrt[..., 0] - x_peak) ** 2
+
+    block.set_P_rho(P, np.full(shape, 1.2))
+    block.set_Vx(np.full(shape, 50.0))
+    block.set_Vr(np.zeros(shape))
+    block.set_Vt(np.zeros(shape))
+
+    return block.squeeze(), i_peak, x_peak
+
+
+def test_the_refinement_uses_the_spacing_it_is_given():
+    """A peak on a stretched mesh is found where it is, not a fraction of a
+    cell off.
+
+    The vertex of a parabola through three unevenly spaced points is not the
+    midpoint slope over twice the curvature: that form is out by
+    ``(d01 - d12) / 4``, which vanishes only on a uniform mesh. What it leaves
+    is a bias that moves as the stagnation point crosses cells, on the one
+    quantity that exists to slide smoothly between them.
+    """
+    block, i_peak, x_peak = stretched_stagnation_block()
+    nj = block.shape[1]
+
+    zeta = util.get_zeta(block)
+    zeta_stag = util.get_zeta_stag(block, np.full((nj,), i_peak))
+
+    # Arc length is the axial coordinate here, zeroed at i = 0.
+    zeta_peak = x_peak - float(block.x[0, 0])
+
+    # Measured as a fraction of the cell the peak sits in, so the tolerance
+    # means the same thing wherever on the stretched mesh it landed.
+    cell = zeta[i_peak + 1, 0] - zeta[i_peak, 0]
+    np.testing.assert_allclose(zeta_stag, zeta_peak, atol=1e-3 * cell)
+
+    # Asserted as absent rather than merely small: on this mesh the bias the
+    # uniform form carries is a measurable fraction of a cell.
+    bias = 0.25 * (
+        (zeta[i_peak, 0] - zeta[i_peak - 1, 0])
+        - (zeta[i_peak + 1, 0] - zeta[i_peak, 0])
+    )
+    assert abs(bias) > 1e-2 * cell
+
+
 def test_the_refinement_stands_on_the_node_it_is_given():
     """With no maximum, `get_zeta_stag` falls back rather than extrapolating."""
     block = stagnation_block(flat=True)

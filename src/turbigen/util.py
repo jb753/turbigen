@@ -436,11 +436,18 @@ def get_zeta_stag(block, i_stag):
     s01 = (p1 - p0) / d01
     s12 = (p2 - p1) / d12
     curvature = (s12 - s01) / (z2 - z0)
-    slope = 0.5 * (s01 + s12)
 
+    # Vertex of the Newton form `p0 + s01 (z - z0) + c (z - z0)(z - z1)`, whose
+    # derivative vanishes at `(z0 + z1) / 2 - s01 / (2 c)`, written relative to
+    # `z1`. Taking it as `-(s01 + s12) / (4 c)` instead --- the midpoint slope
+    # over twice the curvature --- is the same number only when the two
+    # spacings match, and is out by `(d01 - d12) / 4` when they do not: a
+    # sub-cell bias that moves as the stagnation point crosses cells, which is
+    # exactly what refining between nodes is here to remove.
+    #
     # A triple that is not concave down has no vertex to find, which happens
     # only where `get_i_stag` did not find a maximum either. Left on the node.
-    delta = np.where(curvature >= 0.0, 0.0, -slope / (2.0 * curvature))
+    delta = np.where(curvature >= 0.0, 0.0, -0.5 * d01 - s01 / (2.0 * curvature))
 
     # Kept inside the bracket the three points span: a nearly flat parabola
     # puts its vertex arbitrarily far away, and the answer is known to lie
