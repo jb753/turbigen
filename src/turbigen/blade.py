@@ -614,9 +614,9 @@ class Blade:
         mu_LTE, ml_LTE : ndarray, shape (n,)
             Normalised meridional position of the upper and lower surfaces,
             on the leading-to-trailing edge scale of the aerofoil.
-        Dy : ndarray, shape (n,)
-            Thickness offset of each surface from the camber line, normal to
-            it and normalised by meridional chord.
+        Dy_u, Dy_l : ndarray, shape (n,)
+            Thickness offset of the upper and lower surfaces from the camber
+            line, normal to it and normalised by meridional chord.
         chord : float
             Meridional length of the camber line [m].
 
@@ -625,14 +625,20 @@ class Blade:
 
         dydm = camber.dydm(m)
         chi = np.arctan(dydm)
-        tau = thickness.thick(m)
+
+        # Each surface carries its own thickness, the same number twice unless
+        # the distribution says otherwise, so the two are offset independently
+        # rather than one being the other reflected in the camber line.
+        t_u, t_l = thickness.thick_both(m)
 
         # Offsets for thickness perpendicular to the camber line
-        Dm = -tau * np.sin(chi)
-        Dy = tau * np.cos(chi)
+        Dm_u = -t_u * np.sin(chi)
+        Dm_l = t_l * np.sin(chi)
+        Dy_u = t_u * np.cos(chi)
+        Dy_l = -t_l * np.cos(chi)
 
-        mu = m + Dm
-        ml = m - Dm
+        mu = m + Dm_u
+        ml = m + Dm_l
 
         # The surfaces overhang the camber line at the ends, so rescale onto
         # the row so that the aerofoil, not its camber line, spans leading to
@@ -655,7 +661,7 @@ class Blade:
         theta -= np.interp(self.m_stack, mcam, theta)
         theta += self.theta_offset
 
-        return np.stack((*xr, theta)), mu_LTE, ml_LTE, Dy, chord
+        return np.stack((*xr, theta)), mu_LTE, ml_LTE, Dy_u, Dy_l, chord
 
     def evaluate_camber(self, spf, nchord=10000, m=None):
         """Return coordinates of the camber line at `spf`.
@@ -711,7 +717,7 @@ class Blade:
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
 
-        xrt, mu_LTE, ml_LTE, Dy, chord = self._camber_curve(spf, m)
+        xrt, mu_LTE, ml_LTE, Dy_u, Dy_l, chord = self._camber_curve(spf, m)
         xr, theta = xrt[:2], xrt[2]
 
         # Meridional coordinates of the upper and lower surfaces
@@ -720,9 +726,10 @@ class Blade:
 
         # Angular offsets to the surfaces, at the mean radius between the
         # camber line and each surface
-        dtu = Dy * chord / xr[1]
+        dtu = Dy_u * chord / xr[1]
+        dtl = Dy_l * chord / xr[1]
         drtu = dtu * 0.5 * (xr[1] + xru[1])
-        drtl = -dtu * 0.5 * (xr[1] + xrl[1])
+        drtl = dtl * 0.5 * (xr[1] + xrl[1])
 
         xrtu = np.stack((*xru, (theta * xru[1] + drtu) / xru[1]))
         xrtl = np.stack((*xrl, (theta * xrl[1] + drtl) / xrl[1]))

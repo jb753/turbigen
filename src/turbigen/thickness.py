@@ -38,8 +38,27 @@ class ThicknessDesign(Node):
     """
 
     def thick(self, m):
-        """Return half-thickness at normalised meridional distance `m`."""
+        """Return half-thickness at normalised meridional distance `m`.
+
+        For a distribution that is the same both sides of the camber line. A
+        distribution that is not implements :meth:`thick_both` instead, and
+        has no one number to answer with here.
+        """
         raise NotImplementedError(f"{type(self).__name__} must implement thick(m)")
+
+    def thick_both(self, m):
+        """Return the half-thickness of each surface, upper first.
+
+        Upper meaning the surface at the higher angular coordinate, which is
+        the order :meth:`~turbigen.blade.Blade.evaluate_section` returns them
+        in --- not the suction surface, which is a fact about the flow rather
+        than about a distribution.
+
+        The same number twice unless a distribution says otherwise, so a
+        symmetric one need only write :meth:`thick`.
+        """
+        t = self.thick(m)
+        return t, t
 
 
 class Taylor(ThicknessDesign):

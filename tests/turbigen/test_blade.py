@@ -707,6 +707,106 @@ def test_camber_line_is_rotated_by_theta_offset():
 
 
 #
+# THICKNESS THAT DIFFERS SIDE TO SIDE
+#
+# A distribution answers with a half-thickness per surface, so the two are
+# offset from the camber line independently rather than one being the other
+# reflected in it.
+#
+
+
+class LopsidedThickness(ThicknessDesign):
+    """A thickness several times heavier on one surface than the other.
+
+    Closing at both ends like a real distribution, so the aerofoil it makes
+    is one a blade could have; deliberately far from symmetric, so that a
+    surface offset by the wrong side's thickness could not pass. No `type`,
+    so it is never selectable from a config file.
+    """
+
+    t_upper: float = 0.10
+    t_lower: float = 0.02
+
+    def thick_both(self, m):
+        m = np.asarray(m, dtype=float)
+        close = np.sqrt(m) * (1.0 - m)
+        return self.t_upper * close, self.t_lower * close
+
+
+def _lopsided(machine, i_row=0):
+    """Return the row's blade with its thickness swapped for a lopsided one."""
+    blade = machine.rows[i_row].blade
+    return dataclasses.replace(
+        blade, thicknesses=(LopsidedThickness(),) * blade.n_section
+    )
+
+
+def test_a_symmetric_thickness_answers_with_the_same_number_twice():
+    """A distribution that says nothing about sides is the same both sides."""
+    thickness = Taylor(**{k: v for k, v in THICKNESS.items() if k != "type"})
+
+    m = turbigen.util.cluster_cosine(101)
+    upper, lower = thickness.thick_both(m)
+    np.testing.assert_array_equal(upper, thickness.thick(m))
+    np.testing.assert_array_equal(lower, thickness.thick(m))
+
+
+def test_each_surface_is_offset_by_its_own_thickness(machine):
+    """The point of the pair: the two sides need not agree.
+
+    Measured against the blade's own camber line rather than the mean of the
+    surfaces, which on a section like this is not the camber line at all --
+    which is why `evaluate_camber` had to exist first.
+    """
+    blade = _lopsided(machine)
+    thickness = LopsidedThickness()
+    m = turbigen.util.cluster_cosine(2001)
+
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, m=m)
+        surfaces = blade.evaluate_section(spf, m=m)
+        chord = turbigen.util.arc_length(xrt[:2])
+
+        for surface, t in zip(surfaces, thickness.thick_both(m)):
+            offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(xrt))
+            np.testing.assert_allclose(offset, t * chord, atol=2e-3 * chord)
+
+
+def test_the_thicker_side_stands_further_off(machine):
+    """Which surface got which thickness, stated the crude way.
+
+    The offsets above could both be right and still be swapped, if the two
+    sides happened to be measured symmetrically; this cannot pass that way.
+    """
+    blade = _lopsided(machine)
+    m = turbigen.util.cluster_cosine(2001)
+
+    xrt = blade.evaluate_camber(0.5, m=m)
+    xrtu, xrtl = blade.evaluate_section(0.5, m=m)
+
+    upper = turbigen.util.vecnorm(_xrrt(xrtu) - _xrrt(xrt)).max()
+    lower = turbigen.util.vecnorm(_xrrt(xrtl) - _xrrt(xrt)).max()
+    assert upper > 4.0 * lower
+
+
+def test_a_lopsided_section_is_not_the_mean_of_its_surfaces(machine):
+    """What the pair breaks, recorded: the old shortcut is now wrong.
+
+    On a symmetric section the mean of the two surfaces is within a
+    thousandth of chord of the camber line. Here it is nowhere near, being
+    off by about half the difference between the two thicknesses.
+    """
+    blade = _lopsided(machine)
+    m = turbigen.util.cluster_cosine(2001)
+
+    xrt = blade.evaluate_camber(0.5, m=m)
+    mean = np.mean(blade.evaluate_section(0.5, m=m), axis=0)
+    chord = turbigen.util.arc_length(xrt[:2])
+
+    assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) > 0.01 * chord
+
+
+#
 # ARC LENGTH AS A FUNCTION OF M
 #
 # What a loading iterator would use to place a point measured on the flow back
