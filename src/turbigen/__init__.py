@@ -60,7 +60,7 @@ from turbigen.post import (
 )
 from turbigen.result import Result
 from turbigen.solver import Ember, Solver
-from turbigen.thickness import Taylor, ThicknessDesign
+from turbigen.thickness import Clark, Taylor, ThicknessDesign
 
 # _version.py is generated at build time by setuptools-scm (see pyproject.toml);
 # it is gitignored, so fall back to a runtime metadata lookup when running from
@@ -90,6 +90,7 @@ __all__ = [
     "CamberPlot",
     "Chic",
     "Circulation",
+    "Clark",
     "Config",
     "ContourPlot",
     "ConvergencePlot",

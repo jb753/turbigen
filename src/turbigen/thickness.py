@@ -12,6 +12,12 @@ exists, rather than only once a chord is known.
 :class:`Taylor` (``taylor``) is the built-in distribution: two cubic splines in
 shape space meeting at the point of maximum thickness, after
 :cite:`Taylor2016`.
+
+:class:`Clark` (``clark``) is the two-sided alternative, after Clark (2019): a
+Bernstein polynomial in shape space per surface, so the aerofoil need not be
+symmetric about its camber line. A distribution answers with a half-thickness
+for each surface, and one that says nothing about sides gives the same number
+twice.
 """
 
 import logging
@@ -212,3 +218,115 @@ class Taylor(ThicknessDesign):
         # so `__post_init__` settles it once -- and settles it for the whole
         # domain, where checking here could only ever cover the samples given.
         return float(t.item()) if np.isscalar(m) else t
+
+
+class Clark(ThicknessDesign):
+    """A Bernstein polynomial in shape space per surface, after Clark (2019).
+
+    Where :class:`Taylor` describes one thickness reflected in the camber
+    line, this describes each surface separately, which is what lets a
+    section be shaped to a loading distribution rather than to a thickness
+    parameter. The camber line stays where it was put: only the two surfaces
+    move.
+
+    Three things are shared rather than written per surface. The leading edge
+    radius, so that the nose is one curvature rather than two meeting at a
+    point --- Clark's own reason. The wedge angle, because the trailing edge
+    metal angle is the camber line's to set here, which leaves exactly one
+    degree of freedom at the trailing edge where Clark's formulation has two.
+    And the trailing edge thickness, split evenly, so a blunt trailing edge
+    stays centred on the camber line.
+
+    What is left is the interior of each surface, and only the interior: each
+    is the straight line in shape space between those two endpoints plus a
+    Bernstein perturbation pinned at zero at both ends. So the leading edge
+    radius and the wedge angle are exactly what they say however the
+    coefficients move, and all-zero coefficients give a section symmetric
+    about the camber line.
+    """
+
+    type: ClassVar[str] = "clark"
+
+    R_LE: float
+    """Leading edge radius, normalised by meridional chord [--]. Shared by
+    both surfaces, so that the nose is a single curvature."""
+
+    coeff: tuple[tuple[float, ...], ...] = ((), ())
+    """Interior Bernstein coefficients in shape space, one row per surface
+    [--].
+
+    The upper surface first, meaning the one at the higher angular
+    coordinate, which is the order
+    :meth:`~turbigen.blade.Blade.evaluate_section` returns the surfaces in.
+    Not the suction surface: which surface the flow makes that is a fact
+    about the flow, and a shape cannot know it in advance.
+
+    The two rows are the same length, and that length sets the order of the
+    curve --- `order - 1` interior coefficients, the two endpoint ones being
+    the leading edge radius and the wedge angle rather than free. Empty rows
+    are the straight line in shape space between them, and a section
+    symmetric about its camber line.
+    """
+
+    tanwedge: float = 0.0
+    """Tangent of the trailing edge wedge angle [--]."""
+
+    t_TE: float = 0.0
+    """Trailing edge thickness, the total due to both sides [--]."""
+
+    def __post_init__(self):
+        if len(self.coeff) != 2:
+            raise ValueError(
+                f"A two-sided thickness takes one row of coefficients per "
+                f"surface, so two rows, got {len(self.coeff)}."
+            )
+
+        widths = [len(row) for row in self.coeff]
+        if widths[0] != widths[1]:
+            raise ValueError(
+                f"Both surfaces must carry the same number of coefficients, "
+                f"which is what sets the order of the curve, got {widths}."
+            )
+
+        if self.R_LE <= 0.0:
+            raise ValueError(
+                f"A leading edge radius must be positive, got R_LE={self.R_LE}."
+            )
+
+    def tau(self, m):
+        """Return shape space of each surface at meridional distance `m`.
+
+        Upper first, as :meth:`thick_both` returns them.
+        """
+        m = np.asarray(m, dtype=float)
+
+        # The straight line between the two endpoints the physics fixes. It is
+        # added to the evaluated perturbation rather than to its coefficients,
+        # which is what keeps the coefficients purely the perturbation --- see
+        # `turbigen.shapespace`.
+        tau_LE = shapespace.tau_LE(self.R_LE)
+        tau_TE = shapespace.tau_TE(self.t_TE, self.tanwedge)
+        line = tau_LE + (tau_TE - tau_LE) * m
+
+        return tuple(
+            line + shapespace.evaluate_bernstein((0.0, *row, 0.0), m)
+            for row in self.coeff
+        )
+
+    def thick_both(self, m):
+        """Return the half-thickness of each surface, upper first.
+
+        The trailing edge thickness is the total due to both sides, so half of
+        it is left on each surface at the trailing edge.
+        """
+        shapespace.validate_domain(m)
+
+        m_array = np.asarray(m, dtype=float)
+        t = tuple(
+            shapespace.thickness_from_tau(m_array, tau, self.t_TE)
+            for tau in self.tau(m_array)
+        )
+
+        if np.isscalar(m):
+            return tuple(float(side.item()) for side in t)
+        return t

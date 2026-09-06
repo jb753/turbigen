@@ -42,8 +42,10 @@ level:
      - :class:`Row` --- a :class:`Blade`, ``n_blade``, ``tip_gap``
 
 :class:`~turbigen.camber.Quadratic` and :class:`~turbigen.camber.Bernstein` are
-the built-in camber shapes and :class:`~turbigen.thickness.Taylor` the built-in
-thickness distribution; all are documented in the sections below.
+the built-in camber shapes. :class:`~turbigen.thickness.Taylor` is the built-in
+thickness distribution and :class:`~turbigen.thickness.Clark` the two-sided
+alternative, which gives each surface its own thickness about the same camber
+line. All are documented in the sections below.
 
 The number of blades comes from a :class:`BladeCount` rule on the design:
 
