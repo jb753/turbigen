@@ -26,6 +26,7 @@ from turbigen import (
     Row,
     SectionDesign,
     Taylor,
+    ThicknessDesign,
 )
 from turbigen.blade import _Alpha_rel, _interpolate, _to_xrrt
 
@@ -332,6 +333,68 @@ class OtherCamber(Quadratic):
     """A second camber shape, to check that mixing them is refused."""
 
     type = "other_for_testing"
+
+
+class TwoRowThickness(ThicknessDesign):
+    """A thickness carrying a row of coefficients per surface.
+
+    What a distribution free to differ side to side looks like to the
+    interpolation: one field holding a row per surface, rather than a field
+    per surface. No `type`, so it is never selectable from a config file --
+    this is here to be interpolated and nothing else.
+    """
+
+    coeff: tuple[tuple[float, ...], ...]
+    R_LE: float = 0.02
+
+    def thick(self, m):
+        del m
+        raise NotImplementedError
+
+
+def test_a_parameter_of_rows_interpolates_element_by_element():
+    """A field holding a row per surface blends like any other.
+
+    Element by element, and back into the shape it was declared with -- a
+    two-sided thickness is one field of two rows, so the interpolation has to
+    carry a shape rather than a length.
+    """
+    ends = [
+        TwoRowThickness(coeff=((0.0, 0.0), (1.0, 3.0))),
+        TwoRowThickness(coeff=((2.0, 4.0), (3.0, 5.0))),
+    ]
+
+    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+    assert middle.coeff == ((1.0, 2.0), (2.0, 4.0))
+
+    # Extrapolates beyond the end sections, as every other parameter does.
+    beyond = _interpolate(ends, np.array([0.0, 1.0]), 2.0)
+    assert beyond.coeff == ((4.0, 8.0), (5.0, 7.0))
+
+
+def test_an_interpolated_parameter_comes_back_as_tuples():
+    """Tuples, not arrays: a Node holds its sequences that way to stay hashable."""
+    ends = [
+        TwoRowThickness(coeff=((0.0, 0.0), (1.0, 3.0))),
+        TwoRowThickness(coeff=((2.0, 4.0), (3.0, 5.0))),
+    ]
+
+    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+    assert isinstance(middle.coeff, tuple)
+    assert all(isinstance(row, tuple) for row in middle.coeff)
+    assert all(isinstance(value, float) for row in middle.coeff for value in row)
+    hash(middle)
+
+
+def test_parameters_of_different_shape_cannot_be_interpolated():
+    """Two rows against three is a different design, not a blendable one."""
+    ends = [
+        TwoRowThickness(coeff=((0.0, 0.0), (1.0, 3.0))),
+        TwoRowThickness(coeff=((2.0, 4.0, 6.0), (3.0, 5.0, 7.0))),
+    ]
+
+    with pytest.raises(ValueError, match="same shape"):
+        _interpolate(ends, np.array([0.0, 1.0]), 0.5)
 
 
 #

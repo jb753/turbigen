@@ -159,6 +159,18 @@ def _to_xrrt(xrt):
     return np.stack((*xrt[:2], xrt[1] * xrt[2]))
 
 
+def _nested(values):
+    """Return an array as nested tuples, however many dimensions it has.
+
+    What puts an interpolated parameter back into the shape its field was
+    declared with. Tuples rather than arrays, because a :class:`Node` holds
+    its sequences as tuples so that it stays hashable.
+    """
+    if values.ndim == 0:
+        return float(values)
+    return tuple(_nested(value) for value in values)
+
+
 def _interpolate(nodes, spf_sections, spf):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
@@ -178,33 +190,37 @@ def _interpolate(nodes, spf_sections, spf):
         return nodes[0]
 
     # A parameter is not always one number: a Bernstein camber line carries a
-    # tuple of coefficients, so each section is flattened to one row and the
-    # shapes are put back afterwards. Sections whose tuples are different
-    # lengths describe different designs and cannot be blended, which is the
-    # same objection as blending a quadratic into a quartic.
+    # tuple of coefficients and a two-sided thickness one row of them per
+    # surface, so each section is flattened to one row and the shapes are put
+    # back afterwards. Sections whose parameters are different shapes describe
+    # different designs and cannot be blended, which is the same objection as
+    # blending a quadratic into a quartic.
     rows = [
         [np.atleast_1d(np.asarray(getattr(node, name), dtype=float)) for name in names]
         for node in nodes
     ]
-    widths = [len(part) for part in rows[0]]
+    shapes = [part.shape for part in rows[0]]
     for row in rows:
-        if [len(part) for part in row] != widths:
+        if [part.shape for part in row] != shapes:
             raise ValueError(
-                f"Every section must carry the same number of parameters to "
+                f"Every section must carry the same shape of parameters to "
                 f"interpolate between, and a {cls.__name__} section has "
-                f"{[len(part) for part in row]} against {widths}."
+                f"{[part.shape for part in row]} against {shapes}."
             )
+    widths = [int(np.prod(shape)) for shape in shapes]
 
     # A parameter every section agrees on is carried over untouched rather than
     # interpolated onto itself. Same number either way, but it keeps whatever
     # type the field was declared with -- a Bernstein order is an integer, and
     # a float in its place is not a valid one.
-    values = np.array([np.concatenate(row) for row in rows])
+    values = np.array([np.concatenate([part.ravel() for part in row]) for row in rows])
     interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
     interpolated = np.asarray(interpolated).reshape(-1)
 
     moved = {}
-    for name, width, start in zip(names, widths, np.cumsum([0, *widths])):
+    for name, shape, width, start in zip(
+        names, shapes, widths, np.cumsum([0, *widths])
+    ):
         original = getattr(nodes[0], name)
         # `array_equal` rather than `==`, which on an array field would give an
         # array of answers and no way to reduce it.
@@ -213,9 +229,10 @@ def _interpolate(nodes, spf_sections, spf):
             continue
 
         chunk = interpolated[start : start + width]
-        moved[name] = (
-            type(original)(chunk) if width > 1 or _is_sequence(original) else chunk[0]
-        )
+        if width > 1 or _is_sequence(original):
+            moved[name] = type(original)(_nested(chunk.reshape(shape)))
+        else:
+            moved[name] = chunk[0]
 
     try:
         return cls(**moved)
