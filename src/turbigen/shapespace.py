@@ -1,0 +1,223 @@
+"""
+.. _shapespace:
+
+Shape space
+^^^^^^^^^^^
+
+The arithmetic that :doc:`camber lines </blade>` and thickness distributions
+have in common, as free functions over plain arrays. Nothing here is a
+:class:`~turbigen.node.Node` and nothing here holds state: a shape is a
+:class:`~turbigen.camber.CamberDesign` or a
+:class:`~turbigen.thickness.ThicknessDesign`, and this is what those are
+written in terms of.
+
+A curve is written against a normalised meridional coordinate ``m``, zero at
+the leading edge and one at the trailing edge. *Shape space* is the curve
+``tau`` left after dividing a half-thickness by the class function
+``sqrt(m) * (1 - m)``, which is what carries the square-root nose and the
+closing trailing edge; :func:`thickness_from_tau` and
+:func:`tau_from_thickness` move between the two. :cite:`Taylor2016` writes a
+cubic in that space and Clark (2019) a Bernstein polynomial, but both are the
+same transform, and the two ends of it are physical: the value at the leading
+edge is fixed by the leading edge radius (:func:`tau_LE`) and the value at the
+trailing edge by the trailing edge thickness and wedge angle
+(:func:`tau_TE`).
+
+Two different linear terms appear, and they are not the same thing:
+
+* the trailing edge thickness enters *physical* thickness, as the ``t_TE / 2``
+  ramp added outside the class function by :func:`thickness_from_tau`;
+* a curve written as a straight line plus a Bernstein perturbation carries a
+  ramp in *shape space*, which stays at the call site rather than living here.
+  There is no function for it, because evaluation is linear and the line is
+  exactly representable in the basis: adding the line to the result of
+  :func:`evaluate_bernstein` gives the same curve as adding it to the
+  coefficients, and doing it to the result keeps the coefficients purely the
+  perturbation. That matters because :func:`elevate_bernstein` leaves the end
+  coefficients alone, so a perturbation pinned at zero stays pinned however it
+  is elevated --- and a leading edge radius or a wedge angle written into the
+  ends of a curve cannot drift when something moves the interior.
+"""
+
+import math
+
+import numpy as np
+
+
+def validate_domain(m):
+    """Check that a normalised meridional coordinate lies in [0, 1]."""
+    if np.any(np.asarray(m) < 0.0) or np.any(np.asarray(m) > 1.0):
+        raise ValueError("Meridional distance m must be in the range [0, 1].")
+
+
+def evaluate_bernstein(coeff, m):
+    """Return the Bernstein polynomial with coefficients `coeff` at `m`.
+
+    Parameters
+    ----------
+    coeff : array_like, shape (order + 1,)
+        Every coefficient of the curve, ends included --- an order `n` curve
+        takes `n + 1` of them. The first and last are the values at `m = 0`
+        and `m = 1`.
+    m : array_like
+        Normalised meridional positions to evaluate at.
+
+    Returns
+    -------
+    ndarray or float
+        The curve at each position, scalar if `m` was one.
+
+    """
+    coeff = np.asarray(coeff, dtype=float)
+    if coeff.ndim != 1 or len(coeff) < 2:
+        raise ValueError(
+            f"A Bernstein curve needs order + 1 coefficients, at least two, "
+            f"got {coeff.shape}."
+        )
+
+    m = np.asarray(m, dtype=float)
+    scalar = m.ndim == 0
+    m = np.atleast_1d(m)
+
+    n = len(coeff) - 1
+    i = np.arange(n + 1)
+    binom = np.array([math.comb(n, k) for k in i], dtype=float)
+    basis = (
+        binom[:, None]
+        * m[None, :] ** i[:, None]
+        * (1.0 - m)[None, :] ** (n - i)[:, None]
+    )
+
+    value = coeff @ basis
+    return value[0] if scalar else value
+
+
+def elevate_bernstein(coeff, order):
+    """Return `coeff` rewritten in the basis of degree `order`.
+
+    An exact identity, not a fit: the elevated coefficients describe the same
+    curve, written in a basis with room for more of them. The end
+    coefficients are carried over untouched, so a curve pinned at its ends
+    stays pinned --- which is what lets a low-order design be read as a
+    high-order one and then perturbed further.
+
+    Sampling the low-order curve and solving a matrix problem to match points
+    would only approximate this, and get worse-conditioned as the order grows.
+
+    Parameters
+    ----------
+    coeff : array_like, shape (n_low + 1,)
+        Every coefficient of the curve, ends included.
+    order : int
+        Degree to raise the curve to, at least its own.
+
+    Returns
+    -------
+    ndarray, shape (order + 1,)
+        The same curve, in the higher basis.
+
+    """
+    b = np.asarray(coeff, dtype=float)
+    if b.ndim != 1 or len(b) < 2:
+        raise ValueError(
+            f"A Bernstein curve needs order + 1 coefficients, at least two, "
+            f"got {b.shape}."
+        )
+
+    n_low = len(b) - 1
+    if order < n_low:
+        raise ValueError(
+            f"Cannot elevate an order {n_low} curve to order {order}; "
+            f"degree elevation only raises the order."
+        )
+
+    for _ in range(order - n_low):
+        n = len(b) - 1
+        i = np.arange(n + 2)
+        left = np.concatenate(([0.0], b))
+        right = np.concatenate((b, [0.0]))
+        t = i / (n + 1)
+        b = t * left + (1.0 - t) * right
+
+    return b
+
+
+def thickness_from_tau(m, tau, t_TE):
+    """Return half-thickness from a curve `tau` in shape space.
+
+    The class function ``sqrt(m) * (1 - m)`` puts a square-root nose on the
+    leading edge and closes the trailing edge; the trailing edge thickness is
+    then added back as a linear ramp, so that half of it is left at `m = 1`.
+
+    Parameters
+    ----------
+    m : array_like
+        Normalised meridional positions.
+    tau : array_like
+        Shape space curve at those positions.
+    t_TE : float
+        Trailing edge thickness, the total due to both sides [--].
+
+    """
+    m = np.asarray(m, dtype=float)
+    return np.sqrt(m) * (1.0 - m) * np.asarray(tau, dtype=float) + m * t_TE / 2.0
+
+
+def tau_from_thickness(m, t, t_TE):
+    """Return shape space from a half-thickness, inverting :func:`thickness_from_tau`.
+
+    How a thickness distribution measured off an existing aerofoil is read
+    into the parametrisation. Undefined at both ends, where the class
+    function vanishes and every shape space curve gives the same
+    half-thickness: ask :func:`tau_LE` and :func:`tau_TE` for those instead,
+    which is where the leading edge radius and the wedge angle come from.
+
+    Parameters
+    ----------
+    m : array_like
+        Normalised meridional positions, strictly between 0 and 1.
+    t : array_like
+        Half-thickness at those positions.
+    t_TE : float
+        Trailing edge thickness, the total due to both sides [--].
+
+    """
+    m = np.asarray(m, dtype=float)
+    validate_domain(m)
+    if np.any(m <= 0.0) or np.any(m >= 1.0):
+        raise ValueError(
+            "Shape space is undefined at the ends of the chord, where the "
+            "class function vanishes; take tau_LE and tau_TE from the "
+            "leading edge radius and the wedge angle instead."
+        )
+
+    return (np.asarray(t, dtype=float) - m * t_TE / 2.0) / (np.sqrt(m) * (1.0 - m))
+
+
+def tau_LE(R_LE):
+    """Return the shape space value at the leading edge, for a radius `R_LE`."""
+    return np.sqrt(2.0 * R_LE)
+
+
+def R_LE_from_tau(tau):
+    """Return the leading edge radius of a curve that starts at `tau` [--]."""
+    return tau**2.0 / 2.0
+
+
+def tau_TE(t_TE, tanwedge):
+    """Return the shape space value at the trailing edge.
+
+    Parameters
+    ----------
+    t_TE : float
+        Trailing edge thickness, the total due to both sides [--].
+    tanwedge : float
+        Tangent of the trailing edge wedge angle [--].
+
+    """
+    return t_TE + tanwedge
+
+
+def tanwedge_from_tau(tau, t_TE):
+    """Return the wedge angle tangent of a curve that ends at `tau` [--]."""
+    return tau - t_TE

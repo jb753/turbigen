@@ -24,20 +24,14 @@ zero aft loading.
 
 import dataclasses
 import logging
-import math
 from typing import ClassVar
 
 import numpy as np
 
+from turbigen import shapespace
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
-
-
-def _validate_domain(m):
-    """Check that a normalised meridional coordinate lies in [0, 1]."""
-    if np.any(np.asarray(m) < 0.0) or np.any(np.asarray(m) > 1.0):
-        raise ValueError("Meridional distance m must be in the range [0, 1].")
 
 
 class CamberDesign(Node):
@@ -69,24 +63,10 @@ class Quadratic(CamberDesign):
     """
 
     def chi_hat(self, m):
-        _validate_domain(m)
+        shapespace.validate_domain(m)
         a = self.aft_loading
         m = np.asarray(m, dtype=float)
         return m * (a * m + (1.0 - a))
-
-
-def _elevate_control_points(b):
-    """Degree-elevate a Bezier control-point array by one degree.
-
-    Exact identity, not an approximation: the elevated curve traces the same
-    shape as `b`, just written in the next degree's basis.
-    """
-    n = len(b) - 1
-    i = np.arange(n + 2)
-    left = np.concatenate(([0.0], b))
-    right = np.concatenate((b, [0.0]))
-    t = i / (n + 1)
-    return t * left + (1.0 - t) * right
 
 
 class Bernstein(CamberDesign):
@@ -139,33 +119,24 @@ class Bernstein(CamberDesign):
                     f"supply them all, or set upsample=True to raise this "
                     f"shorter curve to order {n} exactly."
                 )
-            # Full control points of the low-order curve, ramp plus
-            # perturbation, endpoints pinned at 0 and 1.
-            n_low = len(self.coeff) + 1
-            b = np.concatenate(
-                ([0.0], np.arange(1, n_low) / n_low + np.asarray(self.coeff), [1.0])
-            )
-            for _ in range(n - n_low):
-                b = _elevate_control_points(b)
-            coeff = tuple(float(v) for v in b[1:-1] - np.arange(1, n) / n)
-            object.__setattr__(self, "coeff", coeff)
+            # The perturbation is elevated on its own, ramp and all left
+            # out of it: elevation is linear and carries a ramp to a ramp, so
+            # elevating ramp plus perturbation and subtracting the new ramp
+            # would put the ramp in and take the same ramp back out again.
+            # Its pinned ends survive, elevation leaving end coefficients be.
+            b = shapespace.elevate_bernstein((0.0, *self.coeff, 0.0), n)
+            object.__setattr__(self, "coeff", tuple(float(v) for v in b[1:-1]))
 
     def chi_hat(self, m):
-        _validate_domain(m)
+        shapespace.validate_domain(m)
         n = self.order
         m = np.asarray(m, dtype=float)
-        scalar = m.ndim == 0
-        m = np.atleast_1d(m)
+
+        # The ramp is added to the evaluated curve rather than to the
+        # coefficients, which leaves the coefficients purely the perturbation
+        # and its ends pinned at zero.
         c = np.zeros(n - 1) if not self.coeff else np.asarray(self.coeff)
-        i = np.arange(1, n)
-        binom = np.array([math.comb(n, k) for k in i], dtype=float)
-        basis = (
-            binom[:, None]
-            * m[None, :] ** i[:, None]
-            * (1.0 - m)[None, :] ** (n - i)[:, None]
-        )
-        chi_hat = m + c @ basis
-        return chi_hat[0] if scalar else chi_hat
+        return m + shapespace.evaluate_bernstein((0.0, *c, 0.0), m)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -193,7 +164,7 @@ class CamberLine:
 
     def dydm(self, m):
         """Return camber line slope at normalised meridional distance `m`."""
-        _validate_domain(m)
+        shapespace.validate_domain(m)
         return self.tanchi_LE + self.shape.chi_hat(m) * self.Dtanchi
 
     def chi(self, m):

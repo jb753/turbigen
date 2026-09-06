@@ -19,6 +19,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from turbigen import shapespace
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
@@ -28,12 +29,6 @@ _PEAK_TOL = 1e-10
 
 _ROOT_TOL = 1e-9
 """Largest imaginary part for a root to count as real."""
-
-
-def _validate_domain(m):
-    """Check that a normalised meridional coordinate lies in [0, 1]."""
-    if np.any(np.asarray(m) < 0.0) or np.any(np.asarray(m) > 1.0):
-        raise ValueError("Meridional distance m must be in the range [0, 1].")
 
 
 class ThicknessDesign(Node):
@@ -81,7 +76,7 @@ class Taylor(ThicknessDesign):
         t_TE = self.t_TE
 
         # Control points in shape space
-        s_LE = np.sqrt(2.0 * self.R_LE)
+        s_LE = shapespace.tau_LE(self.R_LE)
         s_max = (self.t_max - m_tmax * t_TE / 2.0) / np.sqrt(m_tmax) / (1.0 - m_tmax)
         ds_max = (
             (
@@ -91,7 +86,7 @@ class Taylor(ThicknessDesign):
             / np.sqrt(m_tmax)
             / (1.0 - m_tmax)
         )
-        s_TE = t_TE + self.tanwedge
+        s_TE = shapespace.tau_TE(t_TE, self.tanwedge)
 
         x1 = m_tmax
         x2 = m_tmax**2.0
@@ -188,12 +183,10 @@ class Taylor(ThicknessDesign):
         The trailing edge thickness is specified as the total due to both
         sides, so half of it is returned at the trailing edge.
         """
-        _validate_domain(m)
+        shapespace.validate_domain(m)
 
         m_array = np.asarray(m, dtype=float)
-        t = np.sqrt(m_array) * (1.0 - m_array) * self.tau(m_array) + (
-            m_array * self.t_TE / 2.0
-        )
+        t = shapespace.thickness_from_tau(m_array, self.tau(m_array), self.t_TE)
 
         # No bound check here. Whether the distribution stays under its own
         # t_max is a property of the parameters, not of the points asked for,
