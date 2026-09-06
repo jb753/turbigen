@@ -20,6 +20,7 @@ from test_mesh import MESH, TIP
 
 from turbigen import (
     AnnulusPlot,
+    CamberPlot,
     Config,
     ContourPlot,
     ConvergencePlot,
@@ -1043,3 +1044,53 @@ def test_a_failing_post_processor_is_not_swallowed(tmp_path, monkeypatch):
     case.write_text(CASE)
 
     assert cli.main(["report", str(case)]) == 1
+
+
+#
+# The camber line, which is design rather than flow: it draws from the machine
+# geometry alone, so unlike the surface plot it needs no solution and no mesh.
+#
+
+
+def test_camber_plot_draws_each_row(bladed, meshed):
+    figures = CamberPlot().report(bladed, meshed)
+
+    assert len(figures) == len(meshed.machine.rows)
+    # The normalised shape alone, one curve for one designed section.
+    (shape,) = figures[0].axes
+    assert len(shape.lines) == 1
+
+
+def test_camber_plot_takes_the_span_fractions_it_is_given(bladed, meshed):
+    figures = CamberPlot(spf=(0.25, 0.75)).report(bladed, meshed)
+
+    assert len(figures[0].axes[0].lines) == 2
+
+
+def test_camber_plot_marks_the_knobs_a_loading_profile_moves(bladed, meshed):
+    """The points the iterator moves, on the curve it moves them on.
+
+    Its own `knob_m`, not a guess at where they sit: a plot that sampled
+    somewhere else would be drawing circles the iterator never reads, which is
+    what `_draw_loading_profile` avoids the same way.
+    """
+    config = _profiled(bladed, order=4)
+    iterator = config.iterate.correct[0]
+
+    ax = CamberPlot().report(config, meshed)[0].axes[0]
+    (knobs,) = [ln for ln in ax.lines if "knobs" in ln.get_label()]
+    (shape,) = [ln for ln in ax.lines if ln.get_label().startswith("spf")]
+
+    assert knobs.get_marker() == "o"
+    assert knobs.get_color() == shape.get_color()
+    assert knobs.get_xdata() == pytest.approx(iterator.knob_m())
+
+
+def test_camber_plot_leaves_an_unshaped_row_unmarked(bladed, meshed):
+    ax = CamberPlot().report(bladed, meshed)[0].axes[0]
+
+    assert not [ln for ln in ax.lines if "knobs" in ln.get_label()]
+
+
+def test_camber_plot_without_blades_is_empty(config, result):
+    assert CamberPlot().report(config, result) == []

@@ -49,6 +49,7 @@ from turbigen.metric import Metric, SurfaceDissipation
 from turbigen.node import Node
 from turbigen.post import (
     AnnulusPlot,
+    CamberPlot,
     ContourPlot,
     ConvergencePlot,
     Post,
@@ -86,6 +87,7 @@ __all__ = [
     "BladeDesign",
     "CamberDesign",
     "CamberLine",
+    "CamberPlot",
     "Chic",
     "Circulation",
     "Config",

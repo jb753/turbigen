@@ -376,6 +376,77 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
     ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
 
 
+class CamberPlot(Post):
+    """Normalised camber line of each row.
+
+    The design-side companion to :class:`SurfacePlot`: that draws what the
+    flow did with a blade, this draws the blade. Where a `loading_profile`
+    iterator is shaping the row, the points it reads are marked, exactly as
+    the surface plot marks them --- a camber coefficient is moved in `m` and
+    measured in `zeta`, and seeing the knobs on the curve they actually move
+    is what makes a saturated or a flat one recognisable.
+
+    The normalised shape and nothing else, as the package this replaces drew
+    it. That is what a camber design states and what an iterator moves; the
+    metal angle it lands on is the mean line's business, and the thickness
+    wrapped around it is a plot of its own.
+    """
+
+    type: ClassVar[str] = "camber"
+
+    spf: tuple[float, ...] = ()
+    """Span fractions to draw. Empty for the designed sections."""
+
+    def report(self, config, result):
+        from turbigen.iterate import LoadingProfile
+
+        rows = result.machine.rows if result.machine else ()
+        if not rows:
+            logger.info("No blades were designed, skipping the camber plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        m = np.linspace(0.0, 1.0, N_CHORD_PLOT)
+
+        figures = []
+        for i_row, row in enumerate(rows):
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"Row {i_row} Camber")
+            ax.set_ylabel(r"Normalised Metal Angle, $\hat{\chi}$")
+            ax.set_xlabel(r"Meridional Distance, $m/c_m$")
+            ax.set_xlim((0.0, 1.0))
+
+            for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+                camber, _ = row.blade._get_cam_thick(spf)
+                color = f"C{i_spf}"
+
+                ax.plot(m, camber.shape.chi_hat(m), color=color, label=f"spf={spf:.2f}")
+
+                # Only where an iterator reads this row and span: a knob drawn
+                # at a section nobody shapes would be a claim the design never
+                # made, which is how `_draw_loading_profile` treats its own
+                # sample points.
+                profile = _matching(config, LoadingProfile, i_row, spf)
+                if profile is None:
+                    continue
+
+                m_knob = profile.knob_m()
+                ax.plot(
+                    m_knob,
+                    camber.shape.chi_hat(m_knob),
+                    "o",
+                    color=color,
+                    fillstyle="none",
+                    label=f"knobs, spf={spf:.2f}",
+                )
+
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
 class VelocityTrianglePlot(Post):
     """Mean-line velocity triangles at inlet and exit of each row.
 
