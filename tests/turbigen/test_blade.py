@@ -489,6 +489,161 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
 
 
 #
+# THE CAMBER LINE
+#
+# The curve the surfaces are hung off. What wants it today takes the mean of
+# the two surfaces instead, which is the camber line only while both sides
+# carry the same thickness as each other -- so these check `evaluate_camber`
+# against the surfaces it produced, and record how far the mean is from it.
+#
+
+
+def _xrrt(xrt):
+    """A section with its angle turned into a distance, for measuring with."""
+    return np.stack((xrt[0], xrt[1], xrt[1] * xrt[2]))
+
+
+def test_camber_line_lies_between_the_surfaces(machine):
+    """Strictly inside the aerofoil, everywhere the aerofoil has thickness."""
+    blade = machine.rows[0].blade
+    m = np.linspace(0.0, 1.0, 501)
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, m=m)
+        xrtu, xrtl = blade.evaluate_section(spf, m=m)
+
+        # The ends are excluded: the thickness vanishes at the nose, so there
+        # the three curves meet rather than nest.
+        assert np.all(xrt[2, 1:-1] > xrtl[2, 1:-1])
+        assert np.all(xrt[2, 1:-1] < xrtu[2, 1:-1])
+
+
+def test_camber_line_is_offset_by_the_thickness(machine):
+    """Each surface stands off it by the thickness the section declares.
+
+    Not exactly, and not claimed to be: the offset is applied normal to the
+    camber line in the normalised meridional plane and then wrapped onto a
+    radius, so an annulus that changes radius stretches it slightly. Within a
+    thousandth of chord against a thickness a hundred times that.
+    """
+    blade = machine.rows[0].blade
+    m = turbigen.util.cluster_cosine(2001)
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, m=m)
+        surfaces = blade.evaluate_section(spf, m=m)
+
+        _, thickness = blade._get_cam_thick(spf)
+        chord = turbigen.util.arc_length(xrt[:2])
+        expected = thickness.thick(m) * chord
+
+        for surface in surfaces:
+            offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(xrt))
+            np.testing.assert_allclose(offset, expected, atol=2e-3 * chord)
+
+
+def test_camber_line_is_equidistant_from_a_symmetric_section(machine):
+    """The two surfaces stand off it equally, carrying equal thickness.
+
+    Which is what makes it the *camber* line rather than any other curve
+    drawn down the middle of the aerofoil.
+    """
+    blade = machine.rows[0].blade
+    m = turbigen.util.cluster_cosine(2001)
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, m=m)
+        xrtu, xrtl = blade.evaluate_section(spf, m=m)
+        chord = turbigen.util.arc_length(xrt[:2])
+
+        upper = turbigen.util.vecnorm(_xrrt(xrtu) - _xrrt(xrt))
+        lower = turbigen.util.vecnorm(_xrrt(xrtl) - _xrrt(xrt))
+        assert np.max(np.abs(upper - lower)) < 1e-3 * chord
+
+
+def test_camber_line_stops_short_of_the_aerofoil(machine):
+    """It is shorter than the blade, the thickness overhanging both ends.
+
+    The one property that stops the camber line being read as a leading- to
+    trailing-edge curve: `m=0` on it is behind the nose, not at it.
+    """
+    blade = machine.rows[0].blade
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf)
+        xrtu, xrtl = blade.evaluate_section(spf)
+
+        x_LE = min(xrtu[0].min(), xrtl[0].min())
+        x_TE = max(xrtu[0].max(), xrtl[0].max())
+        assert x_LE < xrt[0, 0] < xrt[0, -1] < x_TE
+
+
+def test_camber_line_leaves_at_the_metal_angles(machine):
+    """Its direction at each end is the metal angle there.
+
+    A direction check, not an identity: the angle is set against a meridional
+    distance taken at midspan, and read back here against the true arc length
+    of the curve at the span asked for.
+    """
+    blade = machine.rows[0].blade
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, nchord=2001)
+        s = turbigen.util.cum_arc_length(xrt[:2])
+        rt = xrt[1] * xrt[2]
+        chi = np.degrees(np.arctan(np.gradient(rt, s)))
+
+        np.testing.assert_allclose((chi[0], chi[-1]), blade.evaluate_chi(spf), atol=0.5)
+
+
+def test_camber_line_is_near_the_mean_of_the_surfaces(machine):
+    """How good the approximation that everything else makes today is.
+
+    Under a thousandth of chord on a symmetric thickness, so nothing that
+    takes the mean is wrong now --- but the two are different curves, and a
+    thickness free to differ side to side would separate them by half that
+    difference rather than by an annulus effect.
+    """
+    blade = machine.rows[0].blade
+    m = turbigen.util.cluster_cosine(2001)
+    for spf in SPF:
+        xrt = blade.evaluate_camber(spf, m=m)
+        mean = np.mean(blade.evaluate_section(spf, m=m), axis=0)
+        chord = turbigen.util.arc_length(xrt[:2])
+
+        assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) < 1e-3 * chord
+
+
+def test_camber_line_defaults_to_a_clustered_m(machine):
+    """With no `m` given, the points are `evaluate_section`'s own default."""
+    blade = machine.rows[0].blade
+    xrt = blade.evaluate_camber(0.5, nchord=51)
+    assert xrt.shape == (3, 51)
+
+    np.testing.assert_allclose(
+        xrt, blade.evaluate_camber(0.5, m=turbigen.util.cluster_cosine(51)), atol=1e-12
+    )
+
+
+def test_camber_line_is_stacked_at_the_stacking_point():
+    """It passes through theta=0 at m_stack, as the sections do."""
+    machine = build(blades=[blade(m_stack=0.25), blade()]).design()
+
+    m = np.linspace(0.0, 1.0, 101)
+    for spf in (0.0, 0.5, 1.0):
+        xrt = machine.rows[0].blade.evaluate_camber(spf, m=m)
+        assert abs(np.interp(0.25, m, xrt[2])) < 1e-3
+
+
+def test_camber_line_is_rotated_by_theta_offset():
+    """The whole blade turns, camber line included."""
+    offset = 0.1
+    plain = build().design().rows[0].blade
+    rotated = build(blades=[blade(theta_offset=offset), blade()]).design().rows[0].blade
+
+    for spf in (0.0, 1.0):
+        turned = rotated.evaluate_camber(spf)
+        still = plain.evaluate_camber(spf)
+        np.testing.assert_allclose(turned[:2], still[:2], atol=1e-12)
+        np.testing.assert_allclose(turned[2] - still[2], offset, atol=1e-9)
+
+
+#
 # ARC LENGTH AS A FUNCTION OF M
 #
 # What a loading iterator would use to place a point measured on the flow back

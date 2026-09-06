@@ -91,7 +91,8 @@ field by field, extrapolating beyond the end sections. The metal angles are the
 exception: only the recamber is interpolated, and the flow angle it is added to
 is evaluated at the span fraction asked for.
 :meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
-of the two surfaces; :meth:`~Blade.evaluate_chi` the leading and trailing metal
+of the two surfaces and :meth:`~Blade.evaluate_camber` those of the camber line
+they are hung off; :meth:`~Blade.evaluate_chi` the leading and trailing metal
 angles; and :meth:`~Blade.evaluate_chord` and
 :meth:`~Blade.evaluate_surface_length` the meridional chord and the longer
 surface length used by the count rules.
@@ -582,29 +583,28 @@ class Blade:
 
         return chi
 
-    def evaluate_section(self, spf, nchord=10000, m=None):
-        """Return coordinates of the upper and lower surfaces at `spf`.
+    def _camber_curve(self, spf, m):
+        """Return the camber line at `spf`, and what hangs the surfaces off it.
 
-        Parameters
-        ----------
-        spf : float
-            Span fraction to take the section at.
-        nchord : int
-            Number of chordwise points, if `m` is not given.
-        m : array_like, optional
-            Normalised chordwise positions along the camber line.
+        The one place the camber line is built, so
+        :meth:`evaluate_camber` and :meth:`evaluate_section` cannot answer
+        with different curves.
 
         Returns
         -------
-        xrt_upper, xrt_lower : ndarray, shape (3, n)
-            Axial, radial and angular coordinates of each surface. The upper
-            surface is at the higher angular coordinate.
+        xrt : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of the camber line.
+        mu_LTE, ml_LTE : ndarray, shape (n,)
+            Normalised meridional position of the upper and lower surfaces,
+            on the leading-to-trailing edge scale of the aerofoil.
+        Dy : ndarray, shape (n,)
+            Thickness offset of each surface from the camber line, normal to
+            it and normalised by meridional chord.
+        chord : float
+            Meridional length of the camber line [m].
 
         """
         camber, thickness = self._get_cam_thick(spf)
-
-        if m is None:
-            m = turbigen.util.cluster_cosine(nchord)
 
         dydm = camber.dydm(m)
         chi = np.arctan(dydm)
@@ -628,9 +628,7 @@ class Blade:
         mcam = (m - mcam_LE) / mcam_ptp
         chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
 
-        # Meridional coordinates of the upper, lower and camber lines
-        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
-        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
+        # Meridional coordinates of the camber line
         xr = self.row_annulus.evaluate_xr(mcam, spf)
 
         # Project the camber angle onto the annulus
@@ -639,6 +637,69 @@ class Blade:
         # Stack the sections, then rotate the whole blade
         theta -= np.interp(self.m_stack, mcam, theta)
         theta += self.theta_offset
+
+        return np.stack((*xr, theta)), mu_LTE, ml_LTE, Dy, chord
+
+    def evaluate_camber(self, spf, nchord=10000, m=None):
+        """Return coordinates of the camber line at `spf`.
+
+        The curve the surfaces are hung off, not a curve fitted back out of
+        them: it is shorter than the aerofoil, because the thickness
+        overhangs it at both ends, and it is only the mean of the two
+        surfaces while they carry the same thickness as each other. Taking
+        the mean is therefore an approximation that a thickness free to
+        differ side to side would make a worse one; asking the blade is
+        exact either way.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to take the camber line at.
+        nchord : int
+            Number of chordwise points, if `m` is not given.
+        m : array_like, optional
+            Normalised chordwise positions along the camber line, as
+            :meth:`evaluate_section` takes.
+
+        Returns
+        -------
+        xrt : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of the camber line.
+
+        """
+        if m is None:
+            m = turbigen.util.cluster_cosine(nchord)
+
+        return self._camber_curve(spf, m)[0]
+
+    def evaluate_section(self, spf, nchord=10000, m=None):
+        """Return coordinates of the upper and lower surfaces at `spf`.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to take the section at.
+        nchord : int
+            Number of chordwise points, if `m` is not given.
+        m : array_like, optional
+            Normalised chordwise positions along the camber line.
+
+        Returns
+        -------
+        xrt_upper, xrt_lower : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of each surface. The upper
+            surface is at the higher angular coordinate.
+
+        """
+        if m is None:
+            m = turbigen.util.cluster_cosine(nchord)
+
+        xrt, mu_LTE, ml_LTE, Dy, chord = self._camber_curve(spf, m)
+        xr, theta = xrt[:2], xrt[2]
+
+        # Meridional coordinates of the upper and lower surfaces
+        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
+        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
 
         # Angular offsets to the surfaces, at the mean radius between the
         # camber line and each surface
